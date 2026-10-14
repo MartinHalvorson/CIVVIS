@@ -849,7 +849,10 @@ fn a_staging_gun_holds_short_of_a_cuirassier_it_saw_last_turn() {
     let _ = (gun, ai);
     assert_eq!(run(false), next, "off, nothing on the board says danger");
     let held = run(true);
-    assert_eq!(held, start, "on, the gun holds short of the remembered reach");
+    assert_eq!(
+        held, start,
+        "on, the gun holds short of the remembered reach"
+    );
 }
 
 /// A sighting older than `REMEMBERED_STRIKER_TURNS` steers nothing: the
@@ -886,7 +889,10 @@ fn a_remembered_hostile_in_sight_is_not_counted_twice() {
     g.remove_unit(cuirassier);
     let strikers = ai.remembered_strikers(&g, 0, gun);
     assert_eq!(strikers.len(), 1);
-    assert_eq!(strikers[0].reach, 8, "four moves for the turn since, four to strike");
+    assert_eq!(
+        strikers[0].reach, 8,
+        "four moves for the turn since, four to strike"
+    );
     assert!(
         strikers[0].blow > 80.0,
         "a Cuirassier's blow on a Trebuchet is a one-shot: {}",
@@ -922,7 +928,9 @@ fn gun_behind_a_strait(road: bool) -> (Game, u32, u32, Pos) {
         .route_step(gun, target, STAGING_FAR)
         .expect("fixture: an ordinary route");
     assert!(
-        g.map.get(wet_step).is_some_and(|tile| g.rules.is_water(tile)),
+        g.map
+            .get(wet_step)
+            .is_some_and(|tile| g.rules.is_water(tile)),
         "fixture: the ordinary march steps into the water ({wet_step:?})"
     );
     assert_eq!(
@@ -952,7 +960,10 @@ fn stage_across_a_strait(road: bool, gene: bool, come_ashore: bool) -> (Pos, boo
     }
     ai.siege_stage_step(&mut g, 0, gun, &city, &plan);
     let unit = &g.units[&gun];
-    let dry = g.map.get(unit.pos).is_some_and(|tile| !g.rules.is_water(tile));
+    let dry = g
+        .map
+        .get(unit.pos)
+        .is_some_and(|tile| !g.rules.is_water(tile));
     (unit.pos, dry, unit.moves_left.to_bits())
 }
 
@@ -965,8 +976,15 @@ fn stage_march_takes_the_land_road_round_a_strait() {
     let StageMarch::Dry { step, dry, wet } = stage_march(&g, gun, target, STAGING_FAR) else {
         panic!("a dry road round the strait");
     };
-    assert_eq!(step, (start.0 - 1, start.1), "the road leaves along the spit");
-    assert!(dry > wet.saturating_mul(2).max(wet + DRY_MARCH_SLACK), "{dry} against {wet}");
+    assert_eq!(
+        step,
+        (start.0 - 1, start.1),
+        "the road leaves along the spit"
+    );
+    assert!(
+        dry > wet.saturating_mul(2).max(wet + DRY_MARCH_SLACK),
+        "{dry} against {wet}"
+    );
     assert!(dry <= STAGE_DRY_LIMIT);
 
     let (off_pos, off_dry, _) = stage_across_a_strait(true, false, true);
@@ -1047,7 +1065,10 @@ fn a_friend_on_the_one_dry_step_leaves_the_dry_road_standing() {
     );
     g.spawn_unit("spearman", 0, (start.0 - 1, start.1));
     assert!(
-        matches!(stage_march(&g, gun, target, STAGING_FAR), StageMarch::Hold { .. }),
+        matches!(
+            stage_march(&g, gun, target, STAGING_FAR),
+            StageMarch::Hold { .. }
+        ),
         "fixture: the friend on the spit reads as water"
     );
     assert_eq!(
@@ -1080,7 +1101,10 @@ fn a_zone_of_control_lock_leaves_the_dry_road_standing() {
     unit.started_turn_in_zoc = true;
     unit.acted = true;
     unit.moved = false;
-    assert_eq!(g.route_step_dry(gun, target, STAGING_FAR, STAGE_DRY_LIMIT), None);
+    assert_eq!(
+        g.route_step_dry(gun, target, STAGING_FAR, STAGE_DRY_LIMIT),
+        None
+    );
     assert_eq!(
         g.dry_road_blocked_now(gun, target, STAGING_FAR, STAGE_DRY_LIMIT),
         Some((road, true))
@@ -1119,21 +1143,38 @@ fn a_blocked_dry_road_waits_without_a_water_hold_under_the_gene() {
             .iter()
             .map(|t| t.headline.to_string())
             .collect();
-        let held = ai.siege_road_tally.get(&cid).and_then(|tally| tally.held(gun));
+        let held = ai
+            .siege_road_tally
+            .get(&cid)
+            .and_then(|tally| tally.held(gun));
         (g.units[&gun].pos == start, said, held)
     };
     let (stood, said, held) = run(false, false);
     assert!(stood);
-    assert!(said.iter().any(|line| line.contains("short of the water")), "{said:#?}");
+    assert!(
+        said.iter().any(|line| line.contains("short of the water")),
+        "{said:#?}"
+    );
     assert_eq!(held, Some(true), "off, the road tally counts a hold");
     let (stood, said, held) = run(true, false);
     assert!(stood, "the gun still waits for the spit to clear");
-    assert!(said.iter().any(|line| line.contains("waits on its dry road")), "{said:#?}");
-    assert!(!said.iter().any(|line| line.contains("short of the water")), "{said:#?}");
+    assert!(
+        said.iter()
+            .any(|line| line.contains("waits on its dry road")),
+        "{said:#?}"
+    );
+    assert!(
+        !said.iter().any(|line| line.contains("short of the water")),
+        "{said:#?}"
+    );
     assert_eq!(held, Some(false), "on, the road tally counts a march");
     let (stood, said, _) = run(true, true);
     assert!(stood, "the Invest march waits as well");
-    assert!(said.iter().any(|line| line.contains("waits on its dry road")), "{said:#?}");
+    assert!(
+        said.iter()
+            .any(|line| line.contains("waits on its dry road")),
+        "{said:#?}"
+    );
 }
 
 /// The gene ships off; a true water hold is left to the hold.
@@ -1149,7 +1190,10 @@ fn dry_road_gene_ships_off_and_leaves_a_true_water_hold() {
     ai.enable_dry_road_outlasts_a_blocked_step();
     let hold = stage_march(&g, gun, city.pos, STAGING_FAR);
     assert!(matches!(hold, StageMarch::Hold { .. }));
-    assert_eq!(ai.dry_road_blocked_holds(&mut g, 0, gun, &city, &hold), None);
+    assert_eq!(
+        ai.dry_road_blocked_holds(&mut g, 0, gun, &city, &hold),
+        None
+    );
 }
 
 /// `siege-members-use-their-moves`: a postless gun far from an invested city

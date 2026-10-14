@@ -76,9 +76,10 @@ fn approach_sorties_ride_with_the_volley() {
     assert!(orders
         .iter()
         .any(|order| order.verb.as_deref() == Some("AIR_ATTACK") && order.pos == Some((12, 9))));
-    assert!(orders
-        .iter()
-        .all(|order| order.subject != Some(50)), "other units still wait");
+    assert!(
+        orders.iter().all(|order| order.subject != Some(50)),
+        "other units still wait"
+    );
 }
 
 #[test]

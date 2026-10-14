@@ -556,7 +556,9 @@ pub(super) fn breaker_guns_wanted(city: &crate::game::City) -> usize {
     if city.wall_hp <= 0 {
         return 0;
     }
-    (city.wall_hp as usize).div_ceil(100).clamp(1, BREAKER_GUNS_MAX)
+    (city.wall_hp as usize)
+        .div_ceil(100)
+        .clamp(1, BREAKER_GUNS_MAX)
 }
 
 /// `breakers-stay-with-the-siege`: whether a walled Siege row on the board
@@ -1977,9 +1979,9 @@ impl AdvancedAi {
                 // stayed home, and only a fresh board (every replay, and the
                 // test above) moved them.
                 let reserve_seeded = |uid: &u32| {
-                    assignment.get(uid).is_none_or(|index| {
-                        forces[*index].objective_key == ObjectiveKey::Reserve
-                    })
+                    assignment
+                        .get(uid)
+                        .is_none_or(|index| forces[*index].objective_key == ObjectiveKey::Reserve)
                 };
                 let mut surplus: Vec<u32> = pool
                     .iter()
@@ -2016,7 +2018,14 @@ impl AdvancedAi {
         // Medieval Walls). One whose effect works on the top walled Siege
         // row's city joins that row's land force.
         if self.siege_needs_a_breaker && !arena {
-            self.breach_support_joins_the_siege(g, &rows, &pool, &facts, &mut forces, &mut assignment);
+            self.breach_support_joins_the_siege(
+                g,
+                &rows,
+                &pool,
+                &facts,
+                &mut forces,
+                &mut assignment,
+            );
         }
         // Leftovers: the Reserve, per domain — on an arena, the top force.
         for domain in [ForceDomain::Land, ForceDomain::Sea] {
@@ -3377,13 +3386,22 @@ mod tests {
             ai.battlefront_observation = false;
             ai.rebuild_force_groups(&g, 0, &plan);
             let units = |key| force_for(ai, key).map_or(Vec::new(), |force| force.units.clone());
-            (units(ObjectiveKey::Siege(target)), units(ObjectiveKey::Reserve))
+            (
+                units(ObjectiveKey::Siege(target)),
+                units(ObjectiveKey::Reserve),
+            )
         };
 
         let mut off = AdvancedAi::targeting(VictoryTarget::Domination);
         let (_, home) = run(&mut off);
-        assert!(home.contains(&tower), "a Tower is no surplus body: {home:?}");
-        assert!(guns.iter().any(|gun| home.contains(gun)), "the newest guns stay home");
+        assert!(
+            home.contains(&tower),
+            "a Tower is no surplus body: {home:?}"
+        );
+        assert!(
+            guns.iter().any(|gun| home.contains(gun)),
+            "the newest guns stay home"
+        );
 
         let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
         ai.enable_siege_needs_a_breaker();
@@ -3486,7 +3504,10 @@ mod tests {
         ai.battlefront_observation = false;
         ai.rebuild_force_groups(&g, 0, &plan);
         let reserve = force_for(&ai, ObjectiveKey::Reserve).map_or(0, |f| f.units.len());
-        assert!(reserve > CAMPAIGN_SURPLUS_HOME_KEEP, "peace keeps the army home: {reserve}");
+        assert!(
+            reserve > CAMPAIGN_SURPLUS_HOME_KEEP,
+            "peace keeps the army home: {reserve}"
+        );
 
         war(&mut g, 0, 1);
         g.turn += 1;
@@ -3494,7 +3515,11 @@ mod tests {
         let siege = force_for(&ai, ObjectiveKey::Siege(target)).map_or(0, |f| f.units.len());
         let reserve = force_for(&ai, ObjectiveKey::Reserve).map_or(0, |f| f.units.len());
         assert_eq!(reserve, CAMPAIGN_SURPLUS_HOME_KEEP, "two stay home");
-        assert_eq!(siege, ours.len() - CAMPAIGN_SURPLUS_HOME_KEEP, "the rest march");
+        assert_eq!(
+            siege,
+            ours.len() - CAMPAIGN_SURPLUS_HOME_KEEP,
+            "the rest march"
+        );
     }
 
     /// A Siege row asks the campaign's own bill times the margin, with a
@@ -3637,7 +3662,9 @@ mod tests {
                     && d <= CAMP_RADIUS
                     && g.wdist(*pos, at(30, 8)) > g.wdist(*pos, at(6, 8)) + 4
                     && g.city_at(*pos).is_none()
-                    && g.map.get(*pos).is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+                    && g.map
+                        .get(*pos)
+                        .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
             })
             .expect("a tile in the outer camp band");
         g.barb_camps.clear();
@@ -3651,7 +3678,10 @@ mod tests {
         g.turn += 1;
         ai.rebuild_force_groups(&g, 0, &plan);
         let far_row = row(&ai, ObjectiveKey::Camp(far)).expect("a far ClearCamp row");
-        assert_eq!(far_row.requirement.bodies, 0, "a far camp keeps the plain rule");
+        assert_eq!(
+            far_row.requirement.bodies, 0,
+            "a far camp keeps the plain rule"
+        );
     }
 
     /// Under `early-conquest-opening` a Scout is never recruited for a

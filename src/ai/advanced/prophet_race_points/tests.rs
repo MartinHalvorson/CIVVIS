@@ -75,13 +75,24 @@ fn the_race_shrine_goes_in_front_of_the_holy_site_city_queue() {
     let scout = Item::Unit {
         unit: crate::name!("scout"),
     };
-    g.apply(0, &Action::Produce { city: cid, item: scout.clone() }).unwrap();
+    g.apply(
+        0,
+        &Action::Produce {
+            city: cid,
+            item: scout.clone(),
+        },
+    )
+    .unwrap();
     g.cities.get_mut(&cid).unwrap().production = 4.0;
     let mut ai = racer();
 
     let mut off = g.clone();
     ai.reserve_race_shrine(&mut off, 0, &plan);
-    assert_eq!(off.cities[&cid].queue.first(), Some(&scout), "off by default");
+    assert_eq!(
+        off.cities[&cid].queue.first(),
+        Some(&scout),
+        "off by default"
+    );
 
     ai.enable_prophet_race_earns_its_points();
 
@@ -89,12 +100,20 @@ fn the_race_shrine_goes_in_front_of_the_holy_site_city_queue() {
     let mut held = plan.clone();
     held.threatened_city = Some(cid);
     ai.reserve_race_shrine(&mut threatened, 0, &held);
-    assert_eq!(threatened.cities[&cid].queue.first(), Some(&scout), "a threatened city defends");
+    assert_eq!(
+        threatened.cities[&cid].queue.first(),
+        Some(&scout),
+        "a threatened city defends"
+    );
 
     let mut founded = g.clone();
     founded.players[0].religion = Some("RELIGION_BUDDHISM".to_string());
     ai.reserve_race_shrine(&mut founded, 0, &plan);
-    assert_eq!(founded.cities[&cid].queue.first(), Some(&scout), "the race is won");
+    assert_eq!(
+        founded.cities[&cid].queue.first(),
+        Some(&scout),
+        "the race is won"
+    );
 
     // The rival's religion and the Prophet it holds take both of a duel
     // map's slots.
@@ -103,12 +122,20 @@ fn the_race_shrine_goes_in_front_of_the_holy_site_city_queue() {
     closed.players[1].prophet_pending = true;
     assert_eq!(closed.max_religions(), 2);
     ai.reserve_race_shrine(&mut closed, 0, &plan);
-    assert_eq!(closed.cities[&cid].queue.first(), Some(&scout), "the race is closed");
+    assert_eq!(
+        closed.cities[&cid].queue.first(),
+        Some(&scout),
+        "the race is closed"
+    );
 
     let mut skipped = g.clone();
     ai.base.skip_prophet_race = true;
     ai.reserve_race_shrine(&mut skipped, 0, &plan);
-    assert_eq!(skipped.cities[&cid].queue.first(), Some(&scout), "the race is called off");
+    assert_eq!(
+        skipped.cities[&cid].queue.first(),
+        Some(&scout),
+        "the race is called off"
+    );
     ai.base.skip_prophet_race = false;
 
     let mut standing = g.clone();
@@ -119,11 +146,19 @@ fn the_race_shrine_goes_in_front_of_the_holy_site_city_queue() {
         .buildings
         .push(crate::name!("shrine"));
     ai.reserve_race_shrine(&mut standing, 0, &plan);
-    assert_eq!(standing.cities[&cid].queue.first(), Some(&scout), "the Shrine stands");
+    assert_eq!(
+        standing.cities[&cid].queue.first(),
+        Some(&scout),
+        "the Shrine stands"
+    );
 
     ai.reserve_race_shrine(&mut g, 0, &plan);
     assert!(shrine_first(&g, cid), "queue: {:?}", g.cities[&cid].queue);
-    assert_eq!(g.item_invested_production(cid, &scout), 4.0, "the Scout keeps its progress");
+    assert_eq!(
+        g.item_invested_production(cid, &scout),
+        4.0,
+        "the Scout keeps its progress"
+    );
     // Idempotent on the next frame.
     ai.reserve_race_shrine(&mut g, 0, &plan);
     assert!(shrine_first(&g, cid));
@@ -142,17 +177,31 @@ fn the_race_shrine_waits_for_a_finishing_item_and_takes_an_idle_queue() {
     };
     let mut finishing = g.clone();
     finishing
-        .apply(0, &Action::Produce { city: cid, item: scout.clone() })
+        .apply(
+            0,
+            &Action::Produce {
+                city: cid,
+                item: scout.clone(),
+            },
+        )
         .unwrap();
     let cost = finishing.item_cost_for_city(0, cid, &scout);
     finishing.cities.get_mut(&cid).unwrap().production = cost - 0.5;
     assert!(finishing.city_yields(cid).production >= 0.5);
     ai.reserve_race_shrine(&mut finishing, 0, &plan);
-    assert_eq!(finishing.cities[&cid].queue.first(), Some(&scout), "the Scout finishes first");
+    assert_eq!(
+        finishing.cities[&cid].queue.first(),
+        Some(&scout),
+        "the Scout finishes first"
+    );
 
     let mut idle = g.clone();
     ai.reserve_race_shrine(&mut idle, 0, &plan);
-    assert!(shrine_first(&idle, cid), "queue: {:?}", idle.cities[&cid].queue);
+    assert!(
+        shrine_first(&idle, cid),
+        "queue: {:?}",
+        idle.cities[&cid].queue
+    );
 }
 
 /// The governor keeps the race's Shrine only while the race still wants it.
@@ -163,7 +212,10 @@ fn the_governor_keeps_the_race_shrine_while_the_race_is_open() {
         building: crate::name!("shrine"),
     };
     let mut ai = racer();
-    assert!(!ai.race_shrine_committed(&g, 0, cid, &shrine), "off by default");
+    assert!(
+        !ai.race_shrine_committed(&g, 0, cid, &shrine),
+        "off by default"
+    );
     ai.enable_prophet_race_earns_its_points();
     assert!(ai.race_shrine_committed(&g, 0, cid, &shrine));
     let library = Item::Building {
@@ -171,7 +223,10 @@ fn the_governor_keeps_the_race_shrine_while_the_race_is_open() {
     };
     assert!(!ai.race_shrine_committed(&g, 0, cid, &library));
     g.players[0].prophet_pending = true;
-    assert!(!ai.race_shrine_committed(&g, 0, cid, &shrine), "the Prophet is in hand");
+    assert!(
+        !ai.race_shrine_committed(&g, 0, cid, &shrine),
+        "the Prophet is in hand"
+    );
 }
 
 fn oligarchy(g: &mut Game) {
@@ -201,14 +256,20 @@ fn revelation_takes_the_wildcard_while_a_prophet_is_open() {
     let (mut g, _, _) = board();
     oligarchy(&mut g);
     assert!(
-        g.available_policies(0).contains(&crate::name!("revelation")),
+        g.available_policies(0)
+            .contains(&crate::name!("revelation")),
         "Mysticism offers Revelation"
     );
     let mut ai = racer();
 
     let mut off = g.clone();
     ai.strategic_policies(&mut off, 0, GrandStrategy::Conquest);
-    assert!(!off.players[0].policies.contains(&crate::name!("revelation")), "off by default");
+    assert!(
+        !off.players[0]
+            .policies
+            .contains(&crate::name!("revelation")),
+        "off by default"
+    );
 
     ai.enable_prophet_race_earns_its_points();
     let mut founded = g.clone();

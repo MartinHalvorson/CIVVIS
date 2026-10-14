@@ -93,7 +93,9 @@ impl AdvancedAi {
             .filter(|rival| self.water_road_stand_downs(g, pid, *rival) == 0)
             .filter(|rival| self.campaign_target_legal(g, pid, *rival))
             .map(|rival| {
-                let needed = self.domination_capital_target_for(g, pid, Some(rival)).is_some();
+                let needed = self
+                    .domination_capital_target_for(g, pid, Some(rival))
+                    .is_some();
                 (!needed, g.military_power(rival), rival)
             })
             .min_by(|a, b| a.0.cmp(&b.0).then(a.1.total_cmp(&b.1)).then(a.2.cmp(&b.2)))?;

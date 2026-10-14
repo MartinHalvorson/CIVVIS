@@ -2005,7 +2005,9 @@ mod tests {
         assert_eq!((open.stalled_streak, open.forgotten_streak), (0, 0));
 
         assert!(
-            run(&game, 0, far, false).capture_stood_down.contains_key(&target),
+            run(&game, 0, far, false)
+                .capture_stood_down
+                .contains_key(&target),
             "a gun that comes no nearer is not coming"
         );
         assert!(

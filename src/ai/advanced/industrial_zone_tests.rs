@@ -50,15 +50,25 @@ fn the_delegated_governor_opens_the_zone_but_not_in_the_threatened_city() {
         let mut game = game.clone();
         let mut ai = controller(gene);
         ai.delegated_cities(&mut game, 0, &plan(GrandStrategy::Expansion, threatened));
-        assert_eq!(ai.base.plan_threatened_city, None, "the lend ends with the call");
+        assert_eq!(
+            ai.base.plan_threatened_city, None,
+            "the lend ends with the call"
+        );
         game.cities[&top].queue.first().cloned()
     };
     let stock = run(false, None);
     assert!(stock.is_some(), "the stock governor builds something");
-    assert!(!is_zone(&game, &stock), "fixture: the stock queue is no zone: {stock:?}");
+    assert!(
+        !is_zone(&game, &stock),
+        "fixture: the stock queue is no zone: {stock:?}"
+    );
     let gene = run(true, None);
     assert!(is_zone(&game, &gene), "the gene opens the zone: {gene:?}");
-    assert_eq!(run(true, Some(top)), run(false, Some(top)), "threatened: the stock queue");
+    assert_eq!(
+        run(true, Some(top)),
+        run(false, Some(top)),
+        "threatened: the stock queue"
+    );
 }
 
 /// The strategic governor's idle queue: under the gene the most productive
@@ -145,19 +155,20 @@ fn the_theater_reservation_leaves_the_producers_slot_to_the_zone() {
                 .is_some()
         })
         .collect();
-    assert_eq!(producers.len(), PRODUCER_ZONE_MAX, "fixture: three producers");
+    assert_eq!(
+        producers.len(),
+        PRODUCER_ZONE_MAX,
+        "fixture: three producers"
+    );
     let claimed = |gene: bool| {
         let mut game = game.clone();
         let mut ai = controller(gene);
         ai.enable_culture_defense_theater_2();
         ai.reserve_culture_defense_theater(&mut game, 0, &plan(GrandStrategy::Conquest, None));
-        ranked
-            .iter()
-            .copied()
-            .find(|cid| {
-                matches!(game.cities[cid].queue.first(), Some(Item::District { district, .. })
+        ranked.iter().copied().find(|cid| {
+            matches!(game.cities[cid].queue.first(), Some(Item::District { district, .. })
                     if game.district_family(*district) == "theater_square")
-            })
+        })
     };
     let stock = claimed(false);
     assert!(

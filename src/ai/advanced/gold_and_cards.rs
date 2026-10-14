@@ -1071,7 +1071,11 @@ mod tests {
     fn the_upgrade_floor_keeps_the_armys_bill_only_while_on() {
         assert_eq!(upgrade_floor_from(30.0, 0.0), 30.0);
         assert_eq!(upgrade_floor_from(30.0, 140.0), 210.0);
-        assert_eq!(upgrade_floor_from(300.0, 140.0), 300.0, "a larger floor stands");
+        assert_eq!(
+            upgrade_floor_from(300.0, 140.0),
+            300.0,
+            "a larger floor stands"
+        );
         let (mut g, _) = board();
         std::sync::Arc::make_mut(&mut g.host_maintenance).insert(
             0,
@@ -1082,7 +1086,11 @@ mod tests {
             },
         );
         let mut ai = AdvancedAi::new();
-        assert_eq!(ai.upgrade_treasury_floor(&g, 0, 30.0), 30.0, "off by default");
+        assert_eq!(
+            ai.upgrade_treasury_floor(&g, 0, 30.0),
+            30.0,
+            "off by default"
+        );
         ai.enable_upkeep_reserve();
         assert_eq!(ai.upgrade_treasury_floor(&g, 0, 30.0), 210.0);
         ai.disable_upkeep_reserve();

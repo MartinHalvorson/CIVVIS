@@ -2118,7 +2118,12 @@ impl AdvancedAi {
     /// Live King civvis-20261005T185206Z (game 153) declared on Spain at
     /// turns 100 and 120 at 611 and 712 against 305 and 282; Spain made 189
     /// and 231 Production to our 85 and 131, and both wars ended in a rout.
-    pub(crate) fn declaration_edge_2(&self, g: &Game, pid: usize, target: usize) -> DeclarationEdge {
+    pub(crate) fn declaration_edge_2(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: usize,
+    ) -> DeclarationEdge {
         DeclarationEdge {
             ours: g.military_power(pid),
             peak: self.peak_rival_power(g, target),

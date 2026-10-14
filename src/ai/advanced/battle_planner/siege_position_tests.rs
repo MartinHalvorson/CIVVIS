@@ -157,6 +157,12 @@ fn a_healthy_stage_siege_gun_is_not_rotated_out() {
         let _ = ai.rotate_wounded(&mut g, 0, &mut field, &BTreeSet::new(), &BTreeSet::new());
         ai.battle_planner_ordered.contains(&gun) || g.units[&gun].pos != here
     };
-    assert!(rotated(false), "the control: an exposed gun outside any siege rotates out");
-    assert!(!rotated(true), "a healthy gun of a Stage siege is left to the train");
+    assert!(
+        rotated(false),
+        "the control: an exposed gun outside any siege rotates out"
+    );
+    assert!(
+        !rotated(true),
+        "a healthy gun of a Stage siege is left to the train"
+    );
 }

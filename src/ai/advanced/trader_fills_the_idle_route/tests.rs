@@ -80,26 +80,44 @@ fn an_empty_slot_claims_one_trader_over_a_routine_unit() {
         panic!("fixture: two cities and a trade slot");
     };
     set_all(&mut game, unit("warrior"));
-    assert!(AdvancedAi::empty_trade_slots(&game, 0, None) > 0, "fixture: a slot stands empty");
+    assert!(
+        AdvancedAi::empty_trade_slots(&game, 0, None) > 0,
+        "fixture: a slot stands empty"
+    );
 
     let stock = AdvancedAi::new();
     let mut off = game.clone();
     let plan = stock.assess(&off, 0);
     stock.claim_trader_for_idle_route(&mut off, 0, &plan);
-    assert!(heads(&off).iter().all(|head| *head == Some(unit("warrior"))), "off: no claim");
+    assert!(
+        heads(&off)
+            .iter()
+            .all(|head| *head == Some(unit("warrior"))),
+        "off: no claim"
+    );
 
     let ai = armed();
     let mut on = game.clone();
     let plan = ai.assess(&on, 0);
     ai.claim_trader_for_idle_route(&mut on, 0, &plan);
-    let traders = heads(&on).iter().filter(|head| **head == Some(trader())).count();
+    let traders = heads(&on)
+        .iter()
+        .filter(|head| **head == Some(trader()))
+        .count();
     assert_eq!(traders, 1, "one Trader for one empty slot");
-    assert_eq!(AdvancedAi::empty_trade_slots(&on, 0, None), 0, "the slot is answered");
+    assert_eq!(
+        AdvancedAi::empty_trade_slots(&on, 0, None),
+        0,
+        "the slot is answered"
+    );
 
     // A second pass claims nothing more: the queued Trader answers the slot.
     let plan = ai.assess(&on, 0);
     ai.claim_trader_for_idle_route(&mut on, 0, &plan);
-    let again = heads(&on).iter().filter(|head| **head == Some(trader())).count();
+    let again = heads(&on)
+        .iter()
+        .filter(|head| **head == Some(trader()))
+        .count();
     assert_eq!(again, 1, "no second Trader for the same slot");
 
     // The claimed Trader holds against the governor's rescoring while its
@@ -114,10 +132,19 @@ fn an_empty_slot_claims_one_trader_over_a_routine_unit() {
     let mut afield = game.clone();
     let home = afield.cities[&claimed].pos;
     afield.spawn_test_unit("trader", 0, home);
-    assert_eq!(AdvancedAi::empty_trade_slots(&afield, 0, None), 0, "a Trader afield fills it");
+    assert_eq!(
+        AdvancedAi::empty_trade_slots(&afield, 0, None),
+        0,
+        "a Trader afield fills it"
+    );
     let plan = ai.assess(&afield, 0);
     ai.claim_trader_for_idle_route(&mut afield, 0, &plan);
-    assert!(heads(&afield).iter().all(|head| *head == Some(unit("warrior"))), "no claim");
+    assert!(
+        heads(&afield)
+            .iter()
+            .all(|head| *head == Some(unit("warrior"))),
+        "no claim"
+    );
 }
 
 /// A Settler, a Builder, Walls and a freshly attacked city keep their queues.
@@ -132,7 +159,10 @@ fn settlers_builders_walls_and_attacked_cities_keep_their_queues() {
         set_all(&mut busy, keep.clone());
         let plan = ai.assess(&busy, 0);
         ai.claim_trader_for_idle_route(&mut busy, 0, &plan);
-        assert!(heads(&busy).iter().all(|head| *head == Some(keep.clone())), "{keep:?} stays");
+        assert!(
+            heads(&busy).iter().all(|head| *head == Some(keep.clone())),
+            "{keep:?} stays"
+        );
     }
     let walls = Item::Building {
         building: crate::name!("walls"),
@@ -146,7 +176,12 @@ fn settlers_builders_walls_and_attacked_cities_keep_their_queues() {
     {
         let plan = ai.assess(&walled, 0);
         ai.claim_trader_for_idle_route(&mut walled, 0, &plan);
-        assert!(heads(&walled).iter().all(|head| *head == Some(walls.clone())), "Walls stay");
+        assert!(
+            heads(&walled)
+                .iter()
+                .all(|head| *head == Some(walls.clone())),
+            "Walls stay"
+        );
     }
     let mut attacked = game.clone();
     set_all(&mut attacked, unit("warrior"));
@@ -156,7 +191,12 @@ fn settlers_builders_walls_and_attacked_cities_keep_their_queues() {
     }
     let plan = ai.assess(&attacked, 0);
     ai.claim_trader_for_idle_route(&mut attacked, 0, &plan);
-    assert!(heads(&attacked).iter().all(|head| *head == Some(unit("warrior"))), "attacked: no claim");
+    assert!(
+        heads(&attacked)
+            .iter()
+            .all(|head| *head == Some(unit("warrior"))),
+        "attacked: no claim"
+    );
 }
 
 /// The gene is registered and off by default.

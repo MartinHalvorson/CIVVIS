@@ -1112,7 +1112,11 @@ impl AdvancedAi {
             }
             let damage = expected_damage(attack, g.city_strength(cid));
             let shooter = posted.is_some() && super::siege_train::is_siege_shooter(g, *uid);
-            if shooter && posted.as_ref().is_some_and(|(posted, _)| !posted.contains(uid)) {
+            if shooter
+                && posted
+                    .as_ref()
+                    .is_some_and(|(posted, _)| !posted.contains(uid))
+            {
                 continue;
             }
             // `unwalled-city-takes-the-swarm`: the city's reply to this
@@ -1141,7 +1145,11 @@ impl AdvancedAi {
             // the wall damage that would make the siege ready to invest.
             let wall_multiplier = if spec.siege {
                 1.0
-            } else if shooter && posted.as_ref().is_some_and(|(_, walls)| !walls.contains(uid)) {
+            } else if shooter
+                && posted
+                    .as_ref()
+                    .is_some_and(|(_, walls)| !walls.contains(uid))
+            {
                 0.0
             } else if ranged {
                 0.5

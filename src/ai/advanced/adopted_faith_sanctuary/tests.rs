@@ -533,7 +533,10 @@ fn a_faith_at_match_point_is_the_threat_from_its_first_convert() {
             .count(),
         1
     );
-    assert!(ai.adopted_faith_threat(&g, 0).is_none(), "the half rule alone waits");
+    assert!(
+        ai.adopted_faith_threat(&g, 0).is_none(),
+        "the half rule alone waits"
+    );
     ai.enable_air_surge_2();
     // With only the founder left beside us, its faith holds every other
     // major by definition; add a third major that follows it instead.

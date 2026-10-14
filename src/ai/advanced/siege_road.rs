@@ -548,9 +548,8 @@ fn border_blocker(g: &Game, uid: u32, target: Pos) -> Option<usize> {
 fn border_free_road(g: &Game, uid: u32, target: Pos) -> Option<(usize, Option<usize>)> {
     let unit = g.units.get(&uid)?;
     let seat = unit.owner;
-    let open = |owner: usize| {
-        owner == seat || g.is_at_war(seat, owner) || g.has_open_borders(seat, owner)
-    };
+    let open =
+        |owner: usize| owner == seat || g.is_at_war(seat, owner) || g.has_open_borders(seat, owner);
     let mut seen = BTreeSet::from([unit.pos]);
     let mut queue = VecDeque::from([(unit.pos, None::<usize>, 0usize)]);
     while let Some((current, blocker, steps)) = queue.pop_front() {
@@ -657,7 +656,14 @@ mod tests {
 
     /// Run `turns` turns in which the Stage step reads `march` for the
     /// soldier, reconciling the ledger after each.
-    fn run(ai: &mut AdvancedAi, g: &mut Game, target: u32, soldier: u32, march: StageMarch, turns: u32) {
+    fn run(
+        ai: &mut AdvancedAi,
+        g: &mut Game,
+        target: u32,
+        soldier: u32,
+        march: StageMarch,
+        turns: u32,
+    ) {
         for _ in 0..turns {
             let _ = ai.note_stage_march(g, soldier, target, &march);
             ai.reconcile_commitments(g, 0);
@@ -679,23 +685,39 @@ mod tests {
             .expect("the way round");
         let free = super::border_free_road(&g, soldier, pos).expect("a road through");
         assert_eq!(free.1, Some(1), "through the screen");
-        assert!(dry >= 2 * free.0 && dry >= free.0 + 10, "fixture: {dry} against {free:?}");
+        assert!(
+            dry >= 2 * free.0 && dry >= free.0 + 10,
+            "fixture: {dry} against {free:?}"
+        );
         let march = StageMarch::Dry { step, dry, wet: 12 };
         let mut off = ai(true, &g, target);
         off.enable_siege_buys_the_passage();
-        assert!(matches!(off.long_road_holds(&g, soldier, pos, march), StageMarch::Dry { .. }), "off");
+        assert!(
+            matches!(
+                off.long_road_holds(&g, soldier, pos, march),
+                StageMarch::Dry { .. }
+            ),
+            "off"
+        );
         let mut on = ai(true, &g, target);
         on.enable_siege_buys_the_passage();
         on.enable_long_road_names_the_blocker();
         let held = on.long_road_holds(&g, soldier, pos, march);
         assert!(matches!(held, StageMarch::Hold { wet: 12 }), "{held:?}");
         let _ = on.note_stage_march(&g, soldier, target, &held);
-        assert_eq!(on.siege_passage_blockers(&g, 0), [1].into(), "the screen's owner");
+        assert_eq!(
+            on.siege_passage_blockers(&g, 0),
+            [1].into(),
+            "the screen's owner"
+        );
         let mut war = g.clone();
         war.at_war.insert((0, 1));
         war.at_war.insert((1, 0));
         assert!(
-            matches!(on.long_road_holds(&war, soldier, pos, march), StageMarch::Dry { .. }),
+            matches!(
+                on.long_road_holds(&war, soldier, pos, march),
+                StageMarch::Dry { .. }
+            ),
             "at war the road through is open"
         );
     }
@@ -713,16 +735,27 @@ mod tests {
         let mut on = ai(true, &g, target);
         on.enable_siege_buys_the_passage();
         let _ = on.note_stage_march(&g, soldier, target, &hold);
-        assert_eq!(on.siege_passage_blockers(&g, 0), [1].into(), "the screen's owner");
+        assert_eq!(
+            on.siege_passage_blockers(&g, 0),
+            [1].into(),
+            "the screen's owner"
+        );
         let mut later = g.clone();
         later.turn += 1;
-        assert_eq!(on.siege_passage_blockers(&later, 0), [1].into(), "a turn on");
+        assert_eq!(
+            on.siege_passage_blockers(&later, 0),
+            [1].into(),
+            "a turn on"
+        );
         later.turn += 1;
         assert!(on.siege_passage_blockers(&later, 0).is_empty(), "stale");
         let mut war = g.clone();
         war.at_war.insert((0, 1));
         war.at_war.insert((1, 0));
-        assert!(on.siege_passage_blockers(&war, 0).is_empty(), "no purchase at war");
+        assert!(
+            on.siege_passage_blockers(&war, 0).is_empty(),
+            "no purchase at war"
+        );
     }
 
     /// `siege-buys-the-passage`: a siege stood down for want of the road keeps
@@ -735,7 +768,10 @@ mod tests {
         on.enable_siege_buys_the_passage();
         let mut g = game.clone();
         run(&mut on, &mut g, target, soldier, hold, ROAD_HOLD_TURNS);
-        assert!(on.capture_stood_down_holds(&g, target), "fixture: stood down");
+        assert!(
+            on.capture_stood_down_holds(&g, target),
+            "fixture: stood down"
+        );
         g.turn += 5;
         assert_eq!(
             on.siege_passage_blockers(&g, 0),
@@ -752,7 +788,8 @@ mod tests {
     fn a_border_blocked_siege_is_stood_down_within_three_turns() {
         let (game, target, soldier) = strip();
         assert!(
-            game.route_step_dry(soldier, game.cities[&target].pos, 5, 128).is_none(),
+            game.route_step_dry(soldier, game.cities[&target].pos, 5, 128)
+                .is_none(),
             "fixture: no open land road"
         );
         let hold = StageMarch::Hold { wet: 30 };
@@ -764,13 +801,25 @@ mod tests {
             Some(g.players[1].civ.as_str()),
             "the hold names the closed border"
         );
-        assert!(on.campaign_target_legal(&g, 0, 2), "at war: a legal campaign target");
+        assert!(
+            on.campaign_target_legal(&g, 0, 2),
+            "at war: a legal campaign target"
+        );
         run(&mut on, &mut g, target, soldier, hold, ROAD_HOLD_TURNS - 1);
-        assert!(!on.capture_stood_down.contains_key(&target), "two holds are not yet the rule");
+        assert!(
+            !on.capture_stood_down.contains_key(&target),
+            "two holds are not yet the rule"
+        );
         run(&mut on, &mut g, target, soldier, hold, 1);
-        assert!(on.capture_stood_down.contains_key(&target), "gene on: stood down");
+        assert!(
+            on.capture_stood_down.contains_key(&target),
+            "gene on: stood down"
+        );
         assert!(on.capture_stood_down_holds(&g, target));
-        assert!(on.siege_road_cuts_off(&g, 0, 2), "the campaign drops the rival");
+        assert!(
+            on.siege_road_cuts_off(&g, 0, 2),
+            "the campaign drops the rival"
+        );
         assert!(!on.campaign_target_legal(&g, 0, 2));
         assert_eq!(
             g.players[0].counters.get("commit:capture:road_stand_downs"),
@@ -800,10 +849,19 @@ mod tests {
     fn a_reachable_siege_is_not_stood_down() {
         let (mut game, target, soldier) = strip();
         game.players[1].borders_enforced = Some(false);
-        assert!(game.route_step_dry(soldier, game.cities[&target].pos, 5, 128).is_some());
+        assert!(game
+            .route_step_dry(soldier, game.cities[&target].pos, 5, 128)
+            .is_some());
         let mut on = ai(true, &game, target);
         let mut g = game.clone();
-        run(&mut on, &mut g, target, soldier, StageMarch::Ordinary, ROAD_HOLD_TURNS + 2);
+        run(
+            &mut on,
+            &mut g,
+            target,
+            soldier,
+            StageMarch::Ordinary,
+            ROAD_HOLD_TURNS + 2,
+        );
         assert!(!on.capture_stood_down.contains_key(&target));
         assert_eq!(
             on.commitments()
@@ -859,7 +917,10 @@ mod tests {
         game.record_contact(0, 1);
         game.record_contact(0, 2);
         let screen_capital = game.player_city_ids(1)[0];
-        assert!(game.cities[&screen_capital].is_capital, "fixture: the screen's capital");
+        assert!(
+            game.cities[&screen_capital].is_capital,
+            "fixture: the screen's capital"
+        );
         for pos in [(6, 5), (6, 7)] {
             game.spawn_test_unit("warrior", 0, pos);
         }
@@ -875,19 +936,45 @@ mod tests {
             ai.one_war = Some(front(2, game.turn));
             let mut g = game.clone();
             run(&mut ai, &mut g, target, soldier, hold, ROAD_HOLD_TURNS);
-            assert!(ai.capture_stood_down_holds(&g, target), "the road stand-down holds");
-            assert!(ai.declaration_edge_2(&g, 0, 1).passes(), "fixture: the screen is weak");
+            assert!(
+                ai.capture_stood_down_holds(&g, target),
+                "the road stand-down holds"
+            );
+            assert!(
+                ai.declaration_edge_2(&g, 0, 1).passes(),
+                "fixture: the screen is weak"
+            );
             if gene {
-                assert_eq!(ai.road_blocker_front(&g, 0), Some(1), "gene on: the screen is named");
-                assert_eq!(ai.one_war_second_front(&g, 0), Some(1), "and opens the second front");
+                assert_eq!(
+                    ai.road_blocker_front(&g, 0),
+                    Some(1),
+                    "gene on: the screen is named"
+                );
+                assert_eq!(
+                    ai.one_war_second_front(&g, 0),
+                    Some(1),
+                    "and opens the second front"
+                );
                 // A war on the screen opens the road: nothing is named any more.
                 let mut opened = g.clone();
                 opened.at_war.insert((0, 1));
                 opened.at_war.insert((1, 0));
-                assert_eq!(ai.road_blocker_front(&opened, 0), None, "at war: the road is open");
+                assert_eq!(
+                    ai.road_blocker_front(&opened, 0),
+                    None,
+                    "at war: the road is open"
+                );
             } else {
-                assert_eq!(ai.road_blocker_front(&g, 0), None, "gene off: nothing is named");
-                assert_ne!(ai.one_war_second_front(&g, 0), Some(1), "gene off: no second front on the screen");
+                assert_eq!(
+                    ai.road_blocker_front(&g, 0),
+                    None,
+                    "gene off: nothing is named"
+                );
+                assert_ne!(
+                    ai.one_war_second_front(&g, 0),
+                    Some(1),
+                    "gene off: no second front on the screen"
+                );
             }
         }
     }
@@ -909,9 +996,19 @@ mod tests {
         }
         let mut ai_strong = ai(true, &strong, target);
         ai_strong.enable_blocker_becomes_the_target();
-        run(&mut ai_strong, &mut strong, target, soldier, hold, ROAD_HOLD_TURNS);
+        run(
+            &mut ai_strong,
+            &mut strong,
+            target,
+            soldier,
+            hold,
+            ROAD_HOLD_TURNS,
+        );
         assert!(ai_strong.capture_stood_down_holds(&strong, target));
-        assert!(!ai_strong.declaration_edge_2(&strong, 0, 1).passes(), "fixture: short of the edge");
+        assert!(
+            !ai_strong.declaration_edge_2(&strong, 0, 1).passes(),
+            "fixture: short of the edge"
+        );
         assert_eq!(ai_strong.road_blocker_front(&strong, 0), None);
 
         // Weak, but its capital is not an original capital of a rival we need:
@@ -921,7 +1018,14 @@ mod tests {
         let mut ai_nocap = ai(true, &game, target);
         ai_nocap.enable_blocker_becomes_the_target();
         let mut g = game.clone();
-        run(&mut ai_nocap, &mut g, target, soldier, hold, ROAD_HOLD_TURNS);
+        run(
+            &mut ai_nocap,
+            &mut g,
+            target,
+            soldier,
+            hold,
+            ROAD_HOLD_TURNS,
+        );
         assert!(ai_nocap.capture_stood_down_holds(&g, target));
         assert_eq!(ai_nocap.road_blocker_front(&g, 0), None);
     }
@@ -974,24 +1078,49 @@ mod tests {
             ai.one_war = Some(front(2, game.turn));
             let mut g = game.clone();
             run(&mut ai, &mut g, target, soldier, hold, ROAD_HOLD_TURNS);
-            assert!(ai.capture_stood_down_holds(&g, target), "the road stand-down holds");
-            assert_eq!(ai.diplomatic_contender_to_eliminate(&g, 0), Some(2), "fixture: eliminating the target");
-            assert_eq!(ai.rival_pressure(&g, 1).0, GrandStrategy::Science, "fixture: the screen's race");
+            assert!(
+                ai.capture_stood_down_holds(&g, target),
+                "the road stand-down holds"
+            );
+            assert_eq!(
+                ai.diplomatic_contender_to_eliminate(&g, 0),
+                Some(2),
+                "fixture: eliminating the target"
+            );
+            assert_eq!(
+                ai.rival_pressure(&g, 1).0,
+                GrandStrategy::Science,
+                "fixture: the screen's race"
+            );
             let mut plan = ai.plan.clone().expect("the fixture's plan");
             plan.assessed_turn = g.turn;
             for _ in 0..12 {
                 if g.is_at_war(0, 1) {
                     break;
                 }
-                assert_eq!(plan.target_player, Some(2), "the plan stays on the elimination front");
+                assert_eq!(
+                    plan.target_player,
+                    Some(2),
+                    "the plan stays on the elimination front"
+                );
                 ai.advanced_diplomacy(&mut g, 0, &plan);
                 g.turn += 1;
             }
             if gene {
-                assert_eq!(ai.road_blocker_front(&g, 0), None, "at war: the road is open");
-                assert!(g.is_at_war(0, 1), "gene on: the displaced blocker is declared on");
+                assert_eq!(
+                    ai.road_blocker_front(&g, 0),
+                    None,
+                    "at war: the road is open"
+                );
+                assert!(
+                    g.is_at_war(0, 1),
+                    "gene on: the displaced blocker is declared on"
+                );
             } else {
-                assert!(!g.is_at_war(0, 1), "gene off: nothing declares on the screen");
+                assert!(
+                    !g.is_at_war(0, 1),
+                    "gene off: nothing declares on the screen"
+                );
             }
         }
     }
@@ -1074,27 +1203,61 @@ mod tests {
         for gene in [false, true] {
             let mut ai = blocker_ai(gene, &game, target);
             let mut g = game.clone();
-            hold_beside_marchers(&mut ai, &mut g, target, soldier, &mates, ROAD_HOLD_TURNS - 1);
-            assert_eq!(ai.road_blocker_front(&g, 0), None, "two turns of holds name nothing");
+            hold_beside_marchers(
+                &mut ai,
+                &mut g,
+                target,
+                soldier,
+                &mates,
+                ROAD_HOLD_TURNS - 1,
+            );
+            assert_eq!(
+                ai.road_blocker_front(&g, 0),
+                None,
+                "two turns of holds name nothing"
+            );
             hold_beside_marchers(&mut ai, &mut g, target, soldier, &mates, 1);
-            assert!(!ai.capture_stood_down.contains_key(&target), "fixture: the siege holds, never stood down");
+            assert!(
+                !ai.capture_stood_down.contains_key(&target),
+                "fixture: the siege holds, never stood down"
+            );
             if gene {
-                assert_eq!(ai.closed_border_front(&g, 0), Some(1), "gene on: the screen is named");
+                assert_eq!(
+                    ai.closed_border_front(&g, 0),
+                    Some(1),
+                    "gene on: the screen is named"
+                );
                 assert_eq!(ai.road_blocker_front(&g, 0), Some(1));
-                assert_eq!(ai.one_war_second_front(&g, 0), Some(1), "and opens the second front");
+                assert_eq!(
+                    ai.one_war_second_front(&g, 0),
+                    Some(1),
+                    "and opens the second front"
+                );
                 let plan = ai.plan.clone().expect("the fixture's plan");
                 assert!(ai.second_front_displaced(&g, 0, 1, &plan));
                 // At war with the screen the road is open: nothing is named.
                 let mut opened = g.clone();
                 opened.at_war.insert((0, 1));
                 opened.at_war.insert((1, 0));
-                assert_eq!(ai.road_blocker_front(&opened, 0), None, "at war: the road is open");
+                assert_eq!(
+                    ai.road_blocker_front(&opened, 0),
+                    None,
+                    "at war: the road is open"
+                );
                 // A run that stopped two turns ago is no hold.
                 let mut later = g.clone();
                 later.turn += 1;
-                assert_eq!(ai.closed_border_front(&later, 0), None, "a stale run names nothing");
+                assert_eq!(
+                    ai.closed_border_front(&later, 0),
+                    None,
+                    "a stale run names nothing"
+                );
             } else {
-                assert_eq!(ai.road_blocker_front(&g, 0), None, "gene off: version 1 waits on a stand-down");
+                assert_eq!(
+                    ai.road_blocker_front(&g, 0),
+                    None,
+                    "gene off: version 1 waits on a stand-down"
+                );
                 assert_ne!(ai.one_war_second_front(&g, 0), Some(1));
             }
         }
@@ -1109,7 +1272,11 @@ mod tests {
         hold_beside_marchers(&mut ai, &mut g, target, soldier, &mates, 2);
         g.turn += 1; // a turn without a hold
         hold_beside_marchers(&mut ai, &mut g, target, soldier, &mates, 2);
-        assert_eq!(ai.closed_border_front(&g, 0), None, "two and two are not three running");
+        assert_eq!(
+            ai.closed_border_front(&g, 0),
+            None,
+            "two and two are not three running"
+        );
         hold_beside_marchers(&mut ai, &mut g, target, soldier, &mates, 1);
         assert_eq!(ai.closed_border_front(&g, 0), Some(1));
     }
@@ -1121,7 +1288,14 @@ mod tests {
         let (game, target, soldier, mates) = held_strip(2_100.0);
         let mut ai = blocker_ai(true, &game, target);
         let mut g = game.clone();
-        hold_beside_marchers(&mut ai, &mut g, target, soldier, &mates, ROAD_HOLD_TURNS + 2);
+        hold_beside_marchers(
+            &mut ai,
+            &mut g,
+            target,
+            soldier,
+            &mates,
+            ROAD_HOLD_TURNS + 2,
+        );
         assert_eq!(ai.closed_border_front(&g, 0), None, "over half our power");
 
         // Weak now, but a 30-turn peak over two-thirds of ours.
@@ -1133,14 +1307,22 @@ mod tests {
             .push((game.turn, 3_000.0));
         let mut g = game.clone();
         hold_beside_marchers(&mut ai, &mut g, target, soldier, &mates, ROAD_HOLD_TURNS);
-        assert_eq!(ai.closed_border_front(&g, 0), None, "a recent peak at strength");
+        assert_eq!(
+            ai.closed_border_front(&g, 0),
+            None,
+            "a recent peak at strength"
+        );
 
         let (mut game, target, soldier, mates) = held_strip(600.0);
         game.players[0].friends_until.insert(1, game.turn + 30);
         let mut ai = blocker_ai(true, &game, target);
         let mut g = game.clone();
         hold_beside_marchers(&mut ai, &mut g, target, soldier, &mates, ROAD_HOLD_TURNS);
-        assert_eq!(ai.closed_border_front(&g, 0), None, "a friend is no campaign target");
+        assert_eq!(
+            ai.closed_border_front(&g, 0),
+            None,
+            "a friend is no campaign target"
+        );
     }
 
     /// `closed-border-blocker-declares`: a city-state screen is named alone
@@ -1151,30 +1333,52 @@ mod tests {
         let (mut game, target, _, _) = held_strip(300.0);
         game.players[1].is_minor = true;
         let ai = blocker_ai(true, &game, target);
-        assert!(ai.closed_border_blocker_is_weak(&game, 0, 1), "no suzerain: named");
+        assert!(
+            ai.closed_border_blocker_is_weak(&game, 0, 1),
+            "no suzerain: named"
+        );
 
         // The target, at war with us, is its suzerain: the city-state is in
         // that war already, its borders open, and there is nothing to declare.
         let mut fought = game.clone();
         fought.players[2].envoys.push((1, 5));
-        assert_eq!(fought.suzerain_of(1), Some(2), "fixture: the target holds it");
-        assert!(fought.is_at_war(0, 1), "fixture: dragged into its suzerain's war");
-        assert!(!ai.closed_border_blocker_is_weak(&fought, 0, 1), "already at war: not named");
+        assert_eq!(
+            fought.suzerain_of(1),
+            Some(2),
+            "fixture: the target holds it"
+        );
+        assert!(
+            fought.is_at_war(0, 1),
+            "fixture: dragged into its suzerain's war"
+        );
+        assert!(
+            !ai.closed_border_blocker_is_weak(&fought, 0, 1),
+            "already at war: not named"
+        );
 
         // At peace with that suzerain, and it at strength.
         let mut strong = fought.clone();
         strong.at_war.remove(&(0, 2));
         strong.at_war.remove(&(2, 0));
         std::sync::Arc::make_mut(&mut strong.observed_military_power).insert(2, 2_500.0);
-        assert!(!ai.closed_border_blocker_is_weak(&strong, 0, 1), "a strong suzerain at peace");
+        assert!(
+            !ai.closed_border_blocker_is_weak(&strong, 0, 1),
+            "a strong suzerain at peace"
+        );
         // At peace, but weak.
         std::sync::Arc::make_mut(&mut strong.observed_military_power).insert(2, 900.0);
-        assert!(ai.closed_border_blocker_is_weak(&strong, 0, 1), "a weak suzerain at peace");
+        assert!(
+            ai.closed_border_blocker_is_weak(&strong, 0, 1),
+            "a weak suzerain at peace"
+        );
 
         // Ours.
         let mut ours = game.clone();
         ours.players[0].envoys.push((1, 5));
-        assert!(!ai.closed_border_blocker_is_weak(&ours, 0, 1), "our own city-state");
+        assert!(
+            !ai.closed_border_blocker_is_weak(&ours, 0, 1),
+            "our own city-state"
+        );
     }
 
     /// `closed-border-blocker-declares` at the declaration desk, with version
@@ -1201,15 +1405,28 @@ mod tests {
                     break;
                 }
                 plan.assessed_turn = g.turn;
-                assert_eq!(plan.target_player, Some(2), "the plan stays on the target's war");
+                assert_eq!(
+                    plan.target_player,
+                    Some(2),
+                    "the plan stays on the target's war"
+                );
                 ai.advanced_diplomacy(&mut g, 0, &plan);
                 hold_beside_marchers(&mut ai, &mut g, target, soldier, &mates, 1);
             }
-            assert!(ai.siege_road_closed.is_empty(), "no road stand-down for version 1");
+            assert!(
+                ai.siege_road_closed.is_empty(),
+                "no road stand-down for version 1"
+            );
             if gene {
-                assert!(g.is_at_war(0, 1), "gene on: the weak blocker is declared on");
+                assert!(
+                    g.is_at_war(0, 1),
+                    "gene on: the weak blocker is declared on"
+                );
             } else {
-                assert!(!g.is_at_war(0, 1), "gene off: nothing declares on the screen");
+                assert!(
+                    !g.is_at_war(0, 1),
+                    "gene off: nothing declares on the screen"
+                );
             }
         }
     }

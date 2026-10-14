@@ -248,7 +248,12 @@ impl SeatEconomy {
         };
         for city in g.cities.values().filter(|city| city.owner == pid) {
             for pos in &city.owned_tiles {
-                match g.map.tiles.get(pos).and_then(|tile| tile.improvement.as_deref()) {
+                match g
+                    .map
+                    .tiles
+                    .get(pos)
+                    .and_then(|tile| tile.improvement.as_deref())
+                {
                     Some("farm") => seat.farms += 1,
                     Some("mine") => seat.mines += 1,
                     Some("lumber_mill") => seat.lumber_mills += 1,
@@ -475,7 +480,13 @@ struct Trial {
     civs: Vec<String>,
 }
 
-fn trial(seed: u64, difficulty: Option<&str>, max_turns: u32, policy: &Gene, enabled: bool) -> Trial {
+fn trial(
+    seed: u64,
+    difficulty: Option<&str>,
+    max_turns: u32,
+    policy: &Gene,
+    enabled: bool,
+) -> Trial {
     let mut game = Game::new_with(options(seed, difficulty, max_turns));
     let civs = game.players.iter().take(4).map(|p| p.civ.clone()).collect();
     let mut ais = fleet(&game, policy, enabled);
@@ -528,7 +539,10 @@ fn trial(seed: u64, difficulty: Option<&str>, max_turns: u32, policy: &Gene, ena
     run_game_observed(&mut game, &mut ais, &mut observe);
     observe(&game);
     if let Some(dir) = explain_dir {
-        let path = dir.join(format!("{seed}-{}.why.log", if enabled { "on" } else { "off" }));
+        let path = dir.join(format!(
+            "{seed}-{}.why.log",
+            if enabled { "on" } else { "off" }
+        ));
         if let Err(error) = std::fs::write(&path, &lines) {
             eprintln!("{}: {error}", path.display());
         }
@@ -580,12 +594,39 @@ pub(super) fn run(args: &[String]) -> Result<(), String> {
         // with the second leg. Both worlds and controllers start fresh.
         let (off, on) = if index % 2 == 0 {
             (
-                trial(seed, config.difficulty, config.max_turns, config.policy, false),
-                trial(seed, config.difficulty, config.max_turns, config.policy, true),
+                trial(
+                    seed,
+                    config.difficulty,
+                    config.max_turns,
+                    config.policy,
+                    false,
+                ),
+                trial(
+                    seed,
+                    config.difficulty,
+                    config.max_turns,
+                    config.policy,
+                    true,
+                ),
             )
         } else {
-            let on = trial(seed, config.difficulty, config.max_turns, config.policy, true);
-            (trial(seed, config.difficulty, config.max_turns, config.policy, false), on)
+            let on = trial(
+                seed,
+                config.difficulty,
+                config.max_turns,
+                config.policy,
+                true,
+            );
+            (
+                trial(
+                    seed,
+                    config.difficulty,
+                    config.max_turns,
+                    config.policy,
+                    false,
+                ),
+                on,
+            )
         };
         if off.civs != on.civs {
             return Err(format!("paired civilizations differ at seed {seed}"));

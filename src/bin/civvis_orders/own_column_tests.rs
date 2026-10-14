@@ -40,7 +40,11 @@ fn a_walk_ending_on_a_held_hex_is_cut_back_to_the_last_free_hex() {
     let raw = vec![walk(7, (3, 3)), walk(7, (4, 3)), walk(7, (5, 3))];
     let steps = open_walk_steps(&raw);
     let (mut orders, _, _) = coalesce_unit_paths(raw, true);
-    assert_eq!(orders[0].pos, Some((5, 3)), "the walk folds to its last hex");
+    assert_eq!(
+        orders[0].pos,
+        Some((5, 3)),
+        "the walk folds to its last hex"
+    );
     let held = |_: i64, hex: (i32, i32), _: usize| hex == (5, 3);
     assert_eq!(retarget_friendly_held_walks(&mut orders, &steps, held), 1);
     assert_eq!(orders[0].pos, Some((4, 3)));
@@ -77,10 +81,28 @@ fn a_free_end_and_an_attack_are_untouched() {
 fn planned_movers_split_by_what_crossed() {
     let civ6_of: std::collections::BTreeMap<u32, i64> = [(1, 101), (2, 102), (3, 103)].into();
     let planned = [
-        (0, Action::Move { unit: 1, to: (0, 0) }),
-        (0, Action::MoveTo { unit: 2, to: (0, 0) }),
+        (
+            0,
+            Action::Move {
+                unit: 1,
+                to: (0, 0),
+            },
+        ),
+        (
+            0,
+            Action::MoveTo {
+                unit: 2,
+                to: (0, 0),
+            },
+        ),
         (0, Action::Fortify { unit: 3 }),
-        (1, Action::Move { unit: 3, to: (0, 0) }),
+        (
+            1,
+            Action::Move {
+                unit: 3,
+                to: (0, 0),
+            },
+        ),
     ];
     let orders = vec![walk(101, (1, 1))];
     let (sent, unsent) = split_planned_movers(
@@ -89,5 +111,9 @@ fn planned_movers_split_by_what_crossed() {
         &civ6_of,
     );
     assert_eq!(sent, [1].into());
-    assert_eq!(unsent, [2].into(), "a fortify is no move, and a rival seat is not ours");
+    assert_eq!(
+        unsent,
+        [2].into(),
+        "a fortify is no move, and a rival seat is not ours"
+    );
 }

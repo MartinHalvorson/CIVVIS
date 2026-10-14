@@ -187,7 +187,15 @@ impl AdvancedAi {
         let name = g.cities[&cid].name.clone();
         let backlog = BasicAi::unimproved_worked_tiles(g, pid);
         let cover = BasicAi::builder_charge_cover(g, pid);
-        if g.apply(pid, &Action::Produce { city: cid, item: builder }).is_ok() {
+        if g.apply(
+            pid,
+            &Action::Produce {
+                city: cid,
+                item: builder,
+            },
+        )
+        .is_ok()
+        {
             think!(self.journal(), Economy, Decision,
                    "{name} trains a Builder for the worked backlog";
                    "backlog-builder-takes-the-queue: {backlog} worked tiles unimproved against \

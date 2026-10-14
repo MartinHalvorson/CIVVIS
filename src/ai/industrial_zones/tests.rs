@@ -174,9 +174,14 @@ fn the_three_most_productive_cities_open_an_industrial_zone_under_the_gene() {
         );
         zones += 1;
     }
-    assert!(zones >= 2, "fixture: the gene changes at least two picks ({zones})");
+    assert!(
+        zones >= 2,
+        "fixture: the gene changes at least two picks ({zones})"
+    );
     let mut early = game.clone();
-    early.players[0].techs.remove(&crate::name!("apprenticeship"));
+    early.players[0]
+        .techs
+        .remove(&crate::name!("apprenticeship"));
     for cid in &ranked[..PRODUCER_ZONE_MAX] {
         assert_eq!(
             pick(&governor(true), &early, *cid),
@@ -313,7 +318,10 @@ fn a_threatened_city_keeps_its_stock_pick() {
         ai.plan_threatened_city = Some(top);
         ai
     };
-    assert_eq!(pick(&lent(true), &game, top), pick(&lent(false), &game, top));
+    assert_eq!(
+        pick(&lent(true), &game, top),
+        pick(&lent(false), &game, top)
+    );
     assert!(
         is_zone(
             &game,
@@ -380,7 +388,10 @@ fn a_due_settler_comes_before_the_zone() {
         roomy(false).settler_due(&game, 0, ranked[0], 6, 0),
         "fixture: a Settler is due"
     );
-    assert_eq!(pick(&roomy(true), &game, ranked[0]), pick(&roomy(false), &game, ranked[0]));
+    assert_eq!(
+        pick(&roomy(true), &game, ranked[0]),
+        pick(&roomy(false), &game, ranked[0])
+    );
 }
 
 /// Under `commercial-hub-and-traders` too, the producer's one free slot goes

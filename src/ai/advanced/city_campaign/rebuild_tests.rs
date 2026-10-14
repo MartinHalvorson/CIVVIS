@@ -258,12 +258,7 @@ fn a_beaten_rival_in_the_fog_is_not_offered_peace_under_the_gene() {
 #[test]
 fn a_completed_campaign_keeps_its_war_on_a_diplomatic_contender_it_outguns() {
     let offered = |dvp: i64, ours: f64, theirs: f64| {
-        let mut game = board(&[
-            (0, (6, 12)),
-            (1, (14, 12)),
-            (1, (17, 15)),
-            (2, (24, 12)),
-        ]);
+        let mut game = board(&[(0, (6, 12)), (1, (14, 12)), (1, (17, 15)), (2, (24, 12))]);
         let border = game.city_at((17, 15)).unwrap();
         let mut ai = campaign(&game);
         ai.campaign.as_mut().unwrap().cities = vec![border];
@@ -283,7 +278,10 @@ fn a_completed_campaign_keeps_its_war_on_a_diplomatic_contender_it_outguns() {
         !offered(15, 300.0, 100.0),
         "a 15-point contender at a third of our power keeps its war"
     );
-    assert!(offered(3, 300.0, 100.0), "an ordinary completed campaign still closes");
+    assert!(
+        offered(3, 300.0, 100.0),
+        "an ordinary completed campaign still closes"
+    );
     assert!(
         offered(15, 150.0, 100.0),
         "a contender we do not outgun twice over is still offered peace"

@@ -4790,9 +4790,6 @@ impl AdvancedAi {
         self.base.housing_reserve = false;
     }
 
-
-
-
     /// Opt-in gene `shared-danger`; see [`Self::shared_danger`].
     pub fn enable_shared_danger(&mut self) {
         self.shared_danger = true;
@@ -5833,8 +5830,6 @@ impl AdvancedAi {
         self.capture_holds_the_ring = false;
     }
 
-
-
     /// Opt-in gene `breach-reads-the-air`; see
     /// [`Self::breach_reads_the_air`].
     pub fn enable_breach_reads_the_air(&mut self) {
@@ -6007,9 +6002,6 @@ impl AdvancedAi {
     pub fn disable_ring_fires_on_the_city(&mut self) {
         self.ring_fires_on_the_city = false;
     }
-
-
-
 
     /// Opt-in gene `recovery-peace-waits`; see
     /// [`Self::recovery_peace_waits`].

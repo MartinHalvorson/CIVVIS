@@ -149,10 +149,8 @@ fn domination_keeps_relief_until_the_cash_reserve_recovers() {
 fn the_deck_keeps_the_relief_the_host_held_through_the_base_reshuffle() {
     let (mut game, mut ai) = deficit_campaign();
     game.players[0].gold_per_turn = 2.9;
-    ai.turn_start_policies = BTreeSet::from([
-        crate::name!("conscription"),
-        crate::name!("urban_planning"),
-    ]);
+    ai.turn_start_policies =
+        BTreeSet::from([crate::name!("conscription"), crate::name!("urban_planning")]);
     let mut stock = game.clone();
     ai.strategic_policies(&mut stock, 0, GrandStrategy::Conquest);
     assert!(
@@ -175,7 +173,11 @@ fn liberalism_is_kept_while_it_holds_a_city_at_zero() {
     let (mut game, mut ai) = deficit_campaign();
     assert_eq!(ai.liberalism_repair_bar(&game, 0), 0);
     game.players[0].policies.insert(crate::name!("liberalism"));
-    assert_eq!(ai.liberalism_repair_bar(&game, 0), 0, "stock asks only on a deficit");
+    assert_eq!(
+        ai.liberalism_repair_bar(&game, 0),
+        0,
+        "stock asks only on a deficit"
+    );
     ai.enable_policy_deck_hysteresis();
     assert_eq!(ai.liberalism_repair_bar(&game, 0), 1);
     game.players[0].policies.remove(&crate::name!("liberalism"));
@@ -196,10 +198,8 @@ fn a_windfall_over_the_reserve_keeps_the_relief_the_income_needs() {
     assert!(military >= 1);
     game.players[0].gold = 500.0;
     game.players[0].gold_per_turn = military as f64 - 0.5;
-    ai.turn_start_policies = BTreeSet::from([
-        crate::name!("conscription"),
-        crate::name!("urban_planning"),
-    ]);
+    ai.turn_start_policies =
+        BTreeSet::from([crate::name!("conscription"), crate::name!("urban_planning")]);
     ai.enable_policy_deck_hysteresis();
     let mut first = game.clone();
     ai.strategic_policies(&mut first, 0, GrandStrategy::Conquest);
@@ -227,16 +227,22 @@ fn the_emergency_relief_evicts_a_lower_ranked_wanted_card() {
     let mut first = game.clone();
     ai.strategic_policies(&mut first, 0, GrandStrategy::Conquest);
     assert!(
-        first.players[0].policies.contains(&crate::name!("logistics")),
+        first.players[0]
+            .policies
+            .contains(&crate::name!("logistics")),
         "version 1 protects the wanted card: {:?}",
         first.players[0].policies
     );
     ai.enable_policy_deck_hysteresis_2();
     ai.strategic_policies(&mut game, 0, GrandStrategy::Conquest);
     assert!(
-        game.players[0].policies.contains(&crate::name!("conscription")),
+        game.players[0]
+            .policies
+            .contains(&crate::name!("conscription")),
         "{:?}",
         game.players[0].policies
     );
-    assert!(!game.players[0].policies.contains(&crate::name!("logistics")));
+    assert!(!game.players[0]
+        .policies
+        .contains(&crate::name!("logistics")));
 }

@@ -9151,9 +9151,9 @@ mod embassy_capital;
 /// `racer-keeps-the-spies`: see `advanced/racer_keeps_the_spies.rs`.
 mod racer_keeps_the_spies;
 
+mod city_memory;
 mod denial_nearest_finish;
 mod denial_needs_a_road;
-mod city_memory;
 mod runaway_expander;
 // `found-against-a-rival-faith`. See `advanced/faith_veto.rs`.
 mod faith_veto;
@@ -9287,12 +9287,12 @@ mod siege_production;
 /// `advanced/siege_train.rs`.
 mod siege_train;
 
-/// `siege-target-needs-a-road`: a siege the army cannot walk to is stood
-/// down. See `advanced/siege_road.rs`.
-mod siege_road;
 /// `sea-locked-front-moves-on`: a front the army cannot walk to gives way to
 /// an enemy it can. See `advanced/sea_locked_front.rs`.
 mod sea_locked_front;
+/// `siege-target-needs-a-road`: a siege the army cannot walk to is stood
+/// down. See `advanced/siege_road.rs`.
+mod siege_road;
 
 /// `siege-buys-the-gun-resource`: the Niter or Oil our better siege gun
 /// waits on, bought from a rival's trade screen. See
@@ -9430,52 +9430,43 @@ mod wonder_clearance;
 /// opt-in genes; see `advanced/wonder_sites.rs`.
 mod wonder_sites;
 
+/// `amphibious-siege-train`: a water-locked siege objective's guns and
+/// escorts cross as one group. See `advanced/amphibious_siege_train.rs`.
+mod amphibious_siege_train;
+mod aqueduct_claims_the_capped_queue;
+mod backlog_builder_takes_the_queue;
 mod band_hunt;
+/// `campus-building-claims-the-queue`: a standing Campus's next building
+/// claims its city's queue. See `advanced/campus_building_claims_the_queue.rs`.
+mod campus_building_claims_the_queue;
+/// `civic-awaits-its-inspiration`: the civic chooser waits for a near
+/// inspiration. See `advanced/civic_inspiration_wait.rs`.
+mod civic_inspiration_wait;
 mod culture_denial_heist;
 mod dvp_leader_front;
+/// `engineering-for-capped-fresh-water`: the Aqueduct technology for a
+/// capped empire when it costs a few turns. See
+/// `advanced/engineering_for_capped_fresh_water.rs`.
+mod engineering_for_capped_fresh_water;
 mod falling_city_takers;
 mod far_settle_site;
 /// `founder-converts-its-own-cities`: a founder's spreaders convert our own
 /// cities before any foreign one. See `advanced/founder_home.rs`.
 mod founder_home;
 mod gold_buys_the_settler;
-/// `engineering-for-capped-fresh-water`: the Aqueduct technology for a
-/// capped empire when it costs a few turns. See
-/// `advanced/engineering_for_capped_fresh_water.rs`.
-mod engineering_for_capped_fresh_water;
-/// `siege-tier-before-the-beeline`: the next siege tier ahead of the air
-/// surge's beeline behind Medieval walls. See
-/// `advanced/siege_tier_before_the_beeline.rs`.
-mod siege_tier_before_the_beeline;
-mod aqueduct_claims_the_capped_queue;
-/// `amphibious-siege-train`: a water-locked siege objective's guns and
-/// escorts cross as one group. See `advanced/amphibious_siege_train.rs`.
-mod amphibious_siege_train;
-/// `industrial-zone-claims-the-producer-queue`: the producer step's
-/// Industrial Zone or Workshop claims its city's queue. See
-/// `advanced/industrial_zone_claims_the_producer_queue.rs`.
-mod industrial_zone_claims_the_producer_queue;
+mod granary_claims_the_bound_queue;
+/// `founder-holds-the-holy-city`: a founder keeps its Holy City on its own
+/// faith. See `advanced/holy_city_guard.rs`.
+mod holy_city_guard;
 /// `industrial-zone-claims-the-factory`: once Industrialization is known, the
 /// Factory that reaches the most new cities (then the Coal Power Plant that
 /// powers the most Factories) claims its city's queue. See
 /// `advanced/industrial_zone_claims_the_factory.rs`.
 mod industrial_zone_claims_the_factory;
-/// `campus-building-claims-the-queue`: a standing Campus's next building
-/// claims its city's queue. See `advanced/campus_building_claims_the_queue.rs`.
-mod campus_building_claims_the_queue;
-/// Diagnostic journal: why a city's menu passed a Settler over while the
-/// empire is short of its settlement target. Reads only. See
-/// `advanced/settler_admission_journal.rs`.
-mod settler_admission_journal;
-mod granary_claims_the_bound_queue;
-/// `founder-holds-the-holy-city`: a founder keeps its Holy City on its own
-/// faith. See `advanced/holy_city_guard.rs`.
-mod holy_city_guard;
-mod trader_fills_the_idle_route;
-mod backlog_builder_takes_the_queue;
-/// `civic-awaits-its-inspiration`: the civic chooser waits for a near
-/// inspiration. See `advanced/civic_inspiration_wait.rs`.
-mod civic_inspiration_wait;
+/// `industrial-zone-claims-the-producer-queue`: the producer step's
+/// Industrial Zone or Workshop claims its city's queue. See
+/// `advanced/industrial_zone_claims_the_producer_queue.rs`.
+mod industrial_zone_claims_the_producer_queue;
 mod launcher_war;
 mod peacetime_republic;
 mod science_denial_every_pad;
@@ -9485,17 +9476,26 @@ mod science_suppression_pads;
 mod science_threat_denial;
 mod science_trade;
 mod science_victory_drive;
+/// Diagnostic journal: why a city's menu passed a Settler over while the
+/// empire is short of its settlement target. Reads only. See
+/// `advanced/settler_admission_journal.rs`.
+mod settler_admission_journal;
 mod settler_departure;
 mod settler_path_clear;
+/// `siege-tier-before-the-beeline`: the next siege tier ahead of the air
+/// surge's beeline behind Medieval walls. See
+/// `advanced/siege_tier_before_the_beeline.rs`.
+mod siege_tier_before_the_beeline;
+mod trader_fills_the_idle_route;
 pub use science_victory_drive::ScienceDrive;
 
-mod domination_research;
-mod decisive_window;
-mod culture_defense;
-mod government_plaza;
 /// `capital-campus-before-the-plaza`: the capital's Campus and Library
 /// ahead of the Plaza claim. See `advanced/capital_campus_claim.rs`.
 mod capital_campus_claim;
+mod culture_defense;
+mod decisive_window;
+mod domination_research;
+mod government_plaza;
 /// `paused-district-finishes`: a foundation the host quotes at two turns or
 /// less finishes first at full health. See `advanced/paused_district_finish.rs`.
 mod paused_district_finish;
@@ -11695,7 +11695,10 @@ impl AdvancedAi {
         objective: Pos,
     ) -> Option<usize> {
         let mut goals: Vec<Pos> = g
-            .wdisk(objective, self.campaign_staging_reach(g, pid, target, objective))
+            .wdisk(
+                objective,
+                self.campaign_staging_reach(g, pid, target, objective),
+            )
             .into_iter()
             .filter(|position| {
                 self.campaign_staging_position(g, pid, target, uid, objective, *position)
@@ -18147,9 +18150,9 @@ impl AdvancedAi {
             {
                 match &decisive_window {
                     Some(window)
-                        if window
-                            .tech_goal
-                            .is_some_and(|goal| self.window_yields_to_the_bombers(g, pid, goal)) =>
+                        if window.tech_goal.is_some_and(|goal| {
+                            self.window_yields_to_the_bombers(g, pid, goal)
+                        }) =>
                     {
                         think!(self.journal(), Research, Detail, "decisive-window: yields to the bombers";
                                "{} for {} lies off the Advanced Flight path, and the air surge's research owns the slot ({} techs from the Bomber)",
@@ -18439,7 +18442,9 @@ impl AdvancedAi {
             // The window's chain crosses eras the rolling window does not
             // offer yet (Military Science behind a Medieval backlog): admit
             // every legal step toward it while it owns the forced goal.
-            if let Some(goal) = decisive_window_goal.filter(|goal| forced_goal == Some(goal.as_str())) {
+            if let Some(goal) =
+                decisive_window_goal.filter(|goal| forced_goal == Some(goal.as_str()))
+            {
                 for tech in g.available_techs(pid) {
                     if self.tech_leads_to(g, &tech, goal.as_str()) && !available.contains(&tech) {
                         available.push(tech);
@@ -18457,7 +18462,8 @@ impl AdvancedAi {
                 .filter(|pick| forced_goal == Some(pick.tech.as_str()))
             {
                 for tech in g.available_techs(pid) {
-                    if self.tech_leads_to(g, &tech, pick.tech.as_str()) && !available.contains(&tech)
+                    if self.tech_leads_to(g, &tech, pick.tech.as_str())
+                        && !available.contains(&tech)
                     {
                         available.push(tech);
                     }
@@ -20277,8 +20283,7 @@ impl AdvancedAi {
         let domination_target = self.active_victory_target(g) == Some(VictoryTarget::Domination);
         // Positive income may be the discount's own effect. Keep it while
         // rebuilding the reserve instead of immediately restoring the bill.
-        let retained_domination_relief =
-            domination_target && self.maintenance_relief_held(g, pid);
+        let retained_domination_relief = domination_target && self.maintenance_relief_held(g, pid);
         // A discounted upgrade still needs cash. Give a named offensive
         // upkeep relief when four turns of income cannot fund its cohort.
         let upgrade_funding_relief = domination_target
@@ -22371,12 +22376,21 @@ impl AdvancedAi {
         }
         let standable = |pos: Pos| reached.contains(&pos) && g.city_at(pos).is_none();
         let mut stands = (3..=5)
-            .map(|distance| g.wring(objective, distance).into_iter().filter(|pos| standable(*pos)).count())
+            .map(|distance| {
+                g.wring(objective, distance)
+                    .into_iter()
+                    .filter(|pos| standable(*pos))
+                    .count()
+            })
             .sum::<usize>();
         let mut reach = 5;
         while stands < BORDER_STAGING_STANDS && reach < BORDER_STAGING_MAX {
             reach += 1;
-            stands += g.wring(objective, reach).into_iter().filter(|pos| standable(*pos)).count();
+            stands += g
+                .wring(objective, reach)
+                .into_iter()
+                .filter(|pos| standable(*pos))
+                .count();
         }
         let mut memo = self.staging_reach_memo.borrow_mut();
         memo.retain(|(turn, _, _), _| *turn == g.turn);
@@ -22919,14 +22933,17 @@ impl AdvancedAi {
         let current = unit.pos;
         let goals: HashSet<Pos> = {
             let _memo = g.query_memo();
-            g.wdisk(objective, self.campaign_staging_reach(g, pid, target, objective))
-                .into_iter()
-                .filter(|position| {
-                    on_opening_ring(*position)
-                        && self.campaign_staging_position(g, pid, target, uid, objective, *position)
-                        && g.unit_ids_at(*position).is_empty()
-                })
-                .collect()
+            g.wdisk(
+                objective,
+                self.campaign_staging_reach(g, pid, target, objective),
+            )
+            .into_iter()
+            .filter(|position| {
+                on_opening_ring(*position)
+                    && self.campaign_staging_position(g, pid, target, uid, objective, *position)
+                    && g.unit_ids_at(*position).is_empty()
+            })
+            .collect()
         };
         // Prefer an accessible dry assembly area. A coastal city can own
         // every beach on its island, leaving its nominal dry staging ring
@@ -24211,10 +24228,9 @@ impl AdvancedAi {
         } else {
             None
         };
-        let breach_short = breach_reading
-            .is_some_and(|(turns, endurance, _)| {
-                turns > endurance * siege_train::DECLARATION_BREACH_SHARE
-            });
+        let breach_short = breach_reading.is_some_and(|(turns, endurance, _)| {
+            turns > endurance * siege_train::DECLARATION_BREACH_SHARE
+        });
         let breaker_missing = breaker_absent || breach_short;
         let holdable =
             breaker_missing && staged && !urgent_denial && !faith_counter_due && !rushing;
@@ -24225,9 +24241,10 @@ impl AdvancedAi {
             holdable,
         );
         if breaker_held && breach_short && !breaker_absent {
-            if let (Some(city), Some((turns, endurance, guns))) =
-                (plan.target_city.and_then(|city| g.cities.get(&city)), breach_reading)
-            {
+            if let (Some(city), Some((turns, endurance, guns))) = (
+                plan.target_city.and_then(|city| g.cities.get(&city)),
+                breach_reading,
+            ) {
                 think!(self.journal(), Military, Detail,
                        "Holding the declaration on {} for the breach", g.players[target].civ;
                        "{} stands behind {} walls; the force within {} tiles reads {turns:.1} turns \
@@ -24356,15 +24373,15 @@ impl AdvancedAi {
         let strike_short = close_enough
             && ready
             && offensive
-            && first_strike.is_some_and(|(blows, health)| {
-                blows < health * siege_train::FIRST_STRIKE_SHARE
-            });
+            && first_strike
+                .is_some_and(|(blows, health)| blows < health * siege_train::FIRST_STRIKE_SHARE);
         let strike_held =
             self.first_strike_hold_patience(g, objective.map(|(_, pos)| pos), strike_short);
         if strike_held {
-            if let (Some(city), Some((blows, health))) =
-                (plan.target_city.and_then(|city| g.cities.get(&city)), first_strike)
-            {
+            if let (Some(city), Some((blows, health))) = (
+                plan.target_city.and_then(|city| g.cities.get(&city)),
+                first_strike,
+            ) {
                 think!(self.journal(), Military, Detail,
                        "Holding the declaration on {} for a first-turn strike", g.players[target].civ;
                        "{} has no walls; the units that can strike it this turn bring {blows:.0} of its \
@@ -24997,7 +25014,9 @@ impl AdvancedAi {
                     continue;
                 };
                 if age_deadline.is_some()
-                    && cheapest_closer.as_ref().is_none_or(|(best, ..)| price < *best)
+                    && cheapest_closer
+                        .as_ref()
+                        .is_none_or(|(best, ..)| price < *best)
                 {
                     cheapest_closer = Some((price, kind.to_string(), currency, bank, reserve));
                 }
@@ -31525,9 +31544,9 @@ impl AdvancedAi {
                 .is_some_and(|(_, item)| self.capped_aqueduct_holds(g, pid, cid, plan, item));
             // `campus-building-claims-the-queue`: the claimed Campus building
             // finishes while the Campus still names it.
-            let campus_building_commitment = committed.as_ref().is_some_and(|(_, item)| {
-                self.campus_building_claim_holds(g, pid, cid, plan, item)
-            });
+            let campus_building_commitment = committed
+                .as_ref()
+                .is_some_and(|(_, item)| self.campus_building_claim_holds(g, pid, cid, plan, item));
             // `industrial-zone-in-the-producers`: a queued Industrial Zone or
             // Workshop finishes before routine rescoring can claim the city.
             let industrial_zone_commitment = committed.as_ref().is_some_and(|(_, item)| {
@@ -31901,7 +31920,9 @@ impl AdvancedAi {
                             && !player.is_minor
                             && g.is_at_war(pid, player.id)
                     }))
-                && !self.base.settler_due(g, pid, cid, n_cities, counts.settlers)
+                && !self
+                    .base
+                    .settler_due(g, pid, cid, n_cities, counts.settlers)
             {
                 if let Some(item) = self.base.industrial_zone_producer_item(
                     g,
@@ -37645,9 +37666,9 @@ impl AdvancedAi {
         // `settler-walks-to-the-better-site`: the one-turn pick yields to a
         // far better ranked site beyond this turn's walk. `None` with the
         // gene off. See `advanced/far_settle_site.rs`.
-        if let Some(far) = near.and_then(|near| {
-            self.better_site_beyond_the_turn(g, uid, &candidates, &paths, near)
-        }) {
+        if let Some(far) = near
+            .and_then(|near| self.better_site_beyond_the_turn(g, uid, &candidates, &paths, near))
+        {
             return Some(far);
         }
         near
@@ -48547,11 +48568,11 @@ mod domination_solvency_tests;
 #[cfg(test)]
 mod commercial_hub_queue_tests;
 #[cfg(test)]
+mod growth_farm_tests;
+#[cfg(test)]
 mod industrial_zone_tests;
 #[cfg(test)]
 mod urban_planning_slot_tests;
-#[cfg(test)]
-mod growth_farm_tests;
 #[cfg(test)]
 mod worked_production_tests;
 

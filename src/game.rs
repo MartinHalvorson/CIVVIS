@@ -15187,7 +15187,11 @@ impl Game {
                 + self.religious_alliance_combat_bonus(defender.owner, &attacker_religion),
             defender.hp,
         );
-        Some((expected_damage(att, def), expected_damage(def, att), defender.hp))
+        Some((
+            expected_damage(att, def),
+            expected_damage(def, att),
+            defender.hp,
+        ))
     }
 
     /// [`Self::theological_exchange_preview`] with `defender` read as if it
@@ -15219,7 +15223,11 @@ impl Game {
                 + self.religious_alliance_combat_bonus(probe.owner, &attacker_religion),
             probe.hp,
         );
-        Some((expected_damage(att, def), expected_damage(def, att), probe.hp))
+        Some((
+            expected_damage(att, def),
+            expected_damage(def, att),
+            probe.hp,
+        ))
     }
 
     fn do_theological_attack(&mut self, pid: usize, uid: u32, target: Pos) -> Result<(), String> {

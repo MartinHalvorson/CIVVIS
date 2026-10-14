@@ -244,7 +244,9 @@ impl AdvancedAi {
             })
             .max()
             .unwrap_or(0);
-        let held = from_techs.max((seen + WALL_TIER_HP - 1) / WALL_TIER_HP).min(4);
+        let held = from_techs
+            .max((seen + WALL_TIER_HP - 1) / WALL_TIER_HP)
+            .min(4);
         let next = (held < 4
             && tech_within_reach(g, target, Name::new(WALL_TIER_TECHS[held as usize]), true))
             as i32;
@@ -361,7 +363,10 @@ impl AdvancedAi {
         if g.resource_visible_to(pid, resource.as_str()) {
             return None;
         }
-        g.rules.resources.get(resource.as_str()).and_then(|spec| spec.tech)
+        g.rules
+            .resources
+            .get(resource.as_str())
+            .and_then(|spec| spec.tech)
     }
 
     /// `breaker-research-first`: a siege of ours stands held for a
@@ -538,10 +543,12 @@ impl AdvancedAi {
         let opens = |kind: Name, spec: &UnitSpec, assault: &UnitSpec| -> bool {
             match kind.as_str() {
                 "battering_ram" => {
-                    tier <= 1 && matches!(assault.promotion_class.as_str(), "melee" | "anti_cavalry")
+                    tier <= 1
+                        && matches!(assault.promotion_class.as_str(), "melee" | "anti_cavalry")
                 }
                 "siege_tower" => {
-                    tier <= 2 && matches!(assault.promotion_class.as_str(), "melee" | "anti_cavalry")
+                    tier <= 2
+                        && matches!(assault.promotion_class.as_str(), "melee" | "anti_cavalry")
                 }
                 _ => {
                     // An air breaker strikes as the air surge's wing, not as a
@@ -564,8 +571,7 @@ impl AdvancedAi {
         for (kind, spec) in &assaults {
             let is_unique = unique(spec);
             let defender = Self::decisive_defender(g, target, spec);
-            let margin =
-                spec.strength + if is_unique { UNIQUE_MARGIN } else { 0.0 } - defender;
+            let margin = spec.strength + if is_unique { UNIQUE_MARGIN } else { 0.0 } - defender;
             if margin + f64::EPSILON < required_margin {
                 continue;
             }
@@ -604,18 +610,25 @@ impl AdvancedAi {
                 if turns > horizon {
                     continue;
                 }
-                let missing = |tech: &Option<Name>| {
-                    tech.filter(|tech| !g.players[pid].techs.contains(tech))
-                };
-                let tech_goal = [missing(&assault_tech), breaker.and_then(|(_, tech, _)| missing(&tech))]
-                    .into_iter()
-                    .flatten()
-                    .chain(hidden.iter().copied().filter(|tech| !g.players[pid].techs.contains(tech)))
-                    .min_by(|left, right| {
-                        Self::war_remaining_research_cost(g, pid, *left)
-                            .total_cmp(&Self::war_remaining_research_cost(g, pid, *right))
-                            .then_with(|| left.cmp(right))
-                    });
+                let missing =
+                    |tech: &Option<Name>| tech.filter(|tech| !g.players[pid].techs.contains(tech));
+                let tech_goal = [
+                    missing(&assault_tech),
+                    breaker.and_then(|(_, tech, _)| missing(&tech)),
+                ]
+                .into_iter()
+                .flatten()
+                .chain(
+                    hidden
+                        .iter()
+                        .copied()
+                        .filter(|tech| !g.players[pid].techs.contains(tech)),
+                )
+                .min_by(|left, right| {
+                    Self::war_remaining_research_cost(g, pid, *left)
+                        .total_cmp(&Self::war_remaining_research_cost(g, pid, *right))
+                        .then_with(|| left.cmp(right))
+                });
                 let civic_goal = [
                     assault_civic.filter(|civic| !g.players[pid].civics.contains(civic)),
                     breaker
@@ -627,7 +640,11 @@ impl AdvancedAi {
                 .next();
                 let price = turns
                     * if is_unique { UNIQUE_COST_SHARE } else { 1.0 }
-                    * if hidden.is_empty() { 1.0 } else { UNREVEALED_RESOURCE_PREMIUM };
+                    * if hidden.is_empty() {
+                        1.0
+                    } else {
+                        UNREVEALED_RESOURCE_PREMIUM
+                    };
                 let window = DecisiveWindow {
                     target,
                     assault: *kind,

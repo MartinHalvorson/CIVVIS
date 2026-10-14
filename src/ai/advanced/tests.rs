@@ -18899,11 +18899,26 @@ fn an_exploring_scout_does_not_brawl_but_takes_a_kill() {
         "stock: the Scout may swing"
     );
     ai.enable_early_conquest_opening();
-    assert!(ai.recon_declines_the_swing(scout, &swing, false, true), "an even fight is declined");
-    assert!(ai.recon_declines_the_swing(scout, &swing, true, false), "so is a kill it dies taking");
-    assert!(!ai.recon_declines_the_swing(scout, &swing, true, true), "a kill it survives is taken");
-    assert!(!ai.recon_declines_the_swing(scout, &shot, false, true), "a recon shot is untouched");
-    assert!(!ai.recon_declines_the_swing(warrior, &swing, false, true), "a Warrior still swings");
+    assert!(
+        ai.recon_declines_the_swing(scout, &swing, false, true),
+        "an even fight is declined"
+    );
+    assert!(
+        ai.recon_declines_the_swing(scout, &swing, true, false),
+        "so is a kill it dies taking"
+    );
+    assert!(
+        !ai.recon_declines_the_swing(scout, &swing, true, true),
+        "a kill it survives is taken"
+    );
+    assert!(
+        !ai.recon_declines_the_swing(scout, &shot, false, true),
+        "a recon shot is untouched"
+    );
+    assert!(
+        !ai.recon_declines_the_swing(warrior, &swing, false, true),
+        "a Warrior still swings"
+    );
 }
 
 #[test]
@@ -24507,7 +24522,13 @@ fn an_embarked_settler_crosses_alone_after_waiting_on_a_quiet_sea() {
         ai.enable_live_formationless_settler_shadow();
         ai.enable_live_settler_capture_lessons();
         ai.settler_targets.insert(settler, target);
-        ai.settler_escort_journeys.insert(settler, SettlerEscortJourney { home: source, target });
+        ai.settler_escort_journeys.insert(
+            settler,
+            SettlerEscortJourney {
+                home: source,
+                target,
+            },
+        );
         ai.settler_guards.insert(settler, land_guard);
     };
     let mut live = AdvancedAi::new();
@@ -24517,16 +24538,30 @@ fn an_embarked_settler_crosses_alone_after_waiting_on_a_quiet_sea() {
     let mut wary = AdvancedAi::new();
     journey(&mut wary);
     wary.enable_naval_escort_patience();
-    let barbarian = threatened.players.iter().position(|p| p.is_barbarian).expect("a barbarian seat");
+    let barbarian = threatened
+        .players
+        .iter()
+        .position(|p| p.is_barbarian)
+        .expect("a barbarian seat");
     let raider_tile = threatened
         .wdisk(first_water, 3)
         .into_iter()
-        .find(|pos| *pos != first_water
-            && threatened.map.get(*pos).is_some_and(|tile| threatened.rules.is_water(tile))
-            && threatened.unit_ids_at(*pos).is_empty())
+        .find(|pos| {
+            *pos != first_water
+                && threatened
+                    .map
+                    .get(*pos)
+                    .is_some_and(|tile| threatened.rules.is_water(tile))
+                && threatened.unit_ids_at(*pos).is_empty()
+        })
         .expect("open water near the crossing");
     threatened.spawn_test_unit("galley", barbarian, raider_tile);
-    assert!(AdvancedAi::hostile_ship_near(&threatened, 0, first_water, 6));
+    assert!(AdvancedAi::hostile_ship_near(
+        &threatened,
+        0,
+        first_water,
+        6
+    ));
     assert!(!AdvancedAi::hostile_ship_near(&game, 0, first_water, 6));
 
     for turn in 0..2 {
@@ -24541,7 +24576,10 @@ fn an_embarked_settler_crosses_alone_after_waiting_on_a_quiet_sea() {
         assert!(!wary.settler_step_out_of_reach(&mut threatened, 0, settler, target));
         threatened.turn += 1;
     }
-    assert_eq!(threatened.units[&settler].pos, first_water, "a hostile ship in reach keeps the hold");
+    assert_eq!(
+        threatened.units[&settler].pos, first_water,
+        "a hostile ship in reach keeps the hold"
+    );
     assert!(
         live.settler_step_out_of_reach(&mut game, 0, settler, target),
         "the third turn crosses alone on a quiet sea"
@@ -47087,7 +47125,10 @@ fn the_second_version_prices_the_first_luxury_only_while_a_city_is_short() {
         }
         ai
     };
-    assert!(!AdvancedAi::new().first_luxury_first_2, "the gene ships off");
+    assert!(
+        !AdvancedAi::new().first_luxury_first_2,
+        "the gene ships off"
+    );
     assert_eq!(
         AdvancedAi::new().first_luxury_premium(&game, 0, silk, "plantation"),
         0.0,
@@ -47096,7 +47137,11 @@ fn the_second_version_prices_the_first_luxury_only_while_a_city_is_short() {
 
     // Content: the Palace's two Amenities against ceil(2 / 2).
     game.cities.get_mut(&capital).unwrap().pop = 2;
-    assert_eq!(armed(true).empire_amenity_deficit(&game, 0), 0.0, "fixture: content");
+    assert_eq!(
+        armed(true).empire_amenity_deficit(&game, 0),
+        0.0,
+        "fixture: content"
+    );
     assert_eq!(
         armed(false).first_luxury_premium(&game, 0, silk, "plantation"),
         first_luxury::FIRST_COPY_BASE,
@@ -47111,7 +47156,11 @@ fn the_second_version_prices_the_first_luxury_only_while_a_city_is_short() {
     // Three Amenities short: both versions price the first copy the same.
     game.cities.get_mut(&capital).unwrap().pop = 10;
     let short = armed(true);
-    assert_eq!(short.empire_amenity_deficit(&game, 0), 3.0, "fixture: three short");
+    assert_eq!(
+        short.empire_amenity_deficit(&game, 0),
+        3.0,
+        "fixture: three short"
+    );
     assert_eq!(
         short.first_luxury_premium(&game, 0, silk, "plantation"),
         first_luxury::FIRST_COPY_BASE + first_luxury::FIRST_COPY_PER_AMENITY * 3.0,
@@ -51482,12 +51531,8 @@ fn the_lent_floor_waits_for_the_builder_backlog_only_under_the_gene() {
         ai.base
             .pick_item(&game, 0, capital, 2, 1, builders, 9, 9, held, held, 0)
     };
-    let is_builder = |item: &Option<Item>| {
-        matches!(item, Some(Item::Unit { unit }) if *unit == crate::name!("builder"))
-    };
-    let is_military = |item: &Option<Item>| {
-        matches!(item, Some(Item::Unit { unit }) if game.rules.units[unit].class == "military")
-    };
+    let is_builder = |item: &Option<Item>| matches!(item, Some(Item::Unit { unit }) if *unit == crate::name!("builder"));
+    let is_military = |item: &Option<Item>| matches!(item, Some(Item::Unit { unit }) if game.rules.units[unit].class == "military");
     for gene in [false, true] {
         let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
         ai.base.book_pos = 4;
@@ -51507,46 +51552,58 @@ fn the_lent_floor_waits_for_the_builder_backlog_only_under_the_gene() {
         let own = pick(&ai, 0, 1);
         assert!(is_military(&own), "below the genome's own floor: {own:?}");
         let staffed = pick(&ai, 1, 2);
-        assert!(is_military(&staffed), "one Builder for two cities: {staffed:?}");
+        assert!(
+            is_military(&staffed),
+            "one Builder for two cities: {staffed:?}"
+        );
     }
 }
 
-    /// See `AdvancedAi::denial_reaches_far`: an urgent rival 25 tiles away is in
-    /// reach for an overwhelming Domination army under `denial-nearest-finish`,
-    /// and not otherwise.
-    #[test]
-    fn an_urgent_far_rival_is_in_reach_only_for_an_overwhelming_denial_army() {
-        let mut g = Game::new_full(2, 60, 24, 936_211, 500, 0, false);
-        for unit in g.units.keys().copied().collect::<Vec<_>>() {
-            g.remove_unit(unit);
-        }
-        let home = g.found_city_for(0, (5, 12), None);
-        let far = g.found_city_for(1, (30, 12), None);
-        g.players[0].met.insert(1);
-        g.players[1].met.insert(0);
-        g.players[1].dvp = 19;
-        g.turn = 150;
-        let objective = g.cities[&far].pos;
-        let distance = g.wdist(g.cities[&home].pos, objective);
-        assert!(distance > 18 && distance <= DENIAL_FAR_REACH_TILES, "{distance}");
-        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
-        assert!(ai.urgent_victory_threat(&g, 1), "a rival one vote from Diplomacy is urgent");
-        let at = g.cities[&home].pos;
-        g.spawn_test_unit("warrior", 1, objective);
-        for _ in 0..6 {
-            g.spawn_test_unit("swordsman", 0, at);
-        }
-        assert!(!ai.denial_reaches_far(&g, 0, 1, objective), "the gene is off");
-        ai.enable_denial_nearest_finish();
-        assert!(ai.denial_reaches_far(&g, 0, 1, objective));
-        for _ in 0..8 {
-            g.spawn_test_unit("swordsman", 1, objective);
-        }
-        assert!(
-            !ai.denial_reaches_far(&g, 0, 1, objective),
-            "a contested army keeps the ordinary range"
-        );
+/// See `AdvancedAi::denial_reaches_far`: an urgent rival 25 tiles away is in
+/// reach for an overwhelming Domination army under `denial-nearest-finish`,
+/// and not otherwise.
+#[test]
+fn an_urgent_far_rival_is_in_reach_only_for_an_overwhelming_denial_army() {
+    let mut g = Game::new_full(2, 60, 24, 936_211, 500, 0, false);
+    for unit in g.units.keys().copied().collect::<Vec<_>>() {
+        g.remove_unit(unit);
     }
+    let home = g.found_city_for(0, (5, 12), None);
+    let far = g.found_city_for(1, (30, 12), None);
+    g.players[0].met.insert(1);
+    g.players[1].met.insert(0);
+    g.players[1].dvp = 19;
+    g.turn = 150;
+    let objective = g.cities[&far].pos;
+    let distance = g.wdist(g.cities[&home].pos, objective);
+    assert!(
+        distance > 18 && distance <= DENIAL_FAR_REACH_TILES,
+        "{distance}"
+    );
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    assert!(
+        ai.urgent_victory_threat(&g, 1),
+        "a rival one vote from Diplomacy is urgent"
+    );
+    let at = g.cities[&home].pos;
+    g.spawn_test_unit("warrior", 1, objective);
+    for _ in 0..6 {
+        g.spawn_test_unit("swordsman", 0, at);
+    }
+    assert!(
+        !ai.denial_reaches_far(&g, 0, 1, objective),
+        "the gene is off"
+    );
+    ai.enable_denial_nearest_finish();
+    assert!(ai.denial_reaches_far(&g, 0, 1, objective));
+    for _ in 0..8 {
+        g.spawn_test_unit("swordsman", 1, objective);
+    }
+    assert!(
+        !ai.denial_reaches_far(&g, 0, 1, objective),
+        "a contested army keeps the ordinary range"
+    );
+}
 
 /// See `DOOMED_CAPTURE_TURNS`: a small captured city six turns from revolt
 /// at moderate pressure is kept by the shipped rules (neither imminent nor
@@ -51728,7 +51785,9 @@ fn a_reserved_gun_keeps_its_queue_against_the_scorer() {
         .unwrap();
     game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
     let city = game.player_city_ids(0)[0];
-    let gun = Item::Unit { unit: crate::name!("catapult") };
+    let gun = Item::Unit {
+        unit: crate::name!("catapult"),
+    };
     assert!(game.rules.units[&crate::name!("catapult")].siege);
     {
         let c = game.cities.get_mut(&city).unwrap();
@@ -51745,15 +51804,32 @@ fn a_reserved_gun_keeps_its_queue_against_the_scorer() {
         rush: false,
     };
     let mut ai = AdvancedAi::new();
-    assert!(!ai.breaker_commitment_holds(&game, city, &gun, &plan), "off by default");
+    assert!(
+        !ai.breaker_commitment_holds(&game, city, &gun, &plan),
+        "off by default"
+    );
     ai.enable_breaker_keeps_its_queue();
     assert!(ai.breaker_commitment_holds(&game, city, &gun, &plan));
-    let threatened = StrategicPlan { threatened_city: Some(city), ..plan.clone() };
-    assert!(!ai.breaker_commitment_holds(&game, city, &gun, &threatened), "a threatened city gives it up");
+    let threatened = StrategicPlan {
+        threatened_city: Some(city),
+        ..plan.clone()
+    };
+    assert!(
+        !ai.breaker_commitment_holds(&game, city, &gun, &threatened),
+        "a threatened city gives it up"
+    );
     game.cities.get_mut(&city).unwrap().production = 0.0;
-    assert!(!ai.breaker_commitment_holds(&game, city, &gun, &plan), "nothing invested yet");
-    let horse = Item::Unit { unit: crate::name!("horseman") };
-    assert!(!ai.breaker_commitment_holds(&game, city, &horse, &plan), "not a gun");
+    assert!(
+        !ai.breaker_commitment_holds(&game, city, &gun, &plan),
+        "nothing invested yet"
+    );
+    let horse = Item::Unit {
+        unit: crate::name!("horseman"),
+    };
+    assert!(
+        !ai.breaker_commitment_holds(&game, city, &horse, &plan),
+        "not a gun"
+    );
 }
 
 #[test]
@@ -52092,7 +52168,10 @@ fn the_staging_band_reaches_past_a_deep_closed_border_only_under_the_gene() {
         .find(|id| g.units[id].kind == "settler")
         .unwrap();
     let home = g.units[&ours].pos;
-    assert!(g.wdist(home, objective) > 9, "fixture: our city stands clear of the band");
+    assert!(
+        g.wdist(home, objective) > 9,
+        "fixture: our city stands clear of the band"
+    );
     g.found_city_for(0, home, None);
     let soldier = g
         .player_unit_ids(0)
@@ -52108,12 +52187,28 @@ fn the_staging_band_reaches_past_a_deep_closed_border_only_under_the_gene() {
     let (inside, six, seven) = (at(4), at(6), at(7));
     let mut ai = AdvancedAi::new();
     assert_eq!(ai.campaign_staging_reach(&g, 0, 1, objective), 5);
-    assert!(!ai.campaign_staging_position(&g, 0, 1, soldier, objective, six), "off: six out is no stand");
+    assert!(
+        !ai.campaign_staging_position(&g, 0, 1, soldier, objective, six),
+        "off: six out is no stand"
+    );
     ai.enable_staging_reaches_the_border();
-    assert_eq!(ai.campaign_staging_reach(&g, 0, 1, objective), 6, "the sixth ring holds the stands");
-    assert!(ai.campaign_staging_position(&g, 0, 1, soldier, objective, six), "on: six out stages");
-    assert!(!ai.campaign_staging_position(&g, 0, 1, soldier, objective, seven), "on: no further than it needs");
-    assert!(!ai.campaign_staging_position(&g, 0, 1, soldier, objective, inside), "never inside the closed territory");
+    assert_eq!(
+        ai.campaign_staging_reach(&g, 0, 1, objective),
+        6,
+        "the sixth ring holds the stands"
+    );
+    assert!(
+        ai.campaign_staging_position(&g, 0, 1, soldier, objective, six),
+        "on: six out stages"
+    );
+    assert!(
+        !ai.campaign_staging_position(&g, 0, 1, soldier, objective, seven),
+        "on: no further than it needs"
+    );
+    assert!(
+        !ai.campaign_staging_position(&g, 0, 1, soldier, objective, inside),
+        "never inside the closed territory"
+    );
 }
 
 /// `counter-out-of-reach-takes-the-weak`: a denial counter on a rival
@@ -52138,12 +52233,21 @@ fn an_out_of_reach_counter_yields_to_a_weak_neighbour_only_under_the_gene() {
     ai.battlefront_observation = false;
     assert!(!ai.counter_out_of_reach(&g, 0, 1), "off");
     ai.enable_counter_out_of_reach_takes_the_weak();
-    assert!(ai.counter_out_of_reach(&g, 0, 1), "weaker than the counter rival, a weak neighbour by");
+    assert!(
+        ai.counter_out_of_reach(&g, 0, 1),
+        "weaker than the counter rival, a weak neighbour by"
+    );
     std::sync::Arc::make_mut(&mut g.observed_military_power).insert(0, 900.0);
-    assert!(!ai.counter_out_of_reach(&g, 0, 1), "we out-power the counter rival");
+    assert!(
+        !ai.counter_out_of_reach(&g, 0, 1),
+        "we out-power the counter rival"
+    );
     std::sync::Arc::make_mut(&mut g.observed_military_power).insert(0, 700.0);
     std::sync::Arc::make_mut(&mut g.observed_military_power).insert(2, 400.0);
-    assert!(!ai.counter_out_of_reach(&g, 0, 1), "no neighbour at a third of our power");
+    assert!(
+        !ai.counter_out_of_reach(&g, 0, 1),
+        "no neighbour at a third of our power"
+    );
 }
 
 /// `falling-city-outranks-the-heal`: a recovering melee unit fit to fight
@@ -52189,13 +52293,22 @@ fn a_falling_city_calls_a_recovering_taker_only_under_the_gene() {
     let mut ai = AdvancedAi::new();
     assert!(!ai.falling_city_calls(&g, 0, taker), "off");
     ai.enable_falling_city_outranks_the_heal();
-    assert!(ai.falling_city_calls(&g, 0, taker), "a falling city three tiles out");
+    assert!(
+        ai.falling_city_calls(&g, 0, taker),
+        "a falling city three tiles out"
+    );
     assert!(!ai.falling_city_calls(&g, 0, distant), "ten tiles out");
     g.units.get_mut(&taker).unwrap().hp = 40;
-    assert!(!ai.falling_city_calls(&g, 0, taker), "under the rotation line");
+    assert!(
+        !ai.falling_city_calls(&g, 0, taker),
+        "under the rotation line"
+    );
     g.units.get_mut(&taker).unwrap().hp = 63;
     g.cities.get_mut(&city).unwrap().hp = 150;
-    assert!(!ai.falling_city_calls(&g, 0, taker), "the city still stands");
+    assert!(
+        !ai.falling_city_calls(&g, 0, taker),
+        "the city still stands"
+    );
 }
 
 // Policy controls for the native Bogotá 117f0 queue interruption.

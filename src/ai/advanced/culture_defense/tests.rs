@@ -3,7 +3,15 @@ use crate::ai::advanced::GrandStrategy;
 use crate::game::Item;
 
 fn board() -> (Game, u32, StrategicPlan) {
-    let mut g = Game::new_full(2, 24, 16, crate::rng::fixture_seed("CULTURERESERVE", 91_821), 250, 0, false);
+    let mut g = Game::new_full(
+        2,
+        24,
+        16,
+        crate::rng::fixture_seed("CULTURERESERVE", 91_821),
+        250,
+        0,
+        false,
+    );
     let settler = g
         .player_unit_ids(0)
         .into_iter()
@@ -68,18 +76,32 @@ fn a_trailing_empire_reserves_a_theater_ahead_of_the_delegated_governor() {
     broke.players[0].gold = 10.0;
     broke.players[0].gold_per_turn = -6.0;
     ai.reserve_culture_defense_theater(&mut broke, 0, &plan);
-    assert!(broke.cities[&cid].queue.is_empty(), "economic recovery holds it");
+    assert!(
+        broke.cities[&cid].queue.is_empty(),
+        "economic recovery holds it"
+    );
 
     let mut due = g.clone();
     ai.reserve_culture_defense_theater(&mut due, 0, &plan);
-    assert!(due.cities[&cid].queue.is_empty(), "a city due a Settler keeps it");
+    assert!(
+        due.cities[&cid].queue.is_empty(),
+        "a city due a Settler keeps it"
+    );
     // At its city target the empire sends no Settler.
     ai.base.w.city_target = 1.0;
 
     let mut no_campus = g.clone();
-    no_campus.cities.get_mut(&cid).unwrap().districts.remove(&crate::name!("campus"));
+    no_campus
+        .cities
+        .get_mut(&cid)
+        .unwrap()
+        .districts
+        .remove(&crate::name!("campus"));
     ai.reserve_culture_defense_theater(&mut no_campus, 0, &plan);
-    assert!(no_campus.cities[&cid].queue.is_empty(), "never the first district");
+    assert!(
+        no_campus.cities[&cid].queue.is_empty(),
+        "never the first district"
+    );
 
     ai.reserve_culture_defense_theater(&mut g, 0, &plan);
     assert!(queued_theater(&g, cid), "queue: {:?}", g.cities[&cid].queue);
@@ -104,18 +126,37 @@ fn version_two_leaves_a_housing_bound_city_its_granary() {
     ai.enable_culture_defense_theater();
     let mut v1 = g.clone();
     ai.reserve_culture_defense_theater(&mut v1, 0, &plan);
-    assert!(queued_theater(&v1, cid), "version 1 claims it: {:?}", v1.cities[&cid].queue);
+    assert!(
+        queued_theater(&v1, cid),
+        "version 1 claims it: {:?}",
+        v1.cities[&cid].queue
+    );
 
     ai.disable_culture_defense_theater();
     ai.enable_culture_defense_theater_2();
-    assert!(ai.base.culture_defense_theater, "version 2 keeps the governor's step");
+    assert!(
+        ai.base.culture_defense_theater,
+        "version 2 keeps the governor's step"
+    );
     let mut v2 = g.clone();
     ai.reserve_culture_defense_theater(&mut v2, 0, &plan);
-    assert!(v2.cities[&cid].queue.is_empty(), "the Granary first: {:?}", v2.cities[&cid].queue);
+    assert!(
+        v2.cities[&cid].queue.is_empty(),
+        "the Granary first: {:?}",
+        v2.cities[&cid].queue
+    );
 
-    g.cities.get_mut(&cid).unwrap().buildings.push(crate::name!("granary"));
+    g.cities
+        .get_mut(&cid)
+        .unwrap()
+        .buildings
+        .push(crate::name!("granary"));
     ai.reserve_culture_defense_theater(&mut g, 0, &plan);
-    assert!(queued_theater(&g, cid), "with its Granary it is claimed: {:?}", g.cities[&cid].queue);
+    assert!(
+        queued_theater(&g, cid),
+        "with its Granary it is claimed: {:?}",
+        g.cities[&cid].queue
+    );
 
     ai.disable_culture_defense_theater_2();
     assert!(!ai.base.culture_defense_theater);

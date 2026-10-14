@@ -1849,7 +1849,10 @@ fn split_planned_movers<'a>(
     orders: &[Order],
     planned: impl Iterator<Item = (usize, &'a Action)>,
     civ6_of: &std::collections::BTreeMap<u32, i64>,
-) -> (std::collections::BTreeSet<u32>, std::collections::BTreeSet<u32>) {
+) -> (
+    std::collections::BTreeSet<u32>,
+    std::collections::BTreeSet<u32>,
+) {
     let moved: std::collections::BTreeSet<i64> = orders
         .iter()
         .filter(|order| moves_its_unit(order))
@@ -1878,7 +1881,9 @@ fn open_walk_steps(orders: &[Order]) -> std::collections::BTreeMap<i64, Vec<(i32
         let Some(subject) = order.subject else {
             continue;
         };
-        let step = (order.verb.as_deref() == Some("MOVE_TO")).then_some(order.pos).flatten();
+        let step = (order.verb.as_deref() == Some("MOVE_TO"))
+            .then_some(order.pos)
+            .flatten();
         let (open, steps) = walks.entry(subject).or_insert((true, Vec::new()));
         match step {
             Some(pos) if *open => steps.push(pos),
@@ -3481,7 +3486,9 @@ fn drop_deals_beside_war_or_peace(orders: &mut Vec<Order>) -> usize {
     let before = orders.len();
     orders.retain(|order| {
         !(matches!(order.kind, "sell" | "buy")
-            && order.subject.is_some_and(|subject| contested.contains(&subject)))
+            && order
+                .subject
+                .is_some_and(|subject| contested.contains(&subject)))
     });
     before - orders.len()
 }
@@ -5163,8 +5170,7 @@ fn decide(
     // book with 314 Gold in the bank while France, the culture winner, was
     // never seen.
     if ai.unseen_capital_is_unseen() {
-        exploration_targets
-            .retain(|seat, _| passage_value(*seat) >= BORDER_BUY_CEILING_MIN as f64);
+        exploration_targets.retain(|seat, _| passage_value(*seat) >= BORDER_BUY_CEILING_MIN as f64);
     }
     match append_border_buy_order(
         &mirror_state.game.sealed_border_owners,
@@ -5520,7 +5526,8 @@ fn decide(
         note_bits.push(format!("coalesced_path_steps={coalesced_path_steps}"));
     }
     if !walk_steps.is_empty() {
-        let retargeted = retarget_friendly_held_walks_on_board(&mut orders, &walk_steps, mirror_state);
+        let retargeted =
+            retarget_friendly_held_walks_on_board(&mut orders, &walk_steps, mirror_state);
         if retargeted > 0 {
             note_bits.push(format!("own_column_retargeted={retargeted}"));
         }
@@ -5620,7 +5627,9 @@ fn decide(
     orders = host_legal;
     let session_conflicts = drop_deals_beside_war_or_peace(&mut orders);
     if session_conflicts > 0 {
-        note_bits.push(format!("deals_dropped_for_war_or_peace={session_conflicts}"));
+        note_bits.push(format!(
+            "deals_dropped_for_war_or_peace={session_conflicts}"
+        ));
     }
     if let Some((target, needed)) = envoy_reclaim {
         let submitted = orders
@@ -5842,11 +5851,13 @@ fn decide(
     if own_column_before.is_some() {
         let (sent, unsent) = split_planned_movers(
             &orders,
-            planned_game.log.since(before).map(|(seat, action)| (*seat, action)),
+            planned_game
+                .log
+                .since(before)
+                .map(|(seat, action)| (*seat, action)),
             &mirror_state.civ6_of,
         );
-        let rolled_back =
-            ai.note_host_moves(&mirror_state.game, own_column_before, &sent, &unsent);
+        let rolled_back = ai.note_host_moves(&mirror_state.game, own_column_before, &sent, &unsent);
         if rolled_back > 0 {
             note_bits.push(format!("own_column_rolled_back={rolled_back}"));
         }
@@ -12377,7 +12388,8 @@ mod tests {
             unit_order(unit, "MOVE_TO", Some((6, 5))),
         ];
         let local = refusals.local_retry.keys().copied().collect();
-        let (orders, _, coalesced) = coalesce_unit_paths_except(retry_steps, true, &local, &Default::default());
+        let (orders, _, coalesced) =
+            coalesce_unit_paths_except(retry_steps, true, &local, &Default::default());
         assert_eq!(coalesced, 0);
         assert_eq!(orders.len(), 2);
         state.frame = 1;
@@ -14035,7 +14047,15 @@ mod tests {
         raider.x = 7;
         raider.y = 5;
         let verdict = |tiles: &Snapshot| {
-            verify_unit_order(&order, 30, &before, &walked, tiles, &[], LaterFrames::default())
+            verify_unit_order(
+                &order,
+                30,
+                &before,
+                &walked,
+                tiles,
+                &[],
+                LaterFrames::default(),
+            )
         };
         assert!(matches!(verdict(&board(Some((7, 5)))), Verdict::Verified));
         assert!(matches!(verdict(&board(Some((5, 5)))), Verdict::Verified));
@@ -15757,13 +15777,15 @@ mod tests {
                 unit_order(8, "MOVE_TO", Some((21, 8))),
             ]
         };
-        let (orders, deferred, coalesced) = coalesce_unit_paths_except(planned(), true, &local, &Default::default());
+        let (orders, deferred, coalesced) =
+            coalesce_unit_paths_except(planned(), true, &local, &Default::default());
         assert_eq!(deferred, 0);
         assert_eq!(coalesced, 1, "healthy travel still coalesces");
         assert_eq!(orders[0].pos, Some((10, 9)));
         assert_eq!(orders[1].pos, Some((11, 8)));
         assert_eq!(orders[2].verb.as_deref(), Some("FORTIFY"));
-        let (old_host, deferred, _) = coalesce_unit_paths_except(planned(), false, &local, &Default::default());
+        let (old_host, deferred, _) =
+            coalesce_unit_paths_except(planned(), false, &local, &Default::default());
         assert_eq!(deferred, 2);
         assert_eq!(
             old_host
@@ -18755,7 +18777,9 @@ mod tests {
                 StateRival {
                     player: 3,
                     tradeable_strategics: Some(
-                        [("RESOURCE_ALUMINUM".to_string(), 50)].into_iter().collect(),
+                        [("RESOURCE_ALUMINUM".to_string(), 50)]
+                            .into_iter()
+                            .collect(),
                     ),
                     ..StateRival::default()
                 },

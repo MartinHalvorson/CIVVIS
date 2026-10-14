@@ -8665,10 +8665,7 @@ fn a_standalone_unique_lands_by_its_promotion_class() {
     );
 
     // A class CIVVIS has no representative for must still not invent a unit.
-    let nonsense = build(
-        "UNIT_MOORISH_FARFANES",
-        Some("PROMOTION_CLASS_NOT_REAL"),
-    );
+    let nonsense = build("UNIT_MOORISH_FARFANES", Some("PROMOTION_CLASS_NOT_REAL"));
     assert!(
         nonsense.game.units.is_empty(),
         "an unknown class must not be guessed at"

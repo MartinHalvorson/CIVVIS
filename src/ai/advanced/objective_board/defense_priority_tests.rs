@@ -141,7 +141,9 @@ mod capital_defense_holds {
         let mut ai = on();
         let rows = board(&g, &mut ai, Some(munich));
         assert!(
-            !rows.iter().any(|row| row.key == ObjectiveKey::Defend(capital)),
+            !rows
+                .iter()
+                .any(|row| row.key == ObjectiveKey::Defend(capital)),
             "the shipped gate drops the row: {rows:?}"
         );
     }
@@ -224,7 +226,10 @@ mod capital_defense_holds {
         assert_eq!(healthy, capital_need(200, false).0);
         // And it asks for more than the shipped damage penalty alone adds.
         let (off_falling, _) = capital_need(20, false);
-        assert!(falling > off_falling, "{falling} against off's {off_falling}");
+        assert!(
+            falling > off_falling,
+            "{falling} against off's {off_falling}"
+        );
     }
 
     #[test]
@@ -251,7 +256,9 @@ mod capital_defense_holds {
         assert!(AdvancedAi::city_pressure(&g, 0, capital) < BASTION_PRESSURE);
         let mut off = on();
         let rows = board(&g, &mut off, None);
-        assert!(!rows.iter().any(|row| row.key == ObjectiveKey::Defend(capital)));
+        assert!(!rows
+            .iter()
+            .any(|row| row.key == ObjectiveKey::Defend(capital)));
         let mut ai = on();
         ai.enable_capital_defense_holds();
         let rows = board(&g, &mut ai, None);
@@ -289,7 +296,10 @@ mod capital_defense_holds {
                 .urgent
         };
         assert!(!urgent(false), "the setup is calm off");
-        assert!(!urgent(true), "no hostile within two: the gene adds no urgency");
+        assert!(
+            !urgent(true),
+            "no hostile within two: the gene adds no urgency"
+        );
     }
 
     #[test]
@@ -300,7 +310,9 @@ mod capital_defense_holds {
         let mut ai = on();
         ai.enable_capital_defense_holds();
         let rows = board(&g, &mut ai, None);
-        assert!(!rows.iter().any(|row| row.key == ObjectiveKey::Defend(capital)));
+        assert!(!rows
+            .iter()
+            .any(|row| row.key == ObjectiveKey::Defend(capital)));
         // Damaged, but the hostile three tiles out: no contact, no row.
         let (mut g, capital, _) = bogota_at_turn_40();
         let near = g
@@ -314,6 +326,8 @@ mod capital_defense_holds {
         let mut ai = on();
         ai.enable_capital_defense_holds();
         let rows = board(&g, &mut ai, None);
-        assert!(!rows.iter().any(|row| row.key == ObjectiveKey::Defend(capital)));
+        assert!(!rows
+            .iter()
+            .any(|row| row.key == ObjectiveKey::Defend(capital)));
     }
 }

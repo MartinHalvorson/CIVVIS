@@ -94,7 +94,11 @@ fn a_backlog_claims_a_builder_over_a_routine_unit() {
     let (game, _capital, _second) = backlogged_empire();
     let backlog = BasicAi::unimproved_worked_tiles(&game, 0);
     assert!(backlog >= 4, "fixture backlog {backlog}");
-    assert_eq!(BasicAi::builder_charge_cover(&game, 0), 0, "fixture: no charges");
+    assert_eq!(
+        BasicAi::builder_charge_cover(&game, 0),
+        0,
+        "fixture: no charges"
+    );
 
     let stock = AdvancedAi::new();
     let mut off = game.clone();
@@ -107,7 +111,11 @@ fn a_backlog_claims_a_builder_over_a_routine_unit() {
     let mut busy = game.clone();
     let plan = idle_only.assess(&busy, 0);
     idle_only.claim_idle_queue_for_worked_backlog(&mut busy, 0, &plan);
-    assert_eq!(builders_at_head(&busy), 0, "the idle-queue claim cannot reach a busy queue");
+    assert_eq!(
+        builders_at_head(&busy),
+        0,
+        "the idle-queue claim cannot reach a busy queue"
+    );
 
     let ai = armed();
     let mut on = game.clone();
@@ -128,7 +136,10 @@ fn a_backlog_claims_a_builder_over_a_routine_unit() {
         ai.backlog_builder_holds(&on, 0, claimed, &plan, &unit("builder")),
         "the governor keeps the claimed Builder while the backlog wants it"
     );
-    assert!(!stock.backlog_builder_holds(&on, 0, claimed, &plan, &unit("builder")), "off: no hold");
+    assert!(
+        !stock.backlog_builder_holds(&on, 0, claimed, &plan, &unit("builder")),
+        "off: no hold"
+    );
 
     // Charges in hand that cover the backlog stop the claim.
     let mut covered = game.clone();
@@ -137,7 +148,11 @@ fn a_backlog_claims_a_builder_over_a_routine_unit() {
     covered.units.get_mut(&uid).unwrap().charges = backlog as i32;
     let plan = ai.assess(&covered, 0);
     ai.claim_backlog_builder(&mut covered, 0, &plan);
-    assert_eq!(builders_at_head(&covered), 0, "a covered backlog claims nothing");
+    assert_eq!(
+        builders_at_head(&covered),
+        0,
+        "a covered backlog claims nothing"
+    );
 }
 
 /// A Settler, a Builder, a Trader, Walls and a freshly attacked city keep
@@ -156,7 +171,10 @@ fn settlers_traders_walls_and_attacked_cities_keep_their_queues() {
         }
         let plan = ai.assess(&busy, 0);
         ai.claim_backlog_builder(&mut busy, 0, &plan);
-        assert!(heads(&busy).iter().all(|head| *head == Some(keep.clone())), "{keep:?} stays");
+        assert!(
+            heads(&busy).iter().all(|head| *head == Some(keep.clone())),
+            "{keep:?} stays"
+        );
     }
     let mut attacked = game.clone();
     let turn = attacked.turn.max(1);
@@ -165,7 +183,11 @@ fn settlers_traders_walls_and_attacked_cities_keep_their_queues() {
     }
     let plan = ai.assess(&attacked, 0);
     ai.claim_backlog_builder(&mut attacked, 0, &plan);
-    assert_eq!(builders_at_head(&attacked), 0, "attacked cities keep their queues");
+    assert_eq!(
+        builders_at_head(&attacked),
+        0,
+        "attacked cities keep their queues"
+    );
 }
 
 /// The gene is registered and off by default.

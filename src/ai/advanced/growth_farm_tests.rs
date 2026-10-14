@@ -247,7 +247,10 @@ fn the_food_premium_is_the_grown_citizens_priced_as_production() {
     let citizens = AdvancedAi::growth_citizens(&game, city.pop, game.city_housing_headroom(city));
     let horizon = game.standard_duration(growth_farm::GROWTH_HORIZON_STANDARD_TURNS) as f64;
     assert!(
-        (citizens - (horizon / game.growth_cost(city.pop)).min(game.city_housing_headroom(city) - 1.0)).abs() < 1e-9,
+        (citizens
+            - (horizon / game.growth_cost(city.pop)).min(game.city_housing_headroom(city) - 1.0))
+        .abs()
+            < 1e-9,
         "citizens = horizon / growth cost, capped one below the Housing"
     );
     let strategy = GrandStrategy::Conquest;
@@ -311,7 +314,10 @@ fn version_two_prices_housing_before_the_cap() {
     assert!(farm_housing > 0.0, "fixture: a Farm gives Housing");
     set_headroom(&mut game, capital, 2.0);
     let headroom = game.city_housing_headroom(&game.cities[&capital]);
-    assert!(headroom > 1.0 && headroom < 4.0, "fixture: room 2-3 ({headroom})");
+    assert!(
+        headroom > 1.0 && headroom < 4.0,
+        "fixture: room 2-3 ({headroom})"
+    );
     assert_eq!(
         version_one().growth_farm_premium(&game, 0, flat, "farm"),
         0.0,
@@ -337,10 +343,16 @@ fn growth_prices_the_farm_2_is_off_by_default_and_reversible() {
     assert!(!AdvancedAi::legacy().growth_prices_the_farm_2);
     let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
     let strategy = GrandStrategy::Conquest;
-    assert_eq!(ai.growing_city_food_premium(&game, 0, flat, "farm", strategy), 0.0);
+    assert_eq!(
+        ai.growing_city_food_premium(&game, 0, flat, "farm", strategy),
+        0.0
+    );
     ai.enable_growth_prices_the_farm_2();
     assert!(ai.growing_city_food_premium(&game, 0, flat, "farm", strategy) > 0.0);
     ai.disable_growth_prices_the_farm_2();
-    assert_eq!(ai.growing_city_food_premium(&game, 0, flat, "farm", strategy), 0.0);
+    assert_eq!(
+        ai.growing_city_food_premium(&game, 0, flat, "farm", strategy),
+        0.0
+    );
     assert_eq!(ai.growth_farm_premium(&game, 0, flat, "farm"), 0.0);
 }

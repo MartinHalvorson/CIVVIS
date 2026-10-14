@@ -79,7 +79,10 @@ fn the_declaring_frame_does_not_read_as_peace() {
             );
             assert!(ai.air_surge_census.aborts.is_empty());
         } else {
-            assert_eq!(ai.air_surge_census.aborts.get("peace closed the war"), Some(&1));
+            assert_eq!(
+                ai.air_surge_census.aborts.get("peace closed the war"),
+                Some(&1)
+            );
         }
     }
 }
@@ -228,8 +231,14 @@ fn a_stalled_war_on_the_rival_closest_to_winning_is_not_offered_peace() {
         ai.advanced_diplomacy(&mut g, 0, &plan);
         ai.peace_offers.contains(&1)
     };
-    assert!(offers(false), "the control: the stalled war is offered peace");
-    assert!(!offers(true), "the war on the rival closest to winning is kept");
+    assert!(
+        offers(false),
+        "the control: the stalled war is offered peace"
+    );
+    assert!(
+        !offers(true),
+        "the war on the rival closest to winning is kept"
+    );
 }
 
 /// Live King civvis-20261004T025448Z: the conquest opening declared on Spain
@@ -282,7 +291,10 @@ fn a_stalled_war_the_conquest_opening_declared_is_not_offered_peace() {
         ai.peace_offers.contains(&1)
     };
     assert!(offers(false), "the control: this war is stalled and unpaid");
-    assert!(!offers(true), "the opening's war is not offered the stall peace");
+    assert!(
+        !offers(true),
+        "the opening's war is not offered the stall peace"
+    );
 }
 
 /// A front whose original capital we hold securely is done for Domination
@@ -297,7 +309,10 @@ fn a_secured_capital_releases_the_wing_s_front_for_the_next_capital() {
     g.record_contact(0, 2);
     {
         let capital = g.cities.get_mut(&target).unwrap();
-        assert!(capital.is_capital, "the fixture's target is player 1's original capital");
+        assert!(
+            capital.is_capital,
+            "the fixture's target is player 1's original capital"
+        );
         capital.owner = 0;
         capital.loyalty = 100.0;
     }
@@ -530,10 +545,18 @@ fn a_wing_starved_of_aluminum_goes_to_take_the_city_that_holds_it() {
     }
     ai.maintain_air_surge(&g, 0);
     assert!(ai.air_surge_status.metal_grab_ready);
-    assert_eq!(ai.air_surge_plan.as_ref().unwrap().phase, AirSurgePhase::Strike);
+    assert_eq!(
+        ai.air_surge_plan.as_ref().unwrap().phase,
+        AirSurgePhase::Strike
+    );
 
     // A deposit in our own land is mined, not conquered.
-    let own = g.cities.values().find(|city| city.owner == 0).unwrap().clone();
+    let own = g
+        .cities
+        .values()
+        .find(|city| city.owner == 0)
+        .unwrap()
+        .clone();
     let home = *own.owned_tiles.iter().find(|pos| **pos != own.pos).unwrap();
     g.map.tiles.get_mut(&home).unwrap().resource = Some(crate::name!("aluminum"));
     assert!(!ai.air_surge_metal_starved(&g, 0));
@@ -630,7 +653,12 @@ fn the_wing_turns_on_the_rival_whose_victory_must_be_denied() {
     ai.enable_denial_outranks_expansion();
     ai.enable_counter_in_lane();
     ai.enable_air_surge_2();
-    assert_eq!(ai.air_surge_denial_rival(&g, 0), Some(1), "{:?}", ai.denial_target(&g, 0));
+    assert_eq!(
+        ai.air_surge_denial_rival(&g, 0),
+        Some(1),
+        "{:?}",
+        ai.denial_target(&g, 0)
+    );
     ai.air_surge_plan = Some(AirSurge {
         target_player: 2,
         objective_city: other,
@@ -697,14 +725,22 @@ fn a_banked_stockpile_buys_bombers_past_the_income() {
     // The fixture's two standing Bombers already draw two a turn; count only
     // what is left for the wing goal.
     let income = g.strategic_resource_rate(0, "aluminum");
-    let sustainable = ((income / spec.resource_maintenance).floor() as usize).min(AIR_SURGE_BOMBERS);
-    assert!(sustainable >= AIR_SURGE_LAUNCH_BOMBERS, "precondition: {income}");
+    let sustainable =
+        ((income / spec.resource_maintenance).floor() as usize).min(AIR_SURGE_BOMBERS);
+    assert!(
+        sustainable >= AIR_SURGE_LAUNCH_BOMBERS,
+        "precondition: {income}"
+    );
     assert_eq!(goal(&mut g, 0.0), sustainable);
     assert_eq!(
         goal(&mut g, per_extra * 2.0),
         (sustainable + 2).min(AIR_SURGE_BOMBERS)
     );
-    assert_eq!(goal(&mut g, 10_000.0), AIR_SURGE_BOMBERS, "the ceiling holds");
+    assert_eq!(
+        goal(&mut g, 10_000.0),
+        AIR_SURGE_BOMBERS,
+        "the ceiling holds"
+    );
 }
 
 /// Live King 20261001T080758Z: Bombers against Pella from turn 156 while the
@@ -757,7 +793,10 @@ fn one_war_does_not_offer_the_wing_s_front_peace() {
         ai.advanced_diplomacy(&mut g, 0, &plan);
         ai.peace_offers.contains(&1)
     };
-    assert!(offers(false), "the control: a second front is offered peace");
+    assert!(
+        offers(false),
+        "the control: a second front is offered peace"
+    );
     assert!(!offers(true), "the wing's front keeps its war");
 }
 
@@ -796,7 +835,10 @@ fn a_recovery_reading_does_not_offer_the_wing_s_front_peace() {
         ai.advanced_diplomacy(&mut g, 0, &plan);
         ai.peace_offers.contains(&1)
     };
-    assert!(offers(false), "the control: Recovery offers a non-target peace");
+    assert!(
+        offers(false),
+        "the control: Recovery offers a non-target peace"
+    );
     assert!(!offers(true), "the wing's front keeps its war");
 }
 
@@ -831,7 +873,13 @@ fn an_in_flight_declaration_keeps_its_objective_beside_another_war() {
         "a fresh choice would follow the other front"
     );
     ai.maintain_air_surge(&g, 0);
-    let plan = ai.air_surge_plan.as_ref().expect("the wing stays appointed");
+    let plan = ai
+        .air_surge_plan
+        .as_ref()
+        .expect("the wing stays appointed");
     assert_eq!(plan.target_player, 1);
-    assert_eq!(plan.objective_pos, g.cities[&other].pos, "the objective holds");
+    assert_eq!(
+        plan.objective_pos, g.cities[&other].pos,
+        "the objective holds"
+    );
 }

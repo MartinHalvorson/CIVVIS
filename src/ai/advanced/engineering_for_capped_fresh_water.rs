@@ -112,16 +112,19 @@ impl AdvancedAi {
         let legal = candidates
             .iter()
             .filter(|cid| {
-                future.district_sites(**cid, aqueduct).into_iter().any(|pos| {
-                    future.can_produce(
-                        pid,
-                        **cid,
-                        &Item::District {
-                            district: aqueduct,
-                            pos,
-                        },
-                    )
-                })
+                future
+                    .district_sites(**cid, aqueduct)
+                    .into_iter()
+                    .any(|pos| {
+                        future.can_produce(
+                            pid,
+                            **cid,
+                            &Item::District {
+                                district: aqueduct,
+                                pos,
+                            },
+                        )
+                    })
             })
             .count();
         if legal < ENGINEERING_MIN_CAPPED_CITIES {

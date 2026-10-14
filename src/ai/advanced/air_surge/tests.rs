@@ -250,10 +250,25 @@ fn an_unexpected_nonurgent_war_keeps_the_domination_air_investment() {
 fn an_outclassed_cavalry_line_hands_the_capture_to_the_strongest_melee_body() {
     let mut g = Game::new_full(2, 30, 20, 936211, 500, 0, false);
     g.found_city_for(0, (8, 8), None);
-    for tech in ["bronze_working", "the_wheel", "wheel", "military_science", "rifling", "gunpowder", "military_tactics", "ballistics"] {
+    for tech in [
+        "bronze_working",
+        "the_wheel",
+        "wheel",
+        "military_science",
+        "rifling",
+        "gunpowder",
+        "military_tactics",
+        "ballistics",
+    ] {
         if g.rules.techs.contains_key(&Name::new(tech)) {
             g.players[0].techs.insert(Name::new(tech));
-            for ancestor in g.rules.tech_ancestors.get(tech).cloned().unwrap_or_default() {
+            for ancestor in g
+                .rules
+                .tech_ancestors
+                .get(tech)
+                .cloned()
+                .unwrap_or_default()
+            {
                 g.players[0].techs.insert(Name::new(&ancestor));
             }
         }
@@ -269,7 +284,9 @@ fn an_outclassed_cavalry_line_hands_the_capture_to_the_strongest_melee_body() {
                 .iter()
                 .map(|unit| {
                     (
-                        Game::production_block_key(&Item::Unit { unit: Name::new(unit) }),
+                        Game::production_block_key(&Item::Unit {
+                            unit: Name::new(unit),
+                        }),
                         crate::game::HostMenuEntry::default(),
                     )
                 })
@@ -339,7 +356,10 @@ fn an_overwhelming_ground_army_does_not_wait_for_the_wing() {
     g.spawn_test_unit("warrior", 1, g.cities[&target].pos);
     g.spawn_test_unit("warrior", 0, at);
     assert!(!AdvancedAi::air_surge_ground_overwhelms(&g, 0, 1));
-    assert!(ai.air_surge_opening(&mut g, 0, 1), "an even army waits for the wing");
+    assert!(
+        ai.air_surge_opening(&mut g, 0, 1),
+        "an even army waits for the wing"
+    );
     for _ in 0..5 {
         g.spawn_test_unit("swordsman", 0, at);
     }
@@ -395,8 +415,14 @@ fn a_beeline_wing_does_not_hold_the_ground_war() {
     assert!(ai.air_surge_plan.is_some(), "the wing keeps its research");
     assert!(!g.is_at_war(0, 1), "the surge itself declares nothing");
 
-    ai.air_surge_plan = Some(AirSurge { phase: AirSurgePhase::Arm, ..surge });
-    assert!(ai.air_surge_opening(&mut g, 0, 1), "an arming wing keeps the hold");
+    ai.air_surge_plan = Some(AirSurge {
+        phase: AirSurgePhase::Arm,
+        ..surge
+    });
+    assert!(
+        ai.air_surge_opening(&mut g, 0, 1),
+        "an arming wing keeps the hold"
+    );
 }
 
 /// The surge does not trade the plan's victory-suppression city for its own
@@ -408,7 +434,11 @@ fn the_surge_keeps_the_plan_on_the_rivals_spaceport() {
     let surge_city = g.found_city_for(1, (20, 12), None);
     let pad = g.found_city_for(1, (24, 16), None);
     let pad_pos = g.cities[&pad].pos;
-    g.cities.get_mut(&pad).unwrap().districts.insert(Name::new("spaceport"), pad_pos);
+    g.cities
+        .get_mut(&pad)
+        .unwrap()
+        .districts
+        .insert(Name::new("spaceport"), pad_pos);
     g.players[0].met.insert(1);
     g.record_contact(0, 1);
     g.at_war.insert((0, 1));
@@ -447,10 +477,16 @@ fn the_surge_keeps_the_plan_on_the_rivals_spaceport() {
     assert_eq!(before.target_city, Some(surge_city));
 
     // On the expedition, the pad is the city that stops the victory.
-    g.players[1].science_projects.insert("exoplanet_expedition".to_string());
+    g.players[1]
+        .science_projects
+        .insert("exoplanet_expedition".to_string());
     let mut after = plan(pad);
     ai.apply_air_surge_to_strategy(&g, 0, &mut after);
-    assert_eq!(after.target_city, Some(pad), "the army stays on the Spaceport");
+    assert_eq!(
+        after.target_city,
+        Some(pad),
+        "the army stays on the Spaceport"
+    );
 }
 
 /// See `air_surge_strikes_through_urgency`: under the gene, a surge in

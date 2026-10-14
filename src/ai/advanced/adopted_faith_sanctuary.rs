@@ -254,7 +254,8 @@ impl AdvancedAi {
     /// A city that owns a Holy Site, queues one, or holds paid progress on one.
     fn sanctuary_district_investment(g: &Game, cid: u32) -> bool {
         let city = &g.cities[&cid];
-        let holy_site = |district: &str| g.district_family(Name::new(district)).as_str() == "holy_site";
+        let holy_site =
+            |district: &str| g.district_family(Name::new(district)).as_str() == "holy_site";
         g.city_has_district_family(city, crate::name!("holy_site"))
             || city.queue.iter().any(|item| {
                 matches!(item, Item::District { district, .. } if holy_site(district.as_str()))

@@ -1281,7 +1281,10 @@ impl AdvancedAi {
         let spec = &g.rules.units[unit.kind];
         if unit.hp < ROTATE_HP
             || !spec.is_melee_capable()
-            || spec.domain.as_deref().is_some_and(|domain| domain != "land")
+            || spec
+                .domain
+                .as_deref()
+                .is_some_and(|domain| domain != "land")
             || g.is_embarked(unit)
         {
             return false;
@@ -2368,8 +2371,7 @@ impl AdvancedAi {
             // risk limit. Live King civvis-20261004T033533Z (game 46) rotated
             // four 100-hp catapults out at Babylon every turn from 135 to 153.
             if !wounded
-                && (self.active_siege_member(g, pid, uid)
-                    || self.staging_siege_member(g, pid, uid))
+                && (self.active_siege_member(g, pid, uid) || self.staging_siege_member(g, pid, uid))
             {
                 continue;
             }

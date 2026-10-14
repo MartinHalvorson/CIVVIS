@@ -95,17 +95,21 @@ impl AdvancedAi {
     /// `denial_nearest_finish::ENGINE_CLOCK_MIN_TOURISTS` visitors back it.
     /// `None` when neither reading exists.
     pub(crate) fn moves_on_race_clock(&self, g: &Game, rival: usize) -> Option<f64> {
-        let science = g.observed_public_empire_stats.get(&rival).and_then(|stats| {
-            let (points, needed, rate) = (
-                stats.science_victory_points?,
-                stats.science_victory_points_needed?,
-                stats.science_victory_points_per_turn?,
-            );
-            (rate > 0.0 && needed > 0.0).then(|| (needed - points).max(0.0) / rate)
-        });
+        let science = g
+            .observed_public_empire_stats
+            .get(&rival)
+            .and_then(|stats| {
+                let (points, needed, rate) = (
+                    stats.science_victory_points?,
+                    stats.science_victory_points_needed?,
+                    stats.science_victory_points_per_turn?,
+                );
+                (rate > 0.0 && needed > 0.0).then(|| (needed - points).max(0.0) / rate)
+            });
         let culture = g.culture_turns_to_victory(rival).filter(|turns| {
             *turns >= 0.0
-                && g.foreign_tourists(rival) >= super::denial_nearest_finish::ENGINE_CLOCK_MIN_TOURISTS
+                && g.foreign_tourists(rival)
+                    >= super::denial_nearest_finish::ENGINE_CLOCK_MIN_TOURISTS
         });
         match (science, culture) {
             (Some(a), Some(b)) => Some(a.min(b)),
@@ -120,7 +124,9 @@ impl AdvancedAi {
         let horizon = f64::from(g.standard_duration(THREAT_HORIZON_TURNS));
         g.players
             .iter()
-            .filter(|rival| rival.id != pid && rival.alive && !rival.is_minor && !rival.is_barbarian)
+            .filter(|rival| {
+                rival.id != pid && rival.alive && !rival.is_minor && !rival.is_barbarian
+            })
             .filter_map(|rival| {
                 let dvp = self.moves_on_dvp_clock(g, rival.id);
                 let clock = self
@@ -271,7 +277,10 @@ impl AdvancedAi {
                 && holds_needed_capital(owner)
                 && self.campaign_target_legal(g, pid, owner)
         };
-        if let Some(shortest) = self.moves_on_shortest_clock(g, pid).filter(|rival| usable(*rival)) {
+        if let Some(shortest) = self
+            .moves_on_shortest_clock(g, pid)
+            .filter(|rival| usable(*rival))
+        {
             return Some(shortest);
         }
         g.cities
@@ -284,7 +293,12 @@ impl AdvancedAi {
             })
             .min_by(|left, right| {
                 self.campaign_city_value(g, pid, left, super::GrandStrategy::Conquest)
-                    .total_cmp(&self.campaign_city_value(g, pid, right, super::GrandStrategy::Conquest))
+                    .total_cmp(&self.campaign_city_value(
+                        g,
+                        pid,
+                        right,
+                        super::GrandStrategy::Conquest,
+                    ))
                     .then(left.id.cmp(&right.id))
             })
             .map(|city| city.owner)

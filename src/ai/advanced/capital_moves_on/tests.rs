@@ -85,7 +85,11 @@ fn a_refused_capital_peace_moves_the_army_on_under_the_gene() {
             "fixture: the beaten rival is offered the capital-secure peace"
         );
         refused_for(&mut ai, &g, 1);
-        assert_eq!(ai.capital_moves_on_next(&g, 0), None, "a fresh refusal waits");
+        assert_eq!(
+            ai.capital_moves_on_next(&g, 0),
+            None,
+            "a fresh refusal waits"
+        );
         refused_for(&mut ai, &g, CAPITAL_MOVES_ON_TURNS);
         assert_eq!(
             ai.capital_moves_on_next(&g, 0),
@@ -103,12 +107,22 @@ fn a_refused_capital_peace_moves_the_army_on_under_the_gene() {
             refused_for(&mut ai, &g, CAPITAL_MOVES_ON_TURNS);
         }
         if gene {
-            assert!(g.is_at_war(0, 2), "gene on: the next capital's owner is declared on");
+            assert!(
+                g.is_at_war(0, 2),
+                "gene on: the next capital's owner is declared on"
+            );
             assert!(g.is_at_war(0, 1), "the remnant war is held, not abandoned");
             ai.one_war_observe(&g, 0);
-            assert_eq!(ai.one_war_front(), Some(2), "the front moves to the next capital's war");
+            assert_eq!(
+                ai.one_war_front(),
+                Some(2),
+                "the front moves to the next capital's war"
+            );
         } else {
-            assert!(!g.is_at_war(0, 2), "gene off: no staged siege, no declaration");
+            assert!(
+                !g.is_at_war(0, 2),
+                "gene off: no staged siege, no declaration"
+            );
         }
     }
 }
@@ -127,16 +141,26 @@ fn contender_front() -> (Game, AdvancedAi) {
 #[test]
 fn a_contender_with_no_shorter_clock_keeps_the_elimination_front() {
     let (g, ai) = contender_front();
-    assert_eq!(ai.diplomatic_contender_base(&g, 0), Some(1), "fixture: the contender");
+    assert_eq!(
+        ai.diplomatic_contender_base(&g, 0),
+        Some(1),
+        "fixture: the contender"
+    );
     assert!(!ai.elimination_yields_to_a_shorter_clock(&g, 0, 1));
     assert_eq!(ai.diplomatic_contender_to_eliminate(&g, 0), Some(1));
-    assert_eq!(ai.capital_moves_on_next(&g, 0), None, "the elimination front holds the army");
+    assert_eq!(
+        ai.capital_moves_on_next(&g, 0),
+        None,
+        "the elimination front holds the army"
+    );
 }
 
 #[test]
 fn a_shorter_science_clock_makes_the_elimination_front_yield() {
     let (mut g, mut ai) = contender_front();
-    let stats = Arc::make_mut(&mut g.observed_public_empire_stats).entry(2).or_default();
+    let stats = Arc::make_mut(&mut g.observed_public_empire_stats)
+        .entry(2)
+        .or_default();
     stats.science_victory_points = Some(20.0);
     stats.science_victory_points_needed = Some(25.0);
     stats.science_victory_points_per_turn = Some(1.0);
@@ -146,8 +170,16 @@ fn a_shorter_science_clock_makes_the_elimination_front_yield() {
         "fixture: the science clock runs out first"
     );
     assert!(ai.elimination_yields_to_a_shorter_clock(&g, 0, 1));
-    assert_eq!(ai.diplomatic_contender_to_eliminate(&g, 0), None, "the front yields");
-    assert_eq!(ai.capital_moves_on_next(&g, 0), Some(2), "to the shorter clock's capital");
+    assert_eq!(
+        ai.diplomatic_contender_to_eliminate(&g, 0),
+        None,
+        "the front yields"
+    );
+    assert_eq!(
+        ai.capital_moves_on_next(&g, 0),
+        Some(2),
+        "to the shorter clock's capital"
+    );
     ai.disable_capital_taken_moves_on();
     assert_eq!(
         ai.diplomatic_contender_to_eliminate(&g, 0),

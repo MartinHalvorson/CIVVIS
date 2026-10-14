@@ -78,7 +78,13 @@ impl AdvancedAi {
 
     /// The governor keeps the race's Shrine through rescoring while the race
     /// still wants it. See `advanced_production`.
-    pub(super) fn race_shrine_committed(&self, g: &Game, pid: usize, cid: u32, item: &Item) -> bool {
+    pub(super) fn race_shrine_committed(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        item: &Item,
+    ) -> bool {
         *item == Self::race_shrine_item()
             && self.race_points_wanted(g, pid)
             && g.city_has_district_family(&g.cities[&cid], crate::name!("holy_site"))
@@ -114,15 +120,14 @@ impl AdvancedAi {
             None => {}
         }
         let item = Self::race_shrine_item();
-        if g
-            .apply(
-                pid,
-                &Action::Produce {
-                    city: cid,
-                    item: item.clone(),
-                },
-            )
-            .is_ok()
+        if g.apply(
+            pid,
+            &Action::Produce {
+                city: cid,
+                item: item.clone(),
+            },
+        )
+        .is_ok()
         {
             let claimed = g.religions_founded()
                 + g.players

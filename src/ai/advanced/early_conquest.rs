@@ -768,9 +768,10 @@ impl AdvancedAi {
             .player_city_ids(pid)
             .into_iter()
             .filter(|cid| {
-                g.cities[cid].queue.iter().any(
-                    |item| matches!(item, Item::Unit { unit } if breaker(unit.as_str())),
-                )
+                g.cities[cid]
+                    .queue
+                    .iter()
+                    .any(|item| matches!(item, Item::Unit { unit } if breaker(unit.as_str())))
             })
             .count();
         standing + queued
@@ -795,13 +796,7 @@ impl AdvancedAi {
     /// worth while the opening's target stands behind walls and the force
     /// holds none. Only the capital, only after the first Settler's city
     /// exists, and only for the Ram itself.
-    pub(super) fn conquest_breaker_value(
-        &self,
-        g: &Game,
-        pid: usize,
-        cid: u32,
-        unit: &str,
-    ) -> f64 {
+    pub(super) fn conquest_breaker_value(&self, g: &Game, pid: usize, cid: u32, unit: &str) -> f64 {
         if unit != "battering_ram"
             || Self::conquest_capital(g, pid) != Some(cid)
             || g.player_city_ids(pid).len() < CONQUEST_FIRST_SETTLER_CITIES
@@ -1474,7 +1469,8 @@ impl AdvancedAi {
         if opening.declared.is_some() || Self::conquest_rally_standable(g, opening.rally) {
             return;
         }
-        let (Some(capital), Some(city)) = (Self::conquest_capital(g, pid), g.cities.get(&opening.city))
+        let (Some(capital), Some(city)) =
+            (Self::conquest_capital(g, pid), g.cities.get(&opening.city))
         else {
             return;
         };
@@ -1535,7 +1531,9 @@ impl AdvancedAi {
         let adopt = self.conquest_opening.as_ref().is_some_and(|opening| {
             opening.declared.is_none()
                 && g.is_at_war(pid, opening.target)
-                && g.players.get(opening.target).is_some_and(|player| player.alive)
+                && g.players
+                    .get(opening.target)
+                    .is_some_and(|player| player.alive)
                 && g.cities
                     .get(&opening.city)
                     .is_some_and(|city| city.owner == opening.target)

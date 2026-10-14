@@ -462,7 +462,9 @@ fn the_domination_airfield_goes_to_the_fastest_city_even_when_it_is_busy() {
         }
     }
     g.cities.get_mut(&second).unwrap().pop = 1;
-    g.cities.get_mut(&first).unwrap().queue = vec![Item::Unit { unit: name!("builder") }];
+    g.cities.get_mut(&first).unwrap().queue = vec![Item::Unit {
+        unit: name!("builder"),
+    }];
     g.cities.get_mut(&second).unwrap().queue.clear();
     let field = |g: &Game, cid: u32| {
         g.producible_items(0, cid).into_iter().find(|item| {
@@ -476,7 +478,8 @@ fn the_domination_airfield_goes_to_the_fastest_city_even_when_it_is_busy() {
             / (g.city_yields(cid).production * g.item_prod_mult(0, cid, Some(item))).max(0.1)
     };
     assert!(
-        rate(&g, second, &slow) > rate(&g, first, &fast) * AIR_SURGE_SLOW_FACTOR + AIR_SURGE_SLOW_SLACK,
+        rate(&g, second, &slow)
+            > rate(&g, first, &fast) * AIR_SURGE_SLOW_FACTOR + AIR_SURGE_SLOW_SLACK,
         "precondition: {} turns against {}",
         rate(&g, second, &slow),
         rate(&g, first, &fast)
@@ -498,7 +501,9 @@ fn the_domination_airfield_goes_to_the_fastest_city_even_when_it_is_busy() {
     // Outside the Domination lane the first idle city still takes it.
     let (mut g, mut ai, _plan, first, second) = fixture();
     ai.victory_target = None;
-    g.cities.get_mut(&first).unwrap().queue = vec![Item::Unit { unit: name!("builder") }];
+    g.cities.get_mut(&first).unwrap().queue = vec![Item::Unit {
+        unit: name!("builder"),
+    }];
     g.cities.get_mut(&second).unwrap().queue.clear();
     assert!(ai.air_surge_production(&mut g, 0));
     assert!(matches!(
@@ -544,10 +549,12 @@ fn a_second_airfield_rises_during_the_beeline_for_half_the_launch_wing() {
         ai.air_surge_production(&mut g, 0);
         g.cities[&second].queue.first().cloned()
     };
-    let field =
-        |item: &Option<Item>| matches!(item, Some(Item::District { district, .. }) if district == "aerodrome");
+    let field = |item: &Option<Item>| matches!(item, Some(Item::District { district, .. }) if district == "aerodrome");
     let v1 = run(false);
-    assert!(!field(&v1), "one airfield is the whole v1 requirement: {v1:?}");
+    assert!(
+        !field(&v1),
+        "one airfield is the whole v1 requirement: {v1:?}"
+    );
     let v2 = run(true);
     assert!(field(&v2), "the second airfield: {v2:?}");
 }

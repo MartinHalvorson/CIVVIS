@@ -433,13 +433,21 @@ fn a_free_city_holding_the_last_capital_is_the_finishing_front() {
     ai.enable_domination_finish_holds_the_front();
     assert_eq!(ai.free_city_finish(&g, 0), None, "off");
     let plan = ai.assess(&g, 0);
-    assert_ne!(plan.target_city, Some(capital), "off: the flipped capital is nobody's objective");
+    assert_ne!(
+        plan.target_city,
+        Some(capital),
+        "off: the flipped capital is nobody's objective"
+    );
 
     ai.enable_flipped_capital_finishes();
     assert_eq!(ai.free_city_finish(&g, 0), Some((free, capital)));
     let plan = ai.assess(&g, 0);
     assert_eq!(plan.target_player, Some(free));
-    assert_eq!(plan.target_city, Some(capital), "on: the Free City's capital ends the game");
+    assert_eq!(
+        plan.target_city,
+        Some(capital),
+        "on: the Free City's capital ends the game"
+    );
 
     // Not the last capital: the old owner still holds the other one, so
     // taking the flipped capital does not finish and the rule stays quiet.

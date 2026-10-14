@@ -36,7 +36,10 @@ fn plan_withheld_walk(ai: &mut AdvancedAi, g: &Game, uid: u32, steps: [Pos; 2]) 
     let before = ai.host_frame_movement();
     let mut view = g.speculative_clone();
     for to in steps {
-        assert!(ai.base.path_move(&mut view, 0, uid, to), "the plan walks {to:?}");
+        assert!(
+            ai.base.path_move(&mut view, 0, uid, to),
+            "the plan walks {to:?}"
+        );
     }
     let unsent: BTreeSet<u32> = [uid].into();
     ai.note_host_moves(g, before, &BTreeSet::new(), &unsent)
@@ -52,7 +55,10 @@ fn the_gene_is_an_independently_reversible_opt_in() {
     ai.disable_own_column_is_not_a_refusal();
     assert!(!ai.own_column_is_not_a_refusal_enabled());
     assert!(!ai.base.own_column_is_not_a_refusal);
-    assert!(ai.host_frame_movement().is_none(), "the off arm takes no snapshot");
+    assert!(
+        ai.host_frame_movement().is_none(),
+        "the off arm takes no snapshot"
+    );
 }
 
 /// G104 t216-217: frame 0's ground orders were withheld behind the sortie,
@@ -73,8 +79,13 @@ fn a_withheld_walk_does_not_block_the_next_frames_same_step() {
     // the very step the host never saw.
     let (mut legacy, mut g) = fixture(false);
     let uid = warrior(&mut g, (5, 5));
-    assert_eq!(plan_withheld_walk(&mut legacy, &g, uid, [(6, 5), (7, 5)]), 0);
-    assert!(!legacy.base.path_step_allowed(&g, uid, (5, 5), (6, 5), false));
+    assert_eq!(
+        plan_withheld_walk(&mut legacy, &g, uid, [(6, 5), (7, 5)]),
+        0
+    );
+    assert!(!legacy
+        .base
+        .path_step_allowed(&g, uid, (5, 5), (6, 5), false));
 }
 
 /// A withheld step two turns running is not a host refusal: no bar. The
@@ -130,7 +141,10 @@ fn a_later_withheld_frame_restores_the_earlier_sent_frame() {
     let watched = *ai.base.move_refusal_watch.borrow().get(&uid).unwrap();
 
     plan_withheld_walk(&mut ai, &g, uid, [(5, 6), (5, 7)]);
-    assert_eq!(ai.base.move_refusal_watch.borrow().get(&uid), Some(&watched));
+    assert_eq!(
+        ai.base.move_refusal_watch.borrow().get(&uid),
+        Some(&watched)
+    );
 }
 
 /// Firaxis checks stacking where a move ends: a step onto a tile a column
@@ -201,9 +215,15 @@ fn a_turn_without_a_sent_move_is_not_a_fruitless_lap() {
         if gene {
             assert_eq!((fruitless, window), (0, 0), "an unsent turn is inert");
             let sent_fruitless = ai.base.unit_motion.get(&other).map_or(0, |m| m.fruitless);
-            assert!(sent_fruitless >= 3, "a sent mover is still judged: {sent_fruitless}");
+            assert!(
+                sent_fruitless >= 3,
+                "a sent mover is still judged: {sent_fruitless}"
+            );
         } else {
-            assert!(fruitless >= 3, "the legacy arm counts every turn: {fruitless}");
+            assert!(
+                fruitless >= 3,
+                "the legacy arm counts every turn: {fruitless}"
+            );
         }
     }
 }
@@ -218,5 +238,9 @@ fn without_a_report_the_livelock_detector_is_unchanged() {
         g.turn += 1;
         ai.base.observe_unit_motion(&g, 0);
     }
-    assert!(ai.base.unit_motion.get(&uid).is_some_and(|m| m.fruitless >= 3));
+    assert!(ai
+        .base
+        .unit_motion
+        .get(&uid)
+        .is_some_and(|m| m.fruitless >= 3));
 }

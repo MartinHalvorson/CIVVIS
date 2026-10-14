@@ -41,7 +41,10 @@ fn a_weaker_inquisitor_does_not_start_a_fight_it_loses() {
     let (dealt, received, _) = game
         .theological_exchange_preview(mine, target)
         .expect("fixture: the exchange reads");
-    assert!(dealt < received, "fixture: the Inquisitor is the weaker side");
+    assert!(
+        dealt < received,
+        "fixture: the Inquisitor is the weaker side"
+    );
     assert!(!AdvancedAi::theology_fight_is_winnable(&game, mine, target));
 }
 

@@ -545,7 +545,11 @@ fn the_conquest_opening_war_is_not_traded_for_a_victory_threat() {
         losses: 0,
         taken: 0,
     });
-    assert_eq!(ai.one_war_peace(&g, 0, 1), None, "the opening keeps its war");
+    assert_eq!(
+        ai.one_war_peace(&g, 0, 1),
+        None,
+        "the opening keeps its war"
+    );
     for y in [2, 3, 4, 5] {
         g.spawn_test_unit("modern_armor", 0, (4, y));
     }
@@ -1848,9 +1852,15 @@ fn a_staged_war_needs_twice_the_peak_or_the_production_edge_under_version_two() 
     set_production_margin(&mut g, 10.0);
     assert!(ai.declaration_has_the_edge(&g, 0, 2), "off");
     ai.enable_declaration_needs_the_edge();
-    assert!(ai.declaration_has_the_edge(&g, 0, 2), "version 1 at 1.6 times");
+    assert!(
+        ai.declaration_has_the_edge(&g, 0, 2),
+        "version 1 at 1.6 times"
+    );
     ai.enable_declaration_needs_the_edge_2();
-    assert!(!ai.declaration_needs_the_edge, "version 2 turns version 1 off");
+    assert!(
+        !ai.declaration_needs_the_edge,
+        "version 2 turns version 1 off"
+    );
     ai.record_rival_power(&g, 0);
     let reading = ai.declaration_edge_2(&g, 0, 2);
     assert!(reading.their_production > reading.our_production);
@@ -1906,7 +1916,10 @@ fn version_two_weighs_the_thirty_turn_peak() {
     g.turn += 1;
     ai.record_rival_power(&g, 0);
     assert_eq!(ai.peak_rival_power(&g, 2), g.military_power(2));
-    assert!(ai.declaration_has_the_edge(&g, 0, 2), "the peak has aged out");
+    assert!(
+        ai.declaration_has_the_edge(&g, 0, 2),
+        "the peak has aged out"
+    );
     ai.disable_declaration_needs_the_edge_2();
     ai.record_rival_power(&g, 0);
     assert!(
@@ -1933,7 +1946,10 @@ fn a_faith_counter_needs_the_edge_under_the_gene() {
     set_power(&mut g, 2, ours / 2.0);
     g.turn += 1;
     ai.record_rival_power(&g, 0);
-    assert!(ai.faith_counter_due(&g, 0, 2), "off: twice its power this turn");
+    assert!(
+        ai.faith_counter_due(&g, 0, 2),
+        "off: twice its power this turn"
+    );
     assert!(ai.faith_counter_has_the_edge(&g, 0, 2), "off");
     ai.enable_faith_counter_needs_the_edge();
     assert!(
@@ -1969,7 +1985,10 @@ fn an_urgent_denial_needs_the_edge_under_the_gene() {
     ai.record_rival_power(&g, 0);
     g.turn += 1;
     ai.record_rival_power(&g, 0);
-    assert!(ai.urgent_denial_has_the_edge(&g, 0, 2), "off: the urgent clock waives the edge");
+    assert!(
+        ai.urgent_denial_has_the_edge(&g, 0, 2),
+        "off: the urgent clock waives the edge"
+    );
     ai.enable_urgent_denial_needs_the_edge();
     assert!(
         !ai.urgent_denial_has_the_edge(&g, 0, 2),
@@ -1978,12 +1997,18 @@ fn an_urgent_denial_needs_the_edge_under_the_gene() {
     set_power(&mut g, 2, ours / 1.6);
     g.turn += PREY_POWER_MEMORY_TURNS;
     ai.record_rival_power(&g, 0);
-    assert!(ai.urgent_denial_has_the_edge(&g, 0, 2), "1.6 times declares");
+    assert!(
+        ai.urgent_denial_has_the_edge(&g, 0, 2),
+        "1.6 times declares"
+    );
     ai.disable_urgent_denial_needs_the_edge();
     set_power(&mut g, 2, ours / 1.2);
     g.turn += PREY_POWER_MEMORY_TURNS;
     ai.record_rival_power(&g, 0);
-    assert!(ai.urgent_denial_has_the_edge(&g, 0, 2), "off again: 1.2 times declares");
+    assert!(
+        ai.urgent_denial_has_the_edge(&g, 0, 2),
+        "off again: 1.2 times declares"
+    );
 }
 
 /// See `counter_war_has_the_emperor_edge`: under the gene the faith counter

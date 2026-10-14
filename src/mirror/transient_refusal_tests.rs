@@ -439,7 +439,9 @@ fn a_named_refusal_blocks_that_improvement_not_the_tile() {
     );
     assert_eq!(
         named.get(&crate::hex::offset_to_axial(6, 8)),
-        Some(&std::collections::BTreeSet::from([crate::name!("seaside_resort")])),
+        Some(&std::collections::BTreeSet::from([crate::name!(
+            "seaside_resort"
+        )])),
         "the host's type id maps to the CIVVIS name"
     );
 }

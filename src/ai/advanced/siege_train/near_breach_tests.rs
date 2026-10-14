@@ -172,7 +172,11 @@ fn the_near_breach_needs_invest_or_reduce_walls_and_a_fit_posted_gun() {
     siege(&mut ai, cid, SiegeStage::Invest, &[(gun, post)]);
     g.units.get_mut(&gun).unwrap().hp = GUN_HP - 1;
     let city = CityView::of(&g, cid).unwrap();
-    assert_eq!(ai.near_breach(&g, 0, &city), None, "a wounded gun heals first");
+    assert_eq!(
+        ai.near_breach(&g, 0, &city),
+        None,
+        "a wounded gun heals first"
+    );
     g.units.get_mut(&gun).unwrap().hp = GUN_HP;
     g.cities.get_mut(&cid).unwrap().wall_hp = 0;
     let city = CityView::of(&g, cid).unwrap();

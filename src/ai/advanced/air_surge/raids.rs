@@ -94,7 +94,9 @@ impl AdvancedAi {
             (strategic.strategy == GrandStrategy::Conquest
                 && city.owner != pid
                 && g.is_at_war(pid, city.owner)
-                && g.players.get(city.owner).is_some_and(|owner| !owner.is_minor))
+                && g.players
+                    .get(city.owner)
+                    .is_some_and(|owner| !owner.is_minor))
             .then_some(city.pos)
         };
         let Some(objective) = surge_objective.or_else(campaign_objective) else {
@@ -222,7 +224,10 @@ impl AdvancedAi {
             let mut board = g.speculative_clone();
             let mut actions = Vec::new();
             if tile != origin {
-                let step = Action::MoveTo { unit: uid, to: tile };
+                let step = Action::MoveTo {
+                    unit: uid,
+                    to: tile,
+                };
                 if board.apply(pid, &step).is_err()
                     || board.units.get(&uid).is_none_or(|unit| unit.pos != tile)
                     || board.units[&uid].moves_left <= 0.0

@@ -55,8 +55,14 @@ fn melee_joins_the_assault_on_an_unwalled_city_its_blows_can_take() {
     // pressure); the gene must do at least as well and make progress on a
     // full-health one. The Stage test below is the case the baseline misses.
     let (off, on) = (outcome[0], outcome[1]);
-    assert!(on.0 == 0 || on.1 < 200, "the assault makes progress: {on:?}");
-    assert!(on.0 == 0 || (off.0 != 0 && on.1 <= off.1), "never worse than without: off {off:?}, on {on:?}");
+    assert!(
+        on.0 == 0 || on.1 < 200,
+        "the assault makes progress: {on:?}"
+    );
+    assert!(
+        on.0 == 0 || (off.0 != 0 && on.1 <= off.1),
+        "never worse than without: off {off:?}, on {on:?}"
+    );
 }
 
 /// A lone unit whose blow cannot take the city in two turns waits, and a
@@ -76,7 +82,10 @@ fn a_volley_short_of_the_city_or_a_wounded_unit_holds() {
     ai.enable_breach_assault();
     let plan = plan_against(&g, cid);
     play(&mut ai, &mut g, 0, &plan);
-    assert_eq!(g.cities[&cid].hp, 200, "one Warrior's blow is far short of 200");
+    assert_eq!(
+        g.cities[&cid].hp, 200,
+        "one Warrior's blow is far short of 200"
+    );
     assert_eq!(g.units[&lone].hp, 100);
 
     // Four Swordsmen against a standing wall and no ram: the wall still rules.
@@ -90,7 +99,10 @@ fn a_volley_short_of_the_city_or_a_wounded_unit_holds() {
     ai.enable_breach_assault();
     let plan = plan_against(&g, cid);
     play(&mut ai, &mut g, 0, &plan);
-    assert_eq!(g.cities[&cid].wall_hp, 100, "no melee blow on an unbreached wall");
+    assert_eq!(
+        g.cities[&cid].wall_hp, 100,
+        "no melee blow on an unbreached wall"
+    );
 }
 
 /// Live King civvis-20261004T114858Z (game 55), Nicomedia at turn 200:
@@ -118,7 +130,11 @@ fn a_stage_siege_finishes_a_dying_breached_city_beside_it() {
         let city = &g.cities[&cid];
         outcome.push((city.owner, city.hp));
     }
-    assert_eq!(outcome[0], (1, 41), "without the gene Stage leaves the city alone");
+    assert_eq!(
+        outcome[0],
+        (1, 41),
+        "without the gene Stage leaves the city alone"
+    );
     assert!(
         outcome[1].0 == 0 || outcome[1].1 < 41,
         "with the gene the blow lands: {:?}",

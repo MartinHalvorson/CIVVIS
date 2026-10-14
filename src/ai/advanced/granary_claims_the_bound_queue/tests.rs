@@ -95,7 +95,11 @@ fn a_bound_city_claims_its_granary_over_a_routine_unit() {
     let mut on = busy.clone();
     let plan = ai.assess(&on, 0);
     ai.claim_bound_granaries(&mut on, 0, &plan);
-    assert_eq!(head(&on, capital), Some(granary.clone()), "the Granary goes first");
+    assert_eq!(
+        head(&on, capital),
+        Some(granary.clone()),
+        "the Granary goes first"
+    );
 
     // An idle queue with a Settler due is left to the Settler step; with a
     // Settler already walking, the idle queue takes the Granary.
@@ -104,15 +108,26 @@ fn a_bound_city_claims_its_granary_over_a_routine_unit() {
     let settler_due = ai.base.settler_due(&due, 0, capital, 1, 0);
     ai.claim_bound_granaries(&mut due, 0, &plan);
     if settler_due {
-        assert_eq!(head(&due, capital), None, "a due Settler keeps the idle queue");
+        assert_eq!(
+            head(&due, capital),
+            None,
+            "a due Settler keeps the idle queue"
+        );
     }
     let mut idle = game.clone();
     let home = idle.cities[&capital].pos;
     idle.spawn_unit("settler", 0, home);
-    assert!(!ai.base.settler_due(&idle, 0, capital, 1, 1), "fixture: a Settler walking");
+    assert!(
+        !ai.base.settler_due(&idle, 0, capital, 1, 1),
+        "fixture: a Settler walking"
+    );
     let plan = ai.assess(&idle, 0);
     ai.claim_bound_granaries(&mut idle, 0, &plan);
-    assert_eq!(head(&idle, capital), Some(granary.clone()), "an idle queue takes it");
+    assert_eq!(
+        head(&idle, capital),
+        Some(granary.clone()),
+        "an idle queue takes it"
+    );
 
     let mut built = busy.clone();
     built
@@ -123,7 +138,11 @@ fn a_bound_city_claims_its_granary_over_a_routine_unit() {
         .push(crate::name!("granary"));
     let plan = ai.assess(&built, 0);
     ai.claim_bound_granaries(&mut built, 0, &plan);
-    assert_eq!(head(&built, capital), Some(unit("warrior")), "a built Granary claims nothing");
+    assert_eq!(
+        head(&built, capital),
+        Some(unit("warrior")),
+        "a built Granary claims nothing"
+    );
 }
 
 /// A Settler (which relieves the housing), the faith defence's Shrine, a
@@ -139,7 +158,11 @@ fn a_settler_an_attacked_city_and_an_unbound_city_keep_their_queues() {
     queue(&mut settling, capital, unit("settler"));
     let plan = ai.assess(&settling, 0);
     ai.claim_bound_granaries(&mut settling, 0, &plan);
-    assert_eq!(head(&settling, capital), Some(unit("settler")), "the Settler stays");
+    assert_eq!(
+        head(&settling, capital),
+        Some(unit("settler")),
+        "the Settler stays"
+    );
 
     let mut shrine = game.clone();
     let faith = Item::Building {
@@ -148,7 +171,11 @@ fn a_settler_an_attacked_city_and_an_unbound_city_keep_their_queues() {
     queue(&mut shrine, capital, faith.clone());
     let plan = ai.assess(&shrine, 0);
     ai.claim_bound_granaries(&mut shrine, 0, &plan);
-    assert_eq!(head(&shrine, capital), Some(faith), "the faith defence's Shrine stays");
+    assert_eq!(
+        head(&shrine, capital),
+        Some(faith),
+        "the faith defence's Shrine stays"
+    );
 
     let mut attacked = game.clone();
     queue(&mut attacked, capital, unit("warrior"));
@@ -156,7 +183,11 @@ fn a_settler_an_attacked_city_and_an_unbound_city_keep_their_queues() {
     attacked.cities.get_mut(&capital).unwrap().last_attacked = turn;
     let plan = ai.assess(&attacked, 0);
     ai.claim_bound_granaries(&mut attacked, 0, &plan);
-    assert_eq!(head(&attacked, capital), Some(unit("warrior")), "an attacked city keeps its unit");
+    assert_eq!(
+        head(&attacked, capital),
+        Some(unit("warrior")),
+        "an attacked city keeps its unit"
+    );
 
     let mut roomy = game.clone();
     queue(&mut roomy, capital, unit("warrior"));
@@ -165,7 +196,11 @@ fn a_settler_an_attacked_city_and_an_unbound_city_keep_their_queues() {
         roomy.cities.get_mut(&capital).unwrap().pop = (housing.floor() as i32 - 2).max(1);
         let plan = ai.assess(&roomy, 0);
         ai.claim_bound_granaries(&mut roomy, 0, &plan);
-        assert_eq!(head(&roomy, capital), Some(unit("warrior")), "room to grow: no claim");
+        assert_eq!(
+            head(&roomy, capital),
+            Some(unit("warrior")),
+            "room to grow: no claim"
+        );
     }
 }
 
@@ -183,7 +218,11 @@ fn at_war_a_unit_keeps_its_queue_but_a_monument_waits() {
     queue(&mut unit_head, capital, unit("warrior"));
     let plan = ai.assess(&unit_head, 0);
     ai.claim_bound_granaries(&mut unit_head, 0, &plan);
-    assert_eq!(head(&unit_head, capital), Some(unit("warrior")), "a war unit stays");
+    assert_eq!(
+        head(&unit_head, capital),
+        Some(unit("warrior")),
+        "a war unit stays"
+    );
 
     let mut monument = game.clone();
     let item = Item::Building {
@@ -193,7 +232,11 @@ fn at_war_a_unit_keeps_its_queue_but_a_monument_waits() {
     let plan = ai.assess(&monument, 0);
     if plan.threatened_city != Some(capital) {
         ai.claim_bound_granaries(&mut monument, 0, &plan);
-        assert_eq!(head(&monument, capital), Some(granary), "the Monument waits");
+        assert_eq!(
+            head(&monument, capital),
+            Some(granary),
+            "the Monument waits"
+        );
     }
 }
 
@@ -217,13 +260,20 @@ fn the_deterrent_leaves_a_claimed_granary_alone() {
     let mut off = game.clone();
     let plan = deterrence_only.assess(&off, 0);
     deterrence_only.claim_deterrence_unit(&mut off, 0, &plan);
-    assert_ne!(head(&off, capital), Some(granary.clone()), "off: the deterrent displaces it");
+    assert_ne!(
+        head(&off, capital),
+        Some(granary.clone()),
+        "off: the deterrent displaces it"
+    );
 
     let mut both = armed();
     both.enable_near_rival_deterrence();
     let mut on = game.clone();
     let plan = both.assess(&on, 0);
-    assert!(both.bound_granary_holds(&on, 0, capital, &plan, &granary), "the claim holds");
+    assert!(
+        both.bound_granary_holds(&on, 0, capital, &plan, &granary),
+        "the claim holds"
+    );
     both.claim_deterrence_unit(&mut on, 0, &plan);
     assert_eq!(head(&on, capital), Some(granary), "on: the Granary stays");
 }

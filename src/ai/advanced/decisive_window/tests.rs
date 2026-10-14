@@ -99,15 +99,25 @@ fn learn_civics(g: &mut Game, pid: usize, civics: &[&str]) {
 #[test]
 fn gran_colombia_researches_toward_the_llanero_and_a_bombard() {
     let (mut g, ai, plan) = board("Gran Colombia");
-    learn(&mut g, 1, &["siege_tactics", "gunpowder", "military_tactics"]);
-    learn(&mut g, 0, &["printing", "castles", "gunpowder", "animal_husbandry"]);
+    learn(
+        &mut g,
+        1,
+        &["siege_tactics", "gunpowder", "military_tactics"],
+    );
+    learn(
+        &mut g,
+        0,
+        &["printing", "castles", "gunpowder", "animal_husbandry"],
+    );
     g.players[0]
         .strategic_resources
         .insert(name!("horses"), 40.0);
     g.players[0]
         .strategic_resources
         .insert(name!("niter"), 40.0);
-    let window = ai.decisive_window_within(&g, 0, &plan, f64::INFINITY).expect("a window");
+    let window = ai
+        .decisive_window_within(&g, 0, &plan, f64::INFINITY)
+        .expect("a window");
     assert_eq!(window.target, 1);
     assert_eq!(window.assault, name!("llanero"));
     assert!(window.unique);
@@ -121,7 +131,9 @@ fn gran_colombia_researches_toward_the_llanero_and_a_bombard() {
     );
     let mut g = g;
     quote_cheap(&mut g, 0);
-    assert!(ai.decisive_window(&g, 0, &plan).is_some_and(|w| w.tech_goal.is_some()));
+    assert!(ai
+        .decisive_window(&g, 0, &plan)
+        .is_some_and(|w| w.tech_goal.is_some()));
     g.players[0].research = None;
     ai.advanced_research(&mut g, 0, &plan);
     let picked = g.players[0].research.clone().expect("a research pick");
@@ -140,11 +152,21 @@ fn gran_colombia_researches_toward_the_llanero_and_a_bombard() {
 #[test]
 fn the_window_yields_an_off_path_goal_to_the_bombers_under_the_gene() {
     let (mut g, mut ai, plan) = board("Gran Colombia");
-    learn(&mut g, 1, &["siege_tactics", "gunpowder", "military_tactics"]);
+    learn(
+        &mut g,
+        1,
+        &["siege_tactics", "gunpowder", "military_tactics"],
+    );
     learn(
         &mut g,
         0,
-        &["printing", "castles", "gunpowder", "animal_husbandry", "education"],
+        &[
+            "printing",
+            "castles",
+            "gunpowder",
+            "animal_husbandry",
+            "education",
+        ],
     );
     g.players[0]
         .strategic_resources
@@ -162,7 +184,10 @@ fn the_window_yields_an_off_path_goal_to_the_bombers_under_the_gene() {
     );
     // Gene off: the window's goal holds; Ballistics is still the surge's gate.
     assert!(!ai.window_yields_to_the_bombers(&g, 0, goal));
-    assert_eq!(ai.decisive_window_research_goal(&g, 0, Some(&window)), Some(goal));
+    assert_eq!(
+        ai.decisive_window_research_goal(&g, 0, Some(&window)),
+        Some(goal)
+    );
     assert_eq!(ai.air_surge_research_goal(&g, 0), None);
 
     ai.enable_siege_tier_yields_to_the_bombers();
@@ -186,7 +211,11 @@ fn the_window_yields_an_off_path_goal_to_the_bombers_under_the_gene() {
 #[test]
 fn an_unlocked_package_is_an_open_window_and_yields_research() {
     let (mut g, ai, plan) = board("Gran Colombia");
-    learn(&mut g, 1, &["siege_tactics", "gunpowder", "military_tactics"]);
+    learn(
+        &mut g,
+        1,
+        &["siege_tactics", "gunpowder", "military_tactics"],
+    );
     learn(
         &mut g,
         0,
@@ -198,7 +227,9 @@ fn an_unlocked_package_is_an_open_window_and_yields_research() {
     g.players[0]
         .strategic_resources
         .insert(name!("niter"), 40.0);
-    let window = ai.decisive_window_within(&g, 0, &plan, f64::INFINITY).expect("a window");
+    let window = ai
+        .decisive_window_within(&g, 0, &plan, f64::INFINITY)
+        .expect("a window");
     assert!(window.open(), "{window:?}");
     assert_eq!(window.turns, 0.0);
     assert_eq!(ai.decisive_window_tech_goal(&g, 0, &plan), None);
@@ -212,13 +243,17 @@ fn an_unlocked_package_is_an_open_window_and_yields_research() {
 #[test]
 fn rams_do_not_count_against_medieval_walls() {
     let (mut g, ai, plan) = board("Rome");
-    learn(&mut g, 1, &["construction", "masonry", "bronze_working", "archery"]);
+    learn(
+        &mut g,
+        1,
+        &["construction", "masonry", "bronze_working", "archery"],
+    );
     learn(&mut g, 0, &["masonry", "iron_working", "bronze_working"]);
-    g.players[0]
-        .strategic_resources
-        .insert(name!("iron"), 40.0);
+    g.players[0].strategic_resources.insert(name!("iron"), 40.0);
     assert_eq!(ai.decisive_wall_tier(&g, 1), (1, 2));
-    let window = ai.decisive_window_within(&g, 0, &plan, f64::INFINITY).expect("a window");
+    let window = ai
+        .decisive_window_within(&g, 0, &plan, f64::INFINITY)
+        .expect("a window");
     assert_eq!(window.wall_tier, 2);
     assert_ne!(window.breaker, Some(name!("battering_ram")), "{window:?}");
     assert!(window.breaker.is_some());
@@ -238,10 +273,10 @@ fn japan_beelines_feudalism_for_the_samurai() {
     learn(&mut g, 1, &["iron_working"]);
     learn(&mut g, 0, &["iron_working", "bronze_working"]);
     learn_civics(&mut g, 0, &["military_training"]);
-    g.players[0]
-        .strategic_resources
-        .insert(name!("iron"), 40.0);
-    let window = ai.decisive_window_within(&g, 0, &plan, f64::INFINITY).expect("a window");
+    g.players[0].strategic_resources.insert(name!("iron"), 40.0);
+    let window = ai
+        .decisive_window_within(&g, 0, &plan, f64::INFINITY)
+        .expect("a window");
     if window.assault == name!("samurai") {
         assert_eq!(window.civic_goal, Some(name!("feudalism")));
         assert_eq!(
@@ -267,7 +302,9 @@ fn the_window_waits_for_the_opening_and_a_second_city() {
     g.turn = g.standard_duration(DECISIVE_WINDOW_OPENS) - 1;
     assert_eq!(ai.decisive_window(&g, 0, &plan), None);
     g.turn = 110;
-    assert!(ai.decisive_window_within(&g, 0, &plan, f64::INFINITY).is_some());
+    assert!(ai
+        .decisive_window_within(&g, 0, &plan, f64::INFINITY)
+        .is_some());
     let second = g.player_city_ids(0)[1];
     g.cities.remove(&second);
     assert_eq!(ai.decisive_window_within(&g, 0, &plan, f64::INFINITY), None);
@@ -333,10 +370,22 @@ fn the_build_picker_prefers_the_llanero_until_half_the_army() {
 #[test]
 fn nationalism_is_the_civic_goal_inside_the_horizon() {
     let (mut g, ai, plan) = board("Gran Colombia");
-    learn(&mut g, 1, &["siege_tactics", "gunpowder", "military_tactics"]);
-    learn(&mut g, 0, &["printing", "castles", "gunpowder", "animal_husbandry"]);
-    g.players[0].strategic_resources.insert(name!("horses"), 40.0);
-    g.players[0].strategic_resources.insert(name!("niter"), 40.0);
+    learn(
+        &mut g,
+        1,
+        &["siege_tactics", "gunpowder", "military_tactics"],
+    );
+    learn(
+        &mut g,
+        0,
+        &["printing", "castles", "gunpowder", "animal_husbandry"],
+    );
+    g.players[0]
+        .strategic_resources
+        .insert(name!("horses"), 40.0);
+    g.players[0]
+        .strategic_resources
+        .insert(name!("niter"), 40.0);
     assert_eq!(
         ai.decisive_window_civic_goal_within(&g, 0, &plan, f64::INFINITY),
         Some(name!("nationalism"))
@@ -387,11 +436,23 @@ fn a_pending_window_yields_astrology_to_the_faith_veto() {
     g.record_contact(0, 1);
     g.players[0].civ = "Gran Colombia".to_string();
     g.players[1].civ = "Egypt".to_string();
-    learn(&mut g, 1, &["siege_tactics", "gunpowder", "military_tactics"]);
-    learn(&mut g, 0, &["printing", "castles", "gunpowder", "animal_husbandry"]);
+    learn(
+        &mut g,
+        1,
+        &["siege_tactics", "gunpowder", "military_tactics"],
+    );
+    learn(
+        &mut g,
+        0,
+        &["printing", "castles", "gunpowder", "animal_husbandry"],
+    );
     g.players[0].techs.remove(&name!("astrology"));
-    g.players[0].strategic_resources.insert(name!("horses"), 40.0);
-    g.players[0].strategic_resources.insert(name!("niter"), 40.0);
+    g.players[0]
+        .strategic_resources
+        .insert(name!("horses"), 40.0);
+    g.players[0]
+        .strategic_resources
+        .insert(name!("niter"), 40.0);
     quote_cheap(&mut g, 0);
     let faith = "Rival Faith".to_string();
     g.players[1].religion = Some(faith.clone());
@@ -476,7 +537,16 @@ fn overwhelming_power_reduces_the_window_to_a_breaker() {
     let (mut g, ai, plan) = board("Gran Colombia");
     // Medieval walls are one step away for the target; its Pikemen and
     // Men-at-Arms outclass our Swordsmen.
-    learn(&mut g, 1, &["construction", "masonry", "military_tactics", "apprenticeship"]);
+    learn(
+        &mut g,
+        1,
+        &[
+            "construction",
+            "masonry",
+            "military_tactics",
+            "apprenticeship",
+        ],
+    );
     learn(&mut g, 0, &["iron_working", "bronze_working", "masonry"]);
     g.players[0].strategic_resources.insert(name!("iron"), 40.0);
     let even = ai
@@ -495,7 +565,9 @@ fn overwhelming_power_reduces_the_window_to_a_breaker() {
     assert!(crushing.power_ratio >= OVERWHELMING_POWER, "{crushing:?}");
     let assault = &g.rules.units[crushing.assault];
     assert!(
-        assault.tech.is_none_or(|tech| g.players[0].techs.contains(&tech)),
+        assault
+            .tech
+            .is_none_or(|tech| g.players[0].techs.contains(&tech)),
         "the assault is one we already field: {crushing:?}"
     );
     let breaker = crushing.breaker.expect("walls need a breaker");
@@ -519,9 +591,15 @@ fn an_unlocked_bomber_wing_opens_urban_defenses() {
     learn(&mut g, 1, &["steel"]);
     let target = plan.target_city.unwrap();
     std::sync::Arc::make_mut(&mut g.observed_city_strength).insert(target, 115.0);
-    learn(&mut g, 0, &["advanced_flight", "military_science", "animal_husbandry"]);
+    learn(
+        &mut g,
+        0,
+        &["advanced_flight", "military_science", "animal_husbandry"],
+    );
     for resource in ["horses", "aluminum", "niter", "oil"] {
-        g.players[0].strategic_resources.insert(Name::new(resource), 60.0);
+        g.players[0]
+            .strategic_resources
+            .insert(Name::new(resource), 60.0);
     }
     let home = g.cities[&g.player_city_ids(0)[0]].pos;
     for _ in 0..12 {
@@ -546,11 +624,17 @@ fn readiness_builds_the_wing_behind_urban_defenses() {
     let (mut g, mut ai, plan) = board("Gran Colombia");
     ai.plan = Some(plan.clone());
     learn(&mut g, 1, &["castles"]);
-    assert_eq!(ai.decisive_air_wing_bombers(&g, 0), AIR_SURGE_LAUNCH_BOMBERS);
+    assert_eq!(
+        ai.decisive_air_wing_bombers(&g, 0),
+        AIR_SURGE_LAUNCH_BOMBERS
+    );
     learn(&mut g, 1, &["steel"]);
     assert_eq!(ai.decisive_air_wing_bombers(&g, 0), AIR_SURGE_BOMBERS);
     ai.disable_decisive_window();
-    assert_eq!(ai.decisive_air_wing_bombers(&g, 0), AIR_SURGE_LAUNCH_BOMBERS);
+    assert_eq!(
+        ai.decisive_air_wing_bombers(&g, 0),
+        AIR_SURGE_LAUNCH_BOMBERS
+    );
 }
 
 /// `breaker-research-first`: an unmined Niter deposit is no Bombard. With
@@ -560,13 +644,25 @@ fn readiness_builds_the_wing_behind_urban_defenses() {
 #[test]
 fn breaker_research_first_needs_the_resource_in_hand() {
     let (mut g, mut ai, plan) = board("Gran Colombia");
-    learn(&mut g, 1, &["siege_tactics", "gunpowder", "military_tactics"]);
+    learn(
+        &mut g,
+        1,
+        &["siege_tactics", "gunpowder", "military_tactics"],
+    );
     learn(
         &mut g,
         0,
-        &["printing", "castles", "gunpowder", "animal_husbandry", "military_engineering"],
+        &[
+            "printing",
+            "castles",
+            "gunpowder",
+            "animal_husbandry",
+            "military_engineering",
+        ],
     );
-    g.players[0].strategic_resources.insert(name!("horses"), 40.0);
+    g.players[0]
+        .strategic_resources
+        .insert(name!("horses"), 40.0);
     let capital = g.player_city_ids(0)[0];
     let centre = g.cities[&capital].pos;
     let deposit = *g.cities[&capital]
@@ -588,7 +684,9 @@ fn breaker_research_first_needs_the_resource_in_hand() {
         .expect("a window");
     assert_ne!(on.breaker, Some(name!("bombard")), "{on:?}");
 
-    g.players[0].strategic_resources.insert(name!("niter"), 20.0);
+    g.players[0]
+        .strategic_resources
+        .insert(name!("niter"), 20.0);
     let supplied = ai
         .decisive_window_within(&g, 0, &plan, f64::INFINITY)
         .expect("a window");
@@ -606,9 +704,15 @@ fn modernization_yields_while_a_siege_waits_for_its_breaker() {
     let city = g.cities[&plan.target_city.unwrap()].pos;
     let musket = name!("gunpowder");
     let bombard = name!("metal_casting");
-    assert!(!ai.modernization_yields_to_the_breaker(&g, 0, musket), "gene off");
+    assert!(
+        !ai.modernization_yields_to_the_breaker(&g, 0, musket),
+        "gene off"
+    );
     ai.enable_breaker_research_first();
-    assert!(!ai.modernization_yields_to_the_breaker(&g, 0, musket), "no siege held");
+    assert!(
+        !ai.modernization_yields_to_the_breaker(&g, 0, musket),
+        "no siege held"
+    );
     ai.siege_breaker_waits.insert(
         city,
         super::super::siege_train::BreakerWait {
@@ -619,7 +723,13 @@ fn modernization_yields_while_a_siege_waits_for_its_breaker() {
         },
     );
     assert!(ai.modernization_yields_to_the_breaker(&g, 0, musket));
-    assert!(!ai.modernization_yields_to_the_breaker(&g, 0, bombard), "a breaker tech");
+    assert!(
+        !ai.modernization_yields_to_the_breaker(&g, 0, bombard),
+        "a breaker tech"
+    );
     ai.siege_breaker_waits.get_mut(&city).unwrap().last = g.turn - 5;
-    assert!(!ai.modernization_yields_to_the_breaker(&g, 0, musket), "a stale hold");
+    assert!(
+        !ai.modernization_yields_to_the_breaker(&g, 0, musket),
+        "a stale hold"
+    );
 }

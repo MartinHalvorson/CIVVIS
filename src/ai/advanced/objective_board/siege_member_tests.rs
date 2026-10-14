@@ -91,7 +91,10 @@ fn the_opening_strike_force_keeps_its_members() {
             losses: 0,
             taken: 0,
         });
-        assert_eq!(members.iter().all(|uid| ai.conquest_force_member(*uid)), keeps);
+        assert_eq!(
+            members.iter().all(|uid| ai.conquest_force_member(*uid)),
+            keeps
+        );
         // A raider five tiles off, in a scout's sight.
         g.spawn_test_unit("horseman", 2, at(8, 16));
         g.spawn_test_unit("scout", 0, at(9, 15));
@@ -104,7 +107,10 @@ fn the_opening_strike_force_keeps_its_members() {
         if keeps {
             assert_eq!(taken, 0, "the opening keeps its strike force");
         } else {
-            assert!(taken > 0, "control: the Destroy row takes the opening's bodies");
+            assert!(
+                taken > 0,
+                "control: the Destroy row takes the opening's bodies"
+            );
         }
     }
 }

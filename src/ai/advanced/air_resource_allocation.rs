@@ -127,8 +127,7 @@ impl AdvancedAi {
             demand,
             cost,
             self.bombers_fly_on_a_small_stock,
-        )
-            >= air_surge::AIR_SURGE_LAUNCH_BOMBERS
+        ) >= air_surge::AIR_SURGE_LAUNCH_BOMBERS
     }
 
     pub(super) fn air_resource_upgrade_preserves_wing(

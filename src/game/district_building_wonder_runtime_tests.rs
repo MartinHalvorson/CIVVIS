@@ -1043,8 +1043,16 @@ fn a_pillaged_prerequisite_is_repaired_before_the_building_that_needs_it() {
         let menu = game.producible_items(0, city);
         for (index, building) in chain.iter().enumerate().skip(step) {
             let open = index == step;
-            assert_eq!(game.can_produce(0, city, &repair(building)), open, "{building} at step {step}");
-            assert_eq!(menu.contains(&repair(building)), open, "{building} at step {step}");
+            assert_eq!(
+                game.can_produce(0, city, &repair(building)),
+                open,
+                "{building} at step {step}"
+            );
+            assert_eq!(
+                menu.contains(&repair(building)),
+                open,
+                "{building} at step {step}"
+            );
         }
         assert!(game.complete_item(0, city, &repair(chain[step])));
     }

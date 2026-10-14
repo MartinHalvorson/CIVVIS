@@ -421,10 +421,14 @@ impl AdvancedAi {
             return None;
         }
         let mut costly = g.speculative_clone();
-        if let Some(volley) = self.air_assault_approach_volley(&mut costly, pid, plan, cid, target, true)
+        if let Some(volley) =
+            self.air_assault_approach_volley(&mut costly, pid, plan, cid, target, true)
         {
             let takers = self.air_assault_takers(&costly, pid, target);
-            if self.air_assault_best_capture(&costly, pid, cid, &takers).is_some() {
+            if self
+                .air_assault_best_capture(&costly, pid, cid, &takers)
+                .is_some()
+            {
                 for action in &volley.2 {
                     if g.apply(pid, action).is_err() {
                         break;
@@ -492,7 +496,10 @@ impl AdvancedAi {
             let Some((_, pos)) = best else {
                 continue;
             };
-            let action = Action::AirStrike { unit: uid, target: pos };
+            let action = Action::AirStrike {
+                unit: uid,
+                target: pos,
+            };
             if g.apply(pid, &action).is_ok() {
                 sorties.push(uid);
                 struck.insert(pos);
@@ -775,7 +782,10 @@ impl AdvancedAi {
             };
             blow(right)
                 .total_cmp(&blow(left))
-                .then_with(|| g.wdist(g.units[left].pos, target).cmp(&g.wdist(g.units[right].pos, target)))
+                .then_with(|| {
+                    g.wdist(g.units[left].pos, target)
+                        .cmp(&g.wdist(g.units[right].pos, target))
+                })
                 .then_with(|| left.cmp(right))
         });
         takers
@@ -793,7 +803,10 @@ impl AdvancedAi {
         takers
             .iter()
             .take(AIR_ASSAULT_CAPTURE_TRIES)
-            .find_map(|uid| self.air_assault_capture(g, pid, *uid, cid).map(|actions| (*uid, actions)))
+            .find_map(|uid| {
+                self.air_assault_capture(g, pid, *uid, cid)
+                    .map(|actions| (*uid, actions))
+            })
     }
 
     fn air_assault_capture(&self, g: &Game, pid: usize, uid: u32, cid: u32) -> Option<Vec<Action>> {

@@ -339,11 +339,15 @@ fn a_rebuilt_live_board_carries_the_hosts_era_deadline_into_the_window() {
 /// the gene could have bought the point.
 fn g111_scientist(g: &mut Game) -> f64 {
     let cost = g.gp_cost(0, "scientist");
-    g.players[0].gpp.insert("scientist".to_string(), cost - 23.0);
+    g.players[0]
+        .gpp
+        .insert("scientist".to_string(), cost - 23.0);
     g.players[0].era_score = 58;
     g.players[0].normal_age_threshold = 59;
     g.players[0].gold_per_turn = 8.4;
-    let price = g.great_person_patronage_price(0, "scientist", "gold").unwrap();
+    let price = g
+        .great_person_patronage_price(0, "scientist", "gold")
+        .unwrap();
     assert_eq!(price, 545.0);
     price
 }
@@ -376,7 +380,11 @@ fn a_verified_closer_may_spend_the_gold_reserve_under_the_gene() {
     g.players[0].gold = price + 55.0;
     let mut kept = g.clone();
     candidate().advanced_great_people(&mut kept, 0, GrandStrategy::Science);
-    assert_eq!(bought(&kept, "scientist"), 0, "age-closer-2 alone keeps the reserve");
+    assert_eq!(
+        bought(&kept, "scientist"),
+        0,
+        "age-closer-2 alone keeps the reserve"
+    );
     spender().advanced_great_people(&mut g, 0, GrandStrategy::Science);
     assert_eq!(bought(&g, "scientist"), 1);
     assert_eq!(g.players[0].era_score, 59);

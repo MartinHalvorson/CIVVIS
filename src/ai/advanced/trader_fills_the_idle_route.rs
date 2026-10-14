@@ -225,7 +225,15 @@ impl AdvancedAi {
         let head = g.cities[&cid].queue.first().cloned();
         let name = g.cities[&cid].name.clone();
         let slots = Self::empty_trade_slots(g, pid, None);
-        if g.apply(pid, &Action::Produce { city: cid, item: trader }).is_ok() {
+        if g.apply(
+            pid,
+            &Action::Produce {
+                city: cid,
+                item: trader,
+            },
+        )
+        .is_ok()
+        {
             think!(self.journal(), Economy, Decision,
                    "{name} trains a Trader for an empty trade route";
                    "trader-fills-the-idle-route: {slots} slot(s) of {} empty, {turns:.1} turns, \

@@ -80,11 +80,12 @@ fn a_step_into_range(g: &Game, cid: u32) -> (Pos, Pos) {
         if !g.line_of_sight_from(post, city) {
             continue;
         }
-        if let Some(from) = g
-            .nbrs(post)
-            .into_iter()
-            .find(|from| g.wdist(*from, city) == 3 && g.map.get(*from).is_some_and(|t| g.rules.is_passable(t) && !g.rules.is_water(t)))
-        {
+        if let Some(from) = g.nbrs(post).into_iter().find(|from| {
+            g.wdist(*from, city) == 3
+                && g.map
+                    .get(*from)
+                    .is_some_and(|t| g.rules.is_passable(t) && !g.rules.is_water(t))
+        }) {
             return (from, post);
         }
     }
@@ -102,7 +103,14 @@ fn the_live_seat_fires_a_siege_gun_after_it_moves_and_a_native_board_does_not() 
         }
         let (from, post) = a_step_into_range(&g, cid);
         let gun = g.spawn_unit("catapult", 0, from);
-        g.apply(0, &Action::Move { unit: gun, to: post }).unwrap();
+        g.apply(
+            0,
+            &Action::Move {
+                unit: gun,
+                to: post,
+            },
+        )
+        .unwrap();
         assert!(g.units[&gun].moved && g.units[&gun].moves_left > 0.0);
         let walls = g.cities[&cid].wall_hp;
         let target = g.cities[&cid].pos;
@@ -156,11 +164,18 @@ fn melee_do_not_hold_the_ring_of_walls_nothing_can_open() {
 
     let city = CityView::of(&g, cid).unwrap();
     let reading = ai.breach_reading(&g, 0, &city, &units);
-    assert_eq!((reading.guns, reading.wounded_guns, reading.support), (0, 1, 0));
+    assert_eq!(
+        (reading.guns, reading.wounded_guns, reading.support),
+        (0, 1, 0)
+    );
     assert!(!reading.at_hand(&city));
 
     ai.assess_siege(&g, 0, cid, &plan, &group);
-    assert_eq!(ai.sieges[&cid].stage, SiegeStage::Reduce, "one short turn holds");
+    assert_eq!(
+        ai.sieges[&cid].stage,
+        SiegeStage::Reduce,
+        "one short turn holds"
+    );
     // The hold is recorded, and the healing gun is a breaker on its way.
     assert_eq!(
         ai.siege_breaker_waits.get(&city.pos),
@@ -178,7 +193,11 @@ fn melee_do_not_hold_the_ring_of_walls_nothing_can_open() {
     assert_eq!(ai.sieges[&cid].stage, SiegeStage::Stage);
     g.turn = 32;
     ai.assess_siege(&g, 0, cid, &plan, &group);
-    assert_eq!(ai.sieges[&cid].stage, SiegeStage::Stage, "no breaker, no Invest");
+    assert_eq!(
+        ai.sieges[&cid].stage,
+        SiegeStage::Stage,
+        "no breaker, no Invest"
+    );
 
     // The budget counted the healing gun as firing every turn.
     off.assess_siege(&g, 0, cid, &plan, &group);
@@ -190,7 +209,8 @@ fn melee_do_not_hold_the_ring_of_walls_nothing_can_open() {
     let melee = units[0];
     let view = CityView::of(&g, cid).unwrap();
     for _ in 0..4 {
-        if g.units[&melee].moves_left <= 0.0 || !ai.siege_stage_step(&mut g, 0, melee, &view, &plan) {
+        if g.units[&melee].moves_left <= 0.0 || !ai.siege_stage_step(&mut g, 0, melee, &view, &plan)
+        {
             break;
         }
     }
@@ -269,12 +289,21 @@ fn a_siege_tower_joins_a_melee_member_of_the_train() {
     let start = g
         .wring(stand, 2)
         .into_iter()
-        .find(|pos| g.wdist(*pos, city) >= 4 && g.map.get(*pos).is_some_and(|t| g.rules.is_passable(t)))
+        .find(|pos| {
+            g.wdist(*pos, city) >= 4 && g.map.get(*pos).is_some_and(|t| g.rules.is_passable(t))
+        })
         .unwrap();
     let tower = g.spawn_unit("siege_tower", 0, start);
     // A stray warrior carries it now: not a member of the train.
     let stray = g.spawn_unit("warrior", 0, start);
-    g.apply(0, &Action::LinkUnits { unit: stray, with: tower }).unwrap();
+    g.apply(
+        0,
+        &Action::LinkUnits {
+            unit: stray,
+            with: tower,
+        },
+    )
+    .unwrap();
     let group = group_on(&g, cid, &[melee]);
     let plan = plan_against(&g, cid);
     let mut ai = AdvancedAi::new();
@@ -364,7 +393,10 @@ fn a_breaker_is_coming_only_while_it_comes_nearer_or_is_nearly_built() {
     };
     g.turn = 30 + stall + 1;
     ai.siege_breaker_waits.insert(pos, wait(8, 30 + stall));
-    assert!(ai.waiting_for_a_breaker(&g, 0, cid), "it came nearer lately");
+    assert!(
+        ai.waiting_for_a_breaker(&g, 0, cid),
+        "it came nearer lately"
+    );
     ai.siege_breaker_waits.insert(pos, wait(8, 30));
     assert!(!ai.waiting_for_a_breaker(&g, 0, cid), "it stood off");
 
@@ -413,7 +445,10 @@ fn a_dominant_train_gives_its_shooters_longer_to_breach() {
     let mut lone = ai.clone();
     lone.force_groups.push(small.clone());
     lone.assess_siege(&g, 0, cid, &plan, &small);
-    assert!(lone.siege_breaker_waits.contains_key(&city.pos), "no breaker");
+    assert!(
+        lone.siege_breaker_waits.contains_key(&city.pos),
+        "no breaker"
+    );
 
     let mut units = bows.clone();
     for pos in at_distance(&g, cid, 8).into_iter().take(4) {
@@ -462,13 +497,23 @@ fn only_shooters_with_a_firing_post_and_a_clear_reach_count_toward_the_walls() {
     ai.enable_siege_train();
     ai.enable_siege_needs_a_breaker();
     let every_bow = ai.breach_reading(&g, 0, &city, &bows).shooter_walls;
-    assert!((every_bow - 5.0 * per_shot).abs() < 1e-6, "{every_bow} vs {per_shot}");
+    assert!(
+        (every_bow - 5.0 * per_shot).abs() < 1e-6,
+        "{every_bow} vs {per_shot}"
+    );
 
     ai.enable_siege_counts_posted_shooters();
     let (posted, walls) = posted_shooters(&g, 0, cid, &bows);
-    assert_eq!((posted.len(), walls.len()), (2, 2), "two firing tiles, two posts");
+    assert_eq!(
+        (posted.len(), walls.len()),
+        (2, 2),
+        "two firing tiles, two posts"
+    );
     let counted = ai.breach_reading(&g, 0, &city, &bows).shooter_walls;
-    assert!((counted - 2.0 * per_shot).abs() < 1e-6, "{counted} vs {per_shot}");
+    assert!(
+        (counted - 2.0 * per_shot).abs() < 1e-6,
+        "{counted} vs {per_shot}"
+    );
 
     // A defender within reach of one post draws that bow's shot.
     let posts = siege_posts(&g, 0, &city, &bows, None);
@@ -479,14 +524,18 @@ fn only_shooters_with_a_firing_post_and_a_clear_reach_count_toward_the_walls() {
         .into_iter()
         .filter(|pos| {
             g.wdist(*pos, other) > 2
-                && g.map.get(*pos).is_some_and(|t| g.rules.is_passable(t) && !g.rules.is_water(t))
+                && g.map
+                    .get(*pos)
+                    .is_some_and(|t| g.rules.is_passable(t) && !g.rules.is_water(t))
                 && g.unit_ids_at(*pos).is_empty()
                 && *pos != center
         })
         .min()
         .or_else(|| {
             g.wring(first, 1).into_iter().find(|pos| {
-                g.map.get(*pos).is_some_and(|t| g.rules.is_passable(t) && !g.rules.is_water(t))
+                g.map
+                    .get(*pos)
+                    .is_some_and(|t| g.rules.is_passable(t) && !g.rules.is_water(t))
                     && g.unit_ids_at(*pos).is_empty()
             })
         })
@@ -519,9 +568,15 @@ fn an_investing_siege_needs_the_units_in_its_reach() {
     };
     ai.sieges.insert(cid, siege(SiegeStage::Invest));
     assert!(ai.siege_needs_the_unit(&g, 0, near));
-    assert!(!ai.siege_needs_the_unit(&g, 0, far), "beyond the muster's reach");
+    assert!(
+        !ai.siege_needs_the_unit(&g, 0, far),
+        "beyond the muster's reach"
+    );
     ai.sieges.insert(cid, siege(SiegeStage::Stage));
-    assert!(!ai.siege_needs_the_unit(&g, 0, near), "a holding Stage train");
+    assert!(
+        !ai.siege_needs_the_unit(&g, 0, near),
+        "a holding Stage train"
+    );
     ai.stage_muster_ready.insert(cid, true);
     assert!(ai.siege_needs_the_unit(&g, 0, near), "its muster closed");
     ai.sieges.get_mut(&cid).unwrap().assessed = g.turn.saturating_sub(5);
@@ -603,7 +658,11 @@ fn the_first_strike_counts_what_can_hit_an_unwalled_city_this_turn() {
     g.cities.get_mut(&cid).unwrap().wall_hp = 0;
     assert_eq!(g.city_max_wall_hp(&g.cities[&cid]), 0, "fixture: no walls");
     let ai = AdvancedAi::targeting(super::super::VictoryTarget::Domination);
-    assert_eq!(ai.first_strike_blows(&g, 0, cid), Some(0.0), "nobody in reach");
+    assert_eq!(
+        ai.first_strike_blows(&g, 0, cid),
+        Some(0.0),
+        "nobody in reach"
+    );
     let three = at_distance(&g, cid, 3);
     g.spawn_test_unit("warrior", 0, three[0]);
     assert_eq!(
@@ -634,7 +693,11 @@ fn the_first_strike_counts_what_can_hit_an_unwalled_city_this_turn() {
     let city = g.cities.get_mut(&cid).unwrap();
     city.buildings = vec![crate::name!("walls")];
     Arc::make_mut(&mut g.observed_city_max_wall_hp).remove(&cid);
-    assert_eq!(ai.first_strike_blows(&g, 0, cid), None, "walls: the breach decides");
+    assert_eq!(
+        ai.first_strike_blows(&g, 0, cid),
+        None,
+        "walls: the breach decides"
+    );
 }
 
 /// `declaration-waits-for-the-breach`: one gun on the ring satisfies the
@@ -675,7 +738,10 @@ fn one_gun_is_at_hand_but_short_of_the_breach() {
     }
     let (more, _, guns) = ai.declaration_breach_reading(&g, 0, cid).unwrap();
     assert_eq!(guns, 4, "guns within the muster's reach count");
-    assert!(more < turns, "more guns, a shorter breach: {more:.1} vs {turns:.1}");
+    assert!(
+        more < turns,
+        "more guns, a shorter breach: {more:.1} vs {turns:.1}"
+    );
     g.cities.get_mut(&cid).unwrap().wall_hp = 0;
     assert_eq!(
         ai.declaration_breach_reading(&g, 0, cid),

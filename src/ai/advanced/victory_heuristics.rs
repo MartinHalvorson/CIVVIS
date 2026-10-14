@@ -572,7 +572,9 @@ impl AdvancedAi {
             .filter(|city| {
                 city.is_capital
                     && city.owner != pid
-                    && g.players.get(city.owner).is_some_and(|owner| owner.is_free_city)
+                    && g.players
+                        .get(city.owner)
+                        .is_some_and(|owner| owner.is_free_city)
                     && g.is_at_war(pid, city.owner)
                     && Self::capture_completes_domination(g, pid, city.id)
             })

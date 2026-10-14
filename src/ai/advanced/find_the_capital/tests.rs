@@ -273,7 +273,10 @@ fn under_the_unseen_capital_gene_a_slow_body_takes_the_hunt() {
     let mut v1 = on();
     v1.enable_objective_board();
     v1.board_rebuild_force_groups(&g, 0, &plan);
-    assert!(!assigned(&v1), "find-the-capital alone takes only scouts and fast bodies");
+    assert!(
+        !assigned(&v1),
+        "find-the-capital alone takes only scouts and fast bodies"
+    );
 
     let mut ai = on();
     ai.enable_unseen_capital_is_unseen();

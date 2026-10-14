@@ -73,17 +73,30 @@ fn a_bank_that_covers_the_settler_buys_it() {
     let stock = AdvancedAi::new();
     let mut off = game.clone();
     let plan = stock.assess(&off, 0);
-    assert_eq!(stock.settler_fund(&mut off, 0, &plan), SettlerFund::Off, "off: no fund");
+    assert_eq!(
+        stock.settler_fund(&mut off, 0, &plan),
+        SettlerFund::Off,
+        "off: no fund"
+    );
     assert_eq!(settlers(&off), 0);
-    assert_eq!(off.players[0].gold, game.players[0].gold, "off: the bank is untouched");
+    assert_eq!(
+        off.players[0].gold, game.players[0].gold,
+        "off: the bank is untouched"
+    );
 
     let ai = armed();
     let mut on = game.clone();
     let plan = ai.assess(&on, 0);
-    assert!(plan.desired_cities > 1, "fixture: the plan wants more cities");
+    assert!(
+        plan.desired_cities > 1,
+        "fixture: the plan wants more cities"
+    );
     assert_eq!(ai.settler_fund(&mut on, 0, &plan), SettlerFund::Bought);
     assert_eq!(settlers(&on), 1, "a Settler is bought");
-    assert!(on.players[0].gold < game.players[0].gold, "the bank paid for it");
+    assert!(
+        on.players[0].gold < game.players[0].gold,
+        "the bank paid for it"
+    );
 }
 
 /// Short of the price but within the save horizon, the fund raises the
@@ -104,7 +117,10 @@ fn a_bank_within_reach_saves_and_an_empty_one_does_not() {
     let plan = ai.assess(&near, 0);
     match ai.settler_fund(&mut near, 0, &plan) {
         SettlerFund::Saving { reserve } => {
-            assert!(reserve + 1e-9 >= cost - 1.0, "the reserve is the Settler's price");
+            assert!(
+                reserve + 1e-9 >= cost - 1.0,
+                "the reserve is the Settler's price"
+            );
         }
         other => panic!("expected Saving, got {other:?}"),
     }
@@ -130,34 +146,57 @@ fn war_the_band_turn_the_floor_and_walkers_shut_the_fund() {
     war.at_war.insert((0, 1));
     assert!(war.is_at_war(0, 1), "fixture: at war");
     let plan = ai.assess(&war, 0);
-    assert_eq!(ai.settler_fund(&mut war, 0, &plan), SettlerFund::Off, "at war");
+    assert_eq!(
+        ai.settler_fund(&mut war, 0, &plan),
+        SettlerFund::Off,
+        "at war"
+    );
 
     let mut late = peace.clone();
     late.turn = late.standard_duration(SETTLER_FUND_END_STANDARD);
     let plan = ai.assess(&late, 0);
-    assert_eq!(ai.settler_fund(&mut late, 0, &plan), SettlerFund::Off, "past the band");
+    assert_eq!(
+        ai.settler_fund(&mut late, 0, &plan),
+        SettlerFund::Off,
+        "past the band"
+    );
 
     let mut small = peace.clone();
     small.cities.get_mut(&capital).unwrap().pop = 1;
     let plan = ai.assess(&small, 0);
-    assert_eq!(ai.settler_fund(&mut small, 0, &plan), SettlerFund::Off, "pop floor");
+    assert_eq!(
+        ai.settler_fund(&mut small, 0, &plan),
+        SettlerFund::Off,
+        "pop floor"
+    );
 
     let mut walking = peace.clone();
     let home = walking.cities[&capital].pos;
     walking.spawn_unit("settler", 0, home);
     walking.spawn_unit("settler", 0, home);
     let plan = ai.assess(&walking, 0);
-    assert_eq!(ai.settler_fund(&mut walking, 0, &plan), SettlerFund::Off, "two walking");
+    assert_eq!(
+        ai.settler_fund(&mut walking, 0, &plan),
+        SettlerFund::Off,
+        "two walking"
+    );
 
     let mut open = peace.clone();
     let plan = ai.assess(&open, 0);
-    assert_eq!(ai.settler_fund(&mut open, 0, &plan), SettlerFund::Bought, "at peace it buys");
+    assert_eq!(
+        ai.settler_fund(&mut open, 0, &plan),
+        SettlerFund::Bought,
+        "at peace it buys"
+    );
 }
 
 /// The gene is registered and ships off.
 #[test]
 fn the_gene_is_registered_off_by_default() {
-    assert!(!AdvancedAi::new().gold_buys_the_settler, "an opt-in ships off");
+    assert!(
+        !AdvancedAi::new().gold_buys_the_settler,
+        "an opt-in ships off"
+    );
     let mut ai = AdvancedAi::new();
     ai.enable_gold_buys_the_settler();
     assert!(ai.gold_buys_the_settler);

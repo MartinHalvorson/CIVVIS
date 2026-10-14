@@ -723,10 +723,17 @@ impl AdvancedAi {
     }
 
     /// Whether a city's territory holds a deposit of `metal` we have seen.
-    fn air_surge_city_holds_metal(g: &Game, pid: usize, city: &crate::game::City, metal: Name) -> bool {
+    fn air_surge_city_holds_metal(
+        g: &Game,
+        pid: usize,
+        city: &crate::game::City,
+        metal: Name,
+    ) -> bool {
         city.owned_tiles.iter().any(|pos| {
             g.players[pid].explored.contains(pos)
-                && g.map.get(*pos).is_some_and(|tile| tile.resource == Some(metal))
+                && g.map
+                    .get(*pos)
+                    .is_some_and(|tile| tile.resource == Some(metal))
         })
     }
 
@@ -1068,9 +1075,15 @@ impl AdvancedAi {
                 .collect();
             let mut objectives: Vec<(f64, &crate::game::City)> = objectives
                 .into_iter()
-                .map(|city| (self.air_surge_objective_value_in(g, pid, city, &context), city))
+                .map(|city| {
+                    (
+                        self.air_surge_objective_value_in(g, pid, city, &context),
+                        city,
+                    )
+                })
                 .collect();
-            objectives.sort_by(|left, right| left.0.total_cmp(&right.0).then(left.1.id.cmp(&right.1.id)));
+            objectives
+                .sort_by(|left, right| left.0.total_cmp(&right.0).then(left.1.id.cmp(&right.1.id)));
             for (score, city) in objectives {
                 // The wing has to be able to hit it from home, and the escort
                 // has to be able to walk to it. Either alone is half a surge.
@@ -1158,15 +1171,18 @@ impl AdvancedAi {
         context: &AirSurgeObjectiveContext,
     ) -> f64 {
         let ground = self.campaign_city_value(g, pid, city, GrandStrategy::Conquest);
-        if !self.air_surge_2 || self.active_victory_target(g) != Some(VictoryTarget::Domination)
-        {
+        if !self.air_surge_2 || self.active_victory_target(g) != Some(VictoryTarget::Domination) {
             return ground;
         }
         let walls = self
             .remembered_city(city.id)
             .map_or(city.wall_hp, |sighting| sighting.wall_hp)
             .max(0) as f64;
-        let wall_terms = if walls > 0.0 { 55.0 + walls * 0.56 } else { 0.0 };
+        let wall_terms = if walls > 0.0 {
+            55.0 + walls * 0.56
+        } else {
+            0.0
+        };
         // Only a capital within reach of the empire's core: once the wing is
         // ready this objective becomes the land campaign's target, and a
         // capital twenty tiles out is a march the capture bodies cannot make
@@ -1202,8 +1218,7 @@ impl AdvancedAi {
     /// `air-surge-2`, Domination lane: a replacement objective for a surge
     /// that has not declared yet, with the appointment's clocks carried over.
     fn air_surge_reaim(&self, g: &Game, pid: usize, plan: &AirSurge) -> Option<AirSurge> {
-        if !self.air_surge_2 || self.active_victory_target(g) != Some(VictoryTarget::Domination)
-        {
+        if !self.air_surge_2 || self.active_victory_target(g) != Some(VictoryTarget::Domination) {
             return None;
         }
         let mut next = self.choose_air_surge(g, pid)?;
@@ -1364,11 +1379,9 @@ impl AdvancedAi {
             // The denial war's rival, when the surge is aimed elsewhere and
             // may still turn: before its declaration, or at war with that
             // rival already.
-            let denial_reaim = self
-                .air_surge_denial_rival(g, pid)
-                .is_some_and(|rival| {
-                    rival != plan.target_player && (!fought || g.is_at_war(pid, rival))
-                });
+            let denial_reaim = self.air_surge_denial_rival(g, pid).is_some_and(|rival| {
+                rival != plan.target_player && (!fought || g.is_at_war(pid, rival))
+            });
             if (peace_closed || !fought || denial_reaim)
                 && objective_owner != Some(pid)
                 && (peace_closed
@@ -1385,13 +1398,13 @@ impl AdvancedAi {
                 {
                     if let Some(city) = g.cities.get(&next.objective_city) {
                         think!(self.journal(), Military, Strategy,
-                               "Re-aiming the air surge at {}", city.name;
-                               "{}; research, clocks and the package stay committed",
-                               if peace_closed {
-                                   "peace closed the war it was fighting"
-                               } else {
-                                   "its city left the wing's reach, its owner or the legal targets"
-                               });
+                        "Re-aiming the air surge at {}", city.name;
+                        "{}; research, clocks and the package stay committed",
+                        if peace_closed {
+                            "peace closed the war it was fighting"
+                        } else {
+                            "its city left the wing's reach, its owner or the legal targets"
+                        });
                     }
                     // `choose_air_surge` only names a living major.
                     target_alive = true;
@@ -1767,7 +1780,10 @@ impl AdvancedAi {
         // objective at turn 217; the surge appointed against Sangju at 218
         // overwrote it at 219, the army sat on Sangju to the end, and Korea
         // flew all four launches between turns 220 and 230.
-        if let Some(current) = plan.target_city.filter(|city| *city != surge.objective_city) {
+        if let Some(current) = plan
+            .target_city
+            .filter(|city| *city != surge.objective_city)
+        {
             if let Some(owner) = g.cities.get(&current).map(|city| city.owner) {
                 if owner != pid && self.air_surge_suppression_city(g, pid, owner) == Some(current) {
                     return;
@@ -1802,17 +1818,18 @@ impl AdvancedAi {
     /// lane first, then its launch chain.
     fn air_surge_suppression_city(&self, g: &Game, pid: usize, rival: usize) -> Option<u32> {
         let pressure = self.rival_victory_pressure(g, rival);
-        self.victory_suppression_city(g, pid, rival, pressure).or_else(|| {
-            (pressure.strategy != GrandStrategy::Science)
-                .then(|| {
-                    let launches = super::VictoryFocus {
-                        strategy: GrandStrategy::Science,
-                        progress: Self::science_launch_progress(g, rival),
-                    };
-                    self.victory_suppression_city(g, pid, rival, launches)
-                })
-                .flatten()
-        })
+        self.victory_suppression_city(g, pid, rival, pressure)
+            .or_else(|| {
+                (pressure.strategy != GrandStrategy::Science)
+                    .then(|| {
+                        let launches = super::VictoryFocus {
+                            strategy: GrandStrategy::Science,
+                            progress: Self::science_launch_progress(g, rival),
+                        };
+                        self.victory_suppression_city(g, pid, rival, launches)
+                    })
+                    .flatten()
+            })
     }
 
     /// `air-surge-2`, Domination lane: until the wing is ready to fly, it
@@ -1845,13 +1862,15 @@ impl AdvancedAi {
         let fought = surge.declared_turn.is_some() || surge.opened_at_war;
         if city.pos == surge.objective_pos
             || city.owner == pid
-            || g.players.get(city.owner).is_none_or(|owner| {
-                !owner.alive || owner.is_minor || owner.is_barbarian
-            })
+            || g.players
+                .get(city.owner)
+                .is_none_or(|owner| !owner.alive || owner.is_minor || owner.is_barbarian)
             || (fought && city.owner != surge.target_player)
             || (!g.is_at_war(pid, city.owner) && !self.campaign_target_legal(g, pid, city.owner))
             || !Self::air_surge_in_range(g, pid, city.pos)
-            || self.war_staging_route(g, pid, city.owner, city.pos).is_none()
+            || self
+                .war_staging_route(g, pid, city.owner, city.pos)
+                .is_none()
         {
             return;
         }
@@ -2390,7 +2409,8 @@ impl AdvancedAi {
                                                 * g.item_prod_mult(pid, cid, Some(&item)))
                                             .max(0.1);
                                         per_bomber(cid).is_some_and(|bomber| {
-                                            field_turns.max(*eta) + parallel_share * bomber
+                                            field_turns.max(*eta)
+                                                + parallel_share * bomber
                                                 + f64::EPSILON
                                                 < *deadline
                                         })

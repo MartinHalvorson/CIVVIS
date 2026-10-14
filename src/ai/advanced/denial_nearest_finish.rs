@@ -363,8 +363,7 @@ pub(super) fn countering_finish_note(strategy: GrandStrategy, finish: Option<f64
 mod tests {
     use super::super::{AdvancedAi, GrandStrategy, VictoryTarget};
     use super::{
-        countering_finish_note, CULTURE_CURVE_MIN_SPAN, DENIAL_FINISH_HORIZON,
-        DENIAL_URGENT_FINISH,
+        countering_finish_note, CULTURE_CURVE_MIN_SPAN, DENIAL_FINISH_HORIZON, DENIAL_URGENT_FINISH,
     };
 
     #[test]
@@ -377,7 +376,10 @@ mod tests {
             countering_finish_note(GrandStrategy::Culture, None),
             ", no finish projected"
         );
-        assert_eq!(countering_finish_note(GrandStrategy::Science, Some(4.0)), "");
+        assert_eq!(
+            countering_finish_note(GrandStrategy::Science, Some(4.0)),
+            ""
+        );
     }
     use crate::game::Game;
 

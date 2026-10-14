@@ -278,14 +278,23 @@ fn spies_from_rocketry_is_opt_in() {
 fn a_rocketry_rival_starts_the_spy_network_but_not_the_war() {
     let (g, ours) = rocketry_only();
     let stock = armed();
-    assert!(stock.decisive_space_racers(&g, 0).is_empty(), "fixture: not decisive");
+    assert!(
+        stock.decisive_space_racers(&g, 0).is_empty(),
+        "fixture: not decisive"
+    );
     let mut off = g.clone();
     stock.claim_queues_for_denial_spies(&mut off, 0, &plan());
-    assert!(training(&off).is_empty(), "off: Rocketry alone trains nothing");
+    assert!(
+        training(&off).is_empty(),
+        "off: Rocketry alone trains nothing"
+    );
 
     let mut early = armed();
     early.enable_space_denial_spies_from_rocketry();
-    assert!(early.decisive_space_racers(&g, 0).is_empty(), "the war's racers are unchanged");
+    assert!(
+        early.decisive_space_racers(&g, 0).is_empty(),
+        "the war's racers are unchanged"
+    );
     assert_eq!(early.denial_spy_racers(&g, 0), BTreeSet::from([1]));
     let mut on = g.clone();
     early.claim_queues_for_denial_spies(&mut on, 0, &plan());
@@ -299,8 +308,16 @@ fn spies_from_rocketry_trains_to_capacity() {
     let (g, _ours) = rocketry_only();
     let racers = BTreeSet::from([1]);
     assert_eq!(g.spy_capacity(0), 2, "fixture capacity");
-    assert_eq!(armed().denial_spies_wanted(&g, 0, &racers), 1, "stock: no pad seen, one");
+    assert_eq!(
+        armed().denial_spies_wanted(&g, 0, &racers),
+        1,
+        "stock: no pad seen, one"
+    );
     let mut early = armed();
     early.enable_space_denial_spies_from_rocketry();
-    assert_eq!(early.denial_spies_wanted(&g, 0, &racers), 2, "gene: our capacity");
+    assert_eq!(
+        early.denial_spies_wanted(&g, 0, &racers),
+        2,
+        "gene: our capacity"
+    );
 }

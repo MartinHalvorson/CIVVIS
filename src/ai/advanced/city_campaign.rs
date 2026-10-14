@@ -576,7 +576,9 @@ impl AdvancedAi {
                 Self::tier_unlocked_land(g, rival)
             };
             let our_line = our_ranged.max(our_melee);
-            return (their_melee - our_melee).max(their_ranged - our_line).max(0.0);
+            return (their_melee - our_melee)
+                .max(their_ranged - our_line)
+                .max(0.0);
         }
         let (their_melee, their_ranged) = Self::tier_unlocked_land(g, rival);
         let our_ranged = if our_ranged > 0.0 {
@@ -584,7 +586,9 @@ impl AdvancedAi {
         } else {
             our_melee
         };
-        (their_melee - our_melee).max(their_ranged - our_ranged).max(0.0)
+        (their_melee - our_melee)
+            .max(their_ranged - our_ranged)
+            .max(0.0)
     }
 
     /// `war-bill-prices-the-tier-gap`: what a city of `rival` costs over its
@@ -1027,8 +1031,7 @@ impl AdvancedAi {
                 && !rival.is_barbarian
                 && rival.dvp >= super::one_war::ELIMINATION_CONTENDER_DVP
         }) && g.military_power(pid)
-            >= super::one_war::ELIMINATION_POWER_RATIO
-                * self.steady_rival_power(g, target).max(1.0)
+            >= super::one_war::ELIMINATION_POWER_RATIO * self.steady_rival_power(g, target).max(1.0)
     }
 
     /// The peace desk: a completed campaign offers peace until it is
@@ -1494,7 +1497,10 @@ mod tests {
         let alone = ai.campaign_city_requirement(&game, 0, target, &appraisal, 20.0);
         ai.disable_tier_gap_priced_once();
         let shipped = ai.campaign_city_requirement(&game, 0, target, &appraisal, 20.0);
-        assert_eq!(alone.strength, shipped.strength, "no tier factor, no change");
+        assert_eq!(
+            alone.strength, shipped.strength,
+            "no tier factor, no change"
+        );
 
         ai.enable_war_bill_prices_the_tier_gap();
         let factor = ai.war_bill_tier_factor(&game, 0, 1);
@@ -1506,7 +1512,10 @@ mod tests {
         let expected = (game.city_strength(target)
             + city.wall_hp.max(0) as f64 / 100.0 * WALL_STRENGTH_PER_100_HP)
             * CAMPAIGN_SUPERIORITY;
-        assert!((once.strength - expected).abs() < 1e-9, "{once:?} vs {expected}");
+        assert!(
+            (once.strength - expected).abs() < 1e-9,
+            "{once:?} vs {expected}"
+        );
         assert!(once.strength < tripled.strength, "{once:?} vs {tripled:?}");
     }
 
@@ -1573,7 +1582,10 @@ mod tests {
         ai.enable_war_bill_prices_the_tier_gap();
         let shipped_gap = ai.war_bill_tier_gap(&game, 0, 1);
         let shipped_factor = ai.war_bill_tier_factor(&game, 0, 1);
-        assert!(shipped_gap >= 40.0 - 25.0, "the shipped gap reads our Archer: {shipped_gap}");
+        assert!(
+            shipped_gap >= 40.0 - 25.0,
+            "the shipped gap reads our Archer: {shipped_gap}"
+        );
         assert!(shipped_factor > 1.0);
 
         ai.enable_tier_gap_reads_the_fielded_line();
@@ -1582,7 +1594,11 @@ mod tests {
         assert_eq!(ai.war_bill_tier_factor(&game, 0, 1), 1.0);
         assert!(ai.war_bill_tier_factor(&game, 0, 1) <= shipped_factor);
         ai.disable_tier_gap_reads_the_fielded_line();
-        assert_eq!(ai.war_bill_tier_gap(&game, 0, 1), shipped_gap, "off is the shipped gap");
+        assert_eq!(
+            ai.war_bill_tier_gap(&game, 0, 1),
+            shipped_gap,
+            "off is the shipped gap"
+        );
 
         // A rival with no land soldier on the field: its unlocked catalogue
         // stands in for its line.

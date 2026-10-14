@@ -1166,13 +1166,19 @@ fn the_leader_spy_gene_is_opt_in_and_arms_the_base() {
     assert!(ai.science_threat_denial, "the tag arms the denial it reads");
     ai.disable_science_denial_spy_reads_the_leader();
     assert!(!ai.science_denial_spy_reads_the_leader);
-    assert!(ai.science_threat_denial, "turning it off leaves the base as it was");
+    assert!(
+        ai.science_threat_denial,
+        "turning it off leaves the base as it was"
+    );
 }
 
 #[test]
 fn the_leading_pad_is_the_most_pressing_threats_standing_pad() {
     let (mut g, leader, other) = two_racers();
-    assert_eq!(leader_reader().science_denial_leading_pad_city(&g, 0), Some(leader));
+    assert_eq!(
+        leader_reader().science_denial_leading_pad_city(&g, 0),
+        Some(leader)
+    );
     assert_eq!(
         denier().science_denial_leading_pad_city(&g, 0),
         None,
@@ -1185,7 +1191,10 @@ fn the_leading_pad_is_the_most_pressing_threats_standing_pad() {
         .copied()
         .unwrap();
     g.map.tiles.get_mut(&pad).unwrap().pillaged = true;
-    assert_eq!(leader_reader().science_denial_leading_pad_city(&g, 0), Some(other));
+    assert_eq!(
+        leader_reader().science_denial_leading_pad_city(&g, 0),
+        Some(other)
+    );
 }
 
 /// Live Emperor 2026-10-06: with the eventual winner's pad on the board, the
@@ -1256,13 +1265,22 @@ fn an_idle_spy_outside_every_threat_moves_to_the_leaders_pad() {
         }
         let spy = idle_spy(&mut g, other);
         ai.advanced_spies(&mut g, 0, &conquest_on(2));
-        (g.spies[&spy].city, g.spies[&spy].mission.is_some(), leader, other)
+        (
+            g.spies[&spy].city,
+            g.spies[&spy].mission.is_some(),
+            leader,
+            other,
+        )
     };
     let (city, working, _, other) = stays_or_moves(denier(), false);
     assert_eq!(city, Some(other), "stock: the spy stays");
     assert!(working, "stock: and runs an operation where it stands");
     let (city, _, leader, _) = stays_or_moves(leader_reader(), false);
-    assert_eq!(city, Some(leader), "the gene: re-posted to the leader's pad");
+    assert_eq!(
+        city,
+        Some(leader),
+        "the gene: re-posted to the leader's pad"
+    );
     let (city, _, _, other) = stays_or_moves(leader_reader(), true);
     assert_eq!(city, Some(other), "a spy in a threat's city stays");
 }

@@ -41,7 +41,12 @@ pub(super) const TAKER_CALL_MIN_HP: i32 = super::battle_planner::ROTATE_HP;
 impl AdvancedAi {
     /// The falling cities this turn, plan target and capitals first, then the
     /// weakest. Empty with the gene off.
-    pub(super) fn falling_cities_calling(&self, g: &Game, pid: usize, plan: &StrategicPlan) -> Vec<u32> {
+    pub(super) fn falling_cities_calling(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> Vec<u32> {
         if !self.falling_city_calls_the_takers {
             return Vec::new();
         }
@@ -59,7 +64,12 @@ impl AdvancedAi {
             .collect();
         falling.sort_by_key(|cid| {
             let city = &g.cities[cid];
-            (Some(*cid) != plan.target_city, !city.is_capital, city.hp, *cid)
+            (
+                Some(*cid) != plan.target_city,
+                !city.is_capital,
+                city.hp,
+                *cid,
+            )
         });
         falling.truncate(TAKER_CALL_CITIES);
         falling
@@ -67,7 +77,14 @@ impl AdvancedAi {
 
     /// Our land melee bodies with movement left that could take or close on
     /// the city at `cid`: unspent, unlinked, not already claimed this turn.
-    fn falling_city_bodies(&self, g: &Game, pid: usize, cid: u32, claimed: &BTreeSet<u32>, min_hp: i32) -> Vec<u32> {
+    fn falling_city_bodies(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        claimed: &BTreeSet<u32>,
+        min_hp: i32,
+    ) -> Vec<u32> {
         let target = g.cities[&cid].pos;
         g.player_unit_ids(pid)
             .into_iter()
@@ -104,7 +121,10 @@ impl AdvancedAi {
             let Some(city) = g.cities.get(&cid) else {
                 continue;
             };
-            if city.owner == pid || !g.is_at_war(pid, city.owner) || Self::should_defer_city_capture(g, pid, cid) {
+            if city.owner == pid
+                || !g.is_at_war(pid, city.owner)
+                || Self::should_defer_city_capture(g, pid, cid)
+            {
                 continue;
             }
             let (target, name, health) = (city.pos, city.name.clone(), city.hp);
@@ -112,7 +132,13 @@ impl AdvancedAi {
             // Take it now if a body's ring step and blow do. Only bodies that
             // could reach the ring this turn are simulated.
             let mut ready: Vec<u32> = self
-                .falling_city_bodies(g, pid, cid, &taken, super::air_city_assault::AIR_ASSAULT_BREACH_TAKER_HP)
+                .falling_city_bodies(
+                    g,
+                    pid,
+                    cid,
+                    &taken,
+                    super::air_city_assault::AIR_ASSAULT_BREACH_TAKER_HP,
+                )
                 .into_iter()
                 .filter(|uid| {
                     let unit = &g.units[uid];
@@ -124,7 +150,9 @@ impl AdvancedAi {
                     let unit = &g.units[uid];
                     g.unit_strength(unit, false) * f64::from(unit.hp.clamp(0, 100)) / 100.0
                 };
-                blow(right).total_cmp(&blow(left)).then_with(|| left.cmp(right))
+                blow(right)
+                    .total_cmp(&blow(left))
+                    .then_with(|| left.cmp(right))
             });
             if let Some((taker, actions)) = self
                 .air_assault_best_capture(g, pid, cid, &ready)

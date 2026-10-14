@@ -1505,13 +1505,26 @@ mod tests {
             .unwrap()
             .set_modified(old)
             .unwrap();
-        assert_eq!(live_pause_status_from(&request, &report, &nobody)["held"], false);
+        assert_eq!(
+            live_pause_status_from(&request, &report, &nobody)["held"],
+            false
+        );
         let holds = |tag: &str| tag == "civvis-20261013T041158Z";
-        assert_eq!(live_pause_status_from(&request, &report, &holds)["held"], true);
+        assert_eq!(
+            live_pause_status_from(&request, &report, &holds)["held"],
+            true
+        );
         let other = |tag: &str| tag == "civvis-20261013T050000Z";
-        assert_eq!(live_pause_status_from(&request, &report, &other)["held"], false);
+        assert_eq!(
+            live_pause_status_from(&request, &report, &other)["held"],
+            false
+        );
         // A released report is not a hold, however fresh.
-        fs::write(&report, r#"{"tag": "civvis-20261013T041158Z", "held": false}"#).unwrap();
+        fs::write(
+            &report,
+            r#"{"tag": "civvis-20261013T041158Z", "held": false}"#,
+        )
+        .unwrap();
         let status = live_pause_status_from(&request, &report, &holds);
         assert_eq!(status["held"], false);
         assert_eq!(status["since_utc"], Value::Null);
@@ -1549,7 +1562,10 @@ mod tests {
         );
         fs::write(dir.join("operator-retire.json"), r#"{"state": "retired"}"#).unwrap();
         let done = live_new_game_status_at(Some(&dir));
-        assert_eq!(done["requested"], false, "a retired game is no longer asked for");
+        assert_eq!(
+            done["requested"], false,
+            "a retired game is no longer asked for"
+        );
         assert_eq!(done["retired"], true);
         assert_eq!(done["detail"], Value::Null);
         let _ = fs::remove_dir_all(&dir);
@@ -1560,7 +1576,10 @@ mod tests {
     /// operator can act on.
     #[test]
     fn the_page_reads_the_switch_for_a_new_game() {
-        assert_eq!(live_new_game_outcome(true, "== retiring the active game ==\n", ""), Ok(()));
+        assert_eq!(
+            live_new_game_outcome(true, "== retiring the active game ==\n", ""),
+            Ok(())
+        );
         assert_eq!(
             live_new_game_outcome(
                 false,

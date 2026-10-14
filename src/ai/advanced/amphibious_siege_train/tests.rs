@@ -907,10 +907,7 @@ fn a_ford_is_held_only_by_a_warship_beside_it_or_within_a_turns_reach() {
         .expect("our land three tiles from the ford");
     g.map.tiles.get_mut(&lake).unwrap().terrain = crate::name!("coast");
     let watcher = g.spawn_unit("galley", 1, lake);
-    assert!(
-        lane_watched(&g, 0, &ford),
-        "the three-tile watch sees it"
-    );
+    assert!(lane_watched(&g, 0, &ford), "the three-tile watch sees it");
     assert!(
         !ford_watched(&g, 0, &ford),
         "but it cannot reach the ford this turn"
@@ -930,11 +927,13 @@ fn a_ford_is_held_only_by_a_warship_beside_it_or_within_a_turns_reach() {
         .expect("water beside the ford");
     let watcher = g.spawn_unit("galley", 1, beside);
     assert!(ford_watched(&g, 0, &ford));
-    assert!(!ai.amphibious_train_holds(&g, 0), "abandons the ford in hand");
+    assert!(
+        !ai.amphibious_train_holds(&g, 0),
+        "abandons the ford in hand"
+    );
     let mut fresh = armed_2(&g, cid, gun, escorts);
     assert!(
-        !fresh.form_amphibious_train(&g, 0, cid)
-            || !fresh.amphibious_train.as_ref().unwrap().ford,
+        !fresh.form_amphibious_train(&g, 0, cid) || !fresh.amphibious_train.as_ref().unwrap().ford,
         "no ford forms under a warship beside it"
     );
     g.remove_unit(watcher);
@@ -1032,7 +1031,10 @@ fn a_ford_train_gathers_only_units_joined_to_its_near_shore() {
         "the near-shore column is the train"
     );
     let (released, trace, _) = run_crossing(&mut g, &mut ai, gun, escorts, target, 5, 12);
-    assert!(released, "the gathering completes and the ford is crossed\n{trace}");
+    assert!(
+        released,
+        "the gathering completes and the ford is crossed\n{trace}"
+    );
     // The gathering is journalled each turn it lasts.
     let gathers: Vec<String> = journal
         .since(0)
@@ -1068,7 +1070,11 @@ fn a_unit_with_a_dry_road_is_not_drafted_into_a_sea_lane() {
     v1.force_groups[0].units.extend([road_gun, road_escort]);
     assert!(v1.form_amphibious_train(&g, 0, cid));
     assert!(
-        v1.amphibious_train.as_ref().unwrap().members.contains(&road_gun),
+        v1.amphibious_train
+            .as_ref()
+            .unwrap()
+            .members
+            .contains(&road_gun),
         "version one drafts the nearest units to the port, a dry road or not"
     );
     let mut ai = armed_2(&g, cid, gun, escorts);
@@ -1087,10 +1093,7 @@ fn a_unit_with_a_dry_road_is_not_drafted_into_a_sea_lane() {
     }
     let ai = armed_2(&g, cid, road_gun, [road_escort, road_escort]);
     let reason = ai.amphibious_gate(&g, 0, cid).err().expect("no train");
-    assert!(
-        reason.contains("units with a dry road march"),
-        "{reason}"
-    );
+    assert!(reason.contains("units with a dry road march"), "{reason}");
 }
 
 #[test]
@@ -1099,8 +1102,11 @@ fn a_sea_lane_landing_on_our_own_landmass_with_a_dry_road_is_refused() {
     // A land bridge from our land to the target's island, away from the
     // port: the bay beside it still offers a short lane to a landing.
     for d in 3..=6 {
-        g.map.tiles.get_mut(&(target.0, target.1 - d)).unwrap().terrain =
-            crate::name!("grassland");
+        g.map
+            .tiles
+            .get_mut(&(target.0, target.1 - d))
+            .unwrap()
+            .terrain = crate::name!("grassland");
     }
     assert!(
         land_joined(&g, target, None).contains(&port),
@@ -1116,8 +1122,5 @@ fn a_sea_lane_landing_on_our_own_landmass_with_a_dry_road_is_refused() {
     assert!(land_joined(&g, port, None).contains(&landing));
     let ai = armed_2(&g, cid, gun, escorts);
     let reason = ai.amphibious_gate(&g, 0, cid).err().expect("refused");
-    assert!(
-        reason.contains("own landmass, with a dry road"),
-        "{reason}"
-    );
+    assert!(reason.contains("own landmass, with a dry road"), "{reason}");
 }

@@ -259,12 +259,18 @@ fn a_healthy_siege_shooter_is_not_evacuated_off_its_post() {
         "the control: the summed envelope walks the archer off the post"
     );
     let (recovering, held, walls) = turn(Some(SiegeStage::Reduce));
-    assert!(!recovering && held, "an active siege keeps its healthy shooter on the post");
+    assert!(
+        !recovering && held,
+        "an active siege keeps its healthy shooter on the post"
+    );
     assert!(walls < 100, "and the shooter fires at the walls");
     // A siege still in Stage owns the turn too: its own step may step the
     // shooter back out of the city's reach, but the evacuation does not.
     let (recovering, _, _) = turn(Some(SiegeStage::Stage));
-    assert!(!recovering, "a Stage siege's healthy member is not evacuated");
+    assert!(
+        !recovering,
+        "a Stage siege's healthy member is not evacuated"
+    );
 }
 
 /// See `assess_siege`: a Hold over a city still the enemy's is a capture the

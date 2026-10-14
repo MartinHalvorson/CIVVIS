@@ -102,8 +102,7 @@ impl AdvancedAi {
         let (item, turns, banked) = best?;
         if let Some(head) = head.filter(|head| **head != item) {
             // The head the host finishes this turn keeps its turn.
-            if g
-                .host_production_turns(cid, head)
+            if g.host_production_turns(cid, head)
                 .is_some_and(|turns| turns.is_finite() && turns > 0.0 && turns <= 1.0)
             {
                 return None;
@@ -136,15 +135,14 @@ impl AdvancedAi {
                 .and_then(|menu| menu.get(&Game::production_block_key(&item)))
                 .and_then(|entry| entry.cost)
                 .unwrap_or(0.0);
-            if g
-                .apply(
-                    pid,
-                    &Action::Produce {
-                        city: cid,
-                        item: item.clone(),
-                    },
-                )
-                .is_ok()
+            if g.apply(
+                pid,
+                &Action::Produce {
+                    city: cid,
+                    item: item.clone(),
+                },
+            )
+            .is_ok()
             {
                 let waits = displaced.map_or_else(
                     || "an empty queue".to_string(),

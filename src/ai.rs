@@ -11106,7 +11106,13 @@ impl BasicAi {
     /// current build): the unique unit leads the army, it does not become
     /// all of it — a Llanero column still wants Line Infantry beside it
     /// against Pike and Shot.
-    fn unique_unit_wanted(&self, g: &Game, pid: usize, kind: Name, spec: &crate::rules::UnitSpec) -> bool {
+    fn unique_unit_wanted(
+        &self,
+        g: &Game,
+        pid: usize,
+        kind: Name,
+        spec: &crate::rules::UnitSpec,
+    ) -> bool {
         if spec.unique_to.as_deref() != Some(g.players[pid].civ.as_str()) {
             return false;
         }
@@ -11124,13 +11130,12 @@ impl BasicAi {
             .values()
             .filter(|unit| unit.owner == pid)
             .map(|unit| unit.kind);
-        let building = g
-            .player_city_ids(pid)
-            .into_iter()
-            .filter_map(|cid| match g.cities[&cid].queue.first() {
+        let building = g.player_city_ids(pid).into_iter().filter_map(|cid| {
+            match g.cities[&cid].queue.first() {
                 Some(Item::Unit { unit }) => Some(*unit),
                 _ => None,
-            });
+            }
+        });
         for unit in fielded.chain(building).filter(|unit| same_role(*unit)) {
             role += 1;
             unique += usize::from(unit == kind);
@@ -12806,13 +12811,13 @@ impl BasicAi {
         // chain already queued here finishes first.
         if self.activation_keeps_its_building
             && matches!(queued, Some(Item::Building { building })
-                if g.players[pid].live_great_person_activation_needs.iter().any(|need| {
-                    Self::live_great_person_work(need).is_some_and(|work| {
-                        Self::live_great_person_work_chain(work)
-                            .iter()
-                            .any(|family| g.building_is_family(building, Name::new(family)))
-                    })
-                }))
+            if g.players[pid].live_great_person_activation_needs.iter().any(|need| {
+                Self::live_great_person_work(need).is_some_and(|work| {
+                    Self::live_great_person_work_chain(work)
+                        .iter()
+                        .any(|family| g.building_is_family(building, Name::new(family)))
+                })
+            }))
         {
             return None;
         }
@@ -13111,7 +13116,8 @@ impl BasicAi {
             && !emergency_defense
             && !self.settler_due(g, pid, cid, n_cities, settlers)
         {
-            if let Some(builder) = self.worked_backlog_builder_step(g, pid, cid, n_cities, builders) {
+            if let Some(builder) = self.worked_backlog_builder_step(g, pid, cid, n_cities, builders)
+            {
                 return Some(builder);
             }
         }
@@ -15755,8 +15761,7 @@ impl BasicAi {
         // `stranded-settler-discount` above subtracts a Settler idle
         // twelve turns so its replacement may start — and the replacement
         // refuses the same sites. See `settler_backlog_brake`.
-        let v1_scope =
-            self.settler_backlog_brake && n_cities >= Self::SETTLER_BACKLOG_MIN_CITIES;
+        let v1_scope = self.settler_backlog_brake && n_cities >= Self::SETTLER_BACKLOG_MIN_CITIES;
         let v2_scope =
             self.settler_backlog_brake_2 && n_cities >= Self::SETTLER_BACKLOG_V2_MIN_CITIES;
         let parked = if v1_scope || v2_scope {
@@ -15866,7 +15871,11 @@ impl BasicAi {
     /// See `front_weighted_floor`: turns for `cid` to build `unit` and walk it
     /// to `objective` in a straight line at the unit's speed.
     fn front_arrival_turns(g: &Game, pid: usize, cid: u32, unit: &str, objective: Pos) -> f64 {
-        let moves = g.rules.units.get(&Name::new(unit)).map_or(2.0, |spec| spec.moves)
+        let moves = g
+            .rules
+            .units
+            .get(&Name::new(unit))
+            .map_or(2.0, |spec| spec.moves)
             + Self::land_movement_bonus(g, pid);
         Self::unit_build_turns(g, pid, cid, unit)
             + g.wdist(g.cities[&cid].pos, objective) as f64 / moves.max(1.0)
@@ -15885,8 +15894,11 @@ impl BasicAi {
                 let spec = g.rules.units.get(&unit.kind)?;
                 (spec.class == "military"
                     && spec.domain.as_deref().is_none_or(|domain| domain == "land")
-                    && !g.map.get(unit.pos).is_some_and(|tile| g.rules.is_water(tile)))
-                    .then(|| (g.unit_max_moves(uid) - spec.moves).max(0.0))
+                    && !g
+                        .map
+                        .get(unit.pos)
+                        .is_some_and(|tile| g.rules.is_water(tile)))
+                .then(|| (g.unit_max_moves(uid) - spec.moves).max(0.0))
             })
             .min_by(|a, b| a.partial_cmp(b).unwrap())
             .unwrap_or(0.0)
@@ -15896,7 +15908,13 @@ impl BasicAi {
     /// See `front_weighted_floor_2`: whether `cid` stands within
     /// `FRONT_NEAR_TILES` of `objective` and puts `unit` there within
     /// `FRONT_ARRIVAL_MARGIN` of the best city of ours that can build it.
-    pub(crate) fn is_front_city_for(g: &Game, pid: usize, cid: u32, unit: &str, objective: Pos) -> bool {
+    pub(crate) fn is_front_city_for(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        unit: &str,
+        objective: Pos,
+    ) -> bool {
         g.wdist(g.cities[&cid].pos, objective) <= FRONT_NEAR_TILES
             && !Self::another_city_arrives_sooner(g, pid, cid, unit, objective)
     }
@@ -15942,12 +15960,14 @@ impl BasicAi {
             .iter()
             .filter(|city| match g.cities[city].queue.first() {
                 Some(Item::District { district, .. }) => g.district_family(*district) == "campus",
-                Some(Item::Building { building }) => g.rules.buildings.get(building).is_some_and(|spec| {
-                    (chain || spec.requires.is_empty())
-                        && spec
-                            .district
-                            .is_some_and(|district| g.district_family(district) == "campus")
-                }),
+                Some(Item::Building { building }) => {
+                    g.rules.buildings.get(building).is_some_and(|spec| {
+                        (chain || spec.requires.is_empty())
+                            && spec
+                                .district
+                                .is_some_and(|district| g.district_family(district) == "campus")
+                    })
+                }
                 _ => false,
             })
             .count();
@@ -16213,13 +16233,15 @@ impl BasicAi {
         if !g.city_has_district_family(g.cities.get(&cid)?, crate::name!("campus")) {
             return None;
         }
-        ["university", "research_lab"].into_iter().find_map(|family| {
-            let item = Self::civ_building(g, pid, cid, family)?;
-            let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
-                g.item_cost_for(pid, &item) / g.city_yields(cid).production.max(0.5)
-            });
-            (turns <= Self::FIRST_CAMPUS_MAX_TURNS).then_some(item)
-        })
+        ["university", "research_lab"]
+            .into_iter()
+            .find_map(|family| {
+                let item = Self::civ_building(g, pid, cid, family)?;
+                let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
+                    g.item_cost_for(pid, &item) / g.city_yields(cid).production.max(0.5)
+                });
+                (turns <= Self::FIRST_CAMPUS_MAX_TURNS).then_some(item)
+            })
     }
 
     /// See `capital_library_first`: the Library of a Campus this city holds,
@@ -16742,7 +16764,8 @@ impl BasicAi {
                 && !player.is_minor
                 && g.is_at_war(pid, player.id)
         });
-        let alarm = self.barbarian_tactics && self.barbarian_local_alarm_for_controller(g, pid, cid);
+        let alarm =
+            self.barbarian_tactics && self.barbarian_local_alarm_for_controller(g, pid, cid);
         if ((at_major_war || alarm) && military < n_cities.max(1))
             || self.besieged_city_item(g, pid, cid).is_some()
             || self.barbarian_defense_item(g, pid, cid).is_some()
@@ -16798,7 +16821,9 @@ impl BasicAi {
         let Some((price, city)) = city_ids
             .iter()
             .copied()
-            .filter(|cid| g.can_produce(pid, *cid, &builder) && !g.purchase_is_blocked(*cid, &builder))
+            .filter(|cid| {
+                g.can_produce(pid, *cid, &builder) && !g.purchase_is_blocked(*cid, &builder)
+            })
             .filter_map(|cid| {
                 g.unit_purchase_cost(pid, cid, "builder", "gold")
                     .map(|price| (price, cid))
@@ -18426,7 +18451,10 @@ impl BasicAi {
                     }
                 }
             }
-            let (x, y) = (delta.0 as f64 + delta.1 as f64 / 2.0, delta.1 as f64 * 0.866);
+            let (x, y) = (
+                delta.0 as f64 + delta.1 as f64 / 2.0,
+                delta.1 as f64 * 0.866,
+            );
             let length = (x * x + y * y).sqrt();
             (length > 0.0).then(|| (x / length, y / length))
         };
@@ -22609,9 +22637,22 @@ mod tests {
         grant_tech_with_prerequisites(&mut game, 0, "astrology");
         grant_tech_with_prerequisites(&mut game, 0, "writing");
         for family in ["holy_site", "campus"] {
-            let pos = game.district_sites(city, Name::new(family)).into_iter().next().unwrap();
-            game.apply(0, &Action::Produce { city, item: Item::District { district: Name::new(family), pos } })
+            let pos = game
+                .district_sites(city, Name::new(family))
+                .into_iter()
+                .next()
                 .unwrap();
+            game.apply(
+                0,
+                &Action::Produce {
+                    city,
+                    item: Item::District {
+                        district: Name::new(family),
+                        pos,
+                    },
+                },
+            )
+            .unwrap();
         }
         game.cities.get_mut(&city).unwrap().production = 17.0;
         game.players[0].live_great_person_activation_needs.push(
@@ -22623,18 +22664,25 @@ mod tests {
             },
         );
         assert!(
-            BasicAi::new().live_great_person_activation_resume_item(&game, 0, city).is_some(),
+            BasicAi::new()
+                .live_great_person_activation_resume_item(&game, 0, city)
+                .is_some(),
             "stock resumes the Holy Site over the Campus"
         );
         let mut waits = BasicAi::new();
         waits.activation_resume_waits = true;
-        assert_eq!(waits.live_great_person_activation_resume_item(&game, 0, city), None);
+        assert_eq!(
+            waits.live_great_person_activation_resume_item(&game, 0, city),
+            None
+        );
         assert!(!waits.prioritize_live_great_person_activation(&mut game, 0));
         assert!(matches!(game.cities[&city].queue.first(),
             Some(Item::District { district, .. }) if *district == "campus"));
         game.cities.get_mut(&city).unwrap().production = 0.0;
         assert!(
-            waits.live_great_person_activation_resume_item(&game, 0, city).is_some(),
+            waits
+                .live_great_person_activation_resume_item(&game, 0, city)
+                .is_some(),
             "a queued district with nothing invested still yields"
         );
     }
@@ -22685,8 +22733,16 @@ mod tests {
                 },
             );
         }
-        game.apply(0, &Action::Produce { city, item: Item::Building { building: crate::name!("art_museum") } })
-            .unwrap();
+        game.apply(
+            0,
+            &Action::Produce {
+                city,
+                item: Item::Building {
+                    building: crate::name!("art_museum"),
+                },
+            },
+        )
+        .unwrap();
         game.cities.get_mut(&city).unwrap().production = 46.0;
         assert!(
             matches!(BasicAi::new().live_great_person_activation_resume_item(&game, 0, city),
@@ -22695,7 +22751,10 @@ mod tests {
         );
         let mut keeps = BasicAi::new();
         keeps.activation_keeps_its_building = true;
-        assert_eq!(keeps.live_great_person_activation_resume_item(&game, 0, city), None);
+        assert_eq!(
+            keeps.live_great_person_activation_resume_item(&game, 0, city),
+            None
+        );
         assert!(!keeps.prioritize_live_great_person_activation(&mut game, 0));
         assert!(matches!(game.cities[&city].queue.first(),
             Some(Item::Building { building }) if *building == "art_museum"));
@@ -25000,9 +25059,19 @@ mod tests {
                 if game.district_family(*district) == "campus")
         };
         let stock = pick(false, 3);
-        assert!(!is_campus(&stock), "the fixture's stock pick is not the Campus: {stock:?}");
-        assert!(is_campus(&pick(true, 3)), "a three-city capital opens its Campus");
-        assert_eq!(pick(true, 2), pick(false, 2), "two cities keep the stock choice");
+        assert!(
+            !is_campus(&stock),
+            "the fixture's stock pick is not the Campus: {stock:?}"
+        );
+        assert!(
+            is_campus(&pick(true, 3)),
+            "a three-city capital opens its Campus"
+        );
+        assert_eq!(
+            pick(true, 2),
+            pick(false, 2),
+            "two cities keep the stock choice"
+        );
     }
 
     /// One founded capital with ten Production a turn, the shared fixture of
@@ -25065,7 +25134,13 @@ mod tests {
             .into_iter()
             .find(|pos| game.wdist(*pos, home) > game.wdist(far_site, home))
             .unwrap_or(far_site);
-        assert!(game.can_produce(0, front, &Item::Unit { unit: crate::name!("warrior") }));
+        assert!(game.can_produce(
+            0,
+            front,
+            &Item::Unit {
+                unit: crate::name!("warrior")
+            }
+        ));
         // A pop-1 colony is too slow to beat the capital's build and walk.
         assert!(
             !BasicAi::another_city_arrives_sooner(&game, 0, capital, "warrior", objective),
@@ -25088,8 +25163,12 @@ mod tests {
         );
         // Version 2: the city beside the front is a front city, the capital
         // nine to twelve tiles back is not.
-        assert!(BasicAi::is_front_city_for(&game, 0, front, "warrior", objective));
-        assert!(!BasicAi::is_front_city_for(&game, 0, capital, "warrior", objective));
+        assert!(BasicAi::is_front_city_for(
+            &game, 0, front, "warrior", objective
+        ));
+        assert!(!BasicAi::is_front_city_for(
+            &game, 0, capital, "warrior", objective
+        ));
         let mut second = BasicAi::new();
         second.front_weighted_floor_2 = true;
         second.front_objective = Some(objective);
@@ -25121,7 +25200,10 @@ mod tests {
             ai.pick_item(&game, 0, cid, 3, settlers, 3, 1, 0, 0, 0, 0)
         };
         let stock = pick(false, 1);
-        assert_ne!(stock, granary, "the fixture's stock pick fills the military floor");
+        assert_ne!(
+            stock, granary,
+            "the fixture's stock pick fills the military floor"
+        );
         assert_eq!(pick(true, 1), granary, "the Granary comes first");
         // Version 2 takes the same Granary from behind the Campus step, and
         // yields to a due Settler.
@@ -25533,7 +25615,10 @@ mod tests {
         tile.terrain = crate::name!("coast");
         tile.feature = None;
         assert!(BasicAi::city_is_coastal(&game, cid));
-        assert!(BasicAi::new().desired_navy(&game, 0) > 0, "the fixture wants a ship");
+        assert!(
+            BasicAi::new().desired_navy(&game, 0) > 0,
+            "the fixture wants a ship"
+        );
         let pick = |on: bool, settlers: usize| {
             let mut ai = BasicAi::new();
             ai.settler_before_the_navy = on;
@@ -25541,16 +25626,30 @@ mod tests {
             ai.pick_item(&game, 0, cid, 3, settlers, 3, 1, 0, 30, 15, 15)
         };
         let stock = pick(false, 0);
-        assert!(BasicAi::new().settler_due(&game, 0, cid, 3, 0), "the fixture is due a Settler");
-        let is_ship = |item: &Option<Item>| matches!(item, Some(Item::Unit { unit })
-            if game.rules.units.get(unit).is_some_and(|spec| spec.domain.as_deref() == Some("sea")));
-        assert!(is_ship(&stock), "the fixture's stock pick launches a ship: {stock:?}");
+        assert!(
+            BasicAi::new().settler_due(&game, 0, cid, 3, 0),
+            "the fixture is due a Settler"
+        );
+        let is_ship = |item: &Option<Item>| {
+            matches!(item, Some(Item::Unit { unit })
+            if game.rules.units.get(unit).is_some_and(|spec| spec.domain.as_deref() == Some("sea")))
+        };
+        assert!(
+            is_ship(&stock),
+            "the fixture's stock pick launches a ship: {stock:?}"
+        );
         assert_eq!(
             pick(true, 0),
-            Some(Item::Unit { unit: crate::name!("settler") }),
+            Some(Item::Unit {
+                unit: crate::name!("settler")
+            }),
             "the due Settler comes first"
         );
-        assert_eq!(pick(true, 1), pick(false, 1), "a Settler on the road leaves the navy step alone");
+        assert_eq!(
+            pick(true, 1),
+            pick(false, 1),
+            "a Settler on the road leaves the navy step alone"
+        );
     }
 
     /// See `campus_before_the_army`: a city without a Campus opens one where
@@ -25567,43 +25666,75 @@ mod tests {
         game.players[0].gold = 500.0;
         game.players[0].gold_per_turn = 5.0;
         game.players[0].techs.insert(crate::name!("writing"));
-        assert!(BasicAi::first_campus_item(&game, 0, cid).is_some(), "the fixture can open a Campus");
+        assert!(
+            BasicAi::first_campus_item(&game, 0, cid).is_some(),
+            "the fixture can open a Campus"
+        );
         let pick = |game: &Game, on: bool, n_cities: usize| {
             let mut ai = BasicAi::new();
             ai.campus_before_the_army = on;
             ai.pick_item(game, 0, cid, n_cities, 0, 3, 1, 0, 0, 0, 0)
         };
-        let is_campus = |item: &Option<Item>| {
-            matches!(item, Some(Item::District { district, .. }) if *district == "campus")
-        };
+        let is_campus = |item: &Option<Item>| matches!(item, Some(Item::District { district, .. }) if *district == "campus");
         let stock = pick(&game, false, 3);
-        assert!(!is_campus(&stock), "the fixture's stock pick is not the Campus: {stock:?}");
-        assert!(is_campus(&pick(&game, true, 3)), "{:?}", pick(&game, true, 3));
-        assert_eq!(pick(&game, true, 2), pick(&game, false, 2), "two cities keep the stock choice");
+        assert!(
+            !is_campus(&stock),
+            "the fixture's stock pick is not the Campus: {stock:?}"
+        );
+        assert!(
+            is_campus(&pick(&game, true, 3)),
+            "{:?}",
+            pick(&game, true, 3)
+        );
+        assert_eq!(
+            pick(&game, true, 2),
+            pick(&game, false, 2),
+            "two cities keep the stock choice"
+        );
         let second = |game: &Game, settlers: usize| {
             let mut ai = BasicAi::new();
             ai.campus_before_the_army_2 = true;
             ai.pick_item(game, 0, cid, 3, settlers, 3, 1, 0, 0, 0, 0)
         };
         let stock_ai = BasicAi::new();
-        assert!(!stock_ai.settler_due(&game, 0, cid, 3, 1), "a Settler on the road fills the pipeline");
-        assert!(is_campus(&second(&game, 1)), "version 2 takes the floor's build");
-        assert!(stock_ai.settler_due(&game, 0, cid, 3, 0), "the fixture is due a Settler");
-        assert!(!is_campus(&second(&game, 0)), "version 2 yields to a due Settler");
+        assert!(
+            !stock_ai.settler_due(&game, 0, cid, 3, 1),
+            "a Settler on the road fills the pipeline"
+        );
+        assert!(
+            is_campus(&second(&game, 1)),
+            "version 2 takes the floor's build"
+        );
+        assert!(
+            stock_ai.settler_due(&game, 0, cid, 3, 0),
+            "the fixture is due a Settler"
+        );
+        assert!(
+            !is_campus(&second(&game, 0)),
+            "version 2 yields to a due Settler"
+        );
         // With the Campus standing, the Library comes next.
         let site = match BasicAi::first_campus_item(&game, 0, cid) {
             Some(Item::District { pos, .. }) => pos,
             other => panic!("{other:?}"),
         };
         game.map.tiles.get_mut(&site).unwrap().district = Some(crate::name!("campus"));
-        game.cities.get_mut(&cid).unwrap().districts.insert(crate::name!("campus"), site);
+        game.cities
+            .get_mut(&cid)
+            .unwrap()
+            .districts
+            .insert(crate::name!("campus"), site);
         let library = pick(&game, true, 3);
         assert!(
             matches!(&library, Some(Item::Building { building }) if *building == "library"),
             "{library:?}"
         );
         // Version 3 goes on to the University once the Library stands.
-        game.cities.get_mut(&cid).unwrap().buildings.push(crate::name!("library"));
+        game.cities
+            .get_mut(&cid)
+            .unwrap()
+            .buildings
+            .push(crate::name!("library"));
         game.players[0].techs.insert(crate::name!("education"));
         let third = |game: &Game, on: bool| {
             let mut ai = BasicAi::new();
@@ -25616,7 +25747,11 @@ mod tests {
             matches!(&university, Some(Item::Building { building }) if *building == "university"),
             "{university:?}"
         );
-        assert_ne!(third(&game, false), university, "version 2 stops at the Library");
+        assert_ne!(
+            third(&game, false),
+            university,
+            "version 2 stops at the Library"
+        );
     }
 
     /// See `industry_before_the_army`: a city holding its Campus opens an
@@ -25850,7 +25985,10 @@ mod tests {
         game.cities.get_mut(&cid).unwrap().pop = 3;
         game.players[0].gold = 500.0;
         game.players[0].gold_per_turn = 5.0;
-        assert!(BasicAi::has_builder_work(&game, 0), "the fixture has land to improve");
+        assert!(
+            BasicAi::has_builder_work(&game, 0),
+            "the fixture has land to improve"
+        );
         let pick = |on: bool, n_cities: usize, builders: usize| {
             let mut ai = BasicAi::new();
             ai.builder_before_the_army = on;
@@ -25864,15 +26002,27 @@ mod tests {
             "the fixture's stock pick fills the military floor: {stock:?}"
         );
         assert!(is_builder(&pick(true, 3, 0)), "{:?}", pick(true, 3, 0));
-        assert_eq!(pick(true, 3, 2), pick(false, 3, 2), "the quota of two is met");
-        assert_eq!(pick(true, 1, 0), pick(false, 1, 0), "one city keeps the stock choice");
+        assert_eq!(
+            pick(true, 3, 2),
+            pick(false, 3, 2),
+            "the quota of two is met"
+        );
+        assert_eq!(
+            pick(true, 1, 0),
+            pick(false, 1, 0),
+            "one city keeps the stock choice"
+        );
         let second = |builders: usize| {
             let mut ai = BasicAi::new();
             ai.builder_before_the_army_2 = true;
             ai.pick_item(&game, 0, cid, 3, 0, builders, 1, 0, 0, 0, 0)
         };
         assert!(is_builder(&second(0)), "version 2 answers the drought");
-        assert_eq!(second(1), pick(false, 3, 1), "version 2 leaves one Builder to stock");
+        assert_eq!(
+            second(1),
+            pick(false, 3, 1),
+            "version 2 leaves one Builder to stock"
+        );
     }
 
     /// See `industrial_hub`: of three cities in one Factory's reach, the
@@ -26042,8 +26192,15 @@ mod tests {
             }
         }
         let backlog = BasicAi::unimproved_worked_tiles(&game, 0);
-        assert!(backlog >= BasicAi::WORKED_BACKLOG_MIN_TILES, "fixture backlog {backlog}");
-        assert_eq!(BasicAi::builder_charge_cover(&game, 0), 0, "fixture: no Builder charges");
+        assert!(
+            backlog >= BasicAi::WORKED_BACKLOG_MIN_TILES,
+            "fixture backlog {backlog}"
+        );
+        assert_eq!(
+            BasicAi::builder_charge_cover(&game, 0),
+            0,
+            "fixture: no Builder charges"
+        );
         let pick = |game: &Game, gene: bool, settlers: usize, builders: usize| {
             let mut ai = BasicAi::new();
             ai.builder_before_the_army_3 = true;
@@ -26057,7 +26214,11 @@ mod tests {
             "version 3's one-per-two-cities cap is met: {:?}",
             pick(&game, false, 1, 2)
         );
-        assert!(is_builder(&pick(&game, true, 1, 2)), "{:?}", pick(&game, true, 1, 2));
+        assert!(
+            is_builder(&pick(&game, true, 1, 2)),
+            "{:?}",
+            pick(&game, true, 1, 2)
+        );
         assert_eq!(
             pick(&game, true, 1, 3),
             pick(&game, false, 1, 3),
@@ -26123,15 +26284,17 @@ mod tests {
             ai.monument_first = first;
             ai.pick_item(game, 0, cid, n_cities, settlers, 3, 1, 0, 0, 0, 0)
         };
-        let is_monument = |item: &Option<Item>| {
-            matches!(item, Some(Item::Building { building }) if *building == "monument")
-        };
+        let is_monument = |item: &Option<Item>| matches!(item, Some(Item::Building { building }) if *building == "monument");
         assert!(
             BasicAi::civ_building(&game, 0, cid, "monument").is_some(),
             "the fixture can build a Monument"
         );
         let ai = BasicAi::new();
-        assert_eq!(ai.barbarian_defense_item(&game, 0, cid), None, "no barbarian alarm");
+        assert_eq!(
+            ai.barbarian_defense_item(&game, 0, cid),
+            None,
+            "no barbarian alarm"
+        );
         assert_eq!(ai.besieged_city_item(&game, 0, cid), None, "no siege");
         let stock = pick(&game, false, 3, 0);
         assert!(
@@ -26149,7 +26312,11 @@ mod tests {
             is_monument(&pick(&game, true, 2, 1)),
             "a Settler on the road counts as sent"
         );
-        game.cities.get_mut(&cid).unwrap().buildings.push(crate::name!("monument"));
+        game.cities
+            .get_mut(&cid)
+            .unwrap()
+            .buildings
+            .push(crate::name!("monument"));
         assert_eq!(
             pick(&game, true, 3, 0),
             stock,
@@ -26263,7 +26430,11 @@ mod tests {
             matches!(item, Some(Item::District { district, .. })
                 if game.district_family(*district) == "theater_square")
         };
-        assert_eq!(pick(&game, true), pick(&game, false), "no rival Culture, no answer");
+        assert_eq!(
+            pick(&game, true),
+            pick(&game, false),
+            "no rival Culture, no answer"
+        );
         std::sync::Arc::make_mut(&mut game.observed_yield_adjustments).insert(
             1,
             crate::rules::Yields {
@@ -26273,19 +26444,34 @@ mod tests {
         );
         assert!(BasicAi::culture_trails_the_field(&game, 0));
         let stock = pick(&game, false);
-        assert!(!is_theater(&stock, &game), "the stock pick is not a Theater: {stock:?}");
+        assert!(
+            !is_theater(&stock, &game),
+            "the stock pick is not a Theater: {stock:?}"
+        );
         let theater = BasicAi::civ_district(&game, 0, "theater_square");
         let sites = game.district_sites(cid, theater);
         let producible: Vec<bool> = sites
             .iter()
-            .map(|pos| game.can_produce(0, cid, &Item::District { district: theater, pos: *pos }))
+            .map(|pos| {
+                game.can_produce(
+                    0,
+                    cid,
+                    &Item::District {
+                        district: theater,
+                        pos: *pos,
+                    },
+                )
+            })
             .collect();
         assert!(
             BasicAi::culture_defense_theater_item(&game, 0, cid, 12).is_some(),
             "the city has a Theater site: {theater} sites {sites:?} producible {producible:?}"
         );
         let answer = pick(&game, true);
-        assert!(is_theater(&answer, &game), "a trailing empire opens one: {answer:?}");
+        assert!(
+            is_theater(&answer, &game),
+            "a trailing empire opens one: {answer:?}"
+        );
     }
 
     /// See `capital_library_first`: a three-city capital holding a Campus
@@ -26304,9 +26490,20 @@ mod tests {
             building: crate::name!("library"),
         });
         let stock = pick(&game, false, 3);
-        assert_ne!(stock, library, "the fixture's stock pick is not the Library");
-        assert_eq!(pick(&game, true, 3), library, "the Library rides with its Campus");
-        assert_eq!(pick(&game, true, 2), pick(&game, false, 2), "two cities keep the stock choice");
+        assert_ne!(
+            stock, library,
+            "the fixture's stock pick is not the Library"
+        );
+        assert_eq!(
+            pick(&game, true, 3),
+            library,
+            "the Library rides with its Campus"
+        );
+        assert_eq!(
+            pick(&game, true, 2),
+            pick(&game, false, 2),
+            "two cities keep the stock choice"
+        );
     }
 
     /// See `district_buildings_first`: only a district's first building is
@@ -26316,7 +26513,11 @@ mod tests {
     fn a_district_buildings_first_city_does_not_raise_the_second_tier() {
         let (mut game, cid) = campus_city_fixture();
         game.players[0].techs.insert(crate::name!("education"));
-        game.cities.get_mut(&cid).unwrap().buildings.push(crate::name!("library"));
+        game.cities
+            .get_mut(&cid)
+            .unwrap()
+            .buildings
+            .push(crate::name!("library"));
         assert_eq!(BasicAi::district_building_item(&game, 0, cid), None);
         let pick = |first: bool| {
             let mut ai = BasicAi::new();
@@ -28331,7 +28532,14 @@ mod tests {
                 let pos = g.cities[&city].pos;
                 std::sync::Arc::make_mut(&mut g.host_observed).insert(pos);
             }
-            g.apply(0, &Action::Produce { city, item: settler.clone() }).unwrap();
+            g.apply(
+                0,
+                &Action::Produce {
+                    city,
+                    item: settler.clone(),
+                },
+            )
+            .unwrap();
             let mut ai = BasicAi::new();
             ai.opening_defense_preempts = preempts;
             ai.cities(&mut g, 0);
@@ -28359,7 +28567,14 @@ mod tests {
             g.cities.get_mut(&city).unwrap().pop = 2;
             let pos = g.cities[&city].pos;
             std::sync::Arc::make_mut(&mut g.host_observed).insert(pos);
-            g.apply(0, &Action::Produce { city, item: settler.clone() }).unwrap();
+            g.apply(
+                0,
+                &Action::Produce {
+                    city,
+                    item: settler.clone(),
+                },
+            )
+            .unwrap();
             let mut ai = BasicAi::new();
             ai.opening_defense_preempts_once = gene;
             ai.opening_defense_preempts = preempts;

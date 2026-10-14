@@ -193,7 +193,11 @@ mod tests {
         }
         let p = plan(&ai, &threatened);
         ai.claim_idle_queue_for_worked_backlog(&mut threatened, 0, &p);
-        assert_eq!(builders_queued(&threatened), 0, "threatened cities keep their queues");
+        assert_eq!(
+            builders_queued(&threatened),
+            0,
+            "threatened cities keep their queues"
+        );
     }
 
     /// The slow-city half of the blocked case: a Builder that takes longer
@@ -259,9 +263,13 @@ mod tests {
     fn a_runaway_backlog_buys_its_builder_above_the_reserve() {
         let (mut game, capital, second) = two_idle_cities();
         for cid in [capital, second] {
-            game.cities.get_mut(&cid).unwrap().queue.push(Item::Building {
-                building: crate::name!("monument"),
-            });
+            game.cities
+                .get_mut(&cid)
+                .unwrap()
+                .queue
+                .push(Item::Building {
+                    building: crate::name!("monument"),
+                });
         }
         let ai = armed();
         let price = [capital, second]
@@ -279,7 +287,11 @@ mod tests {
         rich.players[0].gold = price + reserve + 1.0;
         let p = plan(&ai, &rich);
         ai.claim_idle_queue_for_worked_backlog(&mut rich, 0, &p);
-        assert_eq!(builders_alive(&rich), 1, "above the reserve: one Builder bought");
+        assert_eq!(
+            builders_alive(&rich),
+            1,
+            "above the reserve: one Builder bought"
+        );
         let mut off = game.clone();
         off.players[0].gold = price + reserve + 1.0;
         let stock = AdvancedAi::new();

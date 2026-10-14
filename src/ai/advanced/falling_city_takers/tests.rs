@@ -66,7 +66,14 @@ fn a_falling_city_in_reach_is_taken() {
 
 #[test]
 fn nothing_moves_with_the_gene_off_walls_up_a_wounded_body_or_at_peace() {
-    for case in ["off", "walls", "healthy city", "wounded", "peace", "claimed"] {
+    for case in [
+        "off",
+        "walls",
+        "healthy city",
+        "wounded",
+        "peace",
+        "claimed",
+    ] {
         let (mut g, mut ai, plan, target) = fixture(20);
         let knight = g.spawn_test_unit("knight", 0, (13, 10));
         ai.falling_city_calls_the_takers = true;
@@ -84,7 +91,8 @@ fn nothing_moves_with_the_gene_off_walls_up_a_wounded_body_or_at_peace() {
         }
         let before = g.log.len();
         assert!(
-            ai.plan_falling_city_takers(&mut g, 0, &plan, &claimed).is_empty(),
+            ai.plan_falling_city_takers(&mut g, 0, &plan, &claimed)
+                .is_empty(),
             "{case}"
         );
         assert_eq!(g.units[&knight].pos, (13, 10), "{case}");

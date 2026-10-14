@@ -4501,7 +4501,7 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 // 0 is the unlimited pace; anything else is a turn budget.
                 sh.pace_ms.store(v.min(60_000), Ordering::Relaxed);
                 sh.turn_us.store(0, Ordering::Relaxed); // re-measure at the new pace
-                // On the live mirror the pace is the Civilization VI game's.
+                                                        // On the live mirror the pace is the Civilization VI game's.
                 if civ6::live_pause_control() {
                     if let Err(error) = civ6::set_live_pace(v) {
                         eprintln!("[live pace] {error}");

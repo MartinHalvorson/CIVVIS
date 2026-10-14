@@ -27,8 +27,7 @@ impl AdvancedAi {
         else {
             return false;
         };
-        dealt >= f64::from(defender_hp)
-            || (dealt >= received && f64::from(unit.hp) > received)
+        dealt >= f64::from(defender_hp) || (dealt >= received && f64::from(unit.hp) > received)
     }
 }
 

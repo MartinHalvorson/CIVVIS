@@ -122,7 +122,11 @@ fn version_two_upgrades_the_siege_train_against_medieval_walls() {
     g.players[0].techs.insert(name!("military_engineering"));
     let target = plan.target_city.unwrap();
     g.cities.get_mut(&target).unwrap().wall_hp = 300;
-    assert_eq!(ai.domination_siege_research_goal(&g, 0, &plan), None, "v1 stops at a design");
+    assert_eq!(
+        ai.domination_siege_research_goal(&g, 0, &plan),
+        None,
+        "v1 stops at a design"
+    );
     ai.enable_domination_siege_research_2();
     assert_eq!(
         ai.domination_siege_research_goal(&g, 0, &plan),
@@ -138,6 +142,10 @@ fn version_two_upgrades_the_siege_train_against_medieval_walls() {
     );
     g.cities.get_mut(&target).unwrap().wall_hp = 200;
     if g.city_max_wall_hp(&g.cities[&target]) < 300 {
-        assert_eq!(ai.domination_siege_research_goal(&g, 0, &plan), None, "below the tier");
+        assert_eq!(
+            ai.domination_siege_research_goal(&g, 0, &plan),
+            None,
+            "below the tier"
+        );
     }
 }

@@ -264,20 +264,36 @@ fn the_last_city_of_a_faith_holdout_waits_only_under_the_gene() {
     assert!(ai.capture_holdable(&g, 0, victim_city, taker), "off");
     ai.enable_elimination_waits_on_the_clock();
     assert_eq!(ai.elimination_crowns_a_faith(&g, 0, 2), Some(1));
-    assert!(!ai.capture_holdable(&g, 0, victim_city, taker), "the last holdout city waits");
+    assert!(
+        !ai.capture_holdable(&g, 0, victim_city, taker),
+        "the last holdout city waits"
+    );
     let mut follows = g.clone();
     std::sync::Arc::make_mut(&mut follows.observed_majority_religion).insert(2, faith.clone());
-    assert_eq!(ai.elimination_crowns_a_faith(&follows, 0, 2), None, "the victim already follows it");
+    assert_eq!(
+        ai.elimination_crowns_a_faith(&follows, 0, 2),
+        None,
+        "the victim already follows it"
+    );
     let mut second = g.clone();
     let spot = second
         .wdisk(second.cities[&victim_city].pos, 8)
         .into_iter()
         .find(|pos| {
             second.wdist(*pos, second.cities[&victim_city].pos) >= 5
-                && second.map.get(*pos).is_some_and(|tile| !second.rules.is_water(tile))
-                && second.cities.values().all(|city| second.wdist(city.pos, *pos) >= 4)
+                && second
+                    .map
+                    .get(*pos)
+                    .is_some_and(|tile| !second.rules.is_water(tile))
+                && second
+                    .cities
+                    .values()
+                    .all(|city| second.wdist(city.pos, *pos) >= 4)
         })
         .expect("room for a second city");
     second.found_city_for(2, spot, None);
-    assert!(ai.capture_holdable(&second, 0, victim_city, taker), "not its last city");
+    assert!(
+        ai.capture_holdable(&second, 0, victim_city, taker),
+        "not its last city"
+    );
 }

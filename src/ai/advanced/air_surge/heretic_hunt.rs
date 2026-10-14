@@ -63,7 +63,8 @@ impl AdvancedAi {
                 unit.owner != pid
                     && g.is_at_war(pid, unit.owner)
                     && g.rules.units[unit.kind].class == "religious"
-                    && (in_our_land(g, pid, unit.pos) || near_home(g, &homes, unit.pos, HUNT_HOME_REACH))
+                    && (in_our_land(g, pid, unit.pos)
+                        || near_home(g, &homes, unit.pos, HUNT_HOME_REACH))
                     && !self.preserve_competing_faith(g, pid, unit)
             })
             .map(|unit| {
@@ -154,7 +155,8 @@ impl AdvancedAi {
         }
         actions.push(condemn);
         let hp = f64::from(board.units.get(&uid)?.hp);
-        (super::super::battle_planner::strike_danger(&board, pid, at, uid) < hp * HUNTER_DANGER_SHARE)
+        (super::super::battle_planner::strike_danger(&board, pid, at, uid)
+            < hp * HUNTER_DANGER_SHARE)
             .then_some(actions)
     }
 }

@@ -848,7 +848,14 @@ fn online_opening_keeps_a_full_column_near_the_rally_for_eight_more_turns() {
 
     let rally = ai.conquest_opening.as_ref().unwrap().rally;
     bodies(&mut game, 0, "warrior", rally, 2, CONQUEST_RANGED);
-    bodies(&mut game, 0, "warrior", rally, CONQUEST_ASSEMBLY_RADIUS + 2, CONQUEST_MELEE);
+    bodies(
+        &mut game,
+        0,
+        "warrior",
+        rally,
+        CONQUEST_ASSEMBLY_RADIUS + 2,
+        CONQUEST_MELEE,
+    );
     game.turn = 39;
     ai.maintain_conquest_opening(&mut game, 0);
     let opening = ai.conquest_opening.as_ref().unwrap();
@@ -1547,7 +1554,14 @@ fn a_war_the_target_opens_is_adopted_and_pins_the_campaign() {
     let mut game = board(&[at(6, 12), at(14, 12)]);
     let mut ai = opened(&mut game);
     let rally = ai.conquest_opening.as_ref().unwrap().rally;
-    let force = bodies(&mut game, 0, "warrior", rally, 3, CONQUEST_RANGED + CONQUEST_MELEE);
+    let force = bodies(
+        &mut game,
+        0,
+        "warrior",
+        rally,
+        3,
+        CONQUEST_RANGED + CONQUEST_MELEE,
+    );
     ai.maintain_conquest_opening(&mut game, 0);
     assert!(ai.conquest_opening.as_ref().unwrap().declared.is_none());
 
@@ -1556,8 +1570,15 @@ fn a_war_the_target_opens_is_adopted_and_pins_the_campaign() {
     game.at_war.insert((1, 0));
     game.turn += 1;
     ai.maintain_conquest_opening(&mut game, 0);
-    let opening = ai.conquest_opening.as_ref().expect("the opening survives the war");
-    assert_eq!(opening.declared, Some(game.turn), "the war is adopted this turn");
+    let opening = ai
+        .conquest_opening
+        .as_ref()
+        .expect("the opening survives the war");
+    assert_eq!(
+        opening.declared,
+        Some(game.turn),
+        "the war is adopted this turn"
+    );
     assert!(
         force.iter().all(|uid| opening.force.contains(uid)),
         "the bodies already raised are the war's force"
@@ -1596,7 +1617,14 @@ fn a_partial_force_at_the_rally_is_not_an_assembled_one() {
     );
 
     // The rest arrive: now it is.
-    bodies(&mut game, 0, "warrior", rally, 2, CONQUEST_RANGED + CONQUEST_MELEE - 2);
+    bodies(
+        &mut game,
+        0,
+        "warrior",
+        rally,
+        2,
+        CONQUEST_RANGED + CONQUEST_MELEE - 2,
+    );
     ai.maintain_conquest_opening(&mut game, 0);
     let opening = ai.conquest_opening.as_ref().unwrap();
     assert!(opening.assembled.is_some());
@@ -1607,7 +1635,14 @@ fn a_declaration_is_not_read_as_peace_on_the_turn_it_is_made() {
     let mut game = board(&[at(6, 12), at(14, 12)]);
     let mut ai = opened(&mut game);
     let rally = ai.conquest_opening.as_ref().unwrap().rally;
-    bodies(&mut game, 0, "warrior", rally, 1, CONQUEST_RANGED + CONQUEST_MELEE);
+    bodies(
+        &mut game,
+        0,
+        "warrior",
+        rally,
+        1,
+        CONQUEST_RANGED + CONQUEST_MELEE,
+    );
     ai.maintain_conquest_opening(&mut game, 0);
     if let Some(opening) = ai.conquest_opening.as_mut() {
         assert!(!opening.force.is_empty());
@@ -1625,7 +1660,10 @@ fn a_declaration_is_not_read_as_peace_on_the_turn_it_is_made() {
     // releases as before.
     game.turn += 1;
     ai.maintain_conquest_opening(&mut game, 0);
-    assert!(ai.conquest_opening.is_none(), "a war that never opened ends the opening");
+    assert!(
+        ai.conquest_opening.is_none(),
+        "a war that never opened ends the opening"
+    );
 }
 
 #[test]
@@ -1678,8 +1716,15 @@ fn a_walled_target_reserves_a_ram_in_the_capital() {
     let mut ai = opened(&mut game);
     let capital = AdvancedAi::conquest_capital(&game, 0).expect("a capital");
     assert_ne!(capital, second);
-    assert_eq!(ai.conquest_breach_target(&game), None, "an unwalled city asks for no Ram");
-    assert_eq!(ai.conquest_breaker_value(&game, 0, capital, "battering_ram"), 0.0);
+    assert_eq!(
+        ai.conquest_breach_target(&game),
+        None,
+        "an unwalled city asks for no Ram"
+    );
+    assert_eq!(
+        ai.conquest_breaker_value(&game, 0, capital, "battering_ram"),
+        0.0
+    );
 
     let target = ai.conquest_opening.as_ref().unwrap().city;
     {
@@ -1703,7 +1748,10 @@ fn a_walled_target_reserves_a_ram_in_the_capital() {
     let walkers = bodies(&mut game, 0, "warrior", home, 1, 2);
     assert!(!walkers.is_empty());
     assert!(ai.conquest_breaker_value(&game, 0, capital, "battering_ram") > 0.0);
-    assert_eq!(ai.conquest_breaker_value(&game, 0, second, "battering_ram"), 0.0);
+    assert_eq!(
+        ai.conquest_breaker_value(&game, 0, second, "battering_ram"),
+        0.0
+    );
     assert_eq!(ai.conquest_breaker_value(&game, 0, capital, "archer"), 0.0);
     let plan = StrategicPlan {
         strategy: GrandStrategy::Conquest,
@@ -1740,7 +1788,11 @@ fn a_rally_on_a_mountain_moves_to_standable_ground() {
     game.map.tiles.get_mut(&rally).unwrap().terrain = name!("mountain");
     assert!(!AdvancedAi::conquest_rally_standable(&game, rally));
     ai.maintain_conquest_opening(&mut game, 0);
-    let moved = ai.conquest_opening.as_ref().expect("the opening stands").rally;
+    let moved = ai
+        .conquest_opening
+        .as_ref()
+        .expect("the opening stands")
+        .rally;
     assert_ne!(moved, rally);
     assert!(AdvancedAi::conquest_rally_standable(&game, moved));
     let city = game.cities[&ai.conquest_opening.as_ref().unwrap().city].pos;
@@ -1762,7 +1814,14 @@ fn one_straggler_does_not_cost_the_column_its_extension() {
         let rally = ai.conquest_opening.as_ref().unwrap().rally;
         let near = CONQUEST_RANGED + CONQUEST_MELEE - 2;
         bodies(&mut game, 0, "warrior", rally, 2, near);
-        bodies(&mut game, 0, "warrior", rally, CONQUEST_ASSEMBLY_RADIUS + 2, 2 - stragglers);
+        bodies(
+            &mut game,
+            0,
+            "warrior",
+            rally,
+            CONQUEST_ASSEMBLY_RADIUS + 2,
+            2 - stragglers,
+        );
         let far = game
             .map
             .tiles
@@ -1787,7 +1846,9 @@ fn one_straggler_does_not_cost_the_column_its_extension() {
         );
         game.turn = 40;
         ai.maintain_conquest_opening(&mut game, 0);
-        ai.conquest_opening.as_ref().and_then(|opening| opening.grace_until)
+        ai.conquest_opening
+            .as_ref()
+            .and_then(|opening| opening.grace_until)
     };
     assert!(grace(1).is_some(), "one straggler keeps the extension");
     assert!(grace(2).is_none(), "two do not");
@@ -1807,7 +1868,10 @@ fn a_war_the_target_opens_before_assembly_releases_the_opening() {
     game.at_war.insert((1, 0));
     game.turn += 1;
     ai.maintain_conquest_opening(&mut game, 0);
-    assert!(ai.conquest_opening.is_none(), "a partial force does not adopt the war");
+    assert!(
+        ai.conquest_opening.is_none(),
+        "a partial force does not adopt the war"
+    );
 }
 
 /// A controller that first sees the game just past the naming deadline is a
@@ -1820,7 +1884,10 @@ fn a_resumed_controller_names_the_opening_just_past_the_deadline() {
     game.turn = game.standard_duration(CONQUEST_COMMIT_DEADLINE) + 1;
     let mut resumed = armed();
     resumed.maintain_conquest_opening(&mut game, 0);
-    assert!(resumed.conquest_opening.is_some(), "the resumed controller names it");
+    assert!(
+        resumed.conquest_opening.is_some(),
+        "the resumed controller names it"
+    );
 
     let mut native = armed();
     let late = game.turn;
@@ -1829,14 +1896,20 @@ fn a_resumed_controller_names_the_opening_just_past_the_deadline() {
     native.conquest_opening = None;
     game.turn = late;
     native.maintain_conquest_opening(&mut game, 0);
-    assert!(native.conquest_opening.is_none(), "a controller from turn one keeps the deadline");
+    assert!(
+        native.conquest_opening.is_none(),
+        "a controller from turn one keeps the deadline"
+    );
 
     let mut stale = armed();
     game.turn = game.standard_duration(CONQUEST_COMMIT_DEADLINE)
         + game.standard_duration(CONQUEST_RESUME_GRACE_TURNS)
         + 2;
     stale.maintain_conquest_opening(&mut game, 0);
-    assert!(stale.conquest_opening.is_none(), "a resume long past the window names nothing");
+    assert!(
+        stale.conquest_opening.is_none(),
+        "a resume long past the window names nothing"
+    );
 }
 
 /// A live mirror's kills come from confirmed host deaths, not the engine's
@@ -1859,8 +1932,15 @@ fn a_live_openings_kill_rate_reads_the_host_deaths() {
         losses: 2,
         taken: 1,
     };
-    assert_eq!(game.players[0].counters.get("kills").copied().unwrap_or(0), 0);
-    assert_eq!(ai.conquest_kills_per_loss(&game, 0, &opening), 0.0, "native: the counter");
+    assert_eq!(
+        game.players[0].counters.get("kills").copied().unwrap_or(0),
+        0
+    );
+    assert_eq!(
+        ai.conquest_kills_per_loss(&game, 0, &opening),
+        0.0,
+        "native: the counter"
+    );
     ai.host_war_unit_losses = Some(std::collections::BTreeMap::from([((1, 0), 3), ((0, 1), 2)]));
     assert_eq!(ai.conquest_kills(&game, 0, 1), 3, "their losses to us");
     assert!((ai.conquest_kills_per_loss(&game, 0, &opening) - 1.5).abs() < 1e-9);
@@ -1876,7 +1956,14 @@ fn a_rival_with_cities_in_the_fog_keeps_its_war_after_the_capture() {
         let mut ai = opened(&mut game);
         let city = game.player_city_ids(1)[0];
         let rally = ai.conquest_opening.as_ref().unwrap().rally;
-        bodies(&mut game, 0, "warrior", rally, 1, CONQUEST_RANGED + CONQUEST_MELEE);
+        bodies(
+            &mut game,
+            0,
+            "warrior",
+            rally,
+            1,
+            CONQUEST_RANGED + CONQUEST_MELEE,
+        );
         ai.maintain_conquest_opening(&mut game, 0);
         assert!(ai.conquest_declaration(&mut game, 0));
         if counted {
@@ -1890,7 +1977,10 @@ fn a_rival_with_cities_in_the_fog_keeps_its_war_after_the_capture() {
         }
         game.cities.get_mut(&city).unwrap().owner = 0;
         ai.maintain_conquest_opening(&mut game, 0);
-        assert!(ai.conquest_opening.is_none(), "the opening hands over either way");
+        assert!(
+            ai.conquest_opening.is_none(),
+            "the opening hands over either way"
+        );
         assert_eq!(
             ai.peace_offers.contains(&1),
             !counted,
@@ -1911,7 +2001,14 @@ fn a_bleeding_captured_capital_is_not_traded_for_terms() {
         let city = game.player_city_ids(1)[0];
         assert!(game.cities[&city].is_capital);
         let rally = ai.conquest_opening.as_ref().unwrap().rally;
-        bodies(&mut game, 0, "warrior", rally, 1, CONQUEST_RANGED + CONQUEST_MELEE);
+        bodies(
+            &mut game,
+            0,
+            "warrior",
+            rally,
+            1,
+            CONQUEST_RANGED + CONQUEST_MELEE,
+        );
         ai.maintain_conquest_opening(&mut game, 0);
         assert!(ai.conquest_declaration(&mut game, 0));
         game.cities.get_mut(&city).unwrap().owner = 0;
@@ -2148,10 +2245,18 @@ fn a_capital_fourteen_tiles_out_is_left_alone_and_journalled() {
     assert_eq!(off.conquest_near_noted, None);
 
     let mut on = stays_near();
-    assert_eq!(on.conquest_target(&game, 0), None, "on: fourteen tiles is past the reach");
+    assert_eq!(
+        on.conquest_target(&game, 0),
+        None,
+        "on: fourteen tiles is past the reach"
+    );
     on.maintain_conquest_opening(&mut game, 0);
     assert!(on.conquest_opening.is_none(), "on: no opening is named");
-    assert_eq!(on.conquest_near_noted, Some(game.turn), "the far city is journalled");
+    assert_eq!(
+        on.conquest_near_noted,
+        Some(game.turn),
+        "the far city is journalled"
+    );
 
     // The note is rate-limited, not repeated every turn.
     game.turn += 1;
@@ -2172,7 +2277,10 @@ fn a_rival_city_ten_tiles_out_is_named_over_its_far_capital() {
         .find(|cid| *cid != capital)
         .expect("the forward city stands");
     let home = game.cities[&game.player_city_ids(0)[0]].pos;
-    assert_eq!(game.wdist(home, game.cities[&forward].pos), CONQUEST_NEAR_REACH_TILES);
+    assert_eq!(
+        game.wdist(home, game.cities[&forward].pos),
+        CONQUEST_NEAR_REACH_TILES
+    );
 
     assert_eq!(
         armed().conquest_target(&game, 0),
@@ -2244,7 +2352,10 @@ fn a_target_that_walls_up_with_no_breaker_held_ends_the_opening() {
             assert!(ai.peace_offers.contains(&1), "on: and asks for terms");
             assert!(!ai.conquest_owns_the_campaign());
         } else {
-            assert!(ai.conquest_opening.is_some(), "off: the war keeps the opening");
+            assert!(
+                ai.conquest_opening.is_some(),
+                "off: the war keeps the opening"
+            );
             assert!(!ai.peace_offers.contains(&1));
         }
     }
@@ -2258,7 +2369,10 @@ fn a_held_breaker_keeps_the_opening_through_the_walls() {
     let rally = ai.conquest_opening.as_ref().unwrap().rally;
     bodies(&mut game, 0, "battering_ram", rally, 2, 1);
     ai.maintain_conquest_opening(&mut game, 0);
-    assert!(ai.conquest_opening.is_some(), "a Ram can still open the walls");
+    assert!(
+        ai.conquest_opening.is_some(),
+        "a Ram can still open the walls"
+    );
     assert!(!ai.peace_offers.contains(&1));
 }
 
@@ -2270,12 +2384,18 @@ fn an_undented_city_ends_the_opening_after_the_patience_window() {
 
     game.turn = declared + window - 1;
     ai.maintain_conquest_opening(&mut game, 0);
-    assert!(ai.conquest_opening.is_some(), "inside the window the war keeps going");
+    assert!(
+        ai.conquest_opening.is_some(),
+        "inside the window the war keeps going"
+    );
 
     game.cities.get_mut(&target).unwrap().hp = 120;
     game.turn = declared + window;
     ai.maintain_conquest_opening(&mut game, 0);
-    assert!(ai.conquest_opening.is_some(), "a dented city keeps the opening");
+    assert!(
+        ai.conquest_opening.is_some(),
+        "a dented city keeps the opening"
+    );
 
     game.cities.get_mut(&target).unwrap().hp = 200;
     ai.maintain_conquest_opening(&mut game, 0);
@@ -2367,7 +2487,10 @@ fn early_conquest_stands_down_is_a_native_opt_in_off_in_both_controllers() {
 fn a_standing_down_opening_names_its_target_but_never_opens() {
     let mut game = board(&[at(6, 12), at(14, 12)]);
     let off = opened(&mut game);
-    assert!(off.conquest_opening.is_some(), "off: the shipped opening opens");
+    assert!(
+        off.conquest_opening.is_some(),
+        "off: the shipped opening opens"
+    );
 
     let mut game = board(&[at(6, 12), at(14, 12)]);
     meet_and_explore(&mut game, 1);

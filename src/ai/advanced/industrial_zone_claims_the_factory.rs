@@ -93,9 +93,7 @@ impl AdvancedAi {
         let standing: Vec<Pos> = g
             .cities
             .values()
-            .filter(|other| {
-                other.owner == pid && other.buildings.iter().any(|b| is_factory(g, b))
-            })
+            .filter(|other| other.owner == pid && other.buildings.iter().any(|b| is_factory(g, b)))
             .map(|other| industry_origin(g, other))
             .collect();
         g.cities
@@ -103,7 +101,9 @@ impl AdvancedAi {
             .filter(|other| {
                 other.owner == pid
                     && g.wdist(origin, other.pos) <= range
-                    && standing.iter().all(|from| g.wdist(*from, other.pos) > range)
+                    && standing
+                        .iter()
+                        .all(|from| g.wdist(*from, other.pos) > range)
             })
             .count()
     }
@@ -310,15 +310,18 @@ impl AdvancedAi {
             // The most cities reached first; then the most productive; then
             // the quickest; then the lowest id, so the claim is deterministic.
             let production = g.city_yields(cid).production;
-            if best.as_ref().is_none_or(|(old_reach, old_production, old_turns, old_city, _)| {
-                (std::cmp::Reverse(reach), -production, turns, cid)
-                    < (
-                        std::cmp::Reverse(*old_reach),
-                        -*old_production,
-                        *old_turns,
-                        *old_city,
-                    )
-            }) {
+            if best
+                .as_ref()
+                .is_none_or(|(old_reach, old_production, old_turns, old_city, _)| {
+                    (std::cmp::Reverse(reach), -production, turns, cid)
+                        < (
+                            std::cmp::Reverse(*old_reach),
+                            -*old_production,
+                            *old_turns,
+                            *old_city,
+                        )
+                })
+            {
                 best = Some((reach, production, turns, cid, item));
             }
         }

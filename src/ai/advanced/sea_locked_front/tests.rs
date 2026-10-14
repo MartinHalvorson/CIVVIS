@@ -62,16 +62,29 @@ fn ai(gene: bool, g: &Game, target: u32) -> AdvancedAi {
 /// turns of the train held short of the water stand its siege down.
 fn stand_down(ai: &mut AdvancedAi, g: &mut Game, target: u32, soldier: u32) {
     ai.one_war_observe(g, 0);
-    assert_eq!(ai.one_war_front(), Some(2), "fixture: the plan's target is the front");
+    assert_eq!(
+        ai.one_war_front(),
+        Some(2),
+        "fixture: the plan's target is the front"
+    );
     let hold = StageMarch::Hold { wet: 18 };
     for _ in 0..ROAD_HOLD_TURNS {
         let _ = ai.note_stage_march(g, soldier, target, &hold);
         ai.reconcile_commitments(g, 0);
         g.turn += 1;
     }
-    assert!(ai.capture_stood_down_holds(g, target), "fixture: stood down");
-    assert!(ai.siege_road_cuts_off(g, 0, 2), "fixture: player 2 is cut off");
-    assert!(ai.rival_reachable_by_land(g, 0, 3), "fixture: player 3 is a walk away");
+    assert!(
+        ai.capture_stood_down_holds(g, target),
+        "fixture: stood down"
+    );
+    assert!(
+        ai.siege_road_cuts_off(g, 0, 2),
+        "fixture: player 2 is cut off"
+    );
+    assert!(
+        ai.rival_reachable_by_land(g, 0, 3),
+        "fixture: player 3 is a walk away"
+    );
 }
 
 /// Under the gene the cut-off front moves to the enemy on our island; with
@@ -139,7 +152,10 @@ fn only_a_land_reachable_enemy_takes_the_front() {
     for cid in own {
         far.cities.get_mut(&cid).unwrap().pos = (28, 6);
     }
-    assert!(!on.rival_reachable_by_land(&far, 0, 3), "fixture: 3 is across the water");
+    assert!(
+        !on.rival_reachable_by_land(&far, 0, 3),
+        "fixture: 3 is across the water"
+    );
     assert_eq!(on.sea_locked_front_swap(&far, 0, 2, &[2, 3]), None);
     // A land bridge to player 2: the front is no longer cut off.
     let mut bridged = g.clone();
@@ -184,7 +200,10 @@ fn hold_turns(ai: &mut AdvancedAi, g: &mut Game, city: u32, soldier: u32) {
         ai.reconcile_commitments(g, 0);
         g.turn += 1;
     }
-    assert!(ai.capture_stood_down_holds(g, city), "fixture: {city} stood down");
+    assert!(
+        ai.capture_stood_down_holds(g, city),
+        "fixture: {city} stood down"
+    );
 }
 
 /// With a foothold keeping the rival "reachable", one water stand-down is not
@@ -197,13 +216,24 @@ fn two_water_stand_downs_read_the_front_sea_locked_despite_a_foothold() {
     on.one_war_observe(&g, 0);
     assert_eq!(on.one_war_front(), Some(2));
     hold_turns(&mut on, &mut g, target, soldier);
-    assert!(on.rival_reachable_by_land(&g, 0, 2), "fixture: the foothold reaches player 2");
+    assert!(
+        on.rival_reachable_by_land(&g, 0, 2),
+        "fixture: the foothold reaches player 2"
+    );
     assert!(!on.siege_road_cuts_off(&g, 0, 2));
     assert_eq!(on.water_road_stand_downs(&g, 0, 2), 1);
     on.one_war_observe(&g, 0);
-    assert_eq!(on.one_war_front(), Some(2), "one stand-down: the front stays");
+    assert_eq!(
+        on.one_war_front(),
+        Some(2),
+        "one stand-down: the front stays"
+    );
     hold_turns(&mut on, &mut g, second, soldier);
     assert_eq!(on.water_road_stand_downs(&g, 0, 2), 2);
     on.one_war_observe(&g, 0);
-    assert_eq!(on.one_war_front(), Some(3), "two stand-downs: the front moves");
+    assert_eq!(
+        on.one_war_front(),
+        Some(3),
+        "two stand-downs: the front moves"
+    );
 }

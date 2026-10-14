@@ -4558,10 +4558,8 @@ pub struct StateSnapshot {
     /// `improve_refused` events that name one (`want`). See
     /// `Game::blocked_improvements`.
     #[serde(default)]
-    pub refused_improvement_names: std::collections::BTreeMap<
-        crate::Pos,
-        std::collections::BTreeSet<crate::name::Name>,
-    >,
+    pub refused_improvement_names:
+        std::collections::BTreeMap<crate::Pos, std::collections::BTreeSet<crate::name::Name>>,
     /// Promotions the host refused, per Civilization VI unit id.
     /// See `Game::blocked_promotions` for why this exists.
     ///
@@ -15158,7 +15156,10 @@ impl LiveMirror {
             .extend(state.refused_improves.iter().copied());
         let blocked = Arc::make_mut(&mut self.game.blocked_improvements);
         for (pos, names) in &state.refused_improvement_names {
-            blocked.entry(*pos).or_default().extend(names.iter().copied());
+            blocked
+                .entry(*pos)
+                .or_default()
+                .extend(names.iter().copied());
         }
         Arc::make_mut(&mut self.game.blocked_trade_routes)
             .extend(state.refused_trade_routes.iter().copied());

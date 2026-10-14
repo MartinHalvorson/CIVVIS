@@ -110,7 +110,13 @@ fn a_healthy_explorer_is_not_rotated_out_of_summed_danger() {
         ai.rotate_wounded(&mut g, 0, &mut field, &BTreeSet::new(), &BTreeSet::new());
         g.units[&scout].pos != at
     };
-    assert!(rotate(false, 100), "without an exploration commitment it rotates");
+    assert!(
+        rotate(false, 100),
+        "without an exploration commitment it rotates"
+    );
     assert!(!rotate(true, 100), "a healthy explorer keeps its route");
-    assert!(rotate(true, ROTATE_HP - 10), "a wounded explorer still comes out");
+    assert!(
+        rotate(true, ROTATE_HP - 10),
+        "a wounded explorer still comes out"
+    );
 }

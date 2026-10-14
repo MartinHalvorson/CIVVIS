@@ -37,11 +37,13 @@ fn capital_with_a_hill_and_a_flat(terrain: &str) -> (Game, u32, Pos, Pos) {
         tile.pillaged = false;
     }
     assert!(
-        game.valid_improvements(0, hill).contains(&crate::name!("mine")),
+        game.valid_improvements(0, hill)
+            .contains(&crate::name!("mine")),
         "fixture: a Mine is legal on the hill"
     );
     assert!(
-        game.valid_improvements(0, flat).contains(&crate::name!("farm")),
+        game.valid_improvements(0, flat)
+            .contains(&crate::name!("farm")),
         "fixture: a Farm is legal on the flat"
     );
     (game, capital, hill, flat)
@@ -84,7 +86,10 @@ fn builders_improve_the_worked_for_production_is_off_by_default_and_reversible()
     assert!(!AdvancedAi::legacy().builders_improve_the_worked_for_production);
     let stock = governor(false);
     let strategy = GrandStrategy::Conquest;
-    assert_eq!(stock.worked_production_premium(&game, 0, hill, "mine", strategy), 0.0);
+    assert_eq!(
+        stock.worked_production_premium(&game, 0, hill, "mine", strategy),
+        0.0
+    );
     let mut ai = governor(false);
     ai.enable_builders_improve_the_worked_for_production();
     assert!(ai.worked_production_premium(&game, 0, hill, "mine", strategy) > 0.0);

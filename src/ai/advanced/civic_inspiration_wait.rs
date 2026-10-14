@@ -84,9 +84,10 @@ impl AdvancedAi {
                 .filter(|pos| {
                     g.map.get(**pos).is_some_and(|tile| {
                         !tile.pillaged
-                            && tile.improvement.as_deref().is_some_and(|have| {
-                                want.is_none_or(|want| have == want)
-                            })
+                            && tile
+                                .improvement
+                                .as_deref()
+                                .is_some_and(|have| want.is_none_or(|want| have == want))
                     })
                 })
                 .count() as i64
@@ -101,9 +102,11 @@ impl AdvancedAi {
                 if crews > 0 {
                     (remaining as f64 / crews as f64).ceil() + 1.0
                 } else {
-                    Self::queue_head_turns(g, pid, |item| {
-                        matches!(item, Item::Unit { unit } if unit.as_str() == "builder")
-                    })? + remaining as f64
+                    Self::queue_head_turns(
+                        g,
+                        pid,
+                        |item| matches!(item, Item::Unit { unit } if unit.as_str() == "builder"),
+                    )? + remaining as f64
                 }
             }
             "improvement:farm" => {
@@ -172,7 +175,9 @@ impl AdvancedAi {
 
     /// Live turns to finish `civic` from scratch at today's Culture.
     fn civic_finish_turns(g: &Game, pid: usize, civic: &str) -> f64 {
-        (g.civic_cost(civic) / Self::research_rate(g, pid, false)).ceil().max(1.0)
+        (g.civic_cost(civic) / Self::research_rate(g, pid, false))
+            .ceil()
+            .max(1.0)
     }
 
     /// Would taking `civic` now finish it before its near inspiration lands?
@@ -192,7 +197,12 @@ impl AdvancedAi {
     /// advances? A trigger only a rival or the map grants (another continent,
     /// a declaration, a religion) is not waited for.
     pub(super) fn civic_inspiration_pending(g: &Game, pid: usize, civic: &str) -> bool {
-        let Some(boost) = g.rules.civics.get(civic).and_then(|spec| spec.boost.as_ref()) else {
+        let Some(boost) = g
+            .rules
+            .civics
+            .get(civic)
+            .and_then(|spec| spec.boost.as_ref())
+        else {
             return false;
         };
         if Self::boost_in_hand(g, pid, civic, false) {
@@ -212,9 +222,17 @@ impl AdvancedAi {
                 | "camps"
                 | "land_units"
                 | "units"
-        ) || ["improvement:", "improvement_on_resource:", "improve_resource:", "district:", "building:", "units_of:", "tech:"]
-            .iter()
-            .any(|prefix| trigger.starts_with(prefix))
+        ) || [
+            "improvement:",
+            "improvement_on_resource:",
+            "improve_resource:",
+            "district:",
+            "building:",
+            "units_of:",
+            "tech:",
+        ]
+        .iter()
+        .any(|prefix| trigger.starts_with(prefix))
     }
 
     /// The civic to take instead of `pick`, or `None` to keep it. `goal` is
@@ -253,7 +271,9 @@ impl AdvancedAi {
             let trigger = g.rules.civics[pick.as_str()]
                 .boost
                 .as_ref()
-                .map_or(String::new(), |boost| boost.trigger.replace(['_', ':'], " "));
+                .map_or(String::new(), |boost| {
+                    boost.trigger.replace(['_', ':'], " ")
+                });
             think!(self.journal(), Research, Decision,
                 "Adopting {} before {}", plain(&choice), plain(pick);
                 "civic-awaits-its-inspiration: both lead to {}; {}'s inspiration ({}) is still \

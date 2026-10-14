@@ -291,7 +291,10 @@ fn the_rebuilt_memory_keeps_the_plantings_crown_until_refreshed() {
     let (snapshot, state) = unseen_capital_fixture();
     let mut game = rebuild_from_state(&snapshot, &state, 3, 364000, 500, 0).game;
     let plymouth = named(&game, "Plymouth");
-    assert!(!game.cities[&plymouth].is_capital, "the host's flag on the board");
+    assert!(
+        !game.cities[&plymouth].is_capital,
+        "the host's flag on the board"
+    );
     assert!(
         game.players[0].remembered_cities[&plymouth].is_capital,
         "the planting's crown in the seat's memory"
@@ -310,7 +313,11 @@ fn a_refreshed_memory_lets_find_the_capital_price_the_passage() {
     let mut ai = crate::ai::AdvancedAi::targeting(crate::ai::VictoryTarget::Domination);
     ai.enable_find_the_capital();
     assert!(!game.is_at_war(0, 1));
-    assert_eq!(ai.find_the_capital_passage_gold(&game, 0, 1), None, "the crown hides it");
+    assert_eq!(
+        ai.find_the_capital_passage_gold(&game, 0, 1),
+        None,
+        "the crown hides it"
+    );
     refresh_city_memory(&mut game);
     assert_eq!(
         ai.find_the_capital_passage_gold(&game, 0, 1),

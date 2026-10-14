@@ -97,17 +97,33 @@ fn a_step_that_takes_a_city_is_not_folded_into_the_step_out() {
     let none = Default::default();
 
     let (folded, _, _) = coalesce_unit_paths_except(planned(), true, &none, &Default::default());
-    assert_eq!(folded[0].pos, Some((33, 20)), "without the city the walk folds past it");
+    assert_eq!(
+        folded[0].pos,
+        Some((33, 20)),
+        "without the city the walk folds past it"
+    );
 
     let (orders, deferred, coalesced) = coalesce_unit_paths_except(planned(), true, &none, &tiles);
     assert_eq!((deferred, coalesced), (0, 1));
-    assert_eq!(orders[0].pos, Some(city), "the walk ends on the city it takes");
+    assert_eq!(
+        orders[0].pos,
+        Some(city),
+        "the walk ends on the city it takes"
+    );
     assert_eq!(orders[1].verb.as_deref(), Some("MOVE_TO"));
-    assert_eq!(orders[1].pos, Some((33, 20)), "the step out rides the queue after the capture");
+    assert_eq!(
+        orders[1].pos,
+        Some((33, 20)),
+        "the step out rides the queue after the capture"
+    );
     assert_eq!(orders[2].verb.as_deref(), Some("FORTIFY"));
 
     let (old_host, deferred, _) = coalesce_unit_paths_except(planned(), false, &none, &tiles);
-    assert_eq!(old_host.len(), 1, "an unsequenced host keeps only the capture this frame");
+    assert_eq!(
+        old_host.len(),
+        1,
+        "an unsequenced host keeps only the capture this frame"
+    );
     assert_eq!(old_host[0].pos, Some(city));
     assert_eq!(deferred, 2);
 }

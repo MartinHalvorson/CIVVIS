@@ -365,8 +365,11 @@ impl AdvancedAi {
                     // `siege_train::upgrade_for_the_train`.
                     let front = self.siege_train_upgrades_first
                         && self.upgrade_for_the_train(g, pid, uid, plan);
-                    (g.players[pid].gold - gold >= floor)
-                        .then_some((front, gain / gold.max(1.0), uid))
+                    (g.players[pid].gold - gold >= floor).then_some((
+                        front,
+                        gain / gold.max(1.0),
+                        uid,
+                    ))
                 })
                 .max_by(|a, b| {
                     a.0.cmp(&b.0)

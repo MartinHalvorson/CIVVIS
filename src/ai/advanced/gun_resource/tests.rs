@@ -347,8 +347,14 @@ fn the_air_wing_buys_its_aluminum() {
     assert_eq!(wants.len(), 1, "{wants:?}");
     assert_eq!(wants[0].resource, "RESOURCE_ALUMINUM");
     assert_eq!(wants[0].amount, needed.ceil() as u32);
-    assert_eq!(wants[0].minimum, wants[0].amount, "the whole wing or nothing");
-    assert_eq!(wants[0].guns, super::super::air_surge::AIR_SURGE_LAUNCH_BOMBERS);
+    assert_eq!(
+        wants[0].minimum, wants[0].amount,
+        "the whole wing or nothing"
+    );
+    assert_eq!(
+        wants[0].guns,
+        super::super::air_surge::AIR_SURGE_LAUNCH_BOMBERS
+    );
 
     // The bought block is read back: the goal fields the launch wing.
     g.players[0]
@@ -358,7 +364,10 @@ fn the_air_wing_buys_its_aluminum() {
         AdvancedAi::air_surge_bomber_goal(&g, 0),
         super::super::air_surge::AIR_SURGE_LAUNCH_BOMBERS
     );
-    assert!(ai.siege_gun_resource_wants(&g, 0).is_empty(), "bought, no ask");
+    assert!(
+        ai.siege_gun_resource_wants(&g, 0).is_empty(),
+        "bought, no ask"
+    );
 }
 
 /// `bombers-fly-on-a-small-stock`: the ask is the small stock that trains
@@ -377,7 +386,10 @@ fn a_small_stock_flies_the_launch_wing() {
     let (_, small) = AdvancedAi::air_surge_launch_stock(&g, 0, true).expect("a metal Bomber");
     assert_eq!(wants[0].amount, small.ceil() as u32);
     assert_eq!(wants[0].minimum, wants[0].amount);
-    assert!(wants[0].amount < full[0].amount, "{wants:?} against {full:?}");
+    assert!(
+        wants[0].amount < full[0].amount,
+        "{wants:?} against {full:?}"
+    );
     let launch = super::super::air_surge::AIR_SURGE_LAUNCH_BOMBERS;
     let aluminum = crate::name!("aluminum");
     // One short of the small stock flies nothing and still asks.
@@ -393,10 +405,20 @@ fn a_small_stock_flies_the_launch_wing() {
         .insert(aluminum, f64::from(wants[0].amount));
     assert_eq!(ai.air_wing_bomber_goal(&g, 0), launch);
     assert_eq!(AdvancedAi::air_surge_bomber_goal(&g, 0), 0);
-    assert!(ai.siege_gun_resource_wants(&g, 0).is_empty(), "bought, no ask");
+    assert!(
+        ai.siege_gun_resource_wants(&g, 0).is_empty(),
+        "bought, no ask"
+    );
     ai.disable_bombers_fly_on_a_small_stock();
-    assert_eq!(ai.air_wing_bomber_goal(&g, 0), 0, "off: the grace-window bank");
-    assert!(!ai.siege_gun_resource_wants(&g, 0).is_empty(), "off: the block is asked");
+    assert_eq!(
+        ai.air_wing_bomber_goal(&g, 0),
+        0,
+        "off: the grace-window bank"
+    );
+    assert!(
+        !ai.siege_gun_resource_wants(&g, 0).is_empty(),
+        "off: the block is asked"
+    );
 }
 
 /// The Bomber more than three technologies away asks nothing yet.
@@ -427,7 +449,9 @@ fn the_wings_aluminum_is_held_from_sale() {
     assert!(held.contains("RESOURCE_ALUMINUM"), "{held:?}");
     let spares = ai.siege_barter_spares(&g, 0, &held);
     assert!(
-        spares.iter().all(|spare| spare.resource != "RESOURCE_ALUMINUM"),
+        spares
+            .iter()
+            .all(|spare| spare.resource != "RESOURCE_ALUMINUM"),
         "never bartered away"
     );
 }

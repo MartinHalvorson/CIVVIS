@@ -262,7 +262,10 @@ fn a_bombed_breach_at_one_health_is_finished_by_any_melee_body() {
     let reserved = ai.plan_air_city_assault(&mut g, 0, &plan);
     assert!(reserved.contains(&infantry));
     assert_eq!(g.cities[&breached].owner, 0);
-    assert_eq!(ai.planned_air_city_assault().unwrap().cavalry, Some(infantry));
+    assert_eq!(
+        ai.planned_air_city_assault().unwrap().cavalry,
+        Some(infantry)
+    );
 }
 
 /// A city's melee defence follows its owner's best unit, so the nearest
@@ -308,9 +311,15 @@ fn a_breach_nobody_can_finish_draws_the_nearest_body_in() {
     }
     ai.observe_air_assault_frame(BTreeSet::from([(30, 10)]), 0);
     let reserved = ai.plan_air_city_assault(&mut g, 0, &plan);
-    assert_eq!(g.cities[&breached].owner, 1, "two moves cannot reach it this turn");
+    assert_eq!(
+        g.cities[&breached].owner, 1,
+        "two moves cannot reach it this turn"
+    );
     assert!(reserved.contains(&infantry));
-    assert!(g.wdist(g.units[&infantry].pos, (30, 10)) < 5, "it closes in");
+    assert!(
+        g.wdist(g.units[&infantry].pos, (30, 10)) < 5,
+        "it closes in"
+    );
 }
 
 /// Live King 20260930T211803Z turn 184, frame 0: no cavalry in reach, so the
@@ -335,7 +344,15 @@ fn the_wing_bombs_a_visible_city_with_no_cavalry_in_reach() {
             reserved.contains(uid),
             "the wing is spent on the city: reserved {reserved:?}, report {:?}, bombers {:?}",
             ai.planned_air_city_assault(),
-            bombers.iter().map(|b| (g.units[b].pos, g.units[b].moves_left, g.units[b].acted, g.units[b].hp)).collect::<Vec<_>>()
+            bombers
+                .iter()
+                .map(|b| (
+                    g.units[b].pos,
+                    g.units[b].moves_left,
+                    g.units[b].acted,
+                    g.units[b].hp
+                ))
+                .collect::<Vec<_>>()
         );
     }
     assert!(g.cities[&cid].wall_hp < 400);
@@ -378,7 +395,10 @@ fn the_wing_holds_its_volley_when_nobody_can_walk_in() {
     ai.observe_air_assault_frame(BTreeSet::from([(20, 10)]), 2);
     let reserved = ai.plan_air_city_assault(&mut g, 0, &plan);
     for uid in &bombers {
-        assert!(!reserved.contains(uid), "the wing stays free for other work");
+        assert!(
+            !reserved.contains(uid),
+            "the wing stays free for other work"
+        );
     }
     assert_eq!(g.cities[&cid].wall_hp, 400, "no sortie on the city");
 }
@@ -404,10 +424,12 @@ fn the_wing_clears_a_guarded_breach_before_the_capture() {
         .map(|pos| g.spawn_test_unit("infantry", 1, *pos))
         .collect();
     g.spawn_test_unit("tank", 0, (16, 10));
-    assert!(g.player_can_see(0, (20, 10)) || {
-        g.spawn_test_unit("infantry", 0, (18, 9));
-        true
-    });
+    assert!(
+        g.player_can_see(0, (20, 10)) || {
+            g.spawn_test_unit("infantry", 0, (18, 9));
+            true
+        }
+    );
     ai.observe_air_assault_frame(BTreeSet::from([(20, 10)]), 2);
     let before: i32 = defenders.iter().map(|uid| g.units[uid].hp).sum();
     let reserved = ai.plan_air_city_assault(&mut g, 0, &plan);
@@ -462,11 +484,17 @@ fn a_breach_body_closes_in_under_shared_blows() {
                 && after.apply(0, &Action::MoveTo { unit: body, to }).is_ok()
                 && after.units[&body].pos == to
             {
-                assert!(battle_planner::strike_danger(&after, 0, to, body) >= 50.0, "{to:?}");
+                assert!(
+                    battle_planner::strike_danger(&after, 0, to, body) >= 50.0,
+                    "{to:?}"
+                );
             }
         }
         let reserved = ai.plan_air_city_assault(&mut g, 0, &plan);
-        (reserved.contains(&body), g.wdist(g.units[&body].pos, (30, 10)))
+        (
+            reserved.contains(&body),
+            g.wdist(g.units[&body].pos, (30, 10)),
+        )
     };
     let before = run(false);
     let after = run(true);
@@ -586,9 +614,18 @@ fn a_wounded_taker_finishes_a_falling_city_under_the_gene() {
     let target = (20, 10);
     let mut after = g.speculative_clone();
     after
-        .apply(0, &Action::Attack { unit: cavalry, target })
+        .apply(
+            0,
+            &Action::Attack {
+                unit: cavalry,
+                target,
+            },
+        )
         .expect("fixture: the blow is legal");
-    assert_eq!(after.cities[&cid].owner, 0, "fixture: the blow takes the city");
+    assert_eq!(
+        after.cities[&cid].owner, 0,
+        "fixture: the blow takes the city"
+    );
     let hp = after.units[&cavalry].hp;
     assert!(
         (BREACH_TAKER_MIN_HP..30).contains(&hp),
@@ -596,8 +633,14 @@ fn a_wounded_taker_finishes_a_falling_city_under_the_gene() {
     );
     let mut off = AdvancedAi::targeting(VictoryTarget::Domination);
     off.enable_air_surge_2();
-    assert!(off.air_assault_capture(&g, 0, cavalry, cid).is_none(), "off: refused");
+    assert!(
+        off.air_assault_capture(&g, 0, cavalry, cid).is_none(),
+        "off: refused"
+    );
     let mut on = off.clone();
     on.enable_wounded_taker_finishes_the_breach();
-    assert!(on.air_assault_capture(&g, 0, cavalry, cid).is_some(), "on: taken");
+    assert!(
+        on.air_assault_capture(&g, 0, cavalry, cid).is_some(),
+        "on: taken"
+    );
 }

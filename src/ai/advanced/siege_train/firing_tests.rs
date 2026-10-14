@@ -188,7 +188,9 @@ fn a_gun_is_not_posted_in_another_hostile_citys_strike() {
         .into_iter()
         .filter(|pos| {
             g.wdist(*pos, target) >= 4
-                && g.map.get(*pos).is_some_and(|t| g.rules.is_passable(t) && !g.rules.is_water(t))
+                && g.map
+                    .get(*pos)
+                    .is_some_and(|t| g.rules.is_passable(t) && !g.rules.is_water(t))
         })
         .min()
         .expect("a site beyond the post");
@@ -200,7 +202,10 @@ fn a_gun_is_not_posted_in_another_hostile_citys_strike() {
     g.at_war.insert((0, 2));
     g.at_war.insert((2, 0));
     let chosen = siege_posts(&g, 0, &CityView::of(&g, cid).unwrap(), &[gun], None)[&gun];
-    assert!(g.wdist(chosen, target) <= 2, "still a firing post on the target");
+    assert!(
+        g.wdist(chosen, target) <= 2,
+        "still a firing post on the target"
+    );
     assert!(
         g.wdist(chosen, third) > CITY_STRIKE_RANGE,
         "the post stands out of the third city's strike: {chosen:?} vs {third:?}"

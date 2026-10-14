@@ -1861,16 +1861,20 @@ mod tests {
                 ai.enable_stranded_settler_leaves_the_corridor();
             }
             ai.early_settler_homes.insert(settler, here);
-            assert_eq!(ai.early_settler_home(settler), Some(here), "fixture: an early home");
+            assert_eq!(
+                ai.early_settler_home(settler),
+                Some(here),
+                "fixture: an early home"
+            );
             let journal = Journal::recording();
             ai.attach_journal(journal.handle());
             assert!(!ai.settler_stranded(&mut g, 0, settler));
             assert_eq!(ai.early_settler_home(settler).is_none(), gene);
-            let named = journal
-                .since(0)
-                .thoughts
-                .iter()
-                .any(|thought| thought.headline.starts_with("Settler leaves its early corridor"));
+            let named = journal.since(0).thoughts.iter().any(|thought| {
+                thought
+                    .headline
+                    .starts_with("Settler leaves its early corridor")
+            });
             assert_eq!(named, gene);
         }
     }

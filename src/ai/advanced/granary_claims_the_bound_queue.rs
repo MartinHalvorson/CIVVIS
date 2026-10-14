@@ -66,7 +66,8 @@ impl AdvancedAi {
                 - g.item_invested_production(cid, &granary);
             remaining.max(0.0) / production.max(0.5)
         });
-        (turns <= g.standard_duration(BOUND_GRANARY_MAX_STANDARD) as f64).then_some((granary, turns))
+        (turns <= g.standard_duration(BOUND_GRANARY_MAX_STANDARD) as f64)
+            .then_some((granary, turns))
     }
 
     /// Whether `item` at the head of `cid` is the Granary this gene claims and
@@ -170,7 +171,15 @@ impl AdvancedAi {
                 let city = &g.cities[&cid];
                 (city.name.clone(), city.pop, g.city_housing(city))
             };
-            if g.apply(pid, &Action::Produce { city: cid, item: granary }).is_ok() {
+            if g.apply(
+                pid,
+                &Action::Produce {
+                    city: cid,
+                    item: granary,
+                },
+            )
+            .is_ok()
+            {
                 think!(self.journal(), Cities, Decision,
                        "{name} claims its Granary at its housing";
                        "granary-claims-the-bound-queue: population {pop} against housing \

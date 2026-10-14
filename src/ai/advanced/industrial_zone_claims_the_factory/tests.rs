@@ -92,13 +92,11 @@ fn the_factory_that_reaches_the_most_cities_claims_over_a_routine_unit() {
     let claimed = factory_heads(&on, &ranked);
     assert_eq!(claimed.len(), 1, "one claim a turn");
     let reach = |cid: u32| AdvancedAi::factory_new_reach(&busy, 0, cid);
-    let best = ranked
-        .iter()
-        .take(3)
-        .map(|cid| reach(*cid))
-        .max()
-        .unwrap();
-    assert!(best >= 1, "fixture: a Factory reaches its own city at least");
+    let best = ranked.iter().take(3).map(|cid| reach(*cid)).max().unwrap();
+    assert!(
+        best >= 1,
+        "fixture: a Factory reaches its own city at least"
+    );
     assert_eq!(
         reach(claimed[0]),
         best,
@@ -159,7 +157,11 @@ fn the_plant_waits_for_coal_and_then_powers_the_factories() {
 
     let mut dry = game.clone();
     let plan = ai.assess(&dry, 0);
-    assert_eq!(dry.strategic_resource_rate(0, "coal"), 0.0, "fixture: no Coal income");
+    assert_eq!(
+        dry.strategic_resource_rate(0, "coal"),
+        0.0,
+        "fixture: no Coal income"
+    );
     ai.claim_factory(&mut dry, 0, &plan);
     assert!(
         ranked
@@ -209,7 +211,9 @@ fn a_settler_a_wall_breaker_and_a_university_keep_their_queue() {
         let plan = ai.assess(&game, 0);
         ai.claim_factory(&mut game, 0, &plan);
         assert!(
-            ranked.iter().all(|cid| head(&game, *cid) == Some(keeper.clone())),
+            ranked
+                .iter()
+                .all(|cid| head(&game, *cid) == Some(keeper.clone())),
             "{keeper:?} keeps its queue"
         );
     }

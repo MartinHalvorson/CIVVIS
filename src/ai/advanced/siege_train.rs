@@ -564,7 +564,10 @@ impl AdvancedAi {
             .filter(|unit| {
                 unit.owner == pid
                     && g.rules.units[unit.kind].class == "military"
-                    && !matches!(g.rules.units[unit.kind].domain.as_deref(), Some("sea" | "air"))
+                    && !matches!(
+                        g.rules.units[unit.kind].domain.as_deref(),
+                        Some("sea" | "air")
+                    )
                     && !g.is_embarked(unit)
                     && g.wdist(unit.pos, city.pos) <= MUSTER_BREACH_FAR
             })
@@ -713,7 +716,8 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) {
-        if !self.invest_keeps_its_cavalry || !(self.siege_train || self.siege_positive_damage_budget)
+        if !self.invest_keeps_its_cavalry
+            || !(self.siege_train || self.siege_positive_damage_budget)
         {
             return;
         }
@@ -1797,8 +1801,11 @@ fn siege_posts_keeping(
     });
     let corridor = taker_corridor(g, city, taker, &ring_taken, &open_land);
     let third = third_strike_sources(g, pid, city.id);
-    let third_exposed =
-        |pos: Pos| third.iter().any(|source| g.wdist(*source, pos) <= CITY_STRIKE_RANGE);
+    let third_exposed = |pos: Pos| {
+        third
+            .iter()
+            .any(|source| g.wdist(*source, pos) <= CITY_STRIKE_RANGE)
+    };
     let mut fire_taken: BTreeSet<Pos> = BTreeSet::new();
     for uid in guns {
         let here = g.units[&uid].pos;
@@ -1863,7 +1870,14 @@ fn siege_posts_keeping(
                 let exposure = hostiles.iter().filter(|h| g.wdist(**h, *pos) <= 2).count();
                 // Out of every other hostile city's strike first; see
                 // `third_strike_sources`.
-                (third_exposed(*pos), far_side, !behind, exposure, g.wdist(here, *pos), *pos)
+                (
+                    third_exposed(*pos),
+                    far_side,
+                    !behind,
+                    exposure,
+                    g.wdist(here, *pos),
+                    *pos,
+                )
             });
             candidates
                 .into_iter()
@@ -2478,7 +2492,13 @@ impl AdvancedAi {
 
     /// `siege-needs-a-breaker`: what the train holds within the staging ring
     /// that can bring the walls down. See [`BreachReading`].
-    fn breach_reading(&self, g: &Game, pid: usize, city: &CityView, force: &[u32]) -> BreachReading {
+    fn breach_reading(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: &CityView,
+        force: &[u32],
+    ) -> BreachReading {
         self.breach_reading_within(g, pid, city, force, STAGING_FAR)
     }
 
@@ -2521,7 +2541,10 @@ impl AdvancedAi {
                 Arm::Siege if self.breach_gun_fit(g, *uid) => reading.guns += 1,
                 Arm::Siege => reading.wounded_guns += 1,
                 Arm::Shooter if self.siege_member_fit(g, *uid) => {
-                    if wall_shooters.as_ref().is_none_or(|shooters| shooters.contains(uid)) {
+                    if wall_shooters
+                        .as_ref()
+                        .is_none_or(|shooters| shooters.contains(uid))
+                    {
                         reading.shooter_walls += wall_damage_per_shot(g, *uid, city.id);
                     }
                 }
@@ -2692,7 +2715,8 @@ impl AdvancedAi {
             g.can_move(uid, *next)
                 && (g.wdist(*next, city.pos) > CITY_STRIKE_RANGE
                     || g.unit_ids_at(*next).iter().any(|id| {
-                        g.units[id].owner == pid && g.rules.units[g.units[id].kind].class == "military"
+                        g.units[id].owner == pid
+                            && g.rules.units[g.units[id].kind].class == "military"
                     }))
         });
         if let Some(next) = next {
@@ -2810,8 +2834,7 @@ impl AdvancedAi {
             && !walls_open_to_melee(&city)
             && breach.is_some_and(|reading| reading.at_hand(&city))
             && !force.iter().any(|uid| {
-                arm_of(g, *uid) == Arm::Melee
-                    && g.wdist(g.units[uid].pos, city.pos) <= STAGING_FAR
+                arm_of(g, *uid) == Arm::Melee && g.wdist(g.units[uid].pos, city.pos) <= STAGING_FAR
             });
         // `guns-grind-the-walls`: a fit gun at the ring opens walls the
         // melee cannot yet touch even when the whole capture outlasts the
@@ -2870,17 +2893,15 @@ impl AdvancedAi {
                 .filter(|uid| g.wdist(g.units[uid].pos, city.pos) <= MUSTER_BREACH_FAR)
                 .map(|uid| unit_power(g, *uid))
                 .sum();
-            let no_breaker_mustered = !arena
-                && self.siege_needs_a_breaker
-                && {
-                    let mut reading =
-                        self.breach_reading_within(g, pid, &city, &force, MUSTER_BREACH_FAR);
-                    reading.air_walls = self.air_breach_walls(g, pid, cid);
-                    if strength >= DOMINANT_BILL_SHARE * bill {
-                        reading.horizon = SHOOTER_BREACH_TURNS_DOMINANT;
-                    }
-                    reading.leaves_walls_shut(&city)
-                };
+            let no_breaker_mustered = !arena && self.siege_needs_a_breaker && {
+                let mut reading =
+                    self.breach_reading_within(g, pid, &city, &force, MUSTER_BREACH_FAR);
+                reading.air_walls = self.air_breach_walls(g, pid, cid);
+                if strength >= DOMINANT_BILL_SHARE * bill {
+                    reading.horizon = SHOOTER_BREACH_TURNS_DOMINANT;
+                }
+                reading.leaves_walls_shut(&city)
+            };
             let budget_mustered =
                 self.conversion_siege_entry_budget(g, pid, cid, &force, MUSTER_BREACH_FAR);
             let ready_mustered = !self.siege_positive_damage_budget
@@ -3014,7 +3035,8 @@ impl AdvancedAi {
                 // landed, not a running assault: there is no dip to ride out,
                 // so reopening it never bypasses the abort gate.
                 let since = *record.short_since.get_or_insert(turn);
-                if previous == SiegeStage::Hold || turn.saturating_sub(since) + 1 >= ABORT_PATIENCE {
+                if previous == SiegeStage::Hold || turn.saturating_sub(since) + 1 >= ABORT_PATIENCE
+                {
                     stage = SiegeStage::Stage;
                 }
             } else {
@@ -3348,7 +3370,11 @@ impl AdvancedAi {
         if self.stage_musters_out_of_reach
             && arm_of(g, uid) != Arm::Siege
             && distance > CITY_STRIKE_RANGE
-            && !self.stage_muster_ready.get(&city.id).copied().unwrap_or(true)
+            && !self
+                .stage_muster_ready
+                .get(&city.id)
+                .copied()
+                .unwrap_or(true)
         {
             if let Some(acted) = self.muster_step(g, pid, uid, city) {
                 return acted;
@@ -3433,7 +3459,13 @@ impl AdvancedAi {
                     .filter(|pos| {
                         g.can_move(uid, *pos) && g.wdist(*pos, city.pos) > CITY_STRIKE_RANGE
                     })
-                    .map(|pos| (stage_gun_danger(field, pos, uid, shared_stage), g.wdist(pos, city.pos), pos))
+                    .map(|pos| {
+                        (
+                            stage_gun_danger(field, pos, uid, shared_stage),
+                            g.wdist(pos, city.pos),
+                            pos,
+                        )
+                    })
                     .filter(|(risk, _, _)| *risk + 1.0 < risk_here)
                     .min_by(|a, b| {
                         a.0.total_cmp(&b.0)
@@ -3539,7 +3571,8 @@ impl AdvancedAi {
                         let kind = g.units[&uid].kind;
                         if gun_danger.as_mut().is_none_or(|field| {
                             if remembers {
-                                stage_gun_danger(field, dest, uid, shared_stage) + fog_blow(g, dest) <= gun_risk_limit
+                                stage_gun_danger(field, dest, uid, shared_stage) + fog_blow(g, dest)
+                                    <= gun_risk_limit
                             } else {
                                 stage_gun_danger(field, dest, uid, shared_stage) <= gun_risk_limit
                             }
@@ -3644,7 +3677,8 @@ impl AdvancedAi {
             {
                 if gun_danger.as_mut().is_none_or(|field| {
                     if remembers {
-                        stage_gun_danger(field, dest, uid, shared_stage) + fog_blow(g, dest) <= gun_risk_limit
+                        stage_gun_danger(field, dest, uid, shared_stage) + fog_blow(g, dest)
+                            <= gun_risk_limit
                     } else {
                         stage_gun_danger(field, dest, uid, shared_stage) <= gun_risk_limit
                     }
@@ -3719,12 +3753,16 @@ impl AdvancedAi {
         let mut reliever: Option<(f64, Pos, Action)> = None;
         for action in legal {
             let (target, value, city_strike) = match action {
-                Action::AirStrike { unit, target } if *unit == uid => {
-                    (*target, self.air_strike_value(g, pid, uid, *target, plan), true)
-                }
-                Action::PriorityTarget { unit, target } if *unit == uid => {
-                    (*target, self.priority_target_value(g, pid, uid, *target), false)
-                }
+                Action::AirStrike { unit, target } if *unit == uid => (
+                    *target,
+                    self.air_strike_value(g, pid, uid, *target, plan),
+                    true,
+                ),
+                Action::PriorityTarget { unit, target } if *unit == uid => (
+                    *target,
+                    self.priority_target_value(g, pid, uid, *target),
+                    false,
+                ),
                 _ => continue,
             };
             if value <= 0.0 {
@@ -3734,7 +3772,8 @@ impl AdvancedAi {
             // `wall-sortie-skips-the-encampment`: the guard and the reliever
             // are hostile soldiers; a bare Encampment or district on the tile
             // is neither. See `hostile_soldier_at`.
-            let soldier = !self.wall_sortie_skips_the_encampment || hostile_soldier_at(g, pid, target);
+            let soldier =
+                !self.wall_sortie_skips_the_encampment || hostile_soldier_at(g, pid, target);
             let slot = if on_city {
                 if !(city_strike && walled.iter().any(|(_, pos)| *pos == target)) {
                     continue;
@@ -4040,8 +4079,8 @@ impl AdvancedAi {
         }
         let range = g.unit_attack_range(uid).max(1);
         let distance = g.wdist(unit.pos, city.pos);
-        let can_fire = unit.moves_left > 0.0
-            && !(unit.moved && !g.siege_may_attack_after_moving(&unit));
+        let can_fire =
+            unit.moves_left > 0.0 && !(unit.moved && !g.siege_may_attack_after_moving(&unit));
         if distance <= range && can_fire {
             if let Some(acted) = self.reliever_kill_shot(g, pid, uid, city) {
                 return acted;
@@ -4396,7 +4435,10 @@ impl AdvancedAi {
             }
             self.census.siege_captures += 1;
         }
-        let left = g.cities.get(&city.id).map_or(0, |c| if c.owner == pid { 0 } else { c.hp });
+        let left = g
+            .cities
+            .get(&city.id)
+            .map_or(0, |c| if c.owner == pid { 0 } else { c.hp });
         think!(self.journal(), Military, Decision,
             "Siege of {}: the {} joins the assault", g.cities[&city.id].name, unit.kind;
             "the force's blows this turn come to {volley:.0} against {} health behind {} of wall; {} left; captured {captured}",
@@ -4874,7 +4916,9 @@ impl AdvancedAi {
                         let (refused, danger) =
                             self.entry_refused(g, pid, uid, dest, entering, near > 0);
                         if g.wdist(dest, city_pos) <= CITY_STRIKE_RANGE && refused {
-                            format!("the pass-through stand {dest:?} is refused at {danger:.0} danger")
+                            format!(
+                                "the pass-through stand {dest:?} is refused at {danger:.0} danger"
+                            )
                         } else {
                             String::new()
                         }

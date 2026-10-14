@@ -38,10 +38,14 @@ fn district_due(seed: u64) -> (Game, u32) {
         .into_iter()
         .next()
         .expect("the capital has a neighbour");
-    game.cities.get_mut(&cid).unwrap().queue.push(Item::District {
-        district: name!("campus"),
-        pos: near,
-    });
+    game.cities
+        .get_mut(&cid)
+        .unwrap()
+        .queue
+        .push(Item::District {
+            district: name!("campus"),
+            pos: near,
+        });
     for civic in ["code_of_laws", "craftsmanship", "foreign_trade"] {
         game.players[0].civics.insert(Name::new(civic));
     }
@@ -80,7 +84,9 @@ fn an_inspiration_in_hand_or_landing_mid_research_is_not_missed() {
     );
     assert!(AdvancedAi::civic_misses_its_inspiration(&game, 0, "state_workforce").is_none());
     let (mut game, _) = district_due(71_003);
-    game.players[0].boosted_civics.insert(name!("state_workforce"));
+    game.players[0]
+        .boosted_civics
+        .insert(name!("state_workforce"));
     assert!(AdvancedAi::civic_misses_its_inspiration(&game, 0, "state_workforce").is_none());
 }
 
@@ -102,7 +108,11 @@ fn on_the_beeline_a_step_with_nothing_left_to_earn_goes_first() {
             GrandStrategy::Conquest,
         )
     };
-    assert_eq!(pick(&game, &AdvancedAi::new()), None, "off, the beeline's pick stands");
+    assert_eq!(
+        pick(&game, &AdvancedAi::new()),
+        None,
+        "off, the beeline's pick stands"
+    );
     // Early Empire's own population trigger is still ours to earn: two
     // pending steps keep the beeline's order.
     assert_eq!(pick(&game, &with_gene()), None);
@@ -122,8 +132,16 @@ fn craftsmanship_waits_for_its_builders_behind_foreign_trade() {
     game.players[0].civics.remove(&name!("foreign_trade"));
     // No Builder anywhere: the improvements trigger has no arrival turn, but
     // it is still ours to earn; another continent is not.
-    assert!(AdvancedAi::civic_inspiration_pending(&game, 0, "craftsmanship"));
-    assert!(!AdvancedAi::civic_inspiration_pending(&game, 0, "foreign_trade"));
+    assert!(AdvancedAi::civic_inspiration_pending(
+        &game,
+        0,
+        "craftsmanship"
+    ));
+    assert!(!AdvancedAi::civic_inspiration_pending(
+        &game,
+        0,
+        "foreign_trade"
+    ));
     let available = [name!("craftsmanship"), name!("foreign_trade")];
     let pick = with_gene().civic_awaits_its_inspiration_pick(
         &game,
@@ -134,7 +152,9 @@ fn craftsmanship_waits_for_its_builders_behind_foreign_trade() {
         GrandStrategy::Conquest,
     );
     assert_eq!(pick, Some(name!("foreign_trade")));
-    game.players[0].boosted_civics.insert(name!("craftsmanship"));
+    game.players[0]
+        .boosted_civics
+        .insert(name!("craftsmanship"));
     let pick = with_gene().civic_awaits_its_inspiration_pick(
         &game,
         0,

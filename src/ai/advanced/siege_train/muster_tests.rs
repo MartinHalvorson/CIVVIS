@@ -64,7 +64,10 @@ fn a_ring_member_under_reach_falls_back_only_under_the_gene() {
         let at = g.units[&warrior].pos;
         if gene {
             assert_ne!(at, ring, "the member leaves the reach");
-            assert!(danger(&g, warrior, at) <= limit, "it stands under the line at {at:?}");
+            assert!(
+                danger(&g, warrior, at) <= limit,
+                "it stands under the line at {at:?}"
+            );
             assert!(g.wdist(at, city.pos) > CITY_STRIKE_RANGE);
         } else {
             assert_eq!(at, ring, "today the member holds the ring");
@@ -80,7 +83,10 @@ fn a_ready_train_keeps_the_ordinary_stage_step() {
     let mut ai = train(true);
     ai.stage_muster_ready.insert(cid, true);
     ai.siege_stage_step(&mut g, 0, warrior, &city, &plan);
-    assert_eq!(g.units[&warrior].pos, ring, "a train that can close holds its ring");
+    assert_eq!(
+        g.units[&warrior].pos, ring,
+        "a train that can close holds its ring"
+    );
 }
 
 /// `staging-gun-reads-the-shared-danger`: two hostile Warriors reach a
@@ -210,7 +216,9 @@ fn a_gathered_train_with_a_breaker_reads_ready_to_close() {
     assert!(city.wall_hp > 0, "fixture: walls stand");
     let force = ai.siege_force(&g, 0, &city, &plan, &group);
     assert!(
-        force.iter().all(|uid| g.wdist(g.units[uid].pos, city.pos) > STAGING_FAR),
+        force
+            .iter()
+            .all(|uid| g.wdist(g.units[uid].pos, city.pos) > STAGING_FAR),
         "fixture: the whole train musters beyond the ring"
     );
     ai.assess_siege(&g, 0, cid, &plan, &group);
@@ -229,10 +237,22 @@ fn a_gathered_train_with_a_breaker_reads_ready_to_close() {
 #[test]
 fn a_close_holds_through_its_commitment_window() {
     assert!(muster_commitment_holds(Some(30), 34, 5, true, false));
-    assert!(!muster_commitment_holds(Some(30), 35, 5, true, false), "the window ends");
-    assert!(!muster_commitment_holds(Some(30), 31, 5, false, false), "the bill is lost");
-    assert!(!muster_commitment_holds(Some(30), 31, 5, true, true), "a breaker hold");
-    assert!(!muster_commitment_holds(None, 31, 5, true, false), "never closed");
+    assert!(
+        !muster_commitment_holds(Some(30), 35, 5, true, false),
+        "the window ends"
+    );
+    assert!(
+        !muster_commitment_holds(Some(30), 31, 5, false, false),
+        "the bill is lost"
+    );
+    assert!(
+        !muster_commitment_holds(Some(30), 31, 5, true, true),
+        "a breaker hold"
+    );
+    assert!(
+        !muster_commitment_holds(None, 31, 5, true, false),
+        "never closed"
+    );
 }
 
 /// The turn a train closes is recorded once, and a train that stays closed
@@ -330,10 +350,18 @@ fn a_train_against_a_weak_target_skips_the_muster_under_the_gene() {
     );
     let mut on = ai.clone();
     ai.assess_siege(&g, 0, cid, &plan, &group);
-    assert_eq!(ai.stage_muster_ready.get(&cid).copied(), Some(false), "off: holds");
+    assert_eq!(
+        ai.stage_muster_ready.get(&cid).copied(),
+        Some(false),
+        "off: holds"
+    );
     on.enable_weak_target_skips_the_muster();
     on.assess_siege(&g, 0, cid, &plan, &group);
-    assert_eq!(on.stage_muster_ready.get(&cid).copied(), Some(true), "on: closes");
+    assert_eq!(
+        on.stage_muster_ready.get(&cid).copied(),
+        Some(true),
+        "on: closes"
+    );
 }
 
 #[test]

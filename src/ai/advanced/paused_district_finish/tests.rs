@@ -125,7 +125,10 @@ fn set_turns(g: &mut Game, cid: u32, item: &Item, turns: Option<f64>) {
 fn a_two_turn_paused_campus_goes_back_to_the_head() {
     let (mut g, cid, campus, _, ai) = board();
     let (item, turns, banked) = ai.paused_district_finish_item(&g, 0, cid).unwrap();
-    assert_eq!((item.clone(), turns, banked), (campus.clone(), 2.0, Some(46.0)));
+    assert_eq!(
+        (item.clone(), turns, banked),
+        (campus.clone(), 2.0, Some(46.0))
+    );
     ai.claim_paused_district_finishes(&mut g, 0);
     assert_eq!(g.cities[&cid].queue.first(), Some(&campus));
 }

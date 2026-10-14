@@ -103,7 +103,13 @@ impl AdvancedAi {
             if self.industrial_zone_in_the_producers
                 && self
                     .base
-                    .industrial_zone_producer_item(g, pid, cid, city_ids.len(), plan.threatened_city)
+                    .industrial_zone_producer_item(
+                        g,
+                        pid,
+                        cid,
+                        city_ids.len(),
+                        plan.threatened_city,
+                    )
                     .is_some()
             {
                 continue;
@@ -113,10 +119,7 @@ impl AdvancedAi {
                 continue;
             };
             let production = g.city_yields(cid).production;
-            if best
-                .as_ref()
-                .is_none_or(|(top, _, _)| production > *top)
-            {
+            if best.as_ref().is_none_or(|(top, _, _)| production > *top) {
                 best = Some((production, cid, item));
             }
         }

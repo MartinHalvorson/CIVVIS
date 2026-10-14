@@ -230,7 +230,10 @@ fn encampment_beside_home(g: &mut Game, bomber: u32, enemy: u32) -> Pos {
         tile.owner_city = Some(enemy);
     }
     g.cities.get_mut(&enemy).unwrap().encampment_hp = 20;
-    assert!(g.encampment_at(camp).is_some(), "fixture: the Encampment stands");
+    assert!(
+        g.encampment_at(camp).is_some(),
+        "fixture: the Encampment stands"
+    );
     camp
 }
 
@@ -249,8 +252,14 @@ fn a_bare_encampment_beside_our_city_does_not_outrank_the_walls_under_the_gene()
             ai.enable_wall_sortie_skips_the_encampment();
         }
         let legal = g.legal_doctrine_actions(0, bomber);
-        let camp_strike = Action::AirStrike { unit: bomber, target: camp };
-        assert!(legal.contains(&camp_strike), "fixture: the Encampment is a legal strike");
+        let camp_strike = Action::AirStrike {
+            unit: bomber,
+            target: camp,
+        };
+        assert!(
+            legal.contains(&camp_strike),
+            "fixture: the Encampment is a legal strike"
+        );
         assert!(
             ai.air_strike_value(&g, 0, bomber, camp, &plan()) > 0.0,
             "fixture: the Encampment strike is worth something"
@@ -259,7 +268,10 @@ fn a_bare_encampment_beside_our_city_does_not_outrank_the_walls_under_the_gene()
         let expected = if gene { enemy_at } else { camp };
         assert_eq!(
             choice,
-            Some(Action::AirStrike { unit: bomber, target: expected }),
+            Some(Action::AirStrike {
+                unit: bomber,
+                target: expected
+            }),
             "gene {gene}"
         );
     }
