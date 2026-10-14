@@ -1487,6 +1487,26 @@ fn anvil_orders_for(
 /// `gun-queues-behind-the-column`: the share of a gun's health the reply
 /// at a queue step may reach.
 const QUEUE_DANGER_SHARE: f64 = 0.5;
+/// `gun-queue-follows-the-road`: how many tiles longer than the hex distance
+/// a gun's route to its post may run and still be followed by the queue
+/// step. The traced detours ran one to three tiles round terrain or our own
+/// column; a post much further by road than by air is a post to re-plan.
+const ROAD_DETOUR_SLACK: usize = 4;
+
+/// `gun-queue-follows-the-road`: whether the city at `city_pos` can strike
+/// nobody: no standing wall and no walled, unpillaged Encampment of its own
+/// to shoot in its place, as `unwalled-city-spares-the-train` reads it.
+fn city_cannot_strike(g: &Game, city_pos: Pos) -> bool {
+    let Some(city) = g.city_at(city_pos).and_then(|cid| g.cities.get(&cid)) else {
+        return false;
+    };
+    city.wall_hp <= 0
+        && !(city.encampment_hp > 0
+            && city.encampment_wall_hp > 0
+            && !city.encampment_pillaged
+            && g.city_district_family_position(city, crate::name!("encampment"))
+                .is_some())
+}
 
 /// The same exclusions must govern post assignment and the march to it.
 /// Otherwise spread-first assignment can reserve a pocket whose only entry
@@ -4828,8 +4848,8 @@ impl AdvancedAi {
                 short = Some("out of moves".to_string());
                 break;
             }
-            let routed =
-                siege_route_step(g, pid, uid, goal, city_pos).filter(|next| g.can_move(uid, *next));
+            let raw_step = siege_route_step(g, pid, uid, goal, city_pos);
+            let routed = raw_step.filter(|next| g.can_move(uid, *next));
             // `gun-queues-behind-the-column`: a routed step that leads away
             // from the post goes round our own column, and the next call
             // finds the way round shut and may not step back (the same-turn
@@ -4839,7 +4859,7 @@ impl AdvancedAi {
             if let Some(next) = routed {
                 let here = g.units[&uid].pos;
                 if g.wdist(next, goal) > g.wdist(here, goal) {
-                    if let Some(step) = self.column_queue_step(g, pid, uid, goal, city_pos) {
+                    if let Some(step) = self.column_queue_step(g, pid, uid, goal, city_pos, false) {
                         if self.base.tactical_apply_progress_move(g, pid, uid, step) {
                             moved = true;
                             short = None;
@@ -4864,8 +4884,16 @@ impl AdvancedAi {
                 let through = (!moved)
                     .then(|| g.pass_through_destination(uid, goal, 0))
                     .flatten();
+                // `gun-queue-follows-the-road`: the train's step exists but the
+                // gun has spent part of its moves and the next tile costs more
+                // than it holds (Civilization VI pays a step's cost up front);
+                // the census read this as a missing route.
+                let short_of_moves = self.gun_queue_follows_the_road
+                    && raw_step.is_some_and(|next| !g.can_move(uid, next))
+                    && g.units[&uid].moves_left < g.unit_max_moves(uid);
                 short = Some(match through {
                     None if moved => "no further route step this turn".to_string(),
+                    None if short_of_moves => "out of moves for the next tile".to_string(),
                     None => "no route step and no pass-through destination".to_string(),
                     Some(dest) if !dry_stand(g, uid, dest) => {
                         format!("the pass-through stand {dest:?} is not dry ground")
@@ -4882,7 +4910,7 @@ impl AdvancedAi {
                 });
                 // `gun-queues-behind-the-column`: see `column_queue_step`.
                 if through.is_none() {
-                    if let Some(step) = self.column_queue_step(g, pid, uid, goal, city_pos) {
+                    if let Some(step) = self.column_queue_step(g, pid, uid, goal, city_pos, true) {
                         let from = g.units[&uid].pos;
                         if self.base.tactical_apply_progress_move(g, pid, uid, step) {
                             moved = true;
@@ -4975,6 +5003,23 @@ impl AdvancedAi {
     /// walls at turn 130. Over the 10-07/08 runs that reason was 283 of 634
     /// gun approaches that ended short of the post, most four to six tiles
     /// from the city.
+    ///
+    /// `gun-queue-follows-the-road`, on the no-route call (`follow_road`):
+    /// the router's first step is the first tile of its shortest route, so
+    /// the route left to the post falls by one whether or not the step is
+    /// nearer as the crow flies, and that falling route length is the
+    /// progress the step must make (so `tactical_apply_progress_move` still
+    /// cannot loop within a turn). A route at most [`ROAD_DETOUR_SLACK`]
+    /// longer than the hex distance qualifies. And before a city that cannot
+    /// strike (no standing wall, no walled unpillaged Encampment), the step
+    /// may land two tiles out, on a firing stand, off the city's first ring.
+    /// Traced replays at 851192f2e over Tula (civvis-20261014T080351Z,
+    /// turns 136-141), Bhavapura, Sodo and Cincinnati: of 36 gun-turns that
+    /// read "no route step and no pass-through destination", 8 held full
+    /// moves while the router's first step went round terrain or our column
+    /// at an equal or greater hex distance (Tula's Bombard at (16, 20) on
+    /// turns 136, 139 and 140), and a Bombard three tiles from unwalled Tula
+    /// could not step onto its post two out.
     fn column_queue_step(
         &self,
         g: &Game,
@@ -4982,15 +5027,27 @@ impl AdvancedAi {
         uid: u32,
         goal: Pos,
         city_pos: Pos,
+        follow_road: bool,
     ) -> Option<Pos> {
         if !self.gun_queues_behind_the_column || arm_of(g, uid) != Arm::Siege {
             return None;
         }
         let here = g.units.get(&uid)?.pos;
         let ring: BTreeSet<Pos> = g.wdisk(city_pos, 1).into_iter().collect();
+        let road = follow_road && self.gun_queue_follows_the_road;
+        let hex = g.wdist(here, goal);
+        let road_falls = road
+            && g.route_distance(uid, goal, 0).is_some_and(|steps| {
+                steps >= 1 && steps <= usize::try_from(hex).unwrap_or(0) + ROAD_DETOUR_SLACK
+            });
+        let nearest_stand = if road && city_cannot_strike(g, city_pos) {
+            CITY_STRIKE_RANGE - 1
+        } else {
+            CITY_STRIKE_RANGE
+        };
         g.route_step(uid, goal, 0).filter(|step| {
-            g.wdist(*step, goal) < g.wdist(here, goal)
-                && g.wdist(*step, city_pos) > CITY_STRIKE_RANGE
+            (g.wdist(*step, goal) < hex || road_falls)
+                && g.wdist(*step, city_pos) > nearest_stand
                 && !ring.contains(step)
                 && dry_stand(g, uid, *step)
                 && g.can_move(uid, *step)
@@ -6359,6 +6416,9 @@ mod capture_hold;
 
 #[cfg(test)]
 mod entry_tests;
+
+#[cfg(test)]
+mod road_queue_tests;
 
 #[cfg(test)]
 mod storm_tests;

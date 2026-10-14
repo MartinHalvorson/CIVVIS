@@ -14723,8 +14723,9 @@ impl BasicAi {
     }
 
     /// A tactical step its caller has proven strictly nearer its goal than
-    /// the tile it leaves (`gun-queues-behind-the-column`), so no sequence of
-    /// such steps can loop: the window's retread memory (`retreads_a_loop`)
+    /// the tile it leaves (`gun-queues-behind-the-column`; by route length
+    /// under `gun-queue-follows-the-road`), so no sequence of such steps can
+    /// loop: the window's retread memory (`retreads_a_loop`)
     /// does not apply, while the same-turn reversal, the lethal-tile and the
     /// host-refusal bars still do. Other movers walk a siege gun back and
     /// forth through the staging band, and the memory then refused its
