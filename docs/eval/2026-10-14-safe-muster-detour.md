@@ -46,5 +46,14 @@ turns while never ending under fire. Its cloned-board precondition verifies
 that the first safe `MoveTo` actually executes. Blocked-detour and disabled
 treatment cases must continue holding.
 
-Validation is in progress. No native win-rate or advanced-difficulty
-improvement has been established by this investigation.
+The controlled routing fixture disables random weather so its zero-danger
+assertion measures the posed approach. All 16 muster tests passed in the
+focused local run. The complete local `cargo test --profile ci --locked`
+run passed all 5,918 tests, with 51 existing ignored tests and four ignored
+documentation examples. Independent CI on `d323d2389` passed the same default
+suite, 71 gene-screen, 21 live-differential and 24 evaluator tests, and all
+other required checks. Logs remain beside the frozen evidence.
+
+No native win-rate or advanced-difficulty improvement has been established
+by this investigation. The existing treatment remains opt-in; native
+adoption and outcome verification are separate work.
