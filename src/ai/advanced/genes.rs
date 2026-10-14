@@ -3928,6 +3928,11 @@ pub const GENES: &[Gene] = &[
     // no held siege march, aimed at its city on the road. See
     // `advanced/silent_counter.rs`.
     Gene { tag: "racer-blocker-declares", field: "racer_blocker_declares", kind: Kind::OptIn, enable: AdvancedAi::enable_racer_blocker_declares, disable: AdvancedAi::disable_racer_blocker_declares },
+    // A city of ours losing health with a hostile soldier beside it ranks its
+    // Defend row ahead of every Defend row of a city that is not under fire,
+    // urgent, with a one-turn deadline floor. See
+    // `advanced/objective_board.rs`.
+    Gene { tag: "city-under-fire-ranks-first", field: "city_under_fire_ranks_first", kind: Kind::OptIn, enable: AdvancedAi::enable_city_under_fire_ranks_first, disable: AdvancedAi::disable_city_under_fire_ranks_first },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
