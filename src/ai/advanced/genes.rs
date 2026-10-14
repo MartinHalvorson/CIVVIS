@@ -3933,6 +3933,12 @@ pub const GENES: &[Gene] = &[
     // urgent, with a one-turn deadline floor. See
     // `advanced/objective_board.rs`.
     Gene { tag: "city-under-fire-ranks-first", field: "city_under_fire_ranks_first", kind: Kind::OptIn, enable: AdvancedAi::enable_city_under_fire_ranks_first, disable: AdvancedAi::disable_city_under_fire_ranks_first },
+    // The base deck reads policy income paid to the player (Merchant
+    // Confederation's Gold per Envoy, Raj's yields per tributary), and
+    // Merchant Confederation joins the portfolio ahead of the plan's own
+    // diplomatic cards while our Envoys pay ten Gold a turn. See
+    // `merchant_confederation_pays` in `advanced.rs`.
+    Gene { tag: "merchant-confederation-earns-its-slot", field: "merchant_confederation_earns_its_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_merchant_confederation_earns_its_slot, disable: AdvancedAi::disable_merchant_confederation_earns_its_slot },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
