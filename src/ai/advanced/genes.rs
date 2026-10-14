@@ -3927,6 +3927,12 @@ pub const GENES: &[Gene] = &[
     // land upgrade's material, preserving its exact Gold bill. An offer
     // is not acceptance or execution. See `army_upgrade_materials`.
     Gene { tag: "army-upgrade-materials", field: "army_upgrade_materials", kind: Kind::OptIn, enable: AdvancedAi::enable_army_upgrade_materials, disable: AdvancedAi::disable_army_upgrade_materials },
+    // An urgent Culture or Science racer our Conquest counter cannot reach,
+    // behind one civilization's closed borders: that blocker, when weak by
+    // closed-border-blocker-declares' reading, is the front every turn with
+    // no held siege march, aimed at its city on the road. See
+    // `advanced/silent_counter.rs`.
+    Gene { tag: "racer-blocker-declares", field: "racer_blocker_declares", kind: Kind::OptIn, enable: AdvancedAi::enable_racer_blocker_declares, disable: AdvancedAi::disable_racer_blocker_declares },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

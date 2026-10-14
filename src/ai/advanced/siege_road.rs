@@ -383,6 +383,8 @@ impl AdvancedAi {
     pub(crate) fn road_blocker_front(&self, g: &Game, pid: usize) -> Option<usize> {
         self.stood_down_blocker_front(g, pid)
             .or_else(|| self.closed_border_front(g, pid))
+            // `racer-blocker-declares`: see `advanced/silent_counter.rs`.
+            .or_else(|| self.racer_blocker_front(g, pid))
     }
 
     /// `blocker-becomes-the-target`: the major whose closed borders shut the
@@ -469,7 +471,12 @@ impl AdvancedAi {
     /// reading and [`super::one_war::CRUSHING_PEAK_FLOOR`] times its 30-turn
     /// peak. A city-state's suzerain, when it has one at peace with us, must
     /// read as weak too: its war comes with the city-state's.
-    fn closed_border_blocker_is_weak(&self, g: &Game, pid: usize, blocker: usize) -> bool {
+    pub(super) fn closed_border_blocker_is_weak(
+        &self,
+        g: &Game,
+        pid: usize,
+        blocker: usize,
+    ) -> bool {
         let Some(player) = g.players.get(blocker) else {
             return false;
         };

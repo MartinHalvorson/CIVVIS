@@ -378,6 +378,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `prophet-race-takes-a-district-slot` | off (unmeasured) | Opt-in gene `prophet-race-takes-a-district-slot`; see `Self::prophet_race_takes_a_district_slot`. | — \| 2 |
 | `prophet-race-takes-a-district-slot-2` | off (unmeasured) | Opt-in gene `prophet-race-takes-a-district-slot-2`; see `Self::prophet_race_takes_a_district_slot_2`. | — \| 2 |
 | `purchases-keep-the-upkeep-reserve` | off (unmeasured) | Opt-in gene `purchases-keep-the-upkeep-reserve`; see `AdvancedAi::purchases_keep_the_upkeep_reserve`. | 1 \| 1 |
+| `racer-blocker-declares` | off (unmeasured) | Opt-in gene `racer-blocker-declares`; see `advanced/silent_counter.rs`. | 1 \| 1 |
 | `racer-keeps-the-spies` | off (unmeasured) | Opt-in gene `racer-keeps-the-spies`; see `AdvancedAi::racer_keeps_the_spies`. | 1 \| 1 |
 | `raids-cut-tourism` | off (unmeasured) | Opt-in gene `raids-cut-tourism`; see `Self::raids_cut_tourism`. | 1 \| 1 |
 | `ranged-before-melee` | off (unmeasured) | Opt-in gene `ranged-before-melee`; see `Self::ranged_before_melee`. | 1 \| 1 |

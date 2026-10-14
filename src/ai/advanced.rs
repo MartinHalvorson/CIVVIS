@@ -7572,6 +7572,12 @@ pub struct AdvancedAi {
     /// (`append_luxury_swap_order` in `civvis_orders`). Off by default.
     luxury_swap_asks_2: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `racer-blocker-declares`: an urgent racer our Conquest counter cannot
+    /// reach, behind one civilization's closed borders, makes that blocker
+    /// the front when it reads weak (`closed_border_blocker_is_weak`), every
+    /// turn and with no held siege march; the objective is its city on the
+    /// road. See `advanced/silent_counter.rs`.
+    racer_blocker_declares: bool,
     /// `phantom-capture-keeps-the-siege`: a capture this frame's planning
     /// board makes on damage the same frame dealt (a volley the executor
     /// defers, a shot or another unit's blow the host has not yet executed)
@@ -10808,6 +10814,7 @@ impl AdvancedAi {
             launcher_war_ignores_the_edge: false,
             luxury_swap_asks_2: false,
             // ---- append: p-r ----------------------------------------
+            racer_blocker_declares: false,
             phantom_capture_keeps_the_siege: false,
             phantom_frame_cities: None,
             phantom_contingent_captures: BTreeSet::new(),
@@ -15497,6 +15504,14 @@ impl AdvancedAi {
                 self.diplomatic_contender_to_eliminate(g, pid)
                     .filter(|rival| target_player == Some(*rival))
                     .and_then(|rival| self.elimination_objective_city(g, pid, rival))
+            })
+            // `racer-blocker-declares`: the blocker's city on the land road
+            // to the racer, not its far capital. `None` with the gene off.
+            // See `advanced/silent_counter.rs`.
+            .or_else(|| {
+                self.racer_blocker_objective(g, pid)
+                    .filter(|(blocker, _)| target_player == Some(*blocker))
+                    .map(|(_, city)| city)
             })
             .or_else(|| {
                 if matches!(suppression_target, Some((_, GrandStrategy::Religion))) {
@@ -24310,8 +24325,16 @@ impl AdvancedAi {
         // `declaration-waits-for-the-breaker`: a staged army is not staged
         // for a walled city until a breaker stands on its ring. See
         // `siege_train::declaration_breaker_at_hand`.
-        let objective = plan
-            .target_city
+        // `racer-blocker-declares`: a war on the racer's road blocker is
+        // read at the blocker's city on the road -- its walls, its breach,
+        // its first strike -- not at the running war's objective the plan
+        // keeps. `None` with the gene off. See `advanced/silent_counter.rs`.
+        let racer_road = self
+            .racer_blocker_objective(g, pid)
+            .filter(|(blocker, _)| *blocker == target)
+            .map(|(_, city)| city);
+        let objective = racer_road
+            .or(plan.target_city)
             .and_then(|city| g.cities.get(&city))
             .map(|city| (city.id, city.pos));
         let breaker_absent = self.declaration_waits_for_the_breaker
@@ -24332,8 +24355,15 @@ impl AdvancedAi {
             turns > endurance * siege_train::DECLARATION_BREACH_SHARE
         });
         let breaker_missing = breaker_absent || breach_short;
-        let holdable =
-            breaker_missing && staged && !urgent_denial && !faith_counter_due && !rushing;
+        // `racer-blocker-declares`: the road war answers an urgent racer, as
+        // an urgent denial does, and opens passage rather than a siege, so
+        // the blocker's walls do not hold it either.
+        let holdable = breaker_missing
+            && staged
+            && !urgent_denial
+            && !faith_counter_due
+            && !rushing
+            && racer_road.is_none();
         let breaker_held = self.declaration_hold_patience(
             g,
             objective.map(|(_, pos)| pos),
@@ -24342,7 +24372,7 @@ impl AdvancedAi {
         );
         if breaker_held && breach_short && !breaker_absent {
             if let (Some(city), Some((turns, endurance, guns))) = (
-                plan.target_city.and_then(|city| g.cities.get(&city)),
+                objective.and_then(|(city, _)| g.cities.get(&city)),
                 breach_reading,
             ) {
                 think!(self.journal(), Military, Detail,
@@ -24354,7 +24384,7 @@ impl AdvancedAi {
                        city.pos);
             }
         } else if breaker_held {
-            if let Some(city) = plan.target_city.and_then(|city| g.cities.get(&city)) {
+            if let Some(city) = objective.and_then(|(city, _)| g.cities.get(&city)) {
                 think!(self.journal(), Military, Detail,
                        "Holding the declaration on {} for a wall-breaker", g.players[target].civ;
                        "{} stands behind {} walls and no siege gun, ram or tower of ours is on its ring; \
@@ -24560,6 +24590,7 @@ impl AdvancedAi {
                         }
                         _ => String::new(),
                     };
+                    let racer_reason: String;
                     let readiness = if air_ready {
                         "a ready aircraft can disrupt the rival's Theater Square immediately"
                     } else if culture_counter_ready {
@@ -24575,6 +24606,22 @@ impl AdvancedAi {
                         && self.stood_down_blocker_front(g, pid) == Some(target)
                     {
                         "its closed borders shut the road to a siege we stood down, and the war opens it"
+                    } else if let Some((_, racer, pressure)) = self
+                        .racer_road_blocker(g, pid)
+                        .filter(|(blocker, _, _)| *blocker == target)
+                    {
+                        // See `racer_road_blocker` (`racer-blocker-declares`).
+                        let at = objective
+                            .and_then(|(city, _)| g.cities.get(&city))
+                            .map(|city| format!(" at {}", city.name))
+                            .unwrap_or_default();
+                        racer_reason = format!(
+                            "racer-blocker-declares: they shut the only land road to {} ({} {}%, urgent), and the war opens it{at}",
+                            g.players[racer].civ,
+                            pressure.strategy.as_str(),
+                            pressure.progress
+                        );
+                        racer_reason.as_str()
                     } else if road_opening_ready {
                         // See `closed_border_front` (`closed-border-blocker-declares`).
                         "its closed borders have held our siege's march three turns at half our power or under, and the war opens the road"
