@@ -5467,6 +5467,14 @@ pub struct AdvancedAi {
     /// `advanced/aqueduct_claims_the_capped_queue.rs`. Off by default.
     aqueduct_claims_the_capped_queue: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `city-under-fire-ranks-first`: a city of ours that lost health since
+    /// the last assessment, or was struck within the last turn, with a
+    /// hostile soldier within [`objective_board::CAPITAL_DEFENSE_CONTACT`] is
+    /// under fire. Its Defend row ranks ahead of every Defend row of a city
+    /// that is not, is urgent, and reads its deadline from its health at the
+    /// rate it is losing it with a floor of one turn, not two. See
+    /// `objective_board::city_under_fire`. Off by default.
+    city_under_fire_ranks_first: bool,
     /// `closed-border-blocker-declares`: a third party whose closed borders
     /// have held a Domination siege's march [`siege_road::ROAD_HOLD_TURNS`]
     /// turns running, at half our power or under (a major, or a city-state
@@ -10511,6 +10519,7 @@ impl AdvancedAi {
             amphibious_refused: None,
             aqueduct_claims_the_capped_queue: false,
             // ---- append: c-d ----------------------------------------
+            city_under_fire_ranks_first: false,
             closed_border_blocker_declares: false,
             closed_border_holds: BTreeMap::new(),
             dry_road_outlasts_a_blocked_step: false,

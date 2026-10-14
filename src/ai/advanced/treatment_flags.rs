@@ -7793,6 +7793,17 @@ impl AdvancedAi {
         self.prophet_race_takes_divine_spark = false;
     }
 
+    /// Opt-in gene `city-under-fire-ranks-first`; see
+    /// `advanced/objective_board.rs`.
+    pub fn enable_city_under_fire_ranks_first(&mut self) {
+        self.city_under_fire_ranks_first = true;
+    }
+
+    /// The twin of `enable_city_under_fire_ranks_first`.
+    pub fn disable_city_under_fire_ranks_first(&mut self) {
+        self.city_under_fire_ranks_first = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
