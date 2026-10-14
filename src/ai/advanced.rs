@@ -5071,6 +5071,11 @@ pub struct AdvancedAi {
     /// useful land upgrade while retaining its Gold bill and upkeep floor.
     /// See `army_upgrade_materials`. Off by default.
     army_upgrade_materials: bool,
+    /// `astrology-before-the-second-city`: the Prophet race's Astrology is
+    /// researched by a lone capital, once the opening techs are in, instead of
+    /// waiting for the second city that admits the Holy Site. See
+    /// `advanced/astrology_before_the_second_city.rs`. Off by default.
+    astrology_before_the_second_city: bool,
     /// `aluminum-ask-tops-up-gold`: the air wing's Aluminum ask carries a
     /// Gold ceiling, so the host's counter may price the block in Gold on top
     /// of the barter (`aluminum_ask_ceiling` in `civvis_orders`). Off by
@@ -7572,6 +7577,11 @@ pub struct AdvancedAi {
     /// (`append_luxury_swap_order` in `civvis_orders`). Off by default.
     luxury_swap_asks_2: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `prophet-race-takes-divine-spark`: while the seat runs the Prophet
+    /// race, the pantheon pick ranks Divine Spark right behind Religious
+    /// Settlements (`BasicAi::pantheon_for_the_prophet_race`). See
+    /// `advanced/astrology_before_the_second_city.rs`. Off by default.
+    prophet_race_takes_divine_spark: bool,
     /// `racer-blocker-declares`: an urgent racer our Conquest counter cannot
     /// reach, behind one civilization's closed borders, makes that blocker
     /// the front when it reads weak (`closed_border_blocker_is_weak`), every
@@ -8811,6 +8821,12 @@ pub struct AdvancedAi {
 /// is not delayed and Astrology still lands by about turn 15.
 pub(crate) const PROPHET_RACE_OPENING_TECHS: usize = 2;
 
+/// The cities an empire must hold before the Prophet race admits it: the
+/// Holy Site is a district commitment a lone capital cannot pay beside its
+/// Settlers. `astrology-before-the-second-city` reads our own seat at one
+/// city for the research fee alone.
+pub(crate) const RELIGIOUS_OPENING_CITIES: usize = 2;
+
 /// The short forecast horizon for `skip-the-prophet-race-2`.
 ///
 /// The v2 gate is deliberately a late-race decision: it fires only when a
@@ -9495,6 +9511,9 @@ mod wonder_sites;
 /// escorts cross as one group. See `advanced/amphibious_siege_train.rs`.
 mod amphibious_siege_train;
 mod aqueduct_claims_the_capped_queue;
+/// `astrology-before-the-second-city`: the Prophet race's Astrology before
+/// the second city stands. See `advanced/astrology_before_the_second_city.rs`.
+mod astrology_before_the_second_city;
 mod backlog_builder_takes_the_queue;
 mod band_hunt;
 /// `campus-building-claims-the-queue`: a standing Campus's next building
@@ -10416,6 +10435,7 @@ impl AdvancedAi {
 
             // ---- append: a-b ----------------------------------------
             army_upgrade_materials: false,
+            astrology_before_the_second_city: false,
             aluminum_ask_tops_up_gold: false,
             aluminum_buys_the_tile: false,
             builders_route_around_mountains: false,
@@ -10814,6 +10834,7 @@ impl AdvancedAi {
             launcher_war_ignores_the_edge: false,
             luxury_swap_asks_2: false,
             // ---- append: p-r ----------------------------------------
+            prophet_race_takes_divine_spark: false,
             racer_blocker_declares: false,
             phantom_capture_keeps_the_siege: false,
             phantom_frame_cities: None,
@@ -13009,14 +13030,17 @@ impl AdvancedAi {
             .map(|(_, _, _, _, cid)| cid)
     }
 
-    fn religious_opening_rank(g: &Game, pid: usize) -> Option<(u8, f64, f64)> {
+    /// A Prophet-race contender's rank, for an empire holding at least
+    /// `floor` cities ([`RELIGIOUS_OPENING_CITIES`]; only
+    /// `astrology-before-the-second-city` reads our own seat below it).
+    fn religious_opening_rank_from(g: &Game, pid: usize, floor: usize) -> Option<(u8, f64, f64)> {
         let player = &g.players[pid];
         if !player.alive
             || player.is_minor
             || player.is_barbarian
             || player.religion.is_some()
             || player.prophet_pending
-            || g.player_city_ids(pid).len() < 2
+            || g.player_city_ids(pid).len() < floor
         {
             return None;
         }
@@ -13440,6 +13464,13 @@ impl AdvancedAi {
     }
 
     fn religious_opening_viable(&self, g: &Game, pid: usize) -> bool {
+        self.religious_opening_viable_from(g, pid, RELIGIOUS_OPENING_CITIES)
+    }
+
+    /// `religious_opening_viable` with this seat ranked at `own_floor` cities;
+    /// every rival keeps [`RELIGIOUS_OPENING_CITIES`]. See
+    /// `astrology-before-the-second-city`.
+    fn religious_opening_viable_from(&self, g: &Game, pid: usize, own_floor: usize) -> bool {
         let player = &g.players[pid];
         if player.religion.is_some() {
             return false;
@@ -13456,7 +13487,7 @@ impl AdvancedAi {
         let claimed = founded + pending;
         if claimed >= g.max_religions()
             || g.turn > if founded > 0 { 180 } else { 120 }
-            || Self::religious_opening_rank(g, pid).is_none()
+            || Self::religious_opening_rank_from(g, pid, own_floor).is_none()
         {
             return false;
         }
@@ -13469,7 +13500,13 @@ impl AdvancedAi {
             .players
             .iter()
             .filter_map(|candidate| {
-                Self::religious_opening_rank(g, candidate.id).map(|rank| (candidate.id, rank))
+                let floor = if candidate.id == pid {
+                    own_floor
+                } else {
+                    RELIGIOUS_OPENING_CITIES
+                };
+                Self::religious_opening_rank_from(g, candidate.id, floor)
+                    .map(|rank| (candidate.id, rank))
             })
             .collect();
         contenders.sort_by(|(left_id, left), (right_id, right)| {
@@ -18413,7 +18450,12 @@ impl AdvancedAi {
                 // lane goal is an ancestor of, so no beeline ever reaches it.
                 // Take it once the opening techs are in, while a Prophet slot
                 // is still open for this seat.
-                _ if self.prophet_race_enterable_for(g, pid, self.victory_target)
+                // `astrology-before-the-second-city`: a lone capital takes it
+                // at the same point, so the Holy Site can start the turn the
+                // second city stands. See
+                // `advanced/astrology_before_the_second_city.rs`.
+                _ if (self.prophet_race_enterable_for(g, pid, self.victory_target)
+                    || self.astrology_before_the_second_city_due(g, pid))
                     && g.players[pid].techs.len() >= PROPHET_RACE_OPENING_TECHS
                     && !g.players[pid].techs.contains(&crate::name!("astrology")) =>
                 {
@@ -48057,6 +48099,10 @@ impl AdvancedAi {
                 && active_victory_target == Some(VictoryTarget::Domination));
         let prophet_race_open = self.prophet_race_enterable_for(g, pid, active_victory_target);
         self.base.enter_prophet_race = prophet_race_open;
+        // `prophet-race-takes-divine-spark`: see
+        // `advanced/astrology_before_the_second_city.rs`.
+        self.base.pantheon_for_the_prophet_race =
+            self.prophet_race_takes_divine_spark && self.race_points_wanted(g, pid);
         if prophet_race_open || (prophet_race_enabled && g.players[pid].religion.is_some()) {
             self.base.pursue_religion = true;
         }

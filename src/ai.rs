@@ -4032,6 +4032,13 @@ pub struct BasicAi {
     /// native constructors and the frozen anchor keep the shipped order.
     /// See `research_with_government` and `AdvancedAi::expansion_pantheon`.
     pub(crate) expansion_pantheon: bool,
+    /// `prophet-race-takes-divine-spark`: this turn the seat is running the
+    /// Prophet race (`AdvancedAi::race_points_wanted`), so Divine Spark's
+    /// +1 Prophet point a turn on every Holy Site ranks right behind the
+    /// founding pantheon and ahead of Fertility Rites. Set every turn by
+    /// `AdvancedAi::take_turn_inner`; see
+    /// `advanced/astrology_before_the_second_city.rs`.
+    pub(crate) pantheon_for_the_prophet_race: bool,
     /// The opening book's Settler waits for the host's population floor
     /// instead of burning its slot.
     ///
@@ -5900,6 +5907,7 @@ impl BasicAi {
             capital_settler_after_completion: false,
             scout_first_opening: false,
             expansion_pantheon: false,
+            pantheon_for_the_prophet_race: false,
             opening_settler_waits: false,
             settler_idle: BTreeMap::new(),
             settler_idle_turn: None,
@@ -6418,6 +6426,7 @@ impl BasicAi {
             capital_settler_after_completion: false,
             scout_first_opening: false,
             expansion_pantheon: false,
+            pantheon_for_the_prophet_race: false,
             opening_settler_waits: false,
             settler_idle: BTreeMap::new(),
             settler_idle_turn: None,
@@ -8990,7 +8999,20 @@ impl BasicAi {
             // free Settler in the capital and Fertility Rites a free Builder,
             // and Divine Spark — the shipped first choice, taken in 40 of 40
             // recorded live runs — pays nothing until a district stands.
-            let prefix: &[&str] = if self.expansion_pantheon {
+            // `prophet-race-takes-divine-spark`: while the seat runs the
+            // Prophet race, Divine Spark's +1 Prophet point a turn on every
+            // Holy Site is worth more than Fertility Rites' Builder: the race
+            // closes at t31-44 and live G202334Z lost it 18 points to 30.
+            let prefix: &[&str] = if self.expansion_pantheon && self.pantheon_for_the_prophet_race {
+                &[
+                    "religious_settlements",
+                    "divine_spark",
+                    "fertility_rites",
+                    "god_of_the_forge",
+                    "god_of_the_open_sky",
+                    "god_of_the_sea",
+                ]
+            } else if self.expansion_pantheon {
                 &[
                     "religious_settlements",
                     "fertility_rites",
