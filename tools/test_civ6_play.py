@@ -2879,6 +2879,7 @@ class PeaceDeterrenceConfigTests(unittest.TestCase):
 
 
 class VisualPopupCaptureFailureTests(unittest.TestCase):
+    @needs_pillow
     def test_live_deal_offer_is_refused(self) -> None:
         fixture = Path(__file__).resolve().parent / "fixtures" / "deal_refuse_live.jpg"
         with civ6_play.popup_clear._image_library().open(fixture) as image:
