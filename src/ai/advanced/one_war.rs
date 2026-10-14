@@ -269,6 +269,9 @@ pub(crate) const CAPITAL_PREY_DEEP_REACH: i32 = 27;
 /// The standard turns between two journal lines for the same capital-prey
 /// near miss failing the same gates.
 pub(crate) const CAPITAL_PREY_NOTE_TURNS: u32 = 10;
+/// The standard turns between two journal lines for the same held second
+/// front reading the same gates (`journal_held_second_front`).
+pub(crate) const SECOND_FRONT_HELD_NOTE_TURNS: u32 = 10;
 /// `capital-prey-opens-a-front`: the turns a soft capital's siege is
 /// expected to take once the army stands on its ring.
 pub(crate) const CAPITAL_PREY_SIEGE_TURNS: f64 = 4.0;
@@ -2873,6 +2876,109 @@ impl AdvancedAi {
                        "fails the {gates} gate");
             }
         }
+    }
+
+    /// Journal only: when the denial layer names a Conquest counter against
+    /// a major we are not at war with, while the front's war is running and
+    /// `one_war_second_front` does not name that rival, say which of the
+    /// second front's gates held it -- the front's peace not refused (and no
+    /// prey front), the clock not urgent, an illegal target, the outgun ratio,
+    /// no city in declaration reach, or an earlier rule's second front. Once
+    /// per rival per [`SECOND_FRONT_HELD_NOTE_TURNS`] standard turns, or when
+    /// the gates change. It decides nothing: 73 turns in 15 Immortal games
+    /// from 10-13 named such a counter with no line about it at all.
+    pub(crate) fn journal_held_second_front(&mut self, g: &Game, pid: usize) {
+        if !self.journal().wants(crate::reasoning::Level::Detail)
+            || !self.one_war_at_a_time
+            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || self.forced_target_player.is_some()
+        {
+            return;
+        }
+        let Some((front, closure_wanted_since)) = self
+            .one_war
+            .as_ref()
+            .map(|state| (state.target, state.closure_wanted_since))
+        else {
+            return;
+        };
+        if !g.is_at_war(pid, front) {
+            return;
+        }
+        let Some((rival, counter)) = self.actionable_victory_denial(g, pid) else {
+            return;
+        };
+        let named = self.one_war_second_front(g, pid);
+        if counter != GrandStrategy::Conquest
+            || rival == front
+            || g.is_at_war(pid, rival)
+            || named == Some(rival)
+        {
+            return;
+        }
+        let refused = closure_wanted_since.is_some_and(|since| {
+            g.turn.saturating_sub(since)
+                >= g.standard_duration(ONE_WAR_SECOND_FRONT_PATIENCE).max(1)
+        });
+        let prey_front =
+            self.domination_capital_prey(g, pid, front) || self.conquest_opening_war(front);
+        // Each gate is its kind (the repeat key) and its reading.
+        let mut gates: Vec<(&'static str, String)> = Vec::new();
+        if !refused && !prey_front {
+            gates.push(("refusal", "the front's peace is not refused".to_string()));
+        }
+        let urgent =
+            self.urgent_victory_threat(g, rival) && !self.front_capital_to_finish(g, rival);
+        if !urgent && !self.faith_counter(g, pid, rival) {
+            gates.push(("urgency", "its clock is not urgent".to_string()));
+        }
+        if !self.campaign_target_legal(g, pid, rival) {
+            gates.push(("legal", "it is not a legal target".to_string()));
+        }
+        let ratio = g.military_power(pid) / g.military_power(rival).max(1.0);
+        let need = self.second_front_ratio(rival);
+        if ratio < need {
+            gates.push(("outgun", format!("outgun {ratio:.1}x of {need:.1}x")));
+        }
+        if self.front_needs_a_declarable_rival && !self.declarable_in_reach(g, pid, rival) {
+            gates.push((
+                "reach",
+                "no city of theirs within declaration reach".to_string(),
+            ));
+        }
+        if let Some(other) = named {
+            gates.push((
+                "named",
+                format!("the second front is {}", g.players[other].civ),
+            ));
+        }
+        if gates.is_empty() {
+            gates.push(("other", "no gate read; another rule holds it".to_string()));
+        }
+        // The repeat key is the set of gates, not their numbers: an outgun
+        // ratio moving 1.3x -> 1.4x is the same held front.
+        let key = gates
+            .iter()
+            .map(|(kind, _)| *kind)
+            .collect::<Vec<_>>()
+            .join(",");
+        let every = g.standard_duration(SECOND_FRONT_HELD_NOTE_TURNS);
+        let due = self
+            .second_front_held_noted
+            .get(&rival)
+            .is_none_or(|(noted, turn)| *noted != key || g.turn.saturating_sub(*turn) >= every);
+        if !due {
+            return;
+        }
+        self.second_front_held_noted.insert(rival, (key, g.turn));
+        let reading = gates
+            .into_iter()
+            .map(|(_, text)| text)
+            .collect::<Vec<_>>()
+            .join(", ");
+        think!(self.journal(), Military, Detail,
+               "Second front held for {}", g.players[rival].civ;
+               "{reading}; the counter is named beside the war on {}", g.players[front].civ);
     }
 
     fn one_war_second_front_named(&self, g: &Game, pid: usize) -> Option<usize> {

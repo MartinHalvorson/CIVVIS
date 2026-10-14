@@ -314,3 +314,47 @@ fn a_seat_with_no_domination_contract_is_untouched() {
         assert_eq!(ai.diplomatic_contender_to_eliminate(&g, 0), None);
     }
 }
+
+/// `journal_held_second_front`: the war on player 1 is the front; player 2,
+/// at peace, has flown its Expedition, so denial names it as a Conquest
+/// counter while the second front holds (the front's peace is not refused).
+/// The journal says so once, not again inside the note window, and the
+/// second front it describes is the same before and after.
+#[test]
+fn a_held_second_front_is_journalled_once_and_decides_nothing() {
+    let (mut g, mut ai, _) = captured_front();
+    for project in [
+        "launch_earth_satellite",
+        "launch_moon_landing",
+        "launch_mars_colony",
+        "exoplanet_expedition",
+    ] {
+        g.players[2].science_projects.insert(project.to_string());
+    }
+    ai.one_war_observe(&g, 0);
+    let named = ai.actionable_victory_denial(&g, 0);
+    assert_eq!(
+        named.map(|(rival, _)| rival),
+        Some(2),
+        "fixture: the counter"
+    );
+    let before = ai.one_war_second_front(&g, 0);
+    assert_ne!(before, Some(2), "fixture: the second front holds");
+    ai.base.journal = crate::reasoning::Journal::recording();
+    let headline = format!("Second front held for {}", g.players[2].civ);
+    let count = |ai: &AdvancedAi| {
+        ai.base
+            .journal
+            .since(0)
+            .thoughts
+            .iter()
+            .filter(|thought| thought.headline == headline)
+            .count()
+    };
+    ai.journal_held_second_front(&g, 0);
+    assert_eq!(count(&ai), 1, "journalled");
+    ai.journal_held_second_front(&g, 0);
+    assert_eq!(count(&ai), 1, "not repeated inside the note window");
+    assert_eq!(ai.one_war_second_front(&g, 0), before, "it decides nothing");
+    assert_eq!(ai.actionable_victory_denial(&g, 0), named);
+}
