@@ -7771,6 +7771,17 @@ impl AdvancedAi {
         self.racer_blocker_declares = false;
     }
 
+    /// Opt-in gene `faith-war-before-the-flip`; see
+    /// `advanced/faith_war_before_the_flip.rs`.
+    pub fn enable_faith_war_before_the_flip(&mut self) {
+        self.faith_war_before_the_flip = true;
+    }
+
+    /// The twin of `enable_faith_war_before_the_flip`.
+    pub fn disable_faith_war_before_the_flip(&mut self) {
+        self.faith_war_before_the_flip = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

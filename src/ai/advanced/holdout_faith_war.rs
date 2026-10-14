@@ -37,7 +37,7 @@ const CONVERTING_SHARE: f64 = 0.6;
 
 impl AdvancedAi {
     /// Our cities following `faith` or being converted to it.
-    fn our_cities_on_the_faith(g: &Game, pid: usize, faith: &str) -> usize {
+    pub(super) fn our_cities_on_the_faith(g: &Game, pid: usize, faith: &str) -> usize {
         g.player_city_ids(pid)
             .iter()
             .filter_map(|cid| g.cities.get(cid))
