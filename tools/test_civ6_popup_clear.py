@@ -19,7 +19,22 @@ except ImportError:  # pragma: no cover - depends on the host, not the code
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from civ6_control import popup_clear  # noqa: E402
+from civ6_control import live_pause, popup_clear  # noqa: E402
+
+
+@unittest.skipIf(Image is None, "requires Pillow")
+class DealRefuseTest(unittest.TestCase):
+    def test_live_offer_targets_refuse_while_the_map_is_ignored(self):
+        fixtures = Path(__file__).resolve().parent / "fixtures"
+        with Image.open(fixtures / "deal_refuse_live.jpg") as frame:
+            kind, targets, _ = popup_clear.classify(frame.convert("RGB"))
+            self.assertEqual(kind, "deal")
+            self.assertEqual(len(targets), 1)
+            self.assertTrue(325 < targets[0][0] < 510)
+            self.assertTrue(190 < targets[0][1] < 220)
+            self.assertEqual(popup_clear.click_target(kind, targets, frame.width), targets[0])
+        with Image.open(fixtures / "ordinary_map_live.jpg") as frame:
+            self.assertEqual(popup_clear.classify(frame.convert("RGB"))[0], "map")
 
 
 @unittest.skipIf(Image is None, "requires Pillow")
@@ -149,6 +164,48 @@ class SetupYieldTest(unittest.TestCase):
 
         pause_reason.assert_not_called()
         window_box.assert_not_called()
+
+
+class OperatorPauseTest(unittest.TestCase):
+    """A held live game is the operator's to look around (`live_pause`)."""
+
+    def test_a_held_game_is_neither_captured_nor_clicked(self) -> None:
+        with tempfile.TemporaryDirectory() as root, \
+                mock.patch.object(popup_clear.macos_capture, "prepare", return_value=True), \
+                mock.patch.object(popup_clear, "operator_holds_game", return_value=True), \
+                mock.patch.object(popup_clear, "newest_run_is_pre_turn") as pre_turn, \
+                mock.patch.object(popup_clear, "capture_pause_reason") as pause_reason, \
+                mock.patch.object(popup_clear, "window_box") as window_box, \
+                mock.patch.object(popup_clear.macos_input, "press_key") as press_key, \
+                mock.patch.object(sys, "argv", [
+                    "popup_clear.py", "--once", "--runs", root,
+                    "--log", str(Path(root) / "popup.log"),
+                ]):
+            popup_clear.main()
+            ledger = (Path(root) / "popup.log").read_text()
+
+        pre_turn.assert_not_called()
+        pause_reason.assert_not_called()
+        window_box.assert_not_called()
+        press_key.assert_not_called()
+        self.assertIn("the operator holds the game", ledger)
+
+    def test_the_hold_is_the_live_pause_reading(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {
+                live_pause.REQUEST_ENV: str(Path(tmp) / "pause.json"),
+                live_pause.STATE_ENV: str(Path(tmp) / "state.json")}):
+            self.assertFalse(popup_clear.operator_holds_game())
+            live_pause.set_requested(True, source="test")
+            self.assertFalse(popup_clear.operator_holds_game(),
+                             "asked but the turn is still playing")
+            live_pause.write_state("civvis-test", True, 12)
+            self.assertTrue(popup_clear.operator_holds_game())
+            live_pause.set_requested(False)
+            self.assertFalse(popup_clear.operator_holds_game())
+            with mock.patch.object(popup_clear, "live_pause", None):
+                live_pause.set_requested(True, source="test")
+                self.assertFalse(popup_clear.operator_holds_game(),
+                                 "a tree without the Pause clears as before")
 
 
 class NativeRecordingProtectionTest(unittest.TestCase):

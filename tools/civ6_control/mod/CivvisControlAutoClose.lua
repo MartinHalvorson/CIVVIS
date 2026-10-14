@@ -353,12 +353,45 @@ local dialogueObserved = false;
 local dialogueChoice = nil;
 local dialogueCallback = nil;
 local dialogueAnswered = false;
+local dialogueStatement = nil;
+local dialogueWarWithheld = false;
+-- Gene `dialogue-never-declares-war`. Civ VI binds some answers to a war:
+-- WARNING_TOO_MANY_TROOPS_NEAR_ME_FROM_AI's CHOICE_NEGATIVE carries
+-- DIPLOACTION_DECLARE_SURPRISE_WAR (DiplomacyStatements_Warning.xml), and the
+-- NEGATIVE-first ladder below picked it: live civvis-20261005T045443Z went to
+-- surprise war with Korea at t94 while the board was holding off. When the
+-- brain selects the gene, each order batch renews a lease through
+-- `LuaEvents.CivvisDialogueNoWar(turn)`. It covers the next turn too, because
+-- a statement waiting at turn start is answered before that turn's first
+-- batch lands. Without a lease nothing below changes.
+local dialogueNoWarTurn = nil;
+if NAME == "DiplomacyActionView" then
+    pcall(function()
+        LuaEvents.CivvisDialogueNoWar.Add(function(turn)
+            dialogueNoWarTurn = tonumber(turn);
+        end);
+    end);
+end
+local function dialogueNoWar()
+    if dialogueNoWarTurn == nil then return false; end
+    local ok, now = pcall(function() return Game.GetCurrentGameTurn(); end);
+    -- An unreadable turn keeps the lease: refusing a war is the safe side.
+    if not ok or type(now) ~= "number" then return true; end
+    return now <= dialogueNoWarTurn + 1;
+end
+local function declaresWar(selection)
+    local action = selection.DiplomaticActionType;
+    return type(action) == "string"
+        and string.find(action, "^DIPLOACTION_DECLARE_.*WAR$") ~= nil;
+end
 if NAME == "DiplomacyActionView" and type(DefaultHandlers) == "table" then
     local stockApply = ApplyStatement;
     ApplyStatement = function(handler, statementType, subType, toPlayer, statement)
         firstMeetChoice = nil;
         firstMeetAnswered = false;
         dialogueObserved, dialogueChoice, dialogueCallback, dialogueAnswered = false, nil, nil, false;
+        dialogueStatement = type(statementType) == "string" and statementType or nil;
+        dialogueWarWithheld = false;
         stockApply(handler, statementType, subType, toPlayer, statement);
         local firstMeet = type(statementType) == "string"
             and string.find(statementType, "^FIRST_MEET_") ~= nil;
@@ -375,9 +408,12 @@ if NAME == "DiplomacyActionView" and type(DefaultHandlers) == "table" then
             dialogueObserved = true;
             local rank = { CHOICE_NEGATIVE = 3, CHOICE_IGNORE = 2, CHOICE_EXIT = 1 };
             local best = 0;
+            local noWar = dialogueNoWar();
             for _, selection in ipairs(parsed.Selections or {}) do
                 local score = rank[selection.Key] or 0;
-                if not selection.IsDisabled and score > best then
+                if noWar and score > 0 and not selection.IsDisabled and declaresWar(selection) then
+                    dialogueWarWithheld = true;
+                elseif not selection.IsDisabled and score > best then
                     dialogueChoice, best = selection.Key, score;
                 end
             end
@@ -609,7 +645,9 @@ local function endScreen(attempt)
         if not ok and dialogueCallback == callback and dialogueChoice == choice then
             dialogueAnswered = false;
         end
-        report("diplomacy_choice", string.format(',"choice":"%s","sent":%s', choice, tostring(ok)));
+        report("diplomacy_choice", string.format(',"choice":"%s","sent":%s,"statement":"%s"%s',
+            choice, tostring(ok), tostring(dialogueStatement),
+            dialogueWarWithheld and ',"war_withheld":true' or ''));
         return ok;
     end
     if NAME == "DiplomacyActionView" and firstMeetChoice ~= nil then
@@ -789,13 +827,16 @@ local function endScreen(attempt)
 	-- settled tick, answer the request negatively instead of spending fourteen
 	-- 250ms rungs getting there. The session ID is deliberately required so this
 	-- cannot turn an unrelated action-view screen into a response.
+	-- Under the `dialogue-never-declares-war` lease an unread statement is
+	-- answered IGNORE first: its NEGATIVE may be the war the board never chose.
 	if NAME == "DiplomacyActionView"
 			and (attempt or 1) >= 2 and (attempt or 1) <= 3
 			and not dialogueObserved
 			and type(OnSelectConversationDiplomacyStatement) == "function"
 			and ms_ActiveSessionID ~= nil
 			and pcall(function()
-				OnSelectConversationDiplomacyStatement("CHOICE_NEGATIVE");
+				OnSelectConversationDiplomacyStatement(
+					dialogueNoWar() and "CHOICE_IGNORE" or "CHOICE_NEGATIVE");
 			end) then
 		return true;
 	end
@@ -1086,6 +1127,16 @@ else
 		return not ContextPtr:IsHidden();
 	end
 
+	-- The operator's Pause (CivvisBoard.operatorHold in the agent). While the
+	-- live game is held, a screen up is one the operator opened to look at — a
+	-- leader, the trade overview, the Congress — or one they are reading, so
+	-- nothing here closes it. Their Resume hands the screen back to the clock.
+	local function operatorHolds()
+		local held = false;
+		pcall(function() held = ExposedMembers.CivvisOperatorHold == true; end);
+		return held;
+	end
+
 	-- The shipped diplomacy contexts are visible before they can accept an
 	-- action. During the opening fade the view mode is still being constructed;
 	-- calling its handlers then is a successful Lua call that does nothing. The
@@ -1211,6 +1262,9 @@ else
 				if not isUp() then showing = false; return; end
 			end
 		end
+		-- After the pulse above, which is how a held agent hears the resume
+		-- while a leader screen hides TopPanel. The clock restarts on resume.
+		if operatorHolds() then showing = false; return; end
 		if not showing then
 			showing = true;
 			remaining = SECONDS;

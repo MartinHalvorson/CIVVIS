@@ -55,7 +55,7 @@ fn city_board() -> StateSnapshot {
 fn a_wounded_swordsman_keeps_its_steps_beside_an_enemy_city() {
     let state = city_board();
     let (orders, deferred, coalesced) =
-        coalesce_unit_paths_except(steps(), true, &wounded_local_routes(&state));
+        coalesce_unit_paths_except(steps(), true, &wounded_local_routes(&state), &Default::default());
     assert_eq!(
         coalesced, 0,
         "the city must not erase the planned first step"
@@ -137,7 +137,7 @@ fn ordinary_travel_still_coalesces_and_civilians_do_not_enter_the_guard() {
             _ => state.rivals[0].cities[0].x = 40,
         }
         let (orders, _, coalesced) =
-            coalesce_unit_paths_except(steps(), true, &wounded_local_routes(&state));
+            coalesce_unit_paths_except(steps(), true, &wounded_local_routes(&state), &Default::default());
         assert_eq!(coalesced, 1);
         assert_eq!(orders[0].pos, Some((13, 21)));
     }
@@ -147,7 +147,7 @@ fn ordinary_travel_still_coalesces_and_civilians_do_not_enter_the_guard() {
 fn an_older_host_receives_the_first_safe_step_and_defers_the_followup() {
     let state = city_board();
     let (orders, deferred, coalesced) =
-        coalesce_unit_paths_except(steps(), false, &wounded_local_routes(&state));
+        coalesce_unit_paths_except(steps(), false, &wounded_local_routes(&state), &Default::default());
     assert_eq!(orders.len(), 1);
     assert_eq!(orders[0].pos, Some((14, 22)));
     assert_eq!(deferred, 2);

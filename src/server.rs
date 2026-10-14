@@ -1,5 +1,6 @@
 //! Zero-dependency local HTTP server for the human-vs-AI browser GUI.
 //! Endpoints: GET / (page), GET /state, GET /machine-metrics, GET /save, GET /rules, GET /pedia,
+//! GET /policy-effects,
 //! POST /action, POST /step, POST /autoplay, POST /view,
 //! POST /spectator-status, POST /next-game-settings, POST /new,
 //! POST /supervisor-new.
@@ -68,6 +69,38 @@ fn process_identity() -> u32 {
 /// fields, so reading it back is safe; recover the guard and keep serving.
 fn lock_or_recover<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// The last `/policy-effects` answer and the empire it read (see
+/// [`policy_effects_key`]). Every viewer polls the same empire, so one sweep a
+/// change serves them all.
+static POLICY_EFFECTS_MEMO: Mutex<Option<(String, Value)>> = Mutex::new(None);
+
+/// What a policy ledger depends on closely enough to be re-read when it
+/// moves: the world, the turn, the seat, its deck and government, and the
+/// size of the empire the cards act on.
+fn policy_effects_key(game: &Game, pid: usize) -> String {
+    let Some(player) = game.players.get(pid) else {
+        return format!("{}:{}:none", game.seed, game.turn);
+    };
+    let cities = game.player_city_ids(pid);
+    let population: i64 = cities.iter().map(|cid| game.cities[cid].pop as i64).sum();
+    let queued: Vec<String> = cities
+        .iter()
+        .map(|cid| format!("{:?}", game.cities[cid].queue.first()))
+        .collect();
+    format!(
+        "{}:{}:{}:{:?}:{:?}:{}:{}:{}:{}",
+        game.seed,
+        game.turn,
+        pid,
+        player.policies,
+        player.government,
+        cities.len(),
+        population,
+        game.player_unit_ids(pid).len(),
+        queued.join(",")
+    )
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -2569,22 +2602,32 @@ impl Session {
         }
     }
 
+    /// The empire the observation's `me` describes: the seat being viewed,
+    /// or above the world the major `state` follows for its side panel.
+    pub fn empire_seat(&self) -> usize {
+        self.viewing_seat().unwrap_or_else(|| self.acting_major())
+    }
+
+    /// The omniscient view still needs an empire perspective for the
+    /// side-panel summary. Follow the acting major, falling back when a
+    /// city-state or barbarian is up.
+    fn acting_major(&self) -> usize {
+        let g = &self.game;
+        if g.players[g.current].is_minor || g.players[g.current].is_barbarian {
+            g.players
+                .iter()
+                .find(|p| !p.is_minor && !p.is_barbarian && p.alive)
+                .map(|p| p.id)
+                .unwrap_or(0)
+        } else {
+            g.current
+        }
+    }
+
     pub fn state(&self) -> Value {
         if self.params.spectate {
             let g = &self.game;
-            // The omniscient view still needs an empire perspective for the
-            // side-panel summary. Follow the acting major, falling back when
-            // a city-state or barbarian is up.
-            let summary_pid = if g.players[g.current].is_minor || g.players[g.current].is_barbarian
-            {
-                g.players
-                    .iter()
-                    .find(|p| !p.is_minor && !p.is_barbarian && p.alive)
-                    .map(|p| p.id)
-                    .unwrap_or(0)
-            } else {
-                g.current
-            };
+            let summary_pid = self.acting_major();
             let mut o = match self.view_player {
                 Some(pid) => observation_player_view(g, pid),
                 None => observation_spectator(g, summary_pid),
@@ -4458,6 +4501,12 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 // 0 is the unlimited pace; anything else is a turn budget.
                 sh.pace_ms.store(v.min(60_000), Ordering::Relaxed);
                 sh.turn_us.store(0, Ordering::Relaxed); // re-measure at the new pace
+                // On the live mirror the pace is the Civilization VI game's.
+                if civ6::live_pause_control() {
+                    if let Err(error) = civ6::set_live_pace(v) {
+                        eprintln!("[live pace] {error}");
+                    }
+                }
             }
             if let Some(value) = parsed["between_game_countdown_ms"]
                 .as_u64()
@@ -4650,6 +4699,37 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             let answer = crate::routes::rules(&session, true);
             respond_json(stream, &answer);
         }
+        ("GET", "/policy-effects") => {
+            // A counterfactual sweep per slotted card is too slow to hold the
+            // simulation lock for, so it runs on a branch cloned under the
+            // lock, and is remembered until the empire it read changes.
+            let session = lock_or_recover(&sh.session);
+            let pid = session.empire_seat();
+            let key = policy_effects_key(&session.game, pid);
+            let remembered = lock_or_recover(&POLICY_EFFECTS_MEMO)
+                .as_ref()
+                .filter(|(held, _)| *held == key)
+                .map(|(_, answer)| answer.clone());
+            let answer = match remembered {
+                Some(answer) => {
+                    drop(session);
+                    answer
+                }
+                None => {
+                    let branch = session.game.speculative_clone();
+                    drop(session);
+                    let turn = branch.turn;
+                    let answer = crate::routes::policy_effects_answer(
+                        turn,
+                        pid,
+                        &branch.into_policy_ledger(pid),
+                    );
+                    *lock_or_recover(&POLICY_EFFECTS_MEMO) = Some((key, answer.clone()));
+                    answer
+                }
+            };
+            respond_json(stream, &answer);
+        }
         ("GET", "/gene-program") => {
             let answer = crate::routes::gene_program(&armed_live_treatments());
             respond_json(stream, &answer);
@@ -4827,6 +4907,48 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                 }),
             );
         }
+        // The operator's Pause / Resume for the live Civilization VI game this
+        // page mirrors (`tools/civ6_control/live_pause.py`). Answered without
+        // the simulation lock: the mirror's own world is not what it touches,
+        // and the button must answer while a frame is being published.
+        ("GET", "/live-pause") => {
+            respond_json(stream, &civ6::live_pause_status());
+        }
+        ("POST", "/live-pause") => {
+            let asked = if !civ6::live_pause_control() {
+                Err("this page is not showing a live Civilization VI game".to_string())
+            } else if let Some(paused) = parsed["paused"].as_bool() {
+                civ6::set_live_pause(paused, "civvis-page")
+            } else {
+                Err("send {\"paused\": true} or {\"paused\": false}".to_string())
+            };
+            let mut answer = civ6::live_pause_status();
+            answer["error"] = match asked {
+                Ok(()) => Value::Null,
+                Err(error) => Value::String(error),
+            };
+            respond_json(stream, &answer);
+        }
+        // The operator's New game for that same live game: Civilization VI's
+        // own Retire through `civvis-games retire`, after which the lane's
+        // supervisor starts the next game (`civ6::request_live_new_game`).
+        // The page confirms first; a body must say so, so a stray POST to the
+        // route cannot end a game.
+        ("POST", "/live-new-game") => {
+            let asked = if !civ6::live_pause_control() {
+                Err("this page is not showing a live Civilization VI game".to_string())
+            } else if parsed["confirm"].as_bool() != Some(true) {
+                Err("send {\"confirm\": true} to end this game and start a new one".to_string())
+            } else {
+                civ6::request_live_new_game()
+            };
+            let mut answer = civ6::live_pause_status();
+            answer["error"] = match asked {
+                Ok(()) => Value::Null,
+                Err(error) => Value::String(error),
+            };
+            respond_json(stream, &answer);
+        }
         // Start a real game of Civilization VI with the lobby's settings.
         //
         // The reply is a receipt, not a game: bringing the other game up takes
@@ -4912,7 +5034,13 @@ pub fn serve_with_game(
         next_game_params: Mutex::new(session.take_resumed_next_game_params()),
         match_series: Mutex::new(None),
         session: Mutex::new(session),
-        pace_ms: AtomicU64::new(500), // half a second per turn by default
+        // Half a second per turn by default; the live mirror starts on the
+        // pace its Civilization VI game is actually held to.
+        pace_ms: AtomicU64::new(if civ6::live_pause_control() {
+            civ6::live_pace_ms()
+        } else {
+            500
+        }),
         between_game_countdown_ms: AtomicU64::new(DEFAULT_BETWEEN_GAME_COUNTDOWN_MS),
         finale_rearm: AtomicBool::new(false),
         finale_hold: AtomicU64::new(0),

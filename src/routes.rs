@@ -200,6 +200,43 @@ pub fn pedia(session: &Session) -> Value {
     json!({"entries": crate::pedia::entries(&session.game.rules)})
 }
 
+/// `GET /policy-effects` — what each slotted policy card of the empire the
+/// page describes is worth to it right now, and the deck as a whole: the
+/// counterfactual `Game::policy_ledger` reads, measure by measure.
+pub fn policy_effects(session: &Session) -> Value {
+    let pid = session.empire_seat();
+    policy_effects_answer(session.game.turn, pid, &session.game.policy_ledger(pid))
+}
+
+/// The answer for a ledger already read. Native reads its ledger off a
+/// branch, outside the simulation lock, and shapes it here.
+///
+/// A measure a card does not move is left out rather than sent as zero, so a
+/// card the engine reads as worth nothing arrives as an empty `worth`.
+pub fn policy_effects_answer(turn: u32, pid: usize, ledger: &crate::game::PolicyLedger) -> Value {
+    let reading = |reading: &crate::game::EmpireReading| -> Value {
+        let mut out = serde_json::Map::new();
+        for (key, value) in reading.fields() {
+            let rounded = (value * 10.0).round() / 10.0;
+            if rounded != 0.0 {
+                out.insert(key.to_string(), json!(rounded));
+            }
+        }
+        Value::Object(out)
+    };
+    json!({
+        "player": pid,
+        "turn": turn,
+        "anarchy": ledger.anarchy,
+        "net": reading(&ledger.net),
+        "cards": ledger
+            .cards
+            .iter()
+            .map(|card| json!({"policy": card.policy, "worth": reading(&card.worth)}))
+            .collect::<Vec<_>>(),
+    })
+}
+
 /// `POST /intel` — the one-unit planning read shared by both clients.
 pub fn intel(session: &Session, parsed: &Value) -> Value {
     match parsed["unit"].as_u64() {

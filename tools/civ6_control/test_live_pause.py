@@ -1,0 +1,190 @@
+"""Tests for the operator's Pause / Resume of the live verification game.
+
+The protocol (`live_pause.py`) is two host files and one orders row; what must
+hold is that every reader agrees on what a request says, that the hold report
+belongs to the run that wrote it, and that the row the mod polls survives the
+brain answering the very turn it is holding.
+
+Run: python3 -m unittest tools/civ6_control/test_live_pause.py
+"""
+
+from __future__ import annotations
+
+import json
+import sqlite3
+import sys
+import unittest
+from pathlib import Path
+from tempfile import TemporaryDirectory
+from unittest import mock
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
+import civ6_brain  # noqa: E402
+from civ6_control import live_pause, orders  # noqa: E402
+
+
+class Request(unittest.TestCase):
+    def test_pause_and_resume_write_and_remove_the_request(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "pause.json"
+            self.assertFalse(live_pause.requested(path))
+            live_pause.set_requested(True, source="test", path=path)
+            self.assertTrue(live_pause.requested(path))
+            payload = json.loads(path.read_text())
+            self.assertEqual(payload["paused"], True)
+            self.assertEqual(payload["source"], "test")
+            self.assertRegex(payload["requested_utc"], r"^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ$")
+            live_pause.set_requested(False, path=path)
+            self.assertFalse(path.exists())
+            # Lifting a pause nobody asked for is not an error.
+            live_pause.set_requested(False, path=path)
+
+    def test_the_file_is_the_request(self):
+        """The same reading as the server and the wedge watchdog: only an
+        explicit `"paused": false` plays; an empty or torn file still pauses."""
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "pause.json"
+            for body, wanted in (("", True), ("{not json", True), ("{}", True),
+                                 ('{"paused": true}', True),
+                                 ('{"paused": false}', False)):
+                path.write_text(body)
+                self.assertIs(live_pause.requested(path), wanted, body)
+
+    def test_the_environment_moves_both_files(self):
+        with TemporaryDirectory() as tmp:
+            env = {live_pause.REQUEST_ENV: f"{tmp}/r.json",
+                   live_pause.STATE_ENV: f"{tmp}/s.json"}
+            with mock.patch.dict("os.environ", env):
+                self.assertEqual(live_pause.request_path(), Path(tmp) / "r.json")
+                self.assertEqual(live_pause.state_path(), Path(tmp) / "s.json")
+
+
+class Report(unittest.TestCase):
+    def test_a_hold_keeps_its_start_and_is_released_by_its_own_run(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "state.json"
+            live_pause.write_state("civvis-a", True, 151, path=path)
+            first = json.loads(path.read_text())
+            self.assertTrue(first["held"])
+            self.assertEqual(first["turn"], 151)
+            # The 30 s heartbeat refreshes the report, not the hold's start.
+            with mock.patch.object(live_pause, "utc_stamp", lambda: "2099-01-01T00:00:00Z"):
+                live_pause.write_state("civvis-a", True, 151, path=path)
+            self.assertEqual(json.loads(path.read_text())["since_utc"], first["since_utc"])
+            # Another run cannot release this one's hold...
+            live_pause.release_state("civvis-b", path=path)
+            self.assertTrue(json.loads(path.read_text())["held"])
+            # ...its own can.
+            live_pause.release_state("civvis-a", path=path)
+            released = json.loads(path.read_text())
+            self.assertFalse(released["held"])
+            self.assertEqual(released["turn"], 151)
+            self.assertNotIn("since_utc", released)
+
+    def test_the_game_is_held_only_while_asked_and_reported(self):
+        """What a window-clicking tool asks: both halves, and the request
+        alone decides a resume — a stale report never keeps a game held."""
+        with TemporaryDirectory() as tmp:
+            request, report = Path(tmp) / "pause.json", Path(tmp) / "state.json"
+            self.assertFalse(live_pause.holds_game(request, report))
+            live_pause.set_requested(True, source="test", path=request)
+            self.assertFalse(live_pause.holds_game(request, report),
+                             "asked but not yet held: the turn is still playing")
+            live_pause.write_state("civvis-a", True, 40, path=report)
+            self.assertTrue(live_pause.holds_game(request, report))
+            live_pause.set_requested(False, path=request)
+            self.assertFalse(live_pause.holds_game(request, report),
+                             "Resume hands the screen back before the mod answers")
+            live_pause.set_requested(True, source="test", path=request)
+            live_pause.release_state("civvis-a", path=report)
+            self.assertFalse(live_pause.holds_game(request, report))
+            report.write_text("{torn")
+            self.assertFalse(live_pause.holds_game(request, report))
+
+    def test_a_missing_report_is_released_quietly(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "state.json"
+            live_pause.release_state("civvis-a", path=path)
+            self.assertFalse(path.exists())
+
+
+class Pace(unittest.TestCase):
+    def test_the_page_pace_is_read_as_a_bounded_budget(self):
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "pace.json"
+            self.assertEqual(live_pause.requested_pace_ms(path), 0, "unset is no wait")
+            live_pause.set_pace(2000, path=path)
+            self.assertEqual(live_pause.requested_pace_ms(path), 2000)
+            self.assertEqual(json.loads(path.read_text())["ms"], 2000)
+            live_pause.set_pace(10 ** 9, path=path)
+            self.assertEqual(live_pause.requested_pace_ms(path), live_pause.MAX_PACE_MS)
+            for body in ("{torn", '{"ms": "fast"}', '{"ms": true}', '{"ms": -5}', "[]"):
+                path.write_text(body)
+                self.assertEqual(live_pause.requested_pace_ms(path), 0, body)
+            with mock.patch.dict("os.environ", {live_pause.PACE_ENV: str(path)}):
+                self.assertEqual(live_pause.pace_path(), path)
+
+
+class OrdersRow(unittest.TestCase):
+    def test_the_pause_row_survives_the_brain_answering_the_held_turn(self):
+        with TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "orders.sqlite"
+            conn = civ6_brain.connect(db_path)
+            self.assertTrue(orders.set_operator_pause(db_path, "civvis-a", 151, True))
+            # Idempotent, as the harness re-asserts it.
+            self.assertTrue(orders.set_operator_pause(db_path, "civvis-a", 151, True))
+            civ6_brain.write_turn(conn, "civvis-a", 151, [], frame=0)
+            conn.commit()
+            count = "SELECT count(*) FROM orders WHERE run = ? AND kind = 'pause'"
+            self.assertEqual(conn.execute(count, ("civvis-a",)).fetchone()[0], 1)
+            # The mod's fetch filters on an exact frame; the row is out of band.
+            row = conn.execute("SELECT turn, seq, frame, verb FROM orders"
+                               " WHERE kind = 'pause'").fetchone()
+            self.assertEqual(row, (151, orders.PAUSE_SEQ, orders.PAUSE_FRAME, "operator"))
+            # A pause asked before any turn is known still lands.
+            self.assertTrue(orders.set_operator_pause(db_path, "civvis-a", None, True))
+            self.assertEqual(conn.execute(count, ("civvis-a",)).fetchone()[0], 2)
+            # Resume clears every pause row of this run, and only this run.
+            self.assertTrue(orders.set_operator_pause(db_path, "civvis-b", 7, True))
+            self.assertTrue(orders.set_operator_pause(db_path, "civvis-a", 152, False))
+            self.assertEqual(conn.execute(count, ("civvis-a",)).fetchone()[0], 0)
+            self.assertEqual(conn.execute(count, ("civvis-b",)).fetchone()[0], 1)
+            conn.close()
+
+    def test_the_pace_row_is_one_budget_per_run_and_survives_the_brain(self):
+        with TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "orders.sqlite"
+            conn = civ6_brain.connect(db_path)
+            rows = "SELECT turn, seq, frame, x FROM orders WHERE run = ? AND kind = 'pace'"
+            self.assertTrue(orders.set_operator_pace(db_path, "civvis-a", 2000))
+            self.assertTrue(orders.set_operator_pace(db_path, "civvis-a", 4000))
+            civ6_brain.write_turn(conn, "civvis-a", 12, [], frame=0)
+            conn.commit()
+            self.assertEqual(conn.execute(rows, ("civvis-a",)).fetchall(),
+                             [(0, orders.PACE_SEQ, orders.PACE_FRAME, 4000)])
+            # The pause and the pace are separate rows.
+            self.assertTrue(orders.set_operator_pause(db_path, "civvis-a", 12, True))
+            self.assertEqual(len(conn.execute(rows, ("civvis-a",)).fetchall()), 1)
+            # Lightning is no row at all, for this run only.
+            self.assertTrue(orders.set_operator_pace(db_path, "civvis-b", 500))
+            self.assertTrue(orders.set_operator_pace(db_path, "civvis-a", 0))
+            self.assertEqual(conn.execute(rows, ("civvis-a",)).fetchall(), [])
+            self.assertEqual(len(conn.execute(rows, ("civvis-b",)).fetchall()), 1)
+            conn.close()
+            self.assertFalse(orders.set_operator_pace(Path(tmp) / "none.sqlite", "civvis-a", 500))
+            self.assertFalse((Path(tmp) / "none.sqlite").exists())
+
+    def test_a_database_not_yet_made_is_left_for_the_brain(self):
+        """The game attaches whatever file is at the path, so the pause must
+        never create an empty one ahead of the brain's schema."""
+        with TemporaryDirectory() as tmp:
+            db_path = Path(tmp) / "orders.sqlite"
+            self.assertFalse(orders.set_operator_pause(db_path, "civvis-a", 1, True))
+            self.assertFalse(db_path.exists())
+            sqlite3.connect(str(db_path)).close()  # an empty file, no table yet
+            self.assertFalse(orders.set_operator_pause(db_path, "civvis-a", 1, True))
+
+
+if __name__ == "__main__":
+    unittest.main()

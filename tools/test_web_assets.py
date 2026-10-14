@@ -323,7 +323,7 @@ const addis = {owner:1, pos:[32, 20], hp:200, wall_hp:100, wall_max:400};
 const guard = unit(1, [33, 20]);
 check(near(at(world(1, 10, [...army, guard], [addis])), 32, 20),
       "a siege of an enemy city outweighs a quiet capital, centred on the city");
-check(activeAreaSubjects(world(1, 10, [...army, guard], [addis]), 0, (t += 5000)).length === 49,
+check(activeAreaSubjects(world(1, 10, [...army, guard], [addis]), 0, (t += 5000)).length === (2 * ACTIVE_AREA.frame + 1) ** 2,
       "the frame is the hot tile's neighbourhood, not the empire");
 
 check(near(at(world(1, 10, [...army, unit(0, [31, 21], {hp:40}), guard], [addis])), 32, 20),

@@ -2388,7 +2388,1503 @@ pub const GENES: &[Gene] = &[
     // and below. King ladder proxy, 64 paired games: foreign cities held
     // 8 -> 22, alive 49 -> 54, +0.90 pp; Emperor -1.06 pp, so not above King. See `AdvancedAi::phase_specialization_active`.
     Gene { tag: "domination-specializes-earlier", field: "domination_specializes_earlier", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_specializes_earlier, disable: AdvancedAi::disable_domination_specializes_earlier },
+    // The delegated city governor asked every coastal city for a Harbor before
+    // any specialty district; live King Tiny Pangaea started no Campus between
+    // turns 20 and 65 in two of three games. See `BasicAi::campus_before_harbor`.
+    Gene { tag: "campus-before-harbor", field: "campus_before_harbor", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_before_harbor, disable: AdvancedAi::disable_campus_before_harbor },
+    // V2 also puts the capital's first Campus ahead of its next Settler once
+    // the empire holds three cities: the capital trained eight Settlers by
+    // turn 57 and opened no Campus until turn 66. See `BasicAi::capital_campus_first`.
+    Gene { tag: "campus-before-harbor-2", field: "campus_before_harbor_2", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_before_harbor_2, disable: AdvancedAi::disable_campus_before_harbor_2 },
+    // Seven urgent counter declarations below parity took 0.14 cities in 40
+    // turns and lost all seven games. See `one_war::COUNTER_WAR_PARITY`.
+    Gene { tag: "counter-war-needs-parity", field: "counter_war_needs_parity", kind: Kind::OptIn, enable: AdvancedAi::enable_counter_war_needs_parity, disable: AdvancedAi::disable_counter_war_needs_parity },
+    // The delegated city governor tried every district a city lacked before
+    // any building: live King turn 100 held 15 of 45 Campuses without a
+    // Library and 13 of 19 Commercial Hubs without a Market. See
+    // `BasicAi::district_buildings_first`.
+    Gene { tag: "district-buildings-first", field: "district_buildings_first", kind: Kind::OptIn, enable: AdvancedAi::enable_district_buildings_first, disable: AdvancedAi::disable_district_buildings_first },
+    // Culture buys civics and is one bar of the culture-victory defense
+    // (domestic Tourists are lifetime Culture over 100); our Culture ran a
+    // third to a half of the strongest rival's and the bred district order
+    // always ranks the Theater Square last. See `BasicAi::culture_defense_theater`.
+    Gene { tag: "culture-defense-theater", field: "culture_defense_theater", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_defense_theater, disable: AdvancedAi::disable_culture_defense_theater },
+    // Live King 2026-10-05: 11 of 55 housing-bound cities at t75 built the
+    // reservation's Theater instead of a Granary; see `culture_defense.rs`.
+    Gene { tag: "culture-defense-theater-2", field: "culture_defense_theater_2", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_defense_theater_2, disable: AdvancedAi::disable_culture_defense_theater_2 },
+    // V3 carries version one's housing rule into the delegated city governor,
+    // where most live builds are placed, and follows the Granary with an
+    // Aqueduct while the city stays housing-bound.
+    Gene { tag: "first-granary-reserve-3", field: "first_granary_reserve_3", kind: Kind::OptIn, enable: AdvancedAi::enable_first_granary_reserve_3, disable: AdvancedAi::disable_first_granary_reserve_3 },
+    // The Monument sat behind the military floor, the Settler, the Builders
+    // and the Trader: live King turn 60 to 100, only 54-57% of cities older
+    // than 20 turns held one and culture trailed 10.6 against 27.3. See
+    // `BasicAi::monument_first`.
+    Gene { tag: "monument-first", field: "monument_first", kind: Kind::OptIn, enable: AdvancedAi::enable_monument_first, disable: AdvancedAi::disable_monument_first },
+    Gene { tag: "shared-danger", field: "shared_danger", kind: Kind::OptIn, enable: AdvancedAi::enable_shared_danger, disable: AdvancedAi::disable_shared_danger },
+    // V2 also gives the capital's Library the slot campus-before-harbor-2
+    // gives its Campus, ahead of the next Settler: the best live game held 7
+    // Campuses and 2 Libraries at turn 100. See `BasicAi::capital_library_first`.
+    Gene { tag: "district-buildings-first-2", field: "district_buildings_first_2", kind: Kind::OptIn, enable: AdvancedAi::enable_district_buildings_first_2, disable: AdvancedAi::disable_district_buildings_first_2 },
+    // Upgrades spent the treasury to 30 Gold at war; a one-turn upkeep swing
+    // then bankrupted the empire (live King 040354Z t180-186, t207-213).
+    // See `gold_and_cards::UPKEEP_RESERVE_TURNS`.
+    Gene { tag: "upkeep-reserve", field: "upkeep_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_upkeep_reserve, disable: AdvancedAi::disable_upkeep_reserve },
+    // The base governor's deck pass unslotted Levée en Masse before the
+    // strategic deck read it, so the relief flipped out and the next turn's
+    // bill bankrupted the empire; Liberalism and Aesthetics alternated every
+    // turn. See `AdvancedAi::maintenance_relief_held`.
+    Gene { tag: "policy-deck-hysteresis", field: "policy_deck_hysteresis", kind: Kind::OptIn, enable: AdvancedAi::enable_policy_deck_hysteresis, disable: AdvancedAi::disable_policy_deck_hysteresis },
+    // Live King 052455Z drew no Oil or Aluminum at turn 182 while Spain, the
+    // rival at war, held both; every modern upgrade and the bomber wing
+    // waited on them. See `strategic_deposit_prey::STRATEGIC_DEPOSIT_PREY_VALUE`.
+    Gene { tag: "strategic-deposit-prey", field: "strategic_deposit_prey", kind: Kind::OptIn, enable: AdvancedAi::enable_strategic_deposit_prey, disable: AdvancedAi::disable_strategic_deposit_prey },
+    // Live King 060034Z lost on Culture to Sweden at turn 205: 40 percent at
+    // 185, under the counter's bar, yet compounding to a finish in about 28
+    // turns while the army fought the science leader. See
+    // `denial_nearest_finish::DENIAL_FINISH_HORIZON`.
+    Gene { tag: "denial-nearest-finish", field: "denial_nearest_finish", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_nearest_finish, disable: AdvancedAi::disable_denial_nearest_finish },
+    // Live King 072557Z stood in Stage before 400 walls for 46 turns: the
+    // shortfall reservation stopped at three guns. See
+    // `siege_production::HEAVY_WALL_SIEGE_CAP`.
+    Gene { tag: "siege-train-scales-with-walls", field: "siege_train_scales_with_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_train_scales_with_walls, disable: AdvancedAi::disable_siege_train_scales_with_walls },
+    // V2 also researches the next stronger buildable land siege design once
+    // the target's walls reach the Medieval tier: live King 072557Z stayed on
+    // Trebuchets against 400-HP Cree walls from t123 to t142. See
+    // `SIEGE_UPGRADE_WALL_HP`.
+    Gene { tag: "domination-siege-research-2", field: "domination_siege_research_2", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_siege_research_2, disable: AdvancedAi::disable_domination_siege_research_2 },
+    // Live King 081800Z mustered for unwalled Helsingborg for 82 turns while
+    // the rally flipped across the city. See
+    // `objective_board::SIEGE_RALLY_SWITCH_MARGIN`.
+    Gene { tag: "siege-rally-holds", field: "siege_rally_holds", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_rally_holds, disable: AdvancedAi::disable_siege_rally_holds },
+    Gene { tag: "policy-deck-hysteresis-2", field: "policy_deck_hysteresis_2", kind: Kind::OptIn, enable: AdvancedAi::enable_policy_deck_hysteresis_2, disable: AdvancedAi::disable_policy_deck_hysteresis_2 },
+    // Live King 090618Z kept Bhavapura at 43 Loyalty and -6.6 a turn; it
+    // revolted at 73, seven turns after the capture, before the moved
+    // Governor could hold it. See `DOOMED_CAPTURE_TURNS`.
+    Gene { tag: "raze-a-doomed-capture", field: "raze_doomed_capture", kind: Kind::OptIn, enable: AdvancedAi::enable_raze_doomed_capture, disable: AdvancedAi::disable_raze_doomed_capture },
+    // Live King 093332Z held zero Builders from t54 to t93; see
+    // `BasicAi::builder_before_the_army`.
+    Gene { tag: "builder-before-the-army", field: "builder_before_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_before_the_army, disable: AdvancedAi::disable_builder_before_the_army },
+    Gene { tag: "builder-before-the-army-2", field: "builder_before_the_army_2", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_before_the_army_2, disable: AdvancedAi::disable_builder_before_the_army_2 },
+    // Live King 103619Z: 5 of 6 cities without a Campus from t70 to t120;
+    // see `BasicAi::campus_before_the_army`.
+    Gene { tag: "campus-before-the-army", field: "campus_before_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_before_the_army, disable: AdvancedAi::disable_campus_before_the_army },
+    // Live King 103619Z had Tskhumi's walls 400 -> 276 and dropped to Stage;
+    // they stood at 400 again eight turns later. See
+    // `siege_train::HELD_BREACH_WALL_SHARE`.
+    Gene { tag: "siege-holds-a-breach", field: "siege_holds_a_breach", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_holds_a_breach, disable: AdvancedAi::disable_siege_holds_a_breach },
+    // Live King 021048Z stood down Kwadukuza as "not pushed to a new low"
+    // while its new walls fell from 64 to 28. See
+    // `commitments::rebase_capture_on_new_walls`.
+    Gene { tag: "stall-rebases-on-new-walls", field: "stall_rebases_on_new_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_stall_rebases_on_new_walls, disable: AdvancedAi::disable_stall_rebases_on_new_walls },
+    // Live King 115745Z sieged unwalled Pest with one Archer shot a turn
+    // while ten bodies held in reserve; the city walled at turn 78. See
+    // `objective_board::SIEGE_RANGED_FLOOR`.
+    Gene { tag: "siege-ranged-floor", field: "siege_ranged_floor", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_ranged_floor, disable: AdvancedAi::disable_siege_ranged_floor },
+    // Live King 100536Z aimed its culture denial at India for 45 turns with
+    // Phoenicia's closed borders between; no unit reached Delhi. See
+    // `advanced/denial_needs_a_road.rs`.
+    Gene { tag: "denial-needs-a-road", field: "denial_needs_a_road", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_needs_a_road, disable: AdvancedAi::disable_denial_needs_a_road },
+    Gene { tag: "campus-before-the-army-2", field: "campus_before_the_army_2", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_before_the_army_2, disable: AdvancedAi::disable_campus_before_the_army_2 },
+    Gene { tag: "campus-before-the-army-3", field: "campus_before_the_army_3", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_before_the_army_3, disable: AdvancedAi::disable_campus_before_the_army_3 },
+    // Live King 155014Z: 5 of 6 cities at their housing, no Granary, at t100;
+    // see `BasicAi::granary_before_the_army`.
+    Gene { tag: "granary-before-the-army", field: "granary_before_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_granary_before_the_army, disable: AdvancedAi::disable_granary_before_the_army },
+    // Live King 124613Z: 79 Settler-turns afloat waiting on one Galley; see
+    // `AdvancedAi::naval_escort_patience`.
+    Gene { tag: "naval-escort-patience", field: "naval_escort_patience", kind: Kind::HostOnly, enable: AdvancedAi::enable_naval_escort_patience, disable: AdvancedAi::disable_naval_escort_patience },
+    // Live King 160213Z: 69% of the siege army built more than 12 tiles from
+    // the objective; see `BasicAi::front_weighted_floor`.
+    Gene { tag: "front-weighted-floor", field: "front_weighted_floor", kind: Kind::OptIn, enable: AdvancedAi::enable_front_weighted_floor, disable: AdvancedAi::disable_front_weighted_floor },
+    // Live King 235724Z: version 1 never bound (army 30-58% of its floor);
+    // see `BasicAi::front_weighted_floor_2`.
+    Gene { tag: "front-weighted-floor-2", field: "front_weighted_floor_2", kind: Kind::OptIn, enable: AdvancedAi::enable_front_weighted_floor_2, disable: AdvancedAi::disable_front_weighted_floor_2 },
+    // Live King 024614Z: reserved catapults displaced and built far from
+    // Lisbon; see `AdvancedAi::breaker_commitment_holds` and
+    // `siege_production.rs`.
+    Gene { tag: "breaker-keeps-its-queue", field: "breaker_keeps_its_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_keeps_its_queue, disable: AdvancedAi::disable_breaker_keeps_its_queue },
+    Gene { tag: "breaker-to-the-fastest", field: "breaker_to_the_fastest", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_to_the_fastest, disable: AdvancedAi::disable_breaker_to_the_fastest },
+    // Live King 205431Z: Bogota alternated a Holy Site and a Theater Square
+    // every frame from t251; see `BasicAi::activation_resume_waits`.
+    Gene { tag: "activation-resume-waits", field: "activation_resume_waits", kind: Kind::HostOnly, enable: AdvancedAi::enable_activation_resume_waits, disable: AdvancedAi::disable_activation_resume_waits },
+    // Live King 051413Z: Bogota switched the Art Museum and the Archaeological
+    // Museum every turn t187-t214; see `BasicAi::activation_keeps_its_building`.
+    Gene { tag: "activation-keeps-its-building", field: "activation_keeps_its_building", kind: Kind::HostOnly, enable: AdvancedAi::enable_activation_keeps_its_building, disable: AdvancedAi::disable_activation_keeps_its_building },
+    // Live King 113755Z: Galleys and Quadriremes ahead of the walkers at
+    // three cities; see `BasicAi::settler_before_the_navy`.
+    Gene { tag: "settler-before-the-navy", field: "settler_before_the_navy", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_before_the_navy, disable: AdvancedAi::disable_settler_before_the_navy },
+    // Live King 110427Z-cont1: the budget read Tenochtitlan ready in 2.8
+    // turns while Archers did 5 a shot and melee held the ring; it healed
+    // to 200 every turn. See `conversion_siege_budget`.
+    Gene { tag: "siege-budget-counts-what-fires", field: "siege_budget_counts_what_fires", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_budget_counts_what_fires, disable: AdvancedAi::disable_siege_budget_counts_what_fires },
+    // Live King 135713Z held Kwadukuza's ring with two Knights and three
+    // Men-at-Arms from turn 113 to 122 at 198/200 walls, reading "damage
+    // ready" off a Bombard healing five tiles out; the two fresh Bombards and
+    // the Siege Tower walked in circles in the Reserve. See
+    // `siege_train::BreachReading`.
+    Gene { tag: "siege-needs-a-breaker", field: "siege_needs_a_breaker", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_needs_a_breaker, disable: AdvancedAi::disable_siege_needs_a_breaker },
+    // Live King civvis-20261004T025448Z: the Napata Siege force shrank from
+    // seven to three as Destroy rows took its members each turn, and none of
+    // seven to ten bodies reached its anchor in eighteen turns. See
+    // `objective_board::SIEGE_MEMBER_STRIKE_REACH`.
+    Gene { tag: "siege-force-keeps-its-members", field: "siege_force_keeps_its_members", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_force_keeps_its_members, disable: AdvancedAi::disable_siege_force_keeps_its_members },
+    // Live King October 2026: the delegated governor's district list never
+    // names the Industrial Zone, so 28 games held 0.1 zones at t100 and 0.9
+    // at t200 against 7.9 Campuses, with ~95% of production from worked
+    // tiles. See `BasicAi::industry_before_the_army`.
+    Gene { tag: "industry-before-the-army", field: "industry_before_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_industry_before_the_army, disable: AdvancedAi::disable_industry_before_the_army },
+    // Live King October 2026: Urban Planning in 11 of 26 games at t100; the
+    // timed economy held a one-slot deck's Colonization through the whole
+    // expansion phase. See `AdvancedAi::colonization_earns_its_slot`.
+    // Version 1 over 22 domination pairs: +302 production by t150 (z +2.8),
+    // -2.2 Gold a turn at t120 (z -2.6), rivals' Culture wins 12 of 22
+    // against 6. See `BasicAi::industry_before_the_army_2`.
+    Gene { tag: "industry-before-the-army-2", field: "industry_before_the_army_2", kind: Kind::OptIn, enable: AdvancedAi::enable_industry_before_the_army_2, disable: AdvancedAi::disable_industry_before_the_army_2 },
+    // The zone in the stock district list, behind the floor: version 1 ahead
+    // of the floor thinned the wartime army. See
+    // `BasicAi::industry_in_the_district_list`.
+    Gene { tag: "industry-in-the-district-list", field: "industry_in_the_district_list", kind: Kind::OptIn, enable: AdvancedAi::enable_industry_in_the_district_list, disable: AdvancedAi::disable_industry_in_the_district_list },
+    // Live King since version 2 armed: 20.7 unimproved worked land tiles
+    // against 14.5 improved at t100, 1.6 build charges on the map at t41-80.
+    // See `BasicAi::builder_before_the_army_3`.
+    Gene { tag: "builder-before-the-army-3", field: "builder_before_the_army_3", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_before_the_army_3, disable: AdvancedAi::disable_builder_before_the_army_3 },
+    Gene { tag: "colonization-earns-its-slot", field: "colonization_earns_its_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_colonization_earns_its_slot, disable: AdvancedAi::disable_colonization_earns_its_slot },
+    // Live King civvis-20261004T033533Z: Babylon's catapults held six to ten
+    // tiles out for eighteen turns, each refusing any tile one archer could
+    // reach. See `siege_train::STAGING_ESCORT_BODIES`.
+    Gene { tag: "staging-gun-trusts-its-escort", field: "staging_gun_trusts_its_escort", kind: Kind::OptIn, enable: AdvancedAi::enable_staging_gun_trusts_its_escort, disable: AdvancedAi::disable_staging_gun_trusts_its_escort },
+    // Live King civvis-20261004T070716Z (game 49): the opening on Kyoto had
+    // its 4 Archers and 2 Warriors by turn 30, but a ClearCamp row and
+    // Destroy rows against raiders kept four of them home and it released
+    // at turn 40. See `AdvancedAi::conquest_force_member`.
+    Gene { tag: "opening-force-keeps-its-members", field: "opening_force_keeps_its_members", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_force_keeps_its_members, disable: AdvancedAi::disable_opening_force_keeps_its_members },
+    // Live King 131343Z lost on Technology to a rival with fourteen cities
+    // and twice our population that the campaign never touched. See
+    // `advanced/runaway_expander.rs`.
+    Gene { tag: "runaway-expander-counter", field: "runaway_expander_counter", kind: Kind::OptIn, enable: AdvancedAi::enable_runaway_expander_counter, disable: AdvancedAi::disable_runaway_expander_counter },
+    // A Builder priced a Mine at its printed +1 Production after
+    // Apprenticeship made it +2. See `AdvancedAi::improvement_upgrades_count`.
+    Gene { tag: "improvement-upgrades-count", field: "improvement_upgrades_count", kind: Kind::OptIn, enable: AdvancedAi::enable_improvement_upgrades_count, disable: AdvancedAi::disable_improvement_upgrades_count },
+    // Version 2 still flipped 5 rival Science wins to Culture over 32 pairs.
+    // See `BasicAi::industry_before_the_army_3`.
+    Gene { tag: "industry-before-the-army-3", field: "industry_before_the_army_3", kind: Kind::OptIn, enable: AdvancedAi::enable_industry_before_the_army_3, disable: AdvancedAi::disable_industry_before_the_army_3 },
+    // One zone where its Factory reaches the most cities: 5.6 of 8.6 live
+    // cities at t130. See `BasicAi::industrial_hub`.
+    Gene { tag: "industrial-hub", field: "industrial_hub", kind: Kind::OptIn, enable: AdvancedAi::enable_industrial_hub, disable: AdvancedAi::disable_industrial_hub },
+    // Version 1's test for the Builder cards too: builder-before-the-army-3
+    // queues Builders often enough to hold Urban Planning out behind Ilkum.
+    // See `AdvancedAi::colonization_earns_its_slot_2`.
+    Gene { tag: "colonization-earns-its-slot-2", field: "colonization_earns_its_slot_2", kind: Kind::OptIn, enable: AdvancedAi::enable_colonization_earns_its_slot_2, disable: AdvancedAi::disable_colonization_earns_its_slot_2 },
+    // Version 1's Granary/Aqueduct behind campus v2 and the Builder backlog:
+    // 3.9 of 8.4 live cities sat at their housing cap at t100. See
+    // `BasicAi::granary_before_the_army_2`.
+    Gene { tag: "granary-before-the-army-2", field: "granary_before_the_army_2", kind: Kind::OptIn, enable: AdvancedAi::enable_granary_before_the_army_2, disable: AdvancedAi::disable_granary_before_the_army_2 },
+    // Research and civics aimed at the cheapest assault-plus-breaker package
+    // that beats the campaign target's defender and opens its wall tier, the
+    // civilization's unique unit preferred. Live King: our breaker arrived one
+    // wall tier late every tier (Trebuchet t105 vs Castles t76-88, Bombard
+    // t139 vs Siege Tactics t96-106) and no Llanero was ever trained. See
+    // `advanced/decisive_window.rs`.
+    Gene { tag: "decisive-window", field: "decisive_window", kind: Kind::OptIn, enable: AdvancedAi::enable_decisive_window, disable: AdvancedAi::disable_decisive_window },
+    // The build picker credits the civilization's own unique unit for the
+    // abilities its strength column omits, so the Llanero is trained over the
+    // Line Infantry, and the research scorer's +55 unique-unit credit reads
+    // `unique_to` (civs.json named one for 14 of 105 civilizations). See
+    // `BasicAi::unique_unit_preference`.
+    Gene { tag: "unique-unit-preference", field: "unique_unit_preference", kind: Kind::OptIn, enable: AdvancedAi::enable_unique_unit_preference, disable: AdvancedAi::disable_unique_unit_preference },
+    // Live King 20261004T094143Z (game 51) started religious-defense Holy
+    // Sites in four cities by turn 98 as each one changed faith, and G49 made
+    // thirty starts across six. See `AdvancedAi::adopted_faith_sanctuary_choice`.
+    Gene { tag: "one-sanctuary", field: "one_sanctuary", kind: Kind::OptIn, enable: AdvancedAi::enable_one_sanctuary, disable: AdvancedAi::disable_one_sanctuary },
+    // Live King 115745Z fought Hungary, the culture winner, for 133 turns and
+    // pillaged no Theater Square. See `air_surge::raids::RAID_TOURISM_DENIAL`.
+    Gene { tag: "raids-cut-tourism", field: "raids_cut_tourism", kind: Kind::OptIn, enable: AdvancedAi::enable_raids_cut_tourism, disable: AdvancedAi::disable_raids_cut_tourism },
+    // Live King 070716Z staged for walled Kyoto from turn 15 and ordered its
+    // first Catapult at 70, after the war began. See
+    // `siege_production::breaker_war_with`.
+    Gene { tag: "breaker-before-the-war", field: "breaker_before_the_war", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_before_the_war, disable: AdvancedAi::disable_breaker_before_the_war },
+    // Live King 083931Z stood down Lisbon's 300 walls after fifteen turns
+    // waiting on one Bombard while Artillery was unlocked. See
+    // `siege_production::SUPPLY_WALL_HP`.
+    Gene { tag: "breaker-supply-scales", field: "breaker_supply_scales", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_supply_scales, disable: AdvancedAi::disable_breaker_supply_scales },
+    // Live King 20261004T111442Z (game 53): Madrid stood without walls from
+    // turn 44 to 66, 186-200 health, with five to eight units staged and
+    // "damage ready" — two Archers shot it and the melee held the ring, so it
+    // healed every turn and built walls. See `siege_train::breach_assault_blow`.
+    Gene { tag: "breach-assault", field: "breach_assault", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_assault, disable: AdvancedAi::disable_breach_assault },
+    // Live King 232618Z: unwalled The Hague at 95-134 health beside eleven
+    // staged units, horsemen three tiles out; the assault counted only melee
+    // already beside it. See `siege_train::closing_in`.
+    Gene { tag: "breach-assault-closes-in", field: "breach_assault_closes_in", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_assault_closes_in, disable: AdvancedAi::disable_breach_assault_closes_in },
+    // Version 1 measured -9.7 +/- 5.3 pp: only the capitals Domination
+    // needs, no displaced building. See `siege_production::SUPPLY_STRENGTH_WINDOW`.
+    Gene { tag: "breaker-supply-scales-2", field: "breaker_supply_scales_2", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_supply_scales_2, disable: AdvancedAi::disable_breaker_supply_scales_2 },
+    // Live King 201619Z offered Gaul "one war at a time" peace at 843 power
+    // against 140; Gaul rebuilt to 911 and won on Religion. 223225Z offered
+    // it to Canada at 407 against 138 after taking Brantford. See
+    // `AdvancedAi::second_front_kept_when_winning`.
+    Gene { tag: "second-front-kept-when-winning", field: "second_front_kept_when_winning", kind: Kind::OptIn, enable: AdvancedAi::enable_second_front_kept_when_winning, disable: AdvancedAi::disable_second_front_kept_when_winning },
+    // Live King 232618Z offered the Netherlands that peace at 3.2 times with
+    // The Hague, its capital, the next objective, and declared again eight
+    // turns later. See `AdvancedAi::second_front_kept_when_winning_2`.
+    Gene { tag: "second-front-kept-when-winning-2", field: "second_front_kept_when_winning_2", kind: Kind::OptIn, enable: AdvancedAi::enable_second_front_kept_when_winning_2, disable: AdvancedAi::disable_second_front_kept_when_winning_2 },
+    // Live King 213648Z took Babylon's only known city at turn 81, at six
+    // times its power, and offered peace; Babylon held six cities at 207.
+    // See `one_war::unseen_prey`.
+    Gene { tag: "peace-waits-for-unseen-prey", field: "peace_waits_for_unseen_prey", kind: Kind::OptIn, enable: AdvancedAi::enable_peace_waits_for_unseen_prey, disable: AdvancedAi::disable_peace_waits_for_unseen_prey },
+    // Live King 212049Z left unwalled Viseu in Invest, damage ready in 3.2
+    // turns, for an urgent counter sixteen tiles away. See
+    // `one_war::front_siege_to_finish`.
+    Gene { tag: "front-finishes-its-siege", field: "front_finishes_its_siege", kind: Kind::OptIn, enable: AdvancedAi::enable_front_finishes_its_siege, disable: AdvancedAi::disable_front_finishes_its_siege },
+    // Live King 212049Z made peace with the Zulu beside unwalled
+    // Umgungundlovu, a seized foothold, to declare on Portugal at even power.
+    // See `one_war::one_war_foothold_at_hand`.
+    Gene { tag: "peace-waits-for-the-foothold", field: "peace_waits_for_the_foothold", kind: Kind::OptIn, enable: AdvancedAi::enable_peace_waits_for_the_foothold, disable: AdvancedAi::disable_peace_waits_for_the_foothold },
+    // Live King 212049Z: Guayaquil's Holy Site and its walls traded the queue
+    // five times in five turns. See
+    // `adopted_faith_sanctuary::sanctuary_queue_held`.
+    Gene { tag: "sanctuary-yields-a-held-queue", field: "sanctuary_yields_a_held_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_sanctuary_yields_a_held_queue, disable: AdvancedAi::disable_sanctuary_yields_a_held_queue },
+    // Live King 205431Z held the Prophet race open from turn 30 to 60 and
+    // opened two Campuses, no Holy Site, at the campus-first steps. See
+    // `BasicAi::prophet_race_takes_a_district_slot`.
+    Gene { tag: "prophet-race-takes-a-district-slot", field: "prophet_race_takes_a_district_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_prophet_race_takes_a_district_slot, disable: AdvancedAi::disable_prophet_race_takes_a_district_slot },
+    // Live King 183907Z: our faithless cities were converted by passive
+    // pressure alone; game 70 left two religion slots open. See
+    // `advanced/faith_veto.rs`.
+    Gene { tag: "found-against-a-rival-faith", field: "found_against_a_rival_faith", kind: Kind::OptIn, enable: AdvancedAi::enable_found_against_a_rival_faith, disable: AdvancedAi::disable_found_against_a_rival_faith },
+    // 19 of 29 live "Declaring war" lines on 2026-10-04 sent a denouncement;
+    // the staged army waited. See `strike_when_staged`.
+    Gene { tag: "domination-strikes-when-staged", field: "domination_strikes_when_staged", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_strikes_when_staged, disable: AdvancedAi::disable_domination_strikes_when_staged },
+    // Live King 174103Z stood down six Dutch objectives in 95 turns with the
+    // army still on the road. See `advanced/capture_march.rs`.
+    Gene { tag: "capture-waits-on-the-march", field: "capture_waits_on_the_march", kind: Kind::OptIn, enable: AdvancedAi::enable_capture_waits_on_the_march, disable: AdvancedAi::disable_capture_waits_on_the_march },
+    // Live King 014503Z offered the Inca, its only war, Recovery peace at 321
+    // power against 202 with Qusqu the objective. See
+    // `one_war::recovery_keeps_the_war`.
+    Gene { tag: "recovery-keeps-a-winning-war", field: "recovery_keeps_a_winning_war", kind: Kind::OptIn, enable: AdvancedAi::enable_recovery_keeps_a_winning_war, disable: AdvancedAi::disable_recovery_keeps_a_winning_war },
+    // Live King 160213Z fought Germany for 92 turns without a capture while
+    // the at-war Maori held the capital it needed. See
+    // `one_war::stalled_front_swap`.
+    Gene { tag: "one-war-swaps-a-stalled-front", field: "one_war_swaps_a_stalled_front", kind: Kind::OptIn, enable: AdvancedAi::enable_one_war_swaps_a_stalled_front, disable: AdvancedAi::disable_one_war_swaps_a_stalled_front },
+    // Nine rout or turned-tide peace offers at 1.5 times our rival's power on
+    // 2026-10-04/05; three were followed by a war on the same rival within
+    // 25 turns. See `AdvancedAi::rout_spares_a_stronger_army`.
+    Gene { tag: "rout-spares-a-stronger-army", field: "rout_spares_a_stronger_army", kind: Kind::OptIn, enable: AdvancedAi::enable_rout_spares_a_stronger_army, disable: AdvancedAi::disable_rout_spares_a_stronger_army },
+    // Live King 122037Z held war on France "for staging" from turn 163 to its
+    // Culture win at 181, at 2 to 4 times its power. See
+    // `one_war::culture_counter_due`.
+    Gene { tag: "culture-counter-declares", field: "culture_counter_declares", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_counter_declares, disable: AdvancedAi::disable_culture_counter_declares },
+    // Live King 003728Z offered Phoenicia, holder of Tyre, the last capital
+    // it lacked, "the war has stalled" peace at 1.6 times its power. See
+    // `one_war::last_capital_war_kept`.
+    Gene { tag: "last-capital-war-kept", field: "last_capital_war_kept", kind: Kind::OptIn, enable: AdvancedAi::enable_last_capital_war_kept, disable: AdvancedAi::disable_last_capital_war_kept },
+    // Live King 100903Z: two Rocket Artillery stood in Loja through the war
+    // on India, their Corps refused and re-planned every turn. Live-only: the
+    // refused set is empty off the bridge. See `advanced/formation_refusals.rs`.
+    Gene { tag: "formations-heed-refusals", field: "formations_heed_refusals", kind: Kind::OptIn, enable: AdvancedAi::enable_formations_heed_refusals, disable: AdvancedAi::disable_formations_heed_refusals },
+    // Live King 003728Z stayed at peace with Sumeria at 17 Diplomatic Victory
+    // points and 3 military while Persia won the Diplomatic Victory. See
+    // `one_war::diplomatic_contender`.
+    Gene { tag: "diplomatic-contender-kept", field: "diplomatic_contender_kept", kind: Kind::OptIn, enable: AdvancedAi::enable_diplomatic_contender_kept, disable: AdvancedAi::disable_diplomatic_contender_kept },
+    // Live King 021048Z aimed the army at Indonesia (13 points, 988 military)
+    // while at war with Portugal at 15 points and 172 military. See
+    // `one_war::diplomatic_contender_front`.
+    Gene { tag: "diplomatic-contender-kept-2", field: "diplomatic_contender_kept_2", kind: Kind::OptIn, enable: AdvancedAi::enable_diplomatic_contender_kept_2, disable: AdvancedAi::disable_diplomatic_contender_kept_2 },
+    // Live King civvis-20261004T122037Z (game 62): Yaroslavl's walls went
+    // 100 -> 84 in twelve turns while the journal read "shooters 6-16 wall a
+    // turn": nine archers within five tiles were counted, but the range-2
+    // band had room for few of them and those that fired shot units first.
+    // G64's Canberra read "6.9 turns" at turn 125 and fell at 148. See
+    // `siege_train::shooter_hits_walls`.
+    Gene { tag: "siege-counts-posted-shooters", field: "siege_counts_posted_shooters", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_counts_posted_shooters, disable: AdvancedAi::disable_siege_counts_posted_shooters },
+    // Live King 013110Z (game 91): Germany took Bogota at turn 42. Four
+    // defenders raised the pressure ratio's denominator, the Defend row
+    // lapsed at turn 40 with the capital at 20 of 200 and Germans
+    // adjacent, and its bodies went to Siege Munich. See
+    // `objective_board::capital_defense_contact`.
+    Gene { tag: "capital-defense-holds", field: "capital_defense_holds", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_defense_holds, disable: AdvancedAi::disable_capital_defense_holds },
+    // Live King civvis-20261005T003728Z (game 89): Mashhad held in Stage
+    // from turn 183 to 225; its guns, twelve to fourteen tiles out, stepped
+    // between two tiles every frame behind one of ours in a ridge's only gap.
+    // See `siege_train::siege_stage_step`.
+    Gene { tag: "staging-column-passes-through", field: "staging_column_passes_through", kind: Kind::OptIn, enable: AdvancedAi::enable_staging_column_passes_through, disable: AdvancedAi::disable_staging_column_passes_through },
+    // Live King civvis-20261005T024614Z (game 94): fielded Catapults went to
+    // the Guayaquil anvil and heal rotations while Lisbon's siege held "for a
+    // wall-breaker on its way". See `objective_board::breaker_rows_ask`.
+    Gene { tag: "breakers-stay-with-the-siege", field: "breakers_stay_with_the_siege", kind: Kind::OptIn, enable: AdvancedAi::enable_breakers_stay_with_the_siege, disable: AdvancedAi::disable_breakers_stay_with_the_siege },
+    // Live King civvis-20261005T033442Z (game 96) offered the Khmer, at 70%
+    // of the culture bar, "the war has stalled" peace at turn 207; their
+    // Tourism rose 240 -> 357 in the peace and they won on Culture at 223.
+    // See `one_war::stalled_peace_spares`.
+    Gene { tag: "stalled-peace-spares-the-counter", field: "stalled_peace_spares_the_counter", kind: Kind::OptIn, enable: AdvancedAi::enable_stalled_peace_spares_the_counter, disable: AdvancedAi::disable_stalled_peace_spares_the_counter },
+    // Live King civvis-20261005T035848Z (game 97): version 1 opened the
+    // race's Holy Site in a 3.6-production city (about 15 turns) and all
+    // three religions were founded first. See
+    // `BasicAi::prophet_race_takes_a_district_slot_2`.
+    Gene { tag: "prophet-race-takes-a-district-slot-2", field: "prophet_race_takes_a_district_slot_2", kind: Kind::OptIn, enable: AdvancedAi::enable_prophet_race_takes_a_district_slot_2, disable: AdvancedAi::disable_prophet_race_takes_a_district_slot_2 },
+    // Live King civvis-20261005T033442Z (game 96): Trebuchets marched alone
+    // into the reach of Khmer Cuirassiers seen the turn before and lost in
+    // the fog, and were one-shot at turns 145 and 146. See
+    // `siege_train::siege_stage_step`.
+    Gene { tag: "staging-gun-remembers-hostiles", field: "staging_gun_remembers_hostiles", kind: Kind::OptIn, enable: AdvancedAi::enable_staging_gun_remembers_hostiles, disable: AdvancedAi::disable_staging_gun_remembers_hostiles },
+    // Live King civvis-20261005T024614Z (game 94) opened its conquest on
+    // Lisbon at turn 9 with one city and released it at turn 40, "the commit
+    // deadline passed before the force ever assembled" -- the release in 9 of
+    // the last 24 live games. See `early_conquest::conquest_force_estimate`.
+    Gene { tag: "conquest-opening-needs-the-production", field: "conquest_opening_needs_the_production", kind: Kind::OptIn, enable: AdvancedAi::enable_conquest_opening_needs_the_production, disable: AdvancedAi::disable_conquest_opening_needs_the_production },
+    // Live King civvis-20261005T045443Z (game 101) planned Gwangju at 2.85
+    // times Korea's power, five techs behind; Hwachas (60) one-shot four
+    // Archers and the siege never brought the city under 181. See
+    // `city_campaign::war_bill_tier_factor`.
+    Gene { tag: "war-bill-prices-the-tier-gap", field: "war_bill_prices_the_tier_gap", kind: Kind::OptIn, enable: AdvancedAi::enable_war_bill_prices_the_tier_gap, disable: AdvancedAi::disable_war_bill_prices_the_tier_gap },
+    // Live King civvis-20261005T045443Z (game 101) went to war with Korea at
+    // t94 with no war order: AutoClose answered "too many troops near me" with
+    // CHOICE_NEGATIVE, a surprise war (150 grievances). 100 such flips in 49 of
+    // 74 October live games. See `CivvisControlAutoClose.lua`.
+    Gene { tag: "dialogue-never-declares-war", field: "dialogue_never_declares_war", kind: Kind::OptIn, enable: AdvancedAi::enable_dialogue_never_declares_war, disable: AdvancedAi::disable_dialogue_never_declares_war },
+    // Live King civvis-20261005T053701Z (game 103) declared on the Maori at
+    // turn 74 with Opango behind 100 walls and its Catapult 17 tiles out;
+    // the walls stood at 200 by 78 and the city fell at 118. See
+    // `siege_train::declaration_breaker_at_hand`.
+    Gene { tag: "declaration-waits-for-the-breaker", field: "declaration_waits_for_the_breaker", kind: Kind::OptIn, enable: AdvancedAi::enable_declaration_waits_for_the_breaker, disable: AdvancedAi::disable_declaration_waits_for_the_breaker },
+    // Live King civvis-20261005T053701Z (game 103) left the Inca, at 12
+    // military against ~600 with Qusqu behind 100 walls nine tiles from
+    // Guayaquil, at peace from turn 95 to 125 while it fought the Maori and
+    // Vietnam. See `one_war::capital_prey_beside_the_front`.
+    Gene { tag: "capital-prey-opens-a-front", field: "capital_prey_opens_a_front", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_prey_opens_a_front, disable: AdvancedAi::disable_capital_prey_opens_a_front },
+    // Live King civvis-20261005T060002Z (game 104) aimed its campaign at
+    // Greece, at peace and out of declaration range, from turn 147 to 182+
+    // with no Siege row to fight. See `one_war::declarable_in_reach`.
+    Gene { tag: "front-needs-a-declarable-rival", field: "front_needs_a_declarable_rival", kind: Kind::OptIn, enable: AdvancedAi::enable_front_needs_a_declarable_rival, disable: AdvancedAi::disable_front_needs_a_declarable_rival },
+    // Live King civvis-20261005T060002Z (game 104) staged Canberra,
+    // Australia's original capital and last city, at turns 85-90, damage
+    // ready in 4.2 turns; an urgent counter took the army to Norway at 91
+    // and Canberra had no siege again for sixty turns. See
+    // `one_war::front_capital_to_finish`.
+    Gene { tag: "front-finishes-its-capital", field: "front_finishes_its_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_front_finishes_its_capital, disable: AdvancedAi::disable_front_finishes_its_capital },
+    // The same game's counter was Norway's Orthodoxy, holding three majors
+    // while all our cities kept Buddhism. See
+    // `one_war::religious_threat_spares_the_front`.
+    Gene { tag: "religious-threat-spares-the-front", field: "religious_threat_spares_the_front", kind: Kind::OptIn, enable: AdvancedAi::enable_religious_threat_spares_the_front, disable: AdvancedAi::disable_religious_threat_spares_the_front },
+    // 58 live games of October 4-5 bounced the campaign A -> B -> A within
+    // ten turns 89 times, 53 of them while countering a rival close to
+    // winning. See `victory_heuristics::actionable_victory_denial_with_culture_pressures`.
+    Gene { tag: "denial-keeps-its-rival", field: "denial_keeps_its_rival", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_keeps_its_rival, disable: AdvancedAi::disable_denial_keeps_its_rival },
+    // All 22 October culture losses fired with the winner below the
+    // exported bar (median 94%). See
+    // `denial_nearest_finish::projected_culture_finish_at`.
+    Gene { tag: "culture-finish-at-the-observed-bar", field: "culture_finish_at_the_observed_bar", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_finish_at_the_observed_bar, disable: AdvancedAi::disable_culture_finish_at_the_observed_bar },
+    // G104 (civvis-20261005T060002Z) Siege of Sparta: the air-assault barrier
+    // withheld frame 0's ground orders, the frame-0 plan's watch and path
+    // trail survived, and the next turn barred a step the host was never sent
+    // (Rocket Artillery idle t216-223; another "going nowhere" t236). A step
+    // our own column held at frame start is congestion, not a refusal either.
+    // See `advanced/own_column.rs`.
+    Gene { tag: "own-column-is-not-a-refusal", field: "own_column_is_not_a_refusal", kind: Kind::OptIn, enable: AdvancedAi::enable_own_column_is_not_a_refusal, disable: AdvancedAi::disable_own_column_is_not_a_refusal },
+    // Live King civvis-20261005T045443Z (game 101): the Wak Kab'nal guns
+    // stood 14-18 tiles out from turn 150 to 227, the end of the record,
+    // stepping into the coast and back each turn: the strait was 10-15 tiles,
+    // the land road 51-57, and `come-ashore` landed every embarked unit at
+    // home the next turn.
+    // See `siege_train::StageMarch`.
+    Gene { tag: "stage-march-keeps-to-land", field: "stage_march_keeps_to_land", kind: Kind::OptIn, enable: AdvancedAi::enable_stage_march_keeps_to_land, disable: AdvancedAi::disable_stage_march_keeps_to_land },
+    // Live King civvis-20261005T051413Z (game 102): Toronto's breach reading
+    // counted only its own force's guns and read 0 while three healthy
+    // Bombards of Uruk's force stood at its ring. See
+    // `siege_train::nearby_gun_city`.
+    Gene { tag: "breach-counts-nearby-guns", field: "breach_counts_nearby_guns", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_counts_nearby_guns, disable: AdvancedAi::disable_breach_counts_nearby_guns },
+    // 70 October live games offered peace at three times the rival's power
+    // or more 239 times, every one white; 20 were accepted. See
+    // `PEACE_CITY_ASK_RATIO` and `CivvisPeaceCityAsk` in the agent.
+    Gene { tag: "peace-asks-a-city", field: "peace_asks_a_city", kind: Kind::OptIn, enable: AdvancedAi::enable_peace_asks_a_city, disable: AdvancedAi::disable_peace_asks_a_city },
+    // Live King civvis-20261005T080337Z (game 111) declared no war through
+    // turn 200 with Spain at 49 military against 1,080 and Madrid behind 100
+    // walls 21 tiles out. See `one_war::capital_prey_reaches_far`.
+    Gene { tag: "capital-prey-opens-a-front-2", field: "capital_prey_opens_a_front_2", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_prey_opens_a_front_2, disable: AdvancedAi::disable_capital_prey_opens_a_front_2 },
+    // Live King civvis-20261005T080337Z (game 111): the surge reached Strike
+    // on urgent Persia by turn 185 and handed the war to a ground declaration
+    // that waited on staging to 200. See `air_surge::air_surge_opening`.
+    Gene { tag: "air-surge-strikes-through-urgency", field: "air_surge_strikes_through_urgency", kind: Kind::OptIn, enable: AdvancedAi::enable_air_surge_strikes_through_urgency, disable: AdvancedAi::disable_air_surge_strikes_through_urgency },
+    // Live King civvis-20261005T081917Z (game 112) lost Xanadu, Mongolia's
+    // capital, to Loyalty five turns after taking it, with no Loyalty card
+    // and its Governor unestablished. See `one_war::bleeding_capital`.
+    Gene { tag: "bleeding-capital-loyalty", field: "bleeding_capital_loyalty", kind: Kind::OptIn, enable: AdvancedAi::enable_bleeding_capital_loyalty, disable: AdvancedAi::disable_bleeding_capital_loyalty },
+    // Live King civvis-20261005T081917Z (game 112) kept Singapore at turn
+    // 191 with Kongo on 15 points and lost on Diplomacy at 202 by one vote's
+    // Favor. See `one_war::liberation_funds_the_congress`.
+    Gene { tag: "liberation-funds-the-congress", field: "liberation_funds_the_congress", kind: Kind::OptIn, enable: AdvancedAi::enable_liberation_funds_the_congress, disable: AdvancedAi::disable_liberation_funds_the_congress },
+    // Live King civvis-20261005T051413Z (game 102): four fit Bombards stood
+    // three tiles from walled Toronto from turn 137 to 145, one tile outside
+    // their range, and never fired: every post inside the strike ring read
+    // the city's whole blow (~108 against a Bombard) on each gun. See
+    // `siege_train::entry_group`.
+    Gene { tag: "guns-enter-together", field: "guns_enter_together", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_enter_together, disable: AdvancedAi::disable_guns_enter_together },
+    // Live King civvis-20261005T060002Z (game 104): Sparta's breach reading
+    // counted land guns only and held "nothing to open the walls" while our
+    // Bombers took its walls from 400 to 153. See
+    // `siege_train::air_breach_walls`.
+    Gene { tag: "breach-reads-the-air", field: "breach_reads_the_air", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_reads_the_air, disable: AdvancedAi::disable_breach_reads_the_air },
+    // Live King civvis-20261005T065548Z (game 107) countered France, which
+    // read closer to a Culture Victory, and Babylon won on Culture at 206.
+    // See `denial_nearest_finish::engine_culture_clock`.
+    Gene { tag: "culture-reads-the-engine-clock", field: "culture_reads_the_engine_clock", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_reads_the_engine_clock, disable: AdvancedAi::disable_culture_reads_the_engine_clock },
+    // Live King civvis-20261005T083500Z (game 113) offered Spain rout peace
+    // at turn 216 at 1.16 times its power and named it the counter's second
+    // front at 218. See `one_war::rout_spares_the_counter`.
+    Gene { tag: "rout-spares-the-counter", field: "rout_spares_the_counter", kind: Kind::OptIn, enable: AdvancedAi::enable_rout_spares_the_counter, disable: AdvancedAi::disable_rout_spares_the_counter },
+    // Live King civvis-20261005T080337Z (G111) missed a Normal Age by one era
+    // point: `age-closer-2`'s window opened (era end t107, countdown read live)
+    // but the gold operating reserve (650 at 10 cities) priced every closer
+    // out. See `AdvancedAi::age_closer_spends_the_reserve`.
+    Gene { tag: "age-closer-spends-the-reserve", field: "age_closer_spends_the_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_age_closer_spends_the_reserve, disable: AdvancedAi::disable_age_closer_spends_the_reserve },
+    // Live King civvis-20261005T074521Z (game 110): Tarsus stood without
+    // walls in Invest and Reduce from turn 67 to 73, "damage ready" in about
+    // two turns, while its only melee beside it was the reserved taker, which
+    // never struck a healthy city; the city went 200 -> 191 and built walls at
+    // 74. See `siege_train::assault_pays`.
+    Gene { tag: "melee-storms-an-open-city", field: "melee_storms_an_open_city", kind: Kind::OptIn, enable: AdvancedAi::enable_melee_storms_an_open_city, disable: AdvancedAi::disable_melee_storms_an_open_city },
+    // Live King civvis-20261005T081917Z (game 112) held two of three
+    // rival original capitals from turn 138 and never saw Kongo's: its
+    // border was sealed and the passage purchase held on a 28 Gold book
+    // against a 30 Gold minimum. See `find_the_capital`.
+    Gene { tag: "find-the-capital", field: "find_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_find_the_capital, disable: AdvancedAi::disable_find_the_capital },
+    // 8 of 31 captures in ten live King games (October 5) were lost the very
+    // next turn: G105 Vancouver 151 -> 152, walked into by one Pike and Shot
+    // with ten of 22 staged; G112 Xanadu flipped to loyalty in five turns at
+    // -13.5 a turn; G114 Curitiba sat at walls 0, health 1 with its body six
+    // to twelve tiles out. See `siege_train::capture_hold`.
+    Gene { tag: "capture-holds-the-ring", field: "capture_holds_the_ring", kind: Kind::OptIn, enable: AdvancedAi::enable_capture_holds_the_ring, disable: AdvancedAi::disable_capture_holds_the_ring },
+    // Live King civvis-20261005T084952Z (game 114) bombed Curitiba to walls
+    // 0, city 1 at turn 196 with no body able to walk in; it healed to 20.
+    // See `air_city_assault::air_assault_followup_routed`.
+    Gene { tag: "air-volley-needs-a-road", field: "air_volley_needs_a_road", kind: Kind::OptIn, enable: AdvancedAi::enable_air_volley_needs_a_road, disable: AdvancedAi::disable_air_volley_needs_a_road },
+    // Live King civvis-20261005T093932Z (game 117) lost eleven siege guns
+    // from turn 137, most to one blow of a hostile seen at turn start. See
+    // `advanced/guns_stay_out_of_reach.rs`.
+    Gene { tag: "guns-stay-out-of-reach", field: "guns_stay_out_of_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_stay_out_of_reach, disable: AdvancedAi::disable_guns_stay_out_of_reach },
+    // Live King civvis-20261005T101841Z (game 120): Australia at 7% of our
+    // power, Canberra behind 200 walls, failed the 100-wall gate. See
+    // `one_war::capital_prey_walls`.
+    Gene { tag: "capital-prey-scales-the-walls", field: "capital_prey_scales_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_prey_scales_the_walls, disable: AdvancedAi::disable_capital_prey_scales_the_walls },
+    // 91 faith-counter declarations of October 4-5 took 9 cities against 8
+    // of 39 other wars. See `one_war::faith_at_match_point`.
+    Gene { tag: "faith-counter-waits-for-match-point", field: "faith_counter_waits_for_match_point", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_counter_waits_for_match_point, disable: AdvancedAi::disable_faith_counter_waits_for_match_point },
+    // Live King civvis-20261005T103704Z (game 121) read America at 4 for
+    // one turn and declared on it. See `one_war::steady_rival_power`.
+    Gene { tag: "prey-reads-a-steady-power", field: "prey_reads_a_steady_power", kind: Kind::OptIn, enable: AdvancedAi::enable_prey_reads_a_steady_power, disable: AdvancedAi::disable_prey_reads_a_steady_power },
+    // Live King civvis-20261005T111622Z (game 124) declared on Norway at
+    // turn 105 and offered it one-war peace the same turn. See
+    // `one_war::second_front_recently_named`.
+    Gene { tag: "second-front-keeps-its-war", field: "second_front_keeps_its_war", kind: Kind::OptIn, enable: AdvancedAi::enable_second_front_keeps_its_war, disable: AdvancedAi::disable_second_front_keeps_its_war },
+    // Live King civvis-20261005T110504Z (game 123) held its Catholic
+    // counterweight and spread Protestantism, the winner's faith, in its own
+    // cities. See `adopted_faith_sanctuary::stronger_faith_than`.
+    Gene { tag: "counterweight-faith-is-no-threat", field: "counterweight_faith_is_no_threat", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_faith_is_no_threat, disable: AdvancedAi::disable_counterweight_faith_is_no_threat },
+    // 315 Recovery-clause peace offers of October 4-5 came from spells with
+    // a median of 2 turns; 7 were accepted at 1.5 times the rival's power.
+    // See `one_war::recovery_peace_ready`.
+    Gene { tag: "recovery-peace-waits", field: "recovery_peace_waits", kind: Kind::OptIn, enable: AdvancedAi::enable_recovery_peace_waits, disable: AdvancedAi::disable_recovery_peace_waits },
+    // Live King civvis-20261005T114715Z (game 126): the culture counter's
+    // surprise war drained 184 Favor to 0 while Sweden rose to 17 points. See
+    // `one_war::favor_spares_surprise`.
+    Gene { tag: "favor-spares-the-surprise-war", field: "favor_spares_the_surprise_war", kind: Kind::OptIn, enable: AdvancedAi::enable_favor_spares_the_surprise_war, disable: AdvancedAi::disable_favor_spares_the_surprise_war },
+    // Live King openings of 2026-10-04/05: 4 of 7 named ten or fewer tiles
+    // from the capital took their city, 0 of 42 named further out. See
+    // `early_conquest::CONQUEST_NEAR_REACH_TILES`.
+    Gene { tag: "conquest-opening-stays-near", field: "conquest_opening_stays_near", kind: Kind::OptIn, enable: AdvancedAi::enable_conquest_opening_stays_near, disable: AdvancedAi::disable_conquest_opening_stays_near },
+    // Diplomatic losses of October 2-5: about half met the deciding session
+    // at 0-40 Favor while holding 200-1,000 Gold, and rivals paid us about
+    // 5.5 Gold a point. See `append_favor_buy_order` in `civvis_orders`.
+    Gene { tag: "favor-bought-before-congress", field: "favor_bought_before_congress", kind: Kind::OptIn, enable: AdvancedAi::enable_favor_bought_before_congress, disable: AdvancedAi::disable_favor_bought_before_congress },
+    // Live King civvis-20261005T124739Z (game 130): Delhi held the campaign
+    // at an army median of 15-20 tiles while walled Jabalpur stood 4 from our
+    // city. See `stale_domination_objective_city`.
+    Gene { tag: "stale-swap-reads-the-march", field: "stale_swap_reads_the_march", kind: Kind::OptIn, enable: AdvancedAi::enable_stale_swap_reads_the_march, disable: AdvancedAi::disable_stale_swap_reads_the_march },
+    // Live King civvis-20261005T130519Z (game 131): the war on the Inca held
+    // from turn 105 to 125 at 5-13 times their power for a staged siege no
+    // board row ordered. See `one_war::overwhelming_power_declares`.
+    Gene { tag: "overwhelming-power-declares", field: "overwhelming_power_declares", kind: Kind::OptIn, enable: AdvancedAi::enable_overwhelming_power_declares, disable: AdvancedAi::disable_overwhelming_power_declares },
+    // October 4-5 live: 644 luxury purchase asks, every one answered with a
+    // refusal and nothing on our side; each held the rival's one working deal
+    // and the shared trade cooldown. Off by default; on restores the asks.
+    Gene { tag: "luxury-buy-asks", field: "luxury_buy_asks", kind: Kind::OptIn, enable: AdvancedAi::enable_luxury_buy_asks, disable: AdvancedAi::disable_luxury_buy_asks },
+    // October 5 live: 452 denunciations, 294 before turn 160 on a technology
+    // lead alone; game 131 denounced the Inca while Rome won the space race.
+    // See `science_threat_denunciation`.
+    Gene { tag: "science-denounce-waits-for-the-race", field: "science_denounce_waits_for_the_race", kind: Kind::OptIn, enable: AdvancedAi::enable_science_denounce_waits_for_the_race, disable: AdvancedAi::disable_science_denounce_waits_for_the_race },
+    // Live King civvis-20261005T104725Z (game 122): Tenochtitlan's walls
+    // went 13 -> 100 (turns 82-87), 59 -> 100 (98-102) and 40 -> 100
+    // (111-116) while every shooter and the gun rotated out to heal at once
+    // and nothing hit the walls. See `siege_train::siege_wall_keepers`.
+    Gene { tag: "siege-keeps-a-shooter", field: "siege_keeps_a_shooter", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_keeps_a_shooter, disable: AdvancedAi::disable_siege_keeps_a_shooter },
+    // 20 of 23 strike_frame_timeouts measured on October 5 were shots at a
+    // target a melee blow earlier in the same frame had already killed (live
+    // King civvis-20261005T091120Z, turn 20: a Warrior killed the Horse Archer
+    // and the Slinger's queued shot was dropped). See `civvis_orders`
+    // `ranged_before_melee`.
+    Gene { tag: "ranged-before-melee", field: "ranged_before_melee", kind: Kind::OptIn, enable: AdvancedAi::enable_ranged_before_melee, disable: AdvancedAi::disable_ranged_before_melee },
+    // Live King civvis-20261005T114715Z (game 126): a Siege Tower stood beside
+    // Constantinople (Medieval Walls, 200) at turns 139-140 with a Pike and Shot
+    // beside it, and the assault priced the walls and the city together (420)
+    // although the tower lets the blow strike the city through the walls; the
+    // city stayed at 197-200 from turn 128 to 141. See
+    // `siege_train::tower_bypasses`.
+    Gene { tag: "tower-assault", field: "tower_assault", kind: Kind::OptIn, enable: AdvancedAi::enable_tower_assault, disable: AdvancedAi::disable_tower_assault },
+    // Opening census, 80 live runs October 4-5: of 16 early declared wars, 12
+    // never beat the city's 20 a turn of heal; they put 0.03-0.47 shots a turn
+    // into the city and the rest into units ahead of it, while the 4
+    // captures fired 0.64-1.67 a turn at the city. See
+    // `siege_train::ring_is_threatened`.
+    Gene { tag: "ring-fires-on-the-city", field: "ring_fires_on_the_city", kind: Kind::OptIn, enable: AdvancedAi::enable_ring_fires_on_the_city, disable: AdvancedAi::disable_ring_fires_on_the_city },
+    // October 5 live: new siege guns closed a median 0.80 tiles a turn on
+    // their siege and were born 13 tiles out against 7 for our nearest city.
+    // See `siege_production::BREAKER_MARCH_FACTOR`.
+    Gene { tag: "breaker-reads-the-march", field: "breaker_reads_the_march", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_reads_the_march, disable: AdvancedAi::disable_breaker_reads_the_march },
+    // Live King civvis-20261005T134450Z (game 133): the front left Byzantium
+    // at 14 points and 6 cities for Korea's capital; Byzantium won on
+    // Diplomacy. See `one_war::diplomatic_contender_to_eliminate`.
+    Gene { tag: "diplomatic-contender-eliminated", field: "diplomatic_contender_eliminated", kind: Kind::OptIn, enable: AdvancedAi::enable_diplomatic_contender_eliminated, disable: AdvancedAi::disable_diplomatic_contender_eliminated },
+    // Oct 4-5 live: 25 staged declarations under 1.5 times the target's
+    // power took a city twice; game 135 declared on the Maya at 1.02 times.
+    // See `one_war::declaration_has_the_edge`.
+    Gene { tag: "declaration-needs-the-edge", field: "declaration_needs_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_declaration_needs_the_edge, disable: AdvancedAi::disable_declaration_needs_the_edge },
+    // Live King civvis-20261005T141932Z (game 135): one capital (Madrid)
+    // from Domination, the front drifted to commitments and a second front;
+    // the Maya won on Diplomacy. See `one_war::domination_finish_front`.
+    Gene { tag: "domination-finish-holds-the-front", field: "domination_finish_holds_the_front", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_finish_holds_the_front, disable: AdvancedAi::disable_domination_finish_holds_the_front },
+    // Live King civvis-20261005T141932Z (game 135): a threatened city flipped
+    // the war to Recovery at 1848 power against 645, one capital from
+    // Domination. See `RECOVERY_THREAT_POWER_RATIO`.
+    Gene { tag: "recovery-needs-the-deficit", field: "recovery_needs_the_deficit", kind: Kind::OptIn, enable: AdvancedAi::enable_recovery_needs_the_deficit, disable: AdvancedAi::disable_recovery_needs_the_deficit },
+    // 22 of the 32 Culture losses of October 4-5 took no city in their last
+    // 40 turns; the tourism leader 40 turns out was the winner 18 times in
+    // 30. See `AdvancedAi::tourism_leader`.
+    Gene { tag: "campaign-weighs-the-tourism-leader", field: "campaign_weighs_the_tourism_leader", kind: Kind::OptIn, enable: AdvancedAi::enable_campaign_weighs_the_tourism_leader, disable: AdvancedAi::disable_campaign_weighs_the_tourism_leader },
+    // Live King civvis-20261005T150407Z (game 138): Ethiopia on 14 points at
+    // a quarter of our power was passed for Mali at 201 and won on Diplomacy
+    // at 235. See `one_war::diplomatic_contender_at_peace`.
+    Gene { tag: "contender-at-peace-is-the-target", field: "contender_at_peace_is_the_target", kind: Kind::OptIn, enable: AdvancedAi::enable_contender_at_peace_is_the_target, disable: AdvancedAi::disable_contender_at_peace_is_the_target },
+    // 7 of 30 live runs built a Government Plaza (October 5), so no Grand
+    // Master's Chapel and no Faith-bought land units; up to 3,590 Faith
+    // unspent. See `BasicAi::plaza_in_the_district_list`.
+    Gene { tag: "plaza-in-the-district-list", field: "plaza_in_the_district_list", kind: Kind::OptIn, enable: AdvancedAi::enable_plaza_in_the_district_list, disable: AdvancedAi::disable_plaza_in_the_district_list },
+    // Live King civvis-20261005T152615Z (game 139): Mongolia's Mars Base read
+    // 65 under a culture clock that never finished; Mongolia won on Science.
+    // See `AdvancedAi::science_race_pressure`.
+    Gene { tag: "science-ladder-reads-the-clock", field: "science_ladder_reads_the_clock", kind: Kind::OptIn, enable: AdvancedAi::enable_science_ladder_reads_the_clock, disable: AdvancedAi::disable_science_ladder_reads_the_clock },
+    // Staging marches took the router's single step and stood: 47-62% of
+    // live frame-0 MOVE_TOs were one tile. See `march_moves`.
+    Gene { tag: "march-uses-its-moves", field: "march_uses_its_moves", kind: Kind::OptIn, enable: AdvancedAi::enable_march_uses_its_moves, disable: AdvancedAi::disable_march_uses_its_moves },
+    // Live King civvis-20261005T141932Z (game 135): the Siege of Wak Kab'nal
+    // read Reduce at walls 15/100 for turns 71-78 with 1-2 of 4-10 members
+    // staged, the rest one tile a turn behind. See `close_to_staging`.
+    Gene { tag: "siege-members-use-their-moves", field: "siege_members_use_their_moves", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_members_use_their_moves, disable: AdvancedAi::disable_siege_members_use_their_moves },
+    Gene { tag: "guns-grind-the-walls", field: "guns_grind_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_grind_the_walls, disable: AdvancedAi::disable_guns_grind_the_walls },
+    // Under war-bill-prices-the-tier-gap the tech gap was priced three times:
+    // in the city's own strength, in the tech edge, and by the tier factor
+    // over both. Live G129 held off Kongo at 2.1x power behind a 304 bill;
+    // armed games' siege bills ran a median 1.74x the rival's WHOLE military
+    // at >=2x power (0.99x before). See `AdvancedAi::campaign_city_requirement`.
+    Gene { tag: "tier-gap-priced-once", field: "tier_gap_priced_once", kind: Kind::OptIn, enable: AdvancedAi::enable_tier_gap_priced_once, disable: AdvancedAi::disable_tier_gap_priced_once },
+    // Live King G136: decisive-window took Military Engineering at t87 for a
+    // Bombard with no Niter income until t142, and "modernize the army"
+    // spent t93-t103 on Field Cannons while the Victoria siege waited 77
+    // turns for a breaker. Resources priced; modernization yields while a
+    // siege is held for its breaker. See `advanced/decisive_window.rs`.
+    Gene { tag: "breaker-research-first", field: "breaker_research_first", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_research_first, disable: AdvancedAi::disable_breaker_research_first },
+    Gene { tag: "breach-support-reads-the-wall-tier", field: "breach_support_reads_the_wall_tier", kind: Kind::OptIn, enable: AdvancedAi::enable_breach_support_reads_the_wall_tier, disable: AdvancedAi::disable_breach_support_reads_the_wall_tier },
+    Gene { tag: "second-front-waits-for-its-war", field: "second_front_waits_for_its_war", kind: Kind::OptIn, enable: AdvancedAi::enable_second_front_waits_for_its_war, disable: AdvancedAi::disable_second_front_waits_for_its_war },
+    // Live King 10-04/05: 537 walled Invest/Reduce siege-turns had fit guns
+    // within seven tiles that would open the walls in four turns or fewer,
+    // and 58% saw no shot on the city: guns posted two tiles out walked to
+    // three and held there, the approach charging each the city's whole
+    // reply plus 20. See `siege_train::near_breach`.
+    Gene { tag: "guns-post-for-a-near-breach", field: "guns_post_for_a_near_breach", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_post_for_a_near_breach, disable: AdvancedAi::disable_guns_post_for_a_near_breach },
+    // Live King 10-04/05 (88 games): a Golden or Heroic Age does not rank its
+    // Dedication, so the alphabetical tie-break took Exodus of the
+    // Evangelists in 57 of 81 Medieval Golden Ages, whose Golden half
+    // (Missionaries, Great Prophet points) a seat with no religion never
+    // spends. See `ai::choose_conquest_dedications`.
+    Gene { tag: "golden-dedication-serves-the-conquest", field: "golden_dedication_serves_the_conquest", kind: Kind::OptIn, enable: AdvancedAi::enable_golden_dedication_serves_the_conquest, disable: AdvancedAi::disable_golden_dedication_serves_the_conquest },
+    // The race's Holy Site builds its Shrine and Revelation takes the
+    // wildcard while a Prophet is open. See `advanced/prophet_race_points.rs`.
+    Gene { tag: "prophet-race-earns-its-points", field: "prophet_race_earns_its_points", kind: Kind::OptIn, enable: AdvancedAi::enable_prophet_race_earns_its_points, disable: AdvancedAi::disable_prophet_race_earns_its_points },
+    // Version 2 of `declaration-needs-the-edge` (2026-10-05): a staged
+    // declaration needs twice the target's 30-turn peak power, or version 1's
+    // 1.5 times its steady power against a rival out-produced. Live King
+    // October 4-5: 45 of 180 declarations were routs, the rival out-building
+    // us (its Production over ours read AUC 0.80); the rule blocks 29 of the
+    // 30 staged routs for 2 of 26 captures. See `one_war::declaration_edge_2`.
+    Gene { tag: "declaration-needs-the-edge-2", field: "declaration_needs_the_edge_2", kind: Kind::OptIn, enable: AdvancedAi::enable_declaration_needs_the_edge_2, disable: AdvancedAi::disable_declaration_needs_the_edge_2 },
+    // The religion counter's waiver of the staged siege needs 1.5 times the
+    // rival's steady power. Live King game 152 countered Indonesia at 358
+    // against 350, was routed, took nothing, and lost to its religion. See
+    // `one_war::faith_counter_has_the_edge`.
+    Gene { tag: "faith-counter-needs-the-edge", field: "faith_counter_needs_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_counter_needs_the_edge, disable: AdvancedAi::disable_faith_counter_needs_the_edge },
+    // Live King G148 stood Mikisiw-Wacîhk down at turn 112, five turns after
+    // its first fit gun came, with 10 of 16 staged, and was back there at
+    // 145; G150 stood Karkar down at 92 on the turn its train stepped into
+    // Invest reading "damage ready true". See
+    // `commitments::muster_after_the_breaker` and
+    // `commitments::rebase_capture_on_a_forward_step`.
+    Gene { tag: "stall-waits-for-the-breach", field: "stall_waits_for_the_breach", kind: Kind::OptIn, enable: AdvancedAi::enable_stall_waits_for_the_breach, disable: AdvancedAi::disable_stall_waits_for_the_breach },
+    // Live King civvis-20261005T191828Z (game 155): with Vietnam gone, 13
+    // Missionaries bought in Confucian Bogota and Thang Long as the "safe"
+    // counterfaith (Maya alone held out) took our cities from 0 of 10
+    // Confucian at turn 100 to 10 of 11 at 178; Babylon won on Religion at
+    // 232. See `adopted_faith_sanctuary::counterfaith_is_safe`.
+    Gene { tag: "counterfaith-leaves-two-holdouts", field: "counterfaith_leaves_two_holdouts", kind: Kind::OptIn, enable: AdvancedAi::enable_counterfaith_leaves_two_holdouts, disable: AdvancedAi::disable_counterfaith_leaves_two_holdouts },
+    // `flipped-capital-finishes`: a Free City holding the last original
+    // capital Domination needs is the plan's finishing front. Live King
+    // civvis-20261005T193504Z (game 156) held Canberra and took
+    // Mikisiw-Wacîhk at 167 and Washington at 174; Mikisiw flipped to the
+    // Free Cities at 172 and Washington at 182, and with the other two held
+    // the campaign sieged Los Angeles, Pihtokahanapiwiyin and Mistawasis
+    // instead. The Free Cities seat is barbarian-flagged, so no finishing
+    // rule or wartime front ever named it. See
+    // `victory_heuristics::free_city_finish`.
+    Gene { tag: "flipped-capital-finishes", field: "flipped_capital_finishes", kind: Kind::OptIn, enable: AdvancedAi::enable_flipped_capital_finishes, disable: AdvancedAi::disable_flipped_capital_finishes },
+    // `siege-target-needs-a-road`: half or more of a siege train held on land
+    // for want of a road three turns running stands the capture down, and its
+    // owner leaves the campaign while no land road reaches it. Live King
+    // civvis-20261005T200350Z (game 158): Apu's road ran through Poland's
+    // closed borders; 7 to 18 units mustered at 0% ready from turn 129 to 160.
+    // See `advanced/siege_road.rs`.
+    Gene { tag: "siege-target-needs-a-road", field: "siege_target_needs_a_road", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_target_needs_a_road, disable: AdvancedAi::disable_siege_target_needs_a_road },
+    // `opening-yields-to-walls`: a declared conquest opening that has taken
+    // nothing asks for terms and stands down when its target walls up with
+    // no breaker held, or after the patience window with the city undented.
+    // 13 of 16 openings on 10-04/05 took nothing, 9 of their targets walled
+    // up 1-38 turns after the declaration, and each war ran until the strike
+    // force was dead or the rival made peace, 20-130 turns later. See
+    // `early_conquest::conquest_yields_to_walls`.
+    Gene { tag: "opening-yields-to-walls", field: "opening_yields_to_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_yields_to_walls, disable: AdvancedAi::disable_opening_yields_to_walls },
+    // Live King 10-05 (40 runs, t1-80): the floor built 157 units in a
+    // Domination war's lent margin while the empire held under one Builder
+    // per two cities; a third of worked tiles improved at t60. See
+    // `BasicAi::builders_before_the_lent_floor`.
+    Gene { tag: "builders-before-the-lent-floor", field: "builders_before_the_lent_floor", kind: Kind::OptIn, enable: AdvancedAi::enable_builders_before_the_lent_floor, disable: AdvancedAi::disable_builders_before_the_lent_floor },
+    // Live King game 160 (civvis-20261005T203103Z): an early Settler bound to
+    // six tiles of its capital stood stranded from turn 29 to 66 and the
+    // empire held two cities at t60. See
+    // `settler_never_idles::settler_stranded`.
+    Gene { tag: "stranded-settler-leaves-the-corridor", field: "stranded_settler_leaves_the_corridor", kind: Kind::OptIn, enable: AdvancedAi::enable_stranded_settler_leaves_the_corridor, disable: AdvancedAi::disable_stranded_settler_leaves_the_corridor },
+    // `blocker-becomes-the-target`: the major whose closed borders shut a
+    // stood-down siege's road, when it passes the version-2 declaration edge
+    // and holds an original capital, becomes the war (a second front, or the
+    // campaign target at peace), declared on without a staged siege. 13 of
+    // 50 border-blocked windows on 10-04/05 were shut by such a major; we
+    // warred it later in 3. See `advanced/siege_road.rs`.
+    Gene { tag: "blocker-becomes-the-target", field: "blocker_becomes_the_target", kind: Kind::OptIn, enable: AdvancedAi::enable_blocker_becomes_the_target, disable: AdvancedAi::disable_blocker_becomes_the_target },
+    // Live King 10-04/05: 59% of the 3,926 land soldiers lost in combat died
+    // while their siege read Stage, 772 on the staging ring itself, walking
+    // in one by one. See `siege_train::muster_step`.
+    Gene { tag: "stage-musters-out-of-reach", field: "stage_musters_out_of_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_stage_musters_out_of_reach, disable: AdvancedAi::disable_stage_musters_out_of_reach },
+    // siege_stage_step shared its danger field and then read the unshared
+    // sum: each staging gun read every hostile's blow as its own and held
+    // behind its train. See `siege_train::stage_gun_danger`.
+    Gene { tag: "staging-gun-reads-the-shared-danger", field: "staging_gun_reads_the_shared_danger", kind: Kind::OptIn, enable: AdvancedAi::enable_staging_gun_reads_the_shared_danger, disable: AdvancedAi::disable_staging_gun_reads_the_shared_danger },
+    // Live King G175 declared on Nubia at 1.4 times under the urgent waiver
+    // and was routed within seven turns; staged wars under 1.5 times routed
+    // 13 of 17 on October 4-5. See `one_war::urgent_denial_has_the_edge`.
+    Gene { tag: "urgent-denial-needs-the-edge", field: "urgent_denial_needs_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_urgent_denial_needs_the_edge, disable: AdvancedAi::disable_urgent_denial_needs_the_edge },
+    // Live King 10-04/05: of 4,763 bomber combats flown while a 300+-wall
+    // siege stood, 30% hit that city; the rest pillaged or struck units, most
+    // nine or more tiles away. See `siege_train::siege_wall_sortie`.
+    Gene { tag: "bombers-open-the-siege-walls", field: "bombers_open_the_siege_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_bombers_open_the_siege_walls, disable: AdvancedAi::disable_bombers_open_the_siege_walls },
+    // Live King 10-05/06: 83% of Stage siege-turns with air support read the
+    // damage budget infinite; the bombers' blows counted on the walls only, so
+    // a melee-and-air train never out-fired the city's heal. See
+    // `victory_conversion::conversion_siege_budget_within`.
+    Gene { tag: "air-fire-counts-on-the-city", field: "air_fire_counts_on_the_city", kind: Kind::OptIn, enable: AdvancedAi::enable_air_fire_counts_on_the_city, disable: AdvancedAi::disable_air_fire_counts_on_the_city },
+    // After a rival's capital fell, a refused "required capital is secure"
+    // peace kept the army on its towns (median 13 siege-turns in the losses
+    // another rival won); the elimination front held on a contender while a
+    // shorter clock ran out. See `capital_moves_on`.
+    Gene { tag: "capital-taken-moves-on", field: "capital_taken_moves_on", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_taken_moves_on, disable: AdvancedAi::disable_capital_taken_moves_on },
+    // Live King G179 (civvis-20261006T011806Z) held off war with Nubia at 3x
+    // its power: Sedeinga's ask was 566 because Nubia's Crossbows (40) over
+    // our stale Archer (25) read a 1.82 tier factor while our Musketmen (55)
+    // out-tiered every Nubian unit. See `city_campaign::war_bill_tier_gap`.
+    Gene { tag: "tier-gap-reads-the-fielded-line", field: "tier_gap_reads_the_fielded_line", kind: Kind::OptIn, enable: AdvancedAi::enable_tier_gap_reads_the_fielded_line, disable: AdvancedAi::disable_tier_gap_reads_the_fielded_line },
+    // Live 10-05/06: 176 sieges reached a city with no walls; 33 took it
+    // unwalled, 107 never did, and 63% of those rows read "damage ready false
+    // with inf turns" because a melee blow counted only as the finishing one.
+    // Kish (G183, civvis-20261006T021637Z) took one blow at t96 and built
+    // walls by t98. A breached wall (0/N) is the same city: Angkor Wat (G193,
+    // civvis-20261006T042958Z) sat at 155-173 behind 0/200 from t96 to t99.
+    // See `conversion_siege_budget_within`, `swarm_blow` and `swarm_close`.
+    Gene { tag: "unwalled-city-takes-the-swarm", field: "unwalled_city_takes_the_swarm", kind: Kind::OptIn, enable: AdvancedAi::enable_unwalled_city_takes_the_swarm, disable: AdvancedAi::disable_unwalled_city_takes_the_swarm },
+    // Live Emperor G186 (civvis-20261006T025742Z): Indonesia's Hinduism held
+    // every major but the Aztecs from turn 52, its Missionaries and Apostles
+    // stood beside our cities, no Indonesian city was ever located, and the
+    // religious interception refused every turn from 53 because a war on
+    // Sweden was running; Indonesia won on Religion at 84. See
+    // `religious_interception::match_point_defence_has_the_edge`.
+    Gene { tag: "religious-match-point-defence", field: "religious_match_point_defence", kind: Kind::OptIn, enable: AdvancedAi::enable_religious_match_point_defence, disable: AdvancedAi::disable_religious_match_point_defence },
+    // Live Emperor G186 bought a Missionary in Hindu Bogota on the turn the
+    // host refused our founding, so it came out Hindu, and as a founder spread
+    // Hinduism from Bogota's tile on turns 49-51, two of them into our new
+    // Buddhist Holy City. See `advanced/founder_faith.rs`.
+    Gene { tag: "founder-spreads-only-its-faith", field: "founder_spreads_only_its_faith", kind: Kind::OptIn, enable: AdvancedAi::enable_founder_spreads_only_its_faith, disable: AdvancedAi::disable_founder_spreads_only_its_faith },
+    // Emperor G185-G190 (civvis-20261006T024058Z..T035131Z) all lost to
+    // Science at 202-237; the counter first named a Science race at G187
+    // t190 (the Maya; the Zulu won). The Science-a-turn leader was the winner
+    // in all five at t80/100/120, and in 15 of 23 Science losses of 10-05/06
+    // at t110 (tech-count leader 9). See `advanced/science_leader.rs`.
+    Gene { tag: "science-leader-is-the-target", field: "science_leader_is_the_target", kind: Kind::OptIn, enable: AdvancedAi::enable_science_leader_is_the_target, disable: AdvancedAi::disable_science_leader_is_the_target },
+    // Emperor G188 (Mapuche, t170) and G192 (Greece, t160) declared the culture
+    // counter at 1.6x: our military 1,062 -> 732 and Greece took 4 of our 10
+    // cities. Of 53 culture/faith counter wars on 10-05/06, those under 2.5x
+    // lost a city 3 times in 27, those over it 0 in 26. G191 embargoed India
+    // with no city located. See `one_war::counter_war_has_the_emperor_edge`.
+    Gene { tag: "counter-war-needs-the-emperor-edge", field: "counter_war_needs_the_emperor_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_counter_war_needs_the_emperor_edge, disable: AdvancedAi::disable_counter_war_needs_the_emperor_edge },
+    // Live Emperor 10-06: ten siege targets went from no walls to 100 or 400
+    // in one turn once threatened, and 12 of 14 declarations on majors struck
+    // nothing on the declaration turn; G201 declared on Poland with nobody
+    // near Bydgoszcz, walled 400 the next turn. See
+    // `siege_train::first_strike_blows`.
+    Gene { tag: "unwalled-target-declares-into-the-strike", field: "unwalled_target_declares_into_the_strike", kind: Kind::OptIn, enable: AdvancedAi::enable_unwalled_target_declares_into_the_strike, disable: AdvancedAi::disable_unwalled_target_declares_into_the_strike },
+    // Live 10-04..06: 1,206 raid orders rode out on turns a siege of ours
+    // stood in Invest or Reduce (63 of 105 games); the raid kept only bodies
+    // within two tiles of the city, so the train's cavalry on its ring rode
+    // off. See `siege_train::siege_needs_the_unit`.
+    Gene { tag: "invest-keeps-its-cavalry", field: "invest_keeps_its_cavalry", kind: Kind::OptIn, enable: AdvancedAi::enable_invest_keeps_its_cavalry, disable: AdvancedAi::disable_invest_keeps_its_cavalry },
+    // Live Emperor 10-06: capitals defend at a median 90 against our melee's
+    // 45 where our techs unlock 64; the few upgrades our Gold affords (9-34 a
+    // game) went to whichever unit gained most per Gold, home garrison or not.
+    // See `siege_train::upgrade_for_the_train`.
+    Gene { tag: "siege-train-upgrades-first", field: "siege_train_upgrades_first", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_train_upgrades_first, disable: AdvancedAi::disable_siege_train_upgrades_first },
+    // Live Emperor 10-06/07: in 35 of 120 runs a siege march held short of a
+    // third major's closed borders (102 city-holds, the water crossing round
+    // them a median 19 steps); 1 of those cities fell. The bridge's passage
+    // purchase closed 42 of 47 asks, but only for exploration. See
+    // `siege_road::siege_passage_blockers`.
+    Gene { tag: "siege-buys-the-passage", field: "siege_buys_the_passage", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_buys_the_passage, disable: AdvancedAi::disable_siege_buys_the_passage },
+    // Live Emperor 10-06/07: 448 city-turns of "holds at the muster line" in
+    // 46 runs came while the target's military stood at 0.3x ours or under;
+    // the holds sat a median 10 tiles out (p75 16) because the target's
+    // other cities' strikes barred every nearer stand. See
+    // `siege_train::MUSTER_WEAK_TARGET_SHARE`.
+    Gene { tag: "weak-target-skips-the-muster", field: "weak_target_skips_the_muster", kind: Kind::OptIn, enable: AdvancedAi::enable_weak_target_skips_the_muster, disable: AdvancedAi::disable_weak_target_skips_the_muster },
+    // Live Emperor 10-06: Tüngliyou (game 242) sat at walls 0 and one health
+    // from turn 155 to 158 with its reserved Pike and Shot beside it at 29
+    // health, one under the 30 a taker must keep. See
+    // `air_city_assault::air_assault_capture`.
+    Gene { tag: "wounded-taker-finishes-the-breach", field: "wounded_taker_finishes_the_breach", kind: Kind::OptIn, enable: AdvancedAi::enable_wounded_taker_finishes_the_breach, disable: AdvancedAi::disable_wounded_taker_finishes_the_breach },
+    // Live Emperor 10-06: G194 declared on Vietnam at 2.7x with Dong Hoi
+    // already behind 200 walls and one gun, its budget 18.0 turns against 8.7
+    // endurance; walls 300 by t89 and no city fell. Walled-target wars without
+    // a breach took nothing in G188, G192 or G194. See
+    // `siege_train::declaration_breach_reading`.
+    Gene { tag: "declaration-waits-for-the-breach", field: "declaration_waits_for_the_breach", kind: Kind::OptIn, enable: AdvancedAi::enable_declaration_waits_for_the_breach, disable: AdvancedAi::disable_declaration_waits_for_the_breach },
+    // Live Emperor G200: Quito's Shrine opened the Confucian counterweight at
+    // turn 103 with 565 Faith banked and Buddhism on 8 of our 10 cities; the
+    // seat paid 260 for a Great Scientist and kept two Missionaries, and
+    // Mongolia won on Religion at 108. See `advanced/counterweight_bank.rs`.
+    Gene { tag: "counterweight-spends-the-bank", field: "counterweight_spends_the_bank", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_spends_the_bank, disable: AdvancedAi::disable_counterweight_spends_the_bank },
+    // Live Emperor G185-G198 (civvis-20261006T024058Z..T053813Z): 5.0
+    // citizens a city at t100 against the best rival's 8.3, production per
+    // citizen at parity; 49% of city-turns t60-120 at or within one of the
+    // housing cap with no Granary, building Campus 13% / Settler 11% / Granary
+    // 5%; 61% of cities short of Amenities. See
+    // `BasicAi::housing_bound_granary_step`.
+    Gene { tag: "housing-bound-city-builds-its-granary", field: "housing_bound_city_builds_its_granary", kind: Kind::OptIn, enable: AdvancedAi::enable_housing_bound_city_builds_its_granary, disable: AdvancedAi::disable_housing_bound_city_builds_its_granary },
+    // Live Emperor G185-G198: 20 declarations on majors took 4 cities; the 16
+    // made under 0.8 times the target's Production took 1 within 40 turns.
+    // At war 54% of production went to the army (32% at peace) and our power
+    // fell a median 43% from its peak. See
+    // `one_war::declaration_has_production_parity`.
+    Gene { tag: "declaration-needs-production-parity", field: "declaration_needs_production_parity", kind: Kind::OptIn, enable: AdvancedAi::enable_declaration_needs_production_parity, disable: AdvancedAi::disable_declaration_needs_production_parity },
+    // Live Emperor G185-G198: Gold a turn 0.55x the best rival's at t50,
+    // 0.15x at t100 (net 14 against 63), 0.11x at t125, unit upkeep 20 -> 42
+    // eating 45-65% of the cities' gross Gold; no Commercial Hub or Market in
+    // any of the 13 games at t100, trade route capacity 1-2 until t150. See
+    // `BasicAi::commercial_hub_step` and `advanced/commercial_routes.rs`.
+    Gene { tag: "commercial-hub-and-traders", field: "commercial_hub_and_traders", kind: Kind::OptIn, enable: AdvancedAi::enable_commercial_hub_and_traders, disable: AdvancedAi::disable_commercial_hub_and_traders },
+    // Live Emperor G210-G211 (declaration-needs-production-parity armed):
+    // no offensive declaration in either game while our Production read 0.28
+    // to 0.79 times the target empire's, and both lost to Culture at turns
+    // 181 and 175 as the strongest military. Against the target's cities
+    // within 12 tiles of our cities or the objective (its public Production
+    // shared out by population) it read 0.83 to 2.1 on Macedon t64-117 and
+    // 1.4 to 4.4 on Rome t55-109; from t118 Macedon's capital stood on the
+    // front and held it. See `one_war::rival_front_production`.
+    Gene { tag: "parity-reads-the-front", field: "parity_reads_the_front", kind: Kind::OptIn, enable: AdvancedAi::enable_parity_reads_the_front, disable: AdvancedAi::disable_parity_reads_the_front },
+    // Emperor Religious defeats of October 6: we founded in five of six, and
+    // four kept one Shrine city to the end; the defence ended when it flipped
+    // (G186 9 turns after founding, G212 11, G215 47). See
+    // `advanced/second_faith_source.rs`.
+    Gene { tag: "founder-keeps-two-sources", field: "founder_keeps_two_sources", kind: Kind::OptIn, enable: AdvancedAi::enable_founder_keeps_two_sources, disable: AdvancedAi::disable_founder_keeps_two_sources },
+    // Live Emperor G215 spent over 700 Faith on seven Missionaries and three
+    // Builders from founding to turn 92 and first afforded its Apostle two
+    // turns before Bogota fell; G213, the one founder that launched the
+    // Inquisition, held 49 turns as the last holdout. See
+    // `advanced/inquisition_first.rs`.
+    Gene { tag: "founder-funds-the-inquisition", field: "founder_funds_the_inquisition", kind: Kind::OptIn, enable: AdvancedAi::enable_founder_funds_the_inquisition, disable: AdvancedAi::disable_founder_funds_the_inquisition },
+    // Live Emperor 2026-10-06 (35 games): a University started a median 15
+    // turns after its Campus city held the Library and Education (p75 32;
+    // 41 of 218 cities never), 0 / 1 / 3 per game at t100 / t125 / t150,
+    // while 28% of that wait went to new districts, ordinary buildings and
+    // district projects. See `BasicAi::campus_buildings_first`.
+    Gene { tag: "campus-buildings-first", field: "campus_buildings_first", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_buildings_first, disable: AdvancedAi::disable_campus_buildings_first },
+    // Live Emperor 2026-10-06 (42 games): the first Industrial Zone a median
+    // 40 turns after Apprenticeship (t80 -> t120), a second in 23 games at
+    // t180; none in 29 of 41 games at t100, 1 zone / 1 Workshop / 0 Factories
+    // at t150 at 0.46x the best rival's Production, while the three most
+    // productive cities built soldiers 44% of the turns a zone was placeable.
+    // See `BasicAi::industrial_zone_in_the_producers`.
+    Gene { tag: "industrial-zone-in-the-producers", field: "industrial_zone_in_the_producers", kind: Kind::OptIn, enable: AdvancedAi::enable_industrial_zone_in_the_producers, disable: AdvancedAi::disable_industrial_zone_in_the_producers },
+    // Live Emperor 2026-10-06 (24 Science losses): once the winner's pad was
+    // on the board, 42 of 73 spy postings and 27 of 45 Rocketry disruptions
+    // went to another rival's pad -- 26 postings to a rival at war with us
+    // while the winner led -- and 9 of 24 games ever disrupted the winner.
+    // The leading threat's free pad outranks every other posting, and an idle
+    // spy in a non-threat foreign city is re-posted to it. Requires and arms
+    // `science-threat-denial`. See `advanced/science_threat_denial.rs`.
+    Gene { tag: "science-denial-spy-reads-the-leader", field: "science_denial_spy_reads_the_leader", kind: Kind::OptIn, enable: AdvancedAi::enable_science_denial_spy_reads_the_leader, disable: AdvancedAi::disable_science_denial_spy_reads_the_leader },
+    // `theater-keeps-its-amphitheater` (2026-10-06): the Great Work veto
+    // refused every Amphitheater on the Domination seat, so the strategic
+    // scorer never ordered one. Live Emperor (55 games): 141 of 249 completed
+    // Theater Squares never got an Amphitheater (a median 73 turns standing),
+    // the 108 that did were all `pick_item` orders a median 35 turns late, and
+    // our culture ran 0.23-0.25 of the best rival's. The veto passes over an
+    // Amphitheater in a city that holds a Theater Square. See
+    // `AdvancedAi::theater_keeps_its_amphitheater`.
+    Gene { tag: "theater-keeps-its-amphitheater", field: "theater_keeps_its_amphitheater", kind: Kind::OptIn, enable: AdvancedAi::enable_theater_keeps_its_amphitheater, disable: AdvancedAi::disable_theater_keeps_its_amphitheater },
+    // Live Emperor 2026-10-06 (47 runs with commercial-hub-and-traders armed):
+    // Gold a turn 14 net / 30 gross at t100 against the best rival's 66 net,
+    // no Commercial Hub or Market at t100 or t120 (median), the first hub a
+    // median 55 turns after the step opens; the strategic governor's scorer
+    // made 43% of the build starts in hub-ready cities and never a hub. The
+    // hub step also runs in its idle queues. Requires and arms
+    // `commercial-hub-and-traders`. See `BasicAi::commercial_hub_step`.
+    Gene { tag: "commercial-hub-in-the-strategic-queue", field: "commercial_hub_in_the_strategic_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_commercial_hub_in_the_strategic_queue, disable: AdvancedAi::disable_commercial_hub_in_the_strategic_queue },
+    // `urban-planning-fills-the-slot`: Urban Planning is wanted at the tail
+    // of every portfolio, so it fills a slot no wanted card holds.
+    Gene { tag: "urban-planning-fills-the-slot", field: "urban_planning_fills_the_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_urban_planning_fills_the_slot, disable: AdvancedAi::disable_urban_planning_fills_the_slot },
+    // `growth-prices-the-farm`: 122 Emperor runs: our cities hold 5.1 citizens
+    // against the best rival's 8.6; 52-60% sit within one of their Housing and
+    // grow 1.19 citizens in 20 turns against 1.91 with room; 19-30% have no
+    // Food surplus and grow 0.50. Builders laid 6.1 Mines to 4.3 Farms a run by
+    // turn 100 because the Farm's Housing was never priced and Food weighs 1.2
+    // to Production's 2.8 under Conquest. In a city below 12 citizens an
+    // improvement's Housing is worth 6.0 a point while the city is Housing-bound
+    // and its Food a further 1.6 while the surplus is at most one. See
+    // `advanced/growth_farm.rs`.
+    Gene { tag: "growth-prices-the-farm", field: "growth_prices_the_farm", kind: Kind::OptIn, enable: AdvancedAi::enable_growth_prices_the_farm, disable: AdvancedAi::disable_growth_prices_the_farm },
+    // `breakers-match-the-walls`: 6,060 hopeless siege decisions of 10-06/07
+    // (inf or 20+ turns): 69% sat in Stage with no fit gun though guns were
+    // alive in 87% of them, and ~70% of the infinite budgets were the gun
+    // tier and count (-d8): three Trebuchets against 300 walls at a city
+    // strength of 85 strike ~6 a shot. The campaign target's Siege row asks
+    // the guns that breach its walls and take its health within 0.8 of the
+    // train's endurance at our best gun's blow, up to six, and holds the
+    // shipped count when even six cannot (game 141). See
+    // `siege_production::breakers_matched_to_walls`.
+    Gene { tag: "breakers-match-the-walls", field: "breakers_match_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_breakers_match_the_walls, disable: AdvancedAi::disable_breakers_match_the_walls },
+    // `siege-buys-the-gun-resource`: live Emperor game 343 held Angkor
+    // Thom's 400 walls at a Trebuchet's 2.3 a shot with Steel and Military
+    // Science researched and no Niter or Oil tile owned, while the Zulu
+    // offered 82 Niter and Arabia 70; at turn 150 of 101 Emperor runs 92
+    // lacked Niter or Oil and 53 had a met rival offering one, and 22% of
+    // 1,000 walled infinite siege-turns were resource-blocked (-d8: the
+    // tech-best gun hits a median 9.4 a shot against 4.1 for the buildable
+    // best). The bridge buys the resource the better gun waits on, sized to
+    // the guns its blow needs. See `gun_resource::siege_gun_resource_wants`.
+    Gene { tag: "siege-buys-the-gun-resource", field: "siege_buys_the_gun_resource", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_buys_the_gun_resource, disable: AdvancedAi::disable_siege_buys_the_gun_resource },
+    // The decisive window spent ~1,200 science a game off the Advanced
+    // Flight path after the air surge's horizon opened (10-06/07 Emperor),
+    // and captures ran 0.20 per 100 turns before the Bomber against 1.24
+    // after it. The window yields to the surge when its goal is off that
+    // path. See `AdvancedAi::window_yields_to_the_bombers`.
+    Gene { tag: "siege-tier-yields-to-the-bombers", field: "siege_tier_yields_to_the_bombers", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_tier_yields_to_the_bombers, disable: AdvancedAi::disable_siege_tier_yields_to_the_bombers },
+    // `surge-fields-the-bombers`: the air surge fields its wing. -d8's
+    // census of the 89 Emperor games of October 6-7 that reached Advanced
+    // Flight: Bombers alive at AF+15 median 1 (none in 44%), at AF+30
+    // median 3 (none in 22%), the first one a median 13 turns after AF and
+    // never in 27%; major cities taken AF..AF+40 rise 0.07 -> 0.24 -> 0.60
+    // with 0, 1-2 and 3+ Bombers alive at AF+30. Live Emperor
+    // civvis-20261007T121238Z (game 349): the strategic-queue Commercial Hub
+    // (t130) and Industrial Zone (t133) spent the last district slots of
+    // Bogota (53 Production) and Maracaibo past the air plan's reservation,
+    // the Aerodrome went to Panama (population 1, 3 Production), and its
+    // Bombers took 41 turns. See `air_surge::bomber_wing`.
+    Gene { tag: "surge-fields-the-bombers", field: "surge_fields_the_bombers", kind: Kind::OptIn, enable: AdvancedAi::enable_surge_fields_the_bombers, disable: AdvancedAi::disable_surge_fields_the_bombers },
+    // `prophet-builds-its-site`: 2 of the 17 Religious defeats of the
+    // October 6-7 Emperor runs held a Great Prophet with no Holy Site to
+    // found on (G348 lost at turn 68 six turns after Revelation earned it),
+    // and the host exhausted the Prophet class at a median turn 45 while the
+    // race kept paying. The site comes with the Prophet; the race closes with
+    // the class. See `prophet_site::prophet_site_due`.
+    Gene { tag: "prophet-builds-its-site", field: "prophet_builds_its_site", kind: Kind::OptIn, enable: AdvancedAi::enable_prophet_builds_its_site, disable: AdvancedAi::disable_prophet_builds_its_site },
+    // `counterweight-from-the-first-convert`: in the 12 faithless Religious
+    // defeats of the October 6-7 Emperor runs our first city followed the
+    // winner's faith at a median turn 68 and the majority fell at 85, while
+    // the counterweight waited for the majority; a source existed in 6 of
+    // the 12 and a median ~400 Faith went unspent. The cap, the reserve and
+    // the sanctuary start at the first convert. See
+    // `counterweight_first_convert::first_convert_threat`.
+    Gene { tag: "counterweight-from-the-first-convert", field: "counterweight_from_the_first_convert", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_from_the_first_convert, disable: AdvancedAi::disable_counterweight_from_the_first_convert },
+    // G351 (civvis-20261007T123621Z): the dry road round Japan's closed
+    // borders ran 40-43 steps against 7-9 through them, and the train
+    // shuffled on the shore for twelve turns with nothing naming Japan. A
+    // march that long holds and names the blocker instead, which the passage
+    // purchase and the road stand-down act on. See
+    // `AdvancedAi::long_road_holds`.
+    Gene { tag: "long-road-names-the-blocker", field: "long_road_names_the_blocker", kind: Kind::OptIn, enable: AdvancedAi::enable_long_road_names_the_blocker, disable: AdvancedAi::disable_long_road_names_the_blocker },
+    // Live Emperor 10-06/07: 15 finished runs held two or more Settlers at
+    // turns 80 and 100, and in 8 the still turns were safe-step holds — a
+    // Settler cycling threatened sites 7-10 tiles out within four tiles of
+    // its own cities (game 355: one walked turns 51-130). Past its walk
+    // allowance it takes the best legal site within four tiles whose ground
+    // and first step are safe. See `advanced/stalled_settler_site.rs`.
+    Gene { tag: "stalled-settler-takes-a-safe-site", field: "stalled_settler_takes_a_safe_site", kind: Kind::OptIn, enable: AdvancedAi::enable_stalled_settler_takes_a_safe_site, disable: AdvancedAi::disable_stalled_settler_takes_a_safe_site },
+    // 283 of 634 gun approaches that ended short of the post on 10-07/08
+    // read "no route step and no pass-through destination": the train's
+    // router treats our units as walls and the crossing looks only beside
+    // the gun. The gun steps up behind the column instead. See
+    // `AdvancedAi::column_queue_step`.
+    Gene { tag: "gun-queues-behind-the-column", field: "gun_queues_behind_the_column", kind: Kind::OptIn, enable: AdvancedAi::enable_gun_queues_behind_the_column, disable: AdvancedAi::disable_gun_queues_behind_the_column },
+    // A city within one of its housing whose Granary stands builds its
+    // Aqueduct (Rome's Bath) ahead of the economy steps and the military
+    // floor, within 25 turns. See `BasicAi::housing_cap_builds_the_aqueduct`.
+    Gene { tag: "housing-cap-builds-the-aqueduct", field: "housing_cap_builds_the_aqueduct", kind: Kind::OptIn, enable: AdvancedAi::enable_housing_cap_builds_the_aqueduct, disable: AdvancedAi::disable_housing_cap_builds_the_aqueduct },
+    // Builders while the charges in hand and queued cover under 60% of the
+    // unimproved worked tiles, one per city, from a city that finishes one
+    // within eight standard turns, ahead of the Monument, the Settler step and
+    // the military floor; under the controller it also claims one idle queue
+    // a turn ahead of the routine idle-queue claims, buys one above the
+    // reserve, and allows 15 standard turns while the backlog is twice the
+    // charges. See `BasicAi::builders_cover_the_worked_backlog`.
+    Gene { tag: "builders-cover-the-worked-backlog", field: "builders_cover_the_worked_backlog", kind: Kind::OptIn, enable: AdvancedAi::enable_builders_cover_the_worked_backlog, disable: AdvancedAi::disable_builders_cover_the_worked_backlog },
+    // An improvement's Production on a tile one of our cities works is priced
+    // again at 2.11 / 1.43 times the lane's Production weight (the top third's
+    // Production per improved tile over the bottom third's at t100), so a Mine
+    // under a citizen outbids a Farm on an idle flat; a starving city with
+    // Housing to grow into keeps the stock pricing. See
+    // `advanced/worked_production.rs`.
+    Gene { tag: "builders-improve-the-worked-for-production", field: "builders_improve_the_worked_for_production", kind: Kind::OptIn, enable: AdvancedAi::enable_builders_improve_the_worked_for_production, disable: AdvancedAi::disable_builders_improve_the_worked_for_production },
+    // `founder-defends-its-cities`: live Emperor 20261008T100610Z founded
+    // Buddhism at 45 and lost to Catholicism at 111 with a held Catholic
+    // Missionary counted in its defensive cap and 706 Faith banked once no
+    // city of ours followed our faith; 20261008T101304Z saved for an Apostle
+    // it never reached from 49 to 83 and lost at 104. Once a rival faith
+    // holds a city of ours the founder buys its own faith's defenders now.
+    // See `founder_defence::founder_defence_live`.
+    Gene { tag: "founder-defends-its-cities", field: "founder_defends_its_cities", kind: Kind::OptIn, enable: AdvancedAi::enable_founder_defends_its_cities, disable: AdvancedAi::disable_founder_defends_its_cities },
+    // From turn 75, 56% of the live seat's city-turns ran Displeased, 84% of
+    // them one Amenity short, while the median empire held spare luxury copies
+    // and its peaceful rivals offered types it lacked; Gold alone never bought
+    // one. The bridge now offers a spare copy for a luxury we lack.
+    Gene { tag: "luxury-swap-asks", field: "luxury_swap_asks", kind: Kind::OptIn, enable: AdvancedAi::enable_luxury_swap_asks, disable: AdvancedAi::disable_luxury_swap_asks },
+    // G388 (civvis-20261008T111334Z): the nearest tile outside Russia's
+    // closed borders was five from St. Petersburg, so the 3-5 staging band
+    // held two bodies against an 819 bill all game at 2-3 times every rival;
+    // 39 of 97 held campaign targets had no stand nearer than four. The
+    // band widens until it holds six peacetime stands (at most eight). See
+    // `AdvancedAi::campaign_staging_reach`.
+    Gene { tag: "staging-reaches-the-border", field: "staging_reaches_the_border", kind: Kind::OptIn, enable: AdvancedAi::enable_staging_reaches_the_border, disable: AdvancedAi::disable_staging_reaches_the_border },
+    // A rival with two space projects landed (or a science race at 80%)
+    // gets a spy on each of its standing Spaceport cities, and every spy
+    // there runs Disrupt Rocketry whenever the host offers it. G398 lost to
+    // Japan's four pads while both disruptions hit the same one. See
+    // `advanced/science_denial_every_pad.rs`.
+    Gene { tag: "science-denial-every-pad", field: "science_denial_every_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_science_denial_every_pad, disable: AdvancedAi::disable_science_denial_every_pad },
+    // A Diplomatic Victory leader one session from the win (15 points) is a
+    // Domination counter clock and opens a second front at the declaration
+    // edge. G402 lost to Nubia's Diplomatic Victory at 207, Nubia at peace on
+    // 15 points from turn 181 while the army fought two other rivals. See
+    // `advanced/dvp_leader_front.rs`.
+    Gene { tag: "dvp-leader-is-the-front", field: "dvp_leader_is_the_front", kind: Kind::OptIn, enable: AdvancedAi::enable_dvp_leader_is_the_front, disable: AdvancedAi::disable_dvp_leader_is_the_front },
+    // The bridge leases the Congress ballot a guard on the Diplomatic
+    // Victory leader (14-15 points): its A block is read at the largest any
+    // rival cast last session, so the bank outvotes or redirects it instead
+    // of a B nobody joins. G402 t202 cast 10 B votes; Nubia's A block grew
+    // from 3 to 7 and took +4 to 19. See `CivvisCongressRedirect`.
+    Gene { tag: "congress-guards-the-leader", field: "congress_guards_the_leader", kind: Kind::OptIn, enable: AdvancedAi::enable_congress_guards_the_leader, disable: AdvancedAi::disable_congress_guards_the_leader },
+    // G403 (civvis-20261008T134147Z): three cities at 727 power, the
+    // counter aimed at Kongo (880) while the Netherlands stood at 130 with
+    // five cities. A counter on a stronger rival yields the target to a
+    // neighbour at a third of our power. See
+    // `AdvancedAi::counter_out_of_reach`.
+    Gene { tag: "counter-out-of-reach-takes-the-weak", field: "counter_out_of_reach_takes_the_weak", kind: Kind::OptIn, enable: AdvancedAi::enable_counter_out_of_reach_takes_the_weak, disable: AdvancedAi::disable_counter_out_of_reach_takes_the_weak },
+    // Against a decisive space racer the top-Production cities train Spies
+    // up to its pads plus one, ahead of routine builds. G406 held 0-1 Spies
+    // of 5 capacity from t175 to its t215 Science loss. See
+    // `advanced/science_denial_trains_spies.rs`.
+    Gene { tag: "science-denial-trains-spies", field: "science_denial_trains_spies", kind: Kind::OptIn, enable: AdvancedAi::enable_science_denial_trains_spies, disable: AdvancedAi::disable_science_denial_trains_spies },
+    // `advanced/culture_denial_heist.rs`.
+    Gene { tag: "culture-denial-heist", field: "culture_denial_heist", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_denial_heist, disable: AdvancedAi::disable_culture_denial_heist },
+    // `advanced/band_hunt.rs`.
+    Gene { tag: "war-kills-the-bands", field: "war_kills_the_bands", kind: Kind::OptIn, enable: AdvancedAi::enable_war_kills_the_bands, disable: AdvancedAi::disable_war_kills_the_bands },
+    // Against a decisive space racer the suppression city — the campaign's
+    // first objective and the air surge's target — is its nearest standing
+    // Spaceport city, whatever lane the counter labels it with. G408's
+    // campaign aimed at Faras, whose pad our spy had pillaged at t190, while
+    // Nubia launched from the others. See `advanced/science_suppression_pads.rs`.
+    Gene { tag: "science-suppression-hits-the-pads", field: "science_suppression_hits_the_pads", kind: Kind::OptIn, enable: AdvancedAi::enable_science_suppression_hits_the_pads, disable: AdvancedAi::disable_science_suppression_hits_the_pads },
+    // `defeated-majors-leave-the-board`: live Emperor G415 eliminated
+    // Poland at turn 104, and the board kept it alive: Ethiopia's Orthodoxy,
+    // at match point (every major but Sumeria), read 50% of a 75 bar for 20
+    // turns, and the counterweight bought Orthodox Missionaries to 107;
+    // Ethiopia won on Religion at 132. Empty seats beyond the host's living
+    // count retire. See `defeated_majors::retire_defeated_majors`.
+    Gene { tag: "defeated-majors-leave-the-board", field: "defeated_majors_leave_the_board", kind: Kind::OptIn, enable: AdvancedAi::enable_defeated_majors_leave_the_board, disable: AdvancedAi::disable_defeated_majors_leave_the_board },
+    // G415 (civvis-20261008T160451Z): eliminating Poland, one of Ethiopian
+    // Orthodoxy's last three holdouts, put Orthodoxy at match point; we lost
+    // to it 28 turns later. The last city of a holdout waits while the faith
+    // is at its early warning. Wants `defeated-majors-leave-the-board`. See
+    // `AdvancedAi::elimination_crowns_a_faith`.
+    Gene { tag: "elimination-waits-on-the-clock", field: "elimination_waits_on_the_clock", kind: Kind::OptIn, enable: AdvancedAi::enable_elimination_waits_on_the_clock, disable: AdvancedAi::disable_elimination_waits_on_the_clock },
+    // Before the band turn, while cities plus walkers are short of six and
+    // no Settler is in production, the unthreatened city that trains one
+    // soonest queues a Settler ahead of the Prophet race and the routine
+    // builds. 10-08: four or fewer cities at t75 passed the production gate
+    // in 0 of 19 live Emperor runs. See `advanced/early_settler_floor.rs`.
+    Gene { tag: "early-settler-floor", field: "early_settler_floor", kind: Kind::OptIn, enable: AdvancedAi::enable_early_settler_floor, disable: AdvancedAi::disable_early_settler_floor },
+    // At war with a decisive space racer, a bomber pillages a standing pad in
+    // range and a nearby land unit walks onto one and pillages it, inside the
+    // band hunt's safety envelope. G422 made peace with Sumeria the turn its
+    // Mars base landed. See `advanced/launcher_war.rs`.
+    Gene { tag: "war-raids-the-pads", field: "war_raids_the_pads", kind: Kind::OptIn, enable: AdvancedAi::enable_war_raids_the_pads, disable: AdvancedAi::disable_war_raids_the_pads },
+    // No peace offered to or accepted from a rival past its Mars base and
+    // short of the Exoplanet launch while a pad of its stands, unless our
+    // cities are falling. See `advanced/launcher_war.rs`.
+    Gene { tag: "no-peace-with-a-launcher", field: "no_peace_with_a_launcher", kind: Kind::OptIn, enable: AdvancedAi::enable_no_peace_with_a_launcher, disable: AdvancedAi::disable_no_peace_with_a_launcher },
+    // `advanced/band_hunt.rs`.
+    Gene { tag: "war-kills-the-bands-2", field: "war_kills_the_bands_2", kind: Kind::OptIn, enable: AdvancedAi::enable_war_kills_the_bands_2, disable: AdvancedAi::disable_war_kills_the_bands_2 },
+    // `match-point-interception-ignores-power`: live Emperor G425 held the
+    // religious interception on Georgia at 282 against a steady 273 beside
+    // France's war (1.2 edge) and lost on Religion at 98. When the faith
+    // holds every other major and we are its last holdout, the war that
+    // condemns its spreader at home opens at 0.7 times its steady power.
+    // See `match_point_last_holdout::last_holdout_interception`.
+    Gene { tag: "match-point-interception-ignores-power", field: "match_point_interception_ignores_power", kind: Kind::OptIn, enable: AdvancedAi::enable_match_point_interception_ignores_power, disable: AdvancedAi::disable_match_point_interception_ignores_power },
+    // `counterweight-finishes-one-shrine`: live Emperor G425 queued its one
+    // Hindu city's Shrine 19 times (turns 86-92) while the siege reservation
+    // replaced it with a Trebuchet each turn, started Holy Sites in five
+    // cities, and spent 450 Faith on a Great Merchant at match point; Georgia
+    // won on Religion at 98. One sanctuary finishes (bought when covered) and
+    // the bank waits for it. See `counterweight_shrine::counterweight_shrine_city`.
+    Gene { tag: "counterweight-finishes-one-shrine", field: "counterweight_finishes_one_shrine", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_finishes_one_shrine, disable: AdvancedAi::disable_counterweight_finishes_one_shrine },
+    // G428 (civvis-20261008T182825Z): Yokohama stood wall-less at 1-40
+    // health for eleven turns while the takers in reach held to heal at 63
+    // and 78 hp; 11 of 26 falling cities over 10-06/07/08 took more than two
+    // turns or never fell. A recovering melee unit near a falling city stays
+    // in the fight. See `AdvancedAi::falling_city_calls`.
+    Gene { tag: "falling-city-outranks-the-heal", field: "falling_city_outranks_the_heal", kind: Kind::OptIn, enable: AdvancedAi::enable_falling_city_outranks_the_heal, disable: AdvancedAi::disable_falling_city_outranks_the_heal },
+    // From live turn 30 to 80, while a met major at peace with a city within
+    // ten tiles out-guns us, one queue a turn trains a land unit until we
+    // stand level. 10-08: the AI declared 23 early wars, all at 1.32 or less
+    // of our power, 12 costing a city. See `advanced/near_rival_deterrence.rs`.
+    Gene { tag: "near-rival-deterrence", field: "near_rival_deterrence", kind: Kind::OptIn, enable: AdvancedAi::enable_near_rival_deterrence, disable: AdvancedAi::disable_near_rival_deterrence },
+    // Against a racer past its Moon and short of the Exoplanet launch, the
+    // war opens from 0.8 times its steady power, staged or not, by surprise;
+    // its pads are raided by bombers and lone units, not besieged. G432 held
+    // the urgent denial on Persia under 1.5x for seven turns after its Mars
+    // base. See `advanced/launcher_war.rs`.
+    Gene { tag: "launcher-war-ignores-the-edge", field: "launcher_war_ignores_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_launcher_war_ignores_the_edge, disable: AdvancedAi::disable_launcher_war_ignores_the_edge },
+    // G433 (civvis-20261008T192219Z): four Bombers flew 90 of 100 sorties
+    // at one neutralised Nubian Encampment inside the wall sortie's guard
+    // radius while every siege target stood at 400 walls. The guard and
+    // reliever slots take only tiles a hostile soldier stands on. See
+    // `hostile_soldier_at` in `siege_train`.
+    Gene { tag: "wall-sortie-skips-the-encampment", field: "wall_sortie_skips_the_encampment", kind: Kind::OptIn, enable: AdvancedAi::enable_wall_sortie_skips_the_encampment, disable: AdvancedAi::disable_wall_sortie_skips_the_encampment },
+    // A defensive spreader breaks the faith holding our cities from the
+    // smallest town up: every city counts the same toward a Religious
+    // Victory's majority. G211317Z spent five Catholic charges on a pop-9
+    // Orthodox Maracaibo while three towns of pop 2-3 were the flips that
+    // broke the majority. See `advanced/counterweight_small_towns.rs`.
+    Gene { tag: "counterweight-flips-the-small-towns", field: "counterweight_flips_the_small_towns", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_flips_the_small_towns, disable: AdvancedAi::disable_counterweight_flips_the_small_towns },
+    // Live Emperor 10-08: gate passers held 2,796 train-member turns "at the
+    // muster line" past turn 150, 69% more than ten tiles from the city where
+    // the muster cannot count them; replays traced 36% of those holds to a
+    // coast or pocket with a dry road round it. A mustering member walks in
+    // by the dry road. See `muster_step` in `siege_train`.
+    Gene { tag: "muster-walks-the-road", field: "muster_walks_the_road", kind: Kind::OptIn, enable: AdvancedAi::enable_muster_walks_the_road, disable: AdvancedAi::disable_muster_walks_the_road },
+    // The rebuild takes the seat's city memory before the host's capital
+    // flags land, so every rival's first planted city was remembered as its
+    // capital: find-the-capital never priced a passage or hunted, and the
+    // planning board drew fogged cities with the planting's crown. 113 of 258
+    // rival capitals were never seen in 87 Emperor runs. The decider re-takes
+    // the memory. See `mirror::refresh_city_memory`.
+    Gene { tag: "unseen-capital-is-unseen", field: "unseen_capital_is_unseen", kind: Kind::OptIn, enable: AdvancedAi::enable_unseen_capital_is_unseen, disable: AdvancedAi::disable_unseen_capital_is_unseen },
     Gene { tag: "unit-preservation", field: "unit_preservation", kind: Kind::OptIn, enable: AdvancedAi::enable_unit_preservation, disable: AdvancedAi::disable_unit_preservation },
+    // `peacetime-classical-republic`: 115 Emperor runs ran Oligarchy on 4,672
+    // of 4,780 turns between Political Philosophy (median t41) and Divine
+    // Right (t80), at war with a major on 15% of them, while 54% of our
+    // cities sat at their housing. The Republic gives +1 Housing and +1
+    // Amenity to every city with a district and a second Economic card.
+    // See `advanced/peacetime_republic.rs`.
+    Gene { tag: "peacetime-classical-republic", field: "peacetime_classical_republic", kind: Kind::OptIn, enable: AdvancedAi::enable_peacetime_classical_republic, disable: AdvancedAi::disable_peacetime_classical_republic },
+    // Live Emperor 10-08/09: the air wing read no Bomber goal until the bank
+    // held two Bombers' training and fourteen turns of their upkeep (30
+    // Aluminum), and asked rivals for that whole block or nothing. A rival
+    // at peace offered Aluminum on 361 wait-turns, under the block on 224.
+    // The host's fuel shortage costs -1 Strength per unpaid unit, capped at
+    // 20, so a small stock flies the wing. See `AIR_WING_SMALL_STOCK_TURNS`.
+    Gene { tag: "bombers-fly-on-a-small-stock", field: "bombers_fly_on_a_small_stock", kind: Kind::OptIn, enable: AdvancedAi::enable_bombers_fly_on_a_small_stock, disable: AdvancedAi::disable_bombers_fly_on_a_small_stock },
+    // `settler-walks-to-the-better-site`: the routed settle pick returned the
+    // best site reachable THIS turn whenever one existed, over far better
+    // ranked sites a turn or two out (G034655Z t51: dry 77.9 a tile away
+    // over fresh 143.5 two tiles away). 49% of 1,224 of our foundings were
+    // fresh water against the rivals' 64%. See `advanced/far_settle_site.rs`.
+    Gene { tag: "settler-walks-to-the-better-site", field: "settler_walks_to_the_better_site", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_walks_to_the_better_site, disable: AdvancedAi::disable_settler_walks_to_the_better_site },
+    // `early-conquest-stands-down`: 28 live Emperor early-conquest declarations
+    // (10-08/09) took 0 cities within 30 turns at every power ratio (3 under
+    // 0.7, 13 at 0.7-1.0, 5 at 1.0-1.5, 7 at 1.5-4.6 times the target's
+    // military) and 1 by turn 120; peace came a median 15 turns later. The
+    // opening still scans, its scouts keep their caution, but it never opens.
+    // See `AdvancedAi::conquest_stands_down`.
+    Gene { tag: "early-conquest-stands-down", field: "early_conquest_stands_down", kind: Kind::OptIn, enable: AdvancedAi::enable_early_conquest_stands_down, disable: AdvancedAi::disable_early_conquest_stands_down },
+    // `granary-claims-the-bound-queue`: 145 Emperor runs held 13,409 of
+    // 21,729 housing-bound city-turns (t25-90) without a buildable Granary,
+    // in streaks of median 9 / p90 29 turns against 5.3 to build it, while
+    // the deterrent, the worked backlog's Builder, recon and catch-up claims
+    // took the queue first. See `advanced/granary_claims_the_bound_queue.rs`.
+    Gene { tag: "granary-claims-the-bound-queue", field: "granary_claims_the_bound_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_granary_claims_the_bound_queue, disable: AdvancedAi::disable_granary_claims_the_bound_queue },
+    // `capital-campus-before-the-plaza`: 145 live Emperor runs (10-08/09) put a
+    // Holy Site (83) or a Government Plaza (58) in the capital first and a
+    // Campus never; the capital's Campus stood at a median turn 86, its
+    // Library at 92, while our Science ran 0.21/0.26/0.39 of the best rival's
+    // at turns 50/75/100. The capital's Campus, then its Library, claim the
+    // idle capital ahead of the Plaza claim. See `advanced/capital_campus_claim.rs`.
+    Gene { tag: "capital-campus-before-the-plaza", field: "capital_campus_before_the_plaza", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_campus_before_the_plaza, disable: AdvancedAi::disable_capital_campus_before_the_plaza },
+    // `gold-buys-the-settler`: 144 Emperor runs banked a median 145-170
+    // Gold from t30 to t60 while the gate's line is the city count at t60
+    // (4 or fewer cities 8% pass, five 22%, six 50%); one Settler was bought
+    // with Gold in 144 runs. In the expansion window, at peace, the treasury
+    // saves for a Settler and buys it. See `advanced/gold_buys_the_settler.rs`.
+    Gene { tag: "gold-buys-the-settler", field: "gold_buys_the_settler", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_buys_the_settler, disable: AdvancedAi::disable_gold_buys_the_settler },
+    // `trader-fills-the-idle-route`: 134 Emperor runs opened the first trade
+    // route slot at a median turn 25 and ran the first route at turn 69 (a
+    // 42-turn lag; 63 empty slot-turns by t100, passers 50 against retirees
+    // 68), because every Trader claim reads an idle queue the expansion
+    // window never leaves. The safe origin that trains a Trader soonest puts
+    // one ahead of the routine claims. See `advanced/trader_fills_the_idle_route.rs`.
+    Gene { tag: "trader-fills-the-idle-route", field: "trader_fills_the_idle_route", kind: Kind::OptIn, enable: AdvancedAi::enable_trader_fills_the_idle_route, disable: AdvancedAi::disable_trader_fills_the_idle_route },
+    // `civic-awaits-its-inspiration`: 157 Emperor runs adopted their opening
+    // civics a few turns before their own triggers landed: Craftsmanship 9%
+    // inspired (the third improvement came within 10 turns of adoption in 49
+    // of 136), State Workforce 23% (a district within 5 turns in 52 of 115),
+    // Games and Recreation 9% (Construction within 10 in 40 of 130), while our
+    // Culture ran 0.28 of the median rival's. On a forced beeline a step whose
+    // inspiration is still ours to earn goes after the goal's other steps;
+    // off one, a pick that would finish before its near trigger lands gives
+    // way. See `advanced/civic_inspiration_wait.rs`.
+    Gene { tag: "civic-awaits-its-inspiration", field: "civic_awaits_its_inspiration", kind: Kind::OptIn, enable: AdvancedAi::enable_civic_awaits_its_inspiration, disable: AdvancedAi::disable_civic_awaits_its_inspiration },
+    // `backlog-builder-takes-the-queue`: per citizen our Production is the
+    // rivals' less their +40% Emperor handicap; the tiles are the gap. A
+    // quarter to a third of our worked tiles are improved at t40-t60, the
+    // unimproved worked tiles run 6 → 14 (t30-t70) against 1-4 charges and the
+    // backlog gate wants a Builder on 93% of turns, but its claim reads only an
+    // idle queue. The city that trains it soonest puts it ahead of the routine
+    // claims. See `advanced/backlog_builder_takes_the_queue.rs`.
+    Gene { tag: "backlog-builder-takes-the-queue", field: "backlog_builder_takes_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_backlog_builder_takes_the_queue, disable: AdvancedAi::disable_backlog_builder_takes_the_queue },
+    // G222142Z (2026-10-09): Bogotá queued its religious-defence Holy Site on
+    // 17 straight turns (t50-66) and near-rival-deterrence displaced it with an
+    // Archer or Pikeman every frame. An uninvested district is always
+    // displaceable, so it never started; Spain's faith won at t103. 31 of the
+    // last 60 games show the deterrent displacing a Holy Site, Shrine or Temple.
+    // See `deterrence_may_displace` in `advanced/near_rival_deterrence.rs`.
+    Gene { tag: "deterrence-spares-the-faith-defence", field: "deterrence_spares_the_faith_defence", kind: Kind::OptIn, enable: AdvancedAi::enable_deterrence_spares_the_faith_defence, disable: AdvancedAi::disable_deterrence_spares_the_faith_defence },
+    // 10-08/09 live Emperor: 27 siege targets reached walls 0 and at most 25
+    // health under our strikes; 17 fell within two turns, 4 took three to
+    // eight, 6 never fell, while healthy melee bodies held 4-9 tiles off
+    // (Amboise t149 "waits for a body" with a Knight at 8; Majapahit at 1
+    // health t163-169 with a full Pike-and-Shot at 7). A falling city is taken
+    // when a body can, else calls the nearest fit bodies one safe step in.
+    // See `advanced/falling_city_takers.rs`.
+    Gene { tag: "falling-city-calls-the-takers", field: "falling_city_calls_the_takers", kind: Kind::OptIn, enable: AdvancedAi::enable_falling_city_calls_the_takers, disable: AdvancedAi::disable_falling_city_calls_the_takers },
+    // 9 Emperor science losses after the t150 gate (10-08/09): the winner had
+    // Rocketry 31-60 turns before its Exoplanet launch (median ~35) but the
+    // spy network only starts at its Moon landing (8-23 turns out), held 0-3
+    // Spies against capacity 2-5 and ran 0-3 Disrupt Rocketry on the winner
+    // before launch. See `denial_spy_racers` in `science_denial_every_pad.rs`.
+    Gene { tag: "space-denial-spies-from-rocketry", field: "space_denial_spies_from_rocketry", kind: Kind::OptIn, enable: AdvancedAi::enable_space_denial_spies_from_rocketry, disable: AdvancedAi::disable_space_denial_spies_from_rocketry },
+    // The live opening's barbarian defense displaced the capital's Settler
+    // twice in 73 of 123 Emperor runs (2026-10-10), the second a median six
+    // turns after the first once its Slinger left to hunt; those runs saw
+    // their second Settler at t24 against t19. The Settler now keeps the
+    // queue after one displacement. See `opening_defense_settler_preempts`.
+    Gene { tag: "opening-defense-preempts-once", field: "opening_defense_preempts_once", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_defense_preempts_once, disable: AdvancedAi::disable_opening_defense_preempts_once },
+    // Version 2 of `first-luxury-first` (2026-10-10, eco9): 77 Emperor runs had
+    // 36% of cities Amenity-short at t50 and 47-49% at t100-125 (a short city
+    // loses 15% growth and 10% of every yield); at t50, 27 of 51 runs with a short
+    // city owned a luxury type they lacked, unimproved and tech-ready (39 of 42),
+    // while the Builder paid it the flat +14. v1 also pays +26 to a content empire;
+    // v2 prices the first copy only while the host-calibrated deficit is positive.
+    Gene { tag: "first-luxury-first-2", field: "first_luxury_first_2", kind: Kind::OptIn, enable: AdvancedAi::enable_first_luxury_first_2, disable: AdvancedAi::disable_first_luxury_first_2 },
+    // Founder losses G215527Z/G094619Z: our Inquisitors started 15 theological
+    // fights at strength 75 against 100-strength Apostles, took 443 damage for
+    // 367, and all nine died with most Remove Heresy charges unspent; each death
+    // gives the winner's faith 250 pressure beside our cities. A fight is taken
+    // only when the mean exchange kills or trades evenly and survives. See
+    // `advanced/theology_fights.rs`.
+    Gene { tag: "theology-fights-only-to-win", field: "theology_fights_only_to_win", kind: Kind::OptIn, enable: AdvancedAi::enable_theology_fights_only_to_win, disable: AdvancedAi::disable_theology_fights_only_to_win },
+    // Live Emperor founders 10-09/10: the Holy City left our faith in 40 of 83
+    // games and in five of the seven Religious defeats, 27-51 turns before the
+    // end. The host named the rival as its next faith in 29 of the 40 flips
+    // while its clock read hundreds of turns (183646Z: 501 turns at t57,
+    // Zoroastrian at t61), so the shipped 20-turn warning never rose; our one
+    // Missionary walked away from Guayaquil the turn before. Our nearest spreader
+    // spreads there first and, with none near, the Holy City buys one ahead of
+    // the Apostle save. See `advanced/holy_city_guard.rs`.
+    Gene { tag: "founder-holds-the-holy-city", field: "founder_holds_the_holy_city", kind: Kind::OptIn, enable: AdvancedAi::enable_founder_holds_the_holy_city, disable: AdvancedAi::disable_founder_holds_the_holy_city },
+    // Live Emperor founders 10-09/11: our faith held half or more of our cities
+    // at t80 in 61 of 85 founders that kept clear of a Religious defeat against
+    // 4 of the 10 that lost. Once a rival faith holds one of our cities, the
+    // small-town counterweight charges our own towns 24 a citizen while foreign
+    // targets keep 12, so a founder's Missionaries walked abroad (005957Z:
+    // Plymouth 190 against our unconverted Bogotá 70; lost t118 with 14
+    // cities). See `advanced/founder_home.rs`.
+    Gene { tag: "founder-converts-its-own-cities", field: "founder_converts_its_own_cities", kind: Kind::OptIn, enable: AdvancedAi::enable_founder_converts_its_own_cities, disable: AdvancedAi::disable_founder_converts_its_own_cities },
+    // 10-09/10: rival Apostles attacked our religious units 1,039 times in 109
+    // Emperor runs and killed 395, 55% of the fights one or two tiles from our
+    // cities; each kill hands the winner 250 pressure across ten tiles
+    // (G231456Z: five Buddhist cities to none t96-104, lost t106). A unit of
+    // ours never ends a step where a rival that would win the fight reaches
+    // it. See `advanced/apostle_evasion.rs`.
+    Gene { tag: "spreader-steps-out-of-the-apostle", field: "spreader_steps_out_of_the_apostle", kind: Kind::OptIn, enable: AdvancedAi::enable_spreader_steps_out_of_the_apostle, disable: AdvancedAi::disable_spreader_steps_out_of_the_apostle },
+    // 10-09/11 live Emperor: 23 games held a STAGED, ready declaration in
+    // turns 100-130 at 2-10 times the target's steady military (median 3.45)
+    // because version 2's edge asks twice its 30-turn peak against a rival
+    // that out-produces us (median peak 1.64 times, our Production 0.65 of
+    // theirs); 17 of 27 such targets were never declared on. Wars declared in
+    // that window took a city within 30 turns in 5 of 17 at 2.5 times or more
+    // and 0 of 7 under it (G190448Z, the only Emperor domination win, opened
+    // on the Aztecs at turn 110 at 2.8 times). Three times the steady power
+    // with at least 1.5 times the peak passes the edge.
+    Gene { tag: "crushing-steady-passes-the-edge", field: "crushing_steady_passes_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_crushing_steady_passes_the_edge, disable: AdvancedAi::disable_crushing_steady_passes_the_edge },
+    // Live October 9-11 openings: a Settler took a median 5 turns at
+    // Immortal (4 at Emperor) to found 4 tiles from its birth, and the last
+    // 39 games logged 419 "Settler waits for its guard" turns before t80
+    // (about 10 a game) while settler captures by t60 had become rare (1 of 7
+    // Immortal, 4 of 50 Emperor). Cities at t60 set the t50 production ratio
+    // against the second rival (0.27 at three or fewer, 0.53 at six or more).
+    // Up to live turn 80 the guard holds give way while no hostile unit or
+    // barbarian camp is within four tiles of a road that is all in sight.
+    // See `advanced/settler_path_clear.rs`.
+    Gene { tag: "settler-marches-alone-when-clear", field: "settler_marches_alone_when_clear", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_marches_alone_when_clear, disable: AdvancedAi::disable_settler_marches_alone_when_clear },
+    // `aqueduct-claims-the-capped-queue`: at Immortal t100 59% of our cities
+    // grew at the host's housing ×0.25/×0.5 and 8% held an Aqueduct, while
+    // 22 of 67 capped cities without one had a legal Aqueduct (20 with the
+    // Granary built); the pick_item step reads an idle queue the claims take
+    // first. See `advanced/aqueduct_claims_the_capped_queue.rs`.
+    Gene { tag: "aqueduct-claims-the-capped-queue", field: "aqueduct_claims_the_capped_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_aqueduct_claims_the_capped_queue, disable: AdvancedAi::disable_aqueduct_claims_the_capped_queue },
+    // `engineering-for-capped-fresh-water`: in 11 of 25 Immortal runs two or
+    // more capped fresh-water cities with their Granary waited on Engineering
+    // while it was a median 1.6 turns of research away; in six it landed
+    // 36-74 turns later behind the conquest beeline (551 capped city-turns).
+    // See `advanced/engineering_for_capped_fresh_water.rs`.
+    Gene { tag: "engineering-for-capped-fresh-water", field: "engineering_for_capped_fresh_water", kind: Kind::OptIn, enable: AdvancedAi::enable_engineering_for_capped_fresh_water, disable: AdvancedAi::disable_engineering_for_capped_fresh_water },
+    // 10-11 live Emperor/Immortal census, 53 runs: in 51 a city held a paused
+    // district foundation the host quoted at one or two turns while it built
+    // something else (274 stretches, 1,912 city-turns, 83% at full health,
+    // 702 of them on military units). Immortal G054318Z's capital Campus sat
+    // at 46 of 56 from turn 53 to 82 behind a zero-damage war handoff. At full
+    // city and wall health with no attack in reach, such a foundation goes
+    // back to the head of its queue and the defence handoff keeps it there.
+    Gene { tag: "paused-district-finishes", field: "paused_district_finishes", kind: Kind::OptIn, enable: AdvancedAi::enable_paused_district_finishes, disable: AdvancedAi::disable_paused_district_finishes },
+    // 10-11 live census, 38 Immortal and 120 Emperor GC runs: Apprenticeship
+    // at a median t82 (Immortal), the first Industrial Zone founded 22 turns
+    // later (Emperor 27): 0 zones at t100, 1 at t125. Between the technology
+    // and the first zone, producer cities with a legal zone built soldiers
+    // 39%, ordinary buildings 21%, other districts 19%; the producer step
+    // asks only idle queues the claims take first. The producer step's zone
+    // or Workshop now claims its city's queue over a deferrable head. See
+    // `advanced/industrial_zone_claims_the_producer_queue.rs`.
+    Gene { tag: "industrial-zone-claims-the-producer-queue", field: "industrial_zone_claims_the_producer_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_industrial_zone_claims_the_producer_queue, disable: AdvancedAi::disable_industrial_zone_claims_the_producer_queue },
+    // `sea-locked-front-moves-on`: live Emperor G004440Z kept the Netherlands
+    // as its front from turn 146 to 192 and stood ten Dutch sieges down for
+    // want of a land road while the Maya and Egypt, at war with us at 3-5x
+    // our power over theirs, stood on our side of the water. See
+    // `advanced/sea_locked_front.rs`.
+    Gene { tag: "sea-locked-front-moves-on", field: "sea_locked_front_moves_on", kind: Kind::OptIn, enable: AdvancedAi::enable_sea_locked_front_moves_on, disable: AdvancedAi::disable_sea_locked_front_moves_on },
+    // 10-11 live census, 54 Immortal and 118 Emperor GC runs: the rivals'
+    // walls reach 400 at a median t111 (Immortal) while our Metal Casting
+    // lands at t131 and 21 of 54 runs never research it; at t125 our best gun
+    // is a Trebuchet in 27 of 49 runs. 444 research picks t60-150 walked the
+    // Advanced Flight beeline against 28 for a siege technology, and Advanced
+    // Flight came by t150 in 17 of 41 runs. The next fed siege design's
+    // technology now takes the slot ahead of the beeline when it costs a few
+    // turns. See `advanced/siege_tier_before_the_beeline.rs`.
+    Gene { tag: "siege-tier-before-the-beeline", field: "siege_tier_before_the_beeline", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_tier_before_the_beeline, disable: AdvancedAi::disable_siege_tier_before_the_beeline },
+    // 10-11 live census, 63 Immortal and 105 Emperor GC runs: Campuses come
+    // (Immortal 2 at t100, 4 at t125) but their buildings lag (1.5 Libraries,
+    // 0 Universities at t100); the top third by Science per citizen held 4.5
+    // Libraries and 3 Universities at t125 to the bottom third's 1 and 0. A
+    // median game spent 45 city-turns with a Campus and no Library and 47 with
+    // a University buildable but not in production; campus-buildings-first
+    // asks only idle queues the claims take first. The next Campus building
+    // now claims its city's queue over a deferrable head. See
+    // `advanced/campus_building_claims_the_queue.rs`.
+    Gene { tag: "campus-building-claims-the-queue", field: "campus_building_claims_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_building_claims_the_queue, disable: AdvancedAi::disable_campus_building_claims_the_queue },
+    // 10-13, 5 Immortal runs + 33 surviving 10-10/11 copies: our worked land
+    // yields 2.04 Food a tile at turn 60 (1.80 at 100) against the two a
+    // citizen eats, so a city's surplus stays its centre's +3-4 and growth is
+    // linear; Food a citizen 2.74 against the rivals' 3.06. Farms are 14-25% of
+    // our improvements and 45-56% of the rivals'; the day's Builders laid 93
+    // Mines (worth 15.5) and 63 Lumber Mills (13.9) to 40 Farms (6.2), and
+    // improvements gave our cities 0.29 Housing at turn 60 while 45-50% grow at
+    // x0.5/x0.25 from their cap. Version 1 priced nothing in a city with room.
+    // Version 2 prices a growing city's Food as the citizens it grows, under
+    // the multipliers a Mine's Production gets, and ramps the Housing price in
+    // from three citizens of room. See `advanced/growth_farm.rs`.
+    Gene { tag: "growth-prices-the-farm-2", field: "growth_prices_the_farm_2", kind: Kind::OptIn, enable: AdvancedAi::enable_growth_prices_the_farm_2, disable: AdvancedAi::disable_growth_prices_the_farm_2 },
+    // 2026-10-12 capital-staging tally, five live gate passers with logs:
+    // when a major's capital was the siege objective after t150, the top hold
+    // in two of five was water ("the bombard holds on land short of the
+    // water ... no dry road opens within 128 steps": 133 lines in the Emperor
+    // win civvis-20261010T190448Z, 342 in civvis-20261011T004440Z), and 51%
+    // of at-war capital samples had no land unit of ours within six tiles. A
+    // water-locked objective's guns and escorts now gather at a coastal city,
+    // embark together over a lane no visible enemy warship watches, and land
+    // together beside the target; a gun never lands alone. See
+    // `advanced/amphibious_siege_train.rs`.
+    Gene { tag: "amphibious-siege-train", field: "amphibious_siege_train", kind: Kind::OptIn, enable: AdvancedAi::enable_amphibious_siege_train, disable: AdvancedAi::disable_amphibious_siege_train },
+    // 10-13, 17 Immortal runs: after t100 the rivals' Production a citizen
+    // climbs from ~2.8 to 4.5-6.8 by t125-150 while ours stays 2.0-2.5. At
+    // t150 our 11 games held 25 Workshops, 9 Factories and 1 Coal Power Plant
+    // with Industrialization known in 9 (median t118): 679 city-turns with a
+    // Workshop and no Factory (53 building one) and 119 with a Factory and no
+    // power while Coal income was positive in 74% of samples. A Factory pays
+    // +3 to every city within six tiles of its zone, +3 more powered. The zone
+    // city whose Factory newly reaches the most cities (then the Factory city
+    // whose plant powers the most Factories, with Coal) claims its queue with
+    // the Industrial Zone claim's rules. See
+    // `advanced/industrial_zone_claims_the_factory.rs`.
+    Gene { tag: "industrial-zone-claims-the-factory", field: "industrial_zone_claims_the_factory", kind: Kind::OptIn, enable: AdvancedAi::enable_industrial_zone_claims_the_factory, disable: AdvancedAi::disable_industrial_zone_claims_the_factory },
+    // 10-13 live Immortal runs: 65 of 90 distinct "holds on land short of
+    // the water" rows had a dry road for a gun of that kind. The Stage and
+    // Invest marches read `route_step_dry`, which takes its first edge as a
+    // stop and returns nothing for a unit an enemy zone of control has
+    // locked, so a gun behind a friend on the one land exit, or beside an
+    // enemy, read as water-locked: it fortified, the road stand-down counted
+    // it, and `amphibious-siege-train` shipped it (civvis-20261013T082508Z
+    // held Tlacopan, on our continent with a 13-tile road, as water-locked).
+    // Such a march now waits on its dry road and counts as marching. See
+    // `AdvancedAi::dry_road_blocked_holds`.
+    Gene { tag: "dry-road-outlasts-a-blocked-step", field: "dry_road_outlasts_a_blocked_step", kind: Kind::OptIn, enable: AdvancedAi::enable_dry_road_outlasts_a_blocked_step, disable: AdvancedAi::disable_dry_road_outlasts_a_blocked_step },
+    // First live crossing, civvis-20261013T083300Z: the train for Susa took
+    // 22 turns from forming to landing (a 12-water-tile lane) though the best
+    // mixed road from Cali crossed ONE water tile; members on the mixed
+    // router hopped between land and sea (each switch ends the turn), a gun
+    // was combined into an Army at sea, and an escort was re-tasked to a
+    // builder guard and then upgraded (a new id, dropped), while the
+    // cohesion hold waited on it. Madrid in the Emperor win (190448Z) has the
+    // same shape: sea lanes of 27-42 tiles, a land road crossing one water
+    // tile. Version two fords a strait of at most two water tiles (march to
+    // the shore, cross, land), locks members against combining, upgrading
+    // and re-tasking, sails on a water-only router, drops a member that does
+    // not close for two turns from the cohesion wait, and lands on any free
+    // tile within two of the landing once the train is within three. A ford
+    // is held only for a warship beside it or within a turn's reach (a sea
+    // lane keeps the three-tile watch), gathers only the units joined over
+    // land to its near shore (live 204616Z forded from an islet with the
+    // column already across, held eleven turns), and journals the gathering
+    // each turn. A sea lane sails only from a port off the objective's
+    // landmass and drafts only the units joined to that port by land: a unit
+    // with a dry road marches. See `advanced/amphibious_siege_train.rs`.
+    Gene { tag: "amphibious-siege-train-2", field: "amphibious_siege_train_2", kind: Kind::OptIn, enable: AdvancedAi::enable_amphibious_siege_train_2, disable: AdvancedAi::disable_amphibious_siege_train_2 },
+    // Version two of `luxury-swap-asks`. 21 live Immortal games on 455f438ca:
+    // our cities Displeased or worse 32/39/53/63% at turns 75/100/125/150,
+    // luxuries flat at 2.3-2.5 Amenities a city while the need climbs, and
+    // peaceful rivals offering 3.4-3.9 luxury types we lack in nearly every
+    // game. Version one closed 36 of 119 asks (22 games) and every close
+    // added a type, but a rival whose land holds the spare we put up closed
+    // 2 of 32 against 34 of 87 otherwise, and 25 of those 32 had a partner
+    // and spare that fit; the two-short gate also held 28 luxury slots with
+    // a spare and an offer. Version two asks from one Amenity short and only
+    // of a partner whose mirrored board holds none of a spare, offering that
+    // spare. See `append_luxury_swap_order` in `civvis_orders`.
+    Gene { tag: "luxury-swap-asks-2", field: "luxury_swap_asks_2", kind: Kind::OptIn, enable: AdvancedAi::enable_luxury_swap_asks_2, disable: AdvancedAi::disable_luxury_swap_asks_2 },
+    // The road-blocker front of `blocker-becomes-the-target` needed a siege
+    // stood down for want of the road, and a train held short of a third
+    // party's closed borders mostly holds instead: over 138 live Immortal
+    // runs of 10-11/13 the closed-borders hold struck 19 games (27 blockers),
+    // 58 of 59 open-borders asks during the holds were refused, and the gene
+    // never fired. civvis-20261013T083300Z held its Susa train
+    // short of Mongolia's borders from turn 175 at about five times
+    // Mongolia's power until Persia won on Culture at 193. This gene's
+    // trigger is three turns of holds against a blocker at half our power or
+    // under; a city-state needs a suzerain as weak. See
+    // `AdvancedAi::closed_border_front`.
+    Gene { tag: "closed-border-blocker-declares", field: "closed_border_blocker_declares", kind: Kind::OptIn, enable: AdvancedAi::enable_closed_border_blocker_declares, disable: AdvancedAi::disable_closed_border_blocker_declares },
+    // `purchases-keep-the-upkeep-reserve`: the main purchase pass, the
+    // counterweight Shrine's Gold branch and the city-state levy keep one and
+    // a half turns of the army's bill, the floor `upkeep-reserve` gives the
+    // upgrade passes. See `AdvancedAi::purchase_upkeep_floor`.
+    Gene { tag: "purchases-keep-the-upkeep-reserve", field: "purchases_keep_the_upkeep_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_purchases_keep_the_upkeep_reserve, disable: AdvancedAi::disable_purchases_keep_the_upkeep_reserve },
+    // Live Immortal 10-13: 21 objectives stood unwalled at full health
+    // during a muster, a shooter in range on 2 and none taken; 30 of the 70
+    // muster holds read a finite budget whose endurance was charged a strike
+    // the city cannot make. Jenne (civvis-20261013T184508Z) met its bill at
+    // turn 110 and held at 6.2 turns against 3.5 endurance. See
+    // `conversion_siege_entry_budget`.
+    Gene { tag: "unwalled-city-spares-the-train", field: "unwalled_city_spares_the_train", kind: Kind::OptIn, enable: AdvancedAi::enable_unwalled_city_spares_the_train, disable: AdvancedAi::disable_unwalled_city_spares_the_train },
+    // A sealed ring stops the city's heal, but the entry budget priced a
+    // train holding off the ring at the open ring's 20 a turn: live Immortal
+    // Jenne (civvis-20261013T184508Z) held turns 111-117 with seven to nine
+    // units at 23.7-65.0 turns and its ring 0/6. See `train_seals_the_ring`.
+    Gene { tag: "siege-budget-projects-the-seal", field: "siege_budget_projects_the_seal", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_budget_projects_the_seal, disable: AdvancedAi::disable_siege_budget_projects_the_seal },
+    // `elimination-yields-to-a-launch`: the Diplomatic Victory elimination
+    // front yields to an at-war rival past its Mars launch or a short culture
+    // clock, without first holding the contender's capital. See
+    // `capital_moves_on::elimination_yields_to_a_launch`.
+    Gene { tag: "elimination-yields-to-a-launch", field: "elimination_yields_to_a_launch", kind: Kind::OptIn, enable: AdvancedAi::enable_elimination_yields_to_a_launch, disable: AdvancedAi::disable_elimination_yields_to_a_launch },
+    // Live Immortal 220550Z (civvis-20261013T220550Z), production twice the
+    // second rival's, waited on oil for its Artillery from turn 126 while its
+    // one owned oil, offshore at (42, 20), stood unimproved: from Professional
+    // Sports at turn 148 the board routed each Builder sent to it across the
+    // mountain at (42, 19), the host refused all 13 moves, and the job was
+    // retired as forgotten three times. No Builder of ours stood on a
+    // mountain in 984 Builder-turns after the unlock over two games.
+    Gene { tag: "builders-route-around-mountains", field: "builders_route_around_mountains", kind: Kind::OptIn, enable: AdvancedAi::enable_builders_route_around_mountains, disable: AdvancedAi::disable_builders_route_around_mountains },
+    // Over the 15 strong Immortal games of 10-12/13 the decisive siege opened
+    // 7-44 turns after its target had Urban Defenses (400 walls) in 8 of 13,
+    // our guns then reading 2-12 a shot, while 9 games still held a rival
+    // under 400 walls at turn 150, where they read 14-36. See
+    // `advanced/war_target_walls.rs`.
+    Gene { tag: "war-target-prices-the-walls", field: "war_target_prices_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_war_target_prices_the_walls, disable: AdvancedAi::disable_war_target_prices_the_walls },
+    // A Resident Embassy reveals the host's capital: over 30 Immortal games of
+    // 10-13/14, 12 capitals appeared the turn one landed, while 38 of 90 were
+    // never seen. The stock cadence asked an Unfriendly favourite (880 of
+    // 1,038 asks refused by the bridge), never the plan's target, and stalled
+    // once its favourite held an Embassy. Asked whenever Neutral, 7 never-seen
+    // capitals would have been revealed and 16 a median 7 turns sooner. See
+    // `advanced/embassy_capital.rs`.
+    Gene { tag: "embassy-finds-the-capital", field: "embassy_finds_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_embassy_finds_the_capital, disable: AdvancedAi::disable_embassy_finds_the_capital },
+    // `aluminum-buys-the-tile`: while the empire wants Aluminum and draws
+    // none, buy an unowned Aluminum tile a city can buy, above the reserve.
+    // 10-13/14: 34 of 67 Immortal runs past Radio owned no Aluminum; 6 of
+    // them had an unowned deposit within 3 tiles of a city. See
+    // `gun_resource::aluminum_tile_purchase`.
+    Gene { tag: "aluminum-buys-the-tile", field: "aluminum_buys_the_tile", kind: Kind::OptIn, enable: AdvancedAi::enable_aluminum_buys_the_tile, disable: AdvancedAi::disable_aluminum_buys_the_tile },
+    // `aluminum-ask-tops-up-gold`: the air wing's Aluminum ask carries a Gold
+    // ceiling for the host's counter. 10-13/14: 7 of 91 answered Aluminum
+    // asks closed, every one at ceiling 0, against 38% for luxury swaps. See
+    // `aluminum_ask_ceiling` in `civvis_orders`.
+    Gene { tag: "aluminum-ask-tops-up-gold", field: "aluminum_ask_tops_up_gold", kind: Kind::OptIn, enable: AdvancedAi::enable_aluminum_ask_tops_up_gold, disable: AdvancedAi::disable_aluminum_ask_tops_up_gold },
+    // Live Immortal 050758Z lost to Gaul's Science Victory: our two Spies
+    // ran Foment Unrest in London (the war plan's capital) after Gaul's
+    // Rocketry, both were captured, and the host kept their slots while the
+    // board dropped them, so no Spy could be trained for 19 turns and the
+    // first Disrupt Rocketry came at turn 176. While a space racer exists, a
+    // Spy outside every racer's cities starts no capture-risk operation, an
+    // idle one is posted to the leading racer before any pad is seen, and in
+    // a racer's city it runs Disrupt Rocketry or a safe operation. See
+    // `advanced/racer_keeps_the_spies.rs`.
+    Gene { tag: "racer-keeps-the-spies", field: "racer_keeps_the_spies", kind: Kind::OptIn, enable: AdvancedAi::enable_racer_keeps_the_spies, disable: AdvancedAi::disable_racer_keeps_the_spies },
+    // `capital-walls-before-the-surprise`: a met major at peace with twice
+    // our power and a soldier within eight tiles of the original capital in
+    // the last ten turns puts Masonry next and the capital on its Walls; two
+    // soldiers within six buy a defender above the upkeep reserve. 10-13/14:
+    // 28 of 183 Immortal runs lost the capital before turn 100, walls up in 4;
+    // the trigger fired before 27 of them, walls in time for 20, and in 75 of
+    // the 149 that held. See `advanced/capital_walls_before_the_surprise.rs`.
+    Gene { tag: "capital-walls-before-the-surprise", field: "capital_walls_before_the_surprise", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_walls_before_the_surprise, disable: AdvancedAi::disable_capital_walls_before_the_surprise },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

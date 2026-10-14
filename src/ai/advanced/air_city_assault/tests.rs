@@ -151,6 +151,29 @@ fn spent_bombers_allow_capture_from_the_next_observed_board() {
 }
 
 #[test]
+fn observed_breach_is_claimed_even_after_the_plan_switches_to_another_city() {
+    let (mut g, mut ai, plan, cavalry, bombers) = fixture();
+    let next = plan.target_city.unwrap();
+    let breached = g.found_city_for(1, (26, 10), None);
+    g.relocate(cavalry, (24, 10));
+    g.cities.get_mut(&breached).unwrap().hp = 0;
+    for uid in bombers {
+        g.units.get_mut(&uid).unwrap().moves_left = 0.0;
+    }
+    ai.observe_air_assault_frame(BTreeSet::from([(26, 10)]), 0);
+
+    let before = g.log.len();
+    let reserved = ai.plan_air_city_assault(&mut g, 0, &plan);
+    assert!(reserved.contains(&cavalry));
+    assert_eq!(g.cities[&breached].owner, 0);
+    assert_eq!(g.cities[&next].owner, 1);
+    assert!(g.log.iter().skip(before).any(|(_, action)| {
+        matches!(action, Action::Attack { unit, target } if *unit == cavalry && *target == (26, 10))
+    }));
+    assert!(ai.planned_air_city_assault().unwrap().aircraft.is_empty());
+}
+
+#[test]
 fn an_unused_bomber_does_not_delay_capture_of_an_already_breached_city() {
     let (mut g, mut ai, plan, cavalry, _) = fixture();
     g.relocate(cavalry, (18, 10));
@@ -216,4 +239,365 @@ fn the_ordinary_unit_loop_does_not_spend_the_reserved_spotter_again() {
     ai.advanced_units(&mut g, 0, &plan);
     assert!(ai.planned_air_city_assault().is_some());
     assert_eq!(g.units[&cavalry].pos, (16, 10));
+}
+
+/// Every ranged City Center strike floors health at one, so a bombed city
+/// is never at zero. Live King 20260930T211803Z: Edirne sat at
+/// `walls 0/400, city 1/200` for four turns with a Tank six tiles out.
+#[test]
+fn a_bombed_breach_at_one_health_is_finished_by_any_melee_body() {
+    let (mut g, mut ai, plan, cavalry, bombers) = fixture();
+    g.remove_unit(cavalry);
+    let breached = g.found_city_for(1, (26, 10), None);
+    {
+        let city = g.cities.get_mut(&breached).unwrap();
+        city.hp = 1;
+        city.wall_hp = 0;
+    }
+    let infantry = g.spawn_test_unit("infantry", 0, (25, 10));
+    for uid in bombers {
+        g.units.get_mut(&uid).unwrap().moves_left = 0.0;
+    }
+    ai.observe_air_assault_frame(BTreeSet::from([(26, 10)]), 0);
+    let reserved = ai.plan_air_city_assault(&mut g, 0, &plan);
+    assert!(reserved.contains(&infantry));
+    assert_eq!(g.cities[&breached].owner, 0);
+    assert_eq!(ai.planned_air_city_assault().unwrap().cavalry, Some(infantry));
+}
+
+/// A city's melee defence follows its owner's best unit, so the nearest
+/// body is not necessarily one that survives the blow.
+#[test]
+fn the_strongest_body_in_reach_finishes_the_breach() {
+    let (mut g, mut ai, plan, cavalry, bombers) = fixture();
+    g.remove_unit(cavalry);
+    let breached = g.found_city_for(1, (26, 10), None);
+    {
+        let city = g.cities.get_mut(&breached).unwrap();
+        city.hp = 1;
+        city.wall_hp = 0;
+    }
+    std::sync::Arc::make_mut(&mut g.observed_city_strength).insert(breached, 90.0);
+    let weak = g.spawn_test_unit("horseman", 0, (25, 10));
+    g.units.get_mut(&weak).unwrap().hp = 35;
+    let tank = g.spawn_test_unit("tank", 0, (23, 10));
+    for uid in bombers {
+        g.units.get_mut(&uid).unwrap().moves_left = 0.0;
+    }
+    ai.observe_air_assault_frame(BTreeSet::from([(26, 10)]), 0);
+    let reserved = ai.plan_air_city_assault(&mut g, 0, &plan);
+    assert_eq!(g.cities[&breached].owner, 0);
+    assert!(reserved.contains(&tank));
+    assert!(!reserved.contains(&weak), "the unused body keeps its turn");
+    assert_eq!(g.units[&tank].pos, (26, 10));
+}
+
+#[test]
+fn a_breach_nobody_can_finish_draws_the_nearest_body_in() {
+    let (mut g, mut ai, plan, cavalry, bombers) = fixture();
+    g.remove_unit(cavalry);
+    let breached = g.found_city_for(1, (30, 10), None);
+    {
+        let city = g.cities.get_mut(&breached).unwrap();
+        city.hp = 1;
+        city.wall_hp = 0;
+    }
+    let infantry = g.spawn_test_unit("infantry", 0, (25, 10));
+    for uid in bombers {
+        g.units.get_mut(&uid).unwrap().moves_left = 0.0;
+    }
+    ai.observe_air_assault_frame(BTreeSet::from([(30, 10)]), 0);
+    let reserved = ai.plan_air_city_assault(&mut g, 0, &plan);
+    assert_eq!(g.cities[&breached].owner, 1, "two moves cannot reach it this turn");
+    assert!(reserved.contains(&infantry));
+    assert!(g.wdist(g.units[&infantry].pos, (30, 10)) < 5, "it closes in");
+}
+
+/// Live King 20260930T211803Z turn 184, frame 0: no cavalry in reach, so the
+/// maneuver flew nothing and the unit loop spent the wing on field units. A
+/// visible city's walls fall to the wing alone.
+#[test]
+fn the_wing_bombs_a_visible_city_with_no_cavalry_in_reach() {
+    let (mut g, mut ai, plan, cavalry, bombers) = fixture();
+    g.remove_unit(cavalry);
+    // A picket that sees the city but is no cavalry the maneuver could use.
+    let picket = g.spawn_test_unit("infantry", 0, (18, 10));
+    assert!(g.player_can_see(0, (20, 10)));
+    ai.air_surge = false;
+    ai.enable_air_surge_2();
+    let cid = plan.target_city.unwrap();
+    g.cities.get_mut(&cid).unwrap().wall_hp = 400;
+    std::sync::Arc::make_mut(&mut g.observed_city_max_wall_hp).insert(cid, 400);
+    ai.observe_air_assault_frame(BTreeSet::from([(20, 10)]), 2);
+    let reserved = ai.plan_air_city_assault(&mut g, 0, &plan);
+    for uid in &bombers {
+        assert!(
+            reserved.contains(uid),
+            "the wing is spent on the city: reserved {reserved:?}, report {:?}, bombers {:?}",
+            ai.planned_air_city_assault(),
+            bombers.iter().map(|b| (g.units[b].pos, g.units[b].moves_left, g.units[b].acted, g.units[b].hp)).collect::<Vec<_>>()
+        );
+    }
+    assert!(g.cities[&cid].wall_hp < 400);
+    let report = ai.planned_air_city_assault().unwrap();
+    assert_eq!(report.cavalry, None, "walls still stand; nobody walks in");
+    assert_eq!(report.aircraft.len(), bombers.len());
+    assert!(!reserved.contains(&picket));
+
+    // Version one keeps its cavalry-led maneuver only.
+    let (mut g, mut ai, plan, cavalry, _) = fixture();
+    g.remove_unit(cavalry);
+    g.spawn_test_unit("infantry", 0, (18, 10));
+    ai.observe_air_assault_frame(BTreeSet::from([(20, 10)]), 2);
+    assert!(ai.plan_air_city_assault(&mut g, 0, &plan).is_empty());
+
+    // An unseen city still waits for a spotter.
+    let (mut g, mut ai, plan, cavalry, _) = fixture();
+    g.remove_unit(cavalry);
+    ai.air_surge = false;
+    ai.enable_air_surge_2();
+    ai.observe_air_assault_frame(BTreeSet::new(), 2);
+    assert!(ai.plan_air_city_assault(&mut g, 0, &plan).is_empty());
+}
+
+/// Live King 2026-10-03T131343Z bombed Sheffield to one health with no taker
+/// within a march, and it healed. With no land melee body within two turns
+/// of the city, the cavalry-free volley is not flown.
+#[test]
+fn the_wing_holds_its_volley_when_nobody_can_walk_in() {
+    let (mut g, mut ai, plan, cavalry, bombers) = fixture();
+    g.remove_unit(cavalry);
+    ai.air_surge = false;
+    ai.enable_air_surge_2();
+    let cid = plan.target_city.unwrap();
+    g.cities.get_mut(&cid).unwrap().wall_hp = 400;
+    std::sync::Arc::make_mut(&mut g.observed_city_max_wall_hp).insert(cid, 400);
+    // A melee body far from the city: it cannot follow the breach in.
+    let far = g.spawn_test_unit("infantry", 0, (6, 10));
+    assert!(g.wdist(g.units[&far].pos, (20, 10)) > AIR_ASSAULT_FOLLOWUP_REACH);
+    ai.observe_air_assault_frame(BTreeSet::from([(20, 10)]), 2);
+    let reserved = ai.plan_air_city_assault(&mut g, 0, &plan);
+    for uid in &bombers {
+        assert!(!reserved.contains(uid), "the wing stays free for other work");
+    }
+    assert_eq!(g.cities[&cid].wall_hp, 400, "no sortie on the city");
+}
+
+/// Live King 20260930T211803Z, Edirne at one health turns 188-191: the
+/// approach was held by the Ottoman army, not merely far. The wing strikes
+/// the defenders on the ring before the capture is tried again.
+#[test]
+fn the_wing_clears_a_guarded_breach_before_the_capture() {
+    let (mut g, mut ai, plan, cavalry, bombers) = fixture();
+    g.remove_unit(cavalry);
+    ai.air_surge = false;
+    ai.enable_air_surge_2();
+    let cid = plan.target_city.unwrap();
+    {
+        let city = g.cities.get_mut(&cid).unwrap();
+        city.hp = 1;
+        city.wall_hp = 0;
+    }
+    let ring: Vec<Pos> = g.nbrs((20, 10)).into_iter().collect();
+    let defenders: Vec<u32> = ring
+        .iter()
+        .map(|pos| g.spawn_test_unit("infantry", 1, *pos))
+        .collect();
+    g.spawn_test_unit("tank", 0, (16, 10));
+    assert!(g.player_can_see(0, (20, 10)) || {
+        g.spawn_test_unit("infantry", 0, (18, 9));
+        true
+    });
+    ai.observe_air_assault_frame(BTreeSet::from([(20, 10)]), 2);
+    let before: i32 = defenders.iter().map(|uid| g.units[uid].hp).sum();
+    let reserved = ai.plan_air_city_assault(&mut g, 0, &plan);
+    for uid in &bombers {
+        assert!(reserved.contains(uid), "the wing flew at the approach");
+    }
+    let after: i32 = defenders
+        .iter()
+        .map(|uid| g.units.get(uid).map_or(0, |unit| unit.hp))
+        .sum();
+    assert!(after < before, "the defenders on the ring took the volley");
+}
+
+/// Live King 20261001T050754Z: Uppsala stood behind fallen walls from turn
+/// 103 to 113 while every Swedish blow was charged to our one approaching
+/// body against half its health. Toward a breach the step only has to leave
+/// the body a taker, and with `air-surge-2` each hostile's single blow is
+/// shared among our units in its reach.
+#[test]
+fn a_breach_body_closes_in_under_shared_blows() {
+    let run = |v2: bool| {
+        let (mut g, mut ai, plan, cavalry, bombers) = fixture();
+        g.remove_unit(cavalry);
+        let breached = g.found_city_for(1, (30, 10), None);
+        {
+            let city = g.cities.get_mut(&breached).unwrap();
+            city.hp = 1;
+            city.wall_hp = 0;
+        }
+        let body = g.spawn_test_unit("infantry", 0, (25, 10));
+        // A spent partner on the far side of the ring sees the defenders
+        // and shares their blows.
+        let partner = g.spawn_test_unit("infantry", 0, (27, 11));
+        g.units.get_mut(&partner).unwrap().moves_left = 0.0;
+        let hostiles: Vec<u32> = [(28, 9), (28, 10), (28, 11)]
+            .into_iter()
+            .map(|at| g.spawn_test_unit("infantry", 1, at))
+            .collect();
+        assert!(hostiles.iter().all(|uid| g.unit_visible_to(*uid, 0)));
+        for uid in bombers {
+            g.units.get_mut(&uid).unwrap().moves_left = 0.0;
+        }
+        if v2 {
+            ai.enable_air_surge_2();
+        }
+        ai.observe_air_assault_frame(BTreeSet::from([(30, 10)]), 0);
+        // Every step closer stands in two full blows: 60 of the body's 100
+        // on the full field, over the old half-health bar.
+        for to in g.reachable(body) {
+            let mut after = g.speculative_clone();
+            if g.wdist(to, (30, 10)) < 5
+                && after.apply(0, &Action::MoveTo { unit: body, to }).is_ok()
+                && after.units[&body].pos == to
+            {
+                assert!(battle_planner::strike_danger(&after, 0, to, body) >= 50.0, "{to:?}");
+            }
+        }
+        let reserved = ai.plan_air_city_assault(&mut g, 0, &plan);
+        (reserved.contains(&body), g.wdist(g.units[&body].pos, (30, 10)))
+    };
+    let before = run(false);
+    let after = run(true);
+    assert!(!before.0, "the full field charged every blow to the body");
+    assert!(after.0 && after.1 < 5, "the body closes in: {after:?}");
+}
+
+/// Domination pair seed 37140004: the wing never saw Hastings. The land
+/// siege mustered beyond sight for eighteen turns and, with no cavalry in
+/// reach, not one sortie flew. Any healthy soldier steps into sight and
+/// stays, and the wing flies at the city it now sees.
+#[test]
+fn a_soldier_spots_an_unseen_city_for_the_wing() {
+    let run = |v2: bool| {
+        let (mut g, mut ai, plan, cavalry, _) = fixture();
+        g.remove_unit(cavalry);
+        let infantry = g.spawn_test_unit("infantry", 0, (16, 10));
+        let target = (20, 10);
+        assert!(!g.player_can_see(0, target), "the city starts unseen");
+        if v2 {
+            ai.enable_air_surge_2();
+        }
+        let walls = g.cities[&g.city_at(target).unwrap()].wall_hp;
+        let reserved = ai.plan_air_city_assault(&mut g, 0, &plan);
+        let city = &g.cities[&g.city_at(target).unwrap()];
+        (
+            reserved.contains(&infantry),
+            g.player_can_see(0, target),
+            city.wall_hp < walls || city.hp < 200,
+        )
+    };
+    assert_eq!(run(false), (false, false, false), "no cavalry, no volley");
+    assert_eq!(run(true), (true, true, true), "spotted and bombed");
+}
+
+/// Live King civvis-20261005T084952Z (game 114) turn 196: Curitiba at walls 0,
+/// city 1 after "2 sorties with no cavalry in reach"; the bodies within eight
+/// tiles could not advance, and the city stood at 20 the next turn. Under
+/// `air-volley-needs-a-road` a breached city is bombed only when a melee body
+/// can walk to it; standing walls are still worth the volley alone.
+#[test]
+fn a_breached_city_waits_for_a_body_with_a_road_in() {
+    let breached = |gene: bool, walled: bool, boxed: bool| {
+        let (mut g, mut ai, plan, cavalry, _) = fixture();
+        g.remove_unit(cavalry);
+        ai.air_surge = false;
+        ai.enable_air_surge_2();
+        if gene {
+            ai.enable_air_volley_needs_a_road();
+        }
+        let cid = plan.target_city.unwrap();
+        let walls = if walled { 400 } else { 0 };
+        g.cities.get_mut(&cid).unwrap().wall_hp = walls;
+        std::sync::Arc::make_mut(&mut g.observed_city_max_wall_hp).insert(cid, 400);
+        let body = g.spawn_test_unit("infantry", 0, (16, 10));
+        assert!(g.wdist(g.units[&body].pos, (20, 10)) <= AIR_ASSAULT_FOLLOWUP_REACH);
+        // An archer gives the host's sight of the city and is no melee body.
+        g.spawn_test_unit("archer", 0, (18, 10));
+        assert!(g.player_can_see(0, (20, 10)));
+        if boxed {
+            let ring: Vec<_> = g.nbrs((16, 10)).into_iter().collect();
+            for p in ring {
+                g.map.tiles.get_mut(&p).unwrap().terrain = crate::name!("mountain");
+            }
+            assert_eq!(g.route_distance(body, (20, 10), 1), None);
+        }
+        let gate = ai.air_assault_followup_routed(&g, 0, cid, (20, 10));
+        ai.observe_air_assault_frame(BTreeSet::from([(20, 10)]), 2);
+        let start = g.cities[&cid].hp;
+        ai.plan_air_city_assault(&mut g, 0, &plan);
+        (
+            gate,
+            g.cities[&cid].wall_hp < walls || g.cities[&cid].hp < start,
+        )
+    };
+    assert_eq!(
+        breached(true, false, true),
+        (false, false),
+        "no road in: the breach is not re-bombed"
+    );
+    assert_eq!(
+        breached(true, false, false).0,
+        true,
+        "a body that can walk in keeps the volley"
+    );
+    assert_eq!(
+        breached(true, true, true),
+        (true, true),
+        "standing walls are bombed regardless"
+    );
+    assert_eq!(
+        breached(false, false, true),
+        (true, true),
+        "the gene off, eight tiles suffice"
+    );
+}
+
+/// `wounded-taker-finishes-the-breach`: a taker under 30 health but over
+/// `BREACH_TAKER_MIN_HP` after its blow takes a one-health city under the
+/// gene; off, the 30-health bar refuses it. Live Emperor game 242 held
+/// Tüngliyou at walls 0 and one health for four turns with its reserved Pike
+/// and Shot beside it at 29 health.
+#[test]
+fn a_wounded_taker_finishes_a_falling_city_under_the_gene() {
+    let (mut g, _, plan, cavalry, bombers) = fixture();
+    for uid in bombers {
+        g.remove_unit(uid);
+    }
+    let cid = plan.target_city.unwrap();
+    {
+        let city = g.cities.get_mut(&cid).unwrap();
+        city.hp = 1;
+        city.wall_hp = 0;
+    }
+    g.units.get_mut(&cavalry).unwrap().pos = (19, 10);
+    g.units.get_mut(&cavalry).unwrap().hp = 29;
+    let target = (20, 10);
+    let mut after = g.speculative_clone();
+    after
+        .apply(0, &Action::Attack { unit: cavalry, target })
+        .expect("fixture: the blow is legal");
+    assert_eq!(after.cities[&cid].owner, 0, "fixture: the blow takes the city");
+    let hp = after.units[&cavalry].hp;
+    assert!(
+        (BREACH_TAKER_MIN_HP..30).contains(&hp),
+        "fixture: the taker keeps {hp} health, under 30 but over the gene's bar"
+    );
+    let mut off = AdvancedAi::targeting(VictoryTarget::Domination);
+    off.enable_air_surge_2();
+    assert!(off.air_assault_capture(&g, 0, cavalry, cid).is_none(), "off: refused");
+    let mut on = off.clone();
+    on.enable_wounded_taker_finishes_the_breach();
+    assert!(on.air_assault_capture(&g, 0, cavalry, cid).is_some(), "on: taken");
 }

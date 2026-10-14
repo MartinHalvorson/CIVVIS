@@ -22,7 +22,9 @@ unsetopt BG_NICE
 
 # Recover from the same runtime that launched this keeper, not a development
 # checkout that can contain an older follower protocol. The head override is
-# the supervisor's existing runtime selection; an explicit pin still wins.
+# the supervisor's existing runtime selection. A complete explicit pin wins;
+# while a new pin is still building, the complete head runtime keeps the live
+# display available instead of leaving it blank until the next batch.
 MIRROR_RUNTIME_REPO=${CIVVIS_HEAD_REPO:-${0:A:h:h:h}}
 RUNS=${CIVVIS_RUNS:-$HOME/civvis-civ6-runs/control}
 PINFILE=${CIVVIS_PINFILE:-$HOME/.civvis-play-pin}
@@ -85,6 +87,27 @@ expected_repo() {
   fi
 }
 
+runtime_complete() {
+  local repo=$1
+  [[ -d "$repo" && -f "$repo/tools/follow.py" && -x "$repo/target/release/civvis" ]]
+}
+
+follower_runtime() {
+  local wanted
+  wanted=$(expected_repo)
+  if runtime_complete "$wanted"; then
+    print -r -- "$wanted"
+    return 0
+  fi
+  if [[ "$wanted" != "$MIRROR_RUNTIME_REPO" ]] && runtime_complete "$MIRROR_RUNTIME_REPO"; then
+    say "pinned runtime incomplete '$wanted'; using complete head runtime '$MIRROR_RUNTIME_REPO' until it is built"
+    print -r -- "$MIRROR_RUNTIME_REPO"
+    return 0
+  fi
+  say "cannot start follower: incomplete runtime tree '$wanted' (head runtime '$MIRROR_RUNTIME_REPO' is also incomplete)"
+  return 1
+}
+
 find_follower() {
   # [] keeps pgrep from matching its own command line.  The follower is the
   # only process that ends in tools/follow.py; the game and mirror server have
@@ -144,11 +167,7 @@ follow_log_age() {
 
 start_follower() {
   local repo
-  repo=$(expected_repo)
-  if [[ ! -d "$repo" || ! -f "$repo/tools/follow.py" || ! -x "$repo/target/release/civvis" ]]; then
-    say "cannot start follower: incomplete runtime tree '$repo'"
-    return 1
-  fi
+  repo=$(follower_runtime) || return 1
   (
     cd "$repo" || exit 1
     exec /usr/bin/env PYTHONUNBUFFERED=1 python3 -u tools/follow.py

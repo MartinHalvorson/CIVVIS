@@ -49,6 +49,8 @@ mod air_assault;
 mod air_assault_continuation;
 #[path = "civvis_orders/citizen_growth.rs"]
 mod citizen_growth;
+#[path = "civvis_orders/formation_refusals.rs"]
+mod formation_refusals;
 #[path = "civvis_orders/host_move_postconditions.rs"]
 mod host_move_postconditions;
 #[path = "civvis_orders/host_ranged_history.rs"]
@@ -170,6 +172,7 @@ fn civ6_unit_type(name: &civvis::name::Name) -> String {
         "keshig" => "MONGOLIAN_KESHIG",
         "winged_hussar" => "POLISH_HUSSAR",
         "oromo_cavalry" => "ETHIOPIAN_OROMO_CAVALRY",
+        "llanero" => "COLOMBIAN_LLANERO",
         "toa" => "MAORI_TOA",
         "crouching_tiger" => "CHINESE_CROUCHING_TIGER",
         "gaesatae" => "GAUL_GAESATAE",
@@ -181,6 +184,36 @@ fn civ6_unit_type(name: &civvis::name::Name) -> String {
         "rough_rider" => "AMERICAN_ROUGH_RIDER",
         "voi_chien" => "VIETNAMESE_VOI_CHIEN",
         "nihang" => "LAHORE_NIHANG",
+        "mamluk" => "ARABIAN_MAMLUK",
+        "sabum_kibittum" => "BABYLONIAN_SABUM_KIBITTUM",
+        "minas_geraes" => "BRAZILIAN_MINAS_GERAES",
+        "dromon" => "BYZANTINE_DROMON",
+        "mountie" => "CANADA_MOUNTIE",
+        "okihtcitaw" => "CREE_OKIHTCITAW",
+        "viking_longship" => "NORWEGIAN_LONGSHIP",
+        "sea_dog" => "ENGLISH_SEADOG",
+        "redcoat" => "ENGLISH_REDCOAT",
+        "garde_imperiale" => "FRENCH_GARDE_IMPERIALE",
+        "khevsureti" => "GEORGIAN_KHEVSURETI",
+        "u_boat" => "GERMAN_UBOAT",
+        "huszar" => "HUNGARY_HUSZAR",
+        "black_army" => "HUNGARY_BLACK_ARMY",
+        "warakaq" => "INCA_WARAKAQ",
+        "jong" => "INDONESIAN_JONG",
+        "domrey" => "KHMER_DOMREY",
+        "hwacha" => "KOREAN_HWACHA",
+        "hetairoi" => "MACEDONIAN_HETAIROI",
+        "malon_raider" => "MAPUCHE_MALON_RAIDER",
+        "hulche" => "MAYAN_HULCHE",
+        "berserker" => "NORWEGIAN_BERSERKER",
+        "barbary_corsair" => "OTTOMAN_BARBARY_CORSAIR",
+        "janissary" => "SULEIMAN_JANISSARY",
+        "immortal" => "PERSIAN_IMMORTAL",
+        "highlander" => "SCOTTISH_HIGHLANDER",
+        "conquistador" => "SPANISH_CONQUISTADOR",
+        "carolean" => "SWEDEN_CAROLEAN",
+        "impi" => "ZULU_IMPI",
+        "p51_mustang" => "AMERICAN_P51",
         "anti_air_gun" => "ANTIAIR_GUN",
         other => return format!("UNIT_{}", other.to_ascii_uppercase()),
     };
@@ -929,6 +962,61 @@ fn district_strike_source(verb: &str) -> Option<(i32, i32)> {
     Some((x.parse().ok()?, y.parse().ok()?))
 }
 
+/// The aircraft the decider has already sent on a sortie this turn, replayed
+/// onto every board built for the turn.
+///
+/// ★★★ THE REPLAN FRAME ORDERED THE SAME BOMBER AGAIN. An air attack resolves
+/// after the frame that ordered it is exported, so the next frame's export can
+/// still read the aircraft as unspent, and the board plans a second sortie the
+/// host then refuses (`range_attack_refused`, `can_start=false`). Live King
+/// 20260930T211803Z and 225143Z: 171 of 267 refused strikes were aircraft, 86
+/// of them a bomber that had already flown that turn, and each repeat earns
+/// the order a refusal strike toward `HostOrderRefusals`' ten-turn hold on
+/// that exact bomber and target. A sortie the host refused this turn (it is in
+/// `Game::blocked_strikes`) did not spend the aircraft and is left alone.
+#[derive(Default)]
+struct HostAirStrikes {
+    turn: Option<u32>,
+    sorties: std::collections::BTreeSet<(i64, (i32, i32))>,
+}
+
+impl HostAirStrikes {
+    /// Remember the sorties that left for the host on this frame.
+    fn observe(&mut self, turn: u32, orders: &[IssuedOrder]) {
+        if self.turn != Some(turn) {
+            self.turn = Some(turn);
+            self.sorties.clear();
+        }
+        for order in orders {
+            if order.kind == "unit" && order.verb.as_deref() == Some("AIR_ATTACK") {
+                if let (Some(subject), Some(pos)) = (order.subject, order.pos) {
+                    self.sorties.insert((subject, pos));
+                }
+            }
+        }
+    }
+
+    /// Spend, on a board built for `turn`, the aircraft that already flew.
+    fn apply(&self, mirror: &mut civvis::mirror::LiveMirror, turn: u32) {
+        if self.turn != Some(turn) {
+            return;
+        }
+        for &(host, (x, y)) in &self.sorties {
+            let Some(&uid) = mirror.uid_of.get(&host) else {
+                continue;
+            };
+            let target = civvis::hex::offset_to_axial(x, y);
+            if mirror.game.blocked_strikes.contains(&(uid, target)) {
+                continue;
+            }
+            if let Some(unit) = mirror.game.units.get_mut(&uid) {
+                unit.attacks_left = 0;
+                unit.moves_left = 0.0;
+            }
+        }
+    }
+}
+
 /// Plots the host will not walk a unit onto, learned from moves that went
 /// nowhere.
 ///
@@ -1404,6 +1492,9 @@ struct RefusalRecord {
 #[derive(Default)]
 struct HostOrderRefusals {
     seen: std::collections::BTreeMap<OrderIdentity, RefusalRecord>,
+    /// The turn of each order's latest failure, cleared when it is
+    /// verified. See `formation_refusals`.
+    failed_on: std::collections::BTreeMap<OrderIdentity, u32>,
     war_permissions: std::collections::BTreeMap<i64, bool>,
     typed_war_permissions: std::collections::BTreeMap<(i64, String), bool>,
 }
@@ -1465,15 +1556,32 @@ impl HostOrderRefusals {
                 // history: this order works.
                 Verdict::Verified => {
                     self.seen.remove(&identity);
+                    self.failed_on.remove(&identity);
                 }
                 Verdict::Failed(reason) => {
+                    // One strike per order a turn for a city, governor or
+                    // diplomacy order: a replan frame re-sends the same order,
+                    // and its refusal is the same answer again, not another
+                    // turn of it. Counting frames struck an order out inside
+                    // one turn -- live King civvis-20261005T141932Z (game 135)
+                    // sent Victor's post in three frames of turn 142 and could
+                    // not send it again until 152. A unit's order keeps a
+                    // strike per check: a plane strikes once a turn, so a
+                    // refused strike re-sent in the same turn is futile
+                    // (`air_pillage_tests`), and a move's same-turn replays are
+                    // already suppressed upstream.
+                    let struck_this_turn =
+                        check.order.kind != "unit" && self.failed_on.get(&identity) == Some(&turn);
+                    self.failed_on.insert(identity.clone(), turn);
                     let record = self.seen.entry(identity).or_insert(RefusalRecord {
                         strikes: 0,
                         reason: reason.clone(),
                         until: None,
                     });
                     if record.reason == *reason {
-                        record.strikes += 1;
+                        if !struck_this_turn {
+                            record.strikes += 1;
+                        }
                     } else {
                         // A different answer is a different problem. The host
                         // is not standing on one refusal, so the count starts
@@ -1508,6 +1616,8 @@ impl HostOrderRefusals {
     fn sweep(&mut self, turn: u32) {
         self.seen
             .retain(|_, record| record.until.is_none_or(|until| turn < until));
+        self.failed_on
+            .retain(|_, failed| turn.saturating_sub(*failed) < ORDER_REFUSAL_COOLDOWN_TURNS);
     }
 }
 
@@ -1623,7 +1733,35 @@ fn defer_host_peace_retries(
 /// receiver lacks is how an accepted order becomes a silent no-op.
 #[cfg(test)]
 fn coalesce_unit_paths(orders: Vec<Order>, sequenced: bool) -> (Vec<Order>, usize, usize) {
-    coalesce_unit_paths_except(orders, sequenced, &Default::default())
+    coalesce_unit_paths_except(orders, sequenced, &Default::default(), &Default::default())
+}
+
+/// The centre tiles of every city we are at war with, in Civilization VI
+/// offset coordinates (the coordinates `Order::pos` carries).
+///
+/// ★★★★ A WALK THAT TAKES A CITY ENDS THERE. Live King 20261004T100903Z
+/// (G52), turn 191: the Siege of Mashhad left the city at 0 health behind
+/// fallen walls, CIVVIS moved its Helicopter in ("taken by the helicopter"),
+/// then the battle planner rotated the wounded Helicopter (77 hp) out to heal.
+/// `coalesce_unit_paths_except` folded the step INTO the city and the step OUT
+/// of it into one `MOVE_TO` to the healing tile, so the host flew the
+/// Helicopter past Mashhad and the city healed. Persia's capital stayed
+/// Persian.
+fn capture_tiles(state: &civvis::mirror::StateSnapshot) -> std::collections::BTreeSet<(i32, i32)> {
+    state
+        .rivals
+        .iter()
+        .filter(|rival| rival.at_war)
+        .flat_map(|rival| rival.cities.iter())
+        .chain(
+            state
+                .minors
+                .iter()
+                .filter(|minor| minor.at_war)
+                .flat_map(|minor| minor.cities.iter()),
+        )
+        .map(|city| (city.x, city.y))
+        .collect()
 }
 
 /// A wounded military unit near a known enemy must follow the planner's safe
@@ -1699,10 +1837,218 @@ fn wounded_local_routes(state: &civvis::mirror::StateSnapshot) -> std::collectio
 #[path = "civvis_orders/city_route_tests.rs"]
 mod city_route_tests;
 
+/// `own-column-is-not-a-refusal`: an order that moves its unit off its tile.
+fn moves_its_unit(order: &Order) -> bool {
+    order.kind == "unit" && matches!(order.verb.as_deref(), Some("MOVE_TO" | "CAPTURE" | "SWAP"))
+}
+
+/// `own-column-is-not-a-refusal`: which of the units this frame's plan moved
+/// had a move order cross to Firaxis (`sent`), and which were withheld by an
+/// outbound filter (`unsent`). Mirror ids, the planner's own.
+fn split_planned_movers<'a>(
+    orders: &[Order],
+    planned: impl Iterator<Item = (usize, &'a Action)>,
+    civ6_of: &std::collections::BTreeMap<u32, i64>,
+) -> (std::collections::BTreeSet<u32>, std::collections::BTreeSet<u32>) {
+    let moved: std::collections::BTreeSet<i64> = orders
+        .iter()
+        .filter(|order| moves_its_unit(order))
+        .filter_map(|order| order.subject)
+        .collect();
+    planned
+        .filter(|(seat, _)| *seat == 0)
+        .filter_map(|(_, action)| match action {
+            Action::Move { unit, .. } | Action::MoveTo { unit, .. } | Action::Swap { unit, .. } => {
+                Some(*unit)
+            }
+            _ => None,
+        })
+        .collect::<std::collections::BTreeSet<u32>>()
+        .into_iter()
+        .partition(|uid| civ6_of.get(uid).is_some_and(|civ6| moved.contains(civ6)))
+}
+
+/// `own-column-is-not-a-refusal`: each unit's opening walk as the planner
+/// stepped it, before `coalesce_unit_paths_except` folds it into its last
+/// hex -- every `MOVE_TO` from the unit's first order until anything else.
+fn open_walk_steps(orders: &[Order]) -> std::collections::BTreeMap<i64, Vec<(i32, i32)>> {
+    let mut walks: std::collections::BTreeMap<i64, (bool, Vec<(i32, i32)>)> =
+        std::collections::BTreeMap::new();
+    for order in orders.iter().filter(|order| order.kind == "unit") {
+        let Some(subject) = order.subject else {
+            continue;
+        };
+        let step = (order.verb.as_deref() == Some("MOVE_TO")).then_some(order.pos).flatten();
+        let (open, steps) = walks.entry(subject).or_insert((true, Vec::new()));
+        match step {
+            Some(pos) if *open => steps.push(pos),
+            _ => *open = false,
+        }
+    }
+    walks
+        .into_iter()
+        .filter(|(_, (_, steps))| steps.len() >= 2)
+        .map(|(subject, (_, steps))| (subject, steps))
+        .collect()
+}
+
+/// `own-column-is-not-a-refusal`: a folded walk that ends on a hex another of
+/// our units holds is cut back to the last hex of the same walk that is free.
+///
+/// Firaxis checks stacking where a move ENDS. The planning board walked the
+/// column mate off that hex first, but the host may take the two orders the
+/// other way round, and then the whole walk is refused (`move_no_path`) and
+/// the unit loses the turn -- a column marching onto a staging ring stalls
+/// on its own back. `held(subject, hex, index)` answers whether the hex holds,
+/// at the frame's start, another of our units on the subject's stacking layer
+/// that does not move off before the order at `index`. Returns how many walks
+/// were cut back.
+fn retarget_friendly_held_walks(
+    orders: &mut [Order],
+    walk_steps: &std::collections::BTreeMap<i64, Vec<(i32, i32)>>,
+    held: impl Fn(i64, (i32, i32), usize) -> bool,
+) -> usize {
+    let mut retargeted = 0;
+    for (index, order) in orders.iter_mut().enumerate() {
+        if order.kind != "unit" || order.verb.as_deref() != Some("MOVE_TO") {
+            continue;
+        }
+        let (Some(subject), Some(end)) = (order.subject, order.pos) else {
+            continue;
+        };
+        let Some(steps) = walk_steps.get(&subject) else {
+            continue;
+        };
+        if steps.last() != Some(&end) || !held(subject, end, index) {
+            continue;
+        }
+        let free = steps[..steps.len() - 1]
+            .iter()
+            .rev()
+            .find(|hex| !held(subject, **hex, index));
+        if let Some(free) = free {
+            order.pos = Some(*free);
+            retargeted += 1;
+        }
+    }
+    retargeted
+}
+
+/// [`retarget_friendly_held_walks`] against the frame's authoritative board:
+/// our units where the host last exported them, and the order index at which
+/// each first moves off its hex.
+fn retarget_friendly_held_walks_on_board(
+    orders: &mut [Order],
+    walk_steps: &std::collections::BTreeMap<i64, Vec<(i32, i32)>>,
+    mirror_state: &civvis::mirror::LiveMirror,
+) -> usize {
+    let game = &mirror_state.game;
+    let mirror_of: std::collections::HashMap<i64, u32> = mirror_state
+        .civ6_of
+        .iter()
+        .map(|(mirror, civ6)| (*civ6, *mirror))
+        .collect();
+    let mut standing: std::collections::HashMap<(i32, i32), Vec<u32>> =
+        std::collections::HashMap::new();
+    for (uid, unit) in game.units.iter().filter(|(_, unit)| unit.owner == 0) {
+        standing
+            .entry(civvis::hex::axial_to_offset(unit.pos.0, unit.pos.1))
+            .or_default()
+            .push(*uid);
+    }
+    let mut leaves_at: std::collections::HashMap<i64, usize> = std::collections::HashMap::new();
+    for (index, order) in orders.iter().enumerate() {
+        if let (true, Some(subject)) = (moves_its_unit(order), order.subject) {
+            leaves_at.entry(subject).or_insert(index);
+        }
+    }
+    let held = |subject: i64, hex: (i32, i32), index: usize| {
+        let Some(me) = mirror_of.get(&subject) else {
+            return false;
+        };
+        let here = game
+            .units
+            .get(me)
+            .map(|unit| civvis::hex::axial_to_offset(unit.pos.0, unit.pos.1));
+        if here == Some(hex) {
+            // Its own hex: cutting a walk back to it is no walk at all.
+            return true;
+        }
+        standing.get(&hex).is_some_and(|ids| {
+            ids.iter().any(|other| {
+                other != me
+                    && game.units_share_stacking_layer(*me, *other)
+                    && !mirror_state
+                        .civ6_of
+                        .get(other)
+                        .and_then(|civ6| leaves_at.get(civ6))
+                        .is_some_and(|at| *at < index)
+            })
+        })
+    };
+    retarget_friendly_held_walks(orders, walk_steps, held)
+}
+
+#[cfg(test)]
+#[path = "civvis_orders/own_column_tests.rs"]
+mod own_column_tests;
+
+#[cfg(test)]
+#[path = "civvis_orders/ranged_before_melee_tests.rs"]
+mod ranged_before_melee_tests;
+
+/// `ranged-before-melee`: within one frame's orders, a unit's RANGE_ATTACK on
+/// a tile moves ahead of the first melee ATTACK on that tile that precedes it,
+/// so the shot softens the target and the blow finishes it. 20 of 23
+/// strike_frame_timeouts measured on October 5 were shots at a target a melee
+/// blow earlier in the frame had already killed: live King
+/// civvis-20261005T091120Z, turn 20, a Warrior killed the Horse Archer and the
+/// Slinger's queued shot at it was dropped. A shot moves only when every
+/// earlier order of its own unit already stands before the melee blow, so no
+/// unit's own sequence changes. Returns how many shots moved.
+fn ranged_before_melee(orders: &mut Vec<Order>) -> usize {
+    let mut moved = 0;
+    let mut index = 0;
+    while index < orders.len() {
+        let is_shot = orders[index].kind == "unit"
+            && orders[index].verb.as_deref() == Some("RANGE_ATTACK")
+            && orders[index].pos.is_some();
+        if !is_shot {
+            index += 1;
+            continue;
+        }
+        let target = orders[index].pos;
+        let shooter = orders[index].subject;
+        let first_blow = orders[..index].iter().position(|order| {
+            order.kind == "unit"
+                && order.verb.as_deref() == Some("ATTACK")
+                && order.pos == target
+                && order.subject != shooter
+        });
+        let Some(blow) = first_blow else {
+            index += 1;
+            continue;
+        };
+        let own_after_blow = orders[blow..index]
+            .iter()
+            .any(|order| order.kind == "unit" && order.subject == shooter);
+        if own_after_blow {
+            index += 1;
+            continue;
+        }
+        let shot = orders.remove(index);
+        orders.insert(blow, shot);
+        moved += 1;
+        index += 1;
+    }
+    moved
+}
+
 fn coalesce_unit_paths_except(
     orders: Vec<Order>,
     sequenced: bool,
     local_routes: &std::collections::BTreeSet<i64>,
+    capture_tiles: &std::collections::BTreeSet<(i32, i32)>,
 ) -> (Vec<Order>, usize, usize) {
     // Per unit: where its kept order sits in `out`, and whether that order is still
     // an open walk (every order for the unit so far has been a MOVE_TO).
@@ -1731,9 +2077,12 @@ fn coalesce_unit_paths_except(
             continue;
         };
         let is_step = order.verb.as_deref() == Some("MOVE_TO") && order.pos.is_some();
+        // A step onto an enemy city takes it; whatever the unit does next
+        // must happen after the host has moved it in. See `capture_tiles`.
+        let takes_city = is_step && order.pos.is_some_and(|pos| capture_tiles.contains(&pos));
         match kept.get_mut(&subject) {
             None => {
-                kept.insert(subject, (out.len(), is_step));
+                kept.insert(subject, (out.len(), is_step && !takes_city));
                 out.push(order);
             }
             Some((index, open)) => {
@@ -1741,6 +2090,9 @@ fn coalesce_unit_paths_except(
                     // The walk continues: the host only needs its last hex.
                     out[*index].pos = order.pos;
                     coalesced += 1;
+                    if takes_city {
+                        *open = false;
+                    }
                 } else if sequenced {
                     // The mod queues this behind the unit's earlier orders and
                     // issues it once they have settled. A move after an act is
@@ -2170,6 +2522,26 @@ const BORDER_BUY_CEILING_MAX: i32 = 180;
 const BORDER_BUY_CADENCE: u32 = 6;
 const BORDER_BUY_PHASE: u32 = 1;
 const BORDER_BUY_EXPLORER_APPROACH: i32 = 4;
+/// `siege-buys-the-passage`: the Gold a siege's passage is worth to the
+/// purchase, under `BORDER_BUY_CEILING_MAX`; a train held short of closed
+/// borders for 4-37 turns costs more than this in lost turns.
+const SIEGE_PASSAGE_GOLD: f64 = 150.0;
+/// `siege-buys-the-passage`: the explorer count a siege's blocker is ranked
+/// at, so its passage comes before any exploration gate.
+const SIEGE_PASSAGE_PRIORITY: usize = 1_000;
+
+/// `siege-buys-the-passage`: rank each major whose closed borders hold a
+/// siege march ahead of every exploration gate, whether or not an explorer
+/// stands by it.
+fn add_siege_passage_targets(
+    targets: &mut std::collections::BTreeMap<usize, BorderExplorationPriority>,
+    blockers: &std::collections::BTreeSet<usize>,
+) {
+    for seat in blockers {
+        let priority = targets.entry(*seat).or_default();
+        priority.explorers = priority.explorers.max(SIEGE_PASSAGE_PRIORITY);
+    }
+}
 const BORDER_BUY_FRONTIER_RADIUS: i32 = 5;
 
 /// The evidence that one rival's closed border is a useful exploration gate.
@@ -2346,14 +2718,22 @@ fn append_border_buy_order(
                 std::cmp::Reverse(rival.player),
             )
         });
-    let Some((seat, rival, _, _)) = worst else {
+    let Some((seat, rival, _, priority)) = worst else {
         return Some(if has_sealable_border {
             "border_buy_hold:no_exploration_need"
         } else {
             "border_buy_hold:no_seal"
         });
     };
-    if state.turn % BORDER_BUY_CADENCE != BORDER_BUY_PHASE {
+    // `siege-buys-the-passage`: a siege's passage is asked on any turn; the
+    // mod's own retry cooldown still meters re-asks. A train holds short of
+    // closed borders a median 4.5 turns, under the six-turn cadence: live
+    // Emperor civvis-20261007T074538Z held short of Macedon's borders turns
+    // 177-180, and the one phase turn in that run came when the treasury
+    // read 60.
+    if priority.explorers < SIEGE_PASSAGE_PRIORITY
+        && state.turn % BORDER_BUY_CADENCE != BORDER_BUY_PHASE
+    {
         return Some("border_buy_hold:cadence");
     }
     // The host refuses the agreement item itself without Early Empire on both
@@ -2553,6 +2933,431 @@ fn append_luxury_buy_order(
     None
 }
 
+// ★★★★ THE SPARE COPY, SWAPPED FOR A LUXURY THE SEAT LACKS
+// (`luxury-swap-asks`). From turn 75 on, 56% of the live seat's city-turns
+// ran Displeased (31 Emperor games of 2026-10-08, 20,432 city-turns) — the
+// host's own 10% off every non-food yield and 15% off growth, 6.2% of all
+// production from turn 75 to 150 — and 84% of those cities were exactly ONE
+// Amenity short, which one more luxury type (+1 in four cities) closes. At
+// turn 100 the median empire held 4 types and 2 spare copies, its peaceful
+// rivals offered 4 types it lacked, and 26 of 32 games had both a spare and
+// an offer. Gold alone never bought a copy (`luxury_buy_asks`: 644 asks, every
+// one refused), while the rivals bought our spares for Gold and took luxury
+// spares in barter for Oil (games 351 and 61202Z); so the ask here is copy for
+// copy: the luxury the rival holds most of against one spare copy of ours
+// (two when four or more spares are held), through the strategic barter's
+// shape on the agent's buy arm (`LUXURY_ANY;RESOURCE_A=a,...`), Gold topping
+// up to what a copy is worth and the treasury carries. In the luxury slot of
+// the deal week, at the rival the turn rotates to among those at peace that
+// offer a type we lack, with no deal already heading their way and no
+// denunciation either way inside `LUXURY_SWAP_DENOUNCE_TURNS`.
+//
+// Version two (`luxury-swap-asks-2`), from 22 live Immortal games on
+// 455f438ca: version one closed 36 of 119 asks and every close added a type,
+// but a rival whose land holds the spare we put up closed 2 of 32 against 34
+// of 87 otherwise (the rival's own tradeable list never names it, so only
+// the board can tell), and 25 of the 32 had another partner or spare that
+// fit; 28 luxury slots with a spare and an offer sat one Amenity short,
+// under the two-short gate, while 55 of the 87 short cities at turn 150 were
+// exactly one short. So version two asks from one Amenity short, and
+// only of a partner whose mirrored board (`lacks`) holds none of one of our
+// spares, offering those spares; with no such partner it holds.
+const LUXURY_SWAP_MIN_DEFICIT: f64 = 2.0;
+const LUXURY_SWAP_2_MIN_DEFICIT: f64 = 1.0;
+const LUXURY_SWAP_SECOND_COPY_SPARES: f64 = 4.0;
+const LUXURY_SWAP_DENOUNCE_TURNS: i64 = 30;
+
+/// `lacks` (`luxury-swap-asks-2`, `None` for version one): whether the rival
+/// with this host player id holds no copy of the luxury, as the host names
+/// it, on its mirrored board; `None` when the board cannot say.
+fn append_luxury_swap_order(
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+    lacks: Option<&dyn Fn(i64, &str) -> Option<bool>>,
+) -> Option<&'static str> {
+    let min_deficit = if lacks.is_some() {
+        LUXURY_SWAP_2_MIN_DEFICIT
+    } else {
+        LUXURY_SWAP_MIN_DEFICIT
+    };
+    if amenity_deficit(state) < min_deficit {
+        return Some("luxury_swap_hold:content");
+    }
+    if state.turn % LUXURY_BUY_CADENCE != LUXURY_BUY_PHASE {
+        return Some("luxury_swap_hold:cadence");
+    }
+    let Some(counts) = state.luxury_counts.as_ref() else {
+        return Some("luxury_swap_hold:counts_unknown");
+    };
+    // What another sale already gives this turn stays off our side.
+    let selling: std::collections::BTreeSet<&str> = orders
+        .iter()
+        .filter(|order| order.kind == "sell")
+        .filter_map(|order| order.verb.as_deref())
+        .flat_map(|verb| verb.split([',', ';']))
+        .filter_map(|part| part.split_once('=').map(|(name, _)| name))
+        .collect();
+    let mut spares: Vec<(&str, f64)> = counts
+        .iter()
+        .filter(|(name, _)| !selling.contains(name.as_str()))
+        .map(|(name, count)| (name.as_str(), (count.floor() - 1.0).max(0.0)))
+        .filter(|(_, spare)| *spare >= 1.0)
+        .collect();
+    if spares.is_empty() {
+        return Some("luxury_swap_hold:no_spare");
+    }
+    spares.sort_by(|left, right| {
+        right
+            .1
+            .partial_cmp(&left.1)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| left.0.cmp(right.0))
+    });
+    let held: f64 = spares.iter().map(|(_, spare)| spare).sum();
+    // One copy of the first spare offered; two copies once four or more are
+    // held: one each of the first two, or two of a lone type that has them.
+    let give = |offered: &[(&str, f64)]| {
+        if held < LUXURY_SWAP_SECOND_COPY_SPARES {
+            format!("{}=1", offered[0].0)
+        } else if offered.len() > 1 {
+            format!("{}=1,{}=1", offered[0].0, offered[1].0)
+        } else if offered[0].1 >= 2.0 {
+            format!("{}=2", offered[0].0)
+        } else {
+            format!("{}=1", offered[0].0)
+        }
+    };
+    let recent = |turn: Option<i64>| {
+        turn.is_some_and(|at| at >= 0 && i64::from(state.turn) - at < LUXURY_SWAP_DENOUNCE_TURNS)
+    };
+    let mut partners: Vec<&civvis::mirror::StateRival> = state
+        .rivals
+        .iter()
+        .filter(|rival| !rival.at_war)
+        .filter(|rival| {
+            rival
+                .tradeable_luxuries
+                .as_ref()
+                .is_some_and(|luxuries| !luxuries.is_empty())
+        })
+        .filter(|rival| !recent(rival.our_denounce_turn) && !recent(rival.their_denounce_turn))
+        .filter(|rival| {
+            !orders.iter().any(|order| {
+                (order.kind == "sell" || order.kind == "buy")
+                    && order.subject == Some(rival.player as i64)
+            })
+        })
+        .collect();
+    if partners.is_empty() {
+        return Some("luxury_swap_hold:no_partner");
+    }
+    partners.sort_by_key(|rival| rival.player);
+    let week = (state.turn / LUXURY_BUY_CADENCE) as usize;
+    let (partner, given) = match lacks {
+        None => (partners[week % partners.len()], give(&spares)),
+        Some(lacks) => {
+            // Each partner with the spares its board holds none of, a known
+            // lack before one the board cannot read, most copies first.
+            let fitted: Vec<(&civvis::mirror::StateRival, Vec<(&str, f64)>)> = partners
+                .iter()
+                .filter_map(|rival| {
+                    let mut fit: Vec<(&str, f64, bool)> = spares
+                        .iter()
+                        .filter_map(|(name, spare)| match lacks(rival.player as i64, name) {
+                            Some(false) => None,
+                            known => Some((*name, *spare, known.is_some())),
+                        })
+                        .collect();
+                    fit.sort_by_key(|(_, _, known)| !*known);
+                    (!fit.is_empty()).then(|| {
+                        (
+                            *rival,
+                            fit.into_iter()
+                                .map(|(name, spare, _)| (name, spare))
+                                .collect(),
+                        )
+                    })
+                })
+                .collect();
+            if fitted.is_empty() {
+                return Some("luxury_swap_hold:no_fit");
+            }
+            let (partner, fit) = &fitted[week % fitted.len()];
+            (*partner, give(fit))
+        }
+    };
+    let income = state
+        .gold_per_turn
+        .filter(|income| income.is_finite())
+        .unwrap_or(0.0);
+    let carried = (state.gold - LUXURY_BUY_GOLD_RESERVE).max(0)
+        + (25.0 * (income - LUXURY_BUY_INCOME_FLOOR)).floor().max(0.0) as i64;
+    let worth = LUXURY_BUY_CEILING_BASE
+        + LUXURY_BUY_CEILING_PER_CITY * state.cities.len().min(i32::MAX as usize) as i32;
+    let ceiling = carried
+        .min(i64::from(worth.min(LUXURY_BUY_CEILING_MAX)))
+        .max(0) as i32;
+    orders.push(Order {
+        kind: "buy",
+        subject: Some(partner.player as i64),
+        verb: Some(format!("LUXURY_ANY;{given}")),
+        pos: Some((ceiling, 0)),
+    });
+    None
+}
+
+// ★★★★★ THE GUN'S RESOURCE, BOUGHT WHERE A RIVAL OFFERS IT
+// (`siege-buys-the-gun-resource`). Live Emperor civvis-20261007T111017Z (game
+// 343) held Angkor Thom's 400 walls at turns 176-177 at a Trebuchet's 2.3 a
+// shot, Steel and Military Science researched and no Niter or Oil tile owned,
+// while the Zulu offered 82 Niter on their trade screen and Arabia 70. At turn
+// 150 of 101 Emperor runs of October 6-7, 92 lacked Niter or Oil and 53 had a
+// met rival offering one; -d8 read 22% of 1,000 walled infinite siege-turns
+// as resource-blocked (Oil 13%, Niter 9%), the tech-best gun hitting a median
+// 9.4 a shot against 4.1 for the buildable best. The rival's offer is the
+// export's `tradeable_strategics`; what the campaign's guns want, and how
+// much, is `AdvancedAi::siege_gun_resource_wants` (the Bombard's Niter sized
+// to the guns its blow needs, 20 a gun; the Artillery's Oil with ten turns of
+// upkeep, renewed when the fielded guns' fuel runs low).
+//
+// The order asks the seller's own price with EQUALIZE for `RESOURCE_X=N`, a
+// lump from their side, and the Lua arm closes only at or under the ceiling
+// carried in `x`. The price is the engine's own book for the block
+// (`Game::strategic_gold_value`). Gold alone rarely meets it: -d8 read a
+// median 115 Gold in the treasury on the Niter-blocked turns of 10-06/07 and
+// 118 on the Oil-blocked, none at the 641 a gun's 20 Niter books at and 3-10%
+// at 300. So our side BARTERS first (`RESOURCE_X=N;RESOURCE_A=a,...`): spare
+// luxury copies, then strategics held above our units' needs
+// (`AdvancedAi::siege_barter_spares`), each valued at what it is worth to the
+// seller by the same book (`Game::resource_gold_value`), until the block's
+// price is met; the rest is Gold, never more than the treasury and the income
+// carry at the 25× book with a reserve and a floor kept clear, and that is the
+// ceiling. The full lot goes when our side covers it, else one gun's worth;
+// otherwise the ask waits. Nothing the guns hold, nothing another sale gives
+// this turn, and never a luxury's last copy goes on our side.
+// Cadence-gated in the free slots of the deal week (phase 2 of 3: turns 2 and
+// 5 of 6, clear of the passage at 1, the favor sale at 3 and the luxury at 4),
+// the largest offer first among the majors at peace with no deal already
+// heading their way.
+const GUN_RESOURCE_BUY_CADENCE: u32 = 3;
+const GUN_RESOURCE_BUY_PHASE: u32 = 2;
+const GUN_RESOURCE_BUY_GOLD_RESERVE: i64 = 60;
+const GUN_RESOURCE_BUY_INCOME_FLOOR: f64 = 4.0;
+const GUN_RESOURCE_BUY_CEILING_MIN: i32 = 30;
+const GUN_RESOURCE_BUY_CEILING_MAX: i32 = 900;
+/// `aluminum-ask-tops-up-gold`: the Gold a unit of the air wing's Aluminum
+/// ask may cost on top of its barter, the most the host's counter is let to
+/// ask (`aluminum_ask_ceiling`).
+const ALUMINUM_ASK_GOLD_PER_UNIT: i64 = 8;
+
+/// `aluminum-ask-tops-up-gold`: the Gold ceiling an Aluminum buy order
+/// carries, or `None` when `order` is not one or its ceiling already stands
+/// at or above the top-up. The order's Gold is the ceiling the Lua ask
+/// registers: the host's counter (`EQUALIZE`) may add our Gold to the deal up
+/// to it, and the answer closes only at or under it. The top-up is
+/// [`ALUMINUM_ASK_GOLD_PER_UNIT`] a unit asked, never more than the treasury
+/// above `floor`. Over 10-13/14 every Aluminum ask carried a ceiling of 0 and
+/// 7 of 91 answered closed, against 38% of luxury swaps.
+fn aluminum_ask_ceiling(order: &Order, gold: i64, floor: i64) -> Option<i32> {
+    if order.kind != "buy" {
+        return None;
+    }
+    let verb = order.verb.as_deref()?;
+    let amount: i64 = verb
+        .strip_prefix("RESOURCE_ALUMINUM=")?
+        .split(';')
+        .next()?
+        .parse()
+        .ok()?;
+    let current = i64::from(order.pos.map_or(0, |(gold, _)| gold));
+    let ceiling = (ALUMINUM_ASK_GOLD_PER_UNIT * amount)
+        .min((gold - floor).max(0))
+        .min(i64::from(GUN_RESOURCE_BUY_CEILING_MAX));
+    (ceiling > current).then_some(ceiling as i32)
+}
+
+/// `siege-buys-the-gun-resource`: drop every sale that would give away a
+/// strategic in `held` (`AdvancedAi::siege_gun_resources_held`, host names)
+/// — the planner's surplus sale (`sale_verb`, `RESOURCE_X=N`, alone or in a
+/// bundle) reads a bought block as surplus. Returns how many were dropped.
+fn drop_held_resource_sales(
+    held: &std::collections::BTreeSet<String>,
+    orders: &mut Vec<Order>,
+) -> usize {
+    if held.is_empty() {
+        return 0;
+    }
+    let before = orders.len();
+    orders.retain(|order| {
+        order.kind != "sell"
+            || !order.verb.as_deref().is_some_and(|verb| {
+                verb.split(',')
+                    .filter_map(|part| part.split_once('='))
+                    .any(|(name, _)| held.contains(name))
+            })
+    });
+    before - orders.len()
+}
+
+/// Why no strategic-purchase order was appended this turn, for the note;
+/// `None` when one was. `wants` is `AdvancedAi::siege_gun_resource_wants`,
+/// strongest gun first; `spares` is `AdvancedAi::siege_barter_spares`,
+/// luxuries first; `worth` prices a block of a resource (its CIVVIS id) to us
+/// by the engine's own book, and `give_worth` what `amount` of one of ours is
+/// worth to the host player `seller` by the same book.
+fn append_gun_resource_buy_order(
+    wants: &[civvis::ai::GunResourceWant],
+    spares: &[civvis::ai::BarterSpare],
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+    worth: &dyn Fn(&str, u32) -> f64,
+    give_worth: &dyn Fn(i64, &str, u32) -> f64,
+) -> Option<&'static str> {
+    if wants.is_empty() {
+        return Some("gun_resource_buy_hold:no_need");
+    }
+    if state.turn % GUN_RESOURCE_BUY_CADENCE != GUN_RESOURCE_BUY_PHASE {
+        return Some("gun_resource_buy_hold:cadence");
+    }
+    let income = state
+        .gold_per_turn
+        .filter(|income| income.is_finite())
+        .unwrap_or(0.0);
+    let carried = (state.gold - GUN_RESOURCE_BUY_GOLD_RESERVE).max(0)
+        + (25.0 * (income - GUN_RESOURCE_BUY_INCOME_FLOOR))
+            .floor()
+            .max(0.0) as i64;
+    let affordable = carried.min(GUN_RESOURCE_BUY_CEILING_MAX as i64) as i32;
+    // What another sale already gives this turn stays off our side.
+    let selling: std::collections::BTreeSet<&str> = orders
+        .iter()
+        .filter(|order| order.kind == "sell")
+        .filter_map(|order| order.verb.as_deref())
+        .flat_map(|verb| verb.split(','))
+        .filter_map(|part| part.split_once('=').map(|(name, _)| name))
+        .collect();
+    let mut busy = false;
+    let mut dear = false;
+    for want in wants {
+        let offered = |rival: &civvis::mirror::StateRival| {
+            rival
+                .tradeable_strategics
+                .as_ref()
+                .and_then(|offers| offers.get(&want.resource))
+                .copied()
+                .filter(|offer| *offer >= i64::from(want.minimum.max(1)))
+        };
+        let in_flight = |rival: &civvis::mirror::StateRival| {
+            orders.iter().any(|order| {
+                (order.kind == "sell" || order.kind == "buy")
+                    && order.subject == Some(rival.player as i64)
+            })
+        };
+        let sellers: Vec<_> = state
+            .rivals
+            .iter()
+            .filter(|rival| !rival.at_war)
+            .filter_map(|rival| offered(rival).map(|offer| (rival, offer)))
+            .collect();
+        busy |= sellers.iter().any(|(rival, _)| in_flight(rival));
+        let Some((seller, offer)) = sellers
+            .into_iter()
+            .filter(|(rival, _)| !in_flight(rival))
+            .max_by_key(|(rival, offer)| (*offer, std::cmp::Reverse(rival.player)))
+        else {
+            continue;
+        };
+        let full = want.amount.min(offer.clamp(0, i64::from(u32::MAX)) as u32);
+        let mut lots = vec![full];
+        if want.minimum < full {
+            lots.push(want.minimum);
+        }
+        for amount in lots {
+            let price = worth(&want.resource_id, amount);
+            if !(price.is_finite() && price > 0.0) {
+                // No book for the block: Gold alone, at what the treasury
+                // carries.
+                if affordable < GUN_RESOURCE_BUY_CEILING_MIN {
+                    continue;
+                }
+                orders.push(Order {
+                    kind: "buy",
+                    subject: Some(seller.player as i64),
+                    verb: Some(format!("{}={amount}", want.resource)),
+                    pos: Some((affordable, 0)),
+                });
+                return None;
+            }
+            let seller_id = seller.player as i64;
+            let mut covered = 0.0;
+            let mut given: Vec<String> = Vec::new();
+            for spare in spares {
+                if covered >= price {
+                    break;
+                }
+                if spare.resource == want.resource || selling.contains(spare.resource.as_str()) {
+                    continue;
+                }
+                // A luxury goes only above the host's own count of it, which
+                // nets out copies a deal has traded away: the board counts
+                // the tiles, and live game 354 priced the Turtles and Marble
+                // it had sold to Kongo into seven Oil asks the agent's
+                // last-copy guard refused unproposed. An older export with
+                // no count keeps the board's reading.
+                if spare.luxury
+                    && state.luxury_counts.as_ref().is_some_and(|counts| {
+                        counts.get(&spare.resource).copied().unwrap_or(0.0) < 2.0
+                    })
+                {
+                    continue;
+                }
+                let remaining = price - covered;
+                let count = if spare.luxury {
+                    1
+                } else {
+                    (1..=spare.amount)
+                        .find(|count| {
+                            give_worth(seller_id, &spare.resource_id, *count) >= remaining
+                        })
+                        .unwrap_or(spare.amount)
+                };
+                let value = give_worth(seller_id, &spare.resource_id, count);
+                if count == 0 || !(value.is_finite() && value > 0.0) {
+                    continue;
+                }
+                covered += value;
+                given.push(format!("{}={count}", spare.resource));
+            }
+            let gold = (price - covered).max(0.0).ceil();
+            if gold > f64::from(affordable)
+                || (given.is_empty() && gold < f64::from(GUN_RESOURCE_BUY_CEILING_MIN))
+            {
+                continue;
+            }
+            let verb = if given.is_empty() {
+                format!("{}={amount}", want.resource)
+            } else {
+                format!("{}={amount};{}", want.resource, given.join(","))
+            };
+            orders.push(Order {
+                kind: "buy",
+                subject: Some(seller_id),
+                verb: Some(verb),
+                pos: Some((gold as i32, 0)),
+            });
+            return None;
+        }
+        dear = true;
+    }
+    Some(if dear {
+        "gun_resource_buy_hold:treasury"
+    } else if busy {
+        "gun_resource_buy_hold:deal_in_flight"
+    } else {
+        "gun_resource_buy_hold:no_seller"
+    })
+}
+
 // ★★★★★ THE FAVOR BANK, SPENT ON THE PLAN THAT IS ACTUALLY RUNNING. Diplomatic
 // favor is votes at the World Congress and nothing else; on the live seat the
 // bank has read 200–420 at the end of every game measured, and the 2026-08-18
@@ -2572,6 +3377,33 @@ const FAVOR_SALE_MAX: f64 = 150.0;
 const FAVOR_SALE_CADENCE: u32 = 6;
 const FAVOR_SALE_PHASE: u32 = 3;
 const FAVOR_BUYER_DVP_MAX: i64 = 12;
+/// The Diplomatic Victory points at which any met rival makes the bank votes
+/// again: from then on no favor sells, ours or the planner's.
+///
+/// ★★★ THE VOTES REGISTER NOW, AND THE BANK WAS BEING SOLD. The note on
+/// [`plan_keeps_favor`] records a host that never honoured a purchased vote;
+/// the congress budget (`CivvisCongressVoteBudget` in the agent) has since
+/// cast them. Live King civvis-20261005T030607Z (game 95): "deny" ballots cast
+/// 3 votes against the Zulu for 112 favor at turn 181 and 40 at 201, and the
+/// Zulu went 16 -> 15 and 17 -> 15 DVP across those sessions. The bank was at
+/// 0 by 210 (grievances drain it), the turn 221 ballot could cast only free
+/// votes, and the Zulu took +5 at 222 and won. Between turns 87 and 177 this
+/// sale had sold sixteen blocks, about 600 favor, some of it to England, who
+/// finished on 16 DVP. Four is a fifth of the win, reached around the middle
+/// of a game: from then on the favor is the vote against the leader.
+const FAVOR_HOLD_DVP: i64 = 4;
+
+/// Whether the bank is held for the World Congress: a met rival has reached
+/// [`FAVOR_HOLD_DVP`]. `CIVVIS_SELL_IDLE_FAVOR=1` restores the old sale.
+fn favor_banked_for_votes(state: &civvis::mirror::StateSnapshot) -> bool {
+    let sell_anyway = std::env::var("CIVVIS_SELL_IDLE_FAVOR")
+        .is_ok_and(|value| !value.is_empty() && value != "0");
+    !sell_anyway
+        && state
+            .rivals
+            .iter()
+            .any(|rival| rival.dvp.unwrap_or(0) >= FAVOR_HOLD_DVP)
+}
 /// ★ Until 2026-08-24 the floor was a flat Gold a point; the engine's own
 /// book (`Game::favor_gold_value`, `1.1 + 0.14·era + 0.07·dvp`) says 1.7–3.0
 /// over a game, and the caller now passes it. Kept as the floor of floors.
@@ -2604,12 +3436,17 @@ fn plan_keeps_favor(plan: Option<(&str, Option<&str>)>) -> bool {
     plan.is_none()
 }
 
-/// Drop the planner's own favor sales when the plan means to cast that favor.
+/// Drop the planner's own favor sales when the plan means to cast that favor,
+/// or once a rival's DVP makes the bank votes ([`favor_banked_for_votes`]).
 /// `Game::quick_deals` quotes a ten-favor block to any partner two DVP richer,
-/// plan-blind; on a Diplomacy plan those ten points are two votes at the next
-/// session. Returns how many orders were held back.
-fn hold_planner_favor_sales(plan: Option<(&str, Option<&str>)>, orders: &mut Vec<Order>) -> usize {
-    if !plan_keeps_favor(plan) {
+/// plan-blind — a sale to a rival nearer the win than we are. Returns how many
+/// orders were held back.
+fn hold_planner_favor_sales(
+    plan: Option<(&str, Option<&str>)>,
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+) -> usize {
+    if !plan_keeps_favor(plan) && !favor_banked_for_votes(state) {
         return 0;
     }
     let before = orders.len();
@@ -2619,6 +3456,32 @@ fn hold_planner_favor_sales(plan: Option<(&str, Option<&str>)>, orders: &mut Vec
                 .verb
                 .as_deref()
                 .is_some_and(|verb| verb.contains("FAVOR=")))
+    });
+    before - orders.len()
+}
+
+/// Drop the deal offers aimed at a rival this batch also declares war on or
+/// offers peace to. Every deal, war and peace opens the same per-rival
+/// diplomacy session, and the host refuses a second request while one is
+/// open. Live King civvis-20261003T060034Z, turn 112: `sell
+/// RESOURCE_AMBER=1` to Phoenicia went first, the declaration's request found
+/// the session busy ("Requested Session but already had one open" in
+/// DiplomacyManager.csv), no war happened, and the refusal cooldown held the
+/// campaign at peace with the rival it was countering. Returns how many
+/// offers were dropped.
+fn drop_deals_beside_war_or_peace(orders: &mut Vec<Order>) -> usize {
+    let contested: std::collections::BTreeSet<i64> = orders
+        .iter()
+        .filter(|order| matches!(order.kind, "war" | "peace"))
+        .filter_map(|order| order.subject)
+        .collect();
+    if contested.is_empty() {
+        return 0;
+    }
+    let before = orders.len();
+    orders.retain(|order| {
+        !(matches!(order.kind, "sell" | "buy")
+            && order.subject.is_some_and(|subject| contested.contains(&subject)))
     });
     before - orders.len()
 }
@@ -2635,6 +3498,9 @@ fn append_favor_sale_order(
     // stood here is gone with it — it could never be reached past this line.
     if plan.is_none() {
         return Some("favor_hold:no_plan");
+    }
+    if favor_banked_for_votes(state) {
+        return Some("favor_hold:contender");
     }
     if state.turn % FAVOR_SALE_CADENCE != FAVOR_SALE_PHASE {
         return Some("favor_hold:cadence");
@@ -2688,6 +3554,104 @@ fn append_favor_sale_order(
         subject: Some(buyer.player as i64),
         verb: Some(format!("FAVOR={amount}")),
         pos: Some(((amount as f64 * per_point).ceil() as i32, 0)),
+    });
+    None
+}
+
+// ★★★ FAVOR BOUGHT BEFORE THE SESSION THAT DECIDES THE GAME
+// (`favor-bought-before-congress`, opt-in). A bought World Congress vote is
+// cheap on this host — the ballot's cumulative ladder reads 4, 12, 24, 40, 60
+// and 84 Favor for two to seven votes — and the Diplomatic Victory is won and
+// denied a single vote at a time: live King civvis-20261005T051413Z (game
+// 102) lost the +2 to the Aztecs 6-5, 5-4 and 4-3 at three sessions running.
+// Yet about half of the Diplomatic losses of October 2-5 met the deciding
+// session at 0-40 Favor while holding 200-1,000 Gold (game 126: 0 Favor from
+// turn 212 to the turn-221 session, 185-341 Gold), and rivals had paid us
+// about 5.5 Gold a point (median of forty favor sales on record). So, while a
+// player stands at `FAVOR_BUY_LEADER_DVP` or more and the next session is at
+// most `FAVOR_BUY_SESSION_TURNS` away, a bank under `FAVOR_BUY_TARGET` asks
+// one peaceful rival for the shortfall, in a block of `FAVOR_BUY_MIN` to
+// `FAVOR_BUY_MAX`, at up to `FAVOR_BUY_PRICE` Gold a point, with
+// `FAVOR_BUY_GOLD_RESERVE` kept back. The highest-DVP rival at peace is asked
+// first: Favor taken from a contender is a vote it no longer casts. The order
+// rides the `buy` arm with `FAVOR=N`; the agent clips the block to the bank
+// the engine says that rival holds and closes only at or under the ceiling.
+const FAVOR_BUY_LEADER_DVP: i64 = 10;
+const FAVOR_BUY_SESSION_TURNS: i64 = 5;
+const FAVOR_BUY_TARGET: f64 = 100.0;
+const FAVOR_BUY_MIN: i32 = 20;
+const FAVOR_BUY_MAX: i32 = 80;
+const FAVOR_BUY_PRICE: f64 = 8.0;
+const FAVOR_BUY_GOLD_RESERVE: i64 = 100;
+
+/// Why no favor purchase order was appended this turn, for the note; `None`
+/// when one was. Nothing with the gene off.
+fn append_favor_buy_order(
+    enabled: bool,
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+) -> Option<&'static str> {
+    if !enabled {
+        return Some("favor_buy_hold:gene");
+    }
+    let top_dvp = state
+        .rivals
+        .iter()
+        .filter_map(|rival| rival.dvp)
+        .chain(state.dvp)
+        .max()
+        .unwrap_or(0);
+    if top_dvp < FAVOR_BUY_LEADER_DVP {
+        return Some("favor_buy_hold:no_contender");
+    }
+    let Some(turns_left) = state.congress_turns_left else {
+        return Some("favor_buy_hold:session_unknown");
+    };
+    if !(0..=FAVOR_BUY_SESSION_TURNS).contains(&turns_left) {
+        return Some("favor_buy_hold:session_far");
+    }
+    let Some(favor) = state.favor.filter(|favor| favor.is_finite()) else {
+        return Some("favor_buy_hold:unknown");
+    };
+    let shortfall = (FAVOR_BUY_TARGET - favor).floor() as i32;
+    if shortfall < FAVOR_BUY_MIN {
+        return Some("favor_buy_hold:banked");
+    }
+    // A sale of ours this turn (`CIVVIS_SELL_IDLE_FAVOR`) is never bought
+    // back in the same batch.
+    if orders.iter().any(|order| {
+        order.kind == "sell"
+            && order
+                .verb
+                .as_deref()
+                .is_some_and(|verb| verb.contains("FAVOR="))
+    }) {
+        return Some("favor_buy_hold:selling");
+    }
+    let affordable =
+        ((state.gold - FAVOR_BUY_GOLD_RESERVE).max(0) as f64 / FAVOR_BUY_PRICE).floor() as i32;
+    let amount = shortfall.min(FAVOR_BUY_MAX).min(affordable);
+    if amount < FAVOR_BUY_MIN {
+        return Some("favor_buy_hold:treasury");
+    }
+    let seller = state
+        .rivals
+        .iter()
+        .filter(|rival| !rival.at_war)
+        .filter(|rival| {
+            !orders.iter().any(|order| {
+                matches!(order.kind, "sell" | "buy") && order.subject == Some(rival.player as i64)
+            })
+        })
+        .max_by_key(|rival| (rival.dvp.unwrap_or(0), std::cmp::Reverse(rival.player)));
+    let Some(seller) = seller else {
+        return Some("favor_buy_hold:no_seller");
+    };
+    orders.push(Order {
+        kind: "buy",
+        subject: Some(seller.player as i64),
+        verb: Some(format!("FAVOR={amount}")),
+        pos: Some(((amount as f64 * FAVOR_BUY_PRICE).floor() as i32, 0)),
     });
     None
 }
@@ -3814,6 +4778,13 @@ fn decide(
         eprintln!("civvis-orders: {why}");
         std::process::exit(2);
     }
+    // `unseen-capital-is-unseen`: the board's capital and founder facts are
+    // the host's by now; the seat's city memory, taken earlier in the
+    // rebuild, still crowns each rival's first planted city. Re-take it
+    // before anything plans on it. See `mirror::refresh_city_memory`.
+    if ai.unseen_capital_is_unseen() {
+        civvis::mirror::refresh_city_memory(&mut mirror_state.game);
+    }
     let emergency_wall_adoptions = adopt_emergency_wall_production(ours, state);
     let (production_hints_consumed, production_hints_expired) =
         settle_deferred_production_hints(ours, state);
@@ -3825,6 +4796,7 @@ fn decide(
     // board shown to the next decision is never a mixture of one real game and one
     // speculative CIVVIS turn.
     let mut planned_game = mirror_state.game.clone();
+    ai.observe_air_surge_city_owners(&mirror_state.game);
     // Firaxis keeps a Trader visible while it is travelling an active route;
     // CIVVIS's native model consumes it into `game.routes`.  The authoritative
     // mirror carries both so the map remains faithful.  Remove only the busy
@@ -3833,6 +4805,9 @@ fn decide(
     remove_active_route_traders_from_plan(&mut planned_game, mirror_state);
     let released = release_foreign_production(&mut planned_game, &mirror_state.cid_of, state, ours);
     let before = planned_game.log.len();
+    // `own-column-is-not-a-refusal`: the movement memory before this frame is
+    // planned, handed back once its orders are final. `None` with the gene off.
+    let own_column_before = ai.host_frame_movement();
     // ★★★★ BEFORE THE VOLLEY. See `AdvancedAi::observe_turn_start_hostiles`:
     // the volley below removes wounded raiders from the planning board, and
     // a settler stepping afterwards must keep pricing them — the host has
@@ -3846,6 +4821,11 @@ fn decide(
         host_order_refusals,
     );
     air_assault::observe(ai, snapshot, state);
+    ai.set_refused_combinations(formation_refusals::refused_pairs(
+        &mirror_state.civ6_of,
+        state.turn,
+        host_order_refusals,
+    ));
     let (war_finishers, ai_actions_begin, air_assault_resumed) =
         air_assault_continuation.plan_frame(ai, &mut planned_game, state, &mirror_state.civ6_of);
     // Finishing attacks are translated explicitly below, including the reserve
@@ -4120,7 +5100,7 @@ fn decide(
     let plan_facts = plan
         .as_ref()
         .map(|report| (report.strategy, report.victory_target));
-    let held_favor_sales = hold_planner_favor_sales(plan_facts, &mut orders);
+    let held_favor_sales = hold_planner_favor_sales(plan_facts, state, &mut orders);
     if held_favor_sales > 0 {
         note_bits.push(format!(
             "favor_hold:planner_sales_dropped={held_favor_sales}"
@@ -4132,18 +5112,60 @@ fn decide(
         Some(why) => {
             // Only the holds worth a glance in the ledger: a bank sitting on
             // a plan that would sell it, with nobody to sell to.
-            if why == "favor_hold:no_buyer" {
+            if why == "favor_hold:no_buyer" || why == "favor_hold:contender" {
                 note_bits.push(why.to_string());
             }
         }
     }
-    let passage_value = |_seat: usize| mirror_state.game.passage_gold_value(0);
-    let exploration_targets = border_buy_exploration_targets(
+    match append_favor_buy_order(
+        ai.favor_bought_before_congress_enabled(),
+        state,
+        &mut orders,
+    ) {
+        None => note_bits.push("favor_buy=1".to_string()),
+        Some(why) => {
+            // The holds worth a glance: a session at hand and a bank short of
+            // it, with the treasury or the sellers missing.
+            if why == "favor_buy_hold:treasury" || why == "favor_buy_hold:no_seller" {
+                note_bits.push(why.to_string());
+            }
+        }
+    }
+    // `find-the-capital`: passage to a rival whose needed original capital
+    // we have never seen is worth more than the tourism book (28 Gold for a
+    // seat with no tourism, under the lane's 30 Gold minimum ask). See
+    // `AdvancedAi::find_the_capital_passage_gold`.
+    // `siege-buys-the-passage`: the majors whose closed borders hold a
+    // siege march this turn or last. See `AdvancedAi::siege_passage_blockers`.
+    let siege_blockers = ai.siege_passage_blockers(&mirror_state.game, 0);
+    let passage_value = |seat: usize| {
+        let book = mirror_state.game.passage_gold_value(0);
+        let book = if siege_blockers.contains(&seat) {
+            book.max(SIEGE_PASSAGE_GOLD)
+        } else {
+            book
+        };
+        ai.find_the_capital_passage_gold(&mirror_state.game, 0, seat)
+            .map_or(book, |floor| book.max(floor))
+    };
+    let mut exploration_targets = border_buy_exploration_targets(
         snapshot,
         state,
         &mirror_state.game,
         &mirror_state.game.sealed_border_owners,
     );
+    add_siege_passage_targets(&mut exploration_targets, &siege_blockers);
+    // `unseen-capital-is-unseen`: the lane asks one rival a cadence, the one
+    // with the most explorers at its border, and a rival the book prices
+    // under the 30 Gold minimum ask can only ever hold. Keep the rivals it
+    // would ask, so a rival whose capital we have never seen is not starved
+    // by one whose capital we know: G120134Z t121 held on Babylon's 28 Gold
+    // book with 314 Gold in the bank while France, the culture winner, was
+    // never seen.
+    if ai.unseen_capital_is_unseen() {
+        exploration_targets
+            .retain(|seat, _| passage_value(*seat) >= BORDER_BUY_CEILING_MIN as f64);
+    }
     match append_border_buy_order(
         &mirror_state.game.sealed_border_owners,
         &exploration_targets,
@@ -4161,7 +5183,105 @@ fn decide(
             }
         }
     }
-    match append_luxury_buy_order(state, &mut orders) {
+    // `siege-buys-the-gun-resource`: the Niter or Oil the campaign's better
+    // siege gun waits on, bought from a met major's trade screen. See
+    // `append_gun_resource_buy_order`.
+    if ai.siege_buys_the_gun_resource_enabled() {
+        let wants = ai.siege_gun_resource_wants(&mirror_state.game, 0);
+        let held = ai.siege_gun_resources_held(&mirror_state.game, 0, &wants);
+        let kept = drop_held_resource_sales(&held, &mut orders);
+        if kept > 0 {
+            note_bits.push(format!("gun_resource_sale_held={kept}"));
+        }
+        let spares = ai.siege_barter_spares(&mirror_state.game, 0, &held);
+        let worth = |resource: &str, amount: u32| {
+            mirror_state.game.strategic_gold_value(0, resource, amount)
+        };
+        // A barter item at what it is worth to the seller's mirrored seat;
+        // nothing when the seat cannot be named.
+        let give_worth = |seller: i64, resource: &str, amount: u32| {
+            (1..mirror_state.game.players.len())
+                .find(|seat| host_player_target(mirror_state, state, *seat) == Some(seller))
+                .map_or(0.0, |seat| {
+                    mirror_state
+                        .game
+                        .resource_gold_value(seat, resource, amount)
+                })
+        };
+        match append_gun_resource_buy_order(
+            &wants,
+            &spares,
+            state,
+            &mut orders,
+            &worth,
+            &give_worth,
+        ) {
+            None => {
+                note_bits.push("gun_resource_buy=1".to_string());
+                // `aluminum-ask-tops-up-gold`: let the host's counter price
+                // the Aluminum block in Gold, up to the ceiling journalled
+                // here; the deal events carry the ceiling and the outcome.
+                if ai.aluminum_ask_tops_up_gold_enabled() {
+                    let floor = (ai
+                        .purchase_upkeep_floor_reading(&mirror_state.game, 0)
+                        .ceil() as i64)
+                        .max(GUN_RESOURCE_BUY_GOLD_RESERVE);
+                    if let Some(order) = orders.last_mut() {
+                        if let Some(ceiling) = aluminum_ask_ceiling(order, state.gold, floor) {
+                            order.pos = Some((ceiling, 0));
+                            note_bits.push(format!("aluminum_ask_ceiling={ceiling}"));
+                        }
+                    }
+                }
+            }
+            Some(why) => {
+                // The holds worth a glance: a gun waiting on its resource
+                // while the treasury, the sellers or their working deals
+                // stand in the way.
+                if why != "gun_resource_buy_hold:no_need" && why != "gun_resource_buy_hold:cadence"
+                {
+                    note_bits.push(why.to_string());
+                }
+            }
+        }
+    }
+    // `luxury-buy-asks`: no rival has ever priced a luxury for us -- 644
+    // EQUALIZE asks of October 4-5, every answer a refusal with nothing on our
+    // side (364 of them to rivals we had not denounced) -- while each ask held
+    // the rival's one working deal and the trade cooldown the sales share.
+    // `luxury-swap-asks`: a spare copy for a luxury the seat lacks, ahead of
+    // the Gold-only ask on the same slot.
+    // `luxury-swap-asks-2` fits the spare to the partner by the board: the
+    // rival's seat holds no copy of it.
+    if ai.luxury_swap_asks_enabled() || ai.luxury_swap_asks_2_enabled() {
+        let lacks = |seller: i64, resource: &str| {
+            let id = resource.strip_prefix("RESOURCE_")?.to_ascii_lowercase();
+            mirror_state.game.rules.resources.get(id.as_str())?;
+            (1..mirror_state.game.players.len())
+                .find(|seat| host_player_target(mirror_state, state, *seat) == Some(seller))
+                .map(|seat| mirror_state.game.resource_access_count(seat, &id) == 0)
+        };
+        let fit = ai
+            .luxury_swap_asks_2_enabled()
+            .then_some(&lacks as &dyn Fn(i64, &str) -> Option<bool>);
+        match append_luxury_swap_order(state, &mut orders, fit) {
+            None => note_bits.push("luxury_swap=1".to_string()),
+            Some(why) => {
+                if why == "luxury_swap_hold:no_spare"
+                    || why == "luxury_swap_hold:no_partner"
+                    || why == "luxury_swap_hold:no_fit"
+                {
+                    note_bits.push(why.to_string());
+                }
+            }
+        }
+    }
+    let luxury_buy = if ai.luxury_buy_asks_enabled() {
+        append_luxury_buy_order(state, &mut orders)
+    } else {
+        Some("luxury_buy_hold:gene")
+    };
+    match luxury_buy {
         None => note_bits.push("luxury_buy=1".to_string()),
         Some(why) => {
             // The holds worth a glance: an amenity deficit standing on the
@@ -4298,13 +5418,19 @@ fn decide(
                 if rival.at_war && !already {
                     let routed = report.peace_routed.contains(seat);
                     let cap = peace_tribute_cap(state, routed);
+                    // `peace-asks-a-city`: `y` 1 asks the agent to add the
+                    // rival's nearest cedable town to the first ask.
+                    let ask_city = !routed && report.peace_asks_city.contains(seat);
                     orders.push(Order {
                         kind: "peace",
                         subject: Some(subject),
                         verb: Some("MAKE_PEACE".to_string()),
-                        pos: Some((cap, 0)),
+                        pos: Some((cap, i32::from(ask_city))),
                     });
                     note_bits.push(format!("peace_from_plan={}", rival.player));
+                    if ask_city {
+                        note_bits.push(format!("peace_city_ask={}", rival.player));
+                    }
                     if cap > 0 {
                         note_bits.push(format!("peace_tribute_cap={cap}"));
                     }
@@ -4334,50 +5460,6 @@ fn decide(
         .is_none()
         .then(|| planned_suzerain_peace_envoy_reclaim(&orders, state))
         .flatten();
-
-    let (host_legal, deferred_peace_retries) =
-        defer_host_peace_retries(orders, state, host_peace_retries);
-    orders = host_legal;
-    if let Some((target, needed)) = envoy_reclaim {
-        let submitted = orders
-            .iter()
-            .any(|order| order.kind == "peace" && order.subject == Some(target));
-        if submitted {
-            let deferred = reserve_envoys_for_submitted_reclaim(
-                &mut orders,
-                target,
-                state.envoys_free.unwrap_or_default(),
-                needed,
-            );
-            note_bits.push(format!(
-                "envoy_reclaim_peace={target} needed={needed} deferred_envoys={deferred}"
-            ));
-        }
-    } else if let Some((suzerain, minor, needed)) = suzerain_envoy_reclaim {
-        let submitted = orders
-            .iter()
-            .any(|order| order.kind == "peace" && order.subject == Some(suzerain));
-        if submitted {
-            let deferred = reserve_envoys_for_submitted_reclaim(
-                &mut orders,
-                minor,
-                state.envoys_free.unwrap_or_default(),
-                needed,
-            );
-            note_bits.push(format!(
-                "envoy_suzerain_reclaim_peace={suzerain} minor={minor} needed={needed} \
-                 deferred_envoys={deferred}"
-            ));
-        }
-    }
-    if !deferred_peace_retries.is_empty() {
-        let targets = deferred_peace_retries
-            .iter()
-            .map(ToString::to_string)
-            .collect::<Vec<_>>()
-            .join(",");
-        note_bits.push(format!("peace_host_cooldown=[{targets}]"));
-    }
 
     let (activation_safe, deferred_activation_plot_conflicts) =
         defer_great_person_plot_conflicts(orders, state);
@@ -4426,14 +5508,31 @@ fn decide(
     if !local_routes.is_empty() {
         note_bits.push(format!("wounded_local_routes={}", local_routes.len()));
     }
+    let walk_steps = if ai.own_column_is_not_a_refusal_enabled() {
+        open_walk_steps(&orders)
+    } else {
+        std::collections::BTreeMap::new()
+    };
     let (causally_safe, deferred_unit_followups, coalesced_path_steps) =
-        coalesce_unit_paths_except(orders, sequenced, &local_routes);
+        coalesce_unit_paths_except(orders, sequenced, &local_routes, &capture_tiles(state));
     orders = causally_safe;
     if coalesced_path_steps > 0 {
         note_bits.push(format!("coalesced_path_steps={coalesced_path_steps}"));
     }
+    if !walk_steps.is_empty() {
+        let retargeted = retarget_friendly_held_walks_on_board(&mut orders, &walk_steps, mirror_state);
+        if retargeted > 0 {
+            note_bits.push(format!("own_column_retargeted={retargeted}"));
+        }
+    }
     if deferred_unit_followups > 0 {
         note_bits.push(format!("deferred_unit_followups={deferred_unit_followups}"));
+    }
+    if ai.ranged_before_melee_enabled() {
+        let moved = ranged_before_melee(&mut orders);
+        if moved > 0 {
+            note_bits.push(format!("ranged_before_melee={moved}"));
+        }
     }
     if sequenced {
         // How many orders now ride the mod's per-unit queue instead of waiting
@@ -4510,6 +5609,58 @@ fn decide(
                 mirror_state.game.players[0].envoys_free
             ));
         }
+    }
+
+    // Record a host peace retry only after the air-assault observation barrier
+    // and the other outbound filters have settled. A planned offer deferred
+    // before a sortie was never submitted, so it cannot start Firaxis's
+    // five-turn retry clock or reserve Envoys for a peace that did not happen.
+    let (host_legal, deferred_peace_retries) =
+        defer_host_peace_retries(orders, state, host_peace_retries);
+    orders = host_legal;
+    let session_conflicts = drop_deals_beside_war_or_peace(&mut orders);
+    if session_conflicts > 0 {
+        note_bits.push(format!("deals_dropped_for_war_or_peace={session_conflicts}"));
+    }
+    if let Some((target, needed)) = envoy_reclaim {
+        let submitted = orders
+            .iter()
+            .any(|order| order.kind == "peace" && order.subject == Some(target));
+        if submitted {
+            let deferred = reserve_envoys_for_submitted_reclaim(
+                &mut orders,
+                target,
+                state.envoys_free.unwrap_or_default(),
+                needed,
+            );
+            note_bits.push(format!(
+                "envoy_reclaim_peace={target} needed={needed} deferred_envoys={deferred}"
+            ));
+        }
+    } else if let Some((suzerain, minor, needed)) = suzerain_envoy_reclaim {
+        let submitted = orders
+            .iter()
+            .any(|order| order.kind == "peace" && order.subject == Some(suzerain));
+        if submitted {
+            let deferred = reserve_envoys_for_submitted_reclaim(
+                &mut orders,
+                minor,
+                state.envoys_free.unwrap_or_default(),
+                needed,
+            );
+            note_bits.push(format!(
+                "envoy_suzerain_reclaim_peace={suzerain} minor={minor} needed={needed} \
+                 deferred_envoys={deferred}"
+            ));
+        }
+    }
+    if !deferred_peace_retries.is_empty() {
+        let targets = deferred_peace_retries
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join(",");
+        note_bits.push(format!("peace_host_cooldown=[{targets}]"));
     }
 
     if !mirror_state.unmapped.is_empty() {
@@ -4666,6 +5817,39 @@ fn decide(
             verb: Some("DOOMED_BLOW_VETO".to_string()),
             pos: None,
         });
+    }
+    // A leader statement is answered by the AutoClose layer, often before this
+    // frame's orders land, so every batch renews a one-turn lease there.
+    if ai.dialogue_never_declares_war_enabled() {
+        orders.push(Order {
+            kind: "combat_policy",
+            subject: None,
+            verb: Some("DIALOGUE_NEVER_DECLARES_WAR".to_string()),
+            pos: None,
+        });
+    }
+    // `congress-guards-the-leader`: the agent's ballot reads the lease when
+    // a World Congress session opens, often before this frame's orders land,
+    // so every batch renews it.
+    if ai.congress_guards_the_leader_enabled() {
+        orders.push(Order {
+            kind: "combat_policy",
+            subject: None,
+            verb: Some("CONGRESS_GUARDS_THE_LEADER".to_string()),
+            pos: None,
+        });
+    }
+    if own_column_before.is_some() {
+        let (sent, unsent) = split_planned_movers(
+            &orders,
+            planned_game.log.since(before).map(|(seat, action)| (*seat, action)),
+            &mirror_state.civ6_of,
+        );
+        let rolled_back =
+            ai.note_host_moves(&mirror_state.game, own_column_before, &sent, &unsent);
+        if rolled_back > 0 {
+            note_bits.push(format!("own_column_rolled_back={rolled_back}"));
+        }
     }
     let body = orders
         .iter()
@@ -5113,6 +6297,15 @@ fn translate(
             verb: Some(match improvement.as_str() {
                 "archaeological_dig" | "shipwreck_excavation" => "EXCAVATE".to_string(),
                 "national_park" => "DESIGNATE_PARK".to_string(),
+                // The engine's builder operations (`Game::builder_operations`)
+                // are native unit operations too, not Improvements rows:
+                // `IMPROVE:IMPROVEMENT_CHOP_WOODS` found no row and the host
+                // picked an improvement of its own. Base/Assets/Gameplay/Data/
+                // UnitOperations.xml:35 REMOVE_FEATURE, :23 HARVEST_RESOURCE,
+                // :32 PLANT_FOREST, none with an InterfaceMode.
+                "chop_woods" | "chop_rainforest" | "clear_marsh" => "REMOVE_FEATURE".to_string(),
+                "harvest_resource" => "HARVEST_RESOURCE".to_string(),
+                "plant_woods" => "PLANT_FOREST".to_string(),
                 _ => format!("IMPROVE:{}", civ6_improvement_type(improvement)),
             }),
             pos: None,
@@ -6874,7 +8067,8 @@ fn verify_unit_order(
         // show is the park itself. `EXCAVATE` leaves no improvement at all —
         // it lifts the artifact and clears the site — so it rests on the
         // charge, the unit and the `improved` event.
-        "IMPROVE" | "REPAIR" | "DESIGNATE_PARK" | "EXCAVATE" => {
+        "IMPROVE" | "REPAIR" | "DESIGNATE_PARK" | "EXCAVATE" | "REMOVE_FEATURE"
+        | "HARVEST_RESOURCE" | "PLANT_FOREST" => {
             let charges_spent = match (
                 was.and_then(|u| u.build_charges),
                 now.and_then(|u| u.build_charges),
@@ -6908,8 +8102,15 @@ fn verify_unit_order(
                 Verdict::Failed("no_improvement".to_string())
             }
         }
+        // The host pillages the plot the unit stands on when the order runs.
+        // A raider walks first (`air_surge/raids.rs`: MOVE_TO, then PILLAGE),
+        // so the plot it ends on is as much a witness as the one it started
+        // on; reading only the start plot failed every raid, and three
+        // failures withhold the unit's PILLAGE for ten turns.
         "PILLAGE" => {
-            let pillaged = was.is_some_and(|u| tiles.plot((u.x, u.y)).is_some_and(|plot| plot.p));
+            let pillaged_under =
+                |u: &civvis::mirror::StateUnit| tiles.plot((u.x, u.y)).is_some_and(|plot| plot.p);
+            let pillaged = was.is_some_and(pillaged_under) || now.is_some_and(pillaged_under);
             if pillaged {
                 Verdict::Verified
             } else {
@@ -7182,8 +8383,16 @@ fn verify_order_with_context(
             let appointed = order.kind == "governor_appoint"
                 && governors(after).iter().any(|g| g.kind == verb)
                 && !governors(before).iter().any(|g| g.kind == verb);
+            // A neutralized Governor cannot take a post, so its refusal says
+            // nothing about the order: no strike toward the refusal cooldown.
+            let neutralized = governors(before)
+                .iter()
+                .chain(governors(after).iter())
+                .any(|g| g.kind == verb && g.neutralized_turns > 0);
             if seated || appointed {
                 Verdict::Verified
+            } else if neutralized {
+                Verdict::Unverifiable
             } else if order.kind == "governor_appoint" {
                 failed("not_appointed".to_string())
             } else {
@@ -8353,6 +9562,9 @@ fn main() {
     let fresh_ai = args.iter().any(|a| a == "--fresh-ai");
     let war_from_plan = args.iter().any(|a| a == "--war-from-plan");
     let fresh_board = args.iter().any(|a| a == "--fresh-board");
+    // `CityFireMemory`'s kill switch: the flag or `CIVVIS_NO_CITY_FIRE_MEMORY=1`.
+    let city_fire_memory = !args.iter().any(|a| a == "--no-city-fire-memory")
+        && !civvis::mirror::CityFireMemory::disabled_by_env();
     let arm = DecisionArm {
         war_from_plan,
         forced_on: &forced_on,
@@ -9000,6 +10212,11 @@ fn main() {
             mirror_turns,
             frontier,
         );
+        // One frame has no earlier reading of a fogged city's fire; its
+        // seat's research still floors it. See `CityFireMemory`.
+        if city_fire_memory {
+            civvis::mirror::CityFireMemory::default().apply(&mut live.game);
+        }
         // One-shot: there is no next turn to be self-limiting against, so this starts
         // empty and every foreign choice is released once.
         let mut ours = std::collections::BTreeMap::new();
@@ -9063,9 +10280,13 @@ fn main() {
     // board. It must therefore survive `--fresh-board` just like the peace and
     // treasury handoffs above.
     let mut host_city_attack_cooldowns = HostCityAttackCooldowns::default();
+    // The export reads a rival city's fire only while it is in sight; the
+    // board rebuilt each turn keeps the last reading. See `CityFireMemory`.
+    let mut host_city_fire = civvis::mirror::CityFireMemory::default();
     // A city's strike is once per host turn and the export never says it was
     // spent; the decider's own earlier frames do. See `HostCityStrikes`.
     let mut host_city_strikes = HostCityStrikes::default();
+    let mut host_air_strikes = HostAirStrikes::default();
     let mut host_ranged_history = host_ranged_history::History::default();
     let mut explain_cursor: u64 = 0;
     // What left for the host on each frame, until the next turn's frame answers
@@ -9192,6 +10413,7 @@ fn main() {
                                     &board.game,
                                     &carried,
                                 );
+                                ai.remap_city_memory(&previous_board.game, &board.game, &carried);
                             }
                             ai.remap_unit_memory(&carried);
                         }
@@ -9200,7 +10422,11 @@ fn main() {
                     board.carry_treasury_baseline(carried_treasury);
                     host_ranged_history.observe_and_apply(&mut board, &state);
                     host_city_attack_cooldowns.apply(&mut board);
+                    if city_fire_memory {
+                        host_city_fire.apply(&mut board.game);
+                    }
                     host_city_strikes.apply(&mut board, state.turn);
+                    host_air_strikes.apply(&mut board, state.turn);
                     host_move_refusals.apply(&mut board);
                     let reply = decide(
                         &mut board,
@@ -9231,7 +10457,11 @@ fn main() {
                             );
                             host_ranged_history.observe_and_apply(&mut fresh, &state);
                             host_city_attack_cooldowns.apply(&mut fresh);
+                            if city_fire_memory {
+                                host_city_fire.apply(&mut fresh.game);
+                            }
                             host_city_strikes.apply(&mut fresh, state.turn);
+                            host_air_strikes.apply(&mut fresh, state.turn);
                             host_move_refusals.apply(&mut fresh);
                             let reply = decide(
                                 &mut fresh,
@@ -9254,7 +10484,11 @@ fn main() {
                             existing.sync(&snapshot, &state, frontier);
                             host_ranged_history.observe_and_apply(existing, &state);
                             host_city_attack_cooldowns.apply(existing);
+                            if city_fire_memory {
+                                host_city_fire.apply(&mut existing.game);
+                            }
                             host_city_strikes.apply(existing, state.turn);
+                            host_air_strikes.apply(existing, state.turn);
                             host_move_refusals.apply(existing);
                             // `--fresh-ai` isolates the two halves of persistence: keep the
                             // mirror, throw away the agent. If orders come back, the empty
@@ -9305,6 +10539,7 @@ fn main() {
                 };
                 let orders = IssuedOrder::from_reply(&reply);
                 host_city_strikes.observe(state.turn, &orders);
+                host_air_strikes.observe(state.turn, &orders);
                 pending_orders.push(PendingOrders {
                     turn: state.turn,
                     frame: state.frame,
@@ -10080,6 +11315,35 @@ mod tests {
     }
 
     use super::*;
+
+    /// See `drop_deals_beside_war_or_peace`: a sale to the rival we declare on
+    /// is dropped so the declaration gets the diplomacy session; deals with
+    /// anyone else, and the war itself, stand.
+    #[test]
+    fn a_deal_is_dropped_beside_a_war_or_peace_with_the_same_rival() {
+        let order = |kind: &'static str, subject: i64, verb: &str| Order {
+            kind,
+            subject: Some(subject),
+            verb: Some(verb.to_string()),
+            pos: None,
+        };
+        let mut orders = vec![
+            order("sell", 1, "RESOURCE_AMBER=1"),
+            order("war", 1, "DECLARE_FORMAL_WAR"),
+            order("sell", 2, "FAVOR=20"),
+            order("buy", 3, "LUXURY_ANY"),
+            order("peace", 3, "MAKE_PEACE"),
+        ];
+        assert_eq!(drop_deals_beside_war_or_peace(&mut orders), 2);
+        let left: Vec<(&str, i64)> = orders
+            .iter()
+            .map(|order| (order.kind, order.subject.unwrap()))
+            .collect();
+        assert_eq!(left, vec![("war", 1), ("sell", 2), ("peace", 3)]);
+        let mut quiet = vec![order("sell", 2, "FAVOR=20")];
+        assert_eq!(drop_deals_beside_war_or_peace(&mut quiet), 0);
+        assert_eq!(quiet.len(), 1);
+    }
     use civvis::mirror::{
         Plot, Snapshot, StateActivationPlot, StateCity, StateDistrict, StateEmergency,
         StateEmergencyOurs, StateEmergencyScore, StateGovernor, StateGreatPerson, StateGreatWork,
@@ -10494,6 +11758,53 @@ mod tests {
             envoys, 4,
             "the confirmed peace frame spends the full suzerainty pool: {confirmed}"
         );
+    }
+
+    /// Live King 20260930T211803Z: 86 refused air strikes were a bomber that
+    /// had already flown that turn, re-ordered on a replan frame whose export
+    /// still read it unspent. A sortie the host refused does not spend it.
+    #[test]
+    fn an_aircraft_that_flew_on_an_earlier_frame_is_spent_for_the_turn() {
+        let (snapshot, mut state) = production_board();
+        state.turn = 40;
+        state.units.push(civvis::mirror::StateUnit {
+            id: 4242,
+            kind: "UNIT_BOMBER".to_string(),
+            x: state.cities[0].x,
+            y: state.cities[0].y,
+            hp: 100.0,
+            moves: 10.0,
+            ..civvis::mirror::StateUnit::default()
+        });
+        let sortie = |x, y| IssuedOrder {
+            kind: "unit".to_string(),
+            subject: Some(4242),
+            verb: Some("AIR_ATTACK".to_string()),
+            pos: Some((x, y)),
+        };
+        let spent = |mirror: &civvis::mirror::LiveMirror| {
+            let uid = mirror.uid_of[&4242];
+            let unit = &mirror.game.units[&uid];
+            unit.attacks_left == 0 && unit.moves_left <= 0.0
+        };
+        let mut strikes = HostAirStrikes::default();
+        strikes.observe(40, &[sortie(6, 6)]);
+        let mut replan = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        assert!(!spent(&replan), "precondition: the export reads it fresh");
+        strikes.apply(&mut replan, 40);
+        assert!(spent(&replan), "the frame-0 sortie spent it");
+
+        // The host refused that sortie: the bomber may still fly elsewhere.
+        state.refused_strikes.insert((4242, 6, 6));
+        let mut refused = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        strikes.apply(&mut refused, 40);
+        assert!(!spent(&refused), "a refused sortie spends nothing");
+
+        // The next turn starts fresh.
+        state.refused_strikes.clear();
+        let mut next = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+        strikes.apply(&mut next, 41);
+        assert!(!spent(&next));
     }
 
     /// Run civvis-20260826T184456Z: every one of the 31 refused city strikes
@@ -11066,7 +12377,7 @@ mod tests {
             unit_order(unit, "MOVE_TO", Some((6, 5))),
         ];
         let local = refusals.local_retry.keys().copied().collect();
-        let (orders, _, coalesced) = coalesce_unit_paths_except(retry_steps, true, &local);
+        let (orders, _, coalesced) = coalesce_unit_paths_except(retry_steps, true, &local, &Default::default());
         assert_eq!(coalesced, 0);
         assert_eq!(orders.len(), 2);
         state.frame = 1;
@@ -11940,6 +13251,49 @@ mod tests {
     }
 
     #[test]
+    fn dialogue_never_declares_war_rides_every_bridge_reply_only_when_selected() {
+        let directives = |enable: bool| {
+            let (snapshot, state) = local_barbarian_defense_board();
+            let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 4, 1, 250, 0);
+            let mut ai = victory_lane("domination").unwrap();
+            if enable {
+                ai.enable_dialogue_never_declares_war();
+            }
+            let mut continuation = air_assault_continuation::Continuation::default();
+            let reply: serde_json::Value = serde_json::from_str(&decide(
+                &mut mirror,
+                &mut ai,
+                &snapshot,
+                &state,
+                default_decision_arm(),
+                DecisionMemory {
+                    ours: &mut std::collections::BTreeMap::new(),
+                    host_peace_retries: &mut HostPeaceRetries::default(),
+                    host_move_refusals: &mut HostMoveRefusals::default(),
+                    host_order_refusals: &mut HostOrderRefusals::default(),
+                    air_assault_continuation: &mut continuation,
+                },
+            ))
+            .unwrap();
+            reply["orders"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|order| {
+                    order["kind"] == "combat_policy"
+                        && order["verb"] == "DIALOGUE_NEVER_DECLARES_WAR"
+                })
+                .count()
+        };
+        assert_eq!(directives(false), 0, "off: the reply is unchanged");
+        assert_eq!(
+            directives(true),
+            1,
+            "on: every reply renews the AutoClose lease, strikes or not"
+        );
+    }
+
+    #[test]
     fn finishing_survival_policy_does_not_restore_the_unsafe_wounded_followup() {
         let (snapshot, mut state) = local_barbarian_defense_board();
         state.cities[0].x = 5;
@@ -12644,6 +13998,51 @@ mod tests {
         )
         .expect("the walk crosses");
         assert_eq!(walk.verb.as_deref(), Some("MOVE_TO"));
+    }
+
+    /// A raider walks and then pillages (`air_surge/raids.rs`), so the plot
+    /// it ends the turn on witnesses the PILLAGE as well as the one it
+    /// started on. A still-unpillaged pair of plots is a failure.
+    #[test]
+    fn a_pillage_is_verified_on_the_plot_the_unit_ends_on() {
+        let (_, before) = local_barbarian_defense_board();
+        let order = IssuedOrder {
+            kind: "unit".to_string(),
+            subject: Some(101),
+            verb: Some("PILLAGE".to_string()),
+            pos: None,
+        };
+        let board = |pillaged: Option<(i32, i32)>| {
+            Snapshot::from_chunks(&[TilesChunk {
+                turn: 30,
+                width: 12,
+                height: 12,
+                chunk: 1,
+                plots: (0..12)
+                    .flat_map(|x| (0..12).map(move |y| (x, y)))
+                    .map(|(x, y)| {
+                        serde_json::from_value::<Plot>(serde_json::json!({
+                            "x": x, "y": y, "t": "TERRAIN_GRASS",
+                            "p": pillaged == Some((x, y)),
+                        }))
+                        .expect("a plot with serde defaults deserializes")
+                    })
+                    .collect(),
+            }])
+        };
+        let mut walked = before.clone();
+        let raider = walked.units.iter_mut().find(|unit| unit.id == 101).unwrap();
+        raider.x = 7;
+        raider.y = 5;
+        let verdict = |tiles: &Snapshot| {
+            verify_unit_order(&order, 30, &before, &walked, tiles, &[], LaterFrames::default())
+        };
+        assert!(matches!(verdict(&board(Some((7, 5)))), Verdict::Verified));
+        assert!(matches!(verdict(&board(Some((5, 5)))), Verdict::Verified));
+        assert!(matches!(
+            verdict(&board(None)),
+            Verdict::Failed(reason) if reason == "not_pillaged"
+        ));
     }
 
     /// A capture is verified by the unit standing where the civilian stood,
@@ -13772,6 +15171,11 @@ mod tests {
             ("UNIT_NATURALIST", Some("national_park"), "DESIGNATE_PARK"),
             ("UNIT_ROCK_BAND", None, "TOURISM_BOMB"),
             ("UNIT_BUILDER", Some("farm"), "IMPROVE:IMPROVEMENT_FARM"),
+            ("UNIT_BUILDER", Some("chop_woods"), "REMOVE_FEATURE"),
+            ("UNIT_BUILDER", Some("chop_rainforest"), "REMOVE_FEATURE"),
+            ("UNIT_BUILDER", Some("clear_marsh"), "REMOVE_FEATURE"),
+            ("UNIT_BUILDER", Some("harvest_resource"), "HARVEST_RESOURCE"),
+            ("UNIT_BUILDER", Some("plant_woods"), "PLANT_FOREST"),
         ] {
             let state = StateSnapshot {
                 turn: 156,
@@ -14353,13 +15757,13 @@ mod tests {
                 unit_order(8, "MOVE_TO", Some((21, 8))),
             ]
         };
-        let (orders, deferred, coalesced) = coalesce_unit_paths_except(planned(), true, &local);
+        let (orders, deferred, coalesced) = coalesce_unit_paths_except(planned(), true, &local, &Default::default());
         assert_eq!(deferred, 0);
         assert_eq!(coalesced, 1, "healthy travel still coalesces");
         assert_eq!(orders[0].pos, Some((10, 9)));
         assert_eq!(orders[1].pos, Some((11, 8)));
         assert_eq!(orders[2].verb.as_deref(), Some("FORTIFY"));
-        let (old_host, deferred, _) = coalesce_unit_paths_except(planned(), false, &local);
+        let (old_host, deferred, _) = coalesce_unit_paths_except(planned(), false, &local, &Default::default());
         assert_eq!(deferred, 2);
         assert_eq!(
             old_host
@@ -15438,11 +16842,118 @@ mod tests {
     }
 
     #[test]
+    fn favor_is_bought_before_a_contested_session() {
+        // Game 126 at turn 217: 0 Favor, 249 Gold, the session four turns
+        // out, Sweden at 15 points and at war with us, two rivals at peace.
+        let state = StateSnapshot {
+            turn: 217,
+            favor: Some(0.0),
+            gold: 249,
+            dvp: Some(11),
+            congress_turns_left: Some(4),
+            rivals: vec![
+                StateRival {
+                    player: 2,
+                    dvp: Some(6),
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 3,
+                    dvp: Some(15),
+                    at_war: true,
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 4,
+                    dvp: Some(9),
+                    ..StateRival::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+
+        // The gene off, nothing.
+        let mut orders = Vec::new();
+        assert_eq!(
+            append_favor_buy_order(false, &state, &mut orders),
+            Some("favor_buy_hold:gene")
+        );
+        assert!(orders.is_empty());
+
+        // On: (249 - 100) / 8 = 18 points affordable is under the block
+        // minimum; at 400 Gold, 37 points from the highest-DVP rival at peace.
+        assert_eq!(
+            append_favor_buy_order(true, &state, &mut orders),
+            Some("favor_buy_hold:treasury")
+        );
+        let mut rich = state.clone();
+        rich.gold = 400;
+        assert_eq!(append_favor_buy_order(true, &rich, &mut orders), None);
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].kind, "buy");
+        assert_eq!(orders[0].subject, Some(4), "not the rival at war");
+        assert_eq!(orders[0].verb.as_deref(), Some("FAVOR=37"));
+        assert_eq!(orders[0].pos, Some((296, 0)));
+
+        // A rival with a deal already heading its way is passed over; with
+        // none left, nobody sells.
+        assert_eq!(append_favor_buy_order(true, &rich, &mut orders), None);
+        assert_eq!(orders[1].subject, Some(2));
+        assert_eq!(
+            append_favor_buy_order(true, &rich, &mut orders),
+            Some("favor_buy_hold:no_seller")
+        );
+
+        // A deep treasury buys the block cap, never past the target.
+        let mut deep = rich.clone();
+        deep.gold = 2_000;
+        let mut orders = Vec::new();
+        append_favor_buy_order(true, &deep, &mut orders);
+        assert_eq!(orders[0].verb.as_deref(), Some("FAVOR=80"));
+        deep.favor = Some(70.0);
+        let mut orders = Vec::new();
+        append_favor_buy_order(true, &deep, &mut orders);
+        assert_eq!(orders[0].verb.as_deref(), Some("FAVOR=30"));
+        deep.favor = Some(85.0);
+        assert_eq!(
+            append_favor_buy_order(true, &deep, &mut Vec::new()),
+            Some("favor_buy_hold:banked")
+        );
+
+        // No contender, a far session, or our own sale this turn: nothing.
+        let mut calm = rich.clone();
+        calm.dvp = Some(4);
+        for rival in &mut calm.rivals {
+            rival.dvp = Some(9);
+        }
+        assert_eq!(
+            append_favor_buy_order(true, &calm, &mut Vec::new()),
+            Some("favor_buy_hold:no_contender")
+        );
+        let mut far = rich.clone();
+        far.congress_turns_left = Some(12);
+        assert_eq!(
+            append_favor_buy_order(true, &far, &mut Vec::new()),
+            Some("favor_buy_hold:session_far")
+        );
+        let mut selling = vec![Order {
+            kind: "sell",
+            subject: Some(2),
+            verb: Some("FAVOR=40".to_string()),
+            pos: Some((80, 0)),
+        }];
+        assert_eq!(
+            append_favor_buy_order(true, &rich, &mut selling),
+            Some("favor_buy_hold:selling")
+        );
+    }
+
+    #[test]
     fn idle_favor_sells_on_every_plan_that_reports_one() {
         // The bank the live seat actually holds: 300 favor at t141 with three
         // met rivals — one rich, one richer but two points short of the
         // twenty-point win, one at war with us.
-        let state = StateSnapshot {
+        let contended = StateSnapshot {
             turn: 141,
             favor: Some(300.0),
             rivals: vec![
@@ -15470,15 +16981,43 @@ mod tests {
         };
         let science = Some(("science", None));
 
+        // A rival at 17 DVP makes the whole bank votes: nothing sells, ours
+        // or the planner's. See `FAVOR_HOLD_DVP`.
         let mut orders = Vec::new();
+        assert_eq!(
+            append_favor_sale_order(science, &contended, &mut orders, 2.0),
+            Some("favor_hold:contender")
+        );
+        assert!(orders.is_empty());
+        let mut quoted = vec![Order {
+            kind: "sell",
+            subject: Some(4),
+            verb: Some("FAVOR=10".to_string()),
+            pos: Some((10, 0)),
+        }];
+        assert_eq!(
+            hold_planner_favor_sales(science, &contended, &mut quoted),
+            1
+        );
+        assert!(quoted.is_empty());
+        let mut at_four = contended.clone();
+        at_four.rivals.retain(|rival| rival.player != 4);
+        at_four.rivals[0].dvp = Some(FAVOR_HOLD_DVP);
+        assert_eq!(
+            append_favor_sale_order(science, &at_four, &mut orders, 2.0),
+            Some("favor_hold:contender")
+        );
+
+        // Below it, the surplus sells as before.
+        let mut state = contended.clone();
+        state.rivals.retain(|rival| rival.player != 4);
         assert_eq!(
             append_favor_sale_order(science, &state, &mut orders, 2.0),
             None
         );
         assert_eq!(orders.len(), 1);
         assert_eq!(orders[0].kind, "sell");
-        // Not the richest (Persia at 17 DVP would spend it on the win), not
-        // the one at war: the rich rival at 3 DVP.
+        // Not the one at war: the rich rival at 3 DVP.
         assert_eq!(orders[0].subject, Some(2));
         // 300 − 120 reserve = 180 surplus, capped at one block of 150, at a
         // floor of a gold a point.
@@ -15566,18 +17105,18 @@ mod tests {
                 pos: Some((56, 0)),
             },
         ];
-        assert_eq!(hold_planner_favor_sales(science, &mut planner), 0);
+        assert_eq!(hold_planner_favor_sales(science, &state, &mut planner), 0);
         assert_eq!(planner.len(), 2);
         // The diplomacy plan lets the planner's own quote stand now: those ten
         // points were held as "two votes at the next session", and the next
         // session cannot take them.
         assert_eq!(
-            hold_planner_favor_sales(Some(("diplomacy", None)), &mut planner),
+            hold_planner_favor_sales(Some(("diplomacy", None)), &state, &mut planner),
             0
         );
         assert_eq!(planner.len(), 2);
         // A seat with no plan report still holds: unknown intent is not licence.
-        assert_eq!(hold_planner_favor_sales(None, &mut planner), 1);
+        assert_eq!(hold_planner_favor_sales(None, &state, &mut planner), 1);
         assert_eq!(planner.len(), 1);
         assert_eq!(planner[0].verb.as_deref(), Some("RESOURCE_DYES=1"));
 
@@ -15917,6 +17456,72 @@ mod tests {
             assert_eq!(conflict.len(), 1);
             assert_eq!(conflict[0].kind, kind);
         }
+    }
+
+    #[test]
+    fn a_siege_blocker_passage_is_bought_before_an_exploration_gate() {
+        // `siege-buys-the-passage`: seat 2 has the explorers, seat 1 none, but
+        // seat 1's closed borders hold a siege march, so its passage is asked
+        // first; without the blocker the explorers' seat wins as before.
+        let state = StateSnapshot {
+            turn: 91,
+            gold: 200,
+            civics: vec![
+                "CIVIC_CODE_OF_LAWS".to_string(),
+                "CIVIC_EARLY_EMPIRE".to_string(),
+            ],
+            rivals: vec![
+                StateRival {
+                    player: 2,
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 4,
+                    ..StateRival::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+        let sealed_by: std::collections::BTreeMap<usize, u32> =
+            [(1, 9), (2, 21)].into_iter().collect();
+        let exploration: std::collections::BTreeMap<usize, BorderExplorationPriority> = [(
+            2,
+            BorderExplorationPriority {
+                explorers: 2,
+                frontier_tiles: 1,
+            },
+        )]
+        .into_iter()
+        .collect();
+        let mut plain = Vec::new();
+        assert_eq!(
+            append_border_buy_order(&sealed_by, &exploration, &state, &mut plain, &|_| 40.0),
+            None
+        );
+        assert_eq!(plain[0].subject, Some(4), "no blocker: the explorers' seat");
+        let mut sieged = exploration.clone();
+        add_siege_passage_targets(&mut sieged, &[1].into_iter().collect());
+        let mut orders = Vec::new();
+        assert_eq!(
+            append_border_buy_order(&sealed_by, &sieged, &state, &mut orders, &|_| 40.0),
+            None
+        );
+        assert_eq!(orders[0].subject, Some(2), "the siege's blocker first");
+        assert_eq!(orders[0].verb.as_deref(), Some("OPEN_BORDERS"));
+        // Off the lane's phase the exploration ask waits; the siege's does not.
+        let mut off_phase = state.clone();
+        off_phase.turn = 92;
+        let mut waits = Vec::new();
+        assert_eq!(
+            append_border_buy_order(&sealed_by, &exploration, &off_phase, &mut waits, &|_| 40.0),
+            Some("border_buy_hold:cadence")
+        );
+        let mut asks = Vec::new();
+        assert_eq!(
+            append_border_buy_order(&sealed_by, &sieged, &off_phase, &mut asks, &|_| 40.0),
+            None
+        );
+        assert_eq!(asks[0].subject, Some(2), "the siege asks off the phase");
     }
 
     #[test]
@@ -16450,6 +18055,739 @@ mod tests {
         assert_eq!(
             append_luxury_buy_order(&alone, &mut held),
             Some("luxury_buy_hold:no_seller")
+        );
+    }
+
+    /// `luxury-swap-asks`: a spare copy of ours for a luxury the seat lacks,
+    /// at the rival the turn rotates to among those at peace that offer one.
+    #[test]
+    fn luxury_swaps_offer_a_spare_for_a_type_we_lack() {
+        let short = |needed: f64, have: f64| StateCity {
+            amenities: have,
+            amenities_needed: needed,
+            ..StateCity::default()
+        };
+        let counts = |pairs: &[(&str, f64)]| {
+            Some(
+                pairs
+                    .iter()
+                    .map(|(name, count)| (name.to_string(), *count))
+                    .collect(),
+            )
+        };
+        let offering = |player, luxuries: &[&str]| StateRival {
+            player,
+            tradeable_luxuries: Some(luxuries.iter().map(|name| name.to_string()).collect()),
+            ..StateRival::default()
+        };
+        let state = StateSnapshot {
+            turn: 94, // 94 % 6 == 4, the luxury slot; 94 / 6 = 15
+            gold: 200,
+            gold_per_turn: Some(12.0),
+            cities: vec![short(5.0, 4.0), short(6.0, 5.0), short(3.0, 4.0)],
+            luxury_counts: counts(&[
+                ("RESOURCE_SPICES", 3.0),
+                ("RESOURCE_HONEY", 1.0),
+                ("RESOURCE_TURTLES", 2.0),
+            ]),
+            rivals: vec![
+                offering(2, &["RESOURCE_SILK"]),
+                offering(4, &["RESOURCE_AMBER"]),
+                StateRival {
+                    player: 5,
+                    at_war: true,
+                    ..offering(5, &["RESOURCE_JADE"])
+                },
+                offering(6, &[]),
+            ],
+            ..StateSnapshot::default()
+        };
+
+        // Three spare copies: one goes, the type held most of; the partner
+        // is seat 4 (15 % 2 == 1 of seats 2 and 4); Gold up to a copy's
+        // worth, 135 + 10·3 = 165, which the treasury and income carry.
+        let mut orders = Vec::new();
+        assert_eq!(append_luxury_swap_order(&state, &mut orders, None), None);
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].kind, "buy");
+        assert_eq!(orders[0].subject, Some(4));
+        assert_eq!(
+            orders[0].verb.as_deref(),
+            Some("LUXURY_ANY;RESOURCE_SPICES=1")
+        );
+        assert_eq!(orders[0].pos, Some((165, 0)));
+
+        // The next week rotates to the other partner.
+        let mut next = state.clone();
+        next.turn = 100;
+        let mut next_orders = Vec::new();
+        assert_eq!(
+            append_luxury_swap_order(&next, &mut next_orders, None),
+            None
+        );
+        assert_eq!(next_orders[0].subject, Some(2));
+
+        // Four spare copies or more: two go, one of each of the two largest;
+        // a single spare type gives two of itself.
+        let mut rich = state.clone();
+        rich.luxury_counts = counts(&[("RESOURCE_SPICES", 4.0), ("RESOURCE_TURTLES", 2.0)]);
+        let mut rich_orders = Vec::new();
+        assert_eq!(
+            append_luxury_swap_order(&rich, &mut rich_orders, None),
+            None
+        );
+        assert_eq!(
+            rich_orders[0].verb.as_deref(),
+            Some("LUXURY_ANY;RESOURCE_SPICES=1,RESOURCE_TURTLES=1")
+        );
+        let mut one_type = state.clone();
+        one_type.luxury_counts = counts(&[("RESOURCE_SPICES", 5.0)]);
+        let mut one_orders = Vec::new();
+        assert_eq!(
+            append_luxury_swap_order(&one_type, &mut one_orders, None),
+            None
+        );
+        assert_eq!(
+            one_orders[0].verb.as_deref(),
+            Some("LUXURY_ANY;RESOURCE_SPICES=2")
+        );
+
+        // A spare another sale gives this turn stays home; the next spare
+        // goes instead, and the buyer's seat is busy.
+        let mut selling = vec![Order {
+            kind: "sell",
+            subject: Some(2),
+            verb: Some("RESOURCE_SPICES=1".to_string()),
+            pos: Some((24, 0)),
+        }];
+        assert_eq!(append_luxury_swap_order(&state, &mut selling, None), None);
+        assert_eq!(selling.len(), 2);
+        assert_eq!(selling[1].subject, Some(4));
+        assert_eq!(
+            selling[1].verb.as_deref(),
+            Some("LUXURY_ANY;RESOURCE_TURTLES=1")
+        );
+
+        // No Gold to top up: the swap is still asked, at a ceiling of 0.
+        let mut broke = state.clone();
+        broke.gold = 10;
+        broke.gold_per_turn = Some(-2.0);
+        let mut broke_orders = Vec::new();
+        assert_eq!(
+            append_luxury_swap_order(&broke, &mut broke_orders, None),
+            None
+        );
+        assert_eq!(broke_orders[0].pos, Some((0, 0)));
+
+        // Held: content, off the slot, no export of our copies, no spare, or
+        // nobody at peace offering a type we lack (a denunciation inside the
+        // window either way counts the rival out).
+        let mut held = Vec::new();
+        let mut content = state.clone();
+        content.cities = vec![short(5.0, 4.0), short(3.0, 4.0)];
+        assert_eq!(
+            append_luxury_swap_order(&content, &mut held, None),
+            Some("luxury_swap_hold:content")
+        );
+        let mut off_slot = state.clone();
+        off_slot.turn = 95;
+        assert_eq!(
+            append_luxury_swap_order(&off_slot, &mut held, None),
+            Some("luxury_swap_hold:cadence")
+        );
+        let mut blind = state.clone();
+        blind.luxury_counts = None;
+        assert_eq!(
+            append_luxury_swap_order(&blind, &mut held, None),
+            Some("luxury_swap_hold:counts_unknown")
+        );
+        let mut lean = state.clone();
+        lean.luxury_counts = counts(&[("RESOURCE_SPICES", 1.0), ("RESOURCE_HONEY", 1.0)]);
+        assert_eq!(
+            append_luxury_swap_order(&lean, &mut held, None),
+            Some("luxury_swap_hold:no_spare")
+        );
+        let mut denounced = state.clone();
+        denounced.rivals[0].our_denounce_turn = Some(80);
+        denounced.rivals[1].their_denounce_turn = Some(70);
+        assert_eq!(
+            append_luxury_swap_order(&denounced, &mut held, None),
+            Some("luxury_swap_hold:no_partner")
+        );
+        denounced.rivals[1].their_denounce_turn = Some(60);
+        assert_eq!(append_luxury_swap_order(&denounced, &mut held, None), None);
+        assert_eq!(held.len(), 1);
+        assert_eq!(held[0].subject, Some(4));
+    }
+
+    /// `luxury-swap-asks-2`: asked from one Amenity short, and only of a
+    /// partner whose board holds none of a spare we put up, that spare
+    /// first; a partner the board cannot read comes after a known lack.
+    #[test]
+    fn luxury_swaps_2_offer_the_spare_the_partner_lacks() {
+        let short = |needed: f64, have: f64| StateCity {
+            amenities: have,
+            amenities_needed: needed,
+            ..StateCity::default()
+        };
+        let offering = |player, luxuries: &[&str]| StateRival {
+            player,
+            tradeable_luxuries: Some(luxuries.iter().map(|name| name.to_string()).collect()),
+            ..StateRival::default()
+        };
+        let state = StateSnapshot {
+            turn: 94, // the luxury slot; week 15
+            gold: 200,
+            gold_per_turn: Some(12.0),
+            // One Amenity short in all: version one holds.
+            cities: vec![short(5.0, 4.0), short(3.0, 4.0)],
+            luxury_counts: Some(
+                [
+                    ("RESOURCE_SPICES", 3.0),
+                    ("RESOURCE_HONEY", 1.0),
+                    ("RESOURCE_TURTLES", 2.0),
+                ]
+                .iter()
+                .map(|(name, count)| (name.to_string(), *count))
+                .collect(),
+            ),
+            rivals: vec![
+                offering(2, &["RESOURCE_SILK"]),
+                offering(4, &["RESOURCE_AMBER"]),
+            ],
+            ..StateSnapshot::default()
+        };
+        let mut held = Vec::new();
+        assert_eq!(
+            append_luxury_swap_order(&state, &mut held, None),
+            Some("luxury_swap_hold:content")
+        );
+
+        // Seat 2's land holds Spices, not Turtles; seat 4's holds both. Seat 2
+        // is the only fit and gets the Turtles, though version one's
+        // rotation would have sent Spices to seat 4.
+        let board = |seat: i64, luxury: &str| match (seat, luxury) {
+            (2, "RESOURCE_TURTLES") => Some(true),
+            _ => Some(false),
+        };
+        let mut orders = Vec::new();
+        assert_eq!(
+            append_luxury_swap_order(&state, &mut orders, Some(&board)),
+            None
+        );
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].subject, Some(2));
+        assert_eq!(
+            orders[0].verb.as_deref(),
+            Some("LUXURY_ANY;RESOURCE_TURTLES=1")
+        );
+        assert_eq!(orders[0].pos, Some((155, 0)));
+
+        // Both seats fit: the week rotates among them, and a spare the board
+        // cannot read goes after a known lack.
+        let open = |seat: i64, luxury: &str| match (seat, luxury) {
+            (4, "RESOURCE_TURTLES") => Some(true),
+            (4, _) => None,
+            (2, "RESOURCE_SPICES") => Some(true),
+            _ => Some(false),
+        };
+        let mut rotated = Vec::new();
+        assert_eq!(
+            append_luxury_swap_order(&state, &mut rotated, Some(&open)),
+            None
+        );
+        assert_eq!(rotated[0].subject, Some(4));
+        assert_eq!(
+            rotated[0].verb.as_deref(),
+            Some("LUXURY_ANY;RESOURCE_TURTLES=1")
+        );
+
+        // Four spares or more: two go, both ones the partner lacks; a lone
+        // fitting type with one spare gives one copy.
+        let mut rich = state.clone();
+        rich.luxury_counts = Some(
+            [
+                ("RESOURCE_SPICES", 4.0),
+                ("RESOURCE_TURTLES", 2.0),
+                ("RESOURCE_JADE", 2.0),
+            ]
+            .iter()
+            .map(|(name, count)| (name.to_string(), *count))
+            .collect(),
+        );
+        let lacks_two = |_: i64, luxury: &str| Some(luxury != "RESOURCE_SPICES");
+        let mut rich_orders = Vec::new();
+        assert_eq!(
+            append_luxury_swap_order(&rich, &mut rich_orders, Some(&lacks_two)),
+            None
+        );
+        assert_eq!(
+            rich_orders[0].verb.as_deref(),
+            Some("LUXURY_ANY;RESOURCE_JADE=1,RESOURCE_TURTLES=1")
+        );
+        let mut rich_one = Vec::new();
+        assert_eq!(
+            append_luxury_swap_order(&rich, &mut rich_one, Some(&board)),
+            None
+        );
+        assert_eq!(rich_one[0].subject, Some(2));
+        assert_eq!(
+            rich_one[0].verb.as_deref(),
+            Some("LUXURY_ANY;RESOURCE_TURTLES=1")
+        );
+
+        // Every partner's land holds every spare: held, not asked.
+        let full = |_: i64, _: &str| Some(false);
+        assert_eq!(
+            append_luxury_swap_order(&state, &mut held, Some(&full)),
+            Some("luxury_swap_hold:no_fit")
+        );
+        assert!(held.is_empty());
+    }
+
+    /// `siege-buys-the-gun-resource`: the Bombard's Niter, asked of the
+    /// largest offer at peace: the full lot when our side covers it, else one
+    /// gun's worth, Gold-only when nothing of ours is spare.
+    #[test]
+    fn the_guns_resource_is_bought_from_the_largest_offer() {
+        let want =
+            |resource: &str, id: &str, amount: u32, minimum: u32| civvis::ai::GunResourceWant {
+                resource: resource.to_string(),
+                resource_id: id.to_string(),
+                amount,
+                minimum,
+                unit: "bombard".to_string(),
+                guns: 3,
+                hit: 24.6,
+                renewal: false,
+            };
+        let offers = |pairs: &[(&str, i64)]| {
+            Some(
+                pairs
+                    .iter()
+                    .map(|(resource, amount)| (resource.to_string(), *amount))
+                    .collect::<std::collections::BTreeMap<_, _>>(),
+            )
+        };
+        // The engine's book for a first strategic: a primary value, then 24
+        // a unit. Nothing of ours is spare here.
+        let worth = |_: &str, amount: u32| 185.0 + 24.0 * (f64::from(amount) - 1.0);
+        let no_barter = |_: i64, _: &str, _: u32| 0.0;
+        let state = StateSnapshot {
+            turn: 152, // 152 % 3 == 2, the lane's phase
+            gold: 500,
+            gold_per_turn: Some(20.0),
+            rivals: vec![
+                StateRival {
+                    player: 2,
+                    tradeable_strategics: offers(&[("RESOURCE_NITER", 82)]),
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 4,
+                    tradeable_strategics: offers(&[("RESOURCE_NITER", 70)]),
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 5,
+                    at_war: true,
+                    tradeable_strategics: offers(&[("RESOURCE_NITER", 200)]),
+                    ..StateRival::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+        let wants = vec![want("RESOURCE_NITER", "niter", 50, 20)];
+        let buy = |state: &StateSnapshot, orders: &mut Vec<Order>| {
+            append_gun_resource_buy_order(&wants, &[], state, orders, &worth, &no_barter)
+        };
+        let mut orders = Vec::new();
+        assert_eq!(buy(&state, &mut orders), None);
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].kind, "buy");
+        // The largest offer at peace; seat 5 offers more and is at war.
+        assert_eq!(orders[0].subject, Some(2));
+        // 440 of treasury over the reserve and 25·(20−4) = 400 of income
+        // carry 840; the full 50 Niter books at 1,361, one gun's 20 at 641.
+        assert_eq!(orders[0].verb.as_deref(), Some("RESOURCE_NITER=20"));
+        assert_eq!(orders[0].pos, Some((641, 0)));
+
+        // A deal already heading to the largest offer: the next one.
+        let mut busy = vec![Order {
+            kind: "sell",
+            subject: Some(2),
+            verb: Some("FAVOR=20".to_string()),
+            pos: Some((20, 0)),
+        }];
+        assert_eq!(buy(&state, &mut busy), None);
+        assert_eq!(busy[1].subject, Some(4));
+        busy.pop();
+        busy.push(Order {
+            kind: "buy",
+            subject: Some(4),
+            verb: Some("OPEN_BORDERS".to_string()),
+            pos: Some((60, 0)),
+        });
+        assert_eq!(
+            buy(&state, &mut busy),
+            Some("gun_resource_buy_hold:deal_in_flight")
+        );
+
+        // Fuel for fielded guns: the block is the offer when it is smaller,
+        // still at least the minimum.
+        let oil_state = StateSnapshot {
+            rivals: vec![StateRival {
+                player: 3,
+                tradeable_strategics: offers(&[("RESOURCE_OIL", 5)]),
+                ..StateRival::default()
+            }],
+            ..state.clone()
+        };
+        let oil = vec![want("RESOURCE_OIL", "oil", 10, 3)];
+        let mut fuel = Vec::new();
+        assert_eq!(
+            append_gun_resource_buy_order(&oil, &[], &oil_state, &mut fuel, &worth, &no_barter),
+            None
+        );
+        assert_eq!(fuel[0].verb.as_deref(), Some("RESOURCE_OIL=5"));
+        assert_eq!(fuel[0].subject, Some(3));
+
+        // An offer under one gun's worth is no seller.
+        let thin = StateSnapshot {
+            rivals: vec![StateRival {
+                player: 2,
+                tradeable_strategics: offers(&[("RESOURCE_NITER", 10)]),
+                ..StateRival::default()
+            }],
+            ..state.clone()
+        };
+        let mut none = Vec::new();
+        assert_eq!(
+            buy(&thin, &mut none),
+            Some("gun_resource_buy_hold:no_seller")
+        );
+        assert!(none.is_empty());
+
+        // Off the lane's turn, nothing wanted, a treasury that cannot carry
+        // the smallest ask, or one that cannot carry one gun's worth.
+        let mut held = Vec::new();
+        let off_phase = StateSnapshot {
+            turn: 151,
+            ..state.clone()
+        };
+        assert_eq!(
+            buy(&off_phase, &mut held),
+            Some("gun_resource_buy_hold:cadence")
+        );
+        assert_eq!(
+            append_gun_resource_buy_order(&[], &[], &state, &mut held, &worth, &no_barter),
+            Some("gun_resource_buy_hold:no_need")
+        );
+        let broke = StateSnapshot {
+            gold: 60,
+            gold_per_turn: Some(4.0),
+            ..state.clone()
+        };
+        assert_eq!(
+            buy(&broke, &mut held),
+            Some("gun_resource_buy_hold:treasury")
+        );
+        // 240 over the reserve, no income to speak of: 20 Niter book at 641.
+        let short = StateSnapshot {
+            gold: 300,
+            gold_per_turn: Some(4.0),
+            ..state.clone()
+        };
+        assert_eq!(
+            buy(&short, &mut held),
+            Some("gun_resource_buy_hold:treasury")
+        );
+        assert!(held.is_empty());
+    }
+
+    /// `siege-buys-the-gun-resource`: with the treasury short, a spare
+    /// luxury copy and surplus Coal go on our side first, Gold tops up what
+    /// they leave, and nothing another sale gives this turn is offered.
+    #[test]
+    fn the_guns_resource_is_bartered_when_the_treasury_is_short() {
+        let want = civvis::ai::GunResourceWant {
+            resource: "RESOURCE_NITER".to_string(),
+            resource_id: "niter".to_string(),
+            amount: 50,
+            minimum: 20,
+            unit: "bombard".to_string(),
+            guns: 3,
+            hit: 24.6,
+            renewal: false,
+        };
+        let spare = |resource: &str, id: &str, amount: u32, luxury: bool| civvis::ai::BarterSpare {
+            resource: resource.to_string(),
+            resource_id: id.to_string(),
+            amount,
+            luxury,
+        };
+        let spares = vec![
+            spare("RESOURCE_SILK", "silk", 1, true),
+            spare("RESOURCE_COAL", "coal", 15, false),
+        ];
+        let worth = |_: &str, amount: u32| 185.0 + 24.0 * (f64::from(amount) - 1.0);
+        // To the seller a Silk copy is 185, a unit of Coal 20.
+        let give_worth = |seller: i64, resource: &str, amount: u32| {
+            assert_eq!(seller, 2);
+            match resource {
+                "silk" => 185.0 * f64::from(amount),
+                "coal" => 20.0 * f64::from(amount),
+                _ => 0.0,
+            }
+        };
+        let state = StateSnapshot {
+            turn: 152,
+            gold: 300,
+            gold_per_turn: Some(4.0), // 240 carried
+            rivals: vec![StateRival {
+                player: 2,
+                tradeable_strategics: Some(
+                    [("RESOURCE_NITER".to_string(), 82)].into_iter().collect(),
+                ),
+                ..StateRival::default()
+            }],
+            ..StateSnapshot::default()
+        };
+        let mut orders = Vec::new();
+        assert_eq!(
+            append_gun_resource_buy_order(
+                std::slice::from_ref(&want),
+                &spares,
+                &state,
+                &mut orders,
+                &worth,
+                &give_worth
+            ),
+            None
+        );
+        // The full 50 (1,361) is beyond Silk 185 + all 15 Coal 300 + 240
+        // Gold; one gun's 20 (641) is not: 641 − 185 − 300 = 156 Gold.
+        assert_eq!(
+            orders[0].verb.as_deref(),
+            Some("RESOURCE_NITER=20;RESOURCE_SILK=1,RESOURCE_COAL=15")
+        );
+        assert_eq!(orders[0].pos, Some((156, 0)));
+
+        // A richer seat takes the full lot: Silk 185 and all 15 Coal 300
+        // leave 1,361 − 485 = 876 Gold, under the 900 cap it carries.
+        let rich = StateSnapshot {
+            gold: 1000,
+            gold_per_turn: Some(20.0),
+            ..state.clone()
+        };
+        let mut rich_orders = Vec::new();
+        append_gun_resource_buy_order(
+            std::slice::from_ref(&want),
+            &spares,
+            &rich,
+            &mut rich_orders,
+            &worth,
+            &give_worth,
+        );
+        assert_eq!(
+            rich_orders[0].verb.as_deref(),
+            Some("RESOURCE_NITER=50;RESOURCE_SILK=1,RESOURCE_COAL=15")
+        );
+        assert_eq!(rich_orders[0].pos, Some((876, 0)));
+
+        // Coal to spare covers one gun's lot with no Gold at all, and only
+        // as much Coal goes as the gap needs: 641 − 185 = 456, 23 units.
+        let coal_rich = vec![
+            spare("RESOURCE_SILK", "silk", 1, true),
+            spare("RESOURCE_COAL", "coal", 40, false),
+        ];
+        let mut barter_only = Vec::new();
+        append_gun_resource_buy_order(
+            std::slice::from_ref(&want),
+            &coal_rich,
+            &state,
+            &mut barter_only,
+            &worth,
+            &give_worth,
+        );
+        assert_eq!(
+            barter_only[0].verb.as_deref(),
+            Some("RESOURCE_NITER=20;RESOURCE_SILK=1,RESOURCE_COAL=23")
+        );
+        assert_eq!(barter_only[0].pos, Some((0, 0)));
+
+        // The Silk already on sale this turn stays off our side, and the
+        // Gold-free gap the Coal leaves is then beyond the treasury.
+        let mut selling = vec![Order {
+            kind: "sell",
+            subject: Some(4),
+            verb: Some("RESOURCE_SILK=1".to_string()),
+            pos: Some((40, 0)),
+        }];
+        assert_eq!(
+            append_gun_resource_buy_order(
+                std::slice::from_ref(&want),
+                &spares,
+                &state,
+                &mut selling,
+                &worth,
+                &give_worth
+            ),
+            Some("gun_resource_buy_hold:treasury")
+        );
+        assert_eq!(selling.len(), 1);
+
+        // A luxury the host counts one copy of (the other sold away) stays
+        // home, whatever the board counts; one it counts two of still goes.
+        let sold_away = StateSnapshot {
+            luxury_counts: Some([("RESOURCE_SILK".to_string(), 1.0)].into_iter().collect()),
+            ..state.clone()
+        };
+        let mut netted = Vec::new();
+        append_gun_resource_buy_order(
+            std::slice::from_ref(&want),
+            &coal_rich,
+            &sold_away,
+            &mut netted,
+            &worth,
+            &give_worth,
+        );
+        // 641 from Coal alone: 33 units (660), no Gold.
+        assert_eq!(
+            netted[0].verb.as_deref(),
+            Some("RESOURCE_NITER=20;RESOURCE_COAL=33")
+        );
+        let two_held = StateSnapshot {
+            luxury_counts: Some([("RESOURCE_SILK".to_string(), 2.0)].into_iter().collect()),
+            ..state.clone()
+        };
+        let mut kept = Vec::new();
+        append_gun_resource_buy_order(
+            std::slice::from_ref(&want),
+            &coal_rich,
+            &two_held,
+            &mut kept,
+            &worth,
+            &give_worth,
+        );
+        assert_eq!(
+            kept[0].verb.as_deref(),
+            Some("RESOURCE_NITER=20;RESOURCE_SILK=1,RESOURCE_COAL=23")
+        );
+
+        // The Niter itself is never on our side.
+        let own = vec![spare("RESOURCE_NITER", "niter", 30, false)];
+        let mut none = Vec::new();
+        assert_eq!(
+            append_gun_resource_buy_order(&[want], &own, &state, &mut none, &worth, &give_worth),
+            Some("gun_resource_buy_hold:treasury")
+        );
+    }
+
+    /// `siege-buys-the-gun-resource`: a wanted Niter is not offered for
+    /// sale, alone or in a bundle; other sales and the purchases stand.
+    #[test]
+    fn a_wanted_niter_is_not_offered_for_sale() {
+        let order = |kind: &'static str, subject: i64, verb: &str| Order {
+            kind,
+            subject: Some(subject),
+            verb: Some(verb.to_string()),
+            pos: Some((40, 0)),
+        };
+        let mut orders = vec![
+            order("sell", 2, "RESOURCE_NITER=10"),
+            order("sell", 3, "RESOURCE_IRON=10"),
+            order("sell", 4, "RESOURCE_DYES=1,RESOURCE_NITER=5"),
+            order("sell", 5, "FAVOR=20"),
+            order("buy", 6, "RESOURCE_NITER=20"),
+        ];
+        assert_eq!(
+            drop_held_resource_sales(&std::collections::BTreeSet::new(), &mut orders),
+            0
+        );
+        assert_eq!(orders.len(), 5, "nothing held, nothing dropped");
+        let held: std::collections::BTreeSet<String> =
+            ["RESOURCE_NITER".to_string()].into_iter().collect();
+        assert_eq!(drop_held_resource_sales(&held, &mut orders), 2);
+        let left: Vec<_> = orders
+            .iter()
+            .map(|order| (order.kind, order.verb.as_deref().unwrap_or("")))
+            .collect();
+        assert_eq!(
+            left,
+            vec![
+                ("sell", "RESOURCE_IRON=10"),
+                ("sell", "FAVOR=20"),
+                ("buy", "RESOURCE_NITER=20"),
+            ]
+        );
+    }
+
+    /// `siege-buys-the-gun-resource`: the air wing's Aluminum crosses like
+    /// the guns' Niter: the whole wing's block from the seller that offers
+    /// it, Gold-only when nothing of ours is spare.
+    #[test]
+    fn the_air_wings_aluminum_is_bought_from_a_seller() {
+        let want = civvis::ai::GunResourceWant {
+            resource: "RESOURCE_ALUMINUM".to_string(),
+            resource_id: "aluminum".to_string(),
+            amount: 42,
+            minimum: 42,
+            unit: "bomber".to_string(),
+            guns: 2,
+            hit: 0.0,
+            renewal: false,
+        };
+        let worth = |_: &str, amount: u32| 10.0 * f64::from(amount);
+        let no_barter = |_: i64, _: &str, _: u32| 0.0;
+        let state = StateSnapshot {
+            turn: 152,
+            gold: 1000,
+            gold_per_turn: Some(30.0),
+            rivals: vec![
+                StateRival {
+                    player: 2,
+                    tradeable_strategics: Some(
+                        [("RESOURCE_NITER".to_string(), 80)].into_iter().collect(),
+                    ),
+                    ..StateRival::default()
+                },
+                StateRival {
+                    player: 3,
+                    tradeable_strategics: Some(
+                        [("RESOURCE_ALUMINUM".to_string(), 50)].into_iter().collect(),
+                    ),
+                    ..StateRival::default()
+                },
+            ],
+            ..StateSnapshot::default()
+        };
+        let mut orders = Vec::new();
+        assert_eq!(
+            append_gun_resource_buy_order(
+                std::slice::from_ref(&want),
+                &[],
+                &state,
+                &mut orders,
+                &worth,
+                &no_barter
+            ),
+            None
+        );
+        assert_eq!(orders[0].subject, Some(3));
+        assert_eq!(orders[0].verb.as_deref(), Some("RESOURCE_ALUMINUM=42"));
+        assert_eq!(orders[0].pos, Some((420, 0)));
+        // 40 Gold over the reserve cannot carry the 420 the wing books at, and
+        // nothing smaller fields it.
+        let mut held = Vec::new();
+        let short = StateSnapshot {
+            gold: 100,
+            gold_per_turn: Some(4.0),
+            ..state.clone()
+        };
+        assert_eq!(
+            append_gun_resource_buy_order(&[want], &[], &short, &mut held, &worth, &no_barter),
+            Some("gun_resource_buy_hold:treasury")
         );
     }
 
@@ -17768,6 +20106,50 @@ mod tests {
             );
         }
     }
+    /// `aluminum-ask-tops-up-gold`: the Aluminum ask's ceiling is eight Gold
+    /// a unit, never past the treasury above the floor, and only ever raised.
+    #[test]
+    fn the_aluminum_ask_ceiling_tops_up_within_the_treasury() {
+        let ask = |verb: &str, gold: i32| super::Order {
+            kind: "buy",
+            subject: Some(2),
+            verb: Some(verb.to_string()),
+            pos: Some((gold, 0)),
+        };
+        let barter = ask("RESOURCE_ALUMINUM=6;RESOURCE_AMBER=1", 0);
+        assert_eq!(super::aluminum_ask_ceiling(&barter, 400, 100), Some(48));
+        assert_eq!(
+            super::aluminum_ask_ceiling(&barter, 120, 100),
+            Some(20),
+            "the treasury above the floor"
+        );
+        assert_eq!(
+            super::aluminum_ask_ceiling(&barter, 90, 100),
+            None,
+            "nothing above the floor"
+        );
+        assert_eq!(
+            super::aluminum_ask_ceiling(&ask("RESOURCE_ALUMINUM=6", 60), 400, 100),
+            None,
+            "a higher ceiling stands"
+        );
+        assert_eq!(
+            super::aluminum_ask_ceiling(&ask("RESOURCE_NITER=10;RESOURCE_AMBER=1", 0), 400, 100),
+            None,
+            "Aluminum only"
+        );
+        let sale = super::Order {
+            kind: "sell",
+            subject: Some(2),
+            verb: Some("RESOURCE_ALUMINUM=6".to_string()),
+            pos: Some((0, 0)),
+        };
+        assert_eq!(
+            super::aluminum_ask_ceiling(&sale, 400, 100),
+            None,
+            "buys only"
+        );
+    }
 }
 
 /// The receiving side of the bridge: every check reads two consecutive frames,
@@ -18531,6 +20913,17 @@ mod order_postcondition_tests {
             check(&appoint, &before, &none, &[]),
             failed("not_appointed")
         );
+
+        // Neutralized by a spy: the post cannot stick, and no strike counts.
+        let mut neutralized = frame(26);
+        neutralized.governors = Some(vec![StateGovernor {
+            neutralized_turns: 2,
+            ..governor(-1)
+        }]);
+        assert_eq!(
+            check(&assign, &before, &neutralized, &[]),
+            Verdict::Unverifiable
+        );
     }
 
     #[test]
@@ -19089,6 +21482,34 @@ mod order_postcondition_tests {
         );
     }
 
+    /// Replan frames re-send an order within a turn; their refusals are one
+    /// strike, so only three turns of the same answer strike it out.
+    #[test]
+    fn three_replans_in_one_turn_are_one_strike() {
+        let issued = order(
+            "governor_assign",
+            Some(196_610),
+            Some("GOVERNOR_THE_DEFENDER"),
+            Some((0, -1)),
+        );
+        let mut refusals = HostOrderRefusals::default();
+        let frames = vec![refused(&issued, "not_assigned"); 3];
+        refusals.observe(&frames, 1);
+        assert_eq!(
+            refusals.withheld(&wire(&issued), 2),
+            None,
+            "one turn, one strike"
+        );
+        refusals.observe(&frames, 2);
+        assert_eq!(
+            refusals.withheld(&wire(&issued), 3),
+            None,
+            "two turns, two strikes"
+        );
+        refusals.observe(&frames, 3);
+        assert_eq!(refusals.withheld(&wire(&issued), 4), Some("not_assigned"));
+    }
+
     /// A genuinely transient block does not answer the same way three turns
     /// running, which is what makes the reason comparison a sufficient test.
     #[test]
@@ -19194,14 +21615,14 @@ mod order_postcondition_tests {
         // Record the closed window through the real export filter, even with
         // no selected orders. Each refused declaration used the same target.
         withhold_refused_orders(Vec::new(), &state, &mut refusals);
-        for _ in 0..ORDER_REFUSAL_STRIKES {
+        for back in (0..ORDER_REFUSAL_STRIKES).rev() {
             refusals.observe(
                 &[
                     refused(&war, "not_at_war"),
                     refused(&other_war, "not_at_war"),
                     refused(&step, "did_not_move"),
                 ],
-                98,
+                98 - back,
             );
         }
         assert!(refusals.withheld(&wire(&war), 99).is_some());
@@ -19218,8 +21639,8 @@ mod order_postcondition_tests {
         assert_eq!(withheld.len(), 2);
         // A new failure while the host continues to report permission is
         // still a real problem: do not bypass the ordinary retry bound.
-        for _ in 0..ORDER_REFUSAL_STRIKES {
-            refusals.observe(&[refused(&war, "not_at_war")], 99);
+        for back in (0..ORDER_REFUSAL_STRIKES).rev() {
+            refusals.observe(&[refused(&war, "not_at_war")], 99 - back);
         }
         state.turn = 100;
         let (allowed, withheld) = withhold_refused_orders(vec![wire(&war)], &state, &mut refusals);
@@ -19285,14 +21706,14 @@ mod order_postcondition_tests {
         };
         let mut refusals = HostOrderRefusals::default();
         refusals.observe_war_permissions(&state);
-        for _ in 0..ORDER_REFUSAL_STRIKES {
+        for back in (0..ORDER_REFUSAL_STRIKES).rev() {
             refusals.observe(
                 &[
                     refused(&formal, "cannot_declare"),
                     refused(&surprise, "cannot_declare"),
                     refused(&other, "cannot_declare"),
                 ],
-                53,
+                53 - back,
             );
         }
         state.rivals[0].can_declare = Some(true);
@@ -19311,8 +21732,8 @@ mod order_postcondition_tests {
         refusals.observe_war_permissions(&state);
         assert!(refusals.withheld(&wire(&formal), 54).is_none());
         assert!(refusals.withheld(&wire(&other), 54).is_some());
-        for _ in 0..ORDER_REFUSAL_STRIKES {
-            refusals.observe(&[refused(&formal, "cannot_declare")], 54);
+        for back in (0..ORDER_REFUSAL_STRIKES).rev() {
+            refusals.observe(&[refused(&formal, "cannot_declare")], 54 - back);
         }
         refusals.observe_war_permissions(&state);
         assert!(

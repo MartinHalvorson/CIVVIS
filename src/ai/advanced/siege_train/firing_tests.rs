@@ -57,3 +57,152 @@ fn a_gun_with_a_clear_shot_keeps_its_firing_position() {
     assert!(g.unit_has_line_of_sight_from(gun, here, city.pos));
     assert_eq!(siege_posts(&g, 0, &city, &[gun], None)[&gun], here);
 }
+
+/// A city whose every range-2 line is blocked still gets its guns: an
+/// adjacent tile always has the shot.
+#[test]
+fn a_gun_with_no_range_two_line_takes_an_adjacent_post() {
+    let (mut g, cid) = walled_city();
+    let target = g.cities[&cid].pos;
+    for pos in g.wdisk(target, 3) {
+        if pos == target {
+            continue;
+        }
+        let adjacent = g.wdist(pos, target) == 1;
+        let tile = g.map.tiles.get_mut(&pos).unwrap();
+        tile.terrain = crate::name!("grassland");
+        tile.hills = false;
+        tile.feature = adjacent.then(|| crate::name!("forest"));
+    }
+    let gun = g.spawn_unit("catapult", 0, at_distance(&g, cid, 3)[0]);
+    assert!(
+        at_distance(&g, cid, 2)
+            .into_iter()
+            .all(|pos| !g.unit_has_line_of_sight_from(gun, pos, target)),
+        "fixture: the forest ring blocks every range-2 line"
+    );
+    let city = CityView::of(&g, cid).unwrap();
+    let post = siege_posts(&g, 0, &city, &[gun], None)
+        .get(&gun)
+        .copied()
+        .expect("the gun gets a firing post");
+    assert_eq!(g.wdist(post, target), 1);
+    assert!(g.unit_has_line_of_sight_from(gun, post, target));
+}
+
+/// See `taker_corridor`: guns on every land tile two out from a breached
+/// coastal city seal its taker's approach; one of those tiles is kept clear.
+#[test]
+fn a_breached_city_keeps_a_corridor_clear_for_its_taker() {
+    let (mut g, cid) = walled_city();
+    let target = g.cities[&cid].pos;
+    g.cities.get_mut(&cid).unwrap().wall_hp = 0;
+    let ring = g
+        .nbrs(target)
+        .into_iter()
+        .find(|pos| g.map.get(*pos).is_some())
+        .unwrap();
+    let approach: Vec<Pos> = g
+        .nbrs(ring)
+        .into_iter()
+        .filter(|pos| g.wdist(*pos, target) == 2)
+        .take(2)
+        .collect();
+    assert_eq!(approach.len(), 2, "fixture: two approach tiles");
+    let start = g
+        .nbrs(approach[0])
+        .into_iter()
+        .find(|pos| g.wdist(*pos, target) == 3 && g.nbrs(approach[1]).contains(pos))
+        .or_else(|| {
+            g.nbrs(approach[0])
+                .into_iter()
+                .find(|pos| g.wdist(*pos, target) == 3)
+        })
+        .expect("fixture: a start three out");
+    let land: Vec<Pos> = [target, ring, start]
+        .into_iter()
+        .chain(approach.iter().copied())
+        .collect();
+    for pos in g.wdisk(target, 4) {
+        let outer = g.wdist(pos, target) == 4;
+        let tile = g.map.tiles.get_mut(&pos).unwrap();
+        tile.feature = None;
+        tile.hills = false;
+        tile.terrain = if land.contains(&pos) || outer {
+            crate::name!("grassland")
+        } else {
+            crate::name!("coast")
+        };
+    }
+    let guns: Vec<u32> = approach
+        .iter()
+        .map(|pos| g.spawn_unit("catapult", 0, *pos))
+        .collect();
+    let taker = g.spawn_unit("swordsman", 0, start);
+    let city = CityView::of(&g, cid).unwrap();
+    let mut force = guns.clone();
+    force.push(taker);
+    let open_land = |pos: Pos| {
+        g.map
+            .get(pos)
+            .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+    };
+    let corridor = taker_corridor(&g, &city, Some(taker), &BTreeSet::new(), &open_land)
+        .expect("a corridor two out");
+    assert!(approach.contains(&corridor));
+    let posts = siege_posts(&g, 0, &city, &force, Some(taker));
+    assert!(
+        guns.iter().all(|gun| posts.get(gun) != Some(&corridor)),
+        "no gun keeps the corridor: {posts:?}"
+    );
+
+    // With the walls standing, the guns keep their firing tiles.
+    g.cities.get_mut(&cid).unwrap().wall_hp = 100;
+    let walled = CityView::of(&g, cid).unwrap();
+    assert_eq!(
+        taker_corridor(&g, &walled, Some(taker), &BTreeSet::new(), &open_land),
+        None
+    );
+}
+
+/// Live King civvis-20261004T070716Z (game 49): Nagoya's catapults stood
+/// within reach of a levied city-state's walled district and were shot
+/// dead. A firing post another hostile city can strike is the last resort.
+#[test]
+fn a_gun_is_not_posted_in_another_hostile_citys_strike() {
+    let (mut g, cid) = walled_city();
+    let target = g.cities[&cid].pos;
+    for pos in g.wdisk(target, 6) {
+        if let Some(tile) = g.map.tiles.get_mut(&pos) {
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+        }
+    }
+    let gun = g.spawn_unit("catapult", 0, at_distance(&g, cid, 3)[0]);
+    let first = siege_posts(&g, 0, &CityView::of(&g, cid).unwrap(), &[gun], None)[&gun];
+    assert!(g.wdist(first, target) <= 2, "fixture: a firing post");
+    // A third empire's walled city two tiles beyond that post.
+    let third = g
+        .wring(first, 2)
+        .into_iter()
+        .filter(|pos| {
+            g.wdist(*pos, target) >= 4
+                && g.map.get(*pos).is_some_and(|t| g.rules.is_passable(t) && !g.rules.is_water(t))
+        })
+        .min()
+        .expect("a site beyond the post");
+    if g.players.len() < 3 {
+        return;
+    }
+    let other = g.found_city_for(2, third, None);
+    g.cities.get_mut(&other).unwrap().wall_hp = 100;
+    g.at_war.insert((0, 2));
+    g.at_war.insert((2, 0));
+    let chosen = siege_posts(&g, 0, &CityView::of(&g, cid).unwrap(), &[gun], None)[&gun];
+    assert!(g.wdist(chosen, target) <= 2, "still a firing post on the target");
+    assert!(
+        g.wdist(chosen, third) > CITY_STRIKE_RANGE,
+        "the post stands out of the third city's strike: {chosen:?} vs {third:?}"
+    );
+}

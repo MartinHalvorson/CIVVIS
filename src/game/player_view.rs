@@ -534,6 +534,7 @@ fn public_city(c: &RememberedCity) -> City {
         loyalty: 100.0,
         free_city_pressure: Default::default(),
         captured_from: c.captured_from,
+        religion_next_seen: None,
         occupied_from: c.occupied_from,
         occupation_grievance: None,
         reactor_age: 0,

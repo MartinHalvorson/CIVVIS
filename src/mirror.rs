@@ -1969,6 +1969,24 @@ pub(crate) fn apply_city_memory(game: &mut crate::game::Game) {
     }
 }
 
+/// Re-take the seat's city memory from the board as it stands now.
+///
+/// ⚠ The rebuild takes the memory (`city_memory`, Board phase) BEFORE the
+/// host's city facts land (`capital_identity::apply`, inside
+/// `observed_host_metrics`). Every revealed rival city is planted through
+/// `Game::found_city_for`, which crowns a player's first planted city its
+/// capital and makes its current owner its founder; the host's
+/// `original_capital` and `original_owner` correct the board afterwards, but
+/// the memory keeps the planting's guess. The planning board
+/// (`Game::player_decision_view`) draws every fogged rival city from that
+/// memory, and `find-the-capital` counts a remembered capital as seen. The
+/// live brain rebuilds the board every frame (`--fresh-board`), so the guess
+/// was there on every decision. Called by the decider under
+/// `unseen-capital-is-unseen`; the rebuild itself is unchanged.
+pub fn refresh_city_memory(game: &mut crate::game::Game) {
+    apply_city_memory(game);
+}
+
 /// Tell the seat what the ground it has seen actually LOOKED like.
 ///
 /// ★★★★★ **THE SEAT REMEMBERED NOTHING, SO THE MIRROR DREW ONLY WHAT IT COULD SEE THIS
@@ -3610,6 +3628,11 @@ pub struct StateRival {
     pub foreign_tourists: f64,
     #[serde(default = "unknown_metric")]
     pub domestic_tourists: f64,
+    /// The engine's own turns until this major wins on Culture
+    /// (`GetCulture():GetTurnsUntilVictory()`, WorldRankings.lua:1678): `-1`
+    /// when it reports none, NaN (absent) on an older export.
+    #[serde(default = "unknown_metric")]
+    pub culture_turns_to_victory: f64,
     #[serde(default = "unknown_metric")]
     pub gold: f64,
     #[serde(default = "unknown_metric")]
@@ -4282,6 +4305,11 @@ pub struct StateSnapshot {
     pub foreign_tourists: f64,
     #[serde(default = "unknown_metric")]
     pub domestic_tourists: f64,
+    /// The engine's own turns until this major wins on Culture
+    /// (`GetCulture():GetTurnsUntilVictory()`, WorldRankings.lua:1678): `-1`
+    /// when it reports none, NaN (absent) on an older export.
+    #[serde(default = "unknown_metric")]
+    pub culture_turns_to_victory: f64,
     /// Our tourism per turn as the host reports it (`GetStats():GetTourism()`,
     /// the accessor already used for each rival). `None` on an older export.
     /// The mirror writes it into `Game::observed_tourism_per_turn`, and it is
@@ -4333,6 +4361,13 @@ pub struct StateSnapshot {
     /// this empire alone.
     #[serde(default)]
     pub world_era: Option<i64>,
+    /// `Game.GetEras():GetNextEraCountdown()`: the turns left AFTER this one in
+    /// the world era (0 on its last turn), negative before the countdown has
+    /// started. `None` on an older export. The model's
+    /// `Game::world_era_countdown_end` is derived from it; without it that
+    /// deadline existed only in the simulator, so `age-closer-2` never fired live.
+    #[serde(default)]
+    pub era_countdown: Option<i64>,
     #[serde(default)]
     pub dark_age: Option<bool>,
     #[serde(default)]
@@ -4448,6 +4483,14 @@ pub struct StateSnapshot {
     /// a buildable successor. See `apply_strategic_stockpiles`.
     #[serde(default, deserialize_with = "map_or_empty_sequence")]
     pub strategic_resources: Option<BTreeMap<String, f64>>,
+    /// Our luxury copies by host resource type (`RESOURCE_MARBLE` → copies),
+    /// the host's own count net of copies a deal has traded away; absent
+    /// when none is held or on an older export. The mirrored board counts
+    /// improved tiles and cannot see a copy that is out on a deal, so the
+    /// gun-resource barter (`siege-buys-the-gun-resource`) caps its spare
+    /// copies by this.
+    #[serde(default, deserialize_with = "map_or_empty_sequence")]
+    pub luxury_counts: Option<BTreeMap<String, f64>>,
     /// Gross host strategic income: accumulation + imports + bonuses, before
     /// unit or power demand. Missing entries retain the modeled estimate.
     #[serde(default, deserialize_with = "map_or_empty_sequence")]
@@ -4507,9 +4550,18 @@ pub struct StateSnapshot {
     /// events. Merged in by [`state_from_events`] for the same reason as `seat`.
     #[serde(default)]
     pub refused_sites: std::collections::BTreeSet<crate::Pos>,
-    /// Tiles Civilization VI refused to improve, AXIAL, from `improve_refused`.
+    /// Tiles Civilization VI refused to improve, AXIAL, from `improve_refused`
+    /// events that do not name the improvement.
     #[serde(default)]
     pub refused_improves: std::collections::BTreeSet<crate::Pos>,
+    /// Improvements Civilization VI refused, by AXIAL tile, from
+    /// `improve_refused` events that name one (`want`). See
+    /// `Game::blocked_improvements`.
+    #[serde(default)]
+    pub refused_improvement_names: std::collections::BTreeMap<
+        crate::Pos,
+        std::collections::BTreeSet<crate::name::Name>,
+    >,
     /// Promotions the host refused, per Civilization VI unit id.
     /// See `Game::blocked_promotions` for why this exists.
     ///
@@ -4761,6 +4813,10 @@ fn apply_rival_public_economy(
         // record is the player's `science_projects` below.
         observed.foreign_tourists = count(rival.foreign_tourists);
         observed.domestic_tourists = count(rival.domestic_tourists);
+        observed.culture_turns_to_victory = rival
+            .culture_turns_to_victory
+            .is_finite()
+            .then_some(rival.culture_turns_to_victory);
     }
     // The rival's majority religion, by the CIVVIS name its founded religion
     // takes (`civvis_religion_name`): `Game::majority_religion_of` reads it
@@ -6635,8 +6691,10 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         // absent here until 2026-08-26, so every live state record filed a
         // `schema:state.strategic_resources` gap that was not one.
         "strategic_resources",
+        "luxury_counts",
         "strategic_resource_income",
         "foreign_tourists", "domestic_tourists",
+        "culture_turns_to_victory",
         "tourism_per_turn",
         "cities_following_religion",
         "military",
@@ -6651,7 +6709,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         // The age. `the_schema_allowlists_cover_every_declared_field` fails if a
         // StateSnapshot field is missing here.
         "era_score", "era_score_baseline", "normal_age_threshold",
-        "golden_age_threshold", "world_era", "dark_age", "golden_age",
+        "golden_age_threshold", "world_era", "era_countdown", "dark_age", "golden_age",
         "heroic_golden_age", "dedications", "dedication_choices", "resolutions",
         "congress_turns_left",
         // The host's climate and its trade-route projections (2026-08-26).
@@ -6793,6 +6851,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "science_victory_points_needed",
         "foreign_tourists",
         "domestic_tourists",
+        "culture_turns_to_victory",
         // Both border fields: `open_borders` had crossed since the buy lane
         // shipped and filed `schema:rival.open_borders` on every live turn.
         "open_borders",
@@ -7092,7 +7151,8 @@ pub fn state_from_events(path: &std::path::Path, turn: Option<u32>) -> Option<St
             state.observed_dedication_activity = dedication_history::through(&raw, state.turn);
         }
         state.refused_sites = refused_sites_of_kind_through(path, "found_refused", turn);
-        state.refused_improves = refused_sites_of_kind_through(path, "improve_refused", turn);
+        (state.refused_improves, state.refused_improvement_names) =
+            refused_improvements_through(path, turn);
         state.refused_trade_routes = refused_trade_routes_through(path, turn);
         state.refused_policy_names = refused_policies_through(path, turn);
         state.refused_pantheons = refused_pantheons_through(path, turn);
@@ -7302,6 +7362,7 @@ fn civvis_node_name<T>(
             "mongolian_keshig" => Some("keshig"),
             "polish_hussar" => Some("winged_hussar"),
             "ethiopian_oromo_cavalry" => Some("oromo_cavalry"),
+            "colombian_llanero" => Some("llanero"),
             "maori_toa" => Some("toa"),
             "chinese_crouching_tiger" => Some("crouching_tiger"),
             "gaul_gaesatae" => Some("gaesatae"),
@@ -7313,6 +7374,36 @@ fn civvis_node_name<T>(
             "american_rough_rider" => Some("rough_rider"),
             "vietnamese_voi_chien" => Some("voi_chien"),
             "lahore_nihang" => Some("nihang"),
+            "arabian_mamluk" => Some("mamluk"),
+            "babylonian_sabum_kibittum" => Some("sabum_kibittum"),
+            "brazilian_minas_geraes" => Some("minas_geraes"),
+            "byzantine_dromon" => Some("dromon"),
+            "canada_mountie" => Some("mountie"),
+            "cree_okihtcitaw" => Some("okihtcitaw"),
+            "norwegian_longship" => Some("viking_longship"),
+            "english_seadog" => Some("sea_dog"),
+            "english_redcoat" => Some("redcoat"),
+            "french_garde_imperiale" => Some("garde_imperiale"),
+            "georgian_khevsureti" => Some("khevsureti"),
+            "german_uboat" => Some("u_boat"),
+            "hungary_huszar" => Some("huszar"),
+            "hungary_black_army" => Some("black_army"),
+            "inca_warakaq" => Some("warakaq"),
+            "indonesian_jong" => Some("jong"),
+            "khmer_domrey" => Some("domrey"),
+            "korean_hwacha" => Some("hwacha"),
+            "macedonian_hetairoi" => Some("hetairoi"),
+            "mapuche_malon_raider" => Some("malon_raider"),
+            "mayan_hulche" => Some("hulche"),
+            "norwegian_berserker" => Some("berserker"),
+            "ottoman_barbary_corsair" => Some("barbary_corsair"),
+            "suleiman_janissary" => Some("janissary"),
+            "persian_immortal" => Some("immortal"),
+            "scottish_highlander" => Some("highlander"),
+            "spanish_conquistador" => Some("conquistador"),
+            "sweden_carolean" => Some("carolean"),
+            "zulu_impi" => Some("impi"),
+            "american_p51" => Some("p51_mustang"),
             "antiair_gun" => Some("anti_air_gun"),
             _ => None,
         };
@@ -7458,16 +7549,18 @@ fn civvis_unit_name(civ6: &str) -> String {
         // Firaxis retained Poland's implementation id after the unit's display
         // name became Winged Hussar.
         "polish_hussar" => "winged_hussar".to_string(),
-        // These two unique unit specifications are still absent from CIVVIS.
-        // Firaxis's own UnitReplaces table names their exact stock role, which
-        // is preferable to deleting a visible hostile from the board entirely.
-        "scottish_highlander" => "ranger".to_string(),
-        "korean_hwacha" => "field_cannon".to_string(),
-        // Georgia's Khevsureti replaces Man-at-Arms. The live export does not
-        // include `base` or `class` for this rival unit, so the generic fallback
-        // cannot recover it; keep the hostile on the threat board as its stock
-        // role (the unique hill bonus is not modeled).
-        "georgian_khevsureti" => "man_at_arms".to_string(),
+        // Modeled since the unique-unit roster was completed from the shipped
+        // database (docs/DECISIVE_WINDOWS.md §6). These three used to stand in
+        // as their stock role; the Khevsureti's live export still carries no
+        // `base` or `class`, so its explicit spelling stays here.
+        "scottish_highlander" => "highlander".to_string(),
+        "korean_hwacha" => "hwacha".to_string(),
+        "georgian_khevsureti" => "khevsureti".to_string(),
+        // Firaxis runs these nouns together, CIVVIS spells them out, and the
+        // P-51 keeps its name: no qualifier-stripping can find them.
+        "english_seadog" => "sea_dog".to_string(),
+        "german_uboat" => "u_boat".to_string(),
+        "american_p51" => "p51_mustang".to_string(),
         // Firaxis joins "antiair" in UNIT_ANTIAIR_GUN; the supported
         // rules row uses anti_air_gun, as production lookup already does.
         "antiair_gun" => "anti_air_gun".to_string(),
@@ -7722,7 +7815,50 @@ fn refused_sites_of_kind_through(
     kind: &str,
     turn: Option<u32>,
 ) -> std::collections::BTreeSet<crate::Pos> {
-    let mut refused: std::collections::BTreeSet<crate::Pos> = Default::default();
+    refusals_of_kind_through(path, kind, turn)
+        .into_iter()
+        .map(|(pos, _)| pos)
+        .collect()
+}
+
+/// `improve_refused`, split: a refusal naming its improvement (`want`)
+/// blocks that improvement on the tile; one without a name blocks the tile.
+/// See `Game::blocked_improvements`.
+fn refused_improvements_through(
+    path: &std::path::Path,
+    turn: Option<u32>,
+) -> (
+    std::collections::BTreeSet<crate::Pos>,
+    std::collections::BTreeMap<crate::Pos, std::collections::BTreeSet<crate::name::Name>>,
+) {
+    let mut tiles = std::collections::BTreeSet::new();
+    let mut named: std::collections::BTreeMap<
+        crate::Pos,
+        std::collections::BTreeSet<crate::name::Name>,
+    > = Default::default();
+    for (pos, want) in refusals_of_kind_through(path, "improve_refused", turn) {
+        match want {
+            Some(want) => {
+                named
+                    .entry(pos)
+                    .or_default()
+                    .insert(crate::name::Name::new(&civvis_improvement_name(&want)));
+            }
+            None => {
+                tiles.insert(pos);
+            }
+        }
+    }
+    (tiles, named)
+}
+
+/// Every refusal of `kind` through `turn`, AXIAL, with the `want` it names.
+fn refusals_of_kind_through(
+    path: &std::path::Path,
+    kind: &str,
+    turn: Option<u32>,
+) -> Vec<(crate::Pos, Option<String>)> {
+    let mut refused = Vec::new();
     let Ok(raw) = read_events(path) else {
         return refused;
     };
@@ -7793,7 +7929,12 @@ fn refused_sites_of_kind_through(
         ) else {
             continue;
         };
-        refused.insert(crate::hex::offset_to_axial(x as i32, y as i32));
+        let want = event
+            .get("want")
+            .and_then(|v| v.as_str())
+            .filter(|want| !want.is_empty())
+            .map(str::to_string);
+        refused.push((crate::hex::offset_to_axial(x as i32, y as i32), want));
     }
     refused
 }
@@ -9996,6 +10137,24 @@ fn apply_player_ages(game: &mut crate::game::Game, state: &StateSnapshot) {
         // past its end is clamped rather than allowed to index out of range.
         game.world_era = (era as usize).min(crate::rules::ERA_NAMES.len() - 1);
     }
+    apply_era_countdown(game, state.era_countdown);
+}
+
+/// The host's era countdown as the model's `world_era_countdown_end`: the turn
+/// on which `Game::process_eras` opens the next era. The simulator advances the
+/// era at the start of turn `end`, so the old era's last turn is `end - 1`;
+/// Firaxis counts 0 on that last turn, hence `turn + countdown + 1`. A negative
+/// countdown (not started) clears it: the countdown always runs for
+/// `NEXT_ERA_COUNTDOWN_TURNS` once it starts, so an unstarted era cannot end
+/// inside `age-closer-2`'s window. An older export (`None`) leaves the model's
+/// own value alone.
+fn apply_era_countdown(game: &mut crate::game::Game, countdown: Option<i64>) {
+    let Some(countdown) = countdown else {
+        return;
+    };
+    game.world_era_countdown_end = u32::try_from(countdown)
+        .ok()
+        .map(|left| game.turn.saturating_add(left).saturating_add(1));
 }
 
 /// A Firaxis `COMMEMORATION_*` type as CIVVIS's dedication id — the same pairing
@@ -10237,6 +10396,13 @@ fn apply_city_religion(live: &mut crate::game::City, state: &StateCity) {
     const MAJORITY_CONVERSION_MARKER: f64 = 60.0;
 
     let current = state.religion.as_deref().and_then(civvis_religion_name);
+    // `founder-holds-the-holy-city` reads the host's next faith raw, before
+    // the conversion clock below decides whether it is actionable.
+    live.religion_next_seen = state
+        .religion_next
+        .as_deref()
+        .and_then(civvis_religion_name)
+        .filter(|next| current.as_deref() != Some(next.as_str()));
     live.pressure.clear();
     match current.as_ref() {
         Some(religion) => {
@@ -11469,6 +11635,129 @@ fn apply_observed_city_facts(game: &mut crate::game::Game, state: &StateSnapshot
     }
 }
 
+/// The city fire each foreign seat last showed, carried across the boards a
+/// `--fresh-board` bridge rebuilds every turn.
+///
+/// The export reads a rival city's `ranged_strength` only while the seat can
+/// see the city (`cityRangedStrength` in CivvisControlAgent.lua: "Never read a
+/// fogged rival's strength"), and a city with no reading falls back to the
+/// strongest ranged unit of its owner's the board can see — a Builder's 3 when
+/// none is in sight. Live King civvis-20261005T024614Z (game 94) besieged
+/// Porto from turn 127, where the export read 60 (a Field Cannon civ) on every
+/// turn a unit of ours had the city in sight and nothing on the others. On
+/// turns 132 and 135 it read nothing, the siege's endurance against the
+/// city's strike jumped from 3.1 to 37.2 turns (and from 2.4 to 22.8), the
+/// train invested, and a Catapult, an Archer and a Trebuchet walked into
+/// Porto's reach one turn apiece and died for 1 to 12 wall points each.
+///
+/// A human remembers the number on the banner. Each city's last reading is
+/// kept by position, under the owner that showed it, so a city that changes
+/// hands drops the old owner's fire. Every city of one empire showed the same
+/// fire in that game (Porto and Lisbon 40, then 60, then 107 together), so the
+/// seat's latest reading across all its cities stands for a city of it never
+/// read. Neither reads below what the seat's research lets it train
+/// ([`researched_city_fire`]), which still holds for a seat never seen. An
+/// observed reading always wins.
+///
+/// `CIVVIS_NO_CITY_FIRE_MEMORY=1` (or `civvis_orders --no-city-fire-memory`)
+/// turns it off; see [`CityFireMemory::disabled_by_env`].
+#[derive(Clone, Debug, Default)]
+pub struct CityFireMemory {
+    turn: Option<u32>,
+    /// The last reading at each city position, and the seat that showed it.
+    by_city: BTreeMap<crate::Pos, (usize, f64)>,
+    /// Each seat's latest reading across all of its cities.
+    by_seat: BTreeMap<usize, f64>,
+}
+
+impl CityFireMemory {
+    /// The live kill switch: a non-empty `CIVVIS_NO_CITY_FIRE_MEMORY` other
+    /// than `0` disables the memory without a rebuild.
+    pub fn disabled_by_env() -> bool {
+        std::env::var("CIVVIS_NO_CITY_FIRE_MEMORY")
+            .is_ok_and(|value| !value.is_empty() && value != "0")
+    }
+
+    /// Record the fire this board observed, then give every foreign city the
+    /// export left unread the strongest of its own remembered fire (same
+    /// owner only), its seat's remembered fire and its seat's researched fire.
+    pub fn apply(&mut self, game: &mut crate::game::Game) {
+        if self.turn.is_some_and(|turn| game.turn < turn) {
+            // A replay starts a new timeline.
+            self.by_city.clear();
+            self.by_seat.clear();
+        }
+        self.turn = Some(game.turn);
+        let mut latest: BTreeMap<usize, f64> = BTreeMap::new();
+        for (cid, strength) in game.observed_city_ranged_strength.iter() {
+            if let Some(city) = game.cities.get(cid).filter(|city| city.owner != 0) {
+                self.by_city.insert(city.pos, (city.owner, *strength));
+                let best = latest.entry(city.owner).or_insert(0.0);
+                *best = best.max(*strength);
+            }
+        }
+        self.by_seat.extend(latest);
+        let fills: Vec<(u32, f64)> = game
+            .cities
+            .values()
+            .filter(|city| {
+                city.owner != 0 && !game.observed_city_ranged_strength.contains_key(&city.id)
+            })
+            .filter_map(|city| {
+                let own = self
+                    .by_city
+                    .get(&city.pos)
+                    .filter(|(owner, _)| *owner == city.owner)
+                    .map(|(_, strength)| *strength);
+                own.into_iter()
+                    .chain(self.by_seat.get(&city.owner).copied())
+                    .chain(researched_city_fire(game, city.owner))
+                    .reduce(f64::max)
+                    .map(|strength| (city.id, strength))
+            })
+            .collect();
+        if fills.is_empty() {
+            return;
+        }
+        let observed = Arc::make_mut(&mut game.observed_city_ranged_strength);
+        for (cid, strength) in fills {
+            observed.insert(cid, strength);
+        }
+    }
+}
+
+/// The ranged strength of the strongest land unit this seat's research lets
+/// it train — the engine's own `strongest_ranged_built` once it trains one.
+/// Units that need a strategic resource are left out, since the seat may hold
+/// none; `None` for a seat with no such unit.
+fn researched_city_fire(game: &crate::game::Game, owner: usize) -> Option<f64> {
+    let player = game.players.get(owner)?;
+    game.rules
+        .units
+        .values()
+        .filter(|spec| {
+            spec.class == "military"
+                && spec.buildable
+                && spec.ranged_strength > 0.0
+                && spec.domain.as_deref().is_none_or(|domain| domain == "land")
+                && spec.requires_resource.is_none()
+                && spec
+                    .tech
+                    .as_ref()
+                    .is_none_or(|tech| player.techs.contains(tech))
+                && spec
+                    .civic
+                    .as_ref()
+                    .is_none_or(|civic| player.civics.contains(civic))
+                && spec
+                    .unique_to
+                    .as_deref()
+                    .is_none_or(|civ| game.owns_civ_unique(owner, civ))
+        })
+        .map(|spec| spec.ranged_strength)
+        .reduce(f64::max)
+}
+
 fn apply_observed_host_metrics(
     game: &mut crate::game::Game,
     state: &StateSnapshot,
@@ -11508,6 +11797,10 @@ fn apply_observed_host_metrics(
             .or_default();
         observed.foreign_tourists = count(state.foreign_tourists);
         observed.domestic_tourists = count(state.domestic_tourists);
+        observed.culture_turns_to_victory = state
+            .culture_turns_to_victory
+            .is_finite()
+            .then_some(state.culture_turns_to_victory);
         // Match the local player's World Rankings science lane to the host
         // instead of treating its reconstructed fifty-light-year trip as fact.
         observed.science_victory_points = (state.science_victory_points.is_finite()
@@ -11644,6 +11937,12 @@ fn apply_congress_dvp(game: &mut crate::game::Game, state: &StateSnapshot) {
     let Some(congress) = &state.congress_dvp else {
         return;
     };
+    // One entry per alive major, the seat included: the host's count of the
+    // living, which the board's planted seats cannot give once a major is
+    // eliminated. Read by `retire_defeated_majors`.
+    if !congress.points.is_empty() {
+        game.players[0].live_living_majors = Some(congress.points.len());
+    }
     // Host player id -> mirror seat, exactly as the rival loops assign them.
     let seat_of = host_major_seat_map(state, modeled_major_player_count(game));
     let ours = state.seat.local_player.max(0) as usize;
@@ -12385,6 +12684,7 @@ fn step_refused_site_blocks(ctx: &mut HostStepCtx<'_>) {
     // them. See `refused_sites_of_kind_through`.
     ctx.game.blocked_city_sites = Arc::new(ctx.state.refused_sites.clone());
     ctx.game.blocked_improvement_sites = Arc::new(ctx.state.refused_improves.clone());
+    ctx.game.blocked_improvements = Arc::new(ctx.state.refused_improvement_names.clone());
     ctx.game.blocked_trade_routes = Arc::new(ctx.state.refused_trade_routes.clone());
     let policies = blocked_policies_from(&ctx.state.refused_policy_names, &ctx.game.rules);
     ctx.game.blocked_policies = Arc::new(policies);
@@ -14856,6 +15156,10 @@ impl LiveMirror {
             .extend(state.refused_sites.iter().copied());
         Arc::make_mut(&mut self.game.blocked_improvement_sites)
             .extend(state.refused_improves.iter().copied());
+        let blocked = Arc::make_mut(&mut self.game.blocked_improvements);
+        for (pos, names) in &state.refused_improvement_names {
+            blocked.entry(*pos).or_default().extend(names.iter().copied());
+        }
         Arc::make_mut(&mut self.game.blocked_trade_routes)
             .extend(state.refused_trade_routes.iter().copied());
         // Union for the same reason as the two above: a card the host retired stays

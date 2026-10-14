@@ -178,7 +178,7 @@ impl AdvancedAi {
         pos: Pos,
         improvement: &str,
     ) -> f64 {
-        if !self.first_luxury_first {
+        if !self.first_luxury_first && !self.first_luxury_first_2 {
             return 0.0;
         }
         let first_copy = luxury_at(g, pos).is_some_and(|resource| {
@@ -194,6 +194,12 @@ impl AdvancedAi {
         let deficit = self
             .empire_amenity_deficit(g, pid)
             .min(FIRST_COPY_DEFICIT_CAP);
+        // `first-luxury-first-2`: a content empire (by the host-calibrated
+        // ledger `Game::city_amenities` carries on a live board) keeps the
+        // shipped flat +14 for its first copy too; only a real shortfall pays.
+        if !self.first_luxury_first && deficit <= 0.0 {
+            return 0.0;
+        }
         FIRST_COPY_BASE + FIRST_COPY_PER_AMENITY * deficit
     }
 
@@ -210,6 +216,14 @@ impl AdvancedAi {
     ) -> f64 {
         self.improvement_value(g, pos, improvement, strategy)
             + self.first_luxury_premium(g, pid, pos, improvement)
+            // `growth-prices-the-farm`: zero with the gene off. See
+            // `advanced/growth_farm.rs`.
+            + self.growth_farm_premium(g, pid, pos, improvement)
+            // `growth-prices-the-farm-2`: zero with the gene off.
+            + self.growing_city_food_premium(g, pid, pos, improvement, strategy)
+            // `builders-improve-the-worked-for-production`: zero with the gene
+            // off. See `advanced/worked_production.rs`.
+            + self.worked_production_premium(g, pid, pos, improvement, strategy)
     }
 
     /// Journal an improvement the premium decided, once, after the engine has
@@ -222,7 +236,7 @@ impl AdvancedAi {
         pos: Pos,
         improvement: &str,
     ) {
-        if !self.first_luxury_first {
+        if !self.first_luxury_first && !self.first_luxury_first_2 {
             return;
         }
         // Asked AFTER the order landed, so the tile now connects and
@@ -236,6 +250,11 @@ impl AdvancedAi {
             return;
         };
         let deficit = self.empire_amenity_deficit(g, pid);
+        // Version 2 paid nothing to a content empire, so the order was not ours
+        // to claim.
+        if !self.first_luxury_first && deficit <= 0.0 {
+            return;
+        }
         think!(self.journal(), Cities, Decision,
                "A {} improves the empire's first {}",
                plain(improvement), plain(resource.as_str());

@@ -534,3 +534,32 @@ fn research_alliance_whole_game_instrument() {
         }
     }
 }
+
+/// A Domination seat never offers an alliance to a rival its army must
+/// counter: the bundled friendship would make the denial war illegal.
+#[test]
+fn a_domination_seat_does_not_ally_with_the_faith_it_must_counter() {
+    let ask = |counter: bool| {
+        let mut g = board();
+        // Rival 1 is the only legal partner.
+        g.at_war.insert((0, 2));
+        g.at_war.insert((0, 3));
+        g.players[1].religion = Some("orthodoxy".to_string());
+        for city in g.cities.values_mut() {
+            city.pressure.clear();
+            if counter && (city.owner == 1 || city.owner == 2) {
+                city.pressure.insert("orthodoxy".to_string(), 10_000.0);
+            }
+        }
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        ai.enable_research_alliance_first();
+        assert_eq!(ai.domination_counter_target(&g, 0, 1), counter);
+        ai.propose_strategic_alliance(&mut g, 0, &plan(GrandStrategy::Expansion, 61), None);
+        proposals_from(&g, 0)
+            .into_iter()
+            .map(|(to, _)| to)
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(ask(false), vec![1], "the control asks the only partner");
+    assert!(ask(true).is_empty());
+}

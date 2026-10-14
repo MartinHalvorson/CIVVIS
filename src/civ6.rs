@@ -873,6 +873,308 @@ fn civil_from_unix(secs: i64) -> (i64, u32, u32, u32, u32, u32) {
     )
 }
 
+// --- the operator's pause -------------------------------------------------
+
+/// Whether this server shows the live verification game, and so may hold it.
+///
+/// Only the mirror `tools/follow.py` keeps on screen beside Civilization VI
+/// passes `--live-pause`. A spectator table, the lobby or the follower's
+/// throwaway rebuild server never offers a button that stops a game it is not
+/// showing.
+static LIVE_PAUSE_CONTROL: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+
+pub fn enable_live_pause_control() {
+    LIVE_PAUSE_CONTROL.store(true, std::sync::atomic::Ordering::Relaxed);
+}
+
+pub fn live_pause_control() -> bool {
+    LIVE_PAUSE_CONTROL.load(std::sync::atomic::Ordering::Relaxed)
+}
+
+/// The request: present means "hold the live game". `tools/civ6_control/
+/// live_pause.py` owns the protocol; these paths and their reading are kept in
+/// step with it.
+fn live_pause_request_path() -> PathBuf {
+    std::env::var_os("CIVVIS_LIVE_PAUSE_FILE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home_dir().join(".civvis-live-pause.json"))
+}
+
+/// The report `civ6_play.py` writes from the control mod's own events.
+fn live_pause_state_path() -> PathBuf {
+    std::env::var_os("CIVVIS_LIVE_PAUSE_STATE_FILE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home_dir().join(".civvis-live-pause-state.json"))
+}
+
+/// How long a hold report is believed on its own. The harness rewrites it
+/// every 30 s while the mod holds (`operator_pause_held`); past this, it is
+/// believed only while its run still holds the game lock, so a harness that
+/// died holding cannot leave the page saying "Paused" over nothing.
+const LIVE_PAUSE_REPORT_FRESH: std::time::Duration = std::time::Duration::from_secs(120);
+
+fn read_json_object(path: &Path) -> Option<serde_json::Map<String, Value>> {
+    let raw = fs::read_to_string(path).ok()?;
+    match serde_json::from_str::<Value>(&raw).ok()? {
+        Value::Object(map) => Some(map),
+        _ => None,
+    }
+}
+
+/// The file's existence is the request; only an explicit `"paused": false`
+/// inside it reads as "play" — the same reading as `live_pause.requested()`.
+fn live_pause_requested_at(path: &Path) -> bool {
+    if !path.exists() {
+        return false;
+    }
+    read_json_object(path).is_none_or(|map| map.get("paused") != Some(&Value::Bool(false)))
+}
+
+fn live_pause_status_from(
+    request_path: &Path,
+    report_path: &Path,
+    run_holds_game: &dyn Fn(&str) -> bool,
+) -> Value {
+    let request = read_json_object(request_path).unwrap_or_default();
+    let report = read_json_object(report_path).unwrap_or_default();
+    let tag = report.get("tag").and_then(Value::as_str);
+    let fresh = fs::metadata(report_path)
+        .and_then(|meta| meta.modified())
+        .ok()
+        .and_then(|modified| modified.elapsed().ok())
+        .is_some_and(|age| age <= LIVE_PAUSE_REPORT_FRESH);
+    let held = report.get("held") == Some(&Value::Bool(true))
+        && (fresh || tag.is_some_and(run_holds_game));
+    serde_json::json!({
+        "available": live_pause_control(),
+        "requested": live_pause_requested_at(request_path),
+        "requested_utc": request.get("requested_utc").cloned().unwrap_or(Value::Null),
+        "held": held,
+        "tag": tag,
+        "turn": report.get("turn").cloned().unwrap_or(Value::Null),
+        "since_utc": if held {
+            report.get("since_utc").cloned().unwrap_or(Value::Null)
+        } else {
+            Value::Null
+        },
+    })
+}
+
+/// What the page shows: whether a pause is asked for, and whether the game is
+/// actually standing still yet (the mod holds on its next tick of our turn).
+pub fn live_pause_status() -> Value {
+    let mut status = live_pause_status_from(
+        &live_pause_request_path(),
+        &live_pause_state_path(),
+        &|tag| holder().is_some_and(|holder| holder.alive && holder.tag == tag),
+    );
+    // The New game beside the Pause reads the same live run.
+    status["new_game"] = live_new_game_status_at(live_run_dir().as_deref());
+    status
+}
+
+fn set_live_pause_at(
+    path: &Path,
+    paused: bool,
+    source: &str,
+    now: std::time::SystemTime,
+) -> Result<(), String> {
+    if !paused {
+        return match fs::remove_file(path) {
+            Ok(()) => Ok(()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+            Err(error) => Err(format!("could not lift the pause: {error}")),
+        };
+    }
+    let secs = now
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|since| since.as_secs())
+        .unwrap_or(0);
+    let (year, month, day, hour, minute, second) = civil_from_unix(secs as i64);
+    let body = serde_json::json!({
+        "paused": true,
+        "requested_utc": format!(
+            "{year:04}-{month:02}-{day:02}T{hour:02}:{minute:02}:{second:02}Z"
+        ),
+        "source": source,
+    });
+    // Written beside the target and renamed over it: the watchdogs read this
+    // file every poll and must never see half of it.
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "civvis-live-pause.json".to_string());
+    let staging = path.with_file_name(format!(".{name}.{}.tmp", std::process::id()));
+    fs::write(&staging, format!("{body}\n"))
+        .and_then(|()| fs::rename(&staging, path))
+        .map_err(|error| {
+            let _ = fs::remove_file(&staging);
+            format!("could not ask for the pause: {error}")
+        })
+}
+
+/// Ask for, or lift, the hold on the live game. Resuming removes the request.
+pub fn set_live_pause(paused: bool, source: &str) -> Result<(), String> {
+    set_live_pause_at(
+        &live_pause_request_path(),
+        paused,
+        source,
+        std::time::SystemTime::now(),
+    )
+}
+
+// --- the operator's watch pace --------------------------------------------
+//
+// On the live mirror the page's Watch pace is the Civilization VI game's own
+// per-turn budget (`tools/civ6_control/live_pause.py` `requested_pace_ms`):
+// `civ6_play.py` relays it to the control mod, which holds each turn's
+// opening until the previous opening is that long ago. Lightning (0) is no
+// wait at all, the lane's own speed, and what an unset pace means.
+
+fn live_pace_path() -> PathBuf {
+    std::env::var_os("CIVVIS_LIVE_PACE_FILE")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| home_dir().join(".civvis-live-pace.json"))
+}
+
+/// The live game's pace, as `live_pause.requested_pace_ms` reads it.
+fn live_pace_ms_at(path: &Path) -> u64 {
+    read_json_object(path)
+        .and_then(|map| map.get("ms").and_then(Value::as_u64))
+        .map_or(0, |ms| ms.min(60_000))
+}
+
+pub fn live_pace_ms() -> u64 {
+    live_pace_ms_at(&live_pace_path())
+}
+
+fn set_live_pace_at(path: &Path, ms: u64) -> Result<(), String> {
+    let body = serde_json::json!({ "ms": ms.min(60_000) });
+    let name = path
+        .file_name()
+        .map(|name| name.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "civvis-live-pace.json".to_string());
+    let staging = path.with_file_name(format!(".{name}.{}.tmp", std::process::id()));
+    fs::write(&staging, format!("{body}\n"))
+        .and_then(|()| fs::rename(&staging, path))
+        .map_err(|error| {
+            let _ = fs::remove_file(&staging);
+            format!("could not set the live game's pace: {error}")
+        })
+}
+
+/// Hold the live game to a Watch pace; 0 lets it play at full speed.
+pub fn set_live_pace(ms: u64) -> Result<(), String> {
+    set_live_pace_at(&live_pace_path(), ms)
+}
+
+// --- the operator's New game ----------------------------------------------
+//
+// The page's New game is `civvis-games retire`: the live run is asked to end
+// with Civilization VI's own Retire (`tools/civ6_control/operator_retire.py`
+// owns that protocol), the ladder row says `operator_retired`, and the lane's
+// supervisor starts the next game as it does after any ending. Nothing is
+// killed and nothing is launched from here.
+
+/// The reason the run and its ladder row carry, so a census can tell an
+/// operator's restart from a lost game.
+const LIVE_NEW_GAME_REASON: &str = "operator: new game from the CIVVIS page";
+
+/// The live run's directory: the game lock's holder, while its process lives.
+fn live_run_dir() -> Option<PathBuf> {
+    let holder = holder().filter(|holder| holder.alive)?;
+    let safe = !holder.tag.is_empty()
+        && holder
+            .tag
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '-' | '_' | '.'))
+        && !holder.tag.starts_with('.');
+    safe.then(|| run_root().join(&holder.tag))
+}
+
+/// Whether the live run has been asked to retire, and whether the control mod
+/// has done it. Read from the sidecars `operator_retire.py` keeps in the run.
+fn live_new_game_status_at(run_dir: Option<&Path>) -> Value {
+    // `live: false` is the gap between games: the retired run's harness has
+    // exited and the next one has not taken the lock yet.
+    let Some(run_dir) = run_dir else {
+        return serde_json::json!({
+            "live": false, "requested": false, "retired": false, "detail": null,
+        });
+    };
+    let request = run_dir.join("operator-retire-request.json").is_file();
+    let retired = run_dir.join("operator-retire.json").is_file();
+    let detail = read_json_object(&run_dir.join("operator-retire-status.json"))
+        .and_then(|note| note.get("detail").cloned())
+        .unwrap_or(Value::Null);
+    serde_json::json!({
+        "live": true,
+        "requested": request && !retired,
+        "retired": retired,
+        "detail": if retired { Value::Null } else { detail },
+    })
+}
+
+/// What `civvis-games retire` said, as the page's answer. A game already on its
+/// way out is what was asked for, not a failure.
+fn live_new_game_outcome(succeeded: bool, stdout: &str, stderr: &str) -> Result<(), String> {
+    let said = format!("{stdout}\n{stderr}");
+    if succeeded
+        || said.contains("already has a pending retirement request")
+        || said.contains("already has a recorded retirement")
+    {
+        return Ok(());
+    }
+    // The retire tool explains itself on stderr; the switch's own refusals
+    // (lanes off) print a `==` heading and then the reason on stdout.
+    let last_said = |text: &str| {
+        text.lines()
+            .map(str::trim)
+            .rfind(|line| !line.is_empty() && !line.starts_with("=="))
+            .map(str::to_string)
+    };
+    let why = last_said(stderr)
+        .or_else(|| last_said(stdout))
+        .unwrap_or_else(|| "the lane's switch refused without saying why".to_string());
+    let why = why
+        .trim_start_matches("retire request refused: ")
+        .trim_start_matches("refused: ");
+    Err(if why.contains("has no recorded turn") {
+        "the game is still being set up; try again once its first turn is on screen".to_string()
+    } else if why.contains("no tagged civ6_play harness is active") {
+        "no live game is running to replace".to_string()
+    } else if why.contains("is already complete") {
+        "this game has already ended; the next one is on its way".to_string()
+    } else {
+        why.to_string()
+    })
+}
+
+/// Ask Civilization VI to retire the live game so the lane starts a fresh one,
+/// and lift any pause: the pause request is host-wide, so standing it would
+/// hold the new game at its first turn, and New game means a game that plays.
+pub fn request_live_new_game() -> Result<(), String> {
+    let tools = tools_dir()
+        .ok_or_else(|| "the CIVVIS tools directory is not beside this server".to_string())?;
+    // The operator's own switch, not a copy of it: it refuses when the lanes
+    // are off (a retired game would get no successor), and its retire tool
+    // proves exactly one live game and refuses to touch one still in setup.
+    let output = Command::new("/bin/zsh")
+        .arg(tools.join("ops").join("civvis-games.sh"))
+        .args(["retire", LIVE_NEW_GAME_REASON])
+        .env("CIVVIS_RUNS_ROOT", run_root())
+        .stdin(Stdio::null())
+        .output()
+        .map_err(|error| format!("could not ask for a new game: {error}"))?;
+    live_new_game_outcome(
+        output.status.success(),
+        &String::from_utf8_lossy(&output.stdout),
+        &String::from_utf8_lossy(&output.stderr),
+    )?;
+    set_live_pause(false, "civvis-page")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1105,5 +1407,196 @@ mod tests {
         // Leap years and month ends are where a hand-rolled calendar breaks.
         let leap = epoch + std::time::Duration::from_secs(1_709_164_800);
         assert_eq!(new_tag(leap), "civvis-20240229T000000Z");
+    }
+
+    fn live_pause_scratch(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!(
+            "civvis-live-pause-{name}-{}-{:?}",
+            std::process::id(),
+            std::thread::current().id()
+        ));
+        let _ = fs::remove_dir_all(&dir);
+        fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    /// The page's Watch pace is the live game's per-turn budget, read the way
+    /// `live_pause.requested_pace_ms` reads it: unset or unreadable is no
+    /// wait, and past a minute it is clamped.
+    #[test]
+    fn the_page_sets_the_live_games_watch_pace() {
+        let dir = live_pause_scratch("pace");
+        let pace = dir.join("pace.json");
+        assert_eq!(live_pace_ms_at(&pace), 0);
+        set_live_pace_at(&pace, 2_000).unwrap();
+        assert_eq!(live_pace_ms_at(&pace), 2_000);
+        let written: Value = serde_json::from_str(&fs::read_to_string(&pace).unwrap()).unwrap();
+        assert_eq!(written["ms"], 2_000);
+        set_live_pace_at(&pace, 0).unwrap();
+        assert_eq!(live_pace_ms_at(&pace), 0);
+        set_live_pace_at(&pace, 3_600_000).unwrap();
+        assert_eq!(live_pace_ms_at(&pace), 60_000);
+        fs::write(&pace, "{torn").unwrap();
+        assert_eq!(live_pace_ms_at(&pace), 0);
+        // No staging file is left behind beside it.
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+    }
+
+    /// Pause writes the request the harness and every watchdog read; Resume
+    /// removes it, and lifting a pause nobody asked for is not an error.
+    #[test]
+    fn the_page_asks_for_and_lifts_the_live_pause() {
+        let dir = live_pause_scratch("request");
+        let request = dir.join("pause.json");
+        let report = dir.join("state.json");
+        let nobody = |_: &str| false;
+        assert!(!live_pause_requested_at(&request));
+        let at = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_791_864_000);
+        set_live_pause_at(&request, true, "civvis-page", at).unwrap();
+        assert!(live_pause_requested_at(&request));
+        let written: Value = serde_json::from_str(&fs::read_to_string(&request).unwrap()).unwrap();
+        assert_eq!(written["paused"], true);
+        assert_eq!(written["source"], "civvis-page");
+        assert_eq!(written["requested_utc"], "2026-10-13T04:00:00Z");
+        let status = live_pause_status_from(&request, &report, &nobody);
+        assert_eq!(status["requested"], true);
+        assert_eq!(status["requested_utc"], "2026-10-13T04:00:00Z");
+        // Asked for is not the same as standing still: no report yet.
+        assert_eq!(status["held"], false);
+        // No staging file is left behind beside the request.
+        assert_eq!(fs::read_dir(&dir).unwrap().count(), 1);
+        set_live_pause_at(&request, false, "civvis-page", at).unwrap();
+        assert!(!request.exists());
+        set_live_pause_at(&request, false, "civvis-page", at).unwrap();
+        // The same reading as `live_pause.requested()`: an empty hand-written
+        // file pauses; only an explicit `false` inside it plays.
+        fs::write(&request, "").unwrap();
+        assert!(live_pause_requested_at(&request));
+        fs::write(&request, r#"{"paused": false}"#).unwrap();
+        assert!(!live_pause_requested_at(&request));
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// "Paused" is said only on the harness's word that the game stopped, and
+    /// that word expires with the run that gave it.
+    #[test]
+    fn the_page_believes_a_hold_only_from_a_live_run() {
+        let dir = live_pause_scratch("report");
+        let request = dir.join("pause.json");
+        let report = dir.join("state.json");
+        fs::write(
+            &report,
+            r#"{"tag": "civvis-20261013T041158Z", "held": true, "turn": 151,
+                "since_utc": "2026-10-13T04:20:00Z"}"#,
+        )
+        .unwrap();
+        let nobody = |_: &str| false;
+        let status = live_pause_status_from(&request, &report, &nobody);
+        assert_eq!(status["held"], true, "a fresh report is believed");
+        assert_eq!(status["turn"], 151);
+        assert_eq!(status["tag"], "civvis-20261013T041158Z");
+        assert_eq!(status["since_utc"], "2026-10-13T04:20:00Z");
+        assert_eq!(status["requested"], false, "a resume already asked for");
+        // An old report stands only while its run still holds the game.
+        let old = std::time::SystemTime::now() - std::time::Duration::from_secs(600);
+        fs::File::options()
+            .write(true)
+            .open(&report)
+            .unwrap()
+            .set_modified(old)
+            .unwrap();
+        assert_eq!(live_pause_status_from(&request, &report, &nobody)["held"], false);
+        let holds = |tag: &str| tag == "civvis-20261013T041158Z";
+        assert_eq!(live_pause_status_from(&request, &report, &holds)["held"], true);
+        let other = |tag: &str| tag == "civvis-20261013T050000Z";
+        assert_eq!(live_pause_status_from(&request, &report, &other)["held"], false);
+        // A released report is not a hold, however fresh.
+        fs::write(&report, r#"{"tag": "civvis-20261013T041158Z", "held": false}"#).unwrap();
+        let status = live_pause_status_from(&request, &report, &holds);
+        assert_eq!(status["held"], false);
+        assert_eq!(status["since_utc"], Value::Null);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// New game reads the live run's retire sidecars: asked for until the
+    /// control mod has retired the game, and no live run means nothing asked.
+    #[test]
+    fn the_page_sees_a_new_game_asked_for_and_done() {
+        let none = live_new_game_status_at(None);
+        assert_eq!(none["live"], false);
+        assert_eq!(none["requested"], false);
+        assert_eq!(none["retired"], false);
+        let dir = live_pause_scratch("new-game");
+        let playing = live_new_game_status_at(Some(&dir));
+        assert_eq!(playing["live"], true);
+        assert_eq!(playing["requested"], false);
+        fs::write(
+            dir.join("operator-retire-request.json"),
+            r#"{"tag": "civvis-20261013T054246Z", "state": "requested"}"#,
+        )
+        .unwrap();
+        fs::write(
+            dir.join("operator-retire-status.json"),
+            r#"{"state": "pending", "detail": "wrote native retire order; awaiting control-mod acknowledgement"}"#,
+        )
+        .unwrap();
+        let asked = live_new_game_status_at(Some(&dir));
+        assert_eq!(asked["requested"], true);
+        assert_eq!(asked["retired"], false);
+        assert_eq!(
+            asked["detail"],
+            "wrote native retire order; awaiting control-mod acknowledgement"
+        );
+        fs::write(dir.join("operator-retire.json"), r#"{"state": "retired"}"#).unwrap();
+        let done = live_new_game_status_at(Some(&dir));
+        assert_eq!(done["requested"], false, "a retired game is no longer asked for");
+        assert_eq!(done["retired"], true);
+        assert_eq!(done["detail"], Value::Null);
+        let _ = fs::remove_dir_all(&dir);
+    }
+
+    /// What `civvis-games retire` says becomes the page's answer: a game
+    /// already on its way out is success, and a refusal says why in words the
+    /// operator can act on.
+    #[test]
+    fn the_page_reads_the_switch_for_a_new_game() {
+        assert_eq!(live_new_game_outcome(true, "== retiring the active game ==\n", ""), Ok(()));
+        assert_eq!(
+            live_new_game_outcome(
+                false,
+                "== retiring the active game ==\n",
+                "retire request refused: run 'civvis-x' already has a pending retirement request\n",
+            ),
+            Ok(())
+        );
+        assert_eq!(
+            live_new_game_outcome(
+                false,
+                "== retiring the active game ==\n",
+                "retire request refused: run 'civvis-x' has no recorded turn; refusing to touch setup\n",
+            ),
+            Err("the game is still being set up; try again once its first turn is on screen".into())
+        );
+        assert_eq!(
+            live_new_game_outcome(
+                false,
+                "== retiring the active game ==\n",
+                "retire request refused: no tagged civ6_play harness is active\n",
+            ),
+            Err("no live game is running to replace".into())
+        );
+        // The switch's own refusal is on stdout, under its heading.
+        assert_eq!(
+            live_new_game_outcome(
+                false,
+                "== retiring the active game ==\n  refused: the game lanes are OFF; use civvis-games on before requesting a replacement\n",
+                "",
+            ),
+            Err("the game lanes are OFF; use civvis-games on before requesting a replacement".into())
+        );
+        assert_eq!(
+            live_new_game_outcome(false, "", ""),
+            Err("the lane's switch refused without saying why".into())
+        );
     }
 }

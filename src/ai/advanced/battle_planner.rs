@@ -237,12 +237,19 @@ const FROM_TILES_PER_PAIR: usize = 3;
 const DANGER_WEIGHT: f64 = 0.5;
 /// A unit under this strikes only to finish a kill, and only from safety.
 pub(super) const WOUNDED_STRIKER_HP: i32 = 50;
+/// `falling-city-outranks-the-heal`: a hostile city with no walls standing
+/// at or under this health is falling.
+pub(super) const FALLING_CITY_HP: i32 = 50;
+/// `falling-city-outranks-the-heal`: how near a falling city calls a
+/// recovering melee unit back: the muster line, two marching turns. The
+/// G428 takers held to heal seven tiles from Yokohama.
+pub(super) const FALLING_CITY_REACH: i32 = 8;
 /// A unit under this is rotated out to heal where the board heals.
 pub(super) const ROTATE_HP: i32 = 50;
 /// A rotated unit rejoins the kill plan at this.
 pub(super) const RETURN_HP: i32 = 80;
 /// Danger above `hp - this` rotates a unit whatever its hit points.
-const ROTATE_DANGER_MARGIN: i32 = 20;
+pub(super) const ROTATE_DANGER_MARGIN: i32 = 20;
 /// A target left at or under this, with a finisher to spare, is a plan that
 /// chipped: the penalty says finish it or leave it whole.
 const UNFINISHED_HP: f64 = 30.0;
@@ -412,9 +419,16 @@ pub(crate) fn strike_reach_of(probe: &mut Game, pid: usize, uid: u32) -> Vec<Pos
 }
 
 /// Each source's expected blow on one of our units at one tile: `None` is a
-/// city or Encampment strike; a unit source is named so a plan that kills it
-/// can leave its blow out.
+/// movement hazard; a unit source is named so a plan that kills it can leave
+/// its blow out; a City Center or Encampment strike is named by its city id
+/// tagged with [`STRUCTURE_SOURCE`], so `shared-danger` can split it too.
 type Blows = Arc<Vec<(Option<u32>, f64)>>;
+
+/// The tag on a structure's blow source: a city id with this bit set is its
+/// City Center's strike, and with [`ENCAMPMENT_SOURCE`] set as well, its
+/// Encampment's.
+pub(super) const STRUCTURE_SOURCE: u32 = 1 << 31;
+const ENCAMPMENT_SOURCE: u32 = 1 << 30;
 
 /// The danger field for one frame of the board: what every visible hostile
 /// could do to one of our units on a tile next turn.
@@ -435,6 +449,10 @@ pub(super) struct DangerField {
     /// `strike-reach`: hostiles whose strike reach held a tile the movement
     /// flood did not. Zero with the gene off.
     pub(super) widened: u32,
+    /// `shared-danger`: each hostile's share, one over the number of our
+    /// land units inside its reach. Empty with the gene off, and then every
+    /// reading below is the full field.
+    shares: BTreeMap<u32, f64>,
 }
 
 impl DangerField {
@@ -508,7 +526,128 @@ impl DangerField {
             reaches,
             cache: BTreeMap::new(),
             widened,
+            shares: BTreeMap::new(),
         }
+    }
+
+    /// `shared-danger`: a hostile strikes once a turn, so its blow lands on
+    /// one of the units inside its reach, not on each of them. The full field
+    /// charges every blow to every unit at once; around unwalled Stockholm
+    /// (live King `civvis-20260930T221624Z`) a crossbowman, a catapult and a
+    /// defender made every firing tile read 95-127, and a nine-unit siege
+    /// rotated and held for 27 turns against three strikes a turn. Each
+    /// hostile's share is one over the land units of ours standing in its
+    /// reach now; `shared_reading` never falls under the strongest single
+    /// blow, because any one hostile can still spend all of its strike on
+    /// the unit asked about.
+    pub(super) fn share(&mut self, g: &Game) {
+        let ours: Vec<Pos> = g
+            .units
+            .values()
+            .filter(|unit| {
+                let spec = &g.rules.units[unit.kind];
+                unit.owner == self.pid
+                    && spec.class == "military"
+                    && spec.domain.as_deref() != Some("air")
+                    && !g.is_embarked(unit)
+            })
+            .map(|unit| unit.pos)
+            .collect();
+        self.shares = self
+            .reaches
+            .iter()
+            .map(|(id, reach)| {
+                let exposed = ours
+                    .iter()
+                    .filter(|pos| reach.binary_search(pos).is_ok())
+                    .count()
+                    .max(1);
+                (*id, 1.0 / exposed as f64)
+            })
+            .collect();
+        // A City Center or an Encampment strikes once a turn too, at one
+        // unit within two tiles of it.
+        let exposed_within_two = |at: Pos| {
+            ours.iter()
+                .filter(|pos| g.wdist(**pos, at) <= 2)
+                .count()
+                .max(1) as f64
+        };
+        for city in g.cities.values() {
+            if city.owner == self.pid || !g.is_at_war(self.pid, city.owner) {
+                continue;
+            }
+            debug_assert!(
+                city.id < ENCAMPMENT_SOURCE,
+                "city ids stay below the tag bits"
+            );
+            self.shares.insert(
+                STRUCTURE_SOURCE | city.id,
+                1.0 / exposed_within_two(city.pos),
+            );
+            if let Some(at) = g
+                .wdisk(city.pos, 3)
+                .into_iter()
+                .find(|pos| g.encampment_at(*pos) == Some(city.id))
+            {
+                self.shares.insert(
+                    STRUCTURE_SOURCE | ENCAMPMENT_SOURCE | city.id,
+                    1.0 / exposed_within_two(at),
+                );
+            }
+        }
+    }
+
+    fn shared_reading(&self, blows: impl Iterator<Item = (Option<u32>, f64)>) -> f64 {
+        let (mut shared, mut strongest) = (0.0_f64, 0.0_f64);
+        for (source, blow) in blows {
+            strongest = strongest.max(blow);
+            let share = source
+                .and_then(|id| self.shares.get(&id).copied())
+                .unwrap_or(1.0);
+            shared += blow * share;
+        }
+        shared.max(strongest)
+    }
+
+    /// The rotation's reading at one tile: the full field, or the shared
+    /// one with `shared-danger` on.
+    pub(super) fn rotation_danger(&mut self, tile: Pos, uid: u32) -> f64 {
+        if self.shares.is_empty() {
+            return self.danger(tile, uid);
+        }
+        let blows = self.contributions(tile, uid);
+        self.shared_reading(blows.iter().copied())
+    }
+
+    /// `guns-enter-together`: the reading for one of `entering` siege guns
+    /// stepping into a walled city's strike ring together. A City Center or
+    /// an Encampment strikes once a turn, so its blow is charged once across
+    /// the group (or across the units already in its reach, when that share
+    /// is smaller); every unit's blow and every movement hazard is charged as
+    /// the rotation charges it, and the reading never falls under the
+    /// strongest single unit's blow. Live King civvis-20261005T051413Z
+    /// (game 102): four fit Bombards stood three tiles from walled Toronto
+    /// for nine turns because each post read the city's whole blow, ~108.
+    pub(super) fn group_entry_danger(&mut self, tile: Pos, uid: u32, entering: usize) -> f64 {
+        let group = 1.0 / entering.max(1) as f64;
+        let blows = self.contributions(tile, uid);
+        let (mut total, mut strongest_unit) = (0.0_f64, 0.0_f64);
+        for (source, blow) in blows.iter() {
+            let share = source.and_then(|id| self.shares.get(&id).copied());
+            match source {
+                Some(id) if id & STRUCTURE_SOURCE != 0 => {
+                    total += blow * share.map_or(group, |share| share.min(group));
+                }
+                _ => {
+                    total += blow * share.unwrap_or(1.0);
+                    if source.is_some() {
+                        strongest_unit = strongest_unit.max(*blow);
+                    }
+                }
+            }
+        }
+        total.max(strongest_unit)
     }
 
     /// Every blow that would land on `uid` standing unfortified on `tile`
@@ -581,7 +720,7 @@ impl DangerField {
                         && cities.insert(cid)
                     {
                         out.push((
-                            None,
+                            Some(STRUCTURE_SOURCE | cid),
                             expected_damage(self.probe.city_ranged_strength(cid), defence),
                         ));
                     }
@@ -600,7 +739,7 @@ impl DangerField {
                         && encampments.insert((cid, pos))
                     {
                         out.push((
-                            None,
+                            Some(STRUCTURE_SOURCE | ENCAMPMENT_SOURCE | cid),
                             expected_damage(self.probe.city_ranged_strength(cid), defence),
                         ));
                     }
@@ -634,11 +773,15 @@ impl DangerField {
     }
 
     fn upper_danger_without(&mut self, tile: Pos, uid: u32, hp: i32, dead: &BTreeSet<u32>) -> f64 {
-        self.contributions_at_hp(tile, uid, hp)
+        let blows = self.contributions_at_hp(tile, uid, hp);
+        let alive = blows
             .iter()
             .filter(|(source, _)| source.is_none_or(|id| !dead.contains(&id)))
-            .map(|(_, blow)| upper_roll_damage(*blow))
-            .sum()
+            .map(|(source, blow)| (*source, upper_roll_damage(*blow)));
+        if self.shares.is_empty() {
+            return alive.map(|(_, blow)| blow).sum();
+        }
+        self.shared_reading(alive)
     }
 
     /// Stand `uid` on `to` by an actual `MoveTo` on the probe, read the board
@@ -1114,10 +1257,61 @@ pub(super) fn melee_health_floor(g: &Game, pid: usize, action: &Action) -> Optio
 }
 
 impl AdvancedAi {
+    /// `falling-city-outranks-the-heal`: whether a melee land unit fit to
+    /// fight ([`ROTATE_HP`] or more) but still recovering toward
+    /// [`RETURN_HP`] stays in the fight because a hostile city with no
+    /// walls standing and at most [`FALLING_CITY_HP`] health lies within
+    /// [`FALLING_CITY_REACH`] tiles. Such a city cannot strike, and a blow
+    /// takes it; the heal slot and the recovery rotation otherwise held the
+    /// bodies that would.
+    ///
+    /// Live Emperor civvis-20261008T182825Z (game 428): Yokohama stood with
+    /// no walls at 1 to 40 health from turn 142 to 153 while the takers in
+    /// reach logged "holds position to heal" at 63 and 78 hp seven tiles out
+    /// and the capture read "6 no walk"; Japan won on Culture at 161. Over the 10-06/07/08
+    /// runs, 11 of 26 such falling cities took more than two turns or never
+    /// fell.
+    pub(super) fn falling_city_calls(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        if !self.falling_city_outranks_the_heal {
+            return false;
+        }
+        let Some(unit) = g.units.get(&uid) else {
+            return false;
+        };
+        let spec = &g.rules.units[unit.kind];
+        if unit.hp < ROTATE_HP
+            || !spec.is_melee_capable()
+            || spec.domain.as_deref().is_some_and(|domain| domain != "land")
+            || g.is_embarked(unit)
+        {
+            return false;
+        }
+        g.cities.values().any(|city| {
+            city.owner != pid
+                && g.is_at_war(pid, city.owner)
+                && city.wall_hp <= 0
+                && city.hp <= FALLING_CITY_HP
+                && g.wdist(city.pos, unit.pos) <= FALLING_CITY_REACH
+        })
+    }
+
     /// The live controller must also honor this policy when its fresh combat
     /// preview disagrees with the native damage model.
     pub fn live_strike_survival_enabled(&self) -> bool {
         self.unit_preservation || self.doomed_blow_veto || self.doomed_blow_veto_2
+    }
+
+    /// Gene `dialogue-never-declares-war`. The brain never sees a leader
+    /// statement; the live controller's dialogue closer answers it, so the
+    /// bridge reply carries the policy there.
+    pub fn dialogue_never_declares_war_enabled(&self) -> bool {
+        self.dialogue_never_declares_war
+    }
+
+    /// Gene `ranged-before-melee`: the live bridge orders a frame's shots at
+    /// a target ahead of the melee blows on it.
+    pub fn ranged_before_melee_enabled(&self) -> bool {
+        self.ranged_before_melee
     }
 
     /// Apply the selected survival policy to a live bridge finishing volley.
@@ -1204,6 +1398,9 @@ impl AdvancedAi {
             })
         });
         let mut field = DangerField::with_reach(g, pid, self.strike_reach);
+        if self.shared_danger {
+            field.share(g);
+        }
         self.census.strike_reach_widened += field.widened;
         if field.widened > 0 {
             think!(self.journal(), Military, Detail,
@@ -1227,10 +1424,16 @@ impl AdvancedAi {
         }
         if struck {
             field = DangerField::with_reach(g, pid, self.strike_reach);
+            if self.shared_danger {
+                field.share(g);
+            }
         }
         if self.doomed_blow_veto_2 {
             doomed.retain(|uid| !strikers.contains(uid));
         }
+        // An active Domination siege owns its members' blows: its train has
+        // priced the assault as a whole. See `active_siege_member`.
+        doomed.retain(|uid| !self.active_siege_member(g, pid, *uid));
         self.census.battle_plan_doomed += doomed.len() as u32;
         if !doomed.is_empty() {
             think!(self.journal(), Military, Decision,
@@ -1479,6 +1682,13 @@ impl AdvancedAi {
             // its shot is the wall, not a unit.
             if spec.siege && enemy_city_near(unit.pos, range + g.unit_max_moves(uid).ceil() as i32)
             {
+                armed.insert(uid);
+                continue;
+            }
+            // So is a shooter of a siege reducing an unwalled city: its shot
+            // is the city's health, not the next reliever. See
+            // `siege_train::unwalled_siege_member`.
+            if spec.has_ranged_attack() && self.unwalled_siege_member(g, pid, uid) {
                 armed.insert(uid);
                 continue;
             }
@@ -2086,7 +2296,7 @@ impl AdvancedAi {
 
     /// Pull the wounded and the exposed out of reach and fortify them.
     /// Returns how many actually moved or swapped.
-    fn rotate_wounded(
+    pub(super) fn rotate_wounded(
         &mut self,
         g: &mut Game,
         pid: usize,
@@ -2095,6 +2305,8 @@ impl AdvancedAi {
         doomed: &BTreeSet<u32>,
     ) -> u32 {
         let heals = !g.is_arena() || g.tactics.heal;
+        // `siege-keeps-a-shooter`: see `siege_wall_keepers`.
+        self.siege_wall_keepers = self.siege_wall_keepers(g, pid, field);
         let mut ids = g.player_unit_ids(pid);
         ids.sort_unstable();
         let mut rotations = 0u32;
@@ -2120,6 +2332,14 @@ impl AdvancedAi {
             {
                 continue;
             }
+            if self.siege_wall_keepers.contains(&uid) {
+                self.battle_planner_recovering.remove(&uid);
+                think!(self.journal(), Military, Decision,
+                    "Battle plan: the {} at {:?} keeps firing on the walls", unit.kind, unit.pos;
+                    "{} hp; every other shooter in range is out to heal, and the walls would be restored in full after a few turns without damage",
+                    unit.hp);
+                continue;
+            }
             if g.city_at(unit.pos).is_some() || g.defending_district_at(unit.pos).is_some() {
                 // A recovering garrison already reached safety. Keep its
                 // reservation across live frames until RETURN_HP, otherwise
@@ -2132,9 +2352,38 @@ impl AdvancedAi {
                 }
                 continue;
             }
-            let here = field.danger(unit.pos, uid);
-            let wounded =
-                heals && (unit.hp < ROTATE_HP || self.battle_planner_recovering.contains(&uid));
+            let here = field.rotation_danger(unit.pos, uid);
+            // `falling-city-outranks-the-heal`: see `falling_city_calls`.
+            let wounded = heals
+                && (unit.hp < ROTATE_HP
+                    || (self.battle_planner_recovering.contains(&uid)
+                        && !self.falling_city_calls(g, pid, uid)));
+            // A healthy member of an active Domination siege stays on its
+            // post: the field charges every enemy blow to every unit at once,
+            // and on King `civvis-20260930T221624Z` it rotated 89-hp archers
+            // off an unwalled Stockholm for 27 turns while the train read
+            // "damage ready". Only the wounded come out.
+            // A healthy member of a siege still in Stage is the train's to
+            // move as well: its Stage step holds a gun back on the gun's own
+            // risk limit. Live King civvis-20261004T033533Z (game 46) rotated
+            // four 100-hp catapults out at Babylon every turn from 135 to 153.
+            if !wounded
+                && (self.active_siege_member(g, pid, uid)
+                    || self.staging_siege_member(g, pid, uid))
+            {
+                continue;
+            }
+            // A healthy explorer is not a garrison either. The same summed
+            // field read 88-138 danger around full-health Skirmishers on King
+            // `civvis-20261001T050754Z` and "rotated them out to heal" at 100
+            // hp every turn from t90 to t130, so the two explorers paced the
+            // home cities while Germany, the culture winner, went uncharted
+            // until t147. Its own route (`explorer_turn`) steers around
+            // known threats; only the wounded come out. A vetoed attacker
+            // keeps the doomed path below, which has its own recon escape.
+            if !wounded && !doomed.contains(&uid) && self.distance_scout_available(g, pid, uid) {
+                continue;
+            }
             // Where nothing heals, a unit is pulled out only when it would
             // otherwise be removed: without a recovery to remember, a margin
             // would walk it out of reach one turn and back into it the next.
@@ -2585,7 +2834,7 @@ impl AdvancedAi {
         let mut by_role: BTreeMap<SlotRole, Vec<u32>> = BTreeMap::new();
         for uid in &members {
             let unit = &g.units[uid];
-            if heals && unit.hp < HEAL_SLOT_HP {
+            if heals && unit.hp < HEAL_SLOT_HP && !self.falling_city_calls(g, pid, *uid) {
                 wounded.push(*uid);
                 continue;
             }
@@ -3978,6 +4227,60 @@ mod tests {
             .iter()
             .all(|archer| !g.attack_reach(*archer).contains(&far)));
         assert_eq!(danger(&g, 0, far, ours), 0.0);
+    }
+
+    /// `shared-danger`: two archers strike once each, so with two of our
+    /// units inside both reaches each unit reads one archer's worth, never
+    /// less than the strongest single shot. The gene ships off.
+    #[test]
+    fn shared_danger_splits_each_blow_among_the_units_in_its_reach() {
+        let mut g = open_field();
+        let ours = g.spawn_unit("warrior", 0, at(10, 6));
+        let left = g.spawn_unit("archer", 1, at(8, 6));
+        let right = g.spawn_unit("archer", 1, at(12, 6));
+        let tile = at(10, 6);
+        let full = danger(&g, 0, tile, ours);
+        let mut field = DangerField::new(&g, 0);
+        field.share(&g);
+        let alone = field.rotation_danger(tile, ours);
+        assert!(
+            (alone - full).abs() < 1e-9,
+            "one unit in reach takes both: {alone} v {full}"
+        );
+
+        let friend = *g
+            .wdisk(tile, 2)
+            .iter()
+            .find(|pos| {
+                **pos != tile
+                    && [left, right].iter().all(|archer| {
+                        g.attack_reach(*archer).contains(pos) && g.units[archer].pos != **pos
+                    })
+            })
+            .expect("a second tile inside both reaches");
+        g.spawn_unit("warrior", 0, friend);
+        let full = danger(&g, 0, tile, ours);
+        let mut field = DangerField::new(&g, 0);
+        field.share(&g);
+        let shared = field.rotation_danger(tile, ours);
+        let strongest = [left, right]
+            .into_iter()
+            .map(|archer| {
+                let (att, def) = g
+                    .ranged_strike_strengths(archer, ours, tile)
+                    .expect("a pair");
+                expected_damage(att, def)
+            })
+            .fold(0.0_f64, f64::max);
+        assert!(
+            (shared - (full / 2.0).max(strongest)).abs() < 1e-9,
+            "{shared} v {full}"
+        );
+        assert!(shared < full);
+        assert!(!AdvancedAi::new().shared_danger, "an opt-in ships off");
+        super::super::test_support::opt_in_off_in_both_controllers("shared-danger", |ai| {
+            ai.shared_danger
+        });
     }
 
     /// `strike-reach` is an opt-in that ships off and is registered.

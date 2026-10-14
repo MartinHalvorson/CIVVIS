@@ -2405,6 +2405,15 @@
           "amenity-project-preemption-2": null
         }
       },
+      "amphibious-siege-train": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "amphibious-siege-train": null,
+          "amphibious-siege-train-2": null
+        }
+      },
       "battle-planner": {
         "rule_on": [
           "battle-planner-2"
@@ -2448,6 +2457,25 @@
           "border-parity-3": null
         }
       },
+      "breaker-supply-scales": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "breaker-supply-scales": null,
+          "breaker-supply-scales-2": null
+        }
+      },
+      "builder-before-the-army": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "builder-before-the-army": null,
+          "builder-before-the-army-2": null,
+          "builder-before-the-army-3": null
+        }
+      },
       "builder-workforce-recovery": {
         "rule_on": [
           "builder-workforce-recovery-2"
@@ -2469,6 +2497,34 @@
         "versions": {
           "campus-adjacency-threshold": -0.007025,
           "campus-adjacency-threshold-2": null
+        }
+      },
+      "campus-before-harbor": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "campus-before-harbor": null,
+          "campus-before-harbor-2": null
+        }
+      },
+      "campus-before-the-army": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "campus-before-the-army": null,
+          "campus-before-the-army-2": null,
+          "campus-before-the-army-3": null
+        }
+      },
+      "capital-prey-opens-a-front": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "capital-prey-opens-a-front": null,
+          "capital-prey-opens-a-front-2": null
         }
       },
       "capture-go-or-stand-down": {
@@ -2536,6 +2592,15 @@
           "coastal-city-sites-2": null
         }
       },
+      "colonization-earns-its-slot": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "colonization-earns-its-slot": null,
+          "colonization-earns-its-slot-2": null
+        }
+      },
       "connect-the-luxury": {
         "rule_on": [
           "connect-the-luxury"
@@ -2566,6 +2631,15 @@
           "culture-building-catchup-3": null
         }
       },
+      "culture-defense-theater": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "culture-defense-theater": null,
+          "culture-defense-theater-2": null
+        }
+      },
       "culture-lane-forecast": {
         "rule_on": [
           "culture-lane-forecast"
@@ -2577,6 +2651,24 @@
           "culture-lane-forecast-2": null
         }
       },
+      "declaration-needs-the-edge": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "declaration-needs-the-edge": null,
+          "declaration-needs-the-edge-2": null
+        }
+      },
+      "diplomatic-contender-kept": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "diplomatic-contender-kept": null,
+          "diplomatic-contender-kept-2": null
+        }
+      },
       "diplomatic-lane-forecast": {
         "rule_on": [
           "diplomatic-lane-forecast"
@@ -2586,6 +2678,15 @@
         "versions": {
           "diplomatic-lane-forecast": null,
           "diplomatic-lane-forecast-2": null
+        }
+      },
+      "district-buildings-first": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "district-buildings-first": null,
+          "district-buildings-first-2": null
         }
       },
       "district-coverage": {
@@ -2608,6 +2709,15 @@
         "versions": {
           "district-planning": 0.244584,
           "district-planning-3": null
+        }
+      },
+      "domination-siege-research": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "domination-siege-research": null,
+          "domination-siege-research-2": null
         }
       },
       "doomed-blow-veto": {
@@ -2682,7 +2792,26 @@
         "ships": null,
         "versions": {
           "first-granary-reserve": null,
-          "first-granary-reserve-2": null
+          "first-granary-reserve-2": null,
+          "first-granary-reserve-3": null
+        }
+      },
+      "first-luxury-first": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "first-luxury-first": null,
+          "first-luxury-first-2": null
+        }
+      },
+      "front-weighted-floor": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "front-weighted-floor": null,
+          "front-weighted-floor-2": null
         }
       },
       "government-ladder": {
@@ -2695,6 +2824,24 @@
           "government-ladder": null,
           "government-ladder-2": null,
           "government-ladder-3": null
+        }
+      },
+      "granary-before-the-army": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "granary-before-the-army": null,
+          "granary-before-the-army-2": null
+        }
+      },
+      "growth-prices-the-farm": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "growth-prices-the-farm": null,
+          "growth-prices-the-farm-2": null
         }
       },
       "holy-site-where-the-threat-is": {
@@ -2725,6 +2872,16 @@
           "housing-research-2": null
         }
       },
+      "industry-before-the-army": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "industry-before-the-army": null,
+          "industry-before-the-army-2": null,
+          "industry-before-the-army-3": null
+        }
+      },
       "lane-delegates-production": {
         "rule_on": [
           "lane-delegates-production-2"
@@ -2734,6 +2891,15 @@
         "versions": {
           "lane-delegates-production": null,
           "lane-delegates-production-2": null
+        }
+      },
+      "luxury-swap-asks": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "luxury-swap-asks": null,
+          "luxury-swap-asks-2": null
         }
       },
       "missionary-last-charge-explores": {
@@ -2802,6 +2968,15 @@
           "pass-picket-2": null
         }
       },
+      "policy-deck-hysteresis": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "policy-deck-hysteresis": null,
+          "policy-deck-hysteresis-2": null
+        }
+      },
       "power-the-laboratory": {
         "rule_on": [
           "power-the-laboratory-2"
@@ -2811,6 +2986,15 @@
         "versions": {
           "power-the-laboratory": 0.035908,
           "power-the-laboratory-2": null
+        }
+      },
+      "prophet-race-takes-a-district-slot": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "prophet-race-takes-a-district-slot": null,
+          "prophet-race-takes-a-district-slot-2": null
         }
       },
       "recovery-reads-the-war": {
@@ -2845,6 +3029,15 @@
         "versions": {
           "science-victory-drive": null,
           "science-victory-drive-2": null
+        }
+      },
+      "second-front-kept-when-winning": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "second-front-kept-when-winning": null,
+          "second-front-kept-when-winning-2": null
         }
       },
       "settler-backlog-brake": {
@@ -2918,6 +3111,15 @@
         "versions": {
           "treasury-at-work-2": null,
           "treasury-at-work-2-2": null
+        }
+      },
+      "war-kills-the-bands": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "war-kills-the-bands": null,
+          "war-kills-the-bands-2": null
         }
       },
       "wonder-ring-recon": {

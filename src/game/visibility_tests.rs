@@ -741,10 +741,16 @@ fn stock_unit_sight_ranges_match_civilization_vi() {
         // generic heavy-cavalry and crossbowman fallbacks each had only two.
         "varu",
         "voi_chien",
+        // The completed roster's shipped rows: the Sabum Kibittum is a
+        // scout-eyed raider, the U-Boat a submarine with three.
+        "sabum_kibittum",
+        "u_boat",
     ]
     .into_iter()
     .collect();
-    let sight_four: BTreeSet<&str> = ["biplane", "fighter", "bomber"].into_iter().collect();
+    let sight_four: BTreeSet<&str> = ["biplane", "fighter", "bomber", "mountie", "p51_mustang"]
+        .into_iter()
+        .collect();
     let sight_five: BTreeSet<&str> = ["drone", "jet_fighter", "jet_bomber"].into_iter().collect();
 
     for (unit, spec) in &rules.units {
@@ -1681,4 +1687,33 @@ fn a_contact_that_changes_in_sight_is_recorded_again() {
     assert_eq!(recorded(&game, wounded).map(|unit| unit.hp), Some(37));
     assert!(recorded(&game, steady).as_ref() == Some(&game.units[&steady]));
     assert_eq!(game.players[0].turn_units.len(), 2);
+}
+
+/// A City Center's vantage raises what a viewer standing there sees, not how
+/// tall the tile stands to a shooter. The host refused every range-2 shot a
+/// flat archer took at a Hills city across a Hills tile (`can_start=false`),
+/// while the city itself stays in sight over the same Hill.
+#[test]
+fn a_hills_city_behind_a_hill_is_seen_but_not_shot_from_flat_ground() {
+    let (mut game, origin) = controlled_game(91_013);
+    let blocker = along(&game, origin, 1);
+    let target = along(&game, origin, 2);
+    game.map.tiles.get_mut(&blocker).unwrap().hills = true;
+    game.map.tiles.get_mut(&target).unwrap().hills = true;
+    game.found_city_for(1, target, None);
+    let archer = game.spawn_unit("archer", 0, origin);
+
+    assert!(
+        game.unit_visible_tiles(archer).contains(&target),
+        "the city's vantage keeps it in sight over the Hill"
+    );
+    assert!(
+        !game.unit_has_line_of_sight(archer, target),
+        "a flat shooter has no corridor over the Hill to a Hills city"
+    );
+    game.map.tiles.get_mut(&origin).unwrap().hills = true;
+    assert!(
+        game.unit_has_line_of_sight(archer, target),
+        "a Hill supplies the matching vantage to shoot from"
+    );
 }

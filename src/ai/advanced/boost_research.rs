@@ -1108,7 +1108,13 @@ mod tests {
     #[test]
     fn the_research_pick_prefers_a_boost_it_already_holds() {
         let mut game = capital_board(53_009);
-        let strategy = GrandStrategy::Expansion;
+        // Diplomacy, not Expansion: the property needs a runner-up inside the
+        // gene's discount yet beyond the flat boost credit, and the opening
+        // values barely move with the map. Once the lookahead stopped counting
+        // other civilizations' unique units, Expansion's Mining/Animal
+        // Husbandry gap (39.0/33.8) fell under the flat credit on every seed
+        // from 53,000 to 53,200; Diplomacy's (ratio 1.25) holds on all of them.
+        let strategy = GrandStrategy::Diplomacy;
         let plain = AdvancedAi::new();
         let mut ai = AdvancedAi::new();
         ai.enable_boost_first_research();

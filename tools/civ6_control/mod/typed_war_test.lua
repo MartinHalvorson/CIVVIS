@@ -71,7 +71,18 @@ assert(order("DECLARE"))
 assert(requests[3][3] == "DECLARE_SURPRISE_WAR")
 allowed.DIPLOACTION_DECLARE_GOLDEN_AGE_WAR = true
 assert(order("DECLARE_GOLDEN_AGE_WAR"))
-assert(requests[4][3] == "DECLARE_GOLDEN_WAR", "the native Golden Age session has its own name")
+-- The Diplomacy screen's "DECLARE_GOLDEN_WAR" (DiplomacyActionView_Expansion1
+-- .lua:132) names no DiplomacyStatementType; the engine dropped all 18 such
+-- live requests while the action was valid. DeclareWarPopup_Expansion1.lua:20
+-- and Expansion1_DiplomacyStatements_DeclareWar.xml:7 use the real type.
+assert(requests[4][3] == "DECLARE_GOLDEN_AGE_WAR",
+    "the Golden Age session must be its DiplomacyStatementType, got " .. tostring(requests[4][3]))
+-- Every native declare-war session is the DiplomacyStatementType of the same
+-- name as its DIPLOACTION_ suffix (DiplomacyStatements_DeclareWar.xml and the
+-- Expansion1 file). A session name that differs is a request the engine drops.
+for statement, session in pairs(CivvisWarDeclarations.statements) do
+    assert(session == statement, statement .. " requests unknown session " .. tostring(session))
+end
 atWar = true
 assert(not order("DECLARE_FORMAL_WAR"))
 atWar = false

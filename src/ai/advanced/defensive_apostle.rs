@@ -75,6 +75,24 @@ impl AdvancedAi {
             > 0;
         let wanted = if launched { "inquisitor" } else { "apostle" };
         let faith = g.players[pid].religion.clone().unwrap();
+        // `founder-defends-its-cities`: with a rival faith in our cities, an
+        // Inquisition more than a few turns of Faith away does not hold the
+        // ordinary defensive purchases (live Emperor 20261008T101304Z saved
+        // 2 to 121 of the Apostle's 200 Faith from turn 49 to 83 and lost).
+        let saving_for = if !launched
+            && g.units.values().any(|unit| {
+                unit.owner == pid
+                    && unit.kind == "apostle"
+                    && unit.religion.as_deref() == Some(faith.as_str())
+                    && unit.charges > 0
+            }) {
+            "inquisitor"
+        } else {
+            wanted
+        };
+        if self.founder_inquisition_unit_out_of_reach(g, pid, saving_for) {
+            return false;
+        }
         if g.units.values().any(|unit| {
             unit.owner == pid
                 && unit.kind == wanted
@@ -86,7 +104,10 @@ impl AdvancedAi {
             return !launched;
         }
         for cid in g.player_city_ids(pid) {
-            if g.city_religion(&g.cities[&cid]) != Some(faith.as_str()) {
+            if g.city_religion(&g.cities[&cid]) != Some(faith.as_str())
+                // See `founder_purchase_withheld` (`founder-spreads-only-its-faith`).
+                || self.founder_purchase_withheld(g, pid, cid)
+            {
                 continue;
             }
             let Some(price) = g.unit_purchase_cost(pid, cid, wanted, "faith") else {
@@ -112,6 +133,15 @@ impl AdvancedAi {
                 return true;
             }
         }
+        // See `inquisition_first_price` (`founder-funds-the-inquisition`): the
+        // Inquisition is bought before any cover Missionary.
+        if let Some(price) = self.inquisition_first_price(g, pid) {
+            think!(self.journal(), Faith, Detail,
+                "Saving for the {}", wanted;
+                "founder-funds-the-inquisition: {:.0} of {:.0} Faith; a cover Missionary now would spend the Inquisition (G215 spent over 700 Faith on cover Missionaries and Builders and reached its Apostle two turns before Bogota fell)",
+                g.players[pid].faith, price);
+            return true;
+        }
         // Saving must not leave an exposed source without local cover. A
         // charged Missionary across the empire cannot preserve this city's
         // purchase menu before the approaching foreign spreaders convert it.
@@ -119,7 +149,10 @@ impl AdvancedAi {
         // this is a locality bound, not a movement-point arrival prediction.
         for cid in g.player_city_ids(pid) {
             let city = &g.cities[&cid];
-            if g.city_religion(city) != Some(faith.as_str()) {
+            if g.city_religion(city) != Some(faith.as_str())
+                // See `founder_purchase_withheld` (`founder-spreads-only-its-faith`).
+                || self.founder_purchase_withheld(g, pid, cid)
+            {
                 continue;
             }
             let threatened = g.units.values().any(|unit| {

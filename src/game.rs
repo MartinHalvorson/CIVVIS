@@ -478,8 +478,10 @@ pub use defending_district::DefendingDistrict;
 #[cfg(test)]
 pub(crate) mod defending_district_tests;
 mod growth;
+mod policy_ledger;
 mod research_quotes;
 mod route_avoidance;
+pub use policy_ledger::{EmpireReading, PolicyLedger, PolicyWorth};
 pub use research_quotes::HostResearchQuote;
 
 #[cfg(test)]
@@ -3673,6 +3675,12 @@ pub struct City {
     /// liberate the city before taking another action.
     #[serde(default)]
     pub captured_from: Option<usize>,
+    /// The faith the host names as this city's next majority, whatever its
+    /// turn estimate (`religion_next`). The mirror keeps it raw so a founder
+    /// can see a rival faith closing on its Holy City long before the host's
+    /// conversion clock reads short. `None` on a native board.
+    #[serde(default)]
+    pub religion_next_seen: Option<String>,
     /// The civilization from which this city was taken in war. Unlike
     /// `captured_from`, this survives the mandatory keep decision: an
     /// occupied city keeps its -5 Loyalty pressure until the former owner is
@@ -4611,6 +4619,10 @@ pub struct ObservedPublicEmpireStats {
     pub foreign_tourists: Option<usize>,
     #[serde(default)]
     pub domestic_tourists: Option<usize>,
+    /// The engine's own turns until this major wins on Culture
+    /// (`GetTurnsUntilVictory`); a negative reading means it reports none.
+    #[serde(default)]
+    pub culture_turns_to_victory: Option<f64>,
     /// Two more of that screen's own lane numbers: the religion lane's cities
     /// following this seat's religion (`GetNumCitiesFollowingReligion`, which
     /// counts cities the seat has never seen) and the domination lane's
@@ -4816,6 +4828,14 @@ pub struct Player {
     /// (`great_person_class_earnable`, `unused_great_person_faith`).
     #[serde(default)]
     pub live_great_person_exhausted: Option<BTreeSet<String>>,
+    /// How many majors the host says are alive, the seat included: the
+    /// World Congress standing (`congress_dvp`, one entry per alive major,
+    /// met or not). `None` headless and before the first standing. The
+    /// mirror plants a seat for every major at setup and never retires one,
+    /// so an eliminated major stays `alive` on the board; see
+    /// `AdvancedAi::retire_defeated_majors`.
+    #[serde(default)]
+    pub live_living_majors: Option<usize>,
     #[serde(default)]
     pub gp_claimed: BTreeMap<String, i64>,
     /// IDs of named Great People recruited from the global market.
@@ -5081,6 +5101,7 @@ impl Player {
             live_great_person_offer_blockers: BTreeMap::new(),
             live_great_person_activation_needs: Vec::new(),
             live_great_person_exhausted: None,
+            live_living_majors: None,
             gp_claimed: BTreeMap::new(),
             great_people: Vec::new(),
             pantheon: None,
@@ -6596,6 +6617,33 @@ pub struct Game {
     /// derive this from wall buildings and leave the override empty.
     #[serde(default)]
     pub observed_city_max_wall_hp: Arc<BTreeMap<u32, i32>>,
+    /// `breach-support-reads-the-wall-tier`: read a mirrored city's wall tier
+    /// from its observed wall pool when deciding whether a Battering Ram or a
+    /// Siege Tower works on it. A rival city's record carries its wall bars,
+    /// not its buildings, so `city_building_effect` read no immunity from
+    /// Medieval or Renaissance Walls it could not see. Set by the seat each
+    /// turn; native games leave the observed pool empty, so it changes nothing
+    /// there.
+    #[serde(default)]
+    pub observed_wall_tier_rules: bool,
+    /// `builders-route-around-mountains`: a Builder never enters a mountain,
+    /// whatever the Ski Resort unlock. The host's move pathing put none of
+    /// ours on a mountain in 984 Builder-turns after Professional Sports over
+    /// two 10-13 games and refused every move that ended on one, while the
+    /// board routed Builders across them. Set by the seat each turn.
+    #[serde(default)]
+    pub observed_builders_avoid_mountains: bool,
+    /// `culture-denial-heist`: a Great Work heist the HOST lists on a spy's
+    /// operation menu is offered, though the board cannot see the works. The
+    /// mirror carries only our own Great Works, so a rival city's
+    /// `spy_city_has_stealable_work` always read false and the heist was
+    /// never legal live: the host offered it for 8-14 turns in the culture
+    /// winner's city in three of today's eight culture losses
+    /// (civvis-20261008T062856Z St. Petersburg, T083432Z Tokyo, T090439Z
+    /// Mistahi-Sipihk) and it was never sent. Set by the seat each turn;
+    /// native games have no host menu, so it changes nothing there.
+    #[serde(default)]
+    pub heist_reads_the_host_menu: bool,
     /// Sites a HOST ruleset forbids for a reason CIVVIS's own rules cannot see.
     ///
     /// ★★★★ Empty in an ordinary game, and load-bearing when CIVVIS is driving a
@@ -6623,6 +6671,21 @@ pub struct Game {
     /// with seven builders alive against an army of one.
     #[serde(default)]
     pub blocked_improvement_sites: Arc<BTreeSet<Pos>>,
+    /// Improvements a HOST ruleset refused on one tile, by name. A refusal that
+    /// names its improvement condemns that improvement there, not the ground:
+    /// only a refusal without a name lands in
+    /// [`Game::blocked_improvement_sites`].
+    ///
+    /// ★★★ ONE REFUSED ALCÁZAR HID THE EMPIRE'S ONLY ALUMINUM. Live King
+    /// 20261001T042554Z: a Builder asked for an Alcázar on the Farm at
+    /// (31,29) on turn 112 and the host refused it. The tile was blocked for
+    /// every improvement for the rest of the game, so when Radio revealed
+    /// Aluminum under that Farm and Advanced Flight landed on turn 160, the
+    /// Mine was never valid: eight Builders stood idle, the Bomber wing was
+    /// stood down "no Aluminum" on turn 174, and the Mine went in on turn
+    /// 203 only because a restarted bridge had lost the old refusal.
+    #[serde(default)]
+    pub blocked_improvements: Arc<BTreeMap<Pos, BTreeSet<Name>>>,
     /// ★★★★ GROUND A GREAT PERSON STANDS ON, keyed to its owner. Empty in an
     /// ordinary game; the live mirror fills it because CIVVIS does not model
     /// Great People as units and drops them from the board (see
@@ -6631,7 +6694,8 @@ pub struct Game {
     /// Civilization VI stacks one civilian per plot and a Great Person is a
     /// civilian, so a Builder or Settler cannot end a move on one — exactly as
     /// this engine treats a plot holding a friendly unit of the same class — and
-    /// a foreign Great Person blocks everything short of a capture. On
+    /// a foreign Great Person blocks every unit, at war or not (Firaxis
+    /// captures no Great Person; live King civvis-20261004T160213Z). On
     /// run `civvis-20260816T003229Z` the founded, zero-charge Prophet stood on
     /// (7,25) beside the capital from turn 73 to the end; a Builder with two
     /// charges left was ordered `MOVE_TO (7,25)` on 25 consecutive turns
@@ -7577,6 +7641,9 @@ impl From<GameSer> for Game {
             observed_city_strength: Arc::new(s.observed_city_strength),
             observed_city_ranged_strength: Arc::new(s.observed_city_ranged_strength),
             observed_city_max_wall_hp: Arc::new(s.observed_city_max_wall_hp),
+            observed_wall_tier_rules: false,
+            observed_builders_avoid_mountains: false,
+            heist_reads_the_host_menu: false,
             // Not carried in a save: host refusals are rebuilt from the run's event
             // log on every reconstruction, so a stale copy would only mislead.
             blocked_city_sites: Arc::new(BTreeSet::new()),
@@ -7585,6 +7652,7 @@ impl From<GameSer> for Game {
             unseen_major_borders: BTreeSet::new(),
             sealed_border_owners: BTreeMap::new(),
             blocked_improvement_sites: Arc::new(BTreeSet::new()),
+            blocked_improvements: Arc::new(BTreeMap::new()),
             great_person_plots: BTreeMap::new(),
             blocked_promotions: Arc::new(BTreeMap::new()),
             host_band_promotions: Arc::new(BTreeMap::new()),
@@ -8301,6 +8369,9 @@ impl Game {
             observed_city_strength: Arc::new(BTreeMap::new()),
             observed_city_ranged_strength: Arc::new(BTreeMap::new()),
             observed_city_max_wall_hp: Arc::new(BTreeMap::new()),
+            observed_wall_tier_rules: false,
+            observed_builders_avoid_mountains: false,
+            heist_reads_the_host_menu: false,
             blocked_city_sites: Arc::new(BTreeSet::new()),
             host_observed: Arc::new(BTreeSet::new()),
             observed_appeal: Arc::new(BTreeMap::new()),
@@ -8312,6 +8383,7 @@ impl Game {
             unseen_major_borders: BTreeSet::new(),
             sealed_border_owners: BTreeMap::new(),
             blocked_improvement_sites: Arc::new(BTreeSet::new()),
+            blocked_improvements: Arc::new(BTreeMap::new()),
             great_person_plots: BTreeMap::new(),
             blocked_promotions: Arc::new(BTreeMap::new()),
             host_band_promotions: Arc::new(BTreeMap::new()),
@@ -13092,7 +13164,12 @@ impl Game {
             };
             let useful = match mission {
                 "steal_tech_boost" => self.spy_city_has_stealable_tech(spy.owner, city.owner),
-                "great_work_heist" => self.spy_city_has_stealable_work(spy.owner, city.id),
+                "great_work_heist" => {
+                    self.spy_city_has_stealable_work(spy.owner, city.id)
+                        // See `heist_reads_the_host_menu`.
+                        || (self.heist_reads_the_host_menu
+                            && host_menu.is_some_and(|menu| menu.contains("great_work_heist")))
+                }
                 "recruit_partisans" => self.barb_pid.is_some(),
                 _ => true,
             };
@@ -15063,14 +15140,86 @@ impl Game {
         {
             strength += 15.0;
         }
+        // The unit's own id never stands beside its own tile; the filter
+        // matters only to a probe read off its tile (see
+        // `theological_exchange_preview_with_defender_at`).
         strength
             + 2.0
                 * self
                     .nbrs(unit.pos)
                     .into_iter()
                     .flat_map(|pos| self.unit_ids_at(pos))
-                    .filter(|id| self.units[id].religion.as_deref() == Some(religion))
+                    .filter(|id| {
+                        **id != unit.id && self.units[id].religion.as_deref() == Some(religion)
+                    })
                     .count() as f64
+    }
+
+    /// The exchange a `TheologicalAttack` from `uid` on `target` would resolve,
+    /// both rolls taken at their mean (the strengths `do_theological_attack`
+    /// fights with, no RNG): `(blow dealt, blow received, defender hp)`.
+    /// `None` when there is no such attacker or no opposing religious unit.
+    pub(crate) fn theological_exchange_preview(
+        &self,
+        uid: u32,
+        target: Pos,
+    ) -> Option<(f64, f64, i32)> {
+        let attacker = self.units.get(&uid)?;
+        let attacker_religion = attacker.religion.clone()?;
+        let defender_id = self.units_at(target).into_iter().find(|other_id| {
+            let defender = &self.units[other_id];
+            defender.owner != attacker.owner
+                && self.rules.units[defender.kind].class == "religious"
+                && defender
+                    .religion
+                    .as_deref()
+                    .is_some_and(|r| r != attacker_religion)
+        })?;
+        let defender = &self.units[&defender_id];
+        let defender_religion = defender.religion.clone()?;
+        let att = effective_strength(
+            self.theological_strength(attacker)
+                + self.religious_alliance_combat_bonus(attacker.owner, &defender_religion),
+            attacker.hp,
+        );
+        let def = effective_strength(
+            self.theological_strength(defender)
+                + self.religious_alliance_combat_bonus(defender.owner, &attacker_religion),
+            defender.hp,
+        );
+        Some((expected_damage(att, def), expected_damage(def, att), defender.hp))
+    }
+
+    /// [`Self::theological_exchange_preview`] with `defender` read as if it
+    /// stood on `at`: the tile-bound terms of its strength (home territory, a
+    /// city or Holy Site of its faith, its Holy City, the units of its faith
+    /// beside it) follow it there. `None` when either unit is missing or
+    /// faithless, or the two share a faith.
+    pub(crate) fn theological_exchange_preview_with_defender_at(
+        &self,
+        uid: u32,
+        defender: u32,
+        at: Pos,
+    ) -> Option<(f64, f64, i32)> {
+        let attacker = self.units.get(&uid)?;
+        let attacker_religion = attacker.religion.clone()?;
+        let mut probe = self.units.get(&defender)?.clone();
+        let defender_religion = probe.religion.clone()?;
+        if defender_religion == attacker_religion {
+            return None;
+        }
+        probe.pos = at;
+        let att = effective_strength(
+            self.theological_strength(attacker)
+                + self.religious_alliance_combat_bonus(attacker.owner, &defender_religion),
+            attacker.hp,
+        );
+        let def = effective_strength(
+            self.theological_strength(&probe)
+                + self.religious_alliance_combat_bonus(probe.owner, &attacker_religion),
+            probe.hp,
+        );
+        Some((expected_damage(att, def), expected_damage(def, att), probe.hp))
     }
 
     fn do_theological_attack(&mut self, pid: usize, uid: u32, target: Pos) -> Result<(), String> {
@@ -17970,6 +18119,26 @@ impl Game {
             .sum()
     }
 
+    /// Whether a siege unit may still attack after moving this turn.
+    /// Civilization VI's data gives every siege unit "Cannot move and attack
+    /// in the same turn" (`ABILITY_NO_MOVE_AND_SHOOT`, lifted by Expert
+    /// Crew), and a native board keeps that rule. The live host does not hold
+    /// our seat to it: across the live runs of 2026-09-30 to 10-03, 94 of the
+    /// 104 Range Attacks a siege unit of ours was ordered to make after a Move
+    /// To earlier in the same turn resolved, the same nine in ten an unmoved
+    /// gun's shot resolves, and none of those guns had Expert Crew. Live King
+    /// civvis-20261003T135713Z, turn 101: a fresh Trebuchet stepped from
+    /// (16,16) to (15,15) and struck Kwadukuza's walls for 23. The mirror
+    /// clears `moved` at every frame, so before this the shot happened only
+    /// when a re-plan frame came after the step; the planned turn left the gun
+    /// standing in the city's reach unfired. So a siege unit of the mirrored
+    /// seat fires after moving, as the host lets it, and a hostile one keeps
+    /// the rule.
+    pub(crate) fn siege_may_attack_after_moving(&self, unit: &Unit) -> bool {
+        self.promotion_effect(unit, "attack_after_move") > 0.0
+            || (unit.owner == MIRRORED_SEAT && !self.host_observed.is_empty())
+    }
+
     /// Numeric abilities inherent to the unit type plus earned promotions.
     fn unit_effect(&self, unit: &Unit, effect: &str) -> f64 {
         self.rules.units[unit.kind]
@@ -18922,6 +19091,7 @@ impl Game {
             embark: !sea && (wading_giant || self.has_embarkation(unit.owner, &unit.kind)),
             ocean,
             mountain: (unit.kind == "builder"
+                && !self.observed_builders_avoid_mountains
                 && self.unlocked(
                     unit.owner,
                     &self.rules.improvements["ski_resort"].tech,
@@ -22424,6 +22594,27 @@ impl Game {
             .max(represented)
     }
 
+    /// Fielded ground strength. The host reports only one military total, so
+    /// a navy cannot be removed reliably from `observed_military_power`.
+    /// Use our complete unit roster when sizing a land campaign instead.
+    pub fn land_military_power(&self, pid: usize) -> f64 {
+        self.units
+            .values()
+            .filter(|unit| {
+                unit.owner == pid
+                    && !matches!(
+                        self.rules.units[unit.kind].domain.as_deref(),
+                        Some("sea" | "air")
+                    )
+            })
+            .map(|unit| {
+                (self.rules.units[unit.kind].strength + self.unit_formation_bonus(unit))
+                    * unit.hp as f64
+                    / 100.0
+            })
+            .sum()
+    }
+
     fn unlocked(&self, pid: usize, tech: &Option<Name>, civic: &Option<Name>) -> bool {
         let p = &self.players[pid];
         if let Some(t) = tech {
@@ -24295,6 +24486,52 @@ impl Game {
         viewer_height: i32,
         see_through_woods: bool,
     ) -> bool {
+        let target_height = self.sight_height_via(heights, to);
+        self.tile_has_line_to(
+            heights,
+            from,
+            to,
+            viewer_height,
+            target_height,
+            see_through_woods,
+        )
+    }
+
+    /// A ranged strike's corridor. The target stands at its terrain and
+    /// feature height only: a City Center's or Encampment's vantage raises
+    /// what a viewer standing there sees, not how tall the tile stands to a
+    /// shooter. Over the live King games of 2026-09-30 the host refused all
+    /// ten range-2 strikes on a Hills city across a Hills tile from flat
+    /// ground (`can_start=false`) that the district's +1 had read as clear,
+    /// and none of the 47 recorded range-2 city hits needs that +1.
+    fn tile_has_strike_line(
+        &self,
+        from: Pos,
+        to: Pos,
+        viewer_height: i32,
+        see_through_woods: bool,
+    ) -> bool {
+        let mut heights = HeightField::none();
+        let target_height = self.sight_height(to) - self.district_viewpoint_bonus(to);
+        self.tile_has_line_to(
+            &mut heights,
+            from,
+            to,
+            viewer_height,
+            target_height,
+            see_through_woods,
+        )
+    }
+
+    fn tile_has_line_to(
+        &self,
+        heights: &mut HeightField,
+        from: Pos,
+        to: Pos,
+        viewer_height: i32,
+        target_height: i32,
+        see_through_woods: bool,
+    ) -> bool {
         let sphere = self.map.sphere().is_some();
         let wraps = self.map.topology.wraps_east_west();
         // On a cylinder `unwrapped_toward` chooses the same minimum as
@@ -24305,7 +24542,6 @@ impl Game {
             return true;
         }
         if sphere {
-            let target_height = self.sight_height_via(heights, to);
             return self.arc_is_clear(
                 heights,
                 from,
@@ -24319,7 +24555,6 @@ impl Game {
         if distance == 0 || (wraps && distance == 1) {
             return true;
         }
-        let target_height = self.sight_height_via(heights, to);
         [(1e-6, 1e-6, -2e-6), (-1e-6, -1e-6, 2e-6)]
             .into_iter()
             .any(|nudge| {
@@ -24425,7 +24660,7 @@ impl Game {
             } else {
                 0
             };
-        self.tile_has_visibility_line(&mut HeightField::none(), from, to, attacker_height, false)
+        self.tile_has_strike_line(from, to, attacker_height, false)
     }
 
     /// Whether a unit standing on `from` would have line of sight to `to`.
@@ -24449,13 +24684,7 @@ impl Game {
         let unit = &self.units[&uid];
         if self.unit_effect(unit, "see_through_woods") > 0.0 && self.wdist(from, to) == 2 {
             let attacker_height = self.see_from_level(from);
-            return self.tile_has_visibility_line(
-                &mut HeightField::none(),
-                from,
-                to,
-                attacker_height,
-                true,
-            );
+            return self.tile_has_strike_line(from, to, attacker_height, true);
         }
         self.has_line_of_sight(from, to, true)
     }
@@ -24690,7 +24919,7 @@ impl Game {
             .unwrap_or(0)
     }
 
-    fn air_operation_origin(&self, uid: u32) -> Pos {
+    pub(crate) fn air_operation_origin(&self, uid: u32) -> Pos {
         let unit = &self.units[&uid];
         unit.air_patrol_pos.unwrap_or(unit.pos)
     }
@@ -26638,7 +26867,8 @@ impl Game {
 
     /// A standing Encampment remains a combat target at zero HP until a
     /// melee unit enters and pillages it, like a depleted City Center.
-    #[cfg(test)]
+    /// Every fort's combat presence is `defending_district_at`; this reads the
+    /// Encampment alone, for the siege readers keyed to its legacy fields.
     pub(crate) fn encampment_at(&self, pos: Pos) -> Option<u32> {
         let tile = self.map.get(pos)?;
         if !tile
@@ -26859,6 +27089,18 @@ impl Game {
         true
     }
 
+    /// The movement `uid` has left and the cost of one step onto `to`, when
+    /// it cannot pay that step (see [`Self::can_pay_step`]). `None` when the
+    /// step is affordable or the unit is unknown. Civilization VI charges the
+    /// whole terrain cost before entering, so a unit with 1 point left stops
+    /// in front of a 2-point hill and walks on next turn: the end of a move,
+    /// not a hold.
+    pub(crate) fn step_movement_shortfall(&self, uid: u32, to: Pos) -> Option<(f64, f64)> {
+        let unit = self.units.get(&uid)?;
+        (!self.can_pay_step(uid, unit.pos, to))
+            .then(|| (unit.moves_left, self.unit_step_cost(uid, unit.pos, to)))
+    }
+
     /// MP is paid before entering (Civ VI): a unit needs the full step cost,
     /// except that one untouched unit may always take one step.
     fn can_pay_step(&self, uid: u32, from: Pos, to: Pos) -> bool {
@@ -26946,6 +27188,15 @@ impl Game {
         let separate_military_layers = spec.class == "military"
             && (spec.domain.as_deref() == Some("sea")) != (ospec.domain.as_deref() == Some("sea"));
         !separate_military_layers
+    }
+
+    /// Whether two units on the board would contest one stacking layer if they
+    /// stood on the same tile. False for an unknown id.
+    pub fn units_share_stacking_layer(&self, unit: u32, other: u32) -> bool {
+        let (Some(a), Some(b)) = (self.units.get(&unit), self.units.get(&other)) else {
+            return false;
+        };
+        self.shares_stacking_layer(&self.rules.units[a.kind], &self.rules.units[b.kind])
     }
 
     /// Whether this unit may **end its movement** on `pos`.
@@ -27113,15 +27364,17 @@ impl Game {
         // One of our own on the layer we would finish on: the step is legal
         // and the arrival is not.
         let mut stacked = false;
-        // A Great Person the host has on this plot but CIVVIS has no unit for:
-        // the same stacking rules as the units below, read from the plot map. A
-        // foreign one blocks every layer short of a capture; one of ours holds
-        // the civilian layer against arrival. See `great_person_plots`.
+        // A Great Person the host has on this plot but CIVVIS has no unit for,
+        // read from the plot map. A foreign one blocks every unit, at war or
+        // not: Firaxis captures no Great Person. Live King
+        // civvis-20261004T160213Z (game 65) ordered a helicopter MOVE_TO
+        // (44,20), a Babylonian Great Scientist's plot beside Kar-Shamash, on
+        // turns 193-195 at war with Babylon: the host left it where it stood
+        // each turn and its ATTACK on the city struck nothing. One of ours
+        // holds the civilian layer against arrival. See `great_person_plots`.
         if let Some(owner) = self.great_person_plots.get(&pos) {
             if *owner != u.owner {
-                if spec.class != "military" || !self.is_at_war(u.owner, *owner) {
-                    return Entry::Blocked;
-                }
+                return Entry::Blocked;
             } else if spec.class == "civilian" {
                 stacked = true;
             }
@@ -27724,9 +27977,7 @@ impl Game {
 
             if spec.has_ranged_attack()
                 && !self.unit_is_embarked_at(unit, from)
-                && (!spec.siege
-                    || from == start
-                    || self.promotion_effect(unit, "attack_after_move") > 0.0)
+                && (!spec.siege || from == start || self.siege_may_attack_after_moving(unit))
             {
                 self.map.for_each_disk(from, attack_range, |target| {
                     if target != from && self.unit_has_line_of_sight_from(uid, from, target) {
@@ -28276,6 +28527,43 @@ impl Game {
         }
 
         let _memo = self.query_memo();
+        let distance = self.reverse_goal_distance(uid, goals, &zones)?;
+
+        // The reverse field gives the distance from every interior tile to
+        // its nearest goal. Read the first edge in the same neighbour order as
+        // the forward BFS; among equal distances this preserves its stable
+        // tie-break while avoiding a fresh flood for every unit.
+        let mut best_distance = i32::MAX;
+        let mut best = None;
+        let map_tiles = self.map.tiles.values().as_slice();
+        let neighbors = self.map.neighbor_indices(start_index);
+        for &neighbor_index in neighbors.as_slice() {
+            let index = neighbor_index as usize;
+            let next = map_tiles[index].pos;
+            if !self.can_enter_neighbor(uid, start, next) {
+                continue;
+            }
+            let steps = distance[index];
+            if steps < best_distance {
+                best_distance = steps;
+                best = Some(next);
+            }
+        }
+        best
+    }
+
+    /// The reverse route field `route_step_to_any` walks: for every tile, the
+    /// number of route steps from it to the nearest of `goals` (`i32::MAX`
+    /// where none is reachable), cached per traversal class, territory access
+    /// and goal set within the routing epoch.
+    fn reverse_goal_distance(
+        &self,
+        uid: u32,
+        goals: &HashSet<Pos>,
+        zones: &[u32],
+    ) -> Option<Arc<Vec<i32>>> {
+        let _memo = self.query_memo();
+        let unit = self.units.get(&uid)?;
         let territory_access = self.unit_territory_access(unit);
         let access_key = self.route_access_key(unit, territory_access.as_slice());
         let class = self.traversal_class(uid);
@@ -28304,7 +28592,7 @@ impl Game {
                     class,
                     territory_access.as_slice(),
                     goals.as_slice(),
-                    &zones,
+                    zones,
                 ));
                 let mut routing = self.routing.borrow_mut();
                 if routing.stamp == stamp {
@@ -28326,28 +28614,63 @@ impl Game {
                 distance
             }
         };
+        Some(distance)
+    }
 
-        // The reverse field gives the distance from every interior tile to
-        // its nearest goal. Read the first edge in the same neighbour order as
-        // the forward BFS; among equal distances this preserves its stable
-        // tie-break while avoiding a fresh flood for every unit.
-        let mut best_distance = i32::MAX;
-        let mut best = None;
-        let map_tiles = self.map.tiles.values().as_slice();
-        let neighbors = self.map.neighbor_indices(start_index);
-        for &neighbor_index in neighbors.as_slice() {
-            let index = neighbor_index as usize;
-            let next = map_tiles[index].pos;
-            if !self.can_enter_neighbor(uid, start, next) {
-                continue;
-            }
-            let steps = distance[index];
-            if steps < best_distance {
-                best_distance = steps;
-                best = Some(next);
-            }
+    /// `march-uses-its-moves`: every tile `uid` can stop on this turn that
+    /// has a route to `goals`, with the route steps from it to the nearest
+    /// goal (read on the reverse field [`Game::route_step_to_any`] walks) and
+    /// the movement left on arriving, nearest first, then most movement left,
+    /// then position. The first value is the start tile's own step count.
+    ///
+    /// `None` wherever `route_step_to_any` declines before reading its field,
+    /// for a unit that moves as a formation, and for one without movement.
+    pub(crate) fn march_reach_toward_any(
+        &self,
+        uid: u32,
+        goals: &HashSet<Pos>,
+    ) -> Option<(i32, Vec<(Pos, i32, f64)>)> {
+        if goals.is_empty() {
+            return None;
         }
-        best
+        let unit = self.units.get(&uid)?;
+        if unit.linked_to.is_some() || unit.moves_left <= 0.0 {
+            return None;
+        }
+        let zones = self.routing_zones(self.traversal_class(uid));
+        let start = unit.pos;
+        let start_index = self.map.tiles.index_of(start)?;
+        let start_zone = zones[start_index];
+        if start_zone == 0
+            || goals.contains(&start)
+            || self.formation_movement_locked_by_zoc(uid)
+            || !goals
+                .iter()
+                .any(|p| self.map.tiles.index_of(*p).map_or(0, |i| zones[i]) == start_zone)
+        {
+            return None;
+        }
+        let _memo = self.query_memo();
+        let distance = self.reverse_goal_distance(uid, goals, &zones)?;
+        let start_steps = distance[start_index];
+        if start_steps == i32::MAX {
+            return None;
+        }
+        let mut reach: Vec<(Pos, i32, f64)> = self
+            .flow(uid, start, unit.moves_left)
+            .into_iter()
+            .filter(|(pos, _)| *pos != start && self.can_stop(uid, *pos))
+            .filter_map(|(pos, left)| {
+                let steps = distance[self.map.tiles.index_of(pos)?];
+                (steps != i32::MAX).then_some((pos, steps, left))
+            })
+            .collect();
+        reach.sort_by(|a, b| {
+            a.1.cmp(&b.1)
+                .then_with(|| b.2.total_cmp(&a.2))
+                .then_with(|| a.0.cmp(&b.0))
+        });
+        Some((start_steps, reach))
     }
 
     /// Build a multi-source distance field by walking route edges backwards
@@ -31352,6 +31675,15 @@ impl Game {
             .values()
             .filter(|city| self.city_religion(city) == Some(religion))
             .count()
+    }
+
+    /// The host's own turns until `pid` wins on Culture, when observed: see
+    /// `ObservedPublicEmpireStats::culture_turns_to_victory`. A native game
+    /// has none.
+    pub fn culture_turns_to_victory(&self, pid: usize) -> Option<f64> {
+        self.observed_public_empire_stats
+            .get(&pid)
+            .and_then(|stats| stats.culture_turns_to_victory)
     }
 
     pub fn domestic_tourists(&self, pid: usize) -> i64 {

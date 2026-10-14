@@ -67,6 +67,7 @@ impl AdvancedAi {
                     || soldier.hp < STACKED_GUARD_MIN_HP
                     || soldier.linked_to.is_some()
                     || self.guard_is_reserved_for_civilian(guard)
+                    || self.amphibious_locked(guard)
                 {
                     continue;
                 }

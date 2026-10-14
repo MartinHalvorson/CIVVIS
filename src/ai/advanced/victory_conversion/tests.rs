@@ -429,6 +429,67 @@ fn siege_budget_rejects_an_archer_only_train_and_accepts_a_capable_force() {
 }
 
 #[test]
+fn staged_siege_can_budget_a_last_seen_city_outside_current_sight() {
+    let (mut g, mut ai, _, enemy) = board(VictoryTarget::Domination);
+    g.at_war.insert((0, 1));
+    let city_pos = g.cities[&enemy].pos;
+    g.cities
+        .get_mut(&enemy)
+        .unwrap()
+        .buildings
+        .push(crate::name!("walls"));
+    g.cities.get_mut(&enemy).unwrap().wall_hp = 100;
+    let gun = g.spawn_test_unit("rocket_artillery", 0, (city_pos.0 - 5, city_pos.1));
+    let taker = g.spawn_test_unit("modern_armor", 0, (city_pos.0 - 4, city_pos.1));
+    let force = [gun, taker];
+    assert!(!g.player_visibility(0).contains(&city_pos));
+    ai.enable_siege_positive_damage_budget();
+    g.players[0].remembered_cities.remove(&enemy);
+    assert!(ai.conversion_siege_budget(&g, 0, enemy, &force).is_none());
+
+    let memory = g.remember_city(&g.cities[&enemy]);
+    g.players[0].remembered_cities.insert(enemy, memory);
+    let (turns, endurance) = ai
+        .conversion_siege_budget(&g, 0, enemy, &force)
+        .expect("a known city keeps a siege budget through fog");
+    assert!(turns.is_finite(), "a gun and taker can breach: {turns}");
+    assert!(endurance > 0.0);
+}
+
+#[test]
+fn siege_budget_does_not_credit_melee_that_will_hold_outside_strong_walls() {
+    let (mut g, mut ai, _, enemy) = board(VictoryTarget::Domination);
+    g.at_war.insert((0, 1));
+    g.cities
+        .get_mut(&enemy)
+        .unwrap()
+        .buildings
+        .push(crate::name!("walls"));
+    let full_wall = g.city_max_wall_hp(&g.cities[&enemy]);
+    assert!(full_wall > 0);
+    g.cities.get_mut(&enemy).unwrap().wall_hp = full_wall;
+    let force: Vec<_> = g
+        .nbrs(g.cities[&enemy].pos)
+        .into_iter()
+        .map(|pos| g.spawn_test_unit("modern_armor", 0, pos))
+        .collect();
+    ai.enable_siege_positive_damage_budget();
+    let (turns, _) = ai.conversion_siege_budget(&g, 0, enemy, &force).unwrap();
+    assert!(
+        turns.is_infinite(),
+        "the force has no executable wall damage"
+    );
+    assert!(!ai.conversion_siege_ready(&g, 0, enemy, &force));
+
+    g.cities.get_mut(&enemy).unwrap().wall_hp = full_wall / 5;
+    let (turns, _) = ai.conversion_siege_budget(&g, 0, enemy, &force).unwrap();
+    assert!(
+        turns.is_finite(),
+        "melee can strike a wall at one fifth health"
+    );
+}
+
+#[test]
 fn reinforcement_orders_the_missing_breach_role_and_stops_at_the_deadline() {
     let (mut g, mut ai, home, enemy) = board(VictoryTarget::Domination);
     g.at_war.insert((0, 1));
@@ -473,6 +534,43 @@ fn reinforcement_orders_the_missing_breach_role_and_stops_at_the_deadline() {
             }
         ) <= 0.0
     );
+}
+
+#[test]
+fn a_single_gun_does_not_hide_a_losing_wall_damage_budget() {
+    let (mut g, mut ai, home, enemy) = board(VictoryTarget::Domination);
+    g.at_war.insert((0, 1));
+    g.cities
+        .get_mut(&enemy)
+        .unwrap()
+        .buildings
+        .push(crate::name!("renaissance_walls"));
+    g.cities.get_mut(&enemy).unwrap().wall_hp = 300;
+    let pos = g.cities[&enemy].pos;
+    g.spawn_test_unit("modern_armor", 1, pos);
+    let gun = g.spawn_test_unit("catapult", 0, (pos.0 - 2, pos.1));
+    let taker = g.spawn_test_unit("swordsman", 0, (pos.0 - 1, pos.1));
+    let (finish, endurance) = ai
+        .conversion_siege_budget(&g, 0, enemy, &[gun, taker])
+        .unwrap();
+    assert!(
+        finish > endurance * 0.8,
+        "{finish} turns against {endurance} endurance"
+    );
+    let item = Item::Unit {
+        unit: crate::name!("catapult"),
+    };
+    let quote = ProductionQuote {
+        turns: 5.0,
+        raw: 1000.0,
+    };
+    let plan = plan(&g, enemy, GrandStrategy::Conquest);
+    assert_eq!(
+        ai.conversion_reinforcement_bonus(&g, 0, home, &item, &plan, quote),
+        0.0
+    );
+    ai.enable_siege_positive_damage_budget();
+    assert!(ai.conversion_reinforcement_bonus(&g, 0, home, &item, &plan, quote) > 0.0);
 }
 
 #[test]

@@ -98,9 +98,76 @@ use crate::Pos;
 /// The staging ring: this far from the city while the train gathers.
 pub(super) const STAGING_NEAR: i32 = 3;
 pub(super) const STAGING_FAR: i32 = 5;
+
+/// `declaration-waits-for-the-breaker`: the standard turns a staged
+/// declaration holds for a breaker on one objective before it goes ahead.
+pub(super) const DECLARATION_BREAKER_PATIENCE: u32 = 10;
+/// `declaration-waits-for-the-breach`: a walled objective's budget must read
+/// its turns within this share of the force's endurance before the war opens
+/// — the margin the siege's own Stage -> Invest entry asks.
+pub(super) const DECLARATION_BREACH_SHARE: f64 = 0.8;
+/// `weak-target-skips-the-muster`: the share of our military the target's
+/// may not exceed for the train to skip the muster. The muster keeps a
+/// waiting body out of the reach of the target's field army and cities; it
+/// costs most where the target's other cities cluster round the objective,
+/// barring every nearer stand. Live Emperor civvis-20261007T084638Z (game
+/// 330): Cartagena stood among Valencia (4 tiles), Toledo (6), Madrid and
+/// Barcelona (7), all behind 400 walls, so the train held 12-16 tiles out
+/// ("425 strength within 10 tiles against a bill of 445") while Spain's
+/// military stood at 105 against our 1,419. Over 10-06/07, 448 city-turns
+/// of muster holds in 46 runs came at a target under this share.
+pub(super) const MUSTER_WEAK_TARGET_SHARE: f64 = 0.3;
+/// `unwalled-target-declares-into-the-strike`: the share of an unwalled
+/// objective's health the declaration turn's own blows must take.
+pub(super) const FIRST_STRIKE_SHARE: f64 = 0.5;
+/// `unwalled-target-declares-into-the-strike`: standard turns a declaration
+/// holds on one unwalled objective for its first-turn strike before it goes
+/// ahead.
+pub(super) const FIRST_STRIKE_PATIENCE: u32 = 10;
+/// `declaration-waits-for-the-breach` and
+/// `unwalled-target-declares-into-the-strike`: standard turns in a row a
+/// declaration must go unheld before its hold's patience clock restarts. A
+/// single turn the reading passed restarted it: live Emperor
+/// civvis-20261006T065830Z (game 204) held on Eger from turn 137 to 148
+/// across a ten-turn patience, its budget dipping under the line on turns
+/// 143-144.
+pub(super) const DECLARATION_HOLD_RESET: u32 = 3;
 /// A City Center strikes this far; nothing stands inside it before the
 /// train is staged.
 pub(super) const CITY_STRIKE_RANGE: i32 = 2;
+/// A gun staging without a firing post must survive several enemy replies.
+/// One-turn lethal checks let a hostile city wear it down before it arrives.
+const STAGING_GUN_REPLY_TURNS: f64 = 3.0;
+const STAGING_GUN_HP_RESERVE: f64 = 20.0;
+/// `staging-gun-trusts-its-escort`: a gun with at least this many of our
+/// land soldiers on or beside its next marching step budgets one reply turn
+/// of danger there, not [`STAGING_GUN_REPLY_TURNS`]. A raider that strikes
+/// the gun meets the escort the next turn. Budgeting three replies, a
+/// catapult refuses any tile one enemy archer reaches (a single blow near
+/// 60 against a limit near 27), so near a defended capital the breakers never
+/// reach the staging ring: live King civvis-20261004T033533Z (game 46) held
+/// Babylon's catapults six to ten tiles out from turn 135 to 153 with
+/// "damage ready false"; civvis-20261004T040138Z (game 47) held Quebec
+/// City's at ten.
+pub(super) const STAGING_ESCORT_BODIES: usize = 2;
+/// `staging-gun-remembers-hostiles`: a sighting this many turns old or newer
+/// still prices a hostile on the Stage march. Older sightings scatter too
+/// widely to steer a gun by: a Cuirassier seen two turns ago reaches twelve
+/// tiles under the rule below.
+const REMEMBERED_STRIKER_TURNS: u32 = 1;
+
+/// `staging-gun-remembers-hostiles`: a hostile the seat saw this turn or last
+/// and can no longer see. It may stand anywhere within its movement for every
+/// turn since the sighting, and strike one more movement on: `reach` from
+/// `from`. `blow` is its full-health melee blow on the gun asked about.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct RememberedStriker {
+    pub(super) from: Pos,
+    pub(super) reach: i32,
+    pub(super) blow: f64,
+    /// Turns since the seat last saw it: 0 this turn, 1 the last.
+    pub(super) elapsed: u32,
+}
 /// The bill is the defence within [`DEFENDER_RADIUS`] plus the city and its
 /// walls at [`WALL_STRENGTH_PER_100_HP`] a hundred, times this.
 pub(super) const BILL_MARGIN: f64 = 1.25;
@@ -108,9 +175,56 @@ pub(super) const DEFENDER_RADIUS: i32 = 6;
 pub(super) const WALL_STRENGTH_PER_100_HP: f64 = 10.0;
 /// Under this share of the bill the train falls back to the staging ring.
 pub(super) const ABORT_SHARE: f64 = 0.8;
+/// `siege-holds-a-breach`: once the walls stand at or under this share of
+/// their full strength, the train falls back only under
+/// [`HELD_BREACH_ABORT_SHARE`] of the bill. Live King
+/// civvis-20261003T103619Z (game 32) had Tskhumi's 400 walls down to 276 at
+/// turn 162 with four engines at range; the train dropped to Stage, the
+/// engines walked back five to nine tiles, and the walls stood at 400 again
+/// by 170 (diagnosed by -60).
+pub(super) const HELD_BREACH_WALL_SHARE: f64 = 0.75;
+pub(super) const HELD_BREACH_ABORT_SHARE: f64 = 0.5;
+/// The health a spotter needs before it steps into sight of an unseen city.
+const SPOTTER_MIN_HP: i32 = 60;
+/// Consecutive short assessments before an invested train falls back. The
+/// bill counts every visible defender within [`DEFENDER_RADIUS`], so one unit
+/// walking into or out of sight swings it. Live King civvis-20261001T024402Z,
+/// unwalled Xanadu: bills of 51, 128, 181, 161, 54, 158 between turns 41 and
+/// 61 against a force of 74-144. Each one-turn dip dropped the train to Stage
+/// and restarted [`INVEST_PATIENCE`], so it never reduced, and the city was
+/// never damaged in 25 turns. The damage budget is as noisy: around walled
+/// Tushpa (civvis-20261001T042554Z, turns 195-198) the force's endurance read
+/// 264, 10, 312 and 12 on consecutive turns, and every low reading dropped
+/// the train out of Invest.
+pub(super) const ABORT_PATIENCE: u32 = 2;
 /// Melee holds the ring rather than swinging at a wall above this fraction
 /// of its pool, unless a ram or tower stands beside the city.
 pub(super) const MELEE_WALL_FRACTION: f64 = 0.2;
+/// `breach-assault-closes-in`: how far off the ring a healthy melee unit is
+/// called in from.
+pub(super) const CLOSING_REACH: i32 = 4;
+/// `breach-assault`: a melee unit joins the assault only from this health.
+pub(super) const ASSAULT_MIN_HP: i32 = 60;
+/// ... and only when it keeps at least this much after the city's reply.
+pub(super) const ASSAULT_SURVIVOR_HP: i32 = 25;
+/// `breach-assault`: the assault opens when the force's blows can take the
+/// walls and the city within this many turns ...
+pub(super) const ASSAULT_TURNS: f64 = 2.0;
+/// ... counting one turn of the city's heal.
+pub(super) const ASSAULT_HEAL: f64 = 20.0;
+/// `siege-keeps-a-shooter`: walls standing at or under this share of their
+/// pool are a running breach that Civilization VI restores in full after a
+/// few turns without damage, so one shooter keeps firing on them.
+pub(super) const KEEPER_WALL_SHARE: f64 = 0.6;
+/// ... a kept shooter must keep at least this much past the city's strike.
+pub(super) const KEEPER_SURVIVE_MARGIN: f64 = 10.0;
+/// `melee-storms-an-open-city`: against a city with no standing walls the
+/// assault opens when the force's blows, past the city's heal, take it within
+/// this many turns.
+pub(super) const STORM_TURNS: f64 = 3.0;
+/// ... and the reserved taker joins only while it keeps this much after the
+/// city's reply, enough to still take the city when it falls.
+pub(super) const STORM_TAKER_SURVIVOR_HP: i32 = 50;
 /// A hostile this close to the city is a reliever at the ring.
 pub(super) const RELIEVER_RADIUS: i32 = 3;
 /// Expected damage over hit points before a shot is counted as a kill: the
@@ -121,6 +235,85 @@ pub(super) const KILL_MARGIN: f64 = 1.15;
 pub(super) const INVEST_PATIENCE: u32 = 3;
 /// A siege record nobody has assessed for this many turns is dropped.
 const SIEGE_MEMORY: u32 = 3;
+/// `guns-post-for-a-near-breach`: the guns of a walled siege whose shots
+/// open the standing walls within this many turns enter their firing posts
+/// on a survivable reply rather than on [`ENTRY_HP_MARGIN`] over it.
+pub(super) const NEAR_BREACH_TURNS: f64 = 4.0;
+/// `guns-post-for-a-near-breach`: posted guns this far from the city count
+/// toward the near breach; a two-move gun closes from here in one turn.
+pub(super) const NEAR_BREACH_REACH: i32 = STAGING_FAR + 2;
+/// `guns-post-for-a-near-breach`: a near-breach gun enters while its health
+/// covers the upper roll of the expected reply (the engine's roll is uniform
+/// on 0.8-1.2 of the centre).
+pub(super) const NEAR_BREACH_REPLY_ROLL: f64 = 1.2;
+/// The approach's margin over the expected reply on a post inside the
+/// city's strike ring.
+pub(super) const ENTRY_HP_MARGIN: f64 = 20.0;
+/// `stage-musters-out-of-reach`: while the train cannot yet close, a melee
+/// or shooter member stands only where the shared danger reading is under
+/// this share of its health.
+pub(super) const MUSTER_DANGER_SHARE: f64 = 0.5;
+/// `stage-musters-out-of-reach`: members within this many tiles of the city
+/// count as gathered for the advance.
+pub(super) const MUSTER_FAR: i32 = STAGING_FAR + 3;
+/// `stage-musters-out-of-reach`: the readiness test reads the breakers and
+/// the damage budget over members this far out, since a staging gun holds
+/// on its own danger line, often behind the muster.
+pub(super) const MUSTER_BREACH_FAR: i32 = STAGING_FAR + 5;
+/// `stage-musters-out-of-reach`: standard turns a train that closed from the
+/// muster line keeps closing while it still meets the bill with a breaker,
+/// whatever its damage budget reads. Live King civvis-20261006T021637Z
+/// (game 183) read Kish's mustered budget at 8.8 turns against 8.4
+/// endurance, closed on turns 115, 120, 125 and 131 and fell back between:
+/// its Bombards drifted across the ten-tile reading line, eight to ten tiles
+/// out, and every fall-back pulled them out again, so no close lasted the
+/// march of a six-step road.
+pub(super) const MUSTER_COMMIT_TURNS: u32 = 5;
+
+/// `muster-walks-the-road`: the longest dry road, in steps from the staging
+/// band, a mustering member reads: the Stage march's own [`STAGE_DRY_LIMIT`],
+/// so a member walks in by the road its march would take once the train
+/// closes.
+pub(super) const MUSTER_ROAD_STEPS: usize = STAGE_DRY_LIMIT;
+
+/// `stage-musters-out-of-reach`: a train that closed at `closed`, within
+/// `window` turns of `turn`, keeps closing while the whole train still meets
+/// the bill (its members walk in from the muster line) and no breaker hold
+/// reads.
+pub(super) fn muster_commitment_holds(
+    closed: Option<u32>,
+    turn: u32,
+    window: u32,
+    billed: bool,
+    breaker_hold: bool,
+) -> bool {
+    billed && !breaker_hold && closed.is_some_and(|at| turn.saturating_sub(at) < window)
+}
+/// `wall-sortie-skips-the-encampment`: whether a hostile military land or sea
+/// unit stands on `pos`, the only target the wall sortie's guard and reliever
+/// slots exist for. Live Emperor civvis-20261008T192219Z (game 433): four
+/// Bombers flew 90 of their 100 sorties of turns 165-189 at one Nubian
+/// Encampment two tiles from besieged Buhen, at 0 walls and 20 health and
+/// within the guard radius of a city of ours, while Buhen and every other
+/// siege target of the campaign stood at 400 walls.
+fn hostile_soldier_at(g: &Game, pid: usize, pos: Pos) -> bool {
+    g.unit_ids_at(pos).iter().any(|oid| {
+        let unit = &g.units[oid];
+        let spec = &g.rules.units[unit.kind];
+        unit.owner != pid
+            && g.is_at_war(pid, unit.owner)
+            && spec.class == "military"
+            && spec.domain.as_deref() != Some("air")
+    })
+}
+
+/// `bombers-open-the-siege-walls`: a bomber over a walled siege still kills a
+/// reliever this close to the besieged city when the kill is worth more than
+/// its wall strike.
+pub(super) const SIEGE_AIR_RELIEVER_RADIUS: i32 = 3;
+/// `bombers-open-the-siege-walls`: a hostile this close to any city of ours
+/// is a threat a bomber strikes before the siege walls.
+pub(super) const HOME_AIR_GUARD_RADIUS: i32 = 3;
 /// `anvil`: a defender under this rotates into the city to heal, if the
 /// unit standing there is healthier by the margin.
 pub(super) const ANVIL_ROTATE_HP: i32 = 50;
@@ -131,6 +324,53 @@ pub(super) const ANVIL_HOSTILE_RADIUS: i32 = 6;
 const ANVIL_FRONT_TILES: usize = 3;
 /// A group farther than this from the objective is not on it.
 const OBJECTIVE_REACH: i32 = 8;
+/// `siege-needs-a-breaker`: shooters alone are the breaker when their
+/// expected wall damage brings the walls down within this many turns. Live
+/// King civvis-20261003T135713Z: Archers took Kwadukuza's Ancient Walls from
+/// 100 to 26 in a dozen turns at about ten a shot, while Crossbows against its
+/// Medieval Walls did five or six a shot and 200 walls stood.
+pub(super) const SHOOTER_BREACH_TURNS: f64 = 6.0;
+/// `siege-needs-a-breaker`: a train at least this many times its bill
+/// gives its shooters [`SHOOTER_BREACH_TURNS_DOMINANT`] to breach. Live King
+/// civvis-20261004T025448Z (game 45) outgunned Nubia four to seven times and
+/// held its walled sieges for a gun that never came.
+pub(super) const DOMINANT_BILL_SHARE: f64 = 2.5;
+pub(super) const SHOOTER_BREACH_TURNS_DOMINANT: f64 = 12.0;
+/// `siege-needs-a-breaker`: how far a ram or tower walks to join a siege.
+const BREACH_SUPPORT_REACH: i32 = 15;
+/// `siege-needs-a-breaker`: a gun this close to a walled city, or a city of
+/// ours this close building one, is a breaker on its way. The reach
+/// `domination_siege_train_mobilizing` already reads a walled target's
+/// train by.
+const BREAKER_COMING_REACH: i32 = 24;
+/// `siege-needs-a-breaker`: standard turns a capture may wait on a breaker
+/// before the ledger's stand-down clocks run again. Live King
+/// civvis-20261003T145118Z (game 41)'s guns took about sixteen Online turns
+/// to reach a walled siege; thirty standard turns is twenty Online ones.
+pub(super) const BREAKER_WAIT_TURNS: u32 = 30;
+/// `siege-needs-a-breaker`: standard turns a breaker on its way may go
+/// without coming nearer before it no longer counts as coming. Live King
+/// civvis-20261004T025448Z (game 45): a lone Catapult hovered eight to
+/// fourteen tiles from Napata from turn 90 to 105, struck to 26 hp, while
+/// the capture was held "for a wall-breaker on its way" every turn.
+pub(super) const BREAKER_STALL_TURNS: u32 = 5;
+/// `siege-needs-a-breaker`: a gun in production counts as coming only when
+/// it finishes within this many standard turns.
+pub(super) const BREAKER_BUILD_TURNS: u32 = 8;
+
+/// `siege-needs-a-breaker`: one run of breakerless holds before a walled
+/// city, kept by the city's position (stable through a live rebuild's id
+/// churn). See `AdvancedAi::waiting_for_a_breaker`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct BreakerWait {
+    /// The first and the latest turn of the run.
+    pub(super) since: u32,
+    pub(super) last: u32,
+    /// The nearest a siege gun, ram or tower of ours has stood to the city
+    /// during the run, and the turn it first stood that near.
+    pub(super) nearest: i32,
+    pub(super) nearest_turn: u32,
+}
 
 /// A ranked choice of tile: the best key seen so far, and where it was.
 type Pick<K> = Option<(K, Pos)>;
@@ -178,6 +418,10 @@ pub(super) struct Siege {
     /// for guns and shooters — drawn once at assessment so a unit's goal does
     /// not re-rank under it as it walks and two units never chase one tile.
     pub(super) posts: BTreeMap<u32, Pos>,
+    /// The first turn of the current run of assessments that found the
+    /// force short of the abort share or out of damage budget; `None` when
+    /// the last assessment was not short. See [`ABORT_PATIENCE`].
+    pub(super) short_since: Option<u32>,
 }
 
 /// The few facts about a city the doctrine reads, copied out so a step can
@@ -229,6 +473,497 @@ impl CityView {
             blow
         }
     }
+}
+
+/// `siege-needs-a-breaker`: walls a melee blow opens — none at all, or at or
+/// under [`MELEE_WALL_FRACTION`] of the pool.
+/// `tower-assault`: the assault through a Siege Tower opens when the force's
+/// blows take the city's health alone within [`ASSAULT_TURNS`] counting one
+/// turn of heal, or past the heal within [`STORM_TURNS`].
+fn tower_assault_pays(volley: f64, city: &CityView) -> bool {
+    let to_take = f64::from(city.hp) + ASSAULT_HEAL;
+    volley * ASSAULT_TURNS >= to_take
+        || (volley > ASSAULT_HEAL && f64::from(city.hp) / (volley - ASSAULT_HEAL) <= STORM_TURNS)
+}
+
+fn walls_open_to_melee(city: &CityView) -> bool {
+    city.wall_hp <= 0 || city.wall_max <= 0 || city.wall_fraction() <= MELEE_WALL_FRACTION
+}
+
+/// A Battering Ram or Siege Tower whose effect works on this city's walls
+/// (`Game::city_allows_siege_support`: a ram against Ancient Walls only, a
+/// tower against Ancient and Medieval, neither against Urban Defenses).
+fn breach_support_works(g: &Game, uid: u32, cid: u32) -> bool {
+    g.units.get(&uid).is_some_and(|unit| {
+        matches!(unit.kind.as_str(), "battering_ram" | "siege_tower")
+            && g.city_allows_siege_support(cid, unit.kind.as_str())
+    })
+}
+
+/// A land siege gun: the Catapult's line, the units that break walls whole.
+fn land_gun(g: &Game, kind: crate::name::Name) -> bool {
+    let spec = &g.rules.units[kind];
+    spec.class == "military"
+        && spec.siege
+        && spec.has_ranged_attack()
+        && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+}
+
+/// `siege-needs-a-breaker`: the nearest a siege gun, or a ram or tower that
+/// opens these walls, of ours stands to the city within
+/// [`BREAKER_COMING_REACH`]; `i32::MAX` with none.
+fn nearest_breaker(g: &Game, pid: usize, city: &CityView) -> i32 {
+    g.units
+        .values()
+        .filter(|unit| {
+            unit.owner == pid
+                && (land_gun(g, unit.kind) || breach_support_works(g, unit.id, city.id))
+        })
+        .map(|unit| g.wdist(unit.pos, city.pos))
+        .filter(|distance| *distance <= BREAKER_COMING_REACH)
+        .min()
+        .unwrap_or(i32::MAX)
+}
+
+impl AdvancedAi {
+    /// `declaration-waits-for-the-breaker`: whether the city a war is about
+    /// to open on can be breached by what stands on its ring now — walls a
+    /// melee blow opens, or a fit siege gun of ours, or a ram or tower that
+    /// works on these walls, within [`STAGING_FAR`]. The war-policy verdict
+    /// weighs only the strength staged on the ring, so the war opens with the
+    /// breaker still on the road, and a city at war raises its next wall tier
+    /// while the train holds for it. Live King civvis-20261005T053701Z
+    /// (game 103) declared on the Maori at turn 74, 373 power against 39,
+    /// with Opango behind 100 walls and its Catapult 17 tiles out; the walls
+    /// stood at 200 by turn 78, the siege held "for a wall-breaker on its
+    /// way" to turn 96, and the city fell at 118.
+    /// `declaration-waits-for-the-breach`: the damage budget of the force by
+    /// a walled objective — our land military within [`MUSTER_BREACH_FAR`],
+    /// air wing included — as `(turns, endurance, fit guns)`, or `None` when
+    /// a melee blow opens the walls (unwalled or breached: the early strike
+    /// and the swarm need no gun) or the city is unknown. One gun satisfies
+    /// `declaration_breaker_at_hand`, and one gun does not answer an Emperor
+    /// wall: live civvis-20261006T044739Z (game 194) declared on Vietnam at
+    /// turn 77, 409 power against 154, with Dong Hoi behind 200 walls, seven
+    /// of ten units staged and one gun fit — the siege read 18.0 turns
+    /// against 8.7 endurance that turn, the walls stood at 300 by turn 89,
+    /// and no city fell.
+    pub(super) fn declaration_breach_reading(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+    ) -> Option<(f64, f64, usize)> {
+        let city = CityView::of(g, cid)?;
+        if walls_open_to_melee(&city) {
+            return None;
+        }
+        let force: Vec<u32> = g
+            .units
+            .values()
+            .filter(|unit| {
+                unit.owner == pid
+                    && g.rules.units[unit.kind].class == "military"
+                    && !matches!(g.rules.units[unit.kind].domain.as_deref(), Some("sea" | "air"))
+                    && !g.is_embarked(unit)
+                    && g.wdist(unit.pos, city.pos) <= MUSTER_BREACH_FAR
+            })
+            .map(|unit| unit.id)
+            .collect();
+        let guns = force
+            .iter()
+            .filter(|uid| land_gun(g, g.units[*uid].kind) && self.siege_member_fit(g, **uid))
+            .count();
+        let (turns, endurance) =
+            self.conversion_siege_budget_within(g, pid, cid, &force, MUSTER_BREACH_FAR)?;
+        Some((turns, endurance, guns))
+    }
+
+    /// `unwalled-target-declares-into-the-strike`: the blows our land units
+    /// could deal an objective with no wall pool on the declaration turn
+    /// itself, or `None` when it has walls (the breach readings decide
+    /// those). Emperor rivals buy walls the turn they read the threat: ten
+    /// 10-06 siege targets went from none to 100 or 400 in one turn, and
+    /// civvis-20261006T061618Z (game 201) declared on Poland with nobody near
+    /// Bydgoszcz, walled 400 the next turn. The bridge runs a frame's orders
+    /// in sequence (game 194's Archer struck Vietnam right after the
+    /// declaration), so the first blows can land before the rival's turn.
+    ///
+    /// Reach is read on open ground: a melee unit within its moves less one
+    /// (a tile of slack for terrain), at most one per land tile beside the
+    /// city; a ranged unit within its range plus its moves less one; a siege
+    /// unit within its range, as it cannot move and fire. A blow is the
+    /// expected damage of the unit's strike, a land ranged one at the
+    /// district penalty.
+    pub(super) fn first_strike_blows(&self, g: &Game, pid: usize, cid: u32) -> Option<f64> {
+        let city = g.cities.get(&cid)?;
+        if g.city_max_wall_hp(city) > 0 {
+            return None;
+        }
+        let defense = g.city_strength(cid);
+        let slots = g
+            .wring(city.pos, 1)
+            .into_iter()
+            .filter(|pos| {
+                g.map
+                    .get(*pos)
+                    .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            })
+            .count();
+        let mut melee: Vec<f64> = Vec::new();
+        let mut ranged = 0.0;
+        for unit in g.units.values() {
+            let spec = &g.rules.units[unit.kind];
+            if unit.owner != pid
+                || spec.class != "military"
+                || matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                || g.is_embarked(unit)
+            {
+                continue;
+            }
+            let distance = g.wdist(unit.pos, city.pos);
+            let moves = spec.moves as i32;
+            if spec.has_ranged_attack() {
+                let range = g.unit_attack_range(unit.id);
+                let reach = if spec.siege { range } else { range + moves - 1 };
+                if distance > reach {
+                    continue;
+                }
+                let mut attack = g.unit_ranged_attack_strength(unit);
+                if spec.ranged_strength > 0.0 {
+                    attack -= 17.0;
+                }
+                ranged += expected_damage(effective_strength(attack, unit.hp), defense);
+            } else if spec.is_melee_capable() && distance >= 1 && distance <= moves - 1 {
+                melee.push(expected_damage(
+                    effective_strength(g.unit_strength(unit, true), unit.hp),
+                    defense,
+                ));
+            }
+        }
+        melee.sort_by(|a, b| b.total_cmp(a));
+        Some(ranged + melee.into_iter().take(slots).sum::<f64>())
+    }
+
+    /// `unwalled-target-declares-into-the-strike`: whether the hold on an
+    /// unwalled `objective` still has patience; as
+    /// [`Self::declaration_hold_patience`], on its own clock.
+    pub(super) fn first_strike_hold_patience(
+        &mut self,
+        g: &Game,
+        objective: Option<Pos>,
+        short: bool,
+    ) -> bool {
+        let Some(pos) = objective.filter(|_| short) else {
+            // An unheld turn or two keeps the clock; DECLARATION_HOLD_RESET
+            // in a row restart it.
+            if g.turn.saturating_sub(self.first_strike_seen)
+                >= g.standard_duration(DECLARATION_HOLD_RESET)
+            {
+                self.first_strike_hold = None;
+            }
+            return false;
+        };
+        if self.first_strike_hold.is_none_or(|(held, _)| held != pos) {
+            self.first_strike_hold = Some((pos, g.turn));
+        }
+        self.first_strike_seen = g.turn;
+        self.first_strike_hold.is_some_and(|(_, since)| {
+            g.turn.saturating_sub(since) < g.standard_duration(FIRST_STRIKE_PATIENCE)
+        })
+    }
+
+    /// `declaration-waits-for-the-breach`: whether this turn's breaker or
+    /// breach hold also bars the declaration paths that fire on an unstaged
+    /// army — overwhelming power, road opening, capital moves on. The hold
+    /// clears `staged`, and those paths read `!staged`, so every hold opened
+    /// them: live Emperor civvis-20261006T072328Z (game 206) held its
+    /// declaration on the Netherlands at turn 77 "for a wall-breaker" at
+    /// Eindhoven (100 walls, no gun on the ring), declared through the
+    /// overwhelming path at turn 79 (491 against 104), held the capture "for
+    /// a wall-breaker on its way" from turn 81, took no city, and lost to
+    /// culture at 174. Off: the hold bars nothing but the staged war.
+    pub(super) fn hold_bars_the_unstaged_paths(&self, held: bool) -> bool {
+        self.declaration_waits_for_the_breach && held
+    }
+
+    /// `invest-keeps-its-cavalry`: whether `uid` stands within
+    /// [`MUSTER_BREACH_FAR`] of a city our train is investing, reducing or
+    /// taking, or whose muster has closed — a member the assault's budget
+    /// counts on. The raid planner (`air_surge::raids`) kept only the bodies
+    /// within two tiles of the campaign's city, so the train's cavalry on its
+    /// staging ring rode out to pillage: live Emperor
+    /// civvis-20261006T101049Z (game 219) closed on the Maori capital at turn
+    /// 101 with eight of eight staged and a budget of 3.7 turns, while a
+    /// Knight rode out "to raid behind the wing" and another marched off to
+    /// capture a civilian; the train struck the city for 4 damage in two
+    /// turns and fell back to Stage by 104. Over 10-04..06, 1,206 raid
+    /// orders rode out on turns a siege of ours stood in Invest or Reduce.
+    /// `invest-keeps-its-cavalry`: assess this turn's land sieges before the
+    /// raid planner reads them. The raids are planned ahead of the unit
+    /// loop, whose first siege member assesses its siege, so the raids read
+    /// last turn's record: live Emperor civvis-20261006T121545Z (game 228)
+    /// sent three Horsemen out "to raid behind the wing" at turn 116 onto
+    /// tiles beside Ngulu Mapu, a moment before its muster closed "ready" and
+    /// the siege entered Invest. `assess_siege` runs once a turn, so the
+    /// unit loop's later calls read this assessment.
+    pub(super) fn assess_sieges_before_the_raids(
+        &mut self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) {
+        if !self.invest_keeps_its_cavalry || !(self.siege_train || self.siege_positive_damage_budget)
+        {
+            return;
+        }
+        let groups: Vec<ForceGroup> = self
+            .force_groups
+            .iter()
+            .filter(|group| group.domain == ForceDomain::Land)
+            .cloned()
+            .collect();
+        for group in groups {
+            if let Some(cid) = self.siege_city_of(g, pid, plan, &group) {
+                self.assess_siege(g, pid, cid, plan, &group);
+            }
+        }
+    }
+
+    /// `siege-train-upgrades-first`: whether `uid` belongs to a land force
+    /// group bound for the campaign's objective or a city our train besieges
+    /// this turn or last — a body the assault will throw at the walls. The
+    /// host upgrades a unit only on friendly ground, so the train is
+    /// upgraded at home before it marches, not by the walls. Live Emperor
+    /// capitals defend at a median 90 against the 45 of our melee by them,
+    /// where our own techs unlock 64 (by the expected-damage curve about 5
+    /// against 11 a blow); civvis-20261006T080950Z stood five units before
+    /// unwalled Xanadu (defense 85) with Horsemen and Warriors, and its
+    /// budget read infinite. At a treasury median of 116-131 Gold during
+    /// Emperor sieges the few upgrades must land on that train.
+    pub(super) fn upgrade_for_the_train(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        plan: &StrategicPlan,
+    ) -> bool {
+        self.force_groups.iter().any(|group| {
+            group.domain == ForceDomain::Land
+                && group.units.contains(&uid)
+                && g.city_at(group.objective).is_some_and(|cid| {
+                    g.cities[&cid].owner != pid
+                        && (plan.target_city == Some(cid)
+                            || self.sieges.get(&cid).is_some_and(|siege| {
+                                siege.stage != SiegeStage::Hold
+                                    && g.turn.saturating_sub(siege.assessed) <= 1
+                            }))
+                })
+        })
+    }
+
+    pub(super) fn siege_needs_the_unit(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        let Some(unit) = g.units.get(&uid) else {
+            return false;
+        };
+        self.sieges.iter().any(|(cid, siege)| {
+            g.turn.saturating_sub(siege.assessed) <= 1
+                && (matches!(
+                    siege.stage,
+                    SiegeStage::Invest | SiegeStage::Reduce | SiegeStage::Take
+                ) || (siege.stage == SiegeStage::Stage
+                    && self.stage_muster_ready.get(cid).copied().unwrap_or(false)))
+                && g.cities.get(cid).is_some_and(|city| {
+                    city.owner != pid && g.wdist(unit.pos, city.pos) <= MUSTER_BREACH_FAR
+                })
+        })
+    }
+
+    pub(super) fn declaration_breaker_at_hand(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        let Some(city) = CityView::of(g, cid) else {
+            return true;
+        };
+        if walls_open_to_melee(&city) {
+            return true;
+        }
+        g.units.values().any(|unit| {
+            unit.owner == pid
+                && g.wdist(unit.pos, city.pos) <= STAGING_FAR
+                && !g.is_embarked(unit)
+                && ((land_gun(g, unit.kind) && self.siege_member_fit(g, unit.id))
+                    || breach_support_works(g, unit.id, city.id))
+        })
+    }
+
+    /// `declaration-waits-for-the-breaker`: whether the hold on `objective`
+    /// still has patience. The clock starts the first turn the hold applies
+    /// (`holdable`) on that tile, runs through turns the army reads
+    /// unstaged, and resets only when the breaker arrives or the objective
+    /// moves. After [`DECLARATION_BREAKER_PATIENCE`] standard turns the
+    /// declaration goes ahead without it, so a breaker stuck on its column
+    /// cannot hold the war forever.
+    pub(super) fn declaration_hold_patience(
+        &mut self,
+        g: &Game,
+        objective: Option<Pos>,
+        breaker_missing: bool,
+        holdable: bool,
+    ) -> bool {
+        let Some(pos) = objective.filter(|_| breaker_missing) else {
+            // `declaration-waits-for-the-breach`: an unheld turn or two keeps
+            // the clock; DECLARATION_HOLD_RESET in a row restart it.
+            let keep = self.declaration_waits_for_the_breach
+                && g.turn.saturating_sub(self.declaration_hold_seen)
+                    < g.standard_duration(DECLARATION_HOLD_RESET);
+            if !keep {
+                self.declaration_breaker_hold = None;
+            }
+            return false;
+        };
+        if self
+            .declaration_breaker_hold
+            .is_none_or(|(held, _)| held != pos)
+        {
+            if !holdable {
+                return false;
+            }
+            self.declaration_breaker_hold = Some((pos, g.turn));
+        }
+        if holdable {
+            self.declaration_hold_seen = g.turn;
+        }
+        holdable
+            && self.declaration_breaker_hold.is_some_and(|(_, since)| {
+                g.turn.saturating_sub(since) < g.standard_duration(DECLARATION_BREAKER_PATIENCE)
+            })
+    }
+}
+
+/// A melee unit a ram or tower lends its effect to: `siege_support_effects`
+/// answers only for the melee and anti-cavalry classes.
+fn breach_support_user(g: &Game, uid: u32) -> bool {
+    g.units
+        .get(&uid)
+        .is_some_and(|unit| crate::ai::siege_support::eligible_attacker(&g.rules.units[unit.kind]))
+}
+
+/// `staging-gun-reads-the-shared-danger`: a Stage gun's danger reading at
+/// `pos`. `siege_stage_step` shares its field under `shared-danger`, as its
+/// own comment says the battle planner and the reinforcement step read it,
+/// but every reading took `DangerField::danger`, which ignores the shares:
+/// each staging gun read every hostile's blow as its own and held further
+/// out than the train it marched with. Under the gene the reading is the
+/// rotation's (`rotation_danger`), never under the strongest single blow.
+fn stage_gun_danger(
+    field: &mut super::battle_planner::DangerField,
+    pos: Pos,
+    uid: u32,
+    shared: bool,
+) -> f64 {
+    if shared {
+        field.rotation_danger(pos, uid)
+    } else {
+        field.danger(pos, uid)
+    }
+}
+
+/// `guns-post-for-a-near-breach`: the heaviest single blow — a unit's, a
+/// City Center's or an Encampment's — that would land on `uid` standing on
+/// `tile` next turn.
+fn strongest_blow(g: &Game, pid: usize, tile: Pos, uid: u32) -> f64 {
+    let mut field = super::battle_planner::DangerField::with_reach(g, pid, true);
+    field
+        .contributions(tile, uid)
+        .iter()
+        .filter(|(source, _)| source.is_some())
+        .map(|(_, blow)| *blow)
+        .fold(0.0, f64::max)
+}
+
+/// The wall damage one shot of this ranged unit is expected to do to the
+/// city, as `do_ranged` resolves it: its ranged strength at its hit points,
+/// less 17 for a land ranged unit, against `city_strength`, and half of it on
+/// the wall unless the unit is siege.
+fn wall_damage_per_shot(g: &Game, uid: u32, cid: u32) -> f64 {
+    let unit = &g.units[&uid];
+    let spec = &g.rules.units[unit.kind];
+    let mut base =
+        g.unit_ranged_attack_strength(unit) + g.promotion_effect(unit, "ranged_vs_district");
+    if spec.ranged_strength > 0.0 && spec.domain.as_deref() != Some("sea") {
+        base -= 17.0;
+    }
+    let dealt = expected_damage(effective_strength(base, unit.hp), g.city_strength(cid));
+    dealt * if spec.siege { 1.0 } else { 0.5 }
+}
+
+/// `siege-needs-a-breaker`: what the train holds, this turn, that can bring
+/// the city's walls down. Melee hold a ring they cannot hurt: a swing at a
+/// wall above [`MELEE_WALL_FRACTION`] is refused unless a ram or tower stands
+/// beside the city, and the city's strike lands on them every turn. Live King
+/// civvis-20261003T135713Z held Kwadukuza's ring with two Knights and three
+/// Men-at-Arms from turn 113 to 122, walls 198/200, and read "damage ready"
+/// off a Bombard at five tiles the battle planner was healing from 29 to 89;
+/// the walls fell 15 points in those ten turns, all of it to a Crossbow.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(super) struct BreachReading {
+    /// Siege guns within the staging ring fit to fire.
+    pub(super) guns: usize,
+    /// Siege guns within the staging ring the battle planner holds out to heal.
+    pub(super) wounded_guns: usize,
+    /// `guns-enter-together`: fit siege guns within the staging ring the
+    /// approach keeps off their posts this turn (`gun_barred_from_its_post`),
+    /// not counted in `guns`. Zero with the gene off.
+    pub(super) barred_guns: usize,
+    /// Rams and towers that work on these walls, within the staging ring or
+    /// carried by a member, while a melee member can use one.
+    pub(super) support: usize,
+    /// The expected wall damage a turn from the fit shooters within reach.
+    pub(super) shooter_walls: f64,
+    /// `breach-reads-the-air`: the expected wall damage a turn from our
+    /// aircraft based within strike range of the city. See
+    /// `AdvancedAi::air_breach_walls`; 0 with the gene off.
+    pub(super) air_walls: f64,
+    /// Turns the shooters are given to breach: [`SHOOTER_BREACH_TURNS`], or
+    /// [`SHOOTER_BREACH_TURNS_DOMINANT`] for a dominant train.
+    pub(super) horizon: f64,
+}
+
+impl BreachReading {
+    fn at_hand(&self, city: &CityView) -> bool {
+        walls_open_to_melee(city)
+            || self.guns > 0
+            || self.support > 0
+            || (self.shooter_walls + self.air_walls) * self.horizon >= f64::from(city.wall_hp)
+            // `breach-reads-the-air`: walls the air wing has already brought
+            // below half are coming down.
+            || (self.air_walls > 0.0 && 2 * city.wall_hp <= city.wall_max)
+    }
+
+    /// `siege-needs-a-breaker`: nothing the train holds can open the walls,
+    /// so it does not besiege them. A gun `guns-enter-together` keeps off its
+    /// post this turn (`barred_guns`) is a breaker waiting for a partner, not
+    /// a missing one: counting it as none sent a lone gun's siege from Invest
+    /// back to Stage, where with no post it counted again, and back. Replay
+    /// of live King civvis-20261005T091120Z (game 115), Poznan turns 155-175:
+    /// invest, stage, invest, stage on "0 gun(s) fit ... 1 gun(s) kept off
+    /// their posts". With the gene off `barred_guns` is always zero.
+    fn leaves_walls_shut(&self, city: &CityView) -> bool {
+        !self.at_hand(city) && self.barred_guns == 0
+    }
+}
+
+/// The wall rule shared by the train's melee orders and its damage budget.
+pub(super) fn melee_wall_attack_allowed(g: &Game, pid: usize, uid: u32, cid: u32) -> bool {
+    let (Some(city), Some(unit)) = (CityView::of(g, cid), g.units.get(&uid)) else {
+        return false;
+    };
+    let (ram, tower) = g.siege_support_effects(
+        pid,
+        cid,
+        city.pos,
+        &g.rules.units[unit.kind].promotion_class,
+    );
+    city.wall_fraction() <= MELEE_WALL_FRACTION || ram || tower
 }
 
 /// Which arm of the train a unit is.
@@ -347,6 +1082,73 @@ pub(super) fn ring_state(g: &Game, cid: u32) -> (usize, usize) {
     (sealed, total)
 }
 
+/// `siege-budget-projects-the-seal`: the fewest more bodies of `pid` that
+/// seal the city's ring as [`ring_state`] reads a seal (the engine's
+/// `city_under_siege`, under which the city does not heal): every passable
+/// side held by a hostile military unit or in its zone of control. A body
+/// stands on a dry ring tile with no city, Encampment or unit at war with
+/// `pid` on it, and covers its dry ring neighbours across no river; a water
+/// side is covered from land by nothing. `None` when no placement seals it.
+pub(super) fn seal_bodies_needed(g: &Game, pid: usize, cid: u32) -> Option<usize> {
+    let city = g.cities.get(&cid)?;
+    let ring: Vec<Pos> = g
+        .wdisk(city.pos, 1)
+        .into_iter()
+        .filter(|pos| *pos != city.pos)
+        .collect();
+    let dry = |pos: Pos| {
+        g.map
+            .get(pos)
+            .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+    };
+    let open: Vec<Pos> = ring
+        .iter()
+        .copied()
+        .filter(|pos| {
+            let Some(tile) = g.map.get(*pos) else {
+                return false;
+            };
+            let held = g.unit_ids_at(*pos).iter().any(|id| {
+                let unit = &g.units[id];
+                unit.owner != city.owner
+                    && g.is_at_war(city.owner, unit.owner)
+                    && g.rules.units[unit.kind].class == "military"
+            });
+            g.rules.is_passable(tile) && !held && !g.in_enemy_zoc(city.owner, *pos)
+        })
+        .collect();
+    if open.is_empty() {
+        return Some(0);
+    }
+    let stands: Vec<Pos> = ring
+        .iter()
+        .copied()
+        .filter(|pos| {
+            dry(*pos)
+                && g.city_at(*pos).is_none()
+                && g.defending_district_at(*pos).is_none()
+                && !g.unit_ids_at(*pos).iter().any(|id| {
+                    let unit = &g.units[id];
+                    unit.owner != pid && g.is_at_war(pid, unit.owner)
+                })
+        })
+        .collect();
+    let covers = |stand: Pos, pos: Pos| {
+        stand == pos || (g.wdist(stand, pos) == 1 && dry(pos) && !g.map.has_river_edge(stand, pos))
+    };
+    (1u32..1 << stands.len())
+        .filter(|mask| {
+            open.iter().all(|pos| {
+                stands
+                    .iter()
+                    .enumerate()
+                    .any(|(i, stand)| mask & (1 << i) != 0 && covers(*stand, *pos))
+            })
+        })
+        .map(|mask| mask.count_ones() as usize)
+        .min()
+}
+
 /// The taker's expected blow on the city as `do_attack` would land it: the
 /// attacker's strength at its hit points against `city_strength`, at the
 /// centre of the roll, routed through the wall pool.
@@ -410,6 +1212,34 @@ fn hostiles_near(g: &Game, pid: usize, center: Pos, radius: i32) -> Vec<Pos> {
     out
 }
 
+/// Tiles a hostile city or Encampment other than the target can strike: a
+/// gun posted there is shot by a city the siege is not reducing. Live King
+/// civvis-20261004T070716Z (game 49): Nagoya's catapults were posted within
+/// reach of a levied city-state's walled district; its strikes and a
+/// crossbow took one to 44 and then dead and another to 34, and Nagoya's
+/// Invest landed one blow in six turns.
+fn third_strike_sources(g: &Game, pid: usize, target: u32) -> Vec<Pos> {
+    let mut out = Vec::new();
+    for city in g.cities.values() {
+        if city.id == target || city.owner == pid || !g.is_at_war(pid, city.owner) {
+            continue;
+        }
+        if city.wall_hp > 0 {
+            out.push(city.pos);
+        }
+        if city.encampment_hp > 0 && city.encampment_wall_hp > 0 && !city.encampment_pillaged {
+            if let Some(at) = g
+                .wdisk(city.pos, 3)
+                .into_iter()
+                .find(|pos| g.encampment_at(*pos) == Some(city.id))
+            {
+                out.push(at);
+            }
+        }
+    }
+    out
+}
+
 /// The melee-capable unit that walks in: adjacent to the city with the most
 /// movement, else able to reach a free ring tile this turn.
 fn designate_taker(g: &Game, city: &CityView, force: &[u32]) -> Option<u32> {
@@ -459,6 +1289,31 @@ fn designate_taker(g: &Game, city: &CityView, force: &[u32]) -> Option<u32> {
             ring.iter().any(|pos| reach.contains(pos))
         })
         .max_by_key(rank)
+}
+
+/// A breach can heal before a melee unit crosses the outer staging ring.
+/// Choose a healthy assigned capturer with a short legal route to an adjacent
+/// tile, even when it cannot complete that route this turn.
+fn approaching_breach_taker(g: &Game, pid: usize, city: &CityView, force: &[u32]) -> Option<u32> {
+    force
+        .iter()
+        .copied()
+        .filter(|uid| {
+            let unit = &g.units[uid];
+            arm_of(g, *uid) == Arm::Melee
+                && unit.hp >= 70
+                && unit.attacks_left > 0
+                && g.wdist(unit.pos, city.pos) <= STAGING_FAR
+                && f64::from(city.hp) <= taker_blow(g, pid, *uid, city.id) + 40.0
+                && g.route_distance(*uid, city.pos, 1)
+                    .is_some_and(|steps| steps <= (STAGING_FAR + 3) as usize)
+        })
+        .min_by(|left, right| {
+            g.wdist(g.units[left].pos, city.pos)
+                .cmp(&g.wdist(g.units[right].pos, city.pos))
+                .then_with(|| unit_power(g, *right).total_cmp(&unit_power(g, *left)))
+                .then_with(|| left.cmp(right))
+        })
 }
 
 /// `anvil`: every member's post for the turn. The city tile goes to the
@@ -629,9 +1484,100 @@ fn anvil_orders_for(
     posts
 }
 
+/// `gun-queues-behind-the-column`: the share of a gun's health the reply
+/// at a queue step may reach.
+const QUEUE_DANGER_SHARE: f64 = 0.5;
+
 /// The same exclusions must govern post assignment and the march to it.
 /// Otherwise spread-first assignment can reserve a pocket whose only entry
 /// crosses another ring tile, and the mover can never fulfill that order.
+/// How much longer, in steps, a dry-land march may be than the ordinary
+/// route before a land unit takes the ordinary (embarking) one instead.
+const DRY_MARCH_SLACK: usize = 8;
+
+/// The next step of a land unit's march toward `to`: over dry land while a
+/// dry route exists no more than twice the ordinary route's length (and
+/// [`DRY_MARCH_SLACK`] over it), else the ordinary step. The ordinary router
+/// prices every step at 1, so a unit that can embark crosses any shorter bay.
+/// Live King civvis-20261002T054346Z: the Siege of Tlacopan, across a bay,
+/// staged nobody within five tiles for 45 turns with a force of 7-19. Five to
+/// twenty-six of our units floated in the bay at a time, 165 of their moves
+/// failed with the host's "cannot_start", and units on the shore stood down as
+/// "going nowhere", while a 23-step road ran around the bay over land.
+pub(super) fn march_step(g: &Game, uid: u32, to: Pos, range: i32) -> Option<Pos> {
+    dry_march_step(g, uid, to, range).or_else(|| g.route_step(uid, to, range))
+}
+
+/// `stage-march-keeps-to-land`: the longest dry road a Stage or approach
+/// march takes instead of the water. Twice the 60-column map's width, so a
+/// road round a strait or through a neighbour is in reach.
+pub(super) const STAGE_DRY_LIMIT: usize = 128;
+
+/// `stage-march-keeps-to-land`: how a land unit standing on land marches
+/// when its ordinary route crosses water. [`march_step`] takes a dry road
+/// only up to twice the ordinary route (and never past 64 steps); beyond
+/// that it embarks, and `come-ashore`'s `disembark_step` lands the unit
+/// again at home the next turn, before the train moves it, so the crossing
+/// never completes. Live King civvis-20261005T045443Z (game 101): the guns
+/// for Wak Kab'nal stood 14 to 18 tiles out from turn 150 to 227, the end of
+/// the record, stepping into the coast and back each turn; the strait was 10
+/// to 15 tiles and the land road round it 51 to 57.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum StageMarch {
+    /// The ordinary [`march_step`], unchanged.
+    Ordinary,
+    /// The first step of the dry road, `dry` steps long against the
+    /// ordinary route's `wet`.
+    Dry { step: Pos, dry: usize, wet: usize },
+    /// No dry road within [`STAGE_DRY_LIMIT`]; the unit holds on land.
+    Hold { wet: usize },
+}
+
+/// See [`StageMarch`]. `Ordinary` unless `uid` is a land unit on land
+/// whose ordinary route to within `range` of `to` is shorter than every dry
+/// road: an ordinary route that is already dry, and an unreachable goal,
+/// keep [`march_step`]. A dry road inside `march_step`'s own limit yields
+/// the same first step here, the search being the same breadth-first one.
+pub(super) fn stage_march(g: &Game, uid: u32, to: Pos, range: i32) -> StageMarch {
+    if !keeps_to_land(g, uid) || g.wdist(g.units[&uid].pos, to) <= range {
+        return StageMarch::Ordinary;
+    }
+    let Some(wet) = g.route_distance(uid, to, range) else {
+        return StageMarch::Ordinary;
+    };
+    match g.route_step_dry(uid, to, range, STAGE_DRY_LIMIT) {
+        Some((_, dry)) if dry <= wet => StageMarch::Ordinary,
+        Some((step, dry)) => StageMarch::Dry { step, dry, wet },
+        None => StageMarch::Hold { wet },
+    }
+}
+
+/// The dry-land half of [`march_step`]: `None` for a unit at sea or not on
+/// land, when no acceptable dry route exists, or when the ordinary route is
+/// no longer than the dry one (it already keeps to land).
+pub(super) fn dry_march_step(g: &Game, uid: u32, to: Pos, range: i32) -> Option<Pos> {
+    let unit = g.units.get(&uid)?;
+    let spec = &g.rules.units[unit.kind];
+    if g.is_embarked(unit)
+        || spec
+            .domain
+            .as_deref()
+            .is_some_and(|domain| domain != "land")
+    {
+        return None;
+    }
+    let ordinary_len = g.route_distance(uid, to, range).unwrap_or(usize::MAX / 4);
+    let limit = ordinary_len
+        .saturating_mul(2)
+        .max(ordinary_len.saturating_add(DRY_MARCH_SLACK))
+        .min(64);
+    // A dry road no longer than the ordinary route means the ordinary route
+    // keeps to land already: keep its step and its tie-breaking.
+    g.route_step_dry(uid, to, range, limit)
+        .filter(|(_, steps)| *steps > ordinary_len)
+        .map(|(step, _)| step)
+}
+
 fn siege_route_step(g: &Game, pid: usize, uid: u32, goal: Pos, city: Pos) -> Option<Pos> {
     let unit = g.units.get(&uid)?;
     let mut avoid: BTreeSet<Pos> = g
@@ -650,7 +1596,42 @@ fn siege_route_step(g: &Game, pid: usize, uid: u32, goal: Pos, city: Pos) -> Opt
             .map(|other| other.pos),
     );
     avoid.remove(&unit.pos);
+    // A land unit on land keeps to land on its way to a post. Embarking
+    // spends its moves, and the next turn `disembark_step` lands it again
+    // before the train moves it, so a wet first step is a turn lost and the
+    // next one too. Live King civvis-20261004T100903Z (game 52): with our
+    // own soldiers walling the land approach, four Trebuchets before Ray
+    // shuttled between (31,27) and the water at (32,27), five and four tiles
+    // out, every other turn from turn 109 to 145, and none fired; the siege
+    // ran seventy turns and Ray never fell.
+    if keeps_to_land(g, uid) {
+        avoid.extend(
+            g.map
+                .tiles
+                .iter()
+                .filter(|(pos, tile)| **pos != goal && g.rules.is_water(tile))
+                .map(|(pos, _)| *pos),
+        );
+    }
     g.route_step_avoiding_tiles(uid, goal, &avoid)
+}
+
+/// A land unit standing on land: the train's steps never embark it. See
+/// [`siege_route_step`].
+fn keeps_to_land(g: &Game, uid: u32) -> bool {
+    g.units.get(&uid).is_some_and(|unit| {
+        !g.is_embarked(unit)
+            && g.rules.units[unit.kind]
+                .domain
+                .as_deref()
+                .is_none_or(|domain| domain == "land")
+    })
+}
+
+/// Whether `uid` may end a train step on `pos`: anywhere for a unit at sea
+/// or not on land, dry ground for one on land.
+fn dry_stand(g: &Game, uid: u32, pos: Pos) -> bool {
+    !keeps_to_land(g, uid) || g.map.get(pos).is_some_and(|tile| !g.rules.is_water(tile))
 }
 
 /// The train's posts for the turn. Melee already on the ring keep their
@@ -659,12 +1640,64 @@ fn siege_route_step(g: &Game, pid: usize, uid: u32, goal: Pos, city: Pos) -> Opt
 /// one, then the nearest. Guns, then shooters, keep a tile they can already
 /// shoot the city from, else take a tile at their range behind a ring post
 /// and away from hostiles. A unit with no tile left has no post.
+/// The tile two out that a breached city's taker walks through to its ring,
+/// kept clear of firing posts. A coastal city can have only two or three land
+/// ring tiles, and guns standing on every land tile two out seal the approach.
+/// They have already fired when the breach is ready, so they cannot swap
+/// back. Live King civvis-20261001T050754Z: three Trebuchets held the three
+/// tiles two out from Uppsala, whose ring was three land tiles beside four of
+/// coast. The city sat breached near 20 HP for eight turns, and no taker
+/// could reach a ring tile (diagnosed by -c9). `None` while the walls stand,
+/// once the taker is on the ring, or when no such tile exists.
+fn taker_corridor(
+    g: &Game,
+    city: &CityView,
+    taker: Option<u32>,
+    ring_taken: &BTreeSet<Pos>,
+    open_land: &impl Fn(Pos) -> bool,
+) -> Option<Pos> {
+    if city.wall_hp > 0 {
+        return None;
+    }
+    let taker = taker?;
+    let here = g.units.get(&taker)?.pos;
+    if g.wdist(here, city.pos) <= 1 {
+        return None;
+    }
+    g.wring(city.pos, 2)
+        .into_iter()
+        .filter(|pos| {
+            open_land(*pos)
+                && g.unit_can_traverse(taker, *pos)
+                && g.nbrs(*pos).into_iter().any(|ring| {
+                    g.wdist(ring, city.pos) == 1
+                        && open_land(ring)
+                        && g.unit_can_traverse(taker, ring)
+                        && (!ring_taken.contains(&ring) || g.unit_ids_at(ring).is_empty())
+                })
+        })
+        .min_by_key(|pos| (g.wdist(here, *pos), *pos))
+}
+
 fn siege_posts(
     g: &Game,
     pid: usize,
     city: &CityView,
     force: &[u32],
     taker: Option<u32>,
+) -> BTreeMap<u32, Pos> {
+    siege_posts_keeping(g, pid, city, force, taker, &BTreeMap::new())
+}
+
+/// [`siege_posts`], keeping each unit still walking in on last turn's post
+/// (`previous`) while that post still serves.
+fn siege_posts_keeping(
+    g: &Game,
+    pid: usize,
+    city: &CityView,
+    force: &[u32],
+    taker: Option<u32>,
+    previous: &BTreeMap<u32, Pos>,
 ) -> BTreeMap<u32, Pos> {
     let mut posts: BTreeMap<u32, Pos> = BTreeMap::new();
     let mut ring_taken: BTreeSet<Pos> = BTreeSet::new();
@@ -703,6 +1736,24 @@ fn siege_posts(
     );
     for uid in order {
         let here = g.units[&uid].pos;
+        // A unit still walking in keeps last turn's post while it stays free
+        // and reachable. Redrawn spread-first every turn, the post swung
+        // across the city as the ring filled and emptied: live King
+        // civvis-20261004T144618Z (game 62) walked the Warrior carrying the
+        // Siege Tower four, seven, four, seven tiles from Yaroslavl between
+        // turns 89 and 95 (a frame-0 trace at turn 91 shows post_step taking
+        // it from four tiles out to six), and the walls fell from 100 to 84
+        // in twelve turns of Reduce.
+        if let Some(kept) = previous.get(&uid).copied().filter(|pos| {
+            ring_free.contains(pos)
+                && !ring_taken.contains(pos)
+                && g.unit_can_traverse(uid, *pos)
+                && siege_route_step(g, pid, uid, *pos, city.pos).is_some()
+        }) {
+            posts.insert(uid, kept);
+            ring_taken.insert(kept);
+            continue;
+        }
         let mut candidates: Vec<Pos> = ring_free
             .iter()
             .copied()
@@ -744,11 +1795,17 @@ fn siege_posts(
             *uid,
         )
     });
+    let corridor = taker_corridor(g, city, taker, &ring_taken, &open_land);
+    let third = third_strike_sources(g, pid, city.id);
+    let third_exposed =
+        |pos: Pos| third.iter().any(|source| g.wdist(*source, pos) <= CITY_STRIKE_RANGE);
     let mut fire_taken: BTreeSet<Pos> = BTreeSet::new();
     for uid in guns {
         let here = g.units[&uid].pos;
         let range = g.unit_attack_range(uid).max(1);
         if g.wdist(here, city.pos) <= range
+            && Some(here) != corridor
+            && !third_exposed(here)
             && !fire_taken.contains(&here)
             && g.ranged_order_is_legal(pid, uid, city.pos, frame.as_ref(), &viewers)
         {
@@ -756,34 +1813,116 @@ fn siege_posts(
             fire_taken.insert(here);
             continue;
         }
-        let mut candidates: Vec<Pos> = g
-            .wring(city.pos, range)
-            .into_iter()
-            .filter(|pos| {
-                *pos != here
-                    && !fire_taken.contains(pos)
-                    && !ring_taken.contains(pos)
-                    && open_land(*pos)
-                    && g.unit_can_traverse(uid, *pos)
-                    && g.unit_has_line_of_sight_from(uid, *pos, city.pos)
-                    && g.unit_ids_at(*pos).is_empty()
-            })
-            .collect();
-        candidates.sort_by_key(|pos| {
-            let behind = ring_taken.iter().any(|held| g.wdist(*held, *pos) == 1);
-            let exposure = hostiles.iter().filter(|h| g.wdist(**h, *pos) <= 2).count();
-            (!behind, exposure, g.wdist(here, *pos), *pos)
+        // The farthest band with a shot. Live King civvis-20261001T022028Z:
+        // Cairo stood on Hills behind Wonder, Holy Site and Jungle tiles, no
+        // range-2 tile had a line to it, and the guns stood three and four
+        // tiles out for 22 turns of Invest while the walls went 164 -> 200.
+        // An adjacent tile always has the line.
+        // As for melee: last turn's firing post while it still serves.
+        let kept = previous.get(&uid).copied().filter(|pos| {
+            *pos != here
+                && g.wdist(*pos, city.pos) <= range
+                && Some(*pos) != corridor
+                && !fire_taken.contains(pos)
+                && !ring_taken.contains(pos)
+                && open_land(*pos)
+                && g.unit_can_traverse(uid, *pos)
+                && g.unit_has_line_of_sight_from(uid, *pos, city.pos)
+                && g.unit_ids_at(*pos).is_empty()
+                && siege_route_step(g, pid, uid, *pos, city.pos).is_some()
         });
-        // Assignment and approach use the same route exclusions.
-        let best = candidates
-            .into_iter()
-            .find(|pos| siege_route_step(g, pid, uid, *pos, city.pos).is_some());
+        if let Some(pos) = kept {
+            posts.insert(uid, pos);
+            fire_taken.insert(pos);
+            continue;
+        }
+        // Each band offers its candidates in the existing order and keeps the
+        // first one `siege_route_step` can reach: the approach's own route
+        // rules (#4016). A gun with no reachable firing tile gets no post.
+        let best = (1..=range).rev().find_map(|distance| {
+            let mut candidates: Vec<Pos> = g
+                .wring(city.pos, distance)
+                .into_iter()
+                .filter(|pos| {
+                    *pos != here
+                        && Some(*pos) != corridor
+                        && !fire_taken.contains(pos)
+                        && !ring_taken.contains(pos)
+                        && open_land(*pos)
+                        && g.unit_can_traverse(uid, *pos)
+                        && g.unit_has_line_of_sight_from(uid, *pos, city.pos)
+                        && g.unit_ids_at(*pos).is_empty()
+                })
+                .collect();
+            candidates.sort_by_key(|pos| {
+                // The gun's own side of the city first: a post across the
+                // city is a walk around its strike ring (Natal, game 30:
+                // guns on the west were posted east).
+                let far_side = g.wdist(here, *pos) > g.wdist(here, city.pos);
+                let behind = ring_taken.iter().any(|held| g.wdist(*held, *pos) == 1);
+                let exposure = hostiles.iter().filter(|h| g.wdist(**h, *pos) <= 2).count();
+                // Out of every other hostile city's strike first; see
+                // `third_strike_sources`.
+                (third_exposed(*pos), far_side, !behind, exposure, g.wdist(here, *pos), *pos)
+            });
+            candidates
+                .into_iter()
+                .find(|pos| siege_route_step(g, pid, uid, *pos, city.pos).is_some())
+        });
         if let Some(pos) = best {
             posts.insert(uid, pos);
             fire_taken.insert(pos);
         }
     }
     posts
+}
+
+/// `siege-counts-posted-shooters`: does this shooter put its shot on the
+/// walls? Only from a firing post `siege_posts` can give it — the range band
+/// holds few free tiles, and a shooter with none fortifies where it stands
+/// (live King civvis-20261004T122037Z, game 62: archer u43 three tiles from
+/// Yaroslavl with range 2) — and only with no hostile unit within its reach of
+/// that post, since `siege_shooter_step` shoots a unit before the city while
+/// the walls stand.
+fn shooter_hits_walls(g: &Game, pid: usize, uid: u32, posts: &BTreeMap<u32, Pos>) -> bool {
+    let Some(post) = posts.get(&uid).copied() else {
+        return false;
+    };
+    let range = g.unit_attack_range(uid).max(1);
+    !g.wdisk(post, range)
+        .into_iter()
+        .any(|pos| pos != post && strongest_hostile_at(g, pid, pos).is_some())
+}
+
+/// A land shooter of the train: what [`posted_shooters`] gives posts to.
+pub(super) fn is_siege_shooter(g: &Game, uid: u32) -> bool {
+    arm_of(g, uid) == Arm::Shooter
+}
+
+/// `siege-counts-posted-shooters`: the shooters of `force` that hold a firing
+/// post on `cid` (`.0`), and those of them whose shot goes to the walls
+/// (`.1`). See [`shooter_hits_walls`].
+pub(super) fn posted_shooters(
+    g: &Game,
+    pid: usize,
+    cid: u32,
+    force: &[u32],
+) -> (BTreeSet<u32>, BTreeSet<u32>) {
+    let Some(city) = CityView::of(g, cid) else {
+        return (BTreeSet::new(), BTreeSet::new());
+    };
+    let posts = siege_posts(g, pid, &city, force, None);
+    let posted: BTreeSet<u32> = force
+        .iter()
+        .copied()
+        .filter(|uid| arm_of(g, *uid) == Arm::Shooter && posts.contains_key(uid))
+        .collect();
+    let walls = posted
+        .iter()
+        .copied()
+        .filter(|uid| shooter_hits_walls(g, pid, *uid, &posts))
+        .collect();
+    (posted, walls)
 }
 
 impl AdvancedAi {
@@ -809,6 +1948,20 @@ impl AdvancedAi {
                 Some((city, siege))
             })
             .collect();
+        // `stage-musters-out-of-reach`: the muster's readiness and the turn it
+        // closed follow their city through the rebuild as the siege does. Kept
+        // under the old ids, the fresh board's next city read another city's
+        // muster: a replay of live King game 183 read Kish's train "closed
+        // since t107" on turn 115 after it had held on turns 111-114.
+        let city_of = |old: u32| next.city_at(previous.cities.get(&old)?.pos);
+        self.stage_muster_ready = std::mem::take(&mut self.stage_muster_ready)
+            .into_iter()
+            .filter_map(|(old, ready)| city_of(old).map(|city| (city, ready)))
+            .collect();
+        self.stage_muster_closed = std::mem::take(&mut self.stage_muster_closed)
+            .into_iter()
+            .filter_map(|(old, at)| city_of(old).map(|city| (city, at)))
+            .collect();
         // Only surviving siege takers own these reservations. In particular,
         // losing an objective must not leave its old taker ID reserved.
         self.reserved_units = self
@@ -816,6 +1969,9 @@ impl AdvancedAi {
             .values()
             .filter_map(|siege| siege.taker)
             .collect();
+        // `amphibious-siege-train`: the crossing in hand follows its target,
+        // port and members the same way.
+        self.remap_amphibious_train(previous, next, units);
     }
 
     /// Whether the siege has reserved this unit as its taker — the hook a
@@ -824,6 +1980,69 @@ impl AdvancedAi {
     #[cfg_attr(not(test), allow(dead_code))]
     pub(super) fn unit_is_reserved(&self, uid: u32) -> bool {
         self.reserved_units.contains(&uid)
+    }
+
+    /// Whether a Domination siege that has cleared its entry gate — Invest,
+    /// Reduce or Take — owns this land unit's turn. The train priced the
+    /// assault as a whole (the bill with its margin, the damage budget
+    /// inside the force's endurance); the battle planner's per-unit veto
+    /// charges every enemy blow to every one of our units at once and must
+    /// not undo that verdict one unit at a time.
+    pub(super) fn active_siege_member(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        self.siege_train
+            && self.active_victory_target(g) == Some(super::VictoryTarget::Domination)
+            && self.force_groups.iter().any(|group| {
+                group.domain == ForceDomain::Land
+                    && group.units.contains(&uid)
+                    && g.city_at(group.objective).is_some_and(|cid| {
+                        let owner = g.cities[&cid].owner;
+                        owner != pid
+                            && g.is_at_war(pid, owner)
+                            && self.sieges.get(&cid).is_some_and(|siege| {
+                                matches!(
+                                    siege.stage,
+                                    SiegeStage::Invest | SiegeStage::Reduce | SiegeStage::Take
+                                )
+                            })
+                    })
+            })
+    }
+
+    /// Whether this unit belongs to a Domination siege still in Stage. The
+    /// train's own Stage step prices its approach (`siege_stage_step`: a gun
+    /// holds back on its own risk limit; the rest march to the staging
+    /// ring), so the battle planner does not rotate a healthy member out "to
+    /// heal". Live King civvis-20261004T033533Z (game 46), turn 140: all four
+    /// 100-hp catapults before Babylon were rotated out at danger 96-100 and
+    /// fortified; Stage never invested in 18 turns.
+    pub(super) fn staging_siege_member(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        self.siege_train
+            && self.active_victory_target(g) == Some(super::VictoryTarget::Domination)
+            && self.force_groups.iter().any(|group| {
+                group.domain == ForceDomain::Land
+                    && group.units.contains(&uid)
+                    && g.city_at(group.objective).is_some_and(|cid| {
+                        let owner = g.cities[&cid].owner;
+                        owner != pid
+                            && g.is_at_war(pid, owner)
+                            && self
+                                .sieges
+                                .get(&cid)
+                                .is_some_and(|siege| siege.stage == SiegeStage::Stage)
+                    })
+            })
+    }
+
+    /// Whether this unit is a member of an active Domination siege (see
+    /// `active_siege_member`) whose city stands without walls: its shot
+    /// is the city's health, and the battle planner leaves it to the train.
+    pub(super) fn unwalled_siege_member(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        self.active_siege_member(g, pid, uid)
+            && self.force_groups.iter().any(|group| {
+                group.units.contains(&uid)
+                    && g.city_at(group.objective)
+                        .is_some_and(|cid| g.cities[&cid].wall_hp <= 0)
+            })
     }
 
     /// The doctrine's turn for one unit: `Some(acted)` when a siege or an
@@ -854,8 +2073,20 @@ impl AdvancedAi {
                 }
             }
         }
+        if self.siege_needs_a_breaker && self.siege_train {
+            if let Some(acted) = self.breach_support_step(g, pid, uid, plan) {
+                return Some(acted);
+            }
+        }
         if arm_of(g, uid) == Arm::Other {
             return None;
+        }
+        // `capture-holds-the-ring`: see `capture_hold`.
+        if self.capture_holds_the_ring {
+            self.note_capture_holds(g, pid);
+            if let Some(acted) = self.capture_ring_step(g, pid, uid) {
+                return Some(acted);
+            }
         }
         let group = self
             .force_groups
@@ -871,7 +2102,12 @@ impl AdvancedAi {
             }
         }
         if self.siege_train || self.siege_positive_damage_budget {
-            if let Some(cid) = self.siege_city_of(g, pid, plan, &group) {
+            // `breach-counts-nearby-guns`: a gun another siege counts as its
+            // breaker takes that siege's orders. See `nearby_gun_city`.
+            if let Some(cid) = self
+                .nearby_gun_city(g, pid, plan, uid)
+                .or_else(|| self.siege_city_of(g, pid, plan, &group))
+            {
                 return self.siege_train_step(g, pid, uid, cid, plan, &group);
             }
         }
@@ -887,6 +2123,10 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         group: &ForceGroup,
     ) -> Option<u32> {
+        // `capture-holds-the-ring`: see `loyalty_prey_for`.
+        if let Some(prey) = self.loyalty_prey_for(g, pid, group.anchor) {
+            return Some(prey);
+        }
         let enemy_city = |cid: u32| {
             g.cities
                 .get(&cid)
@@ -913,7 +2153,8 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         group: &ForceGroup,
     ) -> Vec<u32> {
-        self.force_groups
+        let mut members = self
+            .force_groups
             .iter()
             .chain(std::iter::once(group))
             .filter(|group| {
@@ -926,9 +2167,538 @@ impl AdvancedAi {
                     && arm_of(g, *uid) != Arm::Other
                     && !self.guard_is_reserved_for_civilian(*uid)
             })
-            .collect::<BTreeSet<_>>()
+            .collect::<BTreeSet<_>>();
+        // `breach-counts-nearby-guns`: a fit gun at another walled city's
+        // ring serves that city, and one at this city's ring serves this one,
+        // whichever row the board gave it. See `nearby_gun_city`.
+        if self.nearby_guns_join() {
+            members.retain(|uid| {
+                self.nearby_gun_city(g, pid, plan, *uid)
+                    .is_none_or(|cid| cid == city.id)
+            });
+            members.extend(
+                g.units
+                    .values()
+                    .filter(|unit| {
+                        unit.owner == pid
+                            && !self.guard_is_reserved_for_civilian(unit.id)
+                            && self.nearby_gun_city(g, pid, plan, unit.id) == Some(city.id)
+                    })
+                    .map(|unit| unit.id),
+            );
+        }
+        members.into_iter().collect()
+    }
+
+    /// `breach-reads-the-air`: the wall damage a turn our aircraft bring to
+    /// the walled city `cid`. Each aircraft with a bombard strength strikes
+    /// once a turn, as `Game::do_air_strike` resolves it: its strength at its
+    /// health, less 17 for a ranged one, against the city's, at full effect on
+    /// the wall for a siege aircraft and half for any other. An aircraft
+    /// counts toward one walled city we besiege within its strike range of
+    /// its base, so two sieges never both count one sortie: the one this
+    /// frame's volley struck, else the appointed surge's objective, else the
+    /// nearest, then the lowest id. Live G104 besieged Pharsalos as well from
+    /// turn 220, nearer the Bomber that struck Sparta every turn. 0 with the
+    /// gene off. The breach reading counted land guns
+    /// only: live King civvis-20261005T060002Z (game 104) read "0 gun(s) fit
+    /// ... nothing to open the walls" at Sparta on 28 of 34 turns from 196 to
+    /// 229 while our Bombers struck it, its walls 400 -> 153.
+    pub(super) fn air_breach_walls(&self, g: &Game, pid: usize, cid: u32) -> f64 {
+        if !self.breach_reads_the_air {
+            return 0.0;
+        }
+        let walled = |id: u32| {
+            CityView::of(g, id).filter(|city| {
+                city.owner != pid && g.is_at_war(pid, city.owner) && city.wall_max > 0
+            })
+        };
+        let Some(city) = walled(cid) else {
+            return 0.0;
+        };
+        let besieged: Vec<CityView> = self
+            .sieges
+            .iter()
+            .filter(|(id, siege)| {
+                **id != cid
+                    && siege.stage != SiegeStage::Hold
+                    && g.turn.saturating_sub(siege.assessed) <= 1
+            })
+            .filter_map(|(id, _)| walled(*id))
+            .chain(std::iter::once(city))
+            .collect();
+        let volley = self.air_city_assault.as_ref().map(|assault| assault.target);
+        let surge = self
+            .air_surge_plan
+            .as_ref()
+            .map(|surge| surge.objective_pos);
+        let defense = g.city_strength(cid);
+        g.units
+            .values()
+            .filter(|unit| {
+                let spec = &g.rules.units[unit.kind];
+                unit.owner == pid
+                    && spec.class == "military"
+                    && spec.domain.as_deref() == Some("air")
+                    && spec.bombard_strength > 0.0
+            })
+            .filter(|unit| {
+                let base = g.air_operation_origin(unit.id);
+                let range = g.unit_attack_range(unit.id);
+                besieged
+                    .iter()
+                    .filter(|other| g.wdist(base, other.pos) <= range)
+                    .min_by_key(|other| {
+                        (
+                            volley != Some(other.pos),
+                            surge != Some(other.pos),
+                            g.wdist(base, other.pos),
+                            other.id,
+                        )
+                    })
+                    .is_some_and(|served| served.id == cid)
+            })
+            .map(|unit| {
+                let spec = &g.rules.units[unit.kind];
+                let mut strength = g.unit_ranged_attack_strength(unit);
+                if spec.ranged_strength > 0.0 {
+                    strength -= 17.0;
+                }
+                expected_damage(effective_strength(strength, unit.hp), defense)
+                    * if spec.siege { 1.0 } else { 0.5 }
+            })
+            .sum()
+    }
+
+    /// `breach-counts-nearby-guns`: the walled city a fit siege gun of ours
+    /// within [`STAGING_FAR`] of it is the breaker for, whatever row the board
+    /// gave it — the nearest walled city a land force of ours besieges, then
+    /// the one its own force is on, then the lowest id, so two sieges never
+    /// both count one gun. `None` with the gene off, for anything but a fit
+    /// land siege gun, or for a gun at no besieged city's ring. A breach
+    /// reading counted only its own force's guns: live King
+    /// civvis-20261005T051413Z (game 102) held Toronto's 400 walls in Stage
+    /// from turn 155 with four units staged and "0 gun(s) fit", while three
+    /// healthy Bombards of Uruk's force stood four and five tiles from
+    /// Toronto, eight to ten from Uruk, with Toronto between them and it.
+    fn nearby_gun_city(&self, g: &Game, pid: usize, plan: &StrategicPlan, uid: u32) -> Option<u32> {
+        if !self.nearby_guns_join() {
+            return None;
+        }
+        let unit = g.units.get(&uid)?;
+        if unit.owner != pid
+            || g.is_embarked(unit)
+            || arm_of(g, uid) != Arm::Siege
+            || !self.breach_gun_fit(g, uid)
+        {
+            return None;
+        }
+        let mut own = None;
+        let mut cities = BTreeSet::new();
+        for group in &self.force_groups {
+            if group.domain != ForceDomain::Land {
+                continue;
+            }
+            let Some(cid) = self.siege_city_of(g, pid, plan, group) else {
+                continue;
+            };
+            if group.units.contains(&uid) {
+                own = Some(cid);
+            }
+            cities.insert(cid);
+        }
+        cities
             .into_iter()
-            .collect()
+            .filter_map(|cid| CityView::of(g, cid))
+            .filter(|city| city.wall_max > 0 && g.wdist(unit.pos, city.pos) <= STAGING_FAR)
+            .min_by_key(|city| (g.wdist(unit.pos, city.pos), own != Some(city.id), city.id))
+            .map(|city| city.id)
+    }
+
+    /// `siege-needs-a-breaker`: whether a ranged member will be on the line
+    /// this turn. The battle planner pulls a unit under `ROTATE_HP` out to
+    /// heal and keeps it out until `RETURN_HP` (`battle_planner_recovering`);
+    /// a gun it holds back fires nothing however near it stands.
+    pub(super) fn siege_member_fit(&self, g: &Game, uid: u32) -> bool {
+        let Some(unit) = g.units.get(&uid) else {
+            return false;
+        };
+        let heals = !g.is_arena() || g.tactics.heal;
+        !heals
+            || (unit.hp >= super::battle_planner::ROTATE_HP
+                && !self.battle_planner_recovering.contains(&uid))
+    }
+
+    /// `siege-budget-projects-the-seal`: whether the fit melee of `force`
+    /// within `radius` of the city, off its ring, are enough bodies to seal
+    /// it (`seal_bodies_needed`). The melee hold the ring in Invest and Reduce
+    /// (`siege_blow`), and behind standing walls take it once the walls fall,
+    /// which is when the budget's city phase begins.
+    pub(super) fn train_seals_the_ring(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        force: &[u32],
+        radius: i32,
+    ) -> bool {
+        let Some(city) = g.cities.get(&cid) else {
+            return false;
+        };
+        let bodies = force
+            .iter()
+            .filter(|uid| {
+                g.units.get(uid).is_some_and(|unit| {
+                    unit.owner == pid
+                        && (2..=radius).contains(&g.wdist(unit.pos, city.pos))
+                        && arm_of(g, **uid) == Arm::Melee
+                        && g.exerts_zoc(unit)
+                        && self.siege_member_fit(g, **uid)
+                })
+            })
+            .count();
+        seal_bodies_needed(g, pid, cid).is_some_and(|needed| needed <= bodies)
+    }
+
+    /// Whether a gun counts as a breaker in a breach reading: fit to stand
+    /// in the train (`siege_member_fit`), or, under
+    /// `breach-counts-nearby-guns`, at or above `ROTATE_HP` though the battle
+    /// planner still holds it recovering. Counting is not posting: such a
+    /// gun still takes no post it cannot survive. Live heal rotations held
+    /// guns at 40-79 hp out of every breach reading (games 96 and 102).
+    pub(super) fn breach_gun_fit(&self, g: &Game, uid: u32) -> bool {
+        self.siege_member_fit(g, uid)
+            || (self.breach_counts_nearby_guns
+                && g.units
+                    .get(&uid)
+                    .is_some_and(|unit| unit.hp >= super::battle_planner::ROTATE_HP))
+    }
+
+    /// `siege-needs-a-breaker`: whether the capture of `cid` is waiting on a
+    /// breaker that is coming — its train held outside the city's reach for
+    /// want of one (`BreachReading`) this turn or the last, for at most
+    /// [`BREAKER_WAIT_TURNS`] standard turns, while a siege gun or a ram or
+    /// tower that opens these walls stands within [`BREAKER_COMING_REACH`],
+    /// or a city of ours that close is building a gun. The commitment ledger
+    /// does not count such a turn against the capture
+    /// (`capture-go-or-stand-down`): the train stands three to five tiles
+    /// out, so it read as "nobody went" or "not winning" and the city was
+    /// stood down while its guns were on the road.
+    pub(super) fn waiting_for_a_breaker(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        if !self.siege_needs_a_breaker {
+            return false;
+        }
+        let Some(city) = g.cities.get(&cid) else {
+            return false;
+        };
+        let Some(wait) = self.siege_breaker_waits.get(&city.pos) else {
+            return false;
+        };
+        if g.turn.saturating_sub(wait.last) > 1
+            || g.turn.saturating_sub(wait.since) > g.standard_duration(BREAKER_WAIT_TURNS)
+        {
+            return false;
+        }
+        // On its way: one has come nearer within BREAKER_STALL_TURNS. A gun
+        // that stands off — driven back, healing, boxed in — is not coming.
+        let closing = wait.nearest <= BREAKER_COMING_REACH
+            && g.turn.saturating_sub(wait.nearest_turn) <= g.standard_duration(BREAKER_STALL_TURNS);
+        // Or nearly built in a city of ours within reach.
+        let building = g.cities.values().any(|own| {
+            own.owner == pid
+                && g.wdist(own.pos, city.pos) <= BREAKER_COMING_REACH
+                && own.queue.first().is_some_and(|item| {
+                    let crate::game::Item::Unit { unit } = item else {
+                        return false;
+                    };
+                    if !land_gun(g, *unit) {
+                        return false;
+                    }
+                    let left = (g.item_cost_for_city(pid, own.id, item) - own.production).max(0.0);
+                    let rate = g.city_yields(own.id).production.max(0.1);
+                    left / rate <= f64::from(g.standard_duration(BREAKER_BUILD_TURNS))
+                })
+        });
+        closing || building
+    }
+
+    /// `siege-needs-a-breaker`: whether the siege train for `cid` is
+    /// gathering on its staging ring — its record in Stage, assessed this
+    /// turn or the last, for at most [`BREAKER_WAIT_TURNS`] standard turns,
+    /// with a land soldier of ours within [`STAGING_FAR`]. Stage holds the
+    /// train three to five tiles out until the staged strength meets the bill
+    /// and the damage budget is ready, so the capture ledger read it as
+    /// "nobody went" (no one within `CAPTURE_PRESENCE_RADIUS`) or, counted
+    /// present, as "not winning". Live King civvis-20261003T162445Z
+    /// (game 42r): Cairo, undefended, its train 126 strength near against a
+    /// bill of 158 with a Bombard on the ring, was stood down at turn 114
+    /// as "the objective nobody went to".
+    pub(super) fn siege_mustering(&self, g: &Game, pid: usize, cid: u32) -> bool {
+        if !self.siege_needs_a_breaker {
+            return false;
+        }
+        let (Some(siege), Some(city)) = (self.sieges.get(&cid), g.cities.get(&cid)) else {
+            return false;
+        };
+        siege.stage == SiegeStage::Stage
+            && g.turn.saturating_sub(siege.assessed) <= 1
+            && g.turn.saturating_sub(siege.entered) <= g.standard_duration(BREAKER_WAIT_TURNS)
+            && g.units.values().any(|unit| {
+                let spec = &g.rules.units[unit.kind];
+                unit.owner == pid
+                    && spec.class == "military"
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                    && g.wdist(unit.pos, city.pos)
+                        <= if self.stage_musters_out_of_reach {
+                            MUSTER_FAR
+                        } else {
+                            STAGING_FAR
+                        }
+            })
+    }
+
+    /// `siege-needs-a-breaker`: why the capture of `cid` is waiting on its
+    /// own train this turn, if it is — a breaker on its way, or the train
+    /// gathering on its staging ring. The commitment ledger counts such a
+    /// turn as neither forgotten nor stalled.
+    pub(super) fn capture_waits_on_the_train(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+    ) -> Option<&'static str> {
+        if self.waiting_for_a_breaker(g, pid, cid) {
+            Some("for a wall-breaker on its way")
+        } else if self.siege_mustering(g, pid, cid) {
+            Some("while its siege train gathers on the staging ring")
+        } else {
+            None
+        }
+    }
+
+    /// `siege-needs-a-breaker`: what the train holds within the staging ring
+    /// that can bring the walls down. See [`BreachReading`].
+    fn breach_reading(&self, g: &Game, pid: usize, city: &CityView, force: &[u32]) -> BreachReading {
+        self.breach_reading_within(g, pid, city, force, STAGING_FAR)
+    }
+
+    /// [`Self::breach_reading`] over the members within `radius` of the city.
+    /// `stage-musters-out-of-reach` reads it at [`MUSTER_BREACH_FAR`]: the
+    /// breakers a mustered train would bring onto its staging ring.
+    fn breach_reading_within(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: &CityView,
+        force: &[u32],
+        radius: i32,
+    ) -> BreachReading {
+        let mut reading = BreachReading {
+            horizon: SHOOTER_BREACH_TURNS,
+            ..BreachReading::default()
+        };
+        // `siege-counts-posted-shooters`: see `shooter_hits_walls`.
+        let wall_shooters = self
+            .siege_counts_posted_shooters
+            .then(|| posted_shooters(g, pid, city.id, force).1);
+        let mut users = false;
+        // `guns-enter-together`: see `gun_barred_from_its_post`.
+        let group = self.entry_group(g, pid, city);
+        for uid in force {
+            let Some(unit) = g.units.get(uid) else {
+                continue;
+            };
+            if g.wdist(unit.pos, city.pos) > radius {
+                continue;
+            }
+            match arm_of(g, *uid) {
+                Arm::Siege
+                    if self.breach_gun_fit(g, *uid)
+                        && self.gun_barred_from_its_post(g, pid, *uid, city, &group) =>
+                {
+                    reading.barred_guns += 1;
+                }
+                Arm::Siege if self.breach_gun_fit(g, *uid) => reading.guns += 1,
+                Arm::Siege => reading.wounded_guns += 1,
+                Arm::Shooter if self.siege_member_fit(g, *uid) => {
+                    if wall_shooters.as_ref().is_none_or(|shooters| shooters.contains(uid)) {
+                        reading.shooter_walls += wall_damage_per_shot(g, *uid, city.id);
+                    }
+                }
+                Arm::Melee if breach_support_user(g, *uid) => {
+                    users = true;
+                    // A carrier brings its ram or tower to the ring with it.
+                    if unit
+                        .linked_to
+                        .is_some_and(|peer| breach_support_works(g, peer, city.id))
+                    {
+                        reading.support += 1;
+                    }
+                }
+                _ => {}
+            }
+        }
+        if users {
+            reading.support += g
+                .units
+                .values()
+                .filter(|unit| {
+                    unit.owner == pid
+                        && unit.linked_to.is_none()
+                        && g.wdist(unit.pos, city.pos) <= radius
+                        && breach_support_works(g, unit.id, city.id)
+                })
+                .count();
+        }
+        reading
+    }
+
+    /// `siege-needs-a-breaker`: a Battering Ram or Siege Tower whose effect
+    /// works on a besieged city's walls joins a melee carrier of the train.
+    /// The effect needs it beside the city next to the melee that swings
+    /// (`Game::siege_support_effects`), and `advanced_formations` links it
+    /// only to whatever military unit shares its tile: live King
+    /// civvis-20261003T135713Z linked its Siege Tower to three different units
+    /// between turns 119 and 147, and it stood seven tiles from Kwadukuza
+    /// "walking in circles" through a siege against Medieval Walls, the walls a
+    /// tower opens. So a support unit carried by a melee member of the train
+    /// rides with it; one carried by anything else leaves it; and a free one
+    /// walks onto the nearest melee member it can reach this turn and links,
+    /// or closes on the train without ending alone inside the city's reach.
+    /// `None` for anything that is not such a support unit near such a siege.
+    fn breach_support_step(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        plan: &StrategicPlan,
+    ) -> Option<bool> {
+        let unit = g.units.get(&uid)?.clone();
+        if unit.owner != pid
+            || !matches!(unit.kind.as_str(), "battering_ram" | "siege_tower")
+            || g.is_embarked(&unit)
+        {
+            return None;
+        }
+        let besieged = |cid: u32| {
+            CityView::of(g, cid).filter(|city| {
+                city.owner != pid
+                    && g.is_at_war(pid, city.owner)
+                    && !walls_open_to_melee(city)
+                    && breach_support_works(g, uid, city.id)
+                    && g.wdist(unit.pos, city.pos) <= BREACH_SUPPORT_REACH
+            })
+        };
+        let city = self
+            .sieges
+            .iter()
+            .filter(|(_, siege)| siege.stage != SiegeStage::Hold)
+            .filter_map(|(cid, _)| besieged(*cid))
+            .chain(plan.target_city.and_then(besieged))
+            .min_by_key(|city| (g.wdist(unit.pos, city.pos), city.id))?;
+        let members: BTreeSet<u32> = self
+            .force_groups
+            .iter()
+            .filter(|group| {
+                group.domain == ForceDomain::Land
+                    && self.siege_city_of(g, pid, plan, group) == Some(city.id)
+            })
+            .flat_map(|group| group.units.iter().copied())
+            .collect();
+        let carrier_fit = |g: &Game, id: u32| {
+            members.contains(&id)
+                && g.units.get(&id).is_some_and(|carrier| {
+                    carrier.owner == pid
+                        && carrier.hp >= super::battle_planner::ROTATE_HP
+                        && !g.is_embarked(carrier)
+                        && arm_of(g, id) == Arm::Melee
+                        && breach_support_user(g, id)
+                })
+        };
+        if unit.linked_to.is_some_and(|peer| carrier_fit(g, peer)) {
+            // The carrier's orders move the pair.
+            return Some(false);
+        }
+        let carriers: Vec<u32> = members
+            .iter()
+            .copied()
+            .filter(|id| carrier_fit(g, *id) && g.units[id].linked_to.is_none())
+            .collect();
+        if carriers.is_empty() {
+            // Nothing of the train to ride with: whatever carries it now
+            // keeps it, and the ladder moves it.
+            return None;
+        }
+        if unit.linked_to.is_some() {
+            if g.apply(pid, &Action::UnlinkUnits { unit: uid }).is_err() {
+                return None;
+            }
+            self.force_groups_dirty = true;
+        }
+        let here = g.units[&uid].pos;
+        let link = |g: &mut Game, carrier: u32| {
+            g.apply(
+                pid,
+                &Action::LinkUnits {
+                    unit: carrier,
+                    with: uid,
+                },
+            )
+            .is_ok()
+        };
+        let kind = unit.kind;
+        let name = g.cities[&city.id].name.clone();
+        // One already shares the tile: link.
+        if let Some(carrier) = carriers.iter().copied().find(|id| g.units[id].pos == here) {
+            if link(g, carrier) {
+                self.force_groups_dirty = true;
+                think!(self.journal(), Military, Decision,
+                    "Siege of {name}: the {kind} joins the {}", g.units[&carrier].kind;
+                    "walls {}/{} that a {kind} opens; it rides with a melee member of the train to the ring",
+                    city.wall_hp, city.wall_max;
+                    city.pos);
+                return Some(true);
+            }
+        }
+        // The nearest carrier reachable this turn: walk onto it and link.
+        let reach = g.reachable(uid);
+        if let Some(carrier) = carriers
+            .iter()
+            .copied()
+            .filter(|id| reach.contains(&g.units[id].pos))
+            .min_by_key(|id| (g.wdist(here, g.units[id].pos), *id))
+        {
+            let to = g.units[&carrier].pos;
+            if self.base.path_walk_to(g, pid, uid, to) {
+                self.force_groups_dirty = true;
+                if g.units.get(&uid).is_some_and(|unit| unit.pos == to) && link(g, carrier) {
+                    think!(self.journal(), Military, Decision,
+                        "Siege of {name}: the {kind} joins the {}", g.units[&carrier].kind;
+                        "walls {}/{} that a {kind} opens; it rides with a melee member of the train to the ring",
+                        city.wall_hp, city.wall_max;
+                        city.pos);
+                }
+                return Some(true);
+            }
+        }
+        // Otherwise close on the nearest carrier, never ending alone inside
+        // the city's reach. With no melee member to carry it, a lone ram or
+        // tower has no business at the walls: the ladder keeps it.
+        let goal = carriers
+            .iter()
+            .map(|id| g.units[id].pos)
+            .min_by_key(|pos| (g.wdist(here, *pos), *pos))?;
+        let next = march_step(g, uid, goal, 0).filter(|next| {
+            g.can_move(uid, *next)
+                && (g.wdist(*next, city.pos) > CITY_STRIKE_RANGE
+                    || g.unit_ids_at(*next).iter().any(|id| {
+                        g.units[id].owner == pid && g.rules.units[g.units[id].kind].class == "military"
+                    }))
+        });
+        if let Some(next) = next {
+            return Some(self.base.tactical_apply_move(g, pid, uid, next));
+        }
+        Some(self.base.fortify_or_stop(g, pid, uid))
     }
 
     /// The state machine, once a turn per city: the bill, the strength, the
@@ -987,15 +2757,227 @@ impl AdvancedAi {
         });
 
         let damage_ready = self.conversion_siege_ready(g, pid, cid, &force);
+        let damage_budget = self.conversion_siege_entry_budget(g, pid, cid, &force, 5);
+        // Entry needs a margin for the first reply. Once the train has
+        // invested, a modest dip below that entry margin must not pull its
+        // guns back out of firing range every other turn. A force that cannot
+        // finish within its estimated endurance still regroups.
+        let damage_can_continue = !self.siege_positive_damage_budget
+            || damage_budget.is_some_and(|(turns, endurance)| turns <= endurance);
+        // A damaged wall is a running assault, even if losses briefly forced
+        // the train back to Stage. Resume when it can finish within its full
+        // endurance; waiting for the untouched-wall entry margin again lets
+        // the defender's wall and the war-stall clock recover for free.
+        let damage_entry_ready = damage_ready
+            || (self.siege_positive_damage_budget
+                && city.wall_hp > 0
+                && city.wall_hp < city.wall_max
+                && damage_can_continue);
+        let breach_taker = (city.wall_hp <= 0 && city.hp <= 100 && strength >= bill)
+            .then(|| {
+                designate_taker(g, &city, &force)
+                    .filter(|uid| {
+                        let unit = &g.units[uid];
+                        unit.hp >= 70
+                            && g.wdist(unit.pos, city.pos) <= STAGING_FAR
+                            && f64::from(city.hp) <= taker_blow(g, pid, *uid, cid) + 40.0
+                    })
+                    .or_else(|| approaching_breach_taker(g, pid, &city, &force))
+            })
+            .flatten();
+        // `siege-needs-a-breaker`: walls nothing in the train can open are
+        // not besieged — the melee would hold a ring under the city's fire
+        // with nothing to show for it. See `BreachReading`.
+        let breach = self.siege_needs_a_breaker.then(|| {
+            let mut reading = self.breach_reading(g, pid, &city, &force);
+            reading.air_walls = self.air_breach_walls(g, pid, cid);
+            if strength >= DOMINANT_BILL_SHARE * bill {
+                reading.horizon = SHOOTER_BREACH_TURNS_DOMINANT;
+            }
+            reading
+        });
+        let no_breaker = !arena && breach.is_some_and(|reading| reading.leaves_walls_shut(&city));
+        // `siege-needs-a-breaker`: walls a breaker at hand can open are
+        // opened before the taker comes. The damage budget reads a train
+        // with no melee taker in reach as never finishing (`inf`), so a
+        // force of shooters that would breach in a few turns staged instead.
+        // Live King civvis-20261003T164758Z (game 43) held Thebes's 100
+        // walls in Stage from turn 90 to 100 with Archers at 20 wall a turn,
+        // the bill met, until a Horseman came. The train invests to open
+        // the walls; the budget gates the assault once they are a quarter
+        // down (`siege-holds-a-breach` holds that breach).
+        let opens_walls = !arena
+            && !walls_open_to_melee(&city)
+            && breach.is_some_and(|reading| reading.at_hand(&city))
+            && !force.iter().any(|uid| {
+                arm_of(g, *uid) == Arm::Melee
+                    && g.wdist(g.units[uid].pos, city.pos) <= STAGING_FAR
+            });
+        // `guns-grind-the-walls`: a fit gun at the ring opens walls the
+        // melee cannot yet touch even when the whole capture outlasts the
+        // train's endurance. The budget prices the walls and the city as one
+        // stand under the city's fire, so a lone gun against Renaissance Walls
+        // read 15 turns against 7 of endurance and the train held outside its
+        // own range: over the 10-05 control runs 430 such turns (66 sieges)
+        // had the force at least half staged, a fit gun, and walls up, while
+        // a damaged wall stayed where the guns left it on 933 of 1011 turns.
+        // The guns and shooters invest and grind; the melee keep the staging
+        // ring (`grinding_sieges`) until the walls open to them or the budget
+        // reads the assault ready, and the bill still gates the entry.
+        let grind = self.guns_grind_the_walls
+            && !arena
+            && !walls_open_to_melee(&city)
+            && breach.is_some_and(|reading| reading.guns > 0)
+            && !damage_entry_ready;
+        if self.siege_needs_a_breaker {
+            if no_breaker {
+                let nearest = nearest_breaker(g, pid, &city);
+                let wait = self
+                    .siege_breaker_waits
+                    .entry(city.pos)
+                    .or_insert(BreakerWait {
+                        since: turn,
+                        last: turn,
+                        nearest,
+                        nearest_turn: turn,
+                    });
+                wait.last = turn;
+                if nearest < wait.nearest {
+                    wait.nearest = nearest;
+                    wait.nearest_turn = turn;
+                }
+            } else {
+                self.siege_breaker_waits.remove(&city.pos);
+            }
+        }
+        // `capture-holds-the-ring`: see `dying_open_city`.
+        let dying = self.dying_open_city(&city);
+        // `stage-musters-out-of-reach`: the train may close on its staging
+        // ring when the Stage -> Invest step below would fire with the
+        // mustered members standing on the ring — the bill met, the walls
+        // answered and no breaker hold read, all over the members within
+        // `MUSTER_BREACH_FAR` (a staging gun holds on its own danger line, and
+        // a muster stand lies out of every ranged and city strike) — so the
+        // body closes only when the siege will invest. The bill read only
+        // `MUSTER_FAR` once: live Emperor civvis-20261006T081907Z (game 210)
+        // held Pella's train from turn 170 to 179 at "0 strength within 8
+        // tiles" while its budget within 10 read entry-ready (1.3 turns
+        // against 5.2 endurance by turn 179) and the walls fell 400 -> 0, the
+        // capital at 55 health when Macedon's culture won at 182.
+        if self.stage_musters_out_of_reach {
+            let mustered: f64 = force
+                .iter()
+                .filter(|uid| g.wdist(g.units[uid].pos, city.pos) <= MUSTER_BREACH_FAR)
+                .map(|uid| unit_power(g, *uid))
+                .sum();
+            let no_breaker_mustered = !arena
+                && self.siege_needs_a_breaker
+                && {
+                    let mut reading =
+                        self.breach_reading_within(g, pid, &city, &force, MUSTER_BREACH_FAR);
+                    reading.air_walls = self.air_breach_walls(g, pid, cid);
+                    if strength >= DOMINANT_BILL_SHARE * bill {
+                        reading.horizon = SHOOTER_BREACH_TURNS_DOMINANT;
+                    }
+                    reading.leaves_walls_shut(&city)
+                };
+            let budget_mustered =
+                self.conversion_siege_entry_budget(g, pid, cid, &force, MUSTER_BREACH_FAR);
+            let ready_mustered = !self.siege_positive_damage_budget
+                || budget_mustered.is_some_and(|(turns, endurance)| turns <= endurance * 0.8);
+            let continues_mustered = !self.siege_positive_damage_budget
+                || budget_mustered.is_some_and(|(turns, endurance)| turns <= endurance);
+            let entry_mustered = ready_mustered
+                || (self.siege_positive_damage_budget
+                    && city.wall_hp > 0
+                    && city.wall_hp < city.wall_max
+                    && continues_mustered);
+            let billed = (arena && gathered) || mustered >= bill || breach_taker.is_some();
+            let walls_answered = billed && (entry_mustered || grind) && !no_breaker_mustered;
+            // No patience valve: a Stage train cannot step into Invest before
+            // its walls are answered, and Stage guns do not fire, so a train
+            // closed on its ring early only stands under the city's reach.
+            // Live King game 178 (civvis-20261006T010219Z): the valve closed
+            // Munich's train four times with "walls answered false", and 34%
+            // of the land soldiers lost died on the staging ring in Stage.
+            // A muster whose walls are never answered waits at the line until
+            // the commitment clock retargets it.
+            let committed = muster_commitment_holds(
+                self.stage_muster_closed.get(&cid).copied(),
+                turn,
+                g.standard_duration(MUSTER_COMMIT_TURNS),
+                strength >= bill || breach_taker.is_some(),
+                no_breaker_mustered,
+            );
+            // `weak-target-skips-the-muster`: see `MUSTER_WEAK_TARGET_SHARE`.
+            // The train walks to its staging ring as it did before the
+            // muster; Stage -> Invest still waits for the walls answered.
+            let weak_target = self.weak_target_skips_the_muster
+                && g.military_power(city.owner)
+                    <= MUSTER_WEAK_TARGET_SHARE * g.military_power(pid).max(1.0);
+            let ready = dying || walls_answered || committed || weak_target;
+            if !ready {
+                self.stage_muster_closed.remove(&cid);
+            }
+            if !ready && self.journal().wants(crate::reasoning::Level::Detail) {
+                // Why the muster holds, read as its readiness reads it: live
+                // King civvis-20261006T021637Z (game 183) held Kish's train
+                // 25 turns at 400 walls with three Bombards and a Trebuchet
+                // six to ten tiles out, and no line said which test failed.
+                let name = g
+                    .cities
+                    .get(&cid)
+                    .map(|c| c.name.clone())
+                    .unwrap_or_default();
+                let budget = budget_mustered.map_or_else(
+                    || "unknown".to_string(),
+                    |(turns, endurance)| format!("{turns:.1} turns / {endurance:.1} endurance"),
+                );
+                think!(self.journal(), Military, Detail,
+                    "Siege of {name}: the mustered train holds";
+                    "{mustered:.0} strength within {MUSTER_BREACH_FAR} tiles against a bill of {bill:.0}; \
+                     budget within {MUSTER_BREACH_FAR}: {budget}; entry {entry_mustered}, grind {grind}, \
+                     breaker hold {no_breaker_mustered}";
+                    city.pos);
+            }
+            let was = self.stage_muster_ready.insert(cid, ready);
+            if ready && was != Some(true) {
+                self.stage_muster_closed.insert(cid, turn);
+            }
+            if ready
+                && was == Some(false)
+                && self.journal().wants(crate::reasoning::Level::Decision)
+            {
+                let reason = if dying {
+                    "dying"
+                } else if walls_answered || committed {
+                    "ready"
+                } else {
+                    "weak target"
+                };
+                let name = g
+                    .cities
+                    .get(&cid)
+                    .map(|c| c.name.clone())
+                    .unwrap_or_default();
+                think!(self.journal(), Military, Decision,
+                    "Siege of {name}: the mustered train closes: {reason}";
+                    "{mustered:.0} strength within {MUSTER_BREACH_FAR} tiles against a bill of {bill:.0}; \
+                     walls answered {walls_answered}, breaker hold {no_breaker_mustered}";
+                    city.pos);
+            }
+        }
         let record = self.sieges.entry(cid).or_insert(Siege {
             stage: SiegeStage::Stage,
             taker: None,
             entered: turn,
             assessed: turn,
             posts: BTreeMap::new(),
+            short_since: None,
         });
         record.assessed = turn;
         let previous = record.stage;
+        let previous_taker = record.taker;
         let mut stage = if held_enemy_city {
             SiegeStage::Reduce
         } else {
@@ -1004,12 +2986,51 @@ impl AdvancedAi {
         if city.owner == pid {
             stage = SiegeStage::Hold;
         } else {
-            if stage != SiegeStage::Stage && !arena && strength < ABORT_SHARE * bill {
-                stage = SiegeStage::Stage;
+            // A wall rebuilt behind the ring can invalidate the damage
+            // budget even while the nominal force still covers the bill.
+            // Regroup for breach support instead of remaining in Reduce with
+            // no attack that can finish before the force is exhausted.
+            let invested = stage != SiegeStage::Stage && !arena;
+            // `siege-holds-a-breach`: a wall already a quarter down is a
+            // running assault; only a deep shortfall abandons it.
+            let held_breach = self.siege_holds_a_breach
+                && city.wall_max > 0
+                && f64::from(city.wall_hp) <= HELD_BREACH_WALL_SHARE * f64::from(city.wall_max);
+            let abort_share = if held_breach {
+                HELD_BREACH_ABORT_SHARE
+            } else {
+                ABORT_SHARE
+            };
+            if invested
+                && (strength < abort_share * bill
+                    || (!damage_can_continue
+                        && breach_taker.is_none()
+                        && !held_breach
+                        && !opens_walls
+                        && !grind)
+                    || no_breaker)
+            {
+                // A Hold over a city that is not ours is a capture that never
+                // landed, not a running assault: there is no dip to ride out,
+                // so reopening it never bypasses the abort gate.
+                let since = *record.short_since.get_or_insert(turn);
+                if previous == SiegeStage::Hold || turn.saturating_sub(since) + 1 >= ABORT_PATIENCE {
+                    stage = SiegeStage::Stage;
+                }
+            } else {
+                record.short_since = None;
             }
             match stage {
                 SiegeStage::Stage => {
-                    if ((arena && gathered) || staged >= bill) && damage_ready {
+                    // A finished wall and a city within one near taker's
+                    // next blow are an opening that will heal away while the
+                    // rest of the train fills distant staging posts. Keep
+                    // the whole-force bill and positive-damage gate, but let
+                    // a healthy, reachable capturer exploit that breach.
+                    if ((arena && gathered) || staged >= bill || breach_taker.is_some())
+                        && (damage_entry_ready || opens_walls || grind)
+                        && !no_breaker
+                    {
                         stage = SiegeStage::Invest;
                     }
                 }
@@ -1021,13 +3042,28 @@ impl AdvancedAi {
                 }
                 _ => {}
             }
+            // `capture-holds-the-ring`: a dying open city is never staged for.
+            if stage == SiegeStage::Stage && dying {
+                stage = SiegeStage::Invest;
+            }
         }
         let mut taker = None;
         if matches!(
             stage,
             SiegeStage::Invest | SiegeStage::Reduce | SiegeStage::Take
         ) {
-            taker = designate_taker(g, &city, &force);
+            let immediate = designate_taker(g, &city, &force);
+            taker = immediate
+                .filter(|uid| g.units[uid].hp >= 70)
+                .or_else(|| {
+                    previous_taker.filter(|uid| {
+                        city.wall_hp <= 0
+                            && force.contains(uid)
+                            && g.units.get(uid).is_some_and(|unit| unit.hp >= 70)
+                    })
+                })
+                .or(breach_taker)
+                .or(immediate);
             let ready = taker.is_some_and(|uid| {
                 g.wdist(g.units[&uid].pos, city.pos) <= 1
                     && (city.hp <= 0 || f64::from(city.hp) <= taker_blow(g, pid, uid, cid))
@@ -1053,10 +3089,15 @@ impl AdvancedAi {
             stage,
             SiegeStage::Invest | SiegeStage::Reduce | SiegeStage::Take
         ) {
-            siege_posts(g, pid, &city, &force, taker)
+            siege_posts_keeping(g, pid, &city, &force, taker, &record.posts)
         } else {
             BTreeMap::new()
         };
+        if grind && matches!(stage, SiegeStage::Invest | SiegeStage::Reduce) {
+            self.grinding_sieges.insert(cid);
+        } else {
+            self.grinding_sieges.remove(&cid);
+        }
 
         match stage {
             SiegeStage::Stage => self.census.siege_stage_turns += 1,
@@ -1077,14 +3118,61 @@ impl AdvancedAi {
                 .get(&cid)
                 .map(|c| c.name.clone())
                 .unwrap_or_default();
+            let damage_budget = damage_budget
+                .map(|(turns, endurance)| format!("{turns:.1} turns / {endurance:.1} endurance"))
+                .unwrap_or_else(|| "unknown".to_string());
+            // `stage-musters-out-of-reach`: the muster's state, at this level
+            // so a busy turn's journal budget cannot drop it.
+            let muster_note = match (
+                self.stage_musters_out_of_reach && stage == SiegeStage::Stage,
+                self.stage_muster_ready.get(&cid),
+                self.stage_muster_closed.get(&cid),
+            ) {
+                (true, Some(true), Some(at)) => format!("; muster closed since t{at}"),
+                (true, Some(false), _) => "; muster holds".to_string(),
+                _ => String::new(),
+            };
             let taker_note = match taker {
                 Some(uid) => format!(", taker {} reserved", g.units[&uid].kind),
+                None => String::new(),
+            };
+            let breach_note = match breach {
+                Some(reading) => format!(
+                    "; breakers: {} gun(s) fit, {} healing, {} ram/tower, shooters {:.0} wall a turn{}{}{}",
+                    reading.guns,
+                    reading.wounded_guns,
+                    reading.support,
+                    reading.shooter_walls,
+                    if reading.barred_guns > 0 {
+                        format!(
+                            ", {} gun(s) kept off their posts inside the city's strike",
+                            reading.barred_guns
+                        )
+                    } else {
+                        String::new()
+                    },
+                    if reading.air_walls > 0.0 {
+                        format!(", aircraft {:.0} wall a turn", reading.air_walls)
+                    } else {
+                        String::new()
+                    },
+                    if no_breaker {
+                        " — nothing to open the walls, so the train holds outside the city's reach"
+                    } else if opens_walls {
+                        " — no taker in reach yet, so the train opens the walls first"
+                    } else if grind {
+                        " — the guns grind the walls while the melee wait outside the city's reach"
+                    } else {
+                        ""
+                    }
+                ),
                 None => String::new(),
             };
             think!(self.journal(), Military, Decision,
                 "Siege of {name}: {}", stage.as_str();
                 "ring {sealed}/{ring} sealed, walls {}/{}, city {}/200, {} of {} units staged, \
-                 {strength:.0} strength against a bill of {bill:.0}{taker_note}",
+                 {strength:.0} strength ({staged:.0} near) against a bill of {bill:.0}; \
+                 damage ready {damage_ready} with {damage_budget}{taker_note}{breach_note}{muster_note}",
                 city.wall_hp, city.wall_max, city.hp,
                 force.iter().filter(|uid| g.wdist(g.units[uid].pos, city.pos) <= STAGING_FAR).count(),
                 force.len();
@@ -1107,7 +3195,36 @@ impl AdvancedAi {
         if city.owner == pid || siege.stage == SiegeStage::Hold {
             return None;
         }
+        // `breach-assault` runs before the Stage return: a siege whose counted
+        // members are still far off reads Stage however low the city is, and
+        // a unit already beside a breached city must not walk away from it.
+        // `melee-storms-an-open-city`: the taker joins an open city's assault.
+        // `tower-assault`: and through a Siege Tower beside a walled one.
+        let taker_storms = (self.melee_storms_an_open_city && city.wall_hp <= 0)
+            || self.tower_bypasses(g, pid, uid, &city);
+        if self.breach_assault
+            && (siege.taker != Some(uid) || taker_storms)
+            && arm_of(g, uid) == Arm::Melee
+        {
+            if let Some(acted) = self.breach_assault_blow(g, pid, uid, &city, plan, group) {
+                return Some(acted);
+            }
+        }
         if siege.stage == SiegeStage::Stage {
+            return Some(self.siege_stage_step(g, pid, uid, &city, plan));
+        }
+        if self.siege_spotter(g, pid, group, &city) == Some(uid) {
+            if let Some(acted) = self.spotter_step(g, pid, uid, &city) {
+                return Some(acted);
+            }
+        }
+        // `guns-grind-the-walls`: while the guns grind walls the melee
+        // cannot yet touch, the melee hold the staging ring out of the
+        // city's reach instead of a post beside it.
+        if self.grinding_sieges.contains(&cid)
+            && matches!(siege.stage, SiegeStage::Invest | SiegeStage::Reduce)
+            && arm_of(g, uid) == Arm::Melee
+        {
             return Some(self.siege_stage_step(g, pid, uid, &city, plan));
         }
         if siege.taker == Some(uid) {
@@ -1121,6 +3238,87 @@ impl AdvancedAi {
         }
     }
 
+    /// The member that steps into sight of an invested city nobody of ours
+    /// can see: the nearest healthy land soldier with moves within
+    /// [`STAGING_FAR`]. `None` while the city is in sight. Every reading the
+    /// train takes of an unseen city is memory: in sim seed 37140004 the
+    /// Siege of Hastings sat in Invest for eighteen turns, its units 3-4 tiles
+    /// out at the anchor, on a wall reading of 22/400 frozen from the last
+    /// sighting (diagnosed by -c9).
+    fn siege_spotter(
+        &self,
+        g: &Game,
+        pid: usize,
+        group: &ForceGroup,
+        city: &CityView,
+    ) -> Option<u32> {
+        if g.sees(&g.player_vision_frame(pid), city.pos) {
+            return None;
+        }
+        group
+            .units
+            .iter()
+            .copied()
+            .filter(|uid| {
+                g.units.get(uid).is_some_and(|unit| {
+                    let spec = &g.rules.units[unit.kind];
+                    unit.owner == pid
+                        && spec.class == "military"
+                        && spec.domain.as_deref().is_none_or(|domain| domain == "land")
+                        && !g.is_embarked(unit)
+                        && unit.hp >= SPOTTER_MIN_HP
+                        && unit.moves_left > 0.0
+                        && g.wdist(unit.pos, city.pos) <= STAGING_FAR
+                })
+            })
+            .min_by_key(|uid| (g.wdist(g.units[uid].pos, city.pos), *uid))
+    }
+
+    /// Walk the spotter to the tile it can reach this turn that sees the
+    /// city, where its expected reply leaves it more than half its health.
+    fn spotter_step(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        city: &CityView,
+    ) -> Option<bool> {
+        let unit = g.units.get(&uid)?.clone();
+        let sight = g.unit_sight(uid).max(1);
+        let mut candidates: Vec<Pos> = g
+            .reachable(uid)
+            .into_iter()
+            .filter(|pos| {
+                *pos != unit.pos
+                    && g.city_at(*pos).is_none()
+                    && dry_stand(g, uid, *pos)
+                    && g.wdist(*pos, city.pos) <= sight
+                    && g.line_of_sight_from(*pos, city.pos)
+            })
+            .collect();
+        candidates.sort_by_key(|pos| {
+            (
+                g.wdist(unit.pos, *pos),
+                Reverse(g.wdist(*pos, city.pos)),
+                *pos,
+            )
+        });
+        let half = f64::from(unit.hp) * 0.5;
+        let dest = candidates
+            .into_iter()
+            .take(12)
+            .find(|pos| self.approach_danger(g, pid, *pos, uid) < half)?;
+        if !self.base.path_walk_to(g, pid, uid, dest) {
+            return None;
+        }
+        think!(self.journal(), Military, Detail,
+            "Siege of {}: the {} steps into sight of the city", g.cities[&city.id].name, unit.kind;
+            "nothing of ours saw it, so every wall and garrison reading was memory; {:?} sees it at {} tiles",
+            dest, g.wdist(dest, city.pos);
+            city.pos);
+        Some(true)
+    }
+
     /// Stage: fight what comes out, step out of the city's reach, march to
     /// the staging ring, and hold there as a body.
     fn siege_stage_step(
@@ -1131,11 +3329,123 @@ impl AdvancedAi {
         city: &CityView,
         plan: &StrategicPlan,
     ) -> bool {
-        if let Some(acted) = self.siege_blow(g, pid, uid, city, plan, false) {
+        // ★★★ STAGE NEVER STRUCK THE CITY. `allow_city` was false here, so a
+        // unit beside a dying city could not finish it and the step below
+        // walked it back out of the city's reach. Live King
+        // civvis-20261004T114858Z (game 55): the Siege of Nicomedia read Stage
+        // in all 82 assessments from turn 77 to 225; at turn 200 the city
+        // stood at 41/200 behind 0/400 walls with a Llanero beside it, and
+        // the Llanero walked three tiles out and fortified (diagnosed by -9c).
+        // Under `breach-assault`, `siege_blow`'s own kill-or-paying-exchange
+        // test may take a city whose walls no longer shield it.
+        let allow_city = self.breach_assault && melee_wall_attack_allowed(g, pid, uid, city.id);
+        if let Some(acted) = self.siege_blow(g, pid, uid, city, plan, allow_city) {
             return acted;
         }
         let here = g.units[&uid].pos;
         let distance = g.wdist(here, city.pos);
+        // `stage-musters-out-of-reach`: see `muster_step`.
+        if self.stage_musters_out_of_reach
+            && arm_of(g, uid) != Arm::Siege
+            && distance > CITY_STRIKE_RANGE
+            && !self.stage_muster_ready.get(&city.id).copied().unwrap_or(true)
+        {
+            if let Some(acted) = self.muster_step(g, pid, uid, city) {
+                return acted;
+            }
+        }
+        // `shared-danger`, as the battle planner and the reinforcement step
+        // read it: a hostile's one blow a turn is split among the units of
+        // ours in its reach. Unshared, a gun inside its own army read every
+        // ranger's blow as its alone and held at the edge: live King
+        // civvis-20261004T033533Z (game 46) kept Babylon's catapults six to
+        // ten tiles out from turn 135 to 153 ("damage ready false"), and
+        // civvis-20261004T040138Z (game 47) held Quebec City's at ten.
+        let mut gun_danger = (arm_of(g, uid) == Arm::Siege).then(|| {
+            let mut field = super::battle_planner::DangerField::with_reach(g, pid, true);
+            if self.shared_danger {
+                field.share(g);
+            }
+            field
+        });
+        // `staging-gun-reads-the-shared-danger`: the field above is shared,
+        // and the readings below take the share. See `stage_gun_danger`.
+        let shared_stage = self.staging_gun_reads_the_shared_danger && self.shared_danger;
+        let gun_risk_limit = (f64::from(g.units[&uid].hp) - STAGING_GUN_HP_RESERVE).max(0.0)
+            / STAGING_GUN_REPLY_TURNS;
+        // `staging-gun-trusts-its-escort`: see `STAGING_ESCORT_BODIES`. The
+        // board is a parameter, not a capture, so the step may still move the
+        // unit while the limit is in scope.
+        let trusts_escort = self.staging_gun_trusts_its_escort;
+        let escorted_limit = |g: &Game, pos: Pos| -> f64 {
+            let escorts = g
+                .nbrs(pos)
+                .into_iter()
+                .chain(std::iter::once(pos))
+                .flat_map(|n| g.unit_ids_at(n).iter().copied())
+                .filter(|id| {
+                    *id != uid
+                        && g.units.get(id).is_some_and(|unit| {
+                            let spec = &g.rules.units[unit.kind];
+                            unit.owner == pid
+                                && spec.class == "military"
+                                && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                                && arm_of(g, *id) != Arm::Siege
+                        })
+                })
+                .count();
+            if trusts_escort && escorts >= STAGING_ESCORT_BODIES {
+                (f64::from(g.units[&uid].hp) - STAGING_GUN_HP_RESERVE).max(0.0)
+            } else {
+                gun_risk_limit
+            }
+        };
+        // `staging-gun-remembers-hostiles`: the danger field reads only the
+        // units on the board, and a hostile that walked into the fog is not
+        // on it. Price the ones the seat saw this turn or last. Off, the
+        // list is empty and every reading below is the field's alone.
+        let remembering = self.staging_gun_remembers_hostiles && arm_of(g, uid) == Arm::Siege;
+        let mut remembered = if remembering {
+            self.remembered_strikers(g, pid, uid)
+        } else {
+            Vec::new()
+        };
+        // `guns-enter-together`: see `staging_fog_terms`.
+        let (fog_share, fresh_only) = self.staging_fog_terms(g, pid, city, uid);
+        if fresh_only {
+            remembered.retain(|striker| striker.elapsed == 0);
+        }
+        let fog_blow = |g: &Game, pos: Pos| -> f64 {
+            remembered
+                .iter()
+                .filter(|striker| g.wdist(striker.from, pos) <= striker.reach)
+                .map(|striker| striker.blow)
+                .fold(0.0, f64::max)
+                / fog_share
+        };
+        let remembers = !remembered.is_empty();
+        if let Some(field) = gun_danger.as_mut() {
+            let risk_here = stage_gun_danger(field, here, uid, shared_stage);
+            if risk_here > escorted_limit(g, here) {
+                let safer = g
+                    .nbrs(here)
+                    .into_iter()
+                    .filter(|pos| {
+                        g.can_move(uid, *pos) && g.wdist(*pos, city.pos) > CITY_STRIKE_RANGE
+                    })
+                    .map(|pos| (stage_gun_danger(field, pos, uid, shared_stage), g.wdist(pos, city.pos), pos))
+                    .filter(|(risk, _, _)| *risk + 1.0 < risk_here)
+                    .min_by(|a, b| {
+                        a.0.total_cmp(&b.0)
+                            .then_with(|| a.1.cmp(&b.1))
+                            .then_with(|| a.2.cmp(&b.2))
+                    });
+                if let Some((_, _, pos)) = safer {
+                    return self.base.tactical_apply_move(g, pid, uid, pos);
+                }
+                return self.base.fortify_or_stop(g, pid, uid);
+            }
+        }
         if distance <= CITY_STRIKE_RANGE {
             let mut best: Pick<BackOffKey> = None;
             for pos in g.nbrs(here) {
@@ -1160,23 +3470,467 @@ impl AdvancedAi {
             return self.base.fortify_or_stop(g, pid, uid);
         }
         if distance > STAGING_FAR {
-            if let Some(next) = g
-                .route_step(uid, city.pos, STAGING_FAR)
+            // `stage-march-keeps-to-land`: see `StageMarch`. Off, or without
+            // `come-ashore`, the march is the ordinary one.
+            let dry_march = if self.stage_march_keeps_to_land && self.base.come_ashore {
+                stage_march(g, uid, city.pos, STAGING_FAR)
+            } else {
+                StageMarch::Ordinary
+            };
+            // `dry-road-outlasts-a-blocked-step`: see `dry_road_blocked_holds`.
+            if let Some(acted) = self.dry_road_blocked_holds(g, pid, uid, city, &dry_march) {
+                return acted;
+            }
+            let water_hold = matches!(dry_march, StageMarch::Hold { .. });
+            // `long-road-names-the-blocker`: see `long_road_holds`.
+            let dry_march = self.long_road_holds(g, uid, city.pos, dry_march);
+            // `siege-target-needs-a-road`: see `advanced/siege_road.rs`.
+            let shut_by = self.note_stage_march(g, uid, city.id, &dry_march);
+            if let StageMarch::Hold { wet } = dry_march {
+                if let Some(owner) = shut_by {
+                    think!(self.journal(), Military, Detail,
+                        "Siege of {}: the {} holds short of {}'s closed borders", g.cities[&city.id].name, g.units[&uid].kind, owner;
+                        "the land road to the staging ring runs through {}'s territory, closed to us; the march crosses water in {} steps",
+                        owner, wet;
+                        city.pos);
+                } else {
+                    // `amphibious-siege-train`: a pure water hold may cross as
+                    // one group. `None` with the gene off, and the hold stands.
+                    // See `advanced/amphibious_siege_train.rs`.
+                    if water_hold {
+                        if let Some(acted) = self.amphibious_hold_step(g, pid, uid, city.id) {
+                            return acted;
+                        }
+                    }
+                    think!(self.journal(), Military, Detail,
+                        "Siege of {}: the {} holds on land short of the water", g.cities[&city.id].name, g.units[&uid].kind;
+                        "the march crosses water in {} steps and come-ashore lands an embarked unit at home; no dry road opens within {} steps",
+                        wet, STAGE_DRY_LIMIT;
+                        city.pos);
+                }
+                return self.base.fortify_or_stop(g, pid, uid);
+            }
+            let marched = match dry_march {
+                StageMarch::Dry { step, .. } => Some(step),
+                _ => march_step(g, uid, city.pos, STAGING_FAR),
+            };
+            if let Some(next) = marched
                 .filter(|pos| g.can_move(uid, *pos) && g.wdist(*pos, city.pos) > CITY_STRIKE_RANGE)
             {
+                // `staging-column-passes-through`: a march step that brings
+                // the unit no nearer is the router going round one of ours
+                // in the defile: only the first step must be a tile it may
+                // stop on, so a friend in the gap turns the route sideways,
+                // and from the side tile the route turns back. Live King
+                // civvis-20261005T003728Z (game 89): Mashhad, Persia's
+                // capital, held in Stage from turn 183 to 225 with its
+                // artillery stepping (26,17) -> (26,18) -> (26,17) every
+                // frame behind a Rocket Artillery in the one gap of a
+                // mountain ridge, twelve to fourteen tiles out. Cross the
+                // friend instead, to the open tile beyond. A dry road round
+                // the water leads no nearer by design, and the crossing's
+                // destination is read by straight distance, toward the water.
+                let on_dry_road = matches!(dry_march, StageMarch::Dry { .. });
+                if self.staging_column_passes_through
+                    && !on_dry_road
+                    && g.wdist(next, city.pos) >= distance
+                {
+                    if let Some(dest) = g.pass_through_destination(uid, city.pos, STAGING_FAR) {
+                        let kind = g.units[&uid].kind;
+                        if gun_danger.as_mut().is_none_or(|field| {
+                            if remembers {
+                                stage_gun_danger(field, dest, uid, shared_stage) + fog_blow(g, dest) <= gun_risk_limit
+                            } else {
+                                stage_gun_danger(field, dest, uid, shared_stage) <= gun_risk_limit
+                            }
+                        }) && self.base.path_walk_to(g, pid, uid, dest)
+                        {
+                            think!(self.journal(), Military, Detail,
+                                "Siege of {}: the {} crosses its own column toward the staging ring", g.cities[&city.id].name, kind;
+                                "its march step led no nearer than {} tiles, round one of ours in the gap; {:?} stands {} tiles out",
+                                distance, dest, g.wdist(dest, city.pos);
+                                city.pos);
+                            return true;
+                        }
+                    }
+                }
+                if let Some(field) = gun_danger.as_mut() {
+                    let mut risk_at = |g: &Game, pos: Pos| -> f64 {
+                        let seen = stage_gun_danger(field, pos, uid, shared_stage);
+                        if remembers {
+                            seen + fog_blow(g, pos)
+                        } else {
+                            seen
+                        }
+                    };
+                    if risk_at(g, next) > escorted_limit(g, next) {
+                        if remembers && fog_blow(g, next) > 0.0 {
+                            think!(self.journal(), Military, Detail,
+                                "Siege of {}: the {} holds short of a hostile seen in the fog", g.cities[&city.id].name, g.units[&uid].kind;
+                                "{:?} lies in the reach of one the seat saw this turn or last; its blow there reads {:.0} against a limit of {:.0}",
+                                next, fog_blow(g, next), escorted_limit(g, next);
+                                city.pos);
+                        }
+                        let safe = g
+                            .nbrs(here)
+                            .into_iter()
+                            .filter(|pos| {
+                                g.can_move(uid, *pos)
+                                    && g.wdist(*pos, city.pos) > CITY_STRIKE_RANGE
+                                    && g.wdist(*pos, city.pos) <= distance
+                            })
+                            .map(|pos| (g.wdist(pos, city.pos), risk_at(g, pos), pos))
+                            .filter(|(_, risk, _)| *risk <= gun_risk_limit)
+                            .min_by(|a, b| {
+                                a.0.cmp(&b.0)
+                                    .then_with(|| a.1.total_cmp(&b.1))
+                                    .then_with(|| a.2.cmp(&b.2))
+                            });
+                        if let Some((_, _, pos)) = safe {
+                            return self.base.tactical_apply_move(g, pid, uid, pos);
+                        }
+                        return self.base.fortify_or_stop(g, pid, uid);
+                    }
+                }
+                // `march-uses-its-moves`: walk as far toward the staging
+                // ring as this turn's movement reaches, to a tile outside the
+                // city's strike that passes the same danger test as the step.
+                if self.march_uses_its_moves && matches!(dry_march, StageMarch::Ordinary) {
+                    let goals: HashSet<Pos> = g.wdisk(city.pos, STAGING_FAR).into_iter().collect();
+                    let outside_and_safe = |g: &Game, pos: Pos, _: &[Pos]| {
+                        g.wdist(pos, city.pos) > CITY_STRIKE_RANGE
+                            && gun_danger.as_mut().is_none_or(|field| {
+                                let seen = stage_gun_danger(field, pos, uid, shared_stage);
+                                let risk = if remembers {
+                                    seen + fog_blow(g, pos)
+                                } else {
+                                    seen
+                                };
+                                risk <= escorted_limit(g, pos)
+                            })
+                    };
+                    if let Some(dest) =
+                        self.march_destination(g, uid, &goals, next, outside_and_safe)
+                    {
+                        let kind = g.units[&uid].kind;
+                        if self.base.path_walk_to(g, pid, uid, dest) {
+                            think!(self.journal(), Military, Detail,
+                                "Siege of {}: the {} walks {} tiles toward the staging ring", g.cities[&city.id].name, kind, g.wdist(here, dest);
+                                "its movement reaches {:?}, {} tiles from the city, where the router's single step reached {:?}",
+                                dest, g.wdist(dest, city.pos), next;
+                                city.pos);
+                            return true;
+                        }
+                    }
+                }
+                if let StageMarch::Dry { dry, wet, .. } = dry_march {
+                    think!(self.journal(), Military, Detail,
+                        "Siege of {}: the {} takes the land road toward the staging ring", g.cities[&city.id].name, g.units[&uid].kind;
+                        "the march crosses water in {} steps and come-ashore lands an embarked unit at home; the dry road runs {} steps, first {:?}",
+                        wet, dry, next;
+                        city.pos);
+                }
                 return self.base.tactical_apply_move(g, pid, uid, next);
             }
             // A staging column can fill every legal adjacent stopping tile.
             // Walk through a friendly screen to an open tile beyond it, using
             // the same whole-path legality and movement bookkeeping as the
             // general mover. The destination remains outside the strike ring.
-            if let Some(dest) = g.pass_through_destination(uid, city.pos, STAGING_FAR) {
-                if self.base.path_walk_to(g, pid, uid, dest) {
+            // Not on a dry road: the crossing's destination is read by
+            // straight distance, toward the water.
+            if let Some(dest) = (!matches!(dry_march, StageMarch::Dry { .. }))
+                .then(|| g.pass_through_destination(uid, city.pos, STAGING_FAR))
+                .flatten()
+            {
+                if gun_danger.as_mut().is_none_or(|field| {
+                    if remembers {
+                        stage_gun_danger(field, dest, uid, shared_stage) + fog_blow(g, dest) <= gun_risk_limit
+                    } else {
+                        stage_gun_danger(field, dest, uid, shared_stage) <= gun_risk_limit
+                    }
+                }) && self.base.path_walk_to(g, pid, uid, dest)
+                {
                     return true;
                 }
             }
         }
         self.base.fortify_or_stop(g, pid, uid)
+    }
+
+    /// `bombers-open-the-siege-walls`: a strike bomber's sortie while a walled
+    /// city our ground train besieges is in its reach. A hostile within
+    /// [`HOME_AIR_GUARD_RADIUS`] of a city of ours comes first; then the best
+    /// wall strike on a besieged city, unless a reliever within
+    /// [`SIEGE_AIR_RELIEVER_RADIUS`] of it is worth more. Pillage and distant
+    /// unit strikes wait. `None` with the gene off, with no walled siege, or
+    /// with none in this bomber's reach — the ordinary argmax then decides.
+    ///
+    /// `advanced_air_action` took the best-valued sortie in reach and never read
+    /// the siege train: a strike on 400 walls read about 74 (plus 45 on the
+    /// plan's target), under a Campus pillage (175) or most unit kills (190 and
+    /// up). Over the 10-04/05 control runs, of 4,763 bomber combats flown
+    /// while a 300+-wall siege stood, 30% hit that city, 47% hit units and 23%
+    /// other cities and districts, 59% of the off-siege strikes nine or more
+    /// tiles from any such siege. In 62 losses at war with the eventual
+    /// winner, 52 of 72 victory-critical sieges never left Stage and 56 of
+    /// those cities ended at 400/400 walls; both of the day's air-closed wins
+    /// (Uruk in game 151, game 172) broke 400 walls by air.
+    pub(super) fn siege_wall_sortie(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        legal: &[Action],
+        plan: &StrategicPlan,
+    ) -> Option<Action> {
+        if !self.bombers_open_the_siege_walls {
+            return None;
+        }
+        let walled: Vec<(u32, Pos)> = self
+            .sieges
+            .iter()
+            .filter(|(_, siege)| {
+                siege.stage != SiegeStage::Hold && g.turn.saturating_sub(siege.assessed) <= 1
+            })
+            .filter_map(|(cid, _)| CityView::of(g, *cid))
+            .filter(|city| city.owner != pid && g.is_at_war(pid, city.owner) && city.wall_hp > 0)
+            // A train still far off would only let the walls heal back
+            // before it arrives: a land soldier of ours must stand within
+            // `MUSTER_FAR`. Live King game 170: aircraft brought Qaraqorum's
+            // 400 walls to 0 by turn 250 with two units near, and they stood
+            // at 364 again by 270.
+            .filter(|city| {
+                g.units.values().any(|unit| {
+                    let spec = &g.rules.units[unit.kind];
+                    unit.owner == pid
+                        && spec.class == "military"
+                        && spec.domain.as_deref().is_none_or(|domain| domain == "land")
+                        && !g.is_embarked(unit)
+                        && g.wdist(unit.pos, city.pos) <= MUSTER_FAR
+                })
+            })
+            .map(|city| (city.id, city.pos))
+            .collect();
+        if walled.is_empty() {
+            return None;
+        }
+        let mut wall: Option<(f64, Pos, Action)> = None;
+        let mut guard: Option<(f64, Pos, Action)> = None;
+        let mut reliever: Option<(f64, Pos, Action)> = None;
+        for action in legal {
+            let (target, value, city_strike) = match action {
+                Action::AirStrike { unit, target } if *unit == uid => {
+                    (*target, self.air_strike_value(g, pid, uid, *target, plan), true)
+                }
+                Action::PriorityTarget { unit, target } if *unit == uid => {
+                    (*target, self.priority_target_value(g, pid, uid, *target), false)
+                }
+                _ => continue,
+            };
+            if value <= 0.0 {
+                continue;
+            }
+            let on_city = g.city_at(target).is_some();
+            // `wall-sortie-skips-the-encampment`: the guard and the reliever
+            // are hostile soldiers; a bare Encampment or district on the tile
+            // is neither. See `hostile_soldier_at`.
+            let soldier = !self.wall_sortie_skips_the_encampment || hostile_soldier_at(g, pid, target);
+            let slot = if on_city {
+                if !(city_strike && walled.iter().any(|(_, pos)| *pos == target)) {
+                    continue;
+                }
+                &mut wall
+            } else if soldier
+                && g.cities.values().any(|city| {
+                    city.owner == pid && g.wdist(city.pos, target) <= HOME_AIR_GUARD_RADIUS
+                })
+            {
+                &mut guard
+            } else if soldier
+                && walled
+                    .iter()
+                    .any(|(_, pos)| g.wdist(*pos, target) <= SIEGE_AIR_RELIEVER_RADIUS)
+            {
+                &mut reliever
+            } else {
+                continue;
+            };
+            if slot
+                .as_ref()
+                .is_none_or(|(best, at, _)| value > *best || (value == *best && target < *at))
+            {
+                *slot = Some((value, target, action.clone()));
+            }
+        }
+        if let Some((_, _, action)) = guard {
+            return Some(action);
+        }
+        let (wall_value, wall_target, wall_action) = wall?;
+        if let Some((_, _, action)) = reliever.filter(|(value, _, _)| *value > wall_value) {
+            return Some(action);
+        }
+        if self.journal().wants(crate::reasoning::Level::Detail) {
+            let name = g
+                .city_at(wall_target)
+                .and_then(|cid| g.cities.get(&cid))
+                .map(|city| city.name.clone())
+                .unwrap_or_default();
+            let kind = g.units[&uid].kind;
+            think!(self.journal(), Military, Detail,
+                "Bombers open the walls of {name}";
+                "the {kind} strikes the besieged city for {wall_value:.0} rather than a pillage \
+                 or a strike away from the siege";
+                wall_target);
+        }
+        Some(wall_action)
+    }
+
+    /// `stage-musters-out-of-reach`: a melee or shooter member of a train
+    /// that cannot yet close stands at the reachable tile nearest the city
+    /// whose shared danger reading is under [`MUSTER_DANGER_SHARE`] of its
+    /// health, and holds there; one standing over that line steps back to
+    /// the safest such tile. `None` leaves the ordinary Stage step to it.
+    ///
+    /// Stage marched every member to the staging ring alone the moment it
+    /// joined, and held it there under the defenders' reach while the bill or
+    /// a breaker was still missing. Over the 10-04/05 control runs 59% of the
+    /// 3,926 land soldiers we lost in combat died while their siege read
+    /// Stage — 772 on the three-to-five-tile ring itself — and the trains
+    /// that stood in Stage spent 7,751 siege-turns there against 2,956 in
+    /// Invest and Reduce together. Live King civvis-20261005T014503Z: the
+    /// Siege of Sydney read Stage with "0 of 10-15 units staged" from turn 133
+    /// to 159 behind 400 walls with no breaker, its Warriors, Crossbowmen and
+    /// Pike walking in one by one from eleven tiles and dying at five to
+    /// seven.
+    fn muster_step(&mut self, g: &mut Game, pid: usize, uid: u32, city: &CityView) -> Option<bool> {
+        let here = g.units.get(&uid)?.pos;
+        let limit = f64::from(g.units[&uid].hp) * MUSTER_DANGER_SHARE;
+        let mut field = super::battle_planner::DangerField::with_reach(g, pid, true);
+        if self.shared_danger {
+            field.share(g);
+        }
+        // A hostile ranged or siege unit, or a neighbouring City Center or
+        // Encampment, strikes a waiting body every turn and takes no blow
+        // back: no muster stand lies in such a reach, whatever the danger
+        // reading. Live King game 176 lost 24% of its land soldiers on the
+        // six-to-eight-tile line while trains waited there; game 179 lost 30%
+        // there, most to the strikes of the cities beside Qusqu.
+        let ranged_reach = |field: &mut super::battle_planner::DangerField, pos: Pos| {
+            field.contributions(pos, uid).iter().any(|(source, blow)| {
+                *blow > 0.0
+                    && source.is_some_and(|id| {
+                        id & super::battle_planner::STRUCTURE_SOURCE != 0
+                            || g.units.get(&id).is_some_and(|unit| {
+                                unit.owner != pid && g.rules.units[unit.kind].has_ranged_attack()
+                            })
+                    })
+            })
+        };
+        let risk_here = field.rotation_danger(here, uid);
+        let shot_here = ranged_reach(&mut field, here);
+        let distance = g.wdist(here, city.pos);
+        let dry = |g: &Game, pos: Pos| dry_stand(g, uid, pos);
+        // `muster-walks-the-road`: wherever a dry road leads from here to
+        // the staging band, a stand is nearer by that road, not by straight
+        // distance. Live Emperor civvis-20261008T192219Z (game 433) held
+        // Taiyuan's Llaneros and Machine Guns 22-25 tiles out from turn 183 at
+        // 2,000 power against China's 861; replayed, 36% of 381 such holds
+        // over six gate passers had every straight-nearer tile in reach water,
+        // or none nearer in reach at all, with a dry road round. A member that
+        // never comes within `MUSTER_BREACH_FAR` never counts toward the
+        // muster, so the train cannot close. `None` reads straight distance.
+        let road = self
+            .muster_walks_the_road
+            .then(|| g.dry_road_steps(uid, city.pos, STAGING_FAR, MUSTER_ROAD_STEPS))
+            .filter(|steps| steps.contains_key(&here));
+        let nearness = |g: &Game, pos: Pos| -> i32 {
+            match &road {
+                Some(steps) => steps
+                    .get(&pos)
+                    .map_or(i32::MAX, |steps| i32::try_from(*steps).unwrap_or(i32::MAX)),
+                None => g.wdist(pos, city.pos),
+            }
+        };
+        let here_nearness = nearness(g, here);
+        let candidates: Vec<Pos> = g
+            .reachable(uid)
+            .into_iter()
+            .filter(|pos| {
+                *pos != here
+                    && g.wdist(*pos, city.pos) > CITY_STRIKE_RANGE
+                    && dry(g, *pos)
+                    && g.unit_ids_at(*pos).is_empty()
+            })
+            .collect();
+        let mut stands: Vec<(i32, f64, Pos)> = Vec::new();
+        for pos in candidates {
+            let risk = field.rotation_danger(pos, uid);
+            if risk <= limit && !ranged_reach(&mut field, pos) {
+                stands.push((nearness(g, pos), risk, pos));
+            }
+        }
+        let by_road = road.is_some();
+        stands.sort_by(|a, b| {
+            a.0.cmp(&b.0)
+                .then_with(|| a.1.total_cmp(&b.1))
+                .then_with(|| a.2.cmp(&b.2))
+        });
+        let name = g
+            .cities
+            .get(&city.id)
+            .map(|c| c.name.clone())
+            .unwrap_or_default();
+        if risk_here > limit || shot_here {
+            // Over the line: the nearest safe stand, else the ordinary step.
+            let (_, risk, dest) = *stands.first()?;
+            let kind = g.units[&uid].kind;
+            if self.base.path_walk_to(g, pid, uid, dest) {
+                think!(self.journal(), Military, Detail,
+                    "Siege of {name}: the {kind} falls back to the muster line";
+                    "{here:?} reads {risk_here:.0} danger against a limit of {limit:.0} while the \
+                     train cannot close; {dest:?}, {} tiles out, reads {risk:.0}",
+                    g.wdist(dest, city.pos);
+                    city.pos);
+                return Some(true);
+            }
+            return None;
+        }
+        // Safe here: walk in only as far as the line, never past it.
+        if let Some((d, _, dest)) = stands
+            .first()
+            .copied()
+            .filter(|(d, _, _)| *d < here_nearness)
+        {
+            let kind = g.units[&uid].kind;
+            if self.base.path_walk_to(g, pid, uid, dest) {
+                if by_road {
+                    think!(self.journal(), Military, Detail,
+                        "Siege of {name}: the {kind} musters at {dest:?} by the road";
+                        "{} tiles from the city and {d} steps of dry road from its staging band \
+                         against {here_nearness} from {here:?}, the nearest stand under {limit:.0} \
+                         danger while the train cannot close",
+                        g.wdist(dest, city.pos);
+                        city.pos);
+                } else {
+                    think!(self.journal(), Military, Detail,
+                        "Siege of {name}: the {kind} musters at {dest:?}";
+                        "{d} tiles from the city, the nearest stand under {limit:.0} danger while the \
+                         train cannot close";
+                        city.pos);
+                }
+                return Some(true);
+            }
+        }
+        if distance <= STAGING_FAR {
+            return None;
+        }
+        let kind = g.units[&uid].kind;
+        think!(self.journal(), Military, Detail,
+            "Siege of {name}: the {kind} holds at the muster line";
+            "{distance} tiles out; every nearer stand reads over {limit:.0} danger while the \
+             train cannot close";
+            city.pos);
+        Some(self.base.fortify_or_stop(g, pid, uid))
     }
 
     /// Invest and Reduce, melee: hold the ring and fortify; swing at the
@@ -1193,17 +3947,19 @@ impl AdvancedAi {
         let here = g.units[&uid].pos;
         let distance = g.wdist(here, city.pos);
         if distance <= 1 {
-            let (ram, tower) = g.siege_support_effects(
-                pid,
-                city.id,
-                city.pos,
-                &g.rules.units[g.units[&uid].kind].promotion_class,
-            );
-            let allow_city = city.wall_fraction() <= MELEE_WALL_FRACTION || ram || tower;
+            let allow_city = melee_wall_attack_allowed(g, pid, uid, city.id);
             if let Some(acted) = self.siege_blow(g, pid, uid, city, plan, allow_city) {
                 return acted;
             }
+            // `unwalled-city-takes-the-swarm`: see `swarm_blow`.
+            if let Some(acted) = self.swarm_blow(g, pid, uid, city) {
+                return acted;
+            }
             return self.base.fortify_or_stop(g, pid, uid);
+        }
+        // `unwalled-city-takes-the-swarm`: see `swarm_close`.
+        if let Some(acted) = self.swarm_close(g, pid, uid, city) {
+            return acted;
         }
         if let Some(acted) = self.post_step(g, pid, uid, city) {
             return acted;
@@ -1212,14 +3968,66 @@ impl AdvancedAi {
             return acted;
         }
         if distance > CITY_STRIKE_RANGE {
-            if let Some(next) = g
-                .route_step(uid, city.pos, CITY_STRIKE_RANGE)
+            let dry = dry_march_step(g, uid, city.pos, CITY_STRIKE_RANGE);
+            if let Some(next) = dry
+                .or_else(|| g.route_step(uid, city.pos, CITY_STRIKE_RANGE))
                 .filter(|pos| g.can_move(uid, *pos))
             {
+                // `siege-members-use-their-moves`: walk as far toward the
+                // ring as this turn's movement reaches, over land and outside
+                // the city's strike; the step into the strike stays the
+                // router's. Not on a dry road round the water.
+                if self.siege_members_use_their_moves && dry.is_none() {
+                    if let Some(acted) =
+                        self.member_walk(g, pid, uid, city, CITY_STRIKE_RANGE, next)
+                    {
+                        return acted;
+                    }
+                }
                 return self.base.tactical_apply_move(g, pid, uid, next);
             }
         }
         self.base.fortify_or_stop(g, pid, uid)
+    }
+
+    /// `siege-members-use-their-moves`: walk an Invest or Reduce member from
+    /// beyond `range` of the city to the tile this turn's movement reaches
+    /// nearest that range, where that beats the router's single `step`, on a
+    /// dry path that stays outside the city's strike. `None` where no such
+    /// walk is taken.
+    fn member_walk(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        city: &CityView,
+        range: i32,
+        step: Pos,
+    ) -> Option<bool> {
+        let goals: HashSet<Pos> = g
+            .wdisk(city.pos, range)
+            .into_iter()
+            .filter(|pos| *pos != city.pos)
+            .collect();
+        let outside = |g: &Game, pos: Pos, path: &[Pos]| {
+            g.wdist(pos, city.pos) > CITY_STRIKE_RANGE
+                && path.iter().all(|tile| {
+                    g.wdist(*tile, city.pos) > CITY_STRIKE_RANGE
+                        && !g.rules.is_water(&g.map.tiles[tile])
+                })
+        };
+        let dest = self.march_destination(g, uid, &goals, step, outside)?;
+        let from = g.units[&uid].pos;
+        let kind = g.units[&uid].kind;
+        if !self.base.path_walk_to(g, pid, uid, dest) {
+            return None;
+        }
+        think!(self.journal(), Military, Detail,
+            "Siege of {}: the {} walks {} tiles toward the ring", g.cities[&city.id].name, kind, g.wdist(from, dest);
+            "its movement reaches {:?}, {} tiles from the city, where the router's single step reached {:?}",
+            dest, g.wdist(dest, city.pos), step;
+            city.pos);
+        Some(true)
     }
 
     /// Invest and Reduce, siege: a killable reliever, else the city — walls
@@ -1233,7 +4041,7 @@ impl AdvancedAi {
         let range = g.unit_attack_range(uid).max(1);
         let distance = g.wdist(unit.pos, city.pos);
         let can_fire = unit.moves_left > 0.0
-            && !(unit.moved && g.promotion_effect(&unit, "attack_after_move") == 0.0);
+            && !(unit.moved && !g.siege_may_attack_after_moving(&unit));
         if distance <= range && can_fire {
             if let Some(acted) = self.reliever_kill_shot(g, pid, uid, city) {
                 return acted;
@@ -1245,7 +4053,100 @@ impl AdvancedAi {
         if let Some(acted) = self.post_step(g, pid, uid, city) {
             return acted;
         }
+        if let Some(acted) = self.close_to_staging(g, pid, uid, city) {
+            return acted;
+        }
         self.base.fortify_or_stop(g, pid, uid)
+    }
+
+    /// `dry-road-outlasts-a-blocked-step`: a Stage or Invest march that reads
+    /// as a water hold (`StageMarch::Hold`) while a dry road does reach the
+    /// staging ring, the road's first step being blocked this turn: an enemy
+    /// zone of control holds the unit, or one of our own units stands on
+    /// every dry neighbour. The unit waits where it stands, as the hold did,
+    /// but the turn is no water hold: `siege-target-needs-a-road` counts the
+    /// unit as marching (the road stand-down retargets only a target no road
+    /// reaches), and `amphibious-siege-train` does not ship it. `None` with
+    /// the gene off, for any other march, and for a true water hold. Live
+    /// Immortal 10-13: 65 of 90 distinct "holds on land short of the water"
+    /// rows had a dry road for a gun of that kind; civvis-20261013T082508Z
+    /// held its Trebuchets for Tlacopan, on our own continent with a 13-tile
+    /// road through unowned and Aztec land, as water-locked at turns 103-105
+    /// and 141-142.
+    fn dry_road_blocked_holds(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        city: &CityView,
+        march: &StageMarch,
+    ) -> Option<bool> {
+        if !self.dry_road_outlasts_a_blocked_step || !matches!(march, StageMarch::Hold { .. }) {
+            return None;
+        }
+        let (dry, zoc) = g.dry_road_blocked_now(uid, city.pos, STAGING_FAR, STAGE_DRY_LIMIT)?;
+        let _ = self.note_stage_march(g, uid, city.id, &StageMarch::Ordinary);
+        think!(self.journal(), Military, Detail,
+            "Siege of {}: the {} waits on its dry road", g.cities[&city.id].name, g.units[&uid].kind;
+            "dry-road-outlasts-a-blocked-step: the road over land runs {} steps, but {} this turn; not a water hold",
+            dry,
+            if zoc { "an enemy zone of control holds it" } else { "our own units stand on every dry step" };
+            city.pos);
+        Some(self.base.fortify_or_stop(g, pid, uid))
+    }
+
+    /// A gun or shooter with no firing post this turn, still beyond the
+    /// staging ring, walks up to it rather than fortifying where it stands.
+    /// The firing band holds only so many tiles; the rest of a twenty-unit
+    /// train used to hold at home for the whole siege. Live King
+    /// civvis-20261001T080758Z: the Siege of Pella's force of 16-20 read
+    /// 25-50% ready from turn 94 to 110 with one to three units within four
+    /// tiles. Units already on the ring wait there for a post to free.
+    fn close_to_staging(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        city: &CityView,
+    ) -> Option<bool> {
+        if g.wdist(g.units[&uid].pos, city.pos) <= STAGING_FAR {
+            return None;
+        }
+        // `stage-march-keeps-to-land`: see `StageMarch`.
+        let dry_march = if self.stage_march_keeps_to_land && self.base.come_ashore {
+            stage_march(g, uid, city.pos, STAGING_FAR)
+        } else {
+            StageMarch::Ordinary
+        };
+        // `dry-road-outlasts-a-blocked-step`: see `dry_road_blocked_holds`.
+        if let Some(acted) = self.dry_road_blocked_holds(g, pid, uid, city, &dry_march) {
+            return Some(acted);
+        }
+        let water_hold = matches!(dry_march, StageMarch::Hold { .. });
+        let dry_march = self.long_road_holds(g, uid, city.pos, dry_march);
+        let dry = match dry_march {
+            StageMarch::Ordinary => dry_march_step(g, uid, city.pos, STAGING_FAR),
+            StageMarch::Dry { step, .. } => Some(step),
+            StageMarch::Hold { .. } => {
+                // `amphibious-siege-train`: see the Stage march's water hold.
+                if water_hold {
+                    if let Some(acted) = self.amphibious_hold_step(g, pid, uid, city.id) {
+                        return Some(acted);
+                    }
+                }
+                return Some(self.base.fortify_or_stop(g, pid, uid));
+            }
+        };
+        let next = dry
+            .or_else(|| g.route_step(uid, city.pos, STAGING_FAR))
+            .filter(|pos| g.can_move(uid, *pos))?;
+        // `siege-members-use-their-moves`: see `member_walk`.
+        if self.siege_members_use_their_moves && dry.is_none() {
+            if let Some(acted) = self.member_walk(g, pid, uid, city, STAGING_FAR, next) {
+                return Some(acted);
+            }
+        }
+        Some(self.base.tactical_apply_move(g, pid, uid, next))
     }
 
     /// Invest and Reduce, shooters: a killable reliever, then units while
@@ -1259,10 +4160,22 @@ impl AdvancedAi {
         let range = g.unit_attack_range(uid).max(1);
         let distance = g.wdist(unit.pos, city.pos);
         if distance <= range && unit.moves_left > 0.0 {
-            if let Some(acted) = self.reliever_kill_shot(g, pid, uid, city) {
-                return acted;
+            // `siege-keeps-a-shooter`: the kept shooter's shot is the walls'.
+            if city.wall_hp > 0 && self.siege_wall_keepers.contains(&uid) {
+                if let Some(acted) = self.city_shot(g, pid, uid, city) {
+                    return acted;
+                }
             }
             if city.wall_hp > 0 {
+                if let Some(acted) = self.reliever_kill_shot(g, pid, uid, city) {
+                    return acted;
+                }
+                // `ring-fires-on-the-city`: see `ring_is_threatened`.
+                if self.ring_fires_on_the_city && !self.ring_is_threatened(g, pid, uid) {
+                    if let Some(acted) = self.city_shot(g, pid, uid, city) {
+                        return acted;
+                    }
+                }
                 if let Some(acted) = self.best_unit_shot(g, pid, uid) {
                     return acted;
                 }
@@ -1270,7 +4183,16 @@ impl AdvancedAi {
                     return acted;
                 }
             } else {
+                // A city without walls is the shot: every reliever killed
+                // instead let it heal. Live King civvis-20261003T035351Z,
+                // unwalled Washington, turns 40-58 in Reduce with four to
+                // nine units near: our archers shot units about sixty times
+                // and the city five, and it stood at 200/200 until it built
+                // walls at turn 59.
                 if let Some(acted) = self.city_shot(g, pid, uid, city) {
+                    return acted;
+                }
+                if let Some(acted) = self.reliever_kill_shot(g, pid, uid, city) {
                     return acted;
                 }
                 if let Some(acted) = self.best_unit_shot(g, pid, uid) {
@@ -1279,6 +4201,9 @@ impl AdvancedAi {
             }
         }
         if let Some(acted) = self.post_step(g, pid, uid, city) {
+            return acted;
+        }
+        if let Some(acted) = self.close_to_staging(g, pid, uid, city) {
             return acted;
         }
         self.base.fortify_or_stop(g, pid, uid)
@@ -1309,6 +4234,18 @@ impl AdvancedAi {
             } else {
                 None
             };
+            // `capture-holds-the-ring`: see `capture_holdable`.
+            let action = action.filter(|_| {
+                let holdable = self.capture_holdable(g, pid, city.id, uid);
+                if !holdable {
+                    think!(self.journal(), Military, Decision,
+                        "Siege of {}: the {} holds off the capture", g.cities[&city.id].name, unit.kind;
+                        "a hostile that can retake it stands within two tiles and fewer than {} of ours could end the turn beside it",
+                        capture_hold::CAPTURE_ESCORTS;
+                        city.pos);
+                }
+                holdable
+            });
             if let Some(action) = action {
                 if g.apply(pid, &action).is_ok() {
                     self.force_groups_dirty = true;
@@ -1333,7 +4270,283 @@ impl AdvancedAi {
         if self.safe_taker_pressure(g, pid, uid, city) {
             return true;
         }
+        // `unwalled-city-takes-the-swarm`: see `swarm_blow`.
+        if let Some(acted) = self.swarm_blow(g, pid, uid, city) {
+            return acted;
+        }
         self.base.fortify_or_stop(g, pid, uid)
+    }
+
+    /// `breach-assault`: a healthy melee unit beside a city whose walls no
+    /// longer shield it (down, or opened by a ram or siege tower beside the
+    /// attacker) strikes it once the whole force's blows can take the city
+    /// within [`ASSAULT_TURNS`], even though one blow alone trades badly.
+    ///
+    /// ★★★ ONE BLOW PRICED ALONE NEVER OPENS AN ASSAULT. `siege_blow` keeps a
+    /// melee attack only when its own exchange pays, and a Warrior against a
+    /// full capital never does, so the ring held while two Archers shot. Live
+    /// King 20261004T111442Z (game 53): Madrid stood without walls from turn
+    /// 44 to 66 at 186-200 health with five to eight units staged and the
+    /// siege reading "damage ready"; it healed every turn, built walls at 68,
+    /// and never fell. The same shape: Washington turns 40-58 (035351Z),
+    /// Tenochtitlan (110427Z-cont1). And with a ram: Live King
+    /// 20261004T113554Z (game 54) besieged the Cree's Wihkasko-Kiseyin from
+    /// turn 73, a Battering Ram riding with the train, and its walls stood at
+    /// 100/100 at turn 83 while the Cree won by religion at 90; their two
+    /// cities were the whole founder. Each melee unit here must start at
+    /// [`ASSAULT_MIN_HP`] and survive the reply at [`ASSAULT_SURVIVOR_HP`];
+    /// the reserved taker still finishes.
+    fn breach_assault_blow(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        city: &CityView,
+        plan: &StrategicPlan,
+        group: &ForceGroup,
+    ) -> Option<bool> {
+        if self.active_victory_target(g) != Some(super::VictoryTarget::Domination)
+            || city.hp <= 0
+            || (city.wall_hp > 0 && !melee_wall_attack_allowed(g, pid, uid, city.id))
+        {
+            return None;
+        }
+        let unit = g.units.get(&uid)?.clone();
+        if g.wdist(unit.pos, city.pos) > 1 {
+            // `breach-assault-closes-in`: a unit off the ring steps in toward
+            // a city the force's blows can take; it strikes from beside it.
+            if !self.breach_assault_closes_in
+                || unit.moves_left <= 0.0
+                || !self.closing_in(g, uid, city)
+            {
+                return None;
+            }
+            let volley = self.assault_volley(g, pid, city, plan, group);
+            if !self.assault_pays(volley, city) {
+                return None;
+            }
+            let next = march_step(g, uid, city.pos, 1).filter(|pos| g.can_move(uid, *pos))?;
+            if !self.base.tactical_apply_move(g, pid, uid, next) {
+                return None;
+            }
+            think!(self.journal(), Military, Decision,
+                "Siege of {}: the {} closes in for the assault", g.cities[&city.id].name, unit.kind;
+                "the force's blows come to {volley:.0} a turn against {} health with no wall standing",
+                city.hp;
+                city.pos);
+            return Some(true);
+        }
+        if unit.attacks_left <= 0
+            || unit.moves_left <= 0.0
+            || unit.hp < ASSAULT_MIN_HP
+            || g.is_embarked(&unit)
+            || !g.melee_order_is_legal(pid, uid, city.pos)
+        {
+            return None;
+        }
+        let volley = self.assault_volley(g, pid, city, plan, group);
+        // `tower-assault`: see `tower_bypasses`.
+        let through = self.tower_bypasses(g, pid, uid, city);
+        if !self.assault_pays(volley, city) && !(through && tower_assault_pays(volley, city)) {
+            return None;
+        }
+        let action = Action::Attack {
+            unit: uid,
+            target: city.pos,
+        };
+        let mut after = g.speculative_clone();
+        after.apply(pid, &action).ok()?;
+        // `melee-storms-an-open-city`: the reserved taker keeps enough to
+        // take the city when it falls (or takes it with this blow).
+        let taker = self
+            .sieges
+            .get(&city.id)
+            .is_some_and(|siege| siege.taker == Some(uid));
+        let floor = if taker {
+            STORM_TAKER_SURVIVOR_HP
+        } else {
+            ASSAULT_SURVIVOR_HP
+        };
+        // `elimination-waits-on-the-clock`: see `elimination_holds_city`.
+        if after.cities.get(&city.id).is_some_and(|c| c.owner == pid)
+            && self.elimination_holds_city(g, pid, city.id)
+        {
+            return None;
+        }
+        let captures = self.melee_storms_an_open_city
+            && after.cities.get(&city.id).is_some_and(|c| c.owner == pid);
+        if !captures
+            && after
+                .units
+                .get(&uid)
+                .is_none_or(|survivor| survivor.hp < floor)
+        {
+            return None;
+        }
+        g.apply(pid, &action).ok()?;
+        self.force_groups_dirty = true;
+        let captured = g.cities.get(&city.id).is_some_and(|c| c.owner == pid);
+        if captured {
+            if let Some(siege) = self.sieges.get_mut(&city.id) {
+                if let Some(taker) = siege.taker.take() {
+                    self.reserved_units.remove(&taker);
+                }
+                siege.stage = SiegeStage::Hold;
+                siege.entered = g.turn;
+            }
+            self.census.siege_captures += 1;
+        }
+        let left = g.cities.get(&city.id).map_or(0, |c| if c.owner == pid { 0 } else { c.hp });
+        think!(self.journal(), Military, Decision,
+            "Siege of {}: the {} joins the assault", g.cities[&city.id].name, unit.kind;
+            "the force's blows this turn come to {volley:.0} against {} health behind {} of wall; {} left; captured {captured}",
+            city.hp, city.wall_hp, left;
+            city.pos);
+        Some(true)
+    }
+
+    /// `breach-assault`: whether the force's blows a turn (`assault_volley`)
+    /// open the assault: they take the walls and the city within
+    /// [`ASSAULT_TURNS`] counting one turn of heal. Under
+    /// `melee-storms-an-open-city`, against a city with no standing walls,
+    /// also when the blows past the city's heal take it within
+    /// [`STORM_TURNS`]. Live King civvis-20261005T074521Z (game 110): Tarsus
+    /// stood without walls from turn 67 to 73 with the siege reading
+    /// "damage ready" in about two turns; the only melee beside it was the
+    /// reserved taker, the city went 200 -> 191, and it built walls at 74.
+    fn assault_pays(&self, volley: f64, city: &CityView) -> bool {
+        let to_take = f64::from(city.hp + city.wall_hp.max(0)) + ASSAULT_HEAL;
+        if volley * ASSAULT_TURNS >= to_take {
+            return true;
+        }
+        self.melee_storms_an_open_city
+            && city.wall_hp <= 0
+            && volley > ASSAULT_HEAL
+            && f64::from(city.hp) / (volley - ASSAULT_HEAL) <= STORM_TURNS
+    }
+
+    /// `tower-assault`: whether the melee member `uid` strikes the walled
+    /// city through a Siege Tower beside it (`Game::siege_support_effects`):
+    /// its blow lands on the city's health, so the walls are not the
+    /// assault's to bring down. Live King civvis-20261005T114715Z (game
+    /// 126): Constantinople's Medieval Walls (200) stood with a tower beside
+    /// them at turns 139-140 and a Pike and Shot beside it, while the
+    /// assault priced 200 walls plus 200 health plus the heal; the city held
+    /// at 197-200 from turn 128 to 141.
+    fn tower_bypasses(&self, g: &Game, pid: usize, uid: u32, city: &CityView) -> bool {
+        self.tower_assault
+            && city.wall_hp > 0
+            && g.units.get(&uid).is_some_and(|unit| {
+                g.siege_support_effects(
+                    pid,
+                    city.id,
+                    city.pos,
+                    &g.rules.units[unit.kind].promotion_class,
+                )
+                .1
+            })
+    }
+
+    /// `ring-fires-on-the-city`: whether a hostile in `uid`'s reach stands
+    /// beside a wounded land unit of ours, the one case a shot at a unit
+    /// outranks the shot at the city. See `siege_shooter_step`.
+    pub(super) fn ring_is_threatened(&self, g: &Game, pid: usize, uid: u32) -> bool {
+        let Some(shooter) = g.units.get(&uid) else {
+            return false;
+        };
+        let range = g.unit_attack_range(uid).max(1);
+        g.units.values().any(|hostile| {
+            let spec = &g.rules.units[hostile.kind];
+            hostile.owner != pid
+                && g.is_at_war(pid, hostile.owner)
+                && spec.class == "military"
+                && g.city_at(hostile.pos).is_none()
+                && g.wdist(shooter.pos, hostile.pos) <= range
+                && g.unit_visible_to(hostile.id, pid)
+                && g.nbrs(hostile.pos).into_iter().any(|pos| {
+                    g.unit_ids_at(pos).iter().any(|id| {
+                        let friend = &g.units[id];
+                        friend.owner == pid
+                            && friend.hp < super::battle_planner::ROTATE_HP
+                            && g.rules.units[friend.kind].class == "military"
+                    })
+                })
+        })
+    }
+
+    /// `breach-assault-closes-in`: whether this healthy melee unit, off the
+    /// ring but within [`CLOSING_REACH`] of a city with no wall standing, is
+    /// one the assault can call in: a free land tile beside the city is open
+    /// to it. The ring's melee wait outside the city's strike
+    /// (`siege_melee_step` marches them only to [`CITY_STRIKE_RANGE`]), and
+    /// `breach_assault_blow` and `assault_volley` counted only melee already
+    /// beside the city, so an unwalled city whose ranged damage healed away
+    /// never drew the assault. Zone of control ends a move beside the city,
+    /// so the step in and the blow fall on different turns. Live King
+    /// civvis-20261004T232618Z (game 86): The Hague stood without walls at
+    /// 95-134 health from turn 88 to 95 beside eleven staged units; horsemen
+    /// waited three tiles out with five moves left, the volley read 32.5
+    /// against 95-134, and the city built walls at 96.
+    fn closing_in(&self, g: &Game, uid: u32, city: &CityView) -> bool {
+        if city.wall_hp > 0 {
+            return false;
+        }
+        let Some(unit) = g.units.get(&uid) else {
+            return false;
+        };
+        let distance = g.wdist(unit.pos, city.pos);
+        unit.hp >= ASSAULT_MIN_HP
+            && !g.is_embarked(unit)
+            && (2..=CLOSING_REACH).contains(&distance)
+            && g.nbrs(city.pos).into_iter().any(|pos| {
+                g.unit_ids_at(pos).is_empty()
+                    && g.map
+                        .get(pos)
+                        .is_some_and(|tile| !g.rules.is_water(tile) && g.rules.is_passable(tile))
+            })
+    }
+
+    /// The city damage the siege force can still deal this turn: ranged
+    /// members in range at the land ranged-against-districts penalty, and
+    /// healthy melee members already beside the city — or, under
+    /// `breach-assault-closes-in`, ones the assault can call in from off the
+    /// ring (`closing_in`).
+    fn assault_volley(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: &CityView,
+        plan: &StrategicPlan,
+        group: &ForceGroup,
+    ) -> f64 {
+        let defense = g.city_strength(city.id);
+        self.siege_force(g, pid, city, plan, group)
+            .into_iter()
+            .filter_map(|uid| g.units.get(&uid))
+            .filter(|unit| unit.attacks_left > 0 && unit.moves_left > 0.0 && !g.is_embarked(unit))
+            .map(|unit| {
+                let spec = &g.rules.units[unit.kind];
+                let distance = g.wdist(unit.pos, city.pos);
+                if spec.has_ranged_attack() {
+                    if distance > g.unit_attack_range(unit.id).max(1) {
+                        return 0.0;
+                    }
+                    let mut attack = g.unit_ranged_attack_strength(unit);
+                    if spec.ranged_strength > 0.0 && spec.domain.as_deref() != Some("sea") {
+                        attack += g.promotion_effect(unit, "ranged_vs_district") - 17.0;
+                    }
+                    crate::game::expected_damage(attack, defense)
+                } else if spec.is_melee_capable()
+                    && unit.hp >= ASSAULT_MIN_HP
+                    && (distance <= 1
+                        || (self.breach_assault_closes_in && self.closing_in(g, unit.id, city)))
+                {
+                    crate::game::expected_damage(g.unit_strength(unit, false), defense)
+                } else {
+                    0.0
+                }
+            })
+            .sum()
     }
 
     /// A healthy capture unit can contribute before the final blow when an
@@ -1393,6 +4606,188 @@ impl AdvancedAi {
         true
     }
 
+    /// `unwalled-city-takes-the-swarm`: a fit melee member beside a city with
+    /// no standing wall (never built, or breached to 0: the city cannot
+    /// strike, `Game::city_can_strike`, and repairs a breach only after three
+    /// turns unattacked) strikes it every turn, whether or not this one
+    /// blow pays alone (`siege_blow`) or the force's blows open an assault
+    /// (`assault_pays`). Nothing absorbs the blow and the city heals at most
+    /// 20 a turn, so the ring's swings add up where one priced alone never
+    /// does. Live 10-05/06: 176 sieges reached a city with no walls and 107
+    /// never took it; Kish (G183, civvis-20261006T021637Z) took one blow, at
+    /// turn 96, and stood behind walls by 98. The member stands at
+    /// `ROTATE_HP` (`siege_member_fit`; a wounded one rotates out) and keeps
+    /// [`ASSAULT_SURVIVOR_HP`] past the reply, the reserved taker
+    /// [`STORM_TAKER_SURVIVOR_HP`] so it can still take the city; a blow that
+    /// takes the city lands only where the taker's would (`capture_holdable`).
+    /// `None` where the member does not swing.
+    fn swarm_blow(&mut self, g: &mut Game, pid: usize, uid: u32, city: &CityView) -> Option<bool> {
+        if !self.unwalled_city_takes_the_swarm || city.wall_hp > 0 || city.hp <= 0 {
+            return None;
+        }
+        let unit = g.units.get(&uid)?.clone();
+        if arm_of(g, uid) != Arm::Melee
+            || unit.attacks_left <= 0
+            || unit.moves_left <= 0.0
+            || g.is_embarked(&unit)
+            || !self.siege_member_fit(g, uid)
+            || !g.melee_order_is_legal(pid, uid, city.pos)
+        {
+            return None;
+        }
+        let action = Action::Attack {
+            unit: uid,
+            target: city.pos,
+        };
+        let mut after = g.speculative_clone();
+        after.apply(pid, &action).ok()?;
+        let captures = after.cities.get(&city.id).is_some_and(|c| c.owner == pid);
+        let taker = self
+            .sieges
+            .get(&city.id)
+            .is_some_and(|siege| siege.taker == Some(uid));
+        // A taker relieved by another fit melee member beside the city has
+        // no capture to keep itself for: that member takes it. Live King G191
+        // (civvis-20261006T040519Z) turn 91: the reserved Heavy Chariot at 54
+        // held beside Thebes (154, no walls) at this floor while the
+        // Swordsman that had just struck stood beside it at 85.
+        let relieved = taker
+            && g.nbrs(city.pos).into_iter().any(|pos| {
+                g.unit_ids_at(pos).iter().any(|other| {
+                    *other != uid
+                        && g.units[other].owner == pid
+                        && arm_of(g, *other) == Arm::Melee
+                        && self.siege_member_fit(g, *other)
+                })
+            });
+        let floor = if taker && !relieved {
+            STORM_TAKER_SURVIVOR_HP
+        } else {
+            ASSAULT_SURVIVOR_HP
+        };
+        if captures {
+            if !self.capture_holdable(g, pid, city.id, uid) {
+                return None;
+            }
+        } else if after
+            .units
+            .get(&uid)
+            .is_none_or(|survivor| survivor.hp < floor)
+        {
+            return None;
+        }
+        g.apply(pid, &action).ok()?;
+        self.force_groups_dirty = true;
+        let captured = g.cities.get(&city.id).is_some_and(|c| c.owner == pid);
+        if captured {
+            if let Some(siege) = self.sieges.get_mut(&city.id) {
+                if let Some(taker) = siege.taker.take() {
+                    self.reserved_units.remove(&taker);
+                }
+                siege.stage = SiegeStage::Hold;
+                siege.entered = g.turn;
+            }
+            self.census.siege_captures += 1;
+        }
+        let left = g
+            .cities
+            .get(&city.id)
+            .map_or(0, |c| if c.owner == pid { 0 } else { c.hp });
+        think!(self.journal(), Military, Decision,
+            "Siege of {}: the {} swings at the unwalled city", g.cities[&city.id].name, unit.kind;
+            "no standing wall to absorb the blow (walls {}/{}); the city at {} has {left} left; {} hp of ours after the reply; captured {captured}",
+            city.wall_hp, city.wall_max, city.hp, g.units.get(&uid).map_or(0, |u| u.hp);
+            city.pos);
+        Some(true)
+    }
+
+    /// `unwalled-city-takes-the-swarm`: a fit melee member off the ring of a
+    /// city with no standing wall walks to a free land ring tile it reaches this
+    /// turn with its attack still in hand, and swings (`swarm_blow`): the
+    /// post it is walking to may not be the one it reaches, and a member
+    /// that arrives a turn later meets walls. Its own post first, then the
+    /// nearest. The member keeps [`ASSAULT_SURVIVOR_HP`] past the city's
+    /// reply, and more than the hostile blows that reach the tile
+    /// (`approach_danger`) after it. Not the reserved taker, which keeps its
+    /// own step. `None` where no such tile exists; the post step follows.
+    /// Live King G191 (civvis-20261006T040519Z): Thebes stood without walls
+    /// at 200, 176 and 154 from turn 89 to 91 with the budget reading 1.8
+    /// turns; one Heavy Chariot struck at 89 and 90 and a Swordsman at 91,
+    /// while two Men-at-Arms closed one tile a turn and never reached the
+    /// ring; walls rose at 92.
+    fn swarm_close(&mut self, g: &mut Game, pid: usize, uid: u32, city: &CityView) -> Option<bool> {
+        if !self.unwalled_city_takes_the_swarm || city.wall_hp > 0 || city.hp <= 0 {
+            return None;
+        }
+        let unit = g.units.get(&uid)?.clone();
+        let distance = g.wdist(unit.pos, city.pos);
+        let siege = self.sieges.get(&city.id);
+        if arm_of(g, uid) != Arm::Melee
+            || !(2..=CLOSING_REACH).contains(&distance)
+            || unit.attacks_left <= 0
+            || unit.moves_left <= 0.0
+            || g.is_embarked(&unit)
+            || !self.siege_member_fit(g, uid)
+            || siege.is_some_and(|siege| siege.taker == Some(uid))
+        {
+            return None;
+        }
+        let post = siege.and_then(|siege| siege.posts.get(&uid)).copied();
+        let reachable: BTreeSet<Pos> = g.reachable(uid).into_iter().collect();
+        let mut ring: Vec<Pos> = g
+            .nbrs(city.pos)
+            .into_iter()
+            .filter(|pos| {
+                reachable.contains(pos)
+                    && g.unit_ids_at(*pos).is_empty()
+                    && g.map
+                        .get(*pos)
+                        .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            })
+            .collect();
+        ring.sort_by_key(|pos| (Some(*pos) != post, g.wdist(unit.pos, *pos), *pos));
+        let strike = Action::Attack {
+            unit: uid,
+            target: city.pos,
+        };
+        for dest in ring {
+            let mut after = g.speculative_clone();
+            if after
+                .apply(
+                    pid,
+                    &Action::MoveTo {
+                        unit: uid,
+                        to: dest,
+                    },
+                )
+                .is_err()
+                || after.units.get(&uid).map(|moved| moved.pos) != Some(dest)
+                || !after.melee_order_is_legal(pid, uid, city.pos)
+                || after.apply(pid, &strike).is_err()
+            {
+                continue;
+            }
+            let captures = after.cities.get(&city.id).is_some_and(|c| c.owner == pid);
+            let holds = after.units.get(&uid).is_some_and(|survivor| {
+                survivor.hp >= ASSAULT_SURVIVOR_HP
+                    && self.approach_danger(&after, pid, dest, uid) < f64::from(survivor.hp)
+            });
+            if !captures && !holds {
+                continue;
+            }
+            if !self.base.path_walk_to(g, pid, uid, dest) {
+                return None;
+            }
+            self.force_groups_dirty = true;
+            think!(self.journal(), Military, Decision,
+                "Siege of {}: the {} closes on the unwalled city to swing", g.cities[&city.id].name, unit.kind;
+                "{distance} tiles out, {dest:?} on the ring is in this turn's reach with the attack still in hand";
+                city.pos);
+            return Some(self.swarm_blow(g, pid, uid, city).unwrap_or(true));
+        }
+        None
+    }
+
     /// Toward the unit's post for the turn, when it has one it is not on.
     /// `None` when it has none or already stands there, so the caller holds.
     fn post_step(&mut self, g: &mut Game, pid: usize, uid: u32, city: &CityView) -> Option<bool> {
@@ -1416,22 +4811,571 @@ impl AdvancedAi {
         city_pos: Pos,
     ) -> Option<bool> {
         let mut moved = false;
+        // Why the approach stops short of `goal`, journaled for a gun below.
+        let mut short: Option<String> = None;
+        // `guns-enter-together`: see `entry_group`. Read once, before the
+        // first step, so a gun's own step cannot change the group it is in.
+        let entering = self.entering_with(g, pid, uid, city_pos);
+        // `guns-post-for-a-near-breach`: see `near_breach`. Read once too.
+        let near = self.near_breach_size(g, pid, uid, city_pos);
+        let entering = entering.max(near);
         for _ in 0..4 {
             let unit = g.units.get(&uid)?;
-            if unit.pos == goal || unit.moves_left <= 0.0 {
+            if unit.pos == goal {
                 break;
             }
-            let Some(next) =
-                siege_route_step(g, pid, uid, goal, city_pos).filter(|next| g.can_move(uid, *next))
-            else {
+            if unit.moves_left <= 0.0 {
+                short = Some("out of moves".to_string());
+                break;
+            }
+            let routed =
+                siege_route_step(g, pid, uid, goal, city_pos).filter(|next| g.can_move(uid, *next));
+            // `gun-queues-behind-the-column`: a routed step that leads away
+            // from the post goes round our own column, and the next call
+            // finds the way round shut and may not step back (the same-turn
+            // reversal guard). Live Emperor G360 turn 129: both Trebuchets
+            // before Napata stepped a tile back on the way round, then stood.
+            // Where the column's own road leads nearer, queue on it instead.
+            if let Some(next) = routed {
+                let here = g.units[&uid].pos;
+                if g.wdist(next, goal) > g.wdist(here, goal) {
+                    if let Some(step) = self.column_queue_step(g, pid, uid, goal, city_pos) {
+                        if self.base.tactical_apply_progress_move(g, pid, uid, step) {
+                            moved = true;
+                            short = None;
+                            think!(self.journal(), Military, Detail,
+                                "Siege: the {} queues toward its post behind the column", g.units[&uid].kind;
+                                "the free route to the post {goal:?} leads away round our column, its own road nearer; it steps {here:?} -> {step:?}, {} tiles from the post",
+                                g.wdist(step, goal);
+                                city_pos);
+                            continue;
+                        }
+                    }
+                }
+            }
+            let Some(next) = routed else {
+                // The step-by-step route treats our own soldiers as walls, so
+                // a crowded staging band boxes a gun in behind its own army.
+                // Walk through them to the free post in one move, which may
+                // pass friendly units. Live King civvis-20261003T093332Z: two
+                // of three Bombards before Natal held posts for turns 160-170
+                // and stood five to seven tiles out, never firing, while the
+                // walls went 400 -> 68 under one Bombard's fire.
+                let through = (!moved)
+                    .then(|| g.pass_through_destination(uid, goal, 0))
+                    .flatten();
+                short = Some(match through {
+                    None if moved => "no further route step this turn".to_string(),
+                    None => "no route step and no pass-through destination".to_string(),
+                    Some(dest) if !dry_stand(g, uid, dest) => {
+                        format!("the pass-through stand {dest:?} is not dry ground")
+                    }
+                    Some(dest) => {
+                        let (refused, danger) =
+                            self.entry_refused(g, pid, uid, dest, entering, near > 0);
+                        if g.wdist(dest, city_pos) <= CITY_STRIKE_RANGE && refused {
+                            format!("the pass-through stand {dest:?} is refused at {danger:.0} danger")
+                        } else {
+                            String::new()
+                        }
+                    }
+                });
+                // `gun-queues-behind-the-column`: see `column_queue_step`.
+                if through.is_none() {
+                    if let Some(step) = self.column_queue_step(g, pid, uid, goal, city_pos) {
+                        let from = g.units[&uid].pos;
+                        if self.base.tactical_apply_progress_move(g, pid, uid, step) {
+                            moved = true;
+                            short = None;
+                            think!(self.journal(), Military, Detail,
+                                "Siege: the {} queues toward its post behind the column", g.units[&uid].kind;
+                                "no free route reaches the post {goal:?} and none of ours is beside it to cross; it steps {from:?} -> {step:?}, {} tiles from the post",
+                                g.wdist(step, goal);
+                                city_pos);
+                            continue;
+                        }
+                    }
+                }
+                if let Some(dest) = through.filter(|dest| {
+                    dry_stand(g, uid, *dest)
+                        && (g.wdist(*dest, city_pos) > CITY_STRIKE_RANGE
+                            || !self.entry_refused(g, pid, uid, *dest, entering, near > 0).0)
+                }) {
+                    if g.wdist(dest, city_pos) <= CITY_STRIKE_RANGE {
+                        self.note_near_breach_entry(g, pid, uid, dest, city_pos, entering, near);
+                    }
+                    moved = self.base.path_walk_to(g, pid, uid, dest);
+                    if !moved {
+                        short = Some(format!("the walk through the column to {dest:?} failed"));
+                    }
+                }
                 break;
             };
+            // A post inside the city's firing ring can be covered by more
+            // than one city or Encampment. Do not march a body into a stand
+            // where the forward model expects the next volley to finish it.
+            let inside = g.wdist(next, city_pos) <= CITY_STRIKE_RANGE;
+            if inside {
+                let (refused, danger) = self.entry_refused(g, pid, uid, next, entering, near > 0);
+                if refused {
+                    short = Some(format!(
+                        "the step to {next:?} inside the city's reach is refused at {danger:.0} danger"
+                    ));
+                    break;
+                }
+            }
+            if inside && g.wdist(g.units[&uid].pos, city_pos) > CITY_STRIKE_RANGE {
+                self.note_near_breach_entry(g, pid, uid, next, city_pos, entering, near);
+            }
             if !self.base.tactical_apply_move(g, pid, uid, next) {
+                short = Some(format!("the move to {next:?} was refused"));
                 break;
             }
             moved = true;
         }
+        // A gun short of its post says why: the 10-07 Emperor census read 30%
+        // of walled sieges whose budget read "inf turns" with guns and shooters
+        // within ten tiles that alone would out-fire the heal, and 56% of the
+        // unwalled ones, while no line said why they were not firing.
+        if let Some(reason) = short.filter(|reason| !reason.is_empty()) {
+            if g.units.get(&uid).is_some_and(|unit| unit.pos != goal)
+                && arm_of(g, uid) == Arm::Siege
+                && self.journal().wants(crate::reasoning::Level::Detail)
+            {
+                let name = g
+                    .city_at(city_pos)
+                    .and_then(|cid| g.cities.get(&cid))
+                    .map(|c| c.name.clone())
+                    .unwrap_or_default();
+                think!(self.journal(), Military, Detail,
+                    "Siege of {name}: the {} stops short of its post", g.units[&uid].kind;
+                    "{} tiles from the city, the post {goal:?} {} away: {reason}",
+                    g.wdist(g.units[&uid].pos, city_pos), g.wdist(g.units[&uid].pos, goal);
+                    city_pos);
+            }
+        }
         moved.then_some(true)
+    }
+
+    /// `gun-queues-behind-the-column`: a siege gun's step toward its post
+    /// when the train's own router finds no free route (it treats our
+    /// soldiers as walls) and `pass_through_destination` has nothing either
+    /// (it looks only when one of ours stands beside the gun). The ordinary
+    /// router's first step, whose later edges may cross our units: a dry
+    /// stand outside the city's strike range, off its first ring, that
+    /// strictly nears the post, so the gun closes up behind the column and
+    /// the crossing opens once a friend is beside it. `None` with the gene
+    /// off or for a unit that is not a gun.
+    ///
+    /// Live Emperor civvis-20261008T071102Z (game 360): two Trebuchets before
+    /// unwalled Napata stood five to seven tiles out on turns 125-129, their
+    /// posts three to six away up a hill defile with one of ours in its one
+    /// open tile, logging "no route step and no pass-through destination";
+    /// the city stood at 200 health until Nubia's Urban Defenses raised 400
+    /// walls at turn 130. Over the 10-07/08 runs that reason was 283 of 634
+    /// gun approaches that ended short of the post, most four to six tiles
+    /// from the city.
+    fn column_queue_step(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        goal: Pos,
+        city_pos: Pos,
+    ) -> Option<Pos> {
+        if !self.gun_queues_behind_the_column || arm_of(g, uid) != Arm::Siege {
+            return None;
+        }
+        let here = g.units.get(&uid)?.pos;
+        let ring: BTreeSet<Pos> = g.wdisk(city_pos, 1).into_iter().collect();
+        g.route_step(uid, goal, 0).filter(|step| {
+            g.wdist(*step, goal) < g.wdist(here, goal)
+                && g.wdist(*step, city_pos) > CITY_STRIKE_RANGE
+                && !ring.contains(step)
+                && dry_stand(g, uid, *step)
+                && g.can_move(uid, *step)
+                && super::battle_planner::strike_danger(g, pid, *step, uid)
+                    < f64::from(g.units[&uid].hp) * QUEUE_DANGER_SHARE
+        })
+    }
+
+    /// The reply a unit expects on a post inside the city's firing ring.
+    /// With `shared-danger` on, each hostile's blow is split among our land
+    /// units in its reach, never below the strongest single blow, as the
+    /// battle planner's rotation reads it. The full sum charged every
+    /// defender to every gun. Live King civvis-20261001T022028Z: around
+    /// walled Cairo, the guns of an 18-unit train stood three and four tiles
+    /// out for the 22 turns of Invest, and the city was struck three times.
+    fn approach_danger(&self, g: &Game, pid: usize, tile: Pos, uid: u32) -> f64 {
+        if !self.shared_danger {
+            return super::battle_planner::strike_danger(g, pid, tile, uid);
+        }
+        let mut field = super::battle_planner::DangerField::with_reach(g, pid, true);
+        field.share(g);
+        field.rotation_danger(tile, uid)
+    }
+
+    /// The approach's danger reading for `uid` stepping onto `tile`, as one
+    /// of `entering` guns entering together (`entry_group`); below two it is
+    /// `approach_danger`'s.
+    fn entry_danger(&self, g: &Game, pid: usize, tile: Pos, uid: u32, entering: usize) -> f64 {
+        if entering < 2 {
+            return self.approach_danger(g, pid, tile, uid);
+        }
+        let mut field = super::battle_planner::DangerField::with_reach(g, pid, true);
+        if self.shared_danger {
+            field.share(g);
+        }
+        field.group_entry_danger(tile, uid, entering)
+    }
+
+    /// Whether the approach refuses `uid` the stand `tile` inside a city's
+    /// strike ring, and the reply it reads there. The gun keeps
+    /// [`ENTRY_HP_MARGIN`] over the expected reply; a gun of a near breach
+    /// (`guns-post-for-a-near-breach`) only the reply's upper roll.
+    fn entry_refused(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        tile: Pos,
+        entering: usize,
+        near_breach: bool,
+    ) -> (bool, f64) {
+        let hp = g.units.get(&uid).map_or(0.0, |unit| f64::from(unit.hp));
+        let danger = self.entry_danger(g, pid, tile, uid, entering);
+        let refused = if near_breach {
+            // The group shares the city's blow, but any one striker may still
+            // spend all of it on this gun: a walled Toronto at 400 one-shot a
+            // full-health Bombard (live King civvis-20261005T051413Z, turn
+            // 126). Neither reading's upper roll may finish it.
+            hp <= danger.max(strongest_blow(g, pid, tile, uid)) * NEAR_BREACH_REPLY_ROLL
+        } else {
+            hp <= danger + ENTRY_HP_MARGIN
+        };
+        (refused, danger)
+    }
+
+    /// `guns-post-for-a-near-breach`: the fit siege guns of a walled siege in
+    /// Invest or Reduce that hold a firing post inside the city's strike ring
+    /// and stand within [`NEAR_BREACH_REACH`] of it, and the turns their
+    /// shots take to open the standing walls — when that is at most
+    /// [`NEAR_BREACH_TURNS`]. `None` with the gene off or the breach far.
+    ///
+    /// The approach charged every gun the city's whole reply plus
+    /// [`ENTRY_HP_MARGIN`], so a lone gun or a pair against a city whose
+    /// reply reads 60-80 held one tile outside its own range for as long as
+    /// the siege lasted. Over the 10-04/05 control runs, 537 walled
+    /// Invest/Reduce siege-turns had fit guns within seven tiles that would
+    /// open the walls in four turns or fewer, and only 42% saw a shot on the
+    /// city; the guns were posted two tiles out and walked to three. The
+    /// city strikes once a turn, so the group's guns share its blow
+    /// (`group_entry_danger`), and each enters while its health covers the
+    /// reply's upper roll.
+    fn near_breach(&self, g: &Game, pid: usize, city: &CityView) -> Option<(Vec<u32>, f64)> {
+        if !self.guns_post_for_a_near_breach || city.wall_hp <= 0 {
+            return None;
+        }
+        let siege = self.sieges.get(&city.id)?;
+        if !matches!(siege.stage, SiegeStage::Invest | SiegeStage::Reduce) {
+            return None;
+        }
+        let guns: Vec<u32> = siege
+            .posts
+            .iter()
+            .filter(|(uid, post)| {
+                let Some(unit) = g.units.get(uid) else {
+                    return false;
+                };
+                unit.owner == pid
+                    && !g.is_embarked(unit)
+                    && arm_of(g, **uid) == Arm::Siege
+                    && self.siege_member_fit(g, **uid)
+                    && g.wdist(**post, city.pos) <= CITY_STRIKE_RANGE
+                    && g.wdist(unit.pos, city.pos) <= NEAR_BREACH_REACH
+            })
+            .map(|(uid, _)| *uid)
+            .collect();
+        let per_turn: f64 = guns
+            .iter()
+            .map(|uid| wall_damage_per_shot(g, *uid, city.id))
+            .sum();
+        if per_turn <= 0.0 {
+            return None;
+        }
+        let turns = f64::from(city.wall_hp) / per_turn;
+        (turns <= NEAR_BREACH_TURNS).then_some((guns, turns))
+    }
+
+    /// `guns-post-for-a-near-breach`: the size of the near-breach group `uid`
+    /// belongs to at the city on `city_pos`, or 0.
+    fn near_breach_size(&self, g: &Game, pid: usize, uid: u32, city_pos: Pos) -> usize {
+        if !self.guns_post_for_a_near_breach {
+            return 0;
+        }
+        let Some(city) = g.city_at(city_pos).and_then(|cid| CityView::of(g, cid)) else {
+            return 0;
+        };
+        match self.near_breach(g, pid, &city) {
+            Some((group, _)) if group.contains(&uid) => group.len(),
+            _ => 0,
+        }
+    }
+
+    /// `guns-post-for-a-near-breach`: one line for a gun that steps inside the
+    /// strike ring the approach's [`ENTRY_HP_MARGIN`] would have kept it out
+    /// of.
+    #[allow(clippy::too_many_arguments)]
+    fn note_near_breach_entry(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        tile: Pos,
+        city_pos: Pos,
+        entering: usize,
+        near: usize,
+    ) {
+        if near == 0 || !self.journal().wants(crate::reasoning::Level::Decision) {
+            return;
+        }
+        let hp = g.units.get(&uid).map_or(0.0, |unit| f64::from(unit.hp));
+        let danger = self.entry_danger(g, pid, tile, uid, entering);
+        if hp > danger + ENTRY_HP_MARGIN {
+            return;
+        }
+        let Some(city) = g.city_at(city_pos).and_then(|cid| CityView::of(g, cid)) else {
+            return;
+        };
+        let turns = self
+            .near_breach(g, pid, &city)
+            .map_or(f64::INFINITY, |(_, turns)| turns);
+        let name = g
+            .cities
+            .get(&city.id)
+            .map(|c| c.name.clone())
+            .unwrap_or_default();
+        think!(self.journal(), Military, Decision,
+            "Siege of {name}: the {} enters its post for a near breach", g.units[&uid].kind;
+            "{near} gun(s) open the {}/{} walls in {turns:.1} turns; the reply at {tile:?} reads \
+             {danger:.0} against {hp:.0} health",
+            city.wall_hp, city.wall_max;
+            city.pos);
+    }
+
+    /// `guns-enter-together`: the size of the group `uid` enters with when
+    /// it walks toward its post at the city on `city_pos`, or 0 when it walks
+    /// alone (the gene off, an unwalled city, or a unit outside the group).
+    fn entering_with(&self, g: &Game, pid: usize, uid: u32, city_pos: Pos) -> usize {
+        if !self.guns_enter_together {
+            return 0;
+        }
+        let Some(city) = g.city_at(city_pos).and_then(|cid| CityView::of(g, cid)) else {
+            return 0;
+        };
+        let group = self.entry_group(g, pid, &city);
+        if group.contains(&uid) {
+            group.len()
+        } else {
+            0
+        }
+    }
+
+    /// `guns-enter-together`: the fit siege guns of a walled siege whose
+    /// posts lie inside the city's strike ring and that stand on them, within
+    /// one tile of the ring, or within this turn's reach of them. The city
+    /// strikes once a turn, so two or more stepping in together share its
+    /// blow; alone, each read the whole of it and none entered. Live King
+    /// civvis-20261005T051413Z (game 102): four fit Bombards at 100 hp stood
+    /// three tiles from walled Toronto from turn 137 to 145 with posts at
+    /// two, the approach read ~108 on every post against a Bombard, and not
+    /// one Bombard fired in twenty turns; the walls went 400 -> 391.
+    fn entry_group(&self, g: &Game, pid: usize, city: &CityView) -> Vec<u32> {
+        if !self.guns_enter_together || city.wall_hp <= 0 {
+            return Vec::new();
+        }
+        let Some(siege) = self.sieges.get(&city.id) else {
+            return Vec::new();
+        };
+        siege
+            .posts
+            .iter()
+            .filter(|(uid, post)| {
+                let Some(unit) = g.units.get(uid) else {
+                    return false;
+                };
+                unit.owner == pid
+                    && !g.is_embarked(unit)
+                    && arm_of(g, **uid) == Arm::Siege
+                    && self.siege_member_fit(g, **uid)
+                    && g.wdist(**post, city.pos) <= CITY_STRIKE_RANGE
+                    && (unit.pos == **post
+                        || g.wdist(unit.pos, city.pos) <= CITY_STRIKE_RANGE + 1
+                        || (unit.moves_left > 0.0 && g.reachable(**uid).contains(post)))
+            })
+            .map(|(uid, _)| *uid)
+            .collect()
+    }
+
+    /// `siege-keeps-a-shooter`: for each walled siege in Invest or Reduce
+    /// whose walls stand at or under [`KEEPER_WALL_SHARE`] of their pool, the
+    /// one ranged unit of ours that stays to fire on them this turn when every
+    /// one in range of the city would otherwise rotate out to heal: the
+    /// healthiest that keeps [`KEEPER_SURVIVE_MARGIN`] past its danger. None
+    /// when a healthy one in range already fires. Live King
+    /// civvis-20261005T104725Z (game 122): Tenochtitlan's walls went 13 ->
+    /// 100 (turns 82-87), 59 -> 100 (98-102) and 40 -> 100 (111-116) while
+    /// its gun and Crossbowmen all rotated out to heal together.
+    pub(super) fn siege_wall_keepers(
+        &self,
+        g: &Game,
+        pid: usize,
+        field: &mut super::battle_planner::DangerField,
+    ) -> BTreeSet<u32> {
+        let mut keepers = BTreeSet::new();
+        if !self.siege_keeps_a_shooter {
+            return keepers;
+        }
+        let heals = !g.is_arena() || g.tactics.heal;
+        for (cid, siege) in &self.sieges {
+            if !matches!(siege.stage, SiegeStage::Invest | SiegeStage::Reduce) {
+                continue;
+            }
+            let Some(city) = CityView::of(g, *cid) else {
+                continue;
+            };
+            if city.owner == pid
+                || !g.is_at_war(pid, city.owner)
+                || city.wall_hp <= 0
+                || city.wall_max <= 0
+                || f64::from(city.wall_hp) > KEEPER_WALL_SHARE * f64::from(city.wall_max)
+            {
+                continue;
+            }
+            let in_range: Vec<u32> = g
+                .units
+                .values()
+                .filter(|unit| {
+                    let spec = &g.rules.units[unit.kind];
+                    unit.owner == pid
+                        && spec.class == "military"
+                        && spec.has_ranged_attack()
+                        && spec.domain.as_deref() != Some("air")
+                        && !g.is_embarked(unit)
+                        && unit.attacks_left > 0
+                        && unit.moves_left > 0.0
+                        && g.wdist(unit.pos, city.pos) <= g.unit_attack_range(unit.id).max(1)
+                })
+                .map(|unit| unit.id)
+                .collect();
+            let wounded = |uid: u32| {
+                heals
+                    && (g.units[&uid].hp < super::battle_planner::ROTATE_HP
+                        || self.battle_planner_recovering.contains(&uid))
+            };
+            if in_range.iter().any(|uid| !wounded(*uid)) {
+                continue;
+            }
+            let keeper = in_range
+                .into_iter()
+                .filter_map(|uid| {
+                    let unit = &g.units[&uid];
+                    let danger = field.rotation_danger(unit.pos, uid);
+                    (f64::from(unit.hp) - danger >= KEEPER_SURVIVE_MARGIN)
+                        .then_some((unit.hp, Reverse(uid)))
+                })
+                .max()
+                .map(|(_, Reverse(uid))| uid);
+            keepers.extend(keeper);
+        }
+        keepers
+    }
+
+    /// Whether a fit gun near a walled siege serves it whatever row the
+    /// board gave it (`nearby_gun_city`): `breach-counts-nearby-guns`, and
+    /// `guns-enter-together`, whose group a gun the board holds in its
+    /// Reserve five tiles off never joined. Live King
+    /// civvis-20261005T091120Z (game 115): a Reserve force with Bombards
+    /// held five tiles from Krakow from turn 145 to 176 while the siege
+    /// counted one or two guns.
+    fn nearby_guns_join(&self) -> bool {
+        self.breach_counts_nearby_guns || self.guns_enter_together
+    }
+
+    /// `guns-enter-together`: the Stage march's remembered-hostile terms for
+    /// the gun `uid`: the number of fit siege guns marching on `city` that
+    /// share a remembered hostile's one strike (those within three tiles of
+    /// the staging ring), and whether a hostile seen only last turn is
+    /// dropped because two of them already stand on the ring. Off, (1,
+    /// false). Live King civvis-20261005T091120Z (game 115): fit Bombards sat
+    /// four and five tiles from Krakow for about 95 turns, "holds short of a
+    /// hostile seen in the fog ... its blow there reads 48-55 against a limit
+    /// of 27", twelve times between turns 150 and 174.
+    fn staging_fog_terms(&self, g: &Game, pid: usize, city: &CityView, uid: u32) -> (f64, bool) {
+        if !self.guns_enter_together || arm_of(g, uid) != Arm::Siege {
+            return (1.0, false);
+        }
+        let guns: Vec<i32> = g
+            .units
+            .values()
+            .filter(|unit| {
+                unit.owner == pid
+                    && !g.is_embarked(unit)
+                    && arm_of(g, unit.id) == Arm::Siege
+                    && self.siege_member_fit(g, unit.id)
+            })
+            .map(|unit| g.wdist(unit.pos, city.pos))
+            .filter(|distance| *distance <= STAGING_FAR + 3)
+            .collect();
+        let marching = guns.len().max(1) as f64;
+        let on_ring = guns
+            .iter()
+            .filter(|distance| **distance <= STAGING_FAR)
+            .count();
+        (marching, on_ring >= 2)
+    }
+
+    /// `guns-enter-together`: whether a fit gun of the train can put a shot
+    /// on the walls from where it stands or from its post. A gun whose post
+    /// sits inside the strike ring and whose entry the approach would refuse
+    /// — it is not part of an entering group — fires nothing however many
+    /// turns it stands three tiles out, so the breach reading does not count
+    /// it as a breaker. A gun with no post (the siege still in Stage) is not
+    /// judged here.
+    fn gun_barred_from_its_post(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+        city: &CityView,
+        group: &[u32],
+    ) -> bool {
+        if !self.guns_enter_together || city.wall_hp <= 0 {
+            return false;
+        }
+        let Some(unit) = g.units.get(&uid) else {
+            return false;
+        };
+        let range = g.unit_attack_range(uid).max(1);
+        if g.wdist(unit.pos, city.pos) <= range {
+            return false;
+        }
+        let Some(post) = self
+            .sieges
+            .get(&city.id)
+            .and_then(|siege| siege.posts.get(&uid))
+            .copied()
+        else {
+            return false;
+        };
+        if g.wdist(post, city.pos) > CITY_STRIKE_RANGE {
+            return false;
+        }
+        let entering = if group.contains(&uid) { group.len() } else { 0 };
+        // `guns-post-for-a-near-breach`: see `near_breach`.
+        let near = self.near_breach_size(g, pid, uid, city.pos);
+        self.entry_refused(g, pid, uid, post, entering.max(near), near > 0)
+            .0
     }
 
     /// Walk to the first goal reachable this turn, else one step toward the
@@ -1489,7 +5433,7 @@ impl AdvancedAi {
                 spec.siege,
             )
         };
-        if ranged && siege && unit.moved && g.promotion_effect(&unit, "attack_after_move") == 0.0 {
+        if ranged && siege && unit.moved && !g.siege_may_attack_after_moving(&unit) {
             return None;
         }
         let radius = if ranged {
@@ -1816,11 +5760,77 @@ impl AdvancedAi {
     }
 }
 
+impl AdvancedAi {
+    /// `staging-gun-remembers-hostiles`: every land melee hostile at war with
+    /// `pid` that the seat saw within [`REMEMBERED_STRIKER_TURNS`] turns and
+    /// cannot see now, as a [`RememberedStriker`] against the gun `uid`. A
+    /// unit still in sight is the danger field's own and is left out, so the
+    /// two never count one hostile twice. Live King civvis-20261005T033442Z
+    /// (game 96): the Khmer Cuirassiers that one-shot two Trebuchets at turns
+    /// 145 and 146 stood in sight at turn 144 and in the fog at 145, when the
+    /// Stage march read 0 to 7 danger on the tiles it walked the guns to.
+    pub(super) fn remembered_strikers(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: u32,
+    ) -> Vec<RememberedStriker> {
+        let Some(gun) = g.units.get(&uid) else {
+            return Vec::new();
+        };
+        let defence = effective_strength(g.unit_strength(gun, true), gun.hp);
+        let visible = g.player_vision_frame(pid);
+        let in_sight: BTreeSet<i64> = g
+            .units
+            .values()
+            .filter(|unit| {
+                unit.owner != pid && g.sees(&visible, unit.pos) && g.unit_visible_to(unit.id, pid)
+            })
+            .map(|unit| super::hostile_memory_key(g, unit))
+            .collect();
+        self.hostile_last_seen
+            .iter()
+            .filter_map(|(key, record)| {
+                if in_sight.contains(key)
+                    || record.owner >= g.players.len()
+                    || record.owner == pid
+                    || !g.is_at_war(pid, record.owner)
+                    || record.when > g.turn
+                    || g.turn - record.when > REMEMBERED_STRIKER_TURNS
+                {
+                    return None;
+                }
+                let spec = &g.rules.units[record.kind];
+                if spec.class != "military"
+                    || !spec.is_melee_capable()
+                    || matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                {
+                    return None;
+                }
+                let moves = (spec.moves.ceil() as i32).max(1);
+                let elapsed = (g.turn - record.when) as i32;
+                Some(RememberedStriker {
+                    from: record.pos,
+                    reach: moves * (elapsed + 1),
+                    blow: expected_damage(effective_strength(spec.strength, 100), defence),
+                    elapsed: elapsed as u32,
+                })
+            })
+            .collect()
+    }
+}
+
 #[cfg(test)]
 mod ownership_tests;
 
 #[cfg(test)]
 mod capture_tests;
+
+#[cfg(test)]
+mod breach_tests;
+
+#[cfg(test)]
+mod breaker_tests;
 
 #[cfg(test)]
 mod landing_tests;
@@ -1830,6 +5840,9 @@ mod firing_tests;
 
 #[cfg(test)]
 mod staging_tests;
+
+#[cfg(test)]
+mod assault_tests;
 
 #[cfg(test)]
 mod tests {
@@ -2341,6 +6354,44 @@ mod linked_support_tests;
 #[cfg(test)]
 #[path = "siege_train/tests.rs"]
 mod obstacle_routing_tests;
+
+mod capture_hold;
+
+#[cfg(test)]
+mod entry_tests;
+
+#[cfg(test)]
+mod storm_tests;
+
+#[cfg(test)]
+mod capture_hold_tests;
+
+#[cfg(test)]
+mod keeper_tests;
+
+#[cfg(test)]
+mod tower_ring_tests;
+
+#[cfg(test)]
+mod grind_tests;
+
+#[cfg(test)]
+mod near_breach_tests;
+
+#[cfg(test)]
+mod muster_tests;
+
+#[cfg(test)]
+mod air_tests;
+
+#[cfg(test)]
+mod swarm_tests;
+
+#[cfg(test)]
+mod spared_tests;
+
+#[cfg(test)]
+mod seal_tests;
 
 #[cfg(test)]
 mod post_reachability_tests;

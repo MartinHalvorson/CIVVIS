@@ -70,3 +70,47 @@ fn an_embarked_unit_can_stay_in_friendly_water_to_recover() {
     assert_eq!(g.unit_heal_rate(uid), 20);
     assert!(ai.battle_planner_claims(uid));
 }
+
+/// A full-health explorer standing in summed danger keeps exploring; the
+/// rotation still takes it once it is wounded.
+#[test]
+fn a_healthy_explorer_is_not_rotated_out_of_summed_danger() {
+    let board = |hp: i32| {
+        let mut g = Game::new_full(2, 24, 16, 71_031, 120, 0, false);
+        for uid in g.units.keys().copied().collect::<Vec<_>>() {
+            g.remove_unit(uid);
+        }
+        g.current = 0;
+        g.at_war.insert((0, 1));
+        let at = (8, 8);
+        for pos in g.wdisk(at, 4) {
+            if let Some(tile) = g.map.tiles.get_mut(&pos) {
+                tile.terrain = crate::name!("plains");
+                tile.feature = None;
+                tile.hills = false;
+            }
+        }
+        let scout = g.spawn_test_unit("skirmisher", 0, at);
+        g.units.get_mut(&scout).unwrap().hp = hp;
+        for pos in g.wring(at, 2).into_iter().take(4) {
+            g.spawn_test_unit("archer", 1, pos);
+        }
+        (g, scout, at)
+    };
+    let rotate = |explore_commit: bool, hp: i32| {
+        let (mut g, scout, at) = board(hp);
+        let mut ai = AdvancedAi::new();
+        ai.enable_battle_planner_2();
+        ai.base.explore_commit = explore_commit;
+        let mut field = DangerField::new(&g, 0);
+        assert!(
+            field.rotation_danger(at, scout) > f64::from(hp - ROTATE_DANGER_MARGIN),
+            "the fixture must stand the explorer in summed danger"
+        );
+        ai.rotate_wounded(&mut g, 0, &mut field, &BTreeSet::new(), &BTreeSet::new());
+        g.units[&scout].pos != at
+    };
+    assert!(rotate(false, 100), "without an exploration commitment it rotates");
+    assert!(!rotate(true, 100), "a healthy explorer keeps its route");
+    assert!(rotate(true, ROTATE_HP - 10), "a wounded explorer still comes out");
+}

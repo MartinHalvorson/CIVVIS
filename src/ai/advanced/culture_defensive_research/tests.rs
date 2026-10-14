@@ -234,6 +234,52 @@ fn exposed_domination_queue_defends_without_being_the_named_threat() {
 }
 
 #[test]
+fn walled_original_capital_recruits_before_a_stronger_visible_attacker_arrives() {
+    let (mut g, ai, city, old_attacker) = exposed_queue();
+    g.remove_unit(old_attacker);
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+    }
+    let center = g.cities[&city].pos;
+    let approach = *g
+        .map
+        .tiles
+        .keys()
+        .find(|pos| g.wdist(center, **pos) == 5)
+        .unwrap();
+    let attacker = g.spawn_test_unit("knight", 1, approach);
+    let observer = g.nbrs(approach)[0];
+    g.spawn_test_unit("scout", 0, observer);
+    g.cities
+        .get_mut(&city)
+        .unwrap()
+        .buildings
+        .push(crate::name!("walls"));
+    let full_walls = g.city_max_wall_hp(&g.cities[&city]);
+    g.cities.get_mut(&city).unwrap().wall_hp = full_walls;
+    assert!(g.cities[&city].is_capital);
+    assert_eq!(g.cities[&city].wall_hp, full_walls);
+    let visible = g.player_vision_frame(0);
+    assert!(g.unit_visible_to(attacker, 0));
+    assert!(g
+        .route_distance(attacker, center, 1)
+        .is_some_and(|steps| steps <= 6));
+    assert!(AdvancedAi::strong_attacker_approaches_city(
+        &g, 0, city, &visible, 6
+    ));
+    assert!(!AdvancedAi::strong_attacker_approaches_city(
+        &g, 0, city, &visible, 4
+    ));
+    let claim = ai.redirect_unsafe_city_queue_for_defense(&mut g, 0, None);
+    assert_eq!(claim.as_ref().map(|(cid, _)| *cid), Some(city));
+    assert!(matches!(
+        g.cities[&city].queue.first(),
+        Some(crate::game::Item::Unit { .. })
+    ));
+}
+
+#[test]
 fn exposed_queue_requires_a_strong_enemy_in_an_active_major_war() {
     let (mut g, ai, city, attacker) = exposed_queue();
     g.at_war.clear();
@@ -256,7 +302,7 @@ fn exposed_queue_requires_a_strong_enemy_in_an_active_major_war() {
 }
 
 #[test]
-fn exposed_queue_does_not_retask_a_walled_or_non_domination_city() {
+fn exposed_queue_does_not_retask_a_walled_noncapital_or_non_domination_city() {
     let (mut g, mut ai, city, _) = exposed_queue();
     ai.victory_target = Some(VictoryTarget::Science);
     assert!(ai
@@ -268,6 +314,7 @@ fn exposed_queue_does_not_retask_a_walled_or_non_domination_city() {
         .unwrap()
         .buildings
         .push(crate::name!("walls"));
+    g.cities.get_mut(&city).unwrap().is_capital = false;
     assert!(ai
         .redirect_unsafe_city_queue_for_defense(&mut g, 0, None)
         .is_none());

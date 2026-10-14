@@ -411,3 +411,35 @@ fn a_refusal_that_never_recorded_moves_keeps_the_old_behaviour() {
     let refused = refused_sites_of_kind_through(&p, "improve_refused", None);
     assert_eq!(refused.len(), 1, "no reading is not a transient reading");
 }
+
+/// ★★★ A REFUSED ALCÁZAR IS NOT A REFUSED MINE. Live King 20261001T042554Z:
+/// the host refused an Alcázar on the Farm at (31,29) on turn 112, which
+/// blocked the tile for every improvement, and the Aluminum Radio later
+/// revealed under that Farm could never be mined. A refusal that names its
+/// improvement blocks only that improvement there.
+#[test]
+fn a_named_refusal_blocks_that_improvement_not_the_tile() {
+    let p = events(
+        "named",
+        &[
+            r#"{"kind":"improve_refused","turn":112,"x":31,"y":29,"moves":2,"want":"IMPROVEMENT_ALCAZAR"}"#,
+            r#"{"kind":"improve_refused","turn":113,"x":5,"y":8,"moves":2}"#,
+            r#"{"kind":"improve_refused","turn":114,"x":6,"y":8,"moves":2,"want":"IMPROVEMENT_BEACH_RESORT"}"#,
+        ],
+    );
+    let (tiles, named) = refused_improvements_through(&p, None);
+    assert_eq!(
+        tiles,
+        std::collections::BTreeSet::from([crate::hex::offset_to_axial(5, 8)]),
+        "only the unnamed refusal blocks its tile"
+    );
+    assert_eq!(
+        named.get(&crate::hex::offset_to_axial(31, 29)),
+        Some(&std::collections::BTreeSet::from([crate::name!("alcazar")]))
+    );
+    assert_eq!(
+        named.get(&crate::hex::offset_to_axial(6, 8)),
+        Some(&std::collections::BTreeSet::from([crate::name!("seaside_resort")])),
+        "the host's type id maps to the CIVVIS name"
+    );
+}

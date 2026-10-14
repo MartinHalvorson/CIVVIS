@@ -44,8 +44,10 @@ from civ6_control import (capture_budget, gamelock, launcher, macos_capture,
                           macos_input, macos_ocr, macos_window,
                           operator_retire, popup_clear, vision,
                           watch)  # noqa: E402
+from civ6_control import live_pause  # noqa: E402
 from civ6_control.orders import (orders_db_path, request_retire,  # noqa: E402
-                                 reset_orders_db)
+                                 reset_orders_db, set_operator_pace,
+                                 set_operator_pause)
 # The mod's sentinel for a readback it could not resolve, imported rather than
 # repeated: this harness and the ledger have to agree on what "unreadable"
 # looks like, and a second copy of that fact is a second place for it to rot.
@@ -352,6 +354,12 @@ def partial_summary(tag: str, config: dict, state: dict) -> dict:
     }
 
 
+def is_terminal_result(event: dict) -> bool:
+    """A rival elimination is a game event, not this seat's result."""
+    return (event.get("kind") == "victory"
+            or (event.get("kind") == "defeat" and bool(event.get("ours"))))
+
+
 def record_development(state: dict, event: dict) -> None:
     """Total districts and buildings over our cities, from a `state` frame.
 
@@ -421,6 +429,112 @@ def below_leader_score_reading(
         "score_ratio_ceiling": score_ratio_ceiling,
         "min_turn": LEADER_SCORE_MIN_TURN,
     }
+
+# ★ OPERATOR 2026-10-08: "if not top 2 by prod by turn 150 can restart game".
+#
+# Unlike the retired score rule above, this one may end a live game, and only
+# when the host's policy file asks for it: CIVVIS_RESTART_BELOW_PRODUCTION_RANK
+# in ~/.civvis-verification-policy (0 or absent = off), read once at game
+# start so the long-lived supervisor's environment does not matter. The input
+# is the mod's `major_production` map on the agent's `turn` record -- every
+# alive major's summed city Production a turn, met or not, keyed by player id
+# -- and `local_player`. The reading is taken ONCE, at the first readable turn
+# record at or after turn 150: rank = 1 + the majors producing strictly more
+# than we do (a tie does not push us down), and a rank past the limit retires
+# the game so the supervisor starts the next one. A record without the map is
+# not evidence: it is noted once and the next turn is read instead.
+PRODUCTION_RANK_TURN = 150
+PRODUCTION_RANK_POLICY_KEY = "CIVVIS_RESTART_BELOW_PRODUCTION_RANK"
+
+
+def verification_policy_path() -> Path:
+    """The host's verification policy, as the supervisor and launcher read it."""
+    override = os.environ.get("CIVVIS_VERIFICATION_POLICY")
+    return Path(override) if override else Path.home() / ".civvis-verification-policy"
+
+
+def read_policy_value(key: str, path: Path | None = None) -> str | None:
+    """`key`'s value in the plain KEY=VALUE policy file, or None.
+
+    Parsed as data, exactly like `read_difficulty_policy` in
+    tools/ops/civvis-game-supervisor.sh: everything after `#` is a comment,
+    whitespace is dropped, the last assignment wins, and the file is never
+    sourced. A missing or unreadable file reads as unset.
+    """
+    path = verification_policy_path() if path is None else path
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    value = None
+    for raw in text.splitlines():
+        line = "".join(raw.split("#", 1)[0].split())
+        if "=" not in line:
+            continue
+        name, _, found = line.partition("=")
+        if name == key:
+            value = found
+    return value
+
+
+def production_rank_policy(path: Path | None = None) -> int:
+    """The policy's production-rank limit; 0 (off) when unset or invalid."""
+    value = read_policy_value(PRODUCTION_RANK_POLICY_KEY, path)
+    if value is None or value == "":
+        return 0
+    try:
+        limit = int(value)
+    except ValueError:
+        print(f"[policy] ignoring {PRODUCTION_RANK_POLICY_KEY}={value!r}: "
+              "not a whole number", flush=True)
+        return 0
+    return limit if limit > 0 else 0
+
+
+def production_rank_reading(event: dict, max_rank: int) -> dict | None:
+    """The turn-150 production standing, or None when this record is no reading.
+
+    Returns a dict with `rule: "production_rank"` for every READABLE turn
+    record at or after :data:`PRODUCTION_RANK_TURN` (`fires` says whether the
+    rank is past `max_rank`); `{"unreadable": True, ...}` for a qualifying
+    record without the data; None for anything else, including a limit of 0.
+    """
+    if (not isinstance(max_rank, int) or isinstance(max_rank, bool)
+            or max_rank <= 0):
+        return None
+    if event.get("kind") != "turn" or event.get("ctx") != "agent":
+        return None
+    turn = event.get("turn")
+    if (not isinstance(turn, int) or isinstance(turn, bool)
+            or turn < PRODUCTION_RANK_TURN):
+        return None
+    production = event.get("major_production")
+    us = event.get("local_player")
+    readings: dict[str, float | int] = {}
+    if isinstance(production, dict):
+        for player, value in production.items():
+            metric = _nonnegative_metric(value)
+            if metric is not None:
+                readings[str(player)] = metric
+    ours = None
+    if isinstance(us, int) and not isinstance(us, bool):
+        ours = readings.get(str(us))
+    if ours is None:
+        return {"rule": "production_rank", "turn": turn, "unreadable": True}
+    others = {player: value for player, value in readings.items()
+              if player != str(us)}
+    rank = 1 + sum(1 for value in others.values() if value > ours)
+    return {
+        "rule": "production_rank",
+        "turn": turn,
+        "rank": rank,
+        "max_rank": max_rank,
+        "ours": ours,
+        "others": dict(sorted(others.items())),
+        "majors": len(others) + 1,
+        "fires": rank > max_rank,
+    }
+
 
 DEFAULT_CIVVIS_STRATEGY = ""
 
@@ -774,8 +888,9 @@ def build_config(args: argparse.Namespace) -> dict:
     # core wedge immediately after an unanswered MAKE_DEAL session closes.
     # Keep sessions as an explicit opt-in while the direct path remains the
     # safe default for both manual and CIVVIS-driven games.  `None` is the
-    # parser's intentional "choose the safe default" value, while True keeps
-    # an isolated interactive-session experiment available.
+    # parser's intentional "choose the safe default" value. True enables all
+    # sessions; "peace" reserves them for peace proposals so unanswered sales
+    # cannot use up the run's session budget before a capital handoff.
     deal_sessions = getattr(args, "deal_sessions", None)
     if deal_sessions is None:
         deal_sessions = False
@@ -1047,7 +1162,8 @@ def build_config(args: argparse.Namespace) -> dict:
         # A diplomacy screen is a blocker. Keep its in-game timer explicit and
         # bounded so old launchers cannot silently restore a multi-second close.
         "DialogueSeconds": min(2.0, max(0.0, float(dialogue_seconds))),
-        "DealSessions": bool(deal_sessions),
+        "DealSessions": (deal_sessions if deal_sessions in ("peace", "trade")
+                         else bool(deal_sessions)),
         # ⚠ The victory/defeat screen is the only one that states the OUTCOME, and
         # it had no clock of its own — so it took the general announcement one,
         # which the climb sets to 0.05s so popups never sit on the map the operator
@@ -1097,7 +1213,10 @@ BOOTSTRAP_ATTEMPTS = 16
 # pass, ~1.5 s; looking every three seconds proceeds the moment the menu is up
 # and spends the same budget when it is not.
 SCREEN_POLL_BUDGET_S = 20.0
-SCREEN_POLL_S = 3.0
+# 1.5 s, not 3: a New game waits on this poll for the logos to give way to the
+# menu, and every look costs ~1.5 s on top of it (operator 2026-10-13: a new
+# game "should be fast").
+SCREEN_POLL_S = 1.5
 
 
 def _poll_screen(read, budget_s: float = SCREEN_POLL_BUDGET_S,
@@ -1363,8 +1482,79 @@ def maintain_game_focus(interval: float, last_focus: float, *,
     return now
 
 
+def ensure_game_frontmost(timeout_s: float = 1.5) -> bool:
+    """Raise Civilization VI and see it in front before a click aimed at it.
+
+    ★ A click on a background window only activates it. Live 2026-10-13
+    (civvis-20261013T220550Z, a New game while the operator typed in a
+    Terminal): setup focused the game once per attempt, then spent 5-20 s
+    reading the screen, and by the click Terminal was in front again; five
+    attempts' Single Player and Create Game clicks did nothing, 4 m 20 s to
+    turn 1 against a ~50 s norm. So every click checks first, here.
+    """
+    def in_front() -> bool:
+        try:
+            return popup_clear.frontmost().startswith("Civ6")
+        except (OSError, subprocess.SubprocessError):
+            return False
+    if in_front():
+        return True
+    focus_game()
+    deadline = time.monotonic() + timeout_s
+    while time.monotonic() < deadline:
+        time.sleep(0.1)
+        if in_front():
+            # ★ RAISED IS NOT YET CLICKABLE: Aspyr's window drops the first
+            # click after it is brought forward. Live 22:36Z 10-13
+            # (civvis-20261013T223558Z, the operator typing again): every
+            # setup click needed a raise, and Create Game clicked straight
+            # after it left the main menu up — four attempts, 179 s. That
+            # click goes to the title bar, which is inert on every screen.
+            bounds = game_window()
+            if bounds is not None:
+                x, y, w, _ = bounds
+                macos_window.click_at(int(x + w / 2), int(y + 10))
+                time.sleep(0.3)
+            return True
+    print("[focus] Civilization VI is not in front; this click may only "
+          "activate it", flush=True)
+    return False
+
+
 def click_at(px: int, py: int) -> None:
+    ensure_game_frontmost()
     return macos_window.click_at(px, py)
+
+
+def place_window_as_it_appears(game_process, stop: threading.Event,
+                               timeout_s: float = 30.0,
+                               poll_s: float = 0.15) -> threading.Thread:
+    """Put the game in its corner the moment its window exists.
+
+    Operator 2026-10-13: "have the new game load immediately in the upper
+    left too, rather than full screen for a bit". Aspyr opens a window the
+    size of the render — the whole screen — about 2.5 s after launch, and the
+    one placement used to come at `menu_reached`, 4-6 s in, so a full-screen
+    "Loading, please wait..." covered the CIVVIS page for seconds. This
+    watches from the launch and places the window as soon as it is there,
+    and again if the game resizes it, until `stop` is set at the main menu
+    (whose own placement stays the final word). A game that exits ends it.
+    """
+    def watch() -> None:
+        deadline = time.monotonic() + timeout_s
+        placed = 0
+        while not stop.is_set() and time.monotonic() < deadline:
+            if game_process is not None and game_process.poll() is not None:
+                return
+            if game_window() is not None:
+                place_game(GAME_SIDE, GAME_FRACTION, GAME_VFRACTION)
+                if placed == 0:
+                    setup_mark("window_placed")
+                placed += 1
+            stop.wait(poll_s)
+    thread = threading.Thread(target=watch, name="place-window", daemon=True)
+    thread.start()
+    return thread
 
 
 def park_setup_pointer(bounds: tuple[int, int, int, int]) -> None:
@@ -2568,6 +2758,86 @@ def _map_picker_open(path: Path, bounds: tuple[int, int, int, int]) -> bool:
             or bool(_map_picker_labels(path, bounds, "All Maps")))
 
 
+# The Create Game panel's GAME MODES row: eight icons, each with a checkbox at
+# its lower right, laid out relative to the "Game Modes" label. Offsets are in
+# capture pixels for a game window 1728 capture pixels wide and scale with the
+# window. A ticked box's interior is the gold tick (mean luminance ~79 on the
+# 2026-10-03 capture); an empty one is the panel's dark blue (~25).
+#
+# ★★★★★ NOTHING DROVE THIS ROW, AND THE MODES PERSIST. The mod's setter clears
+# every mode only when the FrontEnd setup context hosts the game, and on this
+# install it never does -- the Create Game panel launches whatever it carries.
+# Live run civvis-20261003T035351Z started with Heroes & Legends ticked: Himiko
+# on the map, `"modes": ["GAMEMODE_HEROES"]` in the seat event.
+GAME_MODE_BOX_OFFSETS = [(-108, 55), (-49, 55), (10, 55), (69, 55), (128, 55),
+                         (-108, 114), (-49, 114), (10, 114)]
+GAME_MODE_REF_WINDOW_PX = 1728.0
+GAME_MODE_TICKED_LUMA = 50.0
+
+
+def _game_mode_boxes(path: Path, bounds: tuple[int, int, int, int]
+                     ) -> list[tuple[int, int, bool]] | None:
+    """Every Game Modes checkbox as (screen x, screen y, ticked), or None
+    when the row's label cannot be read."""
+    screen = desktop_size()
+    if screen is None:
+        return None
+    label = _observed_label_point(path, "Game Modes", bounds)
+    if label is None:
+        return None
+    try:
+        from PIL import Image
+        image = Image.open(path).convert("RGB")
+    except Exception:
+        return None
+    scale = image.size[0] / screen[0]
+    k = (bounds[2] * scale) / GAME_MODE_REF_WINDOW_PX
+    radius = max(1, int(round(3 * k)))
+    boxes = []
+    for dx, dy in GAME_MODE_BOX_OFFSETS:
+        cx = label[0] * scale + dx * k
+        cy = label[1] * scale + dy * k
+        values = [
+            sum(image.getpixel((x, y))) / 3.0
+            for x in range(int(round(cx - radius)), int(round(cx + radius)) + 1)
+            for y in range(int(round(cy - radius)), int(round(cy + radius)) + 1)
+            if 0 <= x < image.size[0] and 0 <= y < image.size[1]
+        ]
+        if not values:
+            return None
+        ticked = sum(values) / len(values) > GAME_MODE_TICKED_LUMA
+        boxes.append((int(round(cx / scale)), int(round(cy / scale)), ticked))
+    return boxes
+
+
+def clear_game_modes(bounds: tuple[int, int, int, int], run_dir: Path,
+                     requested: list[str]) -> bool:
+    """Untick every Game Modes box on the Create Game panel; True once all
+    read empty. A run that asks for a mode is left to its own setter."""
+    if requested:
+        return True
+    for attempt in range(4):
+        shot = run_dir / f"game-modes-{attempt}.png"
+        if not screenshot(shot) and not shot.is_file():
+            continue
+        boxes = _game_mode_boxes(shot, bounds)
+        if boxes is None:
+            print(f"[setup] game modes: label not read (capture {attempt})", flush=True)
+            continue
+        ticked = [i for i, (_, _, on) in enumerate(boxes) if on]
+        if not ticked:
+            print("[setup] game modes: all off, verified", flush=True)
+            return True
+        print(f"[setup] game modes: unticking box(es) {ticked}", flush=True)
+        focus_game(GAME_SIDE, GAME_FRACTION)
+        for index in ticked:
+            click_at(boxes[index][0], boxes[index][1])
+            time.sleep(0.6)
+        time.sleep(0.8)
+    print("[setup] game modes could NOT be verified off", flush=True)
+    return False
+
+
 def select_requested_map(bounds: tuple[int, int, int, int], map_script: str,
                          run_dir: Path, panel: Path | None = None,
                          panel_out: dict | None = None) -> bool:
@@ -2918,6 +3188,20 @@ def _main_menu_visible(path: Path) -> bool:
     )
 
 
+def stall_screen_is_main_menu(shot: Path) -> bool:
+    """Whether a stall's photograph shows Firaxis's main menu.
+
+    A stalled run whose screen is the main menu has lost its game session, so
+    no dialogue rescue can bring the turn back. Live King
+    civvis-20261003T161112Z loaded turn 1 at 16:13:47Z, then sat on the main
+    menu while the agent awaited it for ten minutes, until the climb's frozen
+    clock would have killed it at fifteen. Ending the attempt on the first
+    photograph hands it straight to the climb, which restarts a game frozen
+    before turn 20 and reloads the newest autosave of a later one.
+    """
+    return _main_menu_visible(shot)
+
+
 #: The main menu's own rows. The enlarged menu crop reads them on every real
 #: menu capture, with or without the promo banner beside them.
 MAIN_MENU_LABELS = ("single player", "multiplayer", "game options",
@@ -3243,6 +3527,9 @@ def configure_and_start(bounds: tuple[int, int, int, int], args: argparse.Namesp
                                    panel_out=panel, hint_dir=run_dir.parent):
         print("[setup] requested leader was NOT selected; refusing to start", flush=True)
         return False
+    if not clear_game_modes(bounds, run_dir, list(getattr(args, "game_mode", []) or [])):
+        print("[setup] a game mode is still on; refusing to start", flush=True)
+        return False
     setup_shot = run_dir / "setup.png"
     captured = screenshot(setup_shot)
     start_point = None
@@ -3435,8 +3722,20 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
             # Otherwise the poll above has already spent this attempt's budget
             # looking; go straight to the next attempt's focus and click.
             continue
-        click_at(*menu_point)
-        time.sleep(2.5)
+        # ★ A RETRY OFTEN FINDS THE SUBMENU STILL OPEN. Backing out of a
+        # failed setup leaves Single Player's submenu up, which shifts the
+        # column ~50 pt left, so the label read off that frame is not where it
+        # rests — and clicking it closes the submenu: "no submenu" and 25 s
+        # lost, twice in each of civvis-20261013T220550Z and ...223558Z. A
+        # submenu already showing Create Game is what the click was for.
+        already_open = (attempt > 1 and
+                        _observed_label_point(menushot, "Create Game", bounds) is not None)
+        if already_open:
+            print(f"attempt {attempt}: the Single Player submenu is already open",
+                  file=sys.stderr)
+        else:
+            click_at(*menu_point)
+            time.sleep(2.5)
         # Read the submenu rather than assume its shape. Which entries it has
         # depends on whether there is a save and a game to resume, so where
         # "Create Game" lands moves between runs. The crop follows the read
@@ -3511,9 +3810,12 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
         # opens the post-host modal. Keep proving the exact page for the whole
         # startup window rather than allowing a transient false negative to
         # strand the run behind Begin Game.
-        intro_retries = max(4, min(60, int(verify_s / 2)))
+        # Probed every second rather than every two, over the same window: the
+        # board's arrival ends the probe, and a slower poll was seconds of
+        # every new game spent after the game was already there.
+        intro_retries = max(8, min(120, int(verify_s)))
         advance_leader_intro(bounds, args.leader, run_dir, attempt,
-                             retries=intro_retries, poll_s=2.0,
+                             retries=intro_retries, poll_s=1.0,
                              board_ready=board_is_ready, relay_s=0.05,
                              defer_s=float(getattr(args, "leader_intro_defer", 0.0) or 0.0))
         if board_seen["value"]:
@@ -3794,7 +4096,7 @@ def dismiss_visually_confirmed_popup(*, diagnostic_path: Path | None = None) -> 
         # the modal for the next verified poll instead of letting one unreadable
         # frame end the entire game controller.
         return False, "popup capture unavailable"
-    if surface not in ("leader", "notice"):
+    if surface not in ("leader", "notice", "deal"):
         return False, f"no safe visible dialogue ({surface})"
     target = popup_clear.click_target(surface, targets, window.size[0])
     if target is None:
@@ -3881,12 +4183,45 @@ def apply_verification_options() -> dict[str, dict[str, tuple]]:
     return applied
 
 
+def _uninstall_owned_mod(tag: str, preinstalled_mod: bool = False) -> None:
+    """Remove this run's control mod only while its tag still owns the install.
+
+    A waiting successor can acquire the game lock as soon as ``play`` returns.
+    The process-wide atexit handler runs later, so it must never remove a
+    successor's installation.
+    """
+    if preinstalled_mod:
+        print("leaving the preinstalled control mod for its authorized owner")
+        return
+    try:
+        installed = modinstall.installed_config()
+        if installed is None or installed.get("RunTag") != tag:
+            return
+        if modinstall.uninstall():
+            print("uninstalled the control mod; Civ6.app is vanilla again")
+    except Exception as error:  # noqa: BLE001 - an exit path must not raise
+        print(f"control mod uninstall failed (remove by hand): {error}")
+
+
 def play(args: argparse.Namespace) -> int:
     legacy_score_ratio = getattr(args, "restart_below_leader_ratio", 0.0)
     if legacy_score_ratio not in (0, 0.0):
         print("[policy] ignoring --restart-below-leader-ratio="
               f"{legacy_score_ratio}: verification games always play to an "
               "in-game outcome", flush=True)
+    # Operator 2026-10-08: see `production_rank_reading`. The flag wins over
+    # the host policy file; neither set is off.
+    production_rank_limit = getattr(args, "restart_below_production_rank", None)
+    if production_rank_limit is None:
+        production_rank_limit = production_rank_policy()
+    # `_play` reads the resolved limit from `args`: its turn-record predicate
+    # is a closure there, not in this frame (a NameError at the first turn
+    # record killed live G362, civvis-20261008T073740Z, at turn 8).
+    args.restart_below_production_rank = production_rank_limit
+    if production_rank_limit > 0:
+        print(f"[policy] a game not top {production_rank_limit} by Production at "
+              f"turn {PRODUCTION_RANK_TURN} is retired (operator 2026-10-08)",
+              flush=True)
     # A saved game can be alive and waiting for its SQLite decision worker even
     # when the interactive capture path is temporarily unavailable (for example
     # while the operator is recording).  Attaching that worker must never run
@@ -3939,9 +4274,19 @@ def play(args: argparse.Namespace) -> int:
     finally:
         # The installation is exclusively ours while this lock is held. An
         # interrupt or unexpected exception must not leave the game advancing
-        # after its event stream and mirror have stopped.
-        launcher.stop()
-        gamelock.release()
+        # after its event stream and mirror have stopped. Uninstall before
+        # releasing the lock, or our atexit handler can race the next run's
+        # installation.
+        try:
+            launcher.stop()
+        finally:
+            try:
+                _uninstall_owned_mod(
+                    args.tag,
+                    os.environ.get("CIVVIS_PREINSTALLED_CONTROL_MOD") == "1",
+                )
+            finally:
+                gamelock.release()
 
 
 def _attach_running_game(args: argparse.Namespace) -> int:
@@ -4049,10 +4394,7 @@ def _attach_running_game(args: argparse.Namespace) -> int:
             state["score"] = event.get("score", state["score"])
             if event.get("turn") == OPENING_TEMPO_TURN:
                 state["cities_at_60"] = event.get("cities")
-        if kind == "victory":
-            state["outcome"] = event
-            terminal = True
-        elif kind == "defeat" and bool(event.get("ours")):
+        if is_terminal_result(event):
             state["outcome"] = event
             terminal = True
         elif kind in ("retired",):
@@ -4532,6 +4874,7 @@ def write_attached_summary(args: argparse.Namespace, config: dict, state: dict,
 
 
 def _play(args: argparse.Namespace) -> int:
+    production_rank_limit = getattr(args, "restart_below_production_rank", None) or 0
     run_dir = RUN_ROOT / args.tag
     run_dir.mkdir(parents=True, exist_ok=True)
     # Bound the corpus before adding to it. See `prune_old_run_screenshots`.
@@ -4635,20 +4978,9 @@ def _play(args: argparse.Namespace) -> int:
     # player's Civ6.app. Left behind, it loads into MANUAL games: measured
     # 2026-08-31, a hand-started game opened on turn 2 under the leftover
     # agent, and restarting under the broken bundle seal crashed the game.
-    # Registered beside `stop_brain`, so the SIGTERM SystemExit below runs it
-    # on the supervisor's ordinary teardown too; the next verification run
-    # reinstalls at startup, so removal costs nothing but the file writes.
-    def _uninstall_mod():
-        if preinstalled_mod:
-            print("leaving the preinstalled control mod for its authorized owner")
-            return
-        try:
-            if modinstall.uninstall():
-                print("uninstalled the control mod; Civ6.app is vanilla again")
-        except Exception as error:  # noqa: BLE001 - an exit path must not raise
-            print(f"control mod uninstall failed (remove by hand): {error}")
-
-    atexit.register(_uninstall_mod)
+    # Kept as a fallback for direct _play callers or an early exception, but
+    # ownership is checked so it cannot remove a successor's installation.
+    atexit.register(_uninstall_owned_mod, config["RunTag"], preinstalled_mod)
 
     # ⚠ atexit does NOT run on SIGTERM. CPython's default SIGTERM disposition
     # terminates the process outright, so `stop_brain` above never fires and the
@@ -4673,10 +5005,18 @@ def _play(args: argparse.Namespace) -> int:
     if not args.keep_game_options:
         apply_verification_options()
     launcher.clear_run_logs()
+    # Measured before the launch, so placing the window as it appears pays no
+    # AppKit compile (~1.5 s) while it shows full screen.
+    desktop_size()
     setup_clock_start()
     game_process = launcher.launch(stdout=run_dir / "stdout.log")
     setup_mark("launched")
-    if not launcher.wait_for_launched_main_menu(game_process, args.startup_timeout):
+    placing = threading.Event()
+    placer = place_window_as_it_appears(game_process, placing)
+    reached_menu = launcher.wait_for_launched_main_menu(game_process, args.startup_timeout)
+    placing.set()
+    placer.join(timeout=HOST_PROBE_TIMEOUT_S + 1.0)
+    if not reached_menu:
         stop_brain()
         print("the game did not reach the main menu", file=sys.stderr)
         return 3
@@ -4780,6 +5120,14 @@ def _play(args: argparse.Namespace) -> int:
         # an ordinary card. Defer optional requests before capture/budget
         # work while the shared desktop is in use. The independent,
         # confirmed-stall recovery below can still recover a blocked game.
+        # ★ The operator's Pause: a held game's screens are the operator's —
+        # they are looking around it — so nothing clicks or presses Escape.
+        # The mod's closer stands down too; this catches a request queued
+        # just before the hold.
+        if state.get("operator_held"):
+            print(f"[{kind}] the operator holds the game; leaving "
+                  f"{event.get('screen')} to them", flush=True)
+            return
         if shared_desktop_in_use():
             print(f"[{kind}] shared desktop in use; deferring optional "
                   f"recovery for {event.get('screen')}")
@@ -4903,6 +5251,22 @@ def _play(args: argparse.Namespace) -> int:
         events.write(json.dumps(event, sort_keys=True) + "\n")
         events.flush()
         kind = event.get("kind")
+        # The mod's own word that the game stopped (or carries on), relayed to
+        # the page beside it; see `civ6_control.live_pause`.
+        if kind in ("operator_paused", "operator_pause_held"):
+            state["operator_held"] = True
+            try:
+                live_pause.write_state(args.tag, True, event.get("turn"))
+            except OSError as error:
+                print(f"[pause] could not report the hold: {error}", flush=True)
+            if kind == "operator_paused":
+                print(f"[pause] the game is held at turn {event.get('turn')}",
+                      flush=True)
+        elif kind == "operator_resumed":
+            state["operator_held"] = False
+            live_pause.release_state(args.tag)
+            print(f"[pause] the game resumed at turn {event.get('turn')} after "
+                  f"{event.get('held_s')}s", flush=True)
         if kind == "host":
             state["hosted"] = bool(event.get("started"))
             print(f"[setup] host started={event.get('started')}")
@@ -5028,11 +5392,73 @@ def _play(args: argparse.Namespace) -> int:
                   f"{event.get('why') or 'unknown reason'}", file=sys.stderr, flush=True)
         elif kind in ("victory", "defeat", "error"):
             print(f"[{kind}] {json.dumps(event, sort_keys=True)}")
-            if kind in ("victory", "defeat"):
+            if is_terminal_result(event):
                 state["outcome"] = event
 
+    def abandon_with_retire(verdict: dict) -> bool:
+        """Retire the game the verdict has called, and say whether the mod did.
+
+        Shared by every rule that may end a live game (today only the
+        operator's turn-150 production rank; the legacy score branch below is
+        gated off in every lane).
+        """
+        state["abandoned"] = verdict
+        # ⚠⚠ RETIRE RATHER THAN JUST STOP, so the loss is a RESULT.
+        #
+        # Stopping alone leaves the game unfinished: Civilization VI files
+        # no defeat, `tools/civ6_ladder.py` records nothing, and an attempt
+        # we abandoned on the operator's own rule is indistinguishable from
+        # one that crashed. The mod answers this row with the shipped
+        # `UI.RequestAction(ActionTypes.ACTION_RETIRE)`.
+        #
+        # Best effort by design: a database we cannot write is not a reason
+        # to keep playing a game the rule has already called, so the return
+        # below is unconditional and the game stops either way.
+        asked = request_retire(orders_db_path(run_dir, args.orders_db),
+                               args.tag, verdict["turn"], verdict["rule"])
+        state["retire_requested"] = bool(asked)
+        print(f"[abandon] retire {'requested' if asked else 'could not be written'}"
+              " — the game is filed as a loss rather than left unfinished",
+              flush=True)
+        if asked:
+            # ⚠⚠ THE ROW IS NOT THE RETIRE. Writing it and returning ends
+            # the watch loop, which tears the game down — so the mod never
+            # reaches its next tick, never sees the row, and the game dies
+            # exactly as unfinished as before. Measured in run
+            # civvis-20260829T194002Z: the row was on disk
+            # (`154|99000|retire|below_leader_score|990`) and no `retired`
+            # event ever followed it.
+            #
+            # The mod polls on `GameCoreEventPublishComplete`, which fires
+            # many times per frame while the game is live, so this is a
+            # short wait in practice; the bound is only here so a game that
+            # has ALREADY parked cannot hold the loop open. A parked core
+            # cannot answer a retire at all — nothing is listening — and
+            # the outside watchdog is the only remedy for that case.
+            time.sleep(ABANDON_RETIRE_WAIT_S)
+            # ⚠⚠ AND READ THE ANSWER, or a success is indistinguishable
+            # from a failure.
+            #
+            # The teardown below stops the watcher, so anything the mod
+            # emits during the wait never reaches `events.jsonl`. That made
+            # a WORKING retire look broken for four abandons: run
+            # civvis-20260830T083406Z has no `retired` event in its
+            # events.jsonl, while the raw Automation.log for the same run
+            # holds `"kind":"retired","why":"requested"`, our own
+            # `"kind":"defeat","ours":true`, and the `EndGameMenu` opening.
+            #
+            # So ask the log directly, once, and put the answer in the run
+            # record where the next person will look.
+            state["retire_confirmed"] = _retire_was_answered(args.tag)
+            print("[abandon] retire "
+                  + ("acknowledged by the mod"
+                     if state["retire_confirmed"]
+                     else "NOT acknowledged; the game was still stopped"),
+                  flush=True)
+        return True
+
     def finished(event: dict) -> bool:
-        """Only OUR victory or OUR defeat ends the run.
+        """A game victory or OUR defeat ends the run.
 
         ⚠ This used to stop on any `defeat` event, and a Civilization VI game
         emits one every time ANY player is eliminated — including a rival or a
@@ -5042,14 +5468,12 @@ def _play(args: argparse.Namespace) -> int:
         gets this right — it sets `finished` only when the defeated player is the
         local one — and the harness was throwing that distinction away.
 
-        `victory` carries `won`; `defeat` carries `ours`. Neither is a reason to
-        stop unless it is about us.
+        `victory` names the game's final winner; `defeat` also fires whenever
+        another player is eliminated, so only `ours` makes it terminal.
         """
         kind = event.get("kind")
-        if kind == "victory":
+        if is_terminal_result(event):
             return True
-        if kind == "defeat":
-            return bool(event.get("ours"))
         if kind == "retired" and state.get("operator_retire_event"):
             # This is the exact control-mod acknowledgement for the durable
             # host request, not an inferred game exit or a generic stop.
@@ -5058,6 +5482,28 @@ def _play(args: argparse.Namespace) -> int:
         # but never end a live verification game.  The guarded legacy branch
         # remains so the exact former predicate can be audited against old
         # runs; `leader_score_stop_allowed` is false for every live lane.
+        # ★ OPERATOR 2026-10-08: "if not top 2 by prod by turn 150 can
+        # restart game" -- read once, at the first readable turn record at or
+        # after turn 150. See `production_rank_reading`.
+        if production_rank_limit > 0 and "production_rank" not in state:
+            reading = production_rank_reading(event, production_rank_limit)
+            if reading is not None and reading.get("unreadable"):
+                if not state.get("production_rank_unreadable"):
+                    state["production_rank_unreadable"] = reading["turn"]
+                    print(f"[policy] turn {reading['turn']}: the turn record has no "
+                          "production standing; reading the next one", flush=True)
+            elif reading is not None:
+                state["production_rank"] = reading
+                print(f"[policy] turn {reading['turn']}: our Production "
+                      f"{reading['ours']} ranks {reading['rank']} of "
+                      f"{reading['majors']} majors (others {reading['others']}); "
+                      f"the restart line is top {production_rank_limit}", flush=True)
+                if reading["fires"]:
+                    print(f"[abandon] turn {reading['turn']}: not top "
+                          f"{production_rank_limit} by Production (rank "
+                          f"{reading['rank']} of {reading['majors']}) — retiring so "
+                          "the next game starts (operator 2026-10-08)", flush=True)
+                    return abandon_with_retire(reading)
         verdict = below_leader_score_reading(
             state, event, args.restart_below_leader_ratio
         ) if leader_score_stop_allowed(
@@ -5065,65 +5511,12 @@ def _play(args: argparse.Namespace) -> int:
             victory_target=args.civvis_victory,
         ) else None
         if verdict is not None:
-            state["abandoned"] = verdict
             print(f"[abandon] turn {verdict['turn']}: score {verdict['score']} "
                   f"is {verdict['score_ratio']:.1%} of the leader's "
                   f"{verdict['rival_best']}, under the "
                   f"{verdict['score_ratio_ceiling']:.0%} line "
                   "— stopping the game rather than playing it out", flush=True)
-            # ⚠⚠ RETIRE RATHER THAN JUST STOP, so the loss is a RESULT.
-            #
-            # Stopping alone leaves the game unfinished: Civilization VI files
-            # no defeat, `tools/civ6_ladder.py` records nothing, and an attempt
-            # we abandoned on the operator's own rule is indistinguishable from
-            # one that crashed. The mod answers this row with the shipped
-            # `UI.RequestAction(ActionTypes.ACTION_RETIRE)`.
-            #
-            # Best effort by design: a database we cannot write is not a reason
-            # to keep playing a game the rule has already called, so the return
-            # below is unconditional and the game stops either way.
-            asked = request_retire(orders_db_path(run_dir, args.orders_db),
-                                   args.tag, verdict["turn"], "below_leader_score")
-            state["retire_requested"] = bool(asked)
-            print(f"[abandon] retire {'requested' if asked else 'could not be written'}"
-                  " — the game is filed as a loss rather than left unfinished",
-                  flush=True)
-            if asked:
-                # ⚠⚠ THE ROW IS NOT THE RETIRE. Writing it and returning ends
-                # the watch loop, which tears the game down — so the mod never
-                # reaches its next tick, never sees the row, and the game dies
-                # exactly as unfinished as before. Measured in run
-                # civvis-20260829T194002Z: the row was on disk
-                # (`154|99000|retire|below_leader_score|990`) and no `retired`
-                # event ever followed it.
-                #
-                # The mod polls on `GameCoreEventPublishComplete`, which fires
-                # many times per frame while the game is live, so this is a
-                # short wait in practice; the bound is only here so a game that
-                # has ALREADY parked cannot hold the loop open. A parked core
-                # cannot answer a retire at all — nothing is listening — and
-                # the outside watchdog is the only remedy for that case.
-                time.sleep(ABANDON_RETIRE_WAIT_S)
-                # ⚠⚠ AND READ THE ANSWER, or a success is indistinguishable
-                # from a failure.
-                #
-                # The teardown below stops the watcher, so anything the mod
-                # emits during the wait never reaches `events.jsonl`. That made
-                # a WORKING retire look broken for four abandons: run
-                # civvis-20260830T083406Z has no `retired` event in its
-                # events.jsonl, while the raw Automation.log for the same run
-                # holds `"kind":"retired","why":"requested"`, our own
-                # `"kind":"defeat","ours":true`, and the `EndGameMenu` opening.
-                #
-                # So ask the log directly, once, and put the answer in the run
-                # record where the next person will look.
-                state["retire_confirmed"] = _retire_was_answered(args.tag)
-                print("[abandon] retire "
-                      + ("acknowledged by the mod"
-                         if state["retire_confirmed"]
-                         else "NOT acknowledged; the game was still stopped"),
-                      flush=True)
-            return True
+            return abandon_with_retire(verdict)
         # A game with an optional mode on is not the game CIVVIS is compared
         # against, and 250 turns of it is 250 turns of nothing. Stop at the
         # seat event rather than at the end.
@@ -5149,7 +5542,17 @@ def _play(args: argparse.Namespace) -> int:
               "could not start a game from the main menu", file=sys.stderr)
         return 5
     setup_mark("configured", stop=True)
-    print("in a configured game; the agent holds the seat from here")
+    # ★★★★★ THE SEAT EVENT USUALLY ARRIVES DURING BOOTSTRAP, so `finished` never
+    # sees it and the refusal above never fired: live run
+    # civvis-20261003T035351Z logged "game modes are ['GAMEMODE_HEROES'], asked
+    # for []" and then "in a configured game" and played 75 turns of Heroes &
+    # Legends. A seat that disagrees with the request is refused here too.
+    refused_at_seat = state.get("seat") is not None and not state.get("configured")
+    if refused_at_seat:
+        print("the game does not match what was asked for; refusing to play it",
+              flush=True)
+    else:
+        print("in a configured game; the agent holds the seat from here")
 
     # Unattended upkeep is optional on a shared desktop. Keep processing
     # retirement and game events even when periodic GUI upkeep is disabled.
@@ -5215,6 +5618,66 @@ def _play(args: argparse.Namespace) -> int:
             args.focus_every, last_focus[0], place=True,
         )
 
+    # ★ THE OPERATOR'S PAUSE — the CIVVIS page's Pause button, or
+    # `python3 -m civ6_control.live_pause pause`. The request is one host file;
+    # the mod hears it as a `pause` row in this run's orders channel and stops
+    # playing on the next tick of our turn (or at the next opening, if this
+    # turn's end is already sent), so Civilization VI itself waits on us. Once the mod SAYS it holds (`operator_paused`, relayed by
+    # `record`), `watch.follow` refunds every clock exactly as it does for a
+    # locked screen: a held game is not a wedged one.
+    #
+    # ⚠ Held, not merely requested. `each_poll` — the focus keeper — does not
+    # run while paused, and the press that asked for the pause just put Chrome
+    # in front. Standing the keeper down at the request would leave the rest of
+    # the current turn crawling in a throttled background app; standing it
+    # down while the request is still up after a resume would do the same to
+    # the mod that has to notice the resume. So the keeper is off exactly while
+    # the game is held AND still meant to be.
+    #
+    # `each_poll` also carries the retire request, so it is honoured from here
+    # while held: the mod polls for a retire before it checks the hold, and a
+    # paused game can still be retired.
+    pause_flow = {"synced": None, "attempt_at": 0.0}
+    # ★ THE WATCH PACE rides the same poll: the page's pace on the live mirror
+    # (`live_pause.requested_pace_ms`) becomes a `pace` row the mod holds each
+    # turn's opening to. Absent or Lightning is no row and no wait.
+    pace_flow = {"synced": None, "attempt_at": 0.0}
+
+    def sync_operator_pace(now: float) -> None:
+        pace = live_pause.requested_pace_ms()
+        if pace == pace_flow["synced"] or now - pace_flow["attempt_at"] < 1.0:
+            return
+        pace_flow["attempt_at"] = now
+        if set_operator_pace(orders_db_path(run_dir, args.orders_db), args.tag, pace):
+            if pace or pace_flow["synced"] is not None:
+                print(f"[pace] watch pace {pace} ms per turn" if pace
+                      else "[pace] watch pace lifted; the game plays at full speed",
+                      flush=True)
+            pace_flow["synced"] = pace
+
+    def operator_pause_requested() -> bool:
+        wanted = live_pause.requested()
+        now = time.monotonic()
+        sync_operator_pace(now)
+        if wanted != pause_flow["synced"] and now - pause_flow["attempt_at"] >= 1.0:
+            pause_flow["attempt_at"] = now
+            turn = state.get("turn")
+            if set_operator_pause(orders_db_path(run_dir, args.orders_db), args.tag,
+                                  turn if isinstance(turn, int) and turn >= 0 else None,
+                                  wanted):
+                if wanted or pause_flow["synced"] is not None:
+                    print("[pause] operator " + (
+                        "asked for a pause; the seat holds on its next tick of "
+                        "our turn" if wanted else "lifted the pause"), flush=True)
+                pause_flow["synced"] = wanted
+        return wanted
+
+    def held_or_locked() -> bool:
+        held = operator_pause_requested() and bool(state.get("operator_held"))
+        if held:
+            process_operator_retirement()
+        return console_locked() or held
+
     # ⚠ THE POLL INTERVAL IS THE OUTBOUND LEG OF THE DECISION LOOP. With CIVVIS
     # deciding, the mod holds its turn open until orders arrive, and orders cannot
     # be computed until the board reaches `events.jsonl` through this tail. At the
@@ -5245,13 +5708,14 @@ def _play(args: argparse.Namespace) -> int:
     # the budget ask "can this still get there?" instead of "is the clock up?".
     ceiling_s = (args.timeout_ceiling if args.timeout_ceiling is not None
                  else args.timeout * 1.5)
-    reason = watch.follow(tail, args.timeout, record, stop_when=finished,
-                          each_poll=keep_foreground, poll_s=poll_s,
-                          read_s=read_s,
-                          stall_s=args.stall_seconds,
-                          frozen_s=args.frozen_seconds,
-                          pause_when=console_locked,
-                          finish_turn=args.max_turns, ceiling_s=ceiling_s)
+    reason = "stopped" if refused_at_seat else watch.follow(
+        tail, args.timeout, record, stop_when=finished,
+        each_poll=keep_foreground, poll_s=poll_s,
+        read_s=read_s,
+        stall_s=args.stall_seconds,
+        frozen_s=args.frozen_seconds,
+        pause_when=held_or_locked,
+        finish_turn=args.max_turns, ceiling_s=ceiling_s)
     # ★★★ PHOTOGRAPH A STALL BEFORE KILLING IT. Stalls are now the dominant way runs
     # end — t87, t95, t106, t184 — and the event stream goes silent by definition, so
     # it cannot say what is on screen. One screen (`DiplomacyDealView`) was already
@@ -5291,6 +5755,12 @@ def _play(args: argparse.Namespace) -> int:
         print(f"stalled — photographed to {shot}; rescue attempt {consecutive} "
               f"of {args.stall_rescues} on this screen ({rescues} this run)",
               flush=True)
+        if stall_screen_is_main_menu(shot):
+            print("stalled at Civilization VI's main menu: the game session is "
+                  "gone and no dialogue rescue can recover it; ending the "
+                  "attempt so the climb restarts or reloads it", flush=True)
+            reason = "stalled: main menu"
+            break
         # A queued desktop rescue may be driving the same screen right now.
         desktop_rescues.drain(30.0)
         dismiss_leader_dialogue()
@@ -5299,12 +5769,14 @@ def _play(args: argparse.Namespace) -> int:
                               read_s=read_s,
                               stall_s=args.stall_seconds,
                               frozen_s=args.frozen_seconds,
-                              pause_when=console_locked,
+                              pause_when=held_or_locked,
                               finish_turn=args.max_turns, ceiling_s=ceiling_s)
         if not reason.startswith("stalled"):
             print(f"recovered from stall after {consecutive} attempt(s)", flush=True)
             consecutive = 0
     events.close()
+    # Whatever ended the run, it no longer holds a game.
+    live_pause.release_state(args.tag)
 
     # A terminal run must not leave a live game advancing beside a frozen event
     # stream. That produced a turn-259 Firaxis window next to a turn-191 CIVVIS
@@ -5800,6 +6272,11 @@ def main(argv: list[str] | None = None) -> int:
                     help="deprecated compatibility option; automatic score-based "
                         "retirement is disabled and every verification game plays "
                         "to an in-game outcome (the supplied value is ignored)")
+    ap.add_argument("--restart-below-production-rank", type=int, default=None,
+                    help="retire a game that is not in the top N majors by "
+                         "Production at turn 150 (0 = off); unset reads "
+                         "CIVVIS_RESTART_BELOW_PRODUCTION_RANK from the host's "
+                         "verification policy file (operator 2026-10-08)")
     ap.add_argument("--city-target", type=int, default=6)
     ap.add_argument("--leader", default=ROMAN_LEADER,
                     help="Civ VI leader identifier (default: Trajan)")
@@ -6083,8 +6560,13 @@ def main(argv: list[str] | None = None) -> int:
                     help="maximum in-game diplomacy close delay (capped at 2s)")
     ap.add_argument("--deal-sessions", dest="deal_sessions", action="store_true",
                     default=None,
-                    help="use interactive diplomacy deal sessions; Civvis-driven "
-                         "games enable this by default")
+                    help="use interactive diplomacy sessions for all deals")
+    ap.add_argument("--peace-deal-sessions", dest="deal_sessions",
+                    action="store_const", const="peace",
+                    help="use interactive sessions only for peace proposals")
+    ap.add_argument("--trade-deal-sessions", dest="deal_sessions",
+                    action="store_const", const="trade",
+                    help="use interactive sessions for trades only; peace is sent directly")
     ap.add_argument("--no-deal-sessions", dest="deal_sessions", action="store_false",
                     help="keep direct diplomacy sends even for a Civvis-driven game")
     # ⚠ Deliberately NOT tied to --announcement-seconds. Every other screen is made

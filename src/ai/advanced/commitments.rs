@@ -316,6 +316,49 @@ impl CommitmentLedger {
         self.open.values()
     }
 
+    /// Carry the open decisions through a live board rebuild, which hands
+    /// out new unit and city ids. `unit` and `city` map an old id to its new
+    /// one. A decision whose owner or city has no new id is dropped: the next
+    /// reading reopens whatever the controller still holds.
+    pub(super) fn remap_ids(
+        &mut self,
+        unit: impl Fn(u32) -> Option<u32>,
+        city: impl Fn(u32) -> Option<u32>,
+    ) {
+        for ((kind, owner), mut c) in std::mem::take(&mut self.open) {
+            let owner = match owner {
+                Owner::Unit(uid) => match unit(uid) {
+                    Some(uid) => Owner::Unit(uid),
+                    None => continue,
+                },
+                Owner::Empire => Owner::Empire,
+            };
+            if let Target::City(cid) = c.target {
+                match city(cid) {
+                    Some(cid) => c.target = Target::City(cid),
+                    None => continue,
+                }
+            }
+            c.owner = owner;
+            self.open.insert((kind, owner), c);
+        }
+        self.cities_seen = self
+            .cities_seen
+            .iter()
+            .filter_map(|cid| city(*cid))
+            .collect();
+    }
+
+    /// `stall-rebases-on-new-walls`: the open capture's best reading starts
+    /// again at `reading`, its stall streak cleared.
+    pub(super) fn rebase_capture(&mut self, turn: u32, reading: i32) {
+        if let Some(c) = self.open.get_mut(&(Kind::Capture, Owner::Empire)) {
+            c.best = reading;
+            c.best_turn = turn;
+            c.stalled_streak = 0;
+        }
+    }
+
     pub fn open_for(&self, kind: Kind, owner: Owner) -> Option<&Commitment> {
         self.open.get(&(kind, owner))
     }
@@ -624,7 +667,11 @@ impl CommitmentLedger {
             // Before the declaration the war is the empire's build queue, and
             // whether the phase advances is the only reading; from the
             // declaration on, presence at the objective and its hit points are.
-            let acted = w.declared.then_some(w.present);
+            let acted = if w.waiting.is_some() {
+                None
+            } else {
+                w.declared.then_some(w.present)
+            };
             self.observe_open(key, turn, w.reading, acted, None, "nobody at the objective");
         } else {
             self.open_new(Commitment {
@@ -736,9 +783,138 @@ struct CaptureReading {
     declared: bool,
     /// An own military unit stands within [`CAPTURE_PRESENCE_RADIUS`].
     present: bool,
+    /// `siege-needs-a-breaker`: the train holds outside the city's reach
+    /// while a breaker comes or while it gathers on its staging ring
+    /// (`AdvancedAi::capture_waits_on_the_train`), and why; the turn is
+    /// neither forgotten nor stalled.
+    waiting: Option<&'static str>,
 }
 
 impl AdvancedAi {
+    /// `stall-rebases-on-new-walls`: when the capture objective's wall pool
+    /// grows, its best reading starts again from the walled city, so walls
+    /// knocked down count as the new lows they are. The reading is hit points
+    /// plus walls; a city that builds walls mid-siege jumps above the best
+    /// it showed unwalled, and nothing short of breaching past that old best
+    /// counted as progress. Live King civvis-20261005T021048Z (game 93) had
+    /// Kwadukuza at 184 unwalled by turn 132; it built walls, the army took
+    /// them from 64 to 28 of 100 over turns 136-140, and the siege was stood
+    /// down at 140 as "not pushed to a new low", which opened "the war has
+    /// stalled" peace at 145.
+    pub(super) fn rebase_capture_on_new_walls(&mut self, g: &Game, cid: u32, reading: i32) {
+        if !self.stall_rebases_on_new_walls {
+            return;
+        }
+        let Some(city) = g.cities.get(&cid) else {
+            return;
+        };
+        let walls = g.city_max_wall_hp(city);
+        let raised = self
+            .capture_walls_seen
+            .is_some_and(|(pos, seen)| pos == city.pos && walls > seen);
+        let open = self
+            .commitments
+            .open_for(Kind::Capture, Owner::Empire)
+            .is_some_and(|c| c.target == Target::City(cid));
+        if raised && open {
+            self.commitments.rebase_capture(g.turn, reading);
+            think!(self.journal(), Military, Detail,
+                   "The siege of {} starts its reading again from the new walls", city.name;
+                   "the wall pool grew to {walls}; walls knocked down from here are progress";
+                   city.pos);
+        }
+        self.capture_walls_seen = Some((city.pos, walls));
+    }
+
+    /// `stall-waits-for-the-breach`: when the siege on the capture objective
+    /// steps forward — Stage to Invest, Invest to Reduce, Reduce to Take —
+    /// the open capture's best reading starts again from where the city
+    /// stands, so the walls and hit points the assault knocks down from here
+    /// are new lows. A step back and the next step forward do not restart it
+    /// again inside `STALL_TURNS + CAPTURE_STALL_TURNS` turns, so a train
+    /// that steps in and out of Invest is still stood down if it never
+    /// dents the city. Live King civvis-20261005T181436Z (game 150): the
+    /// best reading for Karkar dated from turn 71, before its walls; the
+    /// guns took the walls from 100 to 87 at turn 89, the city had healed
+    /// to 200, and the siege was stood down at 92 on the turn it stepped
+    /// into Invest reading "damage ready true".
+    pub(super) fn rebase_capture_on_a_forward_step(&mut self, g: &Game, cid: u32, reading: i32) {
+        use super::siege_train::SiegeStage;
+        if !self.stall_waits_for_the_breach {
+            return;
+        }
+        let Some(city) = g.cities.get(&cid) else {
+            return;
+        };
+        let Some(siege) = self
+            .sieges
+            .get(&cid)
+            .filter(|siege| g.turn.saturating_sub(siege.assessed) <= 1)
+        else {
+            return;
+        };
+        let rank = match siege.stage {
+            SiegeStage::Stage => 0,
+            SiegeStage::Invest => 1,
+            SiegeStage::Reduce => 2,
+            SiegeStage::Take => 3,
+            SiegeStage::Hold => 4,
+        };
+        let (seen, last) = match self.stall_stage_seen {
+            Some((pos, seen, last)) if pos == city.pos => (Some(seen), last),
+            _ => (None, None),
+        };
+        let forward = seen.is_some_and(|seen| rank > seen) && (1..=3).contains(&rank);
+        let spaced =
+            last.is_none_or(|at| g.turn.saturating_sub(at) >= STALL_TURNS + CAPTURE_STALL_TURNS);
+        let open = self
+            .commitments
+            .open_for(Kind::Capture, Owner::Empire)
+            .is_some_and(|c| c.target == Target::City(cid));
+        let mut rebased = last;
+        if forward && spaced && open {
+            self.commitments.rebase_capture(g.turn, reading);
+            rebased = Some(g.turn);
+            think!(self.journal(), Military, Detail,
+                   "The siege of {} starts its reading again as it steps forward", city.name;
+                   "the train stepped into {}; walls and hit points knocked down from here are progress",
+                   siege.stage.as_str(); city.pos);
+        }
+        self.stall_stage_seen = Some((city.pos, rank, rebased));
+    }
+
+    /// `stall-waits-for-the-breach`: why the capture of `cid` waits on a
+    /// train still gathering around the breaker it waited for, if it does:
+    /// its record in Stage, assessed this turn or the last, a breaker in the
+    /// train (no `siege_breaker_waits` entry), a land soldier of ours within
+    /// `STAGING_FAR`, and the last turn the capture held for that breaker
+    /// within `BREAKER_WAIT_TURNS` standard turns. `siege_mustering` counts
+    /// its window from the turn the train entered Stage, which the breaker
+    /// wait had already spent. See [`AdvancedAi::stall_waits_for_the_breach`].
+    fn muster_after_the_breaker(&self, g: &Game, pid: usize, cid: u32) -> Option<&'static str> {
+        use super::siege_train::{SiegeStage, BREAKER_WAIT_TURNS, STAGING_FAR};
+        if !self.stall_waits_for_the_breach {
+            return None;
+        }
+        let (Some(siege), Some(city)) = (self.sieges.get(&cid), g.cities.get(&cid)) else {
+            return None;
+        };
+        let (pos, waited) = self.stall_breaker_waited?;
+        let gathering = pos == city.pos
+            && siege.stage == SiegeStage::Stage
+            && g.turn.saturating_sub(siege.assessed) <= 1
+            && g.turn.saturating_sub(waited) <= g.standard_duration(BREAKER_WAIT_TURNS)
+            && !self.siege_breaker_waits.contains_key(&city.pos)
+            && g.units.values().any(|unit| {
+                let spec = &g.rules.units[unit.kind];
+                unit.owner == pid
+                    && spec.class == "military"
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                    && g.wdist(unit.pos, city.pos) <= STAGING_FAR
+            });
+        gathering.then_some("while its siege train gathers around the breaker that came")
+    }
+
     /// The end-of-turn reading. Called once per acting turn, after the unit
     /// pass and before `EndTurn`, so `Unit::acted` still says what each unit
     /// did this turn.
@@ -755,6 +931,25 @@ impl AdvancedAi {
                     && g.rules.units[unit.kind].class == "military"
                     && g.wdist(unit.pos, at) <= CAPTURE_PRESENCE_RADIUS
             })
+        };
+        // `capture-waits-on-the-march`: see `advanced/capture_march.rs`.
+        let march_target = self
+            .war_plan
+            .as_ref()
+            .map(|plan| plan.objective_city)
+            .or_else(|| {
+                self.plan
+                    .as_ref()
+                    .filter(|plan| plan.strategy == GrandStrategy::Conquest)
+                    .and_then(|plan| plan.target_city)
+            });
+        let marching = march_target
+            .filter(|cid| self.capture_marching(g, pid, *cid))
+            .map(|cid| (cid, "while its army marches in"));
+        let march_note = |cid: u32| {
+            marching
+                .filter(|(city, _)| *city == cid)
+                .map(|(_, why)| why)
         };
         let appointed = self.war_plan.as_ref().and_then(|plan| {
             let city = g.cities.get(&plan.objective_city)?;
@@ -775,6 +970,13 @@ impl AdvancedAi {
                 reading: phases_to_go * 1000 + city.hp + city.wall_hp,
                 declared,
                 present: declared && presence(g, city.pos),
+                waiting: declared
+                    .then(|| {
+                        self.capture_waits_on_the_train(g, pid, plan.objective_city)
+                            .or_else(|| march_note(plan.objective_city))
+                            .or_else(|| self.muster_after_the_breaker(g, pid, plan.objective_city))
+                    })
+                    .flatten(),
             })
         });
         let conquest = self.plan.as_ref().and_then(|plan| {
@@ -799,9 +1001,37 @@ impl AdvancedAi {
                 reading: if declared { 0 } else { 1000 } + city.hp + city.wall_hp,
                 declared,
                 present: declared && presence(g, city.pos),
+                waiting: declared
+                    .then(|| {
+                        self.capture_waits_on_the_train(g, pid, cid)
+                            .or_else(|| march_note(cid))
+                            .or_else(|| self.muster_after_the_breaker(g, pid, cid))
+                    })
+                    .flatten(),
             })
         });
         let war = appointed.or(conquest);
+        // `stall-waits-for-the-breach`: the last turn the capture held for a
+        // breaker on its way; the muster that follows counts from there.
+        if self.stall_waits_for_the_breach {
+            if let Some((pos, cid)) = war
+                .as_ref()
+                .filter(|w| w.declared)
+                .and_then(|w| Some((g.cities.get(&w.city)?.pos, w.city)))
+            {
+                if self.waiting_for_a_breaker(g, pid, cid) {
+                    self.stall_breaker_waited = Some((pos, g.turn));
+                }
+            }
+        }
+        if let Some((city, why)) = war
+            .as_ref()
+            .and_then(|w| Some((g.cities.get(&w.city)?, w.waiting?)))
+        {
+            let (name, pos) = (city.name.clone(), city.pos);
+            think!(self.journal(), Military, Detail, "Holding the capture of {name} {why}";
+                   "the train stands outside the city's reach on purpose, so the turn counts as neither forgotten nor stalled"; pos);
+        }
         // Why a committed unit with movement to spend did not act, from what
         // the controller's own maps and the board say. Only the first hold
         // that applies is named, in this order.
@@ -884,6 +1114,12 @@ impl AdvancedAi {
             holds: &holds,
             price: &price,
         };
+        // `stall-rebases-on-new-walls`: see `rebase_capture_on_new_walls`.
+        // `stall-waits-for-the-breach`: see `rebase_capture_on_a_forward_step`.
+        if let Some(w) = war.as_ref() {
+            self.rebase_capture_on_new_walls(g, w.city, w.reading);
+            self.rebase_capture_on_a_forward_step(g, w.city, w.reading);
+        }
         let ledger = &mut self.commitments;
         ledger.reconcile_units(g, pid, Kind::Settle, &self.settler_targets, &ctx);
         ledger.reconcile_units(g, pid, Kind::Improve, &self.builder_targets, &ctx);
@@ -974,6 +1210,8 @@ impl AdvancedAi {
                 }
             }
         }
+        // `siege-target-needs-a-road`: see `advanced/siege_road.rs`.
+        self.reconcile_siege_roads(g, pid);
         let ledger = &mut self.commitments;
         ledger.cities_seen = g
             .cities
@@ -986,7 +1224,9 @@ impl AdvancedAi {
 
     /// `capture-go-or-stand-down` family: either version is on.
     pub(super) fn capture_stand_down_on(&self) -> bool {
-        self.capture_go_or_stand_down || self.capture_go_or_stand_down_2
+        self.capture_go_or_stand_down
+            || self.capture_go_or_stand_down_2
+            || self.siege_target_needs_a_road
     }
 
     /// `capture-go-or-stand-down`: whether the gene holds this city out of
@@ -997,6 +1237,9 @@ impl AdvancedAi {
                 .capture_stood_down
                 .get(&city)
                 .is_some_and(|until| g.turn < *until)
+            // `siege-target-needs-a-road`: a road stand-down lifts when the
+            // border that shut the road opens.
+            && !self.siege_road_reopened(g, city)
     }
 
     /// `commitment-owner-acts`: the owners the unit pass left standing act
@@ -1693,6 +1936,345 @@ mod tests {
         );
     }
 
+    /// `siege-needs-a-breaker`: a walled siege held outside the city's reach
+    /// while a gun comes counts as neither forgotten nor stalled, so the
+    /// capture stands; with no gun coming, or once the wait outruns
+    /// `BREAKER_WAIT_TURNS`, the same readings stand it down.
+    #[test]
+    fn a_capture_waiting_on_a_coming_breaker_is_not_stood_down() {
+        let (mut game, target) = conquest_fixture();
+        // Late enough that a wait can have started before the cap.
+        game.turn += 100;
+        let at = game.cities[&target].pos;
+        let land_free = |game: &Game, pos: &Pos| {
+            !game.rules.is_water(&game.map.tiles[pos])
+                && game.units_at(*pos).is_empty()
+                && game.city_at(*pos).is_none()
+        };
+        let beside = game
+            .wdisk(at, 1)
+            .into_iter()
+            .find(|pos| *pos != at && land_free(&game, pos))
+            .expect("a land hex beside the objective");
+        game.spawn_test_unit("warrior", 0, beside);
+        let road = game
+            .wdisk(at, 10)
+            .into_iter()
+            .filter(|pos| game.wdist(*pos, at) >= 4 && land_free(&game, pos))
+            .max_by_key(|pos| (game.wdist(*pos, at), *pos))
+            .expect("land for the gun on its way");
+        game.spawn_test_unit("catapult", 0, road);
+        let far = game.wdist(road, at);
+        use super::super::siege_train::{BreakerWait, BREAKER_STALL_TURNS, BREAKER_WAIT_TURNS};
+        let stall = game.standard_duration(BREAKER_STALL_TURNS);
+        let rounds = 2 + stall + STALL_TURNS + CAPTURE_STALL_TURNS;
+        // What `assess_siege` writes each turn the train holds out: the
+        // nearest breaker `nearest` tiles out, closing in every turn or not.
+        let run = |game: &Game, started_ago: u32, nearest: i32, closing: bool| {
+            let mut ai = AdvancedAi::new();
+            ai.enable_capture_go_or_stand_down_2();
+            ai.enable_siege_needs_a_breaker();
+            aim(&mut ai, game, target);
+            let mut g = game.clone();
+            let since = g.turn.saturating_sub(started_ago);
+            for _ in 0..rounds {
+                ai.siege_breaker_waits.insert(
+                    at,
+                    BreakerWait {
+                        since,
+                        last: g.turn,
+                        nearest,
+                        nearest_turn: if closing { g.turn } else { since },
+                    },
+                );
+                ai.reconcile_commitments(&mut g, 0);
+                g.turn += 1;
+            }
+            ai
+        };
+
+        let waiting = run(&game, 0, far, true);
+        assert!(
+            !waiting.capture_stood_down.contains_key(&target),
+            "the gun is on its way"
+        );
+        let open = waiting
+            .commitments()
+            .open_for(Kind::Capture, Owner::Empire)
+            .expect("open");
+        assert_eq!((open.stalled_streak, open.forgotten_streak), (0, 0));
+
+        assert!(
+            run(&game, 0, far, false).capture_stood_down.contains_key(&target),
+            "a gun that comes no nearer is not coming"
+        );
+        assert!(
+            run(&game, 0, i32::MAX, false)
+                .capture_stood_down
+                .contains_key(&target),
+            "nothing is coming: the hold is a stall"
+        );
+        let cap = game.standard_duration(BREAKER_WAIT_TURNS);
+        assert!(
+            run(&game, cap + 1, far, true)
+                .capture_stood_down
+                .contains_key(&target),
+            "the wait has a limit"
+        );
+    }
+
+    /// `siege-needs-a-breaker`: a siege train in Stage holds three to five
+    /// tiles out until its staged strength meets the bill. With a soldier of
+    /// ours on that ring the turn is neither forgotten nor stalled, so the
+    /// capture stands; the gene off, nobody on the ring, or a muster past
+    /// `BREAKER_WAIT_TURNS` and "nobody went" stands it down as before.
+    #[test]
+    fn a_capture_whose_train_gathers_on_its_staging_ring_is_not_stood_down() {
+        use super::super::siege_train::{Siege, SiegeStage, BREAKER_WAIT_TURNS, STAGING_FAR};
+        let (mut game, target) = conquest_fixture();
+        game.turn += 100;
+        let at = game.cities[&target].pos;
+        let ring = game
+            .wdisk(at, STAGING_FAR)
+            .into_iter()
+            .filter(|pos| {
+                game.wdist(*pos, at) > CAPTURE_PRESENCE_RADIUS
+                    && !game.rules.is_water(&game.map.tiles[pos])
+                    && game.units_at(*pos).is_empty()
+                    && game.city_at(*pos).is_none()
+            })
+            .min_by_key(|pos| (game.wdist(*pos, at), *pos))
+            .expect("land on the staging ring");
+        let soldier = game.spawn_test_unit("warrior", 0, ring);
+        let rounds = 2 + CAPTURE_GO_TURNS;
+        let run = |game: &Game, gene: bool, started_ago: u32| {
+            let mut ai = AdvancedAi::new();
+            ai.enable_capture_go_or_stand_down_2();
+            if gene {
+                ai.enable_siege_needs_a_breaker();
+            }
+            aim(&mut ai, game, target);
+            let mut g = game.clone();
+            let entered = g.turn.saturating_sub(started_ago);
+            for _ in 0..rounds {
+                // What `assess_siege` keeps while the train stages.
+                ai.sieges.insert(
+                    target,
+                    Siege {
+                        stage: SiegeStage::Stage,
+                        taker: None,
+                        entered,
+                        assessed: g.turn,
+                        posts: BTreeMap::new(),
+                        short_since: None,
+                    },
+                );
+                ai.reconcile_commitments(&mut g, 0);
+                g.turn += 1;
+            }
+            ai.capture_stood_down.contains_key(&target)
+        };
+        assert!(!run(&game, true, 0), "the train is gathering");
+        assert!(run(&game, false, 0), "gene off: nobody within three hexes");
+        let cap = game.standard_duration(BREAKER_WAIT_TURNS);
+        assert!(run(&game, true, cap + 1), "the muster has a limit");
+        let mut empty = game.clone();
+        empty.remove_unit(soldier);
+        assert!(run(&empty, true, 0), "nobody on the ring");
+    }
+
+    /// `stall-waits-for-the-breach`: a train in Stage past its muster window
+    /// waits for a breaker; the gun comes and the train keeps gathering
+    /// around it. The gene off, the turns after the gun came read as stalled
+    /// and stand the capture down; on, they wait for `BREAKER_WAIT_TURNS`
+    /// from the last breaker wait, and no longer, and not once the breaker
+    /// leaves the train. Live King civvis-20261005T174615Z (game 148).
+    #[test]
+    fn a_muster_around_the_breaker_that_came_is_not_stood_down() {
+        use super::super::siege_train::{BreakerWait, Siege, SiegeStage, BREAKER_WAIT_TURNS};
+        let (mut game, target) = conquest_fixture();
+        game.turn += 100;
+        let at = game.cities[&target].pos;
+        let beside = game
+            .wdisk(at, 1)
+            .into_iter()
+            .find(|pos| {
+                *pos != at
+                    && !game.rules.is_water(&game.map.tiles[pos])
+                    && game.units_at(*pos).is_empty()
+                    && game.city_at(*pos).is_none()
+            })
+            .expect("a land hex beside the objective");
+        game.spawn_test_unit("warrior", 0, beside);
+        let cap = game.standard_duration(BREAKER_WAIT_TURNS);
+        let waits = 4;
+        // `after` turns once the gun came; the breaker still in the train
+        // unless `left`, when the reading again finds none and none comes.
+        let run = |game: &Game, gene: bool, after: u32, left: bool| {
+            let mut ai = AdvancedAi::new();
+            ai.enable_capture_go_or_stand_down_2();
+            ai.enable_siege_needs_a_breaker();
+            if gene {
+                ai.enable_stall_waits_for_the_breach();
+            }
+            aim(&mut ai, game, target);
+            let mut g = game.clone();
+            // Entered Stage long enough ago that `siege_mustering` is spent.
+            let entered = g.turn.saturating_sub(cap + 1);
+            let since = g.turn;
+            for round in 0..(waits + after) {
+                ai.sieges.insert(
+                    target,
+                    Siege {
+                        stage: SiegeStage::Stage,
+                        taker: None,
+                        entered,
+                        assessed: g.turn,
+                        posts: BTreeMap::new(),
+                        short_since: None,
+                    },
+                );
+                if round < waits {
+                    // A gun on its way, closing in.
+                    ai.siege_breaker_waits.insert(
+                        at,
+                        BreakerWait {
+                            since,
+                            last: g.turn,
+                            nearest: 6,
+                            nearest_turn: g.turn,
+                        },
+                    );
+                } else if left {
+                    // The gun is gone and nothing comes nearer.
+                    ai.siege_breaker_waits.insert(
+                        at,
+                        BreakerWait {
+                            since,
+                            last: g.turn,
+                            nearest: i32::MAX,
+                            nearest_turn: since,
+                        },
+                    );
+                } else {
+                    // The gun stands in the train: no wait.
+                    ai.siege_breaker_waits.remove(&at);
+                }
+                ai.reconcile_commitments(&mut g, 0);
+                g.turn += 1;
+            }
+            ai
+        };
+        let readings = 2 + STALL_TURNS + CAPTURE_STALL_TURNS;
+        assert!(
+            run(&game, false, readings, false)
+                .capture_stood_down
+                .contains_key(&target),
+            "gene off: the turns after the gun came read as stalled"
+        );
+        let held = run(&game, true, readings, false);
+        assert!(
+            !held.capture_stood_down.contains_key(&target),
+            "the train gathers around the breaker that came"
+        );
+        let open = held
+            .commitments()
+            .open_for(Kind::Capture, Owner::Empire)
+            .expect("open");
+        assert_eq!((open.stalled_streak, open.forgotten_streak), (0, 0));
+        assert!(
+            run(&game, true, cap + readings, false)
+                .capture_stood_down
+                .contains_key(&target),
+            "the muster after the breaker has a limit"
+        );
+        assert!(
+            run(&game, true, readings, true)
+                .capture_stood_down
+                .contains_key(&target),
+            "a breaker that left the train is not gathered around"
+        );
+    }
+
+    /// `stall-waits-for-the-breach`: a siege one reading short of the
+    /// stand-down steps into Invest. The gene off, it is stood down; on, its
+    /// stall reading starts again from the step, the restarted reading still
+    /// stands down a siege that never dents the city, and a step back and in
+    /// again inside the stall window does not restart it twice. Live King
+    /// civvis-20261005T181436Z (game 150), Karkar at turn 92.
+    #[test]
+    fn a_siege_that_steps_forward_starts_its_stall_reading_again() {
+        use super::super::siege_train::{Siege, SiegeStage};
+        let (mut game, target) = conquest_fixture();
+        game.turn += 100;
+        let at = game.cities[&target].pos;
+        let beside = game
+            .wdisk(at, 1)
+            .into_iter()
+            .find(|pos| {
+                *pos != at
+                    && !game.rules.is_water(&game.map.tiles[pos])
+                    && game.units_at(*pos).is_empty()
+                    && game.city_at(*pos).is_none()
+            })
+            .expect("a land hex beside the objective");
+        game.spawn_test_unit("warrior", 0, beside);
+        // The siege stage on each round, as `assess_siege` writes it.
+        let run = |game: &Game, gene: bool, stages: &[SiegeStage]| {
+            let mut ai = AdvancedAi::new();
+            ai.enable_capture_go_or_stand_down_2();
+            if gene {
+                ai.enable_stall_waits_for_the_breach();
+            }
+            aim(&mut ai, game, target);
+            let mut g = game.clone();
+            for stage in stages {
+                ai.sieges.insert(
+                    target,
+                    Siege {
+                        stage: *stage,
+                        taker: None,
+                        entered: g.turn,
+                        assessed: g.turn,
+                        posts: BTreeMap::new(),
+                        short_since: None,
+                    },
+                );
+                ai.reconcile_commitments(&mut g, 0);
+                g.turn += 1;
+            }
+            ai.capture_stood_down.contains_key(&target)
+        };
+        use SiegeStage::{Invest, Stage};
+        let window = (STALL_TURNS + CAPTURE_STALL_TURNS) as usize;
+        // The first round registers the decision; the step comes on the round
+        // the sixth stalled reading would have stood it down.
+        let short = window - 1;
+        let mut stepped = vec![Stage; short];
+        stepped.extend(vec![Invest; window - 1]);
+        assert!(
+            run(&game, false, &stepped),
+            "gene off: stood down before the step"
+        );
+        assert!(
+            !run(&game, true, &stepped),
+            "the step restarts the reading: the assault has its window"
+        );
+        let mut never = stepped.clone();
+        never.push(Invest);
+        assert!(
+            run(&game, true, &never),
+            "a restarted reading that never dents the city"
+        );
+        let mut wobble = vec![Stage; short];
+        wobble.extend([Invest, Invest, Stage]);
+        wobble.extend(vec![Invest; window - 2]);
+        assert!(
+            run(&game, true, &wobble),
+            "in and out of Invest inside the window restarts it once"
+        );
+    }
+
     /// `commitment-patience`: a settler and a Builder that never act on their
     /// targets. Three forgotten readings retire both — the targets leave the
     /// maps, the sites are parked, the endings say `retired` — and the gene
@@ -2066,6 +2648,101 @@ mod tests {
         println!("gene counters:");
         for (key, n) in &gene_counters {
             println!("  {key:<40}{n}");
+        }
+    }
+
+    /// See `advanced/capture_march.rs`: a declared objective whose nearest
+    /// land soldier keeps closing in is not stood down as "nobody went"
+    /// under `capture-waits-on-the-march`.
+    #[test]
+    fn a_marching_army_keeps_its_objective() {
+        for gene in [false, true] {
+            let (mut game, target) = conquest_fixture();
+            let goal = game.cities[&target].pos;
+            let mut ai = AdvancedAi::new();
+            ai.enable_capture_go_or_stand_down();
+            if gene {
+                ai.enable_capture_waits_on_the_march();
+            }
+            aim(&mut ai, &game, target);
+            // A soldier ten tiles out, stepped one tile closer each turn.
+            let start = game
+                .wdisk(goal, 10)
+                .into_iter()
+                .find(|pos| {
+                    game.wdist(*pos, goal) == 10
+                        && !game.rules.is_water(&game.map.tiles[pos])
+                        && game.units_at(*pos).is_empty()
+                })
+                .expect("land ten tiles out");
+            let walker = game.spawn_test_unit("warrior", 0, start);
+            for _ in 0..=CAPTURE_GO_TURNS {
+                ai.reconcile_commitments(&mut game, 0);
+                let here = game.units[&walker].pos;
+                let step = game.nbrs(here).into_iter().find(|pos| {
+                    game.wdist(*pos, goal) < game.wdist(here, goal)
+                        && game.wdist(*pos, goal) > CAPTURE_PRESENCE_RADIUS
+                        && game
+                            .map
+                            .tiles
+                            .get(pos)
+                            .is_some_and(|tile| !game.rules.is_water(tile))
+                        && game.units_at(*pos).is_empty()
+                        && game.city_at(*pos).is_none()
+                });
+                if let Some(step) = step {
+                    game.relocate(walker, step);
+                }
+                game.turn += 1;
+            }
+            assert_eq!(
+                ai.capture_stood_down.contains_key(&target),
+                !gene,
+                "gene {gene}: a marching army is not 'nobody went'"
+            );
+        }
+    }
+
+    /// See `rebase_capture_on_new_walls`: under the gene, walls built
+    /// mid-siege and then knocked down count as new lows, so the siege that
+    /// is breaking them is not stood down as stalled.
+    #[test]
+    fn new_walls_knocked_down_are_progress_under_the_gene() {
+        for gene in [false, true] {
+            let (mut game, target) = conquest_fixture();
+            let goal = game.cities[&target].pos;
+            let beside = game
+                .nbrs(goal)
+                .into_iter()
+                .find(|pos| {
+                    !game.rules.is_water(&game.map.tiles[pos]) && game.units_at(*pos).is_empty()
+                })
+                .expect("a land hex beside the objective");
+            game.spawn_test_unit("warrior", 0, beside);
+            let mut ai = AdvancedAi::new();
+            ai.enable_capture_go_or_stand_down_2();
+            if gene {
+                ai.enable_stall_rebases_on_new_walls();
+            }
+            aim(&mut ai, &game, target);
+            // Two unwalled readings, then walls that fall ten a turn.
+            for round in 0..(4 + STALL_TURNS + CAPTURE_STALL_TURNS) {
+                if round == 2 {
+                    std::sync::Arc::make_mut(&mut game.observed_city_max_wall_hp)
+                        .insert(target, 100);
+                }
+                if round >= 2 {
+                    let walls = 100 - 10 * (round as i32 - 2);
+                    game.cities.get_mut(&target).unwrap().wall_hp = walls.max(0);
+                }
+                ai.reconcile_commitments(&mut game, 0);
+                game.turn += 1;
+            }
+            assert_eq!(
+                ai.capture_stood_down.contains_key(&target),
+                !gene,
+                "gene {gene}: falling new walls are not a stalled siege"
+            );
         }
     }
 }

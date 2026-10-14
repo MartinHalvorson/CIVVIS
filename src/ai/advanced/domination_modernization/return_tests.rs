@@ -358,6 +358,7 @@ fn stalled_stage_taker_returns_for_upgrade_while_ready_assault_keeps_it() {
                 entered: if case == "fresh" { g.turn } else { g.turn - 6 },
                 assessed: if case == "stale" { g.turn - 4 } else { g.turn },
                 posts: BTreeMap::new(),
+                short_since: None,
             },
         );
         if case == "ready_rule" {

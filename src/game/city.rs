@@ -5005,9 +5005,15 @@ impl Game {
         // Pantanal's grassland or Uluru's desert like any other tile and
         // clears the feature on the way in.
         let natural_wonder = self.tile_is_natural_wonder(t);
+        let refused = self.blocked_improvements.get(&pos);
+        let host_refused = |name: &Name| refused.is_some_and(|names| names.contains(name));
         if !natural_wonder {
             if let Some(excavation) = self.valid_excavation(pid, pos) {
-                return vec![Name::new(&excavation)];
+                let excavation = Name::new(&excavation);
+                if host_refused(&excavation) {
+                    return vec![];
+                }
+                return vec![excavation];
             }
         }
         let oc = match t.owner_city {
@@ -5032,6 +5038,9 @@ impl Game {
         let mut artifact_home: Option<bool> = None;
         let mut out = Vec::new();
         for (name, spec) in &self.rules.improvements {
+            if host_refused(name) {
+                continue;
+            }
             if name == "national_park" {
                 if self.tree_effect(pid, "national_parks") > 0.0
                     && self.national_park_site_at(pid, pos).is_some()
@@ -7621,6 +7630,14 @@ impl Game {
                 if repair == "district" {
                     tile.pillaged
                 } else {
+                    // ★★★ A PILLAGED PREREQUISITE IS REPAIRED FIRST. The host
+                    // refuses a Coal Power Plant repair while the Factory it
+                    // requires is still pillaged ("This building requires a
+                    // Factory building."). Live King 20261004T083931Z: Caracas
+                    // lost its Workshop, Factory and Coal Power Plant at turn
+                    // 144; the plant was the cheapest repair, so the city chose
+                    // it and the host refused it every turn from 147 to 205,
+                    // 59 turns with an empty queue.
                     city.pillaged_buildings
                         .iter()
                         .any(|built| *built == *repair)
@@ -7629,7 +7646,10 @@ impl Game {
                                 tile.district.is_some_and(|district| {
                                     self.district_is_family(district, family)
                                 })
-                            })
+                            }) && !building
+                                .requires
+                                .iter()
+                                .any(|required| city.pillaged_buildings.contains(required))
                         })
                 }
             }

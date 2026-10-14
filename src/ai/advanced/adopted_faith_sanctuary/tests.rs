@@ -140,6 +140,49 @@ fn counterfaith_cannot_finish_another_founders_victory() {
     assert!(ai.adopted_faith_sanctuary_choice(&g, 0, None).is_none());
 }
 
+/// See `sanctuary_queue_held`: under the gene, walls at the head and a
+/// district that already holds production keep their city.
+#[test]
+fn a_held_queue_keeps_its_city_under_the_gene() {
+    let walls = Item::Building {
+        building: crate::name!("walls"),
+    };
+    let reserved = |held: Item, production: f64, gene: bool| {
+        let (mut g, mut ai, plan, home) = fixture();
+        if gene {
+            ai.enable_sanctuary_yields_a_held_queue();
+        }
+        let city = g.cities.get_mut(&home).unwrap();
+        city.queue = vec![held];
+        city.production = production;
+        ai.reserve_adopted_faith_sanctuary(&mut g, 0, &plan);
+        g.cities[&home].queue.first().cloned()
+    };
+    let holy = |item: &Option<Item>| matches!(item, Some(Item::District { district, .. }) if district == "holy_site");
+    assert!(
+        holy(&reserved(walls.clone(), 0.0, false)),
+        "off, the sanctuary takes the walls' queue"
+    );
+    assert_eq!(
+        reserved(walls.clone(), 0.0, true),
+        Some(walls),
+        "the walls keep their queue"
+    );
+    let theater = Item::District {
+        district: crate::name!("theater_square"),
+        pos: (5, 5),
+    };
+    assert!(
+        holy(&reserved(theater.clone(), 0.0, true)),
+        "an unstarted district yields"
+    );
+    assert_eq!(
+        reserved(theater.clone(), 12.0, true),
+        Some(theater),
+        "a started one holds"
+    );
+}
+
 #[test]
 fn repeated_reservation_does_not_start_a_second_supplier() {
     let (mut g, ai, plan, home) = fixture();
@@ -162,6 +205,41 @@ fn repeated_reservation_does_not_start_a_second_supplier() {
             .count(),
         1
     );
+}
+
+#[test]
+fn one_sanctuary_does_not_chase_the_counterfaith_into_a_second_city() {
+    for gene in [false, true] {
+        let (mut g, mut ai, plan, home) = fixture();
+        if gene {
+            ai.enable_one_sanctuary();
+        }
+        ai.reserve_adopted_faith_sanctuary(&mut g, 0, &plan);
+        assert!(g.cities[&home].queue.first().is_some_and(
+            |item| matches!(item, Item::District { district, .. } if district == "holy_site")
+        ));
+        // The supplier converts to the threat; another city takes up the
+        // counterfaith. Live King 20261004T094143Z: four cities by turn 98.
+        let other = g
+            .player_city_ids(0)
+            .into_iter()
+            .find(|cid| *cid != home)
+            .unwrap();
+        for (cid, faith) in [(home, "Buddhism"), (other, "Orthodoxy")] {
+            let city = g.cities.get_mut(&cid).unwrap();
+            city.pressure.clear();
+            city.pressure.insert(faith.into(), 1000.0);
+        }
+        let choice = ai.adopted_faith_sanctuary_choice(&g, 0, None);
+        if gene {
+            assert!(choice.is_none(), "{choice:?}");
+        } else {
+            assert!(matches!(
+                choice,
+                Some((cid, Item::District { district, .. })) if cid == other && district == "holy_site"
+            ));
+        }
+    }
 }
 
 #[test]
@@ -431,4 +509,80 @@ fn defensive_infrastructure_precedes_faith_savings_but_purchase_waits() {
             assert_eq!(g.players[0].faith, bank);
         }
     }
+}
+
+/// Live King 20261001T022028Z: Catholicism held every other major and took
+/// two of thirteen cities before the half-converted alarm fired at turn 138;
+/// the Religious victory came at 147. With the faith at its match point, the
+/// first convert is the alarm for an air-surge-2 Domination seat.
+#[test]
+fn a_faith_at_match_point_is_the_threat_from_its_first_convert() {
+    let (mut g, mut ai, _, _) = fixture_with_players(3);
+    // Orthodoxy's founder is the only other major; one of our four cities
+    // follows it.
+    for cid in g.player_city_ids(0).into_iter().skip(1) {
+        let city = g.cities.get_mut(&cid).unwrap();
+        city.pressure.clear();
+        city.atheist_pressure = 1000.0;
+    }
+    g.players[1].alive = false;
+    assert_eq!(
+        g.player_city_ids(0)
+            .iter()
+            .filter(|cid| g.city_religion(&g.cities[cid]) == Some("Orthodoxy"))
+            .count(),
+        1
+    );
+    assert!(ai.adopted_faith_threat(&g, 0).is_none(), "the half rule alone waits");
+    ai.enable_air_surge_2();
+    // With only the founder left beside us, its faith holds every other
+    // major by definition; add a third major that follows it instead.
+    g.players[1].alive = true;
+    let invader = g.player_city_ids(1)[0];
+    let city = g.cities.get_mut(&invader).unwrap();
+    city.pressure.clear();
+    city.pressure.insert("Orthodoxy".into(), 1000.0);
+    assert!(g.civ_follows_religion(1, "Orthodoxy"));
+    assert_eq!(ai.adopted_faith_threat(&g, 0).as_deref(), Some("Orthodoxy"));
+}
+
+/// `counterfaith-leaves-two-holdouts`: with three living majors the shipped
+/// test calls a living founder's faith safe while one other major holds out;
+/// under the gene that last holdout is not enough.
+#[test]
+fn a_living_founders_faith_needs_two_holdouts_under_the_gene() {
+    let (g, mut ai, _, _) = fixture_with_players(3);
+    assert!(AdvancedAi::safe_adopted_counterfaith(&g, 0, "Orthodoxy"));
+    assert!(ai.counterfaith_is_safe(&g, 0, "Orthodoxy"));
+    ai.enable_counterfaith_leaves_two_holdouts();
+    assert!(!ai.counterfaith_is_safe(&g, 0, "Orthodoxy"));
+}
+
+/// A fourth major outside the faith is the second holdout: still safe.
+#[test]
+fn a_second_holdout_keeps_the_counterfaith_safe() {
+    let (mut g, mut ai, _, _) = fixture_with_players(4);
+    let fourth = g.found_city_for(3, (20, 18), None);
+    let city = g.cities.get_mut(&fourth).unwrap();
+    city.pop = 4;
+    city.atheist_pressure = 0.0;
+    city.pressure.clear();
+    city.pressure.insert("Buddhism".into(), 1000.0);
+    ai.enable_counterfaith_leaves_two_holdouts();
+    assert!(ai.counterfaith_is_safe(&g, 0, "Orthodoxy"));
+    // Converting that fourth major to the faith leaves one holdout again.
+    let city = g.cities.get_mut(&fourth).unwrap();
+    city.pressure.clear();
+    city.pressure.insert("Orthodoxy".into(), 1000.0);
+    assert!(!ai.counterfaith_is_safe(&g, 0, "Orthodoxy"));
+}
+
+/// A faith whose founder is gone can never win: always a safe counterweight.
+#[test]
+fn a_faith_without_a_living_founder_is_always_safe() {
+    let (mut g, mut ai, _, _) = fixture_with_players(3);
+    ai.enable_counterfaith_leaves_two_holdouts();
+    assert!(ai.counterfaith_is_safe(&g, 0, "Sikhism"));
+    g.players[2].alive = false;
+    assert!(ai.counterfaith_is_safe(&g, 0, "Orthodoxy"));
 }

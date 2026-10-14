@@ -586,9 +586,7 @@ impl Game {
                     if !embarked
                         && spec.has_ranged_attack()
                         && u.attacks_left > 0
-                        && (!spec.siege
-                            || !u.moved
-                            || self.promotion_effect(&u, "attack_after_move") > 0.0)
+                        && (!spec.siege || !u.moved || self.siege_may_attack_after_moving(&u))
                     {
                         let range = self.unit_attack_range(uid);
                         for pos in self.wdisk(u.pos, range) {
@@ -1867,9 +1865,7 @@ impl Game {
         spec.domain.as_deref() != Some("air")
             && spec.has_ranged_attack()
             && !self.is_embarked(unit)
-            && (!spec.siege
-                || !unit.moved
-                || self.promotion_effect(unit, "attack_after_move") > 0.0)
+            && (!spec.siege || !unit.moved || self.siege_may_attack_after_moving(unit))
             && unit.moves_left > 0.0
             && unit.attacks_left > 0
             && self.wdist(unit.pos, target) <= self.unit_attack_range(uid)
@@ -3237,6 +3233,20 @@ impl Game {
             "siege_tower" => "siege_support_immunity",
             _ => return false,
         };
+        // `breach-support-reads-the-wall-tier`: a mirrored city shows its wall
+        // pool, not its buildings. Each tier adds 100 to the pool (Ancient,
+        // Medieval, Renaissance), so a pool of 200 stands behind Medieval
+        // Walls, which a ram cannot work on, and 300 behind Renaissance Walls,
+        // which a tower cannot. Live King civvis-20261005T152615Z (game 139)
+        // sent a Siege Tower to Mikisiw-Wacihk's 300/300 walls six times.
+        if self.observed_wall_tier_rules {
+            if let Some(max) = self.observed_city_max_wall_hp.get(&cid) {
+                let immune_from = if kind == "battering_ram" { 200 } else { 300 };
+                if *max >= immune_from {
+                    return false;
+                }
+            }
+        }
         self.city_building_effect(city, immunity) <= 0.0
     }
 
@@ -3688,7 +3698,7 @@ impl Game {
         if self.is_embarked(&u) {
             return Err("cannot attack while embarked".into());
         }
-        if spec.siege && u.moved && self.promotion_effect(&u, "attack_after_move") == 0.0 {
+        if spec.siege && u.moved && !self.siege_may_attack_after_moving(&u) {
             return Err("siege units cannot move and attack in the same turn".into());
         }
         if u.moves_left <= 0.0 || u.attacks_left <= 0 {
@@ -3974,6 +3984,7 @@ impl Game {
             loyalty: 100.0,
             free_city_pressure: BTreeMap::new(),
             captured_from: None,
+            religion_next_seen: None,
             occupied_from: None,
             occupation_grievance: None,
             reactor_age: 0,
@@ -9994,6 +10005,39 @@ impl Game {
             / self.turn.saturating_sub(1).max(1) as f64)
             .min(80.0);
         28.0 + tourism * 0.35
+    }
+
+    /// What `amount` of the strategic `resource` (a CIVVIS id, `niter`) is
+    /// worth to `receiver` in Gold by this engine's book: the live seat's
+    /// ceiling for a strategic purchase (`siege-buys-the-gun-resource`).
+    /// `0` for an unknown or non-strategic resource.
+    pub fn strategic_gold_value(&self, receiver: usize, resource: &str, amount: u32) -> f64 {
+        if self
+            .rules
+            .resources
+            .get(resource)
+            .is_none_or(|spec| spec.class != "strategic")
+        {
+            return 0.0;
+        }
+        self.resource_receive_value(receiver, resource, amount.min(i32::MAX as u32) as i32)
+    }
+
+    /// What `amount` of a luxury or strategic `resource` (a CIVVIS id) is
+    /// worth to `receiver` in Gold by this engine's book: the live seat's
+    /// reading of what a barter item puts on a rival's side of the scale
+    /// (`siege-buys-the-gun-resource`). `0` for any other resource.
+    pub fn resource_gold_value(&self, receiver: usize, resource: &str, amount: u32) -> f64 {
+        if self
+            .rules
+            .resources
+            .get(resource)
+            .is_none_or(|spec| spec.class != "strategic" && spec.class != "luxury")
+            || receiver >= self.players.len()
+        {
+            return 0.0;
+        }
+        self.resource_receive_value(receiver, resource, amount.min(i32::MAX as u32) as i32)
     }
 
     pub(super) fn open_borders_receive_value(&self, receiver: usize, grantor: usize) -> f64 {
