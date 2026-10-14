@@ -514,7 +514,7 @@ impl AdvancedAi {
     /// units. A tier unlocked but not fielded fights no battle (live King
     /// civvis-20261005T045443Z, game 101, had Crossbowmen unlocked and
     /// fielded Archers).
-    fn tier_fielded_land(g: &Game, owner: usize) -> (f64, f64) {
+    pub(super) fn tier_fielded_land(g: &Game, owner: usize) -> (f64, f64) {
         let mut melee: f64 = 0.0;
         let mut ranged: f64 = 0.0;
         for unit in g.units.values().filter(|unit| unit.owner == owner) {
@@ -536,7 +536,7 @@ impl AdvancedAi {
     /// civics and not obsolete — or has already fielded, whichever is more.
     /// Strategic resources are not required: an AI with Gunpowder nearly
     /// always holds the Niter for its Musketmen.
-    fn tier_unlocked_land(g: &Game, owner: usize) -> (f64, f64) {
+    pub(super) fn tier_unlocked_land(g: &Game, owner: usize) -> (f64, f64) {
         let (mut melee, mut ranged) = Self::tier_fielded_land(g, owner);
         for unit in Self::player_unit_catalog(g, owner) {
             let spec = &g.rules.units[unit];

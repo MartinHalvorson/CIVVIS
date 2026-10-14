@@ -2059,3 +2059,85 @@ fn a_crushing_steady_power_passes_the_edge_under_the_gene() {
     ai.disable_crushing_steady_passes_the_edge();
     ai.disable_declaration_needs_the_edge_2();
 }
+
+/// A crushing-steady reading on player 2 (3.2 times its steady power, 1.6
+/// times its 30-turn peak, out-producing us), with `strongest` fielded by
+/// player 2 first when given, so the power readings are taken over the army
+/// it actually fields.
+fn crushing_reading(strongest: Option<&str>) -> (Game, AdvancedAi) {
+    let (mut g, mut ai) = two_fronts();
+    // A larger army of the same line, so a third of our power still stands
+    // above whatever single unit player 2 fields (`Game::military_power`
+    // reads the larger of the observed total and the fielded strength).
+    for _ in 0..8 {
+        g.spawn_test_unit("modern_armor", 0, (8, 12));
+    }
+    if let Some(kind) = strongest {
+        g.spawn_test_unit(kind, 2, (23, 13));
+    }
+    let ours = g.military_power(0);
+    set_production_margin(&mut g, 10.0);
+    ai.enable_declaration_needs_the_edge_2();
+    set_power(&mut g, 2, ours / 1.6);
+    ai.record_rival_power(&g, 0);
+    set_power(&mut g, 2, ours / 3.2);
+    g.turn += 5;
+    ai.record_rival_power(&g, 0);
+    let reading = ai.declaration_edge_2(&g, 0, 2);
+    assert!(
+        !reading.passes() && reading.crushing_steady(),
+        "fixture: a crushing reading version 2 holds"
+    );
+    ai.enable_crushing_steady_passes_the_edge();
+    (g, ai)
+}
+
+/// See `crushing_tier_holds`: under `crushing-needs-the-fielded-tier` the
+/// crushing pass stands while player 2 fields a Warrior against our Modern
+/// Armor, and is held when it fields a land unit a tier above our line; with
+/// the gene off it passes either way.
+#[test]
+fn the_fielded_tier_holds_a_crushing_pass_against_an_outclassing_line() {
+    let (g, mut ai) = crushing_reading(None);
+    assert!(
+        ai.declaration_has_the_edge(&g, 0, 2),
+        "fixture: the crushing pass"
+    );
+    ai.enable_crushing_needs_the_fielded_tier();
+    assert_eq!(
+        ai.crushing_tier_gap(&g, 0, 2),
+        0.0,
+        "a Warrior against our armour"
+    );
+    assert!(ai.declaration_has_the_edge(&g, 0, 2), "at tier: it passes");
+
+    let tier = crate::ai::advanced::city_campaign::TIER_GAP_NO_WAIVER;
+    let (our_melee, _) = AdvancedAi::tier_fielded_land(&g, 0);
+    let stronger = g
+        .rules
+        .units
+        .iter()
+        .filter(|(_, spec)| {
+            spec.class == "military"
+                && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                && spec.is_melee_capable()
+                && spec.strength >= our_melee + tier
+        })
+        .min_by(|left, right| left.1.strength.total_cmp(&right.1.strength))
+        .map(|(name, _)| name.as_str().to_string())
+        .expect("a land unit a tier above our armour");
+    let (g, mut ai) = crushing_reading(Some(&stronger));
+    assert!(
+        ai.crushing_tier_gap(&g, 0, 2) >= tier,
+        "{stronger} outclasses our line"
+    );
+    assert!(
+        ai.declaration_has_the_edge(&g, 0, 2),
+        "gene off: the crushing pass stands"
+    );
+    ai.enable_crushing_needs_the_fielded_tier();
+    assert!(
+        !ai.declaration_has_the_edge(&g, 0, 2),
+        "a tier behind: the crushing pass is held"
+    );
+}

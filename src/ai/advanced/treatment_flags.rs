@@ -7651,6 +7651,17 @@ impl AdvancedAi {
         self.builders_route_around_mountains = false;
     }
 
+    /// Opt-in gene `crushing-needs-the-fielded-tier`; see
+    /// `AdvancedAi::crushing_needs_the_fielded_tier`.
+    pub fn enable_crushing_needs_the_fielded_tier(&mut self) {
+        self.crushing_needs_the_fielded_tier = true;
+    }
+
+    /// The twin of `enable_crushing_needs_the_fielded_tier`.
+    pub fn disable_crushing_needs_the_fielded_tier(&mut self) {
+        self.crushing_needs_the_fielded_tier = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -5452,6 +5452,12 @@ pub struct AdvancedAi {
     /// `advanced/aqueduct_claims_the_capped_queue.rs`. Off by default.
     aqueduct_claims_the_capped_queue: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `crushing-needs-the-fielded-tier`: the `crushing-steady-passes-the-edge`
+    /// pass also needs the target's land line not to outclass ours by a unit
+    /// tier (`city_campaign::TIER_GAP_NO_WAIVER`), read as
+    /// `tier-gap-reads-the-fielded-line` reads it. See
+    /// `one_war::crushing_tier_holds`. Off by default.
+    crushing_needs_the_fielded_tier: bool,
     /// `closed-border-blocker-declares`: a third party whose closed borders
     /// have held a Domination siege's march [`siege_road::ROAD_HOLD_TURNS`]
     /// turns running, at half our power or under (a major, or a city-state
@@ -10377,6 +10383,7 @@ impl AdvancedAi {
             amphibious_refused: None,
             aqueduct_claims_the_capped_queue: false,
             // ---- append: c-d ----------------------------------------
+            crushing_needs_the_fielded_tier: false,
             closed_border_blocker_declares: false,
             closed_border_holds: BTreeMap::new(),
             dry_road_outlasts_a_blocked_step: false,
@@ -24184,6 +24191,26 @@ impl AdvancedAi {
                        "crushing-steady-passes-the-edge: {:.2} times their steady power ({:.0}) and {:.2} times their 30-turn peak ({:.0}), at {:.0} Production against their {:.0}",
                        reading.steady_ratio(), reading.steady, reading.peak_ratio(), reading.peak,
                        reading.our_production, reading.their_production);
+            }
+        }
+        // `crushing-needs-the-fielded-tier`: journal the crushing passes the
+        // fielded tier holds.
+        if self.crushing_steady_passes_the_edge
+            && self.crushing_needs_the_fielded_tier
+            && self.declaration_needs_the_edge_2
+            && close_enough
+            && ready
+            && staged
+            && !edge
+        {
+            let reading = self.declaration_edge_2(g, pid, target);
+            if !reading.passes() && reading.crushing_steady() {
+                think!(self.journal(), Military, Detail,
+                       "The fielded tier holds the crushing pass on {}", g.players[target].civ;
+                       "crushing-needs-the-fielded-tier: their land line outclasses ours by {:.0} strength (a tier is {:.0}), at {:.2} times their steady power",
+                       self.crushing_tier_gap(g, pid, target),
+                       city_campaign::TIER_GAP_NO_WAIVER,
+                       reading.steady_ratio());
             }
         }
         if close_enough && ready && staged && !edge {

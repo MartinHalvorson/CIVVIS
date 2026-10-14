@@ -2092,12 +2092,51 @@ impl AdvancedAi {
             // `crushing-steady-passes-the-edge`: see
             // `DeclarationEdge::crushing_steady`. The plain staged
             // declaration only; the screens that call `passes` keep it.
+            // `crushing-needs-the-fielded-tier`: see `crushing_tier_holds`.
             return reading.passes()
-                || (self.crushing_steady_passes_the_edge && reading.crushing_steady());
+                || (self.crushing_steady_passes_the_edge
+                    && reading.crushing_steady()
+                    && !self.crushing_tier_holds(g, pid, target));
         }
         !self.declaration_needs_the_edge
             || g.military_power(pid)
                 >= DECLARATION_EDGE_RATIO * self.steady_rival_power(g, target).max(1.0)
+    }
+
+    /// `crushing-needs-the-fielded-tier`: the strength by which `target`'s
+    /// land line outclasses ours, read as `tier-gap-reads-the-fielded-line`
+    /// reads it whatever the war-bill genes: its fielded melee and ranged
+    /// line (its unlocked catalogue only when no soldier of its is seen)
+    /// against our fielded melee line and the better of our fielded ranged
+    /// and melee strength. Zero when we match or out-tier it.
+    pub(crate) fn crushing_tier_gap(&self, g: &Game, pid: usize, target: usize) -> f64 {
+        if target == pid || target >= g.players.len() {
+            return 0.0;
+        }
+        let (our_melee, our_ranged) = Self::tier_fielded_land(g, pid);
+        let (fielded_melee, fielded_ranged) = Self::tier_fielded_land(g, target);
+        let (their_melee, their_ranged) = if fielded_melee > 0.0 || fielded_ranged > 0.0 {
+            (fielded_melee, fielded_ranged)
+        } else {
+            Self::tier_unlocked_land(g, target)
+        };
+        let our_line = our_ranged.max(our_melee);
+        (their_melee - our_melee)
+            .max(their_ranged - our_line)
+            .max(0.0)
+    }
+
+    /// `crushing-needs-the-fielded-tier`: whether the fielded tier holds a
+    /// crushing-steady pass on `target`: its line a unit tier
+    /// ([`super::city_campaign::TIER_GAP_NO_WAIVER`]) or more above ours. A
+    /// power reading counts bodies, not their blows: live Immortal
+    /// civvis-20261011T065902Z declared on Greece at 853 against 326 military
+    /// seven techs behind, took nothing and lost 36 units by turn 140; over
+    /// 10-13/14, 11 of 15 crushing readings stood seven or more techs behind
+    /// their target. `false` with the gene off.
+    pub(crate) fn crushing_tier_holds(&self, g: &Game, pid: usize, target: usize) -> bool {
+        self.crushing_needs_the_fielded_tier
+            && self.crushing_tier_gap(g, pid, target) >= super::city_campaign::TIER_GAP_NO_WAIVER
     }
 
     /// `declaration-needs-the-edge-2`: the readings the version-2 edge

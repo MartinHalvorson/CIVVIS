@@ -3842,6 +3842,12 @@ pub const GENES: &[Gene] = &[
     // retired as forgotten three times. No Builder of ours stood on a
     // mountain in 984 Builder-turns after the unlock over two games.
     Gene { tag: "builders-route-around-mountains", field: "builders_route_around_mountains", kind: Kind::OptIn, enable: AdvancedAi::enable_builders_route_around_mountains, disable: AdvancedAi::disable_builders_route_around_mountains },
+    // `crushing-needs-the-fielded-tier`: the crushing-steady pass also needs
+    // the target's fielded land line not to outclass ours by a unit tier.
+    // 10-13/14 census: 11 of the 15 crushing readings stood 7+ techs behind
+    // the target (live Immortal 065902Z's rout). See
+    // `one_war::crushing_tier_holds`.
+    Gene { tag: "crushing-needs-the-fielded-tier", field: "crushing_needs_the_fielded_tier", kind: Kind::OptIn, enable: AdvancedAi::enable_crushing_needs_the_fielded_tier, disable: AdvancedAi::disable_crushing_needs_the_fielded_tier },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
