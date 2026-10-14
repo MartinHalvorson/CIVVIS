@@ -16,6 +16,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import computer_control as cc  # noqa: E402
 
+# An earlier test module (the climb, the brain) can import `window_layout`
+# before the line above runs, binding its default to the operator's file.
+cc.window_layout.LAYOUT_FILE = Path(os.environ["CIVVIS_WINDOW_LAYOUT"])
+
 
 class QuadrantFrameTest(unittest.TestCase):
     """Geometry on this host's real 1728x1117 desktop, so failures are legible."""

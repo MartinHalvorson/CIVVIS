@@ -26,6 +26,10 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import civ6_play
 
+# An earlier test module (the climb, the brain) can import `window_layout`
+# before the line above runs, binding its default to the operator's file.
+civ6_play.window_layout.LAYOUT_FILE = Path(os.environ["CIVVIS_WINDOW_LAYOUT"])
+
 try:
     import PIL  # noqa: F401
     _HAVE_PIL = True
