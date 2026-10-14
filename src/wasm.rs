@@ -352,6 +352,15 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
         ("POST", "/civ6/start") => {
             json!({"error": CIV6_NATIVE_ONLY_MESSAGE, "started": Value::Null})
         }
+        // The live game's Pause / Resume and New game act on a Civilization VI
+        // game beside the native mirror. The browser has none, so it says so:
+        // the viewer asks once, reads `available: false` and leaves the
+        // controls hidden instead of polling civvis.ai for a route it lacks.
+        ("GET", "/live-pause") => json!({"available": false}),
+        ("POST", "/live-pause") | ("POST", "/live-new-game") => json!({
+            "available": false,
+            "error": "this page is not showing a live Civilization VI game",
+        }),
 
         ("GET", "/status") => with_session(|session| {
             json!({
@@ -376,6 +385,9 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
         ("GET", "/gene-program") => with_session(|_session| crate::routes::gene_program(&[])),
 
         ("GET", "/pedia") => with_session(|session| crate::routes::pedia(session)),
+        ("GET", "/policy-effects") => {
+            with_session(|session| crate::routes::policy_effects(session))
+        }
 
         // A save is handed straight to the page, which owns the storage this
         // build has: there is no disk here, so `/saves` and the named half of

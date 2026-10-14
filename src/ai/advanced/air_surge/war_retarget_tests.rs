@@ -111,7 +111,7 @@ fn an_unreachable_counter_does_not_let_the_peacetime_wing_override_the_war() {
         assessed_turn: g.turn,
         rush: false,
     };
-    ai.apply_air_surge_to_strategy(&mut strategy);
+    ai.apply_air_surge_to_strategy(&g, 0, &mut strategy);
     assert_eq!(strategy.target_player, Some(3));
 }
 
@@ -126,6 +126,81 @@ fn a_wing_already_fighting_its_target_keeps_that_target_on_a_second_front() {
         ai.air_surge_plan.as_ref().unwrap().phase,
         AirSurgePhase::Exploit
     );
+}
+
+#[test]
+fn an_unready_wartime_wing_leaves_a_ground_siege_on_its_city() {
+    let (mut g, mut ai) = fixture();
+    let air_target = ai.air_surge_plan.as_ref().unwrap().objective_city;
+    let ground_target = g.found_city_for(1, (16, 16), None);
+    g.at_war.insert((0, 1));
+    ai.air_surge_plan.as_mut().unwrap().opened_at_war = true;
+    ai.maintain_air_surge(&g, 0);
+    assert_eq!(
+        ai.air_surge_plan.as_ref().unwrap().phase,
+        AirSurgePhase::Exploit
+    );
+    assert!(!ai.air_surge_status.wing_ready());
+
+    let ground_plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(ground_target),
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    let mut before = ground_plan.clone();
+    ai.apply_air_surge_to_strategy(&g, 0, &mut before);
+    assert_eq!(before.target_city, Some(ground_target));
+
+    ready_wing(&mut g);
+    ai.maintain_air_surge(&g, 0);
+    assert!(ai.air_surge_status.wing_ready());
+    assert!(ai.air_surge_status.escort_ready());
+    let mut after = ground_plan;
+    ai.apply_air_surge_to_strategy(&g, 0, &mut after);
+    assert_eq!(after.target_city, Some(air_target));
+}
+
+#[test]
+fn a_target_declaration_keeps_the_domination_wing_without_interrupting_a_ground_siege() {
+    let (mut g, mut ai) = fixture();
+    let air_target = ai.air_surge_plan.as_ref().unwrap().objective_city;
+    let ground_target = g.found_city_for(1, (16, 16), None);
+    g.at_war.insert((0, 1));
+
+    ai.maintain_air_surge(&g, 0);
+    let surge = ai
+        .air_surge_plan
+        .as_ref()
+        .expect("the invested wing survives");
+    assert_eq!(surge.objective_city, air_target);
+    assert!(surge.opened_at_war);
+    assert_eq!(surge.phase, AirSurgePhase::Exploit);
+    assert_eq!(surge.appointed_turn, 140);
+    assert!(ai.air_surge_census.aborts.is_empty());
+    assert_eq!(ai.air_surge_research_goal(&g, 0), Some(AIR_SURGE_GOAL_TECH));
+
+    let ground_plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(ground_target),
+        threatened_city: None,
+        desired_cities: 1,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    let mut before = ground_plan.clone();
+    ai.apply_air_surge_to_strategy(&g, 0, &mut before);
+    assert_eq!(before.target_city, Some(ground_target));
+
+    ready_wing(&mut g);
+    ai.maintain_air_surge(&g, 0);
+    let mut after = ground_plan;
+    ai.apply_air_surge_to_strategy(&g, 0, &mut after);
+    assert_eq!(after.target_city, Some(air_target));
 }
 
 #[test]
@@ -190,6 +265,31 @@ fn a_captured_counter_objective_is_counted_once_before_the_wing_moves_on() {
     ai.air_surge_plan.as_mut().unwrap().opened_at_war = true;
     ai.maintain_air_surge(&g, 0);
     ai.maintain_air_surge(&g, 0);
+    assert_eq!(
+        ai.air_surge_plan.as_ref().unwrap().objective_city,
+        replacement
+    );
+    assert_eq!(ai.air_surge_census.objectives_captured, 1);
+}
+
+#[test]
+fn a_speculative_capture_waits_for_native_ownership_before_redirecting_the_wing() {
+    let (mut observed, mut ai) = fixture();
+    let old_city = ai.air_surge_plan.as_ref().unwrap().objective_city;
+    let replacement = observed.found_city_for(1, (16, 17), None);
+    observed.at_war.insert((0, 1));
+    ai.air_surge_plan.as_mut().unwrap().opened_at_war = true;
+    ai.observe_air_surge_city_owners(&observed);
+
+    let mut projection = observed.speculative_clone();
+    projection.cities.get_mut(&old_city).unwrap().owner = 0;
+    ai.maintain_air_surge(&projection, 0);
+    assert_eq!(ai.air_surge_plan.as_ref().unwrap().objective_city, old_city);
+    assert_eq!(ai.air_surge_census.objectives_captured, 0);
+
+    observed.cities.get_mut(&old_city).unwrap().owner = 0;
+    ai.observe_air_surge_city_owners(&observed);
+    ai.maintain_air_surge(&observed, 0);
     assert_eq!(
         ai.air_surge_plan.as_ref().unwrap().objective_city,
         replacement

@@ -38,6 +38,7 @@ import json
 import math
 import os
 import re
+import shutil
 import signal
 import subprocess
 import sys
@@ -66,8 +67,8 @@ DEFAULT_STRATEGY = ""
 CLEANUP_OWNERSHIP_FILE = "cleanup-ownership.json"
 
 sys.path.insert(0, str(HERE))
-from civ6_control import (gamelock, install, launcher, macos_input,
-                          macos_window, popup_clear)  # noqa: E402
+from civ6_control import (gamelock, install, launcher, live_pause,  # noqa: E402
+                          macos_input, macos_window, popup_clear)
 import civ6_env as env  # noqa: E402
 import computer_control as desktop_control  # noqa: E402
 # The objective list is not restated here. This launcher's `--victory` is
@@ -195,6 +196,61 @@ def decider_provenance_line(orders_bin: Path) -> str:
             f"sha256={digest or 'unknown'} path={orders_bin}")
 
 
+def freeze_attempt_decider(orders_bin: Path, tag: str) -> Path:
+    """Keep one executable image across a game and all its autosave reloads.
+
+    A supplied worktree binary can be rebuilt while the match is running.
+    Passing that mutable path to each continuation made the same King game use
+    three revisions at turn 184. Copy it before launch and bind its provenance
+    to the bytes; a changed source cannot rewrite this attempt's decisions.
+    """
+    source = orders_bin.expanduser().resolve()
+    digest = binary_sha256(source)
+    if digest is None:
+        raise OSError(f"cannot checksum decider {source}")
+    revision, source_kind = binary_provenance(source)
+    # Keep preflight failures outside `control/<tag>`: that directory denotes
+    # a launched game to the status and ledger tools.
+    target = RUN_ROOT.parent / "decider-snapshots" / tag / "civvis_orders"
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if target.exists():
+        # A pre-turn failure can retry in the same wall-clock second and reuse
+        # the tag. Keep the image if it is exactly the one already frozen;
+        # never overwrite an earlier attempt with different bytes.
+        manifest = target.with_name(target.name + ".provenance.json")
+        try:
+            frozen = json.loads(manifest.read_text())
+        except (OSError, ValueError):
+            frozen = {}
+        if (binary_sha256(target) == digest
+                and frozen.get("kind") == "frozen_attempt_decider"
+                and frozen.get("sha256") == digest):
+            return target
+        raise FileExistsError(f"attempt decider already exists: {target}")
+    fd, temporary = tempfile.mkstemp(prefix=".civvis_orders-", dir=target.parent)
+    os.close(fd)
+    try:
+        shutil.copy2(source, temporary)
+        if binary_sha256(Path(temporary)) != digest:
+            raise OSError(f"decider changed while copying {source}")
+        os.replace(temporary, target)
+    finally:
+        Path(temporary).unlink(missing_ok=True)
+    manifest = target.with_name(target.name + ".provenance.json")
+    provenance = {
+        "schema": 1,
+        "kind": "frozen_attempt_decider",
+        "revision": revision,
+        "sha256": digest,
+        "source_kind": source_kind,
+        "source_path": str(source),
+    }
+    staged = manifest.with_name(manifest.name + ".tmp")
+    staged.write_text(json.dumps(provenance, sort_keys=True) + "\n")
+    os.replace(staged, manifest)
+    return target
+
+
 def dismiss_crash_dialogs() -> None:
     """Close the "quit unexpectedly" / "Game configuration unavailable" dialogs.
 
@@ -252,10 +308,11 @@ def dismiss_crash_dialogs() -> None:
     """ % ", ".join(f'"{owner}"' for owner in owners)
     if owners:
         run(["osascript", "-e", script], timeout=25.0)
-    # Newer macOS crash alerts belong to UserNotificationCenter. Its other
-    # windows may be permission prompts, so use the text-gated crash-only path.
+    # Newer macOS crash alerts belong to UserNotificationCenter. Chrome can
+    # leave one over the display too. Its other windows may be permission
+    # prompts, so use the text-gated crash-only path.
     try:
-        desktop_control.dismiss_modals(civ6_crashes_only=True)
+        desktop_control.dismiss_modals(crashes_only=True)
     except Exception:
         pass  # Accessibility being unavailable must not prevent recovery.
 
@@ -390,8 +447,18 @@ def remember_cleanup_game_processes(tag: str) -> list[dict]:
         # process whose second-resolution ``lstart`` does not prove it began
         # after that preparation; losing a recovery is safer than adopting an
         # orphan that was already on the desktop.
+        # ⚠⚠ BUT `lstart` IS TRUNCATED TO THE SECOND, and the game starts within
+        # milliseconds of this receipt (live G73: receipt 19:07:40.977, Civ VI
+        # 19:07:41). A process that began in the receipt's own second reads
+        # as that second's :00, i.e. BEFORE the fractional launch epoch, and
+        # was rejected: live King civvis-20261004T185259Z (game 72) froze at
+        # t126 with an empty `game_processes`, teardown refused "foreign run
+        # with no readable tag", and the autosave resume never ran — a game
+        # holding two capitals at 698 vs 456 power, thrown away on a coin flip
+        # of sub-second timing. Compare against the launch SECOND: the
+        # baseline above already excludes every process that predates it.
         started_epoch = _process_start_epoch(started)
-        if started_epoch is None or started_epoch <= launch_epoch:
+        if started_epoch is None or started_epoch < math.floor(launch_epoch):
             continue
         if known.get(pid) != started:
             known[pid] = started
@@ -1692,7 +1759,8 @@ def attempt_ceiling(args) -> float:
 
 
 def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
-                           frozen_s: float, locked_probe=None) -> str:
+                           frozen_s: float, locked_probe=None,
+                           paused_probe=None) -> str:
     """Wait for the attempt, and kill it if its TURN stops advancing.
 
     ★★★★★ AN IN-LOOP WATCHDOG CANNOT CATCH A BLOCKED HARNESS. `civ6_play` has
@@ -1735,6 +1803,11 @@ def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
     # to be locked — and on a locked machine they spun forever, because each
     # locked slice extends the deadline it is racing.
     is_locked = locked_probe if locked_probe is not None else screen_locked
+    # The operator's Pause (`civ6_control.live_pause`): the mod holds our turn
+    # on purpose, so the turn not moving is the point, not a wedge. Injected
+    # for the same reason as the lock probe.
+    is_paused = paused_probe if paused_probe is not None else live_pause.requested
+    said_paused = False
     while time.time() < deadline:
         slice_started = time.time()
         try:
@@ -1808,6 +1881,22 @@ def wait_watching_the_turn(play, tag: str, hard_timeout_s: float,
         # must not run at all. Crediting the interval and falling through still
         # killed the attempt — the first version of this fix did exactly that,
         # and `test_a_locked_screen_does_not_kill_a_healthy_attempt` caught it.
+        # ⚠ No cap, unlike the lock below: a pause is an explicit operator
+        # request that stands until the operator lifts it, and the page that
+        # asked for it says so on screen the whole time.
+        if is_paused():
+            paused_for = time.time() - slice_started
+            deadline += paused_for
+            last_turn_at += paused_for
+            if not said_paused:
+                print("[watchdog] the operator paused the game; the attempt "
+                      "clock is held until it resumes", flush=True)
+                said_paused = True
+            continue
+        if said_paused:
+            print("[watchdog] the operator resumed the game; the attempt "
+                  "clock runs again", flush=True)
+            said_paused = False
         if is_locked():
             locked_for = time.time() - slice_started
             if locked_total + locked_for > lock_credit_cap:
@@ -2152,6 +2241,7 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
         + (["--restart-below-leader-ratio", str(args.restart_below_leader_ratio)]
            if getattr(args, "restart_below_leader_ratio", None) is not None else [])
         + (["--no-peace-deterrence"] if args.no_peace_deterrence else [])
+        + DEAL_SESSION_FLAGS.get(getattr(args, "deal_sessions", None) or "off", [])
         + (["--no-counter-resolutions"] if args.no_counter_resolutions else [])
         + [flag for treatment in args.with_
            for flag in ("--civvis-with", treatment)]
@@ -2176,8 +2266,8 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
 
 def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, args,
                          started_at: float, latest=None, recent=None,
-                         used_saves=None) -> Path | None:
-    """The autosave a frozen attempt should be reloaded from, or None.
+                         used_saves=None, stride_index: int | None = None) -> Path | None:
+    """The autosave a frozen or natively crashed attempt should reload, or None.
 
     ★★★★★ A FROZEN GAME WAS SCORED AS A LOSS WITH ITS SAVE ON DISK. Three
     leading games died on the 900 s watchdog on 2026-08-16 alone:
@@ -2193,7 +2283,7 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
     ticks the Autosaves filter the list hides them behind).
 
     Resumes only what is worth resuming: the attempt was killed as `frozen`
-    (a timeout or a locked screen is a different story), reached
+    or Civ VI itself exited without an ending, reached
     `--resume-min-turn`, did not already reach an end screen, the resume
     budget is not spent, and an autosave written since the attempt began
     exists (never one from an earlier game). The live caller also supplies the
@@ -2201,7 +2291,14 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
     make a later stride clamp back onto the same board. Everything else falls
     through to the ledger exactly as before.
     """
-    if why != "frozen" or resumes_so_far >= args.max_resumes:
+    # A native Civ VI abort can follow a perfectly fresh turn. On
+    # 2026-09-28 the core SIGABRTed at t200 with per-turn autosaves enabled.
+    # The watcher returned "exited" and the supervisor started a new game. Require
+    # the harness's explicit crash reason and stopped flag; an ordinary exit,
+    # operator stop, or game-over screen must never restart a finished match.
+    native_crash = (why == "exited" and record.get("reason") == "game exited"
+                    and record.get("game_stopped") is True)
+    if (why != "frozen" and not native_crash) or resumes_so_far >= args.max_resumes:
         return None
     # ⚠ A historical score-retired game must stay retired.  Current
     # verification policy never makes that automatic score call, but old rows
@@ -2263,7 +2360,14 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
     # parked board there.
     if len(saves) > 1:
         saves = saves[1:]
-    step = RESUME_STEPS[min(resumes_so_far, len(RESUME_STEPS) - 1)]
+    # The total count still enforces the batch's recovery budget. A new freeze
+    # turn at least two turns later starts a new rollback episode: after
+    # escaping t88 and reaching t112, going 25 saves back re-enters the t88
+    # deadlock instead of testing t111. An adjacent freeze keeps stepping back;
+    # one-back from t89 would land on the board that froze at t88.
+    # Callers that do not track episodes keep the historical stride sequence.
+    episode_index = resumes_so_far if stride_index is None else max(0, stride_index)
+    step = RESUME_STEPS[min(episode_index, len(RESUME_STEPS) - 1)]
     index = min(step, len(saves) - 1)
     if not 0 <= index < len(saves):
         return None
@@ -2277,9 +2381,10 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
     return None
 
 
-# How far back each successive resume reaches, as an index into the autosaves
-# (newest first, with the parked turn's own save already removed). So the first
-# attempt reloads ONE turn back and the second FOUR.
+# How far back each consecutive resume of the same or adjacent freeze turn
+# reaches, as an index into the autosaves (newest first, with the parked save
+# already removed). A new freeze after real progress restarts at one back;
+# the total six-resume budget and used-save exclusion still apply.
 #
 # ⚠⚠ ADJACENT BOUNDARIES REPLAY INTO THE SAME DEADLOCK. Walking back one save at
 # a time samples a board that is nearly identical, and the park is deterministic
@@ -2297,11 +2402,10 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
 # ⚠ n=3. If a later run escapes at two-back this stride is wrong; the number to
 # watch is which index the escaping resume used.
 #
-# The third step (nine back) exists because the budget rose to three: a game can
-# park more than once. Run `civvis-20260830T223229Z` parked at t66, was rescued
-# ONE turn back, played 27 more turns, and parked again at t93 — a genuinely new
-# deadlock, not a replay of the first. Without a distinct third index the extra
-# attempt would reload the same save as the second.
+# The third step (nine back) exists because the same deadlock can survive both
+# earlier strides. A game that escapes and later freezes at another turn starts
+# a new stride sequence once it has advanced at least two turns, because its
+# nearby saves represent a new board.
 #
 # ⚠⚠ AND THE STRIDES PAST THE THIRD MUST KEEP WALKING, because the budget is six
 # (#2861) and a deterministic park survives strides. Three of the seven parks on
@@ -2314,6 +2418,20 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
 # oldest autosave on disk clamps to the oldest rather than giving up: a short
 # list is still a different board from the one that parked.
 RESUME_STEPS: tuple[int, ...] = (0, 3, 8, 15, 24, 35)
+
+
+def resume_stride_index(resumes: list[dict], frozen_turn: int | None) -> int:
+    """Count recent freezes at this turn or one turn earlier, newest first."""
+    count = 0
+    last = frozen_turn
+    for resume in reversed(resumes):
+        previous = resume.get("from_turn")
+        if (not isinstance(last, int) or not isinstance(previous, int)
+                or not 0 <= last - previous <= 1):
+            break
+        count += 1
+        last = previous
+    return count
 
 
 def _autosave_turn(save: Path) -> int | None:
@@ -2359,6 +2477,62 @@ VICTORY_LANE_FILE = Path(
     os.environ.get("CIVVIS_VICTORY_LANE_FILE", "")
     or Path.home() / ".civvis-victory-lane"
 )
+
+
+#: The host policy file the verified-head launcher reads. The climb reads one
+#: key from it itself, `CIVVIS_DEAL_SESSIONS`, because the live supervisor
+#: that builds this command line runs from a tree the per-game refresh does
+#: not update, while this file is re-read at every game.
+VERIFICATION_POLICY_FILE = Path(
+    os.environ.get("CIVVIS_VERIFICATION_POLICY", "")
+    or Path.home() / ".civvis-verification-policy"
+)
+
+#: `civ6_play.py`'s deal-session flags by mode. `off` forwards nothing, so
+#: the default command line is unchanged.
+DEAL_SESSION_FLAGS = {
+    "all": ["--deal-sessions"],
+    "peace": ["--peace-deal-sessions"],
+    "trade": ["--trade-deal-sessions"],
+    "off": [],
+}
+
+
+def deal_sessions_mode(requested: str | None, environ=None, path: Path | None = None,
+                       warn=None) -> str:
+    """How a game sends its deals: `all`, `peace` or `off`.
+
+    An explicit `--deal-sessions` / `--peace-deal-sessions` /
+    `--no-deal-sessions` wins; then `CIVVIS_DEAL_SESSIONS` in the environment;
+    then the same key in the verification policy file; else `off`. Direct
+    `SendWorkingDeal` offers are never evaluated by the rival (78 of 78 offers
+    in live King games 2026-10-03 failed `no_deal_response`), and only an
+    interactive `MAKE_DEAL` session gets an answer (`CivvisTrade.ask`). The
+    session mode is opt-in because an unanswered session can stall the game
+    until the bounded close ladder clears it.
+    """
+    if requested is not None:
+        return requested
+    environ = os.environ if environ is None else environ
+    path = VERIFICATION_POLICY_FILE if path is None else path
+    warn = warn or (lambda message: print(message, file=sys.stderr))
+    value = (environ.get("CIVVIS_DEAL_SESSIONS") or "").strip()
+    if not value:
+        try:
+            text = path.read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            text = ""
+        for line in text.splitlines():
+            line = line.split("#", 1)[0].strip()
+            if line.startswith("CIVVIS_DEAL_SESSIONS="):
+                value = line.split("=", 1)[1].strip().strip("\"'")
+    if not value:
+        return "off"
+    if value not in DEAL_SESSION_FLAGS:
+        warn(f"CIVVIS_DEAL_SESSIONS={value!r} is not one of "
+             f"{'|'.join(DEAL_SESSION_FLAGS)}; sending deals directly")
+        return "off"
+    return value
 
 
 def operator_victory_lane(requested: str, path: Path | None = None,
@@ -2719,6 +2893,17 @@ def main() -> int:
                     help="REFUSED for live games; see the guard in civ6_play.main. "
                          "Kept so a batch that asks for it fails instead of quietly "
                          "measuring something else")
+    ap.add_argument("--deal-sessions", dest="deal_sessions", action="store_const",
+                    const="all", default=None,
+                    help="forwarded to civ6_play.py: send every deal inside a "
+                         "MAKE_DEAL session (default: CIVVIS_DEAL_SESSIONS, else off)")
+    ap.add_argument("--peace-deal-sessions", dest="deal_sessions", action="store_const",
+                    const="peace", help="forwarded to civ6_play.py: sessions for peace only")
+    ap.add_argument("--trade-deal-sessions", dest="deal_sessions", action="store_const",
+                    const="trade",
+                    help="forwarded to civ6_play.py: sessions for trades, peace sent directly")
+    ap.add_argument("--no-deal-sessions", dest="deal_sessions", action="store_const",
+                    const="off", help="send every deal directly, whatever the policy says")
     ap.add_argument("--tile-export-every", type=int, default=4,
                     help="turns between map exports; the operator watches this against the game")
     ap.add_argument("--combat-frames", type=int, default=0,
@@ -2753,6 +2938,8 @@ def main() -> int:
     # Re-read per game, so the lane can be changed without restarting a
     # supervisor that has held its environment for days. See VICTORY_LANE_FILE.
     args.victory = operator_victory_lane(args.victory)
+    # Re-read per game as well: the deal channel is a policy-file key.
+    args.deal_sessions = deal_sessions_mode(args.deal_sessions)
     # The same per-batch policy seam controls the actual game score clock. A
     # long Science/Domination game must not be cut off at the normal 250-turn
     # comparison horizon because its Terminal-owned supervisor predates the
@@ -2868,6 +3055,7 @@ def main() -> int:
     played = 0          # attempts that produced a MEASUREMENT — the only budget
     started = 0         # iterations, for the log line only
     blocked_streak = 0
+    batch_decider_sha = None
 
     while played < args.attempts:
         # ⚠ Gate BEFORE the tag, the mod sync and the log files. A blocked start that
@@ -2918,10 +3106,24 @@ def main() -> int:
             return 4
         # ★★★★ The program that will actually play: see `refresh_orders_binary`.
         print(refresh_orders_binary(orders_bin, args.build), flush=True)
-        # `code_rev` names the bridge tree.  A supplied binary may be built from
-        # a different worktree, so record its identity beside the attempt after
-        # any rebuild has completed.
-        print(decider_provenance_line(orders_bin), flush=True)
+        try:
+            attempt_bin = freeze_attempt_decider(orders_bin, tag)
+        except OSError as error:
+            print(f"cannot freeze this attempt's decider: {error}", flush=True)
+            return 4
+        attempt_sha = binary_sha256(attempt_bin)
+        if attempt_sha is None:
+            print(f"cannot verify frozen decider {attempt_bin}", flush=True)
+            return 4
+        if pinned is not None and batch_decider_sha not in (None, attempt_sha):
+            print("THE DECIDER BINARY CHANGED MID-BATCH — "
+                  f"pinned {batch_decider_sha}, now {attempt_sha}. "
+                  "Start a new batch for the new executable.", flush=True)
+            return 4
+        batch_decider_sha = attempt_sha
+        # The bridge checkout and a supplied binary may be different trees.
+        # Report the exact copied image that will drive every continuation.
+        print(decider_provenance_line(attempt_bin), flush=True)
         print(f"\n=== attempt {attempt}/{args.attempts}  {tag}  code={code_rev} ===",
               flush=True)
         # The database path is as much part of a run as its event log.  SQLite
@@ -2933,7 +3135,7 @@ def main() -> int:
         if args.load_save:
             try:
                 load_save, diagnostic = prepare_save_diagnostic(
-                    args, tag, code_rev, orders_bin)
+                    args, tag, code_rev, attempt_bin)
             except (OSError, ValueError) as error:
                 print(f"saved-game diagnostic refused before launch: {error}",
                       file=sys.stderr, flush=True)
@@ -2949,7 +3151,7 @@ def main() -> int:
         prepare_cleanup_ownership(
             tag, baseline_pids=getattr(env, "_LAST_GAME_PIDS", ()))
         play = subprocess.Popen(
-            play_command(args, tag, orders_db, orders_bin, load_save=load_save),
+            play_command(args, tag, orders_db, attempt_bin, load_save=load_save),
             stdout=play_log, stderr=subprocess.STDOUT,
         )
         player_pid = getattr(play, "pid", None)
@@ -2989,18 +3191,23 @@ def main() -> int:
                 # play process killed by signal, which is the case that motivated the
                 # explicit terminate in the first place.
                 play_log.close()
-                # Older embedding tests and operators may supply a cleanup
-                # callback that returns None; only an explicit False is a
-                # refusal from the built-in ownership guard.
-                cleanup_ok = teardown(run_tag) is not False
-                torn_down = cleanup_ok
-                if why == "frozen" and cleanup_ok:
+                # ★ SNAPSHOT A FROZEN GAME'S NATIVE LOGS BEFORE TEARDOWN, WHATEVER
+                # TEARDOWN DECIDES. Copying them is read-only. It used to wait for
+                # a proven cleanup, so live King civvis-20261004T185259Z (game 72),
+                # whose teardown was refused, kept no DiplomacyManager.csv, and the
+                # next launch overwrote the only record of what wedged it.
+                if why == "frozen":
                     try:
                         manifest = civ6_native_log_snapshot.snapshot(
                             env.logs_dir(), RUN_ROOT / run_tag / "native-freeze-logs")
                         print(f"[resume] native log snapshot: {manifest}", flush=True)
                     except OSError as error:
                         print(f"[resume] native log snapshot failed: {error}", flush=True)
+                # Older embedding tests and operators may supply a cleanup
+                # callback that returns None; only an explicit False is a
+                # refusal from the built-in ownership guard.
+                cleanup_ok = teardown(run_tag) is not False
+                torn_down = cleanup_ok
                 # The run is over: write up every settler it lost to capture,
                 # beside its events, before the row is read.
                 write_settler_capture_dossiers(run_tag)
@@ -3014,13 +3221,14 @@ def main() -> int:
                 save = resume_from_autosave(
                     record, why, len(resumes), args, attempt_started_at,
                     used_saves={resume["save"] for resume in resumes},
+                    stride_index=resume_stride_index(resumes, record.get("last_turn")),
                 )
                 if save is None:
                     break
                 cont = f"{tag}-cont{len(resumes) + 1}"
                 if diagnostic is not None:
                     try:
-                        check_diagnostic_pins(diagnostic, orders_bin)
+                        check_diagnostic_pins(diagnostic, attempt_bin)
                         write_diagnostic_marker(cont, diagnostic)
                     except OSError as error:
                         print(f"[resume] diagnostic continuation refused: {error}",
@@ -3036,7 +3244,8 @@ def main() -> int:
                 except OSError as error:
                     print(f"[resume] selected save snapshot failed: {error}; "
                           "retaining original reload", flush=True)
-                print(f"[resume] {run_tag} froze at turn {record.get('last_turn')}; "
+                ended_how = "froze" if why == "frozen" else "crashed"
+                print(f"[resume] {run_tag} {ended_how} at turn {record.get('last_turn')}; "
                       f"reloading {save.name} under {cont} (resume {len(resumes) + 1} "
                       f"of {args.max_resumes})", flush=True)
                 resumes.append({"tag": cont, "from_turn": record.get("last_turn"),
@@ -3058,7 +3267,7 @@ def main() -> int:
                 torn_down = False
                 play = subprocess.Popen(
                     play_command(args, cont, RUN_ROOT / cont / "orders.sqlite",
-                                 orders_bin, load_save=save),
+                                 attempt_bin, load_save=save),
                     stdout=play_log, stderr=subprocess.STDOUT,
                 )
                 player_pid = getattr(play, "pid", None)

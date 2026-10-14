@@ -47,8 +47,20 @@ CivvisWarDeclarations = {
         DECLARE_PROTECTORATE_WAR = "DECLARE_PROTECTORATE_WAR",
         DECLARE_COLONIAL_WAR = "DECLARE_COLONIAL_WAR",
         DECLARE_TERRITORIAL_WAR = "DECLARE_TERRITORIAL_WAR",
-        -- Expansion1's replacement:132 uses a different session name.
-        DECLARE_GOLDEN_AGE_WAR = "DECLARE_GOLDEN_WAR",
+        -- ★★★ THE SESSION IS THE STATEMENT TYPE, NOT THE DIPLOMACY SCREEN'S
+        -- TYPO. DiplomacyActionView_Expansion1.lua:132 asks for a session
+        -- named "DECLARE_GOLDEN_WAR", which no DiplomacyStatementType carries
+        -- (Expansion1_DiplomacyStatements_DeclareWar.xml:7 defines
+        -- DECLARE_GOLDEN_AGE_WAR) and no GameCore_XP1/XP2 string names. The
+        -- other shipped path, DeclareWarPopup_Expansion1.lua:20, asks for
+        -- "DECLARE_GOLDEN_AGE_WAR". Copying the screen cost every October
+        -- Golden Age War: 18 of 21 came back `not_at_war` while the host's
+        -- own IsDiplomaticActionValid said yes (Golden Age, To Arms!, the
+        -- denouncement all exported true), and the 3 "verified" were
+        -- Babylon's Military Emergency war on us, not ours (run
+        -- civvis-20261005T234718Z t163). Every other war's session already
+        -- equals its statement type and verified 100%.
+        DECLARE_GOLDEN_AGE_WAR = "DECLARE_GOLDEN_AGE_WAR",
         DECLARE_WAR_OF_RETRIBUTION = "DECLARE_WAR_OF_RETRIBUTION",
         DECLARE_IDEOLOGICAL_WAR = "DECLARE_IDEOLOGICAL_WAR",
     },
@@ -85,6 +97,68 @@ function CivvisWarDeclarations.permissions(diplomacy, target)
     table.sort(facts, function(a, b) return a.statement < b.statement; end);
     return facts;
 end
+
+-- ★★ `peace-asks-a-city`: A PEACE MADE FROM STRENGTH ASKS FOR A TOWN.
+-- The planner offers peace to rivals it outguns three times over to free the
+-- army ("one war at a time", "the required capital is secure"): 239 such
+-- offers in 70 October control games, every one white, 20 accepted the next
+-- turn. A Civilization VI rival that is losing may cede a town in the deal.
+-- When the order's `y` is 1 (Rust `PlanReport::peace_asks_city`) the FIRST
+-- ask adds the rival's nearest cedable town to the locked peace; the retry is
+-- white peace, so a refusal costs one retry window of a peace we wanted
+-- anyway. The town is the subject's own (SubType 0, never CEDE_OCCUPIED),
+-- valid in the host's list (capitals are not), not its Holy City, and not
+-- building a wonder. The calls are the shipped DiplomacyDealView.lua's
+-- (PopulateAvailableCities :1895, OnClickAvailableCity :1593): an engine
+-- call with the wrong argument shape can fault natively, beyond `pcall`.
+-- Returns {id, name, distance} or nil. Off with `PeaceAsksACity = false`.
+-- Exported globally to stay below the chunk-local limit.
+CivvisPeaceCityAsk = function(deal, pid, subject)
+	local possible = DealManager.GetPossibleDealItems(subject, pid, DealItemTypes.CITIES, deal);
+	if type(possible) ~= "table" then return nil; end
+	local ours = {};
+	for _, city in Players[pid]:GetCities():Members() do
+		ours[#ours + 1] = city;
+	end
+	local holy = nil;
+	pcall(function()
+		local city = CityManager.GetCity(Players[subject]:GetReligion():GetHolyCityID());
+		if city ~= nil and city:GetOwner() == subject then holy = city:GetID(); end
+	end);
+	local best, bestEntry, bestDistance = nil, nil, nil;
+	for _, entry in ipairs(possible) do
+		local id = tonumber(entry.ForType);
+		if entry.IsValid and tonumber(entry.SubType) == 0 and id ~= nil and id ~= holy then
+			local city = Players[subject]:GetCities():FindID(id);
+			local wonder = false;
+			pcall(function()
+				local row = GameInfo.Buildings[city:GetBuildQueue():GetCurrentProductionTypeHash()];
+				wonder = row ~= nil and row.IsWonder == true;
+			end);
+			if city ~= nil and not wonder then
+				local distance = nil;
+				for _, mine in ipairs(ours) do
+					local d = Map.GetPlotDistance(city:GetX(), city:GetY(), mine:GetX(), mine:GetY());
+					if distance == nil or d < distance then distance = d; end
+				end
+				if distance ~= nil and (bestDistance == nil or distance < bestDistance) then
+					best = { id = id, name = city:GetName(), distance = distance };
+					bestEntry, bestDistance = entry, distance;
+				end
+			end
+		end
+	end
+	if best == nil then return nil; end
+	local item = deal:AddItemOfType(DealItemTypes.CITIES, subject, pid, bestEntry.SubType, best.id);
+	if item == nil then return nil; end
+	item:SetSubType(bestEntry.SubType);
+	item:SetValueType(best.id);
+	if not item:IsValid(deal) then
+		deal:RemoveItemByID(item:GetID());
+		return nil;
+	end
+	return best;
+end;
 
 -- BEGIN holy-city observation
 -- ReligionScreen.lua:795 forwards every GetHolyCityID return to GetCity.
@@ -428,6 +502,116 @@ CivvisTradeableStrategics = function(player, pid, otherId)
 	return out;
 end;
 
+-- `siege-buys-the-gun-resource`: put `ask` of the strategic `name` from
+-- `subject`'s side of the working `deal`, clipped to what their table offers
+-- and the item's own maximum, as a lump when the ruleset accumulates it (the
+-- sell arm's `Resource_Consumption` rule). Returns the engine's type and the
+-- amount set, or nil and the refusal. A bare global like
+-- CivvisTradeableStrategics: the agent's main chunk is at its local ceiling.
+CivvisStrategicAsk = function(deal, pid, subject, name, ask)
+	local possible = try(function()
+		return DealManager.GetPossibleDealItems(subject, pid, DealItemTypes.RESOURCES, deal);
+	end, nil) or {};
+	local forType, offer = nil, 0;
+	for _, entry in ipairs(possible) do
+		local row = try(function() return GameInfo.Resources[entry.ForType]; end, nil);
+		if row ~= nil and row.ResourceType == name
+				and row.ResourceClassType == "RESOURCECLASS_STRATEGIC"
+				and entry.IsValid ~= false and (entry.MaxAmount or 0) > 0 then
+			forType, offer = entry.ForType, entry.MaxAmount;
+		end
+	end
+	if forType == nil then return nil, "buy_no_strategic"; end
+	local item = deal:AddItemOfType(DealItemTypes.RESOURCES, subject);
+	if item == nil then return nil, "no_resource_item"; end
+	item:SetValueType(forType);
+	local consumption = try(function() return GameInfo.Resource_Consumption[name]; end, nil);
+	local lump = consumption ~= nil
+		and (consumption.Accumulate == true or consumption.Accumulate == 1);
+	item:SetDuration(lump and 0 or 30);
+	local amount = math.min(ask, math.floor(offer));
+	local cap = try(function() return item:GetMaxAmount(); end, nil);
+	if cap ~= nil and cap > 0 and cap < amount then amount = cap; end
+	if amount < 1 or not pcall(function() item:SetAmount(amount); end)
+			or not try(function() return item:IsValid(); end, true) then
+		pcall(function() deal:RemoveItemByID(item:GetID()); end);
+		return nil, "strategic_invalid";
+	end
+	return forType, amount;
+end;
+
+-- `siege-buys-the-gun-resource`: put OUR spares named in `list`
+-- ("RESOURCE_A=a,RESOURCE_B=b") on the working `deal` for `subject`, the
+-- way the sell arm puts them there: each from our side of the table, a
+-- strategic as a lump, a luxury for thirty turns and never its last copy (the
+-- host's own count), nothing another pending deal gives. Returns the
+-- `{ ["RESOURCES:<type>"] = amount }` given and its text, or nil and
+-- `barter_short` when any item the bridge priced cannot go: the rest is
+-- under the price, and live Emperor civvis-20261007T123621Z (game 351) sent
+-- 10 Oil for one Truffles copy at turns 215, 218 and 221 after its second
+-- Gypsum (priced by the bridge, which counts the tiles, not the copy traded
+-- away at 212) stayed home as the last copy; Kongo rejected all three.
+CivvisBarterGive = function(deal, pid, subject, list, player)
+	local possible = try(function()
+		return DealManager.GetPossibleDealItems(pid, subject, DealItemTypes.RESOURCES, deal);
+	end, nil) or {};
+	local gave, text, short = {}, {}, false;
+	for name, want in string.gmatch(list, "([%w_]+)=(%d+)") do
+		local row = try(function() return GameInfo.Resources[name]; end, nil);
+		local forType = nil;
+		for _, entry in ipairs(possible) do
+			if row ~= nil and entry.ForType == row.Index and entry.IsValid ~= false
+					and (entry.MaxAmount or 0) > 0 then
+				forType = entry.ForType;
+			end
+		end
+		local key = "RESOURCES:" .. tostring(forType);
+		local amount = tonumber(want) or 0;
+		local luxury = row ~= nil and row.ResourceClassType == "RESOURCECLASS_LUXURY";
+		local owned = forType ~= nil and try(function()
+			return player:GetResources():GetResourceAmount(forType);
+		end, nil) or nil;
+		local busy = false;
+		for _, other in pairs(CivvisTrade.pending) do
+			if other.gave ~= nil and other.gave[key] ~= nil then busy = true; end
+		end
+		if forType ~= nil and amount > 0 and not busy
+				and not (luxury and (type(owned) ~= "number" or owned <= amount)) then
+			local consumption = try(function() return GameInfo.Resource_Consumption[name]; end, nil);
+			local lump = consumption ~= nil
+				and (consumption.Accumulate == true or consumption.Accumulate == 1);
+			local item = deal:AddItemOfType(DealItemTypes.RESOURCES, pid);
+			if item ~= nil then
+				item:SetValueType(forType);
+				item:SetDuration(lump and 0 or 30);
+				local cap = try(function() return item:GetMaxAmount(); end, nil);
+				if cap ~= nil and cap > 0 and cap < amount then amount = cap; end
+				if pcall(function() item:SetAmount(amount); end)
+						and try(function() return item:IsValid(); end, true) then
+					gave[key] = amount;
+					text[#text + 1] = name .. "=" .. tostring(amount);
+				else
+					pcall(function() deal:RemoveItemByID(item:GetID()); end);
+				end
+			end
+		end
+		if gave[key] == nil then short = true; end
+	end
+	if short then return nil, "barter_short"; end
+	if next(gave) == nil then return nil, "barter_nothing"; end
+	return gave, table.concat(text, ",");
+end;
+
+-- Whether every item on our side of a purchase's answer (`mine`, Gold
+-- excluded) is one the ask bartered (`gave`), in no larger amount; with
+-- nothing bartered, whether our side holds nothing but Gold.
+CivvisWithinGave = function(mine, gave)
+	for key, amount in pairs(mine) do
+		if gave == nil or gave[key] == nil or amount > gave[key] then return false; end
+	end
+	return true;
+end;
+
 
 -- --------------------------------------------------------------- action ids
 --
@@ -489,6 +673,12 @@ local function resolveActions()
 		-- seat. Parameterless, like FORTIFY: the unit pillages the tile it is on.
 		"UNITOPERATION_PILLAGE",
 		"UNITOPERATION_HARVEST_RESOURCE", "UNITOPERATION_REST_REPAIR",
+		-- A chop (`chop_woods`, `chop_rainforest`, `clear_marsh`) and a forest
+		-- planting cross as these, parameterless like HARVEST_RESOURCE:
+		-- Base/Assets/Gameplay/Data/UnitOperations.xml:35 and :32 carry no
+		-- InterfaceMode. Before these rows civvis_orders sent a chop as an
+		-- Improvements row the host does not have (`IMPROVEMENT_CHOP_WOODS`).
+		"UNITOPERATION_REMOVE_FEATURE", "UNITOPERATION_PLANT_FOREST",
 		"UNITOPERATION_MAKE_TRADE_ROUTE", "UNITOPERATION_SPREAD_RELIGION",
 		-- This begins the Apostle's native belief-selection prompt. The order
 		-- handler keeps CIVVIS's selected belief and completes that prompt with
@@ -1339,6 +1529,53 @@ end
 -- cannot leak unmet-civ knowledge into gameplay. It exists so the gap between
 -- "the best we have met" and "the leader" can be measured before anyone changes
 -- a rule on top of it.
+-- Every alive major's total city Production a turn, keyed by player id as a
+-- STRING (an all-integer table can encode as a JSON array). It feeds only the
+-- harness's operator restart rule (`production_rank_reading` in
+-- tools/civ6_play.py, operator 2026-10-08: "if not top 2 by prod by turn 150
+-- can restart game"); CIVVIS never reads the `turn` record, so an unmet
+-- major's number cannot leak into play. Each city reads the build queue's
+-- Production, the accessor our own state export uses, falling back to the
+-- city yield; a major none of whose cities can be read is omitted, never 0.
+-- A bare global like CivvisTradeableStrategics: the main chunk is at its
+-- local ceiling.
+CivvisMajorProduction = function()
+	local out = {};
+	for _, id in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {})) do
+		local total, read = 0, 0;
+		-- Collected under `try` and capped: a city list that cannot be walked,
+		-- or one that never ends, must not take the turn record down with it.
+		-- No real empire on these maps comes near the cap.
+		local cities = try(function()
+			local found, steps = {}, 0;
+			for _, city in Players[id]:GetCities():Members() do
+				steps = steps + 1;
+				if city ~= nil then found[#found + 1] = city; end
+				if steps >= 200 then break; end
+			end
+			return found;
+		end, nil) or {};
+		for _, city in ipairs(cities) do
+			local yield = try(function()
+				return city:GetBuildQueue():GetProductionYield();
+			end, nil);
+			if type(yield) ~= "number" or yield < 0 then
+				yield = try(function()
+					return city:GetYield(YieldTypes.PRODUCTION);
+				end, nil);
+			end
+			if type(yield) == "number" and yield >= 0 then
+				total = total + yield;
+				read = read + 1;
+			end
+		end
+		if read > 0 then
+			out[tostring(id)] = math.floor(total * 10 + 0.5) / 10;
+		end
+	end
+	return out;
+end;
+
 local function rivalBest(player, pid)
 	local diplomacy = try(function() return player:GetDiplomacy(); end);
 	if diplomacy == nil then return nil, 0, nil, 0; end
@@ -4800,10 +5037,27 @@ end
 
 -- Later governments are strictly stronger and unlock more slots, so the
 -- newest unlocked one is taken whenever the game will allow the change.
+--
+-- ★★★ BUT NOT WHILE CIVVIS DECIDES. CIVVIS owns the government (its own
+-- `government` order, `CIVVIS_OWNED_BLOCKERS`), and when it means to stay it
+-- sends nothing; the prompt then survives `civvis_complete` and the forfeit
+-- escape asks this ladder for one real answer. "Newest unlocked" is the last
+-- row of `GameInfo.Governments`, so Suffrage put the seat in Democracy and
+-- the Digital Democracy civic in Digital Democracy: on October 5, 15 of 43
+-- live runs changed government with no order of ours (11 Democracy 1-9 turns
+-- after CIVVIS chose Communism, 7 Digital Democracy after it chose Corporate
+-- Libertarianism), and the planner then read "Staying under democracy ... two
+-- turns of Anarchy is not worth paying" -- a Domination seat on one military
+-- slot for the rest of the game. Under CIVVIS the answer is "considered",
+-- never a switch; `GovernmentLadderSwitches = true` restores the old pick.
 local function chooseGovernment(player)
 	local culture = try(function() return player:GetCulture(); end);
 	if culture == nil then return nil; end
 	if not try(function() return culture:CanChangeGovernmentAtAll(); end, false) then
+		return nil;
+	end
+	if cfg.CivvisDecides and cfg.GovernmentLadderSwitches ~= true then
+		pcall(function() culture:SetGovernmentChangeConsidered(true); end);
 		return nil;
 	end
 	local current = try(function() return culture:GetCurrentGovernment(); end, -1);
@@ -9442,6 +9696,14 @@ local function exportState(player, pid, turn, frame, eventKind)
 			return Game.GetEras():GetPlayerGoldenAgeThreshold(pid);
 		end, -1),
 		world_era = try(function() return Game.GetEras():GetCurrentEra(); end, -1),
+		-- The world era's countdown, as the shipped EraProgressPanel reads it:
+		-- turns left AFTER this one, 0 on the era's last turn, negative before
+		-- the countdown starts. The mirror turns it into the model's
+		-- `world_era_countdown_end`, which only the simulator set, so
+		-- `age-closer-2` (buy the Great Person that closes a Dark Age in the
+		-- era's last turns) could never see a deadline live. One scalar read
+		-- per export; nil when the host cannot answer.
+		era_countdown = try(function() return Game.GetEras():GetNextEraCountdown(); end, nil),
 		dark_age = try(function() return Game.GetEras():HasDarkAge(pid); end, nil),
 		golden_age = try(function() return Game.GetEras():HasGoldenAge(pid); end, nil),
 		heroic_golden_age = try(function()
@@ -9666,6 +9928,32 @@ local function exportState(player, pid, turn, frame, eventKind)
 			local any = false;
 			for row in GameInfo.Resources() do
 				if row.ResourceClassType == "RESOURCECLASS_STRATEGIC" then
+					local amount = try(function()
+						return resources:GetResourceAmount(row.ResourceType);
+					end, nil);
+					if amount ~= nil and amount > 0 then
+						out[row.ResourceType] = amount;
+						any = true;
+					end
+				end
+			end
+			if not any then return nil; end
+			return out;
+		end, nil),
+		-- Our luxury copies by the host's own count, net of the copies a deal
+		-- has traded away (`siege-buys-the-gun-resource`'s barter offers
+		-- only a copy above the last). The board counts improved tiles and
+		-- does not know a copy is out: live Emperor civvis-20261007T131449Z
+		-- (game 354) sold Turtles and Marble to Kongo at turns 126 and 132,
+		-- then priced both into seven Oil asks from 155 that the last-copy
+		-- guard refused unproposed. nil when none is held, as above.
+		luxury_counts = try(function()
+			local resources = player:GetResources();
+			if resources == nil then return nil; end
+			local out = {};
+			local any = false;
+			for row in GameInfo.Resources() do
+				if row.ResourceClassType == "RESOURCECLASS_LUXURY" then
 					local amount = try(function()
 						return resources:GetResourceAmount(row.ResourceType);
 					end, nil);
@@ -11254,10 +11542,19 @@ CivvisTrade = { pending = {}, asked = {}, sessions = {}, unanswered = 0, disable
 -- the rival never answers is closed by that ladder as before and counted,
 -- and after `DealSessionStandDown` of those the lane stands down for the
 -- run rather than opening a screen a fourth time. `DealSessions = false`
--- restores the direct send.
+-- restores the direct send; `DealSessions = "peace"` reserves sessions for
+-- peace so unanswered EQUALIZE sales or buys cannot stand peace down first;
+-- `DealSessions = "trade"` is the reverse, sessions for trades and the direct
+-- send for peace. Live game 2026-10-03T063926Z closed about twenty trade
+-- sessions cleanly, and one peace session froze it at t150: the rival
+-- refused, then left `MAKE_DEAL, POSITIVE` pending to us after the session
+-- closed (DiplomacyManager.csv).
 CivvisTrade.ask = function(pid, subject, action, kind, turn)
 	local trade = CivvisTrade;
-	if cfg.DealSessions == false or trade.disabled then
+	if cfg.DealSessions == false
+			or (cfg.DealSessions == "peace" and kind ~= "peace")
+			or (cfg.DealSessions == "trade" and kind == "peace")
+			or trade.disabled then
 		DealManager.SendWorkingDeal(DealProposalAction[action], pid, subject);
 		return "direct";
 	end
@@ -11477,7 +11774,10 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 				end);
 			end
 		end
+		local cityAsked = CivvisK.peaceCityAsked and CivvisK.peaceCityAsked[other];
 		emit("peace_response", { turn = turn, target = other, accepted = accepted,
+			city_asked = cityAsked and cityAsked.id or nil,
+			city_asked_turn = cityAsked and cityAsked.turn or nil,
 			deal_equal = dealEqual, equality_checked = equalityChecked,
 			submitted = submitted, submitted_action = submittedAction,
 			-- This is deliberately false until `pollPeace` observes the host
@@ -11588,7 +11888,7 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 					if kind == DealItemTypes.GOLD then
 						-- Their gold is the price of a sale and foreign to a
 						-- purchase, whatever else the answer holds.
-						if buying then
+						if buying and pending.gave == nil then
 							foreign = foreign + 1;
 						elseif duration == 0 then
 							gold = gold + amount;
@@ -11622,8 +11922,16 @@ CivvisOnIncomingDeal = function(fromPlayer, toPlayer, action)
 		-- else in either direction: a counter that slips another item onto
 		-- our side, swaps the copy for another, doubles it, or keeps it off
 		-- theirs is walked away from.
+		-- A Favor or strategic block may come back larger, never smaller: the
+		-- ceiling was priced on the block asked.
 		local want = pending.want or "OPEN_BORDERS";
-		matches = theirs[want] == 1 and next(mine) == nil;
+		if want == "FAVOR" or pending.strategic then
+			matches = (theirs[want] or 0) >= (pending.want_amount or 1)
+				and CivvisWithinGave(mine, pending.gave);
+		else
+			-- A swap's spares in no larger amount; otherwise Gold alone.
+			matches = theirs[want] == 1 and CivvisWithinGave(mine, pending.gave);
+		end
 		for key, _ in pairs(theirs) do
 			if key ~= want then matches = false; end
 		end
@@ -12361,7 +12669,7 @@ local function applyOrder(player, pid, row, turn)
 	-- 200-register main-chunk ceiling and make the entire mod fail to compile.
 	-- Returns `(submitted, concession, reason)`.  `submitted` names an actual
 	-- `SendWorkingDeal` call, deliberately not merely a `pcall` that did not throw.
-	local function submitMajorPeaceDeal(subject, asked, cap)
+	local function submitMajorPeaceDeal(subject, asked, cap, askCity)
 		if DealManager.HasPendingDeal(pid, subject) then
 			return false, 0, "pending";
 		end
@@ -12377,6 +12685,26 @@ local function applyOrder(player, pid, row, turn)
 		-- deal." — the shipped comment beside the UI's Make Peace action.
 		deal:Validate();
 		if not deal:IsValid() then return false, 0, "invalid_deal"; end
+
+		-- See `CivvisPeaceCityAsk`. A failed ask marks the rival, so the next
+		-- attempt goes out as the white peace rather than failing again.
+		if askCity then
+			local okAsk, city = pcall(CivvisPeaceCityAsk, deal, pid, subject);
+			deal:Validate();
+			if not okAsk or not deal:IsValid() then
+				CivvisK.peaceCityFailed = CivvisK.peaceCityFailed or {};
+				CivvisK.peaceCityFailed[subject] = turn;
+				emit("peace_city_ask", { turn = turn, target = subject, failed = true,
+					error = okAsk and "invalid_deal" or tostring(city):sub(1, 160) });
+				return false, 0, "city_ask_failed";
+			end
+			if city ~= nil then
+				CivvisK.peaceCityAsked = CivvisK.peaceCityAsked or {};
+				CivvisK.peaceCityAsked[subject] = { id = city.id, name = city.name, turn = turn };
+				emit("peace_city_ask", { turn = turn, target = subject, city = city.id,
+					name = city.name, distance = city.distance });
+			end
+		end
 
 		local concession = 0;
 		-- A free peace offer is the right first question.  Once the same rival
@@ -12990,6 +13318,36 @@ local function applyOrder(player, pid, row, turn)
 			});
 			return false, "cannot_declare";
 		end
+		-- ⚠ ONE DIPLOMACY SESSION PER RIVAL. A MAKE_DEAL session this lane
+		-- opened in an earlier frame (`CivvisTrade.ask` with `DealSessions` on),
+		-- or the rival's own, still holds the pair; the engine answers a second
+		-- request with "Requested Session but already had one open" while the
+		-- call below returns cleanly, so the war was marked declared and never
+		-- asked again that turn (live 2026-10-03 game 24, t112: a sale and a
+		-- declaration to Phoenicia). The shipped screens look the session up
+		-- first (Civ6Common.lua:695 `DiplomacyManager.FindOpenSessionID`) and
+		-- close their own (DiplomacyDealView.lua:680-682
+		-- `DiplomacyManager.CloseSession`). Close ours, leave a rival's to the
+		-- closers, and defer unmarked so the next frame asks again.
+		if major then
+			local openSession = try(function()
+				return DiplomacyManager.FindOpenSessionID(pid, subject);
+			end, nil);
+			if openSession ~= nil then
+				local ours = CivvisTrade.sessions[subject] ~= nil;
+				if ours then
+					CivvisTrade.close(pid, subject, "yield_to_war");
+					if try(function()
+						return DiplomacyManager.FindOpenSessionID(pid, subject);
+					end, nil) ~= nil then
+						pcall(function() DiplomacyManager.CloseSession(openSession); end);
+					end
+				end
+				emit("war_deferred", { turn = turn, target = subject, ours = ours,
+					statement = statement });
+				return false, "session_open";
+			end
+		end
 		local params = {};
 		params[PlayerOperations.PARAM_PLAYER_ONE] = pid;
 		params[PlayerOperations.PARAM_PLAYER_TWO] = subject;
@@ -13055,7 +13413,12 @@ local function applyOrder(player, pid, row, turn)
 		local ok, submitted, reason;
 		if major then
 			local ran;
-			ran, submitted, concession, reason = pcall(submitMajorPeaceDeal, subject, asked, x);
+			-- `peace-asks-a-city`: the first ask of this war only (the last
+			-- ask older than two retry windows starts a new war's asking).
+			local askCity = y == 1 and cfg.PeaceAsksACity ~= false
+				and (asked == nil or (turn - asked) > 2 * (cfg.PeaceRetryTurns or 5))
+				and not (CivvisK.peaceCityFailed and CivvisK.peaceCityFailed[subject]);
+			ran, submitted, concession, reason = pcall(submitMajorPeaceDeal, subject, asked, x, askCity);
 			if not ran then
 				submitted, concession, reason = false, 0, "throw";
 			end
@@ -13106,6 +13469,29 @@ local function applyOrder(player, pid, row, turn)
 			present = try(function() return diplomacy:HasDelegationAt(subject); end, false);
 		end
 		if present then return false, "delegation_already_present"; end
+		-- A mission the host would not offer a human opens no leader scene.
+		if try(function()
+			return diplomacy:IsDiplomaticActionValid("DIPLOACTION_" .. verb, subject, true);
+		end) == false then
+			return false, "delegation_not_offered";
+		end
+		-- ★★★ A REFUSAL IS A LEADER SCENE THE CLEARERS DO NOT ALWAYS CLOSE.
+		-- An Unfriendly or Denouncing rival answers with AI_REFUSE_DEAL, and on
+		-- 2026-09-30 that answer froze the King seat twice at the same ask
+		-- (Byzantium, Unfriendly, RESIDENT_EMBASSY at t136 and again at t208):
+		-- the refusal sat pending to us, the end turn never cleared, and the
+		-- wedge watchdog reloaded a save each time. Ask only a rival whose view
+		-- of us is at least neutral; the rival's state is read as the
+		-- friendship arm below reads it.
+		local missionState = try(function()
+			local row = GameInfo.DiplomaticStates[
+				Players[subject]:GetDiplomaticAI():GetDiplomaticStateIndex(pid)];
+			return row ~= nil and row.StateType or nil;
+		end);
+		if missionState == "DIPLO_STATE_UNFRIENDLY" or missionState == "DIPLO_STATE_DENOUNCED"
+				or missionState == "DIPLO_STATE_WAR" then
+			return false, "delegation_unfriendly";
+		end
 		-- An unaffordable session is a leader scene opened for a guaranteed
 		-- no; the cost read is the shipped GetGoldCost helper's.
 		local cost = try(function()
@@ -13503,9 +13889,48 @@ local function applyOrder(player, pid, row, turn)
 	-- anyone is not bought back. Their RESOURCES item, one copy, thirty
 	-- turns, nothing on our side; EQUALIZE; the handler closes only at or
 	-- under the ceiling, and only when their side is exactly that copy.
+	--
+	-- ★★★ AND THEIR FAVOR, BEFORE A CONTESTED SESSION. `FAVOR=N` (CIVVIS's
+	-- `append_favor_buy_order`, gene `favor-bought-before-congress`) asks for
+	-- N of the rival's Diplomatic Favor as a lump, clipped to the bank the
+	-- engine says they hold (the item's own max, as the sale clips ours); a
+	-- clipped block shrinks the ceiling with it, and a block under 10 is not
+	-- worth the deal window. The handler closes at or under the ceiling when
+	-- their side holds that much Favor or more and nothing else.
+	--
+	-- ★★★ AND THE STRATEGIC A SIEGE GUN WAITS ON. `RESOURCE_X=N` (CIVVIS's
+	-- `append_gun_resource_buy_order`, gene `siege-buys-the-gun-resource`)
+	-- asks for N of THEIR strategic X — the Bombard's Niter, the Artillery's
+	-- Oil — a lump clipped to what their table offers, through
+	-- `CivvisStrategicAsk`; a clipped block shrinks the ceiling with it. The
+	-- handler closes at or under the ceiling when their side holds that much
+	-- or more and nothing else.
 	if kind == "buy" then
-		local luxury = verb == "LUXURY_ANY" or string.find(verb, "^RESOURCE_") ~= nil;
-		if verb ~= "OPEN_BORDERS" and not luxury then return false, "buy_unknown_item"; end
+		-- `RESOURCE_X=N;RESOURCE_A=a,...` barters our spares for it
+		-- (`CivvisBarterGive`), Gold topping up to the ceiling.
+		local strategicName, strategicAsk, barter =
+			string.match(verb, "^(RESOURCE_[%w_]+)=(%d+);(.+)$");
+		if strategicName == nil then
+			strategicName, strategicAsk = string.match(verb, "^(RESOURCE_[%w_]+)=(%d+)$");
+		end
+		-- `luxury-swap-asks`: `LUXURY_ANY;RESOURCE_A=a,...` is a luxury we
+		-- lack against our spare copies, the strategic barter's shape.
+		if strategicName == nil then
+			barter = string.match(verb, "^LUXURY_ANY;(.+)$");
+			if barter ~= nil then verb = "LUXURY_ANY"; end
+		end
+		strategicAsk = tonumber(strategicAsk);
+		if strategicAsk ~= nil and (strategicAsk <= 0
+				or try(function() return GameInfo.Resources[strategicName]; end, nil) == nil) then
+			return false, "buy_unknown_item";
+		end
+		local luxury = verb == "LUXURY_ANY"
+			or (strategicAsk == nil and string.find(verb, "^RESOURCE_") ~= nil);
+		local favorAsk = tonumber(string.match(verb, "^FAVOR=(%d+)$"));
+		if favorAsk ~= nil and (favorAsk <= 0 or DealItemTypes.FAVOR == nil) then favorAsk = nil; end
+		if verb ~= "OPEN_BORDERS" and not luxury and favorAsk == nil and strategicAsk == nil then
+			return false, "buy_unknown_item";
+		end
 		if luxury and verb ~= "LUXURY_ANY"
 				and try(function() return GameInfo.Resources[verb]; end, nil) == nil then
 			return false, "buy_unknown_item";
@@ -13522,7 +13947,7 @@ local function applyOrder(player, pid, row, turn)
 		if not try(function() return Players[subject]:IsMajor(); end, false) then
 			return false, "buy_not_major";
 		end
-		if not luxury and try(function() return diplomacy:HasOpenBordersFrom(subject); end, false) then
+		if verb == "OPEN_BORDERS" and try(function() return diplomacy:HasOpenBordersFrom(subject); end, false) then
 			return false, "buy_already_open";
 		end
 		local trade = CivvisTrade;
@@ -13544,22 +13969,49 @@ local function applyOrder(player, pid, row, turn)
 			return false, "buy_cooldown";
 		end
 		local ceiling = math.max(0, math.floor(x or 0));
-		if ceiling <= 0 then return false, "buy_no_ceiling"; end
+		if ceiling <= 0 and barter == nil then return false, "buy_no_ceiling"; end
 		local ran, submitted, reason, wantName = pcall(function()
 			DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject);
 			local deal = DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, subject);
 			if deal == nil then return false, "no_working_deal"; end
-			local want, name = "OPEN_BORDERS", "OPEN_BORDERS";
-			if luxury then
+			local want, name, wantAmount = "OPEN_BORDERS", "OPEN_BORDERS", favorAsk or 1;
+			if favorAsk ~= nil then
+				local item = deal:AddItemOfType(DealItemTypes.FAVOR, subject);
+				if item == nil then return false, "no_favor_item"; end
+				item:SetDuration(0);
+				local cap = try(function() return item:GetMaxAmount(); end, nil);
+				if cap ~= nil and cap < wantAmount then wantAmount = cap; end
+				if wantAmount < 10 or not pcall(function() item:SetAmount(wantAmount); end)
+						or not try(function() return item:IsValid(); end, true) then
+					pcall(function() deal:RemoveItemByID(item:GetID()); end);
+					return false, "buy_no_favor";
+				end
+				ceiling = math.floor(ceiling * wantAmount / favorAsk);
+				want, name = "FAVOR", "FAVOR=" .. tostring(wantAmount);
+			elseif strategicAsk ~= nil then
+				local forType, got = CivvisStrategicAsk(deal, pid, subject, strategicName, strategicAsk);
+				if forType == nil then return false, got; end
+				wantAmount = got;
+				ceiling = math.floor(ceiling * got / strategicAsk);
+				want, name = "RESOURCES:" .. tostring(forType), strategicName .. "=" .. tostring(got);
+				if barter ~= nil then
+					local gaveText;
+					barter, gaveText = CivvisBarterGive(deal, pid, subject, barter, player);
+					if barter == nil then return false, gaveText; end
+					name = name .. ";" .. gaveText;
+				end
+			elseif luxury then
 				-- Owner first: the RIVAL's tradeable resources, the column the
 				-- shipped screen fills for their side of the table.
 				local possible = try(function()
 					return DealManager.GetPossibleDealItems(subject, pid, DealItemTypes.RESOURCES, deal);
 				end, nil) or {};
 				local resources = try(function() return player:GetResources(); end, nil);
-				local forType = nil;
+				-- The copy the rival holds most of: a spare costs it no
+				-- Amenity, its last copy does (ties keep the table's order).
+				local forType, most = nil, 0;
 				for _, entry in ipairs(possible) do
-					if forType == nil and entry.IsValid ~= false and (entry.MaxAmount or 0) > 0 then
+					if (tonumber(entry.MaxAmount) or 0) > most and entry.IsValid ~= false then
 						local row = try(function() return GameInfo.Resources[entry.ForType]; end, nil);
 						if row ~= nil and row.ResourceClassType == "RESOURCECLASS_LUXURY"
 								and (verb == "LUXURY_ANY" or row.ResourceType == verb) then
@@ -13574,7 +14026,7 @@ local function applyOrder(player, pid, row, turn)
 								if other.gave ~= nil and other.gave[key] ~= nil then selling = true; end
 							end
 							if owned == 0 and not selling then
-								forType, name = entry.ForType, row.ResourceType;
+								forType, name, most = entry.ForType, row.ResourceType, tonumber(entry.MaxAmount);
 							end
 						end
 					end
@@ -13590,6 +14042,12 @@ local function applyOrder(player, pid, row, turn)
 					return false, "resource_invalid";
 				end
 				want = "RESOURCES:" .. tostring(forType);
+				if barter ~= nil then
+					local gaveText;
+					barter, gaveText = CivvisBarterGive(deal, pid, subject, barter, player);
+					if barter == nil then return false, gaveText; end
+					name = name .. ";" .. gaveText;
+				end
 			else
 				-- The agreement rides FROM the rival: they grant, we pay. A
 				-- ruleset without the agreement type has nothing to buy here.
@@ -13611,6 +14069,8 @@ local function applyOrder(player, pid, row, turn)
 			-- `want` is the key the handler matches their side against.
 			trade.pending[subject] = {
 				turn = turn, ceiling = ceiling, direction = "buy", verb = name, want = want,
+				want_amount = wantAmount, strategic = strategicAsk ~= nil or nil,
+				gave = type(barter) == "table" and barter or nil,
 			};
 			CivvisTrade.ask(pid, subject, "EQUALIZE", "buy", turn);
 			return true, "asked", name;
@@ -13628,7 +14088,10 @@ local function applyOrder(player, pid, row, turn)
 		if not submitted and (reason == "no_agreement_type" or reason == "no_agreement_item"
 				or reason == "agreement_invalid" or reason == "invalid_deal"
 				or reason == "buy_no_luxury" or reason == "no_resource_item"
-				or reason == "resource_invalid") then
+				or reason == "resource_invalid" or reason == "buy_no_favor"
+				or reason == "no_favor_item" or reason == "buy_no_strategic"
+				or reason == "strategic_invalid" or reason == "barter_nothing"
+				or reason == "barter_short") then
 			-- The engine will not sell passage here right now — usually a
 			-- missing Early Empire on one side — or has no luxury the seat
 			-- lacks on its table; do not re-ask every turn for the same
@@ -16167,6 +16630,245 @@ CivvisCongressVoteBudget = function(favor, costs, maxVotes)
 	return host, host, standard;
 end
 
+-- ★★★ PACE THE BANK ACROSS THE SESSIONS A LEADER CAN WIN FROM.
+--
+-- The Favor a Diplomatic Victory ballot may spend. Every session from the
+-- denial floor used to spend the whole bank, and a self-claim below it did
+-- too. Three of the four live Diplomatic losses of 2026-10-04/05 then met the
+-- deciding session with nothing: civvis-20261005T030607Z (game 95) spent 112
+-- at t181 and 40 at t201 on B ballots the rivals won without us (29-6, 19-10),
+-- had 0 at t221, and lost there 6 votes to 4 -- three bought votes (12 Favor)
+-- would have turned it; T003728Z and T194303Z-cont1 cast only free votes at
+-- 18 and 19 points. Rivals turn on a leader themselves from about 15, so a
+-- bought vote matters most at match point. So: from `DiploVictoryMatchPoint`
+-- (18, one +2 from the win) the whole bank; from the denial floor, half;
+-- below it (the probe and the self-claim) only what is above
+-- `DiploVictoryClaimReserve` (120). Exported globally to stay below the
+-- chunk-local limit.
+--
+-- ★★ AND A BANK THAT IS DRAINING IS SPENT WHILE IT LASTS. `draining` is true
+-- when the bank stands lower than it did right after the last session: war
+-- grievances are taking Favor every turn, and whatever this ballot holds back
+-- is gone before the next one. Live King civvis-20261005T051413Z (game 102):
+-- 190 after t162, 171 at the t181 ballot, 80 at t201, 0 by t213; the ballot
+-- held its reserve and half-banks, cast a probe and two free votes, and the
+-- Aztecs took the +2 by a single vote at three sessions running (6-5, 5-4,
+-- 4-3) on their way from 5 to 20 DVP. Off with `DiploVictorySpendDraining =
+-- false`.
+CivvisCongressBallotBank = function(favor, leaderPoints, config, draining)
+	local bank = tonumber(favor) or 0;
+	local points = tonumber(leaderPoints) or 0;
+	config = type(config) == "table" and config or {};
+	if draining and config.DiploVictorySpendDraining ~= false then
+		return bank;
+	end
+	if points >= (tonumber(config.DiploVictoryMatchPoint) or 18) then
+		return bank;
+	end
+	if points >= (tonumber(config.DiploVictoryVoteFloor) or 12) then
+		return bank / 2;
+	end
+	return bank - (tonumber(config.DiploVictoryClaimReserve) or 120);
+end
+
+-- ★★★ CONGRESS PARTICIPATION IS A DIPLOMATIC VICTORY POINT, AND IT CAN BE
+-- DENIED. At every session a major gains, besides the Diplomatic Victory
+-- resolution's +2/-2 on its target, ONE point for every resolution -- the
+-- Diplomatic Victory one included -- whose winning option AND target match
+-- its own vote ("Congress Participation", LOC_DVP_TOOLTIP_AGREEING_RESOLUTIONS).
+-- That rule predicts 1,951 of 1,976 recorded player-sessions exactly across
+-- the October control runs. Live King civvis-20261005T060002Z (game 104):
+-- Greece went 7 -> 12 at turn 182 (+2 target, +1 on the Diplomatic Victory
+-- resolution, +1 each on World Ideology and Military Advisory) and won on
+-- Diplomacy at 242. A leader's vote on the other resolutions is predictable
+-- enough to vote against: Border Control and Migration Treaty draw option A
+-- on the voter itself (93% and 66% of rival votes), the rest repeat the
+-- voter's option of the last session on that type. Replayed over every
+-- session where the leader stood at 12 or more, three votes on the option
+-- opposite that prediction took 13 of the leader's 38 participation points
+-- for 12 Favor a resolution (Online table); one vote moved nothing, and four
+-- or five took no more. Returns the option to vote, or nil to leave the
+-- ballot as it is. `lastOption` is keyed "<ResolutionType>:<player>" by the
+-- review emitter. Off with `ParticipationDenial = false`. Exported globally
+-- to stay below the chunk-local limit.
+CivvisParticipationDenialOption = function(rtype, leader, pid, leaderPoints, lastOption, config)
+	config = type(config) == "table" and config or {};
+	if config.ParticipationDenial == false or rtype == nil
+		or rtype == "WC_RES_DIPLOVICTORY" then
+		return nil;
+	end
+	leader = tonumber(leader);
+	if leader == nil or leader < 0 or leader == tonumber(pid) then return nil; end
+	if (tonumber(leaderPoints) or 0) < (tonumber(config.ParticipationDenialFloor)
+		or tonumber(config.DiploVictoryVoteFloor) or 12) then
+		return nil;
+	end
+	local predicted = nil;
+	if rtype == "WC_RES_BORDER_CONTROL" or rtype == "WC_RES_MIGRATION_TREATY" then
+		predicted = 1;
+	elseif type(lastOption) == "table" then
+		predicted = tonumber(lastOption[tostring(rtype) .. ":" .. tostring(leader)]);
+	end
+	if predicted ~= 1 and predicted ~= 2 then return nil; end
+	return 3 - predicted;
+end
+
+-- ★★ A TRADE EMBARGO THE CULTURE LEADER CANNOT VOTE DOWN.
+--
+-- Option B of the Trade Policy resolution disables its target's
+-- international trade routes (APPLY_INTERNATIONAL_MAJOR_TRADE_ROUTES_DISABLED),
+-- and each live route is +25% Tourism toward its partner. The counter names
+-- the culture leader with the one free vote, and option A wins: over the
+-- Culture losses of October 3-5, Trade, Border and Migration resolutions
+-- came up 36 times in the last 60 turns, B landed on the eventual winner
+-- twice, and our B ballots on it carried 1-3 votes while the bank held 63-600
+-- Favor (median about 200). Option A won those sessions with 2-16 votes,
+-- median 6-7. So when the culture leader stands at `CultureEmbargoBar` (75)
+-- or more of the bar it must pass -- Culture wins fired at 79-99% of it --
+-- the Trade Policy ballot buys the last session's A total of that type plus
+-- two votes (eight when none is recorded), at most `CultureEmbargoMaxVotes`
+-- (12), from what the Diplomatic Victory ballot left, keeping
+-- `DiploVictoryClaimReserve` (120) while a Diplomatic leader stands at the
+-- vote floor. Returns the votes and their price; (1, 0) leaves the free
+-- vote. Off with `CultureEmbargo = false`. Exported globally to stay below
+-- the chunk-local limit.
+CivvisCultureEmbargoVotes = function(rtype, threat, candidates, favor, costs, leaderPoints, lastA, config)
+	config = type(config) == "table" and config or {};
+	if config.CultureEmbargo == false or rtype ~= "WC_RES_TRADE_TREATY" or type(costs) ~= "table" then
+		return 1, 0;
+	end
+	local culture = nil;
+	for _, c in ipairs(type(candidates) == "table" and candidates or {}) do
+		if tonumber(c.id) == tonumber(threat) then culture = tonumber(c.culture); end
+	end
+	if culture == nil or culture < (tonumber(config.CultureEmbargoBar) or 75) then return 1, 0; end
+	local bank = tonumber(favor) or 0;
+	if (tonumber(leaderPoints) or 0) >= (tonumber(config.DiploVictoryVoteFloor) or 12) then
+		bank = bank - (tonumber(config.DiploVictoryClaimReserve) or 120);
+	end
+	local last = type(lastA) == "table" and tonumber(lastA[rtype]) or nil;
+	local want = (last or 6) + 2;
+	local cap = math.min(tonumber(config.CultureEmbargoMaxVotes) or 12, tonumber(costs.MaxVotes) or 1);
+	if want > cap then want = cap; end
+	while want > 1 and (tonumber(costs[want - 1]) or bank + 1) > bank do want = want - 1; end
+	if want < 2 then return 1, 0; end
+	return want, tonumber(costs[want - 1]) or 0;
+end
+
+-- ★★★ REDIRECT THE +2 RATHER THAN DENY IT.
+--
+-- Option A of the Diplomatic Victory resolution gives +2 to the player with
+-- the largest A block, and every rival votes A for itself; option B wins only
+-- when the rivals themselves turn on a leader. So a B ballot against the
+-- leader is lost in nearly every session, and the bank it spends is gone.
+-- Live King civvis-20261005T095215Z (game 118): Macedon's own A blocks of 12,
+-- 9 and 10 took the +2 at turns 162, 182 and 202 (10 -> 14 -> 17 DVP, the
+-- win at 221) while we cast 3, 3 and 10 B votes and banked 260-371 Favor.
+-- Four, six and three more A votes for Gaul (8-9 DVP), whose own block stood
+-- at 9, 4 and 8, would have handed it the +2 instead. Across the Diplomatic
+-- losses of October 2-5, the winner took the +2 in 39 of 78 sessions, and
+-- the Favor in hand bought that redirect in 29 of them.
+--
+-- From the last session's A blocks (`wc_rival_blocks`): when the largest
+-- block belongs to a contender (at least `DiploVictoryRedirectFloor`, 6,
+-- points, and within two of the leader), the block to beat is it plus a
+-- quarter (at least 2). A claim for us is preferred when the session's
+-- budget buys one more vote than that ("outvote"); otherwise the votes go to
+-- the rival block, counted at three quarters, of the rival with the fewest
+-- points -- at least two behind the leader and at most
+-- `DiploVictoryRedirectCeiling` (14) after the +3 -- that the budget can lift
+-- past it ("redirect"). Our A vote then matches the winning option and
+-- target too. Simulated from each previous session's blocks over October
+-- 2-5 the rule fires 46 times and carries the session in 26, taking the +2
+-- off its holder in 21 (6 the eventual winner). A session the rivals won on
+-- B is left to the denial -- but only while the leader still stands at
+-- `DiploVictoryGangFloor` (15) or more. Below it the rivals vote A for
+-- themselves again: across October 2-5 they ganged on a leader under 14
+-- points in 0-9% of sessions, at 16 in 57%, at 18 in all five, and after a
+-- B session that left the leader at 14 or less they ganged again in none of
+-- 15. Live King civvis-20261005T134450Z (game 133) knocked Byzantium from 16
+-- to 14 on B at t202; at t221 the rivals voted A for themselves (Byzantium
+-- 15, Korea 10, Canada 9), our 6 votes went to a B nobody joined, and
+-- Byzantium took +5 to 19 and won at 241 -- 6 votes on Korea's block would
+-- have carried it. The blocks are each rival's last recorded A block
+-- (`wc_rival_blocks_seen`), since a rival that voted B last time has none
+-- in that session. `nil` when nothing applies; off with
+-- `DiploVictoryRedirect = false`. Exported globally to stay below the
+-- chunk-local limit.
+CivvisCongressRedirect = function(blocks, candidates, pid, budget, maxVotes, config, lastWon)
+	config = type(config) == "table" and config or {};
+	if config.DiploVictoryRedirect == false or type(blocks) ~= "table" then
+		return nil;
+	end
+	budget = math.min(tonumber(budget) or 0, tonumber(maxVotes) or 1);
+	local points, lead, leader = {}, 0, nil;
+	for _, c in ipairs(type(candidates) == "table" and candidates or {}) do
+		local p = tonumber(c.points) or 0;
+		points[tonumber(c.id) or -1] = p;
+		if p > lead then lead, leader = p, tonumber(c.id); end
+	end
+	if lastWon == 2 and lead >= (tonumber(config.DiploVictoryGangFloor) or 15) then
+		return nil;
+	end
+	-- The block the +2 goes to; on a tie, the contender with more points --
+	-- game 124 (T111622Z) t201 read Norway (5 points) and the Zulu leader
+	-- (9) at 5 votes each, picked the lower id, and stood down while the
+	-- Zulu took the +2.
+	local top, topVotes = nil, 0;
+	for who, votes in pairs(blocks) do
+		local id, v = tonumber(who), tonumber(votes) or 0;
+		local pi, pt = points[id] or 0, top ~= nil and points[top] or 0;
+		if id ~= nil and id ~= pid and (v > topVotes or (v == topVotes and top ~= nil
+			and (pi > pt or (pi == pt and id < top)))) then
+			top, topVotes = id, v;
+		end
+	end
+	-- ★ `congress-guards-the-leader` (opt-in; the bridge sets
+	-- `DiploVictoryGuardLeader`). A rival's A block can grow between sessions,
+	-- and the leader's is the one that ends the game. Live Emperor
+	-- civvis-20261008T132311Z (game 402) t201: last session's blocks read the
+	-- Netherlands (9 points) 7, Nubia (the leader, 15) 3 and Scythia 2, so no
+	-- contender's block stood to beat and the bank's 10 votes went to a B
+	-- nobody joined. Nubia cast 7 A for itself, won 13-10, took +4 to 19 and
+	-- won at 207. Ten A votes for us were the session's largest block. So from
+	-- `DiploVictoryGuardFloor` (14) the leader is the block to beat, read at
+	-- the largest block any rival cast last session.
+	if config.DiploVictoryGuardLeader == true and leader ~= nil and leader ~= pid
+		and lead >= (tonumber(config.DiploVictoryGuardFloor) or 14) then
+		local biggest = 0;
+		for who, votes in pairs(blocks) do
+			local v = tonumber(votes) or 0;
+			if tonumber(who) ~= pid and v > biggest then biggest = v; end
+		end
+		top, topVotes = leader, biggest;
+	end
+	local topPoints = top ~= nil and points[top] or nil;
+	if topPoints == nil or topPoints < (tonumber(config.DiploVictoryRedirectFloor) or 6)
+		or topPoints + 2 < lead then
+		return nil;
+	end
+	local need = topVotes + math.max(2, math.ceil(topVotes / 4));
+	if need + 1 <= budget then
+		return pid, need + 1, "outvote";
+	end
+	local ceiling = tonumber(config.DiploVictoryRedirectCeiling) or 14;
+	local best, bestVotes = nil, nil;
+	for who, votes in pairs(blocks) do
+		local id = tonumber(who);
+		local p = id ~= nil and points[id] or nil;
+		if p ~= nil and id ~= top and id ~= pid and p + 3 <= ceiling and p + 2 <= lead then
+			local n = math.max(1, need - math.floor((tonumber(votes) or 0) * 3 / 4) + 1);
+			local bp = best ~= nil and points[best] or nil;
+			if n <= budget and (best == nil or p < bp or (p == bp and (n < bestVotes
+				or (n == bestVotes and id < best)))) then
+				best, bestVotes = id, n;
+			end
+		end
+	end
+	if best == nil then return nil; end
+	return best, bestVotes, "redirect";
+end
+
 -- A ballot is verified against all three native selection fields, not just
 -- its size. WorldCongressPopup.lua:1915-1919 reads PlayerID, OptionChosen,
 -- and Votes; :1935-1940 reads ResolutionTarget for that same voter.
@@ -16215,7 +16917,7 @@ end;
 -- (`gp_activated` / `gp_moving` / `gp_idle`), so telemetry never presents it
 -- as CIVVIS's work.
 local gpPending = {};      -- unit id -> {x, y} last reported walk target
-local gpIdleReported = {}; -- unit id -> turn the last `idle` event was emitted
+CivvisK.gpIdleReported = {}; -- unit id -> turn the last `idle` event was emitted
 local gpApiMissing = false;
 
 local function greatPersonOf(unit)
@@ -16654,13 +17356,13 @@ local function orderGreatPerson(player, unit, id, turn, supportAllowed, controll
 		if religionCreated ~= nil and religionCreated >= 0 and charges == 0
 				and commandUnit(unit, CMD["UNITCOMMAND_DELETE"], true) then
 			gpPending[id] = nil;
-			gpIdleReported[id] = turn;
+			CivvisK.gpIdleReported[id] = turn;
 			emit("gp", { turn = turn, unit = id, individual = individual,
 				class = class, action = "retired_founded_prophet" });
 			return "retired";
 		end
-		if gpIdleReported[id] == nil then
-			gpIdleReported[id] = turn;
+		if CivvisK.gpIdleReported[id] == nil then
+			CivvisK.gpIdleReported[id] = turn;
 			emit("gp", { turn = turn, unit = id, individual = individual,
 				class = class, action = "deferred_prophet" });
 		end
@@ -16802,9 +17504,9 @@ local function orderGreatPerson(player, unit, id, turn, supportAllowed, controll
 	-- `empty_slots` rides along (absent when unknowable) so an idle Writer
 	-- with slots on the board reads as the driver's failure, not the empire's.
 	gpPending[id] = nil;
-	local before = gpIdleReported[id];
+	local before = CivvisK.gpIdleReported[id];
 	if before == nil or (turn - before) >= 25 then
-		gpIdleReported[id] = turn;
+		CivvisK.gpIdleReported[id] = turn;
 		emit("gp", { turn = turn, unit = id, individual = individual,
 			class = class, action = spaceTargets ~= nil and "reserved_space_boost" or "idle",
 			empty_slots = slotCount,
@@ -17305,6 +18007,16 @@ CivvisQueue.drain = function(player, pid, turn)
 					-- was re-armed on that plot; nothing else to do this tick.
 				elseif ready and CivvisQueue.dropWatch(subject, entry) then
 					-- The opening walk has landed; nothing follows it.
+				elseif ready and entry.expect ~= nil and not arrived and not spent
+						and entry.wait < grace and not cannot_land then
+					-- (A walk the host's path lands on a later turn cannot be the
+					-- one that arrives later this tick: `cannot_land` above.)
+					-- An operation-ended event can precede the host's move
+					-- callbacks. On turn 204 a tank was still on its origin when
+					-- MOVE_TO looked like a no-op, but reached the requested tile
+					-- later that tick. Dropping its queued ATTACK here lost an open
+					-- capital. Keep the dependent row until arrival or the bounded
+					-- grace limit; a rows-less watch may still release for replan.
 				elseif ready then
 					-- A MOVE_TO can report an operation-ended event, spend its movement,
 					-- or hit the grace cap without reaching the requested plot.  None of
@@ -19364,10 +20076,20 @@ local function applyOrders(player, pid, turn, rows)
 	-- Consume only the recognized batch directive. Attach the policy to the
 	-- rows themselves so delayed strikes retain it without global frame state.
 	local survival = false;
+	local dialogueNoWar = false;
 	for i = #rows, 1, -1 do
 		local row = rows[i];
 		if row.kind == "combat_policy" and row.verb == "DOOMED_BLOW_VETO" then
 			survival = true;
+			table.remove(rows, i);
+		elseif row.kind == "combat_policy" and row.verb == "DIALOGUE_NEVER_DECLARES_WAR" then
+			dialogueNoWar = true;
+			table.remove(rows, i);
+		elseif row.kind == "combat_policy" and row.verb == "CONGRESS_GUARDS_THE_LEADER" then
+			-- `congress-guards-the-leader` (opt-in): the ballot reads it at the
+			-- next session; the gene holds for the whole game, so the lease
+			-- simply stays set. See `CivvisCongressRedirect`.
+			cfg.DiploVictoryGuardLeader = true;
 			table.remove(rows, i);
 		elseif row.kind == "observe" and row.verb == "AIR_ASSAULT" then
 			-- A failed spotting move or refused sortie changes no sight/damage,
@@ -19428,6 +20150,16 @@ local function applyOrders(player, pid, turn, rows)
 		emit("combat_policy_applied", {
 			turn = turn, frame = (CivvisFrames ~= nil and CivvisFrames.current) or 0,
 			policy = "DOOMED_BLOW_VETO",
+		});
+	end
+	-- The leader statement is answered in DiplomacyActionView's own context,
+	-- usually before this turn's first batch lands, so the batch renews a
+	-- one-turn lease there (CivvisControlAutoClose.lua) instead of a row flag.
+	if dialogueNoWar then
+		local leased = pcall(function() LuaEvents.CivvisDialogueNoWar(turn); end);
+		emit("combat_policy_applied", {
+			turn = turn, frame = (CivvisFrames ~= nil and CivvisFrames.current) or 0,
+			policy = "DIALOGUE_NEVER_DECLARES_WAR", leased = leased,
 		});
 	end
 	local shadowRows = 0;
@@ -19883,6 +20615,9 @@ local function applyOrders(player, pid, turn, rows)
 		-- `rival_best`, so this changes no decision.
 		rival_best_all = rivalTopAll,
 		majors = majorCount,
+		-- Operator restart rule only; see CivvisMajorProduction.
+		major_production = CivvisMajorProduction(),
+		local_player = pid,
 		lead = (rivalTop ~= nil and ourScore >= 0) and (ourScore - rivalTop) or nil,
 		cities = cityCount,
 		units = counts.total or counts.military,
@@ -20137,6 +20872,17 @@ local function beginTurn(player, pid, turn)
 		local review = wc:GetReview(pid);
 		if type(review) ~= "table" then return; end
 		local resolutions, signature = {}, {};
+		-- The largest block a rival cast for option A ("+2 to the target")
+		-- on the Diplomatic Victory resolution: the block an A ballot must
+		-- outvote to take the +2 (`wc_rival_block`, read by the ballot).
+		local rivalBlock = nil;
+		-- Each voter's option per resolution type, for
+		-- `CivvisParticipationDenialOption` at the next ballot.
+		local lastOption = envoyTally.wc_last_option or {};
+		envoyTally.wc_last_option = lastOption;
+		-- Every rival A block by the player it names, and which option won:
+		-- `CivvisCongressRedirect` reads both.
+		local rivalBlocks, dvpWon = nil, nil;
 		for i, r in pairs(review.Resolutions or {}) do
 			if type(i) == "number" and type(r) == "table" and r.Type ~= nil then
 				local info = GameInfo.Resolutions[r.Type];
@@ -20148,7 +20894,17 @@ local function beginTurn(player, pid, turn)
 						local votes = tonumber(sel.Votes) or 0;
 						local option = tonumber(sel.OptionChosen) or 0;
 						if option == 1 then a = a + votes; else b = b + votes; end
+						if rtype == "WC_RES_DIPLOVICTORY" and option == 1 and who ~= pid
+							and votes > (rivalBlock or 0) then
+							rivalBlock = votes;
+						end
+						lastOption[rtype .. ":" .. tostring(who)] = option;
 						local target = sel.ResolutionTarget;
+						if rtype == "WC_RES_DIPLOVICTORY" and option == 1 and who ~= pid
+							and tonumber(target) ~= nil then
+							rivalBlocks = rivalBlocks or {};
+							rivalBlocks[tonumber(target)] = (rivalBlocks[tonumber(target)] or 0) + votes;
+						end
 						voters[#voters + 1] = { player = who, option = option, votes = votes,
 							target = target };
 						if who == pid then
@@ -20157,6 +20913,9 @@ local function beginTurn(player, pid, turn)
 					end
 				end
 				local won = a > b and 1 or (b > a and 2 or 0);
+				if rtype == "WC_RES_DIPLOVICTORY" then dvpWon = won; end
+				envoyTally.wc_last_a = envoyTally.wc_last_a or {};
+				envoyTally.wc_last_a[rtype] = a;
 				resolutions[#resolutions + 1] = {
 					type = rtype,
 					target_type = tostring(r.TargetType or ""),
@@ -20196,6 +20955,16 @@ local function beginTurn(player, pid, turn)
 				end
 			end
 		end
+		if rivalBlock ~= nil then envoyTally.wc_rival_block = rivalBlock; end
+		if dvpWon ~= nil then
+			envoyTally.wc_rival_blocks = rivalBlocks;
+			envoyTally.wc_dvp_won = dvpWon;
+			-- Each rival's last recorded A block: a rival that voted B this
+			-- session keeps the block it cast before (`CivvisCongressRedirect`).
+			local seen = envoyTally.wc_rival_blocks_seen or {};
+			for who, votes in pairs(rivalBlocks or {}) do seen[who] = votes; end
+			envoyTally.wc_rival_blocks_seen = seen;
+		end
 		if #resolutions == 0 and #proposals == 0 then return; end
 		table.sort(signature);
 		local key = table.concat(signature, "|");
@@ -20211,6 +20980,9 @@ local function beginTurn(player, pid, turn)
 			end
 		end
 		local favorNow = tonumber(try(function() return player:GetFavor(); end, 0)) or 0;
+		-- The bank right after this session: the next ballot reads a lower
+		-- bank as a draining one (`CivvisCongressBallotBank`).
+		envoyTally.wc_review_favor = favorNow;
 		emit("wc_outcome", {
 			turn = turn, resolutions = resolutions, proposals = proposals, dvp = dvp,
 			favor = favorNow,
@@ -20616,6 +21388,9 @@ local function playTurn(player, pid, turn)
 		-- `rival_best`, so this changes no decision.
 		rival_best_all = rivalTopAll,
 		majors = majorCount,
+		-- Operator restart rule only; see CivvisMajorProduction.
+		major_production = CivvisMajorProduction(),
+		local_player = pid,
 		-- Positive means we would win a score victory at the turn limit against
 		-- everyone we have met. This is the number that decides the reachable
 		-- victory, and until now the log showed only our own half of it.
@@ -21163,6 +21938,135 @@ CivvisTrade.answerOrphanSessions = function(turn)
 	end
 end;
 
+-- ★★★ THE OPERATOR'S PAUSE. `tools/civ6_control/live_pause.py` is the
+-- protocol: the CIVVIS page's Pause button leaves a request on the host,
+-- `civ6_play.py` turns it into a `pause` row in this run's orders channel, and
+-- this answers it by not playing. Civilization VI then simply waits on our
+-- turn — the AI cannot move until we end it — so nothing is lost, and lifting
+-- the request lets the same tick carry on into `settleTurn` as though the wait
+-- had been a slow brain.
+--
+-- The hold is TAKEN on the first tick of our turn that sees the request —
+-- the opening, a replan frame, the queue draining, the blockers being
+-- answered — and the game stands exactly where that tick found it: orders the
+-- brain has written stay unapplied, a unit mid-walk finishes its step and no
+-- more. Operator 2026-10-13: "ideally, it can pause instantly"; the first
+-- version waited for the next opening, a whole turn of play after the press.
+-- Every budget the turn spends (`awaiting.polls`, `CivvisQueue.ticks`) counts
+-- only the ticks `settleTurn` runs, so a held turn carries on as if the wait
+-- had been a slow brain. Only a turn whose end has already been SENT cannot be
+-- held — the engine ends it whatever this says — so that press waits for the
+-- next opening, a few seconds of rival play later. Once held it stays held
+-- until the request is lifted.
+--
+-- While held, `ExposedMembers.CivvisOperatorHold` is true and the mod's other
+-- contexts take their hands off the game, so the operator can scroll, zoom
+-- and click around it: the camera (CivvisControlMapView) stops aiming and
+-- zooming, and the screen closer (CivvisControlAutoClose) leaves every screen
+-- up to them. Contexts share no globals; ExposedMembers is the shared table.
+--
+-- ⚠ Polled on the UI clock at most four times a second, never per tick — see
+-- the `DB.Query` deadlock note in `settleTurn`. A missing channel reads as
+-- "play".
+-- ⚠ On `CivvisBoard`, not a local: the main chunk is at Civ VI's register
+-- ceiling (register_budget_test.lua).
+CivvisBoard.hold = { asked = false, held = false, pollSeconds = 0.25 };
+-- A fresh game starts unheld, whatever the last one left in the shared table.
+pcall(function() ExposedMembers.CivvisOperatorHold = false; end);
+function CivvisBoard.operatorHold(turn)
+	local hold = CivvisBoard.hold;
+	local now = CivvisClock.now();
+	if type(now) ~= "number" or type(hold.polledAt) ~= "number"
+			or now < hold.polledAt or now - hold.polledAt >= hold.pollSeconds then
+		hold.polledAt = now;
+		-- The watch pace rides the same query (`CivvisBoard.paceHold`).
+		local asked, pace = false, 0;
+		if attachOrders() then
+			pcall(function()
+				local rows = DB.Query(string.format(
+					"SELECT kind, x FROM civvis.orders WHERE run = '%s' " ..
+					"AND kind IN ('pause', 'pace')", sqlSafe(cfg.RunTag)));
+				for _, row in ipairs(rows) do
+					if row.kind == "pause" then asked = true;
+					elseif row.kind == "pace" then pace = math.max(0, tonumber(row.x) or 0); end
+				end
+			end);
+		end
+		hold.asked, hold.paceMs = asked, pace;
+	end
+	local heldFor = (type(now) == "number" and type(hold.since) == "number")
+		and math.floor(now - hold.since + 0.5) or nil;
+	if hold.held then
+		if not hold.asked then
+			hold.held = false;
+			pcall(function() ExposedMembers.CivvisOperatorHold = false; end);
+			emit("operator_resumed", { turn = turn, held_s = heldFor });
+			return false;
+		end
+		-- One line every 30 s: the run's record says the quiet is deliberate.
+		if type(now) == "number" and (type(hold.saidAt) ~= "number"
+				or now < hold.saidAt or now - hold.saidAt >= 30) then
+			hold.saidAt = now;
+			emit("operator_pause_held", { turn = turn, held_s = heldFor });
+		end
+		return true;
+	end
+	if not hold.asked then return false; end
+	-- The board for this turn goes out first, so the page shows this turn.
+	if cfg.CivvisDecides and awaiting.turn ~= turn then return false; end
+	if try(function() return UI.HasSentTurnComplete(); end, false) == true then
+		return false;
+	end
+	hold.held, hold.since, hold.saidAt = true, now, now;
+	pcall(function() ExposedMembers.CivvisOperatorHold = true; end);
+	-- Where in the turn it stopped: frame 0 unsettled is the opening.
+	emit("operator_paused", { turn = turn, frame = awaiting.frame or 0,
+	                          settled = awaiting.done == true });
+	-- ★ AND A RECORD RIGHT BEHIND IT. The game writes its last record only
+	-- when the next one is logged (`LogTail` in watch.py), and a held game
+	-- logs nothing for 30 s. Live 2026-10-13 (civvis-20261013T213509Z t16):
+	-- held 1.1 s after the press, but the harness heard it 30 s later, so the
+	-- page said "Pausing…" and the popup backstop pressed Escape three times
+	-- on the held game.
+	emit("operator_pause_held", { turn = turn, held_s = 0 });
+	return true;
+end
+
+-- ★ THE WATCH PACE. Operator 2026-10-13: "lets try to have watch pace apply to
+-- verification games too". The page's Watch pace is a whole-turn budget —
+-- Blitz 0.5 s, Fast 1 s, Standard 2 s, Slow 4 s, Lightning none — and on the
+-- live mirror it reaches here as the `pace` row `operatorHold` polls
+-- (`hold.paceMs`). Each turn's OPENING waits until the previous opening is
+-- that long ago: the board is already out, so the brain answers during the
+-- wait and only the moves are held back; once they begin they run at speed.
+-- A turn that already took longer than the budget does not wait at all.
+function CivvisBoard.paceHold(turn)
+	local hold = CivvisBoard.hold;
+	local now = CivvisClock.now();
+	hold.pacing = false;
+	if type(now) ~= "number" then return false; end
+	if hold.paceTurn ~= turn then
+		hold.paceTurn, hold.prevOpenedAt, hold.openedAt = turn, hold.openedAt, now;
+	end
+	local ms = tonumber(hold.paceMs) or 0;
+	if ms <= 0 or type(hold.prevOpenedAt) ~= "number" or now < hold.prevOpenedAt then
+		return false;
+	end
+	if cfg.CivvisDecides and (awaiting.turn ~= turn or awaiting.done
+			or (awaiting.frame or 0) ~= 0) then
+		return false;
+	end
+	local left = ms / 1000 - (now - hold.prevOpenedAt);
+	if left <= 0 then return false; end
+	if hold.paceSaid ~= turn then
+		hold.paceSaid = turn;
+		emit("pace_hold", { turn = turn, pace_ms = ms,
+		                    wait_ms = math.floor(left * 1000 + 0.5) });
+	end
+	hold.pacing = true;
+	return true;
+end
+
 -- Submission is not acceptance: the host may still be settling a movement.
 CivvisQueue.requestEndTurn = function(turn, parameters)
 	if CivvisCitizenGrowth ~= nil and CivvisCitizenGrowth.pending() then return false; end
@@ -21281,6 +22185,9 @@ local function tick()
 			end);
 			if wanted then
 				CivvisBoard.retireAsked = true;
+				-- Retired while paused: the game is over, so its closing screens
+				-- go back to the screen closer.
+				pcall(function() ExposedMembers.CivvisOperatorHold = false; end);
 				local action = try(function() return ActionTypes.ACTION_RETIRE; end);
 				if action == nil then
 					emit("retire_failed", { why = "no_action_type" });
@@ -21448,6 +22355,7 @@ local function tick()
 					end, 0)) or 0;
 					local culture = (against > 0) and (100 * tourists / against) or 0;
 					local diplo = 100 * (tonumber(c.points) or 0) / 20;
+					c.culture = culture;
 					c.progress = (culture > diplo) and culture or diplo;
 					if c.progress > 100 then c.progress = 100; end
 				end
@@ -21507,14 +22415,20 @@ local function tick()
 						-- only matters at the sessions a leader can win from. Below
 						-- `DiploVictoryVoteFloor` points (12: four sessions of +2 from
 						-- twenty) the free vote is still cast against the leader and
-						-- nothing is spent; from there every session spends the bank.
+						-- nothing is spent; from there each session spends its share
+						-- of the bank (`CivvisCongressBallotBank`).
 						local floor = cfg.DiploVictoryVoteFloor or 12;
 						local maxVotes = tonumber(costs.MaxVotes) or 1;
 						-- Use the active game's host prices. Retain the Standard
 						-- comparison in the verdict for diagnosing pricing, without
 						-- limiting an Online ballot by a different speed's costs.
-						local budget, budgetHost, budgetStandard =
-							CivvisCongressVoteBudget(favor, costs, maxVotes);
+						-- See `CivvisCongressBallotBank`: the share of the
+						-- bank this session may spend.
+						local budget, budgetHost, budgetStandard = CivvisCongressVoteBudget(
+							CivvisCongressBallotBank(favor, leaderPoints, cfg,
+								tonumber(envoyTally.wc_review_favor) ~= nil
+									and favor < tonumber(envoyTally.wc_review_favor)),
+							costs, maxVotes);
 						envoyTally.ballot_budget =
 							{ host = budgetHost, standard = budgetStandard };
 						local n = 1;
@@ -21565,12 +22479,79 @@ local function tick()
 						-- Native t201 of civvis-20260927T132350Z-cont1: our 13
 						-- A/self votes joined the leader's 14 A votes against 18 B
 						-- votes; the leader, not us, received the +2 and won.
-						if ourIdx ~= nil and budget >= claim
-							and (tonumber(leaderPoints) or 0) < floor then
+						--
+						-- ★★★ AND FROM THE FLOOR, A CLAIM THAT OUTVOTES EVERY BLOCK.
+						-- Option A's +2 lands on whoever casts the largest A block,
+						-- and each rival votes A for itself: a B ballot against the
+						-- leader we picked does nothing to the rival with the
+						-- biggest block. Live King civvis-20261005T042226Z (game
+						-- 99) cast 10 B votes against Mapuche (15 DVP, picked on a
+						-- tie by score) at t221; option A won 14-10, Brazil's 8 A
+						-- votes for itself took the +2, and Brazil won on Diplomacy
+						-- at 222. Those 10 votes as an A claim were the biggest
+						-- block. So from the floor, when the session's share of the
+						-- bank buys `DiploVictoryOutvoteFactor` (2) times the largest
+						-- rival A block of the last session (`wc_rival_block`), the
+						-- ballot claims instead ("outvote"). The factor covers a
+						-- rival block that grew since (Brazil 4 -> 8); native t201
+						-- of T132350Z-cont1, our 13 against the leader's 14, stays a
+						-- denial. Off with `DiploVictoryOutvoteClaim = false`.
+						-- Below the floor too: game 102's Aztecs went 5 -> 10 -> 15
+						-- -> 20 with the leader by points under 12 at two of those
+						-- sessions, each +2 taken by a 4-6 vote block.
+						-- ★★ FROM 16 THE RIVALS GANG ON THE LEADER: NO CLAIM, NO
+						-- REDIRECT. Across October 2-5 the rivals voted B on a
+						-- leader at 16 in 57% of sessions, at 18 in all five; of
+						-- the five outvotes cast at 16 or more (with game 134,
+						-- civvis-20261005T140105Z t241: 432 Favor on 15 A votes
+						-- against a 34-15 B), B won four and none gave us the +2,
+						-- while every deny at 16-17 ended on B. The ballot then
+						-- votes with the gang (and the participation point) instead
+						-- of casting A into it. `DiploVictoryGangCertain` (16).
+						local ganged = (tonumber(leaderPoints) or 0)
+							>= (tonumber(cfg.DiploVictoryGangCertain) or 16);
+						if ourIdx ~= nil and ((budget >= claim
+							and (tonumber(leaderPoints) or 0) < floor)
+							or (cfg.DiploVictoryOutvoteClaim ~= false and not ganged
+								and tonumber(envoyTally.wc_rival_block) ~= nil
+								and budget >= (tonumber(cfg.DiploVictoryOutvoteFactor) or 2)
+									* math.max(tonumber(envoyTally.wc_rival_block), 1))) then
 							option = 1;
 							selection = ourIdx;
 							n = budget;
-							mode = "claim";
+							mode = (budget >= claim and (tonumber(leaderPoints) or 0) < floor)
+								and "claim" or "outvote";
+						end
+						-- See `CivvisCongressRedirect`: a +2 we can take from a
+						-- contender goes to us or a rival far behind instead.
+						if mode ~= "claim" and mode ~= "outvote" and not ganged then
+							local to, count, how = CivvisCongressRedirect(
+								envoyTally.wc_rival_blocks_seen or envoyTally.wc_rival_blocks,
+								candidates, pid, budget, maxVotes, cfg, envoyTally.wc_dvp_won);
+							for idx, t in pairs(to ~= nil and targets or {}) do
+								if tonumber(t) == to then
+									option, selection, n, mode = 1, idx, count, how;
+								end
+							end
+						end
+						-- ★★ AN OUTVOTE FROM THE FLOOR GOES ALL IN. A claim is won
+						-- or lost whole: the +2 goes to the largest A block, ties
+						-- lose, and a rival's block can triple between sessions.
+						-- Live King civvis-20261005T124739Z (game 130) t181: half
+						-- of 451 Favor cast 11 votes against India's last block of
+						-- 4; India cast 12, took the +2 (9 -> 14) and won on
+						-- Diplomacy at 222 -- 13 votes were in the bank. Of 58
+						-- recorded claims for us (October 2-5), 12 lost, 10 of
+						-- them by three votes or fewer with Favor left unspent. So
+						-- from the floor an outvote casts every vote the bank buys
+						-- above `DiploVictoryOutvoteReserve` (60) when that is
+						-- more. Below the floor the paced reserve stands. Off with
+						-- `DiploVictoryOutvoteAllIn = false`.
+						if mode == "outvote" and cfg.DiploVictoryOutvoteAllIn ~= false
+								and (tonumber(leaderPoints) or 0) >= floor then
+							local allIn = CivvisCongressVoteBudget(math.max(0, favor
+								- (tonumber(cfg.DiploVictoryOutvoteReserve) or 60)), costs, maxVotes);
+							if allIn > n then n = allIn; end
 						end
 						votes = n;
 						local cost = (n > 1 and costs[n - 1]) or 0;
@@ -21617,6 +22598,36 @@ local function tick()
 						end
 					elseif BAN_FIRST[rtype] then
 						option = 2;
+					end
+					-- See `CivvisParticipationDenialOption`: against a leader on
+					-- the denial floor, the option its own vote is predicted
+					-- not to take, with three votes when Favor allows. On a
+					-- player-target resolution option B names the leader.
+					local deny = CivvisParticipationDenialOption(rtype, leader, pid,
+						leaderPoints, envoyTally.wc_last_option, cfg);
+					if deny ~= nil then
+						option = deny;
+						if r.TargetType == "PlayerType" then
+							for idx, t in pairs(targets) do
+								if tonumber(t) == ((deny == 2) and leader or pid) then selection = idx; end
+							end
+						end
+						local want = tonumber(cfg.ParticipationDenialVotes) or 3;
+						local price = tonumber(costs[want - 1]);
+						if want > 1 and price ~= nil and price <= favor then
+							votes = want;
+							favor = favor - price;
+							spent = spent + price;
+						end
+					elseif option == 2 and tonumber(targets[selection]) == threat then
+						-- See `CivvisCultureEmbargoVotes`.
+						local want, price = CivvisCultureEmbargoVotes(rtype, threat, candidates,
+							favor, costs, leaderPoints, envoyTally.wc_last_a, cfg);
+						if want > 1 then
+							votes = want;
+							favor = favor - price;
+							spent = spent + price;
+						end
 					end
 					local params = {};
 					params[PlayerOperations.PARAM_RESOLUTION_TYPE] = info.Hash;
@@ -21751,6 +22762,9 @@ local function tick()
 			end
 		end
 
+		if CivvisBoard.operatorHold(turn) then return; end
+		if CivvisBoard.paceHold(turn) then return; end
+
 		-- ⚠ DO NOT END A TURN WHOSE DECISIONS HAVE NOT BEEN MADE. Every order below
 		-- this point assumes the turn has been played. Ending first would hand CIVVIS
 		-- a board it never acted on and read, in telemetry, exactly like a controller
@@ -21864,6 +22878,31 @@ local function tick()
 						-- forfeit, and it keeps a quiet first response from wedging the turn.
 						local dropped = dismissBlocker(pid, blocker);
 						answered = answered .. "+forced";
+						emit("dismissed", { turn = turn, blocker = name,
+						                    dismissed = dropped, attempts = attempts,
+						                    answered = answered, parked = parked,
+						                    forfeit = 0, forced = true, same_pass = true });
+						same_pass_forced = true;
+						pcall(function()
+							CivvisQueue.requestEndTurn(turn,
+							                 { REASON = "UserForced" });
+						end);
+					end
+					-- Run civvis-20260928T150733Z reached turn 136 three times:
+					-- this was the first blocker, then the UI waited on an idle
+					-- galley. The game core went quiet before the unit blocker could
+					-- be observed. All governor titles were already spent, so the
+					-- opportunity was a reminder, not a decision left to make. Park
+					-- ready units while we still have this callback, then end the
+					-- turn in the same pass instead of waiting for another sighting.
+					if name == "ENDTURN_BLOCKING_GOVERNOR_OPPORTUNITY"
+						and try(function()
+							local governors = player:GetGovernors();
+							return governors:GetGovernorPoints() <= governors:GetGovernorPointsSpent();
+						end, false) then
+						local parked = parkReadyUnits(player);
+						local dropped = dismissBlocker(pid, blocker);
+						answered = answered .. "+parked:" .. parked .. "+forced";
 						emit("dismissed", { turn = turn, blocker = name,
 						                    dismissed = dropped, attempts = attempts,
 						                    answered = answered, parked = parked,
@@ -22468,6 +23507,13 @@ CivvisQueue.onUiPulse = function(source)
 		or cfg.Play == false and "disabled" or not cfg.CivvisDecides and "standalone";
 	if rejected then CivvisQueue.noteUiPulse(source, rejected); return; end
 	pcall(CivvisQueue.checkAiPhaseStall);
+	-- A held game is quiet on purpose: tick every pulse so a lifted pause is
+	-- noticed even while the core publishes nothing, and do not call it a wake.
+	if CivvisBoard.hold.held then
+		tick();
+		CivvisQueue.lastUiTick = CivvisQueue.controllerTicks or 0;
+		return;
+	end
 	local serial = CivvisQueue.controllerTicks or 0;
 	if CivvisQueue.lastUiTick ~= serial then
 		CivvisQueue.noteUiPulse(source, "observing");
@@ -22504,7 +23550,12 @@ end;
 -- `orders_peek_wake` says how long the controller had gone without a tick.
 CivvisQueue.onPeekPulse = function()
 	if finished or inTick or cfg.Play == false or not cfg.CivvisDecides then return; end
+	-- Orders the brain wrote for a held turn stay landed until it resumes; the
+	-- UI pulse above owns the held game's ticks.
+	if CivvisBoard.hold.held then return; end
 	if not CivvisQueue.ordersLanded() then return; end
+	-- A turn held to the watch pace: tick quietly until its wait is up.
+	if CivvisBoard.hold.pacing then tick(); return; end
 	local now = CivvisClock.now();
 	local last = CivvisQueue.lastTickAt;
 	emit("orders_peek_wake", {
@@ -22526,6 +23577,13 @@ local function onTeamVictory(team, victoryType, eventID)
 	emit("victory", {
 		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
 		team = team, victory = victoryType,
+		-- The integer is the host's `GameInfo.Victories` index; name it here
+		-- so every outcome row is self-describing without the start-of-game
+		-- `victory_types` table (3 = VICTORY_CULTURE on this install).
+		victory_type = try(function()
+			local row = GameInfo.Victories[victoryType];
+			return row ~= nil and row.VictoryType or nil;
+		end, nil),
 		local_player = pid, local_team = ourTeam,
 		won = (team == ourTeam),
 		score = try(function()

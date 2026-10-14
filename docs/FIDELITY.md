@@ -3384,6 +3384,31 @@ alone reads a frame-0 order against a frame-2 position. The handicap is
 episode table: a constant ratio across cities is a multiplier, and King's is
 the only one with production and gold at 1.20 and the rest at 1.08.
 
+## Measured: the live host lets our siege units fire after they move (2026-10-03)
+
+Civilization VI's data gives every siege unit (`CLASS_SIEGE_SETUP`: Catapult,
+Trebuchet, Bombard, Artillery, Rocket Artillery) `ABILITY_NO_MOVE_AND_SHOOT`,
+"Cannot move and attack in the same turn" (`MODIFIER_PLAYER_UNIT_ADJUST_MOVE_AND_ATTACK`
+with `CanAttack = false`, lifted by Expert Crew), and a native board keeps that
+rule (`do_ranged`: "siege units cannot move and attack in the same turn"). The
+live host does not hold our seat to it. Across the 59 control runs of
+2026-09-30 to 10-03, 104 Range Attacks were ordered for a siege unit of ours
+after a Move To in an earlier frame of the same turn, and 94 of them resolved
+as combat, against 470 of 507 for a gun that had not moved: the same nine in
+ten. None of those guns had Expert Crew, and the host exports
+`attacks_remaining = 1` after the step. Live King civvis-20261003T135713Z,
+turn 101: a fresh Trebuchet stepped from (16,16) to (15,15) in frame 0, fired
+in frame 1, and took 23 off Kwadukuza's walls.
+
+The mirror clears `moved` at every frame, so the seat fired after a step only
+when a re-plan frame happened to follow it, and the planned turn left a gun at
+its new post unfired for the city's reply. `Game::siege_may_attack_after_moving`
+now answers yes for a siege unit of `MIRRORED_SEAT` on a host-observed board
+and no for a hostile one and on every native board, so no simulated, screened
+or arena game changes. To re-measure: join `orders.sqlite` (`turn`, `frame`,
+`subject`, `verb` of MOVE_TO and RANGE_ATTACK) to the run's `events.jsonl`
+`host_move` and `combat` rows by turn and unit.
+
 <!-- live-divergence:begin -->
 ## Measured divergence: the engine's next turn against the game's
 

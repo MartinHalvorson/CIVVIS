@@ -58,6 +58,8 @@ fn score_counter_preserves_other_contracts_and_existing_pressure_gates() {
         );
     }
     let mut ai = controller(VictoryTarget::Domination);
+    // A Domination seat keeps out of the space race, so a launch chain is
+    // answered by its army even with `counter-in-lane` on.
     assert_eq!(
         ai.denial_response_for_pressure(
             &g,
@@ -69,7 +71,7 @@ fn score_counter_preserves_other_contracts_and_existing_pressure_gates() {
                 progress: 97
             }
         ),
-        Some(GrandStrategy::Science)
+        Some(GrandStrategy::Conquest)
     );
     assert_eq!(
         ai.denial_response_for_pressure(

@@ -101,6 +101,12 @@ fn retreat_danger_field_includes_an_oppidum_as_its_own_actor() {
     let mut field = battle_planner::DangerField::with_reach(&g, 1, true);
     let blows = field.contributions(target, victim);
     assert_eq!(blows.len(), 1);
-    assert!(blows[0].0.is_none() && blows[0].1 > 0.0);
+    // Its blow is a structure's, tagged for the shared-danger reading.
+    assert!(
+        blows[0]
+            .0
+            .is_some_and(|id| id & battle_planner::STRUCTURE_SOURCE != 0)
+            && blows[0].1 > 0.0
+    );
     assert!(g.wdist(g.cities[&city].pos, target) > 2);
 }

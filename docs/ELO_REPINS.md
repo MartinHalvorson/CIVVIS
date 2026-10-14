@@ -2155,3 +2155,54 @@ The unchanged five-profile probe now measures **18,909 decisions and
 hashing function agree. The full suite exposed this deliberate shared-engine
 change; updating the pin records that boundary. The fingerprint and smoke
 games do not establish stronger play or a native Domination win.
+
+## v42 (2026-10-03) — a ranged strike reads the target's terrain height
+
+d212a7973 corrects shared line of sight for ranged strikes:
+`has_line_of_sight` and `unit_has_line_of_sight_from` now measure the target
+tile at its terrain height instead of `sight_height`, which added a City
+Center's or Encampment's +1 vantage. Civilization VI refuses a shot from flat
+ground at a Hills city across a Hills tile; over the recorded range-2 strikes of
+five live games the terrain-height target predicts all ten host refusals of a
+city shot the vantage had read as clear and contradicts none of the 47 range-2
+city hits. Sight itself keeps the vantage. This is engine fidelity that every
+controller uses, including `AdvancedAi::legacy()`; it is not an AI policy and
+not a gene gate.
+
+A bisect over the pinned live branch (good fa854b694, bad d212a7973, the
+commit alone) located the change, and the anchor at d212a7973 and at the
+branch tip agree, so nothing later moved it. The unchanged five-profile probe
+now measures **18,903 decisions and `0xbad7_b8b7_5c93_0af0`**, replacing v41's
+**18,909 decisions and `0x73b8_2ccc_dff4_361b`**. The fingerprint does not
+establish stronger play.
+
+
+## v43 (2026-10-04) — every shipped civilization unique unit is in the rules
+
+The unique-unit roster was completed from the installed game database: 32
+civilization and leader uniques the rules lacked (the Immortal, Mamluk, Impi,
+Conquistador, Janissary, Redcoat, Garde Imperiale, Huszar, Black Army, Hwacha,
+Domrey, Khevsureti, Berserker, Carolean, Digger, Mountie, Hetairoi and their
+naval and air peers). Each row is the loader's `Units`, `UnitReplaces`,
+`UnitUpgrades` and `Units_XP2.ResourceCost` values; `tools/civ6_fidelity.py`
+now compares 132 units with 0 divergent fields (it compared 100 before). A
+civilization that owns one now trains it in place of the unit it replaces —
+`Game::player_unit_replacement` — so this is shared-engine rules data that
+every controller reads, including `AdvancedAi::legacy()`; it is not an AI
+policy and not a gene gate. See `docs/DECISIVE_WINDOWS.md` §6.
+
+The same change stops `AdvancedAi::tech_value`'s one-step lookahead from
+counting other civilizations' unique units as unlocks. It had always counted
+them (the Pitati behind Archery, the Hoplite behind Bronze Working, for every
+civilization), and with the whole roster Military Tactics alone carries the
+Impi, the Berserker and the Khevsureti: +24 on Mathematics for everyone. The
+lookahead now counts a unit only when `unique_to` is absent or names the
+seat's own civilization. This reaches `legacy()` too, and belongs to the
+roster: without it the new rows would distort every civilization's research.
+
+The genes added alongside it (`decisive-window`, `unique-unit-preference`)
+are default-off and left the anchor unchanged at their own commit. The data
+alone measured 18,951 decisions and `0x1c4c_d7be_51af_a50e`; with the
+lookahead filter the unchanged five-profile probe now measures **19,362
+decisions and `0x0f0e_d009_a74c_279c`**, replacing v42's **18,903 decisions and
+`0xbad7_b8b7_5c93_0af0`**. The fingerprint does not establish stronger play.

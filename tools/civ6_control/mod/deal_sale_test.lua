@@ -99,6 +99,10 @@ local resourceRows = {
 		ResourceClassType = "RESOURCECLASS_LUXURY" },
 	RESOURCE_JADE = { ResourceType = "RESOURCE_JADE", Index = 18,
 		ResourceClassType = "RESOURCECLASS_LUXURY" },
+	RESOURCE_TRUFFLES = { ResourceType = "RESOURCE_TRUFFLES", Index = 31,
+		ResourceClassType = "RESOURCECLASS_LUXURY" },
+	RESOURCE_NITER = { ResourceType = "RESOURCE_NITER", Index = 46,
+		ResourceClassType = "RESOURCECLASS_STRATEGIC" },
 }
 GameInfo = {
 	Resources = setmetatable({}, { __index = function(_, key)
@@ -110,7 +114,7 @@ GameInfo = {
 		end
 		return resourceRows[key]
 	end }),
-	Resource_Consumption = { RESOURCE_IRON = { Accumulate = true } },
+	Resource_Consumption = { RESOURCE_IRON = { Accumulate = true }, RESOURCE_NITER = { Accumulate = true } },
 	-- Indexable by NAME (the sell arm's `want.name` lookup) and by the
 	-- description id a possible-items entry carries (`ForTypeDescriptionID`),
 	-- the way the shipped deal screen reads the same table both ways.
@@ -1020,6 +1024,398 @@ check("an invalid copy item is refused", why, "resource_invalid")
 check("an invalid copy item is removed", linvalid.removed and #linvalid.removed, 1)
 check("an invalid copy item starts the cooldown", trade.asked[4], 196)
 check("no luxury guard opened a session", rawget(_G, "SESSION_OPENED"), nil)
+
+-- ─── the favor purchase ─────────────────────────────────────────────────────
+-- `FAVOR=N` on the buy arm: THEIR favor, a lump clipped to the bank the
+-- engine says they hold, EQUALIZE; the handler closes when their side holds
+-- that much favor or more against our gold at or under the ceiling.
+local function favorOrder(pid, subject, player, turn, ceiling, verb)
+	return applyOrder(player, pid, {
+		kind = "buy", subject = tostring(subject), verb = verb or "FAVOR=37", x = ceiling, y = 0,
+	}, turn)
+end
+
+reset()
+local fasks, fasksPlayer = fixture({})
+ok, why = favorOrder(7, 3, fasksPlayer, 210, 296)
+check("favor ask is submitted", ok, true)
+check("favor ask says asked", why, "buy_asked")
+local block = itemOfKind(fasks, DealItemTypes.FAVOR)
+check("the favor is THEIRS to give", block and block.owner, 3)
+check("the favor is the block asked", block and block.amount, 37)
+check("the favor is a lump", block and block.duration, 0)
+check("nothing of ours goes on the favor table", #fasks.items, 1)
+check("the favor ask is EQUALIZE", fasks.sends[1][1], "equalize")
+check("no PROPOSED goes out on the favor ask", callAt(fasks, "send_proposed"), nil)
+check("the pending favor ask knows what it wants", trade.pending[3].want, "FAVOR")
+check("the pending favor ask knows how much", trade.pending[3].want_amount, 37)
+check("the pending favor ask keeps the ceiling", trade.pending[3].ceiling, 296)
+check("the favor offer names the block", eventField(lastEvent("deal_offer"), "want"), "FAVOR=37")
+
+-- Their bank is smaller than the ask: the block is clipped and the ceiling
+-- shrinks with it; under ten points nothing is asked and the cooldown runs.
+reset()
+local fclip, fclipPlayer = fixture({ favorMax = 20 })
+ok, why = favorOrder(7, 3, fclipPlayer, 216, 296)
+check("a clipped favor ask is submitted", why, "buy_asked")
+check("the clipped block is their bank", itemOfKind(fclip, DealItemTypes.FAVOR).amount, 20)
+check("the clipped ceiling shrinks with it", trade.pending[3].ceiling, 160)
+reset()
+local fpoor, fpoorPlayer = fixture({ favorMax = 5 })
+ok, why = favorOrder(7, 3, fpoorPlayer, 216, 296)
+check("a near-empty bank is not worth the window", why, "buy_no_favor")
+check("the empty favor item is removed", fpoor.removed and #fpoor.removed, 1)
+check("a near-empty bank starts the cooldown", trade.asked[3], 216)
+check("a near-empty bank sends nothing", fpoor.sends, nil)
+ok, why = favorOrder(7, 4, fpoorPlayer, 216, 296, "FAVOR=0")
+check("an empty block is unknown", why, "buy_unknown_item")
+
+-- The rival prices 37 favor at 250 lump: under the ceiling, closed.
+reset()
+local ffair, ffairPlayer = fixture({})
+favorOrder(7, 3, ffairPlayer, 222, 296)
+local fgot = fixture({ incoming = {
+	{ kind = DealItemTypes.FAVOR, from = 3, duration = 0, amount = 37 },
+	{ kind = DealItemTypes.GOLD, from = 7, duration = 0, amount = 250 },
+} })
+onIncoming(3, 7, DealProposalAction.ADJUSTED)
+check("a fair favor price is accepted", fgot.sends and fgot.sends[1][1], "accepted")
+check("the favor close is in the ledger", eventField(lastEvent("deal_closed"), "pay"), "250")
+check("the favor close names what it wanted", eventField(lastEvent("deal_closed"), "want"), "FAVOR")
+check("the answer settles the favor buy", trade.pending[3], nil)
+
+-- A smaller block, a price over the ceiling, or anything of ours besides
+-- gold: declined.
+for _, case in ipairs({
+	{ "a smaller favor block is declined", 30, 200, nil },
+	{ "a favor price over the ceiling is declined", 37, 300, nil },
+	{ "our favor slipped onto the table is declined", 37, 200,
+		{ kind = DealItemTypes.FAVOR, from = 7, duration = 0, amount = 10 } },
+}) do
+	reset()
+	local _, askPlayer = fixture({})
+	favorOrder(7, 3, askPlayer, 228, 296)
+	local answer = {
+		{ kind = DealItemTypes.FAVOR, from = 3, duration = 0, amount = case[2] },
+		{ kind = DealItemTypes.GOLD, from = 7, duration = 0, amount = case[3] },
+	}
+	if case[4] ~= nil then answer[#answer + 1] = case[4] end
+	local declined = fixture({ incoming = answer })
+	onIncoming(3, 7, DealProposalAction.ADJUSTED)
+	check(case[1], declined.sends, nil)
+	check(case[1] .. " (settled)", trade.pending[3], nil)
+end
+
+-- ─── the strategic purchase ─────────────────────────────────────────────────
+-- `RESOURCE_X=N` on the buy arm (`siege-buys-the-gun-resource`): THEIR
+-- strategic X, a lump clipped to what their table offers, EQUALIZE; the
+-- handler closes when their side holds that much or more against our gold at
+-- or under the ceiling.
+-- In a function of its own: the test chunk sits at Lua 5.1's 200-local
+-- ceiling, which a `do` block does not lift.
+;(function()
+local function strategicOrder(pid, subject, player, turn, ceiling, verb)
+	return applyOrder(player, pid, {
+		kind = "buy", subject = tostring(subject), verb = verb or "RESOURCE_NITER=40", x = ceiling, y = 0,
+	}, turn)
+end
+
+reset()
+local sasks, sasksPlayer = fixture({ theirPossible = { RESOURCE_NITER = 82 } })
+ok, why = strategicOrder(7, 3, sasksPlayer, 234, 600)
+check("strategic ask is submitted", ok, true)
+check("strategic ask says asked", why, "buy_asked")
+check("the rival's strategic table is read, owner first",
+	sasks.possibleArgs[1] .. ":" .. sasks.possibleArgs[2], "3:7")
+local lump = itemOfKind(sasks, DealItemTypes.RESOURCES)
+check("the strategic is THEIRS to give", lump and lump.owner, 3)
+check("the strategic carries the engine's type", lump and lump.valueType, 46)
+check("the strategic is the block asked", lump and lump.amount, 40)
+check("the strategic is a lump", lump and lump.duration, 0)
+check("nothing of ours goes on the strategic table", #sasks.items, 1)
+check("the strategic ask is EQUALIZE", sasks.sends[1][1], "equalize")
+check("no PROPOSED goes out on the strategic ask", callAt(sasks, "send_proposed"), nil)
+check("the pending strategic ask knows what it wants", trade.pending[3].want, "RESOURCES:46")
+check("the pending strategic ask knows how much", trade.pending[3].want_amount, 40)
+check("the pending strategic ask is marked", trade.pending[3].strategic, true)
+check("the pending strategic ask keeps the ceiling", trade.pending[3].ceiling, 600)
+check("the strategic offer names the block", eventField(lastEvent("deal_offer"), "want"), "RESOURCE_NITER=40")
+
+-- Their table offers less than the ask: the block is the offer and the
+-- ceiling shrinks with it.
+reset()
+local sclip, sclipPlayer = fixture({ theirPossible = { RESOURCE_NITER = 25 } })
+ok, why = strategicOrder(7, 3, sclipPlayer, 240, 600)
+check("a clipped strategic ask is submitted", why, "buy_asked")
+check("the clipped strategic block is their offer", itemOfKind(sclip, DealItemTypes.RESOURCES).amount, 25)
+check("the clipped strategic ceiling shrinks with it", trade.pending[3].ceiling, 375)
+
+-- Not on their table, a luxury named like a strategic, or a name the
+-- ruleset lacks: refused, and the first two start the cooldown.
+reset()
+local snone, snonePlayer = fixture({ theirPossible = { RESOURCE_AMBER = 1 } })
+ok, why = strategicOrder(7, 3, snonePlayer, 246, 600)
+check("a strategic their table lacks is refused", why, "buy_no_strategic")
+check("the refusal starts the cooldown", trade.asked[3], 246)
+check("the refusal sends nothing", snone.sends, nil)
+check("the refusal leaves no pending ask", trade.pending[3], nil)
+reset()
+ok, why = strategicOrder(7, 3, snonePlayer, 246, 600, "RESOURCE_AMBER=2")
+check("a luxury is not a strategic purchase", why, "buy_no_strategic")
+reset()
+ok, why = strategicOrder(7, 3, snonePlayer, 246, 600, "RESOURCE_BOGUS=5")
+check("an unknown strategic is refused", why, "buy_unknown_item")
+ok, why = strategicOrder(7, 3, snonePlayer, 246, 600, "RESOURCE_NITER=0")
+check("an empty strategic block is refused", why, "buy_unknown_item")
+reset()
+local swar, swarPlayer = fixture({ theirPossible = { RESOURCE_NITER = 82 }, atWar = true })
+ok, why = strategicOrder(7, 3, swarPlayer, 246, 600)
+check("a rival at war sells no strategic", why, "buy_at_war")
+
+-- The rival prices 40 Niter at 400 lump: under the ceiling, closed; a
+-- larger block at that price closes too.
+for _, case in ipairs({
+	{ "a fair strategic price is accepted", 40 },
+	{ "a larger strategic block is accepted", 45 },
+}) do
+	reset()
+	local _, askPlayer = fixture({ theirPossible = { RESOURCE_NITER = 82 } })
+	strategicOrder(7, 3, askPlayer, 252, 600)
+	local got = fixture({ incoming = {
+		{ kind = DealItemTypes.RESOURCES, from = 3, duration = 0, amount = case[2], valueType = 46 },
+		{ kind = DealItemTypes.GOLD, from = 7, duration = 0, amount = 400 },
+	} })
+	onIncoming(3, 7, DealProposalAction.ADJUSTED)
+	check(case[1], got.sends and got.sends[1][1], "accepted")
+	check(case[1] .. " (ledger)", eventField(lastEvent("deal_closed"), "want"), "RESOURCES:46")
+	check(case[1] .. " (settled)", trade.pending[3], nil)
+end
+
+-- A smaller block, a price over the ceiling, or anything of ours besides
+-- gold: declined.
+for _, case in ipairs({
+	{ "a smaller strategic block is declined", 30, 300, nil },
+	{ "a strategic price over the ceiling is declined", 40, 700, nil },
+	{ "our resource slipped onto the strategic table is declined", 40, 300,
+		{ kind = DealItemTypes.RESOURCES, from = 7, duration = 30, amount = 1, valueType = 3 } },
+}) do
+	reset()
+	local _, askPlayer = fixture({ theirPossible = { RESOURCE_NITER = 82 } })
+	strategicOrder(7, 3, askPlayer, 258, 600)
+	local answer = {
+		{ kind = DealItemTypes.RESOURCES, from = 3, duration = 0, amount = case[2], valueType = 46 },
+		{ kind = DealItemTypes.GOLD, from = 7, duration = 0, amount = case[3] },
+	}
+	if case[4] ~= nil then answer[#answer + 1] = case[4] end
+	local declined = fixture({ incoming = answer })
+	onIncoming(3, 7, DealProposalAction.ADJUSTED)
+	check(case[1], declined.sends, nil)
+	check(case[1] .. " (settled)", trade.pending[3], nil)
+end
+
+-- ─── the barter ───────────────────────────────────────────────────────────
+-- `RESOURCE_X=N;RESOURCE_A=a,...`: their strategic, and OUR spares from our
+-- side of the table the way the sell arm puts them there — a strategic as a
+-- lump, a luxury for thirty turns and never its last copy — with Gold up to
+-- the ceiling, which may be nothing.
+reset()
+local bart, bartPlayer = fixture({
+	theirPossible = { RESOURCE_NITER = 82 },
+	possible = { RESOURCE_AMBER = 2, RESOURCE_IRON = 30 },
+	own = { RESOURCE_AMBER = 2, RESOURCE_IRON = 30 },
+})
+ok, why = strategicOrder(7, 3, bartPlayer, 264, 156, "RESOURCE_NITER=20;RESOURCE_AMBER=1,RESOURCE_IRON=10")
+check("a barter ask is submitted", why, "buy_asked")
+local mineAmber, mineIron, theirNiter = nil, nil, nil
+for _, item in ipairs(bart.items) do
+	if item.owner == 7 and item.valueType == 3 then mineAmber = item end
+	if item.owner == 7 and item.valueType == 44 then mineIron = item end
+	if item.owner == 3 and item.valueType == 46 then theirNiter = item end
+end
+check("their Niter is on the table", theirNiter and theirNiter.amount, 20)
+check("our spare luxury copy goes from our side", mineAmber and mineAmber.amount, 1)
+check("the luxury copy runs thirty turns", mineAmber and mineAmber.duration, 30)
+check("our surplus strategic goes as a lump", mineIron and mineIron.duration, 0)
+check("the strategic block is the one bartered", mineIron and mineIron.amount, 10)
+check("the barter is remembered", trade.pending[3].gave and trade.pending[3].gave["RESOURCES:44"], 10)
+check("the barter offer says what it gives", eventField(lastEvent("deal_offer"), "want"),
+	"RESOURCE_NITER=20;RESOURCE_AMBER=1,RESOURCE_IRON=10")
+
+-- Nothing but the barter: a ceiling of nothing is still an ask.
+reset()
+local _, freePlayer = fixture({
+	theirPossible = { RESOURCE_NITER = 82 }, possible = { RESOURCE_IRON = 30 },
+	own = { RESOURCE_IRON = 30 },
+})
+ok, why = strategicOrder(7, 3, freePlayer, 270, 0, "RESOURCE_NITER=20;RESOURCE_IRON=25")
+check("a Gold-free barter is asked", why, "buy_asked")
+ok, why = strategicOrder(7, 4, freePlayer, 270, 0)
+check("a Gold-only ask with no ceiling is not", why, "buy_no_ceiling")
+
+-- Never our last copy of a luxury: it stays home, and the ask it was priced
+-- into does not go out short of it (game 351 sent 10 Oil for one Truffles
+-- copy three times after its Gypsum stayed home; Kongo rejected each).
+reset()
+local last, lastPlayer = fixture({
+	theirPossible = { RESOURCE_NITER = 82 },
+	possible = { RESOURCE_AMBER = 1, RESOURCE_IRON = 30 },
+	own = { RESOURCE_AMBER = 1, RESOURCE_IRON = 30 },
+})
+ok, why = strategicOrder(7, 3, lastPlayer, 276, 156, "RESOURCE_NITER=20;RESOURCE_AMBER=1,RESOURCE_IRON=10")
+check("a barter short of its last luxury copy is refused", why, "barter_short")
+check("the short barter sends nothing", last.sends, nil)
+check("the short barter leaves nothing pending", trade.pending[3], nil)
+check("the short barter starts the cooldown", trade.asked[3], 276)
+check("the short barter clears the working deal", last.clearArgs and last.clearArgs[1], "outgoing")
+reset()
+local _, onlyLastPlayer = fixture({
+	theirPossible = { RESOURCE_NITER = 82 }, possible = { RESOURCE_AMBER = 1 },
+	own = { RESOURCE_AMBER = 1 },
+})
+ok, why = strategicOrder(7, 3, onlyLastPlayer, 282, 156, "RESOURCE_NITER=20;RESOURCE_AMBER=1")
+check("a barter of nothing but the last copy is refused", why, "barter_short")
+check("the refused barter starts the cooldown", trade.asked[3], 282)
+check("the refused barter leaves nothing pending", trade.pending[3], nil)
+-- An item off our table altogether is as short.
+reset()
+local _, offTablePlayer = fixture({
+	theirPossible = { RESOURCE_NITER = 82 }, possible = { RESOURCE_IRON = 30 },
+	own = { RESOURCE_IRON = 30 },
+})
+ok, why = strategicOrder(7, 3, offTablePlayer, 284, 156, "RESOURCE_NITER=20;RESOURCE_JADE=1,RESOURCE_IRON=10")
+check("a barter item off our table refuses the ask", why, "barter_short")
+
+-- The answer: our bartered items in no larger amount, Gold at or under the
+-- ceiling, their Gold welcome; anything else of ours, or more of it, is not.
+for _, case in ipairs({
+	{ "a barter answered with no Gold is accepted", {}, "accepted" },
+	{ "a barter topped up under the ceiling is accepted",
+		{ { kind = DealItemTypes.GOLD, from = 7, duration = 0, amount = 100 } }, "accepted" },
+	{ "a barter they sweeten with their Gold is accepted",
+		{ { kind = DealItemTypes.GOLD, from = 3, duration = 0, amount = 30 } }, "accepted" },
+	{ "a barter topped up over the ceiling is declined",
+		{ { kind = DealItemTypes.GOLD, from = 7, duration = 0, amount = 200 } }, nil },
+	{ "another item of ours on a barter is declined",
+		{ { kind = DealItemTypes.RESOURCES, from = 7, duration = 30, amount = 1, valueType = 18 } }, nil },
+	{ "more of a bartered strategic is declined",
+		{ { kind = DealItemTypes.RESOURCES, from = 7, duration = 0, amount = 5, valueType = 44 } }, nil },
+}) do
+	reset()
+	local _, askPlayer = fixture({
+		theirPossible = { RESOURCE_NITER = 82 },
+		possible = { RESOURCE_AMBER = 2, RESOURCE_IRON = 30 },
+		own = { RESOURCE_AMBER = 2, RESOURCE_IRON = 30 },
+	})
+	strategicOrder(7, 3, askPlayer, 288, 156, "RESOURCE_NITER=20;RESOURCE_AMBER=1,RESOURCE_IRON=10")
+	local answer = {
+		{ kind = DealItemTypes.RESOURCES, from = 3, duration = 0, amount = 20, valueType = 46 },
+		{ kind = DealItemTypes.RESOURCES, from = 7, duration = 30, amount = 1, valueType = 3 },
+		{ kind = DealItemTypes.RESOURCES, from = 7, duration = 0, amount = 10, valueType = 44 },
+	}
+	for _, extra in ipairs(case[2]) do answer[#answer + 1] = extra end
+	local answered = fixture({ incoming = answer })
+	onIncoming(3, 7, DealProposalAction.ADJUSTED)
+	check(case[1], answered.sends and answered.sends[1][1], case[3])
+	check(case[1] .. " (settled)", trade.pending[3], nil)
+end
+end)()
+
+-- ─── the luxury swap ────────────────────────────────────────────────────────
+-- `LUXURY_ANY;RESOURCE_A=a,...` (`luxury-swap-asks`): a luxury we lack —
+-- the copy the rival holds most of — against our SPARE copies from our side,
+-- each for thirty turns and never a last copy, Gold up to the ceiling, which
+-- may be nothing. The answer closes on their copy against our spares in no
+-- larger amount; their Gold is welcome, anything else of ours is not.
+;(function()
+local function swapOrder(pid, subject, player, turn, ceiling, verb)
+	return applyOrder(player, pid, {
+		kind = "buy", subject = tostring(subject),
+		verb = verb or "LUXURY_ANY;RESOURCE_TRUFFLES=1", x = ceiling, y = 0,
+	}, turn)
+end
+local function swapFixture(own)
+	return fixture({
+		theirPossible = { RESOURCE_AMBER = 1, RESOURCE_JADE = 2 },
+		possible = { RESOURCE_TRUFFLES = own },
+		own = { RESOURCE_TRUFFLES = own },
+	})
+end
+
+reset()
+local swap, swapPlayer = swapFixture(2)
+local ok, why = swapOrder(7, 3, swapPlayer, 300, 0)
+check("a Gold-free luxury swap is asked", why, "buy_asked")
+local theirs, ours = nil, nil
+for _, item in ipairs(swap.items) do
+	if item.owner == 3 then theirs = item end
+	if item.owner == 7 then ours = item end
+end
+check("the swap asks the rival's spare copy", theirs and theirs.valueType, 18)
+check("their copy runs thirty turns", theirs and theirs.duration, 30)
+check("our spare copy goes from our side", ours and ours.valueType, 31)
+check("one spare copy goes", ours and ours.amount, 1)
+check("our spare runs thirty turns", ours and ours.duration, 30)
+check("the swap is EQUALIZE", swap.sends and swap.sends[1][1], "equalize")
+check("the swap wants their copy", trade.pending[3].want, "RESOURCES:18")
+check("the swap remembers its spare", trade.pending[3].gave and trade.pending[3].gave["RESOURCES:31"], 1)
+check("the swap is no strategic ask", trade.pending[3].strategic, nil)
+check("the swap offer says both sides", eventField(lastEvent("deal_offer"), "want"),
+	"RESOURCE_JADE;RESOURCE_TRUFFLES=1")
+
+-- Our last copy never goes: the ask is refused before it is sent.
+reset()
+local last, lastPlayer = swapFixture(1)
+ok, why = swapOrder(7, 3, lastPlayer, 306, 0)
+check("a swap of our last copy is refused", why, "barter_short")
+check("the refused swap sends nothing", last.sends, nil)
+check("the refused swap leaves nothing pending", trade.pending[3], nil)
+check("the refused swap starts the cooldown", trade.asked[3], 306)
+
+-- A rival with nothing we lack: no swap.
+reset()
+local _, ownedPlayer = fixture({
+	theirPossible = { RESOURCE_JADE = 2 }, possible = { RESOURCE_TRUFFLES = 2 },
+	own = { RESOURCE_TRUFFLES = 2, RESOURCE_JADE = 1 },
+})
+ok, why = swapOrder(7, 3, ownedPlayer, 312, 0)
+check("a swap with nothing we lack is refused", why, "buy_no_luxury")
+
+for _, case in ipairs({
+	{ "a swap answered copy for copy is accepted", 0, {}, "accepted" },
+	{ "a swap topped up under the ceiling is accepted", 100,
+		{ { kind = DealItemTypes.GOLD, from = 7, duration = 0, amount = 60 } }, "accepted" },
+	{ "a swap they sweeten with their Gold is accepted", 0,
+		{ { kind = DealItemTypes.GOLD, from = 3, duration = 30, amount = 2 } }, "accepted" },
+	{ "a swap topped up over the ceiling is declined", 0,
+		{ { kind = DealItemTypes.GOLD, from = 7, duration = 0, amount = 60 } }, nil },
+	{ "another copy of ours on a swap is declined", 0,
+		{ { kind = DealItemTypes.RESOURCES, from = 7, duration = 30, amount = 1, valueType = 3 } }, nil },
+	{ "a second copy of their luxury on a swap is declined", 0,
+		{ { kind = DealItemTypes.RESOURCES, from = 3, duration = 30, amount = 1, valueType = 3 } }, nil },
+}) do
+	reset()
+	local _, askPlayer = swapFixture(3)
+	swapOrder(7, 3, askPlayer, 318, case[2])
+	local answer = {
+		{ kind = DealItemTypes.RESOURCES, from = 3, duration = 30, amount = 1, valueType = 18 },
+		{ kind = DealItemTypes.RESOURCES, from = 7, duration = 30, amount = 1, valueType = 31 },
+	}
+	for _, extra in ipairs(case[3]) do answer[#answer + 1] = extra end
+	local answered = fixture({ incoming = answer })
+	onIncoming(3, 7, DealProposalAction.ADJUSTED)
+	check(case[1], answered.sends and answered.sends[1][1], case[4])
+	check(case[1] .. " (settled)", trade.pending[3], nil)
+end
+-- A swap answered with no spare of ours is still the copy for nothing.
+reset()
+local _, freeAskPlayer = swapFixture(2)
+swapOrder(7, 3, freeAskPlayer, 324, 0)
+local free = fixture({ incoming = {
+	{ kind = DealItemTypes.RESOURCES, from = 3, duration = 30, amount = 1, valueType = 18 },
+} })
+onIncoming(3, 7, DealProposalAction.ADJUSTED)
+check("a swap they give for nothing is accepted", free.sends and free.sends[1][1], "accepted")
+end)()
 
 -- ─── wiring ─────────────────────────────────────────────────────────────────
 local src = assert(io.open(here .. "/CivvisControlAgent.lua")):read("*a")

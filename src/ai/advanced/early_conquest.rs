@@ -41,8 +41,9 @@
 //!    visibility frame for what stands on them. It never reads a city or a
 //!    defender the seat has not seen.
 //! 2. **The reservation** ([`AdvancedAi::conquest_reservation`]). While a
-//!    target stands and the standard turn is before
-//!    [`CONQUEST_COMMIT_DEADLINE`], the CAPITAL's production is reserved for
+//!    target is named before [`CONQUEST_COMMIT_DEADLINE`], the CAPITAL's
+//!    production is reserved through that deadline or a minimum preparation
+//!    window, whichever is later, for
 //!    [`CONQUEST_RANGED`] ranged bodies and [`CONQUEST_MELEE`] melee bodies,
 //!    and — when the best shooter the empire can train is a range-one
 //!    Slinger — the research picker chases the node that upgrades it, by the
@@ -50,8 +51,9 @@
 //!    reservation, not a bid: while it is unfilled the capital's Settler arm
 //!    is deferred outright, the way `threatened_recovery_holds_settlers`
 //!    defers it. It never defers the FIRST Settler (an empire of one city
-//!    has nothing to conquer with) and it never fires while the capital is
-//!    `threatened` — the defence sentinel outranks the whole opening.
+//!    has nothing to conquer with). A `threatened` capital keeps the
+//!    reservation: its bodies are the capital's defence, and a raider beside
+//!    the walls is the worst moment to train a Settler instead.
 //! 3. **Assembly and declaration**
 //!    ([`AdvancedAi::conquest_declaration`]). The force gathers at a rally
 //!    tile [`CONQUEST_RALLY_MIN`]–[`CONQUEST_RALLY_MAX`] tiles from the
@@ -127,25 +129,71 @@ use std::collections::BTreeSet;
 /// How far from our capital a target city may stand, in the wrapped world
 /// distance every campaign reach in this controller is measured in
 /// (`CAMPAIGN_REACH`, `CAMPAIGN_V2_REACH`, `rival_is_in_campaign_reach`).
-/// Twelve is `CAMPAIGN_V2_REACH`: the distance at which a force can reach
-/// the city without pulling the field army across a frontier.
-pub(crate) const CONQUEST_REACH_TILES: i32 = 12;
+///
+/// Eighteen, not `CAMPAIGN_V2_REACH`'s twelve. On the live King seat's
+/// four-player Tiny Pangaea (60×38) the nearest rival capital was first seen
+/// 13–23 tiles from ours in the 2026-09-28/29 runs, so a twelve-tile reach
+/// named a target in 4 of 21 games and the strike force the capital had
+/// already trained stood at home. In the opening there is no field army to
+/// pull across a frontier, and a Gran Colombia archer walks eighteen tiles in
+/// six or seven turns.
+pub(crate) const CONQUEST_REACH_TILES: i32 = 18;
+
+/// `conquest-opening-stays-near`: how far from our capital a target city may
+/// stand while the gene is on, in place of [`CONQUEST_REACH_TILES`].
+///
+/// The live King openings of 2026-10-04/05 (49 of them over 80 control
+/// games, Gran Colombia, four players, Pangaea): the seven named on a city
+/// ten or fewer tiles from the capital all declared, and four took their
+/// city (Nobamba, Brisbane, Tilburg, Nicomedia). The forty-two named eleven
+/// to eighteen tiles out took none. Nineteen of them released at the commit
+/// deadline with the force's six nearest bodies still six to fourteen tiles
+/// from a rally they never reached, eight lost the race to the rival's own
+/// declaration, and the nine that declared put 0.03-0.47 shots a turn into a
+/// city that heals 20 a turn and never fell. A far opening also holds the
+/// game's one opening through the whole window: in seven of those games a
+/// rival city ten or fewer tiles out came into view before turn 40 while the
+/// far opening still stood.
+pub(crate) const CONQUEST_NEAR_REACH_TILES: i32 = 10;
 
 /// The most cities a rival may be KNOWN to hold and still be an opening
-/// target. Beyond three the neighbour is no longer a small empire whose
+/// target. Beyond four the neighbour is no longer a small empire whose
 /// capital is a decisive prize; it is a war, and this gene is an opening.
-pub(crate) const CONQUEST_MAX_RIVAL_CITIES: usize = 3;
+/// Four, not three: a King rival on Online speed holds three or four cities
+/// by the turn its capital is first charted, so three closed the window on
+/// the very turn the target became visible.
+pub(crate) const CONQUEST_MAX_RIVAL_CITIES: usize = 4;
 
-/// The standard turn by which the force must have committed. Sixty is the
+/// The last standard turn on which a new opening can be named. Sixty is the
 /// end of the window in which the rung's handicap is still small and a city
-/// is still defended by one or two Ancient bodies; it is also the turn the
-/// opening band (`4–6 cities @ t60`) is measured at, so the reservation
-/// cannot run past the expansion decision it competes with.
+/// is still defended by one or two Ancient bodies. An opening named late in
+/// this window may finish its minimum preparation after turn sixty.
 pub(crate) const CONQUEST_COMMIT_DEADLINE: u32 = 60;
 
-/// Ranged bodies the capital reserves. Three shooters take a city's hit
-/// points down without ever standing in the counter-attack.
-pub(crate) const CONQUEST_RANGED: usize = 3;
+/// Standard turns a resumed controller may still name an opening past
+/// [`CONQUEST_COMMIT_DEADLINE`]. The decider's memory does not survive a
+/// freeze reload. Live King 2026-10-03T110427Z named Tenochtitlan at turn
+/// 39 (deadline 40 at this speed), froze at turn 42, and the process that
+/// resumed the turn-41 autosave started past the deadline with no opening.
+/// The reserved bodies drifted, and the war came at turn 78 under the
+/// ordinary desk, when Archers previewed 3-5 damage against the city.
+pub(crate) const CONQUEST_RESUME_GRACE_TURNS: u32 = 5;
+
+/// A target first seen near the end of that window still needs time to
+/// assemble the five reserved bodies. On Online speed the standard deadline
+/// is turn 40: the King Gran Colombia seat named Trà Kiệu on turn 36, then
+/// released the opening on turn 40 before any force could assemble. The same
+/// window starts when a second city lets the capital reserve production if
+/// that happens after the target is named.
+pub(crate) const CONQUEST_MIN_PREPARATION_TURNS: u32 = 30;
+
+/// Ranged bodies the capital reserves. Four shooters take a city's hit
+/// points down without ever standing in the counter-attack. Three was
+/// measured short: on 2026-09-29 (King, Susa) three Archers put 61 damage
+/// into the unwalled capital in their one full volley, the city healed
+/// 15–20 a turn, and Ancient Walls went up two turns later, after which an
+/// Archer's shot did 1–5. A fourth shooter makes it a two-volley city.
+pub(crate) const CONQUEST_RANGED: usize = 4;
 
 /// Melee bodies the capital reserves. Two: one to take the centre and one to
 /// replace it, which is exactly `CAMPAIGN_SPARE_BODIES` over the minimum a
@@ -168,13 +216,42 @@ pub(crate) const CONQUEST_RALLY_MAX: i32 = 3;
 /// The share of the force that must stand within
 /// [`CONQUEST_ASSEMBLY_RADIUS`] of the rally before the war opens.
 pub(crate) const CONQUEST_ASSEMBLY_SHARE: f64 = 0.8;
-/// How close to the rally a body counts as assembled.
-pub(crate) const CONQUEST_ASSEMBLY_RADIUS: i32 = 2;
+/// How close to the rally a body counts as assembled. Five, not two: the
+/// board holds the reserve at the rally as a loose formation, not on its
+/// ring. Live King 2026-10-01T080758Z had seven bodies for a six-body force
+/// from turn 38 — Archers and Warriors at 2, 2, 4, 5, 5 and 6 tiles from a
+/// rally three tiles from Pella — and released the opening on turn 40 with
+/// two "assembled"; the 2026-09-28 game expired the same way with bodies at
+/// 2, 2, 2, 4 and 5. A body five out of a rally three from the target is two
+/// turns from its first shot.
+pub(crate) const CONQUEST_ASSEMBLY_RADIUS: i32 = 5;
+
+/// A full force that is still marching gets one bounded extension when at
+/// least three of five bodies are already within the assembly radius and
+/// the rest are within [`CONQUEST_APPROACHING_RADIUS`]. In the King Online game on 2026-09-28,
+/// the opening expired on turn 40 with three bodies within two tiles and the
+/// other two four and five tiles away; expiration diverted the whole column.
+pub(crate) const CONQUEST_APPROACHING_SHARE: f64 = 0.6;
+/// Eight once the assembly radius is five: the grace is for a column one
+/// march behind the formation, not for one already counted in it.
+pub(crate) const CONQUEST_APPROACHING_RADIUS: i32 = 8;
+/// Bodies of a full force that may still be beyond
+/// [`CONQUEST_APPROACHING_RADIUS`] when the extension is granted.
+pub(crate) const CONQUEST_APPROACHING_STRAGGLERS: usize = 1;
+pub(crate) const CONQUEST_APPROACHING_GRACE_TURNS: u32 = 12;
 
 /// Standard turns after the force first assembled that the opening waits for
 /// a bill it can cover. Twenty is `CAMPAIGN_PATIENCE`: the same patience the
 /// shipped campaign gives an unlaunched plan.
 pub(crate) const CONQUEST_ABANDON_TURNS: u32 = 20;
+
+/// `opening-yields-to-walls`: city health at or above which a declared
+/// opening that has taken nothing reads as not having dented its target once
+/// [`CONQUEST_ABANDON_TURNS`] standard turns of war have passed. The three
+/// openings that converted on 10-04/05 had their target at 129 or less by the
+/// thirteenth turn of the war and took it by the fifteenth; the stalled ones
+/// sat at 178-200.
+pub(crate) const CONQUEST_UNDENTED_HP: i32 = 150;
 
 /// The war's own kills per loss at or above which the campaign extends to
 /// the rival's next city. One is break-even, and the live rate is 0.45: a
@@ -206,6 +283,54 @@ pub(crate) const CONQUEST_RESERVATION_PER_MISSING: f64 = 60.0;
 /// `early-archers` pays its own beeline.
 pub(crate) const CONQUEST_RESEARCH: f64 = 90.0;
 
+/// Battering Rams the capital adds to the reserved force when the target
+/// city has walls. Four shooters and two melee bodies cannot open even an
+/// Ancient Wall: live King 2026-10-01T080758Z named Pella on turn 18, Pella
+/// finished its Ancient Walls on turn 23, and every later siege of it
+/// ended with the walls still standing (300/300 at turn 117). A Ram beside
+/// the city lets the melee bodies strike the wall at full strength.
+pub(crate) const CONQUEST_WALL_BREAKERS: usize = 1;
+
+/// Recon bodies the empire keeps while the opening has nothing to aim at.
+/// One Scout is what the opening book buys; the second is this gene's.
+pub(crate) const CONQUEST_SEARCH_SCOUTS: usize = 2;
+
+/// What the second Scout is worth in the capital's ranking while no target
+/// is known. Above the Builder (260–295) and the opening Monument (240),
+/// below any Settler with a site (920 and up). The opening is inert until a
+/// rival city is charted in reach, and on the live King Tiny Pangaea the one
+/// opening Scout met no major until turn 43 (2026-09-30) or 46 (2026-09-29)
+/// while four Archers stood at home; `early-contact-window` values a second
+/// eye only for unmet city-states, and at a half share below a Builder.
+pub(crate) const CONQUEST_SEARCH_SCOUT_VALUE: f64 = 300.0;
+
+/// The slowest a city may train the search Scout and still be asked. An eye
+/// that arrives after the window it searches for is no eye: the first live
+/// game with the term (2026-09-30) put it in a 0.9-production second city,
+/// seventeen turns out, when the capital finished its Settler in four.
+pub(crate) const CONQUEST_SEARCH_SCOUT_MAX_TURNS: f64 = 6.0;
+
+/// `conquest-opening-needs-the-production`: standard turns between two
+/// journal lines for an opening the gene refuses, so a capital that stays
+/// short of the force does not write the same line every turn.
+pub(crate) const CONQUEST_FEASIBILITY_NOTE_TURNS: u32 = 5;
+
+/// `conquest-opening-needs-the-production`: tiles a strike-force body covers
+/// per turn on the march from the capital to the rally. An Ancient land
+/// body's two moves; roads and terrain are left out, so the march is priced
+/// at its best case.
+pub(crate) const CONQUEST_MARCH_TILES_PER_TURN: f64 = 2.0;
+
+/// `conquest-opening-needs-the-production`: the share of the window the
+/// best-case estimate may fill. The estimate leaves out the capital's other
+/// builds, barbarian pressure and the Settler's walk, so a force priced at
+/// the whole window does not arrive inside it. Replaying live game 94: at
+/// turn 14 the estimate read 26 turns of a 26-turn window, and live the
+/// second city came at 18, the book's Settler ran to 27, and the force was
+/// still short when the opening released at 40. None of the last 24 live
+/// openings ever took its city.
+pub(crate) const CONQUEST_FEASIBLE_SHARE: f64 = 0.8;
+
 /// The opening this controller has committed to.
 ///
 /// Everything the gene remembers between turns lives here, so the flag being
@@ -218,6 +343,10 @@ pub(crate) struct ConquestOpening {
     pub(crate) city: u32,
     /// The turn the target was first named.
     pub(crate) opened: u32,
+    /// The turn the empire first had two cities and could reserve the force.
+    pub(crate) preparing_since: Option<u32>,
+    /// The fixed end of a short extension granted when the full force nears the rally.
+    pub(crate) grace_until: Option<u32>,
     /// The tile the force gathers on, on our side of the city.
     pub(crate) rally: Pos,
     /// The strike force: the bodies this opening is spending.
@@ -239,14 +368,15 @@ impl ConquestOpening {
     /// The war's own kills per loss so far. A war with no losses yet trades
     /// at its kill count, and a war with neither is at the floor: an opening
     /// that has not yet paid anything is not evidence against itself.
+    #[cfg(test)]
     pub(crate) fn kills_per_loss(&self, g: &Game, pid: usize) -> f64 {
-        let kills = g.players[pid]
-            .counters
-            .get("kills")
-            .copied()
-            .unwrap_or(0)
-            .saturating_sub(self.kills_at_war)
-            .max(0) as f64;
+        self.kills_per_loss_at(g.players[pid].counters.get("kills").copied().unwrap_or(0))
+    }
+
+    /// The same rate against a kill total read elsewhere (see
+    /// `AdvancedAi::conquest_kills`).
+    pub(crate) fn kills_per_loss_at(&self, kills_now: i64) -> f64 {
+        let kills = kills_now.saturating_sub(self.kills_at_war).max(0) as f64;
         if self.losses == 0 {
             return kills.max(CONQUEST_KILLS_PER_LOSS_FLOOR);
         }
@@ -455,14 +585,32 @@ impl AdvancedAi {
 
     /// ⭐ THE TARGET: the city this opening is for, or `None`.
     ///
-    /// A met rival, a city we have explored within [`CONQUEST_REACH_TILES`]
-    /// of our capital, an owner with at most [`CONQUEST_MAX_RIVAL_CITIES`]
-    /// known cities, and the shipped legality mask
+    /// A met rival, a city we have explored within [`Self::conquest_reach`]
+    /// of our capital ([`CONQUEST_REACH_TILES`], or
+    /// [`CONQUEST_NEAR_REACH_TILES`] under `conquest-opening-stays-near`),
+    /// an owner with at most [`CONQUEST_MAX_RIVAL_CITIES`] known cities, and
+    /// the shipped legality mask
     /// (`campaign_target_legal`: alive, not a friend or ally, not a
     /// city-state under a suzerain we may not offend). Ranked by
     /// [`TargetRank`]: the capital first, then the lightest visible
     /// garrison, then the nearest, then the lowest id.
     pub(crate) fn conquest_target(&self, g: &Game, pid: usize) -> Option<(usize, u32)> {
+        self.conquest_target_within(g, pid, self.conquest_reach())
+    }
+
+    /// The reach the target scan uses: [`CONQUEST_NEAR_REACH_TILES`] with
+    /// `conquest-opening-stays-near` on, else the shipped
+    /// [`CONQUEST_REACH_TILES`].
+    pub(crate) fn conquest_reach(&self) -> i32 {
+        if self.conquest_opening_stays_near {
+            CONQUEST_NEAR_REACH_TILES
+        } else {
+            CONQUEST_REACH_TILES
+        }
+    }
+
+    /// [`Self::conquest_target`] at an explicit reach from our capital.
+    fn conquest_target_within(&self, g: &Game, pid: usize, reach: i32) -> Option<(usize, u32)> {
         if !self.early_conquest_opening {
             return None;
         }
@@ -486,7 +634,7 @@ impl AdvancedAi {
             for city in known {
                 let pos = g.cities[&city].pos;
                 let distance = g.wdist(home, pos);
-                if distance > CONQUEST_REACH_TILES {
+                if distance > reach {
                     continue;
                 }
                 let garrison = Self::conquest_visible_garrison(g, pid, city, &visible);
@@ -512,14 +660,151 @@ impl AdvancedAi {
     // 2. the reservation
     // ------------------------------------------------------------------
 
+    /// The original deadline plus preparation time after reservation opens.
+    fn conquest_commit_base(g: &Game, opening: &ConquestOpening) -> u32 {
+        g.standard_duration(CONQUEST_COMMIT_DEADLINE).max(
+            opening
+                .opened
+                .max(opening.preparing_since.unwrap_or(opening.opened))
+                .saturating_add(g.standard_duration(CONQUEST_MIN_PREPARATION_TURNS)),
+        )
+    }
+
+    /// All five reserved bodies are close enough that another short march
+    /// can assemble the column; an incomplete or distant force gets no grace.
+    ///
+    /// One straggler does not cost the column its extension. Live King
+    /// 2026-10-03T052455Z held four of six bodies inside the assembly radius
+    /// and a fifth at eight tiles at the turn-40 deadline, with the second
+    /// melee body garrisoning thirteen tiles away, and released the opening.
+    fn conquest_force_approaching(g: &Game, opening: &ConquestOpening) -> bool {
+        let far = opening
+            .force
+            .iter()
+            .filter(|uid| {
+                !g.units.get(uid).is_some_and(|unit| {
+                    g.wdist(unit.pos, opening.rally) <= CONQUEST_APPROACHING_RADIUS
+                })
+            })
+            .count();
+        opening.force.len() == CONQUEST_RANGED + CONQUEST_MELEE
+            && Self::conquest_assembled_share(g, opening) >= CONQUEST_APPROACHING_SHARE
+            && far <= CONQUEST_APPROACHING_STRAGGLERS
+    }
+
+    /// The opening can only be named before the original deadline. Once it
+    /// has a real target and can reserve production, it gets a minimum
+    /// preparation window. A near-assembled force may receive one fixed,
+    /// bounded extension at that deadline.
+    fn conquest_commit_due(g: &Game, opening: &ConquestOpening) -> u32 {
+        let base = Self::conquest_commit_base(g, opening);
+        base.max(opening.grace_until.unwrap_or(base))
+    }
+
     /// Whether the reservation is open at all: the gene is on, an opening
-    /// stands, the war has not opened yet, and the standard turn is before
-    /// the commit deadline.
-    fn conquest_reservation_open(&self, g: &Game) -> bool {
+    /// stands, the war has not opened yet, and its preparation has not expired.
+    pub(super) fn conquest_reservation_open(&self, g: &Game) -> bool {
         self.early_conquest_opening
             && self.conquest_opening.as_ref().is_some_and(|opening| {
-                opening.declared.is_none() && g.turn < g.standard_duration(CONQUEST_COMMIT_DEADLINE)
+                opening.declared.is_none() && g.turn < Self::conquest_commit_due(g, opening)
             })
+    }
+
+    /// The opening's target while the reservation is open and the city
+    /// stands behind walls, so a Battering Ram is worth building before the
+    /// war it is for. `None` with the gene off, outside the window, and for
+    /// an unwalled or vanished city.
+    pub(super) fn conquest_breach_target(&self, g: &Game) -> Option<u32> {
+        if !self.conquest_reservation_open(g) {
+            return None;
+        }
+        let city = self.conquest_opening.as_ref()?.city;
+        g.cities
+            .get(&city)
+            .is_some_and(|target| g.city_max_wall_hp(target) > 0)
+            .then_some(city)
+    }
+
+    /// `opening-yields-to-walls`: why a declared opening that has taken nothing
+    /// should ask for terms and stand down, if it should. Its target walled up
+    /// while the empire holds and queues no Battering Ram or Siege Tower, or the
+    /// war has run [`CONQUEST_ABANDON_TURNS`] standard turns with the city still
+    /// at [`CONQUEST_UNDENTED_HP`] or more. `None` with the gene off, once a
+    /// city has been taken, and for a vanished city. Live King
+    /// civvis-20261005T204024Z (game 161) declared on Kongo at turn 29 for an
+    /// unwalled Mbanza Kongo; it walled up at 41 and the war still stood at 75
+    /// with four cities of ours. Over the 10-04/05 control runs the 13 openings
+    /// that took nothing all ran until the strike force was dead or the rival
+    /// made peace, 20 to 130 turns after declaring, and the empire stood one
+    /// city behind the openings-free games at turn 75 and two at turn 100.
+    pub(super) fn conquest_yields_to_walls(
+        &self,
+        g: &Game,
+        pid: usize,
+        opening: &ConquestOpening,
+        declared: u32,
+    ) -> Option<&'static str> {
+        if !self.opening_yields_to_walls || opening.taken > 0 {
+            return None;
+        }
+        let city = g.cities.get(&opening.city)?;
+        if g.city_max_wall_hp(city) > 0 && Self::conquest_breakers_held(g, pid) == 0 {
+            return Some("the target walled up before the strike landed and no breaker is held");
+        }
+        let at_war = g.turn.saturating_sub(declared);
+        (at_war >= g.standard_duration(CONQUEST_ABANDON_TURNS) && city.hp >= CONQUEST_UNDENTED_HP)
+            .then_some("the strike has not dented the city in the whole patience window")
+    }
+
+    /// Wall breakers the empire holds or has queued anywhere.
+    fn conquest_breakers_held(g: &Game, pid: usize) -> usize {
+        let breaker = |kind: &str| matches!(kind, "battering_ram" | "siege_tower");
+        let standing = g
+            .units
+            .values()
+            .filter(|unit| unit.owner == pid && breaker(unit.kind.as_str()))
+            .count();
+        let queued = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|cid| {
+                g.cities[cid]
+                    .queue
+                    .iter()
+                    .any(|item| matches!(item, Item::Unit { unit } if breaker(unit.as_str())))
+            })
+            .count();
+        standing + queued
+    }
+
+    /// Breakers still missing for a walled target that the capital can
+    /// actually train. Zero outside [`Self::conquest_breach_target`].
+    fn conquest_breakers_missing(&self, g: &Game, pid: usize, cid: u32) -> usize {
+        if self.conquest_breach_target(g).is_none() {
+            return 0;
+        }
+        let ram = Item::Unit {
+            unit: crate::name!("battering_ram"),
+        };
+        if !g.can_produce(pid, cid, &ram) {
+            return 0;
+        }
+        CONQUEST_WALL_BREAKERS.saturating_sub(Self::conquest_breakers_held(g, pid))
+    }
+
+    /// `early-conquest-opening`: what a Battering Ram trained in `cid` is
+    /// worth while the opening's target stands behind walls and the force
+    /// holds none. Only the capital, only after the first Settler's city
+    /// exists, and only for the Ram itself.
+    pub(super) fn conquest_breaker_value(&self, g: &Game, pid: usize, cid: u32, unit: &str) -> f64 {
+        if unit != "battering_ram"
+            || Self::conquest_capital(g, pid) != Some(cid)
+            || g.player_city_ids(pid).len() < CONQUEST_FIRST_SETTLER_CITIES
+            || self.conquest_breakers_missing(g, pid, cid) == 0
+        {
+            return 0.0;
+        }
+        CONQUEST_RESERVATION_BASE
     }
 
     /// A body the strike force's ranged half counts: a land, non-siege
@@ -563,14 +848,17 @@ impl AdvancedAi {
 
     /// `early-conquest-opening`: what training `spec` in `cid` is worth on
     /// top of the military arm's own sum. Zero with the gene off, outside
-    /// the reservation window, in any city but the capital, while the city
-    /// is threatened, for anything but a reserved body, and once the force
-    /// is complete.
+    /// the reservation window, in any city but the capital, for anything but
+    /// a reserved body, and once the force is complete.
     ///
     /// `threatened` is the caller's own defence sentinel — a barbarian
     /// alarm, the plan's threatened city, or a city hit in the last four
-    /// turns. The opening never outranks it: a capital under attack builds
-    /// what defends it.
+    /// turns — and it no longer suspends the reservation. The reserved bodies
+    /// ARE what defends an Ancient capital. Suspending it handed the idle
+    /// capital to the Settler arm: live King 2026-09-30T221624Z named
+    /// Stockholm on turn 24, a barbarian Horse Archer stood beside Bogotá on
+    /// turns 25–27, the capital started a Settler on turn 27, and the force
+    /// never assembled before the window closed on turn 44.
     pub(super) fn conquest_reservation(
         &self,
         g: &Game,
@@ -580,10 +868,19 @@ impl AdvancedAi {
         counts: &EmpireCounts,
         threatened: bool,
     ) -> f64 {
-        if threatened || !self.conquest_reservation_open(g) {
+        let _ = threatened;
+        if !self.conquest_reservation_open(g) {
             return 0.0;
         }
         if Self::conquest_capital(g, pid) != Some(cid) {
+            return 0.0;
+        }
+        // The first Settler is never deferred, and a bonus that outranks it is
+        // a deferral by another name: live King 2026-10-01T024402Z named
+        // Xanadu on turn 16 with one city, and the capital's half-built
+        // Settler was displaced by a reserved Archer (t17) and Warrior (t20)
+        // and restored by the Settler arm each time -- one city at turn 25.
+        if g.player_city_ids(pid).len() < CONQUEST_FIRST_SETTLER_CITIES {
             return 0.0;
         }
         let (ranged, melee) = Self::conquest_reservation_shortfall(counts);
@@ -601,14 +898,69 @@ impl AdvancedAi {
             + CONQUEST_RESERVATION_PER_MISSING * (ranged + melee).saturating_sub(1) as f64
     }
 
+    /// `early-conquest-opening`: what a Scout trained in `cid` is worth while
+    /// the opening is still looking for its target. Zero with the gene off,
+    /// once an opening stands or has closed, after the commit deadline,
+    /// while the city is threatened, once the empire holds
+    /// [`CONQUEST_SEARCH_SCOUTS`] Scouts, and whenever a target is already in
+    /// reach — the search is for the opening, not for the map — and in any
+    /// city that would take longer than [`CONQUEST_SEARCH_SCOUT_MAX_TURNS`].
+    /// Any city may train it: the capital's opening is the scripted Settler
+    /// book, which never asks this ranking, so a capital-only term would
+    /// never be heard.
+    /// `counts` is the census with queued bodies, so two cities cannot both
+    /// start it.
+    pub(super) fn conquest_search_scout_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        counts: &EmpireCounts,
+        threatened: bool,
+    ) -> f64 {
+        if !self.early_conquest_opening
+            || threatened
+            || self.conquest_closed
+            || self.conquest_opening.is_some()
+            || g.turn >= g.standard_duration(CONQUEST_COMMIT_DEADLINE)
+            || counts.scouts >= CONQUEST_SEARCH_SCOUTS
+            || g.cities.get(&cid).is_none_or(|city| city.owner != pid)
+            || self.conquest_target(g, pid).is_some()
+        {
+            return 0.0;
+        }
+        let scout = Item::Unit {
+            unit: crate::name!("scout"),
+        };
+        let turns = g.host_production_turns(cid, &scout).unwrap_or_else(|| {
+            g.item_cost_for(pid, &scout) / g.city_yields(cid).production.max(0.5)
+        });
+        if turns > CONQUEST_SEARCH_SCOUT_MAX_TURNS {
+            return 0.0;
+        }
+        CONQUEST_SEARCH_SCOUT_VALUE
+    }
+
+    /// `early-conquest-opening`: where the objective board's Reserve gathers
+    /// while an opening is still assembling — its rally — or `None` with the
+    /// gene off, with no opening, once the war is open, or past the commit
+    /// deadline. A Deter row still outranks it (the caller asks first).
+    pub(super) fn conquest_staging_rally(&self, g: &Game) -> Option<Pos> {
+        if !self.conquest_reservation_open(g) {
+            return None;
+        }
+        self.conquest_opening.as_ref().map(|opening| opening.rally)
+    }
+
     /// `early-conquest-opening`: whether the capital defers its Settler
     /// while the reservation is unfilled.
     ///
     /// This is what makes the reservation a reservation rather than a bid.
     /// It is deliberately as narrow as `threatened_recovery_holds_settlers`:
     /// the capital only, while a target stands, before the deadline, while
-    /// bodies are actually missing, never while the city is threatened, and
-    /// never while the empire holds fewer than
+    /// bodies are actually missing — threatened or not, since a threatened
+    /// capital is the last place to train a Settler — and never while the
+    /// empire holds fewer than
     /// [`CONQUEST_FIRST_SETTLER_CITIES`] cities — the first Settler is never
     /// deferred, because an empire of one city has nothing to conquer with.
     pub(super) fn conquest_defers_the_settler(
@@ -620,7 +972,8 @@ impl AdvancedAi {
         city_count: usize,
         threatened: bool,
     ) -> bool {
-        if threatened || !self.conquest_reservation_open(g) {
+        let _ = threatened;
+        if !self.conquest_reservation_open(g) {
             return false;
         }
         if Self::conquest_capital(g, pid) != Some(cid) {
@@ -630,7 +983,7 @@ impl AdvancedAi {
             return false;
         }
         let (ranged, melee) = Self::conquest_reservation_shortfall(counts);
-        ranged + melee > 0
+        ranged + melee + self.conquest_breakers_missing(g, pid, cid) > 0
     }
 
     /// Give the scripted opening the same capital reservation as the utility
@@ -674,6 +1027,7 @@ impl AdvancedAi {
             let Item::Unit { unit } = &item else { continue };
             if self.conquest_reservation(g, pid, cid, &g.rules.units[unit], &counts, threatened)
                 <= 0.0
+                && self.conquest_breaker_value(g, pid, cid, unit.as_str()) <= 0.0
             {
                 continue;
             }
@@ -722,13 +1076,23 @@ impl AdvancedAi {
     /// leading to the strike force's shooter. Zero with the gene off,
     /// outside the reservation window, and once the node is held.
     pub(crate) fn conquest_research_value(&self, g: &Game, pid: usize, tech: &str) -> f64 {
+        // A walled target asks for the Ram's tech as well.
+        let masonry = crate::name!("masonry");
+        let breach = if self.conquest_breach_target(g).is_some()
+            && !g.players[pid].techs.contains(&masonry)
+            && self.tech_leads_to(g, tech, &masonry)
+        {
+            CONQUEST_RESEARCH
+        } else {
+            0.0
+        };
         let Some(node) = self.conquest_research_node(g, pid) else {
-            return 0.0;
+            return breach;
         };
         if !self.tech_leads_to(g, tech, &node) {
-            return 0.0;
+            return breach;
         }
-        CONQUEST_RESEARCH
+        CONQUEST_RESEARCH + breach
     }
 
     // ------------------------------------------------------------------
@@ -739,16 +1103,26 @@ impl AdvancedAi {
     /// [`CONQUEST_RALLY_MAX`] from the target, nearest our capital — "on our
     /// side" is exactly that, and it needs no separate geometry. `None` when
     /// the ring around the city is all water or impassable.
-    pub(crate) fn conquest_rally_tile(g: &Game, home: Pos, city: Pos) -> Option<Pos> {
+    ///
+    /// A tile the seat has charted beats one it has not: an unexplored tile
+    /// reads as the map's default ground, and live King 2026-10-01T080758Z
+    /// put Pella's rally on what the host knew as a Mountain — the reserve
+    /// circled it for five turns ("walking in circles", "going nowhere")
+    /// and the opening expired with seven bodies around it.
+    pub(crate) fn conquest_rally_tile(g: &Game, pid: usize, home: Pos, city: Pos) -> Option<Pos> {
+        let explored = &g.players[pid].explored;
         g.wdisk(city, CONQUEST_RALLY_MAX)
             .into_iter()
             .filter(|pos| (CONQUEST_RALLY_MIN..=CONQUEST_RALLY_MAX).contains(&g.wdist(*pos, city)))
-            .filter(|pos| {
-                g.map
-                    .get(*pos)
-                    .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
-            })
-            .min_by_key(|pos| (g.wdist(*pos, home), *pos))
+            .filter(|pos| Self::conquest_rally_standable(g, *pos))
+            .min_by_key(|pos| (!explored.contains(pos), g.wdist(*pos, home), *pos))
+    }
+
+    /// Whether a body can stand on `pos`: dry and passable on the board.
+    fn conquest_rally_standable(g: &Game, pos: Pos) -> bool {
+        g.map
+            .get(pos)
+            .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
     }
 
     /// The strike force: our field army, nearest the rally first, capped at
@@ -792,8 +1166,7 @@ impl AdvancedAi {
         let opening = self.conquest_opening.as_ref()?;
         if opening.declared.is_some()
             || !opening.force.contains(&uid)
-            || (opening.assembled.is_none()
-                && g.turn >= g.standard_duration(CONQUEST_COMMIT_DEADLINE))
+            || (opening.assembled.is_none() && g.turn >= Self::conquest_commit_due(g, opening))
             || !self.campaign_target_legal(g, pid, opening.target)
             || self.all_reserved_civilian_guards().contains(&uid)
         {
@@ -819,7 +1192,14 @@ impl AdvancedAi {
             .filter_map(|uid| g.units.get(uid))
             .filter(|unit| g.wdist(unit.pos, opening.rally) <= CONQUEST_ASSEMBLY_RADIUS)
             .count();
-        up as f64 / opening.force.len() as f64
+        // The share of the RESERVED force, not of whatever bodies exist yet.
+        // Live King 2026-10-01T010043Z named Pella on turn 16 with two bodies
+        // trained; both stood at the rally, 2 of 2 read as assembled, the
+        // patience window opened that turn and released the opening on turn 30
+        // -- this game's one attempt -- before the reserved four shooters were
+        // ever built.
+        let reserved = (CONQUEST_RANGED + CONQUEST_MELEE).max(opening.force.len());
+        up as f64 / reserved as f64
     }
 
     /// Whether the force can take the city.
@@ -932,6 +1312,45 @@ impl AdvancedAi {
                 .is_some_and(|opening| opening.declared.is_some())
     }
 
+    /// Our kills against `target` so far. A live mirror never replays combat
+    /// into the engine's `kills` counter, so it reads the confirmed host
+    /// deaths (`observe_host_war_losses`); a native game keeps the counter.
+    /// Live King 2026-10-03T135713Z took Ondini at turn 57 and closed the
+    /// opening at once, "trading at 0.00 kills per loss", against a Zulu
+    /// army of 35.
+    pub(crate) fn conquest_kills(&self, g: &Game, pid: usize, target: usize) -> i64 {
+        match &self.host_war_unit_losses {
+            Some(losses) => i64::from(losses.get(&(target, pid)).copied().unwrap_or(0)),
+            None => g.players[pid].counters.get("kills").copied().unwrap_or(0),
+        }
+    }
+
+    /// The opening's kills per loss on [`Self::conquest_kills`].
+    fn conquest_kills_per_loss(&self, g: &Game, pid: usize, opening: &ConquestOpening) -> f64 {
+        opening.kills_per_loss_at(self.conquest_kills(g, pid, opening.target))
+    }
+
+    /// A body of the undeclared opening's strike force, which
+    /// `opening-force-keeps-its-members` keeps out of distant skirmish rows.
+    /// Always `false` with either gene off.
+    pub(super) fn conquest_force_member(&self, uid: u32) -> bool {
+        self.opening_force_keeps_its_members
+            && self.early_conquest_opening
+            && self
+                .conquest_opening
+                .as_ref()
+                .is_some_and(|opening| opening.declared.is_none() && opening.force.contains(&uid))
+    }
+
+    /// The war the declared conquest opening is fighting is against `other`.
+    pub(crate) fn conquest_opening_war(&self, other: usize) -> bool {
+        self.conquest_owns_the_campaign()
+            && self
+                .conquest_opening
+                .as_ref()
+                .is_some_and(|opening| opening.target == other)
+    }
+
     /// A declared opening keeps its surviving strike force when a new
     /// Settler looks for an escort. Existing civilian guards retain priority;
     /// this reservation applies only to new assignments while the war stands.
@@ -968,6 +1387,37 @@ impl AdvancedAi {
             declared: opening.declared,
             taken: opening.taken,
         });
+    }
+
+    /// The target declared on us while the force was still gathering. Live
+    /// King 2026-09-30T225143Z named Amsterdam on turn 31; the Netherlands
+    /// declared on turn 38 with three of our Archers three or four tiles from
+    /// the city; the opening kept waiting for an assembly the fighting had
+    /// overtaken and released on turn 51 as if no war had ever opened, with
+    /// the campaign never pinned to its city. Take the roster once more, mark
+    /// the war declared from this turn, and pin the campaign exactly as our
+    /// own declaration would.
+    fn conquest_adopt_war(&mut self, g: &Game, pid: usize) {
+        self.conquest_refresh_force(g, pid);
+        let Some(target) = self.conquest_opening.as_ref().map(|opening| opening.target) else {
+            return;
+        };
+        let kills = self.conquest_kills(g, pid, target);
+        let Some(opening) = self.conquest_opening.as_mut() else {
+            return;
+        };
+        opening.declared = Some(g.turn);
+        opening.kills_at_war = kills;
+        let (target, city, bodies) = (opening.target, opening.city, opening.force.len());
+        think!(self.journal(), Military, Strategy,
+               "The conquest adopts the war {} opened", g.players[target].civ;
+               "they declared before the strike force did; the campaign is pinned to {} \
+                with the {} bod{} already raised",
+               g.cities.get(&city).map(|city| city.name.clone())
+                   .unwrap_or_else(|| String::from("the objective")),
+               bodies,
+               if bodies == 1 { "y" } else { "ies" });
+        self.conquest_pin_the_campaign(g);
     }
 
     /// Count the bodies of ours that left the board since the last turn
@@ -1008,6 +1458,37 @@ impl AdvancedAi {
                "{why}");
     }
 
+    /// Move an undeclared opening's rally off ground the board has since
+    /// learned no body can stand on. The tile was chosen when it may still
+    /// have been fog; a Mountain under the anchor holds the whole reserve in
+    /// a circle around it.
+    fn conquest_revalidate_rally(&mut self, g: &Game, pid: usize) {
+        let Some(opening) = self.conquest_opening.as_ref() else {
+            return;
+        };
+        if opening.declared.is_some() || Self::conquest_rally_standable(g, opening.rally) {
+            return;
+        }
+        let (Some(capital), Some(city)) =
+            (Self::conquest_capital(g, pid), g.cities.get(&opening.city))
+        else {
+            return;
+        };
+        let home = g.cities[&capital].pos;
+        let Some(rally) = Self::conquest_rally_tile(g, pid, home, city.pos) else {
+            return;
+        };
+        let old = opening.rally;
+        let name = city.name.clone();
+        if let Some(opening) = self.conquest_opening.as_mut() {
+            opening.rally = rally;
+        }
+        think!(self.journal(), Military, Decision,
+               "The conquest moves its rally for {}", name;
+               "{:?} cannot hold a body; the force gathers at {:?} instead", old, rally;
+               rally);
+    }
+
     /// ⭐ Start of turn: keep the opening honest.
     ///
     /// Runs before `maintain_city_campaign` so the pinned plan is in place
@@ -1020,7 +1501,64 @@ impl AdvancedAi {
             self.conquest_closed = false;
             return;
         }
+        if self.conquest_first_turn.is_none() {
+            self.conquest_first_turn = Some(g.turn);
+        }
         self.conquest_count_losses(g);
+        if g.player_city_ids(pid).len() >= CONQUEST_FIRST_SETTLER_CITIES {
+            if let Some(opening) = self.conquest_opening.as_mut() {
+                if opening.preparing_since.is_none() {
+                    opening.preparing_since = Some(g.turn);
+                }
+            }
+        }
+        self.conquest_revalidate_rally(g, pid);
+        if let Some(opening) = self.conquest_opening.as_mut() {
+            let base = Self::conquest_commit_base(g, opening);
+            if opening.grace_until.is_none()
+                && opening.assembled.is_none()
+                && g.turn >= base
+                && Self::conquest_force_approaching(g, opening)
+            {
+                opening.grace_until = Some(
+                    base.saturating_add(g.standard_duration(CONQUEST_APPROACHING_GRACE_TURNS)),
+                );
+            }
+        }
+        // A war the target opened on us before we declared is still this
+        // opening's war: adopt it rather than keep waiting for an assembly
+        // that the fighting has overtaken.
+        let adopt = self.conquest_opening.as_ref().is_some_and(|opening| {
+            opening.declared.is_none()
+                && g.is_at_war(pid, opening.target)
+                && g.players
+                    .get(opening.target)
+                    .is_some_and(|player| player.alive)
+                && g.cities
+                    .get(&opening.city)
+                    .is_some_and(|city| city.owner == opening.target)
+        });
+        if adopt {
+            // Only an assembled force adopts the war, whoever opened it. Live King
+            // 2026-10-03T090618Z: Khmer declared on turn 26 with the force
+            // still Slingers scattered short of the rally; the opening pinned
+            // the campaign to Angkor Thom, the bodies walked into the city's
+            // and the army's fire, and by turn 51 "the whole strike force is
+            // gone". An unassembled force is released to the ordinary war,
+            // which defends first and sieges on its own bill.
+            let assembled = self.conquest_opening.as_ref().is_some_and(|opening| {
+                Self::conquest_assembled_share(g, opening) >= CONQUEST_ASSEMBLY_SHARE
+            });
+            if assembled {
+                self.conquest_adopt_war(g, pid);
+            } else {
+                self.conquest_release(
+                    g,
+                    "the war opened before the strike force assembled; the ordinary war takes it",
+                );
+                return;
+            }
+        }
         if let Some(opening) = self.conquest_opening.as_ref() {
             let target_alive = g
                 .players
@@ -1038,12 +1576,20 @@ impl AdvancedAi {
                 self.conquest_after_a_capture(g, pid);
                 return;
             }
-            if opening.declared.is_some() {
+            if let Some(declared) = opening.declared {
                 // The war is open. It ends by any road — a peace accepted, a
                 // truce imposed — and the opening ends with it; and a force
                 // that is wholly gone has nothing left to pin the campaign
                 // with, so it asks for terms and stands down.
-                if !g.is_at_war(pid, opening.target) {
+                //
+                // Not on the turn it was declared: the host applies the
+                // declaration after the order is read back, so the next frame
+                // of the SAME turn still exports peace. Live King
+                // 2026-10-01T014323Z declared on Norway on turn 45 with 83% of
+                // the force at Oslo's rally, read that frame's peace as "the
+                // war has ended", and closed the game's one opening -- while
+                // the host showed the war from turn 46.
+                if g.turn > declared && !g.is_at_war(pid, opening.target) {
                     self.conquest_release(g, "the war has ended");
                     return;
                 }
@@ -1051,6 +1597,17 @@ impl AdvancedAi {
                     let target = opening.target;
                     self.conquest_sue_for_peace(g, pid, target);
                     self.conquest_release(g, "the whole strike force is gone");
+                    return;
+                }
+                // `opening-yields-to-walls`: see `conquest_yields_to_walls`.
+                if let Some(why) = self.conquest_yields_to_walls(g, pid, opening, declared) {
+                    let (target, city) = (opening.target, opening.city);
+                    think!(self.journal(), Military, Strategy,
+                           "The conquest opening yields at {}", g.cities[&city].name;
+                           "{why}; asking {} for terms", g.players[target].civ;
+                           g.cities[&city].pos);
+                    self.conquest_sue_for_peace(g, pid, target);
+                    self.conquest_release(g, why);
                     return;
                 }
             } else {
@@ -1070,9 +1627,7 @@ impl AdvancedAi {
                         return;
                     }
                 }
-                if g.turn >= g.standard_duration(CONQUEST_COMMIT_DEADLINE)
-                    && opening.assembled.is_none()
-                {
+                if g.turn >= Self::conquest_commit_due(g, opening) && opening.assembled.is_none() {
                     self.conquest_release(
                         g,
                         "the commit deadline passed before the force ever assembled",
@@ -1093,20 +1648,278 @@ impl AdvancedAi {
     /// Name a target and open. Nothing happens once the commit deadline has
     /// passed, or once an assembled opening has been released: an opening
     /// is an opening, and this game has had its attempt.
+    /// The last turn an opening can be named. A controller that first saw
+    /// the game after turn one, inside the grace of the deadline, resumed a
+    /// game whose opening died with the old process, and may name it again
+    /// for [`CONQUEST_RESUME_GRACE_TURNS`] after its first turn.
+    fn conquest_naming_deadline(&self, g: &Game) -> u32 {
+        let deadline = g.standard_duration(CONQUEST_COMMIT_DEADLINE);
+        let grace = g.standard_duration(CONQUEST_RESUME_GRACE_TURNS).max(1);
+        match self.conquest_first_turn {
+            Some(first) if first > 1 && first <= deadline + grace => deadline.max(first + grace),
+            _ => deadline,
+        }
+    }
+
+    /// `conquest-opening-needs-the-production`: the turns the opening would
+    /// need against the turns it would have, as `(needed, window)`.
+    ///
+    /// `needed` is what the capital must still do before the force can stand
+    /// at the rally:
+    ///
+    /// - the first Settler, when the empire has one city and no Settler on
+    ///   the map (the reservation never defers it, so the force waits);
+    /// - the book's next Settler, while a population-two Settler gene still
+    ///   holds the opening book (it takes the capital's empty queue ahead of
+    ///   the reservation);
+    /// - the missing ranged bodies, at the Archer's cost while the best
+    ///   shooter the capital can train is still range-one (the reservation
+    ///   trains the Archer as soon as it can), and the missing melee bodies
+    ///   at the fastest rate the capital trains them;
+    /// - a Battering Ram, when the target is walled and the capital can
+    ///   train one;
+    /// - the march to the rally at [`CONQUEST_MARCH_TILES_PER_TURN`].
+    ///
+    /// The capital's other builds, barbarians and the Settler's own walk are
+    /// left out, so the estimate errs fast: the gene refuses only an opening
+    /// that could not assemble even with the capital on nothing else.
+    ///
+    /// `window` is the deadline the opening would get if it opened now: the
+    /// shipped [`Self::conquest_commit_base`] with preparation starting once
+    /// the first Settler is out.
+    ///
+    /// `None` when a missing half has no body the capital can train, so an
+    /// opening this cannot price is left to the shipped rule.
+    ///
+    /// Live King civvis-20261005T024614Z (game 94) opened on Lisbon at turn
+    /// 9 with one city; the capital ran its Settler book, began the force at
+    /// turn 27 and released the opening at turn 40, "the commit deadline
+    /// passed before the force ever assembled" — the release reason in 9 of
+    /// the last 24 live games.
+    pub(crate) fn conquest_force_estimate(
+        &self,
+        g: &Game,
+        pid: usize,
+        capital: u32,
+        city: u32,
+        rally: Pos,
+    ) -> Option<(f64, f64)> {
+        let production = g.city_yields(capital).production.max(0.5);
+        let turns_for = |item: &Item| {
+            g.host_production_turns(capital, item)
+                .unwrap_or_else(|| g.item_cost_for(pid, item) / production)
+        };
+        let counts = self.counts(g, pid);
+        let (ranged, melee) = Self::conquest_reservation_shortfall(&counts);
+        let mut fastest_ranged: Option<f64> = None;
+        let mut fastest_melee: Option<f64> = None;
+        for item in g.producible_items(pid, capital) {
+            let Item::Unit { unit } = &item else { continue };
+            let spec = &g.rules.units[unit];
+            let slot = if Self::conquest_ranged_body(spec) {
+                &mut fastest_ranged
+            } else if Self::conquest_melee_body(spec) {
+                &mut fastest_melee
+            } else {
+                continue;
+            };
+            let turns = turns_for(&item);
+            *slot = Some(slot.map_or(turns, |best| best.min(turns)));
+        }
+        // The reservation trains the range-two shooter (the Archer) the
+        // moment it can, and its research credit chases exactly that unlock,
+        // so a range-one best (the Slinger) is priced at the Archer's cost.
+        let civ = &g.players[pid].civ;
+        let archer = g
+            .rules
+            .units
+            .iter()
+            .filter(|(_, spec)| spec.buildable && Self::early_archers_shooter(spec))
+            .filter(|(_, spec)| spec.unique_to.as_ref().is_none_or(|unique| unique == civ))
+            .min_by(|a, b| a.1.cost.total_cmp(&b.1.cost))
+            .map(|(name, _)| Item::Unit { unit: *name });
+        let range_one_best = !g.producible_items(pid, capital).iter().any(|item| {
+            matches!(item, Item::Unit { unit } if Self::early_archers_shooter(&g.rules.units[unit]))
+        });
+        let ranged_turns = match (&archer, range_one_best) {
+            (Some(archer), true) => Some(
+                fastest_ranged
+                    .map_or_else(|| turns_for(archer), |best| best.max(turns_for(archer))),
+            ),
+            _ => fastest_ranged,
+        };
+        let mut build = 0.0;
+        if ranged > 0 {
+            build += ranged_turns? * ranged as f64;
+        }
+        if melee > 0 {
+            build += fastest_melee? * melee as f64;
+        }
+        let ram = Item::Unit {
+            unit: crate::name!("battering_ram"),
+        };
+        let walled = g
+            .cities
+            .get(&city)
+            .is_some_and(|target| g.city_max_wall_hp(target) > 0);
+        if walled && g.can_produce(pid, capital, &ram) {
+            let breakers =
+                CONQUEST_WALL_BREAKERS.saturating_sub(Self::conquest_breakers_held(g, pid));
+            build += turns_for(&ram) * breakers as f64;
+        }
+        let settler_turns = turns_for(&Item::Unit {
+            unit: crate::name!("settler"),
+        });
+        let settler_out = g
+            .units
+            .values()
+            .any(|unit| unit.owner == pid && unit.kind.as_str() == "settler");
+        // The first Settler is never deferred: the reservation waits for the
+        // second city, and preparation starts there.
+        let first = if g.player_city_ids(pid).len() < CONQUEST_FIRST_SETTLER_CITIES && !settler_out
+        {
+            settler_turns
+        } else {
+            0.0
+        };
+        // While the opening book is open, a population-two Settler gene
+        // takes the capital's next empty queue before the reservation can.
+        // Live game 94 founded its second city at turn 18 and the capital
+        // queued another Settler that same turn; the force began at 27.
+        let book = if self.base.book_settler_ahead() {
+            settler_turns
+        } else {
+            0.0
+        };
+        let home = g.cities[&capital].pos;
+        let march = (f64::from(g.wdist(home, rally)) / CONQUEST_MARCH_TILES_PER_TURN).ceil();
+        let now = f64::from(g.turn);
+        let deadline = f64::from(g.standard_duration(CONQUEST_COMMIT_DEADLINE))
+            .max(now + first + f64::from(g.standard_duration(CONQUEST_MIN_PREPARATION_TURNS)));
+        Some((first + book + build + march, deadline - now))
+    }
+
+    /// `conquest-opening-stays-near`: journal the city the shipped reach
+    /// would have opened on and this gene leaves alone, once every
+    /// [`CONQUEST_FEASIBILITY_NOTE_TURNS`]. Journal only: the opening stays
+    /// unnamed, the capital keeps its own builds, and the search for a nearer
+    /// city goes on.
+    fn conquest_note_a_far_target(&mut self, g: &Game, pid: usize) {
+        if !self.conquest_opening_stays_near {
+            return;
+        }
+        let note_due = self.conquest_near_noted.is_none_or(|noted| {
+            g.turn >= noted + g.standard_duration(CONQUEST_FEASIBILITY_NOTE_TURNS)
+        });
+        if !note_due {
+            return;
+        }
+        let (Some((target, city)), Some(capital)) = (
+            self.conquest_target_within(g, pid, CONQUEST_REACH_TILES),
+            Self::conquest_capital(g, pid),
+        ) else {
+            return;
+        };
+        self.conquest_near_noted = Some(g.turn);
+        let distance = g.wdist(g.cities[&capital].pos, g.cities[&city].pos);
+        think!(self.journal(), Military, Strategy,
+               "Not opening a conquest against {}", g.players[target].civ;
+               "{} is {} tiles from the capital, past the {} an opening reaches; \
+                the capital keeps its own builds until a nearer city is charted",
+               g.cities[&city].name, distance, CONQUEST_NEAR_REACH_TILES);
+    }
+
+    /// `early-conquest-stands-down`: whether the opening declines to open on
+    /// `city` although it is in reach. Journalled once every
+    /// [`CONQUEST_FEASIBILITY_NOTE_TURNS`], the window the feasibility note
+    /// shares (both are "not opening" notes and never fire on the same turn:
+    /// this one returns before the force is priced). `false` with the gene
+    /// off.
+    ///
+    /// Live Emperor census, 10-08/09 (every run with a journal): 28
+    /// declarations by this opening ("…of the strike force stands at the
+    /// rally and the preview covers X's bill") took 0 cities within 30 turns
+    /// at every ratio of our military to the target's — 3 under 0.7, 13 at
+    /// 0.7-1.0, 5 at 1.0-1.5, 7 at 1.5-4.6 — and 1 city of the target by turn
+    /// 120. Peace followed a median 15 turns after the declaration. Those
+    /// games held a median 5 cities at turn 75 and 7 at turn 100 against 6
+    /// and 8 in the 95 that never opened, and passed the turn-150 production
+    /// gate 18% of the time against 21%. After `near-rival-deterrence`
+    /// shipped, the opening declared in 27% of games (11% before): the
+    /// deterrent's units fill the strike force and the local bill preview
+    /// lets it declare on the very neighbour the deterrent was raised
+    /// against (civvis-20261009T072248Z: 97 power against America's 228 at
+    /// turn 40; Bogotá lost at turn 123).
+    ///
+    /// The scan, the scouts' caution (`recon_declines_the_swing`, the board's
+    /// recon exclusion) and the search Scout keep reading the shipped flag;
+    /// only the opening itself — reservation, rally and declaration — stays
+    /// shut.
+    fn conquest_stands_down(&mut self, g: &Game, target: usize, city: u32) -> bool {
+        if !self.early_conquest_stands_down {
+            return false;
+        }
+        let note_due = self.conquest_feasibility_noted.is_none_or(|noted| {
+            g.turn >= noted + g.standard_duration(CONQUEST_FEASIBILITY_NOTE_TURNS)
+        });
+        if note_due {
+            self.conquest_feasibility_noted = Some(g.turn);
+            think!(self.journal(), Military, Strategy,
+                   "Not opening a conquest against {}", g.players[target].civ;
+                   "{} is in reach, but the opening stands down: 28 live Emperor openings \
+                    that declared took no city within 30 turns at any power ratio; the \
+                    capital keeps its own builds",
+                   g.cities[&city].name);
+        }
+        true
+    }
+
     fn conquest_open(&mut self, g: &mut Game, pid: usize) {
-        if self.conquest_closed || g.turn >= g.standard_duration(CONQUEST_COMMIT_DEADLINE) {
+        if self.conquest_closed || g.turn >= self.conquest_naming_deadline(g) {
             return;
         }
         let Some((target, city)) = self.conquest_target(g, pid) else {
+            self.conquest_note_a_far_target(g, pid);
             return;
         };
+        if self.conquest_stands_down(g, target, city) {
+            return;
+        }
         let Some(capital) = Self::conquest_capital(g, pid) else {
             return;
         };
         let home = g.cities[&capital].pos;
-        let Some(rally) = Self::conquest_rally_tile(g, home, g.cities[&city].pos) else {
+        let Some(rally) = Self::conquest_rally_tile(g, pid, home, g.cities[&city].pos) else {
             return;
         };
+        if self.conquest_opening_needs_the_production {
+            if let Some((needed, window)) =
+                self.conquest_force_estimate(g, pid, capital, city, rally)
+            {
+                let budget = window * CONQUEST_FEASIBLE_SHARE;
+                if needed <= budget {
+                    think!(self.journal(), Military, Detail,
+                           "The conquest force for {} fits its window", g.cities[&city].name;
+                           "raising and marching it takes about {:.0} turns; the opening would \
+                            get {:.0} and plans on {:.0} of them", needed, window, budget);
+                }
+                if needed > budget {
+                    let note_due = self.conquest_feasibility_noted.is_none_or(|noted| {
+                        g.turn >= noted + g.standard_duration(CONQUEST_FEASIBILITY_NOTE_TURNS)
+                    });
+                    if note_due {
+                        self.conquest_feasibility_noted = Some(g.turn);
+                        think!(self.journal(), Military, Strategy,
+                               "Not opening a conquest against {}", g.players[target].civ;
+                               "the force for {} would take {:.0} turns to raise and march \
+                                against a window of {:.0}, of which it plans on {:.0}; the \
+                                capital keeps its own builds",
+                               g.cities[&city].name, needed, window, budget);
+                    }
+                    return;
+                }
+            }
+        }
         let known = Self::conquest_known_cities(g, pid, target).len();
         think!(self.journal(), Military, Strategy,
                "Opening a conquest against {}", g.players[target].civ;
@@ -1122,6 +1935,9 @@ impl AdvancedAi {
             target,
             city,
             opened: g.turn,
+            preparing_since: (g.player_city_ids(pid).len() >= CONQUEST_FIRST_SETTLER_CITIES)
+                .then_some(g.turn),
+            grace_until: None,
             rally,
             force: BTreeSet::new(),
             assembled: None,
@@ -1209,13 +2025,18 @@ impl AdvancedAi {
                    "the treasury cannot carry the war it would open");
             return false;
         }
+        // `declaration-needs-production-parity`. Says so itself.
+        let objective = g.cities.get(&opening.city).map(|city| city.pos);
+        if !self.declaration_has_production_parity(g, pid, opening.target, objective) {
+            return false;
+        }
         let Some(action) = self.raid_opening(g, pid, opening.target) else {
             return false;
         };
         if g.apply(pid, &action).is_err() {
             return false;
         }
-        let kills = g.players[pid].counters.get("kills").copied().unwrap_or(0);
+        let kills = self.conquest_kills(g, pid, opening.target);
         if let Some(opening) = self.conquest_opening.as_mut() {
             opening.declared = Some(g.turn);
             opening.kills_at_war = kills;
@@ -1245,7 +2066,7 @@ impl AdvancedAi {
             return;
         }
         let taken = opening.taken + 1;
-        let rate = opening.kills_per_loss(g, pid);
+        let rate = self.conquest_kills_per_loss(g, pid, &opening);
         if rate < CONQUEST_KILLS_PER_LOSS_FLOOR {
             think!(self.journal(), Military, Strategy,
                    "Closing the conquest against {}", g.players[opening.target].civ;
@@ -1267,6 +2088,26 @@ impl AdvancedAi {
             })
             .min_by_key(|cid| (g.wdist(g.cities[cid].pos, opening.rally), *cid));
         let Some(next) = next else {
+            // The fog is not the rival's last city. Live King
+            // 2026-10-03T135713Z took Ondini at turn 57 with Kwadukuza still
+            // unseen until turn 59, sued for terms, and lost Ondini to its
+            // own loyalty by turn 71. A rival whose public record still
+            // counts a city keeps its war: the ordinary desk finds and takes
+            // what the opening could not see.
+            let unseen = g
+                .observed_public_empire_stats
+                .get(&opening.target)
+                .and_then(|stats| stats.city_count)
+                .is_some_and(|count| count > 0);
+            if unseen {
+                think!(self.journal(), Military, Strategy,
+                       "The conquest has taken every city it knows of from {}",
+                       g.players[opening.target].civ;
+                       "trading at {:.2} kills per loss; their record still counts a city \
+                        in the fog, so the war goes on", rate);
+                self.conquest_release(g, "the rival's remaining cities are not yet found");
+                return;
+            }
             think!(self.journal(), Military, Strategy,
                    "The conquest has taken every city it knows of from {}",
                    g.players[opening.target].civ;
@@ -1290,6 +2131,18 @@ impl AdvancedAi {
     /// per rival, never repeated while one is pending.
     fn conquest_sue_for_peace(&mut self, g: &mut Game, pid: usize, target: usize) {
         if !g.is_at_war(pid, target) || self.peace_offers.contains(&target) {
+            return;
+        }
+        // A captured original capital that is bleeding Loyalty is kept by the
+        // war that finds the cities feeding the pressure, not by a treaty that
+        // leaves them standing. Live King 2026-10-03T135713Z took Ondini at
+        // turn 57 at 33 Loyalty and -17 a turn, sued for terms the same turn,
+        // and the Zulu held it again by turn 71. See
+        // `holds_bleeding_capital_of`.
+        if self.holds_bleeding_capital_of(g, pid, target) {
+            think!(self.journal(), Military, Strategy,
+                   "Keeping the war on {}", g.players[target].civ;
+                   "we hold their original capital and its Loyalty is falling");
             return;
         }
         let pending = g.pending_deals.iter().any(|deal| {
@@ -1326,7 +2179,9 @@ impl AdvancedAi {
     /// zero after the first loss with no kill — would close every siege on
     /// its first casualty.
     fn conquest_peace(&mut self, g: &mut Game, pid: usize, opening: &ConquestOpening) {
-        if opening.taken == 0 || opening.kills_per_loss(g, pid) >= CONQUEST_KILLS_PER_LOSS_FLOOR {
+        if opening.taken == 0
+            || self.conquest_kills_per_loss(g, pid, opening) >= CONQUEST_KILLS_PER_LOSS_FLOOR
+        {
             return;
         }
         self.conquest_sue_for_peace(g, pid, opening.target);

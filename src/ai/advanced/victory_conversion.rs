@@ -974,19 +974,108 @@ impl AdvancedAi {
         cid: u32,
         force: &[u32],
     ) -> Option<(f64, f64)> {
+        self.conversion_siege_budget_within(g, pid, cid, force, 5)
+    }
+
+    /// [`Self::conversion_siege_budget`] over the members within `radius` of
+    /// the city. `stage-musters-out-of-reach` reads it at its muster radius:
+    /// the train as it would stand on its staging ring.
+    pub(super) fn conversion_siege_budget_within(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        force: &[u32],
+        radius: i32,
+    ) -> Option<(f64, f64)> {
+        self.siege_budget_reading(g, pid, cid, force, radius, false)
+    }
+
+    /// The budget the siege's entry reads — Stage -> Invest
+    /// (`conversion_siege_ready`) and the muster's close — over the members
+    /// within `radius`. It is [`Self::conversion_siege_budget_within`] but
+    /// for `unwalled-city-spares-the-train`; the production reads keep the
+    /// shipped budget, so the guns bought for a target that walls up do not
+    /// change.
+    pub(super) fn conversion_siege_entry_budget(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        force: &[u32],
+        radius: i32,
+    ) -> Option<(f64, f64)> {
+        self.siege_budget_reading(g, pid, cid, force, radius, true)
+    }
+
+    fn siege_budget_reading(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        force: &[u32],
+        radius: i32,
+        entry: bool,
+    ) -> Option<(f64, f64)> {
         let city = g.cities.get(&cid)?;
-        if !g.player_visibility(pid).contains(&city.pos) {
-            return None;
-        }
+        // A siege staged outside the city's strike radius can lose current
+        // sight of a city it has already found. Requiring live visibility
+        // here trapped the column in Stage and also disabled its siege-unit
+        // production bonus. Use the last-seen health budget until a unit
+        // closes to refresh it; unknown cities still have no estimate.
+        let (wall_hp, city_hp) = if g.player_visibility(pid).contains(&city.pos) {
+            (city.wall_hp, city.hp)
+        } else {
+            let memory = g.players[pid]
+                .remembered_cities
+                .get(&cid)
+                .filter(|memory| memory.owner == city.owner && memory.pos == city.pos)?;
+            (memory.wall_hp, memory.hp)
+        };
         let mut wall_dps = 0.0;
         let mut city_dps = 0.0;
         let mut endurance = 0.0_f64;
         let mut taker = false;
+        // `siege-budget-counts-what-fires`: the strongest melee blow, struck
+        // once the city is low (see `finishing_blow` below).
+        let mut finishing_blow = 0.0_f64;
+        let counts_what_fires = self.siege_budget_counts_what_fires;
+        // `unwalled-city-takes-the-swarm`: a city with no standing wall,
+        // never built (`walls 0/0`) or breached to 0, has nothing to absorb a
+        // melee blow and cannot strike (`Game::city_can_strike`), so every fit
+        // melee member swings each turn (`siege_train::swarm_blow`) and its
+        // blow is per-turn fire, not only the last one. A breached wall is
+        // repaired only after three turns unattacked.
+        let swarm = self.unwalled_city_takes_the_swarm && wall_hp <= 0;
+        // `unwalled-city-spares-the-train`: the same city strikes nobody
+        // (`Game::city_can_strike`, `BasicAi::city_centre_strikes`), so on
+        // the entry reads its strike costs the train no endurance, unless a
+        // walled Encampment shoots in its place. Charged a strike at the
+        // owner's best ranged strength, a train read about three turns of
+        // endurance a member: over the 10-13 Immortal control runs 21
+        // objectives stood unwalled at full health, a shooter in range on 2,
+        // and 30 of the 70 muster holds read a finite budget short of its
+        // endurance — Jenne (civvis-20261013T184508Z) at turn 110 met its
+        // bill, 166 against 115, and held at 6.2 turns against 3.5.
+        let spared = entry
+            && self.unwalled_city_spares_the_train
+            && wall_hp <= 0
+            && !(city.encampment_hp > 0
+                && city.encampment_wall_hp > 0
+                && !city.encampment_pillaged
+                && g.city_district_family_position(city, crate::name!("encampment"))
+                    .is_some());
+        // `siege-counts-posted-shooters`: a shooter with no firing post fires
+        // nothing, and one with a hostile unit in reach shoots that first
+        // while the walls stand. See `siege_train::posted_shooters`.
+        let posted = self
+            .siege_counts_posted_shooters
+            .then(|| super::siege_train::posted_shooters(g, pid, cid, force));
         for uid in force {
             let Some(unit) = g
                 .units
                 .get(uid)
-                .filter(|u| u.owner == pid && g.wdist(u.pos, city.pos) <= 5)
+                .filter(|u| u.owner == pid && g.wdist(u.pos, city.pos) <= radius)
             else {
                 continue;
             };
@@ -995,37 +1084,148 @@ impl AdvancedAi {
                 continue;
             }
             let ranged = spec.ranged_strength > 0.0 || spec.bombard_strength > 0.0;
-            let attack = if ranged {
+            // `siege-needs-a-breaker`: a gun or shooter the battle planner
+            // holds out to heal fires nothing, however near it stands. Live
+            // King civvis-20261003T135713Z read Kwadukuza "damage ready" for
+            // ten turns off a Bombard healing from 29 to 89 five tiles out.
+            if self.siege_needs_a_breaker && ranged && !self.siege_member_fit(g, *uid) {
+                continue;
+            }
+            let mut attack = if ranged {
                 g.unit_ranged_attack_strength(unit)
             } else {
                 g.unit_strength(unit, true)
             };
+            // `siege-budget-counts-what-fires`: a land ranged unit strikes a
+            // city at 17 less, as `do_ranged` resolves it (Civilization VI's
+            // ranged-against-districts penalty). Live King
+            // civvis-20261003T110427Z-cont1 (game 33): Archers at 25 against
+            // Tenochtitlan's 45 previewed 5 damage a shot, the budget read
+            // the siege ready in 2.8 turns, and the city healed back to 200
+            // every turn until it built Walls.
+            if counts_what_fires
+                && ranged
+                && spec.ranged_strength > 0.0
+                && spec.domain.as_deref() != Some("sea")
+            {
+                attack += g.promotion_effect(unit, "ranged_vs_district") - 17.0;
+            }
             let damage = expected_damage(attack, g.city_strength(cid));
-            city_dps += damage;
-            wall_dps += damage
-                * if spec.siege {
-                    1.0
-                } else if ranged {
-                    0.5
-                } else {
-                    0.15
-                };
-            let incoming =
-                expected_damage(g.city_ranged_strength(cid), g.unit_strength(unit, false));
+            let shooter = posted.is_some() && super::siege_train::is_siege_shooter(g, *uid);
+            if shooter
+                && posted
+                    .as_ref()
+                    .is_some_and(|(posted, _)| !posted.contains(uid))
+            {
+                continue;
+            }
+            // `unwalled-city-takes-the-swarm`: the city's reply to this
+            // member's blow, when the member swings every turn: it stands at
+            // `ROTATE_HP` (`siege_member_fit`) and the reply leaves it at
+            // `ASSAULT_SURVIVOR_HP`. A wounded member rotates out instead and
+            // stays the shipped finishing blow.
+            let swarm_reply = (swarm && !ranged && spec.is_melee_capable())
+                .then(|| expected_damage(g.city_strength(cid), attack))
+                .filter(|reply| {
+                    self.siege_member_fit(g, *uid)
+                        && f64::from(unit.hp) - reply
+                            >= f64::from(super::siege_train::ASSAULT_SURVIVOR_HP)
+                });
+            if swarm_reply.is_some() {
+                city_dps += damage;
+            } else if counts_what_fires && !ranged {
+                // The train holds melee on the ring until a blow pays
+                // (`siege_blow`): against a healthy city that is the last
+                // one, not one every turn.
+                finishing_blow = finishing_blow.max(damage);
+            } else {
+                city_dps += damage;
+            }
+            // A melee body the train holds at a strong wall cannot supply
+            // the wall damage that would make the siege ready to invest.
+            let wall_multiplier = if spec.siege {
+                1.0
+            } else if shooter
+                && posted
+                    .as_ref()
+                    .is_some_and(|(_, walls)| !walls.contains(uid))
+            {
+                0.0
+            } else if ranged {
+                0.5
+            } else if super::siege_train::melee_wall_attack_allowed(g, pid, *uid, cid) {
+                0.15
+            } else {
+                0.0
+            };
+            wall_dps += damage * wall_multiplier;
+            let mut incoming = if spared {
+                0.0
+            } else {
+                expected_damage(g.city_ranged_strength(cid), g.unit_strength(unit, false))
+            };
+            // `unwalled-city-takes-the-swarm`: a member that swings every turn
+            // takes the city's reply on every swing.
+            if let Some(reply) = swarm_reply {
+                incoming += reply;
+            }
             endurance += (unit.hp as f64 - 20.0).max(0.0) / incoming.max(1.0);
             taker |= !ranged && spec.is_melee_capable();
         }
+        // `breach-reads-the-air`: the air wing's sorties bring the walls down
+        // too. See `siege_train::air_breach_walls`.
+        let air = self.air_breach_walls(g, pid, cid);
+        wall_dps += air;
+        // `air-fire-counts-on-the-city`: once the walls are down the same
+        // sorties strike the city's health, a bombard blow with no district
+        // penalty. Counted only on the walls, a train of melee and bombers
+        // read its fire short of the city's heal (the melee blow is the last
+        // one, not one every turn) and the budget infinite: live King
+        // civvis-20261006T015347Z (game 181) read Rome "inf turns" from t203
+        // to t215 under 41-63 aircraft wall a turn, and 83% of the 10-05/06
+        // Stage siege-turns with air support read infinite.
+        if self.air_fire_counts_on_the_city {
+            city_dps += air;
+        }
         let (sealed, ring) = super::siege_train::ring_state(g, cid);
-        let heal = if ring > 0 && sealed == ring {
+        // `siege-budget-projects-the-seal`: a city whose ring is sealed does
+        // not heal (`Game::city_under_siege`), and a train that holds off the
+        // ring until its entry reads ready never sealed it, so its entry
+        // reads priced every turn at the open ring's heal of 20. On the entry
+        // reads a train with the melee bodies to seal the ring
+        // (`train_seals_the_ring`) prices the city at no heal; the walk to
+        // the ring is not priced, as the shipped budget prices no march.
+        // Live Immortal Jenne (civvis-20261013T184508Z) held turns 111-117
+        // with seven to nine units at 23.7-65.0 turns and the ring 0/6.
+        let projects_the_seal = entry
+            && self.siege_budget_projects_the_seal
+            && self.train_seals_the_ring(g, pid, cid, force, radius);
+        let heal = if (ring > 0 && sealed == ring) || projects_the_seal {
             0.0
         } else {
             20.0
         };
-        if !taker || city_dps <= heal || (city.wall_hp > 0 && wall_dps <= 0.0) {
+        // `siege-budget-counts-what-fires`: the finishing blow takes the last
+        // of the city's health in one stroke; the rest must come from fire.
+        let city_left = (f64::from(city_hp.max(0)) - finishing_blow).max(0.0);
+        let fire_short = if counts_what_fires {
+            city_left > 0.0 && city_dps <= heal
+        } else {
+            city_dps <= heal
+        };
+        if !taker || fire_short || (wall_hp > 0 && wall_dps <= 0.0) {
             return Some((f64::INFINITY, endurance));
         }
-        let turns = city.wall_hp.max(0) as f64 / wall_dps.max(1.0)
-            + city.hp.max(0) as f64 / (city_dps - heal);
+        let city_turns = if counts_what_fires {
+            if city_left > 0.0 {
+                city_left / (city_dps - heal)
+            } else {
+                0.0
+            }
+        } else {
+            city_hp.max(0) as f64 / (city_dps - heal)
+        };
+        let turns = wall_hp.max(0) as f64 / wall_dps.max(1.0) + city_turns;
         Some((turns + 1.0, endurance))
     }
 
@@ -1038,7 +1238,7 @@ impl AdvancedAi {
     ) -> bool {
         !self.siege_positive_damage_budget
             || self
-                .conversion_siege_budget(g, pid, cid, force)
+                .conversion_siege_entry_budget(g, pid, cid, force, 5)
                 .is_some_and(|(turns, endurance)| turns <= endurance * 0.8)
     }
 
@@ -1097,7 +1297,13 @@ impl AdvancedAi {
         if queued >= 2 {
             return 0.0;
         }
-        if self.siege_positive_damage_budget && fills_role {
+        // One wall-breaker is not enough when the measured breach time still
+        // exceeds the train's remaining health. Keep buying a second gun
+        // (subject to the queue cap above) instead of treating the first
+        // gun's mere presence as a completed siege arm.
+        let breach_shortfall =
+            spec.siege && g.cities[&target].wall_hp > 0 && finish > endurance * 0.8;
+        if self.siege_positive_damage_budget && (fills_role || breach_shortfall) {
             return raw * 1.25 / (1.0 + arrival / 10.0);
         }
         if self.reinforce_before_stall

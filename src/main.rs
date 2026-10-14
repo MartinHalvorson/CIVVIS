@@ -70,14 +70,14 @@ use civvis::setup::{self, BaseRuleset, GameSpeed, MapPoles, MapScript, MapSize, 
 /// catching everything, which is how it stopped being read. The targeted
 /// `*_cannot_reach_the_frozen_anchor` tests below remain the second line.
 #[cfg(test)]
-const ANCHOR_BEHAVIOUR_FNV: u64 = 0x73b8_2ccc_dff4_361b;
+const ANCHOR_BEHAVIOUR_FNV: u64 = 0x0f0e_d009_a74c_279c;
 
 /// How many actions the anchor applies across `ANCHOR_PROFILES`. Pinned beside
 /// the hash because a fingerprint that moved tells you nothing about how far,
 /// and "9,256 decisions rather than 8,959" is a much better first sentence of a
 /// diagnosis than a changed 64-bit number.
 #[cfg(test)]
-const ANCHOR_DECISIONS: usize = 18_909;
+const ANCHOR_DECISIONS: usize = 19_362;
 
 fn arg(args: &[String], key: &str, default: i64) -> i64 {
     args.iter()
@@ -1765,6 +1765,12 @@ fn main() {
             let map_topology = play_options.map_topology;
             let map_poles = play_options.map_poles;
             let game_speed = GameSpeed::from_id(&play_options.speed).unwrap_or(GameSpeed::Standard);
+            // Only the mirror `tools/follow.py` keeps beside the live game asks
+            // for this: its page then carries the Pause / Resume that holds
+            // the Civilization VI game itself (`civ6::live_pause_status`).
+            if args.iter().any(|a| a == "--live-pause") {
+                civvis::civ6::enable_live_pause_control();
+            }
             civvis::server::serve_with_game(
                 arg(&args, "--port", 8765) as u16,
                 !args.iter().any(|a| a == "--no-open"),

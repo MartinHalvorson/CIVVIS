@@ -24,6 +24,7 @@ fn unopposed_siege_stage_rallies_near_the_city() {
             entered: g.turn,
             assessed: g.turn,
             posts: BTreeMap::new(),
+            short_since: None,
         },
     );
     ai.rebuild_force_groups(&g, 0, &conquest(&g, Some(target)));

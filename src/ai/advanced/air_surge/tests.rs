@@ -229,12 +229,294 @@ fn urgent_domination_target_opening_war_keeps_the_existing_air_investment() {
 }
 
 #[test]
-fn an_unexpected_nonurgent_war_still_ends_the_elective_air_plan() {
+fn an_unexpected_nonurgent_war_keeps_the_domination_air_investment() {
     let (mut g, mut ai, _) = staged_domination_denial();
     g.players[1].dvp = 0;
     assert!(!ai.urgent_victory_threat(&g, 1));
     g.at_war.insert((0, 1));
     ai.maintain_air_surge(&g, 0);
-    assert!(ai.air_surge_plan.is_none());
-    assert!(ai.air_surge_cooldown_until > g.turn);
+    let surge = ai.air_surge_plan.as_ref().expect("keep the appointed wing");
+    assert!(surge.opened_at_war);
+    assert_eq!(surge.phase, AirSurgePhase::Exploit);
+    assert_eq!(surge.appointed_turn, 140);
+    assert_eq!(ai.air_surge_cooldown_until, 0);
+    assert_eq!(ai.air_surge_research_goal(&g, 0), Some(AIR_SURGE_GOAL_TECH));
+}
+
+/// Live King 20261001T000033Z, no Horses or Iron: the "strongest cavalry" was
+/// a Heavy Chariot at turn 190 and the capital siege never captured. An
+/// outclassed cavalry line hands the capture to the strongest melee body.
+#[test]
+fn an_outclassed_cavalry_line_hands_the_capture_to_the_strongest_melee_body() {
+    let mut g = Game::new_full(2, 30, 20, 936211, 500, 0, false);
+    g.found_city_for(0, (8, 8), None);
+    for tech in [
+        "bronze_working",
+        "the_wheel",
+        "wheel",
+        "military_science",
+        "rifling",
+        "gunpowder",
+        "military_tactics",
+        "ballistics",
+    ] {
+        if g.rules.techs.contains_key(&Name::new(tech)) {
+            g.players[0].techs.insert(Name::new(tech));
+            for ancestor in g
+                .rules
+                .tech_ancestors
+                .get(tech)
+                .cloned()
+                .unwrap_or_default()
+            {
+                g.players[0].techs.insert(Name::new(&ancestor));
+            }
+        }
+    }
+    // No Horses and no Iron: the host offers the resource-free chariot and
+    // Line Infantry, as its own production menu would.
+    let city = g.player_city_ids(0)[0];
+    let menu = |units: &[&str]| {
+        let mut offered = std::collections::BTreeMap::new();
+        offered.insert(
+            city,
+            units
+                .iter()
+                .map(|unit| {
+                    (
+                        Game::production_block_key(&Item::Unit {
+                            unit: Name::new(unit),
+                        }),
+                        crate::game::HostMenuEntry::default(),
+                    )
+                })
+                .collect(),
+        );
+        offered
+    };
+    g.replace_host_menus(
+        menu(&["heavy_chariot", "line_infantry"]),
+        Default::default(),
+        Default::default(),
+    );
+    // Niter for the Line Infantry; still no Horses or Iron for cavalry.
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("niter"), 40.0);
+    let (body, is_cavalry) = AdvancedAi::air_surge_body(&g, 0).expect("a body");
+    assert_eq!(body, "line_infantry");
+    assert!(!is_cavalry);
+
+    // Comparable cavalry keeps the job: a Cuirassier beside Line Infantry.
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("iron"), 40.0);
+    g.replace_host_menus(
+        menu(&["cuirassier", "line_infantry"]),
+        Default::default(),
+        Default::default(),
+    );
+    assert_eq!(
+        AdvancedAi::air_surge_body(&g, 0),
+        Some((Name::new("cuirassier"), true))
+    );
+}
+
+/// A ground army three times the target's takes the declaration while the
+/// wing is still arming; a closer race keeps the surge's hold.
+#[test]
+fn an_overwhelming_ground_army_does_not_wait_for_the_wing() {
+    let mut g = Game::new_full(2, 40, 24, 936011, 500, 0, false);
+    let home = g.found_city_for(0, (6, 12), None);
+    let target = g.found_city_for(1, (20, 12), None);
+    g.players[0].met.insert(1);
+    g.at_war.clear();
+    g.turn = 100;
+    let mut ai = AdvancedAi::new();
+    ai.enable_air_surge_2();
+    ai.victory_target = Some(VictoryTarget::Domination);
+    ai.air_surge_plan = Some(AirSurge {
+        target_player: 1,
+        objective_city: target,
+        objective_pos: g.cities[&target].pos,
+        body_unit: Name::new("musketman"),
+        body_is_cavalry: false,
+        opened_at_war: false,
+        phase: AirSurgePhase::Arm,
+        appointed_turn: 90,
+        tech_turn: None,
+        declared_turn: None,
+        last_reviewed_turn: 100,
+        recovery_assessments: 0,
+    });
+    for unit in g.player_unit_ids(0).into_iter().chain(g.player_unit_ids(1)) {
+        g.remove_unit(unit);
+    }
+    let at = g.cities[&home].pos;
+    g.spawn_test_unit("warrior", 1, g.cities[&target].pos);
+    g.spawn_test_unit("warrior", 0, at);
+    assert!(!AdvancedAi::air_surge_ground_overwhelms(&g, 0, 1));
+    assert!(
+        ai.air_surge_opening(&mut g, 0, 1),
+        "an even army waits for the wing"
+    );
+    for _ in 0..5 {
+        g.spawn_test_unit("swordsman", 0, at);
+    }
+    assert!(AdvancedAi::air_surge_ground_overwhelms(&g, 0, 1));
+    assert!(
+        !ai.air_surge_opening(&mut g, 0, 1),
+        "the surge hands the declaration to the ground campaign"
+    );
+    assert!(ai.air_surge_plan.is_some(), "the wing keeps building");
+    assert!(!g.is_at_war(0, 1), "the surge itself declares nothing");
+}
+
+/// A wing still being researched does not hold the ground war: the
+/// declaration goes to the ordinary desk at any power ratio, and the surge
+/// keeps its plan. Arm keeps the hold for an even army.
+#[test]
+fn a_beeline_wing_does_not_hold_the_ground_war() {
+    let mut g = Game::new_full(2, 40, 24, 936011, 500, 0, false);
+    let home = g.found_city_for(0, (6, 12), None);
+    let target = g.found_city_for(1, (20, 12), None);
+    g.players[0].met.insert(1);
+    g.at_war.clear();
+    g.turn = 120;
+    let mut ai = AdvancedAi::new();
+    ai.enable_air_surge_2();
+    ai.victory_target = Some(VictoryTarget::Domination);
+    let surge = AirSurge {
+        target_player: 1,
+        objective_city: target,
+        objective_pos: g.cities[&target].pos,
+        body_unit: Name::new("musketman"),
+        body_is_cavalry: false,
+        opened_at_war: false,
+        phase: AirSurgePhase::Beeline,
+        appointed_turn: 120,
+        tech_turn: None,
+        declared_turn: None,
+        last_reviewed_turn: 120,
+        recovery_assessments: 0,
+    };
+    ai.air_surge_plan = Some(surge.clone());
+    for unit in g.player_unit_ids(0).into_iter().chain(g.player_unit_ids(1)) {
+        g.remove_unit(unit);
+    }
+    let at = g.cities[&home].pos;
+    g.spawn_test_unit("warrior", 1, g.cities[&target].pos);
+    g.spawn_test_unit("warrior", 0, at);
+    assert!(!AdvancedAi::air_surge_ground_overwhelms(&g, 0, 1));
+    assert!(
+        !ai.air_surge_opening(&mut g, 0, 1),
+        "a researching wing hands the declaration to the ground campaign"
+    );
+    assert!(ai.air_surge_plan.is_some(), "the wing keeps its research");
+    assert!(!g.is_at_war(0, 1), "the surge itself declares nothing");
+
+    ai.air_surge_plan = Some(AirSurge {
+        phase: AirSurgePhase::Arm,
+        ..surge
+    });
+    assert!(
+        ai.air_surge_opening(&mut g, 0, 1),
+        "an arming wing keeps the hold"
+    );
+}
+
+/// The surge does not trade the plan's victory-suppression city for its own
+/// objective: a rival on the expedition keeps the army on its Spaceport.
+#[test]
+fn the_surge_keeps_the_plan_on_the_rivals_spaceport() {
+    let mut g = Game::new_full(2, 40, 24, 936011, 500, 0, false);
+    g.found_city_for(0, (6, 12), None);
+    let surge_city = g.found_city_for(1, (20, 12), None);
+    let pad = g.found_city_for(1, (24, 16), None);
+    let pad_pos = g.cities[&pad].pos;
+    g.cities
+        .get_mut(&pad)
+        .unwrap()
+        .districts
+        .insert(Name::new("spaceport"), pad_pos);
+    g.players[0].met.insert(1);
+    g.record_contact(0, 1);
+    g.at_war.insert((0, 1));
+    g.at_war.insert((1, 0));
+    g.turn = 200;
+    let mut ai = AdvancedAi::new();
+    ai.enable_air_surge_2();
+    ai.victory_target = Some(VictoryTarget::Domination);
+    ai.air_surge_plan = Some(AirSurge {
+        target_player: 1,
+        objective_city: surge_city,
+        objective_pos: g.cities[&surge_city].pos,
+        body_unit: Name::new("helicopter"),
+        body_is_cavalry: true,
+        opened_at_war: true,
+        phase: AirSurgePhase::Strike,
+        appointed_turn: 198,
+        tech_turn: Some(190),
+        declared_turn: Some(198),
+        last_reviewed_turn: 200,
+        recovery_assessments: 0,
+    });
+    let plan = |city: u32| StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(city),
+        threatened_city: None,
+        desired_cities: 6,
+        assessed_turn: 200,
+        rush: false,
+    };
+
+    // No launch yet: the pad is an ordinary city and the surge takes the plan.
+    let mut before = plan(pad);
+    ai.apply_air_surge_to_strategy(&g, 0, &mut before);
+    assert_eq!(before.target_city, Some(surge_city));
+
+    // On the expedition, the pad is the city that stops the victory.
+    g.players[1]
+        .science_projects
+        .insert("exoplanet_expedition".to_string());
+    let mut after = plan(pad);
+    ai.apply_air_surge_to_strategy(&g, 0, &mut after);
+    assert_eq!(
+        after.target_city,
+        Some(pad),
+        "the army stays on the Spaceport"
+    );
+}
+
+/// See `air_surge_strikes_through_urgency`: under the gene, a surge in
+/// Strike keeps the declaration through an urgent clock instead of handing
+/// it to the ordinary staged declaration; Arm still releases it.
+#[test]
+fn a_striking_wing_keeps_its_declaration_through_an_urgent_clock() {
+    let strike = |gene: bool, phase: AirSurgePhase| {
+        let (mut g, mut ai) = urgent_surging_opponent(false, false);
+        ai.victory_target = Some(VictoryTarget::Domination);
+        if gene {
+            ai.enable_air_surge_strikes_through_urgency();
+        }
+        ai.air_surge_plan.as_mut().unwrap().phase = phase;
+        let kept = ai.air_surge_opening(&mut g, 0, 1);
+        (kept, ai.air_surge_plan.is_some())
+    };
+    assert_eq!(
+        strike(false, AirSurgePhase::Strike),
+        (false, true),
+        "off: released"
+    );
+    assert_eq!(
+        strike(true, AirSurgePhase::Strike),
+        (true, true),
+        "the wing keeps it"
+    );
+    assert_eq!(
+        strike(true, AirSurgePhase::Arm),
+        (false, true),
+        "Arm still releases"
+    );
 }

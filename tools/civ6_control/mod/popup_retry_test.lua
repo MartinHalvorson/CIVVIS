@@ -1,7 +1,9 @@
 local here = arg[0]:match("(.*)/[^/]*$") or "."
 local function host(name, fading, closeAt)
     local h={hidden=false, closes=0, logs={}}
-    local env=setmetatable({CivvisControlConfig={AnnouncementSeconds=.25,DialogueSeconds=.25}}, {__index=_G})
+    h.exposed={}
+    local env=setmetatable({CivvisControlConfig={AnnouncementSeconds=.25,DialogueSeconds=.25},
+                            ExposedMembers=h.exposed}, {__index=_G})
     env.include=function() end
     env.OnClose=function() h.closes=h.closes+1;if closeAt and h.closes>=closeAt then h.hidden=true end end
     env.OnShow=function() end
@@ -28,4 +30,14 @@ for i=1,7 do fade.tick(.25) end
 assert(fade.closes==before, "fresh popup must get a fresh fade deadline")
 for i=1,120 do fade.tick(.25) end
 assert(fade.closes>before+20, "persistent popup must keep retrying complete close cycles")
+-- The operator's Pause: a held game's screens are the operator's to close.
+for _, name in ipairs({"DiplomacyActionView", "TradeOverview", "NaturalWonderPopup"}) do
+    local held=host(name,false,1)
+    held.exposed.CivvisOperatorHold=true
+    for i=1,400 do held.tick(.25) end
+    assert(held.closes==0 and not held.hidden, name.." stays up while the operator holds the game")
+    held.exposed.CivvisOperatorHold=false
+    for i=1,12 do if not held.hidden then held.tick(.25) end end
+    assert(held.closes>0 and held.hidden, name.." closes on its own clock after the resume")
+end
 print("bounded popup recovery checks passed")

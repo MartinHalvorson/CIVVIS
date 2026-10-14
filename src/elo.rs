@@ -15,6 +15,10 @@ use crate::ai::{AdvancedAi, Ai, BasicAi, RandomAi};
 
 pub const BUILTIN_AIS: &[&str] = &[
     "advanced",
+    // The same controller assigned the Domination contract, so the doctrine
+    // arena can price the Domination-only siege and counter code that an
+    // untargeted `advanced` seat never reaches.
+    "advanced_domination",
     "advanced_evolved",
     "advanced_v1",
     "basic",
@@ -71,6 +75,9 @@ pub fn builtin_ai(name: &str, seed: u64) -> Box<dyn Ai> {
     let champion = || crate::evolve::load_champion(ARTIFACT_DIR);
     match name {
         "advanced" => Box::new(AdvancedAi::new()),
+        "advanced_domination" => {
+            Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Domination))
+        }
         "advanced_v1" => Box::new(AdvancedAi::legacy()),
         "advanced_evolved" | "evolved" => {
             Box::new(champion().map(AdvancedAi::with_weights).unwrap_or_default())
@@ -117,7 +124,7 @@ pub fn seat_spec(spec: &str) -> Result<(&str, Vec<&'static crate::ai::Gene>), St
     }
     let mut genes = Vec::new();
     for tag in parts {
-        if !matches!(name, "advanced" | "advanced_v1") {
+        if !matches!(name, "advanced" | "advanced_v1" | "advanced_domination") {
             return Err(format!(
                 "`{name}` takes no genes; only advanced and advanced_v1 do"
             ));
@@ -140,6 +147,8 @@ pub fn seat_ai(spec: &str, seed: u64) -> Box<dyn Ai> {
     }
     let mut ai = if name == "advanced_v1" {
         AdvancedAi::legacy()
+    } else if name == "advanced_domination" {
+        AdvancedAi::targeting(crate::ai::VictoryTarget::Domination)
     } else {
         AdvancedAi::new()
     };
@@ -155,6 +164,9 @@ pub fn builtin_send_ai(name: &str, seed: u64) -> Box<dyn Ai + Send> {
     let champion = || crate::evolve::load_champion(ARTIFACT_DIR);
     match name {
         "advanced" => Box::new(AdvancedAi::new()),
+        "advanced_domination" => {
+            Box::new(AdvancedAi::targeting(crate::ai::VictoryTarget::Domination))
+        }
         "advanced_v1" => Box::new(AdvancedAi::legacy()),
         "advanced_evolved" | "evolved" => {
             Box::new(champion().map(AdvancedAi::with_weights).unwrap_or_default())

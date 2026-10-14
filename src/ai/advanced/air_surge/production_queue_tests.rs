@@ -84,6 +84,85 @@ fn stealth_fixture() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
 }
 
 #[test]
+fn launch_escort_starts_before_the_third_bomber() {
+    let (mut g, mut ai, _, first, second) = fixture();
+    g.players[0].civ = "Gran Colombia".to_string();
+    g.players[0].techs.insert(name!("military_science"));
+    g.players[0]
+        .strategic_resources
+        .insert(name!("horses"), 100.0);
+    ai.air_surge_plan.as_mut().unwrap().body_unit = name!("llanero");
+    ai.air_surge_plan.as_mut().unwrap().body_is_cavalry = true;
+    for cid in [first, second] {
+        let source = *g.cities[&cid]
+            .owned_tiles
+            .iter()
+            .find(|pos| **pos != g.cities[&cid].pos)
+            .unwrap();
+        let tile = g.map.tiles.get_mut(&source).unwrap();
+        tile.resource = Some(name!("aluminum"));
+        tile.improvement = Some(name!("mine"));
+    }
+    let field = g.district_sites(first, name!("aerodrome"))[0];
+    g.cities
+        .get_mut(&first)
+        .unwrap()
+        .districts
+        .insert(name!("aerodrome"), field);
+    g.map.tiles.get_mut(&field).unwrap().district = Some(name!("aerodrome"));
+    for cid in [first, second] {
+        g.spawn_test_unit("bomber", 0, g.cities[&cid].pos);
+    }
+    ai.air_surge_status = ai.air_surge_status(&g, 0, ai.air_surge_plan.as_ref().unwrap());
+    assert_eq!(AdvancedAi::air_surge_bomber_goal(&g, 0), 4);
+    assert_eq!(ai.air_surge_status.bombers_committed, 2);
+    assert_eq!(ai.air_surge_status.bodies_committed, 0);
+    assert!(g.can_produce(
+        0,
+        first,
+        &Item::Unit {
+            unit: name!("llanero")
+        }
+    ));
+    assert!(g.can_produce(
+        0,
+        first,
+        &Item::Unit {
+            unit: name!("bomber")
+        }
+    ));
+
+    assert!(ai.air_surge_production(&mut g, 0));
+    let escort_city = g
+        .player_city_ids(0)
+        .into_iter()
+        .find(|cid| !g.cities[cid].queue.is_empty())
+        .unwrap();
+    assert_eq!(
+        g.cities[&escort_city].queue.first(),
+        Some(&Item::Unit {
+            unit: name!("llanero")
+        }),
+        "two committed bombers must release the first land capturer"
+    );
+
+    g.cities.get_mut(&escort_city).unwrap().queue.clear();
+    for pos in [(7, 12), (8, 12)] {
+        g.spawn_test_unit("llanero", 0, pos);
+    }
+    ai.air_surge_status = ai.air_surge_status(&g, 0, ai.air_surge_plan.as_ref().unwrap());
+    assert_eq!(ai.air_surge_status.bodies_committed, 2);
+    assert!(ai.air_surge_production(&mut g, 0));
+    assert_eq!(
+        g.cities[&first].queue.first(),
+        Some(&Item::Unit {
+            unit: name!("bomber")
+        }),
+        "the third bomber resumes after the launch escort is covered"
+    );
+}
+
+#[test]
 fn active_package_keeps_existing_and_queued_bomber_generations() {
     let (mut g, mut ai, plan, first, second) = stealth_fixture();
     g.spawn_test_unit("jet_bomber", 0, g.cities[&first].pos);
@@ -146,6 +225,34 @@ fn two_upgraded_bombers_fill_the_launch_quota_without_ordering_a_third() {
         .player_city_ids(0)
         .into_iter()
         .all(|cid| g.cities[&cid].queue.is_empty()));
+}
+
+#[test]
+fn mechanized_infantry_can_escort_a_modern_armor_surge() {
+    let (mut g, mut ai, mut strategy, first, second) = stealth_fixture();
+    let target = ai.air_surge_plan.as_ref().unwrap().objective_city;
+    let surge = ai.air_surge_plan.as_mut().unwrap();
+    surge.body_unit = name!("modern_armor");
+    surge.phase = AirSurgePhase::Exploit;
+
+    for cid in [first, second] {
+        g.spawn_test_unit("jet_bomber", 0, g.cities[&cid].pos);
+    }
+    g.spawn_test_unit("modern_armor", 0, (7, 12));
+    g.spawn_test_unit("mechanized_infantry", 0, (8, 12));
+    g.spawn_test_unit("tank", 0, (9, 12));
+    g.spawn_test_unit("at_crew", 0, (10, 12));
+    ai.air_surge_status = ai.air_surge_status(&g, 0, ai.air_surge_plan.as_ref().unwrap());
+    assert!(ai.air_surge_status.wing_ready());
+    assert_eq!(
+        ai.air_surge_status.bodies, 3,
+        "late land capturers should count across upgrade branches, but weaker units should not"
+    );
+    assert!(ai.air_surge_status.escort_ready());
+
+    strategy.target_city = None;
+    ai.apply_air_surge_to_strategy(&g, 0, &mut strategy);
+    assert_eq!(strategy.target_city, Some(target));
 }
 
 #[test]
@@ -329,4 +436,125 @@ fn capture_body_quota_preserves_its_last_queue_but_releases_excess() {
         ai.air_surge_city_production_value(&g, 0, first, &body, 2.0),
         None
     );
+}
+
+/// Live King 20261001T000033Z: the first Aerodrome went to the first idle
+/// city at 34 turns, and the first Bomber to a 26-turn city while another
+/// built one in 7. A Domination wing's airfield goes to the fastest city that
+/// can take it, switching that city's queue, and a much slower city is not
+/// paid to take it instead.
+#[test]
+fn the_domination_airfield_goes_to_the_fastest_city_even_when_it_is_busy() {
+    let (mut g, mut ai, _plan, first, second) = fixture();
+    ai.victory_target = Some(crate::ai::advanced::VictoryTarget::Domination);
+    // A mining town and a hamlet.
+    let first_pos = g.cities[&first].pos;
+    // Mined hills beyond the first ring; the first ring stays flat so the
+    // Aerodrome (flat land only) has room.
+    for pos in g.wdisk(first_pos, 3) {
+        if g.wdist(pos, first_pos) < 2 {
+            continue;
+        }
+        if let Some(tile) = g.map.tiles.get_mut(&pos) {
+            tile.terrain = name!("plains");
+            tile.hills = true;
+            tile.improvement = Some(name!("mine"));
+        }
+    }
+    g.cities.get_mut(&second).unwrap().pop = 1;
+    g.cities.get_mut(&first).unwrap().queue = vec![Item::Unit {
+        unit: name!("builder"),
+    }];
+    g.cities.get_mut(&second).unwrap().queue.clear();
+    let field = |g: &Game, cid: u32| {
+        g.producible_items(0, cid).into_iter().find(|item| {
+            matches!(item, Item::District { district, .. } if g.district_family(*district) == name!("aerodrome"))
+        })
+    };
+    let slow = field(&g, second).expect("the hamlet could place one");
+    let fast = field(&g, first).expect("the mining town could place one");
+    let rate = |g: &Game, cid: u32, item: &Item| {
+        g.item_remaining_cost_for_city(0, cid, item)
+            / (g.city_yields(cid).production * g.item_prod_mult(0, cid, Some(item))).max(0.1)
+    };
+    assert!(
+        rate(&g, second, &slow)
+            > rate(&g, first, &fast) * AIR_SURGE_SLOW_FACTOR + AIR_SURGE_SLOW_SLACK,
+        "precondition: {} turns against {}",
+        rate(&g, second, &slow),
+        rate(&g, first, &fast)
+    );
+    let turns = rate(&g, second, &slow);
+    assert_eq!(
+        ai.air_surge_city_production_value(&g, 0, second, &slow, turns),
+        None,
+        "the hamlet is not paid to raise the field"
+    );
+
+    assert!(ai.air_surge_production(&mut g, 0));
+    assert!(matches!(
+        g.cities[&first].queue.first(),
+        Some(Item::District { district, .. }) if g.district_family(*district) == name!("aerodrome")
+    ));
+    assert!(g.cities[&second].queue.is_empty());
+
+    // Outside the Domination lane the first idle city still takes it.
+    let (mut g, mut ai, _plan, first, second) = fixture();
+    ai.victory_target = None;
+    g.cities.get_mut(&first).unwrap().queue = vec![Item::Unit {
+        unit: name!("builder"),
+    }];
+    g.cities.get_mut(&second).unwrap().queue.clear();
+    assert!(ai.air_surge_production(&mut g, 0));
+    assert!(matches!(
+        g.cities[&second].queue.first(),
+        Some(Item::District { district, .. }) if g.district_family(*district) == name!("aerodrome")
+    ));
+}
+
+/// Live King 20261001T080758Z: Advanced Flight at turn 156 and one Aerodrome,
+/// so Bogota trained the two launch Bombers one after the other (163, 168)
+/// while cities within a fifth of its production trained nothing for the
+/// wing. With `air-surge-2` a second airfield rises during the beeline and
+/// trains half the launch wing beside the first.
+#[test]
+fn a_second_airfield_rises_during_the_beeline_for_half_the_launch_wing() {
+    let run = |v2: bool| {
+        let (mut g, mut ai, _, first, second) = fixture();
+        // Two working cities of like production: mined hills on the first
+        // ring, but for one flat tile left for an airfield.
+        for cid in [first, second] {
+            let centre = g.cities[&cid].pos;
+            let mut ring = g.wdisk(centre, 1);
+            ring.retain(|pos| *pos != centre);
+            ring.sort();
+            for pos in ring.into_iter().skip(1) {
+                let tile = g.map.tiles.get_mut(&pos).unwrap();
+                tile.hills = true;
+                tile.improvement = Some(name!("mine"));
+            }
+        }
+        g.players[0].techs.remove(&Name::new(AIR_SURGE_GOAL_TECH));
+        crate::game::install_test_district(&mut g, first, "aerodrome");
+        if !v2 {
+            ai.disable_air_surge_2();
+            ai.air_surge = true;
+        }
+        ai.air_surge_plan.as_mut().unwrap().phase = AirSurgePhase::Beeline;
+        ai.air_surge_plan.as_mut().unwrap().tech_turn = None;
+        ai.air_surge_status = ai.air_surge_status(&g, 0, ai.air_surge_plan.as_ref().unwrap());
+        assert_eq!(ai.air_surge_status.aerodromes_committed, 1);
+        assert!(ai.air_surge_status.metal_ready);
+        assert!(AdvancedAi::air_surge_research_eta(&g, 0) > 0.0);
+        ai.air_surge_production(&mut g, 0);
+        g.cities[&second].queue.first().cloned()
+    };
+    let field = |item: &Option<Item>| matches!(item, Some(Item::District { district, .. }) if district == "aerodrome");
+    let v1 = run(false);
+    assert!(
+        !field(&v1),
+        "one airfield is the whole v1 requirement: {v1:?}"
+    );
+    let v2 = run(true);
+    assert!(field(&v2), "the second airfield: {v2:?}");
 }

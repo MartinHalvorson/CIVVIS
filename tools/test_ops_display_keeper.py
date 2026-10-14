@@ -57,20 +57,17 @@ def game_rectangle(side: str, fraction: float, vfraction: float,
 
 
 def display_rectangle() -> tuple[int, int, int, int]:
-    """(x, y, width, height) the keeper hands Chrome, read from its source."""
+    """(x, y, width, height) the keeper hands Chrome when no layout is saved,
+    read from its `defaultFrame` in the source."""
     source = KEEPER.read_text(encoding="utf-8")
-    values: dict[str, int] = {}
-    for name in ("displayWidth", "displayHeight", "displayX", "displayY"):
-        found = re.search(rf"^const {name} = (\w+);", source, re.MULTILINE)
-        assert found, f"{name} is no longer a plain constant in {KEEPER.name}"
-        written = found.group(1)
-        # A constant may be a literal or an earlier one by name (`displayX` is
-        # `displayWidth`, so the two panes stay adjacent by construction).
-        values[name] = int(written) if written.isdigit() else values[written]
-    assert "`--window-position=${displayX},${displayY}`" in source
-    assert "`--window-size=${displayWidth},${displayHeight}`" in source
-    return (values["displayX"], values["displayY"],
-            values["displayWidth"], values["displayHeight"])
+    block = re.search(r"^const defaultFrame = \{(.*?)\};", source, re.MULTILINE | re.DOTALL)
+    assert block, f"defaultFrame is no longer a plain object in {KEEPER.name}"
+    values = {name: int(value) for name, value in
+              re.findall(r"(width|height|x|y): (\d+)", block.group(1))}
+    assert set(values) == {"width", "height", "x", "y"}, values
+    assert "`--window-position=${frame.x},${frame.y}`" in source
+    assert "`--window-size=${frame.width},${frame.height}`" in source
+    return (values["x"], values["y"], values["width"], values["height"])
 
 
 def overlap(first: tuple[int, int, int, int],
@@ -113,6 +110,14 @@ class DisplayKeeperPlacementTests(unittest.TestCase):
         """Named so the defect stays legible: these were the keeper's constants,
         and they are the game's own quadrant."""
         self.assertEqual(game_rectangle("left", 0.5, 0.5), (0, 33, 864, 542))
+
+    def test_a_saved_layout_supplies_the_frame_at_each_launch(self):
+        """Operator 2026-10-14: the saved upper-right frame wins; the keeper
+        reads the layout file per launch and falls back to defaultFrame."""
+        source = KEEPER.read_text(encoding="utf-8")
+        self.assertIn('saved?.windows?.["upper-right"]?.frame', source)
+        self.assertIn("const frame = displayFrame();", source)
+        self.assertIn(".civvis-window-layout.json", source)
 
     def test_no_dead_window_geometry_claims_the_opposite_layout(self):
         """`follow.py` carried an unused `MIRROR_BOUNDS` describing the left half

@@ -35,11 +35,16 @@
 //!   city — **and** either the tide ledger reads net negative over its
 //!   window ([`Tide`], the same exchange `one_war.rs` keeps, here for every
 //!   rival at war, gene or no gene) or an urgent Defend row has gone
-//!   unserved for [`DEFEND_UNSERVED_PATIENCE`] turns. A defensive war with
-//!   a served Defend row and an even tide is fought, not begged. Every other
-//!   peace term (recovery, religion, fatigue, the envoy reclaim, one-war,
-//!   the Science lane's defensive peace) is untouched; the tribute a `0.62`
-//!   rout licensed is not claimed by this term.
+//!   unserved for [`DEFEND_UNSERVED_PATIENCE`] turns. When `one-war-at-a-time`
+//!   owns the active front, its sustained-tide and rout rules own that tide
+//!   decision; a single negative window here cannot abandon its siege. A
+//!   defensive war with a served Defend row and an even tide is fought, not
+//!   begged. A live Domination siege also defers recovery and fatigue peace.
+//!   Religion, envoy reclaim and the Science lane's defensive peace keep
+//!   their own rules; the tribute a `0.62` rout licensed is not claimed by
+//!   this term. A present siege gets twelve standard turns to invest; a live
+//!   breach through standing walls gets up to eighty before these terms may
+//!   end it.
 //!
 //! Journal: "Not a target" (Detail) for an excluded rival, the declaration's
 //! blocker in the existing "Holding off war" line, the peace reason in the
@@ -50,7 +55,8 @@ use std::collections::{BTreeMap, VecDeque};
 
 use super::objective_board::{ObjectiveKey, ObjectiveKind};
 use super::one_war::{ONE_WAR_CITY_WEIGHT, ONE_WAR_TIDE_WINDOW};
-use super::{AdvancedAi, StrategicPlan};
+use super::siege_train::SiegeStage;
+use super::{AdvancedAi, StrategicPlan, VictoryTarget};
 use crate::game::Game;
 use crate::think;
 
@@ -255,20 +261,33 @@ impl AdvancedAi {
                 "the plan names no city of theirs to besiege".to_string()
             ));
         };
+        // `one_war_second_front`: the rival the one-war gate admits beside
+        // the burning war is not held by it here either.
+        let second_front = self.one_war_second_front(g, pid) == Some(target);
         if let Some(enemy) = self
             .one_war_enemies(g, pid)
             .into_iter()
-            .find(|enemy| *enemy != target)
+            .find(|enemy| *enemy != target && !second_front)
         {
             return Some(Err(format!(
                 "another major war, with {}, is being fought",
                 g.players[enemy].civ
             )));
         }
+        // A Domination seat countering this rival's clock at twice its power
+        // does not wait on a home Defend row. Live King
+        // civvis-20261003T113755Z (game 34) held its war on the Khmer for a
+        // short Defend row at turns 115, 125 and 135, the last at 438 power
+        // against 138, and lost to Khmer Buddhism at 153 without a war.
+        let counter_at_mercy = self.active_victory_target(g)
+            == Some(super::VictoryTarget::Domination)
+            && self.domination_counter_target(g, pid, target)
+            && g.military_power(pid) >= 2.0 * g.military_power(target).max(1.0);
         if let Some(short) = self
             .requisitions()
             .into_iter()
             .find(|requisition| requisition.kind == ObjectiveKind::Defend)
+            .filter(|_| !counter_at_mercy)
         {
             let name = short
                 .city
@@ -278,6 +297,11 @@ impl AdvancedAi {
                 "the Defend row at {name} is short {} unit(s)",
                 short.count
             )));
+        }
+        // See `overwhelming_power_declares`: before a war the board writes no
+        // Siege row, so nothing orders the army onto this ring.
+        if self.overwhelming_power_declares(g, pid, target, city.pos) {
+            return Some(Ok(()));
         }
         let need = self.war_policy_siege_need(g, pid, city.id);
         let staged = self.staged_campaign_units(g, pid, target, city.pos);
@@ -326,10 +350,42 @@ impl AdvancedAi {
         (feasible, least, roster)
     }
 
+    /// A present Domination siege gets a short stage grace. A reducing
+    /// column that has breached at least 20 wall HP gets a longer, bounded
+    /// chance to finish the attack through standing walls.
+    pub(super) fn domination_siege_has_grace(&self, g: &Game, pid: usize, other: usize) -> bool {
+        self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && self.sieges.iter().any(|(cid, siege)| {
+                matches!(
+                    siege.stage,
+                    SiegeStage::Invest | SiegeStage::Reduce | SiegeStage::Take
+                ) && g.turn.saturating_sub(siege.assessed) <= 1
+                    && g.cities.get(cid).is_some_and(|city| {
+                        let breached_wall = siege.stage == SiegeStage::Reduce
+                            && city.wall_hp > 0
+                            && g.city_max_wall_hp(city).saturating_sub(city.wall_hp) >= 20;
+                        let grace = if breached_wall {
+                            g.standard_duration(80)
+                        } else {
+                            g.standard_duration(12)
+                        };
+                        if g.turn.saturating_sub(siege.entered) > grace {
+                            return false;
+                        }
+                        city.owner == other
+                            && (matches!(siege.stage, SiegeStage::Invest | SiegeStage::Reduce)
+                                || city.hp < 200
+                                || city.wall_hp < g.city_max_wall_hp(city))
+                            && Self::domination_siege_present(g, pid, *cid)
+                    })
+            })
+    }
+
     /// The gene's peace term for `other`: the reason, when no Siege row
     /// against them is feasible and either the tide has run against us over
     /// the window or an urgent Defend row has gone unserved for
-    /// [`DEFEND_UNSERVED_PATIENCE`] turns. `None` with the gene off, and
+    /// [`DEFEND_UNSERVED_PATIENCE`] turns. The active one-war front owns its
+    /// own tide patience and rout decision. `None` with the gene off, and
     /// for a war the roster can still win.
     pub(super) fn war_policy_peace(&self, g: &Game, pid: usize, other: usize) -> Option<String> {
         if !self.war_policy_via_board || !g.is_at_war(pid, other) {
@@ -337,6 +393,13 @@ impl AdvancedAi {
         }
         let (feasible, need, roster) = self.war_policy_siege_against(g, pid, other);
         if feasible {
+            return None;
+        }
+        if self.domination_siege_has_grace(g, pid, other) {
+            return None;
+        }
+        // See `war_holds_the_road`.
+        if self.war_holds_the_road(g, pid, other) {
             return None;
         }
         let tide = self
@@ -349,7 +412,12 @@ impl AdvancedAi {
         } else {
             format!("no siege against them is feasible ({roster:.0} strength, no city of theirs to bill)")
         };
-        if tide < 0 {
+        let one_war_owns_tide = self.one_war_at_a_time
+            && self
+                .one_war
+                .as_ref()
+                .is_some_and(|front| front.target == other);
+        if tide < 0 && !one_war_owns_tide {
             return Some(format!(
                 "{no_siege} and the tide has run against us ({tide:+}) over the window"
             ));
@@ -381,7 +449,8 @@ mod mobilization_tests;
 mod tests {
     use std::collections::BTreeMap;
 
-    use super::super::GrandStrategy;
+    use super::super::objective_board::{ForceNeed, Requisition};
+    use super::super::{GrandStrategy, VictoryTarget};
     use super::*;
     use crate::game::{Game, WarLosses, WarRecord};
     use crate::name;
@@ -631,6 +700,123 @@ mod tests {
         assert!(reason.contains("another major war"), "{reason}");
     }
 
+    /// `overwhelming-power-declares`: at four times the target's power a
+    /// Domination seat's declaration does not wait on the staged ring; with
+    /// the gene off, or short of four times, it does.
+    #[test]
+    fn an_overwhelming_army_declares_without_a_staged_ring() {
+        use super::super::one_war::OVERWHELMING_POWER_RATIO;
+        let mut g = flat_board(37, &[at(6, 8), at(20, 8)]);
+        let target = city_of(&g, 1, at(20, 8));
+        let plan = conquest(&g, Some(target));
+        // Eight swordsmen 6-10 tiles out, none on the objective's 3-5 ring;
+        // one warrior of theirs.
+        for pos in (11..15).flat_map(|col| [at(col, 8), at(col, 10)]) {
+            spawn(&mut g, "swordsman", 0, pos);
+        }
+        spawn(&mut g, "warrior", 1, at(22, 8));
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        ai.enable_objective_board();
+        ai.enable_war_policy_via_board();
+        assert!(
+            g.military_power(0) >= OVERWHELMING_POWER_RATIO * g.military_power(1).max(1.0),
+            "{} against {}",
+            g.military_power(0),
+            g.military_power(1)
+        );
+        assert!(
+            matches!(ai.war_policy_declaration(&g, 0, 1, &plan), Some(Err(_))),
+            "the gene off, the declaration waits on the ring"
+        );
+        ai.enable_overwhelming_power_declares();
+        let objective = g.cities[&target].pos;
+        assert!(ai.overwhelming_power_declares(&g, 0, 1, objective));
+        assert_eq!(ai.war_policy_declaration(&g, 0, 1, &plan), Some(Ok(())));
+        // The same army with its median unit past ten tiles is not waived:
+        // power without proximity converted 0 of 9 live declarations.
+        let mut far = flat_board(37, &[at(6, 8), at(20, 8)]);
+        for col in 2..10 {
+            spawn(&mut far, "swordsman", 0, at(col, 14));
+        }
+        spawn(&mut far, "warrior", 1, at(22, 8));
+        let far_target = city_of(&far, 1, at(20, 8));
+        let far_plan = conquest(&far, Some(far_target));
+        let far_objective = far.cities[&far_target].pos;
+        assert!(far.military_power(0) >= OVERWHELMING_POWER_RATIO * far.military_power(1).max(1.0));
+        assert!(!ai.overwhelming_power_declares(&far, 0, 1, far_objective));
+        assert!(matches!(
+            ai.war_policy_declaration(&far, 0, 1, &far_plan),
+            Some(Err(_))
+        ));
+        // Short of four times, the ring rule is back.
+        for col in 0..6 {
+            spawn(&mut g, "swordsman", 1, at(24 + col, 4));
+        }
+        assert!(!ai.overwhelming_power_declares(&g, 0, 1, objective));
+        assert!(matches!(
+            ai.war_policy_declaration(&g, 0, 1, &plan),
+            Some(Err(_))
+        ));
+    }
+
+    /// A Domination seat countering a rival's clock at twice its power does
+    /// not wait on a home Defend row; short of twice, it does.
+    #[test]
+    fn a_defend_row_does_not_hold_the_war_on_a_counter_target_at_our_mercy() {
+        let verdict = |our_swordsmen: usize| {
+            let mut g = flat_board(36, &[at(6, 8), at(20, 8), at(30, 14)]);
+            let target = city_of(&g, 1, at(20, 8));
+            // Player 1 leads the culture race: a Domination counter target.
+            let stats = std::sync::Arc::make_mut(&mut g.observed_public_empire_stats);
+            for pid in 0..3 {
+                stats.insert(
+                    pid,
+                    crate::game::ObservedPublicEmpireStats {
+                        domestic_tourists: Some(100),
+                        foreign_tourists: Some(if pid == 1 { 70 } else { 0 }),
+                        ..Default::default()
+                    },
+                );
+            }
+            spawn(&mut g, "swordsman", 1, at(21, 9));
+            for col in 0..our_swordsmen {
+                spawn(&mut g, "swordsman", 0, at(4 + col as i32, 12));
+            }
+            let mut ai = on();
+            ai.retarget(crate::ai::advanced::VictoryTarget::Domination);
+            ai.deny_leaders = true;
+            assert!(
+                ai.domination_counter_target(&g, 0, 1),
+                "fixture: a counter target"
+            );
+            ai.post_requisition(Requisition {
+                kind: ObjectiveKind::Defend,
+                count: 3,
+                by_turn: None,
+                city: g.player_city_ids(0).first().copied(),
+                unmet: ForceNeed::default(),
+                have: ForceNeed::default(),
+                sea_only: false,
+                label: "home".to_string(),
+            });
+            let mercy = g.military_power(0) >= 2.0 * g.military_power(1);
+            let plan = conquest(&g, Some(target));
+            (mercy, ai.war_policy_declaration(&g, 0, 1, &plan))
+        };
+        let (mercy, held) = verdict(1);
+        assert!(!mercy, "fixture: short of twice");
+        assert!(
+            matches!(&held, Some(Err(reason)) if reason.contains("Defend row")),
+            "{held:?}"
+        );
+        let (mercy, open) = verdict(6);
+        assert!(mercy, "fixture: twice their power");
+        assert!(
+            !matches!(&open, Some(Err(reason)) if reason.contains("Defend row")),
+            "{open:?}"
+        );
+    }
+
     /// Our capital at war and under pressure from three warriors, the
     /// Defend row served by three of ours beside it, their capital held by
     /// six: no siege is feasible, the tide is even — peace is not offered.
@@ -705,6 +891,117 @@ mod tests {
         assert!(ai.war_policy_peace(&g, 0, 1).is_none());
     }
 
+    #[test]
+    fn active_one_war_front_owns_its_tide_patience() {
+        let (mut g, mut ai) = defended_front(39);
+        ai.retarget(VictoryTarget::Domination);
+        ai.enable_one_war_at_a_time();
+        ai.one_war_observe(&g, 0);
+        assert_eq!(ai.one_war.as_ref().map(|front| front.target), Some(1));
+
+        // A small setback cannot cancel the ongoing siege just because
+        // the board's exact strength bill is temporarily out of reach.
+        record_losses(&mut g, 1, 2, 0);
+        g.turn += 1;
+        ai.war_policy_observe(&g, 0);
+        ai.one_war_observe(&g, 0);
+        assert!(!ai.war_policy_siege_against(&g, 0, 1).0);
+        assert_eq!(ai.war_policy.tides[&1].window_net(), -2);
+        assert!(ai.one_war_peace(&g, 0, 1).is_none());
+        assert!(ai.war_policy_peace(&g, 0, 1).is_none());
+
+        // Without the front controller, the board retains its own peace
+        // rule for an infeasible war with a losing tide.
+        ai.disable_one_war_at_a_time();
+        assert!(ai.war_policy_peace(&g, 0, 1).is_some());
+    }
+
+    #[test]
+    fn a_damaged_city_under_active_domination_siege_gets_time_to_finish() {
+        let (mut g, mut ai) = defended_front(3_801);
+        record_losses(&mut g, 1, 3, 0);
+        g.turn += 1;
+        ai.war_policy_observe(&g, 0);
+        ai.retarget(VictoryTarget::Domination);
+        assert!(ai.war_policy_peace(&g, 0, 1).is_some());
+
+        let target = city_of(&g, 1, at(24, 8));
+        let soldier = g.player_unit_ids(0)[0];
+        let original = g.units[&soldier].pos;
+        g.units.get_mut(&soldier).unwrap().pos = at(21, 8);
+        g.cities.get_mut(&target).unwrap().hp = 160;
+        ai.sieges.insert(
+            target,
+            super::super::siege_train::Siege {
+                stage: SiegeStage::Reduce,
+                taker: None,
+                entered: g.turn,
+                assessed: g.turn,
+                posts: BTreeMap::new(),
+                short_since: None,
+            },
+        );
+        assert!(
+            ai.war_policy_peace(&g, 0, 1).is_none(),
+            "the live siege continues"
+        );
+
+        g.cities.get_mut(&target).unwrap().hp = 200;
+        assert!(
+            ai.war_policy_peace(&g, 0, 1).is_none(),
+            "a recent reduction keeps its short grace even after repairs"
+        );
+        let recovery = StrategicPlan {
+            strategy: GrandStrategy::Recovery,
+            target_player: None,
+            target_city: None,
+            ..conquest(&g, Some(target))
+        };
+        ai.advanced_diplomacy(&mut g, 0, &recovery);
+        assert!(
+            !ai.peace_offers.contains(&1),
+            "recovery must not abandon a recent capital reduction"
+        );
+        g.units.get_mut(&soldier).unwrap().pos = original;
+        assert!(
+            ai.war_policy_peace(&g, 0, 1).is_some(),
+            "the army must remain nearby"
+        );
+        g.units.get_mut(&soldier).unwrap().pos = at(21, 8);
+        g.turn += g.standard_duration(12) + 1;
+        ai.sieges.get_mut(&target).unwrap().assessed = g.turn;
+        assert!(
+            ai.war_policy_peace(&g, 0, 1).is_some(),
+            "the grace period ends"
+        );
+
+        g.cities
+            .get_mut(&target)
+            .unwrap()
+            .buildings
+            .push(crate::name!("walls"));
+        g.cities.get_mut(&target).unwrap().wall_hp = 99;
+        assert!(ai.war_policy_peace(&g, 0, 1).is_some());
+        g.cities.get_mut(&target).unwrap().wall_hp = 70;
+        assert!(
+            ai.war_policy_peace(&g, 0, 1).is_none(),
+            "a real breach must not be abandoned on the short stage clock"
+        );
+        g.turn = ai.sieges[&target].entered + g.standard_duration(80) + 1;
+        ai.sieges.get_mut(&target).unwrap().assessed = g.turn;
+        assert!(
+            ai.war_policy_peace(&g, 0, 1).is_some(),
+            "even a breached siege has a finite commitment"
+        );
+
+        ai.sieges.get_mut(&target).unwrap().entered = g.turn;
+        ai.retarget(VictoryTarget::Science);
+        assert!(
+            ai.war_policy_peace(&g, 0, 1).is_some(),
+            "other lanes get no grace"
+        );
+    }
+
     /// An urgent Defend row left short for the patience sues for peace
     /// when no siege is feasible, even with the tide even.
     #[test]
@@ -747,6 +1044,12 @@ mod tests {
         let reason = ai
             .war_policy_peace(&g, 0, 1)
             .expect("the Defend row has gone unserved for the patience");
+        assert!(reason.contains("unserved"), "{reason}");
+        ai.enable_one_war_at_a_time();
+        ai.one_war_observe(&g, 0);
+        let reason = ai
+            .war_policy_peace(&g, 0, 1)
+            .expect("an urgent unserved defense still warrants peace");
         assert!(reason.contains("unserved"), "{reason}");
     }
 }

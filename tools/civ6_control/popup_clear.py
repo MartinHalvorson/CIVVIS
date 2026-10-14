@@ -49,6 +49,10 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from civ6_control import macos_capture, macos_input, macos_ocr  # noqa: E402
+try:
+    from civ6_control import live_pause  # noqa: E402
+except ImportError:  # a tree older than the operator's Pause
+    live_pause = None
 
 PILLOW_MISSING = "popup_clear needs Pillow: python3 -m pip install pillow"
 
@@ -166,6 +170,20 @@ def game_in_progress(runs_dir, fresh_seconds=180.0):
                 return True
         return False
     except OSError:
+        return False
+
+
+def operator_holds_game():
+    """True while the operator's Pause holds the live game (`live_pause`).
+
+    Every screen on a held game is the operator's: a leader they opened, the
+    pause menu, a governor panel. Unreadable means "not held", as before.
+    """
+    if live_pause is None:
+        return False
+    try:
+        return live_pause.holds_game()
+    except Exception:  # noqa: BLE001 - the backstop must never die on this
         return False
 
 
@@ -960,6 +978,41 @@ def dialogue_buttons(gray, box):
     return out
 
 
+def deal_refuse_button(rgb):
+    """The Refuse Deal button on a positively identified two-column offer.
+
+    The offer can cover only the left third of the live map, so the broad
+    leader darkness test calls it a map. Require its dark offer body plus the
+    adjacent green Accept and blue Refuse bars before returning the latter.
+    The 2026-09-28 King Gran Colombia game froze at turn 174 on this layout.
+    """
+    w, h = rgb.size
+    px = rgb.load()
+
+    def fraction(box, matching):
+        x0, y0, x1, y1 = (round(value * size) for value, size in
+                           zip(box, (w, h, w, h)))
+        step = max(1, w // 432)
+        hits = samples = 0
+        for y in range(y0, y1, step):
+            for x in range(x0, x1, step):
+                hits += bool(matching(*px[x, y]))
+                samples += 1
+        return hits / max(1, samples)
+
+    dark = fraction((0.06, 0.26, 0.315, 0.45),
+                    lambda r, g, b: max(r, g, b) < 65)
+    green = fraction((0.09, 0.173, 0.185, 0.208),
+                     lambda r, g, b: 35 < r < 100 and g > 80
+                     and g > r * 1.4 and b > r * 1.2)
+    blue = fraction((0.195, 0.173, 0.292, 0.208),
+                    lambda r, g, b: 8 < r < 75 and b > g * 1.25
+                    and g > r * 1.2 and b < 120)
+    if dark > 0.80 and green > 0.20 and blue > 0.60:
+        return (round(w * 0.242), round(h * 0.190))
+    return None
+
+
 def notice_button(rgb, gray):
     """A centered one-button Firaxis notice, such as ``Unit Captured``.
 
@@ -1091,6 +1144,10 @@ def classify(window):
     if notice:
         return "notice", [notice], dark
 
+    deal = deal_refuse_button(window)
+    if deal:
+        return "deal", [deal], dark
+
     pause = pause_menu_button(window)
     if pause:
         return "pause", [pause], dark
@@ -1184,7 +1241,26 @@ def main():
     warned_setup = False
     warned_cards = False
     last_pause_reason = None
+    warned_hold = False
     while True:
+        # ★ THE OPERATOR'S PAUSE. While the live game is held the operator is
+        # looking around it, and a click or an Escape from here would close
+        # the screen they opened under them (Escape on the map opens the pause
+        # menu, which this then "cleared"). Nothing is captured or clicked
+        # until they resume, and the episode counters start afresh then.
+        if operator_holds_game():
+            if not warned_hold:
+                log("the operator holds the game; leaving its screens to them")
+                warned_hold = True
+            if args.once:
+                return
+            time.sleep(max(MIN_POLL_SECONDS, args.interval))
+            continue
+        if warned_hold:
+            log("the operator resumed the game; popup checks back on")
+            warned_hold = False
+            esc_budget_used = advisor_stuck_passes = 0
+            leader_passes = no_target_passes = misses = 0
         # Do this before even probing capture or window geometry.  A pre-turn
         # Create Game screen is setup, not a popup, so it must have exclusive
         # access to System Events while the recorder's UI is present.

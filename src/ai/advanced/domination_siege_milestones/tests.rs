@@ -1,5 +1,6 @@
 use super::super::{AdvancedAi, GrandStrategy, StrategicPlan, VictoryTarget};
-use crate::game::Game;
+use super::SIEGE_TRAIN_WAR_LIMIT;
+use crate::game::{Game, Item};
 
 fn fixture() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
     let mut g = Game::new_full(2, 40, 24, 373200, 300, 0, false);
@@ -27,6 +28,9 @@ fn fixture() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
     let unit = g.spawn_test_unit("modern_armor", 0, (19, 10));
     g.spawn_test_unit("modern_armor", 0, (18, 11));
     g.spawn_test_unit("warrior", 1, (29, 11));
+    // A reserve far from both cities keeps the front short of crushed
+    // (`domination_front_crushed`), so a stalled war can still tire.
+    g.spawn_test_unit("modern_armor", 1, (36, 20));
     let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
     ai.major_war_since = Some(80);
     ai.last_campaign_progress = 80;
@@ -47,6 +51,70 @@ fn damage(g: &mut Game, ai: &mut AdvancedAi, city: u32, turn: u32, walls: i32) {
     g.turn = turn;
     g.cities.get_mut(&city).unwrap().wall_hp = walls;
     ai.observe_campaign(g, 0);
+}
+
+#[test]
+fn committed_wall_breaker_survives_fatigue_until_its_bounded_arrival_window_ends() {
+    let (mut g, mut ai, plan, _, _) = fixture();
+    // Native King run civvis-20260928T090730Z: the Ottoman war began on
+    // turn 107, Cuenca started a Bombard on 122, and the peace desk called
+    // the war stalled on 131, before the Bombard emerged on 134.
+    ai.major_war_since = Some(g.turn - 25);
+    let home = g.player_city_ids(0)[0];
+    g.cities.get_mut(&home).unwrap().queue = vec![Item::Unit {
+        unit: crate::name!("bombard"),
+    }];
+    assert!(ai.domination_siege_train_mobilizing(&g, 0, 1, &plan));
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!ai.peace_offers.contains(&1));
+
+    let (mut fielded, mut fielded_ai, fielded_plan, _, _) = fixture();
+    fielded_ai.major_war_since = Some(fielded.turn - 27);
+    let gun = fielded.spawn_test_unit("bombard", 0, (8, 10));
+    assert!(fielded_ai.domination_siege_train_mobilizing(&fielded, 0, 1, &fielded_plan));
+    fielded_ai.advanced_diplomacy(&mut fielded, 0, &fielded_plan);
+    assert!(!fielded_ai.peace_offers.contains(&1));
+    fielded.remove_unit(gun);
+    assert!(!fielded_ai.domination_siege_train_mobilizing(&fielded, 0, 1, &fielded_plan));
+
+    let (mut expired, mut expired_ai, expired_plan, _, _) = fixture();
+    expired_ai.major_war_since = Some(expired.turn - SIEGE_TRAIN_WAR_LIMIT);
+    let home = expired.player_city_ids(0)[0];
+    expired.cities.get_mut(&home).unwrap().queue = vec![Item::Unit {
+        unit: crate::name!("bombard"),
+    }];
+    assert!(!expired_ai.domination_siege_train_mobilizing(&expired, 0, 1, &expired_plan));
+    expired_ai.advanced_diplomacy(&mut expired, 0, &expired_plan);
+    assert!(expired_ai.peace_offers.contains(&1));
+}
+
+#[test]
+fn white_peace_does_not_interrupt_a_committed_domination_siege_train() {
+    let (mut g, mut ai, plan, _, _) = fixture();
+    ai.major_war_since = Some(g.turn - 25);
+    let home = g.player_city_ids(0)[0];
+    g.cities.get_mut(&home).unwrap().queue = vec![Item::Unit {
+        unit: crate::name!("bombard"),
+    }];
+    let deal = crate::game::DiplomaticDeal {
+        id: 1,
+        from: 1,
+        to: 0,
+        give_gold: 0.0,
+        request_gold: 0.0,
+        open_borders: false,
+        friendship: false,
+        peace: true,
+        alliance: None,
+        defensive_pact: false,
+        joint_war_target: None,
+        promise: None,
+        demand: false,
+        expires: g.turn + SIEGE_TRAIN_WAR_LIMIT,
+    };
+    assert!(ai.incoming_deal_value(&g, 0, &deal, &plan) < 0.0);
+    g.turn += SIEGE_TRAIN_WAR_LIMIT - 25;
+    assert!(ai.incoming_deal_value(&g, 0, &deal, &plan) > 0.0);
 }
 
 #[test]
@@ -267,4 +335,186 @@ fn upgraded_defenses_do_not_expand_or_replenish_the_four_milestone_budget() {
     assert_eq!(ai.domination_siege_milestones[&key].greatest_quarter, 4);
     ai.advanced_diplomacy(&mut g, 0, &plan);
     assert!(ai.peace_offers.contains(&1));
+}
+
+/// See `domination_front_crushed`: a stalled war against a rival we outgun
+/// four times over keeps going. The fixture's far reserve holds the front
+/// short of that; without it the same stall offers no peace.
+#[test]
+fn a_crushed_front_is_not_offered_stalled_peace() {
+    let (mut g, mut ai, plan, _, _) = fixture();
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(ai.peace_offers.contains(&1), "the control: a stalled war");
+
+    let (mut g, mut ai, plan, _, _) = fixture();
+    for uid in g.player_unit_ids(1) {
+        if g.units[&uid].kind == "modern_armor" {
+            g.remove_unit(uid);
+        }
+    }
+    assert!(ai.domination_front_crushed(&g, 0, 1));
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!ai.peace_offers.contains(&1));
+
+    // Short of crushed, a siege reducing one of its cities keeps the war too.
+    let (mut g, mut ai, plan, city, _) = fixture();
+    ai.sieges.insert(
+        city,
+        crate::ai::advanced::siege_train::Siege {
+            stage: crate::ai::advanced::siege_train::SiegeStage::Reduce,
+            taker: None,
+            entered: g.turn,
+            assessed: g.turn,
+            posts: Default::default(),
+            short_since: None,
+        },
+    );
+    assert!(ai.domination_front_crushed(&g, 0, 1));
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!ai.peace_offers.contains(&1));
+}
+
+/// See `domination_capital_prey`: a stalled war against a rival that still
+/// holds the original capital Domination needs, and that we outgun twice
+/// over, keeps going. Live King civvis-20261003T040354Z offered Kongo that
+/// peace at 613 power against 224 and never fought it again.
+#[test]
+fn a_rival_holding_its_capital_at_twice_our_power_is_not_offered_stalled_peace() {
+    let (mut g, mut ai, plan, city, _) = fixture();
+    assert!(!ai.domination_capital_prey(&g, 0, 1), "the control");
+    for pos in [(17, 10), (17, 11)] {
+        g.spawn_test_unit("modern_armor", 0, pos);
+    }
+    assert!(g.cities[&city].is_capital && g.cities[&city].original_owner == 1);
+    assert!(
+        g.military_power(0) < 4.0 * g.military_power(1),
+        "short of crushed"
+    );
+    assert!(ai.domination_capital_prey(&g, 0, 1));
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!ai.peace_offers.contains(&1));
+
+    // A rival known to have lost its own capital is not prey; one whose
+    // capital is merely unseen still is.
+    let (mut g, ai, _, city, _) = fixture();
+    for pos in [(17, 10), (17, 11)] {
+        g.spawn_test_unit("modern_armor", 0, pos);
+    }
+    g.cities.get_mut(&city).unwrap().owner = 0;
+    assert!(!ai.domination_capital_prey(&g, 0, 1));
+    let (mut g, ai, _, city, _) = fixture();
+    for pos in [(17, 10), (17, 11)] {
+        g.spawn_test_unit("modern_armor", 0, pos);
+    }
+    g.cities.remove(&city);
+    assert!(
+        ai.domination_capital_prey(&g, 0, 1),
+        "an unseen capital is still held"
+    );
+}
+
+/// See `domination_siege_train_mobilizing`: an unwalled objective needs no
+/// wall breaker, so a siege the train is working with a soldier in its
+/// staging band keeps the war; without one the stalled war still tires, and
+/// the war-age limit bounds it.
+#[test]
+fn a_siege_staging_at_an_unwalled_city_is_not_offered_stalled_peace() {
+    let case = |siege: bool, war_since: u32| {
+        let (mut g, mut ai, plan, city, _) = fixture();
+        let target = g.cities.get_mut(&city).unwrap();
+        target.wall_hp = 0;
+        target.buildings.clear();
+        ai.major_war_since = Some(war_since);
+        if siege {
+            ai.sieges.insert(
+                city,
+                crate::ai::advanced::siege_train::Siege {
+                    stage: crate::ai::advanced::siege_train::SiegeStage::Stage,
+                    taker: None,
+                    entered: g.turn,
+                    assessed: g.turn,
+                    posts: Default::default(),
+                    short_since: None,
+                },
+            );
+        }
+        (g, ai, plan)
+    };
+    let (mut g, mut ai, plan) = case(false, 90);
+    assert!(!ai.domination_siege_train_mobilizing(&g, 0, 1, &plan));
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(ai.peace_offers.contains(&1), "the control: a stalled war");
+
+    let (mut g, mut ai, plan) = case(true, 90);
+    assert!(ai.domination_siege_train_mobilizing(&g, 0, 1, &plan));
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!ai.peace_offers.contains(&1));
+
+    let (g, ai, plan) = case(true, 120 - SIEGE_TRAIN_WAR_LIMIT);
+    assert!(
+        !ai.domination_siege_train_mobilizing(&g, 0, 1, &plan),
+        "bounded"
+    );
+}
+
+/// See the Recovery peace clause in `advanced_diplomacy`: a home emergency
+/// offers peace to a war the Recovery plan is not fighting, but a Domination
+/// seat keeps the war on a rival it has at its mercy.
+#[test]
+fn recovery_does_not_buy_peace_with_capital_prey() {
+    let recovery = |plan: StrategicPlan| StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        target_player: None,
+        target_city: None,
+        ..plan
+    };
+    let (mut g, mut ai, plan, _, _) = fixture();
+    ai.major_war_since = Some(115);
+    ai.last_campaign_progress = 118;
+    assert!(!ai.domination_capital_prey(&g, 0, 1));
+    ai.advanced_diplomacy(&mut g, 0, &recovery(plan));
+    assert!(
+        ai.peace_offers.contains(&1),
+        "the control: not the recovery war"
+    );
+
+    let (mut g, mut ai, plan, _, _) = fixture();
+    ai.major_war_since = Some(115);
+    ai.last_campaign_progress = 118;
+    for pos in [(17, 10), (17, 11)] {
+        g.spawn_test_unit("modern_armor", 0, pos);
+    }
+    assert!(ai.domination_capital_prey(&g, 0, 1));
+    ai.advanced_diplomacy(&mut g, 0, &recovery(plan));
+    assert!(!ai.peace_offers.contains(&1));
+}
+
+/// See `holds_bleeding_capital_of`: a Domination seat holding a rival's
+/// original capital whose Loyalty is falling keeps the war on that rival; a
+/// rising capital does not hold it.
+#[test]
+fn a_bleeding_captured_capital_holds_the_war() {
+    let (mut g, mut ai, plan, _, _) = fixture();
+    let capital = g
+        .player_city_ids(1)
+        .into_iter()
+        .find(|cid| g.cities[cid].is_capital)
+        .expect("fixture: a rival capital");
+    g.cities.get_mut(&capital).unwrap().owner = 0;
+    let observed = std::sync::Arc::make_mut(&mut g.observed_city_loyalty_per_turn);
+    observed.insert(capital, -17.0);
+    assert!(ai.holds_bleeding_capital_of(&g, 0, 1));
+    assert!(ai.domination_front_crushed(&g, 0, 1));
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!ai.peace_offers.contains(&1), "the war keeps the capital");
+
+    let (mut g, ai, _, _, _) = fixture();
+    let capital = g
+        .player_city_ids(1)
+        .into_iter()
+        .find(|cid| g.cities[cid].is_capital)
+        .unwrap();
+    g.cities.get_mut(&capital).unwrap().owner = 0;
+    std::sync::Arc::make_mut(&mut g.observed_city_loyalty_per_turn).insert(capital, 4.0);
+    assert!(!ai.holds_bleeding_capital_of(&g, 0, 1));
 }

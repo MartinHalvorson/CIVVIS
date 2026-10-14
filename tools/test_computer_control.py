@@ -9,9 +9,16 @@ from pathlib import Path
 import subprocess
 from unittest import mock
 
+import os
+# Never read the operator's real saved window layout (~/.civvis-window-layout.json).
+os.environ["CIVVIS_WINDOW_LAYOUT"] = "/nonexistent/civvis-window-layout.json"
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import computer_control as cc  # noqa: E402
+
+# An earlier test module (the climb, the brain) can import `window_layout`
+# before the line above runs, binding its default to the operator's file.
+cc.window_layout.LAYOUT_FILE = Path(os.environ["CIVVIS_WINDOW_LAYOUT"])
 
 
 class QuadrantFrameTest(unittest.TestCase):
@@ -126,9 +133,12 @@ class DismissalPolicyTest(unittest.TestCase):
         self.assertIsNone(cc.choose_dismissal(modal))
 
 
-class Civ6CrashAlertTest(unittest.TestCase):
+class CrashAlertTest(unittest.TestCase):
     def test_native_alert_chooses_ignore_without_relaunching(self):
-        for title in ["Civilization VI quit unexpectedly.", "“Civilization VI” quit unexpectedly."]:
+        for title in ["Civilization VI quit unexpectedly.",
+                      "“Civilization VI” quit unexpectedly.",
+                      "Google Chrome quit unexpectedly.",
+                      "“Google Chrome” quit unexpectedly."]:
             with self.subTest(title=title):
                 modal = {"owner": "UserNotificationCenter", "text": title,
                          "buttons": ["Reopen", "Ignore", "Report…"]}
@@ -150,7 +160,7 @@ class Civ6CrashAlertTest(unittest.TestCase):
                       "buttons": ["Don't Allow", "Allow"]}
         with mock.patch.object(cc, "modal_census", return_value=[permission, crash]), \
              mock.patch.object(cc, "_osascript", return_value=subprocess.CompletedProcess([], 0, "", "")) as run:
-            report = cc.dismiss_modals(civ6_crashes_only=True)
+            report = cc.dismiss_modals(crashes_only=True)
         self.assertEqual(len(report), 1)
         self.assertEqual(report[0]["action"], "Ignore")
         self.assertTrue(report[0]["dismissed"])

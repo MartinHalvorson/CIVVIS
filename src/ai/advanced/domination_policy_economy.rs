@@ -1,6 +1,49 @@
 use super::*;
 
 impl AdvancedAi {
+    /// Keep the income card that is funding a Domination army through a cash
+    /// crisis.  The live t208 policy request replaced Economic Union while
+    /// the treasury held 112 Gold at +28/turn; the next board read -32/turn,
+    /// and the ensuing bankruptcy cost soldiers faster than production replaced
+    /// them.  Price the card on this board before protecting it: an empty
+    /// Commercial Hub/Harbor network must not lock up an economic slot.
+    pub(super) fn domination_wartime_gold_card_pays(
+        &self,
+        g: &Game,
+        pid: usize,
+        at_major_war: bool,
+        staged_conquest: bool,
+        reserve: f64,
+    ) -> Option<f64> {
+        let cities = g.player_city_ids(pid);
+        let player = &g.players[pid];
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || !(at_major_war || staged_conquest)
+            || player.gold >= reserve
+            || player.gold_per_turn >= 5.0 * cities.len().max(1) as f64
+        {
+            return None;
+        }
+        let card = Name::new("economic_union");
+        let mut probe = g.clone();
+        let held = probe.players[pid].policies.remove(&card);
+        if !held && !g.available_policies(pid).contains(&card) {
+            return None;
+        }
+        let total_gold = |board: &Game| {
+            let _memo = board.query_memo();
+            let mut gold = board.player_yield_extras(pid).gold;
+            for city in &cities {
+                gold += board.city_yields(*city).gold;
+            }
+            gold
+        };
+        let without = total_gold(&probe);
+        probe.players[pid].policies.insert(card);
+        let marginal = total_gold(&probe) - without;
+        (marginal >= 5.0).then_some(marginal)
+    }
+
     pub(super) fn domination_multiplier_reclaims_fallback(
         &self,
         g: &Game,

@@ -135,6 +135,16 @@ pub(crate) const DENIAL_SPY_ASSIGN_PRIORITY: i32 = 340;
 /// so nothing under a doubling of the gap ever selects it. This clears it.
 pub(crate) const DENIAL_SPY_MISSION_PRIORITY: f64 = 700.0;
 
+/// `science-denial-spy-reads-the-leader`: added, on top of
+/// [`DENIAL_SPY_ASSIGN_PRIORITY`], to a posting whose destination is the
+/// LEADING threat's launch city. Every threat's pad already carries the base
+/// bonus, so between two pads the stock table decides — and its largest
+/// terms favour the rival we are fighting: +180 for the war plan's target and
+/// up to +155 of Conquest terms, on top of a population and district spread
+/// of a few hundred. A thousand clears all of it, so the pad that is actually
+/// going to launch is the posting whatever the war plan says.
+pub(crate) const DENIAL_LEADER_SPY_ASSIGN_PRIORITY: i32 = 1_000;
+
 /// Soldiers sent at the pad. Two is a pillage party, not a campaign: the tile
 /// is taken by movement and one action, and a third body is better spent on
 /// the front the declaration opens at home.
@@ -245,7 +255,7 @@ impl AdvancedAi {
     }
 
     /// Space projects `pid` has completed.
-    fn science_denial_stages(g: &Game, pid: usize) -> usize {
+    pub(super) fn science_denial_stages(g: &Game, pid: usize) -> usize {
         let completed = &g.players[pid].science_projects;
         SPACE_PROJECTS
             .iter()
@@ -345,10 +355,26 @@ impl AdvancedAi {
     /// refuses to denounce an ally (`do_denounce`), so the alliance could not
     /// be broken here in any case; leaving it in would only spend the turn's
     /// one denunciation on a refused apply.
+    ///
+    /// `science-denounce-waits-for-the-race`: only a rival physically in the
+    /// race -- a project landed or a pad we have seen -- is denounced; a
+    /// technology lead alone is not. On October 5 the live seat sent 452
+    /// denunciations over 44 runs, 294 of them before turn 160 (median turn
+    /// 116), long before any Spaceport: each one closed Open Borders to us
+    /// (0 of 7 passage purchases closed after one) and cost standing for
+    /// nothing a launch had yet begun. Game 131 denounced the Inca at turns
+    /// 80, 102 and 257 "for a space race" while Rome, at war with us and so
+    /// past denouncing, won on Science at 268. The pace still admits a threat
+    /// for the other rungs.
     pub(crate) fn science_threat_denunciation(&self, g: &mut Game, pid: usize) -> Option<usize> {
         let ranked: Vec<usize> = self
             .science_threats(g, pid)
             .into_iter()
+            .filter(|threat| {
+                !self.science_denounce_waits_for_the_race
+                    || threat.stages > 0
+                    || threat.pad.is_some()
+            })
             .map(|threat| threat.rival)
             .filter(|rival| g.alliance_with(pid, *rival).is_none())
             .collect();
@@ -421,6 +447,78 @@ impl AdvancedAi {
         } else {
             0.0
         }
+    }
+
+    /// `science-denial-spy-reads-the-leader`: the launch city the denial spy
+    /// is for — the pad of the most pressing threat (most launches landed,
+    /// then the widest technology lead) that has a standing pad we have
+    /// seen. A pillaged pad cannot launch and `disrupt_rocketry` is not
+    /// offered against it, so the next threat's is read instead. `None` with
+    /// the gene off, so every caller below is the stock pass.
+    pub(crate) fn science_denial_leading_pad_city(&self, g: &Game, pid: usize) -> Option<u32> {
+        if !self.science_denial_spy_reads_the_leader {
+            return None;
+        }
+        self.science_threats(g, pid)
+            .into_iter()
+            .filter_map(|threat| threat.pad)
+            .find(|(_, pad)| g.map.get(*pad).is_some_and(|tile| !tile.pillaged))
+            .map(|(cid, _)| cid)
+    }
+
+    /// Whether a spy of ours other than `spy` is in, or on its way to, `cid`.
+    /// The engine sets `Spy::city` to the destination the turn the order is
+    /// given, so one read covers the posted and the travelling agent.
+    fn science_denial_pad_is_held(g: &Game, pid: usize, spy: u32, cid: u32) -> bool {
+        g.spies
+            .values()
+            .any(|other| other.owner == pid && other.id != spy && other.city == Some(cid))
+    }
+
+    /// `science-denial-spy-reads-the-leader`: what posting `spy` to `cid` is
+    /// worth beyond [`AdvancedAi::science_denial_spy_assignment_bonus`] —
+    /// [`DENIAL_LEADER_SPY_ASSIGN_PRIORITY`] for the leading threat's launch
+    /// city while no other spy of ours holds it, nothing anywhere else. One
+    /// pad still takes one spy; a second spy reads the stock table and the
+    /// base bonus, so it goes to the next threat's pad.
+    pub(crate) fn science_denial_leader_spy_assignment_bonus(
+        g: &Game,
+        pid: usize,
+        spy: u32,
+        leader: Option<u32>,
+        cid: u32,
+    ) -> i32 {
+        if leader != Some(cid) || Self::science_denial_pad_is_held(g, pid, spy, cid) {
+            0
+        } else {
+            DENIAL_LEADER_SPY_ASSIGN_PRIORITY
+        }
+    }
+
+    /// `science-denial-spy-reads-the-leader`: whether an idle `spy` should
+    /// leave the foreign city it stands in for the leading threat's launch
+    /// city. Only a spy in a city whose owner is no science threat moves — a
+    /// spy in a threat's city can disrupt where it is — and only while no
+    /// other spy of ours holds that pad. A spy at home goes through the
+    /// ordinary posting, where the leader's pad already outranks the rest.
+    pub(crate) fn science_denial_spy_reposts_to_the_leader(
+        g: &Game,
+        pid: usize,
+        spy: u32,
+        current_city: Option<u32>,
+        leader: Option<u32>,
+        threats: &BTreeSet<usize>,
+    ) -> bool {
+        let Some(leader) = leader else {
+            return false;
+        };
+        let Some(here) = current_city.and_then(|city| g.cities.get(&city)) else {
+            return false;
+        };
+        here.id != leader
+            && here.owner != pid
+            && !threats.contains(&here.owner)
+            && !Self::science_denial_pad_is_held(g, pid, spy, leader)
     }
 
     // ---- Rung 3: the raid -------------------------------------------------

@@ -83,18 +83,69 @@ use super::city_campaign::NeighbourAppraisal;
 use super::siege_train::SiegeStage;
 use super::{
     AdvancedAi, BasicAi, ForceDomain, ForceGroup, ForcePosture, GrandStrategy, StrategicPlan,
-    UnitDoctrine, BASTION_PRESSURE, BELIEF_PRESSURE_HORIZON, BORDER_PARITY_CONTACT_RADIUS,
-    THREAT_RELIEF_RADIUS,
+    UnitDoctrine, VictoryTarget, BASTION_PRESSURE, BELIEF_PRESSURE_HORIZON,
+    BORDER_PARITY_CONTACT_RADIUS, THREAT_RELIEF_RADIUS,
 };
 use crate::game::{effective_strength, Game};
 use crate::think;
 use crate::Pos;
 
 /// A Defend row's requirement is the hostile strength within
+/// How far, in land steps, a siege rally is searched for from its force.
+const SIEGE_RALLY_LAND_REACH: i32 = 60;
+/// Land steps past the nearest reachable ring tile still on the near side.
+const SIEGE_RALLY_LAND_SLACK: i32 = 2;
+
+/// Land steps from `from` to every passable land tile within `reach`,
+/// ignoring units and borders. Empty when `from` is not on land.
+fn land_steps(g: &Game, from: Pos, reach: i32) -> BTreeMap<Pos, i32> {
+    let land = |pos: Pos| {
+        g.map
+            .get(pos)
+            .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+    };
+    let mut steps = BTreeMap::new();
+    if !land(from) {
+        return steps;
+    }
+    steps.insert(from, 0);
+    let mut queue = std::collections::VecDeque::from([from]);
+    while let Some(pos) = queue.pop_front() {
+        let here = steps[&pos];
+        if here >= reach {
+            continue;
+        }
+        for next in g.nbrs(pos) {
+            if !steps.contains_key(&next) && land(next) {
+                steps.insert(next, here + 1);
+                queue.push_back(next);
+            }
+        }
+    }
+    steps
+}
+
+/// `siege-rally-holds`: how much better, in tiles, a fresh siege rally must
+/// score before the force abandons the one it is marching to. See
+/// `AdvancedAi::held_siege_rally`.
+const SIEGE_RALLY_SWITCH_MARGIN: i32 = 2;
+
 /// [`THREAT_RELIEF_RADIUS`] times this, less the city's own strength.
 pub const DEFEND_MARGIN: f64 = 1.2;
+/// `siege-needs-a-breaker`: the most siege guns a walled Siege row asks for.
+pub const BREAKER_GUNS_MAX: usize = 3;
 /// A Siege row's requirement is the campaign bill times this.
 pub const SIEGE_MARGIN: f64 = 1.25;
+/// `siege-ranged-floor`: the ranged bodies a Siege row asks for whatever its
+/// bill. The bill prices the defenders, not the city: live King
+/// 2026-10-03T115745Z sieged unwalled Pest on a bill of 31-79 with two to
+/// four bodies while ten held in reserve at home, landed one Archer shot a
+/// turn (11-14 damage, below the city's heal), and Pest walled at turn 78
+/// with the city at 183 of 200. Three shooters out-damage the heal.
+pub const SIEGE_RANGED_FLOOR: usize = 3;
+/// `siege-ranged-floor`: the field bodies a Siege row asks for, the shooters
+/// and a melee taker with a spare.
+pub const SIEGE_BODY_FLOOR: usize = 5;
 /// A camp's requirement is its guard's strength times this.
 pub const CAMP_MARGIN: f64 = 1.5;
 /// A Destroy row's requirement is the hostile force's strength times this.
@@ -103,6 +154,18 @@ pub const DESTROY_MARGIN: f64 = 1.5;
 pub const CAMP_RADIUS: i32 = crate::ai::HOME_CAMP_RADIUS;
 /// …before this turn (game-speed scaled).
 pub const CAMP_TURN_LIMIT: u32 = 100;
+/// A camp this close to one of our cities is that city's raider nest: its row
+/// asks for at least [`CAMP_NEAR_BODIES`] bodies, and an unseen guard is
+/// priced as [`CAMP_UNSEEN_GUARD_STRENGTH`]. Live King
+/// civvis-20261003T063926Z: the camp six tiles from Bogotá stood on the board
+/// from turn 9 to turn 65 at "need 0" -- its guard unseen -- and drew single
+/// units that stalled and were pulled back to Defend Bogotá, while the capital
+/// spent its opening on Slingers, Warriors and Walls: three cities at turn 77.
+pub const CAMP_NEAR_RADIUS: i32 = 8;
+/// Bodies a near camp's row asks for.
+pub const CAMP_NEAR_BODIES: usize = 2;
+/// A near camp whose guard we cannot see is priced as an Ancient Spearman.
+pub const CAMP_UNSEEN_GUARD_STRENGTH: f64 = 25.0;
 /// The lane's own district counts this much more in a city's value.
 pub const LANE_PREMIUM: f64 = 1.5;
 /// Hammers a citizen is worth.
@@ -127,6 +190,14 @@ pub const NO_DEADLINE_HORIZON: f64 = 10.0;
 pub const DESTROY_ENGAGE_EXCHANGE: f64 = 1.5;
 /// A Defend deadline is never under this.
 pub const DEFEND_DEADLINE_FLOOR: u32 = 2;
+/// `capital-defense-holds`: a hostile military unit this close to a
+/// damaged city of ours keeps the city's Defend row on the board whatever
+/// the pressure ratio reads, and puts a capital we hold under attack. Live
+/// King civvis-20261005T013110Z (game 91): four defenders reached Bogota at
+/// turns 38-39, raised the ratio's friendly strength, and the Defend row
+/// lapsed at turn 40 with the capital at 20 of 200 and German units beside
+/// it; its bodies joined Siege Munich and Bogota fell at turn 42.
+pub const CAPITAL_DEFENSE_CONTACT: i32 = 2;
 /// Hostile units this close to each other are one force.
 pub const FORCE_LINK: i32 = 3;
 /// A Destroy force that has lost its exact row keeps its identity for a row
@@ -138,6 +209,23 @@ pub const SECTOR: i32 = 8;
 pub const SECTOR_EXPLORED_SHARE: f64 = 0.5;
 /// …and are rows only within this of one of our cities.
 pub const RECON_REACH: i32 = 24;
+/// A Domination war's surplus joins the top Siege row, less this many bodies
+/// that keep the Reserve nearest its tile.
+pub const CAMPAIGN_SURPLUS_HOME_KEEP: usize = 2;
+/// A unit under this strength is not a body for the campaign surplus — the
+/// same bar that keeps a scout out of a fight.
+pub const CAMPAIGN_SURPLUS_MIN_STRENGTH: f64 = 15.0;
+/// `siege-force-keeps-its-members`: a Siege force's member may still be
+/// taken by a Destroy, Escort or ClearCamp row whose target is this close.
+/// A blow it can land on its way costs the siege a turn; a detour across
+/// the front costs it the muster. Live King civvis-20261004T025448Z (game
+/// 45): from turn 88 to 106 Destroy rows against Nubian warrior monks and
+/// crossbowmen took four or five units a turn from the Napata force, which
+/// shrank from seven to three, and none of seven to ten bodies came within
+/// five tiles of Napata at 5 to 10 times Nubia's power. A member's worth to
+/// its own row is discounted by its march to the objective, so a force still
+/// staging ten tiles out loses every comparison against a skirmish at hand.
+pub const SIEGE_MEMBER_STRIKE_REACH: i32 = 2;
 /// A scout within this of a sector's centre holds it.
 const RECON_HOLD_RADIUS: i32 = 6;
 /// At most this many Recon rows a turn.
@@ -216,6 +304,9 @@ pub enum ObjectiveKey {
     Deter(u32),
     /// A sector, by index.
     Recon(u32),
+    /// `find-the-capital`: the hunt for a rival's unseen original capital,
+    /// by the rival's seat.
+    FindCapital(usize),
     /// The leftovers.
     Reserve,
 }
@@ -397,6 +488,9 @@ struct UnitFacts {
     ranged: bool,
     siege: bool,
     recon: bool,
+    /// A fast land body (`UnitDoctrine::Mobile`): it may hunt an unseen
+    /// capital under `find-the-capital`.
+    mobile: bool,
 }
 
 impl UnitFacts {
@@ -418,6 +512,7 @@ impl UnitFacts {
             ranged: ranged_attack && !spec.siege,
             siege: ranged_attack && spec.siege,
             recon: BasicAi::unit_doctrine(g, uid) == UnitDoctrine::Recon,
+            mobile: BasicAi::unit_doctrine(g, uid) == UnitDoctrine::Mobile,
         }
     }
 
@@ -449,6 +544,34 @@ impl UnitFacts {
         }
         total
     }
+}
+
+/// `siege-needs-a-breaker`: the siege guns a Siege row asks for against a
+/// city's standing walls — one a hundred points, at least one and at most
+/// [`BREAKER_GUNS_MAX`]. One gun before Medieval Walls is the one target the
+/// city strikes every turn it stands at range: live King
+/// civvis-20261003T135713Z's one assigned Bombard spent ten of Kwadukuza's
+/// turns healing while the two built after it waited in the Reserve.
+pub(super) fn breaker_guns_wanted(city: &crate::game::City) -> usize {
+    if city.wall_hp <= 0 {
+        return 0;
+    }
+    (city.wall_hp as usize)
+        .div_ceil(100)
+        .clamp(1, BREAKER_GUNS_MAX)
+}
+
+/// `breakers-stay-with-the-siege`: whether a walled Siege row on the board
+/// asks for guns. While one does, a siege gun is the walls' breaker and
+/// nothing else: a Defend, Relieve, Destroy, Escort or camp row takes it as
+/// strength and a body, and a gun is the weakest body there is. Live King
+/// civvis-20261005T024614Z (game 94) fielded Catapults at turn 103
+/// ("Reinforcing the campaign with catapult | the front at (11, 21) is 12
+/// tiles away") that went to the Guayaquil anvil and the heal rotations at
+/// (18-23, 29-31) while Lisbon's siege held for "a wall-breaker on its way".
+fn breaker_rows_ask(rows: &[Objective]) -> bool {
+    rows.iter()
+        .any(|row| row.kind == ObjectiveKind::Siege && row.requirement.siege > 0)
 }
 
 /// A unit's production cost at its hit points, in hammers.
@@ -614,6 +737,12 @@ impl AdvancedAi {
         self.objective_board_state.requisitions.clone()
     }
 
+    /// Test seam: post a shortfall as if the board had assessed it.
+    #[cfg(test)]
+    pub(super) fn post_requisition(&mut self, requisition: Requisition) {
+        self.objective_board_state.requisitions.push(requisition);
+    }
+
     /// The board as last assessed.
     pub fn objective_board(&self) -> &ObjectiveBoard {
         &self.objective_board_state
@@ -641,8 +770,9 @@ impl AdvancedAi {
     }
 
     /// Our field units: military and support, land and sea, not air, not a
-    /// scout with somewhere to explore, not a guard bound to a settler.
-    fn board_pool(&self, g: &Game, pid: usize) -> Vec<u32> {
+    /// scout with somewhere to explore, not a guard bound to a settler, not a
+    /// member of the crossing in hand under `amphibious-siege-train-2`.
+    pub(super) fn board_pool(&self, g: &Game, pid: usize) -> Vec<u32> {
         let mut pool: Vec<u32> = g
             .player_unit_ids(pid)
             .into_iter()
@@ -654,6 +784,7 @@ impl AdvancedAi {
                     && !(BasicAi::unit_doctrine(g, *uid) == UnitDoctrine::Recon
                         && self.base.has_exploration_target(g, pid, *uid))
                     && !self.guard_is_reserved_for_civilian(*uid)
+                    && !self.amphibious_locked(*uid)
                     && (unit.linked_to.is_none()
                         || super::siege_train::linked_support_carrier(g, *uid))
             })
@@ -673,6 +804,25 @@ impl AdvancedAi {
     ) -> bool {
         !self.battlefront_observation
             || (g.sees(visible, unit.pos) && self.battlefront_unit_visible(g, pid, unit.id))
+    }
+
+    /// `capital-defense-holds`: an observed hostile military unit at war with
+    /// us stands within [`CAPITAL_DEFENSE_CONTACT`] of `at`. The pressure
+    /// ratio a Defend row is gated on falls as our defenders arrive, so it
+    /// retires the row of a city that is still being taken; contact does not.
+    pub(super) fn capital_defense_contact(
+        &self,
+        g: &Game,
+        pid: usize,
+        at: Pos,
+        visible: &crate::world::TileBits,
+    ) -> bool {
+        g.units
+            .values()
+            .filter(|unit| unit.owner != pid && g.is_at_war(pid, unit.owner))
+            .filter(|unit| g.rules.units[unit.kind].class == "military")
+            .filter(|unit| g.wdist(unit.pos, at) <= CAPITAL_DEFENSE_CONTACT)
+            .any(|unit| self.observed(g, pid, visible, unit))
     }
 
     /// Hostile military strength within `radius` of `at`, visible in the
@@ -853,12 +1003,21 @@ impl AdvancedAi {
             Self::campaign_strength_of(g, &army) / army.len() as f64
         };
         let bill = self.campaign_city_requirement(g, pid, cid, &appraisal, average_body);
+        let (ranged, bodies) = if self.siege_ranged_floor {
+            (SIEGE_RANGED_FLOOR, SIEGE_BODY_FLOOR)
+        } else {
+            (0, 0)
+        };
         ForceNeed {
             strength: bill.strength * SIEGE_MARGIN,
             melee: 1,
-            ranged: 0,
-            siege: usize::from(city.wall_hp > 0),
-            bodies: 0,
+            ranged,
+            siege: if self.siege_needs_a_breaker {
+                breaker_guns_wanted(city)
+            } else {
+                usize::from(city.wall_hp > 0)
+            },
+            bodies,
         }
     }
 
@@ -901,13 +1060,33 @@ impl AdvancedAi {
                 .city_health
                 .insert(*cid, (turn, health));
             let danger = self.city_pressure_with_belief(g, pid, *cid, visible);
-            if danger < BASTION_PRESSURE {
+            // `capital-defense-holds`: a damaged city with a hostile beside it
+            // keeps its row through the pressure gate, and a capital we hold
+            // with a hostile beside it, damaged or pressed, is an urgent
+            // Defend. Damage counts the walls: a walled city keeps its hit
+            // points whole until they fall. All three read false when off.
+            let contact =
+                self.capital_defense_holds && self.capital_defense_contact(g, pid, *pos, visible);
+            let damaged = self.capital_defense_holds
+                && (city.hp < super::CITY_MAX_HP || city.wall_hp < g.city_max_wall_hp(city));
+            if danger < BASTION_PRESSURE && !(contact && damaged) {
                 continue;
             }
+            let capital_under_attack =
+                city.is_capital && contact && (damaged || danger >= BASTION_PRESSURE);
             defended.insert(*cid);
             let hostile = self.hostile_strength_near(g, pid, *pos, THREAT_RELIEF_RADIUS, visible);
+            // `capital-defense-holds`: a damaged city answers for only the
+            // share of its strength its hit points still hold. Bogota at 20
+            // of 200 subtracted its full strength and asked for 24, two
+            // bodies, where at turns 38-39 it had asked for 50-56.
+            let own_strength = if damaged {
+                g.city_strength(*cid) * f64::from(city.hp.max(0)) / f64::from(super::CITY_MAX_HP)
+            } else {
+                g.city_strength(*cid)
+            };
             let need = ForceNeed {
-                strength: (hostile * DEFEND_MARGIN - g.city_strength(*cid)).max(0.0),
+                strength: (hostile * DEFEND_MARGIN - own_strength).max(0.0),
                 melee: 1,
                 ranged: 0,
                 siege: 0,
@@ -949,7 +1128,7 @@ impl AdvancedAi {
                 land: true,
                 sea: false,
                 label: city.name.clone(),
-                urgent: false,
+                urgent: capital_under_attack,
             });
             // Relieve: what the units within reach cannot supply.
             let local: f64 = pool
@@ -1033,12 +1212,18 @@ impl AdvancedAi {
                 RowState::Open
             };
             let key = ObjectiveKey::Siege(cid);
+            let mut requirement = self.siege_requirement(g, pid, cid);
+            // `breakers-match-the-walls`: the campaign target's walls ask the
+            // guns that breach and take it at our best gun's blow.
+            if self.breakers_match_the_walls && plan.target_city == Some(cid) {
+                requirement.siege = self.breakers_match_the_row(g, pid, cid, requirement.siege);
+            }
             rows.push(Objective {
                 kind: ObjectiveKind::Siege,
                 key,
                 at: city.pos,
                 value: city_value(g, cid, lane).max(POP_VALUE),
-                requirement: self.siege_requirement(g, pid, cid),
+                requirement,
                 deadline: None,
                 state,
                 depends_on: previous_siege,
@@ -1171,6 +1356,14 @@ impl AdvancedAi {
                         g.rules.units[g.units[&uid].kind].cost,
                     )
                 });
+                let near = our_cities
+                    .iter()
+                    .any(|(_, pos)| g.wdist(*pos, *camp) <= CAMP_NEAR_RADIUS);
+                let guard_strength = if near && guard.is_none() {
+                    CAMP_UNSEEN_GUARD_STRENGTH
+                } else {
+                    guard_strength
+                };
                 rows.push(Objective {
                     kind: ObjectiveKind::ClearCamp,
                     key: ObjectiveKey::Camp(*camp),
@@ -1181,7 +1374,7 @@ impl AdvancedAi {
                         melee: 1,
                         ranged: 0,
                         siege: 0,
-                        bodies: 0,
+                        bodies: if near { CAMP_NEAR_BODIES } else { 0 },
                     },
                     deadline: None,
                     state: RowState::Open,
@@ -1346,6 +1539,16 @@ impl AdvancedAi {
                 });
             }
         }
+        // `find-the-capital`: the hunt for an unseen rival capital a
+        // Domination plan needs, once that rival's ground is open to us.
+        if self.find_the_capital && !arena {
+            if let Some(row) = self.find_capital_row(g, pid) {
+                think!(self.journal(), Military, Detail,
+                    "Hunting {}", row.label;
+                    "Domination needs that original capital and it has never been seen; the nearest fog in the middle of their known ground is at {:?}", row.at; row.at);
+                rows.push(row);
+            }
+        }
         rows
     }
 
@@ -1373,7 +1576,9 @@ impl AdvancedAi {
                 .map(|unit| unit.travel_turns(g, row.at, THREAT_RELIEF_RADIUS))
                 .min()
                 .unwrap_or(u32::MAX);
-            row.urgent = deadline <= relief;
+            // `capital-defense-holds` marks a capital under attack urgent at
+            // the row's creation; every other row is built not urgent.
+            row.urgent = row.urgent || deadline <= relief;
         }
         Self::order_board_rows(rows);
     }
@@ -1407,10 +1612,19 @@ impl AdvancedAi {
     fn assess_board(&mut self, g: &Game, pid: usize, plan: &StrategicPlan) {
         let visible = self.battlefront_visibility(g, pid);
         let pool = self.board_pool(g, pid);
-        let facts: BTreeMap<u32, UnitFacts> = pool
+        let mut facts: BTreeMap<u32, UnitFacts> = pool
             .iter()
             .map(|uid| (*uid, UnitFacts::of(g, *uid)))
             .collect();
+        // `siege-needs-a-breaker`: a gun the battle planner holds out to
+        // heal is a body, not the gun a walled Siege row asks for.
+        if self.siege_needs_a_breaker {
+            for (uid, unit) in facts.iter_mut() {
+                if unit.siege && !self.siege_member_fit(g, *uid) {
+                    unit.siege = false;
+                }
+            }
+        }
         let mut rows = self.board_rows(g, pid, plan, &visible, &pool);
         Self::rank_rows(g, &mut rows, &pool, &facts);
 
@@ -1428,6 +1642,21 @@ impl AdvancedAi {
             .collect();
         for force in &mut forces {
             force.units.retain(|uid| pool_set.contains(uid));
+        }
+        // `breakers-stay-with-the-siege`: see `breaker_rows_ask`. A gun last
+        // turn's board sent elsewhere comes back to the pool for the siege.
+        let breakers_stay = self.breakers_stay_with_the_siege && breaker_rows_ask(&rows);
+        if breakers_stay {
+            for force in &mut forces {
+                if !matches!(
+                    force.objective_key,
+                    ObjectiveKey::Siege(_) | ObjectiveKey::Reserve
+                ) {
+                    force
+                        .units
+                        .retain(|uid| !facts.get(uid).is_some_and(|unit| unit.siege));
+                }
+            }
         }
         // Match forces to rows: by key, a Destroy by where it was aimed, the
         // Reserve always.
@@ -1527,18 +1756,75 @@ impl AdvancedAi {
                         if unit.domain != domain {
                             continue;
                         }
-                        if row.kind == ObjectiveKind::Recon && !unit.recon {
+                        if row.kind == ObjectiveKind::Recon
+                            && !unit.recon
+                            // `find-the-capital`: a fast body may hunt it too.
+                            && !(unit.mobile && matches!(row.key, ObjectiveKey::FindCapital(_)))
+                            // `unseen-capital-is-unseen`: so may any land body
+                            // but a siege gun. Replayed G090439Z t130 and
+                            // G201550Z t170, the hunt rows for Cree's and
+                            // Hungary's capitals read "no force" at war.
+                            && !(self.unseen_capital_is_unseen
+                                && !unit.siege
+                                && matches!(row.key, ObjectiveKey::FindCapital(_)))
+                        {
                             continue;
                         }
                         if unit.recon
                             && row.kind != ObjectiveKind::Recon
-                            && row.requirement.strength > 0.0
-                            && unit.strength < 15.0
+                            && ((row.requirement.strength > 0.0 && unit.strength < 15.0)
+                                // `early-conquest-opening`: the opening's eyes
+                                // take no fight at all. Live King
+                                // 2026-10-03T081800Z: a "Destroy 1 of scout"
+                                // row recruited our Scout at turns 5 and 28 --
+                                // non-lethal swings that left it at 42 and 10
+                                // health -- and no rival city was seen before
+                                // turn 67, past the opening's deadline.
+                                || self.early_conquest_opening)
                         {
                             // A scout is not a body for a fight.
                             continue;
                         }
+                        // See `breaker_rows_ask`.
+                        if breakers_stay && unit.siege && row.kind != ObjectiveKind::Siege {
+                            continue;
+                        }
                         let distance = g.wdist(unit.pos, row.at);
+                        // See `SIEGE_MEMBER_STRIKE_REACH`.
+                        if self.siege_force_keeps_its_members
+                            && !row.urgent
+                            && matches!(
+                                row.kind,
+                                ObjectiveKind::Destroy
+                                    | ObjectiveKind::Escort
+                                    | ObjectiveKind::ClearCamp
+                            )
+                            && distance > SIEGE_MEMBER_STRIKE_REACH
+                            && assignment.get(uid).is_some_and(|current| {
+                                matches!(forces[*current].objective_key, ObjectiveKey::Siege(_))
+                            })
+                        {
+                            continue;
+                        }
+                        // `opening-force-keeps-its-members`: the same rule for
+                        // the undeclared opening's strike force, which has no
+                        // row of its own and gathers as the Reserve. Live King
+                        // civvis-20261004T070716Z (game 49) had all six bodies
+                        // by turn 30; a ClearCamp row and Destroy rows against
+                        // raiders kept four at home, and Kyoto's opening
+                        // released at turn 40 with two at the rally.
+                        if !row.urgent
+                            && matches!(
+                                row.kind,
+                                ObjectiveKind::Destroy
+                                    | ObjectiveKind::Escort
+                                    | ObjectiveKind::ClearCamp
+                            )
+                            && distance > SIEGE_MEMBER_STRIKE_REACH
+                            && self.conquest_force_member(*uid)
+                        {
+                            continue;
+                        }
                         match row.kind {
                             ObjectiveKind::Defend
                                 if !row.urgent && distance > THREAT_RELIEF_RADIUS =>
@@ -1670,13 +1956,98 @@ impl AdvancedAi {
         } else {
             BTreeMap::new()
         };
-        // Leftovers: the Reserve, per domain — on an arena, the top force.
         let reserve_at = self.reserve_tile(g, pid, &rows);
+        // A Domination war's surplus marches with the campaign. A Siege row
+        // is met on paper by the campaign bill, and every body the bill does
+        // not name used to wait at the Reserve tile for a threat that never
+        // came: on King `civvis-20260930T211803Z` turn 205, ten land units
+        // held the Reserve at home while the Siege of Istanbul had six, one
+        // of them staged, against a 5x power lead. The Reserve keeps
+        // `CAMPAIGN_SURPLUS_HOME_KEEP` bodies, and nothing moves while a
+        // Deter row says a neighbour outguns us or a Defend or Relieve row is
+        // still short.
+        if !arena {
+            if let Some(index) =
+                self.campaign_surplus_force(g, pid, &rows, &mut forces, &facts, &mut next_id)
+            {
+                // Last turn's Reserve members are seeded into `assignment`
+                // with the Reserve's index, as the leftovers pass below
+                // records; they are the surplus, not taken bodies. Live King
+                // civvis-20261003T115745Z declared on Hungary at turn 72 with
+                // the army already sitting in the Reserve from peacetime: the
+                // Siege of Pest held two to four bodies while seven to eight
+                // stayed home, and only a fresh board (every replay, and the
+                // test above) moved them.
+                let reserve_seeded = |uid: &u32| {
+                    assignment
+                        .get(uid)
+                        .is_none_or(|index| forces[*index].objective_key == ObjectiveKey::Reserve)
+                };
+                let mut surplus: Vec<u32> = pool
+                    .iter()
+                    .copied()
+                    .filter(|uid| {
+                        let unit = &facts[uid];
+                        unit.domain == ForceDomain::Land
+                            && !unit.recon
+                            && unit.strength >= CAMPAIGN_SURPLUS_MIN_STRENGTH
+                            && reserve_seeded(uid)
+                    })
+                    .collect();
+                // `siege-needs-a-breaker`: the bodies kept home are not
+                // the guns. The two nearest the Reserve tile are usually the
+                // newest units, and live King civvis-20261003T135713Z's
+                // newest were the Bombards a walled siege was waiting for.
+                surplus.sort_by_key(|uid| {
+                    (
+                        self.siege_needs_a_breaker && facts[uid].siege,
+                        g.wdist(facts[uid].pos, reserve_at),
+                        *uid,
+                    )
+                });
+                for uid in surplus.into_iter().skip(CAMPAIGN_SURPLUS_HOME_KEEP) {
+                    assignment.insert(uid, index);
+                    forces[index].units.push(uid);
+                }
+            }
+        }
+        // `siege-needs-a-breaker`: a ram or tower is no body by strength, so
+        // it never met a row's need and never counted as surplus: it waited
+        // in the Reserve while a siege against the walls it opens went
+        // without it (live King civvis-20261003T135713Z, Kwadukuza's
+        // Medieval Walls). One whose effect works on the top walled Siege
+        // row's city joins that row's land force.
+        if self.siege_needs_a_breaker && !arena {
+            self.breach_support_joins_the_siege(
+                g,
+                &rows,
+                &pool,
+                &facts,
+                &mut forces,
+                &mut assignment,
+            );
+        }
+        // Leftovers: the Reserve, per domain — on an arena, the top force.
         for domain in [ForceDomain::Land, ForceDomain::Sea] {
+            // ⚠ Last turn's Reserve members were seeded into `assignment`
+            // with the Reserve's own index, and the Reserve is rewritten from
+            // the leftovers below. Counting them as assigned dropped them
+            // from every force: live King civvis-20261001T080758Z's Reserve
+            // alternated [36, 37, 39, 41, 42] and [38, 40] every turn
+            // (turns 32-36), and the dropped units drifted with no orders
+            // while the opening's force never gathered.
+            let reserve_index = forces.iter().position(|force| {
+                force.objective_key == ObjectiveKey::Reserve && force.domain == domain
+            });
             let leftovers: Vec<u32> = pool
                 .iter()
                 .copied()
-                .filter(|uid| facts[uid].domain == domain && !assignment.contains_key(uid))
+                .filter(|uid| {
+                    facts[uid].domain == domain
+                        && assignment
+                            .get(uid)
+                            .is_none_or(|index| Some(*index) == reserve_index)
+                })
                 .collect();
             if let Some(&leader) = top_force.get(&(domain == ForceDomain::Sea)) {
                 for uid in &leftovers {
@@ -1840,11 +2211,157 @@ impl AdvancedAi {
         board.requisitions = requisitions;
     }
 
+    /// `siege-needs-a-breaker`: every free Battering Ram and Siege Tower
+    /// whose effect works on the city of the top-ranked Siege row with walls
+    /// a melee blow cannot open joins that row's land force, if it has one.
+    fn breach_support_joins_the_siege(
+        &self,
+        g: &Game,
+        rows: &[Objective],
+        pool: &[u32],
+        facts: &BTreeMap<u32, UnitFacts>,
+        forces: &mut [TaskForce],
+        assignment: &mut BTreeMap<u32, usize>,
+    ) {
+        let Some((key, cid)) = rows.iter().find_map(|row| match row.key {
+            ObjectiveKey::Siege(cid) if row.kind == ObjectiveKind::Siege && row.land => {
+                let city = g.cities.get(&cid)?;
+                let max = g.city_max_wall_hp(city);
+                (max > 0
+                    && f64::from(city.wall_hp)
+                        > super::siege_train::MELEE_WALL_FRACTION * f64::from(max))
+                .then_some((row.key, cid))
+            }
+            _ => None,
+        }) else {
+            return;
+        };
+        let Some(index) = forces
+            .iter()
+            .position(|force| force.objective_key == key && force.domain == ForceDomain::Land)
+        else {
+            return;
+        };
+        // A ram or tower works only for a melee or anti-cavalry blow; a
+        // force with no such member would march it to the walls alone.
+        let users = forces[index].units.iter().any(|uid| {
+            g.units.get(uid).is_some_and(|unit| {
+                crate::ai::siege_support::eligible_attacker(&g.rules.units[unit.kind])
+            })
+        });
+        if !users {
+            return;
+        }
+        for uid in pool {
+            let unit = &g.units[uid];
+            let free = assignment
+                .get(uid)
+                .is_none_or(|current| forces[*current].objective_key == ObjectiveKey::Reserve);
+            if facts[uid].domain != ForceDomain::Land
+                || !matches!(unit.kind.as_str(), "battering_ram" | "siege_tower")
+                || unit.linked_to.is_some()
+                || !g.city_allows_siege_support(cid, unit.kind.as_str())
+                || !free
+            {
+                continue;
+            }
+            if let Some(current) = assignment.insert(*uid, index) {
+                if current != index {
+                    forces[current].units.retain(|other| other != uid);
+                }
+            }
+            if !forces[index].units.contains(uid) {
+                forces[index].units.push(*uid);
+            }
+        }
+    }
+
+    /// The land force of the top-ranked Siege row, raised if it has none,
+    /// when a Domination war's surplus should march with it: the seat is on
+    /// the Domination lane, its top Siege row aims at a major it is at war
+    /// with, no Deter row stands and every Defend and Relieve row is served.
+    fn campaign_surplus_force(
+        &self,
+        g: &Game,
+        pid: usize,
+        rows: &[Objective],
+        forces: &mut Vec<TaskForce>,
+        facts: &BTreeMap<u32, UnitFacts>,
+        next_id: &mut u32,
+    ) -> Option<usize> {
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || rows.iter().any(|row| row.kind == ObjectiveKind::Deter)
+        {
+            return None;
+        }
+        let served = |row: &Objective| {
+            let mut have = ForceNeed::default();
+            for force in forces
+                .iter()
+                .filter(|force| force.objective_key == row.key && force.domain == ForceDomain::Land)
+            {
+                for uid in &force.units {
+                    if let Some(unit) = facts.get(uid) {
+                        have.add(unit);
+                    }
+                }
+            }
+            row.requirement.unmet(&have).is_zero()
+        };
+        if rows
+            .iter()
+            .filter(|row| {
+                matches!(row.kind, ObjectiveKind::Defend | ObjectiveKind::Relieve) && row.land
+            })
+            .any(|row| !served(row))
+        {
+            return None;
+        }
+        let row = rows
+            .iter()
+            .find(|row| row.kind == ObjectiveKind::Siege && row.land)?;
+        let ObjectiveKey::Siege(cid) = row.key else {
+            return None;
+        };
+        let owner = g.cities.get(&cid)?.owner;
+        let rival = g.players.get(owner)?;
+        if rival.is_minor || rival.is_barbarian || !g.is_at_war(pid, owner) {
+            return None;
+        }
+        if let Some(index) = forces
+            .iter()
+            .position(|force| force.objective_key == row.key && force.domain == ForceDomain::Land)
+        {
+            return Some(index);
+        }
+        forces.push(TaskForce {
+            id: *next_id,
+            objective_key: row.key,
+            domain: ForceDomain::Land,
+            units: Vec::new(),
+            rally: row.at,
+            doctrine_state: ForcePosture::Muster,
+            aimed_at: row.at,
+            formed: g.turn,
+        });
+        *next_id += 1;
+        Some(forces.len() - 1)
+    }
+
     /// Where the Reserve stands: the Deter row's tile, else the frontier
     /// city nearest the strongest met rival, else the capital.
     fn reserve_tile(&self, g: &Game, pid: usize, rows: &[Objective]) -> Pos {
         if let Some(row) = rows.iter().find(|row| row.kind == ObjectiveKind::Deter) {
             return row.at;
+        }
+        // See `early-conquest-opening`: the strike force has no row of its own
+        // before the war, so it falls into the leftovers and held the Reserve
+        // at home -- live King 2026-10-01T022028Z had all six reserved bodies
+        // trained by turn 28 and released the opening on turn 40 "before the
+        // force ever assembled" with every one of them inside the home ring.
+        // While the opening gathers, the Reserve gathers at its rally.
+        if let Some(rally) = self.conquest_staging_rally(g) {
+            return rally;
         }
         let ours = g.player_city_ids(pid);
         let strongest = g
@@ -1902,15 +2419,14 @@ impl AdvancedAi {
     /// Siege forces prefer land on their approach side before pricing safety:
     /// a refuge beyond the enemy city is not a place to muster for taking it.
     /// If terrain leaves no approach-side land, retain the available ring.
-    fn far_side(
+    /// The medoid of the hostile soldiers we can see around `objective`.
+    fn rally_enemy(
         &self,
         g: &Game,
         pid: usize,
         objective: Pos,
-        force_medoid: Pos,
         visible: &crate::world::TileBits,
-        approach_only: bool,
-    ) -> Pos {
+    ) -> Option<Pos> {
         let hostile: Vec<Pos> = g
             .units
             .values()
@@ -1920,7 +2436,59 @@ impl AdvancedAi {
             .filter(|unit| self.observed(g, pid, visible, unit))
             .map(|unit| unit.pos)
             .collect();
-        let enemy = medoid(g, &hostile);
+        medoid(g, &hostile)
+    }
+
+    /// `siege-rally-holds`: keep last turn's siege rally while it is still a
+    /// land tile on the city's staging ring and the fresh `far_side` pick is
+    /// not better by [`SIEGE_RALLY_SWITCH_MARGIN`] (distance from the
+    /// defenders less distance from the force). The fresh pick reads two
+    /// moving inputs, the defenders and a force whose membership changes
+    /// every turn, so it flips across the city. Live King
+    /// civvis-20261003T081800Z mustered for unwalled Helsingborg from turn 68
+    /// to 150: the anchor jumped between (1, 20) and (5, 18) or (6, 16), the
+    /// force was 0% ready on almost every turn, and its soldiers stood 9-12
+    /// tiles out.
+    #[allow(clippy::too_many_arguments)]
+    fn held_siege_rally(
+        &self,
+        g: &Game,
+        pid: usize,
+        objective: Pos,
+        force_medoid: Pos,
+        visible: &crate::world::TileBits,
+        prior: Pos,
+        fresh: Pos,
+    ) -> Pos {
+        let on_ring = |pos: Pos| {
+            (2..=3).contains(&g.wdist(pos, objective))
+                && g.map
+                    .get(pos)
+                    .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+        };
+        if prior == fresh || !on_ring(prior) {
+            return fresh;
+        }
+        let enemy = self.rally_enemy(g, pid, objective, visible);
+        let score =
+            |pos: Pos| enemy.map_or(0, |enemy| g.wdist(pos, enemy)) - g.wdist(pos, force_medoid);
+        if score(fresh) >= score(prior) + SIEGE_RALLY_SWITCH_MARGIN {
+            fresh
+        } else {
+            prior
+        }
+    }
+
+    fn far_side(
+        &self,
+        g: &Game,
+        pid: usize,
+        objective: Pos,
+        force_medoid: Pos,
+        visible: &crate::world::TileBits,
+        approach_only: bool,
+    ) -> Pos {
+        let enemy = self.rally_enemy(g, pid, objective, visible);
         // A siege still needs to reach its city when no defending units are
         // visible. Mustering at the remote force center can otherwise keep
         // SiegeStage::Stage from ever gathering units near the objective.
@@ -1938,6 +2506,33 @@ impl AdvancedAi {
                     .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
             })
             .collect();
+        // A siege rally the force can walk to. The straight-line approach
+        // side can lie across water: live King civvis-20261003T131343Z
+        // (game 37) mustered 17-25 bodies for coastal Bristol at a rally on
+        // its side of a bay, the army stood on the far shore for twelve turns
+        // ("0 of 17-22 units staged"), and the only road rounded the bay 37
+        // steps away (diagnosed by -60). Read the ring by land path from the
+        // force; where no ring tile is reachable by land, keep the line.
+        if approach_only {
+            let land = land_steps(g, force_medoid, SIEGE_RALLY_LAND_REACH);
+            if let Some(nearest) = candidates.iter().filter_map(|pos| land.get(pos)).min() {
+                let near_side = nearest + SIEGE_RALLY_LAND_SLACK;
+                if let Some(pos) = candidates
+                    .iter()
+                    .copied()
+                    .filter(|pos| land.get(pos).is_some_and(|steps| *steps <= near_side))
+                    .max_by_key(|pos| {
+                        (
+                            enemy.map_or(0, |enemy| g.wdist(*pos, enemy)),
+                            -land[pos],
+                            *pos,
+                        )
+                    })
+                {
+                    return pos;
+                }
+            }
+        }
         let approach_distance = g.wdist(force_medoid, objective);
         let approach_available = approach_only
             && candidates
@@ -2157,15 +2752,29 @@ impl AdvancedAi {
                 })
                 .sum();
             let rally = match kind {
-                Some(ObjectiveKind::Siege | ObjectiveKind::Defend | ObjectiveKind::Relieve) => self
-                    .far_side(
+                Some(ObjectiveKind::Siege | ObjectiveKind::Defend | ObjectiveKind::Relieve) => {
+                    let fresh = self.far_side(
                         g,
                         pid,
                         objective,
                         force_medoid,
                         &visible,
                         kind == Some(ObjectiveKind::Siege),
-                    ),
+                    );
+                    if self.siege_rally_holds && kind == Some(ObjectiveKind::Siege) {
+                        self.held_siege_rally(
+                            g,
+                            pid,
+                            objective,
+                            force_medoid,
+                            &visible,
+                            force.rally,
+                            fresh,
+                        )
+                    } else {
+                        fresh
+                    }
+                }
                 _ => force_medoid,
             };
             force.rally = rally;
@@ -2491,6 +3100,83 @@ mod tests {
         assert_eq!(group.anchor, force.rally);
     }
 
+    /// See `held_siege_rally`: a siege rally on the staging ring holds until
+    /// a fresh pick is better by the switch margin; an off-ring prior (the
+    /// row's own tile on the force's first turn) never holds.
+    #[test]
+    fn a_siege_rally_holds_until_a_clearly_better_one_appears() {
+        let objective = at(24, 10);
+        let mut g = flat_board(91_623, &[at(6, 10), objective], false);
+        war(&mut g, 0, 1);
+        let mut ai = on();
+        ai.battlefront_observation = false;
+        ai.enable_siege_rally_holds();
+        let visible = ai.battlefront_visibility(&g, 0);
+        let ring: Vec<Pos> = g
+            .wdisk(objective, 3)
+            .into_iter()
+            .filter(|pos| (2..=3).contains(&g.wdist(*pos, objective)))
+            .collect();
+        let medoid = at(12, 10);
+        let nearest = *ring
+            .iter()
+            .min_by_key(|pos| (g.wdist(**pos, medoid), **pos))
+            .unwrap();
+        let one_worse = *ring
+            .iter()
+            .find(|pos| g.wdist(**pos, medoid) == g.wdist(nearest, medoid) + 1)
+            .expect("fixture: a ring tile one step farther");
+        let far = *ring
+            .iter()
+            .max_by_key(|pos| (g.wdist(**pos, medoid), **pos))
+            .unwrap();
+        assert!(g.wdist(far, medoid) >= g.wdist(nearest, medoid) + 2);
+        let held =
+            |prior, fresh| ai.held_siege_rally(&g, 0, objective, medoid, &visible, prior, fresh);
+        // A fresh pick better by less than the margin does not move the force.
+        assert_eq!(held(one_worse, nearest), one_worse);
+        // A clearly better one does.
+        assert_eq!(held(far, nearest), nearest);
+        // A prior off the ring (the row's tile) never holds.
+        assert_eq!(held(objective, nearest), nearest);
+    }
+
+    /// See `far_side`: a siege across a bay rallies where the army can walk,
+    /// on the near side of the land road around the water, not on the
+    /// straight-line approach that lies across it (Bristol, game 37).
+    #[test]
+    fn a_siege_across_a_bay_rallies_on_the_land_road() {
+        let objective = at(24, 10);
+        let approach = at(12, 10);
+        let mut g = flat_board(91_624, &[at(4, 10), objective], false);
+        war(&mut g, 0, 1);
+        // A bay of water columns 16-21, closed except a land bridge at the
+        // southern rows.
+        for tile in g.map.tiles.values_mut() {
+            let (col, row) = crate::hex::axial_to_offset(tile.pos.0, tile.pos.1);
+            if (16..=21).contains(&col) && row < 18 {
+                tile.terrain = name!("coast");
+            }
+        }
+        let mut ai = on();
+        ai.battlefront_observation = false;
+        let visible = ai.battlefront_visibility(&g, 0);
+        let rally = ai.far_side(&g, 0, objective, approach, &visible, true);
+        let land = land_steps(&g, approach, SIEGE_RALLY_LAND_REACH);
+        let nearest = g
+            .wdisk(objective, 3)
+            .into_iter()
+            .filter(|pos| g.wdist(*pos, objective) >= 2)
+            .filter_map(|pos| land.get(&pos).copied())
+            .min()
+            .expect("the ring is reachable around the bay");
+        let steps = *land.get(&rally).expect("the rally is reachable by land");
+        assert!(
+            steps <= nearest + SIEGE_RALLY_LAND_SLACK,
+            "rally {rally:?} at {steps} steps, nearest {nearest}"
+        );
+    }
+
     #[test]
     fn defensive_rally_can_still_shelter_beyond_the_objective() {
         let objective = at(24, 10);
@@ -2627,6 +3313,119 @@ mod tests {
             .any(|req| req.kind == ObjectiveKind::Destroy));
     }
 
+    /// A Domination war's surplus marches with the campaign: the Siege row
+    /// is met on paper by its bill, but every other body used to wait at the
+    /// Reserve tile. Two stay home; the rest join the siege force. Another
+    /// lane, or a Domination seat at peace, keeps the old Reserve.
+    #[test]
+    fn a_domination_wars_surplus_joins_the_top_siege_and_keeps_two_home() {
+        let mut g = flat_board(91_640, &[at(6, 8), at(30, 8)], false);
+        let target = city_of(&g, 1, at(30, 8));
+        let ours: Vec<u32> = (0..8)
+            .map(|index| spawn(&mut g, "warrior", 0, at(8 + index % 4, 7 + index / 4)))
+            .collect();
+        let plan = conquest(&g, Some(target));
+        let run = |g: &Game, mut ai: AdvancedAi| {
+            ai.enable_objective_board();
+            ai.battlefront_observation = false;
+            ai.rebuild_force_groups(g, 0, &plan);
+            let siege = force_for(&ai, ObjectiveKey::Siege(target)).map_or(0, |f| f.units.len());
+            let reserve = force_for(&ai, ObjectiveKey::Reserve).map_or(0, |f| f.units.len());
+            (siege, reserve)
+        };
+
+        let mut at_war = g.clone();
+        war(&mut at_war, 0, 1);
+        let (bill_only, home) = run(&at_war, AdvancedAi::new());
+        assert!(
+            home > CAMPAIGN_SURPLUS_HOME_KEEP,
+            "the bill leaves a surplus: {home}"
+        );
+        assert_eq!(
+            bill_only + home,
+            ours.len(),
+            "every warrior is on the board"
+        );
+
+        let (siege, reserve) = run(&at_war, AdvancedAi::targeting(VictoryTarget::Domination));
+        assert_eq!(reserve, CAMPAIGN_SURPLUS_HOME_KEEP);
+        assert_eq!(siege, ours.len() - CAMPAIGN_SURPLUS_HOME_KEEP);
+
+        let peace = run(&g, AdvancedAi::targeting(VictoryTarget::Domination));
+        assert!(
+            peace.1 > CAMPAIGN_SURPLUS_HOME_KEEP,
+            "no campaign surplus without a war: {peace:?}"
+        );
+    }
+
+    /// `siege-needs-a-breaker`: a walled Siege row asks for its guns by the
+    /// wall still standing, counts only guns fit to fire, keeps infantry home
+    /// rather than the guns, and takes the Siege Tower that opens its walls.
+    /// Live King civvis-20261003T135713Z: Kwadukuza's row held one healing
+    /// Bombard while two fresh ones and the Tower stood in the Reserve.
+    #[test]
+    fn a_walled_siege_row_claims_its_guns_and_the_tower_that_opens_its_walls() {
+        let mut g = flat_board(91_641, &[at(6, 8), at(30, 8)], false);
+        war(&mut g, 0, 1);
+        let target = city_of(&g, 1, at(30, 8));
+        let walled = g.cities.get_mut(&target).unwrap();
+        walled.buildings = vec![name!("walls"), name!("medieval_walls")];
+        walled.wall_hp = 200;
+        // The guns and the Tower are the newest units, beside home.
+        let guns: Vec<u32> = [at(7, 8), at(7, 9)]
+            .iter()
+            .map(|pos| spawn(&mut g, "bombard", 0, *pos))
+            .collect();
+        let tower = spawn(&mut g, "siege_tower", 0, at(6, 9));
+        let infantry: Vec<u32> = (0..6)
+            .map(|index| spawn(&mut g, "man_at_arms", 0, at(9 + index % 3, 7 + index / 3)))
+            .collect();
+        let plan = conquest(&g, Some(target));
+        let run = |ai: &mut AdvancedAi| {
+            ai.enable_objective_board();
+            ai.battlefront_observation = false;
+            ai.rebuild_force_groups(&g, 0, &plan);
+            let units = |key| force_for(ai, key).map_or(Vec::new(), |force| force.units.clone());
+            (
+                units(ObjectiveKey::Siege(target)),
+                units(ObjectiveKey::Reserve),
+            )
+        };
+
+        let mut off = AdvancedAi::targeting(VictoryTarget::Domination);
+        let (_, home) = run(&mut off);
+        assert!(
+            home.contains(&tower),
+            "a Tower is no surplus body: {home:?}"
+        );
+        assert!(
+            guns.iter().any(|gun| home.contains(gun)),
+            "the newest guns stay home"
+        );
+
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        ai.enable_siege_needs_a_breaker();
+        let row = ai.siege_requirement(&g, 0, target);
+        assert_eq!(row.siege, 2, "two guns against 200 walls");
+        let (siege, home) = run(&mut ai);
+        assert!(guns.iter().all(|gun| siege.contains(gun)), "{siege:?}");
+        assert!(siege.contains(&tower), "{siege:?}");
+        assert_eq!(home.len(), CAMPAIGN_SURPLUS_HOME_KEEP);
+        assert!(home.iter().all(|uid| infantry.contains(uid)), "{home:?}");
+
+        // A gun the planner holds out to heal is a body, not the gun.
+        let mut healing = AdvancedAi::targeting(VictoryTarget::Domination);
+        healing.enable_siege_needs_a_breaker();
+        healing.battle_planner_recovering.insert(guns[0]);
+        healing.enable_objective_board();
+        healing.battlefront_observation = false;
+        healing.rebuild_force_groups(&g, 0, &plan);
+        assert!(healing
+            .requisitions()
+            .iter()
+            .any(|req| req.kind == ObjectiveKind::Siege && req.unmet.siege == 1));
+    }
+
     /// A task force keeps its id across turns and across the death of its
     /// lowest-id member.
     #[test]
@@ -2669,6 +3468,60 @@ mod tests {
         assert_eq!(group.units, after.units);
     }
 
+    /// Last turn's Reserve stays in the Reserve. Its members are seeded as
+    /// assigned to the Reserve, and the Reserve is rewritten from the
+    /// leftovers, which used to drop them from every force on alternate turns.
+    #[test]
+    fn the_reserve_keeps_its_members_from_turn_to_turn() {
+        let mut g = flat_board(7, &[at(6, 8), at(30, 8)], false);
+        let ours: Vec<u32> = [at(5, 8), at(5, 9), at(4, 8)]
+            .iter()
+            .map(|pos| spawn(&mut g, "warrior", 0, *pos))
+            .collect();
+        let mut ai = on();
+        let plan = conquest(&g, None);
+        for _ in 0..3 {
+            ai.rebuild_force_groups(&g, 0, &plan);
+            let reserve = force_for(&ai, ObjectiveKey::Reserve).expect("a reserve");
+            assert_eq!(reserve.units, ours, "turn {}", g.turn);
+            g.turn += 1;
+        }
+    }
+
+    /// The surplus is found on a persistent board too: an army that sat in
+    /// the peacetime Reserve joins the siege when the war opens, not only one
+    /// a fresh board allocates.
+    #[test]
+    fn a_peacetime_reserve_joins_the_siege_when_the_war_opens() {
+        let mut g = flat_board(91_640, &[at(6, 8), at(30, 8)], false);
+        let target = city_of(&g, 1, at(30, 8));
+        let ours: Vec<u32> = (0..8)
+            .map(|index| spawn(&mut g, "warrior", 0, at(8 + index % 4, 7 + index / 4)))
+            .collect();
+        let plan = conquest(&g, Some(target));
+        let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+        ai.enable_objective_board();
+        ai.battlefront_observation = false;
+        ai.rebuild_force_groups(&g, 0, &plan);
+        let reserve = force_for(&ai, ObjectiveKey::Reserve).map_or(0, |f| f.units.len());
+        assert!(
+            reserve > CAMPAIGN_SURPLUS_HOME_KEEP,
+            "peace keeps the army home: {reserve}"
+        );
+
+        war(&mut g, 0, 1);
+        g.turn += 1;
+        ai.rebuild_force_groups(&g, 0, &plan);
+        let siege = force_for(&ai, ObjectiveKey::Siege(target)).map_or(0, |f| f.units.len());
+        let reserve = force_for(&ai, ObjectiveKey::Reserve).map_or(0, |f| f.units.len());
+        assert_eq!(reserve, CAMPAIGN_SURPLUS_HOME_KEEP, "two stay home");
+        assert_eq!(
+            siege,
+            ours.len() - CAMPAIGN_SURPLUS_HOME_KEEP,
+            "the rest march"
+        );
+    }
+
     /// A Siege row asks the campaign's own bill times the margin, with a
     /// melee taker and siege while the walls stand.
     #[test]
@@ -2701,6 +3554,23 @@ mod tests {
             .force_groups
             .iter()
             .any(|group| group.objective == g.cities[&target].pos));
+    }
+
+    /// `siege-ranged-floor`: the Siege row asks three shooters and five
+    /// bodies whatever its bill; off, the shipped requirement stands.
+    #[test]
+    fn the_ranged_floor_asks_three_shooters_of_a_siege() {
+        let mut g = flat_board(9, &[at(6, 8), at(20, 8)], false);
+        war(&mut g, 0, 1);
+        let target = city_of(&g, 1, at(20, 8));
+        let mut ai = on();
+        assert_eq!(ai.siege_requirement(&g, 0, target).ranged, 0);
+        assert_eq!(ai.siege_requirement(&g, 0, target).bodies, 0);
+        ai.enable_siege_ranged_floor();
+        let need = ai.siege_requirement(&g, 0, target);
+        assert_eq!(need.ranged, SIEGE_RANGED_FLOOR);
+        assert_eq!(need.bodies, SIEGE_BODY_FLOOR);
+        assert_eq!(need.melee, 1, "the taker stays");
     }
 
     /// A Defend whose deadline is inside the relief time outranks a Siege of
@@ -2766,6 +3636,80 @@ mod tests {
         );
     }
 
+    /// A near camp with no guard in sight asks for two bodies and a guard's
+    /// strength; a far one keeps the plain rule.
+    #[test]
+    fn a_near_camp_asks_for_a_real_party_even_when_its_guard_is_unseen() {
+        let mut g = flat_board(17, &[at(6, 8), at(30, 8)], true);
+        let near = at(12, 10);
+        g.barb_camps.insert(near, g.turn);
+        assert!(g.wdist(near, at(6, 8)) <= CAMP_NEAR_RADIUS);
+        spawn(&mut g, "warrior", 0, at(7, 8));
+        let mut ai = on();
+        let plan = conquest(&g, None);
+        ai.rebuild_force_groups(&g, 0, &plan);
+        let near_row = row(&ai, ObjectiveKey::Camp(near)).expect("a ClearCamp row");
+        assert_eq!(near_row.requirement.bodies, CAMP_NEAR_BODIES);
+        assert!(near_row.requirement.strength >= CAMP_UNSEEN_GUARD_STRENGTH * CAMP_MARGIN - 1e-9);
+        let far = g
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .find(|pos| {
+                let d = g.wdist(*pos, at(6, 8));
+                d > CAMP_NEAR_RADIUS
+                    && d <= CAMP_RADIUS
+                    && g.wdist(*pos, at(30, 8)) > g.wdist(*pos, at(6, 8)) + 4
+                    && g.city_at(*pos).is_none()
+                    && g.map
+                        .get(*pos)
+                        .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+            })
+            .expect("a tile in the outer camp band");
+        g.barb_camps.clear();
+        g.barb_camps.insert(far, g.turn);
+        let beside = g
+            .nbrs(far)
+            .into_iter()
+            .find(|pos| g.unit_ids_at(*pos).is_empty())
+            .unwrap();
+        spawn(&mut g, "warrior", 0, beside);
+        g.turn += 1;
+        ai.rebuild_force_groups(&g, 0, &plan);
+        let far_row = row(&ai, ObjectiveKey::Camp(far)).expect("a far ClearCamp row");
+        assert_eq!(
+            far_row.requirement.bodies, 0,
+            "a far camp keeps the plain rule"
+        );
+    }
+
+    /// Under `early-conquest-opening` a Scout is never recruited for a
+    /// Destroy row, whatever its strength reads.
+    #[test]
+    fn the_opening_keeps_its_scout_out_of_destroy_rows() {
+        let assigned = |opening: bool| {
+            let mut g = flat_board(17, &[at(6, 8), at(30, 8)], true);
+            let barb = g.barb_pid.expect("barbarians");
+            let enemy = spawn(&mut g, "scout", barb, at(10, 8));
+            let ours = spawn(&mut g, "scout", 0, at(9, 8));
+            g.units.get_mut(&ours).unwrap().hp = 100;
+            let mut ai = on();
+            if opening {
+                ai.enable_early_conquest_opening();
+            }
+            let plan = conquest(&g, None);
+            ai.rebuild_force_groups(&g, 0, &plan);
+            let _ = enemy;
+            ai.objective_board()
+                .forces
+                .iter()
+                .filter(|force| !matches!(force.objective_key, ObjectiveKey::Reserve))
+                .any(|force| force.units.contains(&ours))
+        };
+        assert!(!assigned(true), "the opening's scout takes no fight row");
+    }
+
     /// A camp within nine of a city is a row before turn 100 and not after.
     #[test]
     fn a_camp_within_nine_is_a_row_before_turn_100_and_not_after() {
@@ -2774,6 +3718,7 @@ mod tests {
         g.barb_camps.insert(camp, g.turn);
         assert!(g.wdist(camp, at(6, 8)) <= CAMP_RADIUS);
         spawn(&mut g, "warrior", 0, at(7, 8));
+        spawn(&mut g, "warrior", 0, at(7, 9));
         let mut ai = on();
         let plan = conquest(&g, None);
         g.turn = g.standard_duration(CAMP_TURN_LIMIT) - 1;
@@ -2860,3 +3805,9 @@ mod staging_tests;
 
 #[cfg(test)]
 mod defense_priority_tests;
+
+#[cfg(test)]
+mod siege_member_tests;
+
+#[cfg(test)]
+mod breaker_match_tests;

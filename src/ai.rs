@@ -46,6 +46,43 @@ const LIVELOCK_FOOTPRINT: usize = 3;
 /// redirects a stuck unit without ever ordering it to its death.
 pub(crate) const LIVELOCK_ESCAPE_VALUE: f64 = 8.0;
 
+/// `unique-unit-preference`: the strength `best_military` credits our own
+/// unique unit for the abilities its strength column omits. Five is the same
+/// credit `decisive-window` gives it (`decisive_window::UNIQUE_MARGIN`).
+pub(crate) const UNIQUE_UNIT_POWER_CREDIT: f64 = 5.0;
+
+/// See `BasicAi::lent_military_floor_base`: the most standard turns a city may
+/// spend training toward a lent war target above the genome's own floor.
+const LENT_FLOOR_MAX_BUILD_TURNS: u32 = 16;
+/// See `BasicAi::front_weighted_floor`: how much sooner, in standard turns,
+/// another city must put the floor's unit at the front for this one to skip it.
+/// Two: in 160213Z the floor's median city stood 15 tiles from the objective
+/// and the near city 4-8, which for Gran Colombia's three-move infantry
+/// (Ejército Patriota, +1) is only two or three turns of walking.
+const FRONT_ARRIVAL_MARGIN: u32 = 2;
+/// See `BasicAi::front_weighted_floor`: below this share of its floor the
+/// army is built wherever a queue is free.
+const FRONT_FLOOR_SHARE: f64 = 0.75;
+/// See `BasicAi::front_weighted_floor_2`: how close to the campaign's target
+/// a city must stand to build the floor's unit ahead of its economy.
+const FRONT_NEAR_TILES: i32 = 8;
+
+/// The gates of `BasicAi::pick_item`'s Settler step; see
+/// `BasicAi::settler_gates`.
+/// Turns between one city's `journal_settler_hold` lines: a sample of every
+/// game for the census without a line per city per turn.
+const SETTLER_HOLD_JOURNAL_STRIDE: u32 = 3;
+
+struct SettlerGates {
+    room: bool,
+    stranded: usize,
+    pipeline: usize,
+    parked_brake: bool,
+    none_in_flight: bool,
+    grown: bool,
+    in_window: bool,
+}
+
 /// After this many fruitless turns the tabu has had every chance to work and
 /// has not: whatever the unit is trying to reach, it cannot. Standing it down
 /// is strictly better than another lap — it fortifies, heals, and stops
@@ -60,6 +97,35 @@ const LIVELOCK_STAND_DOWN_TURNS: u32 = 4;
 /// goal is written off as ground the host will not walk it to. See
 /// `BasicAi::explore_dead_targets`.
 const EXPLORE_STUCK_TURNS: u32 = 2;
+
+/// Turns an explorer may pursue one goal without coming any closer to it
+/// before the goal is retired with a wider ring (`EXPLORE_NO_PROGRESS_RING`).
+/// Live King 2026-10-01T000033Z: the Scout held goal (27, 14) from turn 13,
+/// seven tiles off, and circled four tiles beside it for thirty turns -- a
+/// cycle neither the same-tile count nor a two-tile bounce check can see --
+/// while the Cree capital lay unseen to the east until turn 62.
+const EXPLORE_NO_PROGRESS_TURNS: u32 = 3;
+
+/// The ring retired around a goal the explorer could not close on. A goal
+/// behind an obstacle has neighbours behind the same obstacle; one ring
+/// hands the next pick a goal two tiles away and the same circuit.
+const EXPLORE_NO_PROGRESS_RING: i32 = 2;
+
+/// A retired exploration goal marks a bearing the host would not walk the
+/// explorer along; a fresh candidate within sixty degrees of it, seen from
+/// the explorer, is charged this much in the ranking (reveal is worth four a
+/// tile, so sixty is fifteen unseen tiles). The 2026-10-01T000033Z Scout gave
+/// up (27, 14) and then chose (20, 14), (20, 12) and (23, 14), all north
+/// across the same lake: a distance shadow around the first goal cannot
+/// reach goals seven tiles along the same far shore, a bearing can.
+const EXPLORE_FAILED_BEARING_PENALTY: i32 = 60;
+/// Only retired tiles at least this far from the explorer mark a bearing; a
+/// retired ring beside the unit says nothing about direction.
+const EXPLORE_FAILED_BEARING_MIN_DISTANCE: i32 = 3;
+
+/// `explore_last`'s record: (goal, tile, same-tile turns, last turn, closest
+/// distance to the goal, turns without coming closer).
+type ExploreProgress = (Pos, Pos, u32, u32, i32, u32);
 
 /// Consecutive turns the same issued step must be seen untaken before
 /// `live-move-refusal-break` bars it. One refused turn is a report, not a
@@ -187,6 +253,10 @@ pub(crate) const HOME_CAMP_RADIUS: i32 = 9;
 /// The loyalty level the governor logic has always treated as an emergency.
 /// Retained as a floor so making the rule rate-aware never makes it blinder
 /// than it was.
+/// `bleeding-capital-loyalty`: an ordinary Governor's establishment turns
+/// (`data/governors.json`; Victor's are three). A Loyalty runway shorter
+/// than this flips the city before that Governor's +8 arrives.
+pub(crate) const VICTOR_SHORT_RUNWAY_TURNS: f64 = 5.0;
 const LOYALTY_LEVEL_ALARM: f64 = 70.0;
 
 /// The share of the army a bounded barbarian response may claim. Half, because
@@ -328,6 +398,9 @@ const RAILROAD_RESOURCE_RESERVE: f64 = 4.0;
 type PlotPurchaseCandidate = (f64, std::cmp::Reverse<(u32, Pos)>, Action);
 
 mod advanced;
+mod campus_buildings;
+mod commercial_hub;
+mod industrial_zones;
 mod movement_risk;
 mod naval_demand;
 mod scout_first;
@@ -340,10 +413,11 @@ pub use advanced::victory_portfolio::{
 pub use advanced::{
     deployment_treatments, gene, gene_ledger, gene_ledger_rows, host_only_tags, ledger_default_on,
     ledger_verdict, live_tags, repair_tags, repair_tags_on, screenable_genes, AdvancedAi,
-    AirCityAssault, Axis, ExpansionCensus, ForceDomain, ForceGroup, ForcePosture, Gene,
-    GeneLedgerApplied, GeneVerdict, GrandStrategy, Kind, Measure, StrategicPlan, StrategyCensus,
-    Verdict, VictoryTarget, GENES, LAND_GRAB_CITY_CEILING, LAND_GRAB_CITY_FLOOR,
-    LAND_GRAB_PIPELINE_BASE, LAND_GRAB_TILES_PER_CITY, PRODUCTION_CITY_TARGET_FLOOR,
+    AirCityAssault, Axis, BarterSpare, ExpansionCensus, ForceDomain, ForceGroup, ForcePosture,
+    Gene, GeneLedgerApplied, GeneVerdict, GrandStrategy, GunResourceWant, Kind, Measure,
+    StrategicPlan, StrategyCensus, Verdict, VictoryTarget, GENES, LAND_GRAB_CITY_CEILING,
+    LAND_GRAB_CITY_FLOOR, LAND_GRAB_PIPELINE_BASE, LAND_GRAB_TILES_PER_CITY,
+    PRODUCTION_CITY_TARGET_FLOOR,
 };
 
 const TECH_PRIORITY: [&str; 15] = [
@@ -487,6 +561,11 @@ pub struct PlanReport {
     /// median 116 Gold, three quarters of the treasury on every retry
     /// regardless of why the offer was made.
     pub peace_routed: Vec<usize>,
+    /// The subset of `peace_offers` that asks the rival to cede a town
+    /// (`peace-asks-a-city`): white offers made from at least
+    /// `PEACE_CITY_ASK_RATIO` times the rival's power. The live bridge adds
+    /// the town to the first ask only; the retry is white peace.
+    pub peace_asks_city: Vec<usize>,
     pub forces: Vec<ForceReport>,
     /// The one authority spanning target selection, research, production,
     /// treasury, staging, declaration, and exploitation.
@@ -841,8 +920,7 @@ pub(crate) fn choose_dedications(g: &mut Game, pid: usize, choice: DedicationCho
         // measured number where it is the literal objective and leaves the
         // rest alone. Georgia is the shipped exception: Strength in Unity also
         // pays the Normal-Age half during Golden and Heroic Ages.
-        let banking = !matches!(g.players[pid].age.as_str(), "golden" | "heroic")
-            || g.civ_effect(pid, "golden_dedication_era_score") > 0.0;
+        let banking = dedication_banks(g, pid);
         let rank = match choice {
             DedicationChoice::Alphabetical => false,
             DedicationChoice::Measured => true,
@@ -872,6 +950,86 @@ pub(crate) fn choose_dedications(g: &mut Game, pid: usize, choice: DedicationCho
         if !progressed {
             return;
         }
+    }
+}
+
+/// Whether this age's Dedication is read as the Era Score it banks: a Normal
+/// or Dark Age, or Georgia's Strength in Unity in any age. See
+/// [`choose_dedications`].
+fn dedication_banks(g: &Game, pid: usize) -> bool {
+    !matches!(g.players[pid].age.as_str(), "golden" | "heroic")
+        || g.civ_effect(pid, "golden_dedication_era_score") > 0.0
+}
+
+/// `golden-dedication-serves-the-conquest`: the Golden-half order a
+/// domination seat takes its Golden and Heroic Age Dedications in.
+///
+/// Under `Banking` a Golden or Heroic Age does not rank, so the choice falls
+/// to the alphabetical tie-break, which leads with Exodus of the Evangelists.
+/// Over the 10-04/05 live King control runs (88 games) Exodus took 57 of 81
+/// Medieval Golden Ages, and the Heroic Ages took Exodus, Free Inquiry and
+/// Monumentality in that order. Exodus's Golden half moves Missionaries and
+/// pays Great Prophet points, which a seat with no religion never spends.
+/// The order puts first the halves a conquest spends: To Arms! (+25%
+/// Production toward military units, +50% combat experience), Sky and Stars
+/// (air experience and the flight Eurekas the air surge rides), Monumentality
+/// (Settlers and Builders 30% cheaper and bought with Faith, Builders +2
+/// Movement), then the economy, with Exodus last.
+pub(crate) const CONQUEST_GOLDEN_DEDICATIONS: [&str; 12] = [
+    "to_arms",
+    "sky_and_stars",
+    "monumentality",
+    "free_inquiry",
+    "reform_the_coinage",
+    "heartbeat_of_steam",
+    "automaton_warfare",
+    "pen_brush_and_voice",
+    "hic_sunt_dracones",
+    "bodyguard_of_lies",
+    "wish_you_were_here",
+    "exodus_of_the_evangelists",
+];
+
+/// `golden-dedication-serves-the-conquest`: in a Golden or Heroic Age, take
+/// the offered Dedications in [`CONQUEST_GOLDEN_DEDICATIONS`] order (a name
+/// the list does not carry goes after it, alphabetically). In an age that
+/// banks Era Score, defer to [`choose_dedications`] with `fallback`, so that
+/// choice is unchanged. Returns the Dedications this call chose by the
+/// conquest order.
+pub(crate) fn choose_conquest_dedications(
+    g: &mut Game,
+    pid: usize,
+    fallback: DedicationChoice,
+) -> Vec<Name> {
+    if pid >= g.players.len() || dedication_banks(g, pid) {
+        choose_dedications(g, pid, fallback);
+        return Vec::new();
+    }
+    let place = |name: &Name| {
+        CONQUEST_GOLDEN_DEDICATIONS
+            .iter()
+            .position(|preferred| *preferred == name.as_str())
+            .unwrap_or(CONQUEST_GOLDEN_DEDICATIONS.len())
+    };
+    let mut chosen = Vec::new();
+    loop {
+        let mut offered = g.available_dedications(pid);
+        if offered.is_empty() {
+            return chosen;
+        }
+        offered.sort_by(|left, right| place(left).cmp(&place(right)).then(left.cmp(right)));
+        let Some(dedication) = offered.into_iter().find(|dedication| {
+            g.apply(
+                pid,
+                &Action::ChooseDedication {
+                    dedication: *dedication,
+                },
+            )
+            .is_ok()
+        }) else {
+            return chosen;
+        };
+        chosen.push(dedication);
     }
 }
 
@@ -2348,6 +2506,33 @@ pub struct BasicAi {
     /// Set per turn from `AdvancedAi::take_turn_inner` by the gene
     /// `enter-the-prophet-race-2`, and only while `prophet_race_open_for` holds.
     pub(crate) enter_prophet_race: bool,
+    /// While `enter_prophet_race` holds and the empire has no Holy Site,
+    /// built or queued, the Campus or Theater Square a campus-first or
+    /// culture-defense step returns becomes this city's Holy Site
+    /// (`race_takes_the_district_slot`). The boost above lives in the
+    /// district loop, and those steps return before it: live King
+    /// 2026-10-04T205431Z held the race open from turn 30 to 60 with
+    /// Astrology in hand, opened Campuses at Maracaibo (t32) and Quito (t38),
+    /// and built its first Holy Site at t75, for a Great Person; T212049Z had
+    /// Astrology at t35, a Campus at t57 and a Theater Square at t62, and no
+    /// Holy Site.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene
+    /// `prophet-race-takes-a-district-slot`.
+    pub(crate) prophet_race_takes_a_district_slot: bool,
+    /// Version 2 of the gene above: the race's Holy Site goes to the city
+    /// that builds it soonest (`race_site_city`), ahead of that city's
+    /// campus-first step, and no other city's Campus or Theater slot is
+    /// taken for it. Live King civvis-20261005T035848Z (game 97): version 1
+    /// opened the site in Barinas at turn 32, 54 production at 3.6 a turn
+    /// (about 15 turns), and all three religions were founded without us;
+    /// the Cree won on Religion at 135 with 560 of our Faith unspent.
+    pub(crate) prophet_race_takes_a_district_slot_2: bool,
+    /// `bleeding-capital-loyalty` (AdvancedAi): the Loyalty emergency takes
+    /// Victor, who establishes in three turns, ahead of an unassigned
+    /// five-turn Governor when the city's runway is under
+    /// [`VICTOR_SHORT_RUNWAY_TURNS`].
+    pub(crate) victor_first_for_a_short_runway: bool,
     /// Build a building that MAKES SCIENCE before one that does not.
     ///
     /// Buildings are picked cheapest-first, and that order is deliberate policy
@@ -2363,6 +2548,528 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `science-building-first`.
     pub(crate) science_building_first: bool,
+    /// A city grown to its housing builds its Granary, then its Aqueduct,
+    /// ahead of another Builder, the Monument, every district and every later
+    /// building. Housing caps growth: a city at its housing grows at a quarter
+    /// speed, one short at half. On King civvis-20261001T003717Z, 89% of the
+    /// city-turns from turn 40 to 150 were housing-bound (55% at the cap) and
+    /// 88% were bound without a Granary. Pottery came at turn 12, yet not one
+    /// of nine cities had a Granary at turn 127, and none had an Aqueduct.
+    /// Seven of nine cities sat at 2 to 7 population while the rivals' cores
+    /// reached 13, and science trailed 46 against 93 to 143. This governor
+    /// reaches a Granary only after every district a city still lacks, which
+    /// a growing city never runs out of.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `first-granary-reserve-3`.
+    pub(crate) housing_reserve: bool,
+    /// A city's first Campus ahead of its Harbor in this governor. The
+    /// coastal block below asked every coastal city for a Harbor before any
+    /// specialty district, and the four-player Tiny Pangaea is mostly coast:
+    /// live King Gran Colombia started ZERO Campuses between turns 20 and 65
+    /// in two of three games (first Campus turn 86 after seven Harbors in
+    /// 2026-10-01T030914Z), and science fell from parity at turn 40 to a third
+    /// of the best rival's by turn 65 in every game but the one that opened a
+    /// Campus at turn 43.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `campus-before-harbor`.
+    pub(crate) campus_before_harbor: bool,
+    /// The capital's first Campus before its next Settler, once the empire
+    /// holds three cities. The capital is the settler pump of the land grab:
+    /// on live King Gran Colombia it trained eight Settlers between turns 6
+    /// and 57 (2026-10-01T053931Z) and sat at population 2-3 with no Campus
+    /// until turn 66 (none by turn 75 in T050754Z), while science trailed
+    /// 15 against 56 at turn 60.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `campus-before-harbor-2`.
+    pub(crate) capital_campus_first: bool,
+    /// A city's Monument ahead of the military floor and the Settler step;
+    /// the capital first sends out two Settlers. This governor reached
+    /// the Monument only after the floor, the Settler, the Builders and the
+    /// Trader, so across the 14 live King Gran Colombia games of 2026-10-01/02
+    /// only 54-57% of our cities older than 20 turns held one from turn 60 to
+    /// 100 (27% at turn 30). A new city's first 40 turns went 3.5% to the
+    /// Monument against 6.9% to Walls and about a quarter to soldiers and
+    /// ships. Culture trailed 10.6 against the rival median's 27.3 at turn
+    /// 60 (civics 9.5 against 12), and culture is also what grows a city's
+    /// borders: our cities owned three or four unworked plots apiece.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `monument-first`.
+    pub(crate) monument_first: bool,
+    /// The genome's own Builder quota (`builder_per_city`, at most one per
+    /// two cities) ahead of the Monument, the Settler, the military floor,
+    /// the recon and the navy, behind only the siege, barbarian and
+    /// economic-recovery steps. Stock reaches its Builder step after all of
+    /// them, and on the live board that step starves: live King
+    /// 2026-10-03T093332Z held zero Builders from t54 to t93 while the lent
+    /// war floor (15-20 units for 5-8 cities), Walls, Settlers and Monuments
+    /// took every queue. It had improved 5 of 73 owned land plots at t90; its
+    /// capital sat at population 2 for 70 turns working two 1-Food mines; and
+    /// at t100 it held 29 population and 18.5 Science against Persia's 61
+    /// and 88.6. Across 25 live King games, those with no Builder on 20% or
+    /// more of their turns (3+ cities, to t150) averaged 34 population and 32
+    /// Science at t100, those under 10% averaged 46 and 52.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `builder-before-the-army`.
+    pub(crate) builder_before_the_army: bool,
+    /// `builder_before_the_army` with a quota of one: the step answers only
+    /// while the empire has no Builder standing or queued, the live drought,
+    /// and leaves an empire that has one to the stock order. Version 1's
+    /// quota moved Builders ahead of the Settler and the first districts in
+    /// the simulator too, where the drought does not happen: 16 domination
+    /// pairs (seeds 37150000) gave 0.62 fewer districts at t60 (z -2.82), 0.69
+    /// fewer cities (z -1.96) and 2.75 fewer citizens (z -1.79) at t100, and
+    /// games 11.6 turns shorter (z -2.13).
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `builder-before-the-army-2`.
+    pub(crate) builder_before_the_army_2: bool,
+    /// `builder_before_the_army_2`, and past that first Builder a quota of
+    /// one Builder per three worked tiles that stand unimproved but could
+    /// take an improvement, at most one per two cities. The extra Builders
+    /// come behind the Campus step and never while this city's Settler step
+    /// is due (`settler_due`), so they displace only the military floor.
+    ///
+    /// Live King games since version 2 was armed (2026-10-03T131343Z on, 10
+    /// games) worked 11.1 unimproved land tiles against 6.4 improved at t60
+    /// and 20.7 against 14.5 at t100 — ten of them hills a Mine pays two
+    /// Production on after Apprenticeship — with 1.6 build charges on the map
+    /// across t41-80 and none at all on 32% of those turns. ~95% of the
+    /// seat's production comes from worked tiles.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `builder-before-the-army-3`.
+    pub(crate) builder_before_the_army_3: bool,
+    /// `builders-before-the-lent-floor`: above the genome's own army floor,
+    /// a unit for a Domination war's lent margin waits for the Builder
+    /// backlog. Set from `AdvancedAi`.
+    pub(crate) builders_before_the_lent_floor: bool,
+    /// `best_military` credits the civilization's own unique unit with
+    /// `UNIQUE_UNIT_POWER_CREDIT` strength for the abilities its strength
+    /// column omits — the Llanero's adjacency bonus and Gran Colombia's
+    /// extra move, the Hoplite's pairing — so a Llanero (62) is trained over
+    /// the Line Infantry (65) and the Cuirassier (64) it is unlocked beside.
+    /// Live King Gran Colombia, 30 games 10-01..04: not one Llanero at any
+    /// checkpoint. The same gene points `AdvancedAi::tech_value`'s +55
+    /// unique-unit research credit at `unique_to` instead of civs.json's
+    /// `unique_unit`, which names one for only 14 of 105 civilizations.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `unique-unit-preference`.
+    pub(crate) unique_unit_preference: bool,
+    /// A city's first Campus, then its Library (`first_campus_item`,
+    /// `campus_library_item`: each buildable here within
+    /// `FIRST_CAMPUS_MAX_TURNS`), ahead of the Monument, the capital Settler
+    /// and the military floor, once the empire holds three cities and while
+    /// fewer than one city in two is already building either. Stock
+    /// reaches its Campus after the floor, and `campus-before-harbor` only
+    /// ahead of the Harbor: live King 2026-10-03T103619Z, with Builders
+    /// restored, still had 5 of its 6 cities without a Campus from t70 to
+    /// t120. Districts took 0% of production in t61-90 and 8% in t91-120,
+    /// against 31-35% for soldiers under a floor of 12-16, while our power
+    /// stood at 252-370 against the strongest rival's 161-182. Science at
+    /// t100 was 21.6 against the top rival's 69.7.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `campus-before-the-army`.
+    pub(crate) campus_before_the_army: bool,
+    /// `campus_before_the_army`'s Campus and Library behind the Monument and
+    /// the capital Settler, and never while this city's Settler step would
+    /// train a Settler (`settler_due`), so they displace only the military
+    /// floor and what follows it. Version 1 stood ahead of all three. Live
+    /// King 2026-10-03T113755Z, its first game, held 3 cities from t42 to
+    /// t100 against a target of 10, with its first Settler at t88, while
+    /// Campuses, Libraries, Theaters, Builders and ships took the queues. 16 domination pairs
+    /// (seeds 37150000) bought +1.44 techs at t100 (z +2.98) and +1.0
+    /// Library (z +3.30), and paid 4.8 citizens (z -3.19), 0.62 civics
+    /// (z -2.82) and 5.8 Culture (z -2.33): the culture and civics
+    /// `monument-first` buys, and the capital's walkers.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `campus-before-the-army-2`.
+    pub(crate) campus_before_the_army_2: bool,
+    /// `campus_before_the_army_2`, on past the Library to the University and
+    /// the Research Lab (each, with its civilization's replacement, within
+    /// `FIRST_CAMPUS_MAX_TURNS`). Live King 2026-10-03T131343Z, the first game
+    /// with version 2, held a Campus and a Library in all 10 cities at t150
+    /// and a University in 4 of them; 5 Universities and 1 Research Lab at
+    /// t200, while those cities trained Artillery, Spies and Builders. It
+    /// lost a Technology victory at t238, the leader's Science going from
+    /// 207 to 416 between t175 and t200 against our 148 and 166.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `campus-before-the-army-3`.
+    pub(crate) campus_before_the_army_3: bool,
+    /// The navy step (`naval < desired_navy`) waits while this city's
+    /// Settler step would train a Settler (`settler_due`). It stands ahead of
+    /// the Settler step, so at three cities against a target of ten live King
+    /// 2026-10-03T113755Z built two Galleys and two Quadriremes from t80 to
+    /// t89 in Cartagena, its first Settlers coming at t88. A replay with
+    /// `campus-before-the-army-2` still trained Galleys and a Quadrireme at
+    /// t52, t75 and t80 where the walkers were due.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `settler-before-the-navy`.
+    pub(crate) settler_before_the_navy: bool,
+    /// `housing_reserve_item` (a city within one of its housing: its Granary,
+    /// else its Aqueduct within `FIRST_CAMPUS_MAX_TURNS`) ahead of the
+    /// military floor, behind the Monument and the capital Settler, and never
+    /// while the city is due a Settler. `first-granary-reserve-3` arms the
+    /// stock step, which comes after the floor and the Settler, and the
+    /// Advanced reserve ahead of the strategic scorer, which a delegated live
+    /// seat never runs. Live King at t100: 2026-10-03T155014Z had 5 of 6
+    /// cities at their housing and no Granary; 164758Z 3 of 9 with 3
+    /// Granaries; 135713Z 4 of 10 with 1. Our cities held 4-5 citizens
+    /// against the rivals' 7-9.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `granary-before-the-army`.
+    pub(crate) granary_before_the_army: bool,
+    /// The military floor's unit is built where it reaches the campaign's
+    /// target soonest: a city skips the floor while another city of ours that
+    /// can build the same unit would put it at `front_objective` at least
+    /// `FRONT_ARRIVAL_MARGIN` standard turns sooner (build turns plus a
+    /// straight-line walk at the unit's speed, civilization bonus included),
+    /// so long as the army already
+    /// holds `FRONT_FLOOR_SHARE` of its floor. The floor stays empire-wide, so
+    /// the army is still built, nearer the front. Live King 2026-10-04: during
+    /// sieges 69% of 160213Z's land-military city-turns were in cities more
+    /// than 12 tiles from the objective (median 15), while a city of ours
+    /// stood within 8 tiles on 171 of 189 siege turns and spent about three
+    /// quarters of its turns on buildings and districts; 153748Z 52%, with a
+    /// near city on every siege turn. The reinforcement walk was a median of
+    /// 16 tiles.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `front-weighted-floor`.
+    pub(crate) front_weighted_floor: bool,
+    /// While the military floor is unmet, a city within
+    /// `FRONT_NEAR_TILES` of the campaign's target whose arrival (build plus
+    /// walk) is within `FRONT_ARRIVAL_MARGIN` of the best city's builds the
+    /// floor's unit ahead of the Granary and Campus steps; cities farther out
+    /// keep their order, so the army is never built slower. Version 1 only
+    /// stopped far cities, and only while the army held three quarters of its
+    /// floor: live King 2026-10-04T235724Z ran at 7-15 units against a lent
+    /// floor of 18-30, so it never bound (74% of the siege army still built
+    /// more than 12 tiles out). The near cities are the ones to move: in
+    /// 160213Z they spent about three quarters of their siege turns on
+    /// buildings and districts while the floor stood unmet.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `front-weighted-floor-2`.
+    pub(crate) front_weighted_floor_2: bool,
+    /// The campaign's target city, set by `AdvancedAi` for
+    /// `front_weighted_floor` and `front_weighted_floor_2`; `None` with both
+    /// off or no target.
+    pub(crate) front_objective: Option<Pos>,
+    /// `live_great_person_activation_resume_item` does not take a city whose
+    /// queue head is a district already holding production: the district
+    /// finishes, then the path resumes. Stock lets any queued district yield,
+    /// and another rule that also overrides a queued district then thrashes
+    /// with it. Live King 2026-10-04T205431Z: from t251 Bogota alternated
+    /// the religious-defense Holy Site ("conversion threatens recruitment")
+    /// and the activation path's Theater Square ("Resuming an activation
+    /// path for a live Great Person") within each turn's frames, so both
+    /// finished about twice as late.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `activation-resume-waits`.
+    pub(crate) activation_resume_waits: bool,
+    /// A Great Person activation path does not replace a queued building on
+    /// any waiting person's slot chain. Stock checks only the chain of the need
+    /// it is serving, so two needs that share a Theater Square undo each
+    /// other: live King 2026-10-05T051413Z, Bogota (45 production) switched
+    /// between the Art Museum (a Great Artist) and the Archaeological Museum
+    /// (Mary Leakey) on every turn from t187 to t214, and the two exclude each
+    /// other, so each switch dropped the turn's progress and neither was ever
+    /// finished. 044201Z did the same in Guayaquil from t174.
+    ///
+    /// Set from `AdvancedAi` by the HostOnly gene `activation-keeps-its-building`.
+    pub(crate) activation_keeps_its_building: bool,
+    /// `granary_before_the_army`, behind the Campus step and the Builder
+    /// backlog instead of ahead of them, so the housing reserve displaces
+    /// only the military floor. Version 1 stood ahead of
+    /// `campus_before_the_army_2`: 16 domination pairs bought +2.1 citizens
+    /// at t100 (z +2.5) and paid 23 Science at t150 (z -2.4) and 0.87
+    /// Libraries. Live King games since 2026-10-03T131343Z held 3.9 of 8.4
+    /// cities at their housing cap at t100 and 2.6 more within one.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `granary-before-the-army-2`.
+    pub(crate) granary_before_the_army_2: bool,
+    /// A city at (or one short of) its housing with no Granary builds the
+    /// Granary next, ahead of the Builder, Holy Site, Campus, Monument,
+    /// capital-Settler, Industry and Settler steps and the military floor
+    /// (lent war target included); a city short of Amenities then takes a
+    /// cheap Amenity building or a Builder for a luxury the empire lacks.
+    /// Never in a city the plan names threatened or that was attacked within
+    /// four turns, never during the floor's `emergency_defense`, and never
+    /// while the city holds a Settler more than half built. See
+    /// `housing_bound_granary_step`.
+    ///
+    /// Live Emperor G185-G198 (civvis-20261006T024058Z..T053813Z): our
+    /// cities held 5.0 citizens at t100 against the best rival's 8.3 while
+    /// production per citizen sat at parity; 49% of city-turns t60-120 were
+    /// at or within one of the housing cap with no Granary though Pottery
+    /// came by ~t22, and those cities built Campus 13%, Settler 11%, Builder
+    /// 6% and Library, Walls and Monument 5% each against Granary 5%. 61% of
+    /// cities were short of Amenities at t100 (about 0.6-1 each).
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene
+    /// `housing-bound-city-builds-its-granary`.
+    pub(crate) housing_bound_city_builds_its_granary: bool,
+    /// A city within one of its housing that already has its Granary (or
+    /// cannot build one) builds its Aqueduct (Rome's Bath) next, ahead of the
+    /// economy steps and the military floor, when the district finishes
+    /// within `HOUSING_CAP_AQUEDUCT_MAX_TURNS`. An Aqueduct takes no district
+    /// slot and lifts a city's water housing: to 6 without fresh water, by 2
+    /// with it. Measured on the 38 Emperor games of October 6-8 at turn 100:
+    /// 56% of our cities stood within one of their housing (median population
+    /// 6 against housing 6, rivals' median city 10), 113 of those 153 already
+    /// had a Granary, and 5 had an Aqueduct; about 45% of them had a legal
+    /// Aqueduct site. The armed lineage reaches the same `housing_reserve_item`
+    /// too late: `granary-before-the-army-2` only within
+    /// `FIRST_CAMPUS_MAX_TURNS` and behind the Campus, the Builder backlog and
+    /// a due Settler; `first-granary-reserve-3` (`housing_reserve`) only after
+    /// the military floor, the Settler and every district step; and
+    /// `housing-bound-city-builds-its-granary` stops at the Granary. At turn 150 the operator retires a game not top 2
+    /// by Production (G365 120 against 448, G366 132 against 330).
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `housing-cap-builds-the-aqueduct`.
+    pub(crate) housing_cap_builds_the_aqueduct: bool,
+    /// Builders while the Builder charges in hand and queued cover less than
+    /// 60% of the empire's unimproved worked tiles, one per city at most,
+    /// from a city that finishes one within eight standard turns, ahead of
+    /// the Monument, the Settler step and the military floor (a due Settler
+    /// and local defence still win).
+    ///
+    /// Measured over the 10-06/07/08 Emperor runs (40-42 games): the worked
+    /// but unimproved land grew from a median 6 tiles at t40 to 14 at t100
+    /// and 15.5 at t120, while the empire held a median ONE Builder with 1-3
+    /// charges from t40 to t90 (5 charges at t100) and no city was producing
+    /// one. Builders were 5.7 of ~67 production starts t30-t100. The armed
+    /// `builder-before-the-army-3` sizes Builders to the same backlog but
+    /// counts bodies, not charges, caps them at one per two cities, and sits
+    /// behind the Monument, the Settler, the housing reserve and the Campus,
+    /// so an idle queue rarely reaches it. Worked-tile Production is the
+    /// per-citizen gap: 1.24 a worked tile in the bottom third of games by
+    /// Production per citizen against 1.74 in the top third at t100, where 56%
+    /// of worked tiles stood improved against 49%. The operator retires a game
+    /// at turn 150 that is not top 2 by Production.
+    ///
+    /// Live G383 and G384 (pins cbc51e678, 353e09be9) fired it 3 and 0 times
+    /// by t100 while the backlog ran from ~11 to 21-25 tiles: the idle queues
+    /// went to `pick_item`'s earlier Granary, Aqueduct and Settler steps and,
+    /// before the delegated governor is ever asked, to the controller's own
+    /// idle-queue claims (Plaza, Theater, Entertainment Complex, recon,
+    /// development Campus). So under the gene `AdvancedAi` also offers the
+    /// Builder one idle queue a turn ahead of those routine claims
+    /// (`advanced/worked_backlog_claim.rs`), buys one with Gold above
+    /// `spend_gold`'s reserve when no idle city can take it, and lets a slow
+    /// city take up to `WORKED_BACKLOG_RUNAWAY_MAX_TURNS` while the backlog is
+    /// twice the charges.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `builders-cover-the-worked-backlog`.
+    pub(crate) builders_cover_the_worked_backlog: bool,
+    /// From turn 90 standard (t60 Online), ahead of the military floor: the
+    /// Market of a standing Commercial Hub, then a Trader while the empire's
+    /// routes and Traders leave a route slot open, then a Commercial Hub on
+    /// its best Gold site in each of the two (three from six cities) most
+    /// productive unthreatened cities that lack one and have a free slot --
+    /// never more than three hubs standing or queued. Never in the plan's
+    /// threatened city or one attacked within four turns, never during the
+    /// floor's `emergency_defense` or while a Settler is due, and never in a
+    /// city due its Granary. See `commercial_hub_step`.
+    ///
+    /// Live Emperor G185-G198 (civvis-20261006T024058Z..T053813Z): Gold a
+    /// turn against the best rival 0.55x at t50, 0.15x at t100 (net 14
+    /// against 63), 0.11x at t125, with unit upkeep 20 -> 42 eating 45-65%
+    /// of the cities' gross Gold; no Commercial Hub and no Market in any of
+    /// the 13 games at t100 (0.9 hubs at t125, 1.6 at t150), trade route
+    /// capacity 1-2 until t150.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `commercial-hub-and-traders`.
+    pub(crate) commercial_hub_and_traders: bool,
+    /// The strategic plan's threatened city, lent by
+    /// `AdvancedAi::delegated_cities` for the call and `None` outside it.
+    /// Read only by `housing_bound_granary_step` and `commercial_hub_step`.
+    pub(crate) plan_threatened_city: Option<u32>,
+    /// `industry-before-the-army`: the Industrial Zone, then its Workshop,
+    /// then its Factory, ahead of the military floor for at most a third of
+    /// the empire's cities at a time, from three cities on. A city opens a
+    /// zone only once it holds its Campus (or cannot build one), never
+    /// while its Settler step is due, and only where the zone's best site
+    /// earns adjacency and finishes within `FIRST_CAMPUS_MAX_TURNS`. A
+    /// Factory goes only to a city no standing Factory already reaches.
+    ///
+    /// The delegated governor's own district list (`DISTRICT_PRIORITY`)
+    /// never names the zone. 28 live King games (2026-10-01..04) held 0.1
+    /// zones at t100 and 0.9 at t200 against 7.9 Campuses, 0.2 Workshops
+    /// and 0.1 Factories; ~95% of production came from worked tiles, and the
+    /// strongest rival out-produced the seat 1.6x at t60-100 and 2x at t200.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `industry-before-the-army`.
+    pub(crate) industry_before_the_army: bool,
+    /// `industry_before_the_army`, keeping a slot for the Theater and the
+    /// treasury: a city opens its zone only while it holds a Theater Square
+    /// or has two free specialty slots, and the whole chain waits while the
+    /// empire nets under `INDUSTRY_MIN_GOLD_PER_TURN`. Version 1 over 22
+    /// domination pairs (seeds 37150000) bought +302 production by t150
+    /// (z +2.8) and +1.2 Workshops, and paid 2.2 Gold a turn at t120
+    /// (z -2.6), 3.9 more bankrupt turns and 2.3 Culture at t150, with
+    /// rivals' Culture victories 12 of 22 against 6.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `industry-before-the-army-2`.
+    pub(crate) industry_before_the_army_2: bool,
+    /// `industry_before_the_army_2`, only while the standing army already
+    /// meets its floor (`military >= military_floor`): the chain then takes
+    /// the builds the floor would leave to Builders, Traders, Harbors and the
+    /// district list, never a soldier. Version 2 over 32 domination pairs
+    /// (seeds 37150000) bought +70 production by t120 (z +3.7) and still
+    /// turned 5 rival Science wins into earlier Culture wins (none the other
+    /// way), the thinner wartime army leaving the culture leader unpressed.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `industry-before-the-army-3`.
+    pub(crate) industry_before_the_army_3: bool,
+    /// `industry-in-the-district-list`: the Industrial Zone joins the
+    /// delegated governor's own district list (`DISTRICT_PRIORITY`), ranked
+    /// between the Campus and the Commercial Hub, and a city holding a zone
+    /// builds its Workshop, then its Factory, just ahead of that list. Both
+    /// sit behind the military floor, the Settler step and the Theater, so
+    /// the zone takes only builds the army leaves: peacetime, and the slow
+    /// cities the lent floor already passes over.
+    ///
+    /// `industry-before-the-army` put the same chain ahead of the floor; 32
+    /// domination pairs (seeds 37150000) bought +75 production by t120
+    /// (z +4.2) and +1.2 zones, and turned 8 rival Science wins into earlier
+    /// Culture wins (none the other way) as the thinner wartime army stopped
+    /// pressing the culture leader.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `industry-in-the-district-list`.
+    pub(crate) industry_in_the_district_list: bool,
+    /// `plaza-in-the-district-list`: the empire's first Government Plaza at
+    /// the front of the capital's district list, then the Plaza's Warlord's
+    /// Throne and Grand Master's Chapel ahead of the Harbor. The delegated
+    /// governor's list was the Campus, Commercial Hub, Holy Site and Theater
+    /// only, so the cities it builds for never opened a Plaza: 7 of 30 live
+    /// runs (October 5) built one, the earliest at turn 81 and most after
+    /// 159, against a district buildable from turns 27-40 at 30 production.
+    /// Without it there is no Grand Master's Chapel, the one building that
+    /// lets Faith buy land units (`faith_purchase_land_units`), and those runs
+    /// ended on 960-3,590 unspent Faith. See `plaza_wanted_here` and
+    /// `plaza_building_item`.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `plaza-in-the-district-list`.
+    pub(crate) plaza_in_the_district_list: bool,
+    /// `industrial-hub`: one Industrial Zone, in the city whose zone site
+    /// reaches the most own cities within a Factory's regional range (at
+    /// least `INDUSTRIAL_HUB_MIN_REACH`), then its Workshop, its Factory and
+    /// a power plant the empire holds fuel for, ahead of the military floor
+    /// in that city alone and never while its Settler step is due. The
+    /// Factory and the plant also wait while the empire's net Gold is
+    /// negative. A Factory pays its +3 Production (+3 more powered) to every
+    /// own city it reaches: 22 live King games put 5.6 of 8.6 cities within
+    /// one hub's reach at t130, about +35 Production for ~930 spent in a
+    /// single city, against `industry_before_the_army`'s zone in every city
+    /// that thinned the wartime army (rival Science wins turned to Culture
+    /// wins 8:0 over 32 domination pairs).
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `industrial-hub`.
+    pub(crate) industrial_hub: bool,
+    /// `industrial-zone-in-the-producers`: once Apprenticeship is in hand,
+    /// the empire's two most productive unthreatened cities (three from six
+    /// cities) that have a free district slot and are not due their first
+    /// Campus place an Industrial Zone on their best Production-adjacency
+    /// site, and the most productive zone cities then build its Workshop.
+    /// The step stands just behind the industrial hub, ahead of the
+    /// Commercial Hub step, the military floor, the district list and every
+    /// ordinary building; behind local defence, economic recovery, the
+    /// housing Granary, the first-Campus, Builder and housing-reserve steps
+    /// and a due Settler, never in the plan's threatened city or one attacked
+    /// within four turns, and it gives its slot to the city's standing
+    /// Campus's next building (the Library, or under `campus-buildings-first`
+    /// that step's building). The strategic governor asks the same step for
+    /// an idle queue and keeps a queued zone or Workshop against its review
+    /// (`AdvancedAi::advanced_production`), and the culture-defense Theater
+    /// reservation leaves a producer's slot to it.
+    ///
+    /// Live Emperor civvis-20261006T024058Z..T114112Z (42 games): the first
+    /// zone came a median 40 turns after Apprenticeship (t80 -> t120), a
+    /// second in 23 games at t180; 29 of 41 games held no zone at t100 and a
+    /// median 1 zone, 1 Workshop, 0 Factories at t150, at 0.46x the best
+    /// rival's Production. The three most productive cities, while a zone was
+    /// placeable, built soldiers 44% of the time, ordinary buildings 21%, a
+    /// Campus 8%, a Settler 8%. See `industrial_zones.rs`.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene
+    /// `industrial-zone-in-the-producers`.
+    pub(crate) industrial_zone_in_the_producers: bool,
+    /// A standing district's first building before the city opens another
+    /// district. This governor tried every district the city still lacked
+    /// before any building, so a district stood without the building that
+    /// makes it pay until the city ran out of district slots. Live King
+    /// 2026-10-01/02, turn 100: 15 of 45 Campuses without a Library, 13 of
+    /// 19 Commercial Hubs without a Market, 4 of 4 Industrial Zones without
+    /// a Workshop; turn 120: 23 of 41 Hubs, 8 of 13 Entertainment Complexes
+    /// without an Arena. Science per citizen trailed about 0.9 against the
+    /// rivals' 2.0.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `district-buildings-first`.
+    pub(crate) district_buildings_first: bool,
+    /// The capital's Library ahead of its next Settler once it holds a
+    /// Campus, at the slot `capital_campus_first` gives the Campus itself.
+    /// `campus-before-harbor-2` opens the capital's Campus there, but its
+    /// Library then waited behind the military floor, the Settlers and every
+    /// district the city lacked: live King 2026-10-03T040354Z, the best game
+    /// of the series, held 7 Campuses and 2 Libraries at turn 100.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `district-buildings-first-2`.
+    pub(crate) capital_library_first: bool,
+    /// A city whose standing Campus can build its next building -- the
+    /// Library, else the University, else the Research Lab, each within
+    /// `campus_buildings::CAMPUS_BUILDING_MAX_TURNS` -- builds it before the
+    /// city opens another district or takes an ordinary building or a
+    /// repeatable project: the step stands just ahead of
+    /// `district-buildings-first`, the Harbor and the district list, behind
+    /// the military floor and every step above it (local defence, the
+    /// housing Granary, the Prophet race's Holy Site, the industrial hub),
+    /// the Settler step, the housing reserve, the Builders, the Trader, the
+    /// Monument and the Plaza. The Commercial Hub step's second and third
+    /// hubs give their slot to it (the empire's first hub, a hub's Market and
+    /// the Trader keep theirs), and so does the culture-defense Theater
+    /// reservation (`AdvancedAi::reserve_culture_defense_theater`).
+    ///
+    /// Live Emperor civvis-20261006T024058Z..T095649Z (35 games): Campuses /
+    /// Libraries / Universities 4 / 2 / 0 per game at t100 and 7 / 6.5 / 3 at
+    /// t150; Education at a median t91 (the rivals' t87), then a University
+    /// that started a median 15 turns after it was buildable (p75 32; 41 of
+    /// 218 cities never), while those cities spent 17% of the wait on a new
+    /// district, 7% on another ordinary building and 4% on a district
+    /// project. Science per citizen 1.25 against the rivals' 1.95 at t100.
+    /// See `campus_buildings.rs`.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `campus-buildings-first`.
+    pub(crate) campus_buildings_first: bool,
+    /// A Theater Square ahead of the Harbor and every other district while
+    /// the empire's Culture trails the strongest rival's, until half the
+    /// cities hold one. Culture buys the civics a government and its policy
+    /// slots wait on, and it is one bar of the culture-victory defense: a
+    /// seat's domestic Tourists are its lifetime Culture over 100
+    /// (`Game::domestic_tourists`), and a rival wins once its foreign
+    /// Tourists outnumber the highest domestic count among the others
+    /// (`Game::check_culture_victory`). Culture was the commonest live King
+    /// loss (17 of 31 in late September); in 2026-09-30T221624Z ours was that
+    /// highest count (53) when Byzantium won at 51 and climbing. Our Culture
+    /// ran a third to a half of the strongest rival's through the 14 live
+    /// games of 2026-10-01/02, which built one Theater Square between them:
+    /// `theater_square` is the last `DISTRICT_PRIORITY` family in every bred
+    /// genome, so a city reaches it only after the other three.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `culture-defense-theater`.
+    pub(crate) culture_defense_theater: bool,
+    /// The genome's own `mil_per_city` while `AdvancedAi::delegated_cities`
+    /// has lent this governor a Domination war's higher army target, `None`
+    /// otherwise. Below the genome's own floor every city still builds the
+    /// army. Above it, only a city that finishes its unit within
+    /// `LENT_FLOOR_MAX_BUILD_TURNS` standard turns builds toward the lent
+    /// margin. In a replay of King civvis-20261001T003717Z under the lent
+    /// target of 3.0 a city, every idle city went military. A 4-production
+    /// Cali started a Crossbowman due in 23 turns, a 3-production Popayan a
+    /// Man-at-Arms due in 27, while 89% of the empire's city-turns were
+    /// housing-bound. Those cities grow instead, and the fast cities raise
+    /// the army.
+    pub(crate) lent_military_floor_base: Option<f64>,
+    /// A named domination seat must not let the delegated baseline governor
+    /// build a Spaceport or launch project. The King Gran Colombia game won
+    /// by Science at turn 229 while its public plan remained Conquest.
+    pub(crate) exclude_space_race: bool,
     /// Set by a targeted Science controller while its expansion plan still
     /// has a city deficit.  The flag applies to every route through the
     /// activation-item chooser for this turn, so an ordinary city-production
@@ -2793,10 +3500,12 @@ pub struct BasicAi {
     /// Civilization VI bridge); a native engine moves what it accepts, so
     /// native constructors and the frozen anchor keep the plain goal.
     pub(crate) explore_dead_targets: bool,
-    /// Per unit: the exploration goal it was last sent at, where it stood, and
-    /// how many consecutive turns it has stood there aiming at that goal,
-    /// and the last game turn observed. Replanning does not advance the clock.
-    explore_last: RefCell<HashMap<u32, (Pos, Pos, u32, u32)>>,
+    /// Per unit: the exploration goal it was last sent at, where it stood, how
+    /// many consecutive turns it has stood there aiming at that goal, the last
+    /// game turn observed, the closest it has come to that goal, and how many
+    /// turns running it has failed to come closer. Replanning does not advance
+    /// the clock.
+    explore_last: RefCell<HashMap<u32, ExploreProgress>>,
     /// Per unit: exploration goals proved unreachable, with the turn each
     /// expires. See `explore_dead_targets`.
     explore_dead: RefCell<HashMap<u32, HashMap<Pos, u32>>>,
@@ -2863,6 +3572,14 @@ pub struct BasicAi {
     /// (`AdvancedAi::enable_wonder_ring_recon`); the goal search is
     /// `wonder_ring_goal` in `advanced/wonder_sites.rs`.
     pub(crate) wonder_ring_recon: bool,
+    /// Settlers the opening's barbarian defense has displaced on a live
+    /// board. See `OPENING_DEFENSE_SETTLER_PREEMPTS`.
+    pub(crate) opening_defense_preempts: u32,
+    /// `opening-defense-preempts-once`: on a live board the opening's
+    /// barbarian defense displaces a queued Settler at most once rather than
+    /// `OPENING_DEFENSE_SETTLER_PREEMPTS` times. See
+    /// `opening_defense_settler_preempts`. Opt-in gene, off by default.
+    pub(crate) opening_defense_preempts_once: bool,
     /// Version two preserves every wonder pocket V1 would scout, but among
     /// goals no more than one tile beyond V1's nearest it picks the tile that
     /// reveals the most of the pocket. It therefore buys information without
@@ -3128,6 +3845,36 @@ pub struct BasicAi {
     move_refusal_watch: RefCell<HashMap<u32, (u32, Pos, Pos)>>,
     move_refusal_strikes: HashMap<u32, (Pos, Pos, u8)>,
     move_refusal_blocks: HashMap<u32, (Pos, u32)>,
+    /// `own-column-is-not-a-refusal` (OptIn): a planned step the host never
+    /// received, or one onto a tile another of our units held when the frame
+    /// began, is not the host's refusal. Live King civvis-20261005T060002Z
+    /// (G104), Siege of Sparta: the air-assault barrier deferred every ground
+    /// order of frame 0 (`air_assault_phase_deferred=60` t216, `=52` t217),
+    /// yet the frame-0 plan had already written this turn's watch and path
+    /// trail. The next frame's replan found its own first step "already
+    /// walked" by the same-turn reversal guard and issued nothing, and the
+    /// following turn judged the step the host never saw as a refusal: a
+    /// Rocket Artillery 13 tiles out was barred for 8 turns on t218, idle
+    /// t216-223, and a second stood 14 turns at (23,20) until it "stands
+    /// down; it is going nowhere" on t236. Inert with the gene off.
+    own_column_is_not_a_refusal: bool,
+    /// Per unit: the last host turn the live bridge reported on its planned
+    /// moves, and whether any move order actually reached the host that turn.
+    /// Written only by [`BasicAi::note_host_moves`].
+    host_move_feedback: HashMap<u32, (u32, bool)>,
+    /// Whether the live bridge has reported sent moves at all. Off the bridge
+    /// nothing reports, and every applied move is the host's own act.
+    host_move_feedback_active: bool,
+    /// Per unit: the turn whose watched step was onto a tile one of our own
+    /// units on the same stacking layer held when the frame began.
+    move_refusal_congested: RefCell<HashMap<u32, u32>>,
+    /// Where each of our units stood when this frame's movement began.
+    frame_own_tiles: HashMap<Pos, Vec<u32>>,
+    /// `guns-stay-out-of-reach`: per siege gun, the tiles it can reach this
+    /// turn where one visible hostile's blow would destroy it, with that
+    /// blow. Written by the advanced controller each frame; empty with the
+    /// gene off. See `advanced/guns_stay_out_of_reach.rs`.
+    gun_lethal_tiles: HashMap<u32, HashMap<Pos, f64>>,
     /// Melee units the ancient-rush lane wants in hand, or 0 when no rush is
     /// running. Set once a turn by `AdvancedAi` from its strategic plan.
     ///
@@ -5017,7 +5764,48 @@ impl BasicAi {
             pursue_religion: true,
             skip_prophet_race: false,
             enter_prophet_race: false,
+            prophet_race_takes_a_district_slot: false,
+            prophet_race_takes_a_district_slot_2: false,
+            victor_first_for_a_short_runway: false,
             science_building_first: false,
+            housing_reserve: false,
+            campus_before_harbor: false,
+            capital_campus_first: false,
+            monument_first: false,
+            builder_before_the_army: false,
+            builder_before_the_army_2: false,
+            builder_before_the_army_3: false,
+            builders_before_the_lent_floor: false,
+            unique_unit_preference: false,
+            campus_before_the_army: false,
+            campus_before_the_army_2: false,
+            campus_before_the_army_3: false,
+            settler_before_the_navy: false,
+            granary_before_the_army: false,
+            front_weighted_floor: false,
+            front_objective: None,
+            front_weighted_floor_2: false,
+            activation_resume_waits: false,
+            activation_keeps_its_building: false,
+            granary_before_the_army_2: false,
+            housing_bound_city_builds_its_granary: false,
+            housing_cap_builds_the_aqueduct: false,
+            builders_cover_the_worked_backlog: false,
+            commercial_hub_and_traders: false,
+            plan_threatened_city: None,
+            industry_before_the_army: false,
+            industry_before_the_army_2: false,
+            industry_before_the_army_3: false,
+            industry_in_the_district_list: false,
+            plaza_in_the_district_list: false,
+            industrial_hub: false,
+            industrial_zone_in_the_producers: false,
+            district_buildings_first: false,
+            capital_library_first: false,
+            campus_buildings_first: false,
+            culture_defense_theater: false,
+            lent_military_floor_base: None,
+            exclude_space_race: false,
             defer_low_impact_science_activation_paths: false,
             pantheon_reads_the_board: false,
             apostle_promotion_by_role: false,
@@ -5063,6 +5851,8 @@ impl BasicAi {
             explore_dead: RefCell::new(HashMap::new()),
             explore_commit: false,
             wonder_ring_recon: false,
+            opening_defense_preempts: 0,
+            opening_defense_preempts_once: false,
             wonder_ring_recon_2: false,
             hut_collection: false,
             village_seeking: false,
@@ -5093,6 +5883,12 @@ impl BasicAi {
             move_refusal_watch: RefCell::new(HashMap::new()),
             move_refusal_strikes: HashMap::new(),
             move_refusal_blocks: HashMap::new(),
+            own_column_is_not_a_refusal: false,
+            host_move_feedback: HashMap::new(),
+            host_move_feedback_active: false,
+            move_refusal_congested: RefCell::new(HashMap::new()),
+            frame_own_tiles: HashMap::new(),
+            gun_lethal_tiles: HashMap::new(),
             rush_military_floor: 0,
             settler_strand_discount: false,
             settler_backlog_brake: false,
@@ -5153,6 +5949,15 @@ impl BasicAi {
     }
 
     /// Enable the baseline half of the capital-settler-after-completion gene.
+    /// Whether the capital is still inside the opening book's first four
+    /// builds AND a population-two Settler gene (`capital-settler-after-completion`
+    /// or `rapid-city-expansion-2`) will queue a Settler the next time the
+    /// capital's queue empties, ahead of anything the strategic layer asks
+    /// for. `conquest-opening-needs-the-production` prices that Settler.
+    pub(crate) fn book_settler_ahead(&self) -> bool {
+        (self.capital_settler_after_completion || self.rapid_city_expansion_2) && self.book_pos < 4
+    }
+
     pub(crate) fn enable_capital_settler_after_completion(&mut self) {
         self.capital_settler_after_completion = true;
     }
@@ -5477,7 +6282,48 @@ impl BasicAi {
             pursue_religion: true,
             skip_prophet_race: false,
             enter_prophet_race: false,
+            prophet_race_takes_a_district_slot: false,
+            prophet_race_takes_a_district_slot_2: false,
+            victor_first_for_a_short_runway: false,
             science_building_first: false,
+            housing_reserve: false,
+            campus_before_harbor: false,
+            capital_campus_first: false,
+            monument_first: false,
+            builder_before_the_army: false,
+            builder_before_the_army_2: false,
+            builder_before_the_army_3: false,
+            builders_before_the_lent_floor: false,
+            unique_unit_preference: false,
+            campus_before_the_army: false,
+            campus_before_the_army_2: false,
+            campus_before_the_army_3: false,
+            settler_before_the_navy: false,
+            granary_before_the_army: false,
+            front_weighted_floor: false,
+            front_objective: None,
+            front_weighted_floor_2: false,
+            activation_resume_waits: false,
+            activation_keeps_its_building: false,
+            granary_before_the_army_2: false,
+            housing_bound_city_builds_its_granary: false,
+            housing_cap_builds_the_aqueduct: false,
+            builders_cover_the_worked_backlog: false,
+            commercial_hub_and_traders: false,
+            plan_threatened_city: None,
+            industry_before_the_army: false,
+            industry_before_the_army_2: false,
+            industry_before_the_army_3: false,
+            industry_in_the_district_list: false,
+            plaza_in_the_district_list: false,
+            industrial_hub: false,
+            industrial_zone_in_the_producers: false,
+            district_buildings_first: false,
+            capital_library_first: false,
+            campus_buildings_first: false,
+            culture_defense_theater: false,
+            lent_military_floor_base: None,
+            exclude_space_race: false,
             defer_low_impact_science_activation_paths: false,
             pantheon_reads_the_board: false,
             apostle_promotion_by_role: false,
@@ -5523,6 +6369,8 @@ impl BasicAi {
             explore_dead: RefCell::new(HashMap::new()),
             explore_commit: false,
             wonder_ring_recon: false,
+            opening_defense_preempts: 0,
+            opening_defense_preempts_once: false,
             wonder_ring_recon_2: false,
             hut_collection: false,
             village_seeking: false,
@@ -5553,6 +6401,12 @@ impl BasicAi {
             move_refusal_watch: RefCell::new(HashMap::new()),
             move_refusal_strikes: HashMap::new(),
             move_refusal_blocks: HashMap::new(),
+            own_column_is_not_a_refusal: false,
+            host_move_feedback: HashMap::new(),
+            host_move_feedback_active: false,
+            move_refusal_congested: RefCell::new(HashMap::new()),
+            frame_own_tiles: HashMap::new(),
+            gun_lethal_tiles: HashMap::new(),
             rush_military_floor: 0,
             settler_strand_discount: false,
             settler_backlog_brake: false,
@@ -7029,6 +7883,9 @@ impl BasicAi {
         self.move_refusal_watch.get_mut().clear();
         self.move_refusal_strikes.clear();
         self.move_refusal_blocks.clear();
+        self.host_move_feedback.clear();
+        self.move_refusal_congested.get_mut().clear();
+        self.frame_own_tiles.clear();
         self.explore_last.get_mut().clear();
         self.explore_dead.get_mut().clear();
         self.explore_goal.get_mut().clear();
@@ -7098,6 +7955,18 @@ impl BasicAi {
             .into_iter()
             .filter_map(|(uid, value)| map.get(&uid).map(|new| (*new, value)))
             .collect();
+        self.host_move_feedback = std::mem::take(&mut self.host_move_feedback)
+            .into_iter()
+            .filter_map(|(uid, value)| map.get(&uid).map(|new| (*new, value)))
+            .collect();
+        let congested = std::mem::take(self.move_refusal_congested.get_mut());
+        *self.move_refusal_congested.get_mut() = congested
+            .into_iter()
+            .filter_map(|(uid, value)| map.get(&uid).map(|new| (*new, value)))
+            .collect();
+        // Rebuilt by `begin_movement_turn` for every frame; a rebuilt board's
+        // ids would only make a stale copy lie.
+        self.frame_own_tiles.clear();
         // ⚠ Remapped, not cleared. A replan can rebuild the live board after a
         // host-accepted step but before that host turn ends. Clearing this trail
         // then forgets the step the reversal guard must reject, so the replan can
@@ -7135,6 +8004,100 @@ impl BasicAi {
         self.refresh_unit_memories(g, pid);
         self.observe_unit_motion(g, pid);
         self.judge_move_refusals(g, pid);
+        if self.own_column_is_not_a_refusal {
+            self.frame_own_tiles.clear();
+            for uid in g.player_unit_ids(pid) {
+                self.frame_own_tiles
+                    .entry(g.units[&uid].pos)
+                    .or_default()
+                    .push(uid);
+            }
+        }
+    }
+
+    /// `own-column-is-not-a-refusal`: whether `to` held another of our units
+    /// on `uid`'s stacking layer when this frame's movement began. Firaxis
+    /// checks stacking where a move ENDS, so a step the planning board freed
+    /// by walking that unit away first is still refused if the host takes
+    /// the two orders the other way round -- congestion in our own column,
+    /// not ground the host will not let us walk.
+    fn frame_start_friend_holds(&self, g: &Game, uid: u32, to: Pos) -> bool {
+        self.frame_own_tiles.get(&to).is_some_and(|held| {
+            held.iter()
+                .any(|other| *other != uid && g.units_share_stacking_layer(uid, *other))
+        })
+    }
+
+    /// `own-column-is-not-a-refusal`: the live bridge reports, after every
+    /// frame's outbound filters have settled, which of the units the plan
+    /// moved actually had a move order sent to Firaxis (`sent`) and which
+    /// were planned to move but withheld (`unsent`: the air-assault barrier,
+    /// a deferred follow-up). A withheld unit never walked, so the watched
+    /// step and path trail this frame's plan wrote for it are the plan's, not
+    /// the host's: both go back to what they were before the frame was
+    /// planned (`before_paths`, `before_watches`), so the next frame may plan
+    /// the very same step again. Returns how many units were rolled back.
+    /// Inert with the gene off.
+    pub(crate) fn note_host_moves(
+        &mut self,
+        g: &Game,
+        before_paths: &HashMap<u32, (u32, Vec<Pos>)>,
+        before_watches: &HashMap<u32, (u32, Pos, Pos)>,
+        sent: &BTreeSet<u32>,
+        unsent: &BTreeSet<u32>,
+    ) -> usize {
+        if !self.own_column_is_not_a_refusal {
+            return 0;
+        }
+        self.host_move_feedback_active = true;
+        for uid in sent {
+            self.host_move_feedback.insert(*uid, (g.turn, true));
+        }
+        let mut rolled_back = 0;
+        for uid in unsent.difference(sent) {
+            if self.host_move_feedback.get(uid) != Some(&(g.turn, true)) {
+                self.host_move_feedback.insert(*uid, (g.turn, false));
+            }
+            let mut changed = false;
+            let trails = self.last_path_step_from.get_mut();
+            if trails.get(uid) != before_paths.get(uid) {
+                match before_paths.get(uid) {
+                    Some(trail) => trails.insert(*uid, trail.clone()),
+                    None => trails.remove(uid),
+                };
+                changed = true;
+            }
+            let watches = self.move_refusal_watch.get_mut();
+            if watches.get(uid) != before_watches.get(uid) {
+                match before_watches.get(uid) {
+                    Some(watch) => watches.insert(*uid, *watch),
+                    None => watches.remove(uid),
+                };
+                changed = true;
+            }
+            let watched_this_turn = before_watches
+                .get(uid)
+                .is_some_and(|(turn, _, _)| *turn == g.turn);
+            if !watched_this_turn {
+                let congested = self.move_refusal_congested.get_mut();
+                if congested.get(uid) == Some(&g.turn) {
+                    congested.remove(uid);
+                }
+            }
+            if changed {
+                rolled_back += 1;
+            }
+        }
+        rolled_back
+    }
+
+    /// `own-column-is-not-a-refusal`: whether the live bridge reported a move
+    /// order reaching the host for this unit on `turn`. Always true off the
+    /// bridge, where every applied move is the host's own act.
+    fn host_received_a_move(&self, uid: u32, turn: u32) -> bool {
+        !self.own_column_is_not_a_refusal
+            || !self.host_move_feedback_active
+            || self.host_move_feedback.get(&uid) == Some(&(turn, true))
     }
 
     /// `live-move-refusal-break`: judge last turn's issued steps against where
@@ -7180,6 +8143,15 @@ impl BasicAi {
                 self.move_refusal_strikes.remove(&uid);
                 continue;
             }
+            // `own-column-is-not-a-refusal`: a step onto a tile our own column
+            // held when the order went out, or one the host was never sent,
+            // is no evidence about the ground. Neither a strike nor a reset.
+            if self.own_column_is_not_a_refusal
+                && (self.move_refusal_congested.get_mut().get(&uid) == Some(&turn)
+                    || !self.host_received_a_move(uid, turn))
+            {
+                continue;
+            }
             let strikes = match self.move_refusal_strikes.get(&uid) {
                 Some((f, s, n)) if *f == from && *s == step => n + 1,
                 _ => 1,
@@ -7196,6 +8168,12 @@ impl BasicAi {
             }
         }
         *self.move_refusal_watch.borrow_mut() = keep;
+        if self.own_column_is_not_a_refusal {
+            let turn = g.turn;
+            self.move_refusal_congested
+                .get_mut()
+                .retain(|_, marked| *marked + 1 >= turn);
+        }
         for (uid, from, step, kind) in blocked {
             think!(self.journal, Military, Detail,
                    "{kind} {uid} stops re-asking a move the host keeps refusing";
@@ -7286,6 +8264,16 @@ impl BasicAi {
         for uid in ids {
             let mark = work_mark(g, uid);
             let pos = g.units[&uid].pos;
+            // `own-column-is-not-a-refusal`: a turn on which no move of this
+            // unit reached the host is not a lap of any circle -- the unit
+            // stood where the bridge left it. It neither counts as fruitless
+            // nor enters the window.
+            let inert = self.own_column_is_not_a_refusal
+                && self.host_move_feedback_active
+                && !g
+                    .turn
+                    .checked_sub(1)
+                    .is_some_and(|last| self.host_received_a_move(uid, last));
             let (was_looping, looping, fruitless, footprint, stand_down) = {
                 let motion = self.unit_motion.entry(uid).or_default();
                 if self.live_motion_turn_accounting && motion.observed_turn == Some(g.turn) {
@@ -7307,10 +8295,12 @@ impl BasicAi {
                         observed_turn,
                         ..UnitMotion::default()
                     };
-                } else {
+                } else if !inert {
                     motion.fruitless += 1;
                 }
-                motion.tiles.push_back(pos);
+                if !inert {
+                    motion.tiles.push_back(pos);
+                }
                 while motion.tiles.len() > LIVELOCK_WINDOW {
                     motion.tiles.pop_front();
                 }
@@ -8321,6 +9311,12 @@ impl BasicAi {
             });
         let Some(target) = target else { return false };
         let target_loyalty = g.cities[&target].loyalty;
+        // `victor_first_for_a_short_runway`: a city that flips before an
+        // ordinary Governor establishes needs Victor's three turns.
+        let short_runway = self.victor_first_for_a_short_runway
+            && self
+                .loyalty_emergency(g, target)
+                .is_some_and(|turns| turns < VICTOR_SHORT_RUNWAY_TURNS);
         let action = g
             .legal_actions_within(pid, ActionFamilies::EMPIRE)
             .into_iter()
@@ -8341,8 +9337,16 @@ impl BasicAi {
                 (state.city.is_none()
                     || (source_loyalty >= 90.0 && source_loyalty - target_loyalty >= 20.0))
                     .then_some((
-                        state.city.is_none(),
-                        governor == "victor",
+                        if short_runway {
+                            governor == "victor"
+                        } else {
+                            state.city.is_none()
+                        },
+                        if short_runway {
+                            state.city.is_none()
+                        } else {
+                            governor == "victor"
+                        },
                         source_loyalty,
                         std::cmp::Reverse(*governor),
                         action,
@@ -8679,7 +9683,7 @@ impl BasicAi {
         }
         let at_war = others.iter().any(|o| g.is_at_war(pid, *o));
         if at_war {
-            self.levy_city_state_military(g, pid, false);
+            self.levy_city_state_military(g, pid, false, 0.0);
         }
         if !at_war
             && (g.turn as f64) > self.w.war_min_turn
@@ -8724,13 +9728,23 @@ impl BasicAi {
     /// Turn spare wartime Gold into immediately usable troops when this AI is
     /// a city-state's Suzerain. `urgent` lets the strategic AI spend deeper
     /// into its treasury for Conquest/Recovery plans; the general AI retains
-    /// a larger economic reserve.
-    pub(crate) fn levy_city_state_military(&self, g: &mut Game, pid: usize, urgent: bool) {
+    /// a larger economic reserve. `floor` is Gold the levy must leave in the
+    /// treasury on top of that share (`purchases-keep-the-upkeep-reserve`);
+    /// zero keeps the shipped levy.
+    pub(crate) fn levy_city_state_military(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        urgent: bool,
+        floor: f64,
+    ) {
         if self.minor || self.barb {
             return;
         }
         let reserve_share = if urgent { 0.20 } else { 0.40 };
-        let spendable = (g.players[pid].gold * (1.0 - reserve_share) - 20.0).max(0.0);
+        let spendable = (g.players[pid].gold * (1.0 - reserve_share) - 20.0)
+            .min(g.players[pid].gold - floor)
+            .max(0.0);
         let best = g
             .players
             .iter()
@@ -9074,6 +10088,45 @@ impl BasicAi {
         self.settler_idle.retain(|uid, _| seen.contains(uid));
     }
 
+    /// How many Settlers the empire may have walking or queued at once — the
+    /// one width `pick_item` asks before starting a Settler and the queue
+    /// revalidation in `cities` asks before keeping one. `settlers` counts
+    /// the walkers and every queued Settler.
+    fn settler_pipeline_width(&self, g: &Game, n_cities: usize, settlers: usize) -> usize {
+        let seats_short = (self.w.city_target.ceil().max(0.0) as usize).saturating_sub(n_cities);
+        // `rapid-city-expansion-2` answers only while the empire trails
+        // the opening pace; `None` falls through to the ordinary gates
+        // below, exactly as `AdvancedAi::settler_in_flight_allowed` does.
+        // An `unwrap_or(1)` here held the delegated governor to one walker
+        // for the rest of the game once the band closed: on King
+        // `civvis-20260930T225143Z` the capital's queued Settlers were
+        // refused "a settler is already in flight" at 4 cities of 10
+        // wanted (t65, t70) while the strategic governor's land-grab width
+        // allowed three.
+        let rapid = if self.rapid_city_expansion_2 && seats_short > 0 {
+            advanced::rapid_city_expansion::pipeline_width(
+                g,
+                n_cities + seats_short,
+                n_cities,
+                settlers,
+            )
+        } else {
+            None
+        };
+        if let Some(width) = rapid {
+            width
+        } else if self.land_grab && seats_short > 0 {
+            (crate::ai::LAND_GRAB_PIPELINE_BASE + n_cities / 3).min(seats_short)
+        } else if self.parallel_settlers
+            && n_cities >= 2
+            && ((n_cities + settlers + 1) as f64) < self.w.city_target
+        {
+            2
+        } else {
+            1
+        }
+    }
+
     /// How many of this player's Settlers have stopped making progress.
     ///
     /// ⚠ THIS EXISTS BECAUSE ONE STUCK SETTLER USED TO END AN EMPIRE'S
@@ -9160,6 +10213,34 @@ impl BasicAi {
     /// standing, Walls and ordinary development return to their usual queue
     /// rules; an already-queued non-recon soldier is also already the right
     /// answer and is left alone.
+    /// Times the opening's barbarian defense may displace a queued Settler
+    /// on a live board before the Settler keeps the queue. The defenders it
+    /// raises are drawn off by the board to hunt the raiders, so the local
+    /// gap reopens every turn: live King 2026-10-03T145118Z started a Settler
+    /// at frame 0 and gave it to a Slinger at frame 1 on turns 12-13, 16-17
+    /// and 20-21, built Slingers and Archers from turn 10 to 37, and held one
+    /// city until turn 41. A besieged capital still answers through
+    /// `besieged_city_item`.
+    const OPENING_DEFENSE_SETTLER_PREEMPTS: u32 = 2;
+
+    /// The live cap on the opening defense's Settler displacements.
+    ///
+    /// `opening-defense-preempts-once` (2026-10-10 census, 123 live Emperor
+    /// runs): the second displacement fired in 73 of them, a median six turns
+    /// after the first, once the first Slinger had been drawn off to hunt.
+    /// Those runs saw their first and second Settlers at a median t15/t24
+    /// against t11/t19 with no displacement, and the second Settler before
+    /// t18 passed the t150 gate 5 of 16 against 3 of 38 after t26. One
+    /// Settler was captured by t60 across the window, so the second hold buys
+    /// little safety for four turns of the expansion clock.
+    fn opening_defense_settler_preempts(&self) -> u32 {
+        if self.opening_defense_preempts_once {
+            1
+        } else {
+            Self::OPENING_DEFENSE_SETTLER_PREEMPTS
+        }
+    }
+
     fn opening_barbarian_defense_item(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
         let city = g.cities.get(&cid).filter(|city| city.owner == pid)?;
         if self.minor
@@ -9255,7 +10336,17 @@ impl BasicAi {
         // a civilian that can never found a city.
         let practical_settle_site = self.has_practical_settle_site(g, pid);
         if settlers > active_settlers || (settlers > 0 && !practical_settle_site) {
-            let mut committed_settlers = active_settlers;
+            // A queued Settler is kept while the pipeline `pick_item` would
+            // open for it still has room. Keeping only the first one when no
+            // walker existed replaced every second Settler the pipeline had
+            // just authorised: on the live King seat the capital alternated
+            // Settler and Monument orders every turn (civvis-20261001T000033Z
+            // t27-t30; eight such swaps by t51 in every game of 2026-09-30),
+            // each replacement asking `pick_item` with the walker counted as
+            // the one Settler in flight.
+            let width = self.settler_pipeline_width(g, n_cities, settlers);
+            let mut committed_settlers =
+                active_settlers.saturating_sub(self.stranded_settlers(g, pid));
             for cid in &city_ids {
                 if !matches!(
                     g.cities[cid].queue.first(),
@@ -9263,8 +10354,8 @@ impl BasicAi {
                 ) {
                     continue;
                 }
-                if committed_settlers == 0 && practical_settle_site {
-                    committed_settlers = 1;
+                if committed_settlers < width.max(1) && practical_settle_site {
+                    committed_settlers += 1;
                     continue;
                 }
                 let replacement = self.pick_item(
@@ -9374,15 +10465,31 @@ impl BasicAi {
             // of the same local threat it was waiting to survive.
             if let Some(item) = self.opening_barbarian_defense_item(g, pid, *cid) {
                 let displaced = g.cities[cid].queue.first().cloned();
-                if g.apply(
-                    pid,
-                    &Action::Produce {
-                        city: *cid,
-                        item: item.clone(),
-                    },
-                )
-                .is_ok()
+                let displaces_settler =
+                    matches!(&displaced, Some(Item::Unit { unit }) if unit == "settler");
+                let live = pid == crate::game::MIRRORED_SEAT && !g.host_observed.is_empty();
+                if live
+                    && displaces_settler
+                    && self.opening_defense_preempts >= self.opening_defense_settler_preempts()
                 {
+                    think!(self.journal, Military, Detail,
+                           "{} keeps its Settler despite nearby barbarians", g.cities[cid].name;
+                           "the opening has already given the Settler's queue to {} defenders \
+                            and the board draws them off; the city keeps building",
+                           self.opening_defense_preempts);
+                } else if g
+                    .apply(
+                        pid,
+                        &Action::Produce {
+                            city: *cid,
+                            item: item.clone(),
+                        },
+                    )
+                    .is_ok()
+                {
+                    if live && displaces_settler {
+                        self.opening_defense_preempts += 1;
+                    }
                     if self.journal.wants(crate::reasoning::Level::Decision) {
                         let city = &g.cities[cid];
                         think!(self.journal, Military, Decision,
@@ -9624,6 +10731,9 @@ impl BasicAi {
                 melee,
                 ranged,
             ) {
+                // Diagnostic only, no order reads it: why this pick is not a
+                // Settler while the empire has room. See `journal_settler_hold`.
+                self.journal_settler_hold(g, pid, *cid, n_cities, settlers, &item);
                 if g.apply(
                     pid,
                     &Action::Produce {
@@ -9978,12 +11088,58 @@ impl BasicAi {
             if !g.can_produce(pid, cid, &Item::Unit { unit: *name }) {
                 continue;
             }
-            let power = spec.strength.max(spec.ranged_attack_strength());
+            let mut power = spec.strength.max(spec.ranged_attack_strength());
+            if self.unique_unit_preference && self.unique_unit_wanted(g, pid, *name, spec) {
+                power += UNIQUE_UNIT_POWER_CREDIT;
+            }
             if best.as_ref().map(|(b, _)| power > *b).unwrap_or(true) {
                 best = Some((power, name.to_string()));
             }
         }
         best.map(|(_, n)| n)
+    }
+
+    /// `unique-unit-preference`: whether `best_military` should credit this
+    /// design as our own unique unit. Only while it is under half of the
+    /// land army in its melee-or-ranged role (fielded plus each city's
+    /// current build): the unique unit leads the army, it does not become
+    /// all of it — a Llanero column still wants Line Infantry beside it
+    /// against Pike and Shot.
+    fn unique_unit_wanted(
+        &self,
+        g: &Game,
+        pid: usize,
+        kind: Name,
+        spec: &crate::rules::UnitSpec,
+    ) -> bool {
+        if spec.unique_to.as_deref() != Some(g.players[pid].civ.as_str()) {
+            return false;
+        }
+        let ranged = spec.has_ranged_attack();
+        let same_role = |unit: Name| {
+            let other = &g.rules.units[unit];
+            other.class == "military"
+                && !matches!(other.domain.as_deref(), Some("sea" | "air"))
+                && other.has_ranged_attack() == ranged
+        };
+        let mut role = 0usize;
+        let mut unique = 0usize;
+        let fielded = g
+            .units
+            .values()
+            .filter(|unit| unit.owner == pid)
+            .map(|unit| unit.kind);
+        let building = g.player_city_ids(pid).into_iter().filter_map(|cid| {
+            match g.cities[&cid].queue.first() {
+                Some(Item::Unit { unit }) => Some(*unit),
+                _ => None,
+            }
+        });
+        for unit in fielded.chain(building).filter(|unit| same_role(*unit)) {
+            role += 1;
+            unique += usize::from(unit == kind);
+        }
+        unique * 2 < role.max(2)
     }
 
     /// The strongest land recon unit this city can build right now.
@@ -11419,20 +12575,28 @@ impl BasicAi {
             .filter(|item| g.can_produce(pid, cid, item))
     }
 
+    /// The buildings that open a slot for `work`: the target first, then the
+    /// prerequisite needed to make it buildable.
+    fn live_great_person_work_chain(work: &str) -> &'static [&'static str] {
+        match work {
+            "writing" => &["amphitheater"],
+            "art" => &["art_museum", "amphitheater"],
+            "artifact" => &["archaeological_museum", "amphitheater"],
+            "music" => &["broadcast_center", "art_museum", "amphitheater"],
+            _ => &[],
+        }
+    }
+
     fn live_great_person_cultural_item(g: &Game, pid: usize, cid: u32, work: &str) -> Option<Item> {
         // The host's empty activation-plot list is authoritative. CIVVIS may
         // believe a generic Palace `any` slot is open while Firaxis refuses
         // this exact individual, and trusting the approximation here is what
         // leaves the physical person parked. Build typed capacity until the
         // next host frame exposes a real plot and clears the need.
-        let chain: &[&str] = match work {
-            "writing" => &["amphitheater"],
-            // Target first, then the prerequisite needed to make it buildable.
-            "art" => &["art_museum", "amphitheater"],
-            "artifact" => &["archaeological_museum", "amphitheater"],
-            "music" => &["broadcast_center", "art_museum", "amphitheater"],
-            _ => return None,
-        };
+        let chain = Self::live_great_person_work_chain(work);
+        if chain.is_empty() {
+            return None;
+        }
         let already_queued = g.player_city_ids(pid).into_iter().any(|city| {
             matches!(
                 g.cities[&city].queue.first(),
@@ -11633,6 +12797,27 @@ impl BasicAi {
                     Self::live_great_person_district(need)
                         .is_some_and(|family| g.district_family(*district) == family)))
         }) {
+            return None;
+        }
+        // `activation-resume-waits`: a district already under way finishes first.
+        if self.activation_resume_waits
+            && matches!(queued, Some(Item::District { .. }))
+            && g.cities[&cid].production > 0.0
+        {
+            return None;
+        }
+        // `activation-keeps-its-building`: a rung of a waiting person's slot
+        // chain already queued here finishes first.
+        if self.activation_keeps_its_building
+            && matches!(queued, Some(Item::Building { building })
+            if g.players[pid].live_great_person_activation_needs.iter().any(|need| {
+                Self::live_great_person_work(need).is_some_and(|work| {
+                    Self::live_great_person_work_chain(work)
+                        .iter()
+                        .any(|family| g.building_is_family(building, Name::new(family)))
+                })
+            }))
+        {
             return None;
         }
         let queue_can_yield = match queued {
@@ -11900,6 +13085,92 @@ impl BasicAi {
                 .economic_recovery_item(g, pid, cid, traders)
                 .or_else(|| self.upkeep_free_recovery_item(g, pid, cid));
         }
+        // `housing-bound-city-builds-its-granary`: a housing-bound city's
+        // Granary, then a short city's Amenity, ahead of every economy step
+        // and the military floor below. Local defence above still wins.
+        if self.housing_bound_city_builds_its_granary
+            && !self.minor
+            && !self.barb
+            && !emergency_defense
+        {
+            if let Some(item) = self.housing_bound_granary_step(g, pid, cid, n_cities, builders) {
+                return Some(item);
+            }
+        }
+        // `housing-cap-builds-the-aqueduct`: a housing-bound city's Aqueduct
+        // once its Granary stands, ahead of every economy step and the
+        // military floor below. Local defence above still wins.
+        if self.housing_cap_builds_the_aqueduct && !self.minor && !self.barb && !emergency_defense {
+            if let Some(item) = self.housing_cap_aqueduct_step(g, pid, cid) {
+                return Some(item);
+            }
+        }
+        // `builders-cover-the-worked-backlog`: Builders while the charges in
+        // hand cover too little of the ground the cities already work
+        // unimproved, ahead of the Monument, the Settler step and the military
+        // floor below. A due Settler and local defence above still win.
+        if self.builders_cover_the_worked_backlog
+            && !self.minor
+            && !self.barb
+            && !emergency_defense
+            && !self.settler_due(g, pid, cid, n_cities, settlers)
+        {
+            if let Some(builder) = self.worked_backlog_builder_step(g, pid, cid, n_cities, builders)
+            {
+                return Some(builder);
+            }
+        }
+        // `monument-first`: the cheapest culture in the game before the
+        // military floor and the Settler step, which otherwise kept a city
+        // from ever reaching it. The capital sends the land grab's first two
+        // Settlers out first, and an early rush still assembles its stack.
+        if (self.builder_before_the_army
+            || self.builder_before_the_army_2
+            || self.builder_before_the_army_3)
+            && !self.minor
+            && !self.barb
+            && !emergency_defense
+        {
+            if let Some(builder) =
+                self.builder_before_the_army_item(g, pid, cid, n_cities, builders)
+            {
+                return Some(builder);
+            }
+        }
+        // `prophet-race-takes-a-district-slot-2`: the race's Holy Site in the
+        // city that builds it soonest. See `race_site_city`.
+        if self.prophet_race_takes_a_district_slot_2
+            && !self.minor
+            && !self.barb
+            && !emergency_defense
+        {
+            if let Some((site_city, holy_site)) = self.race_site_city(g, pid) {
+                if site_city == cid {
+                    think!(self.journal, Cities, Decision,
+                           "{} opens the Holy Site for the Great Prophet race", g.cities[&cid].name;
+                           "it builds the site soonest of the empire's cities; {} of {} religions founded",
+                           g.religions_founded(), g.max_religions());
+                    return Some(holy_site);
+                }
+            }
+        }
+        if self.campus_before_the_army && !self.minor && !self.barb && !emergency_defense {
+            if let Some(item) = Self::campus_before_the_army_item(g, pid, cid, n_cities, false) {
+                return Some(self.race_takes_the_district_slot(g, pid, cid, item));
+            }
+        }
+        if self.monument_first
+            && !self.minor
+            && !self.barb
+            && !emergency_defense
+            && (!g.cities[&cid].is_capital
+                || n_cities + settlers >= Self::MONUMENT_CAPITAL_MIN_CITIES)
+            && (self.rush_military_floor == 0 || military >= self.rush_military_floor)
+        {
+            if let Some(monument) = Self::civ_building(g, pid, cid, "monument") {
+                return Some(monument);
+            }
+        }
         // `capital-settler-after-completion` opens one specific expansion
         // window: when the capital's whole queue has drained and it has
         // reached the engine's population-two floor, a Settler gets the next
@@ -11947,6 +13218,190 @@ impl BasicAi {
         } else {
             self.w.mil_per_city * n_cities as f64
         };
+        if self.front_weighted_floor_2
+            && !self.minor
+            && !self.barb
+            && can_add_military
+            && (military as f64) < military_floor
+        {
+            if let Some(objective) = self.front_objective {
+                if let Some(unit) = self
+                    .combined_arms_unit(g, pid, cid, melee, ranged)
+                    .filter(|unit| Self::is_front_city_for(g, pid, cid, unit, objective))
+                {
+                    think!(self.journal, Cities, Detail,
+                           "A city beside the front takes the floor's {unit}";
+                           "{} is {} tiles from the campaign's target and the army holds {military} \
+                            against a floor of {military_floor:.1}", g.cities[&cid].name,
+                           g.wdist(g.cities[&cid].pos, objective));
+                    return Some(Item::Unit {
+                        unit: Name::new(&unit),
+                    });
+                }
+            }
+        }
+        if self.granary_before_the_army
+            && !self.minor
+            && !self.barb
+            && !emergency_defense
+            && !self.settler_due(g, pid, cid, n_cities, settlers)
+        {
+            if let Some(item) = Self::housing_reserve_item(g, pid, cid).filter(|item| {
+                !matches!(item, Item::District { .. })
+                    || g.host_production_turns(cid, item).unwrap_or_else(|| {
+                        g.item_cost_for(pid, item) / g.city_yields(cid).production.max(0.5)
+                    }) <= Self::FIRST_CAMPUS_MAX_TURNS
+            }) {
+                return Some(item);
+            }
+        }
+        if (self.campus_before_the_army_2 || self.campus_before_the_army_3)
+            && !self.minor
+            && !self.barb
+            && !emergency_defense
+            && !self.settler_due(g, pid, cid, n_cities, settlers)
+        {
+            if let Some(item) = Self::campus_before_the_army_item(
+                g,
+                pid,
+                cid,
+                n_cities,
+                self.campus_before_the_army_3,
+            ) {
+                return Some(self.race_takes_the_district_slot(g, pid, cid, item));
+            }
+        }
+        // `builder-before-the-army-3`: Builders for the unimproved ground the
+        // cities already work, behind the Campus step and a due Settler.
+        if self.builder_before_the_army_3
+            && !self.minor
+            && !self.barb
+            && !emergency_defense
+            && !self.settler_due(g, pid, cid, n_cities, settlers)
+        {
+            if let Some(builder) = Self::builder_backlog_item(g, pid, cid, n_cities, builders) {
+                return Some(builder);
+            }
+        }
+        // `granary-before-the-army-2`: version 1's housing reserve, behind
+        // the Campus step and the Builder backlog.
+        if self.granary_before_the_army_2
+            && !self.minor
+            && !self.barb
+            && !emergency_defense
+            && !self.settler_due(g, pid, cid, n_cities, settlers)
+        {
+            if let Some(item) = Self::housing_reserve_item(g, pid, cid).filter(|item| {
+                !matches!(item, Item::District { .. })
+                    || g.host_production_turns(cid, item).unwrap_or_else(|| {
+                        g.item_cost_for(pid, item) / g.city_yields(cid).production.max(0.5)
+                    }) <= Self::FIRST_CAMPUS_MAX_TURNS
+            }) {
+                return Some(item);
+            }
+        }
+        // `industrial-hub`: one zone where its Factory reaches the most
+        // cities, and its chain, behind the Campus step and a due Settler.
+        if self.industrial_hub
+            && !self.minor
+            && !self.barb
+            && !emergency_defense
+            && !self.settler_due(g, pid, cid, n_cities, settlers)
+        {
+            if let Some(item) = Self::industrial_hub_item(g, pid, cid) {
+                think!(self.journal, Cities, Detail,
+                       "The industrial hub takes the build";
+                       "{} in {}", crate::reasoning::plain(&format!("{item:?}")),
+                       g.cities[&cid].name);
+                return Some(item);
+            }
+        }
+        // `industrial-zone-in-the-producers`: the most productive cities'
+        // Industrial Zones and Workshops, behind the industrial hub and a due
+        // Settler, ahead of the Commercial Hub step and the floor.
+        if self.industrial_zone_in_the_producers
+            && !self.minor
+            && !self.barb
+            && !emergency_defense
+            && !self.settler_due(g, pid, cid, n_cities, settlers)
+        {
+            if let Some(item) =
+                self.industrial_zone_producer_item(g, pid, cid, n_cities, self.plan_threatened_city)
+            {
+                think!(self.journal, Cities, Detail,
+                       "{} builds {} for its industry", g.cities[&cid].name,
+                       Self::item_label(&item);
+                       "industrial-zone-in-the-producers: one of the empire's most productive \
+                        cities raises its Industrial Zone and Workshop ahead of the army");
+                return Some(item);
+            }
+        }
+        // `industry-before-the-army`: the production chain the district list
+        // below never names, behind the Campus step and a due Settler.
+        if (self.industry_before_the_army
+            || self.industry_before_the_army_2
+            || (self.industry_before_the_army_3 && military as f64 >= military_floor))
+            && !self.minor
+            && !self.barb
+            && !emergency_defense
+            && !self.settler_due(g, pid, cid, n_cities, settlers)
+        {
+            if let Some(item) = Self::industry_before_the_army_item(
+                g,
+                pid,
+                cid,
+                n_cities,
+                self.industry_before_the_army_2 || self.industry_before_the_army_3,
+            ) {
+                think!(self.journal, Cities, Detail,
+                       "Industry before the army takes the build";
+                       "{} in {} ahead of a floor of {military_floor:.1} with {military} held",
+                       crate::reasoning::plain(&format!("{item:?}")), g.cities[&cid].name);
+                return Some(item);
+            }
+        }
+        // `commercial-hub-and-traders`: a hub's Market, a Trader for an open
+        // route slot, and a Commercial Hub in the best unthreatened cities,
+        // behind the Campus step, the industry steps and a due Settler.
+        if !emergency_defense
+            && self.commercial_hub_window_open(g)
+            && !self.settler_due(g, pid, cid, n_cities, settlers)
+        {
+            if let Some(item) = self.commercial_hub_step(g, pid, cid, n_cities, traders) {
+                // `campus-buildings-first`: a second or third hub gives its
+                // slot to this city's next Campus building.
+                return Some(self.campus_building_takes_the_hub_slot(g, pid, cid, item));
+            }
+        }
+        // `builders-before-the-lent-floor`: a Domination war lends this
+        // governor an army target above the genome's own floor (see
+        // `lent_military_floor_base`). Above that own floor, a unit for the
+        // lent margin waits while the empire is short of Builders for the
+        // ground its cities already work: the Builder backlog without its
+        // Settler gate, since the floor ranks ahead of the Settler step anyway.
+        // Over 40 live King runs (10-05, turns 1-80) the floor built 157 units
+        // in the lent margin while the empire held fewer than one Builder per
+        // two cities; a third of worked tiles were improved at turn 60 and
+        // 71% of cities grew at a half or a quarter of their rate.
+        if self.builders_before_the_lent_floor
+            && !self.minor
+            && !self.barb
+            && !emergency_defense
+            && can_add_military
+            && (military as f64) < military_floor
+            && self
+                .lent_military_floor_base
+                .is_some_and(|base| (military as f64) >= base * n_cities as f64)
+        {
+            if let Some(builder) = Self::builder_backlog_item(g, pid, cid, n_cities, builders) {
+                think!(self.journal, Cities, Detail,
+                       "A Builder before the lent floor's unit";
+                       "{} trains a Builder: the empire holds {builders} for {n_cities} cities and \
+                        {military} military against a lent floor of {military_floor:.1}",
+                       g.cities[&cid].name);
+                return Some(builder);
+            }
+        }
         // ★★★★★ THE FLOOR IS A HEADCOUNT AND CANNOT SEE A MISSING ARM.
         //
         // `military_floor` is `mil_per_city * n_cities`. It counts bodies and
@@ -12011,6 +13466,32 @@ impl BasicAi {
             } else {
                 None
             };
+            // See `lent_military_floor_base`: a slow city leaves the lent
+            // margin above the genome's own floor to the fast cities.
+            let force_pick = force_pick.filter(|unit| {
+                self.lent_military_floor_base.is_none_or(|base| {
+                    (military as f64) < base * n_cities as f64
+                        || Self::unit_build_turns(g, pid, cid, unit)
+                            <= g.standard_duration(LENT_FLOOR_MAX_BUILD_TURNS) as f64
+                })
+            });
+            // `front-weighted-floor`: leave the unit to a city that puts it at
+            // the front sooner.
+            let force_pick = force_pick.filter(|unit| {
+                let keeps = !self.front_weighted_floor
+                    || (military as f64) < FRONT_FLOOR_SHARE * military_floor
+                    || self.front_objective.is_none_or(|objective| {
+                        !Self::another_city_arrives_sooner(g, pid, cid, unit, objective)
+                    });
+                if !keeps {
+                    think!(self.journal, Cities, Detail,
+                           "Military floor leaves the {unit} to a city nearer the front";
+                           "{} is {} tiles from the campaign's target; another city puts the unit \
+                            there sooner", g.cities[&cid].name,
+                           self.front_objective.map_or(0, |objective| g.wdist(g.cities[&cid].pos, objective)));
+                }
+                keeps
+            });
             let picked = recon_pick.or(naval_recon_pick).or(force_pick);
             if let Some(m) = picked {
                 // ⚠ THE BRANCH THAT WINS MUST SAY SO.
@@ -12060,7 +13541,10 @@ impl BasicAi {
                 // than this simulator's queue entry.
                 Self::empire_district_family_ready_or_queued(g, pid, "spaceport")
             };
-            if !has_spaceport && g.players[pid].techs.contains(&crate::name!("rocketry")) {
+            if !self.exclude_space_race
+                && !has_spaceport
+                && g.players[pid].techs.contains(&crate::name!("rocketry"))
+            {
                 if let Some(pos) = g
                     .district_sites(cid, crate::name!("spaceport"))
                     .into_iter()
@@ -12093,11 +13577,21 @@ impl BasicAi {
                 .projects
                 .iter()
                 .filter(|(project, spec)| {
-                    !spec.repeatable
+                    (!spec.repeatable
                         || matches!(
                             project.as_str(),
                             "lagrange_laser_station" | "terrestrial_laser_station"
-                        )
+                        ))
+                        && (!self.exclude_space_race
+                            || !matches!(
+                                project.as_str(),
+                                "launch_earth_satellite"
+                                    | "launch_moon_landing"
+                                    | "launch_mars_colony"
+                                    | "exoplanet_expedition"
+                                    | "lagrange_laser_station"
+                                    | "terrestrial_laser_station"
+                            ))
                 })
                 .map(|(project, _)| Item::Project { project: *project })
                 .filter(|item| g.can_produce(pid, cid, item))
@@ -12115,11 +13609,41 @@ impl BasicAi {
             }
         }
         let naval = Self::naval_counts(g, pid).0;
-        if can_add_military && naval < self.desired_navy(g, pid) {
+        if can_add_military
+            && naval < self.desired_navy(g, pid)
+            && !(self.settler_before_the_navy
+                && !self.minor
+                && !self.barb
+                && self.settler_due(g, pid, cid, n_cities, settlers))
+        {
             if let Some(unit) = self.best_naval_unit(g, pid, cid) {
                 return Some(Item::Unit {
                     unit: Name::new(&unit),
                 });
+            }
+        }
+        // `campus-before-harbor-2`: the capital's first Campus before its
+        // next Settler once the land grab has three cities to build them.
+        if self.capital_campus_first
+            && !self.minor
+            && !self.barb
+            && n_cities >= Self::CAPITAL_CAMPUS_MIN_CITIES
+            && g.cities[&cid].is_capital
+        {
+            if let Some(item) = Self::first_campus_item(g, pid, cid) {
+                return Some(self.race_takes_the_district_slot(g, pid, cid, item));
+            }
+        }
+        // `district-buildings-first-2`: and the Campus's Library in the same
+        // slot once the Campus stands.
+        if self.capital_library_first
+            && !self.minor
+            && !self.barb
+            && n_cities >= Self::CAPITAL_CAMPUS_MIN_CITIES
+            && g.cities[&cid].is_capital
+        {
+            if let Some(item) = Self::campus_library_item(g, pid, cid) {
+                return Some(item);
             }
         }
         // ⚠ Five conditions in one `&&` chain, and an empire that ends the game
@@ -12131,72 +13655,15 @@ impl BasicAi {
             // ones. The cap on how many cities the empire is still trying to
             // reach must not move; only the "one at a time" serialisation is
             // discounted. See `stranded_settlers`.
-            let room = ((n_cities + settlers) as f64) < self.w.city_target;
-            let stranded = self.stranded_settlers(g, pid);
-            // ★★★★ ONE SETTLER AT A TIME IS THE PACE OF THE WHOLE EMPIRE. On the
-            // live Civilization VI seat the cities of run civvis-20260815T210845Z
-            // were founded at t2/19/45/58/78 and "a settler is already in flight"
-            // was the refusal on t19, t42, t43 and t47 — a two-city empire with
-            // pop to spare and land open, waiting on one walker. Under
-            // `parallel_settlers` a second Settler may start once the empire
-            // holds two cities and is still at least two short of its target;
-            // the target stays the hard cap and every other gate below is
-            // unchanged.
-            // ★★★★ AND UNDER THE LAND GRAB THE PIPELINE WIDENS WITH THE
-            // EMPIRE: two walkers from the first city, one more per three
-            // cities, never more than the seats still short. See `land_grab`
-            // and `AdvancedAi::settler_in_flight_allowed`, which opens the
-            // same width for the strategic governor.
-            let seats_short =
-                (self.w.city_target.ceil().max(0.0) as usize).saturating_sub(n_cities);
-            let pipeline = if self.rapid_city_expansion_2 && seats_short > 0 {
-                advanced::rapid_city_expansion::pipeline_width(
-                    g,
-                    n_cities + seats_short,
-                    n_cities,
-                    settlers,
-                )
-                .unwrap_or(1)
-            } else if self.land_grab && seats_short > 0 {
-                (crate::ai::LAND_GRAB_PIPELINE_BASE + n_cities / 3).min(seats_short)
-            } else if self.parallel_settlers
-                && n_cities >= 2
-                && ((n_cities + settlers + 1) as f64) < self.w.city_target
-            {
-                2
-            } else {
-                1
-            };
-            // ★★★★ A PARKED SETTLER HOLDS THE PIPELINE, IT DOES NOT OPEN IT.
-            // `stranded-settler-discount` above subtracts a Settler idle
-            // twelve turns so its replacement may start — and the replacement
-            // refuses the same sites. See `settler_backlog_brake`.
-            let v1_scope =
-                self.settler_backlog_brake && n_cities >= Self::SETTLER_BACKLOG_MIN_CITIES;
-            let v2_scope =
-                self.settler_backlog_brake_2 && n_cities >= Self::SETTLER_BACKLOG_V2_MIN_CITIES;
-            let parked = if v1_scope || v2_scope {
-                self.parked_settlers(g, pid, Self::SETTLER_BACKLOG_IDLE_TURNS)
-            } else {
-                0
-            };
-            let parked_brake = (v1_scope || v2_scope) && parked > 0;
-            let none_in_flight = !parked_brake && settlers.saturating_sub(stranded) < pipeline;
-            // ★★★★ THE HOST'S FLOOR, NOT THE GENOME'S. See `host_settler_pop`:
-            // Civilization VI starts a Settler at population 2, and the live
-            // genome's 2.456 held a food-poor capital at one city for forty
-            // turns waiting for population 3.
-            let settler_min_pop = if self.host_settler_pop || self.rapid_city_expansion_2 {
-                self.w.settler_min_pop.min(HOST_SETTLER_MIN_POP)
-            } else {
-                self.w.settler_min_pop
-            };
-            let grown = (city_pop as f64) >= settler_min_pop;
-            // ★★★★ THE LAND GRAB SETTLES UNTIL A SETTLER CAN NO LONGER
-            // REPAY, not until the genome's turn. See `land_grab`.
-            let in_window = (g.turn as f64) < self.w.settler_stop_turn
-                || ((self.land_grab || self.rapid_city_expansion_2)
-                    && g.turn + g.standard_duration(LAND_GRAB_SETTLE_HORIZON) < g.max_turns);
+            let SettlerGates {
+                room,
+                stranded,
+                pipeline,
+                parked_brake,
+                none_in_flight,
+                grown,
+                in_window,
+            } = self.settler_gates(g, pid, city_pop, n_cities, settlers);
             if room && none_in_flight && grown && in_window {
                 if self.has_practical_settle_site(g, pid) {
                     return Some(Item::Unit {
@@ -12235,6 +13702,13 @@ impl BasicAi {
                        self.w.city_target, g.turn, self.w.settler_stop_turn);
             }
         }
+        // `first-granary-reserve-3`: a housing-bound city grows before it
+        // trains another Builder or opens a specialty district.
+        if self.housing_reserve && !self.minor && !self.barb {
+            if let Some(item) = Self::housing_reserve_item(g, pid, cid) {
+                return Some(item);
+            }
+        }
         if (builders as f64) < self.w.builder_per_city * n_cities as f64
             && Self::has_builder_work(g, pid)
         {
@@ -12264,7 +13738,51 @@ impl BasicAi {
         if let Some(monument) = Self::civ_building(g, pid, cid, "monument") {
             return Some(monument);
         }
+        // `plaza-in-the-district-list`: the standing Plaza's Warlord's Throne,
+        // then its Grand Master's Chapel, and the empire's first Plaza in the
+        // capital -- ahead of `district-buildings-first`, whose Library,
+        // Shrine and Temple otherwise hold the capital's queue every turn
+        // (live King civvis-20261005T161132Z, game 142: armed, buildable from
+        // turn 38, no Plaza by 81), and which would take any tier-one Plaza
+        // building. A Prophet race still open goes first. See
+        // `plaza_building_item` and `plaza_item`.
+        if self.plaza_in_the_district_list && !self.minor && !self.barb {
+            if let Some(item) = Self::plaza_building_item(g, pid, cid) {
+                return Some(item);
+            }
+            if !self.plaza_prophet_race_open(g, pid) {
+                if let Some(item) = Self::plaza_item(g, pid, cid) {
+                    return Some(item);
+                }
+            }
+        }
+        // `campus-buildings-first`: the standing Campus's Library, University
+        // or Research Lab before the city opens another district or takes an
+        // ordinary building. See `campus_buildings.rs`.
+        if let Some(item) = self.campus_buildings_first_item(g, pid, cid) {
+            return Some(item);
+        }
+        // `district-buildings-first`: the building that makes a standing
+        // district pay before the city opens another district.
+        if self.district_buildings_first && !self.minor && !self.barb {
+            if let Some(item) = Self::district_building_item(g, pid, cid) {
+                return Some(item);
+            }
+        }
 
+        // `campus-before-harbor`: the city's first Campus before its Harbor.
+        if self.campus_before_harbor && !self.minor && !self.barb {
+            if let Some(item) = Self::first_campus_item(g, pid, cid) {
+                return Some(self.race_takes_the_district_slot(g, pid, cid, item));
+            }
+        }
+        // `culture-defense-theater`: a Theater Square while the empire's
+        // Culture trails, ahead of the Harbor and the bred district order.
+        if self.culture_defense_theater && !self.minor && !self.barb {
+            if let Some(item) = Self::culture_defense_theater_item(g, pid, cid, n_cities) {
+                return Some(self.race_takes_the_district_slot(g, pid, cid, item));
+            }
+        }
         // Coastal infrastructure is part of the water strategy, not an
         // accidental fallback after every land district. A harbor also gives
         // later naval production somewhere sensible to concentrate.
@@ -12290,6 +13808,13 @@ impl BasicAi {
                 }
             }
         }
+        // `industry-in-the-district-list`: a standing zone's Workshop or
+        // Factory before the city opens another district.
+        if self.industry_in_the_district_list && !self.minor && !self.barb {
+            if let Some(item) = Self::industry_building_item(g, pid, cid) {
+                return Some(item);
+            }
+        }
         let mut dpri: Vec<(&str, f64)> = DISTRICT_PRIORITY
             .iter()
             .cloned()
@@ -12300,6 +13825,14 @@ impl BasicAi {
                 self.w.d_theater,
             ])
             .collect();
+        // `industry-in-the-district-list`: and the zone itself, between the
+        // Campus and the Commercial Hub.
+        if self.industry_in_the_district_list && !self.minor && !self.barb {
+            dpri.push((
+                "industrial_zone",
+                0.5 * (self.w.d_campus + self.w.d_commercial),
+            ));
+        }
         // A city paying the Amenity band asks for the district that repairs it
         // before it asks for another specialty district, because the band
         // multiplies what every one of those districts produces. Weighted by
@@ -12382,6 +13915,17 @@ impl BasicAi {
                 let depth = if self.district_coverage_2 { 0.75 } else { 0.5 };
                 *weight *= 1.0 - depth * (have / total);
             }
+        }
+        // `plaza-in-the-district-list`: the empire's first Government Plaza
+        // at the front of the capital's list. A live Prophet race below still
+        // goes ahead of it. See `plaza_wanted_here`.
+        if self.plaza_in_the_district_list
+            && !self.minor
+            && !self.barb
+            && Self::plaza_wanted_here(g, pid, cid)
+        {
+            let top = dpri.iter().map(|(_, w)| *w).fold(0.0_f64, f64::max);
+            dpri.push(("government_plaza", top + 1.0));
         }
         // `enter-the-prophet-race-2`: the empire's first Holy Site goes to the
         // front while the race is open. The reservation below still limits
@@ -13193,6 +14737,28 @@ impl BasicAi {
         self.path_move(g, pid, uid, to)
     }
 
+    /// A tactical step its caller has proven strictly nearer its goal than
+    /// the tile it leaves (`gun-queues-behind-the-column`; by route length
+    /// under `gun-queue-follows-the-road`), so no sequence of such steps can
+    /// loop: the window's retread memory (`retreads_a_loop`)
+    /// does not apply, while the same-turn reversal, the lethal-tile and the
+    /// host-refusal bars still do. Other movers walk a siege gun back and
+    /// forth through the staging band, and the memory then refused its
+    /// every step forward to its post. Off `recorded_tactical_step`, the raw
+    /// apply as in `tactical_apply_move`.
+    pub(crate) fn tactical_apply_progress_move(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        uid: u32,
+        to: Pos,
+    ) -> bool {
+        if !self.recorded_tactical_step {
+            return g.apply(pid, &Action::Move { unit: uid, to }).is_ok();
+        }
+        self.path_move_inner(g, pid, uid, to, true)
+    }
+
     /// Follow one A* step out of a *proven* live-bridge livelock.
     ///
     /// `path_move` normally forbids every historical retread. That is right
@@ -13278,9 +14844,18 @@ impl BasicAi {
             return;
         }
         let mut watch = self.move_refusal_watch.borrow_mut();
+        let fresh = watch.get(&uid).is_none_or(|(turn, _, _)| *turn != g.turn);
         let entry = watch.entry(uid).or_insert((g.turn, from, to));
         if entry.0 != g.turn {
             *entry = (g.turn, from, to);
+        }
+        if fresh && self.own_column_is_not_a_refusal {
+            let mut congested = self.move_refusal_congested.borrow_mut();
+            if self.frame_start_friend_holds(g, uid, to) {
+                congested.insert(uid, g.turn);
+            } else {
+                congested.remove(&uid);
+            }
         }
     }
 
@@ -13306,6 +14881,16 @@ impl BasicAi {
             // around terrain while returning home.
             if from_home <= MINOR_DEFENSE_RADIUS && to_home > MINOR_DEFENSE_RADIUS {
                 return false;
+            }
+        }
+        // `guns-stay-out-of-reach`: a gun does not step onto a tile where one
+        // visible hostile's blow destroys it, unless the step lowers the
+        // blow it stands under. Empty with the gene off.
+        if let Some(lethal) = self.gun_lethal_tiles.get(&uid) {
+            if let Some(blow) = lethal.get(&to) {
+                if lethal.get(&from).is_none_or(|here| blow >= here) {
+                    return false;
+                }
             }
         }
         // `live-move-refusal-break`: a step this unit has provably been
@@ -13986,6 +15571,1457 @@ impl BasicAi {
     /// civilization or its secret society builds instead. `None` means the
     /// city already has one or cannot have it, so the caller moves on rather
     /// than proposing something the engine will refuse.
+    /// Turns this city needs to train `unit` from scratch at its current
+    /// production.
+    fn unit_build_turns(g: &Game, pid: usize, cid: u32, unit: &str) -> f64 {
+        let item = Item::Unit {
+            unit: Name::new(unit),
+        };
+        g.item_cost_for_city(pid, cid, &item) / g.city_yields(cid).production.max(0.1)
+    }
+
+    /// The slowest a city may build its first Campus and still be asked under
+    /// `campus-before-harbor`: a one-production outpost waits for the ordinary
+    /// list rather than parking forty turns on a district.
+    const FIRST_CAMPUS_MAX_TURNS: f64 = 15.0;
+
+    /// Cities the empire holds before `capital_campus_first` puts the
+    /// capital's Campus ahead of its next Settler: the pump has founded two
+    /// others, so the land grab keeps a second and third source of walkers.
+    const CAPITAL_CAMPUS_MIN_CITIES: usize = 3;
+
+    /// See `campus_before_harbor`: this city's first Campus at its best site,
+    /// when the empire can build one here, the city holds none and none is
+    /// already queued in it, and the city would finish it within
+    /// [`Self::FIRST_CAMPUS_MAX_TURNS`]. `None` otherwise.
+    pub(crate) fn first_campus_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        Self::first_district_item(g, pid, cid, "campus")
+    }
+
+    /// This city's first district of `family` (its civilization's
+    /// replacement where it has one) on the site with the highest total
+    /// yield, when the city would finish it within `FIRST_CAMPUS_MAX_TURNS`.
+    fn first_district_item(g: &Game, pid: usize, cid: u32, family: &str) -> Option<Item> {
+        let city = g.cities.get(&cid)?;
+        if g.city_has_district_family(city, Name::new(family)) {
+            return None;
+        }
+        let dname = Self::civ_district(g, pid, family);
+        let spec = g.rules.districts.get(&dname)?;
+        let unlocked = spec
+            .tech
+            .as_ref()
+            .is_none_or(|tech| g.players[pid].techs.contains(tech))
+            && spec
+                .civic
+                .as_ref()
+                .is_none_or(|civic| g.players[pid].civics.contains(civic));
+        if !unlocked {
+            return None;
+        }
+        let best = g
+            .district_sites(cid, Name::new(dname.as_str()))
+            .into_iter()
+            .max_by(|a, b| {
+                g.district_yields(dname, *a)
+                    .total()
+                    .partial_cmp(&g.district_yields(dname, *b).total())
+                    .unwrap()
+                    .then(a.cmp(b))
+            })?;
+        let item = Item::District {
+            district: dname,
+            pos: best,
+        };
+        if !g.can_produce(pid, cid, &item) {
+            return None;
+        }
+        let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
+            g.item_cost_for(pid, &item) / g.city_yields(cid).production.max(0.5)
+        });
+        (turns <= Self::FIRST_CAMPUS_MAX_TURNS).then_some(item)
+    }
+
+    /// See `prophet_race_takes_a_district_slot`: `item` unless it is a Campus
+    /// or a Theater Square while the race is open, a slot is left, and no
+    /// city of the empire holds or is building a Holy Site; then this city's
+    /// Holy Site, where one is buildable within `FIRST_CAMPUS_MAX_TURNS`.
+    pub(crate) fn race_takes_the_district_slot(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        item: Item,
+    ) -> Item {
+        let specialty = matches!(
+            &item,
+            Item::District { district, .. }
+                if matches!(g.district_family(*district).as_str(), "campus" | "theater_square")
+        );
+        if !specialty
+            || !(self.prophet_race_takes_a_district_slot
+                || self.prophet_race_takes_a_district_slot_2)
+            || !self.race_open_without_a_site(g, pid)
+        {
+            return item;
+        }
+        // Version 2: only the city that builds the site soonest gives up
+        // its slot. See `race_site_city`.
+        if self.prophet_race_takes_a_district_slot_2
+            && self.race_site_city(g, pid).map(|(city, _)| city) != Some(cid)
+        {
+            return item;
+        }
+        match Self::first_district_item(g, pid, cid, "holy_site") {
+            Some(holy_site) => {
+                think!(self.journal, Cities, Decision,
+                       "{} opens a Holy Site in its {} slot", g.cities[&cid].name,
+                       match &item {
+                           Item::District { district, .. } => plain(district.as_str()),
+                           _ => String::new(),
+                       };
+                       "the Great Prophet race is open with {} of {} religions founded, \
+                        and the empire holds no Holy Site",
+                       g.religions_founded(), g.max_religions());
+                holy_site
+            }
+            None => item,
+        }
+    }
+
+    /// Whether the Great Prophet race is open to this seat
+    /// (`enter-the-prophet-race-2`), a slot is left, and no city of the
+    /// empire holds or is building a Holy Site.
+    fn race_open_without_a_site(&self, g: &Game, pid: usize) -> bool {
+        self.enter_prophet_race
+            && !self.skip_prophet_race
+            && g.players[pid].religion.is_none()
+            && g.religions_founded() < g.max_religions()
+            && !g.cities.values().any(|other| {
+                other.owner == pid
+                    && (g.city_has_district_family(other, crate::name!("holy_site"))
+                        || matches!(
+                            other.queue.first(),
+                            Some(Item::District { district, .. })
+                                if g.district_family(*district) == "holy_site"
+                        ))
+            })
+    }
+
+    /// `prophet-race-takes-a-district-slot-2`: while the race is open
+    /// without a site, the city of the empire that builds its Holy Site in
+    /// the fewest turns, with that site; ties go to the lower city id.
+    /// `None` when the race is closed or no city can build one within
+    /// `FIRST_CAMPUS_MAX_TURNS`.
+    fn race_site_city(&self, g: &Game, pid: usize) -> Option<(u32, Item)> {
+        if !self.race_open_without_a_site(g, pid) {
+            return None;
+        }
+        g.player_city_ids(pid)
+            .into_iter()
+            .filter_map(|city| {
+                let item = Self::first_district_item(g, pid, city, "holy_site")?;
+                let turns = g.host_production_turns(city, &item).unwrap_or_else(|| {
+                    g.item_cost_for(pid, &item) / g.city_yields(city).production.max(0.5)
+                });
+                Some((turns, city, item))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)))
+            .map(|(_, city, item)| (city, item))
+    }
+
+    /// The gates of the delegated governor's Settler step, shared with the
+    /// steps that must yield to it (`campus_before_the_army_2`).
+    fn settler_gates(
+        &self,
+        g: &Game,
+        pid: usize,
+        city_pop: i32,
+        n_cities: usize,
+        settlers: usize,
+    ) -> SettlerGates {
+        let room = ((n_cities + settlers) as f64) < self.w.city_target;
+        let stranded = self.stranded_settlers(g, pid);
+        // ★★★★ ONE SETTLER AT A TIME IS THE PACE OF THE WHOLE EMPIRE. On the
+        // live Civilization VI seat the cities of run civvis-20260815T210845Z
+        // were founded at t2/19/45/58/78 and "a settler is already in flight"
+        // was the refusal on t19, t42, t43 and t47 — a two-city empire with
+        // pop to spare and land open, waiting on one walker. Under
+        // `parallel_settlers` a second Settler may start once the empire
+        // holds two cities and is still at least two short of its target;
+        // the target stays the hard cap and every other gate below is
+        // unchanged.
+        // ★★★★ AND UNDER THE LAND GRAB THE PIPELINE WIDENS WITH THE
+        // EMPIRE: two walkers from the first city, one more per three
+        // cities, never more than the seats still short. See `land_grab`
+        // and `AdvancedAi::settler_in_flight_allowed`, which opens the
+        // same width for the strategic governor.
+        let pipeline = self.settler_pipeline_width(g, n_cities, settlers);
+        // ★★★★ A PARKED SETTLER HOLDS THE PIPELINE, IT DOES NOT OPEN IT.
+        // `stranded-settler-discount` above subtracts a Settler idle
+        // twelve turns so its replacement may start — and the replacement
+        // refuses the same sites. See `settler_backlog_brake`.
+        let v1_scope = self.settler_backlog_brake && n_cities >= Self::SETTLER_BACKLOG_MIN_CITIES;
+        let v2_scope =
+            self.settler_backlog_brake_2 && n_cities >= Self::SETTLER_BACKLOG_V2_MIN_CITIES;
+        let parked = if v1_scope || v2_scope {
+            self.parked_settlers(g, pid, Self::SETTLER_BACKLOG_IDLE_TURNS)
+        } else {
+            0
+        };
+        let parked_brake = (v1_scope || v2_scope) && parked > 0;
+        let none_in_flight = !parked_brake && settlers.saturating_sub(stranded) < pipeline;
+        // ★★★★ THE HOST'S FLOOR, NOT THE GENOME'S. See `host_settler_pop`:
+        // Civilization VI starts a Settler at population 2, and the live
+        // genome's 2.456 held a food-poor capital at one city for forty
+        // turns waiting for population 3.
+        let settler_min_pop = if self.host_settler_pop || self.rapid_city_expansion_2 {
+            self.w.settler_min_pop.min(HOST_SETTLER_MIN_POP)
+        } else {
+            self.w.settler_min_pop
+        };
+        let grown = (city_pop as f64) >= settler_min_pop;
+        // ★★★★ THE LAND GRAB SETTLES UNTIL A SETTLER CAN NO LONGER
+        // REPAY, not until the genome's turn. See `land_grab`.
+        let in_window = (g.turn as f64) < self.w.settler_stop_turn
+            || ((self.land_grab || self.rapid_city_expansion_2)
+                && g.turn + g.standard_duration(LAND_GRAB_SETTLE_HORIZON) < g.max_turns);
+        SettlerGates {
+            room,
+            stranded,
+            pipeline,
+            parked_brake,
+            none_in_flight,
+            grown,
+            in_window,
+        }
+    }
+
+    /// Whether the Settler step would train a Settler in this city now.
+    /// Diagnostic only: when the empire has room for another city and the
+    /// build order picked something other than a Settler for `cid`, journal
+    /// the first Settler gate that refused it — the pipeline, the city's
+    /// population, the expansion window, a practical site — or, when every
+    /// gate admitted it, the earlier step that took the queue. One Detail line
+    /// every `SETTLER_HOLD_JOURNAL_STRIDE` turns; it reads only, so no order
+    /// changes. See `advanced/settler_admission_journal.rs` for the governor's
+    /// twin.
+    fn journal_settler_hold(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        n_cities: usize,
+        settlers: usize,
+        picked: &Item,
+    ) {
+        if !g.turn.is_multiple_of(SETTLER_HOLD_JOURNAL_STRIDE)
+            || !self.journal.wants(crate::reasoning::Level::Detail)
+            || matches!(picked, Item::Unit { unit } if unit == "settler")
+        {
+            return;
+        }
+        let city = &g.cities[&cid];
+        let gates = self.settler_gates(g, pid, city.pop, n_cities, settlers);
+        if !gates.room {
+            return;
+        }
+        let reason = if !gates.none_in_flight {
+            if gates.parked_brake {
+                "a parked Settler holds the pipeline".to_string()
+            } else {
+                format!(
+                    "the Settler pipeline is full ({settlers} in flight of {})",
+                    gates.pipeline
+                )
+            }
+        } else if !gates.grown {
+            format!("population {} is below the Settler floor", city.pop)
+        } else if !gates.in_window {
+            "the expansion window is closed".to_string()
+        } else if !self.has_practical_settle_site(g, pid) {
+            "no practical settle site".to_string()
+        } else {
+            format!(
+                "outranked by {} earlier in the build order",
+                Self::item_label(picked)
+            )
+        };
+        think!(self.journal, Cities, Detail, "Settler held in {}", city.name;
+               "{reason}; {n_cities} cities and {settlers} settler{} against a target of {:.1}",
+               if settlers == 1 { "" } else { "s" }, self.w.city_target);
+    }
+
+    pub(crate) fn settler_due(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        n_cities: usize,
+        settlers: usize,
+    ) -> bool {
+        let gates = self.settler_gates(g, pid, g.cities[&cid].pop, n_cities, settlers);
+        gates.room
+            && gates.none_in_flight
+            && gates.grown
+            && gates.in_window
+            && self.has_practical_settle_site(g, pid)
+    }
+
+    /// See `front_weighted_floor`: turns for `cid` to build `unit` and walk it
+    /// to `objective` in a straight line at the unit's speed.
+    fn front_arrival_turns(g: &Game, pid: usize, cid: u32, unit: &str, objective: Pos) -> f64 {
+        let moves = g
+            .rules
+            .units
+            .get(&Name::new(unit))
+            .map_or(2.0, |spec| spec.moves)
+            + Self::land_movement_bonus(g, pid);
+        Self::unit_build_turns(g, pid, cid, unit)
+            + g.wdist(g.cities[&cid].pos, objective) as f64 / moves.max(1.0)
+    }
+
+    /// The movement our land soldiers carry beyond their spec, read from the
+    /// standing army (`Game::unit_max_moves`, the host's own figure on the
+    /// live board): the least extra any land military unit on land shows,
+    /// so a road or a promotion on one unit does not inflate it. Gran
+    /// Colombia's Ejército Patriota reads +1. Zero with no such unit.
+    fn land_movement_bonus(g: &Game, pid: usize) -> f64 {
+        g.player_unit_ids(pid)
+            .into_iter()
+            .filter_map(|uid| {
+                let unit = &g.units[&uid];
+                let spec = g.rules.units.get(&unit.kind)?;
+                (spec.class == "military"
+                    && spec.domain.as_deref().is_none_or(|domain| domain == "land")
+                    && !g
+                        .map
+                        .get(unit.pos)
+                        .is_some_and(|tile| g.rules.is_water(tile)))
+                .then(|| (g.unit_max_moves(uid) - spec.moves).max(0.0))
+            })
+            .min_by(|a, b| a.partial_cmp(b).unwrap())
+            .unwrap_or(0.0)
+            .min(2.0)
+    }
+
+    /// See `front_weighted_floor_2`: whether `cid` stands within
+    /// `FRONT_NEAR_TILES` of `objective` and puts `unit` there within
+    /// `FRONT_ARRIVAL_MARGIN` of the best city of ours that can build it.
+    pub(crate) fn is_front_city_for(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        unit: &str,
+        objective: Pos,
+    ) -> bool {
+        g.wdist(g.cities[&cid].pos, objective) <= FRONT_NEAR_TILES
+            && !Self::another_city_arrives_sooner(g, pid, cid, unit, objective)
+    }
+
+    /// See `front_weighted_floor`: whether another city of ours that can build
+    /// `unit` would put it at `objective` at least `FRONT_ARRIVAL_MARGIN`
+    /// standard turns before `cid` would.
+    pub(crate) fn another_city_arrives_sooner(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        unit: &str,
+        objective: Pos,
+    ) -> bool {
+        let item = Item::Unit {
+            unit: Name::new(unit),
+        };
+        let ours = Self::front_arrival_turns(g, pid, cid, unit, objective);
+        let margin = g.standard_duration(FRONT_ARRIVAL_MARGIN) as f64;
+        g.player_city_ids(pid).into_iter().any(|other| {
+            other != cid
+                && g.can_produce(pid, other, &item)
+                && Self::front_arrival_turns(g, pid, other, unit, objective) + margin < ours
+        })
+    }
+
+    /// See `campus_before_the_army`: this city's first Campus, else the
+    /// Library of the Campus it holds, from three cities on and while fewer
+    /// than one city in two has a Campus or a Library first in its queue, so
+    /// the floor keeps the other half.
+    pub(crate) fn campus_before_the_army_item(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        n_cities: usize,
+        chain: bool,
+    ) -> Option<Item> {
+        if n_cities < Self::CAPITAL_CAMPUS_MIN_CITIES {
+            return None;
+        }
+        let in_flight = g
+            .player_city_ids(pid)
+            .iter()
+            .filter(|city| match g.cities[city].queue.first() {
+                Some(Item::District { district, .. }) => g.district_family(*district) == "campus",
+                Some(Item::Building { building }) => {
+                    g.rules.buildings.get(building).is_some_and(|spec| {
+                        (chain || spec.requires.is_empty())
+                            && spec
+                                .district
+                                .is_some_and(|district| g.district_family(district) == "campus")
+                    })
+                }
+                _ => false,
+            })
+            .count();
+        if in_flight >= n_cities.div_ceil(2) {
+            return None;
+        }
+        Self::first_campus_item(g, pid, cid)
+            .or_else(|| Self::campus_library_item(g, pid, cid))
+            .or_else(|| chain.then(|| Self::campus_tier_item(g, pid, cid)).flatten())
+    }
+
+    /// The slowest a city may build a Workshop or Factory under
+    /// `industry_before_the_army`: a Workshop is 195 production, three times
+    /// a first Campus's price on the live board.
+    const INDUSTRY_BUILDING_MAX_TURNS: f64 = 20.0;
+
+    /// Net Gold a turn below which `industry_before_the_army_2` leaves the
+    /// chain alone: a zone and its Workshop cost two Gold a turn in upkeep,
+    /// a Factory two more.
+    const INDUSTRY_MIN_GOLD_PER_TURN: f64 = 5.0;
+
+    /// The next building of the Industrial Zone this city holds: its
+    /// Workshop, else its Factory where no standing own Factory already
+    /// reaches the city, each within `INDUSTRY_BUILDING_MAX_TURNS`. `None`
+    /// for a city without a zone.
+    pub(crate) fn industry_building_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        let city = g.cities.get(&cid)?;
+        if !g.city_has_district_family(city, crate::name!("industrial_zone")) {
+            return None;
+        }
+        let within = |item: &Item| {
+            g.host_production_turns(cid, item).unwrap_or_else(|| {
+                g.item_cost_for(pid, item) / g.city_yields(cid).production.max(0.5)
+            }) <= Self::INDUSTRY_BUILDING_MAX_TURNS
+        };
+        if let Some(workshop) = Self::civ_building(g, pid, cid, "workshop") {
+            return within(&workshop).then_some(workshop);
+        }
+        let factory = Self::civ_building(g, pid, cid, "factory")?;
+        let reached = g.cities.values().any(|other| {
+            other.owner == pid
+                && other.buildings.iter().any(|building| {
+                    g.rules.buildings.get(building).is_some_and(|spec| {
+                        spec.regional_range > 0
+                            && spec.replaces.unwrap_or(*building) == "factory"
+                            && g.wdist(other.pos, city.pos) <= spec.regional_range
+                    })
+                })
+        });
+        (!reached && within(&factory)).then_some(factory)
+    }
+
+    /// The fewest own cities an `industrial_hub` zone must reach.
+    const INDUSTRIAL_HUB_MIN_REACH: usize = 3;
+
+    /// The slowest the hub city may build its zone or a hub building.
+    const INDUSTRIAL_HUB_MAX_TURNS: f64 = 25.0;
+
+    /// Fuel a power plant burns, in the order `industrial_hub` tries them,
+    /// and the stockpile that must stand before one is built.
+    const INDUSTRIAL_HUB_PLANTS: [(&'static str, &'static str); 3] = [
+        ("coal_power_plant", "coal"),
+        ("oil_power_plant", "oil"),
+        ("nuclear_power_plant", "uranium"),
+    ];
+    const INDUSTRIAL_HUB_MIN_FUEL: f64 = 5.0;
+
+    /// See `industrial_hub`: the hub city's next item. The hub is the own
+    /// city whose standing zone reaches the most own cities; with none
+    /// reaching `INDUSTRIAL_HUB_MIN_REACH`, the city whose best zone site
+    /// would reach the most (then the more productive) opens one there.
+    pub(crate) fn industrial_hub_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        let range = g
+            .rules
+            .buildings
+            .get(&crate::name!("factory"))
+            .map_or(6, |spec| spec.regional_range);
+        let own: Vec<&crate::game::City> = g.cities.values().filter(|c| c.owner == pid).collect();
+        if own.len() < Self::INDUSTRIAL_HUB_MIN_REACH {
+            return None;
+        }
+        let reach = |pos: Pos| own.iter().filter(|c| g.wdist(pos, c.pos) <= range).count();
+        let zone_of = |city: &crate::game::City| {
+            city.districts
+                .iter()
+                .find(|(district, _)| g.district_family(**district) == "industrial_zone")
+                .map(|(_, pos)| *pos)
+        };
+        let production = |city: &crate::game::City| g.city_yields(city.id).production;
+        let within = |item: &Item| {
+            g.host_production_turns(cid, item).unwrap_or_else(|| {
+                g.item_cost_for(pid, item) / g.city_yields(cid).production.max(0.5)
+            }) <= Self::INDUSTRIAL_HUB_MAX_TURNS
+        };
+        let hub = own
+            .iter()
+            .filter_map(|city| zone_of(city).map(|pos| (*city, reach(pos))))
+            .filter(|(_, reached)| *reached >= Self::INDUSTRIAL_HUB_MIN_REACH)
+            .max_by(|a, b| {
+                a.1.cmp(&b.1)
+                    .then(production(a.0).total_cmp(&production(b.0)))
+                    .then(b.0.id.cmp(&a.0.id))
+            })
+            .map(|(city, _)| city.id);
+        if let Some(hub) = hub {
+            if hub != cid {
+                return None;
+            }
+            if let Some(workshop) = Self::civ_building(g, pid, cid, "workshop") {
+                return within(&workshop).then_some(workshop);
+            }
+            if g.players[pid].gold_per_turn < 0.0 {
+                return None;
+            }
+            if let Some(factory) = Self::civ_building(g, pid, cid, "factory") {
+                return within(&factory).then_some(factory);
+            }
+            return Self::INDUSTRIAL_HUB_PLANTS
+                .iter()
+                .find_map(|(plant, fuel)| {
+                    if g.strategic_stockpile(pid, Name::new(fuel)) < Self::INDUSTRIAL_HUB_MIN_FUEL {
+                        return None;
+                    }
+                    Self::civ_building(g, pid, cid, plant).filter(within)
+                });
+        }
+        // No hub yet: the city whose best site reaches the most opens one.
+        let zone = Self::civ_district(g, pid, "industrial_zone");
+        let spec = g.rules.districts.get(&zone)?;
+        let unlocked = spec
+            .tech
+            .as_ref()
+            .is_none_or(|tech| g.players[pid].techs.contains(tech))
+            && spec
+                .civic
+                .as_ref()
+                .is_none_or(|civic| g.players[pid].civics.contains(civic));
+        if !unlocked {
+            return None;
+        }
+        let best_site = |city: &crate::game::City| {
+            g.district_sites(city.id, Name::new(zone.as_str()))
+                .into_iter()
+                .map(|pos| (pos, reach(pos), g.district_yields(zone, pos).production))
+                .max_by(|a, b| a.1.cmp(&b.1).then(a.2.total_cmp(&b.2)).then(b.0.cmp(&a.0)))
+        };
+        let (designated, pos, reached) = own
+            .iter()
+            .filter_map(|city| best_site(city).map(|(pos, reached, _)| (*city, pos, reached)))
+            .max_by(|a, b| {
+                a.2.cmp(&b.2)
+                    .then(production(a.0).total_cmp(&production(b.0)))
+                    .then(b.0.id.cmp(&a.0.id))
+            })?;
+        if designated.id != cid || reached < Self::INDUSTRIAL_HUB_MIN_REACH {
+            return None;
+        }
+        let item = Item::District {
+            district: zone,
+            pos,
+        };
+        (g.can_produce(pid, cid, &item) && within(&item)).then_some(item)
+    }
+
+    /// See `industry_before_the_army`: this city's Workshop, else its Factory
+    /// where no standing Factory reaches it, else its first Industrial Zone,
+    /// from three cities on and while fewer than one city in three has the
+    /// zone's family first in its queue.
+    pub(crate) fn industry_before_the_army_item(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        n_cities: usize,
+        reserve: bool,
+    ) -> Option<Item> {
+        if n_cities < Self::CAPITAL_CAMPUS_MIN_CITIES
+            || (reserve && g.players[pid].gold_per_turn < Self::INDUSTRY_MIN_GOLD_PER_TURN)
+        {
+            return None;
+        }
+        let industrial = |district: Name| g.district_family(district) == "industrial_zone";
+        let in_flight = g
+            .player_city_ids(pid)
+            .iter()
+            .filter(|city| match g.cities[city].queue.first() {
+                Some(Item::District { district, .. }) => industrial(*district),
+                Some(Item::Building { building }) => g
+                    .rules
+                    .buildings
+                    .get(building)
+                    .is_some_and(|spec| spec.district.is_some_and(industrial)),
+                _ => false,
+            })
+            .count();
+        if in_flight >= n_cities.div_ceil(3) {
+            return None;
+        }
+        let city = g.cities.get(&cid)?;
+        let within = |item: &Item, cap: f64| {
+            g.host_production_turns(cid, item).unwrap_or_else(|| {
+                g.item_cost_for(pid, item) / g.city_yields(cid).production.max(0.5)
+            }) <= cap
+        };
+        if g.city_has_district_family(city, crate::name!("industrial_zone")) {
+            return Self::industry_building_item(g, pid, cid);
+        }
+        // The Campus comes first: a city that can open one and has not
+        // leaves its next district to `campus_before_the_army_2`.
+        if Self::first_campus_item(g, pid, cid).is_some() {
+            return None;
+        }
+        // Version 2: and a city without its Theater keeps a slot for one.
+        if reserve && !g.city_has_district_family(city, crate::name!("theater_square")) {
+            let built = city
+                .districts
+                .keys()
+                .filter(|district| g.rules.districts[district].specialty)
+                .count()
+                + city
+                    .owned_tiles
+                    .iter()
+                    .filter_map(|position| g.map.tiles[position].district_foundation.as_ref())
+                    .filter(|foundation| g.rules.districts[foundation.district].specialty)
+                    .count();
+            if g.city_specialty_district_capacity(city) < built + 2 {
+                return None;
+            }
+        }
+        let dname = Self::civ_district(g, pid, "industrial_zone");
+        let spec = g.rules.districts.get(&dname)?;
+        let unlocked = spec
+            .tech
+            .as_ref()
+            .is_none_or(|tech| g.players[pid].techs.contains(tech))
+            && spec
+                .civic
+                .as_ref()
+                .is_none_or(|civic| g.players[pid].civics.contains(civic));
+        if !unlocked {
+            return None;
+        }
+        let (pos, adjacency) = g
+            .district_sites(cid, Name::new(dname.as_str()))
+            .into_iter()
+            .map(|pos| (pos, g.district_yields(dname, pos).production))
+            .max_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)))?;
+        if adjacency < 1.0 {
+            return None;
+        }
+        let item = Item::District {
+            district: dname,
+            pos,
+        };
+        (g.can_produce(pid, cid, &item) && within(&item, Self::FIRST_CAMPUS_MAX_TURNS))
+            .then_some(item)
+    }
+
+    /// See `campus_before_the_army_3`: the University, else the Research Lab,
+    /// of the Campus this city holds (its civilization's replacement where it
+    /// has one), when the city would finish it within
+    /// `FIRST_CAMPUS_MAX_TURNS`.
+    pub(crate) fn campus_tier_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        if !g.city_has_district_family(g.cities.get(&cid)?, crate::name!("campus")) {
+            return None;
+        }
+        ["university", "research_lab"]
+            .into_iter()
+            .find_map(|family| {
+                let item = Self::civ_building(g, pid, cid, family)?;
+                let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
+                    g.item_cost_for(pid, &item) / g.city_yields(cid).production.max(0.5)
+                });
+                (turns <= Self::FIRST_CAMPUS_MAX_TURNS).then_some(item)
+            })
+    }
+
+    /// See `capital_library_first`: the Library of a Campus this city holds,
+    /// when the city would finish it within `FIRST_CAMPUS_MAX_TURNS`.
+    pub(crate) fn campus_library_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        if !g.city_has_district_family(g.cities.get(&cid)?, crate::name!("campus")) {
+            return None;
+        }
+        let item = Self::civ_building(g, pid, cid, "library")?;
+        let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
+            g.item_cost_for(pid, &item) / g.city_yields(cid).production.max(0.5)
+        });
+        (turns <= Self::FIRST_CAMPUS_MAX_TURNS).then_some(item)
+    }
+
+    /// See `housing_reserve`: the Granary, then the Aqueduct, for a city whose
+    /// population is within one of its housing. Neither while the city has
+    /// room to grow, and the Aqueduct only once the Granary stands or cannot
+    /// be built here.
+    /// Cities founded or on the road before `monument_first` lets the capital
+    /// stop for its Monument: the capital is the land grab's settler pump,
+    /// and cities held at turn 60 drive the rest of the game.
+    const MONUMENT_CAPITAL_MIN_CITIES: usize = 3;
+
+    /// `culture_defense_theater` answers while the empire's Culture a turn is
+    /// under this share of the strongest living rival major's — the bar the
+    /// Advanced governor's `culture-floor` uses (`CULTURE_FLOOR_RATIO`).
+    const CULTURE_DEFENSE_RATIO: f64 = 0.7;
+
+    /// A seat's Culture a turn: what its cities make, plus the host's
+    /// correction for that seat. On the live board a rival's cities are
+    /// rebuilt from what the seat has seen and its public Culture figure
+    /// lands in `observed_yield_adjustments`, so the cities alone would read
+    /// every rival at about zero. Empty on a native board.
+    pub(crate) fn seat_culture_per_turn(g: &Game, seat: usize) -> f64 {
+        g.player_city_ids(seat)
+            .into_iter()
+            .map(|city| g.city_yields(city).culture)
+            .sum::<f64>()
+            + g.observed_yield_adjustments
+                .get(&seat)
+                .map_or(0.0, |adjustment| adjustment.culture)
+    }
+
+    /// A seat's Production a turn, read the way `seat_culture_per_turn` reads
+    /// Culture: what its cities make, plus the host's correction for that
+    /// seat, which carries a live rival's public Production total. Empty on a
+    /// native board, where the cities are the whole reading.
+    pub(crate) fn seat_production_per_turn(g: &Game, seat: usize) -> f64 {
+        g.player_city_ids(seat)
+            .into_iter()
+            .map(|city| g.city_yields(city).production)
+            .sum::<f64>()
+            + g.observed_yield_adjustments
+                .get(&seat)
+                .map_or(0.0, |adjustment| adjustment.production)
+    }
+
+    /// Whether the empire's Culture trails `CULTURE_DEFENSE_RATIO` of the
+    /// strongest living rival major's.
+    pub(crate) fn culture_trails_the_field(g: &Game, pid: usize) -> bool {
+        let best = g
+            .players
+            .iter()
+            .filter(|player| {
+                player.id != pid && player.alive && !player.is_minor && !player.is_barbarian
+            })
+            .map(|player| Self::seat_culture_per_turn(g, player.id))
+            .fold(0.0_f64, f64::max);
+        best > 0.0 && Self::seat_culture_per_turn(g, pid) < Self::CULTURE_DEFENSE_RATIO * best
+    }
+
+    /// See `culture_defense_theater`: this city's Theater Square at its best
+    /// site while the empire's Culture trails, the city holds none, and fewer
+    /// than half of the empire's cities hold or have queued one.
+    /// See `builder_before_the_army`: a Builder while the empire holds (or
+    /// has queued) fewer than its quota, there is land to improve, and this
+    /// city finishes one within `LENT_FLOOR_MAX_BUILD_TURNS`. The quota is
+    /// the genome's `builder_per_city`, at most one per two cities, and at
+    /// least one once the empire holds two cities.
+    pub(crate) fn builder_before_the_army_item(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        n_cities: usize,
+        builders: usize,
+    ) -> Option<Item> {
+        if n_cities < 2 {
+            return None;
+        }
+        let quota = if self.builder_before_the_army_2 || self.builder_before_the_army_3 {
+            1
+        } else {
+            ((self.w.builder_per_city * n_cities as f64).ceil() as usize)
+                .min(n_cities.div_ceil(2))
+                .max(1)
+        };
+        if builders >= quota || !Self::has_builder_work(g, pid) {
+            return None;
+        }
+        let builder = Item::Unit {
+            unit: crate::name!("builder"),
+        };
+        if !g.can_produce(pid, cid, &builder)
+            || Self::unit_build_turns(g, pid, cid, "builder")
+                > g.standard_duration(LENT_FLOOR_MAX_BUILD_TURNS) as f64
+        {
+            return None;
+        }
+        Some(builder)
+    }
+
+    /// Worked tiles across the empire that stand unimproved (or pillaged)
+    /// and could take a Builder's improvement. See
+    /// `builder_before_the_army_3`.
+    pub(crate) fn unimproved_worked_tiles(g: &Game, pid: usize) -> usize {
+        let _memo = g.query_memo();
+        g.player_city_ids(pid)
+            .into_iter()
+            .map(|cid| {
+                g.city_citizen_plan(cid)
+                    .worked_tiles
+                    .into_iter()
+                    .filter(|pos| {
+                        g.map.get(*pos).is_some_and(|tile| {
+                            tile.district.is_none() && (tile.improvement.is_none() || tile.pillaged)
+                        }) && g
+                            .valid_improvements(pid, *pos)
+                            .iter()
+                            .any(|improvement| g.rules.improvements[improvement].builder_buildable)
+                    })
+                    .count()
+            })
+            .sum()
+    }
+
+    /// See `builder_before_the_army_3`: a Builder while the empire holds (or
+    /// has queued) fewer than one per three unimproved worked tiles, at most
+    /// one per two cities, and this city finishes one within
+    /// `LENT_FLOOR_MAX_BUILD_TURNS`.
+    pub(crate) fn builder_backlog_item(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        n_cities: usize,
+        builders: usize,
+    ) -> Option<Item> {
+        if n_cities < 2 || builders >= n_cities.div_ceil(2) {
+            return None;
+        }
+        let quota = Self::unimproved_worked_tiles(g, pid)
+            .div_ceil(3)
+            .min(n_cities.div_ceil(2));
+        if builders >= quota {
+            return None;
+        }
+        let builder = Item::Unit {
+            unit: crate::name!("builder"),
+        };
+        (g.can_produce(pid, cid, &builder)
+            && Self::unit_build_turns(g, pid, cid, "builder")
+                <= g.standard_duration(LENT_FLOOR_MAX_BUILD_TURNS) as f64)
+            .then_some(builder)
+    }
+
+    pub(crate) fn culture_defense_theater_item(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        n_cities: usize,
+    ) -> Option<Item> {
+        if g.city_has_district_family(&g.cities[&cid], crate::name!("theater_square")) {
+            return None;
+        }
+        let held = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|other| {
+                let city = &g.cities[other];
+                g.city_has_district_family(city, crate::name!("theater_square"))
+                    || matches!(
+                        city.queue.first(),
+                        Some(Item::District { district, .. })
+                            if g.district_family(*district) == "theater_square"
+                    )
+            })
+            .count();
+        if 2 * held >= n_cities.max(1) || !Self::culture_trails_the_field(g, pid) {
+            return None;
+        }
+        let theater = Self::civ_district(g, pid, "theater_square");
+        let pos = g.district_sites(cid, theater).into_iter().max_by(|a, b| {
+            g.district_yields(theater, *a)
+                .total()
+                .partial_cmp(&g.district_yields(theater, *b).total())
+                .unwrap_or(Ordering::Equal)
+                .then(a.cmp(b))
+        })?;
+        let item = Item::District {
+            district: theater,
+            pos,
+        };
+        g.can_produce(pid, cid, &item).then_some(item)
+    }
+
+    /// District families whose first building `district_buildings_first`
+    /// raises ahead of a new district, in the order it takes them. Science
+    /// first; the Arena before the Theater because a city short of Amenities
+    /// loses a tenth of every yield; the Encampment last, as a soldier's
+    /// building rather than an economy's.
+    const DISTRICT_BUILDING_ORDER: [&'static str; 8] = [
+        "campus",
+        "commercial_hub",
+        "industrial_zone",
+        "entertainment_complex",
+        "theater_square",
+        "harbor",
+        "holy_site",
+        "encampment",
+    ];
+
+    /// See `district_buildings_first`: the first building of a district the
+    /// city already holds — one that requires no other building, so a
+    /// Library and never a University — in `DISTRICT_BUILDING_ORDER`.
+    pub(crate) fn district_building_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        let city = &g.cities[&cid];
+        Self::DISTRICT_BUILDING_ORDER
+            .iter()
+            .filter(|family| g.city_has_district_family(city, Name::new(family)))
+            .find_map(|family| {
+                let mut tier_one: Vec<(i64, Name)> = g
+                    .rules
+                    .buildings
+                    .iter()
+                    .filter(|(_, spec)| {
+                        !spec.wonder
+                            && spec.requires.is_empty()
+                            && spec.requires_any.is_empty()
+                            && spec
+                                .district
+                                .is_some_and(|district| g.district_family(district) == *family)
+                    })
+                    .map(|(name, spec)| (spec.cost as i64, *name))
+                    .filter(|(_, name)| {
+                        g.can_produce(pid, cid, &Item::Building { building: *name })
+                    })
+                    .collect();
+                tier_one.sort();
+                tier_one
+                    .into_iter()
+                    .next()
+                    .map(|(_, building)| Item::Building { building })
+            })
+    }
+
+    pub(crate) fn housing_reserve_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        let city = &g.cities[&cid];
+        if (city.pop as f64) + 1.0 < g.city_housing(city) {
+            return None;
+        }
+        if let Some(granary) = Self::civ_building(g, pid, cid, "granary") {
+            return Some(granary);
+        }
+        if g.city_has_district_family(city, crate::name!("aqueduct")) {
+            return None;
+        }
+        let aqueduct = Self::civ_district(g, pid, "aqueduct");
+        let pos = g.district_sites(cid, aqueduct).into_iter().min()?;
+        let item = Item::District {
+            district: aqueduct,
+            pos,
+        };
+        g.can_produce(pid, cid, &item).then_some(item)
+    }
+
+    /// `housing-bound-city-builds-its-granary`: the city's next build when it
+    /// is housing-bound or short of Amenities. In order: its Granary while its
+    /// population is within one of its housing (the board's own figure, the
+    /// host's on a live seat); then, while its Amenity surplus is negative, the
+    /// quickest Amenity building it finishes within `FIRST_CAMPUS_MAX_TURNS`,
+    /// or a Builder for a luxury the empire lacks (see `luxury_builder_item`).
+    /// `None` in a city the plan names threatened (`plan_threatened_city`) or
+    /// that was attacked within four turns, the test the Advanced Amenity
+    /// handoffs use, and in a city holding a Settler more than half built.
+    fn housing_bound_granary_step(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        n_cities: usize,
+        builders: usize,
+    ) -> Option<Item> {
+        let city = &g.cities[&cid];
+        let threatened = self.plan_threatened_city == Some(cid)
+            || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4);
+        if threatened || Self::settler_half_built(g, pid, cid) {
+            return None;
+        }
+        let housing = g.city_housing(city);
+        if (city.pop as f64) + 1.0 >= housing {
+            if let Some(granary) = Self::civ_building(g, pid, cid, "granary") {
+                think!(self.journal, Cities, Detail,
+                       "{} builds its Granary at its housing", city.name;
+                       "population {} against housing {housing:.0}: the city grows before it \
+                        builds anything else", city.pop);
+                return Some(granary);
+            }
+        }
+        let surplus = g.city_amenity_surplus(city);
+        if surplus >= 0 {
+            return None;
+        }
+        if let Some(building) = Self::cheap_amenity_building(g, pid, cid) {
+            think!(self.journal, Cities, Detail,
+                   "{} builds an Amenity", city.name;
+                   "{} short of Amenities: {}", -surplus,
+                   crate::reasoning::plain(&format!("{building:?}")));
+            return Some(building);
+        }
+        let builder = Self::luxury_builder_item(g, pid, cid, n_cities, builders)?;
+        think!(self.journal, Cities, Detail,
+               "{} trains a Builder for a luxury", city.name;
+               "{} short of Amenities, and a luxury the empire lacks lies unimproved on our \
+                ground with {builders} Builders held", -surplus);
+        Some(builder)
+    }
+
+    /// The longest an Aqueduct may take under `housing-cap-builds-the-aqueduct`.
+    /// A city at its housing grows at a quarter to a half of its rate, so the
+    /// district pays for its own turns there; the cap keeps a tiny city from
+    /// spending half the game on it.
+    const HOUSING_CAP_AQUEDUCT_MAX_TURNS: f64 = 25.0;
+    /// The smallest city `housing-cap-builds-the-aqueduct` builds for: a
+    /// newly founded one reaches its housing on its first improvements.
+    const HOUSING_CAP_AQUEDUCT_MIN_POP: i32 = 3;
+
+    /// `housing-cap-builds-the-aqueduct`: the Aqueduct (Rome's Bath) of a city
+    /// within one of its housing whose Granary already stands or cannot be
+    /// built, on the legal site `housing_reserve_item` uses, when it finishes
+    /// within `HOUSING_CAP_AQUEDUCT_MAX_TURNS`. `None` in a city the plan
+    /// names threatened, a city attacked within four turns, a city holding a
+    /// Settler past half its price, a city under
+    /// `HOUSING_CAP_AQUEDUCT_MIN_POP`, and a city that already has one.
+    fn housing_cap_aqueduct_step(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        let city = &g.cities[&cid];
+        let threatened = self.plan_threatened_city == Some(cid)
+            || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4);
+        if threatened
+            || Self::settler_half_built(g, pid, cid)
+            || city.pop < Self::HOUSING_CAP_AQUEDUCT_MIN_POP
+        {
+            return None;
+        }
+        let housing = g.city_housing(city);
+        if (city.pop as f64) + 1.0 < housing
+            || Self::civ_building(g, pid, cid, "granary").is_some()
+            || g.city_has_district_family(city, crate::name!("aqueduct"))
+        {
+            return None;
+        }
+        let aqueduct = Self::civ_district(g, pid, "aqueduct");
+        let pos = g.district_sites(cid, aqueduct).into_iter().min()?;
+        let item = Item::District {
+            district: aqueduct,
+            pos,
+        };
+        if !g.can_produce(pid, cid, &item) {
+            return None;
+        }
+        let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
+            g.item_cost_for(pid, &item) / g.city_yields(cid).production.max(0.5)
+        });
+        if turns > Self::HOUSING_CAP_AQUEDUCT_MAX_TURNS {
+            return None;
+        }
+        think!(self.journal, Cities, Detail,
+               "{} builds its Aqueduct at its housing", city.name;
+               "population {} against housing {housing:.0} with its Granary built: the Aqueduct \
+                takes no district slot and lifts the water housing, about {turns:.0} turns",
+               city.pop);
+        Some(item)
+    }
+
+    /// See `builders_cover_the_worked_backlog`: the share of the unimproved
+    /// worked tiles the charges in hand (and the Builders queued) must cover
+    /// before no further Builder is wanted.
+    const WORKED_BACKLOG_COVER: f64 = 0.6;
+    /// See `builders_cover_the_worked_backlog`: no Builder for a backlog
+    /// smaller than this many unimproved worked tiles.
+    const WORKED_BACKLOG_MIN_TILES: usize = 4;
+    /// See `builders_cover_the_worked_backlog`: the slowest Builder this step
+    /// orders, in standard turns, so only a city that delivers one promptly
+    /// spends its queue on it.
+    const WORKED_BACKLOG_BUILDER_MAX_TURNS: u32 = 8;
+
+    /// Builder charges `pid` holds on Builders in the field, plus the charges
+    /// each Builder its cities have queued will carry.
+    pub(crate) fn builder_charge_cover(g: &Game, pid: usize) -> i32 {
+        let in_hand: i32 = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter_map(|uid| g.units.get(&uid))
+            .filter(|unit| unit.kind.as_str() == "builder")
+            .map(|unit| unit.charges.max(0))
+            .sum();
+        let queued = g
+            .player_city_ids(pid)
+            .into_iter()
+            .filter(|cid| {
+                matches!(
+                    g.cities[cid].queue.first(),
+                    Some(Item::Unit { unit }) if unit == "builder"
+                )
+            })
+            .count() as i32;
+        in_hand + queued * g.builder_charges(pid).max(1)
+    }
+
+    /// See `builders_cover_the_worked_backlog`: a backlog at least this many
+    /// times the charges in hand and queued is running away from them, and
+    /// the Builder may take up to `WORKED_BACKLOG_RUNAWAY_MAX_TURNS`.
+    const WORKED_BACKLOG_RUNAWAY_RATIO: f64 = 2.0;
+    /// See `WORKED_BACKLOG_RUNAWAY_RATIO`, in standard turns. Live G383
+    /// (civvis-20261008T102717Z) left Builders to cities of 3-4 Production
+    /// whose Builder took 7-10 Online turns against the six of
+    /// `WORKED_BACKLOG_BUILDER_MAX_TURNS`, while the backlog grew from 11
+    /// worked tiles at t63 to 25 at t97 against 0-8 charges.
+    const WORKED_BACKLOG_RUNAWAY_MAX_TURNS: u32 = 15;
+
+    /// See `builders_cover_the_worked_backlog`: the backlog, the cover and the
+    /// turns when `cid` should train a Builder for the unimproved worked
+    /// tiles: the charges in hand and queued cover less than
+    /// `WORKED_BACKLOG_COVER` of them, at most one Builder per city, from a
+    /// city that finishes one within `WORKED_BACKLOG_BUILDER_MAX_TURNS`
+    /// (`WORKED_BACKLOG_RUNAWAY_MAX_TURNS` while the backlog runs away).
+    fn worked_backlog_builder(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        n_cities: usize,
+        builders: usize,
+    ) -> Option<(usize, i32, f64)> {
+        if n_cities < 2 || builders >= n_cities {
+            return None;
+        }
+        let city = &g.cities[&cid];
+        let threatened = self.plan_threatened_city == Some(cid)
+            || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4);
+        if threatened {
+            return None;
+        }
+        let backlog = Self::unimproved_worked_tiles(g, pid);
+        if backlog < Self::WORKED_BACKLOG_MIN_TILES {
+            return None;
+        }
+        let cover = Self::builder_charge_cover(g, pid);
+        if f64::from(cover) >= backlog as f64 * Self::WORKED_BACKLOG_COVER {
+            return None;
+        }
+        let builder = Item::Unit {
+            unit: crate::name!("builder"),
+        };
+        if !g.can_produce(pid, cid, &builder) {
+            return None;
+        }
+        let max_turns = if backlog as f64 >= f64::from(cover) * Self::WORKED_BACKLOG_RUNAWAY_RATIO {
+            Self::WORKED_BACKLOG_RUNAWAY_MAX_TURNS
+        } else {
+            Self::WORKED_BACKLOG_BUILDER_MAX_TURNS
+        };
+        let turns = Self::unit_build_turns(g, pid, cid, "builder");
+        (turns <= g.standard_duration(max_turns) as f64).then_some((backlog, cover, turns))
+    }
+
+    /// See `worked_backlog_builder`: the Builder, journalled.
+    fn worked_backlog_builder_step(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        n_cities: usize,
+        builders: usize,
+    ) -> Option<Item> {
+        let (backlog, cover, turns) =
+            self.worked_backlog_builder(g, pid, cid, n_cities, builders)?;
+        think!(self.journal, Cities, Detail,
+               "{} trains a Builder for the worked backlog", g.cities[&cid].name;
+               "{backlog} worked tiles stand unimproved against {cover} Builder charges in hand \
+                and queued, under {:.0}% cover; about {turns:.0} turns",
+               Self::WORKED_BACKLOG_COVER * 100.0);
+        Some(Item::Unit {
+            unit: crate::name!("builder"),
+        })
+    }
+
+    /// See `builders_cover_the_worked_backlog`: the turns `cid` takes to train
+    /// the backlog's Builder when an idle queue is offered to it ahead of the
+    /// controller's other idle-queue claims, under the same gates `pick_item`
+    /// puts ahead of the step: a siege or barbarian answer, an emergency
+    /// defence and a due Settler all keep the queue.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn worked_backlog_claim_turns(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        n_cities: usize,
+        settlers: usize,
+        builders: usize,
+        military: usize,
+    ) -> Option<f64> {
+        if !self.builders_cover_the_worked_backlog || self.minor || self.barb {
+            return None;
+        }
+        let at_major_war = g.players.iter().any(|player| {
+            player.id != pid
+                && player.alive
+                && !player.is_barbarian
+                && !player.is_minor
+                && g.is_at_war(pid, player.id)
+        });
+        let alarm =
+            self.barbarian_tactics && self.barbarian_local_alarm_for_controller(g, pid, cid);
+        if ((at_major_war || alarm) && military < n_cities.max(1))
+            || self.besieged_city_item(g, pid, cid).is_some()
+            || self.barbarian_defense_item(g, pid, cid).is_some()
+            || self.settler_due(g, pid, cid, n_cities, settlers)
+        {
+            return None;
+        }
+        self.worked_backlog_builder(g, pid, cid, n_cities, builders)
+            .map(|(_, _, turns)| turns)
+    }
+
+    /// See `builders_cover_the_worked_backlog`: buy a Builder with Gold in the
+    /// city that sells one cheapest while the backlog runs away from the
+    /// charges (`WORKED_BACKLOG_RUNAWAY_RATIO`) and the treasury keeps the
+    /// reserve `spend_gold` holds. One Builder at most per city.
+    pub(crate) fn buy_worked_backlog_builder(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        city_ids: &[u32],
+        builders: usize,
+    ) -> bool {
+        let n_cities = city_ids.len();
+        if !self.builders_cover_the_worked_backlog
+            || self.minor
+            || self.barb
+            || n_cities < 2
+            || builders >= n_cities
+        {
+            return false;
+        }
+        let backlog = Self::unimproved_worked_tiles(g, pid);
+        let cover = Self::builder_charge_cover(g, pid);
+        if backlog < Self::WORKED_BACKLOG_MIN_TILES
+            || (backlog as f64) < f64::from(cover) * Self::WORKED_BACKLOG_RUNAWAY_RATIO
+        {
+            return false;
+        }
+        let at_major_war = g
+            .players
+            .iter()
+            .any(|p| p.id != pid && p.alive && !p.is_barbarian && g.is_at_war(pid, p.id));
+        // `spend_gold`'s reserve, unchanged.
+        let reserve = if at_major_war {
+            40.0 + 10.0 * n_cities as f64
+        } else {
+            100.0 + 25.0 * n_cities as f64
+        }
+        .max(self.reserve_floor);
+        let builder = Item::Unit {
+            unit: crate::name!("builder"),
+        };
+        let Some((price, city)) = city_ids
+            .iter()
+            .copied()
+            .filter(|cid| {
+                g.can_produce(pid, *cid, &builder) && !g.purchase_is_blocked(*cid, &builder)
+            })
+            .filter_map(|cid| {
+                g.unit_purchase_cost(pid, cid, "builder", "gold")
+                    .map(|price| (price, cid))
+            })
+            .min_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)))
+        else {
+            return false;
+        };
+        if g.players[pid].gold + 1e-9 < price + reserve {
+            return false;
+        }
+        let bought = g
+            .apply(
+                pid,
+                &Action::Buy {
+                    city,
+                    unit: crate::name!("builder"),
+                    formation: 0,
+                    currency: "gold".to_string(),
+                },
+            )
+            .is_ok();
+        if bought {
+            think!(self.journal, Economy, Decision,
+                   "Buying a Builder in {} for the worked backlog", g.cities[&city].name;
+                   "{backlog} worked tiles stand unimproved against {cover} Builder charges; \
+                    {price:.0} Gold, {:.0} left above a reserve of {reserve:.0}",
+                   g.players[pid].gold - reserve);
+        }
+        bought
+    }
+
+    /// Whether `cid` holds production for a Settler past half its price.
+    fn settler_half_built(g: &Game, pid: usize, cid: u32) -> bool {
+        let settler = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        let cost = g.item_cost_for_city(pid, cid, &settler);
+        cost > 0.0 && g.item_invested_production(cid, &settler) > 0.5 * cost
+    }
+
+    /// The quickest building with an Amenity that `cid` can produce within
+    /// `FIRST_CAMPUS_MAX_TURNS` (an Arena in a standing Entertainment
+    /// Complex, a Stupa, ...); ties to the name.
+    fn cheap_amenity_building(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        g.rules
+            .buildings
+            .iter()
+            .filter(|(_, spec)| spec.amenity > 0.0)
+            .map(|(name, _)| Item::Building { building: *name })
+            .filter(|item| g.can_produce(pid, cid, item))
+            .map(|item| {
+                let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
+                    g.item_cost_for(pid, &item) / g.city_yields(cid).production.max(0.5)
+                });
+                (turns, format!("{item:?}"), item)
+            })
+            .filter(|(turns, _, _)| *turns <= Self::FIRST_CAMPUS_MAX_TURNS)
+            .min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)))
+            .map(|(_, _, item)| item)
+    }
+
+    /// A Builder while the empire holds (or has queued) fewer than the
+    /// distinct luxuries it lacks that lie unimproved on its own ground with an
+    /// improvement it can already build there -- each one an Amenity in four
+    /// cities -- capped at one per two cities, from a city that finishes one
+    /// within `LENT_FLOOR_MAX_BUILD_TURNS`.
+    fn luxury_builder_item(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        n_cities: usize,
+        builders: usize,
+    ) -> Option<Item> {
+        let mut missing: BTreeSet<Name> = BTreeSet::new();
+        for city in g.player_city_ids(pid) {
+            for pos in &g.cities[&city].owned_tiles {
+                let Some(tile) = g.map.get(*pos) else {
+                    continue;
+                };
+                let Some(resource) = tile.resource else {
+                    continue;
+                };
+                if tile.improvement.is_some()
+                    || missing.contains(&resource)
+                    || !g
+                        .rules
+                        .resources
+                        .get(&resource)
+                        .is_some_and(|spec| spec.class == "luxury")
+                    || g.resource_access_count(pid, resource.as_str()) > 0
+                {
+                    continue;
+                }
+                let connectable = g.valid_improvements(pid, *pos).iter().any(|improvement| {
+                    let spec = &g.rules.improvements[improvement];
+                    spec.builder_buildable && spec.resources.contains(&resource)
+                });
+                if connectable {
+                    missing.insert(resource);
+                }
+            }
+        }
+        if builders >= missing.len().min(n_cities.div_ceil(2)) {
+            return None;
+        }
+        let builder = Item::Unit {
+            unit: crate::name!("builder"),
+        };
+        (g.can_produce(pid, cid, &builder)
+            && Self::unit_build_turns(g, pid, cid, "builder")
+                <= g.standard_duration(LENT_FLOOR_MAX_BUILD_TURNS) as f64)
+            .then_some(builder)
+    }
+
+    /// `plaza-in-the-district-list`: whether `cid` is our own original
+    /// capital and no city of ours holds a Government Plaza or has one first
+    /// in its queue.
+    pub(crate) fn plaza_wanted_here(g: &Game, pid: usize, cid: u32) -> bool {
+        let city = &g.cities[&cid];
+        city.owner == pid
+            && city.is_capital
+            && city.original_owner == pid
+            && Self::plaza_absent(g, pid)
+    }
+
+    /// `plaza-in-the-district-list`: no city of ours holds a Government
+    /// Plaza or has one first in its queue.
+    pub(crate) fn plaza_absent(g: &Game, pid: usize) -> bool {
+        !g.cities.values().any(|other| {
+            other.owner == pid
+                && (g.city_has_district_family(other, crate::name!("government_plaza"))
+                    || matches!(
+                        other.queue.first(),
+                        Some(Item::District { district, .. })
+                            if g.district_family(*district) == "government_plaza"
+                    ))
+        })
+    }
+
+    /// `plaza-in-the-district-list`: a Prophet race the empire has entered
+    /// but not yet started a Holy Site for goes ahead of the Plaza.
+    pub(crate) fn plaza_prophet_race_open(&self, g: &Game, pid: usize) -> bool {
+        self.enter_prophet_race
+            && !self.skip_prophet_race
+            && g.players[pid].religion.is_none()
+            && !g.cities.values().any(|other| {
+                other.owner == pid
+                    && (g.city_has_district_family(other, crate::name!("holy_site"))
+                        || matches!(
+                            other.queue.first(),
+                            Some(Item::District { district, .. })
+                                if g.district_family(*district) == "holy_site"
+                        ))
+            })
+    }
+
+    /// `plaza-in-the-district-list`: the empire's first Government Plaza for
+    /// `cid` when `plaza_wanted_here`, on the site whose district yields are
+    /// highest (ties to the lowest tile), if the city can produce it there.
+    pub(crate) fn plaza_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        if !Self::plaza_wanted_here(g, pid, cid) {
+            return None;
+        }
+        Self::plaza_site_item(g, pid, cid)
+    }
+
+    /// `plaza-in-the-district-list`: a Government Plaza for `cid` on its
+    /// highest-yield site (ties to the lowest tile), if it can produce one.
+    pub(crate) fn plaza_site_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        let plaza = Self::civ_district(g, pid, "government_plaza");
+        g.district_sites(cid, plaza)
+            .into_iter()
+            .map(|pos| (g.district_yields(plaza, pos).total(), pos))
+            .max_by(|a, b| a.0.total_cmp(&b.0).then(b.1.cmp(&a.1)))
+            .map(|(_, pos)| Item::District {
+                district: Name::new(&plaza),
+                pos,
+            })
+            .filter(|item| g.can_produce(pid, cid, item))
+    }
+
+    /// `plaza-in-the-district-list`: the next Government Plaza building for a
+    /// city that holds the Plaza -- the Warlord's Throne (the conquest tier:
+    /// production in captured cities), then the Grand Master's Chapel (Faith
+    /// buys land units). A Plaza with another tier-one building goes straight
+    /// to the Chapel; one with both, or a tier the host has not unlocked,
+    /// offers nothing.
+    pub(crate) fn plaza_building_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        if !g.city_has_district_family(&g.cities[&cid], crate::name!("government_plaza")) {
+            return None;
+        }
+        ["warlords_throne", "grand_masters_chapel"]
+            .into_iter()
+            .find_map(|building| Self::civ_building(g, pid, cid, building))
+    }
+
     fn civ_building(g: &Game, pid: usize, cid: u32, family: &str) -> Option<Item> {
         let base = Item::Building {
             building: Name::new(family),
@@ -15404,6 +18440,45 @@ impl BasicAi {
             }
         }
         let reserved = self.reserved_explore_goals(g, pid, uid);
+        // See `EXPLORE_FAILED_BEARING_PENALTY`. Cylinder and arena only: a
+        // globe's storage coordinates carry no bearing.
+        let unit_vector = |to: Pos| -> Option<(f64, f64)> {
+            let mut delta = (to.0 - origin.0, to.1 - origin.1);
+            if g.map.topology.wraps_east_west() {
+                for shift in [-g.map.width, g.map.width] {
+                    let wrapped = (delta.0 + shift, delta.1);
+                    if crate::hex::distance((0, 0), wrapped) < crate::hex::distance((0, 0), delta) {
+                        delta = wrapped;
+                    }
+                }
+            }
+            let (x, y) = (
+                delta.0 as f64 + delta.1 as f64 / 2.0,
+                delta.1 as f64 * 0.866,
+            );
+            let length = (x * x + y * y).sqrt();
+            (length > 0.0).then(|| (x / length, y / length))
+        };
+        let failed_bearings: Vec<(f64, f64)> = if g.map.sphere().is_none() {
+            dead.iter()
+                .filter(|pos| g.wdist(origin, **pos) >= EXPLORE_FAILED_BEARING_MIN_DISTANCE)
+                .filter_map(|pos| unit_vector(*pos))
+                .collect()
+        } else {
+            Vec::new()
+        };
+        let failed_bearing = |target: Pos| -> i32 {
+            match unit_vector(target) {
+                Some(heading)
+                    if failed_bearings
+                        .iter()
+                        .any(|failed| failed.0 * heading.0 + failed.1 * heading.1 >= 0.5) =>
+                {
+                    EXPLORE_FAILED_BEARING_PENALTY
+                }
+                _ => 0,
+            }
+        };
         // The ordinary committed sweep stops eight rings beyond the first
         // fog, which is right once the table is known. A live Civ VI host can
         // accept a fog order yet leave the unit unmoved, and carries the target
@@ -15485,12 +18560,22 @@ impl BasicAi {
             // best horizons until one has a route through territory the unit
             // may actually enter. `route_step` keeps a Scout on its side of a
             // known closed border without inspecting hidden actors.
+            //
+            // The committed sweep's rank includes the charted-terrain rival
+            // prior, and so does this one. Ranked on raw reveal alone, the
+            // sweep's twenty-ring horizon sends the Scout to whichever map
+            // corner shows the most fog — ocean fog counts the same as land —
+            // and on the live King Tiny Pangaea (2026-09-30) it spent turns
+            // 16–35 in the empty north-west corner while Portugal's Porto
+            // stood twelve tiles east of the capital, first seen on turn 52.
             candidates.sort_by_cached_key(|target| {
                 std::cmp::Reverse((
                     island_home.as_ref().map_or(0, |home_landmass| {
                         self.island_landfall_value(g, pid, uid, *target, home_landmass)
                     }),
-                    Self::frontier_reveal_value(g, pid, uid, *target),
+                    Self::frontier_reveal_value(g, pid, uid, *target) as i32 * 4
+                        + Self::rival_frontier_prior(g, pid, uid, *target, home)
+                        - failed_bearing(*target),
                     home.map_or(0, |home| g.wdist(home, *target)),
                     std::cmp::Reverse(g.wdist(origin, *target)),
                     std::cmp::Reverse(*target),
@@ -15535,7 +18620,8 @@ impl BasicAi {
             candidates.into_iter().max_by_key(|target| {
                 (
                     Self::frontier_reveal_value(g, pid, uid, *target) as i32 * 4
-                        + Self::rival_frontier_prior(g, pid, uid, *target, home),
+                        + Self::rival_frontier_prior(g, pid, uid, *target, home)
+                        - failed_bearing(*target),
                     home.map_or(0, |home| g.wdist(home, *target)),
                     std::cmp::Reverse(g.wdist(origin, *target)),
                     std::cmp::Reverse(*target),
@@ -15758,32 +18844,59 @@ impl BasicAi {
             // not walk it to: retire it and its ring (an impassable edge is
             // rarely one plot wide) and aim elsewhere. See `explore_dead_targets`.
             if let Some(target) = goal {
-                let stuck = {
+                let (stuck, stale) = {
                     let mut last = self.explore_last.borrow_mut();
+                    let distance = g.wdist(upos, target);
                     match last.get_mut(&uid) {
-                        // Same goal from the same tile as last turn: one more
-                        // turn of proof the order went nowhere.
-                        Some(entry) if entry.0 == target && entry.1 == upos => {
+                        // The same goal on a later turn. Standing on the same
+                        // tile is one more turn of proof the order went
+                        // nowhere; not coming any closer is the same proof for
+                        // a unit the host moves in circles. Live King
+                        // 2026-09-30T225143Z bounced its Scout between two
+                        // tiles from t13 to t28, and 2026-10-01T000033Z circled
+                        // four tiles from t13 to t44, each move resetting a
+                        // same-tile count.
+                        Some(entry) if entry.0 == target => {
                             if g.turn > entry.3 {
-                                entry.2 += 1;
+                                if entry.1 == upos {
+                                    entry.2 += 1;
+                                } else {
+                                    entry.2 = 0;
+                                    entry.1 = upos;
+                                }
+                                if distance < entry.4 {
+                                    entry.4 = distance;
+                                    entry.5 = 0;
+                                } else {
+                                    entry.5 += 1;
+                                }
                                 entry.3 = g.turn;
                             }
-                            entry.2
+                            (entry.2, entry.5)
                         }
-                        // A new goal, or the unit did move: start counting.
+                        // A new goal: start counting.
                         _ => {
-                            last.insert(uid, (target, upos, 0, g.turn));
-                            0
+                            last.insert(uid, (target, upos, 0, g.turn, distance, 0));
+                            (0, 0)
                         }
                     }
                 };
-                if stuck >= EXPLORE_STUCK_TURNS {
+                if stuck >= EXPLORE_STUCK_TURNS || stale >= EXPLORE_NO_PROGRESS_TURNS {
+                    let stuck = stuck.max(stale);
                     self.retire_exploration_target(g, uid, target);
+                    if stale >= EXPLORE_NO_PROGRESS_TURNS {
+                        let expiry = g.turn + EXPLORE_DEAD_TARGET_TURNS;
+                        let mut dead = self.explore_dead.borrow_mut();
+                        let unit_dead = dead.entry(uid).or_default();
+                        for pos in g.wdisk(target, EXPLORE_NO_PROGRESS_RING) {
+                            unit_dead.insert(pos, expiry);
+                        }
+                    }
                     think!(self.journal, Military, Detail,
                            "{} {uid} gives up on {target:?}", g.units[&uid].kind;
-                           "ordered there {stuck} turns running from {upos:?} and never moved; \
-                            the host will not walk it there, so that ground is retired for \
-                            {EXPLORE_DEAD_TARGET_TURNS} turns";
+                           "ordered there {stuck} turns running from {upos:?} without coming \
+                            closer; the host will not walk it there, so that ground is retired \
+                            for {EXPLORE_DEAD_TARGET_TURNS} turns";
                            upos);
                     goal = self.exploration_goal(g, pid, uid, dry_only);
                 }
@@ -19496,6 +22609,158 @@ mod tests {
         ));
     }
 
+    /// See `activation_resume_waits`: a paused Holy Site foundation does not
+    /// resume over a Campus that already holds production.
+    #[test]
+    fn an_activation_path_waits_for_a_district_under_way() {
+        let mut game = Game::new_full(1, 20, 14, 41_109, 80, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        game.cities.get_mut(&city).unwrap().pop = 5;
+        for position in game.cities[&city].owned_tiles.clone() {
+            if position == game.cities[&city].pos {
+                continue;
+            }
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.district = None;
+            tile.wonder = None;
+        }
+        grant_tech_with_prerequisites(&mut game, 0, "astrology");
+        grant_tech_with_prerequisites(&mut game, 0, "writing");
+        for family in ["holy_site", "campus"] {
+            let pos = game
+                .district_sites(city, Name::new(family))
+                .into_iter()
+                .next()
+                .unwrap();
+            game.apply(
+                0,
+                &Action::Produce {
+                    city,
+                    item: Item::District {
+                        district: Name::new(family),
+                        pos,
+                    },
+                },
+            )
+            .unwrap();
+        }
+        game.cities.get_mut(&city).unwrap().production = 17.0;
+        game.players[0].live_great_person_activation_needs.push(
+            crate::game::LiveGreatPersonActivationNeed {
+                kind: "scientist".to_string(),
+                individual: Some("hildegard_of_bingen".to_string()),
+                required_district: Some("holy_site".to_string()),
+                ..crate::game::LiveGreatPersonActivationNeed::default()
+            },
+        );
+        assert!(
+            BasicAi::new()
+                .live_great_person_activation_resume_item(&game, 0, city)
+                .is_some(),
+            "stock resumes the Holy Site over the Campus"
+        );
+        let mut waits = BasicAi::new();
+        waits.activation_resume_waits = true;
+        assert_eq!(
+            waits.live_great_person_activation_resume_item(&game, 0, city),
+            None
+        );
+        assert!(!waits.prioritize_live_great_person_activation(&mut game, 0));
+        assert!(matches!(game.cities[&city].queue.first(),
+            Some(Item::District { district, .. }) if *district == "campus"));
+        game.cities.get_mut(&city).unwrap().production = 0.0;
+        assert!(
+            waits
+                .live_great_person_activation_resume_item(&game, 0, city)
+                .is_some(),
+            "a queued district with nothing invested still yields"
+        );
+    }
+
+    /// See `activation_keeps_its_building`: a Great Artist and Mary Leakey
+    /// share one Theater Square, and the Art Museum under way is not swapped
+    /// for the Archaeological Museum that excludes it.
+    #[test]
+    fn an_activation_path_keeps_a_museum_under_way() {
+        let mut game = Game::new_full(1, 20, 14, 41_109, 80, 0, false);
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = game.player_city_ids(0)[0];
+        let theater = game.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&city].pos)
+            .unwrap();
+        game.map.tiles.get_mut(&theater).unwrap().district = Some(crate::name!("theater_square"));
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert(crate::name!("theater_square"), theater);
+        game.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push(crate::name!("amphitheater"));
+        game.players[0].civics.insert(crate::name!("drama_poetry"));
+        game.players[0].civics.insert(crate::name!("humanism"));
+        for (kind, individual, work) in [
+            ("artist", "andrei_rublev", "art"),
+            ("scientist", "mary_leakey", "artifact"),
+        ] {
+            game.players[0].live_great_person_activation_needs.push(
+                crate::game::LiveGreatPersonActivationNeed {
+                    kind: kind.to_string(),
+                    individual: Some(individual.to_string()),
+                    required_district: Some("theater_square".to_string()),
+                    required_great_work: Some(work.to_string()),
+                    ..crate::game::LiveGreatPersonActivationNeed::default()
+                },
+            );
+        }
+        game.apply(
+            0,
+            &Action::Produce {
+                city,
+                item: Item::Building {
+                    building: crate::name!("art_museum"),
+                },
+            },
+        )
+        .unwrap();
+        game.cities.get_mut(&city).unwrap().production = 46.0;
+        assert!(
+            matches!(BasicAi::new().live_great_person_activation_resume_item(&game, 0, city),
+                Some(Item::Building { building }) if building == "archaeological_museum"),
+            "stock swaps the Art Museum for the Archaeological Museum"
+        );
+        let mut keeps = BasicAi::new();
+        keeps.activation_keeps_its_building = true;
+        assert_eq!(
+            keeps.live_great_person_activation_resume_item(&game, 0, city),
+            None
+        );
+        assert!(!keeps.prioritize_live_great_person_activation(&mut game, 0));
+        assert!(matches!(game.cities[&city].queue.first(),
+            Some(Item::Building { building }) if *building == "art_museum"));
+    }
+
     #[test]
     fn a_live_great_person_resumes_a_foundation_without_displacing_another_activation_path() {
         let mut game = Game::new_full(1, 20, 14, 41_109, 80, 0, false);
@@ -20262,6 +23527,48 @@ mod tests {
         assert_eq!(game.players[0].governor_roster["victor"].city, Some(second));
     }
 
+    /// `victor_first_for_a_short_runway`: a city about to flip takes Victor,
+    /// who establishes in three turns, ahead of an unassigned Governor; a
+    /// longer runway keeps the unassigned Governor first.
+    #[test]
+    fn a_short_loyalty_runway_takes_victor_before_an_unassigned_governor() {
+        let run = |flag: bool, loyalty: f64| {
+            let (mut game, source, target) = island_colony_game(1);
+            let second_settler = game.spawn_test_unit("settler", 0, target);
+            let second = game.found_city_for(0, game.units[&second_settler].pos, None);
+            let first = game.city_at(source).unwrap();
+            game.players[0]
+                .counters
+                .insert("district_governor_titles".to_string(), 1);
+            game.apply(
+                0,
+                &Action::AppointGovernor {
+                    governor: crate::name!("victor"),
+                    city: first,
+                },
+            )
+            .unwrap();
+            game.players[0].governor_roster.insert(
+                "pingala".to_string(),
+                crate::game::GovernorState {
+                    city: None,
+                    assigned_turn: 0,
+                    disabled_until: 0,
+                    promotions: std::collections::BTreeSet::new(),
+                },
+            );
+            game.cities.get_mut(&first).unwrap().loyalty = 100.0;
+            game.cities.get_mut(&second).unwrap().loyalty = loyalty;
+            let mut ai = BasicAi::new();
+            ai.victor_first_for_a_short_runway = flag;
+            assert!(ai.reassign_governor_for_loyalty(&mut game, 0));
+            game.players[0].governor_roster["victor"].city == Some(second)
+        };
+        assert!(!run(false, 3.0), "off: the unassigned Governor goes");
+        assert!(run(true, 3.0), "a short runway takes Victor");
+        assert!(!run(true, 35.0), "a long runway keeps the unassigned first");
+    }
+
     #[test]
     fn ai_uses_heathen_conversion_before_the_apostle_moves() {
         let mut game = Game::new_full(1, 20, 14, 41_007, 80, 0, true);
@@ -20481,6 +23788,76 @@ mod tests {
         assert!(
             !matches!(choice, Some(Item::Unit { ref unit }) if g.rules.units[unit].class == "military"),
             "a peaceful city-state at its force budget must prefer infrastructure or idle"
+        );
+    }
+
+    /// `plaza-in-the-district-list`: the capital wants the empire's one
+    /// Government Plaza until a city holds it; the Plaza's city then builds
+    /// the Warlord's Throne, then the Grand Master's Chapel.
+    #[test]
+    fn plaza_in_the_district_list_wants_one_plaza_then_its_tier_buildings() {
+        let mut g = Game::new_full(1, 24, 16, 91_770, 120, 0, false);
+        let settler = g
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| g.units[unit].kind == "settler")
+            .unwrap();
+        g.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let city = g.player_city_ids(0)[0];
+        g.players[0].civics.insert(crate::name!("state_workforce"));
+        assert!(
+            BasicAi::plaza_wanted_here(&g, 0, city),
+            "the capital, no Plaza"
+        );
+        assert_eq!(
+            BasicAi::plaza_building_item(&g, 0, city),
+            None,
+            "no Plaza yet"
+        );
+        assert!(
+            matches!(
+                BasicAi::plaza_item(&g, 0, city),
+                Some(Item::District { district, .. }) if district == "government_plaza"
+            ),
+            "the capital's Plaza"
+        );
+        let site = g.cities[&city]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| {
+                let tile = &g.map.tiles[position];
+                *position != g.cities[&city].pos
+                    && tile.district.is_none()
+                    && !g.rules.is_water(tile)
+                    && g.rules.is_passable(tile)
+            })
+            .unwrap();
+        g.map.tiles.get_mut(&site).unwrap().district = Some(crate::name!("government_plaza"));
+        g.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert(crate::name!("government_plaza"), site);
+        assert!(!BasicAi::plaza_wanted_here(&g, 0, city), "one per empire");
+        assert!(
+            matches!(
+                BasicAi::plaza_building_item(&g, 0, city),
+                Some(Item::Building { building }) if building == "warlords_throne"
+            ),
+            "the conquest tier first"
+        );
+        g.cities
+            .get_mut(&city)
+            .unwrap()
+            .buildings
+            .push(crate::name!("warlords_throne"));
+        assert!(
+            matches!(
+                BasicAi::plaza_building_item(&g, 0, city),
+                Some(Item::Building { building }) if building == "grand_masters_chapel"
+            ),
+            "then the Chapel"
         );
     }
 
@@ -21271,6 +24648,128 @@ mod tests {
         );
     }
 
+    /// The queue revalidation keeps a queued Settler while the pipeline
+    /// `pick_item` would open for it has room. It used to keep one Settler in
+    /// all, walker or queued, so a capital building the second Settler the
+    /// land grab had just authorised swapped it for a Monument, then took it
+    /// back the next turn, every turn (live King `civvis-20261001T000033Z`
+    /// t27-t30).
+    #[test]
+    fn a_queued_second_settler_survives_the_revalidation_inside_the_pipeline() {
+        let mut game = Game::new_full(
+            1,
+            24,
+            16,
+            crate::rng::fixture_seed("LANDGRAB", 91_779),
+            250,
+            0,
+            false,
+        );
+        let first = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: first }).unwrap();
+        let capital = game.player_city_ids(0)[0];
+        game.cities.get_mut(&capital).unwrap().pop = 4;
+        let home = game.cities[&capital].pos;
+        game.spawn_unit("scout", 0, home);
+        game.spawn_unit("warrior", 0, home);
+        game.spawn_unit("settler", 0, home);
+        game.turn = 30;
+        let settler = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        let queue_settler = |game: &mut Game| {
+            game.cities.get_mut(&capital).unwrap().queue.clear();
+            game.apply(
+                0,
+                &Action::Produce {
+                    city: capital,
+                    item: settler.clone(),
+                },
+            )
+            .unwrap();
+        };
+        let mut ai = BasicAi::new();
+        ai.w.city_target = 8.0;
+        ai.enable_land_grab();
+        assert!(
+            ai.has_practical_settle_site(&game, 0),
+            "the fixture has land"
+        );
+        queue_settler(&mut game);
+        ai.cities(&mut game, 0);
+        assert_eq!(
+            game.cities[&capital].queue.first(),
+            Some(&settler),
+            "one walker and one queued Settler fit the land grab's two"
+        );
+
+        // Without a widened pipeline the old one-Settler rule still holds.
+        let mut single = BasicAi::new();
+        single.w.city_target = 8.0;
+        queue_settler(&mut game);
+        single.cities(&mut game, 0);
+        assert_ne!(game.cities[&capital].queue.first(), Some(&settler));
+    }
+
+    /// `rapid-city-expansion-2` widens the pipeline only while the empire
+    /// trails the opening pace. Once its band closes it must hand the
+    /// question back to the land grab, not pin the delegated governor to one
+    /// walker for the rest of the game.
+    #[test]
+    fn a_closed_rapid_expansion_band_falls_through_to_the_land_grab_width() {
+        let mut game = Game::new_full(
+            1,
+            24,
+            16,
+            crate::rng::fixture_seed("LANDGRAB", 91_779),
+            250,
+            0,
+            false,
+        );
+        let first = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: first }).unwrap();
+        let capital = game.player_city_ids(0)[0];
+        game.cities.get_mut(&capital).unwrap().pop = 5;
+        let home = game.cities[&capital].pos;
+        game.spawn_unit("scout", 0, home);
+        game.spawn_unit("warrior", 0, home);
+        game.turn = 150;
+        let ask = |game: &Game, ai: &BasicAi, cities: usize, settlers: usize| {
+            ai.pick_item(game, 0, capital, cities, settlers, 6, 2, 1, 20, 10, 10)
+        };
+        let is_settler =
+            |item: Option<Item>| matches!(item, Some(Item::Unit { unit }) if unit == "settler");
+        let mut treated = BasicAi::new();
+        treated.w.city_target = 10.0;
+        treated.enable_land_grab();
+        assert!(
+            is_settler(ask(&game, &treated, 4, 1)),
+            "land grab alone: four cities, one walker, a second may start"
+        );
+        treated.enable_rapid_city_expansion_2();
+        assert_eq!(
+            advanced::rapid_city_expansion::pipeline_width(&game, 10, 4, 1),
+            None,
+            "the opening band has closed"
+        );
+        assert!(
+            is_settler(ask(&game, &treated, 4, 1)),
+            "a closed band falls through to the land grab's width"
+        );
+        assert!(
+            !is_settler(ask(&game, &treated, 4, 3)),
+            "and the land grab's own width still binds"
+        );
+    }
+
     /// The live land-grab already allows two Settlers from one city, but the
     /// scripted opening previously made its next Builder wait for the first
     /// walker to found. Keep the book for ordinary controllers and unsafe
@@ -21461,6 +24960,1640 @@ mod tests {
             let _ = plain.explore_step(&mut game, 0, scout);
         }
         assert!(plain.explore_dead.borrow().is_empty());
+    }
+
+    /// See `campus_before_harbor`: the first Campus is offered once Writing
+    /// is in, never a second one, and never in a city that would take longer
+    /// than `FIRST_CAMPUS_MAX_TURNS`.
+    #[test]
+    fn the_first_campus_is_offered_once_writing_is_in() {
+        let mut game = Game::new_full(
+            1,
+            24,
+            16,
+            crate::rng::fixture_seed("FIRSTCAMPUS", 91_801),
+            250,
+            0,
+            false,
+        );
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let cid = game.player_city_ids(0)[0];
+        game.cities.get_mut(&cid).unwrap().pop = 3;
+        assert_eq!(
+            BasicAi::first_campus_item(&game, 0, cid),
+            None,
+            "no Campus before Writing"
+        );
+        game.players[0].techs.insert(crate::name!("writing"));
+        std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+            cid,
+            crate::rules::Yields {
+                production: 10.0,
+                ..Default::default()
+            },
+        );
+        let Some(Item::District { district, .. }) = BasicAi::first_campus_item(&game, 0, cid)
+        else {
+            panic!("with Writing a producing city is offered its Campus");
+        };
+        assert_eq!(game.district_family(district), "campus");
+
+        std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+            cid,
+            crate::rules::Yields {
+                // The adjustment is added to the modelled yield; this drives
+                // it to the 0.5 floor the gate divides by.
+                production: -100.0,
+                ..Default::default()
+            },
+        );
+        assert_eq!(
+            BasicAi::first_campus_item(&game, 0, cid),
+            None,
+            "a city that would take longer than the cap is not asked"
+        );
+    }
+
+    /// See `capital_campus_first`: a three-city capital with Writing starts
+    /// its Campus where the stock governor starts something else, and a
+    /// two-city capital keeps the stock choice.
+    #[test]
+    fn the_capital_opens_its_campus_before_the_next_settler() {
+        let mut game = Game::new_full(
+            1,
+            24,
+            16,
+            crate::rng::fixture_seed("CAPITALCAMPUS", 91_802),
+            250,
+            0,
+            false,
+        );
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let cid = game.player_city_ids(0)[0];
+        assert!(game.cities[&cid].is_capital);
+        game.cities.get_mut(&cid).unwrap().pop = 3;
+        game.players[0].techs.insert(crate::name!("writing"));
+        std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+            cid,
+            crate::rules::Yields {
+                production: 10.0,
+                ..Default::default()
+            },
+        );
+        let pick = |first: bool, n_cities: usize| {
+            let mut ai = BasicAi::new();
+            ai.capital_campus_first = first;
+            ai.pick_item(&game, 0, cid, n_cities, 0, 3, 1, 0, 6, 3, 3)
+        };
+        let is_campus = |item: &Option<Item>| {
+            matches!(item, Some(Item::District { district, .. })
+                if game.district_family(*district) == "campus")
+        };
+        let stock = pick(false, 3);
+        assert!(
+            !is_campus(&stock),
+            "the fixture's stock pick is not the Campus: {stock:?}"
+        );
+        assert!(
+            is_campus(&pick(true, 3)),
+            "a three-city capital opens its Campus"
+        );
+        assert_eq!(
+            pick(true, 2),
+            pick(false, 2),
+            "two cities keep the stock choice"
+        );
+    }
+
+    /// One founded capital with ten Production a turn, the shared fixture of
+    /// the `monument_first` and `district_buildings_first` tests below.
+    fn founded_capital_fixture(tag: &str, seed: u64) -> (Game, u32) {
+        let mut game = Game::new_full(
+            1,
+            24,
+            16,
+            crate::rng::fixture_seed(tag, seed),
+            250,
+            0,
+            false,
+        );
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let cid = game.player_city_ids(0)[0];
+        std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+            cid,
+            crate::rules::Yields {
+                production: 10.0,
+                ..Default::default()
+            },
+        );
+        (game, cid)
+    }
+
+    /// See `front_weighted_floor`: the city far from the campaign's target
+    /// leaves the floor's unit to an equally productive city beside it, which
+    /// keeps it; a slow colony beside the front does not take it.
+    #[test]
+    fn the_floor_builds_beside_the_front() {
+        let (mut game, capital) = founded_capital_fixture("FRONTFLOOR", 91_871);
+        let home = game.cities[&capital].pos;
+        let candidates: Vec<Pos> = game
+            .map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|pos| game.wdist(home, *pos) >= 9 && game.wdist(home, *pos) <= 12)
+            .collect();
+        let far_site = candidates
+            .into_iter()
+            .find(|pos| {
+                let settler = game.spawn_test_unit("settler", 0, *pos);
+                let ok = game.can_found_city(settler);
+                game.remove_unit(settler);
+                ok
+            })
+            .expect("a foundable site nine to twelve tiles out");
+        let settler = game.spawn_test_unit("settler", 0, far_site);
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let front = game.city_at(far_site).expect("the second city");
+        let objective = game
+            .nbrs(far_site)
+            .into_iter()
+            .find(|pos| game.wdist(*pos, home) > game.wdist(far_site, home))
+            .unwrap_or(far_site);
+        assert!(game.can_produce(
+            0,
+            front,
+            &Item::Unit {
+                unit: crate::name!("warrior")
+            }
+        ));
+        // A pop-1 colony is too slow to beat the capital's build and walk.
+        assert!(
+            !BasicAi::another_city_arrives_sooner(&game, 0, capital, "warrior", objective),
+            "a slow city beside the front does not take the floor from a fast capital"
+        );
+        std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+            front,
+            crate::rules::Yields {
+                production: 10.0,
+                ..Default::default()
+            },
+        );
+        assert!(
+            BasicAi::another_city_arrives_sooner(&game, 0, capital, "warrior", objective),
+            "the capital leaves the warrior to the city beside the front"
+        );
+        assert!(
+            !BasicAi::another_city_arrives_sooner(&game, 0, front, "warrior", objective),
+            "the city beside the front keeps it"
+        );
+        // Version 2: the city beside the front is a front city, the capital
+        // nine to twelve tiles back is not.
+        assert!(BasicAi::is_front_city_for(
+            &game, 0, front, "warrior", objective
+        ));
+        assert!(!BasicAi::is_front_city_for(
+            &game, 0, capital, "warrior", objective
+        ));
+        let mut second = BasicAi::new();
+        second.front_weighted_floor_2 = true;
+        second.front_objective = Some(objective);
+        let pick = second.pick_item(&game, 0, front, 2, 1, 3, 1, 0, 0, 0, 0);
+        assert!(
+            matches!(&pick, Some(Item::Unit { unit }) if game.rules.units[unit].class == "military"),
+            "the front city builds the floor's unit: {pick:?}"
+        );
+    }
+
+    /// See `granary_before_the_army`: a city at its housing builds its Granary
+    /// where the stock governor fills the military floor.
+    #[test]
+    fn a_housing_bound_city_builds_its_granary_before_the_army() {
+        let (mut game, cid) = founded_capital_fixture("GRANARYFIRST", 91_861);
+        game.players[0].gold = 500.0;
+        game.players[0].gold_per_turn = 5.0;
+        game.players[0].techs.insert(crate::name!("pottery"));
+        let housing = game.city_housing(&game.cities[&cid]);
+        game.cities.get_mut(&cid).unwrap().pop = housing.floor() as i32;
+        let granary = BasicAi::housing_reserve_item(&game, 0, cid);
+        assert!(
+            matches!(&granary, Some(Item::Building { building }) if *building == "granary"),
+            "the fixture is housing-bound: {granary:?}"
+        );
+        let pick = |on: bool, settlers: usize| {
+            let mut ai = BasicAi::new();
+            ai.granary_before_the_army = on;
+            ai.pick_item(&game, 0, cid, 3, settlers, 3, 1, 0, 0, 0, 0)
+        };
+        let stock = pick(false, 1);
+        assert_ne!(
+            stock, granary,
+            "the fixture's stock pick fills the military floor"
+        );
+        assert_eq!(pick(true, 1), granary, "the Granary comes first");
+        // Version 2 takes the same Granary from behind the Campus step, and
+        // yields to a due Settler.
+        let second = |settlers: usize| {
+            let mut ai = BasicAi::new();
+            ai.granary_before_the_army_2 = true;
+            ai.pick_item(&game, 0, cid, 3, settlers, 3, 1, 0, 0, 0, 0)
+        };
+        assert_eq!(second(1), granary, "version 2 takes the floor's build");
+        assert!(
+            BasicAi::new().settler_due(&game, 0, cid, 3, 0),
+            "the fixture is due a Settler"
+        );
+        assert_ne!(second(0), granary, "a due Settler comes first");
+    }
+
+    /// The Emperor shape of `housing_bound_city_builds_its_granary`: a capital
+    /// at its housing with Pottery and no Granary, a Settler due, the live
+    /// lineage's Monument, Campus and Builder steps armed, and a lent war
+    /// target of two units a city over an empty army.
+    fn emperor_housing_bound_capital(tag: &str, seed: u64) -> (Game, u32) {
+        let (mut game, cid) = founded_capital_fixture(tag, seed);
+        game.difficulty = "emperor".to_string();
+        game.players[0].gold = 500.0;
+        game.players[0].gold_per_turn = 5.0;
+        for tech in ["pottery", "writing", "mining"] {
+            game.players[0].techs.insert(Name::new(tech));
+        }
+        let housing = game.city_housing(&game.cities[&cid]);
+        game.cities.get_mut(&cid).unwrap().pop = housing.floor() as i32;
+        (game, cid)
+    }
+
+    fn emperor_lineage_governor(gene: bool) -> BasicAi {
+        let mut ai = BasicAi::new();
+        ai.monument_first = true;
+        ai.campus_before_the_army_2 = true;
+        ai.builder_before_the_army_3 = true;
+        ai.granary_before_the_army_2 = true;
+        ai.housing_reserve = true;
+        ai.w.mil_per_city = 2.0;
+        ai.lent_military_floor_base = Some(1.0);
+        ai.housing_bound_city_builds_its_granary = gene;
+        ai
+    }
+
+    /// See `housing_bound_city_builds_its_granary`: on the Emperor shape the
+    /// stock governor spends the housing-bound capital on its lent army or
+    /// its due Settler; under the gene the Granary is the next build, Settler
+    /// due or not.
+    #[test]
+    fn a_housing_bound_city_builds_its_granary_first_under_the_gene() {
+        let (game, cid) = emperor_housing_bound_capital("HOUSINGGRANARY", 91_901);
+        let granary = Some(Item::Building {
+            building: crate::name!("granary"),
+        });
+        assert!(
+            BasicAi::new().settler_due(&game, 0, cid, 3, 0),
+            "the fixture is due a Settler"
+        );
+        for settlers in [0, 1] {
+            let pick = |gene: bool| {
+                emperor_lineage_governor(gene)
+                    .pick_item(&game, 0, cid, 3, settlers, 1, 1, 0, 0, 0, 0)
+            };
+            let stock = pick(false);
+            assert!(stock.is_some(), "the stock governor builds something");
+            assert_ne!(
+                stock, granary,
+                "{settlers} settlers: the stock pick is not the Granary"
+            );
+            assert_eq!(
+                pick(true),
+                granary,
+                "{settlers} settlers: the Granary comes first"
+            );
+        }
+        // A city with room to grow keeps the stock order.
+        let mut roomy = game.clone();
+        roomy.cities.get_mut(&cid).unwrap().pop = 1;
+        assert!(
+            1.0 + 1.0 < roomy.city_housing(&roomy.cities[&cid]),
+            "fixture: room to grow"
+        );
+        assert_eq!(
+            emperor_lineage_governor(true).pick_item(&roomy, 0, cid, 3, 1, 1, 1, 0, 0, 0, 0),
+            emperor_lineage_governor(false).pick_item(&roomy, 0, cid, 3, 1, 1, 1, 0, 0, 0, 0),
+            "room to grow: the stock pick"
+        );
+    }
+
+    /// The `housing-cap-builds-the-aqueduct` shape: the Emperor capital at
+    /// its housing with its Granary built, Engineering researched and a river
+    /// edge beside a city-centre neighbour, so its Aqueduct is legal.
+    fn housing_capped_capital_with_an_aqueduct_site(tag: &str, seed: u64) -> (Game, u32, Item) {
+        let (mut game, cid) = emperor_housing_bound_capital(tag, seed);
+        for tech in ["masonry", "bronze_working", "engineering"] {
+            game.players[0].techs.insert(Name::new(tech));
+        }
+        game.cities
+            .get_mut(&cid)
+            .unwrap()
+            .buildings
+            .push(crate::name!("granary"));
+        let center = game.cities[&cid].pos;
+        let site = game
+            .nbrs(center)
+            .into_iter()
+            .find(|pos| {
+                game.map
+                    .tiles
+                    .get(pos)
+                    .is_some_and(|tile| !game.rules.is_water(tile))
+                    && game
+                        .nbrs(*pos)
+                        .into_iter()
+                        .any(|other| other != center && game.map.tiles.get(&other).is_some())
+            })
+            .expect("a land neighbour of the centre");
+        let source = game
+            .nbrs(site)
+            .into_iter()
+            .find(|pos| *pos != center && game.map.tiles.get(pos).is_some())
+            .expect("a river partner");
+        assert!(
+            game.map.set_river_edge(site, source, true),
+            "river edge set"
+        );
+        let housing = game.city_housing(&game.cities[&cid]);
+        game.cities.get_mut(&cid).unwrap().pop = housing.floor() as i32;
+        let aqueduct = BasicAi::housing_reserve_item(&game, 0, cid)
+            .expect("fixture: the housing reserve names the Aqueduct");
+        assert!(
+            matches!(&aqueduct, Item::District { district, .. } if game.district_family(*district) == "aqueduct"),
+            "fixture: the reserve is the Aqueduct, not a Granary: {aqueduct:?}"
+        );
+        (game, cid, aqueduct)
+    }
+
+    /// See `housing_cap_builds_the_aqueduct`: the stock governor spends the
+    /// housing-bound capital whose Granary stands on something else; under
+    /// the gene its Aqueduct is the next build. A city with room to grow and
+    /// a city under the population floor keep the stock pick.
+    #[test]
+    fn a_housing_capped_city_builds_its_aqueduct_under_the_gene() {
+        let (game, cid, aqueduct) =
+            housing_capped_capital_with_an_aqueduct_site("HOUSINGAQUEDUCT", 91_921);
+        let pick = |game: &Game, gene: bool| {
+            let mut ai = emperor_lineage_governor(true);
+            ai.granary_before_the_army_2 = false;
+            ai.housing_cap_builds_the_aqueduct = gene;
+            ai.pick_item(game, 0, cid, 3, 1, 1, 1, 0, 0, 0, 0)
+        };
+        let stock = pick(&game, false);
+        assert!(stock.is_some(), "the stock governor builds something");
+        assert_ne!(
+            stock.as_ref(),
+            Some(&aqueduct),
+            "the stock pick is not the Aqueduct"
+        );
+        assert_eq!(
+            pick(&game, true),
+            Some(aqueduct.clone()),
+            "the Aqueduct comes first"
+        );
+
+        let mut roomy = game.clone();
+        roomy.cities.get_mut(&cid).unwrap().pop = 1;
+        assert_eq!(
+            pick(&roomy, true),
+            pick(&roomy, false),
+            "room to grow: the stock pick"
+        );
+
+        // Still at its housing, but too small for the district.
+        let mut tiny = game.clone();
+        let housing = tiny.city_housing(&tiny.cities[&cid]);
+        if housing >= 3.0 {
+            tiny.cities.get_mut(&cid).unwrap().pop = 2;
+            if 2.0 + 1.0 >= housing {
+                assert_eq!(
+                    pick(&tiny, true),
+                    pick(&tiny, false),
+                    "under the population floor"
+                );
+            }
+        }
+
+        // A slow city keeps the stock pick: past the turn cap.
+        let mut slow = game.clone();
+        std::sync::Arc::make_mut(&mut slow.observed_city_yield_adjustments).insert(
+            cid,
+            crate::rules::Yields {
+                production: 0.1,
+                ..Default::default()
+            },
+        );
+        let turns = slow
+            .host_production_turns(cid, &aqueduct)
+            .unwrap_or_else(|| {
+                slow.item_cost_for(0, &aqueduct) / slow.city_yields(cid).production.max(0.5)
+            });
+        if turns > BasicAi::HOUSING_CAP_AQUEDUCT_MAX_TURNS {
+            assert_ne!(
+                pick(&slow, true),
+                Some(aqueduct.clone()),
+                "past the turn cap"
+            );
+        }
+    }
+
+    /// See `housing_cap_aqueduct_step`: a city the plan names threatened and
+    /// a city attacked within four turns keep the stock pick; a city still
+    /// short of its Granary takes the Granary through the granary gene.
+    #[test]
+    fn a_threatened_city_keeps_the_stock_pick_under_the_aqueduct_gene() {
+        let (game, cid, aqueduct) =
+            housing_capped_capital_with_an_aqueduct_site("HOUSINGAQUEDUCTTHREAT", 91_923);
+        let governor = |gene: bool| {
+            let mut ai = emperor_lineage_governor(true);
+            ai.granary_before_the_army_2 = false;
+            ai.housing_cap_builds_the_aqueduct = gene;
+            ai
+        };
+        let ask = |game: &Game, ai: &BasicAi| ai.pick_item(game, 0, cid, 3, 1, 1, 1, 0, 0, 0, 0);
+        assert_eq!(
+            ask(&game, &governor(true)),
+            Some(aqueduct.clone()),
+            "fixture: the gene fires"
+        );
+
+        let mut named = governor(true);
+        named.plan_threatened_city = Some(cid);
+        let mut named_stock = governor(false);
+        named_stock.plan_threatened_city = Some(cid);
+        assert_eq!(
+            ask(&game, &named),
+            ask(&game, &named_stock),
+            "the plan's threatened city"
+        );
+
+        let mut attacked = game.clone();
+        attacked.turn = 40;
+        attacked.cities.get_mut(&cid).unwrap().last_attacked = 37;
+        assert_eq!(
+            ask(&attacked, &governor(true)),
+            ask(&attacked, &governor(false)),
+            "attacked three turns ago"
+        );
+
+        let mut no_granary = game.clone();
+        no_granary
+            .cities
+            .get_mut(&cid)
+            .unwrap()
+            .buildings
+            .retain(|building| *building != "granary");
+        assert_eq!(
+            ask(&no_granary, &governor(true)),
+            Some(Item::Building {
+                building: crate::name!("granary"),
+            }),
+            "the Granary before the Aqueduct"
+        );
+    }
+
+    /// See `housing_bound_granary_step`: a city the plan names threatened, a
+    /// city attacked within four turns, and a city holding a Settler more
+    /// than half built keep the stock pick under the gene.
+    #[test]
+    fn a_threatened_or_settling_city_keeps_the_stock_pick_under_the_granary_gene() {
+        let (game, cid) = emperor_housing_bound_capital("HOUSINGGRANARYTHREAT", 91_903);
+        let ask = |game: &Game, ai: &BasicAi| ai.pick_item(game, 0, cid, 3, 1, 1, 1, 0, 0, 0, 0);
+        let stock = ask(&game, &emperor_lineage_governor(false));
+        let granary = Some(Item::Building {
+            building: crate::name!("granary"),
+        });
+        assert_eq!(
+            ask(&game, &emperor_lineage_governor(true)),
+            granary,
+            "fixture: the gene fires"
+        );
+
+        let mut named = emperor_lineage_governor(true);
+        named.plan_threatened_city = Some(cid);
+        assert_eq!(ask(&game, &named), stock, "the plan's threatened city");
+
+        let mut attacked = game.clone();
+        attacked.turn = 40;
+        attacked.cities.get_mut(&cid).unwrap().last_attacked = 37;
+        assert_eq!(
+            ask(&attacked, &emperor_lineage_governor(true)),
+            ask(&attacked, &emperor_lineage_governor(false)),
+            "attacked three turns ago"
+        );
+        attacked.turn = 45;
+        assert_eq!(
+            ask(&attacked, &emperor_lineage_governor(true)),
+            granary,
+            "eight turns ago"
+        );
+
+        let mut settling = game.clone();
+        let settler = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        let cost = settling.item_cost_for_city(0, cid, &settler);
+        settling
+            .cities
+            .get_mut(&cid)
+            .unwrap()
+            .production_progress
+            .insert(Game::item_progress_key(&settler), 0.6 * cost);
+        assert_eq!(
+            ask(&settling, &emperor_lineage_governor(true)),
+            ask(&settling, &emperor_lineage_governor(false)),
+            "a Settler 60% built"
+        );
+        settling
+            .cities
+            .get_mut(&cid)
+            .unwrap()
+            .production_progress
+            .insert(Game::item_progress_key(&settler), 0.4 * cost);
+        assert_eq!(
+            ask(&settling, &emperor_lineage_governor(true)),
+            granary,
+            "40% built"
+        );
+    }
+
+    /// See `luxury_builder_item`: a city short of Amenities, with no Granary
+    /// to build, trains a Builder for a luxury the empire lacks that lies
+    /// unimproved on its ground -- not once the empire holds a Builder for it,
+    /// and not for a luxury it already has.
+    #[test]
+    fn a_city_short_of_amenities_trains_a_builder_for_a_missing_luxury() {
+        let (mut game, cid) = emperor_housing_bound_capital("HOUSINGGRANARYLUX", 91_907);
+        game.players[0].techs.remove(&crate::name!("pottery"));
+        let center = game.cities[&cid].pos;
+        let site = game.cities[&cid]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|pos| *pos != center && !game.rules.is_water(&game.map.tiles[pos]))
+            .expect("an owned land tile");
+        let tile = game.map.tiles.get_mut(&site).unwrap();
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.hills = false;
+        tile.improvement = None;
+        tile.resource = Some(crate::name!("salt"));
+        assert!(
+            game.valid_improvements(0, site)
+                .contains(&crate::name!("mine")),
+            "fixture: the salt takes a Mine"
+        );
+        assert_eq!(game.resource_access_count(0, "salt"), 0);
+        std::sync::Arc::make_mut(&mut game.observed_city_amenity_adjustments).insert(cid, -4);
+        assert!(
+            game.city_amenity_surplus(&game.cities[&cid]) < 0,
+            "fixture: short"
+        );
+        let builder = Some(Item::Unit {
+            unit: crate::name!("builder"),
+        });
+        let ask = |game: &Game, gene: bool, builders: usize| {
+            emperor_lineage_governor(gene).pick_item(game, 0, cid, 3, 1, builders, 1, 0, 0, 0, 0)
+        };
+        assert_ne!(
+            ask(&game, false, 1),
+            builder,
+            "the stock pick is not a Builder"
+        );
+        assert_eq!(
+            ask(&game, true, 0),
+            builder,
+            "no Builder for the salt: train one"
+        );
+        assert_eq!(
+            ask(&game, true, 1),
+            ask(&game, false, 1),
+            "one Builder for one luxury"
+        );
+        let mut mined = game.clone();
+        mined.map.tiles.get_mut(&site).unwrap().improvement = Some(crate::name!("mine"));
+        assert!(
+            mined.resource_access_count(0, "salt") > 0,
+            "fixture: the salt is connected"
+        );
+        assert_eq!(
+            ask(&mined, true, 0),
+            ask(&mined, false, 0),
+            "the luxury is held"
+        );
+    }
+
+    /// See `settler_before_the_navy`: a coastal city due a Settler trains it
+    /// where the stock navy step would launch a ship.
+    #[test]
+    fn a_due_settler_comes_before_the_navy() {
+        let (mut game, cid) = founded_capital_fixture("SETTLERNAVY", 91_851);
+        game.cities.get_mut(&cid).unwrap().pop = 4;
+        game.players[0].gold = 500.0;
+        game.players[0].gold_per_turn = 5.0;
+        game.players[0].techs.insert(crate::name!("sailing"));
+        let shore = game.nbrs(game.cities[&cid].pos)[0];
+        let tile = game.map.tiles.get_mut(&shore).unwrap();
+        tile.terrain = crate::name!("coast");
+        tile.feature = None;
+        assert!(BasicAi::city_is_coastal(&game, cid));
+        assert!(
+            BasicAi::new().desired_navy(&game, 0) > 0,
+            "the fixture wants a ship"
+        );
+        let pick = |on: bool, settlers: usize| {
+            let mut ai = BasicAi::new();
+            ai.settler_before_the_navy = on;
+            // A standing army well over the floor, so the navy step is reached.
+            ai.pick_item(&game, 0, cid, 3, settlers, 3, 1, 0, 30, 15, 15)
+        };
+        let stock = pick(false, 0);
+        assert!(
+            BasicAi::new().settler_due(&game, 0, cid, 3, 0),
+            "the fixture is due a Settler"
+        );
+        let is_ship = |item: &Option<Item>| {
+            matches!(item, Some(Item::Unit { unit })
+            if game.rules.units.get(unit).is_some_and(|spec| spec.domain.as_deref() == Some("sea")))
+        };
+        assert!(
+            is_ship(&stock),
+            "the fixture's stock pick launches a ship: {stock:?}"
+        );
+        assert_eq!(
+            pick(true, 0),
+            Some(Item::Unit {
+                unit: crate::name!("settler")
+            }),
+            "the due Settler comes first"
+        );
+        assert_eq!(
+            pick(true, 1),
+            pick(false, 1),
+            "a Settler on the road leaves the navy step alone"
+        );
+    }
+
+    /// See `campus_before_the_army`: a city without a Campus opens one where
+    /// the stock governor fills the military floor, from three cities on.
+    #[test]
+    fn a_campus_comes_before_the_army() {
+        let (mut game, cid) = founded_capital_fixture("CAMPUSFIRST", 91_841);
+        game.cities.get_mut(&cid).unwrap().pop = 4;
+        for position in game.nbrs(game.cities[&cid].pos) {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+        }
+        game.players[0].gold = 500.0;
+        game.players[0].gold_per_turn = 5.0;
+        game.players[0].techs.insert(crate::name!("writing"));
+        assert!(
+            BasicAi::first_campus_item(&game, 0, cid).is_some(),
+            "the fixture can open a Campus"
+        );
+        let pick = |game: &Game, on: bool, n_cities: usize| {
+            let mut ai = BasicAi::new();
+            ai.campus_before_the_army = on;
+            ai.pick_item(game, 0, cid, n_cities, 0, 3, 1, 0, 0, 0, 0)
+        };
+        let is_campus = |item: &Option<Item>| matches!(item, Some(Item::District { district, .. }) if *district == "campus");
+        let stock = pick(&game, false, 3);
+        assert!(
+            !is_campus(&stock),
+            "the fixture's stock pick is not the Campus: {stock:?}"
+        );
+        assert!(
+            is_campus(&pick(&game, true, 3)),
+            "{:?}",
+            pick(&game, true, 3)
+        );
+        assert_eq!(
+            pick(&game, true, 2),
+            pick(&game, false, 2),
+            "two cities keep the stock choice"
+        );
+        let second = |game: &Game, settlers: usize| {
+            let mut ai = BasicAi::new();
+            ai.campus_before_the_army_2 = true;
+            ai.pick_item(game, 0, cid, 3, settlers, 3, 1, 0, 0, 0, 0)
+        };
+        let stock_ai = BasicAi::new();
+        assert!(
+            !stock_ai.settler_due(&game, 0, cid, 3, 1),
+            "a Settler on the road fills the pipeline"
+        );
+        assert!(
+            is_campus(&second(&game, 1)),
+            "version 2 takes the floor's build"
+        );
+        assert!(
+            stock_ai.settler_due(&game, 0, cid, 3, 0),
+            "the fixture is due a Settler"
+        );
+        assert!(
+            !is_campus(&second(&game, 0)),
+            "version 2 yields to a due Settler"
+        );
+        // With the Campus standing, the Library comes next.
+        let site = match BasicAi::first_campus_item(&game, 0, cid) {
+            Some(Item::District { pos, .. }) => pos,
+            other => panic!("{other:?}"),
+        };
+        game.map.tiles.get_mut(&site).unwrap().district = Some(crate::name!("campus"));
+        game.cities
+            .get_mut(&cid)
+            .unwrap()
+            .districts
+            .insert(crate::name!("campus"), site);
+        let library = pick(&game, true, 3);
+        assert!(
+            matches!(&library, Some(Item::Building { building }) if *building == "library"),
+            "{library:?}"
+        );
+        // Version 3 goes on to the University once the Library stands.
+        game.cities
+            .get_mut(&cid)
+            .unwrap()
+            .buildings
+            .push(crate::name!("library"));
+        game.players[0].techs.insert(crate::name!("education"));
+        let third = |game: &Game, on: bool| {
+            let mut ai = BasicAi::new();
+            ai.campus_before_the_army_2 = !on;
+            ai.campus_before_the_army_3 = on;
+            ai.pick_item(game, 0, cid, 3, 1, 3, 1, 0, 0, 0, 0)
+        };
+        let university = third(&game, true);
+        assert!(
+            matches!(&university, Some(Item::Building { building }) if *building == "university"),
+            "{university:?}"
+        );
+        assert_ne!(
+            third(&game, false),
+            university,
+            "version 2 stops at the Library"
+        );
+    }
+
+    /// See `industry_before_the_army`: a city holding its Campus opens an
+    /// Industrial Zone where the stock governor fills the military floor,
+    /// then its Workshop, then its Factory; two cities, a due Settler, or a
+    /// third of the empire already on the chain keep the stock choice.
+    #[test]
+    fn a_campus_city_builds_its_industry_before_the_army() {
+        let (mut game, cid) = campus_city_fixture();
+        game.players[0].gold = 500.0;
+        game.players[0].gold_per_turn = 5.0;
+        game.players[0].techs.insert(crate::name!("apprenticeship"));
+        // Mines on the second ring give every first-ring site adjacency.
+        let center = game.cities[&cid].pos;
+        let owned: Vec<Pos> = game.cities[&cid].owned_tiles.to_vec();
+        for position in owned {
+            if game.wdist(center, position) == 2 && game.map.tiles[&position].district.is_none() {
+                let tile = game.map.tiles.get_mut(&position).unwrap();
+                tile.terrain = crate::name!("plains");
+                tile.hills = true;
+                tile.feature = None;
+                tile.resource = None;
+                tile.improvement = Some(crate::name!("mine"));
+            }
+        }
+        let pick = |game: &Game, on: bool, n_cities: usize, settlers: usize| {
+            let mut ai = BasicAi::new();
+            ai.industry_before_the_army = on;
+            ai.pick_item(game, 0, cid, n_cities, settlers, 3, 1, 0, 0, 0, 0)
+        };
+        let is_zone = |item: &Option<Item>| matches!(item, Some(Item::District { district, .. }) if *district == "industrial_zone");
+        let stock = pick(&game, false, 3, 1);
+        assert!(
+            !is_zone(&stock),
+            "the fixture's stock pick is not the zone: {stock:?}"
+        );
+        let zone = pick(&game, true, 3, 1);
+        assert!(is_zone(&zone), "the zone comes first: {zone:?}");
+        assert_eq!(
+            pick(&game, true, 2, 1),
+            pick(&game, false, 2, 1),
+            "two cities keep the stock choice"
+        );
+        assert!(
+            BasicAi::new().settler_due(&game, 0, cid, 3, 0),
+            "the fixture is due a Settler"
+        );
+        assert!(
+            !is_zone(&pick(&game, true, 3, 0)),
+            "a due Settler comes first"
+        );
+        // One city in three already on the chain leaves this one to stock.
+        let mut busy = game.clone();
+        busy.cities
+            .get_mut(&cid)
+            .unwrap()
+            .queue
+            .insert(0, zone.clone().unwrap());
+        assert!(BasicAi::industry_before_the_army_item(&busy, 0, cid, 3, false).is_none());
+        // With the zone standing, its Workshop, then its Factory.
+        let site = match zone {
+            Some(Item::District { pos, .. }) => pos,
+            other => panic!("{other:?}"),
+        };
+        game.map.tiles.get_mut(&site).unwrap().district = Some(crate::name!("industrial_zone"));
+        game.cities
+            .get_mut(&cid)
+            .unwrap()
+            .districts
+            .insert(crate::name!("industrial_zone"), site);
+        let workshop = pick(&game, true, 3, 1);
+        assert!(
+            matches!(&workshop, Some(Item::Building { building }) if *building == "workshop"),
+            "{workshop:?}"
+        );
+        game.cities
+            .get_mut(&cid)
+            .unwrap()
+            .buildings
+            .push(crate::name!("workshop"));
+        game.players[0]
+            .techs
+            .insert(crate::name!("industrialization"));
+        let factory = pick(&game, true, 3, 1);
+        assert!(
+            matches!(&factory, Some(Item::Building { building }) if *building == "factory"),
+            "{factory:?}"
+        );
+    }
+
+    /// See `prophet_race_takes_a_district_slot`: while the race is open, the
+    /// campus-first step's Campus becomes the empire's first Holy Site, and
+    /// only the first.
+    #[test]
+    fn an_open_prophet_race_takes_a_district_slot() {
+        let (mut game, cid) = founded_capital_fixture("RACESLOT", 91_843);
+        game.cities.get_mut(&cid).unwrap().pop = 4;
+        for position in game.nbrs(game.cities[&cid].pos) {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+        }
+        game.players[0].gold = 500.0;
+        game.players[0].gold_per_turn = 5.0;
+        game.players[0].techs.insert(crate::name!("writing"));
+        game.players[0].techs.insert(crate::name!("astrology"));
+        assert!(
+            BasicAi::first_campus_item(&game, 0, cid).is_some(),
+            "the fixture can open a Campus"
+        );
+        let pick = |game: &Game, gene: bool, open: bool| {
+            let mut ai = BasicAi::new();
+            ai.campus_before_the_army = true;
+            ai.enter_prophet_race = open;
+            ai.prophet_race_takes_a_district_slot = gene;
+            ai.pick_item(game, 0, cid, 3, 0, 3, 1, 0, 0, 0, 0)
+        };
+        let family = |item: &Option<Item>| match item {
+            Some(Item::District { district, .. }) => district.as_str().to_string(),
+            other => format!("{other:?}"),
+        };
+        assert_eq!(
+            family(&pick(&game, false, true)),
+            "campus",
+            "off, the Campus keeps its slot"
+        );
+        assert_eq!(
+            family(&pick(&game, true, false)),
+            "campus",
+            "a closed race keeps the Campus"
+        );
+        assert_eq!(
+            family(&pick(&game, true, true)),
+            "holy_site",
+            "{:?}",
+            pick(&game, true, true)
+        );
+        // One Holy Site reserves the race: a second city keeps its Campus.
+        let site = match pick(&game, true, true) {
+            Some(Item::District { pos, .. }) => pos,
+            other => panic!("{other:?}"),
+        };
+        game.map.tiles.get_mut(&site).unwrap().district = Some(crate::name!("holy_site"));
+        game.cities
+            .get_mut(&cid)
+            .unwrap()
+            .districts
+            .insert(crate::name!("holy_site"), site);
+        assert_eq!(
+            family(&pick(&game, true, true)),
+            "campus",
+            "one Holy Site is enough"
+        );
+    }
+
+    /// See `prophet_race_takes_a_district_slot_2`: the race's Holy Site goes
+    /// to the city that builds it soonest, ahead of its own campus step, and
+    /// a slower city keeps its Campus. Live King civvis-20261005T035848Z
+    /// (game 97) opened the site in a 3.6-production city.
+    #[test]
+    fn the_prophet_race_site_goes_to_the_fastest_city() {
+        let (mut game, capital) = founded_capital_fixture("RACESITE2", 91_844);
+        game.cities.get_mut(&capital).unwrap().pop = 4;
+        let (x, y) = game.cities[&capital].pos;
+        let second = game.found_city_for(0, (x + 7, y), None);
+        game.cities.get_mut(&second).unwrap().pop = 4;
+        std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+            second,
+            crate::rules::Yields {
+                production: 4.0,
+                ..Default::default()
+            },
+        );
+        for city in [capital, second] {
+            for position in game.nbrs(game.cities[&city].pos) {
+                let tile = game.map.tiles.get_mut(&position).unwrap();
+                tile.terrain = crate::name!("plains");
+                tile.feature = None;
+            }
+        }
+        game.players[0].gold = 500.0;
+        game.players[0].gold_per_turn = 5.0;
+        game.players[0].techs.insert(crate::name!("writing"));
+        game.players[0].techs.insert(crate::name!("astrology"));
+        assert!(
+            game.city_yields(capital).production > game.city_yields(second).production,
+            "fixture: the capital is the faster city"
+        );
+        let pick = |game: &Game, cid: u32, v1: bool, v2: bool| {
+            let mut ai = BasicAi::new();
+            ai.campus_before_the_army = true;
+            ai.enter_prophet_race = true;
+            ai.prophet_race_takes_a_district_slot = v1;
+            ai.prophet_race_takes_a_district_slot_2 = v2;
+            ai.pick_item(game, 0, cid, 2, 0, 3, 1, 0, 0, 0, 0)
+        };
+        let family = |item: &Option<Item>| match item {
+            Some(Item::District { district, .. }) => district.as_str().to_string(),
+            other => format!("{other:?}"),
+        };
+        assert_eq!(
+            family(&pick(&game, capital, false, true)),
+            "holy_site",
+            "the faster city opens the site"
+        );
+        assert_ne!(
+            family(&pick(&game, second, false, true)),
+            "holy_site",
+            "the slower city keeps its own pick"
+        );
+        // Closed race: nothing changes.
+        let mut ai = BasicAi::new();
+        ai.prophet_race_takes_a_district_slot_2 = true;
+        assert!(
+            ai.race_site_city(&game, 0).is_none(),
+            "a closed race names no city"
+        );
+        ai.enter_prophet_race = true;
+        assert_eq!(
+            ai.race_site_city(&game, 0).map(|(city, _)| city),
+            Some(capital)
+        );
+    }
+
+    /// See `builder_before_the_army`: an empire with no Builder trains one
+    /// where the stock governor fills the military floor, and keeps the
+    /// stock choice once its quota is met or while it holds one city.
+    #[test]
+    fn a_builderless_empire_trains_a_builder_before_the_army() {
+        let (mut game, cid) = founded_capital_fixture("BUILDERFIRST", 91_831);
+        game.cities.get_mut(&cid).unwrap().pop = 3;
+        game.players[0].gold = 500.0;
+        game.players[0].gold_per_turn = 5.0;
+        assert!(
+            BasicAi::has_builder_work(&game, 0),
+            "the fixture has land to improve"
+        );
+        let pick = |on: bool, n_cities: usize, builders: usize| {
+            let mut ai = BasicAi::new();
+            ai.builder_before_the_army = on;
+            ai.pick_item(&game, 0, cid, n_cities, 0, builders, 1, 0, 0, 0, 0)
+        };
+        let is_builder =
+            |item: &Option<Item>| matches!(item, Some(Item::Unit { unit }) if *unit == "builder");
+        let stock = pick(false, 3, 0);
+        assert!(
+            matches!(stock, Some(Item::Unit { .. })) && !is_builder(&stock),
+            "the fixture's stock pick fills the military floor: {stock:?}"
+        );
+        assert!(is_builder(&pick(true, 3, 0)), "{:?}", pick(true, 3, 0));
+        assert_eq!(
+            pick(true, 3, 2),
+            pick(false, 3, 2),
+            "the quota of two is met"
+        );
+        assert_eq!(
+            pick(true, 1, 0),
+            pick(false, 1, 0),
+            "one city keeps the stock choice"
+        );
+        let second = |builders: usize| {
+            let mut ai = BasicAi::new();
+            ai.builder_before_the_army_2 = true;
+            ai.pick_item(&game, 0, cid, 3, 0, builders, 1, 0, 0, 0, 0)
+        };
+        assert!(is_builder(&second(0)), "version 2 answers the drought");
+        assert_eq!(
+            second(1),
+            pick(false, 3, 1),
+            "version 2 leaves one Builder to stock"
+        );
+    }
+
+    /// See `industrial_hub`: of three cities in one Factory's reach, the
+    /// most productive opens the zone and the others keep the stock choice;
+    /// the hub then takes its Workshop, Factory and a fuelled power plant,
+    /// and the Factory waits while the empire's Gold runs negative.
+    #[test]
+    fn the_industrial_hub_opens_where_its_factory_reaches_most() {
+        let (mut game, capital) = founded_capital_fixture("INDUSTRIALHUB", 91_833);
+        let center = game.cities[&capital].pos;
+        let mut others = Vec::new();
+        for pos in game.map.tiles.keys().copied().collect::<Vec<_>>() {
+            if others.len() == 2 {
+                break;
+            }
+            let tile = &game.map.tiles[&pos];
+            let land = !game.rules.terrains[&tile.terrain].water && tile.terrain != "mountain";
+            let spaced = game.wdist(center, pos) == 4
+                && others.iter().all(|other| game.wdist(*other, pos) >= 4);
+            if land && spaced && tile.owner_city.is_none() {
+                others.push(pos);
+            }
+        }
+        assert_eq!(others.len(), 2, "the fixture places two more cities");
+        let others: Vec<u32> = others
+            .into_iter()
+            .map(|pos| game.found_city_for(0, pos, None))
+            .collect();
+        game.players[0].gold = 500.0;
+        game.players[0].gold_per_turn = 5.0;
+        game.players[0].techs.insert(crate::name!("apprenticeship"));
+        game.cities.get_mut(&capital).unwrap().pop = 7;
+        let zone = BasicAi::industrial_hub_item(&game, 0, capital);
+        let site = match zone {
+            Some(Item::District { district, pos }) if district == "industrial_zone" => pos,
+            other => panic!("the capital opens the hub's zone: {other:?}"),
+        };
+        for city in &others {
+            assert_eq!(
+                BasicAi::industrial_hub_item(&game, 0, *city),
+                None,
+                "one hub"
+            );
+        }
+        game.map.tiles.get_mut(&site).unwrap().district = Some(crate::name!("industrial_zone"));
+        game.cities
+            .get_mut(&capital)
+            .unwrap()
+            .districts
+            .insert(crate::name!("industrial_zone"), site);
+        let next = |game: &Game| BasicAi::industrial_hub_item(game, 0, capital);
+        assert_eq!(
+            next(&game),
+            Some(Item::Building {
+                building: crate::name!("workshop")
+            })
+        );
+        game.cities
+            .get_mut(&capital)
+            .unwrap()
+            .buildings
+            .push(crate::name!("workshop"));
+        game.players[0]
+            .techs
+            .insert(crate::name!("industrialization"));
+        assert_eq!(
+            next(&game),
+            Some(Item::Building {
+                building: crate::name!("factory")
+            })
+        );
+        game.players[0].gold_per_turn = -3.0;
+        assert_eq!(next(&game), None, "the Factory waits on a negative budget");
+        game.players[0].gold_per_turn = 5.0;
+        game.cities
+            .get_mut(&capital)
+            .unwrap()
+            .buildings
+            .push(crate::name!("factory"));
+        assert_eq!(next(&game), None, "no fuel, no plant");
+        game.players[0]
+            .strategic_resources
+            .insert(crate::name!("coal"), 20.0);
+        assert_eq!(
+            next(&game),
+            Some(Item::Building {
+                building: crate::name!("coal_power_plant")
+            })
+        );
+    }
+
+    /// See `builder_before_the_army_3`: past version 2's first Builder, an
+    /// empire working unimproved hills trains another where the stock
+    /// governor fills the military floor, and a due Settler comes first.
+    #[test]
+    fn unimproved_worked_hills_call_another_builder_before_the_army() {
+        let (mut game, cid) = founded_capital_fixture("BUILDERBACKLOG", 91_832);
+        game.cities.get_mut(&cid).unwrap().pop = 6;
+        game.players[0].gold = 500.0;
+        game.players[0].gold_per_turn = 5.0;
+        game.players[0].techs.insert(crate::name!("mining"));
+        let center = game.cities[&cid].pos;
+        let owned: Vec<Pos> = game.cities[&cid].owned_tiles.to_vec();
+        for position in owned {
+            if position != center && game.map.tiles[&position].district.is_none() {
+                let tile = game.map.tiles.get_mut(&position).unwrap();
+                tile.terrain = crate::name!("grassland");
+                tile.hills = true;
+                tile.feature = None;
+                tile.resource = None;
+                tile.improvement = None;
+            }
+        }
+        assert!(
+            BasicAi::unimproved_worked_tiles(&game, 0) >= 4,
+            "the fixture works unimproved hills: {}",
+            BasicAi::unimproved_worked_tiles(&game, 0)
+        );
+        let pick = |version: u8, settlers: usize, builders: usize| {
+            let mut ai = BasicAi::new();
+            ai.builder_before_the_army_2 = version == 2;
+            ai.builder_before_the_army_3 = version == 3;
+            ai.pick_item(&game, 0, cid, 3, settlers, builders, 1, 0, 0, 0, 0)
+        };
+        let is_builder =
+            |item: &Option<Item>| matches!(item, Some(Item::Unit { unit }) if *unit == "builder");
+        assert!(
+            !is_builder(&pick(2, 1, 1)),
+            "version 2 leaves a second Builder to stock"
+        );
+        assert!(is_builder(&pick(3, 1, 1)), "{:?}", pick(3, 1, 1));
+        assert!(is_builder(&pick(3, 1, 0)), "the first Builder as version 2");
+        assert_eq!(
+            pick(3, 1, 2),
+            pick(2, 1, 2),
+            "the one-per-two-cities cap is met"
+        );
+        assert!(
+            BasicAi::new().settler_due(&game, 0, cid, 3, 0),
+            "the fixture is due a Settler"
+        );
+        assert!(!is_builder(&pick(3, 0, 1)), "a due Settler comes first");
+    }
+
+    /// See `builders_cover_the_worked_backlog`: past `builder-before-the-army-3`'s
+    /// one-per-two-cities cap, an empire whose Builder charges cover too little
+    /// of its unimproved worked hills trains another; charges in hand that
+    /// cover the backlog, one Builder per city, a due Settler and a city just
+    /// attacked keep the stock pick.
+    #[test]
+    fn builders_cover_the_worked_backlog_under_the_gene() {
+        let (mut game, cid) = founded_capital_fixture("BUILDERCOVER", 91_841);
+        game.cities.get_mut(&cid).unwrap().pop = 6;
+        game.players[0].gold = 500.0;
+        game.players[0].gold_per_turn = 5.0;
+        game.players[0].techs.insert(crate::name!("mining"));
+        let center = game.cities[&cid].pos;
+        let owned: Vec<Pos> = game.cities[&cid].owned_tiles.to_vec();
+        for position in owned {
+            if position != center && game.map.tiles[&position].district.is_none() {
+                let tile = game.map.tiles.get_mut(&position).unwrap();
+                tile.terrain = crate::name!("grassland");
+                tile.hills = true;
+                tile.feature = None;
+                tile.resource = None;
+                tile.improvement = None;
+            }
+        }
+        let backlog = BasicAi::unimproved_worked_tiles(&game, 0);
+        assert!(
+            backlog >= BasicAi::WORKED_BACKLOG_MIN_TILES,
+            "fixture backlog {backlog}"
+        );
+        assert_eq!(
+            BasicAi::builder_charge_cover(&game, 0),
+            0,
+            "fixture: no Builder charges"
+        );
+        let pick = |game: &Game, gene: bool, settlers: usize, builders: usize| {
+            let mut ai = BasicAi::new();
+            ai.builder_before_the_army_3 = true;
+            ai.builders_cover_the_worked_backlog = gene;
+            ai.pick_item(game, 0, cid, 3, settlers, builders, 1, 0, 0, 0, 0)
+        };
+        let is_builder =
+            |item: &Option<Item>| matches!(item, Some(Item::Unit { unit }) if *unit == "builder");
+        assert!(
+            !is_builder(&pick(&game, false, 1, 2)),
+            "version 3's one-per-two-cities cap is met: {:?}",
+            pick(&game, false, 1, 2)
+        );
+        assert!(
+            is_builder(&pick(&game, true, 1, 2)),
+            "{:?}",
+            pick(&game, true, 1, 2)
+        );
+        assert_eq!(
+            pick(&game, true, 1, 3),
+            pick(&game, false, 1, 3),
+            "one Builder per city"
+        );
+        assert!(
+            BasicAi::new().settler_due(&game, 0, cid, 3, 0),
+            "the fixture is due a Settler"
+        );
+        assert_eq!(
+            pick(&game, true, 0, 2),
+            pick(&game, false, 0, 2),
+            "a due Settler keeps the stock pick"
+        );
+        let mut attacked = game.clone();
+        attacked.cities.get_mut(&cid).unwrap().last_attacked = attacked.turn.max(1);
+        assert_eq!(
+            pick(&attacked, true, 1, 2),
+            pick(&attacked, false, 1, 2),
+            "a city just attacked keeps the stock pick"
+        );
+        // Charges in hand that cover the backlog: no further Builder.
+        let mut covered = game.clone();
+        let uid = covered.spawn_unit("builder", 0, center);
+        covered.units.get_mut(&uid).unwrap().charges = backlog as i32;
+        assert!(BasicAi::builder_charge_cover(&covered, 0) >= backlog as i32);
+        assert_eq!(
+            pick(&covered, true, 1, 2),
+            pick(&covered, false, 1, 2),
+            "charges in hand cover the backlog"
+        );
+        // A Builder already queued counts its charges.
+        let mut queued = game.clone();
+        queued.cities.get_mut(&cid).unwrap().queue.insert(
+            0,
+            Item::Unit {
+                unit: crate::name!("builder"),
+            },
+        );
+        assert_eq!(
+            BasicAi::builder_charge_cover(&queued, 0),
+            queued.builder_charges(0),
+            "a queued Builder counts the charges it will carry"
+        );
+    }
+
+    /// See `monument_first`: a city without a Monument builds it where the
+    /// stock governor fills the military floor, and a capital that has not
+    /// yet sent out two Settlers keeps the stock choice.
+    #[test]
+    fn the_monument_comes_before_the_military_floor() {
+        let (mut game, cid) = founded_capital_fixture("MONUMENTFIRST", 91_811);
+        let city = game.cities.get_mut(&cid).unwrap();
+        city.pop = 3;
+        // The fixture's start grants a Monument; this city has none.
+        city.buildings.retain(|building| building != "monument");
+        // A treasury, so the economic-recovery branch ahead of both steps
+        // stays shut.
+        game.players[0].gold = 500.0;
+        game.players[0].gold_per_turn = 5.0;
+        let pick = |game: &Game, first: bool, n_cities: usize, settlers: usize| {
+            let mut ai = BasicAi::new();
+            ai.monument_first = first;
+            ai.pick_item(game, 0, cid, n_cities, settlers, 3, 1, 0, 0, 0, 0)
+        };
+        let is_monument = |item: &Option<Item>| matches!(item, Some(Item::Building { building }) if *building == "monument");
+        assert!(
+            BasicAi::civ_building(&game, 0, cid, "monument").is_some(),
+            "the fixture can build a Monument"
+        );
+        let ai = BasicAi::new();
+        assert_eq!(
+            ai.barbarian_defense_item(&game, 0, cid),
+            None,
+            "no barbarian alarm"
+        );
+        assert_eq!(ai.besieged_city_item(&game, 0, cid), None, "no siege");
+        let stock = pick(&game, false, 3, 0);
+        assert!(
+            matches!(stock, Some(Item::Unit { .. })),
+            "the fixture's stock pick fills the military floor: {stock:?}"
+        );
+        let first = pick(&game, true, 3, 0);
+        assert!(is_monument(&first), "the Monument comes first: {first:?}");
+        assert_eq!(
+            pick(&game, true, 2, 0),
+            pick(&game, false, 2, 0),
+            "a capital that has sent one Settler keeps the stock choice"
+        );
+        assert!(
+            is_monument(&pick(&game, true, 2, 1)),
+            "a Settler on the road counts as sent"
+        );
+        game.cities
+            .get_mut(&cid)
+            .unwrap()
+            .buildings
+            .push(crate::name!("monument"));
+        assert_eq!(
+            pick(&game, true, 3, 0),
+            stock,
+            "a city holding a Monument is not asked again"
+        );
+    }
+
+    /// A capital holding a Monument and a Campus, with the Writing, Currency
+    /// and Astrology it needs for a Library and two more districts.
+    fn campus_city_fixture() -> (Game, u32) {
+        let (mut game, cid) = founded_capital_fixture("DISTRICTBUILDINGS", 91_812);
+        let site = game.cities[&cid]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|position| *position != game.cities[&cid].pos)
+            .unwrap();
+        game.map.tiles.get_mut(&site).unwrap().district = Some(crate::name!("campus"));
+        let city = game.cities.get_mut(&cid).unwrap();
+        city.pop = 7;
+        city.districts.insert(crate::name!("campus"), site);
+        if !city.buildings.contains(&crate::name!("monument")) {
+            city.buildings.push(crate::name!("monument"));
+        }
+        for tech in ["writing", "currency", "astrology", "pottery"] {
+            game.players[0].techs.insert(Name::new(tech));
+        }
+        (game, cid)
+    }
+
+    /// See `district_buildings_first`: the stock governor opens another
+    /// district beside a Campus that has no Library; the gene builds the
+    /// Library first.
+    #[test]
+    fn a_standing_campus_takes_its_library_before_another_district() {
+        let (game, cid) = campus_city_fixture();
+        let pick = |first: bool| {
+            let mut ai = BasicAi::new();
+            ai.district_buildings_first = first;
+            ai.pick_item(&game, 0, cid, 12, 0, 6, 1, 0, 12, 6, 6)
+        };
+        let stock = pick(false);
+        assert!(
+            matches!(stock, Some(Item::District { .. })),
+            "the fixture's stock pick opens another district: {stock:?}"
+        );
+        assert_eq!(
+            pick(true),
+            Some(Item::Building {
+                building: crate::name!("library")
+            }),
+            "the Campus takes its Library first"
+        );
+    }
+
+    /// See `culture_defense_theater`: while a rival out-makes the empire's
+    /// Culture, the city opens a Theater Square the stock governor does not;
+    /// with no rival Culture to trail, the stock choice stands.
+    #[test]
+    fn a_trailing_empire_opens_a_theater_square() {
+        let mut game = Game::new_full(
+            2,
+            24,
+            16,
+            crate::rng::fixture_seed("CULTUREDEFENSE", 91_813),
+            250,
+            0,
+            false,
+        );
+        let settler = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
+        let cid = game.player_city_ids(0)[0];
+        // The rival is only a Culture figure here; its starting units on a
+        // small map would otherwise raise the local-defense steps.
+        for unit in game.player_unit_ids(1) {
+            game.remove_unit(unit);
+        }
+        std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+            cid,
+            crate::rules::Yields {
+                production: 10.0,
+                ..Default::default()
+            },
+        );
+        game.players[0].gold = 500.0;
+        game.players[0].gold_per_turn = 5.0;
+        game.players[0].civics.insert(crate::name!("drama_poetry"));
+        for tech in ["writing", "currency"] {
+            game.players[0].techs.insert(Name::new(tech));
+        }
+        for position in game.nbrs(game.cities[&cid].pos) {
+            let tile = game.map.tiles.get_mut(&position).unwrap();
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+        }
+        let city = game.cities.get_mut(&cid).unwrap();
+        city.pop = 7;
+        if !city.buildings.contains(&crate::name!("monument")) {
+            city.buildings.push(crate::name!("monument"));
+        }
+        let pick = |game: &Game, on: bool| {
+            let mut ai = BasicAi::new();
+            ai.culture_defense_theater = on;
+            ai.pick_item(game, 0, cid, 12, 0, 6, 1, 0, 12, 6, 6)
+        };
+        let is_theater = |item: &Option<Item>, game: &Game| {
+            matches!(item, Some(Item::District { district, .. })
+                if game.district_family(*district) == "theater_square")
+        };
+        assert_eq!(
+            pick(&game, true),
+            pick(&game, false),
+            "no rival Culture, no answer"
+        );
+        std::sync::Arc::make_mut(&mut game.observed_yield_adjustments).insert(
+            1,
+            crate::rules::Yields {
+                culture: 100.0,
+                ..Default::default()
+            },
+        );
+        assert!(BasicAi::culture_trails_the_field(&game, 0));
+        let stock = pick(&game, false);
+        assert!(
+            !is_theater(&stock, &game),
+            "the stock pick is not a Theater: {stock:?}"
+        );
+        let theater = BasicAi::civ_district(&game, 0, "theater_square");
+        let sites = game.district_sites(cid, theater);
+        let producible: Vec<bool> = sites
+            .iter()
+            .map(|pos| {
+                game.can_produce(
+                    0,
+                    cid,
+                    &Item::District {
+                        district: theater,
+                        pos: *pos,
+                    },
+                )
+            })
+            .collect();
+        assert!(
+            BasicAi::culture_defense_theater_item(&game, 0, cid, 12).is_some(),
+            "the city has a Theater site: {theater} sites {sites:?} producible {producible:?}"
+        );
+        let answer = pick(&game, true);
+        assert!(
+            is_theater(&answer, &game),
+            "a trailing empire opens one: {answer:?}"
+        );
+    }
+
+    /// See `capital_library_first`: a three-city capital holding a Campus
+    /// takes its Library where the stock governor trains the next Settler.
+    #[test]
+    fn the_capital_takes_its_library_before_the_next_settler() {
+        let (mut game, cid) = campus_city_fixture();
+        game.players[0].gold = 500.0;
+        game.players[0].gold_per_turn = 5.0;
+        let pick = |game: &Game, on: bool, n_cities: usize| {
+            let mut ai = BasicAi::new();
+            ai.capital_library_first = on;
+            ai.pick_item(game, 0, cid, n_cities, 0, 3, 1, 0, 6, 3, 3)
+        };
+        let library = Some(Item::Building {
+            building: crate::name!("library"),
+        });
+        let stock = pick(&game, false, 3);
+        assert_ne!(
+            stock, library,
+            "the fixture's stock pick is not the Library"
+        );
+        assert_eq!(
+            pick(&game, true, 3),
+            library,
+            "the Library rides with its Campus"
+        );
+        assert_eq!(
+            pick(&game, true, 2),
+            pick(&game, false, 2),
+            "two cities keep the stock choice"
+        );
+    }
+
+    /// See `district_buildings_first`: only a district's first building is
+    /// raised. A Campus holding its Library does not pull the University
+    /// ahead of a new district.
+    #[test]
+    fn a_district_buildings_first_city_does_not_raise_the_second_tier() {
+        let (mut game, cid) = campus_city_fixture();
+        game.players[0].techs.insert(crate::name!("education"));
+        game.cities
+            .get_mut(&cid)
+            .unwrap()
+            .buildings
+            .push(crate::name!("library"));
+        assert_eq!(BasicAi::district_building_item(&game, 0, cid), None);
+        let pick = |first: bool| {
+            let mut ai = BasicAi::new();
+            ai.district_buildings_first = first;
+            ai.pick_item(&game, 0, cid, 12, 0, 6, 1, 0, 12, 6, 6)
+        };
+        assert_eq!(pick(true), pick(false));
+    }
+
+    /// A Scout the host bounces between two tiles toward the same goal is as
+    /// stuck as one it never moves: live King 2026-09-30T225143Z paced its
+    /// Scout between two tiles for fifteen turns.
+    #[test]
+    fn a_scout_the_host_bounces_between_two_tiles_gives_up_its_exploration_target() {
+        let mut game = Game::new_full(
+            1,
+            24,
+            16,
+            crate::rng::fixture_seed("DEADGOAL", 91_779),
+            250,
+            0,
+            false,
+        );
+        let first = game
+            .player_unit_ids(0)
+            .into_iter()
+            .find(|unit| game.units[unit].kind == "settler")
+            .unwrap();
+        game.apply(0, &Action::FoundCity { unit: first }).unwrap();
+        let home = game.cities[&game.player_city_ids(0)[0]].pos;
+        let scout = game.spawn_unit("scout", 0, home);
+        game.turn = 10;
+
+        let mut ai = BasicAi::new();
+        ai.enable_explore_commit();
+        ai.enable_explore_dead_targets();
+        let goal = ai
+            .exploration_goal(&game, 0, scout, false)
+            .expect("a fresh map has unexplored ground to aim at");
+        let away = game
+            .nbrs(home)
+            .into_iter()
+            .filter(|pos| game.map.tiles.contains_key(pos) && game.unit_can_traverse(scout, *pos))
+            .max_by_key(|pos| game.wdist(*pos, goal))
+            .expect("a passable neighbour");
+        // The host moves the unit, but only ever back and forth.
+        let mut retired_on = None;
+        for (step, tile) in [home, away, home, away, home, away].into_iter().enumerate() {
+            game.relocate(scout, tile);
+            game.units.get_mut(&scout).unwrap().moves_left = 0.0;
+            game.turn = 10 + step as u32;
+            let _ = ai.explore_step(&mut game, 0, scout);
+            if ai
+                .explore_dead
+                .borrow()
+                .get(&scout)
+                .is_some_and(|dead| dead.contains_key(&goal))
+            {
+                retired_on = Some(step);
+                break;
+            }
+        }
+        assert_eq!(
+            retired_on,
+            Some(EXPLORE_NO_PROGRESS_TURNS as usize),
+            "turns without coming closer retire the goal"
+        );
+        let dead = ai.explore_dead.borrow();
+        let retired = dead.get(&scout).expect("the goal is written off");
+        assert!(
+            game.wdisk(goal, EXPLORE_NO_PROGRESS_RING)
+                .iter()
+                .all(|pos| retired.contains_key(pos)),
+            "with the wider ring, so the next goal is not behind the same obstacle"
+        );
     }
 
     /// ★★★★ See `explore_commit`: a goal is held across turns until it is
@@ -23381,6 +28514,77 @@ mod tests {
     /// not threat recognition: the opening book simply skipped the alarm and
     /// left a nearly-finished Settler in place while civilians waited out the
     /// Scout. A first defender must take that queue.
+    /// On a live board the opening's defense displaces a queued Settler at
+    /// most `OPENING_DEFENSE_SETTLER_PREEMPTS` times; then the Settler keeps
+    /// the queue. A native board keeps yielding.
+    #[test]
+    fn a_live_opening_keeps_its_settler_after_the_defense_cap() {
+        let settler = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        for (live, preempts, yields) in [(true, 0, true), (true, 2, false), (false, 2, true)] {
+            let (mut g, city, scout) = barbarian_at_the_gates_game(91_503);
+            for uid in g.player_unit_ids(0) {
+                g.remove_unit(uid);
+            }
+            g.units.get_mut(&scout).unwrap().kind = crate::name!("scout");
+            g.cities.get_mut(&city).unwrap().pop = 2;
+            if live {
+                let pos = g.cities[&city].pos;
+                std::sync::Arc::make_mut(&mut g.host_observed).insert(pos);
+            }
+            g.apply(
+                0,
+                &Action::Produce {
+                    city,
+                    item: settler.clone(),
+                },
+            )
+            .unwrap();
+            let mut ai = BasicAi::new();
+            ai.opening_defense_preempts = preempts;
+            ai.cities(&mut g, 0);
+            let kept = g.cities[&city].queue.first() == Some(&settler);
+            assert_eq!(!kept, yields, "live {live}, preempts {preempts}");
+            if live && yields {
+                assert_eq!(ai.opening_defense_preempts, preempts + 1);
+            }
+        }
+    }
+
+    /// `opening-defense-preempts-once`: with the gene a live opening keeps its
+    /// Settler after one displacement; without it the second still yields.
+    #[test]
+    fn a_live_opening_keeps_its_settler_after_one_preempt_with_the_gene() {
+        let settler = Item::Unit {
+            unit: crate::name!("settler"),
+        };
+        for (gene, preempts, yields) in [(true, 0, true), (true, 1, false), (false, 1, true)] {
+            let (mut g, city, scout) = barbarian_at_the_gates_game(91_503);
+            for uid in g.player_unit_ids(0) {
+                g.remove_unit(uid);
+            }
+            g.units.get_mut(&scout).unwrap().kind = crate::name!("scout");
+            g.cities.get_mut(&city).unwrap().pop = 2;
+            let pos = g.cities[&city].pos;
+            std::sync::Arc::make_mut(&mut g.host_observed).insert(pos);
+            g.apply(
+                0,
+                &Action::Produce {
+                    city,
+                    item: settler.clone(),
+                },
+            )
+            .unwrap();
+            let mut ai = BasicAi::new();
+            ai.opening_defense_preempts_once = gene;
+            ai.opening_defense_preempts = preempts;
+            ai.cities(&mut g, 0);
+            let kept = g.cities[&city].queue.first() == Some(&settler);
+            assert_eq!(!kept, yields, "gene {gene}, preempts {preempts}");
+        }
+    }
+
     #[test]
     fn opening_queue_yields_to_an_unmarked_live_barbarian_scout() {
         let (mut native, native_city, native_scout) = barbarian_at_the_gates_game(91_502);
@@ -26820,6 +32024,13 @@ mod tests {
             &first,
             Item::District { district, .. } if district == "spaceport"
         ));
+        let mut domination = BasicAi::new();
+        domination.exclude_space_race = true;
+        let conquest_choice = domination.pick_item(&game, 0, launch_city, 2, 2, 2, 2, 1, 10, 5, 5);
+        assert!(
+            !matches!(conquest_choice, Some(Item::District { ref district, .. }) if district == "spaceport"),
+            "the delegated domination governor must leave the launch site alone: {conquest_choice:?}"
+        );
         game.apply(
             0,
             &Action::Produce {
@@ -26834,6 +32045,32 @@ mod tests {
         assert!(
             !matches!(next, Some(Item::District { ref district, .. }) if district == "spaceport"),
             "a queued Spaceport must stop every other city reserving another one: {next:?}"
+        );
+
+        let launch_site = match game.cities[&launch_city].queue.first().unwrap() {
+            Item::District { pos, .. } => *pos,
+            other => panic!("expected the queued Spaceport, got {other:?}"),
+        };
+        game.cities.get_mut(&launch_city).unwrap().queue.clear();
+        game.cities
+            .get_mut(&launch_city)
+            .unwrap()
+            .districts
+            .insert(crate::name!("spaceport"), launch_site);
+        game.map.tiles.get_mut(&launch_site).unwrap().district = Some(crate::name!("spaceport"));
+        let launch = Item::Project {
+            project: crate::name!("launch_earth_satellite"),
+        };
+        assert!(game.can_produce(0, launch_city, &launch));
+        assert_eq!(
+            ai.pick_item(&game, 0, launch_city, 2, 2, 2, 2, 1, 10, 5, 5),
+            Some(launch),
+            "the ordinary governor would start the launch chain"
+        );
+        let conquest_choice = domination.pick_item(&game, 0, launch_city, 2, 2, 2, 2, 1, 10, 5, 5);
+        assert!(
+            !matches!(conquest_choice, Some(Item::Project { ref project }) if project == "launch_earth_satellite"),
+            "the domination governor must spend this queue outside the space race: {conquest_choice:?}"
         );
     }
 

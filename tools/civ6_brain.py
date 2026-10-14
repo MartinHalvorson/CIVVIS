@@ -963,6 +963,24 @@ def binary_provenance(binary: Path) -> tuple[str | None, str]:
     except OSError:
         resolved = binary.expanduser()
 
+    # A climb can snapshot its decider before the first turn. Its checkout may
+    # advance while Civ VI is parked or reloading, so HEAD beside
+    # the original executable no longer proves the copied image's revision.
+    manifest = resolved.with_name(resolved.name + ".provenance.json")
+    if manifest.exists():
+        try:
+            frozen = json.loads(manifest.read_text())
+            revision = frozen.get("revision")
+            if (frozen.get("schema") == 1
+                    and frozen.get("kind") == "frozen_attempt_decider"
+                    and frozen.get("sha256") == binary_sha256(resolved)
+                    and isinstance(revision, str)
+                    and GIT_SHA.fullmatch(revision)):
+                return revision, "attempt-snapshot"
+        except (OSError, ValueError, TypeError):
+            pass
+        return None, "attempt-snapshot-unverified"
+
     published = resolved.parent
     if (GIT_SHA.fullmatch(published.name)
             and published.parent.name == "published"):
@@ -1039,6 +1057,41 @@ def runtime_exec_command(runtime: LiveRuntime, argv: list[str]) -> list[str]:
     _replace_cli_option(arguments, "--bin", str(runtime.binary))
     _replace_cli_option(arguments, "--runtime-revision", runtime.revision)
     return [sys.executable, str(runtime.brain), *arguments]
+
+
+class OperatorHoldClock:
+    """This worker's deadline, standing still while the operator holds the game.
+
+    The CIVVIS page's Pause (`civ6_control.live_pause`) holds the live game for
+    as long as the operator likes, and the climb and the player already refund
+    their clocks for it. This worker's `--seconds` was the one clock still
+    running: a hold that outlasted it would leave the resumed game with nobody
+    to decide its next turn, and the player does not restart a worker that
+    exits. The mod's own `operator_paused` / `operator_pause_held` /
+    `operator_resumed` events in the journal say when the game stood still.
+    """
+
+    HOLDS = ("operator_paused", "operator_pause_held")
+
+    def __init__(self, deadline: float):
+        self.deadline = deadline
+        self.held_since: float | None = None
+
+    def note(self, kind: object, now: float) -> bool:
+        """Account for one journal event; True if it was about the hold."""
+        if kind in self.HOLDS:
+            if self.held_since is None:
+                self.held_since = now
+            return True
+        if kind == "operator_resumed":
+            if self.held_since is not None:
+                self.deadline += max(0.0, now - self.held_since)
+                self.held_since = None
+            return True
+        return False
+
+    def running(self, now: float) -> bool:
+        return self.held_since is not None or now < self.deadline
 
 
 def main() -> int:
@@ -1268,7 +1321,8 @@ def main() -> int:
     # (turn, frame) pairs already answered this session; frames are never
     # recovered across a restart — a frame's board is gone with the turn.
     served_frames: set[tuple[int, int]] = set()
-    while time.time() < deadline:
+    clock = OperatorHoldClock(deadline)
+    while clock.running(time.time()):
         if not events.exists():
             time.sleep(0.5)
             continue
@@ -1277,6 +1331,8 @@ def main() -> int:
             try:
                 event = json.loads(raw)
             except ValueError:
+                continue
+            if clock.note(event.get("kind"), time.time()):
                 continue
             if event.get("kind") == "seat":
                 seat_civ = str(event.get("civ") or "").strip() or None

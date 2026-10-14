@@ -23,6 +23,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import civ6_civvis_climb as climb
+import civ6_brain
 
 
 class CrashAlertCleanupTest(unittest.TestCase):
@@ -30,7 +31,7 @@ class CrashAlertCleanupTest(unittest.TestCase):
         with mock.patch.object(climb, "run", return_value=""), \
              mock.patch.object(climb.desktop_control, "dismiss_modals", return_value=[]) as dismiss:
             climb.dismiss_crash_dialogs()
-        dismiss.assert_called_once_with(civ6_crashes_only=True)
+        dismiss.assert_called_once_with(crashes_only=True)
 
     def test_accessibility_failure_cannot_break_teardown(self):
         with mock.patch.object(climb, "run", return_value=""), \
@@ -44,7 +45,7 @@ class CrashAlertCleanupTest(unittest.TestCase):
                                   else {"return_value": running})), \
              mock.patch.object(climb.desktop_control, "dismiss_modals", return_value=[]) as dismiss:
             climb.dismiss_crash_dialogs()
-        dismiss.assert_called_once_with(civ6_crashes_only=True)
+        dismiss.assert_called_once_with(crashes_only=True)
         return [call.args[0] for call in run.call_args_list if call.args[0][0] == "osascript"]
 
     def test_the_sweep_asks_only_for_owners_that_run(self):
@@ -453,6 +454,37 @@ class ExitConfirmationRecoveryTests(unittest.TestCase):
             finally:
                 climb.RUN_ROOT = old_root
 
+    def test_remember_adopts_a_game_started_in_the_receipts_own_second(self):
+        # `lstart` is whole seconds; the game starts within milliseconds of
+        # the receipt (live G72 froze with an empty receipt and its resume
+        # was refused). Same second as the receipt: ours. A second earlier:
+        # not proven, and still refused.
+        with tempfile.TemporaryDirectory() as temporary:
+            old_root = climb.RUN_ROOT
+            climb.RUN_ROOT = Path(temporary)
+            try:
+                path = climb._cleanup_ownership_path(self.TAG)
+                path.parent.mkdir(parents=True)
+                path.write_text(json.dumps({
+                    "tag": self.TAG,
+                    "player_pid": 99,
+                    "launch_epoch": 1000.546,
+                    "baseline_game_processes": [],
+                    "game_processes": [],
+                }))
+                epochs = {"same-second": 1000.0, "second-before": 999.0}
+                with mock.patch.object(
+                        climb, "_game_process_identities", return_value=[
+                            {"pid": 202, "started": "same-second"},
+                            {"pid": 303, "started": "second-before"},
+                        ]), mock.patch.object(
+                            climb, "_process_start_epoch",
+                            side_effect=lambda stamp: epochs[stamp]):
+                    recorded = climb.remember_cleanup_game_processes(self.TAG)
+                self.assertEqual([{"pid": 202, "started": "same-second"}], recorded)
+            finally:
+                climb.RUN_ROOT = old_root
+
     def test_missing_tag_recovery_clicks_only_the_verified_owned_dialog(self):
         with tempfile.TemporaryDirectory() as temporary:
             old_root = climb.RUN_ROOT
@@ -782,29 +814,39 @@ class SavedGameDiagnostics(_Harness, unittest.TestCase):
         self.assertEqual(rows, [])
         popen.assert_not_called()
 
-    def test_changed_binary_refuses_diagnostic_recovery(self):
+    def test_changed_source_does_not_change_diagnostic_recovery(self):
         spawned = []
         test = self
         selected = Path(self.tmp.name) / "AutoSave_0207.Civ6Save"
         selected.write_bytes(b"recovery input")
+        first_image = self.orders_bin.read_bytes()
 
         class Recording(FakeProc):
             def __init__(self, argv, *args, **kwargs):
                 spawned.append(argv)
                 super().__init__(argv, *args, **kwargs)
 
-        def frozen(*args):
-            test.orders_bin.write_bytes(b"different decider")
-            return "frozen"
+        calls = 0
+
+        def finish(*args):
+            nonlocal calls
+            calls += 1
+            if calls == 1:
+                test.orders_bin.write_bytes(b"different decider")
+                return "frozen"
+            return "exited"
 
         with mock.patch.object(climb.subprocess, "Popen", Recording), \
-             mock.patch.object(climb, "wait_watching_the_turn", side_effect=frozen), \
+             mock.patch.object(climb, "wait_watching_the_turn", side_effect=finish), \
              mock.patch.object(climb, "_recent_autosaves", return_value=[selected]):
-            _, rows = self.climb_with([{"last_turn": 208}], attempts=1,
+            _, rows = self.climb_with([{"last_turn": 208}, {"last_turn": 221}], attempts=1,
                                      argv_extra=self.words)
         self.assertEqual(rows, [])
-        self.assertEqual(len(spawned), 1)
-        self.assertIn("binary changed", self.result()["diagnostic_resume_refused"])
+        self.assertEqual(len(spawned), 2)
+        images = [Path(argv[argv.index("--civvis-bin") + 1]) for argv in spawned]
+        self.assertEqual(images[0], images[1])
+        self.assertEqual(images[0].read_bytes(), first_image)
+        self.assertEqual(len(self.result()["resumes"]), 1)
 
     def test_no_native_turn_is_a_single_failed_diagnostic_start(self):
         with mock.patch.object(climb.subprocess, "Popen", wraps=FakeProc) as popen:
@@ -886,6 +928,30 @@ class DeciderProvenanceTests(unittest.TestCase):
         self.assertIn("source=unverified-binary", line)
         self.assertIn(climb.hashlib.sha256(b"decider image").hexdigest(), line)
         self.assertIn(str(binary), line)
+
+    def test_reload_keeps_the_original_decider_after_its_checkout_rebuilds(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            checkout = root / "checkout"
+            binary = checkout / "target" / "release" / "civvis_orders"
+            binary.parent.mkdir(parents=True)
+            binary.write_bytes(b"first tested image")
+            (checkout / ".git").mkdir()
+            revision = "a" * 40
+            with mock.patch.object(climb, "RUN_ROOT", root / "runs"), \
+                 mock.patch.object(civ6_brain, "local_revision", return_value=revision):
+                frozen = climb.freeze_attempt_decider(binary, "king-game")
+                binary.write_bytes(b"different rebuild")
+                self.assertEqual(frozen.read_bytes(), b"first tested image")
+                self.assertEqual(civ6_brain.binary_provenance(frozen),
+                                 (revision, "attempt-snapshot"))
+                self.assertEqual(climb.binary_sha256(frozen),
+                                 climb.hashlib.sha256(b"first tested image").hexdigest())
+                with self.assertRaises(FileExistsError):
+                    climb.freeze_attempt_decider(binary, "king-game")
+                frozen.write_bytes(b"tampered snapshot")
+                self.assertEqual(civ6_brain.binary_provenance(frozen),
+                                 (None, "attempt-snapshot-unverified"))
 
 
 class BlockedReasonTests(unittest.TestCase):
@@ -1096,6 +1162,31 @@ class FrozenBuildTests(_Harness, unittest.TestCase):
 
         self.assertEqual(code, 1)
         self.assertEqual(len(rows), 3)
+
+    def test_a_supplied_binary_rebuild_ends_the_pinned_batch(self):
+        original = climb.freeze_attempt_decider
+        launches = []
+
+        def mutate_after_freeze(source, tag):
+            image = original(source, tag)
+            if not launches:
+                self.orders_bin.write_bytes(b"new executable image")
+            launches.append(image)
+            return image
+
+        with mock.patch.object(climb, "stamp", side_effect=[
+                "20260928T000000Z", "20260928T000001Z"]), \
+             mock.patch.object(climb, "freeze_attempt_decider",
+                               side_effect=mutate_after_freeze), \
+             mock.patch.object(climb.subprocess, "Popen", wraps=FakeProc) as popen:
+            code, rows = self.climb_with(
+                [{"last_turn": 191}, {"last_turn": 240}], attempts=2)
+        self.assertEqual(code, 4)
+        self.assertEqual(len(rows), 1)
+        players = [call for call in popen.call_args_list
+                   if any(Path(arg).name == "civ6_play.py" for arg in call.args[0])]
+        self.assertEqual(len(players), 1)
+        self.assertEqual(launches[0].read_bytes(), b"#!/bin/sh\n")
 
     def test_a_dirty_tree_that_changes_also_ends_the_batch(self):
         """An edit to uncommitted work is a new program too, and `+dirty` hid it."""
@@ -1329,7 +1420,7 @@ class WedgedAttempt(unittest.TestCase):
         def kill(self):
             self._dead = True
 
-    def _run(self, turns, frozen_s, locked_probe=None):
+    def _run(self, turns, frozen_s, locked_probe=None, paused_probe=None):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             (root / "run").mkdir()
@@ -1346,9 +1437,12 @@ class WedgedAttempt(unittest.TestCase):
             try:
                 play = self._Play(clock, self.WAIT_STEP_S)
                 with mock.patch.object(climb.time, "time", lambda: clock["t"]):
+                    # Both probes are pinned: the defaults read this host's
+                    # real screen and its real operator pause file.
                     why = climb.wait_watching_the_turn(
                         play, "run", 3.0, frozen_s,
-                        locked_probe=locked_probe or (lambda: False))
+                        locked_probe=locked_probe or (lambda: False),
+                        paused_probe=paused_probe or (lambda: False))
                 return why, play.signalled
             finally:
                 climb.RUN_ROOT = original
@@ -1406,6 +1500,27 @@ class WedgedAttempt(unittest.TestCase):
         self.assertEqual(why, "locked")
         self.assertLess(time.time() - started, 30.0,
                         "the capped wait must resolve promptly, not spin")
+
+    def test_an_operator_pause_holds_the_attempt_clock(self):
+        """The operator's Pause holds our turn on purpose (`live_pause`).
+
+        The first slice reads turn 151 unpaused; then with `frozen_s=0` any
+        slice that judges the turn would kill the attempt, so surviving forty
+        paused slices — past the 3 s hard budget, too — proves the pause
+        credits both clocks. Once lifted the guard stands again: the same
+        frozen turn is killed on the very next slice.
+        """
+        probes = []
+
+        def paused():
+            probes.append(len(probes))
+            return 2 <= len(probes) <= 41
+
+        why, signalled = self._run([1, 2, 151], frozen_s=0.0, paused_probe=paused)
+        self.assertEqual(why, "frozen")
+        self.assertEqual(signalled, climb.signal.SIGTERM)
+        self.assertEqual(len(probes), 42,
+                         "killed only on the first slice after the pause lifted")
 
     def test_an_unlocked_frozen_turn_is_still_killed(self):
         """The pause must be conditional — with the screen UNLOCKED the guard stands."""
@@ -1728,8 +1843,12 @@ class OneDeciderTests(_Harness, unittest.TestCase):
         # fell back to its repo-relative default and a worktree without a build died
         # with "CIVVIS decision binary does not exist" while the flag naming a real
         # binary sat on the command line.
+        # Since 5e4a00073 the flag names this attempt's frozen copy of that
+        # binary, so a rebuild during the game cannot change its decider.
         self.assertIn("--civvis-bin", words)
-        self.assertEqual(words[words.index("--civvis-bin") + 1], str(self.orders_bin))
+        frozen = Path(words[words.index("--civvis-bin") + 1])
+        self.assertEqual(frozen.parent.parent.name, "decider-snapshots")
+        self.assertEqual(frozen.read_bytes(), self.orders_bin.read_bytes())
 
     def test_domination_and_auto_remain_explicit_opt_ins(self):
         play = next(
@@ -1997,7 +2116,7 @@ class PassThroughFlagsReachTheGame(unittest.TestCase):
 
 
 class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
-    """A frozen attempt is reloaded from its latest autosave, not scored as it fell.
+    """A frozen or crashed attempt reloads an autosave, not its partial score.
 
     ★★★★★ Three leading games died on the 900 s watchdog on 2026-08-16 with a
     turn-fresh `AutoSave_NNNN.Civ6Save` on disk (t178 leading 804 vs 715, t207,
@@ -2021,7 +2140,7 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
             climb.resume_from_autosave(frozen, "frozen", 0, args, 1234.5, latest=finder),
             Path("/saves/AutoSave_0102.Civ6Save"))
         self.assertEqual(seen, [1234.5], "only autosaves written since the attempt began")
-        # Not frozen: a timeout, a locked screen, a normal exit — no resume.
+        # No crash evidence: a timeout, a locked screen, a normal exit — no resume.
         for why in ("timeout", "locked", "exited", None):
             self.assertIsNone(climb.resume_from_autosave(frozen, why, 0, args, 0.0, latest=finder))
         # Too early to be worth the load flow.
@@ -2037,6 +2156,45 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
         # No autosave since the attempt began: nothing to reload.
         self.assertIsNone(climb.resume_from_autosave(frozen, "frozen", 0, args, 0.0,
                                                      latest=lambda newer_than=None: None))
+
+    def test_native_crash_reloads_only_without_a_game_result(self):
+        args = self._Args()
+        save = Path("/saves/AutoSave_0199.Civ6Save")
+        crashed = {"last_turn": 200, "reason": "game exited", "game_stopped": True}
+        finder = lambda newer_than=None: save
+        self.assertEqual(climb.resume_from_autosave(
+            crashed, "exited", 0, args, 1234.5, latest=finder), save)
+        for changed in ({"game_stopped": False}, {"reason": "stopped"},
+                        {"end_screen_turn": 200}, {"retire_requested": True}):
+            record = {**crashed, **changed}
+            self.assertIsNone(climb.resume_from_autosave(
+                record, "exited", 0, args, 1234.5, latest=finder))
+        self.assertIsNone(climb.resume_from_autosave(
+            crashed, "exited", args.max_resumes, args, 1234.5, latest=finder))
+
+    def test_crashed_game_is_reloaded_instead_of_spending_a_new_attempt(self):
+        newest = Path("/saves/AutoSave_0200.Civ6Save")
+        selected = Path("/saves/AutoSave_0199.Civ6Save")
+        spawned = []
+
+        class Recording(FakeProc):
+            def __init__(self, argv, *args, **kwargs):
+                spawned.append(list(argv))
+                super().__init__(argv, *args, **kwargs)
+
+        with mock.patch.object(climb, "wait_watching_the_turn",
+                               side_effect=["exited", "exited"]), \
+             mock.patch.object(climb, "_recent_autosaves",
+                               return_value=[newest, selected]), \
+             mock.patch.object(climb.subprocess, "Popen", Recording):
+            _, rows = self.climb_with([
+                {"last_turn": 200, "reason": "game exited", "game_stopped": True},
+                {"last_turn": 240, "reason": "finished"},
+            ], attempts=1)
+        self.assertEqual(len(rows), 1)
+        self.assertEqual(rows[0]["last_turn"], 240)
+        self.assertEqual(rows[0]["resumes"][0]["save"], selected.name)
+        self.assertEqual(len([argv for argv in spawned if "--load-save" in argv]), 1)
 
     def test_successive_resumes_step_back_instead_of_reloading_the_same_hang(self):
         args = self._Args()
@@ -2304,15 +2462,13 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
         self.assertEqual(row["reason"], "attempt frozen", "still frozen after the budget: say so")
         self.assertEqual([r["from_turn"] for r in row["resumes"]],
                          [102, 140, 151, 158, 159, 160])
-        # One, four, nine, sixteen, twenty-five and thirty-six back —
-        # RESUME_STEPS = (0, 3, 8, 15, 24, 35) against the list with the newest
-        # parked save removed. Every attempt reaches a board the last one did
-        # not, and the sixth, whose stride runs past the thirty saves on disk,
-        # clamps to the oldest (t131) rather than replaying the fifth's.
+        # Distinct freezes restart at one-back. The final t158, t159 and t160
+        # parks are adjacent, so they use progressively wider strides. The
+        # overall six-resume budget still ends the attempt after this row.
         self.assertEqual([r["save"] for r in row["resumes"]],
-                         ["AutoSave_0159.Civ6Save", "AutoSave_0156.Civ6Save",
-                          "AutoSave_0151.Civ6Save", "AutoSave_0144.Civ6Save",
-                          "AutoSave_0135.Civ6Save", "AutoSave_0131.Civ6Save"])
+                         ["AutoSave_0159.Civ6Save", "AutoSave_0158.Civ6Save",
+                          "AutoSave_0157.Civ6Save", "AutoSave_0156.Civ6Save",
+                          "AutoSave_0155.Civ6Save", "AutoSave_0151.Civ6Save"])
         self.assertTrue(row["resumes"][-1]["tag"].endswith("-cont6"))
 
     def test_a_resume_that_never_reaches_a_turn_keeps_the_frozen_row(self):
@@ -2488,6 +2644,38 @@ class BatchRefreshSecondsTests(unittest.TestCase):
         )
         values.update(changes)
         return SimpleNamespace(**values)
+
+    def test_deal_sessions_reach_the_play_command_only_when_asked(self):
+        """`off` keeps today's command line; `all` and `peace` forward the
+        matching civ6_play flag."""
+        def cmd(mode):
+            return climb.play_command(self._play_args(deal_sessions=mode), "t",
+                                      Path("orders.sqlite"), Path("civvis_orders"))
+        base = climb.play_command(self._play_args(), "t",
+                                  Path("orders.sqlite"), Path("civvis_orders"))
+        self.assertEqual(cmd("off"), base)
+        self.assertEqual(cmd(None), base)
+        self.assertIn("--deal-sessions", cmd("all"))
+        self.assertIn("--peace-deal-sessions", cmd("peace"))
+        self.assertIn("--trade-deal-sessions", cmd("trade"))
+        self.assertNotIn("--deal-sessions", base)
+
+    def test_deal_sessions_mode_reads_flag_then_env_then_policy_file(self):
+        import tempfile
+        warnings = []
+        with tempfile.TemporaryDirectory() as tmp:
+            policy = Path(tmp) / "policy"
+            missing = Path(tmp) / "absent"
+            self.assertEqual(climb.deal_sessions_mode(None, {}, missing), "off")
+            policy.write_text("# comment\nCIVVIS_DEAL_SESSIONS=peace  # trial\n")
+            self.assertEqual(climb.deal_sessions_mode(None, {}, policy), "peace")
+            self.assertEqual(
+                climb.deal_sessions_mode(None, {"CIVVIS_DEAL_SESSIONS": "all"}, policy), "all")
+            self.assertEqual(climb.deal_sessions_mode("off", {"CIVVIS_DEAL_SESSIONS": "all"},
+                                                      policy), "off")
+            policy.write_text("CIVVIS_DEAL_SESSIONS=sometimes\n")
+            self.assertEqual(climb.deal_sessions_mode(None, {}, policy, warnings.append), "off")
+        self.assertEqual(len(warnings), 1)
 
     def test_the_leader_score_line_reaches_the_play_command_only_when_set(self):
         """Legacy launchers retain their argv shape; live play ignores it and
@@ -2810,7 +2998,7 @@ class ExitWhileStaleIsFrozen(unittest.TestCase):
                 with mock.patch.object(climb.time, "time", lambda: clock["t"]):
                     return climb.wait_watching_the_turn(
                         play, "run", 100_000.0, frozen_s,
-                        locked_probe=lambda: False)
+                        locked_probe=lambda: False, paused_probe=lambda: False)
             finally:
                 climb.RUN_ROOT = original
 
@@ -3196,6 +3384,30 @@ class ResumesPastTheThirdKeepWalkingBack(unittest.TestCase):
         self.assertIsNone(self._pick(6))
         self.assertEqual(len(climb.RESUME_STEPS), 6,
                          "one distinct stride per resume in the default budget")
+
+    def test_new_freeze_turn_restarts_the_stride_without_resetting_the_budget(self):
+        """The t88 match reached t112; its fifth resume should test t111, not t86."""
+        prior = [{"from_turn": 88, "save": f"AutoSave_{n:04d}.Civ6Save"}
+                 for n in (87, 84, 79, 72)]
+        saves = [Path(f"AutoSave_{n:04d}.Civ6Save") for n in range(112, 79, -1)]
+        used = {row["save"] for row in prior}
+        stride = climb.resume_stride_index(prior, 112)
+        self.assertEqual(stride, 0)
+        self.assertEqual(
+            climb.resume_from_autosave(
+                {"last_turn": 112}, "frozen", len(prior), self._args(), 0.0,
+                recent=lambda newer_than=None: saves, used_saves=used,
+                stride_index=stride,
+            ),
+            Path("AutoSave_0111.Civ6Save"),
+        )
+        self.assertEqual(climb.resume_stride_index(prior + [{"from_turn": 112}], 112), 1)
+        self.assertEqual(climb.resume_stride_index(prior + [{"from_turn": 112}], 113), 1,
+                         "one-back from t113 would replay the t112 freeze")
+        self.assertIsNone(climb.resume_from_autosave(
+            {"last_turn": 112}, "frozen", 6, self._args(), 0.0,
+            recent=lambda newer_than=None: saves, stride_index=0,
+        ))
 
 
 class TheOperatorsLaneOutlivesAStaleEnvironment(unittest.TestCase):

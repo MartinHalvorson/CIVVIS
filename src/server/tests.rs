@@ -6370,7 +6370,13 @@ fn browser_orders_controls_interface_setup_and_logs() {
     assert!(EMBEDDED_INDEX
         .contains("const PLAYER_HUD_ROW_PITCH = PLAYER_HUD_ROW_HEIGHT + PLAYER_HUD_ROW_GAP;"));
     assert!(EMBEDDED_INDEX.contains("function playerHudRowPitch()"));
-    assert!(EMBEDDED_INDEX.contains("return Math.max(PLAYER_HUD_MIN_HEIGHT, PLAYER_HUD_CHROME_HEIGHT + rows * playerHudRowPitch());"));
+    // A watched world's floor keeps one more row for the live stopwatch
+    // (85284faba).
+    assert!(EMBEDDED_INDEX
+        .contains("const floor = PLAYER_HUD_MIN_HEIGHT + (SPEC ? playerHudRowPitch() : 0);"));
+    assert!(EMBEDDED_INDEX.contains(
+        "return Math.max(floor, PLAYER_HUD_CHROME_HEIGHT + rows * playerHudRowPitch());"
+    ));
     assert!(EMBEDDED_INDEX
         .contains("minHeight:PLAYER_HUD_MIN_HEIGHT,\n            avoidsSidebar:true}"));
     assert!(
@@ -8299,9 +8305,10 @@ fn the_unit_glyphs_are_cut_from_the_installed_game() {
         }
     }
     assert_eq!(
-        borrowed, 1,
+        borrowed, 2,
         "Civilization VI defines a symbol icon for every unit of this \
-             ruleset but the Oromo Cavalry, which stands on the Courser's"
+             ruleset but the Oromo Cavalry, which stands on the Courser's, \
+             and the Hul'che, which stands on the Archer's"
     );
 }
 
@@ -10529,6 +10536,7 @@ fn unified_war_plan_crosses_the_json_and_browser_contract() {
         assessed_turn: 37,
         peace_offers: Vec::new(),
         peace_routed: Vec::new(),
+        peace_asks_city: Vec::new(),
         forces: Vec::new(),
         war: Some(crate::ai::WarPlanReport {
             enabled: true,
@@ -11256,6 +11264,43 @@ fn the_civ6_endpoints_answer_on_any_host() {
         Some("no Civilization VI difficulty is called \"not-a-rung\"")
     );
     assert!(refused["started"].is_null());
+    // The live game's Pause is offered only by the mirror `tools/follow.py`
+    // starts with `--live-pause`; this server was not, so it says so. (No
+    // POST here: a broken guard would write this host's real pause request
+    // and hold whatever verification game is running.)
+    let live_pause = json_at("/live-pause");
+    assert_eq!(live_pause["available"], false, "{live_pause}");
+    assert!(live_pause["requested"].is_boolean(), "{live_pause}");
+    assert!(live_pause["held"].is_boolean(), "{live_pause}");
+    // Its New game reads the same live run — this host's real one, if any, so
+    // only the shape is asserted. Again no POST: a broken guard would retire
+    // the real game.
+    assert!(
+        live_pause["new_game"]["requested"].is_boolean(),
+        "{live_pause}"
+    );
+    assert!(
+        live_pause["new_game"]["retired"].is_boolean(),
+        "{live_pause}"
+    );
+    // The page asks before it shows the controls, the controls name what
+    // pressing them will do, and New game is armed by one press and sent by
+    // a second.
+    for piece in [
+        "id=\"livepause\" hidden",
+        "await fetchJSON(\"/live-pause\", {}, 3000)",
+        "button.textContent = asked ? \"▶ Resume game\" : \"⏸ Pause game\";",
+        "document.getElementById(\"livepause-button\").onclick = toggleLivePause;",
+        "<button id=\"livenewgame-button\" type=\"button\">↻ New game</button>",
+        "postLiveControl(\"/live-new-game\", {confirm: true}, 20000)",
+        "document.getElementById(\"livenewgame-button\").onclick = pressLiveNewGame;",
+        "body.live-pause-available #specbar { display: none !important; }",
+    ] {
+        assert!(
+            EMBEDDED_INDEX.contains(piece),
+            "the live pause is missing {piece}"
+        );
+    }
 }
 
 /// Diplomacy needs a complete player-facing action surface. The screen
@@ -12328,9 +12373,8 @@ fn browser_seats_a_person_in_the_civ_six_arrangement() {
     assert!(EMBEDDED_INDEX.contains("function boostRequirement(spec) {"));
     assert!(EMBEDDED_INDEX.contains("const BOOST_PHRASES = {"));
     assert!(EMBEDDED_INDEX.contains("const BOOST_FAMILIES = ["));
-    assert!(EMBEDDED_INDEX.contains(
-        "const wants = !completed && !boosted.includes(n) ? boostRequirement(s) : \"\";"
-    ));
+    // A studied node folds to one line before this (bf02c4ee1).
+    assert!(EMBEDDED_INDEX.contains("const wants = boosted.has(n) ? \"\" : boostRequirement(s);"));
     assert!(EMBEDDED_INDEX.contains("const wants = isBoosted ? \"\" : boostRequirement(spec);"));
     // Every boost the ruleset ships gets a sentence; the generic fallback
     // exists for a trigger added tomorrow, not for the ones shipped now.
@@ -13743,4 +13787,40 @@ fn every_site_major_plays_the_native_deployment_genome() {
         serde_json::to_string(&expected.log).unwrap(),
         "every site major must play AdvancedAi::new() + enable_native_deployment()"
     );
+}
+
+/// `/policy-effects` answers for the empire the page describes and prices
+/// each slotted card by the engine's counterfactual: Urban Planning in a
+/// one-city empire is +1 Production, and the deck of one is worth that card.
+#[test]
+fn the_policy_ledger_prices_the_seats_slotted_cards() {
+    let mut params = current();
+    params.num_players = 2;
+    params.num_city_states = 0;
+    params.width = 24;
+    params.height = 16;
+    params.seed = 20_261_014;
+    let mut session = Session::new(params);
+    let settler = session
+        .game
+        .units
+        .values()
+        .find(|unit| unit.owner == 0 && unit.kind == "settler")
+        .map(|unit| unit.pos)
+        .expect("seat 0 opens with a settler");
+    session.game.found_city_for(0, settler, None);
+    session.game.players[0].government = Some("chiefdom".to_string());
+    session.game.players[0].policies.clear();
+    session.game.players[0]
+        .policies
+        .insert(crate::name::Name::new("urban_planning"));
+
+    let answer = crate::routes::policy_effects(&session);
+    assert_eq!(answer["player"], json!(0));
+    assert_eq!(answer["anarchy"], json!(false));
+    let cards = answer["cards"].as_array().expect("cards");
+    assert_eq!(cards.len(), 1, "{answer}");
+    assert_eq!(cards[0]["policy"], json!("urban_planning"));
+    assert_eq!(cards[0]["worth"], json!({"production": 1.0}), "{answer}");
+    assert_eq!(answer["net"], cards[0]["worth"]);
 }

@@ -24,9 +24,11 @@
 #   civvis-run-prune.sh [--dry-run]
 #   CIVVIS_RUN_PRUNE_MINUTES   age threshold, default 1440 (24 h)
 #   CIVVIS_RUNS_ROOT           default ~/civvis-civ6-runs/control
+#   CIVVIS_DECIDER_SNAPSHOTS_ROOT  default sibling decider-snapshots directory
 #   CIVVIS_RUN_PRUNE_LOG       default ~/Library/Logs/civvis-run-prune.log
 set -u
 ROOT=${CIVVIS_RUNS_ROOT:-$HOME/civvis-civ6-runs/control}
+SNAPSHOT_ROOT=${CIVVIS_DECIDER_SNAPSHOTS_ROOT:-${ROOT:h}/decider-snapshots}
 LOG=${CIVVIS_RUN_PRUNE_LOG:-$HOME/Library/Logs/civvis-run-prune.log}
 AGE_MIN=${CIVVIS_RUN_PRUNE_MINUTES:-1440}
 DRY_RUN=0
@@ -55,9 +57,29 @@ while IFS= read -r -d '' d; do
   fi
   rm -rf -- "$d" && (( n += 1 ))
 done < <(find "$ROOT" -mindepth 1 -maxdepth 1 -type d -mmin +"$AGE_MIN" -print0)
+snapshots=0
+if [[ -d "$SNAPSHOT_ROOT" ]]; then
+  while IFS= read -r -d '' d; do
+    tag=${d:t}
+    # A continuation can still need its first attempt's image. Keep the copy
+    # until the root and all continuation run directories have been pruned.
+    [[ -d "$ROOT/$tag" ]] && continue
+    [[ -n "$(find "$ROOT" -mindepth 1 -maxdepth 1 -type d -name "$tag-cont*" -print | head -n 1)" ]] && continue
+    if [[ -n "$(lsof +D "$d" -Fn 2>/dev/null | head -n 1)" ]]; then
+      print -r -- "$(stamp) skip in-use snapshot $d" >> "$LOG"
+      continue
+    fi
+    if (( DRY_RUN )); then
+      print -r -- "would prune snapshot $d"
+      (( snapshots += 1 ))
+      continue
+    fi
+    rm -rf -- "$d" && (( snapshots += 1 ))
+  done < <(find "$SNAPSHOT_ROOT" -mindepth 1 -maxdepth 1 -type d -mmin +"$AGE_MIN" -print0)
+fi
 after=$(free_kb)
 left=$(find "$ROOT" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
-line="$(stamp) $([[ $DRY_RUN == 1 ]] && print -n 'DRY RUN: would prune' || print -n 'pruned') $n run dir(s) older than ${AGE_MIN} min; freed $(( (after - before) / 1048576 )) GB; free now $(( after / 1048576 )) GB; runs left $left"
+line="$(stamp) $([[ $DRY_RUN == 1 ]] && print -n 'DRY RUN: would prune' || print -n 'pruned') $n run dir(s) and $snapshots snapshot dir(s) older than ${AGE_MIN} min; freed $(( (after - before) / 1048576 )) GB; free now $(( after / 1048576 )) GB; runs left $left"
 if (( DRY_RUN )); then
   print -r -- "$line"
 else

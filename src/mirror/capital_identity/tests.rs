@@ -150,7 +150,11 @@ fn nonzero_host_seat_maps_founders_and_unknown_founder_gets_no_foreign_credit() 
     state.cities[1].original_owner = Some(999);
     let game = rebuild_from_state(&snapshot, &state, 3, 364003, 500, 0).game;
     assert!(game.cities[&named(&game, "London")].is_capital);
-    assert_eq!(game.cities[&named(&game, "London")].original_owner, 0);
+    let founder = game.cities[&named(&game, "London")].original_owner;
+    assert!(
+        game.players[founder].is_barbarian,
+        "an unmapped founder is nobody's seat, not the holder's: {founder}"
+    );
     assert_eq!(
         game.victory_races(0, 0).controlled_capitals,
         1,
@@ -236,4 +240,90 @@ fn palace_yields_and_loyalty_pressure_match_the_legacy_current_capital_board() {
             "{name} loyalty pressure"
         );
     }
+}
+
+/// Live King civvis-20261004T160213Z (game 65): Germany held Fez, a dead
+/// city-state's original capital, and the board credited Fez to Germany as
+/// its own original capital, so "does Germany still hold its capital" turned
+/// on which city a churning id order listed first.
+#[test]
+fn a_dead_city_states_capital_is_never_its_holders_original_capital() {
+    let (snapshot, mut state) = fixture();
+    // We hold London, rival 1's original capital; rival 1 holds "Fez", an
+    // original capital whose founder (host 7) is on no seat.
+    state.rivals[0]
+        .cities
+        .push(city(5, "Fez", 17, true, false, 7));
+    for seed in [364010_u64, 364011, 364012, 364013] {
+        let game = rebuild_from_state(&snapshot, &state, 3, seed, 500, 0).game;
+        let fez = &game.cities[&named(&game, "Fez")];
+        assert!(fez.is_capital, "Fez stays an original capital: no Raze");
+        assert_ne!(fez.original_owner, 1, "never rival 1's own capital");
+        assert!(game.players[fez.original_owner].is_barbarian);
+        let london = &game.cities[&named(&game, "London")];
+        assert_eq!((london.original_owner, london.owner), (1, 0));
+        assert!(
+            !game
+                .cities
+                .values()
+                .any(|c| c.is_capital && c.original_owner == 1 && c.owner == 1),
+            "rival 1 holds no original capital of its own"
+        );
+    }
+}
+
+/// `unseen-capital-is-unseen`: rival 1's original capital is not in the
+/// export, only Plymouth. The rebuild plants Plymouth through
+/// `found_city_for`, which crowns a player's first city; the host's flag
+/// corrects the board, but the seat's memory was taken before it and keeps
+/// the crown. Live Emperor 10-08: `find-the-capital` read every such rival's
+/// capital as seen, and the planning board drew the fogged crowned city as
+/// that rival's capital.
+fn unseen_capital_fixture() -> (Snapshot, StateSnapshot) {
+    let (snapshot, mut state) = fixture();
+    state.cities.truncate(1);
+    state.rivals[0].cities = vec![city(3, "Plymouth", 13, false, false, 1)];
+    (snapshot, state)
+}
+
+#[test]
+fn the_rebuilt_memory_keeps_the_plantings_crown_until_refreshed() {
+    let (snapshot, state) = unseen_capital_fixture();
+    let mut game = rebuild_from_state(&snapshot, &state, 3, 364000, 500, 0).game;
+    let plymouth = named(&game, "Plymouth");
+    assert!(
+        !game.cities[&plymouth].is_capital,
+        "the host's flag on the board"
+    );
+    assert!(
+        game.players[0].remembered_cities[&plymouth].is_capital,
+        "the planting's crown in the seat's memory"
+    );
+    refresh_city_memory(&mut game);
+    assert!(!game.players[0].remembered_cities[&plymouth].is_capital);
+    // The host's own original capital stays one.
+    let next = named(&game, "Next");
+    assert!(game.players[0].remembered_cities[&next].is_capital);
+}
+
+#[test]
+fn a_refreshed_memory_lets_find_the_capital_price_the_passage() {
+    let (snapshot, state) = unseen_capital_fixture();
+    let mut game = rebuild_from_state(&snapshot, &state, 3, 364000, 500, 0).game;
+    let mut ai = crate::ai::AdvancedAi::targeting(crate::ai::VictoryTarget::Domination);
+    ai.enable_find_the_capital();
+    assert!(!game.is_at_war(0, 1));
+    assert_eq!(
+        ai.find_the_capital_passage_gold(&game, 0, 1),
+        None,
+        "the crown hides it"
+    );
+    refresh_city_memory(&mut game);
+    assert_eq!(
+        ai.find_the_capital_passage_gold(&game, 0, 1),
+        Some(150.0),
+        "FIND_CAPITAL_PASSAGE_GOLD"
+    );
+    // Rival 2's capital is in the export: no passage for it.
+    assert_eq!(ai.find_the_capital_passage_gold(&game, 0, 2), None);
 }

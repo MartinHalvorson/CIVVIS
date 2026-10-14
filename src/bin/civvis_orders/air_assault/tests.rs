@@ -14,7 +14,7 @@ fn fixture(visible: bool) -> (Vec<Order>, AirCityAssault, Snapshot, BTreeMap<u32
     let target = (11, 8);
     let plan = AirCityAssault {
         target: civvis::hex::offset_to_axial(target.0, target.1),
-        cavalry: 7,
+        cavalry: Some(7),
         spot: civvis::hex::offset_to_axial(9, 8),
         moved_to_spot: true,
         aircraft: vec![20, 21],
@@ -64,6 +64,22 @@ fn visible_city_receives_bombs_before_any_speculative_follow_up() {
         .iter()
         .all(|order| order.verb.as_deref() == Some("AIR_ATTACK")));
     assert_eq!(orders[3].kind, "observe");
+}
+
+/// The volley includes the wing's sorties at the defenders on a breached
+/// city's approach, not only those at the city itself.
+#[test]
+fn approach_sorties_ride_with_the_volley() {
+    let (mut orders, plan, snapshot, mapped) = fixture(true);
+    orders.insert(3, order(21, "AIR_ATTACK", (12, 9)));
+    defer_followups(&mut orders, Some(&plan), &snapshot, &mapped);
+    assert!(orders
+        .iter()
+        .any(|order| order.verb.as_deref() == Some("AIR_ATTACK") && order.pos == Some((12, 9))));
+    assert!(
+        orders.iter().all(|order| order.subject != Some(50)),
+        "other units still wait"
+    );
 }
 
 #[test]

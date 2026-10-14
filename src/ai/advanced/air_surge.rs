@@ -68,6 +68,11 @@ use crate::think;
 use crate::Pos;
 
 /// The technology the whole appointment is built around.
+/// Our military power over the surge target's at which the ground campaign
+/// declares without waiting for the wing. Three is the line the opening and
+/// the denial layers already treat as decisive.
+pub(crate) const AIR_SURGE_GROUND_RELEASE_RATIO: f64 = 3.0;
+
 pub(crate) const AIR_SURGE_GOAL_TECH: &str = "advanced_flight";
 /// How far out the beeline may open, counted in technologies still missing on
 /// the path to [`AIR_SURGE_GOAL_TECH`].
@@ -106,6 +111,9 @@ pub(crate) const AIR_SURGE_LAUNCH_BOMBERS: usize = 2;
 /// Cavalry bodies that walk in and take the cities the wing empties. Four are
 /// the sustained campaign package, so a captured continent can be held.
 pub(crate) const AIR_SURGE_BODIES: usize = 4;
+/// The cavalry capture body is preferred while it has at least this share
+/// of the strongest buildable land melee body's strength.
+pub(crate) const AIR_SURGE_CAVALRY_FLOOR: f64 = 0.8;
 /// Two fast capture bodies are enough to begin the campaign. The remaining
 /// bodies continue to build behind the opening captures.
 pub(crate) const AIR_SURGE_LAUNCH_BODIES: usize = 2;
@@ -117,6 +125,34 @@ pub(crate) const AIR_SURGE_ENDGAME_RESERVE: u32 = 30;
 /// before it gives the wing up. `radio` reveals the deposits one tech
 /// earlier, so a Builder has had that long to reach one.
 pub(crate) const AIR_SURGE_ALUMINUM_GRACE: u32 = 20;
+/// `bombers-fly-on-a-small-stock`: the standard turns of the launch wing's
+/// unpaid upkeep a stockpile must cover, besides the wing's training cost,
+/// before the goal counts the wing. The host's shortage rule is mild: every
+/// unit short of its fuel loses one Strength per unpaid unit, capped at 20
+/// (`UNIT_MAX_STR_REDUCTION_INSUFFICIENT_RESOURCES` in
+/// `Expansion2_GlobalParameters.xml`; `Game::process_strategic_resources`),
+/// so a Bomber that runs dry still bombards at 90 or better against its 110.
+pub(crate) const AIR_WING_SMALL_STOCK_TURNS: u32 = 3;
+/// The share of the ground ranking's wall terms a Domination wing does not
+/// pay. See [`AdvancedAi::air_surge_objective_value`].
+pub(crate) const AIR_SURGE_WALL_DISCOUNT: f64 = 0.75;
+/// What an unconquered original capital is worth to a Domination wing on top
+/// of the ground ranking's own capital credit.
+pub(crate) const AIR_SURGE_CAPITAL_VALUE: f64 = 160.0;
+/// A capital earns [`AIR_SURGE_CAPITAL_VALUE`] only within this many tiles of
+/// one of our cities.
+pub(crate) const AIR_SURGE_CAPITAL_REACH: i32 = 12;
+/// What a city holding the wing's metal is worth to a surge starved of it:
+/// more than any capital, because without the metal there is no wing at all.
+/// See [`AdvancedAi::air_surge_metal_starved`].
+pub(crate) const AIR_SURGE_METAL_CITY_VALUE: f64 = 1_000.0;
+/// What a city of the rival whose victory must be denied is worth to the
+/// surge. See [`AdvancedAi::air_surge_denial_rival`].
+pub(crate) const AIR_SURGE_DENIAL_VALUE: f64 = 600.0;
+/// Technologies from the Bomber within which the surge's own war is held
+/// against a stalled-war peace offer. See
+/// [`AdvancedAi::air_surge_holds_front`].
+pub(crate) const AIR_SURGE_FRONT_HOLD_TECHS: usize = 2;
 /// How often the appointment re-reads the home situation, in standard turns.
 pub(crate) const AIR_SURGE_REVIEW_CADENCE: u32 = 5;
 /// After a surge stands down, no new one is appointed for this many standard
@@ -139,6 +175,12 @@ pub(crate) const AIR_SURGE_RECOVERY_LIMIT: u8 = 2;
 pub(crate) const AIR_SURGE_AERODROME_VALUE: f64 = 8_400.0;
 pub(crate) const AIR_SURGE_BOMBER_VALUE: f64 = 8_200.0;
 pub(crate) const AIR_SURGE_BODY_VALUE: f64 = 7_900.0;
+/// A city this many times slower than the empire's fastest at an airfield or
+/// a Bomber (plus [`AIR_SURGE_SLOW_SLACK`] turns) does not take that item:
+/// the fastest city is switched to it instead. See
+/// [`AdvancedAi::air_surge_fast_claim`].
+pub(crate) const AIR_SURGE_SLOW_FACTOR: f64 = 1.6;
+pub(crate) const AIR_SURGE_SLOW_SLACK: f64 = 3.0;
 /// Each still-missing member of the package is worth this much more than the
 /// last, so a city that can finish one now outbids a city that would start a
 /// second copy of what is already coming.
@@ -185,7 +227,8 @@ pub(crate) struct AirSurge {
     /// means the empire could field no cavalry and the surge fell back to its
     /// strongest melee body.
     pub(crate) body_is_cavalry: bool,
-    /// Whether the appointment was made *into* a war already running.
+    /// Whether this surge is fighting a war we did not declare, either because
+    /// the appointment was made into one or the target opened it later.
     ///
     /// ★★★ THIS IS THE COUNTER-ATTACK HALF. A Bomber is as useful against a
     /// civilization attacking us as against one we chose, and the empire that
@@ -219,6 +262,12 @@ pub(crate) struct AirSurgeStatus {
     /// Aluminum can support the two-Bomber launch wing, either sustainably
     /// or from a banked shortfall reserve.
     pub(crate) metal_ready: bool,
+    /// The surge is a metal grab with its ground capture package ready. See
+    /// `AdvancedAi::air_surge_metal_starved`.
+    pub(crate) metal_grab_ready: bool,
+    /// A rival's victory has to be denied, and this surge is not aimed at
+    /// that rival: it must not pull the land campaign off the denial war.
+    pub(crate) denial_elsewhere: bool,
 }
 
 impl AirSurgeStatus {
@@ -234,6 +283,14 @@ impl AirSurgeStatus {
     }
 }
 
+/// What one objective search shares across its comparisons. See
+/// [`AdvancedAi::air_surge_objective_value`].
+#[derive(Clone, Copy, Debug, Default)]
+pub(crate) struct AirSurgeObjectiveContext {
+    denial: Option<usize>,
+    starved_metal: Option<Name>,
+}
+
 /// Running account of what the surge did, for the journal and the screens.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub(crate) struct AirSurgeCensus {
@@ -245,6 +302,21 @@ pub(crate) struct AirSurgeCensus {
 }
 
 impl AdvancedAi {
+    /// One line of the surge's running census, for simulator probes outside
+    /// the crate: appointments, breakthroughs, declarations, captures and the
+    /// stand-down reasons with their counts.
+    pub fn air_surge_census_summary(&self) -> String {
+        let census = &self.air_surge_census;
+        format!(
+            "appointments {} breakthroughs {} declarations {} captures {} aborts {:?}",
+            census.appointments,
+            census.breakthroughs,
+            census.declarations,
+            census.objectives_captured,
+            census.aborts
+        )
+    }
+
     /// Whether an appointment is live. Read by the production reservation and
     /// by the strategy overlay; false whenever the gene is off.
     pub(crate) fn air_surge_active(&self) -> bool {
@@ -281,6 +353,34 @@ impl AdvancedAi {
         (!surge.opened_at_war).then_some(surge.target_player)
     }
 
+    /// `air-surge-2`: whether the surge's own front must not be offered a
+    /// stalled-war peace. A Domination surge at war with its target holds
+    /// that war once the wing is flying or at most
+    /// [`AIR_SURGE_FRONT_HOLD_TECHS`] technologies from the Bomber.
+    ///
+    /// ★★★ THE SEAT MADE PEACE WITH ITS OWN BOMBER TARGET, TWICE. Live King
+    /// 20260930T211803Z offered Portugal peace at turn 132 ("the war has
+    /// stalled", 744 power against 278) two techs from Advanced Flight, and
+    /// the Ottomans at turn 168 (1273 against 746) with two Bombers built and
+    /// two more in the queue. Both offers were accepted and each stood the
+    /// surge down. A war the wing is about to win is not stalled; peace only
+    /// buys the target a treaty, and the next declaration pays the Formal War
+    /// clock again.
+    pub(crate) fn air_surge_holds_front(&self, g: &Game, pid: usize, other: usize) -> bool {
+        if !self.air_surge_2
+            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || !g.is_at_war(pid, other)
+        {
+            return false;
+        }
+        let Some(plan) = self.air_surge_plan.as_ref() else {
+            return false;
+        };
+        plan.target_player == other
+            && (self.air_surge_status.bombers > 0
+                || Self::air_surge_missing_techs(g, pid) <= AIR_SURGE_FRONT_HOLD_TECHS)
+    }
+
     /// How many technologies still stand between the empire and the Bomber.
     /// Zero means it is already unlocked.
     pub(crate) fn air_surge_missing_techs(g: &Game, pid: usize) -> usize {
@@ -298,6 +398,23 @@ impl AdvancedAi {
     fn air_surge_is_bomber(g: &Game, unit: Name) -> bool {
         let spec = &g.rules.units[unit];
         spec.domain.as_deref() == Some("air") && spec.promotion_class == "air_bomber"
+    }
+
+    /// A different upgrade branch can still take a city after the wing
+    /// empties it. The King Gran Colombia seat held Mechanized Infantry and
+    /// Tanks beside four Jet Bombers, but a Modern Armor plan counted only
+    /// its one armor unit and kept its reachable Leeds sortie waiting.
+    /// Within 15% of the chosen unit's strength is a useful land escort;
+    /// much weaker units should not satisfy the launch requirement.
+    fn air_surge_body_ready_kind(g: &Game, pid: usize, kind: Name, chosen: Name) -> bool {
+        if Self::war_unit_is_at_least(g, pid, kind, chosen) {
+            return true;
+        }
+        let (spec, floor) = (&g.rules.units[kind], &g.rules.units[chosen]);
+        spec.class == "military"
+            && spec.is_melee_capable()
+            && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+            && spec.strength + 1e-9 >= floor.strength * 0.85
     }
 
     /// The strongest unlocked Bomber this empire would train, including its
@@ -337,12 +454,21 @@ impl AdvancedAi {
     /// else the strongest land melee body it can build today. Returns the
     /// unit and whether it is cavalry, so the journal can say which happened.
     pub(crate) fn air_surge_body(g: &Game, pid: usize) -> Option<(Name, bool)> {
+        let host_menu_present = !g.host_buildable.is_empty();
+        let cities = host_menu_present.then(|| g.player_city_ids(pid));
         let buildable = |unit: &Name| {
             let spec = &g.rules.units[*unit];
             spec.class == "military"
                 && spec.is_melee_capable()
                 && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
                 && Self::war_unit_unlocked(g, pid, *unit)
+                // The native host's positive menu is authoritative. Gran
+                // Colombia offers Llaneros for Horses but no Cuirassiers
+                // without Iron; selecting the stronger unbuildable unit left
+                // the bomber surge with zero capture bodies.
+                && cities.as_ref().is_none_or(|cities| {
+                    cities.iter().any(|cid| g.can_produce(pid, *cid, &Item::Unit { unit: *unit }))
+                })
         };
         let strongest = |cavalry_only: bool| {
             Self::player_unit_catalog(g, pid)
@@ -362,9 +488,30 @@ impl AdvancedAi {
                         .then_with(|| right.cmp(left))
                 })
         };
-        strongest(true)
-            .map(|unit| (unit, true))
-            .or_else(|| strongest(false).map(|unit| (unit, false)))
+        // ★★ A CAVALRY BODY THE CITY KILLS IS NO BODY. Live King
+        // 20261001T000033Z had neither Horses nor Iron, so "the strongest
+        // cavalry it can build" was a Heavy Chariot (28) at turn 190, and the
+        // wing's capital siege ran forty turns without a capture: a city's
+        // melee defence follows its owner's best unit. Cavalry stays the
+        // preference while it is within reach of the strongest melee body;
+        // a badly outclassed line hands the job to that body instead.
+        let cavalry = strongest(true);
+        let melee = strongest(false);
+        match (cavalry, melee) {
+            (Some(cav), Some(best))
+                if g.rules.units[cav].strength
+                    < g.rules.units[best].strength * AIR_SURGE_CAVALRY_FLOOR =>
+            {
+                let is_cavalry = matches!(
+                    g.rules.units[best].promotion_class.as_str(),
+                    "light_cavalry" | "heavy_cavalry"
+                );
+                Some((best, is_cavalry))
+            }
+            (Some(cav), _) => Some((cav, true)),
+            (None, Some(best)) => Some((best, false)),
+            (None, None) => None,
+        }
     }
 
     /// Every city of ours that can base an aircraft: the City Center carries
@@ -411,7 +558,17 @@ impl AdvancedAi {
     /// but only for the two-plane launch wing. It is not mistaken for a
     /// permanent four-plane income.
     pub(crate) fn air_surge_bomber_goal(g: &Game, pid: usize) -> usize {
-        Self::air_surge_bomber_goal_after_spending(g, pid, 0.0, 0.0)
+        Self::air_surge_bomber_goal_after_spending(g, pid, 0.0, 0.0, false)
+    }
+
+    /// The bomber goal the seat plays: [`Self::air_surge_bomber_goal`], read
+    /// with `bombers-fly-on-a-small-stock` when that gene is on.
+    pub(crate) fn air_wing_bomber_goal(&self, g: &Game, pid: usize) -> usize {
+        if self.bombers_fly_on_a_small_stock {
+            Self::air_surge_bomber_goal_after_spending(g, pid, 0.0, 0.0, true)
+        } else {
+            Self::air_surge_bomber_goal(g, pid)
+        }
     }
 
     pub(super) fn air_surge_supply_commitments(g: &Game, pid: usize) -> (usize, usize) {
@@ -423,6 +580,7 @@ impl AdvancedAi {
         pid: usize,
         extra_demand: f64,
         resource_cost: f64,
+        small_stock: bool,
     ) -> usize {
         let Some(bomber) = Self::air_surge_bomber(g, pid) else {
             return 0;
@@ -435,6 +593,50 @@ impl AdvancedAi {
             return AIR_SURGE_BOMBERS;
         }
 
+        let income = Self::air_surge_metal_income(g, pid, resource, extra_demand);
+        let sustainable = (income.max(0.0) / spec.resource_maintenance).floor() as usize;
+        let sustainable = sustainable.min(AIR_SURGE_BOMBERS);
+        if sustainable >= AIR_SURGE_LAUNCH_BOMBERS {
+            // ★★ A BANKED STOCKPILE IS A STRIKE WINDOW. Live King
+            // 20261001T030914Z mined two Aluminum a turn, banked 25 and flew a
+            // two-Bomber wing one sortie at a time at Gondar. Each Bomber past
+            // what the income sustains is paid for out of the bank: its
+            // training cost and its upkeep for the whole Aluminum grace
+            // window, so the extra wing outlasts the campaign it is built for.
+            let grace = g.standard_duration(AIR_SURGE_ALUMINUM_GRACE) as f64;
+            let per_extra = spec.resource_cost + spec.resource_maintenance * grace;
+            let spare = g.strategic_stockpile(pid, resource) - resource_cost;
+            let extra = if per_extra > f64::EPSILON && spare > 0.0 {
+                (spare / per_extra).floor() as usize
+            } else {
+                0
+            };
+            return (sustainable + extra).min(AIR_SURGE_BOMBERS);
+        }
+
+        // The deposit may be pillaged, traded away, or still be on a Builder's
+        // route. A bank can still pay for an immediate two-Bomber strike, but
+        // it must cover their training cost and the whole bounded wait for a
+        // replacement source; otherwise this is not a viable wing at all.
+        // `bombers-fly-on-a-small-stock`: the wait is a few turns of fuel, not
+        // the grace window; past it the wing flies short at -1 Strength per
+        // unpaid unit (see `AIR_WING_SMALL_STOCK_TURNS`).
+        let launch_maintenance = AIR_SURGE_LAUNCH_BOMBERS as f64 * spec.resource_maintenance;
+        let grace = Self::air_wing_stock_window(g, small_stock);
+        let (_, committed) = Self::domination_air_readiness_counts(g, pid);
+        let temporary_cost = AIR_SURGE_LAUNCH_BOMBERS.saturating_sub(committed) as f64
+            * spec.resource_cost
+            + (launch_maintenance - income).max(0.0) * grace;
+        if g.strategic_stockpile(pid, resource) - resource_cost + f64::EPSILON >= temporary_cost {
+            AIR_SURGE_LAUNCH_BOMBERS
+        } else {
+            sustainable
+        }
+    }
+
+    /// The Bomber's metal a turn after every consumer but the Bombers:
+    /// our other units of that metal, fielded and queued, and `extra_demand`.
+    fn air_surge_metal_income(g: &Game, pid: usize, resource: Name, extra_demand: f64) -> f64 {
         let other_demand = g
             .units
             .values()
@@ -458,33 +660,136 @@ impl AdvancedAi {
             }))
             .sum::<f64>()
             + extra_demand;
-        let income = g.strategic_resource_rate(pid, resource.as_str()) - other_demand;
-        let sustainable = (income.max(0.0) / spec.resource_maintenance).floor() as usize;
-        let sustainable = sustainable.min(AIR_SURGE_BOMBERS);
-        if sustainable >= AIR_SURGE_LAUNCH_BOMBERS {
-            return sustainable;
-        }
+        g.strategic_resource_rate(pid, resource.as_str()) - other_demand
+    }
 
-        // The deposit may be pillaged, traded away, or still be on a Builder's
-        // route. A bank can still pay for an immediate two-Bomber strike, but
-        // it must cover their training cost and the whole bounded wait for a
-        // replacement source; otherwise this is not a viable wing at all.
-        let launch_maintenance = AIR_SURGE_LAUNCH_BOMBERS as f64 * spec.resource_maintenance;
-        let grace = g.standard_duration(AIR_SURGE_ALUMINUM_GRACE) as f64;
-        let (_, committed) = Self::domination_air_readiness_counts(g, pid);
-        let temporary_cost = AIR_SURGE_LAUNCH_BOMBERS.saturating_sub(committed) as f64
-            * spec.resource_cost
-            + (launch_maintenance - income).max(0.0) * grace;
-        if g.strategic_stockpile(pid, resource) - resource_cost + f64::EPSILON >= temporary_cost {
-            AIR_SURGE_LAUNCH_BOMBERS
-        } else {
-            sustainable
+    /// `siege-buys-the-gun-resource`: the stock of the Bomber's metal that
+    /// lets [`Self::air_surge_bomber_goal`] field the launch wing on the
+    /// income we have: the wing's training cost past the Bombers already
+    /// fielded or queued, and the launch wing's upkeep the income leaves
+    /// unpaid for the Aluminum grace window, read exactly as the goal reads
+    /// it. `None` without a Bomber that burns a metal.
+    pub(super) fn air_surge_launch_stock(
+        g: &Game,
+        pid: usize,
+        small_stock: bool,
+    ) -> Option<(Name, f64)> {
+        let bomber = Self::air_surge_bomber(g, pid)?;
+        let spec = &g.rules.units[bomber];
+        let resource = spec.requires_resource?;
+        if spec.resource_maintenance <= f64::EPSILON {
+            return None;
         }
+        let income = Self::air_surge_metal_income(g, pid, resource, 0.0);
+        let launch_maintenance = AIR_SURGE_LAUNCH_BOMBERS as f64 * spec.resource_maintenance;
+        let grace = Self::air_wing_stock_window(g, small_stock);
+        let (_, committed) = Self::domination_air_readiness_counts(g, pid);
+        Some((
+            resource,
+            AIR_SURGE_LAUNCH_BOMBERS.saturating_sub(committed) as f64 * spec.resource_cost
+                + (launch_maintenance - income).max(0.0) * grace,
+        ))
+    }
+
+    /// `siege-buys-the-gun-resource`: whether the air wing wants Bombers:
+    /// a live surge appointment, or Domination air readiness short of its
+    /// wing.
+    pub(super) fn air_wing_wants_bombers(&self, g: &Game, pid: usize) -> bool {
+        self.air_surge_active() || self.domination_air_readiness_active(g, pid)
+    }
+
+    /// The turns of the launch wing's unpaid upkeep a bank must cover: the
+    /// Aluminum grace window, or `AIR_WING_SMALL_STOCK_TURNS` under
+    /// `bombers-fly-on-a-small-stock`.
+    fn air_wing_stock_window(g: &Game, small_stock: bool) -> f64 {
+        g.standard_duration(if small_stock {
+            AIR_WING_SMALL_STOCK_TURNS
+        } else {
+            AIR_SURGE_ALUMINUM_GRACE
+        }) as f64
     }
 
     /// Aluminum enough to train and keep the launch wing alive.
-    fn air_surge_metal_ready(g: &Game, pid: usize) -> bool {
-        Self::air_surge_bomber_goal(g, pid) >= AIR_SURGE_LAUNCH_BOMBERS
+    fn air_surge_metal_ready(&self, g: &Game, pid: usize) -> bool {
+        self.air_wing_bomber_goal(g, pid) >= AIR_SURGE_LAUNCH_BOMBERS
+    }
+
+    /// The Bomber's metal, once a technology has revealed it to us.
+    fn air_surge_metal(g: &Game, pid: usize) -> Option<Name> {
+        let bomber = Self::air_surge_bomber(g, pid)?;
+        g.rules.units[bomber]
+            .requires_resource
+            .filter(|metal| g.resource_visible_to(pid, metal.as_str()))
+    }
+
+    /// Whether a city's territory holds a deposit of `metal` we have seen.
+    fn air_surge_city_holds_metal(
+        g: &Game,
+        pid: usize,
+        city: &crate::game::City,
+        metal: Name,
+    ) -> bool {
+        city.owned_tiles.iter().any(|pos| {
+            g.players[pid].explored.contains(pos)
+                && g.map
+                    .get(*pos)
+                    .is_some_and(|tile| tile.resource == Some(metal))
+        })
+    }
+
+    /// `air-surge-2`, Domination lane: the wing has no Aluminum, no deposit
+    /// lies in our own land to mine, and the metal is revealed.
+    ///
+    /// ★★★ THE METAL WAS ALL ACROSS THE BORDER. Live King 20261001T010043Z
+    /// reached Advanced Flight with every one of the map's five Aluminum
+    /// deposits inside a rival's borders, one three tiles from a city we had
+    /// already taken, and stood the wing down "no Aluminum for the wing" at
+    /// turns 170 and 194 without a Bomber ever built. A Domination seat
+    /// starved of the metal takes the city that holds it: the surge aims at
+    /// it and may open that war with its ground capture bodies alone.
+    pub(crate) fn air_surge_metal_starved(&self, g: &Game, pid: usize) -> bool {
+        if !self.air_surge_2 || self.active_victory_target(g) != Some(VictoryTarget::Domination) {
+            return false;
+        }
+        let Some(metal) = Self::air_surge_metal(g, pid) else {
+            return false;
+        };
+        !self.air_surge_metal_ready(g, pid)
+            && !g
+                .cities
+                .values()
+                .filter(|city| city.owner == pid)
+                .any(|city| Self::air_surge_city_holds_metal(g, pid, city, metal))
+            && !g
+                .units
+                .values()
+                .any(|unit| unit.owner == pid && Self::air_surge_is_bomber(g, unit.kind))
+    }
+
+    /// Whether this plan is a metal grab: the wing is starved and its
+    /// objective holds the metal.
+    fn air_surge_metal_grab(&self, g: &Game, pid: usize, plan: &AirSurge) -> bool {
+        self.air_surge_metal_starved(g, pid)
+            && Self::air_surge_metal(g, pid).is_some_and(|metal| {
+                g.city_at(plan.objective_pos)
+                    .and_then(|cid| g.cities.get(&cid))
+                    .is_some_and(|city| {
+                        city.owner == plan.target_player
+                            && Self::air_surge_city_holds_metal(g, pid, city, metal)
+                    })
+            })
+    }
+
+    /// A metal grab opens with the ground capture package alone.
+    fn air_surge_metal_grab_ready(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &AirSurge,
+        status: &AirSurgeStatus,
+    ) -> bool {
+        let _ = (g, pid, plan);
+        status.metal_grab_ready
     }
 
     /// The package as the board holds it. Queues count, so the first city that
@@ -494,9 +799,10 @@ impl AdvancedAi {
         let field = Self::air_surge_field(g, pid);
         let mut status = AirSurgeStatus {
             wing_in_range: Self::air_surge_in_range(g, pid, plan.objective_pos),
-            metal_ready: Self::air_surge_metal_ready(g, pid),
+            metal_ready: self.air_surge_metal_ready(g, pid),
             ..AirSurgeStatus::default()
         };
+        let metal_grab = self.air_surge_metal_grab(g, pid, plan);
         for cid in g.player_city_ids(pid) {
             let city = &g.cities[&cid];
             let built = field.is_some_and(|family| g.city_has_district_family(city, family));
@@ -518,7 +824,7 @@ impl AdvancedAi {
                 };
                 if Self::air_surge_is_bomber(g, unit) {
                     status.bombers_committed += 1;
-                } else if Self::war_unit_is_at_least(g, pid, unit, plan.body_unit) {
+                } else if Self::air_surge_body_ready_kind(g, pid, unit, plan.body_unit) {
                     status.bodies_committed += 1;
                 }
             }
@@ -527,13 +833,39 @@ impl AdvancedAi {
             let kind = g.units[&uid].kind;
             if Self::air_surge_is_bomber(g, kind) {
                 status.bombers += 1;
-            } else if Self::war_unit_is_at_least(g, pid, kind, plan.body_unit) {
+            } else if Self::air_surge_body_ready_kind(g, pid, kind, plan.body_unit) {
                 status.bodies += 1;
             }
         }
         status.bombers_committed += status.bombers;
         status.bodies_committed += status.bodies;
+        let denial = self.air_surge_denial_rival(g, pid);
+        status.denial_elsewhere = denial.is_some_and(|rival| rival != plan.target_player);
+        status.metal_grab_ready =
+            metal_grab && status.bodies >= AIR_SURGE_BODIES && !status.denial_elsewhere;
         status
+    }
+
+    /// `air-surge-2`, Domination lane: the rival whose victory the denial
+    /// layer has turned the army against, read from the same actionable
+    /// signal the one-war front switches on.
+    ///
+    /// ★★★ RELIGION WON WHILE THE WING WAS FIVE TURNS OUT. Live King
+    /// 20261001T022028Z lost a Religious victory to Brazil at turn 147 with
+    /// three times the military and Advanced Flight landing, its surge aimed
+    /// at Egypt and Brazil; game 5 lost the same way at turn 152. When a
+    /// rival's clock is the threat, the wing is aimed where the denial war is.
+    pub(crate) fn air_surge_denial_rival(&self, g: &Game, pid: usize) -> Option<usize> {
+        if !self.air_surge_2 || self.active_victory_target(g) != Some(VictoryTarget::Domination) {
+            return None;
+        }
+        self.actionable_victory_denial(g, pid)
+            .filter(|(rival, counter)| {
+                *counter == GrandStrategy::Conquest
+                    && (self.domination_counter_target(g, pid, *rival)
+                        || self.urgent_victory_threat(g, *rival))
+            })
+            .map(|(rival, _)| rival)
     }
 
     /// `air_surge_status` through the scoring batch's frame: the batch's
@@ -684,7 +1016,9 @@ impl AdvancedAi {
             let kind = g.units[&uid].kind;
             if Self::air_surge_is_bomber(g, kind) {
                 bombers += 1;
-            } else if body.is_some_and(|(unit, _)| Self::war_unit_is_at_least(g, pid, kind, unit)) {
+            } else if body
+                .is_some_and(|(unit, _)| Self::air_surge_body_ready_kind(g, pid, kind, unit))
+            {
                 bodies += 1;
             }
         }
@@ -719,7 +1053,12 @@ impl AdvancedAi {
         let (body_unit, body_is_cavalry) = self.air_surge_body_preserving_wing(g, pid)?;
         // A running war fixes the target: the counter arms against the
         // civilization already fighting us, never against a third party.
-        let front = Self::air_surge_fronts(g, pid).first().copied();
+        let fronts = Self::air_surge_fronts(g, pid);
+        let context = self.air_surge_objective_context(g, pid);
+        let front = context
+            .denial
+            .filter(|rival| fronts.contains(rival))
+            .or_else(|| fronts.first().copied());
         let mut best: Option<(f64, usize, u32, AirSurge)> = None;
         for target in g.players.iter().filter(|player| {
             player.id != pid
@@ -729,17 +1068,23 @@ impl AdvancedAi {
                 && front.is_none_or(|enemy| player.id == enemy)
                 && self.campaign_target_legal(g, pid, player.id)
         }) {
-            let mut objectives: Vec<_> = g
+            let objectives: Vec<_> = g
                 .cities
                 .values()
                 .filter(|city| city.owner == target.id)
                 .collect();
-            objectives.sort_by(|left, right| {
-                self.campaign_city_value(g, pid, left, GrandStrategy::Conquest)
-                    .total_cmp(&self.campaign_city_value(g, pid, right, GrandStrategy::Conquest))
-                    .then(left.id.cmp(&right.id))
-            });
-            for city in objectives {
+            let mut objectives: Vec<(f64, &crate::game::City)> = objectives
+                .into_iter()
+                .map(|city| {
+                    (
+                        self.air_surge_objective_value_in(g, pid, city, &context),
+                        city,
+                    )
+                })
+                .collect();
+            objectives
+                .sort_by(|left, right| left.0.total_cmp(&right.0).then(left.1.id.cmp(&right.1.id)));
+            for (score, city) in objectives {
                 // The wing has to be able to hit it from home, and the escort
                 // has to be able to walk to it. Either alone is half a surge.
                 if !Self::air_surge_in_range(g, pid, city.pos)
@@ -749,7 +1094,6 @@ impl AdvancedAi {
                 {
                     continue;
                 }
-                let score = self.campaign_city_value(g, pid, city, GrandStrategy::Conquest);
                 let plan = AirSurge {
                     target_player: target.id,
                     objective_city: city.id,
@@ -784,6 +1128,107 @@ impl AdvancedAi {
         best.map(|(_, _, _, plan)| plan)
     }
 
+    /// The surge's objective ranking: the ground campaign's cost, less what
+    /// the wing saves on walls, less the Domination worth of an original
+    /// capital. Lower is better, as for `campaign_city_value`.
+    ///
+    /// ★★★ THE WING WAS AIMED BY THE INFANTRY'S PRICE LIST. The ground
+    /// ranking charges a walled city `55 + 0.4/HP` of breach delay and
+    /// `0.16/HP` of defence, so a 400-wall capital pays ~280 in wall terms
+    /// against a 180 capital credit, and the surge chose Porto, Konya, Edirne
+    /// and Sivas in live King 20260930T211803Z — four border towns, no
+    /// capital, a Tech loss at turn 248. A Bomber is `siege: true` and takes
+    /// walls at full rate from ten tiles away, and Domination is decided only
+    /// by original capitals.
+    #[cfg_attr(not(test), allow(dead_code))]
+    pub(crate) fn air_surge_objective_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: &crate::game::City,
+    ) -> f64 {
+        let context = self.air_surge_objective_context(g, pid);
+        self.air_surge_objective_value_in(g, pid, city, &context)
+    }
+
+    /// What every objective comparison in one search shares, read once: the
+    /// denial rival and the starved wing's metal.
+    fn air_surge_objective_context(&self, g: &Game, pid: usize) -> AirSurgeObjectiveContext {
+        AirSurgeObjectiveContext {
+            denial: self.air_surge_denial_rival(g, pid),
+            starved_metal: self
+                .air_surge_metal_starved(g, pid)
+                .then(|| Self::air_surge_metal(g, pid))
+                .flatten(),
+        }
+    }
+
+    fn air_surge_objective_value_in(
+        &self,
+        g: &Game,
+        pid: usize,
+        city: &crate::game::City,
+        context: &AirSurgeObjectiveContext,
+    ) -> f64 {
+        let ground = self.campaign_city_value(g, pid, city, GrandStrategy::Conquest);
+        if !self.air_surge_2 || self.active_victory_target(g) != Some(VictoryTarget::Domination) {
+            return ground;
+        }
+        let walls = self
+            .remembered_city(city.id)
+            .map_or(city.wall_hp, |sighting| sighting.wall_hp)
+            .max(0) as f64;
+        let wall_terms = if walls > 0.0 {
+            55.0 + walls * 0.56
+        } else {
+            0.0
+        };
+        // Only a capital within reach of the empire's core: once the wing is
+        // ready this objective becomes the land campaign's target, and a
+        // capital twenty tiles out is a march the capture bodies cannot make
+        // inside the window the wing keeps it emptied (live 20261001T010043Z
+        // marched on Poland's farthest city and never staged).
+        let near_core = g
+            .player_city_ids(pid)
+            .into_iter()
+            .any(|cid| g.wdist(g.cities[&cid].pos, city.pos) <= AIR_SURGE_CAPITAL_REACH);
+        // `is_capital` marks the founding capital for good, whoever holds it
+        // now, and every one of them must be held for the victory.
+        let capital = if city.is_capital && city.owner != pid && near_core {
+            AIR_SURGE_CAPITAL_VALUE
+        } else {
+            0.0
+        };
+        let metal = if context
+            .starved_metal
+            .is_some_and(|metal| Self::air_surge_city_holds_metal(g, pid, city, metal))
+        {
+            AIR_SURGE_METAL_CITY_VALUE
+        } else {
+            0.0
+        };
+        let denial = if context.denial == Some(city.owner) {
+            AIR_SURGE_DENIAL_VALUE
+        } else {
+            0.0
+        };
+        ground - wall_terms * AIR_SURGE_WALL_DISCOUNT - capital - metal - denial
+    }
+
+    /// `air-surge-2`, Domination lane: a replacement objective for a surge
+    /// that has not declared yet, with the appointment's clocks carried over.
+    fn air_surge_reaim(&self, g: &Game, pid: usize, plan: &AirSurge) -> Option<AirSurge> {
+        if !self.air_surge_2 || self.active_victory_target(g) != Some(VictoryTarget::Domination) {
+            return None;
+        }
+        let mut next = self.choose_air_surge(g, pid)?;
+        next.appointed_turn = plan.appointed_turn;
+        next.tech_turn = plan.tech_turn;
+        next.last_reviewed_turn = plan.last_reviewed_turn;
+        next.recovery_assessments = plan.recovery_assessments;
+        Some(next)
+    }
+
     fn record_air_surge_abort(&mut self, g: &Game, reason: &'static str) {
         *self.air_surge_census.aborts.entry(reason).or_default() += 1;
         self.air_surge_cooldown_until = g
@@ -792,6 +1237,17 @@ impl AdvancedAi {
         if self.journal().wants(crate::reasoning::Level::Strategy) {
             think!(self.journal(), Military, Strategy, "Standing down the air surge"; "{reason}");
         }
+    }
+
+    /// Pin native ownership before planning mutates its disposable board.
+    /// The next host frame replaces this record with its own observation.
+    pub fn observe_air_surge_city_owners(&mut self, g: &Game) {
+        self.air_surge_observed_owners = Some(
+            g.cities
+                .values()
+                .map(|city| (city.pos, city.owner))
+                .collect(),
+        );
     }
 
     /// Validate and advance the one appointed surge before any subsystem acts.
@@ -810,7 +1266,7 @@ impl AdvancedAi {
 
         let fronts = Self::air_surge_fronts(g, pid);
         if let Some(mut plan) = self.air_surge_plan.take() {
-            let target_alive = g
+            let mut target_alive = g
                 .players
                 .get(plan.target_player)
                 .is_some_and(|target| target.alive);
@@ -821,9 +1277,14 @@ impl AdvancedAi {
             // missing id as a capture; otherwise a sound bomber campaign dies
             // the turn after it was appointed.
             let objective_city = g.city_at(plan.objective_pos);
-            let mut objective_owner = objective_city
-                .and_then(|city| g.cities.get(&city))
-                .map(|city| city.owner);
+            let mut objective_owner = self.air_surge_observed_owners.as_ref().map_or_else(
+                || {
+                    objective_city
+                        .and_then(|city| g.cities.get(&city))
+                        .map(|city| city.owner)
+                },
+                |owners| owners.get(&plan.objective_pos).copied(),
+            );
             if objective_owner == Some(plan.target_player) {
                 // The owner above could only have come from this current
                 // coordinate's city, so the id is safe to carry through the
@@ -841,12 +1302,34 @@ impl AdvancedAi {
                 && self.active_victory_target(g) == Some(VictoryTarget::Domination)
                 && self.urgent_victory_threat(g, plan.target_player)
                 && self.threatened_city(g, pid).is_none();
+            // ★★ A DECLARATION IS IN FLIGHT FOR ONE HOST FRAME. Live King
+            // 20260930T211803Z, turn 183: frame one declared on Edirne with four
+            // Bombers in range and flew four sorties; frame two's fresh board
+            // had not yet exported the war, and this lifecycle read "peace
+            // closed the war", stood the wing down and paid the fifteen-turn
+            // cooldown on the very turn it opened. The host showed the war on
+            // turn 184. Hold the plan in Exploit for the declaring turn and the
+            // next; after that the war really did not happen.
+            let declaration_in_flight = self.air_surge_2
+                && !at_war
+                && !plan.opened_at_war
+                && plan
+                    .declared_turn
+                    .is_some_and(|turn| g.turn.saturating_sub(turn) <= 1);
             // The investment belongs to the active front, even when a new
             // war supersedes an elective target or its city changes hands.
             // Use a known reachable replacement without an abort cooldown or
             // restarting the research and Aluminum clocks.
+            //
+            // ★★ NOT WHILE ITS OWN DECLARATION IS IN FLIGHT. Domination pair
+            // seed 37140004: the wing opened on Gisborne at turn 162 while
+            // already at war with a second rival; the next frame's board had
+            // not exported the new war, so this read "not at war" and moved
+            // the wing to Hastings. Gisborne was left at 76 of 200 behind
+            // fallen walls and nothing was taken.
             if target_alive
                 && fronts.len() == 1
+                && !declaration_in_flight
                 && (!at_war || objective_owner != Some(plan.target_player) || urgent_counter)
             {
                 if let Some(mut counter) = self.choose_air_surge(g, pid) {
@@ -869,6 +1352,67 @@ impl AdvancedAi {
                 }
             }
 
+            // ★★ A LOST OBJECTIVE IS NOT A LOST WING. Live King
+            // 20260930T225143Z lost Cumaná at turn 114, the one base within ten
+            // tiles of Groningen, and stood the whole surge down with its
+            // cooldown while Rotterdam, Amsterdam and Tilburg were all still
+            // under the wing's reach. Before the declaration, a Domination
+            // surge whose city left its reach or its owner re-aims at the best
+            // objective it can still reach, keeping its clocks and package.
+            // The same goes for a war the surge was fighting that peace has
+            // closed: the treaty makes that rival illegal for a while, not the
+            // wing useless, so a Domination surge re-arms against the best
+            // legal objective instead of paying the cooldown.
+            // A declared surge whose target is still legal most likely had
+            // its declaration refused; that keeps the ordinary stand-down.
+            let fought = plan.declared_turn.is_some() || plan.opened_at_war;
+            let peace_closed = fought
+                && !at_war
+                && !declaration_in_flight
+                && target_alive
+                && (plan.opened_at_war || !self.campaign_target_legal(g, pid, plan.target_player));
+            // A starved wing whose objective holds no metal looks for one
+            // that does (see `air_surge_metal_starved`).
+            let metal_reaim = !fought
+                && self.air_surge_metal_starved(g, pid)
+                && !self.air_surge_metal_grab(g, pid, &plan);
+            // The denial war's rival, when the surge is aimed elsewhere and
+            // may still turn: before its declaration, or at war with that
+            // rival already.
+            let denial_reaim = self.air_surge_denial_rival(g, pid).is_some_and(|rival| {
+                rival != plan.target_player && (!fought || g.is_at_war(pid, rival))
+            });
+            if (peace_closed || !fought || denial_reaim)
+                && objective_owner != Some(pid)
+                && (peace_closed
+                    || denial_reaim
+                    || metal_reaim
+                    || !target_alive
+                    || objective_owner != Some(plan.target_player)
+                    || (!at_war && !self.campaign_target_legal(g, pid, plan.target_player))
+                    || !Self::air_surge_in_range(g, pid, plan.objective_pos))
+            {
+                if let Some(next) = self
+                    .air_surge_reaim(g, pid, &plan)
+                    .filter(|next| next.objective_pos != plan.objective_pos || peace_closed)
+                {
+                    if let Some(city) = g.cities.get(&next.objective_city) {
+                        think!(self.journal(), Military, Strategy,
+                        "Re-aiming the air surge at {}", city.name;
+                        "{}; research, clocks and the package stay committed",
+                        if peace_closed {
+                            "peace closed the war it was fighting"
+                        } else {
+                            "its city left the wing's reach, its owner or the legal targets"
+                        });
+                    }
+                    // `choose_air_surge` only names a living major.
+                    target_alive = true;
+                    at_war = g.is_at_war(pid, next.target_player);
+                    objective_owner = Some(next.target_player);
+                    plan = next;
+                }
+            }
             let mut ended = false;
             if objective_owner != Some(plan.target_player) {
                 if (plan.declared_turn.is_some() || plan.opened_at_war)
@@ -891,9 +1435,23 @@ impl AdvancedAi {
                 self.record_air_surge_abort(g, "diplomacy made war illegal");
                 ended = true;
             } else if at_war && plan.declared_turn.is_none() && !plan.opened_at_war {
-                self.record_air_surge_abort(g, "target opened the war first");
-                ended = true;
-            } else if (plan.declared_turn.is_some() || plan.opened_at_war) && !at_war {
+                if self.active_victory_target(g) == Some(VictoryTarget::Domination) {
+                    // The rival's declaration removes our diplomatic wait; it
+                    // does not make the already funded wing or capture body
+                    // obsolete. Exploit still waits for readiness before it
+                    // can redirect a ground siege to the air objective.
+                    plan.opened_at_war = true;
+                    think!(self.journal(), Military, Strategy,
+                           "Keeping the air surge after the target opened war";
+                           "the bomber wing and capture body remain appointed against the same city");
+                } else {
+                    self.record_air_surge_abort(g, "target opened the war first");
+                    ended = true;
+                }
+            } else if (plan.declared_turn.is_some() || plan.opened_at_war)
+                && !at_war
+                && !declaration_in_flight
+            {
                 self.record_air_surge_abort(g, "peace closed the war");
                 ended = true;
             }
@@ -932,6 +1490,7 @@ impl AdvancedAi {
                     .is_some_and(|turn| g.turn.saturating_sub(turn) >= grace)
                     && status.bombers == 0
                     && !status.metal_ready
+                    && !self.air_surge_metal_grab(g, pid, &plan)
                 {
                     self.record_air_surge_abort(g, "no Aluminum for the wing");
                     ended = true;
@@ -951,11 +1510,13 @@ impl AdvancedAi {
                             "home Recovery persisted for two assessments",
                         );
                         ended = true;
-                    } else if at_war {
+                    } else if at_war || declaration_in_flight {
                         plan.phase = AirSurgePhase::Exploit;
                     } else if !tech_owned {
                         plan.phase = AirSurgePhase::Beeline;
-                    } else if !(status.wing_ready() && status.escort_ready()) || !fronts.is_empty()
+                    } else if !((status.wing_ready() && status.escort_ready())
+                        || self.air_surge_metal_grab_ready(g, pid, &plan, &status))
+                        || !fronts.is_empty()
                     {
                         // If no reachable counter was available (or several
                         // wars are running), retain the package but do not let
@@ -988,7 +1549,7 @@ impl AdvancedAi {
                            Self::air_surge_field(g, pid)
                                .map(|field| plain(field.as_str()))
                                .unwrap_or_else(|| "airfield".to_string()),
-                           Self::air_surge_bomber_goal(g, pid),
+                           self.air_wing_bomber_goal(g, pid),
                            Self::air_surge_bomber(g, pid)
                                .map(|unit| plain(unit.as_str()))
                                .unwrap_or_else(|| "bomber".to_string()),
@@ -1060,6 +1621,37 @@ impl AdvancedAi {
         matched
     }
 
+    /// `air-surge-2`: a Domination seat inside the appointment horizon
+    /// researches toward the Bomber whether or not an appointment is live.
+    ///
+    /// ★★★ THE BEELINE DIED WITH EVERY STAND-DOWN. Research followed the
+    /// appointment, and the appointment is fragile: live King
+    /// 20260930T221624Z appointed at turn 110 (ten techs out) against Sweden,
+    /// Sweden's peace stood it down at 115, and the fifteen-turn cooldown
+    /// handed research back to the lane scorer with nothing steering it to
+    /// the Bomber. Who the wing will fight can change; that the Domination
+    /// seat wants the wing does not. The same gates as an appointment apply:
+    /// the horizon and the whole chain and package fitting before the
+    /// endgame reserve.
+    ///
+    /// ⚠ A threatened home does not switch this off. It already hands the
+    /// slot to a nearer ground upgrade through the wartime-modernization
+    /// yield below; switching the beeline off as well sent live 225143Z's
+    /// research to the lane scorer instead ("Researching economics | worth 17
+    /// to the conquest plan" at turn 140, three techs from the Bomber, with
+    /// neither the wing nor the army modernizing).
+    pub(crate) fn air_surge_lane_beeline(&self, g: &Game, pid: usize) -> bool {
+        self.air_surge_2
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && !g.players[pid]
+                .techs
+                .contains(&Name::new(AIR_SURGE_GOAL_TECH))
+            && g.player_city_ids(pid).len() >= 2
+            && Self::air_surge_bomber(g, pid).is_some()
+            && Self::air_surge_missing_techs(g, pid) <= AIR_SURGE_TECH_HORIZON
+            && self.air_surge_affordable(g, pid)
+    }
+
     /// The forced research goal while the breakthrough is still missing.
     /// Consumed by `advanced_research`, which walks the cheapest legal step
     /// toward it.
@@ -1070,7 +1662,11 @@ impl AdvancedAi {
     /// A nearer standing-army upgrade can temporarily take priority; the air
     /// goal retires when the breakthrough technology lands.
     pub(crate) fn air_surge_research_goal(&self, g: &Game, pid: usize) -> Option<&'static str> {
-        if self.air_surge_plan.is_none() && !self.domination_air_readiness_active(g, pid) {
+        let lane_beeline = self.air_surge_lane_beeline(g, pid);
+        if self.air_surge_plan.is_none()
+            && !lane_beeline
+            && !self.domination_air_readiness_active(g, pid)
+        {
             // Native 20260922T054400Z reached Ballistics and Education but
             // chased later ground upgrades until a Culture loss at turn 191,
             // without Industrialization. Preparation cannot require that
@@ -1083,7 +1679,12 @@ impl AdvancedAi {
             if !self.air_surge_2
                 || self.active_victory_target(g) != Some(VictoryTarget::Domination)
                 || !techs.contains(&crate::name!("education"))
-                || !techs.contains(&crate::name!("ballistics"))
+                // `siege-tier-yields-to-the-bombers`: Ballistics sits behind
+                // Gunpowder and Metal Casting, off the Advanced Flight path,
+                // so waiting for it made the Bombard tier the surge's entry
+                // fee. See `window_yields_to_the_bombers`.
+                || (!techs.contains(&crate::name!("ballistics"))
+                    && !self.siege_tier_yields_to_the_bombers)
                 || techs.contains(&crate::name!("industrialization"))
                 || techs.contains(&Name::new(AIR_SURGE_GOAL_TECH))
                 || g.player_city_ids(pid).len() < 2
@@ -1110,11 +1711,32 @@ impl AdvancedAi {
         // helper requires at least two units and releases the slot as soon
         // as their immediate successor is unlocked. Finish the last air tech
         // rather than interrupting the breakthrough at the end of the chain.
+        // The live King surge upgraded its tank line through Composites, then
+        // let another ground upgrade take research through Combined Arms and
+        // Nuclear Fission. The war ended before Advanced Flight was touched.
+        // One immediate modernization is useful; chaining a second one turns
+        // an appointed air package into an endless ground-tech queue.
+        //
+        // ★★★ A DOMINATION SEAT YIELDS ONLY TO A THREATENED HOME. Live King
+        // 20260930T211803Z appointed the surge at turn 78 (twelve techs out),
+        // then spent turns 92-111 on Engineering, Machinery, Construction,
+        // Military Engineering, Gunpowder, Metal Casting and Ballistics: seven
+        // "modernize the army at war" techs, none of them on the 24-tech
+        // Advanced Flight chain. The Portugal war they modernized for took
+        // no city and ended in our own stalled-war peace offer. The Bomber
+        // landed at turn 145, about twenty turns late. For a Domination seat
+        // the wing is the modernization, so the ground ladder only interrupts
+        // it to defend a home city.
+        let domination_beeline = self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && (self.air_surge_plan.is_some() || lane_beeline)
+            && self.threatened_city(g, pid).is_none();
         if self.air_surge_2
+            && !domination_beeline
             && Self::air_surge_missing_techs(g, pid) > 1
+            && !g.players[pid].techs.contains(&crate::name!("composites"))
             && self.wartime_modernization_tech(g, pid).is_some_and(|goal| {
                 let supplied_air = self.active_victory_target(g) == Some(VictoryTarget::Domination)
-                    && Self::air_surge_metal_ready(g, pid)
+                    && self.air_surge_metal_ready(g, pid)
                     && self.threatened_city(g, pid).is_none()
                     && Self::air_surge_upgrade_lacks_fuel(g, pid, goal);
                 !supplied_air
@@ -1131,14 +1753,56 @@ impl AdvancedAi {
     }
 
     /// Once the package is ready the surge owns the grand strategy, exactly
-    /// as an appointed timed war does. It deliberately does **not** own it
-    /// while the beeline and the buildout run: three techs of Conquest posture
-    /// would pay for the wing with the economy that has to build it.
-    pub(crate) fn apply_air_surge_to_strategy(&self, plan: &mut StrategicPlan) {
+    /// as an appointed timed war does. An appointment made during an existing
+    /// war enters Exploit immediately, even with no bombers, so readiness must
+    /// gate that phase too. Otherwise it abandons a live ground siege for an
+    /// air objective the wing cannot yet attack.
+    pub(crate) fn apply_air_surge_to_strategy(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &mut StrategicPlan,
+    ) {
         let Some(surge) = &self.air_surge_plan else {
             return;
         };
-        if !matches!(surge.phase, AirSurgePhase::Strike | AirSurgePhase::Exploit) {
+        if !matches!(surge.phase, AirSurgePhase::Strike | AirSurgePhase::Exploit)
+            || self.air_surge_status.denial_elsewhere
+            || (surge.phase == AirSurgePhase::Exploit
+                && !((self.air_surge_status.wing_ready() && self.air_surge_status.escort_ready())
+                    || self.air_surge_status.metal_grab_ready))
+        {
+            return;
+        }
+        // The plan already aims at the city that stops the rival's victory:
+        // the surge does not trade it for a softer one. Live King
+        // 2026-10-03T135713Z had Gwangju, Korea's Spaceport, as the land
+        // objective at turn 217; the surge appointed against Sangju at 218
+        // overwrote it at 219, the army sat on Sangju to the end, and Korea
+        // flew all four launches between turns 220 and 230.
+        if let Some(current) = plan
+            .target_city
+            .filter(|city| *city != surge.objective_city)
+        {
+            if let Some(owner) = g.cities.get(&current).map(|city| city.owner) {
+                if owner != pid && self.air_surge_suppression_city(g, pid, owner) == Some(current) {
+                    return;
+                }
+            }
+        }
+        // `capital-prey-opens-a-front-2`: a collapsed rival's capital the plan
+        // already aims at is not traded for the wing's objective either; in
+        // game 111 the surge's Persia overrode every campaign while Spain held
+        // 49 military beside 1,080.
+        if self.capital_prey_opens_a_front_2
+            && plan.target_player.is_some_and(|rival| {
+                rival != surge.target_player
+                    && self
+                        .capital_prey_beside_the_front(g, pid, self.one_war_front())
+                        .0
+                        == Some(rival)
+            })
+        {
             return;
         }
         if plan.strategy != GrandStrategy::Recovery {
@@ -1147,6 +1811,80 @@ impl AdvancedAi {
             plan.target_city = Some(surge.objective_city);
             plan.rush = false;
         }
+    }
+
+    /// The city whose capture stops `rival`'s victory (its Spaceport, holy
+    /// city or Theatre Square), read as `assess` reads it: the rival's own
+    /// lane first, then its launch chain.
+    fn air_surge_suppression_city(&self, g: &Game, pid: usize, rival: usize) -> Option<u32> {
+        let pressure = self.rival_victory_pressure(g, rival);
+        self.victory_suppression_city(g, pid, rival, pressure)
+            .or_else(|| {
+                (pressure.strategy != GrandStrategy::Science)
+                    .then(|| {
+                        let launches = super::VictoryFocus {
+                            strategy: GrandStrategy::Science,
+                            progress: Self::science_launch_progress(g, rival),
+                        };
+                        self.victory_suppression_city(g, pid, rival, launches)
+                    })
+                    .flatten()
+            })
+    }
+
+    /// `air-surge-2`, Domination lane: until the wing is ready to fly, it
+    /// adopts the land campaign's objective when that city lies under its
+    /// reach, so wing and army converge on one city.
+    ///
+    /// ★★ TWO OBJECTIVES, ONE ARMY. Live King 20261001T010043Z appointed the
+    /// surge against Warsaw at turn 96 while the land campaign marched on
+    /// Kraków, and a ready wing's objective overrides the campaign's: the army
+    /// would have turned around on the day its air support arrived. A wing
+    /// already flying keeps its objective (it is the campaign's then); a
+    /// starved one keeps its metal; a counter-surge adopts only a city of the
+    /// rival it is already fighting.
+    pub(crate) fn air_surge_adopt_campaign(&mut self, g: &Game, pid: usize, plan: &StrategicPlan) {
+        if !self.air_surge_2 || self.active_victory_target(g) != Some(VictoryTarget::Domination) {
+            return;
+        }
+        let Some(surge) = self.air_surge_plan.as_ref() else {
+            return;
+        };
+        if self.air_surge_status.wing_ready()
+            || self.air_surge_metal_starved(g, pid)
+            || plan.strategy == GrandStrategy::Recovery
+        {
+            return;
+        }
+        let Some(city) = plan.target_city.and_then(|cid| g.cities.get(&cid)) else {
+            return;
+        };
+        let fought = surge.declared_turn.is_some() || surge.opened_at_war;
+        if city.pos == surge.objective_pos
+            || city.owner == pid
+            || g.players
+                .get(city.owner)
+                .is_none_or(|owner| !owner.alive || owner.is_minor || owner.is_barbarian)
+            || (fought && city.owner != surge.target_player)
+            || (!g.is_at_war(pid, city.owner) && !self.campaign_target_legal(g, pid, city.owner))
+            || !Self::air_surge_in_range(g, pid, city.pos)
+            || self
+                .war_staging_route(g, pid, city.owner, city.pos)
+                .is_none()
+        {
+            return;
+        }
+        let mut next = surge.clone();
+        next.target_player = city.owner;
+        next.objective_city = city.id;
+        next.objective_pos = city.pos;
+        next.opened_at_war = g.is_at_war(pid, city.owner);
+        if self.journal().wants(crate::reasoning::Level::Strategy) {
+            think!(self.journal(), Military, Strategy,
+                   "The air surge joins the campaign on {}", city.name;
+                   "the land army is already aimed there; one objective for wing and army");
+        }
+        self.air_surge_plan = Some(next);
     }
 
     /// Candidate-only scoring for the existing package tests. The live
@@ -1177,6 +1915,9 @@ impl AdvancedAi {
         let Some(plan) = self.air_surge_plan.as_ref() else {
             return self.domination_air_readiness_value(g, pid, cid, item, turns);
         };
+        if self.air_surge_city_too_slow(g, pid, cid, item) {
+            return None;
+        }
         let mut status = self.air_surge_status_framed(g, pid, plan);
         if status.aerodromes_committed == 0 && self.air_surge_reserves_field_slot(g, pid, cid, item)
         {
@@ -1205,7 +1946,7 @@ impl AdvancedAi {
                 Item::Unit { unit } | Item::Formation { unit, .. } => {
                     if Self::air_surge_is_bomber(g, *unit) {
                         status.bombers_committed = status.bombers_committed.saturating_sub(1);
-                    } else if Self::war_unit_is_at_least(g, pid, *unit, plan.body_unit) {
+                    } else if Self::air_surge_body_ready_kind(g, pid, *unit, plan.body_unit) {
                         status.bodies_committed = status.bodies_committed.saturating_sub(1);
                     }
                 }
@@ -1297,7 +2038,7 @@ impl AdvancedAi {
         status: AirSurgeStatus,
     ) -> Option<f64> {
         let plan = self.air_surge_plan.as_ref()?;
-        let bomber_goal = Self::air_surge_bomber_goal(g, pid);
+        let bomber_goal = self.air_wing_bomber_goal(g, pid);
         match item {
             Item::District { district, .. }
                 if Self::air_surge_field(g, pid)
@@ -1316,8 +2057,8 @@ impl AdvancedAi {
                         AIR_SURGE_BOMBER_VALUE + AIR_SURGE_SCARCITY_STEP * missing as f64
                             - turns * 8.0,
                     )
-                } else if status.metal_ready
-                    && Self::war_unit_is_at_least(g, pid, *unit, plan.body_unit)
+                } else if (status.metal_ready || self.air_surge_metal_grab(g, pid, plan))
+                    && Self::air_surge_body_ready_kind(g, pid, *unit, plan.body_unit)
                 {
                     let missing = AIR_SURGE_BODIES.saturating_sub(status.bodies_committed);
                     (missing > 0).then_some(
@@ -1332,6 +2073,182 @@ impl AdvancedAi {
         }
     }
 
+    /// Turns this city needs for `item`, at its current production.
+    fn air_surge_item_turns(g: &Game, pid: usize, cid: u32, item: &Item) -> f64 {
+        g.item_remaining_cost_for_city(pid, cid, item)
+            / (g.city_yields(cid).production * g.item_prod_mult(pid, cid, Some(item))).max(0.1)
+    }
+
+    /// The airfield or Bomber this package item is, if it is one.
+    fn air_surge_slow_sensitive(g: &Game, pid: usize, item: &Item) -> bool {
+        match item {
+            Item::District { district, .. } => Self::air_surge_field(g, pid)
+                .is_some_and(|field| g.district_family(*district) == field),
+            Item::Unit { unit } | Item::Formation { unit, .. } => {
+                Self::air_surge_is_bomber(g, *unit)
+            }
+            _ => false,
+        }
+    }
+
+    /// The fastest any of our cities could deliver an item of `item`'s kind,
+    /// at its current production rate. `None` when no city can.
+    fn air_surge_fastest_rate(g: &Game, pid: usize, item: &Item) -> Option<f64> {
+        let mut rates: Vec<(f64, u32)> = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|cid| {
+                (
+                    g.city_yields(cid).production * g.item_prod_mult(pid, cid, Some(item)),
+                    cid,
+                )
+            })
+            .collect();
+        rates.sort_by(|left, right| right.0.total_cmp(&left.0).then(left.1.cmp(&right.1)));
+        rates
+            .into_iter()
+            .find(|(_, cid)| match item {
+                // The fastest city with room to place the district: a city
+                // that cannot raise the field must not make the rest "slow".
+                Item::District { district, .. } => {
+                    let family = g.district_family(*district);
+                    g.producible_items(pid, *cid).iter().any(|candidate| {
+                        matches!(candidate, Item::District { district, .. }
+                                 if g.district_family(*district) == family)
+                    })
+                }
+                _ => g.can_produce(pid, *cid, item),
+            })
+            .map(|(rate, _)| rate)
+    }
+
+    /// `air-surge-2`, Domination lane: whether this city is much slower at an
+    /// airfield or a Bomber than the empire's fastest city.
+    ///
+    /// ★★★ THE FIRST IDLE QUEUE TOOK THE AIRFIELD. Live King 20261001T000033Z
+    /// started the surge's first Aerodrome in Nueva Barcelona at 34 turns,
+    /// then added Maracaibo (13) and Caracas (5) as "faster alternatives", and
+    /// trained its first Bomber in Maracaibo at 26 turns while Caracas built
+    /// one in 7. The package claimed whichever city was free, and the
+    /// governor prices a 34-turn airfield at 8,128, far above anything else
+    /// that city could build. A slow city now leaves these two items to the
+    /// fast one; [`Self::air_surge_fast_claim`] switches that city to them.
+    fn air_surge_city_too_slow(&self, g: &Game, pid: usize, cid: u32, item: &Item) -> bool {
+        if !self.air_surge_2
+            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || !Self::air_surge_slow_sensitive(g, pid, item)
+        {
+            return false;
+        }
+        let Some(fastest) = Self::air_surge_fastest_rate(g, pid, item) else {
+            return false;
+        };
+        let rate = g.city_yields(cid).production * g.item_prod_mult(pid, cid, Some(item));
+        let cost = g.item_remaining_cost_for_city(pid, cid, item);
+        let here = cost / rate.max(0.1);
+        let there = g.item_cost_for_city(pid, cid, item) / fastest.max(0.1);
+        here > there * AIR_SURGE_SLOW_FACTOR + AIR_SURGE_SLOW_SLACK
+    }
+
+    /// `air-surge-2`, Domination lane: put the airfield (or, with one built,
+    /// the next Bomber) in the fastest city that can take it, switching that
+    /// city's queue when no idle city is competitive. Civilization VI banks
+    /// the displaced item's progress, so the switch costs only time on it.
+    fn air_surge_fast_claim(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        plan: &AirSurge,
+        wants_field: bool,
+        threatened: Option<u32>,
+    ) -> bool {
+        if !self.air_surge_2 || self.active_victory_target(g) != Some(VictoryTarget::Domination) {
+            return false;
+        }
+        let mut best: Option<(f64, u32, Item, f64)> = None;
+        for cid in g.player_city_ids(pid) {
+            if threatened == Some(cid) {
+                continue;
+            }
+            let city = &g.cities[&cid];
+            // A city already building part of the package keeps it.
+            if city
+                .queue
+                .first()
+                .is_some_and(|item| Self::air_surge_slow_sensitive(g, pid, item))
+            {
+                continue;
+            }
+            for item in g.producible_items(pid, cid) {
+                let wanted = match &item {
+                    Item::District { .. } => wants_field,
+                    Item::Unit { .. } => !wants_field,
+                    _ => false,
+                };
+                if !wanted
+                    || !Self::air_surge_slow_sensitive(g, pid, &item)
+                    || !self.air_resource_item_preserves_wing(g, pid, cid, &item)
+                    || self.air_surge_city_too_slow(g, pid, cid, &item)
+                {
+                    continue;
+                }
+                let turns = Self::air_surge_item_turns(g, pid, cid, &item);
+                // `surge-fields-the-bombers`: the field goes where the launch
+                // wing trains fastest, its own turns and the wing's.
+                let rank = if wants_field {
+                    turns + self.surge_launch_wing_turns(g, pid, cid)
+                } else {
+                    turns
+                };
+                if best.as_ref().is_none_or(|(old, old_city, _, _)| {
+                    rank < *old || (rank == *old && cid < *old_city)
+                }) {
+                    best = Some((rank, cid, item, turns));
+                }
+            }
+        }
+        let Some((_, city, item, turns)) = best else {
+            return false;
+        };
+        // The fastest city that can actually take the item claims it, idle or
+        // busy: the slow-city filter reads the empire's fastest rate, which
+        // may belong to a city with no room for the district.
+        if turns > g.max_turns.saturating_sub(g.turn) as f64 {
+            return false;
+        }
+        let displaced = g.cities[&city].queue.first().cloned();
+        if g.apply(
+            pid,
+            &Action::Produce {
+                city,
+                item: item.clone(),
+            },
+        )
+        .is_err()
+        {
+            return false;
+        }
+        if self.journal().wants(crate::reasoning::Level::Decision) {
+            think!(self.journal(), Military, Decision,
+                   "{} switches to {} for the air surge", g.cities[&city].name, Self::plain_item(&item);
+                   "{turns:.0} turns in the empire's fastest city for it, displacing {}; the {} phase",
+                   displaced.as_ref().map_or_else(|| "nothing".to_string(), Self::plain_item),
+                   plan.phase.as_str());
+        }
+        self.air_surge_status = self.air_surge_status(g, pid, plan);
+        true
+    }
+
+    /// Turns until the Bomber's technology lands at the empire's present
+    /// science; zero once it is known.
+    pub(crate) fn air_surge_research_eta(g: &Game, pid: usize) -> f64 {
+        let goal = Name::new(AIR_SURGE_GOAL_TECH);
+        if g.players[pid].techs.contains(&goal) {
+            return 0.0;
+        }
+        Self::war_remaining_research_cost(g, pid, goal) / Self::war_science_per_turn(g, pid)
+    }
+
     /// Claim one idle city queue for the next missing member of the package.
     ///
     /// The adaptive controller hands empty cities to `BasicAi::cities`, which
@@ -1343,32 +2260,57 @@ impl AdvancedAi {
         let Some(plan) = self.air_surge_plan.clone() else {
             return self.domination_air_readiness_production(g, pid);
         };
-        let status = self.air_surge_status;
         let threatened = self.threatened_city(g, pid);
+        // `surge-fields-the-bombers`: an airfield city buys a Bomber when the
+        // treasury carries it, beside whatever the queues train.
+        if self.surge_fields_the_bombers
+            && self.air_surge_status.aerodromes > 0
+            && self.air_surge_status.bombers_committed < self.air_wing_bomber_goal(g, pid)
+            && self.surge_buy_a_bomber(g, pid, threatened)
+        {
+            self.air_surge_status = self.air_surge_status(g, pid, &plan);
+        }
+        let status = self.air_surge_status;
         let field = Self::air_surge_field(g, pid);
         let bomber = Self::air_surge_bomber(g, pid);
         // The airfield first: nothing else in the package can be trained
-        // until one city holds it. Then the wing, then the escort that takes
-        // the city the wing empties.
+        // until one city holds it. Commit the two-plane launch wing, then
+        // the two land capturers before filling the follow-through wing.
         let wants_field = status.aerodromes_committed == 0;
-        let bomber_goal = Self::air_surge_bomber_goal(g, pid);
+        let bomber_goal = self.air_wing_bomber_goal(g, pid);
         let wants_bomber = status.bombers_committed < bomber_goal;
-        let wants_body = status.metal_ready && status.bodies_committed < AIR_SURGE_BODIES;
+        // A metal grab is taken by the ground package alone, so it trains
+        // its bodies before any metal arrives.
+        let wants_body = (status.metal_ready || self.air_surge_metal_grab(g, pid, &plan))
+            && status.bodies_committed < AIR_SURGE_BODIES;
+        let launch_wing_committed = status.bombers_committed >= AIR_SURGE_LAUNCH_BOMBERS;
+        let launch_escort_missing = status.bodies_committed < AIR_SURGE_LAUNCH_BODIES;
         if !wants_field && !wants_bomber && !wants_body {
             return false;
         }
+        if (wants_field || wants_bomber)
+            && self.air_surge_fast_claim(g, pid, &plan, wants_field, threatened)
+        {
+            return true;
+        }
         let launch_missing = AIR_SURGE_LAUNCH_BOMBERS.saturating_sub(status.bombers_committed);
+        // `surge-fields-the-bombers`: a second field may carry the whole wing
+        // still missing, not only the launch pair. The launch pair as shipped.
+        let wing_missing = self.surge_wing_missing(
+            launch_missing,
+            bomber_goal.saturating_sub(status.bombers_committed),
+        );
         let wing_turns = |city| {
             let item = Item::Unit { unit: bomber? };
             let rate = (g.city_yields(city).production * g.item_prod_mult(pid, city, Some(&item)))
                 .max(0.1);
-            Some(launch_missing as f64 * g.item_cost_for_city(pid, city, &item) / rate)
+            Some(wing_missing as f64 * g.item_cost_for_city(pid, city, &item) / rate)
         };
         // A single slow base can monopolize the whole wing while the rest of
         // the empire trains escorts. Permit one faster alternative, including
         // its construction cost, before the launch wing is committed.
         let existing_wing_turns =
-            (status.aerodromes_committed == 1 && status.metal_ready && launch_missing > 0)
+            (status.aerodromes_committed == 1 && status.metal_ready && wing_missing > 0)
                 .then(|| {
                     g.player_city_ids(pid)
                         .into_iter()
@@ -1393,15 +2335,57 @@ impl AdvancedAi {
                         .min_by(f64::total_cmp)
                 })
                 .flatten();
+        // ★★ ONE AIRFIELD TRAINED THE WHOLE LAUNCH WING. Live King
+        // 20261001T080758Z: Advanced Flight at turn 156, the only Aerodrome in
+        // Bogota, Bombers out at 163 and 168 while Kaiapoi and Cartagena, each
+        // within a fifth of Bogota's production, trained nothing for the wing.
+        // `air-surge-2`: a second airfield raised during the beeline trains
+        // half the launch wing beside the first. Before the Bomber is known,
+        // neither base can start one until the research lands, so the second
+        // field only has to stand by then.
+        let parallel_deadline = (self.air_surge_2
+            && status.aerodromes_committed == 1
+            && status.metal_ready
+            && launch_missing >= 2)
+            .then(|| {
+                let eta = Self::air_surge_research_eta(g, pid);
+                let per_bomber = |city| Some(wing_turns(city)? / wing_missing as f64);
+                g.player_city_ids(pid)
+                    .into_iter()
+                    .filter(|cid| {
+                        field.is_some_and(|family| {
+                            g.city_has_district_family(&g.cities[cid], family)
+                                || g.cities[cid].queue.iter().any(|item| {
+                                    matches!(item, Item::District { district, .. }
+                                    if g.district_family(*district) == family)
+                                })
+                        })
+                    })
+                    .filter_map(|cid| {
+                        let waiting = g.cities[&cid].queue.first().map_or(0.0, |item| {
+                            g.item_remaining_cost_for_city(pid, cid, item)
+                                / (g.city_yields(cid).production
+                                    * g.item_prod_mult(pid, cid, Some(item)))
+                                .max(0.1)
+                        });
+                        Some(waiting.max(eta) + wing_turns(cid)?)
+                    })
+                    .min_by(f64::total_cmp)
+                    .map(|deadline| (deadline, eta, per_bomber))
+            })
+            .flatten();
+        let parallel_share = launch_missing.div_ceil(2) as f64;
         let remaining = g.max_turns.saturating_sub(g.turn) as f64;
-        let mut best: Option<(u8, f64, u32, String, Item)> = None;
+        let mut best: Option<(u8, f64, u32, String, Item, f64)> = None;
         for cid in g.player_city_ids(pid) {
             if !g.cities[&cid].queue.is_empty() || threatened == Some(cid) {
                 continue;
             }
             let production = g.city_yields(cid).production.max(0.1);
             for item in g.producible_items(pid, cid) {
-                if !self.air_resource_item_preserves_wing(g, pid, cid, &item) {
+                if !self.air_resource_item_preserves_wing(g, pid, cid, &item)
+                    || self.air_surge_city_too_slow(g, pid, cid, &item)
+                {
                     continue;
                 }
                 let rank = match &item {
@@ -1416,16 +2400,41 @@ impl AdvancedAi {
                                     wing_turns(cid).is_some_and(|wing| {
                                         field_turns + wing + f64::EPSILON < deadline
                                     })
-                                })) =>
+                                })
+                                || parallel_deadline.as_ref().is_some_and(
+                                    |(deadline, eta, per_bomber)| {
+                                        let field_turns = g
+                                            .item_remaining_cost_for_city(pid, cid, &item)
+                                            / (production
+                                                * g.item_prod_mult(pid, cid, Some(&item)))
+                                            .max(0.1);
+                                        per_bomber(cid).is_some_and(|bomber| {
+                                            field_turns.max(*eta)
+                                                + parallel_share * bomber
+                                                + f64::EPSILON
+                                                < *deadline
+                                        })
+                                    },
+                                )) =>
                     {
                         0
                     }
-                    Item::Unit { unit } if wants_bomber && Self::air_surge_is_bomber(g, *unit) => 1,
+                    Item::Unit { unit } if wants_bomber && Self::air_surge_is_bomber(g, *unit) => {
+                        if launch_wing_committed && launch_escort_missing && wants_body {
+                            2
+                        } else {
+                            1
+                        }
+                    }
                     Item::Unit { unit }
                         if wants_body
-                            && Self::war_unit_is_at_least(g, pid, *unit, plan.body_unit) =>
+                            && Self::air_surge_body_ready_kind(g, pid, *unit, plan.body_unit) =>
                     {
-                        2
+                        if launch_wing_committed && launch_escort_missing {
+                            1
+                        } else {
+                            2
+                        }
                     }
                     _ => continue,
                 };
@@ -1433,8 +2442,15 @@ impl AdvancedAi {
                 if build_turns > remaining + f64::EPSILON {
                     continue;
                 }
+                // `surge-fields-the-bombers`: a field is ordered by its own
+                // turns and the launch wing's in that city.
+                let order_turns = if rank == 0 {
+                    build_turns + self.surge_launch_wing_turns(g, pid, cid)
+                } else {
+                    build_turns
+                };
                 let key = format!("{item:?}");
-                let candidate = (rank, build_turns, cid, key, item);
+                let candidate = (rank, order_turns, cid, key, item, build_turns);
                 if best.as_ref().is_none_or(|old| {
                     (candidate.0, candidate.1, candidate.2, &candidate.3)
                         < (old.0, old.1, old.2, &old.3)
@@ -1443,7 +2459,7 @@ impl AdvancedAi {
                 }
             }
         }
-        let Some((_, build_turns, city, _, item)) = best else {
+        let Some((_, _, city, _, item, build_turns)) = best else {
             return false;
         };
         if g.apply(
@@ -1463,10 +2479,10 @@ impl AdvancedAi {
                    "{} starts {} for the air surge", city_name, Self::plain_item(&item);
                    "{:.0} turns; the surge holds {}/{} bombers ({} to launch) and {}/{} {}s ({} to launch) in the {} phase",
                    build_turns,
-                   self.air_surge_status.bombers, Self::air_surge_bomber_goal(g, pid),
+                   self.air_surge_status.bombers, self.air_wing_bomber_goal(g, pid),
                    AIR_SURGE_LAUNCH_BOMBERS,
-                   self.air_surge_status.bodies, AIR_SURGE_BODIES, AIR_SURGE_LAUNCH_BODIES,
-                   plain(plan.body_unit.as_str()),
+                   self.air_surge_status.bodies, AIR_SURGE_BODIES,
+                   plain(plan.body_unit.as_str()), AIR_SURGE_LAUNCH_BODIES,
                    plan.phase.as_str());
         }
         self.air_surge_status = self.air_surge_status(g, pid, &plan);
@@ -1557,6 +2573,13 @@ impl AdvancedAi {
         false
     }
 
+    /// Whether our military already stands at
+    /// [`AIR_SURGE_GROUND_RELEASE_RATIO`] times the target's, so the ground
+    /// campaign need not wait for the wing.
+    pub(crate) fn air_surge_ground_overwhelms(g: &Game, pid: usize, target: usize) -> bool {
+        g.military_power(pid) >= AIR_SURGE_GROUND_RELEASE_RATIO * g.military_power(target).max(1.0)
+    }
+
     pub(crate) fn air_surge_opening(&mut self, g: &mut Game, pid: usize, target: usize) -> bool {
         let Some(plan) = self
             .air_surge_plan
@@ -1572,7 +2595,16 @@ impl AdvancedAi {
             // whether the surge joined this war or declared it itself.
             return false;
         }
-        if self.urgent_victory_threat(g, target) {
+        // `air-surge-strikes-through-urgency`: a wing ready to strike answers
+        // the clock itself. Releasing it hands the war to the ordinary
+        // declaration, which waits on a ground army staged at the surge's
+        // objective. Live King civvis-20261005T080337Z (game 111) reached
+        // Strike on Persia, an urgent rival at parity, by turn 185, then held
+        // "the army has not finished staging" every turn to 200 with no Siege
+        // row on the board, and declared no war all game (diagnosed by -60).
+        if self.urgent_victory_threat(g, target)
+            && !(self.air_surge_strikes_through_urgency && plan.phase == AirSurgePhase::Strike)
+        {
             // Denial may need the staged ground army before the wing is
             // ready. Release the declaration hold without throwing away its
             // research and production. Ordinary diplomacy still checks the
@@ -1585,6 +2617,38 @@ impl AdvancedAi {
             self.record_air_surge_abort(g, "victory denial superseded the surge");
             self.air_surge_plan = None;
             self.air_surge_status = AirSurgeStatus::default();
+            return false;
+        }
+        // A ground army that already overwhelms the surge's target does not
+        // wait for the wing. Live King civvis-20261003T040354Z held Rome at
+        // peace from turn 91 with 805 power against 95 ("power 11.22× theirs"
+        // for Ravenna) because every phase before Strike spent the turn's
+        // war-opening decision on nothing, and the wing of game 15 arrived at
+        // turns 163-168. The ordinary declaration still checks the staged
+        // army, the treasury and the peace deadline; the wing keeps its
+        // research and production and joins the war when it is ready.
+        if plan.phase != AirSurgePhase::Strike
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && self.threatened_city(g, pid).is_none()
+            && Self::air_surge_ground_overwhelms(g, pid, target)
+        {
+            return false;
+        }
+        // A wing still being researched is many turns away, too far to hold a
+        // ground war for. Live King civvis-20261003T100536Z appointed the surge
+        // at turn 120 with Advanced Flight eight techs out, while the campaign
+        // on Carthage had been aimed since turn 111 at 1.7-1.9 times
+        // Phoenicia's power. Every Beeline turn spent the war-opening decision
+        // on nothing, and a dozen bodies stood "going nowhere" for 13-38
+        // turns. The ordinary declaration still checks the staged army, the
+        // campaign bill, the treasury and the peace deadline. The wing keeps
+        // its research and production and joins the war through
+        // `air_surge_join_declared_war`. The hold resumes in Arm, when the
+        // bombers are being built.
+        if plan.phase == AirSurgePhase::Beeline
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && self.threatened_city(g, pid).is_none()
+        {
             return false;
         }
         if plan.phase != AirSurgePhase::Strike {
@@ -1603,7 +2667,9 @@ impl AdvancedAi {
         // Phase is recomputed at turn start; a deal or a loss earlier this
         // turn can have changed the board, so the gate is repeated here.
         let status = self.air_surge_status(g, pid, &plan);
-        if !(status.wing_ready() && status.escort_ready()) || self.threatened_city(g, pid).is_some()
+        let metal_grab = self.air_surge_metal_grab_ready(g, pid, &plan, &status);
+        if !((status.wing_ready() && status.escort_ready()) || metal_grab)
+            || self.threatened_city(g, pid).is_some()
         {
             return true;
         }
@@ -1625,9 +2691,10 @@ impl AdvancedAi {
         if let Some(city) = g.cities.get(&plan.objective_city) {
             think!(self.journal(), Military, Strategy,
                    "The air surge opens on {}", city.name;
-                   "{} bombers in range and {} {}s ready, {} turns after the appointment",
+                   "{} bombers in range and {} {}s ready, {} turns after the appointment{}",
                    status.bombers, status.bodies, plain(plan.body_unit.as_str()),
-                   g.turn.saturating_sub(plan.appointed_turn));
+                   g.turn.saturating_sub(plan.appointed_turn),
+                   if metal_grab { "; the ground package takes the wing's Aluminum" } else { "" });
         }
         true
     }
@@ -1673,7 +2740,19 @@ mod urgent_denial_opening_tests;
 #[cfg(test)]
 mod field_slot_tests;
 
+pub(crate) mod bomber_wing;
+
+#[cfg(test)]
+mod bomber_wing_tests;
+
+mod raids;
+
+mod heretic_hunt;
+
 mod readiness;
 
 #[cfg(test)]
 mod modernization_budget_tests;
+
+#[cfg(test)]
+mod front_hold_tests;

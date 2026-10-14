@@ -70,6 +70,31 @@ fn project(name: &str) -> Item {
 }
 
 #[test]
+fn assigned_domination_never_resumes_a_completed_science_launch_chain() {
+    let (mut g, first, second) = board();
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.lane_lost = true;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 2,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+
+    assert!(!ai.science_endgame_committed(&g, 0));
+    assert!(!ai.science_endgame_lane_committed(&g, 0));
+    ai.space_race_production(&mut g, 0, &plan);
+    assert!(g.cities[&first].queue.is_empty());
+    assert!(g.cities[&second].queue.is_empty());
+    let laser = project("terrestrial_laser_station");
+    assert!(g.can_produce(0, first, &laser));
+    assert!(ai.production_value(&g, 0, first, &laser, &plan, &ai.counts(&g, 0)) < 0.0);
+}
+
+#[test]
 fn all_pads_start_lasers_in_one_pass_and_keep_invested_terrestrial_work() {
     let (mut g, a, b) = board();
     let terrestrial = project(LASERS[1]);

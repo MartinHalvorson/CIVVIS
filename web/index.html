@@ -858,6 +858,16 @@
   .turn-count.turn-count-long { column-gap: 3px; }
   .turn-count.turn-count-long .turn-progress { column-gap: 2px; }
   .turn-count.turn-count-long .turn-label { letter-spacing: .04em; }
+  /* The live stopwatch, the plate's top section when the world is watched. */
+  .victory-turn.has-live-time { grid-template-rows: auto auto auto minmax(0, 1fr); }
+  .turn-live {
+    min-width: 0; display: flex; align-items: baseline; justify-content: center; gap: 6px;
+    margin: 0 0 4px; padding: 0 16px 4px; border-bottom: 1px solid #d7b66a24; white-space: nowrap;
+  }
+  .turn-live .turn-label { font-size: var(--type-small); }
+  .turn-live b {
+    color: #f4d892; font: 850 clamp(14px, 1vw, 15px)/1 var(--font-ui); font-variant-numeric: tabular-nums;
+  }
   .turn-era {
     min-width: 0; overflow: hidden; color: #e1e8e4;
     font-size: clamp(14px, 1vw, 15px); font-weight: 850; letter-spacing: -.01em;
@@ -967,6 +977,11 @@
     grid-column: 1 / -1; grid-row: 2; align-self: start;
     grid-template-columns: repeat(2, minmax(max-content, 1fr)); column-gap: 14px;
   }
+  #playerhud.turn-plate-wide .victory-turn.has-live-time { grid-template-rows: auto auto minmax(0, 1fr); }
+  #playerhud.turn-plate-wide .turn-live { grid-column: 1 / -1; grid-row: 1; }
+  #playerhud.turn-plate-wide .has-live-time .turn-era,
+  #playerhud.turn-plate-wide .has-live-time .turn-count { grid-row: 2; }
+  #playerhud.turn-plate-wide .has-live-time .turn-settings { grid-row: 3; }
   /* Tabular figures so a count changing from 10 to 9 moves the row by exactly
      one digit's width instead of an arbitrary one — the block is refitted on
      that width, and a proportional 1 would re-size all four rows mid-game. */
@@ -1712,6 +1727,153 @@
     font-size: var(--type-small); font-weight: 900;
   }
   .launch-badge[hidden] { display: none; }
+  /* The live game's controls — Pause / Resume (`toggleLivePause`) and New game
+     (`pressLiveNewGame`) — side by side under the research box, all on the
+     map's right (operator 2026-10-14: "have the 2 buttons side by side. have
+     this all on the right side of the screen"). The world minimap holds the
+     bottom-right corner on most layouts and the victory tracker the column
+     above it, so `placeLivePause` steps left of or above them; these offsets
+     are only the first paint. They are shown only where
+     `GET /live-pause` says this page is
+     the mirror beside a Civilization VI verification game, and there they act
+     on the Firaxis game itself. The note above them says what the game is
+     actually doing — the hold lands on the mod's next tick of our turn, and a new
+     game takes a while to come up, neither on the click. */
+  #livepause {
+    position: absolute; z-index: 30; right: var(--panel-edge); bottom: var(--panel-edge);
+    display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+    max-width: calc(100% - 2 * var(--panel-edge));
+    --lt-scale: 1;
+  }
+  #livepause[hidden] { display: none; }
+  /* A full-screen dialog (a tree, the Civilopedia, an empire screen) covers
+     the map, and the controls go under it with the map rather than float on
+     top of the dialog's columns. */
+  body:has(#empire.open, #diplomacy.open, #cityscreen.open, #pedia.open, #tree.open, #trade.open) #livepause {
+    z-index: 14;
+  }
+  .livepause-buttons {
+    display: flex; flex-direction: row; align-items: stretch; gap: 4px;
+    padding: 4px; border-radius: 12px; white-space: nowrap;
+    border: 1px solid #4d685f; background: #0a1512e8;
+    box-shadow: 0 5px 14px #0007; backdrop-filter: blur(12px);
+  }
+  #livepause.live-paused .livepause-buttons { border-color: var(--gold); }
+  .livepause-buttons button {
+    flex: none; margin: 0; padding: 5px 10px; border-radius: 999px; text-align: left;
+    font-size: calc(var(--type-control) * .65); font-weight: 900; letter-spacing: .04em;
+  }
+  #livepause-button {
+    color: #17160f; background: linear-gradient(135deg, #f0d58f, #c99e4e);
+    border-color: #efd184; box-shadow: inset 0 1px #fff7;
+  }
+  #livepause-button:hover {
+    color: #11140f; background: linear-gradient(135deg, #ffe3a0, #dbae58); border-color: #ffe4a0;
+  }
+  #livenewgame-button {
+    color: #dce6e1; background: linear-gradient(180deg, #243530, #192823); border-color: #4d685f;
+  }
+  #livenewgame-button:hover {
+    color: var(--text); background: linear-gradient(180deg, #315048, #223a34); border-color: #6f8f84;
+  }
+  /* Ending a game is the one press here that cannot be taken back, so the
+     first press only arms it and the button says so in a different colour. */
+  #livenewgame-button.confirming,
+  #livenewgame-button.confirming:hover {
+    color: #fff4ef; background: linear-gradient(135deg, #c9583f, #9a3626); border-color: #e48a72;
+  }
+  .livepause-buttons button:disabled { opacity: .6; cursor: progress; }
+  #livepause-note {
+    max-width: 100%; padding: 4px 8px; border-radius: 8px; text-align: left;
+    border: 1px solid #4d685f; background: #0a1512e8; backdrop-filter: blur(12px);
+    color: #dce6e1; font-size: calc(var(--type-control) * .65); font-weight: 800; line-height: 1.3;
+  }
+  /* What our civilization is studying and running, above the controls: the
+     research and civic as Civ VI's world tracker draws them (name, meter,
+     turns), the government, each slotted card condensed from Civ VI's own —
+     its slot's colour, name and text — with what it is worth this turn, and
+     the deck's net effect. Wider than the buttons below it: card text needs
+     the room, and the buttons keep their own width. */
+  #livetracker {
+    position: relative; box-sizing: border-box;
+    width: calc(240px * var(--lt-scale)); max-width: 100%; overflow-y: auto; padding: 6px 7px;
+    /* A short window keeps the masthead clear: past this the box scrolls. */
+    max-height: min(70vh, calc(100vh - 240px));
+    border-radius: 10px; border: 1px solid #4d685f; background: #0a1512eb; backdrop-filter: blur(12px);
+    color: #dce6e1; font-size: calc(var(--type-control) * .72 * var(--lt-scale)); line-height: 1.3;
+    box-shadow: 0 5px 14px #0007;
+  }
+  #livetracker[hidden] { display: none; }
+  #livetracker-body { display: flex; flex-direction: column; gap: 4px; }
+  /* The box is the viewer's to size: this corner scales it and its type
+     together. It sits top-left because the box is anchored at the map's
+     bottom right, so it grows up and to the left, toward the dragging hand. */
+  #livetracker .lt-grip {
+    position: absolute; z-index: 1; top: 0; left: 0; width: 15px; height: 15px; margin: 0; padding: 0;
+    border: 0; border-radius: 10px 0 0 0; cursor: nwse-resize; touch-action: none; opacity: .8;
+    background: repeating-linear-gradient(135deg, #0000 0 2px, #d7e2dd 2px 3.5px) top left / 100% 100%;
+    clip-path: polygon(0 0, 100% 0, 0 100%);
+  }
+  #livetracker .lt-grip:hover, #livetracker .lt-grip:focus-visible,
+  body.live-tracker-resizing #livetracker .lt-grip { opacity: 1; }
+  body.live-tracker-resizing { cursor: nwse-resize; user-select: none; }
+  #livetracker .lt-k { color: #9db0a8; font-weight: 700; letter-spacing: .03em; }
+  #livetracker .lt-none { color: #aebeb7; font-style: italic; font-weight: 700; }
+  #livetracker .lt-study {
+    display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: baseline; gap: 1px 6px;
+    width: 100%; margin: 0; padding: 3px 5px 4px; border: 1px solid transparent; border-radius: 6px;
+    color: inherit; background: #ffffff08; font: inherit; text-align: left; cursor: pointer;
+  }
+  #livetracker button.lt-study:hover { border-color: #6f8f84; background: #ffffff12; }
+  #livetracker .lt-study .lt-name { min-width: 0; overflow: hidden; font-weight: 900; text-overflow: ellipsis; white-space: nowrap; }
+  #livetracker .lt-study .lt-meta { color: #aebeb7; font-weight: 750; white-space: nowrap; }
+  #livetracker .lt-study .lt-bar { grid-column: 1 / -1; height: 3px; overflow: hidden; border-radius: 2px; background: #ffffff17; }
+  #livetracker .lt-study .lt-bar i { display: block; height: 100%; border-radius: 2px; background: var(--blue); }
+  #livetracker .lt-study.techs .lt-name { color: #bfe7f2; }
+  #livetracker .lt-study.civics .lt-name { color: #dcc4f4; }
+  #livetracker .lt-study.civics .lt-bar i { background: #b98be0; }
+  #livetracker .lt-row { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; padding: 0 5px; }
+  #livetracker .lt-cards { display: flex; flex-direction: column; gap: 3px; }
+  #livetracker .lt-card {
+    padding: 3px 6px 4px 7px; border: 1px solid #ffffff1a; border-left: 4px solid #8a8f8c; border-radius: 5px;
+    background: linear-gradient(90deg, #3b4a45cc, #18201ecc);
+  }
+  #livetracker .lt-card.slot-military { border-left-color: #c8553f; background: linear-gradient(90deg, #5a2a22d9, #1d1614d9); }
+  #livetracker .lt-card.slot-economic { border-left-color: #d6a83c; background: linear-gradient(90deg, #574720d9, #1d1a12d9); }
+  #livetracker .lt-card.slot-diplomatic { border-left-color: #4c9fd0; background: linear-gradient(90deg, #1f4258d9, #121a1fd9); }
+  #livetracker .lt-card.slot-wildcard { border-left-color: #9a72cc; background: linear-gradient(90deg, #42305ad9, #19151fd9); }
+  #livetracker .lt-card-head { display: flex; align-items: baseline; justify-content: space-between; gap: 6px; }
+  #livetracker .lt-card-head b { min-width: 0; color: #f4efe2; font-weight: 900; }
+  #livetracker .lt-card-text {
+    display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden;
+    color: #c5d0cb; font-size: .92em; font-weight: 600; line-height: 1.25;
+  }
+  #livetracker .lt-worth { display: inline-flex; flex-wrap: wrap; justify-content: flex-end; gap: 0 5px; text-align: right; }
+  #livetracker .lt-net {
+    display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 1px 6px;
+    padding: 3px 5px 1px; border-top: 1px solid #4d685f;
+  }
+  #livetracker .lt-net .lt-worth { flex: 1 0 auto; }
+  /* A card's worth this turn: up green, down red, nothing measurable faint. */
+  .pw { display: inline-flex; align-items: center; gap: 1px; font-weight: 900; white-space: nowrap; }
+  .pw .pw-icon { width: 1.25em; height: 1.25em; border-width: 0; box-shadow: none; }
+  .pw .pw-mark { font-size: 1.05em; }
+  .pw.up { color: #a9e6b8; }
+  .pw.down { color: #f2a493; }
+  .pw.none { color: var(--faint); font-weight: 700; }
+  .policy-worth { margin-top: 5px; color: var(--faint); font-weight: 700; }
+  .policy-worth .pw + .pw, .empire-heading .pw + .pw { margin-left: 6px; }
+  .empire-heading .pw { font-size: .95em; }
+  #livepause-note[hidden] { display: none; }
+  #livepause.live-pending #livepause-note { color: #aebeb7; font-style: italic; }
+  #livepause.live-error #livepause-note { color: #f2b8a8; border-color: #8a4740; font-style: normal; }
+  /* On that mirror the spectator Pause would start simulating the mirrored
+     world instead of holding the real one, and Restart sim would replace the
+     mirrored world with a simulated one while the real game played on — so the
+     live controls are the only pause and the only restart it offers. */
+  body.live-pause-available #specpause,
+  body.live-pause-available #collapsepause,
+  body.live-pause-available #specbar { display: none !important; }
   #empire {
     position: absolute; z-index: 18;
     inset: var(--workspace-block-inset) var(--workspace-inline-inset);
@@ -2778,18 +2940,76 @@
   @keyframes centered-rise {
     from { opacity: 0; transform: translate(-50%, -50%) translateY(8px) scale(.99); }
   }
-  #treehead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
-  #treetitle { color: var(--gold-bright); font: 600 20px Georgia, serif; }
-  #treecols { display: flex; gap: 18px; flex: 1; overflow: auto; align-items: flex-start; }
-  .tcol { display: flex; flex-direction: column; gap: 10px; min-width: 180px; }
-  .tera { position: sticky; top: 0; z-index: 1; padding: 7px 9px; color: var(--gold-bright); background: #12221fef; border-bottom: 1px solid #536c63; border-radius: 7px; font: 700 var(--type-secondary)/1.2 var(--font-ui); letter-spacing: .07em; text-transform: uppercase; }
-  .tnode { padding: 10px 11px; color: #bcc9c3; background: #101d1a; border: 1px solid #2d443d; border-radius: 10px; font-size: var(--type-control); transition: .12s; }
-  .tnode.done { color: #9bd8ae; border-color: #4a805d; background: #183124; }
-  .tnode.cur { color: #bcecf5; border-color: var(--blue); box-shadow: 0 0 18px #76cde42e; }
-  .tnode.avail { color: var(--gold-bright); border-color: var(--gold); cursor: pointer; }
-  .tnode.avail:hover { transform: translateY(-2px); background: #24372e; }
-  .tnode.locked { opacity: .38; }
-  .tnode .req { color: var(--faint); font-size: var(--type-label); margin-top: 3px; }
+  #treehead { display: flex; align-items: center; justify-content: space-between; gap: 16px; margin-bottom: 14px; }
+  #treetitle { display: flex; flex-direction: column; gap: 4px; min-width: 0; color: var(--gold-bright); font: 600 20px Georgia, serif; }
+  /* What is being studied, how far along, and how much of the tree is done:
+     the three things a glance at Civ VI's tree header tells a player. */
+  #treetitle .tree-study {
+    display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 16px;
+    color: #c9d6d0; font: 600 max(12px, .62em)/1.3 var(--font-ui); letter-spacing: .01em;
+  }
+  #treetitle .tree-study b { color: var(--blue); }
+  #tree[data-kind="civics"] #treetitle .tree-study b { color: #c9a2ee; }
+  #treetitle .tree-tally { color: var(--faint); font-weight: 700; }
+  #treecols { display: flex; gap: 14px; flex: 1; overflow: auto; align-items: flex-start; padding-bottom: 6px; }
+  .tcol { display: flex; flex-direction: column; gap: 6px; flex: none; width: 216px; }
+  .tera {
+    position: sticky; top: 0; z-index: 1; display: flex; justify-content: space-between; gap: 8px;
+    padding: 7px 9px; color: var(--gold-bright); background: #12221fef; border-bottom: 1px solid #536c63;
+    border-radius: 7px; font: 700 var(--type-secondary)/1.2 var(--font-ui); letter-spacing: .07em; text-transform: uppercase;
+  }
+  .tera span { color: var(--faint); letter-spacing: .02em; }
+  .tcol.frontier .tera { border-bottom-color: var(--gold); }
+  /* A node is its name and its time on one line, then only what is worth
+     reading: the meter while it is studied, the boost while it can still be
+     earned, what it waits on while it waits, and what it unlocks as chips. */
+  .tnode {
+    display: grid; gap: 5px; padding: 8px 10px; color: #bcc9c3; background: #101d1a;
+    border: 1px solid #2d443d; border-radius: 9px; font-size: var(--type-control); line-height: 1.3; transition: .12s;
+  }
+  .tn-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 0 8px; min-width: 0; }
+  .tn-name { min-width: 0; color: inherit; font: 700 1.05em/1.2 Georgia, serif; overflow-wrap: anywhere; }
+  .tn-when { margin-left: auto; }
+  .tn-when { flex: none; color: var(--faint); font-size: .82em; font-weight: 750; white-space: nowrap; }
+  /* Studied nodes are folded to a line: late in a game they are most of the
+     tree, and the room belongs to what is still to come. */
+  .tnode.done { padding: 4px 10px; color: #8fc4a0; background: #12201b; border-color: #26402f; }
+  .tnode.done .tn-name { font: 650 .88em/1.25 var(--font-ui); }
+  .tnode.done .tn-when { color: #6fae84; }
+  .tnode.cur { color: #e1f4f8; border-color: var(--blue); background: #12262b; box-shadow: 0 0 18px #76cde42e; }
+  .tnode.cur .tn-when { color: var(--blue); }
+  #tree[data-kind="civics"] .tnode.cur { color: #f1e6fb; border-color: #b98be0; background: #221a2c; box-shadow: 0 0 18px #b98be02e; }
+  #tree[data-kind="civics"] .tnode.cur .tn-when { color: #c9a2ee; }
+  .tnode.avail { color: var(--gold-bright); border-color: var(--gold); }
+  .tnode[onclick] { cursor: pointer; }
+  .tnode[onclick]:hover { transform: translateY(-2px); background: #24372e; }
+  .tnode.locked { opacity: .55; }
+  .tn-bar { height: 4px; overflow: hidden; border-radius: 3px; background: #ffffff17; }
+  .tn-bar i { display: block; height: 100%; border-radius: 3px; background: var(--blue); }
+  #tree[data-kind="civics"] .tn-bar i { background: #b98be0; }
+  .tn-boost { color: var(--gold); font-size: .82em; font-weight: 700; line-height: 1.3; }
+  .tn-boost.got { color: #9bd8ae; }
+  .tn-needs { color: var(--faint); font-size: .8em; line-height: 1.3; }
+  .tn-chips { display: flex; flex-wrap: wrap; gap: 3px; }
+  .tn-chip {
+    max-width: 100%; overflow: hidden; padding: 1px 6px; border: 1px solid #ffffff14; border-radius: 5px;
+    color: #eef1ec; background: #2b3a36; font-size: .76em; font-weight: 700; line-height: 1.35;
+    text-overflow: ellipsis; white-space: nowrap;
+  }
+  .tn-chip.k-unit { background: #5c302a; }
+  .tn-chip.k-building { background: #25495b; }
+  .tn-chip.k-district { background: #4f4421; }
+  .tn-chip.k-wonder { color: #ffe6a8; background: #6b4a12; }
+  .tn-chip.k-improvement { background: #2d4b2b; }
+  .tn-chip.k-project, .tn-chip.k-resource { background: #3d4146; }
+  .tn-chip.k-government { background: #4b305f; }
+  .tn-chip.k-policy.slot-military { background: #7a3328; }
+  .tn-chip.k-policy.slot-economic { background: #7a6324; }
+  .tn-chip.k-policy.slot-diplomatic { background: #285a7a; }
+  .tn-chip.k-policy.slot-wildcard { background: #5b3f7a; }
+  .tn-chip.k-ability { color: #c9d6d0; background: none; border-style: dashed; border-color: #ffffff2e; font-weight: 600; }
+  .tn-chip .pw-mark:empty { display: none; }
+  .tn-chip .pw-icon { width: 1.2em; height: 1.2em; margin-left: 3px; vertical-align: -.25em; border-width: 0; box-shadow: none; }
 
   /* Quick Deals: compare every acceptable AI quote without leader-by-leader
      haggling. The engine still revalues both sides when Accept is clicked. */
@@ -2944,7 +3164,7 @@
     #tree { padding: 13px; }
     #treehead { margin-bottom: 11px; }
     #treecols { gap: 10px; }
-    .tcol { min-width: 152px; }
+    .tcol { width: 172px; }
     #tradelist { grid-template-columns: minmax(0, 1fr); gap: 8px; padding: 10px 13px 16px; }
     .trade-toolbar { flex-wrap: wrap; padding: 9px 13px; }
     .quick-deal { grid-template-columns: 38px minmax(0, 1fr); min-height: 0; gap: 8px; padding: 10px; }
@@ -4377,10 +4597,6 @@
   }
   .wt-boost { color: var(--gold-bright); font-style: normal; }
   /* What would boost this study, while it can still be boosted. */
-  /* On a tree node the boost line sits above the prerequisites and must not
-     read as one of them: it is the only line on the card describing something
-     the player can go and do. */
-  .tnode .tboost { color: var(--gold); }
   /* This one wraps where the name above it clips: a truncated tech is still
      recognisable from its first word, and a truncated instruction is not. */
   .wt-boostwant {
@@ -4771,6 +4987,22 @@
   <div id="worldtracker" aria-label="Research and civics"></div>
   <div id="launchbar" aria-label="Empire screens">
     <div id="launchtabs"></div>
+  </div>
+  <!-- The live game's Pause / Resume and New game. Hidden unless this page is
+       the mirror beside a Civilization VI verification game; see
+       `toggleLivePause` and `pressLiveNewGame`. -->
+  <div id="livepause" hidden role="group" aria-label="Live Civilization VI game">
+    <div id="livetracker" hidden aria-label="What our civilization is studying and running">
+      <button class="lt-grip" type="button"
+        aria-label="Resize the research box: drag this corner, or use the arrow keys; double-click resets"
+        title="Drag to resize · double-click resets"></button>
+      <div id="livetracker-body"></div>
+    </div>
+    <span id="livepause-note" aria-live="polite" hidden></span>
+    <div class="livepause-buttons">
+      <button id="livepause-button" type="button" aria-pressed="false">⏸ Pause game</button>
+      <button id="livenewgame-button" type="button">↻ New game</button>
+    </div>
   </div>
   <!-- Civ 6's partial-screen hooks (PartialScreenHooks.xml): upper right, read
        right to left — Reports, Era progress, Trade routes, City-States,

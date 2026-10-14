@@ -1,7 +1,12 @@
 //! Bounded fatigue relief for a Domination siege that removes substantial defenses.
 
 use super::{AdvancedAi, GrandStrategy, StrategicPlan, VictoryTarget};
-use crate::game::Game;
+use crate::game::{Game, Item};
+
+/// A first wall breaker can finish and reach the front after the ordinary
+/// 24-turn fatigue clock. Give that committed train one bounded chance to
+/// arrive; a stalled or replaced train cannot hold the war open indefinitely.
+const SIEGE_TRAIN_WAR_LIMIT: u32 = 40;
 
 #[derive(Clone, Debug)]
 pub(super) struct SiegeMilestone {
@@ -13,7 +18,82 @@ pub(super) struct SiegeMilestone {
 }
 
 impl AdvancedAi {
-    fn domination_siege_present(g: &Game, pid: usize, city: u32) -> bool {
+    pub(super) fn domination_siege_train_mobilizing(
+        &self,
+        g: &Game,
+        pid: usize,
+        other: usize,
+        plan: &StrategicPlan,
+    ) -> bool {
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || plan.strategy != GrandStrategy::Conquest
+            || plan.target_player != Some(other)
+            || plan.threatened_city.is_some()
+            || !g.is_at_war(pid, other)
+        {
+            return false;
+        }
+        let Some(target) = plan
+            .target_city
+            .and_then(|id| g.cities.get(&id))
+            .filter(|city| city.owner == other)
+        else {
+            return false;
+        };
+        let Some(started) = self
+            .one_war
+            .as_ref()
+            .filter(|front| front.target == other)
+            .map(|front| front.since)
+            .or(self.major_war_since)
+        else {
+            return false;
+        };
+        if g.turn.saturating_sub(started) >= SIEGE_TRAIN_WAR_LIMIT {
+            return false;
+        }
+        // An unwalled objective needs no wall breaker: the train that has it
+        // under siege, with a healthy soldier in its staging band, is the
+        // mobilized force. Live King civvis-20261003T081800Z offered Sweden
+        // "the war has stalled" peace at turn 84 (275 power against 75) on a
+        // Stage reading of unwalled Helsingborg, 36 strength near against a
+        // bill of 28; the same turn's assessment invested it, and the seat
+        // re-declared at 87 and 92.
+        if target.wall_hp <= 0 {
+            return self
+                .sieges
+                .get(&target.id)
+                .is_some_and(|siege| g.turn.saturating_sub(siege.assessed) <= 1)
+                && g.units.values().any(|unit| {
+                    let spec = &g.rules.units[unit.kind];
+                    unit.owner == pid
+                        && unit.hp >= 50
+                        && spec.class == "military"
+                        && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                        && g.wdist(unit.pos, target.pos) <= super::siege_train::STAGING_FAR
+                });
+        }
+        let is_land_gun = |unit: crate::name::Name| {
+            let spec = &g.rules.units[unit];
+            spec.class == "military"
+                && spec.siege
+                && spec.has_ranged_attack()
+                && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+        };
+        g.player_city_ids(pid).into_iter().any(|id| {
+            let city = &g.cities[&id];
+            g.wdist(city.pos, target.pos) <= 24
+                && city.queue.first().is_some_and(|item| match item {
+                    Item::Unit { unit } => is_land_gun(*unit),
+                    _ => false,
+                })
+        }) || g.player_unit_ids(pid).into_iter().any(|id| {
+            let unit = &g.units[&id];
+            unit.hp >= 50 && g.wdist(unit.pos, target.pos) <= 24 && is_land_gun(unit.kind)
+        })
+    }
+
+    pub(super) fn domination_siege_present(g: &Game, pid: usize, city: u32) -> bool {
         let Some(city) = g.cities.get(&city) else {
             return false;
         };

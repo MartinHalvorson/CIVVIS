@@ -13,15 +13,22 @@ import sys
 import subprocess
 import tempfile
 import time
+import threading
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
 from unittest.mock import call, patch
 
+# Never read the operator's real saved window layout (~/.civvis-window-layout.json).
+os.environ["CIVVIS_WINDOW_LAYOUT"] = "/nonexistent/civvis-window-layout.json"
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import civ6_play
+
+# An earlier test module (the climb, the brain) can import `window_layout`
+# before the line above runs, binding its default to the operator's file.
+civ6_play.window_layout.LAYOUT_FILE = Path(os.environ["CIVVIS_WINDOW_LAYOUT"])
 
 try:
     import PIL  # noqa: F401
@@ -55,6 +62,24 @@ def args(**changes):
     }
     values.update(changes)
     return SimpleNamespace(**values)
+
+
+class TerminalResultTests(unittest.TestCase):
+    def test_rival_and_city_state_eliminations_do_not_end_our_game(self):
+        for player in (1, 6):
+            with self.subTest(player=player):
+                self.assertFalse(civ6_play.is_terminal_result({
+                    "kind": "defeat", "player": player, "local_player": 0,
+                    "ours": False,
+                }))
+
+    def test_our_defeat_and_a_victory_end_the_game(self):
+        self.assertTrue(civ6_play.is_terminal_result({
+            "kind": "defeat", "player": 0, "ours": True,
+        }))
+        self.assertTrue(civ6_play.is_terminal_result({
+            "kind": "victory", "player": 0, "won": True,
+        }))
 
 
 class CityDevelopmentTests(unittest.TestCase):
@@ -154,12 +179,14 @@ class SharedDesktopRescueTests(unittest.TestCase):
             self.assertFalse(civ6_play.shared_desktop_in_use())
 
     def test_focus_upkeep_defers_to_a_present_operator(self):
-        with patch.object(civ6_play, "shared_desktop_in_use", return_value=True), \
+        with patch.object(civ6_play.time, "monotonic", return_value=2.0), \
+             patch.object(civ6_play, "shared_desktop_in_use", return_value=True), \
              patch.object(civ6_play, "screen_locked", return_value=False), \
              patch.object(civ6_play, "focus_game") as focus:
             self.assertEqual(civ6_play.maintain_game_focus(1.0, 0.0), 0.0)
         focus.assert_not_called()
-        with patch.object(civ6_play, "shared_desktop_in_use", return_value=False), \
+        with patch.object(civ6_play.time, "monotonic", return_value=2.0), \
+             patch.object(civ6_play, "shared_desktop_in_use", return_value=False), \
              patch.object(civ6_play, "screen_locked", return_value=False), \
              patch.object(civ6_play, "focus_game") as focus:
             self.assertGreater(civ6_play.maintain_game_focus(1.0, 0.0), 0.0)
@@ -1241,6 +1268,7 @@ class Civ6PlayTest(unittest.TestCase):
         )
 
     def test_play_waits_for_unlock_then_launches(self) -> None:
+        cleanup_order = []
         with patch.object(civ6_play.vision, "available", return_value=True), \
              patch.object(civ6_play, "hold_macos_awake") as hold_awake, \
              patch.object(civ6_play, "screen_locked",
@@ -1250,7 +1278,11 @@ class Civ6PlayTest(unittest.TestCase):
              patch.object(civ6_play.gamelock, "acquire", return_value=True) as acquire, \
              patch.object(civ6_play.gamelock, "release") as release, \
              patch.object(civ6_play.launcher, "stop") as stop, \
+             patch.object(civ6_play, "_uninstall_owned_mod") as uninstall, \
              patch.object(civ6_play, "_play", return_value=0) as run:
+            stop.side_effect = lambda: cleanup_order.append("stop")
+            uninstall.side_effect = lambda *_: cleanup_order.append("uninstall")
+            release.side_effect = lambda: cleanup_order.append("release")
             result = civ6_play.play(args(tag="unlock-test", lock_wait=0.0))
 
         self.assertEqual(result, 0)
@@ -1264,7 +1296,24 @@ class Civ6PlayTest(unittest.TestCase):
             "unlock-test", wait_s=0.0, require_verification_intent=True)
         run.assert_called_once()
         stop.assert_called_once()
+        uninstall.assert_called_once_with("unlock-test", False)
         release.assert_called_once()
+        self.assertEqual(cleanup_order, ["stop", "uninstall", "release"])
+
+    def test_exit_cleanup_never_uninstalls_a_successor_control_mod(self) -> None:
+        with patch.object(civ6_play.modinstall, "installed_config",
+                          return_value={"RunTag": "new-game"}) as installed, \
+             patch.object(civ6_play.modinstall, "uninstall") as uninstall:
+            civ6_play._uninstall_owned_mod("old-game")
+            installed.assert_called_once_with()
+            uninstall.assert_not_called()
+
+        with patch.object(civ6_play.modinstall, "installed_config",
+                          return_value={"RunTag": "own-game"}), \
+             patch.object(civ6_play.modinstall, "uninstall",
+                          return_value=True) as uninstall:
+            civ6_play._uninstall_owned_mod("own-game")
+            uninstall.assert_called_once_with()
 
     def test_play_reports_an_explicit_operator_halt_instead_of_free_lock(self) -> None:
         halt = ("the game is explicitly halted since 2026-08-31T23:16:59Z "
@@ -1351,6 +1400,7 @@ class Civ6PlayTest(unittest.TestCase):
              patch.object(civ6_play, "set_dropdown", return_value=True) as setter, \
              patch.object(civ6_play, "select_requested_map", return_value=True) as mapper, \
              patch.object(civ6_play, "select_requested_leader", return_value=True) as leader, \
+             patch.object(civ6_play, "clear_game_modes", return_value=True), \
              patch.object(civ6_play, "screenshot") as screenshot, \
              patch.object(civ6_play, "_observed_label_point",
                           return_value=(321, 432)) as observed, \
@@ -1396,6 +1446,7 @@ class Civ6PlayTest(unittest.TestCase):
              patch.object(civ6_play, "set_dropdown", return_value=True), \
              patch.object(civ6_play, "select_requested_map", return_value=True), \
              patch.object(civ6_play, "select_requested_leader", return_value=True), \
+             patch.object(civ6_play, "clear_game_modes", return_value=True), \
              patch.object(civ6_play, "screenshot") as screenshot, \
              patch.object(civ6_play, "_observed_label_point", return_value=None), \
              patch.object(civ6_play, "focus_game") as focus, \
@@ -1423,6 +1474,7 @@ class Civ6PlayTest(unittest.TestCase):
                  patch.object(civ6_play, "select_requested_map", return_value=True), \
                  patch.object(civ6_play, "select_requested_leader",
                               side_effect=select_leader), \
+                 patch.object(civ6_play, "clear_game_modes", return_value=True), \
                  patch.object(civ6_play, "screenshot", return_value=False), \
                  patch.object(civ6_play, "_observed_label_point",
                               side_effect=[(321, 432)]), \
@@ -2720,6 +2772,13 @@ class DealSessionConfigTests(unittest.TestCase):
         source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
         self.assertIn('ap.add_argument("--deal-sessions", dest="deal_sessions",', source)
 
+    def test_peace_can_use_sessions_without_spending_them_on_sales(self):
+        self.assertEqual(self._config(deal_sessions="peace")["DealSessions"], "peace")
+        source = (Path(__file__).resolve().parent / "civ6_play.py").read_text()
+        self.assertIn('ap.add_argument("--peace-deal-sessions", dest="deal_sessions",', source)
+        self.assertEqual(self._config(deal_sessions="trade")["DealSessions"], "trade")
+        self.assertIn('ap.add_argument("--trade-deal-sessions", dest="deal_sessions",', source)
+
     def test_civvis_decider_can_explicitly_opt_out(self):
         self.assertIs(
             self._config(civvis_decides=True, deal_sessions=False)["DealSessions"],
@@ -2820,6 +2879,21 @@ class PeaceDeterrenceConfigTests(unittest.TestCase):
 
 
 class VisualPopupCaptureFailureTests(unittest.TestCase):
+    @needs_pillow
+    def test_live_deal_offer_is_refused(self) -> None:
+        fixture = Path(__file__).resolve().parent / "fixtures" / "deal_refuse_live.jpg"
+        with civ6_play.popup_clear._image_library().open(fixture) as image:
+            frame = image.convert("RGB")
+        rect = (0, 0, 864, 542)
+        with patch.object(civ6_play, "game_window", return_value=rect), \
+             patch.object(civ6_play, "focus_game"), \
+             patch.object(civ6_play.time, "sleep"), \
+             patch.object(civ6_play.popup_clear, "capture", return_value=(frame, 2)), \
+             patch.object(civ6_play.popup_clear, "held_click") as click:
+            result = civ6_play.dismiss_visually_confirmed_popup()
+        self.assertEqual(result, (True, "confirmed deal button"))
+        click.assert_called_once_with((418, 206), rect, 2)
+
     def test_rescue_saves_and_classifies_one_frame(self) -> None:
         frame = mock.Mock()
         frame.size = (1728, 1084)
@@ -3785,6 +3859,83 @@ class ConnectionIssueAcknowledgement(unittest.TestCase):
                 self.assertFalse(result); click.assert_not_called()
 
 
+
+class GameFocusBeforeClickTest(unittest.TestCase):
+    """A click meant for Civilization VI waits until it is the front app."""
+
+    def test_a_click_raises_the_game_first_when_something_else_is_in_front(self):
+        fronts = iter(["Terminal", "Terminal", "Civ6_Exe_Child"])
+        with patch.object(civ6_play.popup_clear, "frontmost",
+                          side_effect=lambda: next(fronts)), \
+                patch.object(civ6_play, "focus_game") as focus, \
+                patch.object(civ6_play, "game_window", return_value=(0, 33, 864, 542)), \
+                patch.object(civ6_play.time, "sleep"), \
+                patch.object(civ6_play.macos_window, "click_at") as click:
+            civ6_play.click_at(10, 20)
+        focus.assert_called_once()
+        # The raise swallows a click: it is spent on the title bar first.
+        self.assertEqual(click.call_args_list, [call(432, 43), call(10, 20)])
+
+    def test_a_game_already_in_front_is_not_refocused(self):
+        with patch.object(civ6_play.popup_clear, "frontmost",
+                          return_value="Civ6_Exe_Child"), \
+                patch.object(civ6_play, "focus_game") as focus, \
+                patch.object(civ6_play.macos_window, "click_at") as click:
+            civ6_play.click_at(1, 2)
+        focus.assert_not_called()
+        click.assert_called_once_with(1, 2)
+
+    def test_a_game_that_never_comes_forward_is_said_and_clicked_anyway(self):
+        clock = iter(float(n) for n in range(100))
+        with patch.object(civ6_play.popup_clear, "frontmost", return_value="Terminal"), \
+                patch.object(civ6_play, "focus_game"), \
+                patch.object(civ6_play.time, "sleep"), \
+                patch.object(civ6_play.time, "monotonic", side_effect=lambda: next(clock)), \
+                patch("builtins.print") as said:
+            self.assertFalse(civ6_play.ensure_game_frontmost(timeout_s=3.0))
+        self.assertIn("not in front", said.call_args.args[0])
+
+
+class EarlyWindowPlacementTest(unittest.TestCase):
+    """The new game's window goes to its corner as soon as it exists."""
+
+    def test_the_window_is_placed_the_moment_it_appears_and_kept_there(self):
+        windows = iter([None, None, (0, 0, 1728, 1117), (0, 33, 864, 542)])
+        placed = threading.Event()
+        stop = threading.Event()
+        calls = []
+
+        def place(*args):
+            calls.append(args)
+            if len(calls) >= 2:
+                placed.set()
+
+        with patch.object(civ6_play, "game_window",
+                          side_effect=lambda: next(windows, (0, 33, 864, 542))), \
+                patch.object(civ6_play, "place_game", side_effect=place), \
+                patch.object(civ6_play, "setup_mark") as mark:
+            thread = civ6_play.place_window_as_it_appears(None, stop, poll_s=0.001)
+            self.assertTrue(placed.wait(5.0))
+            stop.set()
+            thread.join(5.0)
+        self.assertFalse(thread.is_alive())
+        self.assertEqual(calls[0], (civ6_play.GAME_SIDE, civ6_play.GAME_FRACTION,
+                                    civ6_play.GAME_VFRACTION))
+        mark.assert_called_once_with("window_placed")
+
+    def test_a_game_that_exits_ends_the_watch(self):
+        process = mock.Mock()
+        process.poll.return_value = 1
+        with patch.object(civ6_play, "game_window") as window, \
+                patch.object(civ6_play, "place_game") as place:
+            thread = civ6_play.place_window_as_it_appears(
+                process, threading.Event(), poll_s=0.001)
+            thread.join(5.0)
+        self.assertFalse(thread.is_alive())
+        window.assert_not_called()
+        place.assert_not_called()
+
+
 if __name__ == "__main__":
     unittest.main()
 
@@ -3842,6 +3993,16 @@ class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
         self.assertNotIn("time.sleep(20.0)", unreadable)
         no_submenu = source.split("the menu is not ready yet")[1].split("blind_strikes = 0\n        if len(rows) > 6")[0]
         self.assertNotIn("time.sleep(20.0)", no_submenu)
+
+    def test_a_retry_with_the_submenu_open_does_not_click_single_player_again(self) -> None:
+        import inspect
+        source = inspect.getsource(civ6_play.bootstrap_game)
+        guard = source.index('_observed_label_point(menushot, "Create Game", bounds)')
+        click = source.index("click_at(*menu_point)")
+        self.assertLess(guard, click)
+        self.assertIn("attempt > 1 and", source[guard - 80:guard],
+                      "the first attempt pays no extra read")
+        self.assertIn("else:\n            click_at(*menu_point)", source)
 
     def test_a_capture_is_recognized_once_until_it_changes(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -4538,6 +4699,22 @@ class PollCadenceKeepsItsWallClock(unittest.TestCase):
         self.assertIn(f"cfg.OrdersWaitPolls or {civ6_play.ORDERS_WAIT_POLLS})", lua)
         self.assertIn(f"cfg.OrdersFallbackPolls or {civ6_play.ORDERS_FALLBACK_POLLS})", lua)
         self.assertIn(f"tonumber(cfg.CombatFramePolls) or {civ6_play.COMBAT_FRAME_POLLS})", lua)
+
+
+class StallMainMenuTests(unittest.TestCase):
+    """A stall photographed on the main menu ends the attempt at once."""
+
+    def test_the_main_menu_is_read_from_the_stall_photograph(self) -> None:
+        shot = Path("/tmp/stalled-1.png")
+        with mock.patch.object(civ6_play, "_menu_ocr_observations",
+                               return_value=[{"text": "Single Player"},
+                                             {"text": "Multiplayer"}]):
+            self.assertTrue(civ6_play.stall_screen_is_main_menu(shot))
+        with mock.patch.object(civ6_play, "_menu_ocr_observations",
+                               return_value=[{"text": "Next Turn"}]):
+            self.assertFalse(civ6_play.stall_screen_is_main_menu(shot))
+        with mock.patch.object(civ6_play, "_menu_ocr_observations", return_value=[]):
+            self.assertFalse(civ6_play.stall_screen_is_main_menu(shot))
 
 
 class VSyncABSwitchTest(unittest.TestCase):

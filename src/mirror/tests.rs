@@ -503,20 +503,20 @@ fn a_civ_qualifier_is_stripped_and_great_is_not() {
     assert_eq!(
         resolved_civvis_unit_name(&crate::rules::Rules::embedded(), "UNIT_SCOTTISH_HIGHLANDER")
             .as_deref(),
-        Some("ranger"),
-        "Firaxis declares the Highlander as Scotland's Ranger replacement"
+        Some("highlander"),
+        "Scotland's Highlander is modeled from the shipped database"
     );
     assert_eq!(
         resolved_civvis_unit_name(&crate::rules::Rules::embedded(), "UNIT_KOREAN_HWACHA")
             .as_deref(),
-        Some("field_cannon"),
-        "Firaxis declares the Hwacha as Korea's Field Cannon replacement"
+        Some("hwacha"),
+        "Korea's Hwacha is modeled from the shipped database"
     );
     assert_eq!(
         resolved_civvis_unit_name(&crate::rules::Rules::embedded(), "UNIT_GEORGIAN_KHEVSURETI")
             .as_deref(),
-        Some("man_at_arms"),
-        "Georgia's unmodelled Khevsureti must remain visible as its replacement role"
+        Some("khevsureti"),
+        "Georgia's Khevsureti is modeled from the shipped database"
     );
     assert_eq!(
         resolved_civvis_unit_name(&crate::rules::Rules::embedded(), "UNIT_NUBIAN_PITATI")
@@ -8489,9 +8489,10 @@ fn a_captured_citys_pending_disposition_reaches_the_board_and_clears() {
 /// ★★★★ A rival's unique unit must reach the board as what it REPLACES.
 ///
 /// `UNIT_NORWEGIAN_LONGSHIP` was dropped on every turn it was visible on live run
-/// `civvis-20260801T145302Z` — CIVVIS models no Norwegian uniques — so an enemy
-/// warship was not on the board at all. A Longship replaces a Galley, which
-/// CIVVIS does model.
+/// `civvis-20260801T145302Z` — CIVVIS modeled no Norwegian uniques then — so an
+/// enemy warship was not on the board at all. Every shipped civilization unique
+/// is modeled now, so the fixture is the scenario-only Frankish Caballarii,
+/// which replaces a Knight.
 #[test]
 fn a_rivals_unique_unit_lands_as_what_it_replaces() {
     let snapshot = Snapshot::from_chunks(&[TilesChunk {
@@ -8499,7 +8500,7 @@ fn a_rivals_unique_unit_lands_as_what_it_replaces() {
         width: 8,
         height: 8,
         chunk: 1,
-        plots: vec![plot(2, 2, "TERRAIN_OCEAN"), plot(4, 4, "TERRAIN_GRASS")],
+        plots: vec![plot(2, 2, "TERRAIN_GRASS"), plot(4, 4, "TERRAIN_GRASS")],
     }]);
     let build = |kind: &str, base: Option<&str>| {
         let mut state = StateSnapshot {
@@ -8520,33 +8521,33 @@ fn a_rivals_unique_unit_lands_as_what_it_replaces() {
 
     // ⚠ Precondition: the unique must genuinely be untranslatable, or this test
     // passes for the wrong reason.
-    let bare = build("UNIT_NORWEGIAN_LONGSHIP", None);
+    let bare = build("UNIT_FRANKISH_CABALLARII", None);
     assert!(
         bare.game.units.is_empty(),
         "the fixture must be a unit CIVVIS cannot name, or the fallback is untested"
     );
 
-    let with_base = build("UNIT_NORWEGIAN_LONGSHIP", Some("UNIT_GALLEY"));
+    let with_base = build("UNIT_FRANKISH_CABALLARII", Some("UNIT_KNIGHT"));
     let unit = with_base
         .game
         .units
         .values()
         .next()
         .expect("a unique with a known base must reach the board");
-    assert_eq!(unit.kind.as_str(), "galley", "it lands as what it replaces");
+    assert_eq!(unit.kind.as_str(), "knight", "it lands as what it replaces");
     // ⚠ And it must SAY it approximated. A collapsed distinction that nobody can
     // see is the failure the mapping rule names.
     assert!(
         with_base
             .dropped_units
             .iter()
-            .any(|d| d.contains("approximated_as_galley")),
+            .any(|d| d.contains("approximated_as_knight")),
         "the approximation must be reported, not silent: {:?}",
         with_base.dropped_units
     );
 
     // A base CIVVIS also cannot name must still not invent a unit.
-    let nonsense = build("UNIT_NORWEGIAN_LONGSHIP", Some("UNIT_NOT_A_REAL_UNIT"));
+    let nonsense = build("UNIT_FRANKISH_CABALLARII", Some("UNIT_NOT_A_REAL_UNIT"));
     assert!(
         nonsense.game.units.is_empty(),
         "an unknown base must not be guessed at"
@@ -8555,9 +8556,10 @@ fn a_rivals_unique_unit_lands_as_what_it_replaces() {
 
 /// ★★★★★ Georgia's Khevsureti replaces Man-at-Arms, but the live rival-unit
 /// export omits both `base` and `class`. Keep it on the threat board through the
-/// explicit host spelling rather than letting a nearby army disappear.
+/// explicit host spelling rather than letting a nearby army disappear — as
+/// itself, now that the shipped unit is modeled.
 #[test]
-fn a_georgian_khevsureti_is_planted_as_a_man_at_arms() {
+fn a_georgian_khevsureti_is_planted_as_itself() {
     let snapshot = Snapshot::from_chunks(&[TilesChunk {
         turn: 12,
         width: 8,
@@ -8585,7 +8587,7 @@ fn a_georgian_khevsureti_is_planted_as_a_man_at_arms() {
         .values()
         .next()
         .expect("the Khevsureti must reach the reconstructed board");
-    assert_eq!(unit.kind.as_str(), "man_at_arms");
+    assert_eq!(unit.kind.as_str(), "khevsureti");
     assert!(
         rebuilt.unmapped.is_empty(),
         "the explicit role bridge is a recognized approximation: {:?}",
@@ -8632,14 +8634,14 @@ fn a_standalone_unique_lands_by_its_promotion_class() {
 
     // ⚠ Precondition: with neither base nor class the unit must genuinely drop,
     // or the fallback under test is not what put it on the board.
-    let bare = build("UNIT_MAPUCHE_MALON_RAIDER", None);
+    let bare = build("UNIT_MOORISH_FARFANES", None);
     assert!(
         bare.game.units.is_empty(),
         "the fixture must be a unit CIVVIS cannot name, or the fallback is untested"
     );
 
     let classed = build(
-        "UNIT_MAPUCHE_MALON_RAIDER",
+        "UNIT_MOORISH_FARFANES",
         Some("PROMOTION_CLASS_LIGHT_CAVALRY"),
     );
     let unit = classed
@@ -8663,10 +8665,7 @@ fn a_standalone_unique_lands_by_its_promotion_class() {
     );
 
     // A class CIVVIS has no representative for must still not invent a unit.
-    let nonsense = build(
-        "UNIT_MAPUCHE_MALON_RAIDER",
-        Some("PROMOTION_CLASS_NOT_REAL"),
-    );
+    let nonsense = build("UNIT_MOORISH_FARFANES", Some("PROMOTION_CLASS_NOT_REAL"));
     assert!(
         nonsense.game.units.is_empty(),
         "an unknown class must not be guessed at"
@@ -8701,17 +8700,17 @@ fn a_standalone_unique_lands_by_its_promotion_class() {
     assert_eq!(unit.kind.as_str(), "keshig");
 
     // ⚠ And a REPLACING unique keeps preferring its base: class must only be
-    // the rung below `base`, or a Longship would land as a generic hull even
-    // when the ruleset models what it replaces.
+    // the rung below `base`, or an unmodelled Caballarii would land as a
+    // generic heavy-cavalry body even when the ruleset models what it replaces.
     let mut state = StateSnapshot {
         turn: 12,
         ..StateSnapshot::default()
     };
     state.units.push(StateUnit {
         id: 10,
-        kind: "UNIT_NORWEGIAN_LONGSHIP".to_string(),
-        base: Some("UNIT_GALLEY".to_string()),
-        class: Some("PROMOTION_CLASS_NAVAL_MELEE".to_string()),
+        kind: "UNIT_FRANKISH_CABALLARII".to_string(),
+        base: Some("UNIT_KNIGHT".to_string()),
+        class: Some("PROMOTION_CLASS_HEAVY_CAVALRY".to_string()),
         x: 2,
         y: 2,
         hp: 100.0,
@@ -8724,7 +8723,7 @@ fn a_standalone_unique_lands_by_its_promotion_class() {
         .values()
         .next()
         .expect("the base rung must still fire");
-    assert_eq!(unit.kind.as_str(), "galley", "base outranks class");
+    assert_eq!(unit.kind.as_str(), "knight", "base outranks class");
 }
 
 /// ★★★★★ The game speed Civilization VI is running must reach the board.
@@ -10642,6 +10641,10 @@ fn host_menu_rows_translate_to_the_gates_keys() {
     let rules = crate::rules::Rules::embedded();
     let key = |civ6: &str, tier: Option<u8>| host_production_key(&rules, civ6, tier);
     assert_eq!(key("UNIT_WARRIOR", None).as_deref(), Some("unit:warrior"));
+    assert_eq!(
+        key("UNIT_COLOMBIAN_LLANERO", None).as_deref(),
+        Some("unit:llanero")
+    );
     assert_eq!(
         key("UNIT_WARRIOR", Some(1)).as_deref(),
         Some("formation:warrior:1")
@@ -13048,6 +13051,89 @@ fn a_rivals_districts_and_wonders_cross_with_the_plots() {
     // Our own city takes nothing from this path.
     let rome_id = recon.game.player_city_ids(0)[0];
     assert!(recon.game.cities[&rome_id].districts.is_empty());
+}
+
+#[test]
+fn a_visible_rival_encampment_adds_its_second_city_strike() {
+    let side = 16;
+    let mut plots: Vec<Plot> = (0..side)
+        .flat_map(|x| (0..side).map(move |y| plot(x, y, "TERRAIN_GRASS")))
+        .collect();
+    for tile in &mut plots {
+        match (tile.x, tile.y) {
+            (2, 2) => {
+                tile.o = 0;
+                tile.d = Some("DISTRICT_CITY_CENTER".to_string());
+            }
+            (10, 10) => {
+                tile.o = 3;
+                tile.d = Some("DISTRICT_CITY_CENTER".to_string());
+            }
+            (12, 10) => {
+                tile.o = 3;
+                tile.d = Some("DISTRICT_ENCAMPMENT".to_string());
+                tile.dc = Some(true);
+            }
+            _ => {}
+        }
+    }
+    let snapshot = |plots: Vec<Plot>| {
+        Snapshot::from_chunks(&[TilesChunk {
+            turn: 60,
+            width: side,
+            height: side,
+            chunk: 1,
+            plots,
+        }])
+    };
+    let mut state = StateSnapshot {
+        turn: 60,
+        ..StateSnapshot::default()
+    };
+    state.cities.push(StateCity {
+        id: 1,
+        name: "Rome".to_string(),
+        x: 2,
+        y: 2,
+        capital: true,
+        ..StateCity::default()
+    });
+    state.rivals.push(StateRival {
+        player: 3,
+        civ: "CIVILIZATION_SCOTLAND".to_string(),
+        at_war: true,
+        cities: vec![StateCity {
+            id: 3,
+            name: "Stirling".to_string(),
+            x: 10,
+            y: 10,
+            max_wall_damage: 100.0,
+            wall_damage: 0.0,
+            ranged_strength: Some(60.0),
+            ..StateCity::default()
+        }],
+        ..StateRival::default()
+    });
+    let encampment = crate::hex::offset_to_axial(12, 10);
+    let rebuilt = rebuild_from_state(&snapshot(plots.clone()), &state, 4, 1, 250, 0);
+    let cid = rebuilt.known_city_ids[&3];
+    assert_eq!(rebuilt.game.encampment_at(encampment), Some(cid));
+    assert_eq!(rebuilt.game.cities[&cid].encampment_wall_hp, 100);
+    assert!(rebuilt
+        .game
+        .encampment_can_strike(&rebuilt.game.cities[&cid]));
+
+    plots
+        .iter_mut()
+        .find(|tile| (tile.x, tile.y) == (12, 10))
+        .unwrap()
+        .p = true;
+    let pillaged = rebuild_from_state(&snapshot(plots), &state, 4, 1, 250, 0);
+    let cid = pillaged.known_city_ids[&3];
+    assert_eq!(pillaged.game.encampment_at(encampment), None);
+    assert!(!pillaged
+        .game
+        .encampment_can_strike(&pillaged.game.cities[&cid]));
 }
 
 #[test]

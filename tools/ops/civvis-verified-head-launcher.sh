@@ -2,11 +2,12 @@
 # civvis-verified-head-launcher.sh — the managed entry point for a host's
 # continuous CIVVIS verification games.
 #
-# Every verification game begins from a fresh origin/main build of the GitHub
-# CIVVIS, plays the deployment genome (all and only default-on genes), and runs
-# under the policy the operator wrote down for THIS host — never under whatever
-# a long-lived Terminal window happened to have exported. This file is that
-# contract. It applies the policy and hands over to the tracked launcher,
+# By default, every verification game begins from a fresh origin/main build of
+# the GitHub CIVVIS. An explicit absolute tree pin selects that local revision
+# while it is being verified. The game plays the deployment genome (all and only
+# default-on genes) under the policy the operator wrote down for THIS host —
+# never under whatever a long-lived Terminal window happened to have exported.
+# This file applies the policy and hands over to the tracked launcher,
 # civvis-ladder-terminal-launcher.sh, which hosts the loop and keeps its log.
 #
 # Who opens it (always through Terminal, which holds the grants a game needs —
@@ -259,6 +260,12 @@ if [[ -f "$POLICY" ]]; then
       CIVVIS_RESTART_BELOW_LEADER_RATIO)
         [[ "$value" =~ '^(0|1|0?\.[0-9]+|1\.0+)$' ]] \
           || refuse "$POLICY:$lineno $key='$value' must be a ratio from 0 to 1" ;;
+      CIVVIS_DEAL_SESSIONS)
+        # Validated here, read by the climb itself at every game
+        # (`deal_sessions_mode`): the live supervisor that builds the climb's
+        # command line runs from a tree the per-game refresh does not update.
+        [[ "$value" == all || "$value" == peace || "$value" == trade || "$value" == off ]] \
+          || refuse "$POLICY:$lineno CIVVIS_DEAL_SESSIONS='$value' must be all, peace, trade or off" ;;
       CIVVIS_SCREEN_GENE)
         # One registry tag: the gene a live screen deals each game an arm of
         # (docs/LIVE_SCREEN.md). The climb refuses a tag with no live arm and
@@ -266,7 +273,7 @@ if [[ -f "$POLICY" ]]; then
         [[ "$value" =~ '^[a-z0-9][a-z0-9-]*$' ]] \
           || refuse "$POLICY:$lineno CIVVIS_SCREEN_GENE='$value' is not one gene tag" ;;
       *)
-        say "ignoring unknown policy key '$key' at $POLICY:$lineno (honoured: CIVVIS_HEAD_REPO CIVVIS_DIFFICULTY CIVVIS_LEADER CIVVIS_VICTORY CIVVIS_MAP CIVVIS_MAP_SIZE CIVVIS_SPEED CIVVIS_CAPTURE_FREE CIVVIS_PLAY_ATTEMPTS CIVVIS_RESTART_BELOW_LEADER_RATIO CIVVIS_SCREEN_GENE CIVVIS_PLAY_TIMEOUT CIVVIS_PLAY_TIMEOUT_CEILING CIVVIS_BUILD_MODE)"
+        say "ignoring unknown policy key '$key' at $POLICY:$lineno (honoured: CIVVIS_HEAD_REPO CIVVIS_DIFFICULTY CIVVIS_LEADER CIVVIS_VICTORY CIVVIS_MAP CIVVIS_MAP_SIZE CIVVIS_SPEED CIVVIS_CAPTURE_FREE CIVVIS_PLAY_ATTEMPTS CIVVIS_RESTART_BELOW_LEADER_RATIO CIVVIS_SCREEN_GENE CIVVIS_DEAL_SESSIONS CIVVIS_PLAY_TIMEOUT CIVVIS_PLAY_TIMEOUT_CEILING CIVVIS_BUILD_MODE)"
         continue ;;
     esac
     policy[$key]=$value
@@ -290,11 +297,23 @@ branch=$(git -C "$HEAD_REPO" symbolic-ref --quiet --short HEAD 2>/dev/null || tr
 [[ "$branch" != main ]] \
   || refuse "'$HEAD_REPO' is attached to branch main; the supervisor detach-checkouts origin/main there every cycle and the freshness service needs a main worktree — set CIVVIS_HEAD_REPO in $POLICY to a tree that may sit detached"
 pin=$(cat "$PIN" 2>/dev/null || true)
-[[ "$pin" == head ]] \
-  || refuse "$PIN must contain exactly 'head' (found '${pin:-<absent>}'): verification games track origin/main; \`civvis-games on\` resets the pin"
+GAME_REPO=$HEAD_REPO
+if [[ "$pin" != head ]]; then
+  [[ "$pin" == /* && -f "$pin/Cargo.toml" ]] \
+    || refuse "$PIN must contain 'head' or an absolute buildable tree (found '${pin:-<absent>}')"
+  pin_revision=$(git -C "$pin" rev-parse --verify HEAD 2>/dev/null || true)
+  [[ "$pin_revision" =~ '^[0-9a-f]{40}$' ]] \
+    || refuse "pinned tree '$pin' has no resolvable Git HEAD"
+  GAME_REPO=$pin
+fi
 origin=$(git -C "$HEAD_REPO" remote get-url origin 2>/dev/null || true)
 [[ "$origin" =~ '^(https://github\.com/|git@github\.com:|ssh://git@github\.com/)MartinHalvorson/CIVVIS(\.git)?/?$' ]] \
-  || refuse "origin of '$HEAD_REPO' is '${origin:-<none>}', not the GitHub CIVVIS; verification games must build what GitHub main holds"
+  || refuse "origin of configured head tree '$HEAD_REPO' is '${origin:-<none>}', not the GitHub CIVVIS"
+if [[ "$pin" != head ]]; then
+  pinned_origin=$(git -C "$pin" remote get-url origin 2>/dev/null || true)
+  [[ "$pinned_origin" =~ '^(https://github\.com/|git@github\.com:|ssh://git@github\.com/)MartinHalvorson/CIVVIS(\.git)?/?$' ]] \
+    || refuse "origin of pinned tree '$pin' is '${pinned_origin:-<none>}', not the GitHub CIVVIS"
+fi
 
 # ★ ASK THE TREE, DO NOT KEEP A LIST. A map, size or speed the Create Game panel
 # cannot be driven to has no rendered label to click and no legal read-back, so it
@@ -306,7 +325,7 @@ if [[ -n "${policy[CIVVIS_MAP]:-}${policy[CIVVIS_MAP_SIZE]:-}${policy[CIVVIS_SPE
   lobby_error=$(CIVVIS_LOBBY_MAP=${policy[CIVVIS_MAP]:-} \
                 CIVVIS_LOBBY_MAP_SIZE=${policy[CIVVIS_MAP_SIZE]:-} \
                 CIVVIS_LOBBY_SPEED=${policy[CIVVIS_SPEED]:-} \
-                /usr/bin/python3 - "$HEAD_REPO/tools/civ6_play.py" <<'PYTHON' 2>&1
+                /usr/bin/python3 - "$GAME_REPO/tools/civ6_play.py" <<'PYTHON' 2>&1
 import ast, os, sys
 
 try:
@@ -371,7 +390,7 @@ if [[ -f "$POLICY" ]]; then
 else
   policy_note="no $POLICY — defaults; the rung comes from the ladder policy"
 fi
-say "launching from $HEAD_REPO (origin/main, pin=head) with ${summary}(${policy_note})"
+say "launching from $GAME_REPO (pin=$pin) with ${summary}(${policy_note})"
 say "native release build: codegen_units=${CARGO_PROFILE_RELEASE_CODEGEN_UNITS:-Cargo.toml}, lto=${CARGO_PROFILE_RELEASE_LTO:-Cargo.toml}, incremental=${CARGO_INCREMENTAL:-Cargo default}"
 
 # The terminal-window guard catches only named one-shot helper documents that

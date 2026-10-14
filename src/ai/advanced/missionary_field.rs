@@ -138,7 +138,7 @@ impl AdvancedAi {
 
     /// Whether a spreader beside a city it could convert would spend its
     /// last charge on it: the exception to fleeing.
-    fn last_charge_spends_here(g: &Game, pid: usize, uid: u32) -> bool {
+    pub(super) fn last_charge_spends_here(g: &Game, pid: usize, uid: u32) -> bool {
         let unit = &g.units[&uid];
         if unit.charges != 1 || g.rules.units[unit.kind].religious_spread <= 0.0 {
             return false;
@@ -241,6 +241,11 @@ impl AdvancedAi {
         target: Pos,
         stop_range: i32,
     ) -> bool {
+        // `spreader-steps-out-of-the-apostle`: never walk into a rival
+        // Apostle's reach. `None` off or with no such rival in sight.
+        if let Some(acted) = self.apostle_aware_step(g, pid, uid, target, stop_range) {
+            return acted;
+        }
         if !self.missionary_evades_raiders {
             return self.base.step_toward_range(g, pid, uid, target, stop_range);
         }

@@ -324,23 +324,29 @@ function unitHasHealth(unit) {
 const CIV6_UNIT_ICON_TYPES = [
   "aircraft_carrier", "anti_air_gun", "apostle", "archaeologist", "archer",
   "artillery", "at_crew", "barbarian_horse_archer", "barbarian_horseman",
-  "battering_ram", "battleship", "biplane",
-  "bireme", "bombard", "bomber", "builder", "caravel", "catapult", "cavalry",
-  "cossack", "courser", "crossbowman", "crouching_tiger", "cuirassier", "destroyer",
-  "drone", "eagle_warrior", "field_cannon", "fighter", "frigate", "gaesatae", "galley",
-  "giant_death_robot", "guru", "heavy_chariot", "helicopter", "hoplite",
-  "horseman", "hypaspist", "infantry", "inquisitor", "ironclad", "jet_bomber",
-  "jet_fighter", "keshig", "knight", "kongo_shield_bearer", "legion",
-  "line_infantry", "machine_gun", "man_at_arms", "mandekalu_cavalry",
-  "maryannu_chariot_archer", "mechanized_infantry", "medic", "military_engineer", "missile_cruiser",
-  "missionary", "mobile_sam", "modern_armor", "modern_at", "musketman",
-  "naturalist", "nau", "nihang", "nuclear_submarine", "observation_balloon",
-  "oromo_cavalry", "pike_and_shot", "pikeman", "pitati_archer", "privateer",
-  "quadrireme", "ranger", "rock_band", "rocket_artillery", "rough_rider",
-  "saka_horse_archer", "samurai", "scout", "settler", "siege_tower", "skirmisher",
-  "slinger", "spearman", "spec_ops", "spy", "submarine", "supply_convoy",
-  "swordsman", "tagma", "tank", "toa", "trader", "trebuchet", "varu", "voi_chien",
-  "war_cart", "warrior", "warrior_monk", "winged_hussar"
+  "barbary_corsair", "battering_ram", "battleship", "berserker", "biplane",
+  "bireme", "black_army", "bombard", "bomber", "builder", "caravel", "carolean",
+  "catapult", "cavalry", "conquistador", "cossack", "courser", "crossbowman",
+  "crouching_tiger", "cuirassier", "de_zeven_provincien", "destroyer", "digger",
+  "domrey", "dromon", "drone", "eagle_warrior", "field_cannon", "fighter",
+  "frigate", "gaesatae", "galley", "garde_imperiale", "giant_death_robot",
+  "guru", "heavy_chariot", "helicopter", "hetairoi", "highlander", "hoplite",
+  "horseman", "hulche", "huszar", "hwacha", "hypaspist", "immortal", "impi",
+  "infantry", "inquisitor", "ironclad", "janissary", "jet_bomber", "jet_fighter",
+  "jong", "keshig", "khevsureti", "knight", "kongo_shield_bearer", "legion",
+  "line_infantry", "llanero", "machine_gun", "malon_raider", "mamluk",
+  "man_at_arms", "mandekalu_cavalry", "maryannu_chariot_archer",
+  "mechanized_infantry", "medic", "military_engineer", "minas_geraes",
+  "missile_cruiser", "missionary", "mobile_sam", "modern_armor", "modern_at",
+  "mountie", "musketman", "naturalist", "nau", "nihang", "nuclear_submarine",
+  "observation_balloon", "okihtcitaw", "oromo_cavalry", "p51_mustang",
+  "pike_and_shot", "pikeman", "pitati_archer", "privateer", "quadrireme",
+  "ranger", "redcoat", "rock_band", "rocket_artillery", "rough_rider",
+  "sabum_kibittum", "saka_horse_archer", "samurai", "scout", "sea_dog",
+  "settler", "siege_tower", "skirmisher", "slinger", "spearman", "spec_ops",
+  "spy", "submarine", "supply_convoy", "swordsman", "tagma", "tank", "toa",
+  "trader", "trebuchet", "u_boat", "varu", "viking_longship", "voi_chien",
+  "war_cart", "warakaq", "warrior", "warrior_monk", "winged_hussar"
 ];
 const CIV6_UNIT_ICON_INDEX = new Map(
   CIV6_UNIT_ICON_TYPES.map((type, index) => [type, index]));
@@ -1888,7 +1894,12 @@ function playerHudRowPitch() {
 }
 
 function playerHudContentHeight(rows) {
-  return Math.max(PLAYER_HUD_MIN_HEIGHT, PLAYER_HUD_CHROME_HEIGHT + rows * playerHudRowPitch());
+  // A watched world's turn plate opens with its live stopwatch, a section of
+  // its own above the age, so its floor keeps one more row's room: early on,
+  // with two civilizations met, the stopwatch otherwise pushed the plate's
+  // whole list — the Map row first — out of the masthead.
+  const floor = PLAYER_HUD_MIN_HEIGHT + (SPEC ? playerHudRowPitch() : 0);
+  return Math.max(floor, PLAYER_HUD_CHROME_HEIGHT + rows * playerHudRowPitch());
 }
 
 const HUD_WIDGETS = {
@@ -6372,6 +6383,7 @@ async function boot() {
       firstLoad = false;
       adoptRunningMode();
       if (SPEC) updatePaceControl(state); // adopt the pace the server is keeping
+      pollLivePause();
       updateBetweenGameCountdownControl(state);
       scheduleSpec(state);
       reportSpecStatus();
@@ -6462,7 +6474,363 @@ function toggleSpecPause() {
   setPace({paused: specPaused});
 }
 setInterval(reportSpecStatus, 4000);
-// --- Live time: the turn plate's stopwatch, above its Watch pace row. It
+// --- The live game's Pause / Resume and New game. On the mirror
+// `tools/follow.py` keeps beside a Civilization VI verification game, these act
+// on the Firaxis game itself — not this page's world, which is only its picture
+// (`src/civ6.rs`, `live_pause_status`; `tools/civ6_control/live_pause.py`). The
+// server says whether this page is that mirror; anywhere else the controls
+// never appear. The Pause button follows the REQUEST, so it reads Resume the
+// moment Pause is pressed; the note above it follows the GAME, which stops on
+// the mod's next tick of our turn (a second or so; a few more when our turn's
+// end was already sent) and says so through the harness. Held, the game is the
+// operator's to scroll, zoom and click around: the mod's camera and screen
+// closers stand down until Resume.
+//
+// New game is Civilization VI's own Retire (`civvis-games retire`): the lane's
+// supervisor starts the next game once the mod has retired this one, and this
+// page follows it there the way it follows any new game. It cannot be taken
+// back, so the first press only arms it; a second within a few seconds sends.
+const LIVE_NEW_GAME_ARMED_MS = 6000;
+const LIVE_ERROR_SHOWN_MS = 10000;
+const livePause = {available: false, requested: false, held: false, turn: null,
+  busy: false, error: "", errorUntil: 0, timer: null, asked: 0,
+  newGameArmed: false, newGameTimer: null, ending: false};
+function liveMirrorTurn() {
+  return typeof state === "object" && state && Number.isInteger(state.turn) ? state.turn : null;
+}
+// What our civilization is studying and running, above the live controls
+// (operator 2026-10-13: "the current tech being researched ... and the civic
+// and the policies that are active"). The mirror carries the seat's own
+// research, civic, government and slotted cards (`state.me`, rebuilt from
+// the Civilization VI board each turn), so this reads them straight off it.
+function liveTrackerHtml(me) {
+  const none = text => `<span class="lt-none">${text}</span>`;
+  // Research and civic as Civ VI's world tracker draws them: name, meter and
+  // turns left. Pressing one opens its tree.
+  const study = (kind, name, progress, cost, boosted) => {
+    const label = kind === "techs" ? "Research" : "Civic";
+    if (!name) return `<div class="lt-study ${kind}"><span class="lt-k">${label}</span>${none("choosing…")}</div>`;
+    let total = 0;
+    try { total = cost(name); } catch (_) { total = 0; }
+    const banked = Number(progress) || 0;
+    const pct = total > 0 ? Math.min(100, Math.round(100 * banked / total)) : 0;
+    const perTurn = Number((me.yields || {})[kind === "techs" ? "science" : "culture"]) || 0;
+    const turns = perTurn > 0 && total > 0 ? Math.max(1, Math.ceil((total - banked) / perTurn)) : null;
+    return `<button type="button" class="lt-study ${kind}" onclick='openTree("${kind}")' ` +
+      `title="${escapeAttr(`${titleCase(name)} — ${pct}% studied${turns ? `, ${turns} turn${turns === 1 ? "" : "s"} left` : ""}` +
+        `${boosted ? `, ${kind === "techs" ? "Eureka" : "Inspiration"} earned` : ""}. Open the ${kind === "techs" ? "technology" : "civics"} tree`)}">` +
+      `<span class="lt-k">${label}</span>` +
+      `<span class="lt-name">${escapeAttr(titleCase(name))}${boosted ? " ⚡" : ""}</span>` +
+      `<span class="lt-meta">${pct}%${turns ? ` · ${turns}t` : ""}</span>` +
+      `<span class="lt-bar"><i style="width:${pct}%"></i></span></button>`;
+  };
+  // Each slotted card condensed from Civ VI's: its slot's colour, its name,
+  // its text, and what it is worth to this empire this turn.
+  const ledger = currentPolicyLedger();
+  const worthOf = new Map(((ledger && ledger.cards) || []).map(card => [card.policy, card.worth]));
+  const order = {military: 0, economic: 1, diplomatic: 2, wildcard: 3};
+  const cards = [...(me.policies || [])]
+    .sort((a, b) => (order[policySlotOf(a)] ?? 4) - (order[policySlotOf(b)] ?? 4))
+    .map(card => {
+      const note = policySpec(card).note || "";
+      const worth = ledger ? policyWorthHtml(worthOf.get(card)) : "";
+      return `<div class="lt-card slot-${escapeAttr(policySlotOf(card))}" ` +
+        `title="${escapeAttr(`${titleCase(card)} — ${policySlotOf(card)} card. ${note}`)}">` +
+        `<div class="lt-card-head"><b>${escapeAttr(titleCase(card))}</b>` +
+        (ledger ? `<span class="lt-worth">${worth || `<span class="pw none">—</span>`}</span>` : "") +
+        `</div>` + (note ? `<div class="lt-card-text">${escapeAttr(note)}</div>` : "") + `</div>`;
+    });
+  const net = !ledger || !cards.length ? ""
+    : `<div class="lt-net" title="${escapeAttr("What the slotted cards add together this turn, as the engine measures it: the empire with its deck against the same empire with none. A card worth — moves none of these measures this turn (combat against barbarians, spies, experience).")}">` +
+      `<span class="lt-k">Net policy effect</span>` +
+      `<span class="lt-worth">${ledger.anarchy ? none("cards suspended in Anarchy")
+        : policyWorthHtml(ledger.net) || none("nothing measurable this turn")}</span></div>`;
+  return study("techs", me.research, me.research_progress, techCost,
+      (me.boosted_techs || []).includes(me.research)) +
+    study("civics", me.civic, me.civic_progress, civicCost,
+      (me.boosted_civics || []).includes(me.civic)) +
+    `<div class="lt-row"><span class="lt-k">Government</span>` +
+    `<b>${me.government ? escapeAttr(titleCase(me.government)) : none("none")}</b></div>` +
+    (cards.length ? `<div class="lt-cards">${cards.join("")}</div>` : `<div class="lt-row">${none("no policy cards slotted")}</div>`) +
+    net;
+}
+function paintLiveTracker() {
+  const panel = document.getElementById("livetracker");
+  const body = document.getElementById("livetracker-body");
+  if (!panel || !body) return;
+  const me = livePause.available && state && state.me;
+  panel.hidden = !me;
+  if (!me) return;
+  const html = liveTrackerHtml(me);
+  if (body.dataset.painted !== html) { body.innerHTML = html; body.dataset.painted = html; }
+}
+// The research box is the viewer's to size (operator 2026-10-14: "make new
+// tech civic box adjustable size"). Its corner grip scales the box and its
+// type together, between a little smaller than it opens and well over twice
+// that; the size is this browser's own, kept between visits.
+const LIVE_TRACKER_SCALE_STORE = "civvis-live-tracker-scale-v1";
+const LIVE_TRACKER_SCALE_MIN = .6, LIVE_TRACKER_SCALE_MAX = 2.5;
+let liveTrackerScale = 1;
+try {
+  const saved = Number(localStorage.getItem(LIVE_TRACKER_SCALE_STORE));
+  if (saved >= LIVE_TRACKER_SCALE_MIN && saved <= LIVE_TRACKER_SCALE_MAX) liveTrackerScale = saved;
+} catch (_) {}
+function setLiveTrackerScale(scale, persist = false) {
+  liveTrackerScale = Math.min(LIVE_TRACKER_SCALE_MAX,
+    Math.max(LIVE_TRACKER_SCALE_MIN, Math.round(scale * 100) / 100));
+  document.getElementById("livepause")?.style.setProperty("--lt-scale", String(liveTrackerScale));
+  if (persist) {
+    try { localStorage.setItem(LIVE_TRACKER_SCALE_STORE, String(liveTrackerScale)); } catch (_) {}
+  }
+  placeLivePause();
+}
+(function bindLiveTrackerGrip() {
+  const grip = document.querySelector("#livetracker .lt-grip");
+  if (!grip) return;
+  setLiveTrackerScale(liveTrackerScale);
+  let drag = null;
+  grip.addEventListener("pointerdown", event => {
+    if (event.button !== 0 && event.pointerType !== "touch") return;
+    event.preventDefault();
+    event.stopPropagation();
+    const width = document.getElementById("livetracker").getBoundingClientRect().width || 1;
+    drag = {id: event.pointerId, x: event.clientX, y: event.clientY, width, scale: liveTrackerScale};
+    try { grip.setPointerCapture(event.pointerId); } catch (_) {}
+    document.body.classList.add("live-tracker-resizing");
+  });
+  grip.addEventListener("pointermove", event => {
+    if (!drag || event.pointerId !== drag.id) return;
+    // Left and up both grow it — whichever the hand moved further — because
+    // the box is anchored at its bottom-right corner.
+    const left = drag.x - event.clientX, up = drag.y - event.clientY;
+    const grow = Math.abs(left) >= Math.abs(up) ? left : up;
+    setLiveTrackerScale(drag.scale * (drag.width + grow) / drag.width);
+  });
+  const finish = event => {
+    if (!drag || event.pointerId !== drag.id) return;
+    drag = null;
+    document.body.classList.remove("live-tracker-resizing");
+    setLiveTrackerScale(liveTrackerScale, true);
+  };
+  grip.addEventListener("pointerup", finish);
+  grip.addEventListener("pointercancel", finish);
+  grip.addEventListener("dblclick", () => setLiveTrackerScale(1, true));
+  grip.addEventListener("keydown", event => {
+    const step = event.shiftKey ? .2 : .05;
+    const delta = {ArrowLeft: step, ArrowUp: step, ArrowRight: -step, ArrowDown: -step}[event.key];
+    if (delta === undefined) return;
+    event.preventDefault();
+    setLiveTrackerScale(liveTrackerScale + delta, true);
+  });
+})();
+function paintLivePause() {
+  const box = document.getElementById("livepause");
+  if (!box) return;
+  box.hidden = !livePause.available;
+  document.body.classList.toggle("live-pause-available", livePause.available);
+  paintLiveTracker();
+  if (!livePause.available) return;
+  const button = document.getElementById("livepause-button");
+  const fresh = document.getElementById("livenewgame-button");
+  const note = document.getElementById("livepause-note");
+  const asked = livePause.requested;
+  const ending = livePause.ending;
+  button.textContent = asked ? "▶ Resume game" : "⏸ Pause game";
+  button.title = asked
+    ? "Let the Civilization VI game carry on from where it stands"
+    : "Hold the Civilization VI game where it stands, to look around it";
+  button.setAttribute("aria-pressed", String(asked));
+  button.disabled = livePause.busy || ending;
+  fresh.textContent = ending ? "↻ Starting…" : livePause.newGameArmed ? "Confirm new game" : "↻ New game";
+  fresh.title = livePause.newGameArmed
+    ? "End this Civilization VI game now and start a fresh one"
+    : "End this Civilization VI game with its own Retire and start a fresh one";
+  fresh.classList.toggle("confirming", livePause.newGameArmed && !ending);
+  fresh.disabled = livePause.busy || ending;
+  const turn = liveMirrorTurn();
+  const text = livePause.error ||
+    (ending ? "Ending this game · the next one starts in about a minute"
+      : livePause.newGameArmed
+        ? `Press again to end this game${turn === null ? "" : ` at turn ${turn}`} and start a new one`
+      : asked && livePause.held ? `Paused · turn ${livePause.turn ?? "?"}`
+      : asked ? "Pausing…"
+      : livePause.held ? "Resuming…" : "");
+  note.textContent = text;
+  note.hidden = !text;
+  box.classList.toggle("live-paused", asked && livePause.held && !ending);
+  box.classList.toggle("live-error", !!livePause.error);
+  box.classList.toggle("live-pending", !livePause.error &&
+    (ending || (!livePause.newGameArmed && asked !== livePause.held)));
+  placeLivePause();
+}
+// The controls stand in the map's bottom-right corner unless something else
+// does: the world minimap is anchored there on most layouts with the victory
+// tracker in the column above it, the map tools and the sky bar can reach that
+// far, and the minimap can be dragged anywhere. So: the corner if it is free,
+// else as far right on the bottom row as is free (left of the minimap), else
+// as little above the corner as clears what holds it. Rerun on every paint
+// (the 2 s poll), on resize, and as the research box is resized.
+function placeLivePause() {
+  const box = document.getElementById("livepause");
+  if (!box || box.hidden || !box.offsetParent) return;
+  box.style.right = "";
+  box.style.bottom = "";
+  const tracker = document.getElementById("livetracker");
+  const tracking = tracker && !tracker.hidden;
+  if (tracker) tracker.style.maxHeight = "";
+  const frame = box.offsetParent.getBoundingClientRect();
+  const home = box.getBoundingClientRect();
+  const edge = Math.max(0, frame.right - home.right);
+  const gap = 8;
+  const obstacles = [...document.querySelectorAll(
+    "#maparea .minimap-frame, #victoryhud, #zoomctl-main, #skynav")]
+    .filter((el) => el.getClientRects().length > 0)
+    .map((el) => el.getBoundingClientRect())
+    .filter((r) => r.width > 0 && r.height > 0);
+  const blocked = ([right, bottom]) => {
+    const r = {right: frame.right - right, bottom: frame.bottom - bottom};
+    r.left = r.right - home.width;
+    r.top = r.bottom - home.height;
+    if (r.left < frame.left || r.top < frame.top) return true;
+    return obstacles.some((o) =>
+      o.left < r.right && o.right > r.left && o.top < r.bottom && o.bottom > r.top);
+  };
+  const spots = [[edge, edge]];
+  for (const o of obstacles) {
+    spots.push([Math.ceil(frame.right - o.left + gap), edge]);
+    spots.push([edge, Math.ceil(frame.bottom - o.top + gap)]);
+  }
+  spots.sort((a, b) => a[1] - b[1] || a[0] - b[0]);
+  let spot = spots.find((candidate) => !blocked(candidate));
+  if (!spot) {
+    // Nothing holds the whole group — on the compact layout the victory
+    // tracker runs the map's width under the masthead — so it goes where the
+    // most height is free, and the research box scrolls in what is left.
+    const roomAt = ([right, bottom]) => {
+      const r = {right: frame.right - right, bottom: frame.bottom - bottom};
+      r.left = r.right - home.width;
+      if (r.left < frame.left) return -Infinity;
+      let ceiling = frame.top;
+      for (const o of obstacles)
+        if (o.left < r.right && o.right > r.left && o.top < r.bottom)
+          ceiling = Math.max(ceiling, o.bottom + gap);
+      return r.bottom - ceiling;
+    };
+    let room = -Infinity;
+    for (const candidate of spots) {
+      const free = roomAt(candidate);
+      if (free > room) { room = free; spot = candidate; }
+    }
+    if (tracking && Number.isFinite(room)) {
+      const rest = home.height - tracker.getBoundingClientRect().height;
+      tracker.style.maxHeight = `${Math.max(60, Math.floor(room - rest))}px`;
+    }
+  }
+  const [right, bottom] = spot ?? [edge, edge];
+  if (right !== edge) box.style.right = `${right}px`;
+  if (bottom !== edge) box.style.bottom = `${bottom}px`;
+}
+window.addEventListener("resize", placeLivePause);
+// A refusal stays on screen long enough to read: the 2 s status poll answers
+// without an error and must not wipe one a press just got.
+function showLiveError(text) {
+  livePause.error = text;
+  livePause.errorUntil = text ? Date.now() + LIVE_ERROR_SHOWN_MS : 0;
+}
+function adoptLivePause(status) {
+  if (!status || typeof status !== "object") return;
+  livePause.available = status.available === true;
+  livePause.requested = status.requested === true;
+  livePause.held = status.held === true;
+  livePause.turn = Number.isInteger(status.turn) ? status.turn : null;
+  const fresh = status.new_game && typeof status.new_game === "object" ? status.new_game : {};
+  // Asked for or done, the game is on its way out. Between games (no live run)
+  // the answer stands until a live run without a request says otherwise —
+  // the retired harness exits a little before this mirror is replaced.
+  if (fresh.requested === true || fresh.retired === true) livePause.ending = true;
+  else if (fresh.live === true) livePause.ending = false;
+  if (livePause.ending) disarmLiveNewGame();
+  if (typeof status.error === "string" && status.error) showLiveError(status.error);
+  else if ("error" in status || Date.now() >= livePause.errorUntil) showLiveError("");
+  // The live time stops and starts with the hold, not with the next frame.
+  syncLiveClockRun();
+  paintLivePause();
+}
+async function pollLivePause() {
+  clearTimeout(livePause.timer);
+  let answered = true;
+  // A press made while this poll is out answers for itself; this older
+  // reading must not land after it and flip the button back.
+  const asked = livePause.asked;
+  try {
+    const status = await fetchJSON("/live-pause", {}, 3000);
+    if (!livePause.busy && asked === livePause.asked) adoptLivePause(status);
+  } catch (_) {
+    // The page and this route ship in one binary, so a failure is a server
+    // between frames or restarting: ask again rather than drop the control.
+    answered = false;
+  }
+  // A server that says it is not the live mirror is asked once and left alone.
+  if (livePause.available || !answered)
+    livePause.timer = setTimeout(pollLivePause, answered ? 2000 : 5000);
+}
+async function postLiveControl(path, body, timeoutMs) {
+  livePause.asked += 1;
+  livePause.busy = true;
+  showLiveError("");
+  paintLivePause();
+  try {
+    adoptLivePause(await fetchJSON(path, {method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify(body)}, timeoutMs));
+    return true;
+  } catch (_) {
+    return false;
+  } finally {
+    livePause.busy = false;
+    paintLivePause();
+  }
+}
+async function toggleLivePause() {
+  if (!livePause.available || livePause.busy || livePause.ending) return;
+  disarmLiveNewGame();
+  const paused = !livePause.requested;
+  livePause.requested = paused;
+  if (!await postLiveControl("/live-pause", {paused}, 5000)) {
+    livePause.requested = !paused;
+    showLiveError(paused ? "Could not pause — the server did not answer"
+      : "Could not resume — the server did not answer");
+    paintLivePause();
+  }
+}
+function disarmLiveNewGame() {
+  clearTimeout(livePause.newGameTimer);
+  livePause.newGameTimer = null;
+  livePause.newGameArmed = false;
+}
+async function pressLiveNewGame() {
+  if (!livePause.available || livePause.busy || livePause.ending) return;
+  if (!livePause.newGameArmed) {
+    livePause.newGameArmed = true;
+    showLiveError("");
+    clearTimeout(livePause.newGameTimer);
+    livePause.newGameTimer = setTimeout(() => {
+      disarmLiveNewGame();
+      paintLivePause();
+    }, LIVE_NEW_GAME_ARMED_MS);
+    paintLivePause();
+    return;
+  }
+  disarmLiveNewGame();
+  // The switch proves the one live game with `ps` before it writes anything.
+  if (!await postLiveControl("/live-new-game", {confirm: true}, 20000)) {
+    showLiveError("Could not start a new game — the server did not answer");
+  } else if (livePause.error) {
+    showLiveError(`Could not start a new game — ${livePause.error}`);
+  }
+  paintLivePause();
+}
+// --- Live time: the turn plate's stopwatch, its top section above the age. It
 // reads how long the world on screen has actually been playing: it starts
 // with the world's first unpaused frame, stops while the simulation is paused
 // or a result is on screen, and a new world starts it over from zero. A
@@ -6484,9 +6852,14 @@ function liveClockLabel() {
 // Start or stop the accumulator against what the page is showing right now.
 // Paused covers the unstarted opening as well: a clock that has never run
 // and is not running reads 0:00, which is what an unstarted game has played.
+// On the mirror beside a Civilization VI verification game this page's own
+// simulation never runs — the world is a picture of the Firaxis game — so the
+// clock follows that game instead: it runs while the game plays and stops
+// while the operator's Pause holds it (`livePause.held`, the mod's own word).
 function syncLiveClockRun() {
   const over = gameFinished(state);
-  const shouldRun = SPEC && !!state && !specPaused && !over;
+  const paused = livePause.available ? livePause.held : specPaused;
+  const shouldRun = SPEC && !!state && !paused && !over;
   if (shouldRun && liveClock.runningSince === null) {
     liveClock.runningSince = Date.now();
   } else if (!shouldRun && liveClock.runningSince !== null) {
@@ -7874,7 +8247,7 @@ function render(st, recordChronicle = true, acceptingSupervisedSuccessor = false
   drawSoloHud();
   draw(); drawSide(newWorld); drawMini(); drawPlayerHud(); drawUbar(); drawQuickDeals(); drawCaptureChoice();
   refreshTileTip();
-  drawLaunchBar(); drawEmpire();
+  drawLaunchBar(); drawEmpire(); refreshOpenTree();
   drawCityScreen();
   if (newWorld) {
     unitOrders.clear(); noticeLog = []; noticeDismissed.clear();
@@ -23431,6 +23804,10 @@ function hudTurnPlate() {
   // simultaneous` still reads honestly here.
   const turnStructureName = state.turn_structure === "simultaneous" ? "Simultaneous" : "Sequential";
   const turnStructureValue = `<b>${turnStructureName}</b>`;
+  // The map first, as the lobby names it: how many civilizations were dealt
+  // and on which script ("4P Pangaea"). The dealt count includes the fallen.
+  const dealtCivs = state.players.filter(p => !p.is_minor && !p.is_barbarian).length;
+  const mapRowValue = `${dealtCivs}P ${mapName}`;
   // "Remaining" is a count of who is still playing, so a civilization that has
   // been wiped off the map no longer appears in it. The count it was taken out
   // of is worth as much as the count itself — eight remaining reads very
@@ -23494,8 +23871,9 @@ function hudTurnPlate() {
       `</select><span class="turn-pace-caret" aria-hidden="true">⌄</span></span></div>`
     : ``;
   const plateLabel = `${context}; ${ageLabel}; turn ${turn} of ${turnCap}; ` +
-    `game speed ${speedName}; ${turnStructureName.toLowerCase()} turns; ` +
     (liveTimeText ? `live time ${liveTimeText}; ` : ``) +
+    `map ${mapRowValue}; ` +
+    `game speed ${speedName}; ${turnStructureName.toLowerCase()} turns; ` +
     `watch pace ${watchPace}; ` +
     (fogRow ? `in-game fog ${state.tactics.fog ? "on" : "off"}; ` : ``) +
     `${civCount} civilizations remaining, ${civsLost} eliminated; ` +
@@ -23509,8 +23887,15 @@ function hudTurnPlate() {
   const rosterRow = (label, alive, lost) =>
     `<div class="turn-setting"><span>${label}</span>` +
     `<b>${alive}<small class="turn-toll">(${lost} eliminated)</small></b></div>`;
-  return `<section class="victory-turn" title="${escapeAttr(context)}" aria-label="${escapeAttr(plateLabel)}">` +
+  // The stopwatch is the plate's own top section, above the age (operator
+  // 2026-10-14: "live time can be a very top section above the age").
+  return `<section class="victory-turn${liveTimeText !== null ? " has-live-time" : ""}" ` +
+    `title="${escapeAttr(context)}" aria-label="${escapeAttr(plateLabel)}">` +
     hudFoldButton("turnplate", "turn box", "turn-plate-fold") +
+    (liveTimeText !== null
+      ? `<div class="turn-live" title="How long this world has been playing. Pauses stop the clock; a restart starts it over.">` +
+        `<span class="turn-label">Live time</span><b data-live-time>${liveTimeText}</b></div>`
+      : ``) +
     `<span class="turn-era">${ageLabel}</span>` +
     `<div class="${turnCountClasses}"><span class="turn-label">Turn</span>` +
     `<div class="turn-progress"><strong>${reportedTurn()}</strong>` +
@@ -23518,12 +23903,9 @@ function hudTurnPlate() {
     (decided ? `<small class="turn-playon">Playing on</small>` : ``) +
     `</div>` +
     `<div class="turn-settings" aria-label="Game setup">` +
+    `<div class="turn-setting"><span>Map:</span><b>${escapeAttr(mapRowValue)}</b></div>` +
     `<div class="turn-setting"><span>Game speed:</span><b>${speedName}</b></div>` +
     `<div class="turn-setting"><span>Turns:</span>${turnStructureValue}</div>` +
-    (liveTimeText !== null
-      ? `<div class="turn-setting" title="How long this world has been playing. Pauses stop the clock; a restart starts it over.">` +
-        `<span>Live time:</span><b data-live-time>${liveTimeText}</b></div>`
-      : ``) +
     `<div class="turn-setting"><span>Watch pace:</span>${watchPaceValue}</div>` +
     fogRow +
     rosterRow("Civs:", civCount, civsLost) +
@@ -24895,6 +25277,68 @@ function launchTreeHook(kind) {
 
 function policySpec(id) { return (RULES && RULES.policies && RULES.policies[id]) || {}; }
 function policySlotOf(id) { return policySpec(id).slot || "wildcard"; }
+// What the slotted cards are worth right now. Civilization VI prints a card's
+// text and never its value — "+100% Campus adjacency bonuses" does not say
+// whether that is two Science or forty — and players install a mod for the
+// number (operator 2026-10-14: "the net policy effect (this is normally a mod
+// - we should include this as standard functionality)"). `/policy-effects` is
+// the engine's own counterfactual: the empire measured with each card and
+// without it, and with the whole deck against none.
+const POLICY_MEASURES = [
+  ["science", "⌬", "Science"], ["culture", "❦", "Culture"], ["gold", "💰", "Gold"],
+  ["production", "⚙", "Production toward what is being built"], ["food", "🌾", "Food"],
+  ["faith", "☼", "Faith"], ["amenities", "☺", "Amenities"], ["housing", "⌂", "Housing"],
+  ["loyalty", "⚑", "Loyalty per turn"], ["great_people", "★", "Great Person points"],
+  ["tourism", "✈", "Tourism"], ["influence", "✉", "Influence"],
+  ["strength", "⚔", "Combat strength, army average"],
+];
+const POLICY_LEDGER_RETRY_MS = 30000;
+let policyLedger = null, policyLedgerAsked = "", policyLedgerFailedAt = 0;
+function policyLedgerKey() {
+  if (!state || !state.me) return "";
+  const me = state.me;
+  return [state.turn, state.view_player ?? "", me.government || "", me.anarchy_turns || 0,
+    [...(me.policies || [])].sort().join(",")].join("|");
+}
+// The ledger for the deck on screen, asked for once per turn and deck. A
+// ledger read for another deck would price the wrong cards, so until the new
+// one arrives there is none; one read earlier in the same deck's life is
+// close enough to keep showing meanwhile.
+function currentPolicyLedger() {
+  const key = policyLedgerKey();
+  if (!key) return null;
+  if (policyLedgerAsked !== key && Date.now() - policyLedgerFailedAt > POLICY_LEDGER_RETRY_MS) {
+    policyLedgerAsked = key;
+    fetchJSON("/policy-effects").then(answer => {
+      if (policyLedgerAsked !== key) return;
+      policyLedger = answer;
+      paintLiveTracker();
+      if (empireOpen() && empireTab === "government") drawEmpire();
+    }).catch(() => {
+      if (policyLedgerAsked === key) { policyLedgerAsked = ""; policyLedgerFailedAt = Date.now(); }
+    });
+  }
+  const deck = [...(state.me.policies || [])].sort().join(",");
+  const priced = policyLedger && (policyLedger.cards || []).map(card => card.policy).sort().join(",");
+  return policyLedger && priced === deck ? policyLedger : null;
+}
+// The six yields wear Civ VI's own signs, off the sheet the map and the tile
+// tips draw from; the other measures have no sign there and keep a glyph.
+function policyMeasureMark(key, mark) {
+  if (!CIV6_YIELD_ICON_INDEX.has(key)) return `<span class="pw-mark">${mark}</span>`;
+  return `<span class="tip-yield-marker pw-icon" aria-hidden="true" ` +
+    `style="--tip-yield-fill:${YPIP[key]};--tip-yield-cell:${CIV6_YIELD_ICON_INDEX.get(key)};` +
+    `--tip-yield-portion:100%"></span>`;
+}
+function policyWorthHtml(worth) {
+  return POLICY_MEASURES.filter(([key]) => worth && worth[key]).map(([key, mark, word]) => {
+    const value = Number(worth[key]);
+    const shown = Math.abs(value) >= 10 ? Math.round(value) : Math.round(value * 10) / 10;
+    const signed = `${shown > 0 ? "+" : ""}${shown}`;
+    return `<span class="pw ${value > 0 ? "up" : "down"}" title="${escapeAttr(`${signed} ${word}`)}">` +
+      `${signed}${policyMeasureMark(key, mark)}</span>`;
+  }).join("");
+}
 function emptyPolicySlots() {
   if (!state || SPEC) return 0;
   const total = Object.values(state.me.policy_slots || {}).reduce((a, b) => a + b, 0);
@@ -25489,6 +25933,9 @@ function empireGovernment() {
   // silently dropped; the engine, not this layout, is the authority.
   for (const policy of held) frames.push({kind: policySlotOf(policy), policy});
   const unslot = new Map(legalFor("unslot_policy").map(a => [a.policy, a]));
+  // What each slotted card is worth this turn, and the deck together.
+  const ledger = currentPolicyLedger();
+  const worthOf = new Map(((ledger && ledger.cards) || []).map(card => [card.policy, card.worth]));
   const frameCards = frames.map(frame => {
     if (!frame.policy) return empireCard({
       title: "Empty", kind: `${frame.kind} slot`, cls: `empty empire-slot-${frame.kind}`,
@@ -25496,9 +25943,12 @@ function empireGovernment() {
     });
     const spec = policySpec(frame.policy);
     const drop = unslot.get(frame.policy);
+    const worth = ledger ? policyWorthHtml(worthOf.get(frame.policy)) : "";
     return empireCard({
       title: titleCase(frame.policy), kind: `${frame.kind} slot`,
-      cls: `filled empire-slot-${frame.kind}`, note: spec.note || "",
+      cls: `filled empire-slot-${frame.kind}`,
+      note: (spec.note || "") + (ledger
+        ? `<div class="policy-worth">Worth now ${worth || `<span class="pw none">nothing measurable</span>`}</div>` : ""),
       actions: drop ? [empireAct(drop, "✕ Remove")] : [],
     });
   });
@@ -25513,7 +25963,9 @@ function empireGovernment() {
   });
 
   return empireGroup("Government", current, empireGrid(govs, "No other government is unlocked yet.")) +
-    empireGroup("Policy slots", `${emptyPolicySlots()} empty of ${frames.length}`,
+    empireGroup("Policy slots", `${emptyPolicySlots()} empty of ${frames.length}` +
+        (ledger && (me.policies || []).length
+          ? ` · net effect ${ledger.anarchy ? "suspended in Anarchy" : policyWorthHtml(ledger.net) || "nothing measurable"}` : ""),
       empireGrid(frameCards, "This government provides no policy slots.")) +
     empireGroup("Cards in hand", `${slottable.length} available`,
       empireGrid(slottable, "Every unlocked card is already slotted."));
@@ -28443,6 +28895,8 @@ let treeKind = null;
 // to "Academies", not "Academys", and "an Oil Power Plant" is not "a".
 function boostPlural(count, word) {
   if (count === 1) return word;
+  // Some names are plural already: "2 Fishing Boats", never "Boatses".
+  if (/boats$/i.test(word)) return word;
   if (/[^aeiou]y$/i.test(word)) return `${word.slice(0, -1)}ies`;
   if (/(s|x|z|ch|sh)$/i.test(word)) return `${word}es`;
   return `${word}s`;
@@ -28502,7 +28956,7 @@ const BOOST_FAMILIES = [
   ["kill_with:", (n, x) => `Kill ${boostCount(n, "unit")} with ${boostArticle(x)} ${x}`],
   ["kill_kind:", (n, x) => `Kill ${boostCount(n, x)}`],
   ["trained:", (n, x) => `Train ${boostArticle(x)} ${x}`],
-  ["civic:", (n, x) => `Adopt the ${x} civic`],
+  ["civic:", (n, x) => `Adopt the ${x.replace(/^The /, "")} civic`],
   ["tech:", (n, x) => `Research ${x}`],
 ];
 function boostRequirement(spec) {
@@ -28524,74 +28978,189 @@ function boostRequirement(spec) {
   }
   return `${titleCase(trigger)}${count > 1 ? ` · ${count}` : ""}`;
 }
+// What a node grants beyond its unlocks, in words. The keys are the engine's
+// effect names; the ones that are a yield on something ("pasture_production")
+// or a percentage ("writing_tourism_pct") read themselves (`treeAbilityText`),
+// so only the yes/no grants need a phrase here.
+const TREE_ABILITY_TEXT = {
+  builder_embark: "Builders embark", trader_embark: "Traders embark",
+  land_unit_embark: "Land units embark", ocean_navigation: "Ships cross ocean",
+  chop_woods: "Chop woods", chop_rainforest: "Chop rainforest", clear_marsh: "Clear marsh",
+  plant_woods: "Plant woods", hill_farms: "Farms on hills",
+  harvest_bananas: "Harvest bananas", harvest_copper: "Harvest copper",
+  harvest_stone: "Harvest stone", harvest_sea_resources: "Harvest sea resources",
+  harvest_farm_resources: "Harvest farm resources",
+  harvest_pasture_camp_resources: "Harvest pasture & camp resources",
+  research_agreements: "Research agreements", urban_defenses: "Urban defenses",
+  open_borders: "Open borders", national_parks: "National parks",
+  corps_fleets: "Corps & fleets", armies_armadas: "Armies & armadas",
+  flanking_support: "Flanking & support", airport_transfer: "Air transfers",
+  laser_station_projects: "Laser station projects",
+};
+const TREE_ABILITY_COUNTS = {
+  embarked_movement: "embarked movement", naval_movement: "naval movement",
+  diplomatic_visibility: "diplomatic visibility", diplomatic_victory_points: "victory point",
+  spy_capacity: "spy", trade_route_capacity: "trade route", free_envoys: "envoy",
+  governor_titles: "governor title",
+};
+function treeAbilityText(key, value) {
+  const amount = Math.round(Number(value) * 10) / 10;
+  if (TREE_ABILITY_TEXT[key]) return TREE_ABILITY_TEXT[key];
+  if (TREE_ABILITY_COUNTS[key])
+    return `+${amount} ${TREE_ABILITY_COUNTS[key]}${amount === 1 ? "" : "s"}`;
+  const yieldKey = /^(.+)_(food|production|gold|science|culture|faith)$/.exec(key);
+  if (yieldKey)
+    return `${titleCase(yieldKey[1])} ${amount > 0 ? "+" : ""}${amount} ${titleCase(yieldKey[2])}`;
+  const percent = /^(.+)_pct(?:_.*)?$/.exec(key);
+  if (percent) return `${titleCase(percent[1])} ${amount > 0 ? "+" : ""}${amount}%`;
+  return titleCase(key) + (amount === 1 ? "" : ` ${amount}`);
+}
+// Civ VI prints a node's unlocks as a row of small icons, one per thing, and
+// keeps the sentence for the tooltip. Here each unlock is a chip coloured by
+// its kind — a policy in its slot's colour — so a column reads at a glance
+// rather than as a wall of "Unlocks Building: … · District: …".
+function treeChips(spec) {
+  const chips = (spec.unlocks || []).map(unlock => {
+    const cls = unlock.kind === "policy"
+      ? `k-policy slot-${escapeAttr(policySlotOf(unlock.id))}` : `k-${escapeAttr(unlock.kind)}`;
+    return `<span class="tn-chip ${cls}" title="${escapeAttr(`${titleCase(unlock.kind)}: ${titleCase(unlock.id)}`)}">` +
+      `${escapeAttr(titleCase(unlock.id))}</span>`;
+  });
+  for (const [key, value] of Object.entries(spec.effects || {})) {
+    const text = treeAbilityText(key, value);
+    // A yield on something reads with Civ VI's own sign for the yield.
+    const yieldKey = /_(food|production|gold|science|culture|faith)$/.exec(key);
+    const shown = yieldKey
+      ? escapeAttr(text.slice(0, text.lastIndexOf(" "))) + policyMeasureMark(yieldKey[1], "")
+      : escapeAttr(text);
+    chips.push(`<span class="tn-chip k-ability" title="${escapeAttr(text)}">${shown}</span>`);
+  }
+  return chips.length ? `<div class="tn-chips">${chips.join("")}</div>` : "";
+}
 function openTree(kind) {
   // A battlefield's research is a pace the engine keeps for both sides
   // alike, and it has no civics tree at all, so neither tree opens there.
   if (!RULES || !state || watchingBattlefield()) return;
   treeKind = kind;
-  const specs = kind === "techs" ? RULES.techs : RULES.civics;
-  const known = new Set(kind === "techs" ? state.me.techs : state.me.civics);
-  const boosted = kind === "techs" ? state.me.boosted_techs : state.me.boosted_civics;
-  const current = kind === "techs" ? state.me.research : state.me.civic;
+  const techs = kind === "techs";
+  const specs = techs ? RULES.techs : RULES.civics;
+  const known = new Set(techs ? state.me.techs : state.me.civics);
+  const boosted = new Set(techs ? state.me.boosted_techs : state.me.boosted_civics);
+  const current = techs ? state.me.research : state.me.civic;
+  const progress = Number(techs ? state.me.research_progress : state.me.civic_progress) || 0;
   const cols = ERA_NAMES.map(() => []);
   for (const n of Object.keys(specs)) (cols[specs[n].era] || (cols[specs[n].era] = [])).push(n);
   cols.forEach(col => col.sort((a, b) => specs[a].cost - specs[b].cost || a.localeCompare(b)));
-  document.getElementById("treetitle").textContent =
-    (kind === "techs" ? "Technology tree" : "Civics tree") +
-    (current ? ` — researching: ${current.replaceAll("_"," ")}` : " — click a gold node");
   // Civ 6 prices a tree node in turns, not in beakers: what a player is
   // choosing between is how long each one takes at the rate this empire is
-  // actually running. The raw cost stays beside it, because a tree read at a
-  // pace that is about to change is worth reading in both units.
-  const perTurn = Number((state.me.yields || {})[kind === "techs" ? "science" : "culture"]) || 0;
+  // actually running. The raw cost stays in the tooltip, because a tree read
+  // at a pace that is about to change is worth reading in both units.
+  const perTurn = Number((state.me.yields || {})[techs ? "science" : "culture"]) || 0;
   const speed = gameSpeedPercent() / 100;
-  const nodeTurns = spec => {
+  const nodeTurns = (cost, name) => {
     if (perTurn <= 0) return null;
-    const banked = spec.name === current
-      ? Number(kind === "techs" ? state.me.research_progress : state.me.civic_progress) || 0 : 0;
-    return Math.max(1, Math.ceil((spec.cost * speed - banked) / perTurn));
+    const banked = name === current ? progress : 0;
+    return Math.max(1, Math.ceil((cost * speed - banked) / perTurn));
   };
+  const turnsText = turns => turns ? `${turns} turn${turns === 1 ? "" : "s"}` : "";
+  const studied = current ? Math.min(100, Math.round(100 * progress /
+    Math.max(1, specs[current] ? specs[current].cost * speed : 1))) : 0;
+  const verb = techs ? "Researching" : "Studying";
+  const tally = {done: 0, avail: 0};
   // Switching study is not a client choice to offer: the engine enumerates a
   // `research`/`civic` action only while nothing is being studied, so a node
   // that cannot be clicked says why rather than going quietly dead under the
   // hand of somebody used to Civ 6, where research can be changed at will.
   const heldBy = current ? titleCase(current) : null;
-  document.getElementById("treecols").innerHTML = cols.map((col, era) =>
-    `<div class="tcol"><div class="tera">${ERA_NAMES[era]} era</div>` + col.map(n => {
+  const columns = cols.map((col, era) => {
+    let doneHere = 0;
+    const nodes = col.map(n => {
       const s = specs[n];
       const completed = known.has(n) && !s.repeatable;
       const avail = !completed && s.requires.every(r => known.has(r));
       const cls = completed ? "done" : (n === current ? "cur" : (avail ? "avail" : "locked"));
+      if (completed) { doneHere++; tally.done++; } else if (avail) tally.avail++;
       const canPick = avail && !current;
-      const unlocks = (s.unlocks || []).map(u => `${titleCase(u.kind)}: ${titleCase(u.id)}`);
-      const abilities = Object.keys(s.effects || {}).map(titleCase);
-      const turns = nodeTurns({cost: s.cost, name: n});
+      const turns = completed ? null : nodeTurns(s.cost, n);
+      const unlocks = (s.unlocks || []).map(u => titleCase(u.id));
       const why = completed
-        ? `Already ${kind === "techs" ? "researched" : "studied"}`
+        ? `Already ${techs ? "researched" : "studied"}`
         : n === current
-          ? `Being ${kind === "techs" ? "researched" : "studied"} now`
+          ? `Being ${techs ? "researched" : "studied"} now`
           : canPick
-            ? `Start this${turns ? ` — ${turns} turn${turns === 1 ? "" : "s"} at the current rate` : ""}`
+            ? `Start this${turns ? ` — ${turnsText(turns)} at the current rate` : ""}`
             : avail
               ? `Available, but ${heldBy} is under way — this game studies one at a time`
               : `Needs ${s.requires.map(r => titleCase(r)).join(", ")}`;
+      const tip = `${titleCase(n)} — ${why}. Cost ${Math.round(s.cost * speed)}` +
+        (unlocks.length ? `. Unlocks ${unlocks.join(", ")}` : "");
+      // Studied nodes fold to one line: late in a game they are most of the
+      // tree, and what is worth the room is what is still to come.
+      if (completed)
+        return `<div class="tnode done" title="${escapeAttr(tip)}">` +
+          `<div class="tn-head"><b class="tn-name">${escapeAttr(titleCase(n))}</b>` +
+          `<span class="tn-when">${boosted.has(n) ? "⚡" : ""}✓</span></div></div>`;
       // Civ 6 prints the eureka on every node, because planning around them is
       // most of what reading the tree is for. Showing ⚡ only once the boost
       // has landed says it at the one moment it is worthless.
-      const wants = !completed && !boosted.includes(n) ? boostRequirement(s) : "";
-      return `<div class="tnode ${cls}" title="${escapeAttr(why)}"` +
+      const wants = boosted.has(n) ? "" : boostRequirement(s);
+      const missing = avail ? [] : s.requires.filter(r => !known.has(r));
+      return `<div class="tnode ${cls}" title="${escapeAttr(tip)}"` +
         (canPick ? ` onclick='pickTree("${kind}","${n}")'` : "") + `>` +
-        `<b>${titleCase(n)}</b>` +
-        (s.repeatable ? ` <span class="boost">↻</span>` : "") +
-        (boosted.includes(n) ? ` <span class="boost">⚡</span>` : "") +
-        ` <span class="req">${s.cost}${!completed && turns ? ` · ${turns}t` : ""}</span>` +
-        (wants ? `<div class="req tboost">⚡ ${escapeAttr(wants)}</div>` : "") +
-        (s.requires.length ? `<div class="req">← ${s.requires.map(x => x.replaceAll("_"," ")).join(", ")}</div>` : "") +
-        (unlocks.length ? `<div class="req">Unlocks ${unlocks.join(" · ")}</div>` : "") +
-        (abilities.length ? `<div class="req">Abilities ${abilities.join(" · ")}</div>` : "") +
-        `</div>`;
-    }).join("") + `</div>`).join("");
-  document.getElementById("tree").classList.add("open");
+        `<div class="tn-head"><b class="tn-name">${escapeAttr(titleCase(n))}` +
+        (s.repeatable ? ` <span class="boost">↻</span>` : "") + `</b>` +
+        `<span class="tn-when">${n === current ? `${studied}%` : escapeAttr(turnsText(turns))}</span></div>` +
+        (n === current ? `<div class="tn-bar"><i style="width:${studied}%"></i></div>` : "") +
+        (boosted.has(n) ? `<div class="tn-boost got">⚡ ${techs ? "Eureka" : "Inspiration"} earned</div>`
+          : wants ? `<div class="tn-boost">⚡ ${escapeAttr(wants)}</div>` : "") +
+        (missing.length ? `<div class="tn-needs">Needs ${escapeAttr(missing.map(titleCase).join(", "))}</div>` : "") +
+        treeChips(s) + `</div>`;
+    });
+    if (!col.length) return "";
+    const here = col.includes(current) || col.some(n => !known.has(n) && specs[n].requires.every(r => known.has(r)));
+    return `<div class="tcol${here ? " frontier" : ""}" data-era="${era}">` +
+      `<div class="tera">${ERA_NAMES[era]} era<span>${doneHere}/${col.length}</span></div>` +
+      nodes.join("") + `</div>`;
+  });
+  const total = Object.values(specs).filter(s => !s.repeatable).length;
+  document.getElementById("treetitle").innerHTML =
+    `${techs ? "Technology tree" : "Civics tree"}` +
+    `<small class="tree-study"><span>` + (current
+      ? `${verb} <b>${escapeAttr(titleCase(current))}</b> · ${studied}%` +
+        (nodeTurns(specs[current].cost, current) ? ` · ${turnsText(nodeTurns(specs[current].cost, current))}` : "")
+      : (tally.avail ? `Nothing under way — pick a gold node` : `Nothing under way`)) +
+    `</span><span class="tree-tally">${tally.done} of ${total} done · ${tally.avail} open</span></small>`;
+  const holder = document.getElementById("treecols");
+  const tree = document.getElementById("tree");
+  const reopening = tree.classList.contains("open") && tree.dataset.kind === kind;
+  const kept = reopening ? {left: holder.scrollLeft, top: holder.scrollTop} : null;
+  holder.innerHTML = columns.join("");
+  tree.dataset.kind = kind;
+  tree.classList.add("open");
+  treeSignature = treeStateSignature(kind);
+  if (kept) { holder.scrollLeft = kept.left; holder.scrollTop = kept.top; return; }
+  // Open where the decisions are: the column holding the current study, or
+  // the first one with anything still open in it.
+  const frontier = holder.querySelector(".tcol.frontier");
+  holder.scrollLeft = frontier ? Math.max(0, frontier.offsetLeft - holder.offsetLeft) : 0;
+  holder.scrollTop = 0;
+}
+// What an open tree was drawn from. A state that moves any of it redraws the
+// tree in place, so a tree left open on the live mirror follows the game.
+let treeSignature = "";
+function treeStateSignature(kind) {
+  if (!state || !state.me) return "";
+  const techs = kind === "techs";
+  return [kind, state.turn, techs ? state.me.research : state.me.civic,
+    Math.round(Number(techs ? state.me.research_progress : state.me.civic_progress) || 0),
+    ((techs ? state.me.techs : state.me.civics) || []).length,
+    ((techs ? state.me.boosted_techs : state.me.boosted_civics) || []).length,
+    Math.round(Number((state.me.yields || {})[techs ? "science" : "culture"]) || 0)].join("|");
+}
+function refreshOpenTree() {
+  const tree = document.getElementById("tree");
+  if (!tree || !tree.classList.contains("open") || !treeKind) return;
+  if (treeStateSignature(treeKind) !== treeSignature) openTree(treeKind);
 }
 function pickTree(kind, n) {
   document.getElementById("tree").classList.remove("open");
@@ -30153,7 +30722,8 @@ const EMPIRE_STRATEGIC_UNITS = new Set(["settler", "aircraft_carrier"]);
 // the neighbourhood of the hottest area's hottest tile. It moves on only when
 // another area is clearly hotter and far enough away to be a different place,
 // at most once per hold: one front at a time, not a camera chasing each unit.
-const ACTIVE_AREA = {radius:3, frame:3, reaimTiles:4, reaimMargin:1.25, holdMs:4000, memoryTurns:4};
+// The frame matches the native Civ VI view held zoomed out (CivvisControlMapView FOCUS_ZOOM 0.80).
+const ACTIVE_AREA = {radius:3, frame:8, reaimTiles:4, reaimMargin:1.25, holdMs:4000, memoryTurns:4};
 let activeAreaTrack = null;
 function activeAreaTally(st, player) {
   const units = new Map(), cities = new Map();

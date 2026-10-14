@@ -153,3 +153,137 @@ fn completed_campaign_history_survives_a_rebuild_until_peace() {
     ai.remap_campaign_city_memory(&previous, &previous);
     assert_eq!(ai.campaign, Some(expected));
 }
+
+#[test]
+fn completed_foothold_does_not_end_the_active_domination_front() {
+    let mut game = board(&[
+        (0, (6, 12)),
+        (1, (14, 12)), // Required original capital remains with the rival.
+        (1, (17, 15)), // This border city is the campaign's first capture.
+        (2, (24, 12)),
+    ]);
+    let border = game.city_at((17, 15)).unwrap();
+    let mut ai = campaign(&game);
+    ai.campaign.as_mut().unwrap().cities = vec![border];
+    game.cities.get_mut(&border).unwrap().owner = 0;
+    ai.maintain_city_campaign(&mut game, 0);
+    assert_eq!(ai.campaign.as_ref().unwrap().taken, 1);
+    assert!(ai.campaign.as_ref().unwrap().cities.is_empty());
+
+    let mut ordinary = ai.clone();
+    let mut ordinary_board = game.clone();
+    ordinary.city_campaign_diplomacy(&mut ordinary_board, 0);
+    assert!(
+        ordinary_board
+            .pending_deals
+            .iter()
+            .any(|deal| { deal.from == 0 && deal.to == 1 && deal.peace }),
+        "ordinary campaigns still close after their planned capture"
+    );
+
+    let mut domination = ai.clone();
+    domination.victory_target = Some(super::super::VictoryTarget::Domination);
+    domination.enable_one_war_at_a_time();
+    domination.one_war_observe(&game, 0);
+    assert_eq!(domination.one_war_front(), Some(1));
+    domination.city_campaign_diplomacy(&mut game, 0);
+    assert!(
+        !game
+            .pending_deals
+            .iter()
+            .any(|deal| { deal.from == 0 && deal.to == 1 && deal.peace }),
+        "taking the border city must not sue for peace before the capital"
+    );
+    let plan = domination.plan.clone().unwrap();
+    domination.advanced_diplomacy(&mut game, 0, &plan);
+    assert!(
+        !domination.peace_offers.contains(&1),
+        "the full peace desk must keep the active front after its first capture"
+    );
+
+    let mut science = ai;
+    science.victory_target = Some(super::super::VictoryTarget::Science);
+    science.enable_one_war_at_a_time();
+    science.one_war_observe(&game, 0);
+    science.city_campaign_diplomacy(&mut game, 0);
+    assert!(
+        game.pending_deals
+            .iter()
+            .any(|deal| { deal.from == 0 && deal.to == 1 && deal.peace }),
+        "only the active Domination front inherits the longer war"
+    );
+}
+
+/// See `unseen_prey`: under the gene, a Domination campaign that took the
+/// last city it could see of a rival it outguns does not sue for peace.
+#[test]
+fn a_beaten_rival_in_the_fog_is_not_offered_peace_under_the_gene() {
+    let offered = |gene: bool| {
+        let mut game = board(&[(0, (6, 12)), (1, (17, 15)), (2, (24, 12))]);
+        let border = game.city_at((17, 15)).unwrap();
+        for _ in 0..3 {
+            game.spawn_test_unit("swordsman", 0, (7, 12));
+        }
+        let mut ai = campaign(&board(&[
+            (0, (6, 12)),
+            (1, (14, 12)),
+            (1, (17, 15)),
+            (2, (24, 12)),
+        ]));
+        ai.campaign.as_mut().unwrap().cities = vec![border];
+        ai.plan.as_mut().unwrap().target_city = Some(border);
+        ai.victory_target = Some(super::super::VictoryTarget::Domination);
+        ai.enable_one_war_at_a_time();
+        if gene {
+            ai.enable_peace_waits_for_unseen_prey();
+        }
+        game.cities.get_mut(&border).unwrap().owner = 0;
+        ai.maintain_city_campaign(&mut game, 0);
+        assert_eq!(ai.campaign.as_ref().unwrap().taken, 1);
+        ai.one_war_observe(&game, 0);
+        assert_eq!(ai.one_war_front(), None, "no city of the rival is known");
+        ai.city_campaign_diplomacy(&mut game, 0);
+        game.pending_deals
+            .iter()
+            .any(|deal| deal.from == 0 && deal.to == 1 && deal.peace)
+    };
+    assert!(offered(false), "off, the campaign sues for peace");
+    assert!(!offered(true), "the fogged rival keeps its war");
+}
+
+/// A completed campaign does not sue for peace with a Diplomatic Victory
+/// contender we outgun: only its elimination takes its points off the board.
+/// Live King civvis-20261005T212727Z (game 165) offered Indonesia peace at
+/// 16 points and 1,191 power against 666 and lost to its Diplomatic Victory.
+#[test]
+fn a_completed_campaign_keeps_its_war_on_a_diplomatic_contender_it_outguns() {
+    let offered = |dvp: i64, ours: f64, theirs: f64| {
+        let mut game = board(&[(0, (6, 12)), (1, (14, 12)), (1, (17, 15)), (2, (24, 12))]);
+        let border = game.city_at((17, 15)).unwrap();
+        let mut ai = campaign(&game);
+        ai.campaign.as_mut().unwrap().cities = vec![border];
+        game.cities.get_mut(&border).unwrap().owner = 0;
+        ai.maintain_city_campaign(&mut game, 0);
+        assert_eq!(ai.campaign.as_ref().unwrap().taken, 1);
+        game.players[1].dvp = dvp;
+        let observed = std::sync::Arc::make_mut(&mut game.observed_military_power);
+        observed.insert(0, ours);
+        observed.insert(1, theirs);
+        ai.city_campaign_diplomacy(&mut game, 0);
+        game.pending_deals
+            .iter()
+            .any(|deal| deal.from == 0 && deal.to == 1 && deal.peace)
+    };
+    assert!(
+        !offered(15, 300.0, 100.0),
+        "a 15-point contender at a third of our power keeps its war"
+    );
+    assert!(
+        offered(3, 300.0, 100.0),
+        "an ordinary completed campaign still closes"
+    );
+    assert!(
+        offered(15, 150.0, 100.0),
+        "a contender we do not outgun twice over is still offered peace"
+    );
+}

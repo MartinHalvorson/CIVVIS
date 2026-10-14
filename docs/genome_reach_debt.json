@@ -171,7 +171,7 @@
     },
     "live_move_refusal_break": {
       "group": "host-only",
-      "reason": "The gene's whole proof is an issued step the NEXT turn's board shows untaken \u2014 the host's `did_not_move` answer read off the rebuilt mirror. In the simulator every legal applied move moves the unit, so the watch can never accumulate a strike, the bar can never be placed, and a screen row would be zero-width by construction. The live ladder prices it through the `did_not_move` share of `order_failed` (13.9% of all orders in the 2026-08-30 measurement), with `disable_live_move_refusal_break` as the withholding arm."
+      "reason": "The gene's whole proof is an issued step the NEXT turn's board shows untaken — the host's `did_not_move` answer read off the rebuilt mirror. In the simulator every legal applied move moves the unit, so the watch can never accumulate a strike, the bar can never be placed, and a screen row would be zero-width by construction. The live ladder prices it through the `did_not_move` share of `order_failed` (13.9% of all orders in the 2026-08-30 measurement), with `disable_live_move_refusal_break` as the withholding arm."
     },
     "live_settler_capture_lessons": {
       "group": "host-only",
@@ -180,6 +180,18 @@
     "native_deployment": {
       "group": "bundle",
       "reason": "Bundle, not a behaviour: it turns a named group of other genes on. `gene_screen` already builds its treated seat from `enable_engine_repairs_universe`, so a row here would vary every gene inside it at once and file the sum under one tag. Here: the deployment bundle (`enable_engine_repairs`) planning on the authoritative board, the seat civvis.ai plays (`Session::ai_fleet`)."
+    },
+    "activation_keeps_its_building": {
+      "group": "host-only",
+      "reason": "Declared `Kind::HostOnly` in the live-pin lineage (ported by #4037), so no screen draws it and it is on in every live seat. A Great Person activation path keeps a queued building on any waiting person's slot chain; it answers a thrash seen only on the live King seat (2026-10-05T051413Z: Bogota switched Art Museum and Archaeological Museum every turn from t187 to t214, finishing neither)."
+    },
+    "activation_resume_waits": {
+      "group": "host-only",
+      "reason": "Declared `Kind::HostOnly` in the live-pin lineage (ported by #4037), so no screen draws it and it is on in every live seat. An activation path waits for a queued district that already holds production; it answers a thrash seen on the live King seat (2026-10-04T205431Z: from t251 Bogota alternated a Holy Site and a Theater Square within each turn's frames)."
+    },
+    "naval_escort_patience": {
+      "group": "host-only",
+      "reason": "Declared `Kind::HostOnly` in the live-pin lineage (ported by #4037), so no screen draws it and it is on in every live seat. An embarked Settler crosses alone on a quiet sea after `NAVAL_ESCORT_PATIENCE` turns held for its escort; the hold it ends is the live seat's escort pacing, priced on the live ladder rather than by a screen row."
     }
   }
 }

@@ -8,6 +8,10 @@ use super::{AdvancedAi, GrandStrategy, VictoryFocus, VictoryTarget};
 use crate::game::Game;
 use std::collections::BTreeMap;
 
+/// The science reading at which a Domination army answers a rival's launch
+/// chain: the Moon Landing (`rival_victory_pressure`'s 45).
+pub(super) const DOMINATION_SCIENCE_COUNTER: i32 = 45;
+
 const SCIENCE_VICTORY_TECH_CHAIN: [&str; 5] = [
     "rocketry",
     "satellites",
@@ -18,8 +22,9 @@ const SCIENCE_VICTORY_TECH_CHAIN: [&str; 5] = [
 
 impl AdvancedAi {
     /// A Domination army is already the counterforce. Do not require opt-in
-    /// lane switching to aim it at a Culture leader or a religious match point.
-    /// Culture leaves a preparation window; religion uses the existing strict
+    /// lane switching to aim it at a Culture leader, a Science racer past
+    /// its Moon Landing, or a religious match point. Culture and Science
+    /// leave a preparation window; religion uses the existing strict
     /// majority tally and its whole-civilization match-point threshold.
     pub(super) fn domination_counter_pressure(&self, g: &Game, pressure: VictoryFocus) -> bool {
         if self.active_victory_target(g) != Some(VictoryTarget::Domination)
@@ -30,6 +35,13 @@ impl AdvancedAi {
         }
         match pressure.strategy {
             GrandStrategy::Culture => pressure.progress >= self.culture_threat_pressure(),
+            // The launch chain is serial and public: a rival that has landed
+            // on the Moon has two launches left and its Spaceport is the one
+            // bottleneck an army can take. Waiting for the expedition (78)
+            // left six turns on King `civvis-20260930T211803Z`, where
+            // Portugal finished the Moon at turn 215, flew at turn 242 and
+            // won at 248 while the Domination seat stayed at peace with it.
+            GrandStrategy::Science => pressure.progress >= DOMINATION_SCIENCE_COUNTER,
             GrandStrategy::Religion => {
                 let living = g
                     .players
@@ -38,12 +50,94 @@ impl AdvancedAi {
                     .count() as i32;
                 living > 1 && pressure.progress >= 100 * (living - 1) / living
             }
+            // `dvp-leader-is-the-front`: a Diplomatic Victory leader one
+            // session from the win. See `advanced/dvp_leader_front.rs`.
+            GrandStrategy::Diplomacy => self.dvp_pressure_is_a_clock(pressure),
             _ => false,
         }
     }
 
-    pub(super) fn domination_counter_target(&self, g: &Game, rival: usize) -> bool {
-        self.domination_counter_pressure(g, self.rival_victory_pressure(g, rival))
+    /// A Domination seat with no faith of its own cannot win its own cities
+    /// back, so once a rival's religion holds our majority that rival already
+    /// counts us and needs only the other holdouts — civilizations our army
+    /// cannot keep unconverted. The match point then arrives on the rival's
+    /// schedule, not ours: on King `civvis-20260929T143005Z` Islam held our
+    /// majority from turn 80, the match-point counter first fired at turn
+    /// 140, and Arabia won at 149, before any army could reach a city. Start
+    /// the counter at the religion early-warning bar
+    /// (`denial_response_for_pressure`'s two-holdout reading) instead. A
+    /// majority that follows no living rival's founded faith defends nothing
+    /// either, so then every faith at the bar is countered. This selects the
+    /// campaign target only: it is deliberately not urgency, so the ordinary
+    /// declaration, readiness and one-war gates still apply.
+    pub(super) fn domination_faithless_conversion_counter(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+        pressure: VictoryFocus,
+    ) -> bool {
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || !self.deny_leaders
+            || !Self::victory_strategy_enabled(g, GrandStrategy::Religion)
+            || g.players[pid].religion.is_some()
+        {
+            return false;
+        }
+        // The rival's religion clock, whether or not it is the rival's best
+        // lane. A faith at the bar is a threat to a faithless seat even while
+        // the tech floor or tourism reads higher. In King
+        // civvis-20261001T022028Z Brazil's Catholicism held two of four
+        // majors from its first contact, but Brazil's best lane read Culture,
+        // so the religion counter never looked.
+        let progress = if pressure.strategy == GrandStrategy::Religion {
+            pressure.progress
+        } else {
+            self.lane_progress_table(g, rival)[2]
+        };
+        let Some(faith) = g.players[rival].religion.as_deref() else {
+            return false;
+        };
+        let living = g
+            .players
+            .iter()
+            .filter(|p| p.alive && !p.is_minor && !p.is_barbarian)
+            .count() as i32;
+        let match_point = 100 * (living - 1) / living.max(1);
+        let early_warning = (100 * (living - 2) / living.max(1))
+            .max(50)
+            .min(match_point);
+        if living <= 2 || progress < early_warning {
+            return false;
+        }
+        // Our majority's own faith, if a living rival founded it, is the one
+        // that already counts us. Otherwise nothing of ours resists any
+        // faith at the bar: on King civvis-20261001T022028Z our cities held
+        // Islam, whose founder Arabia had itself turned Catholic by turn 75.
+        // Catholicism sat at the bar from turn 75, the counter waited for our
+        // majority until turn 144, and Brazil won at 147.
+        let held_by_a_rival_faith = g.players.iter().any(|other| {
+            other.id != pid
+                && other.alive
+                && !other.is_minor
+                && !other.is_barbarian
+                && other
+                    .religion
+                    .as_deref()
+                    .is_some_and(|founded| g.civ_follows_religion(pid, founded))
+        });
+        g.civ_follows_religion(pid, faith) || !held_by_a_rival_faith
+    }
+
+    /// Whether `rival`'s victory clock is one the Domination army answers:
+    /// the lane-independent counter above, or a faith that already holds a
+    /// faithless seat's majority.
+    pub(super) fn domination_counter_target(&self, g: &Game, pid: usize, rival: usize) -> bool {
+        let pressure = self.rival_victory_pressure(g, rival);
+        self.domination_counter_pressure(g, pressure)
+            || self.domination_faithless_conversion_counter(g, pid, rival, pressure)
+            // See `one_war::culture_lane_threat`.
+            || self.culture_lane_threat(g, rival)
     }
     /// The next irreducible Science milestone. An explicit or adaptive
     /// Science plan can still honour a declared rush or a war breakthrough,
@@ -153,10 +247,31 @@ impl AdvancedAi {
         pressure: VictoryFocus,
     ) -> Option<GrandStrategy> {
         let urgent = self.victory_pressure_is_urgent(g, rival, pressure);
-        if self.domination_counter_pressure(g, pressure) {
+        if self.domination_counter_pressure(g, pressure)
+            || self.domination_faithless_conversion_counter(g, pid, rival, pressure)
+        {
             // Faith purchases and home religious defense still run; this only
             // keeps the campaign in its assigned military lane.
             return Some(GrandStrategy::Conquest);
+        }
+        // Congress awards Diplomatic Victory Points in jumps. One jump must
+        // not be projected into an imminent win while a Domination army is
+        // already at a required capital's walls: that diverted production
+        // from the Munich siege at nine of twenty points in the live King
+        // game civvis-20260929T011038Z. Keep the projected warning for an
+        // empty front; the observed sixteen-point stock alarm still wins.
+        if pressure.strategy == GrandStrategy::Diplomacy
+            && pressure.progress < 78
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && g.cities.values().any(|city| {
+                city.owner != pid
+                    && city.is_capital
+                    && city.wall_hp > 0
+                    && g.is_at_war(pid, city.owner)
+                    && Self::domination_siege_present(g, pid, city.id)
+            })
+        {
+            return None;
         }
         // Religious progress advances in whole-civilization jumps, and a
         // defender needs time to produce and route religious counters. Start
@@ -261,27 +376,125 @@ impl AdvancedAi {
         let _memo = g.query_memo();
         let targeted = self.active_victory_target(g).is_some();
         let own_progress = self.victory_focus(g, pid).progress;
-        for (rival, pressure) in self.ranked_rival_victory_pressures(g, pid, culture_pressures) {
-            let domination_counter = self.domination_counter_pressure(g, pressure);
+        let ranked = self.ranked_rival_victory_pressures(g, pid, culture_pressures);
+        if let Some(counter) = self.domination_military_counter(g, pid, own_progress, &ranked) {
+            return Some(counter);
+        }
+        let actionable = |rival: usize, pressure: VictoryFocus| -> Option<GrandStrategy> {
+            let domination_counter = self.domination_counter_pressure(g, pressure)
+                || self.domination_faithless_conversion_counter(g, pid, rival, pressure);
             if targeted
                 && !domination_counter
                 && (!self.deny_while_targeted
                     || !self.victory_pressure_is_urgent(g, rival, pressure))
             {
-                continue;
+                return None;
             }
-            let Some(counter) =
-                self.denial_response_for_pressure(g, pid, own_progress, rival, pressure)
-            else {
-                continue;
-            };
-            if self.conquest_denial_actionable(g, pid, rival, counter)
-                && self.culture_denial_actionable(g, pid, rival, counter)
-            {
-                return Some((rival, counter));
+            let counter =
+                self.denial_response_for_pressure(g, pid, own_progress, rival, pressure)?;
+            (self.conquest_denial_actionable(g, pid, rival, counter)
+                && self.culture_denial_actionable(g, pid, rival, counter))
+            .then_some(counter)
+        };
+        let chosen = ranked.iter().find_map(|(rival, pressure)| {
+            actionable(*rival, *pressure).map(|counter| (*rival, counter, pressure.progress))
+        });
+        // `denial-keeps-its-rival`: last turn's counter rival keeps the
+        // counter while it is still actionable and the new leader does not
+        // lead it by [`DENIAL_SWAP_MARGIN`]. Every swap moves the Domination
+        // army: 58 live games of October 4-5 bounced the campaign A -> B -> A
+        // within ten turns 89 times, 53 of them while countering a rival
+        // close to winning. Live King civvis-20261004T150335Z offered
+        // Vietnam peace at turn 123 "to counter a rival victory threat",
+        // declared on Indonesia, and was staging against Vietnam again at
+        // 132; civvis-20261004T114858Z-cont1 moved its front from Byzantium
+        // to France, 21 tiles off, at 156 and back at 161.
+        if self.denial_keeps_its_rival {
+            if let (Some((rival, _, progress)), Some(incumbent)) = (chosen, self.denial_incumbent) {
+                if rival != incumbent {
+                    let kept = ranked
+                        .iter()
+                        .find(|(other, _)| *other == incumbent)
+                        .filter(|(_, held)| progress < held.progress + super::DENIAL_SWAP_MARGIN)
+                        .and_then(|(_, held)| actionable(incumbent, *held));
+                    if let Some(counter) = kept {
+                        return Some((incumbent, counter));
+                    }
+                }
             }
         }
-        None
+        chosen.map(|(rival, counter, _)| (rival, counter))
+    }
+
+    /// A Domination army answers with war, so it serves the most advanced
+    /// clock it can take a city against before any in-lane counter ranked
+    /// above it: a Congress or culture race cannot stop a launch chain. A
+    /// rival's launch ladder is read on its own, because its strongest lane
+    /// can hide it. On King `civvis-20260930T211803Z` the Maori and Ottoman
+    /// Diplomatic Victory points (80 and 75) held the plan on "diplomacy"
+    /// from turn 222 while Portugal, past its Mars launch, flew at 242 and won
+    /// at 248 without a war.
+    fn domination_military_counter(
+        &self,
+        g: &Game,
+        pid: usize,
+        own_progress: i32,
+        ranked: &[(usize, VictoryFocus)],
+    ) -> Option<(usize, GrandStrategy)> {
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination) {
+            return None;
+        }
+        // `science-suppression-hits-the-pads`: a rival past its Mars base and
+        // short of the Exoplanet launch is the counter before any other
+        // clock. `None` with the gene off. See
+        // `advanced/science_suppression_pads.rs`.
+        if let Some(counter) = self.mars_racer_counter(g, pid) {
+            return Some(counter);
+        }
+        let mut clocks: Vec<(usize, VictoryFocus)> = Vec::new();
+        for (rival, pressure) in ranked.iter().copied() {
+            if self.domination_counter_pressure(g, pressure)
+                || self.domination_faithless_conversion_counter(g, pid, rival, pressure)
+            {
+                clocks.push((rival, pressure));
+            }
+            let launches = VictoryFocus {
+                strategy: GrandStrategy::Science,
+                progress: Self::science_launch_progress(g, rival),
+            };
+            if pressure.strategy != GrandStrategy::Science
+                && self.domination_counter_pressure(g, launches)
+            {
+                clocks.push((rival, launches));
+            }
+            // `runaway-expander-counter`: see `advanced/runaway_expander.rs`.
+            if let Some(runaway) = self.runaway_expander_clock(g, pid, rival) {
+                clocks.push((rival, runaway));
+            }
+            // `denial-nearest-finish`: a culture race near its finish, read
+            // by how soon it ends. See `advanced/denial_nearest_finish.rs`.
+            if let Some(culture) = self.nearest_finish_culture_clock(g, rival).filter(|clock| {
+                (pressure.strategy != GrandStrategy::Culture || clock.progress > pressure.progress)
+                    && self.domination_counter_pressure(g, *clock)
+            }) {
+                clocks.push((rival, culture));
+            }
+        }
+        clocks.sort_by(|left, right| {
+            right
+                .1
+                .progress
+                .cmp(&left.1.progress)
+                .then_with(|| left.0.cmp(&right.0))
+        });
+        clocks.into_iter().find_map(|(rival, pressure)| {
+            let counter =
+                self.denial_response_for_pressure(g, pid, own_progress, rival, pressure)?;
+            (counter == GrandStrategy::Conquest
+                && self.conquest_denial_actionable(g, pid, rival, counter)
+                && self.culture_denial_actionable(g, pid, rival, counter))
+            .then_some((rival, counter))
+        })
     }
 
     /// A Domination contract is fulfilled by foreign *original* capitals.
@@ -289,6 +502,84 @@ impl AdvancedAi {
     /// objective. The ordinary war policy still gates the declaration.
     pub(super) fn domination_capital_target(&self, g: &Game, pid: usize) -> Option<(usize, u32)> {
         self.domination_capital_target_for(g, pid, None)
+    }
+
+    /// If taking a rival's original capital ends the match immediately, that
+    /// capture is also the answer to the rival's victory clock. Use the same
+    /// completion predicate as occupation safety so an unseen or lost home
+    /// capital cannot create a false "last capital" shortcut.
+    pub(super) fn domination_finishing_capital_for(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+    ) -> Option<u32> {
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || !self.campaign_target_legal(g, pid, rival)
+        {
+            return None;
+        }
+        g.cities
+            .values()
+            .find(|city| {
+                city.owner == rival
+                    && city.is_capital
+                    && Self::capture_completes_domination(g, pid, city.id)
+            })
+            .map(|city| city.id)
+    }
+
+    /// The rival we are at war with, and its capital, when taking that
+    /// capital completes Domination. `domination_finish` otherwise looks only
+    /// at the rival the denial layer names. Live King
+    /// civvis-20261004T160213Z (game 65) took Aachen at turn 218, leaving
+    /// the Maori capital as the last one Domination needed. The Maori, at war
+    /// with us, held 3 cities at 59 to 125 power against our 2,800, and 16
+    /// Diplomatic Victory points. The denial layer still named Germany, so
+    /// the campaign stayed on Frankfurt and Cologne.
+    pub(super) fn domination_finish_at_war(&self, g: &Game, pid: usize) -> Option<(usize, u32)> {
+        g.players
+            .iter()
+            .filter(|rival| {
+                rival.id != pid && rival.alive && !rival.is_minor && !rival.is_barbarian
+            })
+            .filter(|rival| g.is_at_war(pid, rival.id))
+            .find_map(|rival| {
+                self.domination_finishing_capital_for(g, pid, rival.id)
+                    .map(|city| (rival.id, city))
+            })
+    }
+
+    /// `flipped-capital-finishes`: the Free Cities seat and the original
+    /// capital it holds whose capture completes Domination. The Free Cities
+    /// are always at war with us, but their seat is barbarian-flagged, so
+    /// `domination_finish_at_war`, `campaign_target_legal` and the wartime
+    /// front sets skip it and a capital that flipped to them was never the
+    /// objective again. Live King civvis-20261005T193504Z (game 156) held
+    /// Canberra and Washington from 174 to 181 with Mikisiw-Wacîhk, the
+    /// last capital, a Free City since 172; then Canberra and Mikisiw from 188
+    /// with Washington a Free City since 182. The campaign sieged Los Angeles,
+    /// Pihtokahanapiwiyin and Mistawasis.
+    pub(super) fn free_city_finish(&self, g: &Game, pid: usize) -> Option<(usize, u32)> {
+        if !self.flipped_capital_finishes
+            || self.forced_target_player.is_some()
+            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+        {
+            return None;
+        }
+        g.cities
+            .values()
+            .filter(|city| {
+                city.is_capital
+                    && city.owner != pid
+                    && g.players
+                        .get(city.owner)
+                        .is_some_and(|owner| owner.is_free_city)
+                    && g.is_at_war(pid, city.owner)
+                    && Self::capture_completes_domination(g, pid, city.id)
+            })
+            .map(|city| (city.owner, city.id))
+            .min()
     }
 
     /// Rank required capitals inside the selected front as well as globally.
@@ -348,7 +639,16 @@ impl AdvancedAi {
         rival: usize,
         pressure: VictoryFocus,
     ) -> Option<u32> {
-        if pressure.progress < 78 && !self.domination_counter_pressure(g, pressure) {
+        // `science-suppression-hits-the-pads`: a decisive space racer is
+        // suppressed at a standing pad, whatever lane it reads. `None` with
+        // the gene off. See `advanced/science_suppression_pads.rs`.
+        if let Some(city) = self.suppression_pad_city(g, pid, rival) {
+            return Some(city);
+        }
+        if pressure.progress < 78
+            && !self.domination_counter_pressure(g, pressure)
+            && !self.domination_faithless_conversion_counter(g, pid, rival, pressure)
+        {
             return None;
         }
         let district = match pressure.strategy {
@@ -565,10 +865,14 @@ mod tests {
         let plan = science_plan(game.turn);
         ai.advanced_research(&mut game, 0, &plan);
 
-        assert_eq!(
-            game.players[0].research.as_deref(),
-            Some("bronze_working"),
-            "an explicit Science target must clear an unfinished Ancient era before its Rocketry beeline"
+        // Any unfinished Ancient node is the backfill. This used to name
+        // Bronze Working, which won the scorer only because its lookahead
+        // counted other civilizations' Iron Working uniques (the Kongo Shield
+        // Bearer, Hypaspist and Toa); counted honestly, Irrigation edges it.
+        let picked = game.players[0].research.clone().expect("a research pick");
+        assert!(
+            picked != "rocketry" && game.rules.techs[picked.as_str()].era == 0,
+            "an explicit Science target must clear an unfinished Ancient era before its Rocketry beeline, not {picked}"
         );
     }
 

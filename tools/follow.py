@@ -43,6 +43,8 @@ import time
 import urllib.error
 import urllib.request
 
+from civ6_control import live_pause
+
 RIG = os.environ.get(
     "CIVVIS_RIG", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -614,7 +616,11 @@ def start_visible_server(run_dir, players):
         ["nice", "-n", "5", BIN, "play", "--mirror", staged,
          "--players", str(players), "--port", str(PORT), "--paused", "--no-open",
          "--spectate", "--speed", "online", "--turns", "250",
-         "--victories", "science,culture,religious,diplomatic,domination,score"],
+         "--victories", "science,culture,religious,diplomatic,domination,score",
+         # The page's Pause / Resume holds the Civilization VI game this
+         # window shows (`civ6_control.live_pause`). Only this server carries
+         # it: the throwaway rebuild server in `rebuild` is never on screen.
+         "--live-pause"],
         cwd=RIG, stdout=out, stderr=subprocess.STDOUT,
         start_new_session=True,
     )
@@ -962,7 +968,10 @@ def main():
             time.sleep(POLL_SECONDS)
             continue
 
-        stale = (time.time() - mtime) > RUN_FRESH_SECONDS
+        # A game the operator paused is quiet on purpose and is still the game
+        # on screen; taking its page down would take the Resume button with it.
+        stale = ((time.time() - mtime) > RUN_FRESH_SECONDS
+                 and not live_pause.requested())
         if run_dir != current_run:
             log(f"following run {os.path.basename(run_dir)}"
                 + (" (already idle; leaving the port free until it says more)"
