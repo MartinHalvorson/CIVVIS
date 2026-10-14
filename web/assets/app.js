@@ -1894,7 +1894,12 @@ function playerHudRowPitch() {
 }
 
 function playerHudContentHeight(rows) {
-  return Math.max(PLAYER_HUD_MIN_HEIGHT, PLAYER_HUD_CHROME_HEIGHT + rows * playerHudRowPitch());
+  // A watched world's turn plate opens with its live stopwatch, a section of
+  // its own above the age, so its floor keeps one more row's room: early on,
+  // with two civilizations met, the stopwatch otherwise pushed the plate's
+  // whole list — the Map row first — out of the masthead.
+  const floor = PLAYER_HUD_MIN_HEIGHT + (SPEC ? playerHudRowPitch() : 0);
+  return Math.max(floor, PLAYER_HUD_CHROME_HEIGHT + rows * playerHudRowPitch());
 }
 
 const HUD_WIDGETS = {
