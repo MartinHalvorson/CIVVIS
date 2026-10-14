@@ -3824,6 +3824,11 @@ pub const GENES: &[Gene] = &[
     // turn 110 and held at 6.2 turns against 3.5 endurance. See
     // `conversion_siege_entry_budget`.
     Gene { tag: "unwalled-city-spares-the-train", field: "unwalled_city_spares_the_train", kind: Kind::OptIn, enable: AdvancedAi::enable_unwalled_city_spares_the_train, disable: AdvancedAi::disable_unwalled_city_spares_the_train },
+    // `elimination-yields-to-a-launch`: the Diplomatic Victory elimination
+    // front yields to an at-war rival past its Mars launch or a short culture
+    // clock, without first holding the contender's capital. See
+    // `capital_moves_on::elimination_yields_to_a_launch`.
+    Gene { tag: "elimination-yields-to-a-launch", field: "elimination_yields_to_a_launch", kind: Kind::OptIn, enable: AdvancedAi::enable_elimination_yields_to_a_launch, disable: AdvancedAi::disable_elimination_yields_to_a_launch },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

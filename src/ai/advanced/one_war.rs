@@ -2328,9 +2328,12 @@ impl AdvancedAi {
     /// points with 6 cities at 6-8 times less military than ours; Byzantium
     /// took +5 to 19 at t221 and won on Diplomacy at 241.
     pub(crate) fn diplomatic_contender_to_eliminate(&self, g: &Game, pid: usize) -> Option<usize> {
-        // See `elimination_yields_to_a_shorter_clock` (`capital-taken-moves-on`).
-        self.diplomatic_contender_base(g, pid)
-            .filter(|rival| !self.elimination_yields_to_a_shorter_clock(g, pid, *rival))
+        // See `elimination_yields_to_a_shorter_clock` (`capital-taken-moves-on`)
+        // and `elimination_yields_to_a_launch` (`elimination-yields-to-a-launch`).
+        self.diplomatic_contender_base(g, pid).filter(|rival| {
+            !self.elimination_yields_to_a_shorter_clock(g, pid, *rival)
+                && !self.elimination_yields_to_a_launch(g, pid, *rival)
+        })
     }
 
     /// `diplomatic_contender_to_eliminate` before `capital-taken-moves-on`'s

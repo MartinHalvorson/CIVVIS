@@ -58,6 +58,11 @@ const CONGRESS_SESSION_TURNS: u32 = 30;
 /// only just shorter is not worth abandoning a crushed contender for.
 const CLOCK_MARGIN_TURNS: u32 = 5;
 
+/// `elimination-yields-to-a-launch`: the engine culture clock, in standard
+/// turns (20 live turns at the seat's Online speed), at which an at-war
+/// rival's Culture Victory outranks a Diplomatic Victory elimination.
+const LAUNCH_CULTURE_CLOCK_TURNS: u32 = 40;
+
 /// The horizon inside which a rival's clock makes it "the shortest-clock
 /// threat" that keeps the front: two Congress sessions.
 const THREAT_HORIZON_TURNS: u32 = 60;
@@ -153,6 +158,48 @@ impl AdvancedAi {
             })
             .filter_map(|rival| self.moves_on_race_clock(g, rival.id))
             .any(|clock| clock + margin < contender_clock)
+    }
+
+    /// `elimination-yields-to-a-launch`: whether the elimination front on
+    /// `contender` yields to another living major already at war with us
+    /// whose race is past the point an army can wait out: its Mars stage or
+    /// Exoplanet Expedition launched (`rival_victory_pressure`'s 65 and up),
+    /// or the engine's culture clock at most [`LAUNCH_CULTURE_CLOCK_TURNS`]
+    /// standard turns once `ENGINE_CLOCK_MIN_TOURISTS` visitors back it.
+    /// Unlike `elimination_yields_to_a_shorter_clock` it does not wait for the
+    /// contender's capital, and it reads the launch ladder, which the Science
+    /// Victory points behind that rule show only after the Expedition flies.
+    /// Live Immortal civvis-20261013T220550Z held "Eliminating Hungary" (14
+    /// points, flat for 60 turns) from turn 179 to 196 while the Mapuche, at
+    /// war with us since 114, launched Mars at 181 and the Expedition at 188
+    /// and won on Science at 201; civvis-20261013T163500Z eliminated Russia
+    /// from 217 while the Maori, at war with us, flew at 214 and won at 221.
+    /// `false` with the gene off.
+    pub(crate) fn elimination_yields_to_a_launch(
+        &self,
+        g: &Game,
+        pid: usize,
+        contender: usize,
+    ) -> bool {
+        if !self.elimination_yields_to_a_launch {
+            return false;
+        }
+        let clock = f64::from(g.standard_duration(LAUNCH_CULTURE_CLOCK_TURNS));
+        g.players.iter().any(|rival| {
+            rival.id != pid
+                && rival.id != contender
+                && rival.alive
+                && !rival.is_minor
+                && !rival.is_barbarian
+                && g.is_at_war(pid, rival.id)
+                && (rival.science_projects.contains("launch_mars_colony")
+                    || rival.science_projects.contains("exoplanet_expedition")
+                    || g.culture_turns_to_victory(rival.id).is_some_and(|turns| {
+                        (0.0..=clock).contains(&turns)
+                            && g.foreign_tourists(rival.id)
+                                >= super::denial_nearest_finish::ENGINE_CLOCK_MIN_TOURISTS
+                    }))
+        })
     }
 
     /// Whether `pid` holds `rival`'s original capital.

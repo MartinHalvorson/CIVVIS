@@ -165,3 +165,152 @@ fn capital_taken_moves_on_is_a_reversible_opt_in() {
     ai.disable_capital_taken_moves_on();
     assert!(!ai.capital_taken_moves_on);
 }
+
+/// `elimination-yields-to-a-launch`: the contender front of
+/// `contender_front`, with the contender's capital NOT ours (the shipped
+/// capital-held yield cannot fire) and `capital-taken-moves-on` off, so only
+/// the new rule can release the front. Player 2 is the rival whose race is
+/// read.
+fn launch_front() -> (Game, AdvancedAi) {
+    let (mut g, mut ai) = contender_front();
+    ai.disable_capital_taken_moves_on();
+    for city in g.cities.values_mut() {
+        if city.owner == 0 && city.original_owner == 1 {
+            city.original_owner = 0;
+        }
+    }
+    assert_eq!(
+        ai.diplomatic_contender_base(&g, 0),
+        Some(1),
+        "fixture: the contender"
+    );
+    (g, ai)
+}
+
+#[test]
+fn an_at_war_launch_makes_the_elimination_yield_without_the_capital() {
+    let (mut g, mut ai) = launch_front();
+    g.at_war.insert((0, 2));
+    g.players[2]
+        .science_projects
+        .insert("launch_earth_satellite".to_string());
+    g.players[2]
+        .science_projects
+        .insert("launch_moon_landing".to_string());
+    g.players[2]
+        .science_projects
+        .insert("launch_mars_colony".to_string());
+    assert_eq!(
+        ai.diplomatic_contender_to_eliminate(&g, 0),
+        Some(1),
+        "off: the front holds"
+    );
+    ai.enable_elimination_yields_to_a_launch();
+    assert!(ai.elimination_yields_to_a_launch(&g, 0, 1));
+    assert_eq!(
+        ai.diplomatic_contender_to_eliminate(&g, 0),
+        None,
+        "on: the front yields"
+    );
+    g.players[2]
+        .science_projects
+        .insert("exoplanet_expedition".to_string());
+    assert_eq!(
+        ai.diplomatic_contender_to_eliminate(&g, 0),
+        None,
+        "and after the Expedition"
+    );
+    ai.disable_elimination_yields_to_a_launch();
+    assert_eq!(
+        ai.diplomatic_contender_to_eliminate(&g, 0),
+        Some(1),
+        "reversible"
+    );
+}
+
+#[test]
+fn a_moon_landing_or_a_launch_at_peace_keeps_the_elimination_front() {
+    let (mut g, mut ai) = launch_front();
+    ai.enable_elimination_yields_to_a_launch();
+    // At war, but only the Moon: earlier than the rule answers.
+    g.at_war.insert((0, 2));
+    g.players[2]
+        .science_projects
+        .insert("launch_earth_satellite".to_string());
+    g.players[2]
+        .science_projects
+        .insert("launch_moon_landing".to_string());
+    assert!(!ai.elimination_yields_to_a_launch(&g, 0, 1));
+    assert_eq!(ai.diplomatic_contender_to_eliminate(&g, 0), Some(1));
+    // Mars launched, but at peace with us: not a front.
+    g.at_war.remove(&(0, 2));
+    g.at_war.remove(&(2, 0));
+    g.players[2]
+        .science_projects
+        .insert("launch_mars_colony".to_string());
+    assert!(!g.is_at_war(0, 2), "fixture: at peace");
+    assert!(!ai.elimination_yields_to_a_launch(&g, 0, 1));
+    assert_eq!(ai.diplomatic_contender_to_eliminate(&g, 0), Some(1));
+    // The contender's own launch does not release its own elimination.
+    g.players[1]
+        .science_projects
+        .insert("launch_mars_colony".to_string());
+    assert!(!ai.elimination_yields_to_a_launch(&g, 0, 1));
+}
+
+#[test]
+fn a_short_culture_clock_at_war_makes_the_elimination_yield() {
+    let (mut g, mut ai) = launch_front();
+    ai.enable_elimination_yields_to_a_launch();
+    g.at_war.insert((0, 2));
+    let short = f64::from(g.standard_duration(LAUNCH_CULTURE_CLOCK_TURNS));
+    {
+        let stats = Arc::make_mut(&mut g.observed_public_empire_stats)
+            .entry(2)
+            .or_default();
+        stats.culture_turns_to_victory = Some(short);
+        stats.foreign_tourists =
+            Some(crate::ai::advanced::denial_nearest_finish::ENGINE_CLOCK_MIN_TOURISTS as usize);
+    }
+    assert!(
+        ai.elimination_yields_to_a_launch(&g, 0, 1),
+        "a clock at the bar yields"
+    );
+    assert_eq!(ai.diplomatic_contender_to_eliminate(&g, 0), None);
+    Arc::make_mut(&mut g.observed_public_empire_stats)
+        .get_mut(&2)
+        .unwrap()
+        .culture_turns_to_victory = Some(short + 1.0);
+    assert!(
+        !ai.elimination_yields_to_a_launch(&g, 0, 1),
+        "a longer clock holds the front"
+    );
+    {
+        let stats = Arc::make_mut(&mut g.observed_public_empire_stats)
+            .get_mut(&2)
+            .unwrap();
+        stats.culture_turns_to_victory = Some(short);
+        stats.foreign_tourists = Some(0);
+    }
+    assert!(
+        !ai.elimination_yields_to_a_launch(&g, 0, 1),
+        "an unbacked clock holds the front"
+    );
+}
+
+#[test]
+fn a_seat_with_no_domination_contract_is_untouched() {
+    let (mut g, mut ai) = launch_front();
+    g.at_war.insert((0, 2));
+    g.players[2]
+        .science_projects
+        .insert("launch_mars_colony".to_string());
+    ai.retarget(VictoryTarget::Science);
+    for on in [false, true] {
+        if on {
+            ai.enable_elimination_yields_to_a_launch();
+        }
+        assert_eq!(ai.diplomatic_contender_base(&g, 0), None);
+        assert_eq!(ai.diplomatic_contender_to_eliminate(&g, 0), None);
+    }
+}
