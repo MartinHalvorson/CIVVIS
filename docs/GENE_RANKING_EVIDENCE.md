@@ -195,6 +195,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `amphibious-siege-train-2` | off (unmeasured) | A water-locked siege's crossing fords a strait of one or two water tiles, locks its members, sails on water only and lands on a wider beach. | — \| 2 |
 | `aqueduct-claims-the-capped-queue` | off (unmeasured) | Opt-in gene `aqueduct-claims-the-capped-queue`; see `advanced/aqueduct_claims_the_capped_queue.rs`. | 1 \| 1 |
 | `backlog-builder-takes-the-queue` | off (unmeasured) | Opt-in gene `backlog-builder-takes-the-queue`; see `advanced/backlog_builder_takes_the_queue.rs`. | 1 \| 1 |
+| `bankruptcy-exits-the-drain` | off (unmeasured) | Opt-in gene `bankruptcy-exits-the-drain`; see `advanced/solvency.rs`. | 1 \| 1 |
 | `beeline-orders-by-value` | off (unmeasured) | `beeline-orders-by-value`: a forced research or civic goal walks its prerequisites by value, not by printed price. | 1 \| 1 |
 | `befriend-the-strongest` | off (unmeasured) | `befriend-the-strongest`: offer a friendship-only deal to the strongest neighbour at peace. | 1 \| 1 |
 | `bleeding-capital-loyalty` | off (unmeasured) | Opt-in gene `bleeding-capital-loyalty`; see `Self::bleeding_capital_loyalty`. | 1 \| 1 |
@@ -461,6 +462,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `siege-tier-yields-to-the-bombers` | off (unmeasured) | Opt-in gene `siege-tier-yields-to-the-bombers`; see `Self::siege_tier_yields_to_the_bombers`. | 1 \| 1 |
 | `siege-train-scales-with-walls` | off (unmeasured) | Opt-in gene `siege-train-scales-with-walls`; see `Self::siege_train_scales_with_walls`. | 1 \| 1 |
 | `siege-train-upgrades-first` | off (unmeasured) | Opt-in gene `siege-train-upgrades-first`; see `Self::siege_train_upgrades_first`. | 1 \| 1 |
+| `solvent-or-hold` | off (unmeasured) | Opt-in gene `solvent-or-hold`; see `advanced/solvency.rs`. | 1 \| 1 |
 | `space-denial-spies-from-rocketry` | off (unmeasured) | Opt-in gene `space-denial-spies-from-rocketry`; see `denial_spy_racers` in `advanced/science_denial_every_pad.rs`. | 1 \| 1 |
 | `spreader-steps-out-of-the-apostle` | off (unmeasured) | Opt-in gene `spreader-steps-out-of-the-apostle`; see `advanced/apostle_evasion.rs`. | 1 \| 1 |
 | `stage-march-keeps-to-land` | off (unmeasured) | Opt-in gene `stage-march-keeps-to-land`; see `Self::stage_march_keeps_to_land`. | 1 \| 1 |
