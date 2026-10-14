@@ -633,6 +633,10 @@ const TIMED_WAR_CAPTURE_WINDOW: u32 = 10;
 /// governor and the empire's recovery alarm cannot disagree about what counts
 /// as a threat.
 const BASTION_PRESSURE: f64 = 0.45;
+/// `merchant-confederation-earns-its-slot`: the Gold a turn our placed Envoys
+/// must pay under Merchant Confederation before the card joins the portfolio
+/// -- ten Envoys, about what one ordinary economic card is worth mid-game.
+const MERCHANT_CONFEDERATION_GOLD_FLOOR: f64 = 10.0;
 
 /// A legal attack is only an emergency when the attacker is materially
 /// stronger than the City Center it can strike. The aggregate pressure still
@@ -7141,6 +7145,14 @@ pub struct AdvancedAi {
     /// `advanced/industrial_zone_claims_the_factory.rs`. Off by default.
     industrial_zone_claims_the_factory: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `merchant-confederation-earns-its-slot`: the base deck's
+    /// counterfactual reads the policy income paid to the player
+    /// (`BasicAi::deck_reads_player_income`), and while our placed Envoys
+    /// pay [`MERCHANT_CONFEDERATION_GOLD_FLOOR`] Gold or more a turn
+    /// Merchant Confederation joins the portfolio ahead of the plan's own
+    /// diplomatic cards (after a loyalty Praetorium). See
+    /// `AdvancedAi::merchant_confederation_pays`. Off by default.
+    merchant_confederation_earns_its_slot: bool,
     /// `launched-racer-yields-the-capital`: a rival that has launched its
     /// Exoplanet Expedition and holds the city whose capture completes
     /// Domination is the second front, that city is the objective at peace,
@@ -10807,6 +10819,7 @@ impl AdvancedAi {
             industrial_zone_claims_the_producer_queue: false,
             industrial_zone_claims_the_factory: false,
             // ---- append: l-o ----------------------------------------
+            merchant_confederation_earns_its_slot: false,
             launched_racer_yields_the_capital: false,
             muster_walks_the_road: false,
             near_rival_deterrence: false,
@@ -19994,6 +20007,37 @@ impl AdvancedAi {
     /// admitted only when their explicit downside is safe for the live empire.
     /// Typed cards preferentially replace cards of their own type so wildcard
     /// capacity remains useful.
+    /// `merchant-confederation-earns-its-slot`: our placed Envoys and the Gold
+    /// a turn Merchant Confederation pays for them, when the card is held or
+    /// available, the government has a diplomatic slot, and the Gold reaches
+    /// [`MERCHANT_CONFEDERATION_GOLD_FLOOR`]. None with the gene off.
+    ///
+    /// The static portfolios never name the card outside Diplomacy, so a
+    /// Conquest deck left it to the base deck, which scored it 0.0 (see
+    /// `empire_reading`), and once the plan's own diplomatic cards unlocked
+    /// they evicted anything else. Live Emperor civvis-20261014T083713Z:
+    /// available from t100, never slotted, 41 Envoys at t150 and 63 at t205
+    /// while income ran -11 to -48 a turn, the slot holding Charismatic
+    /// Leader and then Gunboat Diplomacy.
+    pub(super) fn merchant_confederation_pays(&self, g: &Game, pid: usize) -> Option<(i64, f64)> {
+        if !self.merchant_confederation_earns_its_slot {
+            return None;
+        }
+        let card = crate::name!("merchant_confederation");
+        let spec = g.rules.policies.get(&card)?;
+        let held = g.players[pid].policies.contains(&card);
+        if !held && !g.available_policies(pid).contains(&card) {
+            return None;
+        }
+        if g.gov_slots(pid).diplomatic < 1 {
+            return None;
+        }
+        let per_envoy = spec.effects.get("gold_per_envoy").copied().unwrap_or(0.0);
+        let envoys: i64 = g.players[pid].envoys.iter().map(|(_, count)| *count).sum();
+        let gold = per_envoy * envoys as f64;
+        (gold >= MERCHANT_CONFEDERATION_GOLD_FLOOR).then_some((envoys, gold))
+    }
+
     /// Whether the deck holds a maintenance-relief card (Conscription,
     /// Levée en Masse). With `policy-deck-hysteresis` the deck the turn began
     /// with counts too. The base governor's `revise_policy_deck` runs first
@@ -20725,6 +20769,30 @@ impl AdvancedAi {
                    "{:.0} Gold at {:+.1}/turn; the card adds about {marginal:.1} Gold/turn \
                     and a policy swap must not bankrupt the campaign",
                    g.players[pid].gold, g.players[pid].gold_per_turn);
+        }
+        // `merchant-confederation-earns-its-slot`: see
+        // `merchant_confederation_pays`. Ahead of the first diplomatic card
+        // the plan names other than a loyalty Praetorium, so Gunboat
+        // Diplomacy and Cryptography no longer evict it, and a desired card
+        // itself, so the ordinary rule keeps it slotted.
+        if let Some((envoys, gold)) = self.merchant_confederation_pays(g, pid) {
+            desired.retain(|card| *card != "merchant_confederation");
+            let at = desired
+                .iter()
+                .position(|card| {
+                    *card != "praetorium"
+                        && g.rules
+                            .policies
+                            .get(*card)
+                            .is_some_and(|spec| spec.slot == "diplomatic")
+                })
+                .unwrap_or(desired.len());
+            desired.insert(at, "merchant_confederation");
+            think!(self.journal(), Policies, Detail,
+                   "Merchant Confederation pays the envoys";
+                   "merchant-confederation-earns-its-slot: {envoys} Envoys placed, about {gold:.0} Gold a turn; \
+                    wanted at {} of {} in the {} portfolio",
+                   at + 1, desired.len(), objective.as_str());
         }
         // `urban-planning-fills-the-slot`: Urban Planning at the tail of the
         // portfolio, so it fills a free slot and evicts only an orphaned timed
@@ -48972,6 +49040,9 @@ mod defensive_repair_queue_tests;
 
 #[cfg(test)]
 mod domination_maintenance_tests;
+
+#[cfg(test)]
+mod merchant_confederation_tests;
 
 #[cfg(test)]
 mod domination_wonder_tests;

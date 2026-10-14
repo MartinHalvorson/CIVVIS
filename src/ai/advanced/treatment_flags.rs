@@ -7816,6 +7816,19 @@ impl AdvancedAi {
         self.faith_war_before_the_flip = false;
     }
 
+    /// Opt-in gene `merchant-confederation-earns-its-slot`; the deck reading
+    /// lives on `BasicAi`, the portfolio insert on `AdvancedAi`.
+    pub fn enable_merchant_confederation_earns_its_slot(&mut self) {
+        self.merchant_confederation_earns_its_slot = true;
+        self.base.deck_reads_player_income = true;
+    }
+
+    /// The twin of `enable_merchant_confederation_earns_its_slot`.
+    pub fn disable_merchant_confederation_earns_its_slot(&mut self) {
+        self.merchant_confederation_earns_its_slot = false;
+        self.base.deck_reads_player_income = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

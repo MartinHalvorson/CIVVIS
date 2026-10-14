@@ -353,6 +353,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `march-uses-its-moves` | off (unmeasured) | Opt-in gene `march-uses-its-moves`; see `Self::march_uses_its_moves`. | 1 \| 1 |
 | `match-point-interception-ignores-power` | off (unmeasured) | Opt-in gene `match-point-interception-ignores-power`; see `Self::last_holdout_interception`. | 1 \| 1 |
 | `melee-storms-an-open-city` | off (unmeasured) | Opt-in gene `melee-storms-an-open-city`; see `Self::melee_storms_an_open_city`. | 1 \| 1 |
+| `merchant-confederation-earns-its-slot` | off (unmeasured) | Opt-in gene `merchant-confederation-earns-its-slot`; the deck reading lives on `BasicAi`, the portfolio insert on `AdvancedAi`. | 1 \| 1 |
 | `monument-first` | off (unmeasured) | A city's Monument ahead of the military floor and the Settler step in the delegated city governor. | 1 \| 1 |
 | `muster-walks-the-road` | off (unmeasured) | Opt-in gene `muster-walks-the-road`; see `Self::muster_walks_the_road`. | 1 \| 1 |
 | `near-rival-deterrence` | off (unmeasured) | Enable `near-rival-deterrence`. | 1 \| 1 |
