@@ -552,6 +552,9 @@ fn muster_detour_board() -> (Game, u32, u32, Pos, Vec<Pos>) {
         tile.feature = None;
         tile.hills = false;
     }
+    // The staging mover submits world-game MoveTo orders, unavailable on an
+    // arena. Keep the posed terrain and use world movement for this check.
+    g.map_script = crate::setup::MapScript::Pangaea;
     g.turn = 30;
     g.at_war.insert((0, 1));
     let neighbor = g.found_city_for(1, threat, Some("Road blocker".into()));
