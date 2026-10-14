@@ -768,9 +768,21 @@ impl AdvancedAi {
     }
 
     /// Our field units: military and support, land and sea, not air, not a
-    /// scout with somewhere to explore, not a guard bound to a settler, not a
-    /// member of the crossing in hand under `amphibious-siege-train-2`.
+    /// scout with somewhere to explore except one admitted for a capital
+    /// hunt, not a guard bound to a settler, not a member of the crossing in
+    /// hand under `amphibious-siege-train-2`.
     pub(super) fn board_pool(&self, g: &Game, pid: usize) -> Vec<u32> {
+        // A free explorer can do the capital hunt itself. Excluding every
+        // Recon with fog to explore left this row to combat units while the
+        // scouts kept unrelated frontier commitments. Admit one healthy eye;
+        // ordinary exploration and civilian protection keep every other eye.
+        let capital_scout = self.find_capital_row(g, pid).and_then(|row| {
+            g.player_unit_ids(pid)
+                .into_iter()
+                .filter(|uid| self.distance_scout_available(g, pid, *uid))
+                .filter(|uid| f64::from(g.units[uid].hp) > self.base.w.withdraw_hp + 10.0)
+                .min_by_key(|uid| (g.wdist(g.units[uid].pos, row.at), *uid))
+        });
         let mut pool: Vec<u32> = g
             .player_unit_ids(pid)
             .into_iter()
@@ -780,7 +792,8 @@ impl AdvancedAi {
                 matches!(spec.class.as_str(), "military" | "support")
                     && spec.domain.as_deref() != Some("air")
                     && !(BasicAi::unit_doctrine(g, *uid) == UnitDoctrine::Recon
-                        && self.base.has_exploration_target(g, pid, *uid))
+                        && self.base.has_exploration_target(g, pid, *uid)
+                        && capital_scout != Some(*uid))
                     && !self.guard_is_reserved_for_civilian(*uid)
                     && !self.amphibious_locked(*uid)
                     && (unit.linked_to.is_none()
