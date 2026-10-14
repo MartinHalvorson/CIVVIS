@@ -1398,6 +1398,11 @@ def wait_for_unlocked_session(poll_s: float = 2.0) -> None:
 GAME_SIDE = "left"
 GAME_FRACTION = 0.5
 GAME_VFRACTION = 1.0
+#: Set once the seat holds a configured game. Until then the game keeps the
+#: computed setup quadrant: the setup screen's readers (the game-mode boxes,
+#: the Create Game panel) are calibrated to it, and two setups at the
+#: operator's 902x611 frame could not verify the game modes off (2026-10-14).
+GAME_CONFIGURED = False
 
 
 def desktop_size() -> tuple[int, int] | None:
@@ -1409,13 +1414,14 @@ def place_game(side: str = "left", fraction: float = 0.5,
                vfraction: float = 1.0) -> None:
     """Park the process-specific game window without duplicating host logic.
 
-    The standard upper-left placement (side "left", a partial height) uses the
-    operator's saved upper-left frame when one exists for this screen
-    (operator 2026-10-14: the current window sizes are the defaults); see
-    `window_layout`. Any other request keeps the fraction arithmetic.
+    Once the game is configured (`GAME_CONFIGURED`), the standard upper-left
+    placement (side "left", a partial height) uses the operator's saved
+    upper-left frame when one exists for this screen (operator 2026-10-14: the
+    current window sizes are the defaults); see `window_layout`. Setup and any
+    other request keep the fraction arithmetic.
     """
     frame = None
-    if side == "left" and vfraction < 1.0:
+    if GAME_CONFIGURED and side == "left" and vfraction < 1.0:
         size = desktop_size()
         frame = window_layout.frame_for("upper-left", size) if size else None
     return macos_window.place_game(
@@ -5565,6 +5571,11 @@ def _play(args: argparse.Namespace) -> int:
               flush=True)
     else:
         print("in a configured game; the agent holds the seat from here")
+        # Setup is over: the operator's saved frame applies from here on.
+        global GAME_CONFIGURED
+        GAME_CONFIGURED = True
+        if window_layout.frame_for("upper-left", desktop_size() or None):
+            place_game(GAME_SIDE, GAME_FRACTION, GAME_VFRACTION)
 
     # Unattended upkeep is optional on a shared desktop. Keep processing
     # retirement and game events even when periodic GUI upkeep is disabled.
