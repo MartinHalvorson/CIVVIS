@@ -7851,6 +7851,11 @@ pub struct AdvancedAi {
     parity_reads_the_front: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// The gates each held second front last read and the turn it was
+    /// journalled, so the journal repeats a held counter once per
+    /// `SECOND_FRONT_HELD_NOTE_TURNS`. Journal only; see
+    /// `one_war::journal_held_second_front`.
+    second_front_held_noted: BTreeMap<usize, (String, u32)>,
     /// `siege-budget-projects-the-seal`: on the siege's entry reads a train
     /// whose fit melee can seal the city's ring prices the city at no heal,
     /// as a sealed city does not heal. See
@@ -10735,6 +10740,7 @@ impl AdvancedAi {
             parity_reads_the_front: false,
 
             // ---- append: s-s ----------------------------------------
+            second_front_held_noted: BTreeMap::new(),
             siege_budget_projects_the_seal: false,
             sea_locked_front_moves_on: false,
             siege_tier_before_the_beeline: false,
@@ -47665,6 +47671,9 @@ impl AdvancedAi {
         // See `capital_prey_beside_the_front`: the prey and its near misses,
         // once a turn, at war or at peace.
         self.journal_capital_prey(g, pid);
+        // See `journal_held_second_front`: a named counter the second front
+        // holds, and the gates that hold it. Journal only.
+        self.journal_held_second_front(g, pid);
         // See `denial_keeps_its_rival`: this turn's counter rival, chosen
         // against last turn's, is the incumbent for the next.
         if self.denial_keeps_its_rival {
