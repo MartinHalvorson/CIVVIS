@@ -331,3 +331,214 @@ mod capital_defense_holds {
             .any(|row| row.key == ObjectiveKey::Defend(capital)));
     }
 }
+
+#[test]
+fn rows_first_keeps_each_group_in_its_ranked_order() {
+    let mut relief = defense(4, 1000.0, 1, false);
+    relief.kind = ObjectiveKind::Relieve;
+    relief.key = ObjectiveKey::Relieve(4);
+    relief.depends_on = Some(ObjectiveKey::Defend(4));
+    let mut rows = vec![
+        defense(1, 900.0, 2, false),
+        defense(2, 800.0, 2, false),
+        defense(3, 100.0, 2, true),
+        defense(4, 90.0, 2, true),
+        relief,
+    ];
+    let first: BTreeSet<ObjectiveKey> = [ObjectiveKey::Defend(4), ObjectiveKey::Defend(3)]
+        .into_iter()
+        .collect();
+    AdvancedAi::rows_first(&mut rows, &first);
+    assert_eq!(
+        rows.iter().map(|row| row.key).collect::<Vec<_>>(),
+        vec![
+            ObjectiveKey::Defend(3),
+            ObjectiveKey::Defend(4),
+            ObjectiveKey::Defend(1),
+            ObjectiveKey::Defend(2),
+            ObjectiveKey::Relieve(4),
+        ]
+    );
+}
+
+/// `city-under-fire-ranks-first`, the board of live Emperor
+/// civvis-20261014T204453Z at turns 48-52: Bogota (pop 8, untouched, a
+/// hostile four tiles out) outranked Guayaquil (pop 5, hostiles beside it,
+/// 200 to 20 health over four turns) on value over deadline, and Guayaquil's
+/// Defend row drew no force while it fell.
+mod city_under_fire_ranks_first {
+    use super::super::tests::{at, conquest, flat_board, on, war};
+    use super::*;
+
+    struct Front {
+        g: Game,
+        capital: u32,
+        town: u32,
+    }
+
+    /// Our capital at (6, 8), pop 10, with three hostile warriors four tiles
+    /// east and a lookout of ours beside them that sees them; our town at
+    /// (6, 16), pop 5, with three hostile warriors beside it; three of our
+    /// warriors halfway between. The town is struck between the two
+    /// assessments the caller runs.
+    fn guayaquil() -> Front {
+        let mut g = flat_board(374510, &[at(6, 8), at(30, 8)], false);
+        let capital = g.city_at(at(6, 8)).unwrap();
+        let town = g.found_city_for(0, at(6, 16), None);
+        g.cities.get_mut(&capital).unwrap().pop = 10;
+        g.cities.get_mut(&town).unwrap().pop = 5;
+        war(&mut g, 0, 1);
+        for pos in [at(10, 7), at(10, 8), at(10, 9)] {
+            g.spawn_test_unit("warrior", 1, pos);
+        }
+        // The lookout stands beside them, three tiles from the capital: the
+        // capital's own sight does not reach four tiles.
+        g.spawn_test_unit("warrior", 0, at(9, 8));
+        for pos in [at(7, 16), at(6, 17), at(5, 17)] {
+            g.spawn_test_unit("warrior", 1, pos);
+        }
+        for pos in [at(6, 12), at(7, 12), at(5, 12)] {
+            g.spawn_test_unit("warrior", 0, pos);
+        }
+        Front { g, capital, town }
+    }
+
+    /// Assess once, strike the town down to `hp`, then assess the next turn.
+    fn board_after_the_strike(front: &mut Front, ai: &mut AdvancedAi, hp: i32) -> Vec<Objective> {
+        ai.rebuild_force_groups(&front.g, 0, &conquest(&front.g, None));
+        front.g.turn += 1;
+        let turn = front.g.turn;
+        let town = front.g.cities.get_mut(&front.town).unwrap();
+        town.hp = hp;
+        town.last_attacked = turn;
+        ai.rebuild_force_groups(&front.g, 0, &conquest(&front.g, None));
+        ai.objective_board().rows.clone()
+    }
+
+    fn defend_rank(rows: &[Objective], cid: u32) -> usize {
+        rows.iter()
+            .position(|row| row.key == ObjectiveKey::Defend(cid))
+            .expect("the city has a Defend row")
+    }
+
+    fn force_size(ai: &AdvancedAi, cid: u32) -> usize {
+        ai.objective_board()
+            .forces
+            .iter()
+            .filter(|force| force.objective_key == ObjectiveKey::Defend(cid))
+            .map(|force| force.units.len())
+            .sum()
+    }
+
+    #[test]
+    fn off_the_untouched_capital_outranks_the_burning_town() {
+        let mut front = guayaquil();
+        let pressure = AdvancedAi::city_pressure(&front.g, 0, front.capital);
+        assert!(
+            pressure >= BASTION_PRESSURE,
+            "the untouched capital is pressed from four tiles out: {pressure}"
+        );
+        let mut ai = on();
+        ai.enable_capital_defense_holds();
+        let rows = board_after_the_strike(&mut front, &mut ai, 120);
+        assert!(
+            defend_rank(&rows, front.capital) < defend_rank(&rows, front.town),
+            "the shipped order ranks the larger city first: {rows:?}"
+        );
+        let town = &rows[defend_rank(&rows, front.town)];
+        assert!(!town.urgent, "a town is never urgent off: {town:?}");
+    }
+
+    #[test]
+    fn on_the_burning_town_ranks_first_urgent_and_draws_the_guard() {
+        let mut off_front = guayaquil();
+        let mut off = on();
+        off.enable_capital_defense_holds();
+        board_after_the_strike(&mut off_front, &mut off, 120);
+        let off_force = force_size(&off, off_front.town);
+
+        let mut front = guayaquil();
+        let mut ai = on();
+        ai.enable_capital_defense_holds();
+        ai.enable_city_under_fire_ranks_first();
+        let rows = board_after_the_strike(&mut front, &mut ai, 120);
+        assert_eq!(defend_rank(&rows, front.town), 0, "{rows:?}");
+        assert!(rows[0].urgent, "a city under fire is urgent: {:?}", rows[0]);
+        assert!(
+            defend_rank(&rows, front.town) < defend_rank(&rows, front.capital),
+            "{rows:?}"
+        );
+        let on_force = force_size(&ai, front.town);
+        assert!(
+            on_force > off_force,
+            "the burning town draws more of the guard: {on_force} against {off_force}; \
+             on {:?}, off {:?}",
+            ai.objective_board().forces,
+            off.objective_board().forces
+        );
+    }
+
+    #[test]
+    fn on_a_city_that_falls_before_our_next_turn_is_due_in_one() {
+        let deadline = |gene: bool| {
+            let mut front = guayaquil();
+            let mut ai = on();
+            ai.enable_capital_defense_holds();
+            if gene {
+                ai.enable_city_under_fire_ranks_first();
+            }
+            // 200 to 60 in a turn: 140 a turn against 60 left.
+            let rows = board_after_the_strike(&mut front, &mut ai, 60);
+            rows[defend_rank(&rows, front.town)].deadline
+        };
+        assert_eq!(deadline(false), Some(DEFEND_DEADLINE_FLOOR));
+        assert_eq!(deadline(true), Some(1));
+    }
+
+    #[test]
+    fn on_a_damaged_town_with_no_hostile_beside_it_reads_as_off() {
+        let rows = |gene: bool| {
+            let mut front = guayaquil();
+            // The town's attackers step back to three tiles.
+            let near: Vec<u32> = front
+                .g
+                .units
+                .values()
+                .filter(|unit| unit.owner == 1 && front.g.wdist(unit.pos, at(6, 16)) <= 1)
+                .map(|unit| unit.id)
+                .collect();
+            for (uid, pos) in near.into_iter().zip([at(9, 16), at(9, 17), at(9, 15)]) {
+                front.g.units.get_mut(&uid).unwrap().pos = pos;
+            }
+            let mut ai = on();
+            ai.enable_capital_defense_holds();
+            if gene {
+                ai.enable_city_under_fire_ranks_first();
+            }
+            let rows = board_after_the_strike(&mut front, &mut ai, 120);
+            assert!(!ai.city_under_fire(&front.g, 0, front.town, &front.g.player_vision_frame(0)));
+            rows.iter()
+                .map(|row| (row.key, row.urgent, row.deadline))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(rows(true), rows(false));
+    }
+
+    #[test]
+    fn on_a_town_beside_hostiles_but_never_struck_reads_as_off() {
+        let rows = |gene: bool| {
+            let mut front = guayaquil();
+            let mut ai = on();
+            ai.enable_capital_defense_holds();
+            if gene {
+                ai.enable_city_under_fire_ranks_first();
+            }
+            // Two assessments, the town whole throughout.
+            let rows = board_after_the_strike(&mut front, &mut ai, 200);
+            rows.iter()
+                .map(|row| (row.key, row.urgent, row.deadline))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(rows(true), rows(false));
+    }
+}
