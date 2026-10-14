@@ -6569,7 +6569,7 @@ function paintLiveTracker() {
 // type together, between a little smaller than it opens and well over twice
 // that; the size is this browser's own, kept between visits.
 const LIVE_TRACKER_SCALE_STORE = "civvis-live-tracker-scale-v1";
-const LIVE_TRACKER_SCALE_MIN = .8, LIVE_TRACKER_SCALE_MAX = 2.5;
+const LIVE_TRACKER_SCALE_MIN = .6, LIVE_TRACKER_SCALE_MAX = 2.5;
 let liveTrackerScale = 1;
 try {
   const saved = Number(localStorage.getItem(LIVE_TRACKER_SCALE_STORE));
@@ -6675,6 +6675,9 @@ function placeLivePause() {
   if (!box || box.hidden || !box.offsetParent) return;
   box.style.right = "";
   box.style.bottom = "";
+  const tracker = document.getElementById("livetracker");
+  const tracking = tracker && !tracker.hidden;
+  if (tracker) tracker.style.maxHeight = "";
   const frame = box.offsetParent.getBoundingClientRect();
   const home = box.getBoundingClientRect();
   const edge = Math.max(0, frame.right - home.right);
@@ -6698,7 +6701,32 @@ function placeLivePause() {
     spots.push([edge, Math.ceil(frame.bottom - o.top + gap)]);
   }
   spots.sort((a, b) => a[1] - b[1] || a[0] - b[0]);
-  const [right, bottom] = spots.find((spot) => !blocked(spot)) ?? [edge, edge];
+  let spot = spots.find((candidate) => !blocked(candidate));
+  if (!spot) {
+    // Nothing holds the whole group — on the compact layout the victory
+    // tracker runs the map's width under the masthead — so it goes where the
+    // most height is free, and the research box scrolls in what is left.
+    const roomAt = ([right, bottom]) => {
+      const r = {right: frame.right - right, bottom: frame.bottom - bottom};
+      r.left = r.right - home.width;
+      if (r.left < frame.left) return -Infinity;
+      let ceiling = frame.top;
+      for (const o of obstacles)
+        if (o.left < r.right && o.right > r.left && o.top < r.bottom)
+          ceiling = Math.max(ceiling, o.bottom + gap);
+      return r.bottom - ceiling;
+    };
+    let room = -Infinity;
+    for (const candidate of spots) {
+      const free = roomAt(candidate);
+      if (free > room) { room = free; spot = candidate; }
+    }
+    if (tracking && Number.isFinite(room)) {
+      const rest = home.height - tracker.getBoundingClientRect().height;
+      tracker.style.maxHeight = `${Math.max(60, Math.floor(room - rest))}px`;
+    }
+  }
+  const [right, bottom] = spot ?? [edge, edge];
   if (right !== edge) box.style.right = `${right}px`;
   if (bottom !== edge) box.style.bottom = `${bottom}px`;
 }
