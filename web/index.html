@@ -1728,20 +1728,22 @@
   }
   .launch-badge[hidden] { display: none; }
   /* The live game's controls — Pause / Resume (`toggleLivePause`) and New game
-     (`pressLiveNewGame`) — small and stacked in the map's bottom-left corner
-     (operator 2026-10-13: "half the size and in the lower left ... stacked").
-     The map tools hold that corner on most layouts and the world minimap can
-     be moved there, so `placeLivePause` steps above or beside them; these
-     offsets are only the first paint. They are shown only where
+     (`pressLiveNewGame`) — side by side under the research box, all on the
+     map's right (operator 2026-10-14: "have the 2 buttons side by side. have
+     this all on the right side of the screen"). The world minimap holds the
+     bottom-right corner on most layouts and the victory tracker the column
+     above it, so `placeLivePause` steps left of or above them; these offsets
+     are only the first paint. They are shown only where
      `GET /live-pause` says this page is
      the mirror beside a Civilization VI verification game, and there they act
      on the Firaxis game itself. The note above them says what the game is
      actually doing — the hold lands on the mod's next tick of our turn, and a new
      game takes a while to come up, neither on the click. */
   #livepause {
-    position: absolute; z-index: 30; left: var(--panel-edge); bottom: var(--panel-edge);
-    display: flex; flex-direction: column; align-items: flex-start; gap: 4px;
-    max-width: min(240px, calc(100% - 2 * var(--panel-edge)));
+    position: absolute; z-index: 30; right: var(--panel-edge); bottom: var(--panel-edge);
+    display: flex; flex-direction: column; align-items: flex-end; gap: 4px;
+    max-width: calc(100% - 2 * var(--panel-edge));
+    --lt-scale: 1;
   }
   #livepause[hidden] { display: none; }
   /* A full-screen dialog (a tree, the Civilopedia, an empire screen) covers
@@ -1751,7 +1753,7 @@
     z-index: 14;
   }
   .livepause-buttons {
-    display: flex; flex-direction: column; align-items: stretch; gap: 4px;
+    display: flex; flex-direction: row; align-items: stretch; gap: 4px;
     padding: 4px; border-radius: 12px; white-space: nowrap;
     border: 1px solid #4d685f; background: #0a1512e8;
     box-shadow: 0 5px 14px #0007; backdrop-filter: blur(12px);
@@ -1793,13 +1795,28 @@
      the deck's net effect. Wider than the buttons below it: card text needs
      the room, and the buttons keep their own width. */
   #livetracker {
-    display: flex; flex-direction: column; gap: 4px;
-    width: 240px; max-width: 100%; max-height: 58vh; overflow-y: auto; padding: 6px 7px;
+    position: relative; box-sizing: border-box;
+    width: calc(240px * var(--lt-scale)); max-width: 100%; overflow-y: auto; padding: 6px 7px;
+    /* A short window keeps the masthead clear: past this the box scrolls. */
+    max-height: min(70vh, calc(100vh - 240px));
     border-radius: 10px; border: 1px solid #4d685f; background: #0a1512eb; backdrop-filter: blur(12px);
-    color: #dce6e1; font-size: calc(var(--type-control) * .72); line-height: 1.3;
+    color: #dce6e1; font-size: calc(var(--type-control) * .72 * var(--lt-scale)); line-height: 1.3;
     box-shadow: 0 5px 14px #0007;
   }
   #livetracker[hidden] { display: none; }
+  #livetracker-body { display: flex; flex-direction: column; gap: 4px; }
+  /* The box is the viewer's to size: this corner scales it and its type
+     together. It sits top-left because the box is anchored at the map's
+     bottom right, so it grows up and to the left, toward the dragging hand. */
+  #livetracker .lt-grip {
+    position: absolute; z-index: 1; top: 0; left: 0; width: 15px; height: 15px; margin: 0; padding: 0;
+    border: 0; border-radius: 10px 0 0 0; cursor: nwse-resize; touch-action: none; opacity: .8;
+    background: repeating-linear-gradient(135deg, #0000 0 2px, #d7e2dd 2px 3.5px) top left / 100% 100%;
+    clip-path: polygon(0 0, 100% 0, 0 100%);
+  }
+  #livetracker .lt-grip:hover, #livetracker .lt-grip:focus-visible,
+  body.live-tracker-resizing #livetracker .lt-grip { opacity: 1; }
+  body.live-tracker-resizing { cursor: nwse-resize; user-select: none; }
   #livetracker .lt-k { color: #9db0a8; font-weight: 700; letter-spacing: .03em; }
   #livetracker .lt-none { color: #aebeb7; font-style: italic; font-weight: 700; }
   #livetracker .lt-study {
@@ -4975,7 +4992,12 @@
        the mirror beside a Civilization VI verification game; see
        `toggleLivePause` and `pressLiveNewGame`. -->
   <div id="livepause" hidden role="group" aria-label="Live Civilization VI game">
-    <div id="livetracker" hidden aria-label="What our civilization is studying and running"></div>
+    <div id="livetracker" hidden aria-label="What our civilization is studying and running">
+      <button class="lt-grip" type="button"
+        aria-label="Resize the research box: drag this corner, or use the arrow keys; double-click resets"
+        title="Drag to resize · double-click resets"></button>
+      <div id="livetracker-body"></div>
+    </div>
     <span id="livepause-note" aria-live="polite" hidden></span>
     <div class="livepause-buttons">
       <button id="livepause-button" type="button" aria-pressed="false">⏸ Pause game</button>
