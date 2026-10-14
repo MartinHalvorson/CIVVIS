@@ -1658,6 +1658,55 @@ fn dry_stand(g: &Game, uid: u32, pos: Pos) -> bool {
     !keeps_to_land(g, uid) || g.map.get(pos).is_some_and(|tile| !g.rules.is_water(tile))
 }
 
+/// A stalled muster can need to head away from the shortest terrain road to
+/// avoid enemy fire. Flood back from safe stands in the readiness band, keeping
+/// the existing access and dry-land rules. Occupancy still belongs to this
+/// turn's reachable endpoints. Stop at the member: only shorter distances can
+/// guide its next move, so a complete map of the world is unnecessary.
+fn muster_detour_steps(
+    g: &Game,
+    uid: u32,
+    target: Pos,
+    mut safe: impl FnMut(Pos) -> bool,
+) -> BTreeMap<Pos, usize> {
+    let Some(unit) = g.units.get(&uid) else {
+        return BTreeMap::new();
+    };
+    let here = unit.pos;
+    let passable = g.road_plan_passable(uid);
+    let _memo = g.query_memo();
+    let mut walkable = |pos| {
+        g.map.get(pos).is_some_and(|tile| !g.rules.is_water(tile))
+            && g.wdist(pos, target) > CITY_STRIKE_RANGE
+            && passable(pos)
+            && safe(pos)
+    };
+    let mut steps = BTreeMap::new();
+    let mut queue = std::collections::VecDeque::new();
+    for pos in g.wdisk(target, MUSTER_BREACH_FAR) {
+        if walkable(pos) {
+            steps.insert(pos, 0);
+            queue.push_back(pos);
+        }
+    }
+    while let Some(current) = queue.pop_front() {
+        if current == here {
+            break;
+        }
+        let at = steps[&current];
+        if at >= MUSTER_ROAD_STEPS {
+            continue;
+        }
+        for next in g.nbrs(current) {
+            if !steps.contains_key(&next) && walkable(next) {
+                steps.insert(next, at + 1);
+                queue.push_back(next);
+            }
+        }
+    }
+    steps
+}
+
 /// The train's posts for the turn. Melee already on the ring keep their
 /// tile; the taker, then the rest by distance, take reachable free ring tiles in the
 /// spread-first order — the free tile furthest from every held or assigned
@@ -3924,7 +3973,7 @@ impl AdvancedAi {
         // reading. Live King game 176 lost 24% of its land soldiers on the
         // six-to-eight-tile line while trains waited there; game 179 lost 30%
         // there, most to the strikes of the cities beside Qusqu.
-        let ranged_reach = |field: &mut super::battle_planner::DangerField, pos: Pos| {
+        let ranged_reach = |g: &Game, field: &mut super::battle_planner::DangerField, pos: Pos| {
             field.contributions(pos, uid).iter().any(|(source, blow)| {
                 *blow > 0.0
                     && source.is_some_and(|id| {
@@ -3936,7 +3985,7 @@ impl AdvancedAi {
             })
         };
         let risk_here = field.rotation_danger(here, uid);
-        let shot_here = ranged_reach(&mut field, here);
+        let shot_here = ranged_reach(g, &mut field, here);
         let distance = g.wdist(here, city.pos);
         let dry = |g: &Game, pos: Pos| dry_stand(g, uid, pos);
         // `muster-walks-the-road`: wherever a dry road leads from here to
@@ -3960,7 +4009,7 @@ impl AdvancedAi {
                 None => g.wdist(pos, city.pos),
             }
         };
-        let here_nearness = nearness(g, here);
+        let mut here_nearness = nearness(g, here);
         let candidates: Vec<Pos> = g
             .reachable(uid)
             .into_iter()
@@ -3974,11 +4023,32 @@ impl AdvancedAi {
         let mut stands: Vec<(i32, f64, Pos)> = Vec::new();
         for pos in candidates {
             let risk = field.rotation_danger(pos, uid);
-            if risk <= limit && !ranged_reach(&mut field, pos) {
+            if risk <= limit && !ranged_reach(g, &mut field, pos) {
                 stands.push((nearness(g, pos), risk, pos));
             }
         }
         let by_road = road.is_some();
+        // Keep one safe metric throughout a distant approach. Using a detour
+        // only when the terrain metric stalls makes the next turn walk back
+        // to the old local minimum instead of continuing around the fire.
+        let safe_road = (by_road
+            && distance > MUSTER_BREACH_FAR
+            && risk_here <= limit
+            && !shot_here
+            && !stands.is_empty())
+        .then(|| {
+            muster_detour_steps(g, uid, city.pos, |pos| {
+                field.rotation_danger(pos, uid) <= limit && !ranged_reach(g, &mut field, pos)
+            })
+        })
+        .filter(|steps| steps.contains_key(&here));
+        if let Some(steps) = &safe_road {
+            here_nearness = i32::try_from(steps[&here]).unwrap_or(i32::MAX);
+            stands.retain(|(_, _, pos)| steps.contains_key(pos));
+            for (distance, _, pos) in &mut stands {
+                *distance = i32::try_from(steps[pos]).unwrap_or(i32::MAX);
+            }
+        }
         stands.sort_by(|a, b| {
             a.0.cmp(&b.0)
                 .then_with(|| a.1.total_cmp(&b.1))
@@ -4012,7 +4082,14 @@ impl AdvancedAi {
         {
             let kind = g.units[&uid].kind;
             if self.base.path_walk_to(g, pid, uid, dest) {
-                if by_road {
+                if safe_road.is_some() {
+                    think!(self.journal(), Military, Detail,
+                        "Siege of {name}: the {kind} follows the safe muster road";
+                        "{dest:?} leaves {d} safe road steps to the readiness band \
+                         against {here_nearness} from {here:?}, under the muster danger \
+                         limit of {limit:.0}";
+                        city.pos);
+                } else if by_road {
                     think!(self.journal(), Military, Detail,
                         "Siege of {name}: the {kind} musters at {dest:?} by the road";
                         "{} tiles from the city and {d} steps of dry road from its staging band \
@@ -4036,8 +4113,8 @@ impl AdvancedAi {
         let kind = g.units[&uid].kind;
         think!(self.journal(), Military, Detail,
             "Siege of {name}: the {kind} holds at the muster line";
-            "{distance} tiles out; every nearer stand reads over {limit:.0} danger while the \
-             train cannot close";
+            "{distance} tiles out; no safe approach move was completed under the \
+             {limit:.0} danger limit while the train cannot close";
             city.pos);
         Some(self.base.fortify_or_stop(g, pid, uid))
     }
