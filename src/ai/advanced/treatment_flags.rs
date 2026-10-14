@@ -7771,6 +7771,28 @@ impl AdvancedAi {
         self.racer_blocker_declares = false;
     }
 
+    /// Opt-in gene `astrology-before-the-second-city`; see
+    /// `advanced/astrology_before_the_second_city.rs`.
+    pub fn enable_astrology_before_the_second_city(&mut self) {
+        self.astrology_before_the_second_city = true;
+    }
+
+    /// The twin of `enable_astrology_before_the_second_city`.
+    pub fn disable_astrology_before_the_second_city(&mut self) {
+        self.astrology_before_the_second_city = false;
+    }
+
+    /// Opt-in gene `prophet-race-takes-divine-spark`; see
+    /// `advanced/astrology_before_the_second_city.rs`.
+    pub fn enable_prophet_race_takes_divine_spark(&mut self) {
+        self.prophet_race_takes_divine_spark = true;
+    }
+
+    /// The twin of `enable_prophet_race_takes_divine_spark`.
+    pub fn disable_prophet_race_takes_divine_spark(&mut self) {
+        self.prophet_race_takes_divine_spark = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
