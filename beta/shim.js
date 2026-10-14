@@ -38,6 +38,7 @@
     "/intel", "/spectator-status", "/next-game-settings", "/new",
     "/supervisor-new", "/pace", "/next-game",
     "/machine-metrics", "/civ6", "/civ6/start", "/policy-effects",
+    "/live-pause", "/live-new-game",
   ]);
   const LOCAL_DESKTOP_HOST = here.pathname.startsWith("/wasm/");
 

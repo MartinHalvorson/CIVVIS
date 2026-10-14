@@ -6370,7 +6370,13 @@ fn browser_orders_controls_interface_setup_and_logs() {
     assert!(EMBEDDED_INDEX
         .contains("const PLAYER_HUD_ROW_PITCH = PLAYER_HUD_ROW_HEIGHT + PLAYER_HUD_ROW_GAP;"));
     assert!(EMBEDDED_INDEX.contains("function playerHudRowPitch()"));
-    assert!(EMBEDDED_INDEX.contains("return Math.max(PLAYER_HUD_MIN_HEIGHT, PLAYER_HUD_CHROME_HEIGHT + rows * playerHudRowPitch());"));
+    // A watched world's floor keeps one more row for the live stopwatch
+    // (85284faba).
+    assert!(EMBEDDED_INDEX
+        .contains("const floor = PLAYER_HUD_MIN_HEIGHT + (SPEC ? playerHudRowPitch() : 0);"));
+    assert!(EMBEDDED_INDEX.contains(
+        "return Math.max(floor, PLAYER_HUD_CHROME_HEIGHT + rows * playerHudRowPitch());"
+    ));
     assert!(EMBEDDED_INDEX
         .contains("minHeight:PLAYER_HUD_MIN_HEIGHT,\n            avoidsSidebar:true}"));
     assert!(
@@ -12367,9 +12373,8 @@ fn browser_seats_a_person_in_the_civ_six_arrangement() {
     assert!(EMBEDDED_INDEX.contains("function boostRequirement(spec) {"));
     assert!(EMBEDDED_INDEX.contains("const BOOST_PHRASES = {"));
     assert!(EMBEDDED_INDEX.contains("const BOOST_FAMILIES = ["));
-    assert!(EMBEDDED_INDEX.contains(
-        "const wants = !completed && !boosted.includes(n) ? boostRequirement(s) : \"\";"
-    ));
+    // A studied node folds to one line before this (bf02c4ee1).
+    assert!(EMBEDDED_INDEX.contains("const wants = boosted.has(n) ? \"\" : boostRequirement(s);"));
     assert!(EMBEDDED_INDEX.contains("const wants = isBoosted ? \"\" : boostRequirement(spec);"));
     // Every boost the ruleset ships gets a sentence; the generic fallback
     // exists for a trigger added tomorrow, not for the ones shipped now.
