@@ -3834,6 +3834,14 @@ pub const GENES: &[Gene] = &[
     // clock, without first holding the contender's capital. See
     // `capital_moves_on::elimination_yields_to_a_launch`.
     Gene { tag: "elimination-yields-to-a-launch", field: "elimination_yields_to_a_launch", kind: Kind::OptIn, enable: AdvancedAi::enable_elimination_yields_to_a_launch, disable: AdvancedAi::disable_elimination_yields_to_a_launch },
+    // Live Immortal 220550Z (civvis-20261013T220550Z), production twice the
+    // second rival's, waited on oil for its Artillery from turn 126 while its
+    // one owned oil, offshore at (42, 20), stood unimproved: from Professional
+    // Sports at turn 148 the board routed each Builder sent to it across the
+    // mountain at (42, 19), the host refused all 13 moves, and the job was
+    // retired as forgotten three times. No Builder of ours stood on a
+    // mountain in 984 Builder-turns after the unlock over two games.
+    Gene { tag: "builders-route-around-mountains", field: "builders_route_around_mountains", kind: Kind::OptIn, enable: AdvancedAi::enable_builders_route_around_mountains, disable: AdvancedAi::disable_builders_route_around_mountains },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

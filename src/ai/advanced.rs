@@ -5067,6 +5067,10 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `builders-route-around-mountains`: our Builders route as the host moves
+    /// them, never onto a mountain. See
+    /// `Game::observed_builders_avoid_mountains`.
+    builders_route_around_mountains: bool,
     /// `amphibious-siege-train-2`: everything `amphibious-siege-train` does,
     /// plus a ford mode for a strait of at most two water tiles, a lock that
     /// keeps a member from being combined, upgraded or re-tasked mid-crossing,
@@ -10288,6 +10292,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            builders_route_around_mountains: false,
             amphibious_siege_train_2: false,
             backlog_builder_takes_the_queue: false,
             bombers_fly_on_a_small_stock: false,
@@ -47501,6 +47506,7 @@ impl AdvancedAi {
             // These are observed-rule settings, not speculative combat outcomes.
             // The safety forecast and committed replay use the same host rules.
             g.observed_wall_tier_rules = self.breach_support_reads_the_wall_tier;
+            g.observed_builders_avoid_mountains = self.builders_route_around_mountains;
             self.retire_defeated_majors(g, pid);
             let mut proposed = g.clone();
             let start = proposed.log.len();
@@ -47528,6 +47534,9 @@ impl AdvancedAi {
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
         // `breach-support-reads-the-wall-tier`: see `Game::observed_wall_tier_rules`.
         g.observed_wall_tier_rules = self.breach_support_reads_the_wall_tier;
+        // `builders-route-around-mountains`: see
+        // `Game::observed_builders_avoid_mountains`.
+        g.observed_builders_avoid_mountains = self.builders_route_around_mountains;
         // See `defeated_majors` (`defeated-majors-leave-the-board`): before
         // any living-majors reading of this turn.
         self.retire_defeated_majors(g, pid);
@@ -48450,3 +48459,6 @@ mod naval_production_tests;
 
 #[cfg(test)]
 mod faith_army_quality_tests;
+
+#[cfg(test)]
+mod builder_mountain_tests;

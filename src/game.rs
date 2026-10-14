@@ -6601,6 +6601,13 @@ pub struct Game {
     /// there.
     #[serde(default)]
     pub observed_wall_tier_rules: bool,
+    /// `builders-route-around-mountains`: a Builder never enters a mountain,
+    /// whatever the Ski Resort unlock. The host's move pathing put none of
+    /// ours on a mountain in 984 Builder-turns after Professional Sports over
+    /// two 10-13 games and refused every move that ended on one, while the
+    /// board routed Builders across them. Set by the seat each turn.
+    #[serde(default)]
+    pub observed_builders_avoid_mountains: bool,
     /// `culture-denial-heist`: a Great Work heist the HOST lists on a spy's
     /// operation menu is offered, though the board cannot see the works. The
     /// mirror carries only our own Great Works, so a rival city's
@@ -7610,6 +7617,7 @@ impl From<GameSer> for Game {
             observed_city_ranged_strength: Arc::new(s.observed_city_ranged_strength),
             observed_city_max_wall_hp: Arc::new(s.observed_city_max_wall_hp),
             observed_wall_tier_rules: false,
+            observed_builders_avoid_mountains: false,
             heist_reads_the_host_menu: false,
             // Not carried in a save: host refusals are rebuilt from the run's event
             // log on every reconstruction, so a stale copy would only mislead.
@@ -8334,6 +8342,7 @@ impl Game {
             observed_city_ranged_strength: Arc::new(BTreeMap::new()),
             observed_city_max_wall_hp: Arc::new(BTreeMap::new()),
             observed_wall_tier_rules: false,
+            observed_builders_avoid_mountains: false,
             heist_reads_the_host_menu: false,
             blocked_city_sites: Arc::new(BTreeSet::new()),
             host_observed: Arc::new(BTreeSet::new()),
@@ -19054,6 +19063,7 @@ impl Game {
             embark: !sea && (wading_giant || self.has_embarkation(unit.owner, &unit.kind)),
             ocean,
             mountain: (unit.kind == "builder"
+                && !self.observed_builders_avoid_mountains
                 && self.unlocked(
                     unit.owner,
                     &self.rules.improvements["ski_resort"].tech,
