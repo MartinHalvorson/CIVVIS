@@ -1082,6 +1082,73 @@ pub(super) fn ring_state(g: &Game, cid: u32) -> (usize, usize) {
     (sealed, total)
 }
 
+/// `siege-budget-projects-the-seal`: the fewest more bodies of `pid` that
+/// seal the city's ring as [`ring_state`] reads a seal (the engine's
+/// `city_under_siege`, under which the city does not heal): every passable
+/// side held by a hostile military unit or in its zone of control. A body
+/// stands on a dry ring tile with no city, Encampment or unit at war with
+/// `pid` on it, and covers its dry ring neighbours across no river; a water
+/// side is covered from land by nothing. `None` when no placement seals it.
+pub(super) fn seal_bodies_needed(g: &Game, pid: usize, cid: u32) -> Option<usize> {
+    let city = g.cities.get(&cid)?;
+    let ring: Vec<Pos> = g
+        .wdisk(city.pos, 1)
+        .into_iter()
+        .filter(|pos| *pos != city.pos)
+        .collect();
+    let dry = |pos: Pos| {
+        g.map
+            .get(pos)
+            .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+    };
+    let open: Vec<Pos> = ring
+        .iter()
+        .copied()
+        .filter(|pos| {
+            let Some(tile) = g.map.get(*pos) else {
+                return false;
+            };
+            let held = g.unit_ids_at(*pos).iter().any(|id| {
+                let unit = &g.units[id];
+                unit.owner != city.owner
+                    && g.is_at_war(city.owner, unit.owner)
+                    && g.rules.units[unit.kind].class == "military"
+            });
+            g.rules.is_passable(tile) && !held && !g.in_enemy_zoc(city.owner, *pos)
+        })
+        .collect();
+    if open.is_empty() {
+        return Some(0);
+    }
+    let stands: Vec<Pos> = ring
+        .iter()
+        .copied()
+        .filter(|pos| {
+            dry(*pos)
+                && g.city_at(*pos).is_none()
+                && g.encampment_at(*pos).is_none()
+                && !g.unit_ids_at(*pos).iter().any(|id| {
+                    let unit = &g.units[id];
+                    unit.owner != pid && g.is_at_war(pid, unit.owner)
+                })
+        })
+        .collect();
+    let covers = |stand: Pos, pos: Pos| {
+        stand == pos || (g.wdist(stand, pos) == 1 && dry(pos) && !g.map.has_river_edge(stand, pos))
+    };
+    (1u32..1 << stands.len())
+        .filter(|mask| {
+            open.iter().all(|pos| {
+                stands
+                    .iter()
+                    .enumerate()
+                    .any(|(i, stand)| mask & (1 << i) != 0 && covers(*stand, *pos))
+            })
+        })
+        .map(|mask| mask.count_ones() as usize)
+        .min()
+}
+
 /// The taker's expected blow on the city as `do_attack` would land it: the
 /// attacker's strength at its hit points against `city_strength`, at the
 /// centre of the roll, routed through the wall pool.
@@ -2260,6 +2327,37 @@ impl AdvancedAi {
         !heals
             || (unit.hp >= super::battle_planner::ROTATE_HP
                 && !self.battle_planner_recovering.contains(&uid))
+    }
+
+    /// `siege-budget-projects-the-seal`: whether the fit melee of `force`
+    /// within `radius` of the city, off its ring, are enough bodies to seal
+    /// it (`seal_bodies_needed`). The melee hold the ring in Invest and Reduce
+    /// (`siege_blow`), and behind standing walls take it once the walls fall,
+    /// which is when the budget's city phase begins.
+    pub(super) fn train_seals_the_ring(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        force: &[u32],
+        radius: i32,
+    ) -> bool {
+        let Some(city) = g.cities.get(&cid) else {
+            return false;
+        };
+        let bodies = force
+            .iter()
+            .filter(|uid| {
+                g.units.get(uid).is_some_and(|unit| {
+                    unit.owner == pid
+                        && (2..=radius).contains(&g.wdist(unit.pos, city.pos))
+                        && arm_of(g, **uid) == Arm::Melee
+                        && g.exerts_zoc(unit)
+                        && self.siege_member_fit(g, **uid)
+                })
+            })
+            .count();
+        seal_bodies_needed(g, pid, cid).is_some_and(|needed| needed <= bodies)
     }
 
     /// Whether a gun counts as a breaker in a breach reading: fit to stand
@@ -6291,6 +6389,9 @@ mod swarm_tests;
 
 #[cfg(test)]
 mod spared_tests;
+
+#[cfg(test)]
+mod seal_tests;
 
 #[cfg(test)]
 mod post_reachability_tests;

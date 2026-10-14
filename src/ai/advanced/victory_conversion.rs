@@ -1180,7 +1180,19 @@ impl AdvancedAi {
             city_dps += air;
         }
         let (sealed, ring) = super::siege_train::ring_state(g, cid);
-        let heal = if ring > 0 && sealed == ring {
+        // `siege-budget-projects-the-seal`: a city whose ring is sealed does
+        // not heal (`Game::city_under_siege`), and a train that holds off the
+        // ring until its entry reads ready never sealed it, so its entry
+        // reads priced every turn at the open ring's heal of 20. On the entry
+        // reads a train with the melee bodies to seal the ring
+        // (`train_seals_the_ring`) prices the city at no heal; the walk to
+        // the ring is not priced, as the shipped budget prices no march.
+        // Live Immortal Jenne (civvis-20261013T184508Z) held turns 111-117
+        // with seven to nine units at 23.7-65.0 turns and the ring 0/6.
+        let projects_the_seal = entry
+            && self.siege_budget_projects_the_seal
+            && self.train_seals_the_ring(g, pid, cid, force, radius);
+        let heal = if (ring > 0 && sealed == ring) || projects_the_seal {
             0.0
         } else {
             20.0

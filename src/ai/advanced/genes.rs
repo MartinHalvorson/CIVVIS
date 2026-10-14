@@ -3824,6 +3824,11 @@ pub const GENES: &[Gene] = &[
     // turn 110 and held at 6.2 turns against 3.5 endurance. See
     // `conversion_siege_entry_budget`.
     Gene { tag: "unwalled-city-spares-the-train", field: "unwalled_city_spares_the_train", kind: Kind::OptIn, enable: AdvancedAi::enable_unwalled_city_spares_the_train, disable: AdvancedAi::disable_unwalled_city_spares_the_train },
+    // A sealed ring stops the city's heal, but the entry budget priced a
+    // train holding off the ring at the open ring's 20 a turn: live Immortal
+    // Jenne (civvis-20261013T184508Z) held turns 111-117 with seven to nine
+    // units at 23.7-65.0 turns and its ring 0/6. See `train_seals_the_ring`.
+    Gene { tag: "siege-budget-projects-the-seal", field: "siege_budget_projects_the_seal", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_budget_projects_the_seal, disable: AdvancedAi::disable_siege_budget_projects_the_seal },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -7840,6 +7840,11 @@ pub struct AdvancedAi {
     parity_reads_the_front: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `siege-budget-projects-the-seal`: on the siege's entry reads a train
+    /// whose fit melee can seal the city's ring prices the city at no heal,
+    /// as a sealed city does not heal. See
+    /// `siege_train::AdvancedAi::train_seals_the_ring`.
+    siege_budget_projects_the_seal: bool,
     /// `sea-locked-front-moves-on`: a one-war front cut off from every land
     /// road (its siege stood down for want of one) moves to an enemy at war
     /// with us that the army can walk to. See `advanced/sea_locked_front.rs`.
@@ -10717,6 +10722,7 @@ impl AdvancedAi {
             parity_reads_the_front: false,
 
             // ---- append: s-s ----------------------------------------
+            siege_budget_projects_the_seal: false,
             sea_locked_front_moves_on: false,
             siege_tier_before_the_beeline: false,
             settler_marches_alone_when_clear: false,

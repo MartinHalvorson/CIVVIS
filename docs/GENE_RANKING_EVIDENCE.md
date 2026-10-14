@@ -432,6 +432,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `settler-walks-to-the-better-site` | off (unmeasured) | Opt-in gene `settler-walks-to-the-better-site`; see `Self::better_site_beyond_the_turn`. | 1 \| 1 |
 | `shared-danger` | off (unmeasured) | Opt-in gene `shared-danger`; see `Self::shared_danger`. | 1 \| 1 |
 | `siege-budget-counts-what-fires` | off (unmeasured) | Opt-in gene `siege-budget-counts-what-fires`; see `Self::siege_budget_counts_what_fires`. | 1 \| 1 |
+| `siege-budget-projects-the-seal` | off (unmeasured) | Opt-in gene `siege-budget-projects-the-seal`; see `AdvancedAi::siege_budget_projects_the_seal`. | 1 \| 1 |
 | `siege-buys-the-gun-resource` | off (unmeasured) | Opt-in gene `siege-buys-the-gun-resource`; see `Self::siege_buys_the_gun_resource`. | 1 \| 1 |
 | `siege-buys-the-passage` | off (unmeasured) | Opt-in gene `siege-buys-the-passage`; see `Self::siege_buys_the_passage`. | 1 \| 1 |
 | `siege-counts-posted-shooters` | off (unmeasured) | Opt-in gene `siege-counts-posted-shooters`; see `Self::siege_counts_posted_shooters`. | 1 \| 1 |

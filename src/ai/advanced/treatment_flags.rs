@@ -7618,6 +7618,17 @@ impl AdvancedAi {
         self.unwalled_city_spares_the_train = false;
     }
 
+    /// Opt-in gene `siege-budget-projects-the-seal`; see
+    /// `AdvancedAi::siege_budget_projects_the_seal`.
+    pub fn enable_siege_budget_projects_the_seal(&mut self) {
+        self.siege_budget_projects_the_seal = true;
+    }
+
+    /// The twin of `enable_siege_budget_projects_the_seal`.
+    pub fn disable_siege_budget_projects_the_seal(&mut self) {
+        self.siege_budget_projects_the_seal = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
