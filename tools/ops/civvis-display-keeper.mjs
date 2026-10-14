@@ -11,7 +11,7 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 
 // The durable operator halt (`gamelock.py --halt`). On 2026-08-31 this keeper
 // survived a full halt teardown as a launchd orphan and kept forcing the
@@ -82,15 +82,40 @@ async function displayPage() {
 // tools/follow.py). A keeper that hangs is worse than one measured for the
 // fleet's display; `tools/test_ops_display_keeper.py` fails if the game's own
 // placement rule ever moves out from under them.
-const displayWidth = 864;
-const displayHeight = 542;
-const displayX = displayWidth;   // immediately right of a game window this wide
-const displayY = 33;             // level with the game, clear of the menu bar
+const defaultFrame = {
+  width: 864,
+  height: 542,
+  x: 864,   // immediately right of a game window this wide
+  y: 33,    // level with the game, clear of the menu bar
+};
+// Operator 2026-10-14: the saved window layout (tools/window_layout.py,
+// ~/.civvis-window-layout.json) sets the mirror's frame when it names an
+// upper-right window. Read at each launch so a re-saved layout applies to the
+// next window without restarting this keeper; anything unreadable keeps the
+// default frame.
+const layoutFile = process.env.CIVVIS_WINDOW_LAYOUT
+  || `${process.env.HOME}/.civvis-window-layout.json`;
+
+function displayFrame() {
+  try {
+    const saved = JSON.parse(readFileSync(layoutFile, "utf8"));
+    const frame = saved?.windows?.["upper-right"]?.frame;
+    if (Array.isArray(frame) && frame.length === 4
+        && frame.every(v => Number.isFinite(v)) && frame[2] > 0 && frame[3] > 0) {
+      const [x, y, width, height] = frame.map(v => Math.round(v));
+      return { x, y, width, height };
+    }
+  } catch {
+    // no saved layout
+  }
+  return defaultFrame;
+}
 
 function launchDisplay() {
   const now = Date.now();
   if (now - lastLaunchAt < recoveryCooldownMs) return;
   lastLaunchAt = now;
+  const frame = displayFrame();
   const args = [
     "-na", "Google Chrome", "--args",
     `--app=${mirrorUrl}?display=dedicated`,
@@ -104,8 +129,8 @@ function launchDisplay() {
     "--disable-backgrounding-occluded-windows",
     "--disable-features=CalculateNativeWinOcclusion,IntensiveWakeUpThrottling",
     "--no-first-run", "--no-default-browser-check",
-    `--window-position=${displayX},${displayY}`,
-    `--window-size=${displayWidth},${displayHeight}`,
+    `--window-position=${frame.x},${frame.y}`,
+    `--window-size=${frame.width},${frame.height}`,
   ];
   const child = spawn("/usr/bin/open", args, { detached: true, stdio: "ignore" });
   child.unref();

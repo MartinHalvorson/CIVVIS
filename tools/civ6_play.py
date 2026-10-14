@@ -38,6 +38,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent / "civ6_control"))
 import civ6_env as env  # noqa: E402
+import window_layout  # noqa: E402
 from civ6_control import install as modinstall  # noqa: E402
 from civ6_control import operator_presence  # noqa: E402
 from civ6_control import (capture_budget, gamelock, launcher, macos_capture,
@@ -1406,7 +1407,17 @@ def desktop_size() -> tuple[int, int] | None:
 
 def place_game(side: str = "left", fraction: float = 0.5,
                vfraction: float = 1.0) -> None:
-    """Park the process-specific game window without duplicating host logic."""
+    """Park the process-specific game window without duplicating host logic.
+
+    The standard upper-left placement (side "left", a partial height) uses the
+    operator's saved upper-left frame when one exists for this screen
+    (operator 2026-10-14: the current window sizes are the defaults); see
+    `window_layout`. Any other request keeps the fraction arithmetic.
+    """
+    frame = None
+    if side == "left" and vfraction < 1.0:
+        size = desktop_size()
+        frame = window_layout.frame_for("upper-left", size) if size else None
     return macos_window.place_game(
         GAME_PROCESS,
         side,
@@ -1414,6 +1425,7 @@ def place_game(side: str = "left", fraction: float = 0.5,
         vfraction,
         get_desktop_size=desktop_size,
         get_game_window=game_window,
+        frame=frame,
     )
 
 
