@@ -11605,6 +11605,51 @@ fn the_camera_centres_in_the_ground_the_live_controls_leave_open() {
     );
 }
 
+/// The live research box opens with our governors, each under the number
+/// of promotions it holds, and gives the deck's net effect before the cards
+/// it adds up (operator 2026-10-14: "list the governors at the top of this
+/// new box, and list the promotions each has (can just list the number over
+/// the governor). lets list net policy effect above all the indivudla
+/// policies").
+#[test]
+fn the_live_research_box_leads_with_governors_and_the_net_policy_effect() {
+    let tracker = EMBEDDED_INDEX
+        .split_once("function liveTrackerHtml(me)")
+        .expect("the live research box")
+        .1
+        .split_once("\nfunction ")
+        .expect("the end of the live research box")
+        .0;
+    for piece in [
+        "Object.entries(me.governor_roster || {})",
+        "const promotions = posting.promotions || [];",
+        "`<b class=\"lt-gov-n\">${promotions.length}</b>` +",
+        "`<span class=\"lt-gov-name\">${escapeAttr(name)}</span></span>`;",
+        "(governors.length ? governors.join(\"\") : none(\"none yet\"))",
+    ] {
+        assert!(tracker.contains(piece), "the research box is missing {piece}");
+    }
+    let body = tracker
+        .split_once("return governorRow +")
+        .expect("the governors lead the box")
+        .1;
+    let net = body.find("    net +").expect("the net policy effect");
+    let cards = body
+        .find("`<div class=\"lt-cards\">${cards.join(\"\")}</div>`")
+        .expect("the policy cards");
+    assert!(
+        body.find("study(\"techs\"").expect("the research") < net && net < cards,
+        "the net policy effect must stand above the cards it adds up"
+    );
+    for rule in [
+        "#livetracker .lt-govs {",
+        "#livetracker .lt-gov { display: inline-flex; flex-direction: column;",
+        "#livetracker .lt-gov-n {",
+    ] {
+        assert!(EMBEDDED_INDEX.contains(rule), "the governors' style is missing {rule}");
+    }
+}
+
 /// Diplomacy needs a complete player-facing action surface. The screen
 /// must retain both war/peace (including city-states) and every major-to-
 /// major relationship action, or a mechanic the engine and AI can use is
