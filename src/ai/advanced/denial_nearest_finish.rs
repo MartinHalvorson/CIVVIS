@@ -344,10 +344,41 @@ impl AdvancedAi {
     }
 }
 
+/// The turns a "Countering X" journal line adds after a culture race's
+/// percentage: "about N turns to its finish" from `projected_culture_finish`,
+/// or "no finish projected". Other races read as before. Live Emperor
+/// civvis-20261014T073241Z read "its culture race reads 96%" from turn 172
+/// and Egypt won at 190; the percentage never said whether the army had time.
+pub(super) fn countering_finish_note(strategy: GrandStrategy, finish: Option<f64>) -> String {
+    if strategy != GrandStrategy::Culture {
+        return String::new();
+    }
+    match finish {
+        Some(turns) => format!(", about {turns:.0} turns to its finish"),
+        None => ", no finish projected".to_string(),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::{AdvancedAi, GrandStrategy, VictoryTarget};
-    use super::{CULTURE_CURVE_MIN_SPAN, DENIAL_FINISH_HORIZON, DENIAL_URGENT_FINISH};
+    use super::{
+        countering_finish_note, CULTURE_CURVE_MIN_SPAN, DENIAL_FINISH_HORIZON,
+        DENIAL_URGENT_FINISH,
+    };
+
+    #[test]
+    fn countering_line_gives_a_culture_race_its_turns() {
+        assert_eq!(
+            countering_finish_note(GrandStrategy::Culture, Some(7.6)),
+            ", about 8 turns to its finish"
+        );
+        assert_eq!(
+            countering_finish_note(GrandStrategy::Culture, None),
+            ", no finish projected"
+        );
+        assert_eq!(countering_finish_note(GrandStrategy::Science, Some(4.0)), "");
+    }
     use crate::game::Game;
 
     fn tourists(g: &mut Game, foreign: [usize; 3], domestic: [usize; 3]) {
