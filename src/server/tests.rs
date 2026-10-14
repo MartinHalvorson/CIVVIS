@@ -11355,6 +11355,40 @@ fn the_camera_centres_in_the_ground_the_live_controls_leave_open() {
     );
 }
 
+/// The live controls never stand on the standings. On the 830x586 mirror
+/// the victory tracker runs the map's width under the masthead, and with
+/// the research box gripped to 2.5x nothing in the window could hold it:
+/// the most free height left was the strip above the victory band — the
+/// masthead itself, which was not among the obstacles. It is now, and a
+/// grip scale no spot can hold a few lines of is shown at the largest scale
+/// that fits, keeping the viewer's own choice for a roomier window.
+#[test]
+fn the_live_controls_keep_off_the_masthead_at_any_grip_scale() {
+    for piece in [
+        "\"#maparea .minimap-frame, #victoryhud, #playerhud, #zoomctl-main, #skynav\")]",
+        "const LIVE_TRACKER_MIN_HEIGHT = 60;",
+        "while (!placeLiveControls(box) && scale > LIVE_TRACKER_SCALE_MIN) {",
+        "fits = Number.isFinite(room) && room - rest >= (tracking ? LIVE_TRACKER_MIN_HEIGHT : 0);",
+    ] {
+        assert!(
+            EMBEDDED_INDEX.contains(piece),
+            "the live controls' placement is missing {piece}"
+        );
+    }
+    // The shrink is for this window only: the stored grip choice stays put.
+    let place = EMBEDDED_INDEX
+        .split_once("function placeLivePause() {")
+        .expect("the live controls' placement")
+        .1
+        .split_once("\nfunction ")
+        .expect("the end of the live controls' placement")
+        .0;
+    assert!(
+        !place.contains("liveTrackerScale =") && !place.contains("localStorage"),
+        "fitting the window must not overwrite the viewer's grip scale"
+    );
+}
+
 /// The live research box opens with our governors, each under the number
 /// of promotions it holds, and gives the deck's net effect before the cards
 /// it adds up (operator 2026-10-14: "list the governors at the top of this
