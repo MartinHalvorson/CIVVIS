@@ -1,5 +1,6 @@
 //! Zero-dependency local HTTP server for the human-vs-AI browser GUI.
 //! Endpoints: GET / (page), GET /state, GET /machine-metrics, GET /save, GET /rules, GET /pedia,
+//! GET /policy-effects,
 //! POST /action, POST /step, POST /autoplay, POST /view,
 //! POST /spectator-status, POST /next-game-settings, POST /new,
 //! POST /supervisor-new.
@@ -68,6 +69,38 @@ fn process_identity() -> u32 {
 /// fields, so reading it back is safe; recover the guard and keep serving.
 fn lock_or_recover<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// The last `/policy-effects` answer and the empire it read (see
+/// [`policy_effects_key`]). Every viewer polls the same empire, so one sweep a
+/// change serves them all.
+static POLICY_EFFECTS_MEMO: Mutex<Option<(String, Value)>> = Mutex::new(None);
+
+/// What a policy ledger depends on closely enough to be re-read when it
+/// moves: the world, the turn, the seat, its deck and government, and the
+/// size of the empire the cards act on.
+fn policy_effects_key(game: &Game, pid: usize) -> String {
+    let Some(player) = game.players.get(pid) else {
+        return format!("{}:{}:none", game.seed, game.turn);
+    };
+    let cities = game.player_city_ids(pid);
+    let population: i64 = cities.iter().map(|cid| game.cities[cid].pop as i64).sum();
+    let queued: Vec<String> = cities
+        .iter()
+        .map(|cid| format!("{:?}", game.cities[cid].queue.first()))
+        .collect();
+    format!(
+        "{}:{}:{}:{:?}:{:?}:{}:{}:{}:{}",
+        game.seed,
+        game.turn,
+        pid,
+        player.policies,
+        player.government,
+        cities.len(),
+        population,
+        game.player_unit_ids(pid).len(),
+        queued.join(",")
+    )
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -2568,22 +2601,32 @@ impl Session {
         }
     }
 
+    /// The empire the observation's `me` describes: the seat being viewed,
+    /// or above the world the major `state` follows for its side panel.
+    pub fn empire_seat(&self) -> usize {
+        self.viewing_seat().unwrap_or_else(|| self.acting_major())
+    }
+
+    /// The omniscient view still needs an empire perspective for the
+    /// side-panel summary. Follow the acting major, falling back when a
+    /// city-state or barbarian is up.
+    fn acting_major(&self) -> usize {
+        let g = &self.game;
+        if g.players[g.current].is_minor || g.players[g.current].is_barbarian {
+            g.players
+                .iter()
+                .find(|p| !p.is_minor && !p.is_barbarian && p.alive)
+                .map(|p| p.id)
+                .unwrap_or(0)
+        } else {
+            g.current
+        }
+    }
+
     pub fn state(&self) -> Value {
         if self.params.spectate {
             let g = &self.game;
-            // The omniscient view still needs an empire perspective for the
-            // side-panel summary. Follow the acting major, falling back when
-            // a city-state or barbarian is up.
-            let summary_pid = if g.players[g.current].is_minor || g.players[g.current].is_barbarian
-            {
-                g.players
-                    .iter()
-                    .find(|p| !p.is_minor && !p.is_barbarian && p.alive)
-                    .map(|p| p.id)
-                    .unwrap_or(0)
-            } else {
-                g.current
-            };
+            let summary_pid = self.acting_major();
             let mut o = match self.view_player {
                 Some(pid) => observation_player_view(g, pid),
                 None => observation_spectator(g, summary_pid),
@@ -4653,6 +4696,37 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         ("GET", "/rules") => {
             let session = lock_or_recover(&sh.session);
             let answer = crate::routes::rules(&session, true);
+            respond_json(stream, &answer);
+        }
+        ("GET", "/policy-effects") => {
+            // A counterfactual sweep per slotted card is too slow to hold the
+            // simulation lock for, so it runs on a branch cloned under the
+            // lock, and is remembered until the empire it read changes.
+            let session = lock_or_recover(&sh.session);
+            let pid = session.empire_seat();
+            let key = policy_effects_key(&session.game, pid);
+            let remembered = lock_or_recover(&POLICY_EFFECTS_MEMO)
+                .as_ref()
+                .filter(|(held, _)| *held == key)
+                .map(|(_, answer)| answer.clone());
+            let answer = match remembered {
+                Some(answer) => {
+                    drop(session);
+                    answer
+                }
+                None => {
+                    let branch = session.game.speculative_clone();
+                    drop(session);
+                    let turn = branch.turn;
+                    let answer = crate::routes::policy_effects_answer(
+                        turn,
+                        pid,
+                        &branch.into_policy_ledger(pid),
+                    );
+                    *lock_or_recover(&POLICY_EFFECTS_MEMO) = Some((key, answer.clone()));
+                    answer
+                }
+            };
             respond_json(stream, &answer);
         }
         ("GET", "/gene-program") => {
