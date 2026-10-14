@@ -3899,6 +3899,19 @@ pub const GENES: &[Gene] = &[
     // short-of-moves case is journaled as such. See
     // `AdvancedAi::column_queue_step`.
     Gene { tag: "gun-queue-follows-the-road", field: "gun_queue_follows_the_road", kind: Kind::OptIn, enable: AdvancedAi::enable_gun_queue_follows_the_road, disable: AdvancedAi::disable_gun_queue_follows_the_road },
+    // Live Emperor civvis-20261014T130619Z: Scone stood behind fallen walls
+    // at 20-60 health turns 180-190 and never fell. The opening board applied
+    // the bombers' volley and the siege's helicopter "joined the assault ...
+    // captured true" behind it; the executor deferred every order after the
+    // volley, so nothing was sent, but the board capture had already written
+    // the siege to Hold, released its taker and freed its members, and the
+    // re-planned frames found a 6-unit force under its bill. 12 of 40
+    // "Captured X" decisions since 10-12 never landed. A capture made on the
+    // frame's own earlier damage (the host reported the city healthier)
+    // commits no siege state and its keep/raze line waits for the host; a
+    // committed capture the host never executed over a falling city resumes
+    // its siege, stage and taker. See `advanced/phantom_capture.rs`.
+    Gene { tag: "phantom-capture-keeps-the-siege", field: "phantom_capture_keeps_the_siege", kind: Kind::OptIn, enable: AdvancedAi::enable_phantom_capture_keeps_the_siege, disable: AdvancedAi::disable_phantom_capture_keeps_the_siege },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

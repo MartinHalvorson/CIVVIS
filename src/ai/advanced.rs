@@ -7558,6 +7558,22 @@ pub struct AdvancedAi {
     /// (`append_luxury_swap_order` in `civvis_orders`). Off by default.
     luxury_swap_asks_2: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `phantom-capture-keeps-the-siege`: a capture this frame's planning
+    /// board makes on damage the same frame dealt (a volley the executor
+    /// defers, a shot or another unit's blow the host has not yet executed)
+    /// commits no siege state, and a committed capture the host never
+    /// executed resumes its siege over a falling city. Off by default. See
+    /// `advanced/phantom_capture.rs`.
+    phantom_capture_keeps_the_siege: bool,
+    /// `phantom-capture-keeps-the-siege`: each city's owner and health as the
+    /// host reported them when this frame opened; `None` off the live adapter.
+    phantom_frame_cities: Option<BTreeMap<u32, (usize, i32)>>,
+    /// `phantom-capture-keeps-the-siege`: cities this frame's board captured
+    /// on the frame's own earlier damage.
+    phantom_contingent_captures: BTreeSet<u32>,
+    /// `phantom-capture-keeps-the-siege`: the stage and taker a committed
+    /// capture's siege held before it read Hold, by city.
+    phantom_hold_from: BTreeMap<u32, (siege_train::SiegeStage, Option<u32>)>,
     /// `racer-keeps-the-spies`: while a space racer exists, a Spy outside
     /// every racer's cities starts no capture-risk operation, an idle one is
     /// posted to the leading racer before any pad is seen, and in a racer's
@@ -9165,6 +9181,9 @@ mod racer_keeps_the_spies;
 /// See `advanced/silent_counter.rs`.
 mod silent_counter;
 
+/// `phantom-capture-keeps-the-siege`: see `advanced/phantom_capture.rs`.
+mod phantom_capture;
+
 mod city_memory;
 mod denial_nearest_finish;
 mod denial_needs_a_road;
@@ -10764,6 +10783,10 @@ impl AdvancedAi {
             launcher_war_ignores_the_edge: false,
             luxury_swap_asks_2: false,
             // ---- append: p-r ----------------------------------------
+            phantom_capture_keeps_the_siege: false,
+            phantom_frame_cities: None,
+            phantom_contingent_captures: BTreeSet::new(),
+            phantom_hold_from: BTreeMap::new(),
             racer_keeps_the_spies: false,
             racer_spies_slot_note: Cell::new((0, 0, 0)),
             purchases_keep_the_upkeep_reserve: false,
@@ -47195,7 +47218,28 @@ impl AdvancedAi {
             // October 4-5 the live seat razed 23 captured cities and kept 27
             // without a line saying why, and a razed city never reaches the
             // state export, so its Loyalty could not be read afterwards.
-            if self.journal().wants(crate::reasoning::Level::Decision) {
+            // `phantom-capture-keeps-the-siege`: a capture this frame made on
+            // its own earlier damage still needs the board's verdict, but its
+            // Decision line waits for the host to report the city as ours.
+            let provisional = match &action {
+                Action::KeepCity { city }
+                | Action::RazeCity { city }
+                | Action::LiberateCity { city } => self.capture_is_provisional(*city),
+                _ => false,
+            };
+            if provisional && self.journal().wants(crate::reasoning::Level::Detail) {
+                if let Action::KeepCity { city }
+                | Action::RazeCity { city }
+                | Action::LiberateCity { city } = &action
+                {
+                    if let Some(captured) = g.cities.get(city) {
+                        think!(self.journal(), Military, Detail,
+                               "Planned capture of {}: {} if the host takes it", captured.name, Self::disposition_word(&action);
+                               "the board's capture leans on this frame's own damage; the keep/raze line waits for the host";
+                               captured.pos);
+                    }
+                }
+            } else if self.journal().wants(crate::reasoning::Level::Decision) {
                 if let Action::KeepCity { city }
                 | Action::RazeCity { city }
                 | Action::LiberateCity { city } = &action

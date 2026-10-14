@@ -7720,6 +7720,17 @@ impl AdvancedAi {
         self.gun_queue_follows_the_road = false;
     }
 
+    /// Opt-in gene `phantom-capture-keeps-the-siege`; see
+    /// `advanced/phantom_capture.rs`.
+    pub fn enable_phantom_capture_keeps_the_siege(&mut self) {
+        self.phantom_capture_keeps_the_siege = true;
+    }
+
+    /// The twin of `enable_phantom_capture_keeps_the_siege`.
+    pub fn disable_phantom_capture_keeps_the_siege(&mut self) {
+        self.phantom_capture_keeps_the_siege = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

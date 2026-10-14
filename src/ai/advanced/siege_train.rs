@@ -2767,6 +2767,18 @@ impl AdvancedAi {
             && g.cities
                 .get(&cid)
                 .is_some_and(|city| city.owner != pid && g.is_at_war(pid, city.owner));
+        // `phantom-capture-keeps-the-siege`: a city this frame's board took
+        // while the host still reports it as the enemy's keeps its record
+        // until a host board settles it; one the host reports as ours needs
+        // no remembered Hold.
+        if self.board_only_capture(g, pid, cid) {
+            return;
+        }
+        if self.phantom_capture_keeps_the_siege
+            && g.cities.get(&cid).is_some_and(|city| city.owner == pid)
+        {
+            self.forget_hold_from(cid);
+        }
         if self
             .sieges
             .get(&cid)
@@ -2895,6 +2907,16 @@ impl AdvancedAi {
         }
         // `capture-holds-the-ring`: see `dying_open_city`.
         let dying = self.dying_open_city(&city);
+        // `phantom-capture-keeps-the-siege`: a Hold the host never executed
+        // over a falling city (walls down, within its taker's blow) resumes
+        // the siege it replaced: no regroup, no muster hold.
+        let restored = held_enemy_city
+            && self.phantom_capture_keeps_the_siege
+            && city.wall_hp <= 0
+            && (city.hp <= 0
+                || dying
+                || designate_taker(g, &city, &force)
+                    .is_some_and(|uid| f64::from(city.hp) <= taker_blow(g, pid, uid, cid)));
         // `stage-musters-out-of-reach`: the train may close on its staging
         // ring when the Stage -> Invest step below would fire with the
         // mustered members standing on the ring — the bill met, the walls
@@ -2956,7 +2978,7 @@ impl AdvancedAi {
             let weak_target = self.weak_target_skips_the_muster
                 && g.military_power(city.owner)
                     <= MUSTER_WEAK_TARGET_SHARE * g.military_power(pid).max(1.0);
-            let ready = dying || walls_answered || committed || weak_target;
+            let ready = dying || walls_answered || committed || weak_target || restored;
             if !ready {
                 self.stage_muster_closed.remove(&cid);
             }
@@ -3008,6 +3030,28 @@ impl AdvancedAi {
                     city.pos);
             }
         }
+        let held_from = if restored {
+            self.phantom_held_from(cid)
+        } else {
+            None
+        };
+        if restored {
+            self.forget_hold_from(cid);
+            if self.journal().wants(crate::reasoning::Level::Decision) {
+                let name = g
+                    .cities
+                    .get(&cid)
+                    .map(|c| c.name.clone())
+                    .unwrap_or_default();
+                think!(self.journal(), Military, Decision,
+                    "Siege of {name}: the capture never landed; the siege resumes";
+                    "the host still holds it at {} health behind fallen walls; back to {} with {}",
+                    city.hp,
+                    held_from.map_or("reduce", |(stage, _)| stage.as_str()),
+                    held_from.and_then(|(_, taker)| taker).map_or_else(|| "a new taker".to_string(), |uid| format!("taker {uid}"));
+                    city.pos);
+            }
+        }
         let record = self.sieges.entry(cid).or_insert(Siege {
             stage: SiegeStage::Stage,
             taker: None,
@@ -3018,11 +3062,16 @@ impl AdvancedAi {
         });
         record.assessed = turn;
         let previous = record.stage;
-        let previous_taker = record.taker;
-        let mut stage = if held_enemy_city {
-            SiegeStage::Reduce
-        } else {
-            previous
+        let previous_taker = match held_from {
+            Some((_, Some(taker))) => Some(taker),
+            _ => record.taker,
+        };
+        let mut stage = match held_from {
+            Some((SiegeStage::Invest | SiegeStage::Reduce | SiegeStage::Take, _)) => {
+                held_from.map_or(SiegeStage::Reduce, |(held, _)| held)
+            }
+            _ if held_enemy_city => SiegeStage::Reduce,
+            _ => previous,
         };
         if city.owner == pid {
             stage = SiegeStage::Hold;
@@ -3043,6 +3092,7 @@ impl AdvancedAi {
                 ABORT_SHARE
             };
             if invested
+                && !restored
                 && (strength < abort_share * bill
                     || (!damage_can_continue
                         && breach_taker.is_none()
@@ -4306,21 +4356,28 @@ impl AdvancedAi {
                 holdable
             });
             if let Some(action) = action {
+                // `phantom-capture-keeps-the-siege`: see `capture_is_contingent`.
+                let contingent = self.capture_is_contingent(g, city.id);
                 if g.apply(pid, &action).is_ok() {
                     self.force_groups_dirty = true;
                     if g.cities.get(&city.id).is_some_and(|c| c.owner == pid) {
-                        if let Some(siege) = self.sieges.get_mut(&city.id) {
-                            siege.stage = SiegeStage::Hold;
-                            siege.entered = g.turn;
-                            siege.taker = None;
+                        if self.board_capture_commits(g, pid, city.id, contingent) {
+                            self.remember_hold_from(city.id);
+                            if let Some(siege) = self.sieges.get_mut(&city.id) {
+                                siege.stage = SiegeStage::Hold;
+                                siege.entered = g.turn;
+                                siege.taker = None;
+                            }
+                            self.reserved_units.remove(&uid);
+                            self.census.siege_captures += 1;
+                            think!(self.journal(), Military, Decision,
+                                "Siege of {}: taken by the {}", g.cities[&city.id].name, unit.kind;
+                                "the city was at {} behind {} of wall against an expected blow of {blow:.0}",
+                                city.hp, city.wall_hp;
+                                city.pos);
+                        } else {
+                            self.journal_contingent_capture(g, city.id, unit.kind.as_str());
                         }
-                        self.reserved_units.remove(&uid);
-                        self.census.siege_captures += 1;
-                        think!(self.journal(), Military, Decision,
-                            "Siege of {}: taken by the {}", g.cities[&city.id].name, unit.kind;
-                            "the city was at {} behind {} of wall against an expected blow of {blow:.0}",
-                            city.hp, city.wall_hp;
-                            city.pos);
                     }
                     return true;
                 }
@@ -4442,10 +4499,13 @@ impl AdvancedAi {
         {
             return None;
         }
+        // `phantom-capture-keeps-the-siege`: see `capture_is_contingent`.
+        let contingent = self.capture_is_contingent(g, city.id);
         g.apply(pid, &action).ok()?;
         self.force_groups_dirty = true;
         let captured = g.cities.get(&city.id).is_some_and(|c| c.owner == pid);
-        if captured {
+        if captured && self.board_capture_commits(g, pid, city.id, contingent) {
+            self.remember_hold_from(city.id);
             if let Some(siege) = self.sieges.get_mut(&city.id) {
                 if let Some(taker) = siege.taker.take() {
                     self.reserved_units.remove(&taker);
@@ -4454,6 +4514,8 @@ impl AdvancedAi {
                 siege.entered = g.turn;
             }
             self.census.siege_captures += 1;
+        } else if captured {
+            self.journal_contingent_capture(g, city.id, unit.kind.as_str());
         }
         let left = g
             .cities
@@ -4648,18 +4710,29 @@ impl AdvancedAi {
         if f64::from(survivor.hp) - reply < 60.0 {
             return false;
         }
+        // `phantom-capture-keeps-the-siege`: see `capture_is_contingent`.
+        let contingent = self.capture_is_contingent(g, city.id);
         if g.apply(pid, &action).is_err() {
             return false;
         }
         self.force_groups_dirty = true;
         if g.cities[&city.id].owner == pid {
-            if let Some(siege) = self.sieges.get_mut(&city.id) {
-                siege.stage = SiegeStage::Hold;
-                siege.entered = g.turn;
-                siege.taker = None;
+            if self.board_capture_commits(g, pid, city.id, contingent) {
+                self.remember_hold_from(city.id);
+                if let Some(siege) = self.sieges.get_mut(&city.id) {
+                    siege.stage = SiegeStage::Hold;
+                    siege.entered = g.turn;
+                    siege.taker = None;
+                }
+                self.reserved_units.remove(&uid);
+                self.census.siege_captures += 1;
+            } else {
+                self.journal_contingent_capture(
+                    g,
+                    city.id,
+                    g.units.get(&uid).map_or("unit", |unit| unit.kind.as_str()),
+                );
             }
-            self.reserved_units.remove(&uid);
-            self.census.siege_captures += 1;
         }
         think!(self.journal(), Military, Decision,
             "Siege of {}: the reserved {} helps reduce the unwalled city", g.cities[&city.id].name, g.units[&uid].kind;
@@ -4738,10 +4811,13 @@ impl AdvancedAi {
         {
             return None;
         }
+        // `phantom-capture-keeps-the-siege`: see `capture_is_contingent`.
+        let contingent = self.capture_is_contingent(g, city.id);
         g.apply(pid, &action).ok()?;
         self.force_groups_dirty = true;
         let captured = g.cities.get(&city.id).is_some_and(|c| c.owner == pid);
-        if captured {
+        if captured && self.board_capture_commits(g, pid, city.id, contingent) {
+            self.remember_hold_from(city.id);
             if let Some(siege) = self.sieges.get_mut(&city.id) {
                 if let Some(taker) = siege.taker.take() {
                     self.reserved_units.remove(&taker);
@@ -4750,6 +4826,8 @@ impl AdvancedAi {
                 siege.entered = g.turn;
             }
             self.census.siege_captures += 1;
+        } else if captured {
+            self.journal_contingent_capture(g, city.id, unit.kind.as_str());
         }
         let left = g
             .cities
@@ -5923,6 +6001,9 @@ impl AdvancedAi {
 
 #[cfg(test)]
 mod ownership_tests;
+
+#[cfg(test)]
+mod phantom_capture_tests;
 
 #[cfg(test)]
 mod capture_tests;
