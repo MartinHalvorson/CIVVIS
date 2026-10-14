@@ -6556,13 +6556,73 @@ function liveTrackerHtml(me) {
 }
 function paintLiveTracker() {
   const panel = document.getElementById("livetracker");
-  if (!panel) return;
+  const body = document.getElementById("livetracker-body");
+  if (!panel || !body) return;
   const me = livePause.available && state && state.me;
   panel.hidden = !me;
   if (!me) return;
   const html = liveTrackerHtml(me);
-  if (panel.dataset.painted !== html) { panel.innerHTML = html; panel.dataset.painted = html; }
+  if (body.dataset.painted !== html) { body.innerHTML = html; body.dataset.painted = html; }
 }
+// The research box is the viewer's to size (operator 2026-10-14: "make new
+// tech civic box adjustable size"). Its corner grip scales the box and its
+// type together, between a little smaller than it opens and well over twice
+// that; the size is this browser's own, kept between visits.
+const LIVE_TRACKER_SCALE_STORE = "civvis-live-tracker-scale-v1";
+const LIVE_TRACKER_SCALE_MIN = .8, LIVE_TRACKER_SCALE_MAX = 2.5;
+let liveTrackerScale = 1;
+try {
+  const saved = Number(localStorage.getItem(LIVE_TRACKER_SCALE_STORE));
+  if (saved >= LIVE_TRACKER_SCALE_MIN && saved <= LIVE_TRACKER_SCALE_MAX) liveTrackerScale = saved;
+} catch (_) {}
+function setLiveTrackerScale(scale, persist = false) {
+  liveTrackerScale = Math.min(LIVE_TRACKER_SCALE_MAX,
+    Math.max(LIVE_TRACKER_SCALE_MIN, Math.round(scale * 100) / 100));
+  document.getElementById("livepause")?.style.setProperty("--lt-scale", String(liveTrackerScale));
+  if (persist) {
+    try { localStorage.setItem(LIVE_TRACKER_SCALE_STORE, String(liveTrackerScale)); } catch (_) {}
+  }
+  placeLivePause();
+}
+(function bindLiveTrackerGrip() {
+  const grip = document.querySelector("#livetracker .lt-grip");
+  if (!grip) return;
+  setLiveTrackerScale(liveTrackerScale);
+  let drag = null;
+  grip.addEventListener("pointerdown", event => {
+    if (event.button !== 0 && event.pointerType !== "touch") return;
+    event.preventDefault();
+    event.stopPropagation();
+    const width = document.getElementById("livetracker").getBoundingClientRect().width || 1;
+    drag = {id: event.pointerId, x: event.clientX, y: event.clientY, width, scale: liveTrackerScale};
+    try { grip.setPointerCapture(event.pointerId); } catch (_) {}
+    document.body.classList.add("live-tracker-resizing");
+  });
+  grip.addEventListener("pointermove", event => {
+    if (!drag || event.pointerId !== drag.id) return;
+    // Left and up both grow it — whichever the hand moved further — because
+    // the box is anchored at its bottom-right corner.
+    const left = drag.x - event.clientX, up = drag.y - event.clientY;
+    const grow = Math.abs(left) >= Math.abs(up) ? left : up;
+    setLiveTrackerScale(drag.scale * (drag.width + grow) / drag.width);
+  });
+  const finish = event => {
+    if (!drag || event.pointerId !== drag.id) return;
+    drag = null;
+    document.body.classList.remove("live-tracker-resizing");
+    setLiveTrackerScale(liveTrackerScale, true);
+  };
+  grip.addEventListener("pointerup", finish);
+  grip.addEventListener("pointercancel", finish);
+  grip.addEventListener("dblclick", () => setLiveTrackerScale(1, true));
+  grip.addEventListener("keydown", event => {
+    const step = event.shiftKey ? .2 : .05;
+    const delta = {ArrowLeft: step, ArrowUp: step, ArrowRight: -step, ArrowDown: -step}[event.key];
+    if (delta === undefined) return;
+    event.preventDefault();
+    setLiveTrackerScale(liveTrackerScale + delta, true);
+  });
+})();
 function paintLivePause() {
   const box = document.getElementById("livepause");
   if (!box) return;
@@ -6603,41 +6663,43 @@ function paintLivePause() {
     (ending || (!livePause.newGameArmed && asked !== livePause.held)));
   placeLivePause();
 }
-// The controls stand stacked in the map's bottom-left corner unless something
-// else does: the map tools sit there on most layouts, the sky bar unfolds above
-// them, and the world minimap can be moved or dragged there. So: the corner if
-// it is free, else as little above the corner as clears what holds it, else
-// beside it. Rerun on every paint (the 2 s poll) and on resize, which follows
-// a dragged minimap or an unfolded bar.
+// The controls stand in the map's bottom-right corner unless something else
+// does: the world minimap is anchored there on most layouts with the victory
+// tracker in the column above it, the map tools and the sky bar can reach that
+// far, and the minimap can be dragged anywhere. So: the corner if it is free,
+// else as far right on the bottom row as is free (left of the minimap), else
+// as little above the corner as clears what holds it. Rerun on every paint
+// (the 2 s poll), on resize, and as the research box is resized.
 function placeLivePause() {
   const box = document.getElementById("livepause");
   if (!box || box.hidden || !box.offsetParent) return;
-  box.style.left = "";
+  box.style.right = "";
   box.style.bottom = "";
   const frame = box.offsetParent.getBoundingClientRect();
   const home = box.getBoundingClientRect();
-  const edge = Math.max(0, home.left - frame.left);
+  const edge = Math.max(0, frame.right - home.right);
   const gap = 8;
-  const obstacles = [...document.querySelectorAll("#maparea .minimap-frame, #zoomctl-main, #skynav")]
+  const obstacles = [...document.querySelectorAll(
+    "#maparea .minimap-frame, #victoryhud, #zoomctl-main, #skynav")]
     .filter((el) => el.getClientRects().length > 0)
     .map((el) => el.getBoundingClientRect())
     .filter((r) => r.width > 0 && r.height > 0);
-  const blocked = ([left, bottom]) => {
-    const r = {left: frame.left + left, bottom: frame.bottom - bottom};
-    r.right = r.left + home.width;
+  const blocked = ([right, bottom]) => {
+    const r = {right: frame.right - right, bottom: frame.bottom - bottom};
+    r.left = r.right - home.width;
     r.top = r.bottom - home.height;
-    if (r.right > frame.right || r.top < frame.top) return true;
+    if (r.left < frame.left || r.top < frame.top) return true;
     return obstacles.some((o) =>
       o.left < r.right && o.right > r.left && o.top < r.bottom && o.bottom > r.top);
   };
   const spots = [[edge, edge]];
   for (const o of obstacles) {
+    spots.push([Math.ceil(frame.right - o.left + gap), edge]);
     spots.push([edge, Math.ceil(frame.bottom - o.top + gap)]);
-    spots.push([Math.ceil(o.right - frame.left + gap), edge]);
   }
-  spots.sort((a, b) => a[0] - b[0] || a[1] - b[1]);
-  const [left, bottom] = spots.find((spot) => !blocked(spot)) ?? [edge, edge];
-  if (left !== edge) box.style.left = `${left}px`;
+  spots.sort((a, b) => a[1] - b[1] || a[0] - b[0]);
+  const [right, bottom] = spots.find((spot) => !blocked(spot)) ?? [edge, edge];
+  if (right !== edge) box.style.right = `${right}px`;
   if (bottom !== edge) box.style.bottom = `${bottom}px`;
 }
 window.addEventListener("resize", placeLivePause);
