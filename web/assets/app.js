@@ -24212,6 +24212,13 @@ function drawPlayerHud() {
   // relationship-to-me meaning supplied by `at_war_with_me`.
   const activeWarPlayers = SPEC && !Number.isInteger(state.view_player)
     ? activeWarPlayerIds() : null;
+  // `at_war_with_me` is never true of the seat it is measured from, so that
+  // seat's own row stayed unmarked through every war it fought. It is at war
+  // while anyone but the barbarians — who are at war with everybody — is at
+  // war with it.
+  const viewSeat = Number.isInteger(state.player) ? state.player : null;
+  const viewSeatAtWar = !activeWarPlayers && viewSeat !== null && state.players.some(other =>
+    other.id !== viewSeat && other.alive && !other.is_barbarian && other.at_war_with_me);
   // Rank remains the score standing even when the visible rows are sorted by
   // another fact, so a #2 badge never starts meaning "second alphabetically".
   const scoreRankedMajors = state.players
@@ -24308,7 +24315,8 @@ function drawPlayerHud() {
           (capitalHolder ? ` — now held by ${capitalHolder.civ}` : " — now in other hands")
         : `View ${p.civ}'s empire from its capital, ${capital.name}`;
       const alliance = p.alliance;
-      const atWar = activeWarPlayers ? activeWarPlayers.has(p.id) : p.at_war_with_me;
+      const atWar = activeWarPlayers ? activeWarPlayers.has(p.id)
+        : p.id === viewSeat ? viewSeatAtWar : p.at_war_with_me;
       const strategy = p.ai_strategy || "";
       const strategyText = strategy ? `${titleCase(strategy)} plan` : "";
       const relation = !p.alive ? "Defeated"

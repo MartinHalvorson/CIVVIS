@@ -7828,7 +7828,8 @@ fn browser_lets_the_turn_plate_widen_into_two_columns() {
 /// paint green state frames that compete with the red danger signal. The
 /// omniscient spectator uses the public conflict ledger so both sides —
 /// including active allied parties — stay red regardless of whose turn it
-/// is, while a played or Watch-as view remains relative to that seat.
+/// is, while a played or Watch-as view remains relative to that seat — and
+/// that seat's own row is red while anyone is at war with it.
 #[test]
 fn browser_player_rows_use_relationship_color_only_for_active_wars() {
     assert!(!EMBEDDED_INDEX.contains(".diplomacy-card.allied"));
@@ -7841,8 +7842,20 @@ fn browser_player_rows_use_relationship_color_only_for_active_wars() {
     ));
     assert!(EMBEDDED_INDEX
         .contains("const activeWarPlayers = SPEC && !Number.isInteger(state.view_player)"));
-    assert!(EMBEDDED_INDEX.contains(
+    assert!(!EMBEDDED_INDEX.contains(
         "const atWar = activeWarPlayers ? activeWarPlayers.has(p.id) : p.at_war_with_me;"
+    ));
+    // `at_war_with_me` is measured from the viewing seat and is never true of
+    // that seat itself, so its own row reads its wars off everyone else's
+    // (barbarians excepted: they are at war with everybody). The live Civ VI
+    // mirror watches as our seat, and its row stayed unmarked through a war.
+    assert!(EMBEDDED_INDEX
+        .contains("const viewSeat = Number.isInteger(state.player) ? state.player : null;"));
+    assert!(EMBEDDED_INDEX.contains(
+        "other.id !== viewSeat && other.alive && !other.is_barbarian && other.at_war_with_me);"
+    ));
+    assert!(EMBEDDED_INDEX.contains(
+        ": p.id === viewSeat ? viewSeatAtWar : p.at_war_with_me;"
     ));
     assert!(EMBEDDED_INDEX.contains(
         "const stateClass = `${atWar ? \"at-war\" : \"\"} ${p.alive ? \"\" : \"dead\"}`;"
