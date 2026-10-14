@@ -7706,6 +7706,17 @@ impl AdvancedAi {
         self.racer_keeps_the_spies = false;
     }
 
+    /// Opt-in gene `capital-walls-before-the-surprise`; see
+    /// `advanced/capital_walls_before_the_surprise.rs`.
+    pub fn enable_capital_walls_before_the_surprise(&mut self) {
+        self.capital_walls_before_the_surprise = true;
+    }
+
+    /// The twin of `enable_capital_walls_before_the_surprise`.
+    pub fn disable_capital_walls_before_the_surprise(&mut self) {
+        self.capital_walls_before_the_surprise = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

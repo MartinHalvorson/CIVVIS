@@ -6260,6 +6260,15 @@ pub struct AdvancedAi {
     /// from the win is a Domination counter clock and opens a second front at
     /// the declaration edge. See `advanced/dvp_leader_front.rs`.
     dvp_leader_is_the_front: bool,
+    /// `capital-walls-before-the-surprise`: while a met major at peace with
+    /// twice our power has had a soldier within eight tiles of the original
+    /// capital in the last ten turns, Masonry and the capital's Walls; a
+    /// defender while two stand within six and the garrison is short. See
+    /// `advanced/capital_walls_before_the_surprise.rs`. Off by default.
+    capital_walls_before_the_surprise: bool,
+    /// The turn a watched major's soldier was last seen near the original
+    /// capital, by owner, under `capital-walls-before-the-surprise`.
+    capital_watch_sightings: BTreeMap<usize, u32>,
     // ---- append: e-f ------------------------------------------------
     /// `embassy-finds-the-capital`: on a Domination plan with Diplomatic
     /// Service known, one Resident Embassy a turn goes to a met rival at
@@ -9575,6 +9584,11 @@ mod worked_production;
 /// queue ahead of the routine claims. See `advanced/worked_backlog_claim.rs`.
 mod worked_backlog_claim;
 
+/// Masonry, the capital's Walls and a bought defender before a stronger
+/// neighbour at peace can surprise the original capital. Opt-in gene
+/// `capital-walls-before-the-surprise`. See
+/// `advanced/capital_walls_before_the_surprise.rs`.
+mod capital_walls_before_the_surprise;
 /// Commitments: every multi-turn decision — a settle site, a Builder's tile,
 /// the appointed war's objective — observed at the turn boundary and tracked
 /// to its ending, with what became of it counted. Infrastructure, not a
@@ -10571,6 +10585,8 @@ impl AdvancedAi {
             commercial_hub_in_the_strategic_queue: false,
             congress_guards_the_leader: false,
             dvp_leader_is_the_front: false,
+            capital_walls_before_the_surprise: false,
+            capital_watch_sightings: BTreeMap::new(),
             // ---- append: e-f ----------------------------------------
             embassy_finds_the_capital: false,
             embassy_capital_asks: BTreeMap::new(),
@@ -10983,6 +10999,9 @@ impl AdvancedAi {
         {
             self.remember_visible_hostiles(g, pid);
         }
+        // `capital-walls-before-the-surprise`: the watched majors' soldiers
+        // near the original capital, from the same turn-start frame.
+        self.remember_capital_watch_sightings(g, pid);
         if !self.live_formationless_settler_shadow || self.turn_start_hostiles_turn == Some(g.turn)
         {
             return;
@@ -18165,6 +18184,15 @@ impl AdvancedAi {
             // above it passes. See the arm below.
             let siege_tier = std::cell::OnceCell::new();
             let forced_goal = match objective {
+                // `capital-walls-before-the-surprise`: Masonry for the capital
+                // goes ahead of the opening Archery too. 040735Z's slot opened
+                // at turn 11 to eight turns of Archery, which left the walls
+                // at about turn 31 against a capture at 29.
+                _ if defensive_walls_goal.is_some()
+                    && self.capital_walls_research_threat(g, pid).is_some() =>
+                {
+                    defensive_walls_goal.as_deref()
+                }
                 _ if opening_archery_goal.is_some() => opening_archery_goal.as_deref(),
                 _ if defensive_walls_goal.is_some() => defensive_walls_goal.as_deref(),
                 _ if conversion_upgrade_goal.is_some() => conversion_upgrade_goal,
@@ -18525,7 +18553,15 @@ impl AdvancedAi {
                             if opening_archery_goal.as_deref() == Some(goal) {
                                 format!("the first range-two defender is needed against nearby barbarians; unlock {} before the economic beeline", plain(goal))
                             } else if defensive_walls_goal.as_deref() == Some(goal) {
-                                "unlock Ancient Walls for wartime recovery or a stronger hostile approaching an exposed city before the longer army upgrade path".to_string()
+                                // `capital-walls-before-the-surprise` names its own reason.
+                                match self.capital_walls_research_threat(g, pid) {
+                                    Some((rival, ratio)) => format!(
+                                        "capital-walls-before-the-surprise: unlock Ancient Walls for the capital; {} fields {ratio:.1}x our power and its soldiers stood within {} tiles",
+                                        g.players[rival].civ,
+                                        capital_walls_before_the_surprise::CAPITAL_WATCH_TILES
+                                    ),
+                                    None => "unlock Ancient Walls for wartime recovery or a stronger hostile approaching an exposed city before the longer army upgrade path".to_string(),
+                                }
                             } else if barbarian_military_goal.as_deref() == Some(goal) {
                                 format!(
                                     "the {step} step toward {}, needed to catch a nearby barbarian army",
@@ -31452,6 +31488,11 @@ impl AdvancedAi {
             let deterrence_commitment = committed
                 .as_ref()
                 .is_some_and(|(_, item)| self.deterrence_unit_holds(g, pid, item));
+            // `capital-walls-before-the-surprise`: the capital's claimed
+            // Walls finish while they are armed.
+            let capital_walls_commitment = committed
+                .as_ref()
+                .is_some_and(|(_, item)| self.capital_walls_hold(g, pid, cid, item));
             // `granary-claims-the-bound-queue`: the claimed Granary finishes
             // while the city is still housing-bound.
             let bound_granary_commitment = committed
@@ -31511,6 +31552,7 @@ impl AdvancedAi {
                     || race_shrine_commitment
                     || early_settler_commitment
                     || deterrence_commitment
+                    || capital_walls_commitment
                     || bound_granary_commitment
                     || idle_route_trader_commitment
                     || backlog_builder_commitment
@@ -31530,6 +31572,7 @@ impl AdvancedAi {
                     || race_shrine_commitment
                     || early_settler_commitment
                     || deterrence_commitment
+                    || capital_walls_commitment
                     || bound_granary_commitment
                     || idle_route_trader_commitment
                     || backlog_builder_commitment
@@ -47901,8 +47944,12 @@ impl AdvancedAi {
         // peaceful purchase portfolio can spend the treasury, put one body in
         // the city nearest the declarer. An already executed city-saving
         // purchase owns this lane for the turn.
-        let surprise_defense_purchase =
-            !emergency_city_defense && self.surprise_defense_purchase(g, pid);
+        // `capital-walls-before-the-surprise`: a defender bought into the
+        // original capital while a stronger neighbour at peace stands at its
+        // door owns the turn the same way. See
+        // `advanced/capital_walls_before_the_surprise.rs`.
+        let surprise_defense_purchase = !emergency_city_defense
+            && (self.surprise_defense_purchase(g, pid) || self.capital_garrison_purchase(g, pid));
         // Once a city-saving purchase has had its one action, the turn a
         // breakthrough arrives still upgrades appointed predecessors before
         // Great Person patronage, ordinary purchases, diplomacy, or movement.
@@ -48313,6 +48360,12 @@ impl AdvancedAi {
             }
         }
         Self::surge_release_field_slot(g, held_field_slot);
+        // `capital-walls-before-the-surprise`: the original capital's Walls,
+        // or its defender, after every ordinary writer (the opening book and
+        // both governors), before the paused finishes and the defence
+        // handoffs below. Exact no-op while the gene is off. See
+        // `advanced/capital_walls_before_the_surprise.rs`.
+        self.claim_capital_walls_before_the_surprise(g, pid);
         // `paused-district-finishes`: after every ordinary writer, before the
         // declaration response and the defence handoffs below.
         self.claim_paused_district_finishes(g, pid);

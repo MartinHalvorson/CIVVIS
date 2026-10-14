@@ -3877,6 +3877,14 @@ pub const GENES: &[Gene] = &[
     // a racer's city it runs Disrupt Rocketry or a safe operation. See
     // `advanced/racer_keeps_the_spies.rs`.
     Gene { tag: "racer-keeps-the-spies", field: "racer_keeps_the_spies", kind: Kind::OptIn, enable: AdvancedAi::enable_racer_keeps_the_spies, disable: AdvancedAi::disable_racer_keeps_the_spies },
+    // `capital-walls-before-the-surprise`: a met major at peace with twice
+    // our power and a soldier within eight tiles of the original capital in
+    // the last ten turns puts Masonry next and the capital on its Walls; two
+    // soldiers within six buy a defender above the upkeep reserve. 10-13/14:
+    // 28 of 183 Immortal runs lost the capital before turn 100, walls up in 4;
+    // the trigger fired before 27 of them, walls in time for 20, and in 75 of
+    // the 149 that held. See `advanced/capital_walls_before_the_surprise.rs`.
+    Gene { tag: "capital-walls-before-the-surprise", field: "capital_walls_before_the_surprise", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_walls_before_the_surprise, disable: AdvancedAi::disable_capital_walls_before_the_surprise },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -12,6 +12,16 @@ impl AdvancedAi {
         plan: &StrategicPlan,
     ) -> Option<Name> {
         let masonry = crate::name!("masonry");
+        // `capital-walls-before-the-surprise`: a stronger neighbour at peace
+        // whose soldiers stood near the unwalled original capital unlocks the
+        // walls before it declares, on any victory target; the wartime
+        // triggers below come too late for a 2-4 turn capture. See
+        // `advanced/capital_walls_before_the_surprise.rs`.
+        if !g.players[pid].techs.contains(&masonry)
+            && self.capital_walls_research_threat(g, pid).is_some()
+        {
+            return Some(masonry);
+        }
         let target = self.active_victory_target(g);
         if !self.victory_planning
             || !matches!(
