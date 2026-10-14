@@ -223,6 +223,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `builders-before-the-lent-floor` | off (unmeasured) | Opt-in gene `builders-before-the-lent-floor`; see `Self::builders_before_the_lent_floor`. | 1 \| 1 |
 | `builders-cover-the-worked-backlog` | off (unmeasured) | Opt-in gene `builders-cover-the-worked-backlog`; see `BasicAi::builders_cover_the_worked_backlog`. | 1 \| 1 |
 | `builders-improve-the-worked-for-production` | off (unmeasured) | Opt-in gene `builders-improve-the-worked-for-production`; see `advanced/worked_production.rs`. | 1 \| 1 |
+| `builders-route-around-mountains` | off (unmeasured) | Opt-in gene `builders-route-around-mountains`; see `AdvancedAi::builders_route_around_mountains`. | 1 \| 1 |
 | `builders-work-through-raiders` | off (unmeasured) | `builders-work-through-raiders`: the live capture lessons' reach holds keep Settlers only. | 1 \| 1 |
 | `campaign-weighs-the-tourism-leader` | off (unmeasured) | Opt-in gene `campaign-weighs-the-tourism-leader`; see `Self::campaign_weighs_the_tourism_leader`. | 1 \| 1 |
 | `campus-before-harbor` | off (unmeasured) | `campus-before-harbor`: see `BasicAi::campus_before_harbor`. | — \| 2 |

@@ -3829,6 +3829,14 @@ pub const GENES: &[Gene] = &[
     // Jenne (civvis-20261013T184508Z) held turns 111-117 with seven to nine
     // units at 23.7-65.0 turns and its ring 0/6. See `train_seals_the_ring`.
     Gene { tag: "siege-budget-projects-the-seal", field: "siege_budget_projects_the_seal", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_budget_projects_the_seal, disable: AdvancedAi::disable_siege_budget_projects_the_seal },
+    // Live Immortal 220550Z (civvis-20261013T220550Z), production twice the
+    // second rival's, waited on oil for its Artillery from turn 126 while its
+    // one owned oil, offshore at (42, 20), stood unimproved: from Professional
+    // Sports at turn 148 the board routed each Builder sent to it across the
+    // mountain at (42, 19), the host refused all 13 moves, and the job was
+    // retired as forgotten three times. No Builder of ours stood on a
+    // mountain in 984 Builder-turns after the unlock over two games.
+    Gene { tag: "builders-route-around-mountains", field: "builders_route_around_mountains", kind: Kind::OptIn, enable: AdvancedAi::enable_builders_route_around_mountains, disable: AdvancedAi::disable_builders_route_around_mountains },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

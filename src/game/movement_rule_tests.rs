@@ -811,3 +811,37 @@ fn peaceful_transit_does_not_mask_a_hostile_occupant() {
     g.begin_turn(0);
     assert!(!g.can_pass(mover, start, middle));
 }
+
+/// `builders-route-around-mountains`: on the native board a Builder whose
+/// empire has the Ski Resort's civic may stand on a mountain. The host's move
+/// pathing never puts one there, so under the seat's observed rule the board
+/// closes mountains to Builders and routes them round; a Military Engineer
+/// and every other rule keep their passage.
+#[test]
+fn a_builder_stays_off_mountains_under_the_observed_rule() {
+    let (mut g, start, _) = plain_board(6_109);
+    let (middle, beyond) = straight_line(&g, start);
+    g.map.tiles.get_mut(&middle).unwrap().terrain = crate::name!("mountain");
+    g.players[0]
+        .civics
+        .insert(crate::name!("professional_sports"));
+    let builder = g.spawn_unit("builder", 0, start);
+    g.begin_turn(0);
+    assert!(
+        g.traversal_class(builder).mountain,
+        "native: the unlock opens mountains"
+    );
+    assert!(g.can_move(builder, middle));
+
+    g.observed_builders_avoid_mountains = true;
+    assert!(!g.traversal_class(builder).mountain);
+    assert!(
+        !g.can_move(builder, middle),
+        "the host never moves a Builder onto a mountain"
+    );
+    let step = g
+        .route_step(builder, beyond, 0)
+        .expect("a route round the mountain");
+    assert_ne!(step, middle, "the route goes round");
+    assert!(g.route_distance(builder, beyond, 0).is_some());
+}

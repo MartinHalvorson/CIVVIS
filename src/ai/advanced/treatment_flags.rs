@@ -7629,6 +7629,17 @@ impl AdvancedAi {
         self.siege_budget_projects_the_seal = false;
     }
 
+    /// Opt-in gene `builders-route-around-mountains`; see
+    /// `AdvancedAi::builders_route_around_mountains`.
+    pub fn enable_builders_route_around_mountains(&mut self) {
+        self.builders_route_around_mountains = true;
+    }
+
+    /// The twin of `enable_builders_route_around_mountains`.
+    pub fn disable_builders_route_around_mountains(&mut self) {
+        self.builders_route_around_mountains = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
