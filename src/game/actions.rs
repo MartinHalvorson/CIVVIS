@@ -2366,6 +2366,7 @@ impl Game {
             Action::ChooseDedication { dedication } => self.do_choose_dedication(pid, dedication),
             Action::Fortify { unit } => self.do_fortify(pid, *unit),
             Action::UpgradeUnit { unit } => self.do_upgrade_unit(pid, *unit),
+            Action::DisbandUnit { unit } => self.do_disband_unit(pid, *unit),
             Action::Promote { unit, promotion } => self.do_promote(pid, *unit, promotion),
             Action::Upgrade { unit, to } => self.do_upgrade(pid, *unit, to),
             Action::CombineUnits { unit, with } => self.do_combine_units(pid, *unit, *with),
@@ -6992,6 +6993,15 @@ impl Game {
         if !city.owned_tiles.contains(&pos) {
             city.owned_tiles.push(pos);
         }
+        Ok(())
+    }
+
+    /// Remove one of `pid`'s own units, as the host's Delete button does.
+    pub(super) fn do_disband_unit(&mut self, pid: usize, unit: u32) -> Result<(), String> {
+        if self.units.get(&unit).is_none_or(|u| u.owner != pid) {
+            return Err("not your unit".into());
+        }
+        self.remove_unit(unit);
         Ok(())
     }
 

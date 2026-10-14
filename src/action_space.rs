@@ -27,11 +27,11 @@ use crate::Pos;
 /// Every `Action` discriminant, in a stable order. Appending is safe;
 /// reordering invalidates trained policies.
 ///
-/// Packed by hand and kept that way: eighty-six short strings one to a line
-/// is eighty-six lines of nothing, and every append would rewrite the block.
+/// Packed by hand and kept that way: eighty-eight short strings one to a line
+/// is eighty-eight lines of nothing, and every append would rewrite the block.
 #[rustfmt::skip]
 #[cfg(feature = "closed-experiments")]
-pub const KINDS: [&str; 87] = [
+pub const KINDS: [&str; 88] = [
     "move", "move_to", "attack", "ranged", "found_city", "improve",
     "found_corporation", "move_product", "contribute_project",
     "contribute_district", "perform_concert", "pillage", "repair_improvement",
@@ -52,7 +52,7 @@ pub const KINDS: [&str; 87] = [
     "liberate_city", "end_turn", "air_pillage", "priority_target", "upgrade",
     "build_railroad", "buy_plot", "send_delegation", "send_embassy",
     "propose_defensive_pact", "propose_joint_war", "request_promise", "demand_gold",
-    "aim_mass_driver", "mass_driver_strike", "swap", "district_strike",
+    "aim_mass_driver", "mass_driver_strike", "swap", "district_strike", "disband_unit",
 ];
 
 /// The original scalar action block. It is kept as an append-only prefix so
@@ -229,6 +229,7 @@ pub fn kind_name(action: &Action) -> &'static str {
         Action::ChooseDedication { .. } => "choose_dedication",
         Action::Fortify { .. } => "fortify",
         Action::UpgradeUnit { .. } => "upgrade_unit",
+        Action::DisbandUnit { .. } => "disband_unit",
         Action::Promote { .. } => "promote",
         Action::CombineUnits { .. } => "combine_units",
         Action::LinkUnits { .. } => "link_units",
@@ -298,6 +299,7 @@ pub fn target_tile(g: &Game, action: &Action) -> Option<Pos> {
         | Action::CoastalRaid { unit, .. }
         | Action::Fortify { unit }
         | Action::UpgradeUnit { unit }
+        | Action::DisbandUnit { unit }
         | Action::Promote { unit, .. }
         | Action::Spread { unit }
         | Action::BuildRailroad { unit }
@@ -623,6 +625,7 @@ pub fn acting_unit(action: &Action) -> Option<u32> {
         | Action::Upgrade { unit, .. }
         | Action::Fortify { unit }
         | Action::UpgradeUnit { unit }
+        | Action::DisbandUnit { unit }
         | Action::Promote { unit, .. }
         | Action::Spread { unit }
         | Action::PerformConcert { unit } => Some(*unit),

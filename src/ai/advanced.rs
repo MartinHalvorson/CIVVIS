@@ -5474,6 +5474,11 @@ pub struct AdvancedAi {
     /// the routine claims, the deterrent and the governor's rescoring. See
     /// `advanced/aqueduct_claims_the_capped_queue.rs`. Off by default.
     aqueduct_claims_the_capped_queue: bool,
+    /// `bankruptcy-exits-the-drain`: while the treasury holds less than one
+    /// turn of a negative income, gold cards first, an extra surplus sale, and
+    /// the cheapest units disbanded before the host's bankruptcy takes the
+    /// costliest. See `advanced/solvency.rs`. Off by default.
+    bankruptcy_exits_the_drain: bool,
     // ---- append: c-d ------------------------------------------------
     /// `city-under-fire-ranks-first`: a city of ours that lost health since
     /// the last assessment, or was struck within the last turn, with a
@@ -6290,6 +6295,9 @@ pub struct AdvancedAi {
     /// The turn a watched major's soldier was last seen near the original
     /// capital, by owner, under `capital-walls-before-the-surprise`.
     capital_watch_sightings: BTreeMap<usize, u32>,
+    /// The turn `bankruptcy-exits-the-drain` last slotted a gold card; the
+    /// disband waits that turn for the card's income.
+    drain_card_turn: std::cell::Cell<Option<u32>>,
     // ---- append: e-f ------------------------------------------------
     /// `faith-war-before-the-flip`: a defensive war (no siege, no staging) on
     /// a founding rival whose spreaders stand at our cities while our majority
@@ -8573,6 +8581,10 @@ pub struct AdvancedAi {
     /// lane the counter labels it with. See
     /// `advanced/science_suppression_pads.rs`.
     science_suppression_hits_the_pads: bool,
+    /// `solvent-or-hold`: while income is not positive, no Domination upgrade
+    /// that takes income below zero and no amenity or upkeep card traded
+    /// away. See `advanced/solvency.rs`. Off by default.
+    solvent_or_hold: bool,
     // ---- append: t-z ------------------------------------------------
     /// `war-target-prices-the-walls`: at peace, the Domination campaign names
     /// the rival whose capital our fielded siege guns take soonest. See
@@ -9752,6 +9764,9 @@ mod competitive_economy;
 /// asks for a Research Alliance, ranked by science, and feeds its level with
 /// routes. Opt-in gene `research-alliance-first`.
 mod research_alliance;
+/// `solvent-or-hold` and `bankruptcy-exits-the-drain`: the bankruptcy spiral's
+/// two opt-in genes. See `advanced/solvency.rs`.
+mod solvency;
 /// A unit the next blow could remove leaves the reach of whatever can
 /// strike it; a shooter or scout does not end the turn inside a raider's
 /// reach without a melee unit beside it. Opt-in gene `wounded-out-of-reach`.
@@ -10590,6 +10605,7 @@ impl AdvancedAi {
             amphibious_train: None,
             amphibious_refused: None,
             aqueduct_claims_the_capped_queue: false,
+            bankruptcy_exits_the_drain: false,
             // ---- append: c-d ----------------------------------------
             city_under_fire_ranks_first: false,
             closed_border_blocker_declares: false,
@@ -10743,6 +10759,7 @@ impl AdvancedAi {
             dvp_leader_is_the_front: false,
             capital_walls_before_the_surprise: false,
             capital_watch_sightings: BTreeMap::new(),
+            drain_card_turn: std::cell::Cell::new(None),
             // ---- append: e-f ----------------------------------------
             faith_war_before_the_flip: false,
             faith_war_before_the_flip_2: false,
@@ -11083,6 +11100,7 @@ impl AdvancedAi {
             science_denial_trains_spies: false,
             science_denial_refused_pads: BTreeMap::new(),
             science_suppression_hits_the_pads: false,
+            solvent_or_hold: false,
             // ---- append: t-z ----------------------------------------
             war_target_prices_the_walls: false,
             unwalled_city_spares_the_train: false,
@@ -20890,6 +20908,22 @@ impl AdvancedAi {
         if urban_planning_tail {
             desired.push("urban_planning");
         }
+        // `bankruptcy-exits-the-drain`: the gold cards that pay go first while
+        // the treasury holds less than one turn of the deficit. See
+        // `advanced/solvency.rs`.
+        let drain_cards = self.drain_gold_cards(g, pid);
+        if !drain_cards.is_empty() {
+            for (card, _) in drain_cards.iter().rev() {
+                desired.retain(|wanted| *wanted != *card);
+                desired.insert(0, card);
+            }
+            think!(self.journal(), Policies, Detail,
+                   "Gold cards first to leave the bankruptcy drain";
+                   "bankruptcy-exits-the-drain: {:.0} Gold at {:+.1} a turn; {}",
+                   g.players[pid].gold, g.players[pid].gold_per_turn,
+                   drain_cards.iter().map(|(card, gold)| format!("{} about {gold:.0}", plain(card)))
+                       .collect::<Vec<_>>().join(", "));
+        }
         let desired_set: HashSet<&str> = desired.iter().copied().collect();
         // If circumstances changed, remove a downside-bearing Dark Age card
         // immediately. Isolationism must not coexist with a live Settler.
@@ -20933,6 +20967,9 @@ impl AdvancedAi {
 
         let wanted = desired.len();
         let available: HashSet<Name> = g.available_policies(pid).into_iter().collect();
+        // `solvent-or-hold`: each card kept this pass, and the first card it
+        // kept out; journalled once after the pass.
+        let mut solvency_kept: BTreeMap<Name, &str> = BTreeMap::new();
         for (rank, card) in desired.iter().copied().enumerate() {
             if g.players[pid].policies.contains(&Name::new(card))
                 || !available.contains(&Name::new(card))
@@ -20956,6 +20993,9 @@ impl AdvancedAi {
                 think!(self.journal(), Policies, Decision, "Slotted {}", plain(card);
                        "priority {} of {wanted} for the {} plan, into a free slot",
                        rank + 1, objective.as_str());
+                if drain_cards.iter().any(|(gold_card, _)| *gold_card == card) {
+                    self.drain_card_turn.set(Some(g.turn));
+                }
                 continue;
             }
 
@@ -21021,6 +21061,21 @@ impl AdvancedAi {
                             )
                             && !culture_defense_cards.contains(&current.as_str());
                     }
+                    // `bankruptcy-exits-the-drain`: a drain gold card takes an
+                    // ordinary desired card's slot (100910Z t196-199 held
+                    // Merchant Confederation, about 45 Gold, behind conquest
+                    // cards); `solvent-or-hold` still guards amenity and upkeep
+                    // cards below.
+                    if drain_cards.iter().any(|(gold_card, _)| *gold_card == card)
+                        && !drain_cards
+                            .iter()
+                            .any(|(gold_card, _)| *gold_card == current.as_str())
+                        && !culture_defense_cards.contains(&current.as_str())
+                        && !nobel_peace_direct_favor_cards.contains(&current.as_str())
+                        && upgrade_card != Some(current.as_str())
+                    {
+                        return true;
+                    }
                     !desired_set.contains(current.as_str())
                         || self.domination_multiplier_reclaims_fallback(
                             g, card, current.as_str(), &unproductive_economic_cards,
@@ -21055,6 +21110,25 @@ impl AdvancedAi {
                 .filter(|current| Self::policy_swap_fits(g, pid, current, card))
                 .cloned()
                 .collect();
+            // `solvent-or-hold`: while income is not positive an amenity or
+            // upkeep card gives its slot only to a card of the same kind. See
+            // `advanced/solvency.rs`.
+            if self.solvency_guard(g, pid) {
+                let priced = protect_wartime_income.filter(|_| card == "economic_union");
+                let kept: Vec<Name> = replaceable
+                    .iter()
+                    .filter(|current| {
+                        self.solvency_keeps_card_priced(g, pid, current.as_str(), card, priced)
+                    })
+                    .cloned()
+                    .collect();
+                if !kept.is_empty() {
+                    replaceable.retain(|current| !kept.contains(current));
+                    for current in kept {
+                        solvency_kept.entry(current).or_insert(card);
+                    }
+                }
+            }
             replaceable.sort_by(|first, second| {
                 let key = |current: &str| {
                     let policy = &g.rules.policies[current];
@@ -21084,6 +21158,9 @@ impl AdvancedAi {
                 )
                 .is_ok()
                 {
+                    if drain_cards.iter().any(|(gold_card, _)| *gold_card == card) {
+                        self.drain_card_turn.set(Some(g.turn));
+                    }
                     if builder_window_card == Some(card) {
                         think!(self.journal(), Policies, Decision,
                                "Slotted {} over {}", plain(card), plain(&current);
@@ -21110,6 +21187,12 @@ impl AdvancedAi {
                 // reassessment can never silently empty a government.
                 let _ = g.apply(pid, &Action::SlotPolicy { policy: current });
             }
+        }
+        for (current, card) in solvency_kept {
+            think!(self.journal(), Policies, Decision,
+                   "Keeping {} while income is not positive", plain(&current);
+                   "solvent-or-hold: {:+.1} Gold a turn; {} would have taken its slot",
+                   g.players[pid].gold_per_turn, plain(card));
         }
     }
 
@@ -48599,6 +48682,9 @@ impl AdvancedAi {
             self.redirect_unsafe_city_queue_for_defense(g, pid, plan.threatened_city);
         let mut wall_breaker_claims = self.invested_wall_breaker_queues(g, pid, &plan);
         self.advanced_diplomacy(g, pid, &plan);
+        // `bankruptcy-exits-the-drain`: after diplomacy's ordinary trade,
+        // before production and movement. See `advanced/solvency.rs`.
+        self.exit_the_drain(g, pid);
         self.advanced_spies(g, pid, &plan);
         self.byzantium_tagma_production(g, pid, &plan);
 

@@ -3988,6 +3988,18 @@ pub const GENES: &[Gene] = &[
     // wants least (never a production, Builder or Settler card). See
     // `advanced/medina_quarter.rs`.
     Gene { tag: "medina-quarter-houses-the-districts", field: "medina_quarter_houses_the_districts", kind: Kind::OptIn, enable: AdvancedAi::enable_medina_quarter_houses_the_districts, disable: AdvancedAi::disable_medina_quarter_houses_the_districts },
+    // `solvent-or-hold`: while income is not positive, no Domination upgrade
+    // whose added upkeep takes income below zero (upkeep-reserve floor), and
+    // no amenity or upkeep card traded for another kind. 10-14 083713Z: unit
+    // bill 30 -> 70 on 24 -> 30 units t128-145 as the modernizer read only the
+    // treasury; Liberalism traded away while broke. See `advanced/solvency.rs`.
+    Gene { tag: "solvent-or-hold", field: "solvent_or_hold", kind: Kind::OptIn, enable: AdvancedAi::enable_solvent_or_hold, disable: AdvancedAi::disable_solvent_or_hold },
+    // `bankruptcy-exits-the-drain`: while the treasury holds less than one
+    // turn of a negative income, gold cards first, two extra surplus sales,
+    // then the cheapest units disbanded before the host takes the costliest.
+    // 10-14: the bankruptcy amenity drain (20-120) turned every city Unhappy
+    // in 083713Z and 100910Z. See `advanced/solvency.rs`.
+    Gene { tag: "bankruptcy-exits-the-drain", field: "bankruptcy_exits_the_drain", kind: Kind::OptIn, enable: AdvancedAi::enable_bankruptcy_exits_the_drain, disable: AdvancedAi::disable_bankruptcy_exits_the_drain },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

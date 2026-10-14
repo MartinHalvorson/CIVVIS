@@ -5232,6 +5232,12 @@ pub enum Action {
     UpgradeUnit {
         unit: u32,
     },
+    /// Disband one of our own units. The bridge sends the host
+    /// `UNITCOMMAND_DELETE`; `bankruptcy-exits-the-drain` uses it to choose
+    /// which units go before the host's bankruptcy takes the costliest.
+    DisbandUnit {
+        unit: u32,
+    },
     Pillage {
         unit: u32,
     },

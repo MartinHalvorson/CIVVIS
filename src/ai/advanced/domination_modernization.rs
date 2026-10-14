@@ -352,13 +352,25 @@ impl AdvancedAi {
         {
             self.strategic_policies(g, pid, self.policy_lane(g, pid, plan));
         }
-        let floor = 30.0 + (-g.players[pid].gold_per_turn).max(0.0);
+        let mut floor = 30.0 + (-g.players[pid].gold_per_turn).max(0.0);
+        // `solvent-or-hold`: the upkeep-reserve floor, and no upgrade whose
+        // added upkeep takes income below zero. See `advanced/solvency.rs`.
+        let solvency = self.solvent_or_hold;
+        if solvency {
+            floor = super::gold_and_cards::upgrade_floor_from(floor, g.unit_gold_maintenance(pid));
+        }
+        let mut income = g.players[pid].gold_per_turn;
+        let mut held = 0usize;
         loop {
             let best = self
                 .domination_upgrade_need(g, pid)
                 .into_iter()
                 .filter_map(|(uid, gain)| {
-                    let (_, gold, _) = g.unit_gold_upgrade_offer(pid, uid)?;
+                    let (target, gold, _) = g.unit_gold_upgrade_offer(pid, uid)?;
+                    let delta = Self::upgrade_upkeep_delta(g, uid, target);
+                    if solvency && delta > 0.0 && income - delta < 0.0 {
+                        return None;
+                    }
                     // `siege-train-upgrades-first`: the units of the train
                     // bound for the objective or an active siege come first,
                     // ranked as ever among themselves. See
@@ -377,12 +389,38 @@ impl AdvancedAi {
                         .then_with(|| b.2.cmp(&a.2))
                 });
             let Some((_, _, uid)) = best else { break };
+            let delta = g
+                .unit_gold_upgrade_offer(pid, uid)
+                .map_or(0.0, |(target, _, _)| {
+                    Self::upgrade_upkeep_delta(g, uid, target)
+                });
             if g.apply(pid, &Action::UpgradeUnit { unit: uid }).is_err() {
                 break;
             }
+            income -= delta;
             think!(self.journal(), Military, Decision,
                 "Modernizing a standing Domination unit";
                 "the named offensive needs stronger bodies before it can stage; keep {floor:.0} Gold for emergencies and current maintenance");
+        }
+        if solvency {
+            held = self
+                .domination_upgrade_need(g, pid)
+                .into_iter()
+                .filter(|(uid, _)| {
+                    g.unit_gold_upgrade_offer(pid, *uid)
+                        .is_some_and(|(target, gold, _)| {
+                            let delta = Self::upgrade_upkeep_delta(g, *uid, target);
+                            g.players[pid].gold - gold >= floor
+                                && delta > 0.0
+                                && income - delta < 0.0
+                        })
+                })
+                .count();
+        }
+        if held > 0 {
+            think!(self.journal(), Military, Decision,
+                "Holding {held} Domination upgrade(s) the income cannot carry";
+                "solvent-or-hold: income {income:+.1} a turn; each would add upkeep and take it below zero");
         }
     }
 }
