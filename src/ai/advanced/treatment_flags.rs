@@ -7828,6 +7828,26 @@ impl AdvancedAi {
         self.base.deck_reads_player_income = false;
     }
 
+    /// Opt-in gene `solvent-or-hold`; see `advanced/solvency.rs`.
+    pub fn enable_solvent_or_hold(&mut self) {
+        self.solvent_or_hold = true;
+    }
+
+    /// The twin of `enable_solvent_or_hold`.
+    pub fn disable_solvent_or_hold(&mut self) {
+        self.solvent_or_hold = false;
+    }
+
+    /// Opt-in gene `bankruptcy-exits-the-drain`; see `advanced/solvency.rs`.
+    pub fn enable_bankruptcy_exits_the_drain(&mut self) {
+        self.bankruptcy_exits_the_drain = true;
+    }
+
+    /// The twin of `enable_bankruptcy_exits_the_drain`.
+    pub fn disable_bankruptcy_exits_the_drain(&mut self) {
+        self.bankruptcy_exits_the_drain = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
