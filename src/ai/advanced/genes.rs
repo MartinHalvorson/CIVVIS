@@ -3912,6 +3912,10 @@ pub const GENES: &[Gene] = &[
     // committed capture the host never executed over a falling city resumes
     // its siege, stage and taker. See `advanced/phantom_capture.rs`.
     Gene { tag: "phantom-capture-keeps-the-siege", field: "phantom_capture_keeps_the_siege", kind: Kind::OptIn, enable: AdvancedAi::enable_phantom_capture_keeps_the_siege, disable: AdvancedAi::disable_phantom_capture_keeps_the_siege },
+    // No peace offered to, or accepted from, a faith's founder while we are its
+    // last holdout and a city of ours follows or is converting to it, unless a
+    // city of ours is falling. See `advanced/holdout_faith_war.rs`.
+    Gene { tag: "holdout-keeps-the-faith-war", field: "holdout_keeps_the_faith_war", kind: Kind::OptIn, enable: AdvancedAi::enable_holdout_keeps_the_faith_war, disable: AdvancedAi::disable_holdout_keeps_the_faith_war },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

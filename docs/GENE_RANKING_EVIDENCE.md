@@ -353,6 +353,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `guns-grind-the-walls` | off (unmeasured) | Opt-in gene `guns-grind-the-walls`; see `Self::guns_grind_the_walls`. | 1 \| 1 |
 | `guns-post-for-a-near-breach` | off (unmeasured) | Opt-in gene `guns-post-for-a-near-breach`; see `Self::guns_post_for_a_near_breach`. | 1 \| 1 |
 | `guns-stay-out-of-reach` | off (unmeasured) | Opt-in gene `guns-stay-out-of-reach`; see `Self::guns_stay_out_of_reach`. | 1 \| 1 |
+| `holdout-keeps-the-faith-war` | off (unmeasured) | Opt-in gene `holdout-keeps-the-faith-war`; see `advanced/holdout_faith_war.rs`. | 1 \| 1 |
 | `hostile-memory-3` | off (unmeasured) | Version three also revises stale sightings when their forecast area is fully visible, using only the unit facts recorded at observation. | 1 \| 3 |
 | `housing-bound-city-builds-its-granary` | off (unmeasured) | Opt-in gene `housing-bound-city-builds-its-granary`; see `BasicAi::housing_bound_city_builds_its_granary`. | 1 \| 1 |
 | `housing-cap-builds-the-aqueduct` | off (unmeasured) | Opt-in gene `housing-cap-builds-the-aqueduct`; see `BasicAi::housing_cap_builds_the_aqueduct`. | 1 \| 1 |
