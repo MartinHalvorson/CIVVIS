@@ -344,3 +344,45 @@ fn the_capital_hunt_does_not_take_a_bound_civilian_guard() {
     }));
     assert_eq!(ai.distance_scout_step(&mut g, 0, scout), None);
 }
+
+#[test]
+fn the_disabled_capital_hunt_keeps_the_generic_exploration_commitment() {
+    let (mut g, mut ai, scout, plan, _) = competing_scout_goals();
+    ai.disable_find_the_capital();
+    let generic = ai.base.explore_goal.borrow()[&scout].0;
+    let before = g.wdist(g.units[&scout].pos, generic);
+    ai.advanced_units(&mut g, 0, &plan);
+    assert!(g.wdist(g.units[&scout].pos, generic) < before);
+    assert!(ai
+        .objective_board()
+        .forces
+        .iter()
+        .all(|force| { !matches!(force.objective_key, ObjectiveKey::FindCapital(_)) }));
+}
+
+#[test]
+fn a_capital_lead_retires_when_its_ground_closes() {
+    let (mut g, mut ai, scout, plan, goal) = competing_scout_goals();
+    ai.board_rebuild_force_groups(&g, 0, &plan);
+    assert_eq!(ai.rival_lead_goal(&g, 0, scout), Some(goal));
+    g.at_war.clear();
+    assert_eq!(
+        ai.rival_lead_goal(&g, 0, scout),
+        None,
+        "the retained assignment cannot overrule closed borders"
+    );
+}
+
+#[test]
+fn a_capital_lead_respects_the_explorers_retired_goals() {
+    let (g, mut ai, scout, plan, goal) = competing_scout_goals();
+    ai.board_rebuild_force_groups(&g, 0, &plan);
+    assert_eq!(ai.rival_lead_goal(&g, 0, scout), Some(goal));
+    ai.base
+        .explore_dead
+        .borrow_mut()
+        .entry(scout)
+        .or_default()
+        .insert(goal, g.turn + 5);
+    assert_eq!(ai.rival_lead_goal(&g, 0, scout), None);
+}
