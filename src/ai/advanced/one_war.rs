@@ -2990,6 +2990,22 @@ impl AdvancedAi {
         }
         let front_state = self.one_war.as_ref()?;
         let front = front_state.target;
+        // See `launched_racer_finish` (`launched-racer-yields-the-capital`):
+        // the launched racer holding the capital that completes Domination
+        // opens beside the front at once -- the front's refusal, its prey and
+        // `front_capital_to_finish` wait on a clock this rival no longer
+        // keeps. `None` with the gene off.
+        if let Some(racer) = self
+            .launched_racer_finish(g, pid)
+            .map(|(rival, _)| rival)
+            .filter(|rival| {
+                *rival != front
+                    && !g.is_at_war(pid, *rival)
+                    && self.campaign_target_legal(g, pid, *rival)
+            })
+        {
+            return Some(racer);
+        }
         // See `capital_prey_beside_the_front`.
         if let Some(prey) = self.capital_prey_beside_the_front(g, pid, Some(front)).0 {
             return Some(prey);

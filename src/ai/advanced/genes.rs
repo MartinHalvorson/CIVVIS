@@ -3916,6 +3916,11 @@ pub const GENES: &[Gene] = &[
     // last holdout and a city of ours follows or is converting to it, unless a
     // city of ours is falling. See `advanced/holdout_faith_war.rs`.
     Gene { tag: "holdout-keeps-the-faith-war", field: "holdout_keeps_the_faith_war", kind: Kind::OptIn, enable: AdvancedAi::enable_holdout_keeps_the_faith_war, disable: AdvancedAi::disable_holdout_keeps_the_faith_war },
+    // A rival that has launched its Exoplanet Expedition and holds the city
+    // whose capture completes Domination: the second front at once, that city
+    // the objective at peace, and a declaration no major-war, treasury or
+    // staging hold delays. See `advanced/launched_racer.rs`.
+    Gene { tag: "launched-racer-yields-the-capital", field: "launched_racer_yields_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_launched_racer_yields_the_capital, disable: AdvancedAi::disable_launched_racer_yields_the_capital },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

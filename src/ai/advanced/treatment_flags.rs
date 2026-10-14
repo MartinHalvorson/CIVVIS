@@ -7750,6 +7750,17 @@ impl AdvancedAi {
         self.holdout_keeps_the_faith_war = false;
     }
 
+    /// Opt-in gene `launched-racer-yields-the-capital`; see
+    /// `advanced/launched_racer.rs`.
+    pub fn enable_launched_racer_yields_the_capital(&mut self) {
+        self.launched_racer_yields_the_capital = true;
+    }
+
+    /// The twin of `enable_launched_racer_yields_the_capital`.
+    pub fn disable_launched_racer_yields_the_capital(&mut self) {
+        self.launched_racer_yields_the_capital = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
