@@ -6863,6 +6863,12 @@ pub struct AdvancedAi {
     /// post and nothing of ours beside it to cross steps up behind the
     /// column instead of standing. See `AdvancedAi::column_queue_step`.
     gun_queues_behind_the_column: bool,
+    /// `gun-queue-follows-the-road`: on the no-route call the queue step
+    /// follows the router's road when its length to the post falls, not only
+    /// when the hex distance does, may land two tiles from a city that cannot
+    /// strike, and a gun short of moves for its next tile says so. See
+    /// `AdvancedAi::column_queue_step`.
+    gun_queue_follows_the_road: bool,
     /// `housing-cap-builds-the-aqueduct`: a city within one of its housing
     /// whose Granary stands builds its Aqueduct ahead of the economy steps.
     /// See `BasicAi::housing_cap_builds_the_aqueduct`.
@@ -10656,6 +10662,7 @@ impl AdvancedAi {
             // ---- append: g-k ----------------------------------------
             holy_city_guard: RefCell::new(holy_city_guard::HolyCityGuard::default()),
             gun_queues_behind_the_column: false,
+            gun_queue_follows_the_road: false,
             housing_cap_builds_the_aqueduct: false,
             growth_prices_the_farm: false,
             growth_prices_the_farm_2: false,

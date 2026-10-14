@@ -7709,6 +7709,17 @@ impl AdvancedAi {
         self.capital_walls_before_the_surprise = false;
     }
 
+    /// Opt-in gene `gun-queue-follows-the-road`; see
+    /// [`Self::gun_queue_follows_the_road`].
+    pub fn enable_gun_queue_follows_the_road(&mut self) {
+        self.gun_queue_follows_the_road = true;
+    }
+
+    /// The twin of `enable_gun_queue_follows_the_road`.
+    pub fn disable_gun_queue_follows_the_road(&mut self) {
+        self.gun_queue_follows_the_road = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

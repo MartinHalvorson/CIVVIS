@@ -23577,6 +23577,13 @@ local function onTeamVictory(team, victoryType, eventID)
 	emit("victory", {
 		turn = try(function() return Game.GetCurrentGameTurn(); end, -1),
 		team = team, victory = victoryType,
+		-- The integer is the host's `GameInfo.Victories` index; name it here
+		-- so every outcome row is self-describing without the start-of-game
+		-- `victory_types` table (3 = VICTORY_CULTURE on this install).
+		victory_type = try(function()
+			local row = GameInfo.Victories[victoryType];
+			return row ~= nil and row.VictoryType or nil;
+		end, nil),
 		local_player = pid, local_team = ourTeam,
 		won = (team == ourTeam),
 		score = try(function()
