@@ -11555,6 +11555,56 @@ fn the_civ6_endpoints_answer_on_any_host() {
     }
 }
 
+/// The live mirror's research box and its Pause / New game buttons stand
+/// in the map's lower-right corner, and the camera used to compose the
+/// followed front at the middle of the whole canvas — under the box. The
+/// operator (2026-10-14): "civvis should center the map on the open
+/// screen. the new tech/civics/policy list should close down the open
+/// screen area automatically". The box now trims the camera's focus (and
+/// the automatic frame's stage) by whichever edge leaves the most open
+/// ground, follows it as it shows, grows, moves or hides, and leaves the
+/// fitted canvas alone: the world still runs beneath it like the dock.
+#[test]
+fn the_camera_centres_in_the_ground_the_live_controls_leave_open() {
+    for piece in [
+        "function liveControlsBox(origin)",
+        "function openBesideBox(bounds, box)",
+        "{...bounds, right:Math.min(bounds.right, box.left)},",
+        "{...bounds, bottom:Math.min(bounds.bottom, box.top)},",
+        "return openBesideBox(uncoveredMapBox(origin, Math.max(1, MAPW), Math.max(1, MAPH)),\n                       liveControlsBox(origin));",
+        "({left, right, top, bottom} = openBesideBox({left, right, top, bottom},\n                                              liveControlsBox(cv.getBoundingClientRect())));",
+        "function followLiveControls()",
+        "if (element) new ResizeObserver(() => followLiveControls()).observe(element);",
+    ] {
+        assert!(
+            EMBEDDED_INDEX.contains(piece),
+            "the live controls' open ground is missing {piece}"
+        );
+    }
+    let place = EMBEDDED_INDEX
+        .split_once("function placeLivePause()")
+        .expect("the live controls' placement")
+        .1
+        .split_once("\nfunction ")
+        .expect("the end of the live controls' placement")
+        .0;
+    assert!(
+        place.contains("  followLiveControls();\n}"),
+        "a moved box must carry the camera's focus with it"
+    );
+    let uncovered = EMBEDDED_INDEX
+        .split_once("function uncoveredMapBox(origin, width, height)")
+        .expect("the uncovered-map measurement")
+        .1
+        .split_once("\nfunction ")
+        .expect("the end of the uncovered-map measurement")
+        .0;
+    assert!(
+        !uncovered.contains("livepause") && !uncovered.contains("liveControlsBox"),
+        "the fitted map must keep running beneath the floating live controls"
+    );
+}
+
 /// Diplomacy needs a complete player-facing action surface. The screen
 /// must retain both war/peace (including city-states) and every major-to-
 /// major relationship action, or a mechanic the engine and AI can use is
