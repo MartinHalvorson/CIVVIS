@@ -194,6 +194,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `amphibious-siege-train` | off (unmeasured) | A water-locked Domination siege objective's guns and escorts cross as one group. | — \| 2 |
 | `amphibious-siege-train-2` | off (unmeasured) | A water-locked siege's crossing fords a strait of one or two water tiles, locks its members, sails on water only and lands on a wider beach. | — \| 2 |
 | `aqueduct-claims-the-capped-queue` | off (unmeasured) | Opt-in gene `aqueduct-claims-the-capped-queue`; see `advanced/aqueduct_claims_the_capped_queue.rs`. | 1 \| 1 |
+| `astrology-before-the-second-city` | off (unmeasured) | Opt-in gene `astrology-before-the-second-city`; see `advanced/astrology_before_the_second_city.rs`. | 1 \| 1 |
 | `backlog-builder-takes-the-queue` | off (unmeasured) | Opt-in gene `backlog-builder-takes-the-queue`; see `advanced/backlog_builder_takes_the_queue.rs`. | 1 \| 1 |
 | `beeline-orders-by-value` | off (unmeasured) | `beeline-orders-by-value`: a forced research or civic goal walks its prerequisites by value, not by printed price. | 1 \| 1 |
 | `befriend-the-strongest` | off (unmeasured) | `befriend-the-strongest`: offer a friendship-only deal to the strongest neighbour at peace. | 1 \| 1 |
@@ -407,6 +408,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `prophet-race-earns-its-points` | off (unmeasured) | Opt-in gene `prophet-race-earns-its-points`; see `Self::reserve_race_shrine` and `Self::race_wants_revelation`. | 1 \| 1 |
 | `prophet-race-takes-a-district-slot` | off (unmeasured) | Opt-in gene `prophet-race-takes-a-district-slot`; see `Self::prophet_race_takes_a_district_slot`. | — \| 2 |
 | `prophet-race-takes-a-district-slot-2` | off (unmeasured) | Opt-in gene `prophet-race-takes-a-district-slot-2`; see `Self::prophet_race_takes_a_district_slot_2`. | — \| 2 |
+| `prophet-race-takes-divine-spark` | off (unmeasured) | Opt-in gene `prophet-race-takes-divine-spark`; see `advanced/astrology_before_the_second_city.rs`. | 1 \| 1 |
 | `purchases-keep-the-upkeep-reserve` | off (unmeasured) | Opt-in gene `purchases-keep-the-upkeep-reserve`; see `AdvancedAi::purchases_keep_the_upkeep_reserve`. | 1 \| 1 |
 | `racer-blocker-declares` | off (unmeasured) | Opt-in gene `racer-blocker-declares`; see `advanced/silent_counter.rs`. | 1 \| 1 |
 | `racer-keeps-the-spies` | off (unmeasured) | Opt-in gene `racer-keeps-the-spies`; see `AdvancedAi::racer_keeps_the_spies`. | 1 \| 1 |

@@ -3928,6 +3928,17 @@ pub const GENES: &[Gene] = &[
     // no held siege march, aimed at its city on the road. See
     // `advanced/silent_counter.rs`.
     Gene { tag: "racer-blocker-declares", field: "racer_blocker_declares", kind: Kind::OptIn, enable: AdvancedAi::enable_racer_blocker_declares, disable: AdvancedAi::disable_racer_blocker_declares },
+    // A faithless seat loses the Prophet race to the 2-city floor: Astrology
+    // waits for the second city and lands at t24-34, after the third Prophet
+    // went at t31-44. The lone capital researches it once the opening techs
+    // are in; the Holy Site still waits for the second city. See
+    // `advanced/astrology_before_the_second_city.rs`.
+    Gene { tag: "astrology-before-the-second-city", field: "astrology_before_the_second_city", kind: Kind::OptIn, enable: AdvancedAi::enable_astrology_before_the_second_city, disable: AdvancedAi::disable_astrology_before_the_second_city },
+    // The race's other cheap lever: Divine Spark (+1 Prophet point a turn
+    // on every Holy Site) ranks behind Religious Settlements and ahead of
+    // Fertility Rites while the seat runs the race. See
+    // `advanced/astrology_before_the_second_city.rs`.
+    Gene { tag: "prophet-race-takes-divine-spark", field: "prophet_race_takes_divine_spark", kind: Kind::OptIn, enable: AdvancedAi::enable_prophet_race_takes_divine_spark, disable: AdvancedAi::disable_prophet_race_takes_divine_spark },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
