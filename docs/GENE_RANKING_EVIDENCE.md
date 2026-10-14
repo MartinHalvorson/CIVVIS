@@ -340,6 +340,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `industry-in-the-district-list` | off (unmeasured) | The Industrial Zone in the delegated governor's district list; see `BasicAi::industry_in_the_district_list`. | 1 \| 1 |
 | `invest-keeps-its-cavalry` | off (unmeasured) | Opt-in gene `invest-keeps-its-cavalry`; see `Self::invest_keeps_its_cavalry`. | 1 \| 1 |
 | `last-capital-war-kept` | off (unmeasured) | Opt-in gene `last-capital-war-kept`; see `Self::last_capital_war_kept`. | 1 \| 1 |
+| `launched-racer-yields-the-capital` | off (unmeasured) | Opt-in gene `launched-racer-yields-the-capital`; see `advanced/launched_racer.rs`. | 1 \| 1 |
 | `launcher-war-ignores-the-edge` | off (unmeasured) | Enable `launcher-war-ignores-the-edge`. | 1 \| 1 |
 | `liberation-funds-the-congress` | off (unmeasured) | Opt-in gene `liberation-funds-the-congress`; see `Self::liberation_funds_the_congress`. | 1 \| 1 |
 | `long-road-names-the-blocker` | off (unmeasured) | Opt-in gene `long-road-names-the-blocker`; see `Self::long_road_names_the_blocker`. | 1 \| 1 |

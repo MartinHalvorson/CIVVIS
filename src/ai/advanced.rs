@@ -7114,6 +7114,12 @@ pub struct AdvancedAi {
     /// `advanced/industrial_zone_claims_the_factory.rs`. Off by default.
     industrial_zone_claims_the_factory: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `launched-racer-yields-the-capital`: a rival that has launched its
+    /// Exoplanet Expedition and holds the city whose capture completes
+    /// Domination is the second front, that city is the objective at peace,
+    /// and the declaration on it skips the major-war, treasury and staging
+    /// holds. See `advanced/launched_racer.rs`.
+    launched_racer_yields_the_capital: bool,
     /// `muster-walks-the-road`: a mustering member of a train that cannot
     /// yet close walks in by the dry road, not by straight distance, to the
     /// stand nearest the city's staging band under the muster's danger line.
@@ -9191,6 +9197,9 @@ mod phantom_capture;
 /// `holdout-keeps-the-faith-war`: see `advanced/holdout_faith_war.rs`.
 mod holdout_faith_war;
 
+/// `launched-racer-yields-the-capital`: see `advanced/launched_racer.rs`.
+mod launched_racer;
+
 mod city_memory;
 mod denial_nearest_finish;
 mod denial_needs_a_road;
@@ -10740,6 +10749,7 @@ impl AdvancedAi {
             industrial_zone_claims_the_producer_queue: false,
             industrial_zone_claims_the_factory: false,
             // ---- append: l-o ----------------------------------------
+            launched_racer_yields_the_capital: false,
             muster_walks_the_road: false,
             near_rival_deterrence: false,
             match_point_interception_ignores_power: false,
@@ -15650,6 +15660,10 @@ impl AdvancedAi {
         // beside Madrid, the last capital it needed.
         let finishing_capital = self
             .domination_finish_front(g, pid)
+            // `launched-racer-yields-the-capital`: the launched racer's
+            // finishing capital is the objective at peace too. `None` with
+            // the gene off. See `advanced/launched_racer.rs`.
+            .or_else(|| self.launched_racer_finish(g, pid))
             .filter(|(owner, _)| target_player == Some(*owner))
             .map(|(_, capital)| capital)
             .filter(|capital| {
@@ -24143,19 +24157,32 @@ impl AdvancedAi {
         // `one_war_second_front`: the next capital's owner or an urgent clock
         // may be declared on beside the burning war.
         let second_front = self.one_war_second_front(g, pid) == Some(target);
+        // `launched-racer-yields-the-capital`: the racer past its launch
+        // holding the capital that completes Domination. Taking it wins
+        // first, and nothing else stops a launched Expedition, so neither the
+        // running war, the treasury nor the staging holds it. `false` with
+        // the gene off. See `advanced/launched_racer.rs`.
+        let launched_finish = self
+            .launched_racer_finish(g, pid)
+            .is_some_and(|(rival, _)| rival == target);
         if plan.strategy != GrandStrategy::Conquest
-            || (major_wars > 0 && !second_front)
+            || (major_wars > 0 && !second_front && !launched_finish)
             || (!rushing && g.turn < 35)
             || g.turn < self.peace_until
             || (!rushing && g.player_city_ids(pid).len() < 2)
             || g.is_at_war(pid, target)
             || (!emergency_target && !self.campaign_target_legal(g, pid, target))
-            // See `war_needs_a_treasury`. `strategic_policies` already
-            // records the shape of this failure -- "the counter-leader plan
-            // held 85 Gold at -59 per turn before it declared" -- but only
-            // reacts to it with a policy card, after the declaration.
-            || !self.war_is_affordable(g, pid)
         {
+            return;
+        }
+        // See `war_needs_a_treasury`. `strategic_policies` already records
+        // the shape of this failure -- "the counter-leader plan held 85 Gold
+        // at -59 per turn before it declared" -- but only reacts to it with a
+        // policy card, after the declaration. The hold used to be silent: live
+        // Emperor civvis-20261014T155202Z held the war on India, its
+        // Expedition launched, on 7 of turns 217-224 with no line at all.
+        if !launched_finish && !self.war_is_affordable(g, pid) {
+            self.journal_treasury_holds_the_war(g, pid, target);
             return;
         }
         let target_power = g.military_power(target);
@@ -24222,7 +24249,8 @@ impl AdvancedAi {
         // the launch is fought from 0.8 times its steady power, staged or
         // not; its pads are raided, not besieged. `false` with the gene off.
         // See `advanced/launcher_war.rs`.
-        let launcher_ready = !below_counter_floor && self.launcher_war_opens(g, pid, target);
+        let launcher_ready =
+            launched_finish || (!below_counter_floor && self.launcher_war_opens(g, pid, target));
         // See `road_blocker_front` (`blocker-becomes-the-target`): the army
         // already stands at the border the war opens, and the blocker has
         // passed the version-2 edge, so no staged siege or Board bill is
@@ -24492,6 +24520,11 @@ impl AdvancedAi {
             // `launcher-war-ignores-the-edge`: a denouncement's five turns
             // are five turns of launches; the launcher war opens by surprise.
             let opening = match self.preferred_war_opening(g, pid, target) {
+                // `launched-racer-yields-the-capital`: no denouncement's five
+                // turns either; see `advanced/launched_racer.rs`.
+                Some(Action::Denounce { .. }) | None if launched_finish => {
+                    self.launched_racer_opening(g, pid, target, my_power)
+                }
                 Some(Action::Denounce { .. }) | None if launcher_ready => {
                     self.launcher_war_opening(g, pid, target, my_power)
                 }
@@ -24537,6 +24570,9 @@ impl AdvancedAi {
                         "its closed borders have held our siege's march three turns at half our power or under, and the war opens the road"
                     } else if moving_on_ready {
                         "the beaten rival's capital is ours and it refuses peace, so the army moves on to the next capital"
+                    } else if launched_finish && !staged {
+                        // See `launched_racer_finish`.
+                        "launched-racer-yields-the-capital: its Exoplanet Expedition is launched and it holds the last capital Domination needs, so taking that capital wins first"
                     } else if launcher_ready && !staged {
                         // See `launcher_war_opens`.
                         "launcher-war-ignores-the-edge: past its Moon with a pad standing, the war raids its pads rather than besieging a city"
