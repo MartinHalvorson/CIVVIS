@@ -284,3 +284,63 @@ fn under_the_unseen_capital_gene_a_slow_body_takes_the_hunt() {
     ai.board_rebuild_force_groups(&g, 0, &plan);
     assert!(assigned(&ai), "the warrior takes the hunt");
 }
+
+fn competing_scout_goals() -> (Game, AdvancedAi, u32, StrategicPlan, Pos) {
+    let (mut g, _) = board();
+    g.disaster_intensity = 0;
+    g.storms.clear();
+    g.at_war.insert((0, 1));
+    let scout = g.spawn_test_unit("scout", 0, at(10, 11));
+    let generic = at(4, 4);
+    for pos in g.wdisk(generic, 2) {
+        g.players[0].explored.remove(&pos);
+    }
+    let mut ai = on();
+    ai.enable_objective_board();
+    ai.base
+        .explore_goal
+        .borrow_mut()
+        .insert(scout, (generic, g.turn));
+    let goal = ai.find_capital_goal(&g, 0, 1).expect("capital-search fog");
+    assert_ne!(goal, generic);
+    assert!(ai.base.has_exploration_target(&g, 0, scout));
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    (g, ai, scout, plan, goal)
+}
+
+#[test]
+fn a_free_scout_follows_its_capital_hunt_through_the_production_unit_pass() {
+    let (mut g, mut ai, scout, plan, goal) = competing_scout_goals();
+    let start = g.units[&scout].pos;
+    let before = g.wdist(start, goal);
+    ai.advanced_units(&mut g, 0, &plan);
+    let after = g.units[&scout].pos;
+    assert!(g.wdist(after, goal) < before,
+        "the capital hunt must beat the held generic frontier: {start:?} -> {after:?}, goal {goal:?}");
+    assert!(
+        ai.objective_board().forces.iter().any(|force| {
+            force.objective_key == ObjectiveKey::FindCapital(1) && force.units.contains(&scout)
+        }),
+        "an exploring Scout must be available for the named capital row"
+    );
+}
+
+#[test]
+fn the_capital_hunt_does_not_take_a_bound_civilian_guard() {
+    let (mut g, mut ai, scout, plan, _) = competing_scout_goals();
+    let settler = g.spawn_test_unit("settler", 0, at(6, 11));
+    ai.settler_guards.insert(settler, scout);
+    ai.board_rebuild_force_groups(&g, 0, &plan);
+    assert!(!ai.objective_board().forces.iter().any(|force| {
+        force.objective_key == ObjectiveKey::FindCapital(1) && force.units.contains(&scout)
+    }));
+    assert_eq!(ai.distance_scout_step(&mut g, 0, scout), None);
+}
