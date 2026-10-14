@@ -5067,6 +5067,16 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `aluminum-ask-tops-up-gold`: the air wing's Aluminum ask carries a
+    /// Gold ceiling, so the host's counter may price the block in Gold on top
+    /// of the barter (`aluminum_ask_ceiling` in `civvis_orders`). Off by
+    /// default.
+    aluminum_ask_tops_up_gold: bool,
+    /// `aluminum-buys-the-tile`: while the empire wants Aluminum and draws
+    /// none, the purchase pass buys an unowned Aluminum tile a city can buy,
+    /// above the reserve. See `gun_resource::aluminum_tile_purchase`. Off by
+    /// default.
+    aluminum_buys_the_tile: bool,
     /// `builders-route-around-mountains`: our Builders route as the host moves
     /// them, never onto a mountain. See
     /// `Game::observed_builders_avoid_mountains`.
@@ -10317,6 +10327,8 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            aluminum_ask_tops_up_gold: false,
+            aluminum_buys_the_tile: false,
             builders_route_around_mountains: false,
             amphibious_siege_train_2: false,
             backlog_builder_takes_the_queue: false,
@@ -11103,6 +11115,20 @@ impl AdvancedAi {
     /// in `civvis_orders`).
     pub fn siege_buys_the_gun_resource_enabled(&self) -> bool {
         self.siege_buys_the_gun_resource
+    }
+
+    /// Whether `aluminum-ask-tops-up-gold` is on; the live bridge raises the
+    /// Aluminum ask's Gold ceiling (`aluminum_ask_ceiling` in
+    /// `civvis_orders`).
+    pub fn aluminum_ask_tops_up_gold_enabled(&self) -> bool {
+        self.aluminum_ask_tops_up_gold
+    }
+
+    /// The treasury a discretionary purchase leaves
+    /// (`purchases-keep-the-upkeep-reserve`), for the live bridge: zero
+    /// while that gene is off.
+    pub fn purchase_upkeep_floor_reading(&self, g: &Game, pid: usize) -> f64 {
+        self.purchase_upkeep_floor(g, pid, 0.0)
     }
 
     /// Whether the barbarian seat hunts religious units. See
@@ -25611,7 +25637,10 @@ impl AdvancedAi {
         } else {
             1
         };
-        let mut purchased = bought_out_an_outpost || bought_a_first_asset;
+        // `aluminum-buys-the-tile`: the Aluminum the air wing waits on, bought
+        // as a tile out of the same reserve. See `gun_resource.rs`.
+        let bought_aluminum = self.aluminum_tile_purchase(g, pid, reserve);
+        let mut purchased = bought_out_an_outpost || bought_a_first_asset || bought_aluminum;
         let mut purchased_units = 0;
         for _ in 0..purchase_limit {
             let bank = g.players[pid].gold;

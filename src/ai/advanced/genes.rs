@@ -3856,6 +3856,17 @@ pub const GENES: &[Gene] = &[
     // capitals would have been revealed and 16 a median 7 turns sooner. See
     // `advanced/embassy_capital.rs`.
     Gene { tag: "embassy-finds-the-capital", field: "embassy_finds_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_embassy_finds_the_capital, disable: AdvancedAi::disable_embassy_finds_the_capital },
+    // `aluminum-buys-the-tile`: while the empire wants Aluminum and draws
+    // none, buy an unowned Aluminum tile a city can buy, above the reserve.
+    // 10-13/14: 34 of 67 Immortal runs past Radio owned no Aluminum; 6 of
+    // them had an unowned deposit within 3 tiles of a city. See
+    // `gun_resource::aluminum_tile_purchase`.
+    Gene { tag: "aluminum-buys-the-tile", field: "aluminum_buys_the_tile", kind: Kind::OptIn, enable: AdvancedAi::enable_aluminum_buys_the_tile, disable: AdvancedAi::disable_aluminum_buys_the_tile },
+    // `aluminum-ask-tops-up-gold`: the air wing's Aluminum ask carries a Gold
+    // ceiling for the host's counter. 10-13/14: 7 of 91 answered Aluminum
+    // asks closed, every one at ceiling 0, against 38% for luxury swaps. See
+    // `aluminum_ask_ceiling` in `civvis_orders`.
+    Gene { tag: "aluminum-ask-tops-up-gold", field: "aluminum_ask_tops_up_gold", kind: Kind::OptIn, enable: AdvancedAi::enable_aluminum_ask_tops_up_gold, disable: AdvancedAi::disable_aluminum_ask_tops_up_gold },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
