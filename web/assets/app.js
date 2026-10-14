@@ -6786,9 +6786,26 @@ function paintLivePause() {
 // else as far right on the bottom row as is free (left of the minimap), else
 // as little above the corner as clears what holds it. Rerun on every paint
 // (the 2 s poll), on resize, and as the research box is resized.
+//
+// A grip scale no spot in this window can hold even a few lines of — 2.5x on
+// the 830-wide mirror is wider than any column the masthead, victory band,
+// minimap and map tools leave — is shown at the largest scale that fits. The
+// viewer's own choice is kept for a roomier window.
+const LIVE_TRACKER_MIN_HEIGHT = 60;
 function placeLivePause() {
   const box = document.getElementById("livepause");
   if (!box || box.hidden || !box.offsetParent) return;
+  let scale = liveTrackerScale;
+  box.style.setProperty("--lt-scale", String(scale));
+  while (!placeLiveControls(box) && scale > LIVE_TRACKER_SCALE_MIN) {
+    scale = Math.max(LIVE_TRACKER_SCALE_MIN, Math.round(scale * 90) / 100);
+    box.style.setProperty("--lt-scale", String(scale));
+  }
+  followLiveControls();
+}
+// One placement at the box's current scale; false when the best spot left the
+// research box less than LIVE_TRACKER_MIN_HEIGHT to scroll in.
+function placeLiveControls(box) {
   box.style.right = "";
   box.style.bottom = "";
   const tracker = document.getElementById("livetracker");
@@ -6798,8 +6815,10 @@ function placeLivePause() {
   const home = box.getBoundingClientRect();
   const edge = Math.max(0, frame.right - home.right);
   const gap = 8;
+  // The masthead is one of them: with nothing else free, the most height used
+  // to be the strip above the victory band, which is the standings.
   const obstacles = [...document.querySelectorAll(
-    "#maparea .minimap-frame, #victoryhud, #zoomctl-main, #skynav")]
+    "#maparea .minimap-frame, #victoryhud, #playerhud, #zoomctl-main, #skynav")]
     .filter((el) => el.getClientRects().length > 0)
     .map((el) => el.getBoundingClientRect())
     .filter((r) => r.width > 0 && r.height > 0);
@@ -6818,6 +6837,7 @@ function placeLivePause() {
   }
   spots.sort((a, b) => a[1] - b[1] || a[0] - b[0]);
   let spot = spots.find((candidate) => !blocked(candidate));
+  let fits = true;
   if (!spot) {
     // Nothing holds the whole group — on the compact layout the victory
     // tracker runs the map's width under the masthead — so it goes where the
@@ -6837,15 +6857,15 @@ function placeLivePause() {
       const free = roomAt(candidate);
       if (free > room) { room = free; spot = candidate; }
     }
-    if (tracking && Number.isFinite(room)) {
-      const rest = home.height - tracker.getBoundingClientRect().height;
-      tracker.style.maxHeight = `${Math.max(60, Math.floor(room - rest))}px`;
-    }
+    const rest = home.height - (tracking ? tracker.getBoundingClientRect().height : 0);
+    fits = Number.isFinite(room) && room - rest >= (tracking ? LIVE_TRACKER_MIN_HEIGHT : 0);
+    if (tracking && Number.isFinite(room))
+      tracker.style.maxHeight = `${Math.max(LIVE_TRACKER_MIN_HEIGHT, Math.floor(room - rest))}px`;
   }
   const [right, bottom] = spot ?? [edge, edge];
   if (right !== edge) box.style.right = `${right}px`;
   if (bottom !== edge) box.style.bottom = `${bottom}px`;
-  followLiveControls();
+  return fits;
 }
 window.addEventListener("resize", placeLivePause);
 // The camera composes into the ground the live controls leave open, so when
