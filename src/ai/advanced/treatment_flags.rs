@@ -7761,6 +7761,16 @@ impl AdvancedAi {
         self.launched_racer_yields_the_capital = false;
     }
 
+    /// Opt-in gene `racer-blocker-declares`; see `advanced/silent_counter.rs`.
+    pub fn enable_racer_blocker_declares(&mut self) {
+        self.racer_blocker_declares = true;
+    }
+
+    /// The twin of `enable_racer_blocker_declares`.
+    pub fn disable_racer_blocker_declares(&mut self) {
+        self.racer_blocker_declares = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

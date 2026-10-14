@@ -3921,6 +3921,12 @@ pub const GENES: &[Gene] = &[
     // the objective at peace, and a declaration no major-war, treasury or
     // staging hold delays. See `advanced/launched_racer.rs`.
     Gene { tag: "launched-racer-yields-the-capital", field: "launched_racer_yields_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_launched_racer_yields_the_capital, disable: AdvancedAi::disable_launched_racer_yields_the_capital },
+    // An urgent Culture or Science racer our Conquest counter cannot reach,
+    // behind one civilization's closed borders: that blocker, when weak by
+    // closed-border-blocker-declares' reading, is the front every turn with
+    // no held siege march, aimed at its city on the road. See
+    // `advanced/silent_counter.rs`.
+    Gene { tag: "racer-blocker-declares", field: "racer_blocker_declares", kind: Kind::OptIn, enable: AdvancedAi::enable_racer_blocker_declares, disable: AdvancedAi::disable_racer_blocker_declares },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
