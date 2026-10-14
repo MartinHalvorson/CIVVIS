@@ -7825,6 +7825,33 @@ fn browser_lets_the_turn_plate_widen_into_two_columns() {
     }
 }
 
+/// Beside a live Civilization VI game the turn plate names the level and the
+/// speed the game is played at in one row ("Level/Speed: Lv 6 / Online"),
+/// counted on the ruleset's own ladder so "Lv 6" is the verification lane's
+/// Emperor. Any other world keeps the plain speed row. The page learns it is
+/// beside a live game from the pause poll, which can land between frames, so
+/// the masthead redraws when that answer changes.
+#[test]
+fn browser_names_a_live_games_level_on_the_turn_plate() {
+    for piece in [
+        "function difficultyLevel(id) {",
+        "return {level: spec.order + 1, of: Object.keys(ladder).length, name: spec.name || titleCase(id)};",
+        "const liveLevel = livePause.available ? difficultyLevel(state.difficulty) : null;",
+        "`<span>Level/Speed:</span><b>Lv ${liveLevel.level} / ${speedName}</b></div>`",
+        ": `<div class=\"turn-setting\"><span>Game speed:</span><b>${speedName}</b></div>`;",
+        "if (livePause.available !== wasAvailable && state) drawPlayerHud();",
+    ] {
+        assert!(
+            EMBEDDED_INDEX.contains(piece),
+            "the live level row is missing {piece}"
+        );
+    }
+    let rules = crate::rules::Rules::embedded();
+    assert_eq!(rules.difficulties.len(), 8);
+    assert_eq!(rules.difficulties["emperor"].order + 1, 6);
+    assert_eq!(rules.difficulties["immortal"].order + 1, 7);
+}
+
 /// Player-row color is reserved for a current war. Friendships and
 /// alliances remain available in the row's text and dossier, but must not
 /// paint green state frames that compete with the red danger signal. The
