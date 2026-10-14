@@ -6855,6 +6855,10 @@ pub struct AdvancedAi {
     /// Off by default.
     engineering_for_capped_fresh_water: bool,
     // ---- append: g-k ------------------------------------------------
+    /// `holdout-keeps-the-faith-war`: no peace offered to or accepted from a
+    /// faith's founder while we are its last holdout and a city of ours
+    /// follows or is converting to it. See `advanced/holdout_faith_war.rs`.
+    holdout_keeps_the_faith_war: bool,
     /// `founder-holds-the-holy-city`'s memory: the last threat seen at the
     /// Holy City and the last spread of ours there, by position. See
     /// `advanced/holy_city_guard.rs`.
@@ -9184,6 +9188,9 @@ mod silent_counter;
 /// `phantom-capture-keeps-the-siege`: see `advanced/phantom_capture.rs`.
 mod phantom_capture;
 
+/// `holdout-keeps-the-faith-war`: see `advanced/holdout_faith_war.rs`.
+mod holdout_faith_war;
+
 mod city_memory;
 mod denial_nearest_finish;
 mod denial_needs_a_road;
@@ -10687,6 +10694,7 @@ impl AdvancedAi {
             front_weighted_floor_2: false,
             engineering_for_capped_fresh_water: false,
             // ---- append: g-k ----------------------------------------
+            holdout_keeps_the_faith_war: false,
             holy_city_guard: RefCell::new(holy_city_guard::HolyCityGuard::default()),
             gun_queues_behind_the_column: false,
             gun_queue_follows_the_road: false,
@@ -23576,7 +23584,11 @@ impl AdvancedAi {
                             || self.air_surge_holds_front(g, pid, deal.from)
                             // `no-peace-with-a-launcher`: see
                             // `advanced/launcher_war.rs`.
-                            || self.launcher_keeps_the_war(g, pid, deal.from));
+                            || self.launcher_keeps_the_war(g, pid, deal.from)
+                            // `holdout-keeps-the-faith-war`: see
+                            // `advanced/holdout_faith_war.rs`.
+                            || (deal.peace
+                                && self.holdout_keeps_the_faith_war_with(g, pid, deal.from)));
                     (
                         worth >= 0.0 && !pins_objective,
                         deal.peace,
@@ -23587,6 +23599,9 @@ impl AdvancedAi {
             else {
                 continue;
             };
+            if peace && !accept && self.holdout_keeps_the_faith_war_with(g, pid, from) {
+                self.journal_holdout_keeps_the_faith_war(g, pid, from, true);
+            }
             if self.journal().wants(crate::reasoning::Level::Decision) {
                 let who = g
                     .players
@@ -23912,6 +23927,14 @@ impl AdvancedAi {
                 // falling. `false` with the gene off. See
                 // `advanced/launcher_war.rs`.
                 if self.launcher_keeps_the_war(g, pid, *other) {
+                    continue;
+                }
+                // `holdout-keeps-the-faith-war`: no peace with a faith's
+                // founder while we are its last holdout and it is taking our
+                // cities, unless our cities are falling. `false` with the gene
+                // off. See `advanced/holdout_faith_war.rs`.
+                if self.holdout_keeps_the_faith_war_with(g, pid, *other) {
+                    self.journal_holdout_keeps_the_faith_war(g, pid, *other, false);
                     continue;
                 }
                 self.peace_offers.insert(*other);

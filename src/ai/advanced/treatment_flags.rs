@@ -7731,6 +7731,17 @@ impl AdvancedAi {
         self.phantom_capture_keeps_the_siege = false;
     }
 
+    /// Opt-in gene `holdout-keeps-the-faith-war`; see
+    /// `advanced/holdout_faith_war.rs`.
+    pub fn enable_holdout_keeps_the_faith_war(&mut self) {
+        self.holdout_keeps_the_faith_war = true;
+    }
+
+    /// The twin of `enable_holdout_keeps_the_faith_war`.
+    pub fn disable_holdout_keeps_the_faith_war(&mut self) {
+        self.holdout_keeps_the_faith_war = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

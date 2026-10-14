@@ -90,7 +90,7 @@ impl AdvancedAi {
 
     /// Whether a city of ours is falling: hit within
     /// [`FALLING_CITY_TURNS`] turns and down to [`FALLING_CITY_HP`].
-    fn our_cities_falling(g: &Game, pid: usize) -> bool {
+    pub(super) fn our_cities_falling(g: &Game, pid: usize) -> bool {
         g.player_city_ids(pid).iter().any(|cid| {
             let city = &g.cities[cid];
             city.last_attacked > 0
