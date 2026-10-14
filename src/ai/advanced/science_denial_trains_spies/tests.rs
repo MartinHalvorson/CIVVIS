@@ -255,7 +255,7 @@ fn rocketry_only() -> (Game, Vec<u32>) {
         .get_mut(&rival)
         .unwrap()
         .districts
-        .remove(&crate::name!("spaceport"))
+        .remove(crate::name!("spaceport"))
         .unwrap_or_default();
     for pad in pads {
         g.map.tiles.get_mut(&pad).unwrap().district = None;

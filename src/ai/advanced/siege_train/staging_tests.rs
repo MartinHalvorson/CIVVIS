@@ -318,7 +318,7 @@ fn a_postless_gun_closes_to_the_staging_ring() {
     let mut ai = AdvancedAi::new();
     assert_eq!(ai.close_to_staging(&mut g, 0, gun, &city), Some(true));
     let after = g.wdist(g.units[&gun].pos, target);
-    assert!(after < 9 && after >= STAGING_FAR, "walked up to {after}");
+    assert!((STAGING_FAR..9).contains(&after), "walked up to {after}");
 
     let near = super::tests::at_distance(&g, cid, STAGING_FAR - 1)[0];
     let waiting = g.spawn_unit("catapult", 0, near);

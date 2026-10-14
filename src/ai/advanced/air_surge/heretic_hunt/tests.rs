@@ -51,7 +51,7 @@ fn no_hunt_at_peace_far_from_home_out_of_reach_or_off_the_lane() {
         let at = if case == "far" { (20, 12) } else { (13, 12) };
         let target = spreader(&mut g, "missionary", at);
         let kind = if case == "slow" { "warrior" } else { "cavalry" };
-        let start = if case == "slow" { (10, 13) } else { (10, 13) };
+        let start = (10, 13);
         let hunter = g.spawn_test_unit(kind, 0, start);
         let mut reserved = BTreeSet::new();
         match case {

@@ -3704,7 +3704,7 @@ mod tests {
             ai.objective_board()
                 .forces
                 .iter()
-                .filter(|force| matches!(force.objective_key, ObjectiveKey::Reserve) == false)
+                .filter(|force| !matches!(force.objective_key, ObjectiveKey::Reserve))
                 .any(|force| force.units.contains(&ours))
         };
         assert!(!assigned(true), "the opening's scout takes no fight row");

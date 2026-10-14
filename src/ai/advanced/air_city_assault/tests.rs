@@ -575,9 +575,8 @@ fn a_breached_city_waits_for_a_body_with_a_road_in() {
         (false, false),
         "no road in: the breach is not re-bombed"
     );
-    assert_eq!(
+    assert!(
         breached(true, false, false).0,
-        true,
         "a body that can walk in keeps the volley"
     );
     assert_eq!(

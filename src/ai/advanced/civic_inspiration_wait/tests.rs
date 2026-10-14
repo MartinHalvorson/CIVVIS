@@ -214,7 +214,7 @@ fn construction_in_research_holds_games_and_recreation() {
     let (eta, trigger) = AdvancedAi::civic_misses_its_inspiration(&game, 0, "games_recreation")
         .expect("Construction lands after Games and Recreation would finish");
     assert_eq!(trigger, "tech:construction");
-    assert!(eta >= 2.0 && eta <= INSPIRATION_WAIT_TURNS, "eta {eta}");
+    assert!((2.0..=INSPIRATION_WAIT_TURNS).contains(&eta), "eta {eta}");
     game.players[0].research = Some("mining".to_string());
     assert!(AdvancedAi::civic_misses_its_inspiration(&game, 0, "games_recreation").is_none());
 }

@@ -137,15 +137,14 @@ impl AdvancedAi {
                         matches!(item, Item::District { district, .. }
                             if g.district_family(*district) == family)
                     })?
-                } else if let Some(tech) = trigger.strip_prefix("tech:") {
+                } else {
+                    let tech = trigger.strip_prefix("tech:")?;
                     let player = &g.players[pid];
                     if player.research.as_deref() != Some(tech) {
                         return None;
                     }
                     let left = (g.tech_cost(tech) - player.research_progress).max(0.0);
                     (left / Self::research_rate(g, pid, true)).ceil().max(1.0)
-                } else {
-                    return None;
                 }
             }
         };

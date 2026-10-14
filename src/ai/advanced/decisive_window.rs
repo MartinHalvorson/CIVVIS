@@ -576,6 +576,7 @@ impl AdvancedAi {
                 continue;
             }
             let (assault_tech, assault_civic) = unlock_of(g, spec);
+            #[allow(clippy::type_complexity)]
             let breaker_options: Vec<Option<(Name, Option<Name>, Option<Name>)>> = if tier == 0 {
                 vec![None]
             } else {

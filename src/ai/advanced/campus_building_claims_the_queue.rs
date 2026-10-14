@@ -50,8 +50,8 @@ fn campus_building_rank(g: &Game, item: &Item) -> Option<u8> {
         .rules
         .buildings
         .get(building)
-        .and_then(|spec| spec.replaces.clone())
-        .unwrap_or_else(|| building.clone());
+        .and_then(|spec| spec.replaces)
+        .unwrap_or(*building);
     match family.as_str() {
         "library" => Some(0),
         "university" => Some(1),

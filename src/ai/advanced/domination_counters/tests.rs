@@ -371,7 +371,7 @@ fn science_board(launches: &[&str]) -> (Game, u32) {
     }
     for city in g.cities.values_mut() {
         city.pressure.clear();
-        city.districts.remove(&crate::name!("holy_site"));
+        city.districts.remove(crate::name!("holy_site"));
     }
     let site = g.cities[&objective].pos;
     g.cities

@@ -89,7 +89,7 @@ impl AdvancedAi {
         }
         let first_foreign = targets
             .first()
-            .map(|target| pos_of(target))
+            .map(&pos_of)
             .filter(|pos| !ours(*pos))
             .and_then(|pos| g.city_at(pos))
             .map(|cid| g.cities[&cid].name.clone());

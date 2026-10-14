@@ -2975,6 +2975,7 @@ const LUXURY_SWAP_DENOUNCE_TURNS: i64 = 30;
 /// `lacks` (`luxury-swap-asks-2`, `None` for version one): whether the rival
 /// with this host player id holds no copy of the luxury, as the host names
 /// it, on its mirrored board; `None` when the board cannot say.
+#[allow(clippy::type_complexity)]
 fn append_luxury_swap_order(
     state: &civvis::mirror::StateSnapshot,
     orders: &mut Vec<Order>,

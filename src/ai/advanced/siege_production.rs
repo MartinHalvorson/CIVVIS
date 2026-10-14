@@ -422,7 +422,7 @@ impl AdvancedAi {
         if self.active_victory_target(g) != Some(VictoryTarget::Domination) {
             return None;
         }
-        let Some(target) = plan
+        let target = plan
             .target_city
             .and_then(|cid| g.cities.get(&cid))
             .filter(|city| {
@@ -434,10 +434,7 @@ impl AdvancedAi {
                             && g.players[city.owner]
                                 .techs
                                 .contains(&crate::name!("masonry"))))
-            })
-        else {
-            return None;
-        };
+            })?;
         let objective = target.pos;
         let target_name = target.name.clone();
         let counts = self.counts(g, pid);
@@ -625,7 +622,7 @@ impl AdvancedAi {
                             .then(a.1.total_cmp(&b.1))
                             .then((a.2, &a.3).cmp(&(b.2, &b.3)))
                     })
-                    .map(|c| (c.1, c.2, c.3.clone()))
+                    .map(|c| (c.1, c.2, c.3))
             };
             let best_idle = pick(false);
             let best_fresh = pick(true);
@@ -646,9 +643,7 @@ impl AdvancedAi {
                 _ => None,
             }
         };
-        let Some((arrival, city, unit, slow_idle)) = best else {
-            return None;
-        };
+        let (arrival, city, unit, slow_idle) = best?;
         let faster_than_queued = queued_arrival.is_some_and(|queued| {
             arrival <= 20.0 && queued >= arrival + 8.0 && queued >= arrival * 1.5
         });

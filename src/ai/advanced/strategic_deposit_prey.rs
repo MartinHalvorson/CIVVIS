@@ -67,7 +67,7 @@ impl AdvancedAi {
             .units
             .values()
             .filter(|spec| spec.class == "military" && spec.tech.is_some() && known(&spec.tech))
-            .filter_map(|spec| spec.requires_resource.clone())
+            .filter_map(|spec| spec.requires_resource)
             .filter(|resource| {
                 g.rules
                     .resources

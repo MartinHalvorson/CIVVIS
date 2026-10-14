@@ -460,7 +460,7 @@ fn fresh_delegated_siege_reservation_survives_the_same_pass() {
         },
     )
     .unwrap();
-    ai.restore_wall_breaker_queues(&mut g, 0, &plan, &[claim.clone()], None);
+    ai.restore_wall_breaker_queues(&mut g, 0, &plan, std::slice::from_ref(&claim), None);
     assert_eq!(g.cities[&home].queue.first(), Some(&claim.1));
 }
 

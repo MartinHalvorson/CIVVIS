@@ -44,8 +44,8 @@ fn bomber_over_a_siege(hostile_near_home: bool) -> (Game, u32, u32, Pos, Pos) {
         .iter()
         .find(|pos| {
             g.city_at(**pos).is_none()
-                && g.wdist(**pos, enemy_at) <= range - 1
-                && g.wdist(**pos, home_at) <= range - 1
+                && g.wdist(**pos, enemy_at) < range
+                && g.wdist(**pos, home_at) < range
                 && g.wdist(**pos, home_at) >= 2
         })
         .expect("fixture: a base in reach of both cities");

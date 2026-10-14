@@ -637,7 +637,7 @@ impl AdvancedAi {
                     attack -= 17.0;
                 }
                 ranged += expected_damage(effective_strength(attack, unit.hp), defense);
-            } else if spec.is_melee_capable() && distance >= 1 && distance <= moves - 1 {
+            } else if spec.is_melee_capable() && distance >= 1 && distance < moves {
                 melee.push(expected_damage(
                     effective_strength(g.unit_strength(unit, true), unit.hp),
                     defense,

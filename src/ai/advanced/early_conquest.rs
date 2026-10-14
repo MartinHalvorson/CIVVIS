@@ -1627,7 +1627,7 @@ impl AdvancedAi {
                         return;
                     }
                 }
-                if g.turn >= Self::conquest_commit_due(g, &opening) && opening.assembled.is_none() {
+                if g.turn >= Self::conquest_commit_due(g, opening) && opening.assembled.is_none() {
                     self.conquest_release(
                         g,
                         "the commit deadline passed before the force ever assembled",

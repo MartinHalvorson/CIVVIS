@@ -669,7 +669,7 @@ fn the_cohesion_wait_blames_the_straggler_not_the_waiters() {
     let (a, b) = (at(4).next().unwrap(), at(4).nth(1).unwrap());
     let (reach, far) = *water.last().unwrap();
     assert!(
-        reach >= 4 + AMPHIB_COHESION + 1,
+        reach > 4 + AMPHIB_COHESION,
         "fixture: a straggler well behind"
     );
     for uid in [gun, escorts[0], escorts[1]] {
@@ -1092,7 +1092,7 @@ fn a_unit_with_a_dry_road_is_not_drafted_into_a_sea_lane() {
         g.remove_unit(uid);
     }
     let ai = armed_2(&g, cid, road_gun, [road_escort, road_escort]);
-    let reason = ai.amphibious_gate(&g, 0, cid).err().expect("no train");
+    let reason = ai.amphibious_gate(&g, 0, cid).expect_err("no train");
     assert!(reason.contains("units with a dry road march"), "{reason}");
 }
 
@@ -1121,6 +1121,6 @@ fn a_sea_lane_landing_on_our_own_landmass_with_a_dry_road_is_refused() {
     let landing = v1.amphibious_train.as_ref().unwrap().landing;
     assert!(land_joined(&g, port, None).contains(&landing));
     let ai = armed_2(&g, cid, gun, escorts);
-    let reason = ai.amphibious_gate(&g, 0, cid).err().expect("refused");
+    let reason = ai.amphibious_gate(&g, 0, cid).expect_err("refused");
     assert!(reason.contains("own landmass, with a dry road"), "{reason}");
 }

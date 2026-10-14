@@ -870,6 +870,7 @@ impl AdvancedAi {
         };
         // The shortest lane over every port and landing; nearer members
         // break a tie, then the board's order.
+        #[allow(clippy::type_complexity)]
         let mut best: Option<((usize, i32, usize), u32, Pos, Pos, Vec<Pos>)> = None;
         for (rank, landing) in landings.iter().enumerate() {
             for (cid, port) in &ports {

@@ -26,6 +26,7 @@
 //! - Great Person patronage, Faith buildings and Faith-bought military keep
 //!   its price in the bank, and the delegated governor's Faith-Builder
 //!   threshold (`w.faith_builder`) is raised by it for the call.
+//!
 //! Off: unchanged.
 
 use super::*;

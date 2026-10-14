@@ -862,7 +862,7 @@ fn online_opening_keeps_a_full_column_near_the_rally_for_eight_more_turns() {
     assert_eq!(opening.force.len(), CONQUEST_RANGED + CONQUEST_MELEE);
     let share = AdvancedAi::conquest_assembled_share(&game, opening);
     assert!(
-        share >= CONQUEST_APPROACHING_SHARE && share < CONQUEST_ASSEMBLY_SHARE,
+        (CONQUEST_APPROACHING_SHARE..CONQUEST_ASSEMBLY_SHARE).contains(&share),
         "the column is approaching, not assembled: {share}"
     );
     assert_eq!(AdvancedAi::conquest_commit_due(&game, opening), 40);

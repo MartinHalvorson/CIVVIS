@@ -28633,6 +28633,7 @@ impl Game {
     ///
     /// `None` wherever `route_step_to_any` declines before reading its field,
     /// for a unit that moves as a formation, and for one without movement.
+    #[allow(clippy::type_complexity)]
     pub(crate) fn march_reach_toward_any(
         &self,
         uid: u32,

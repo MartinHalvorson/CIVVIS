@@ -10113,7 +10113,7 @@ impl BasicAi {
         } else {
             None
         };
-        let pipeline = if let Some(width) = rapid {
+        if let Some(width) = rapid {
             width
         } else if self.land_grab && seats_short > 0 {
             (crate::ai::LAND_GRAB_PIPELINE_BASE + n_cities / 3).min(seats_short)
@@ -10124,8 +10124,7 @@ impl BasicAi {
             2
         } else {
             1
-        };
-        pipeline
+        }
     }
 
     /// How many of this player's Settlers have stopped making progress.
@@ -16744,6 +16743,7 @@ impl BasicAi {
     /// controller's other idle-queue claims, under the same gates `pick_item`
     /// puts ahead of the step: a siege or barbarian answer, an emergency
     /// defence and a due Settler all keep the queue.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn worked_backlog_claim_turns(
         &self,
         g: &Game,

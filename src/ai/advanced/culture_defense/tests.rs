@@ -96,7 +96,7 @@ fn a_trailing_empire_reserves_a_theater_ahead_of_the_delegated_governor() {
         .get_mut(&cid)
         .unwrap()
         .districts
-        .remove(&crate::name!("campus"));
+        .remove(crate::name!("campus"));
     ai.reserve_culture_defense_theater(&mut no_campus, 0, &plan);
     assert!(
         no_campus.cities[&cid].queue.is_empty(),
