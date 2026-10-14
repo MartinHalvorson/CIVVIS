@@ -7900,6 +7900,10 @@ pub struct AdvancedAi {
     /// `SECOND_FRONT_HELD_NOTE_TURNS`. Journal only; see
     /// `one_war::journal_held_second_front`.
     second_front_held_noted: BTreeMap<usize, (String, u32)>,
+    /// The clause each urgent racer's unexecutable Conquest counter last
+    /// read and the turn it was journalled. Journal only; see
+    /// `silent_counter::journal_silent_counter`.
+    silent_counter_noted: BTreeMap<usize, (&'static str, u32)>,
     /// `siege-budget-projects-the-seal`: on the siege's entry reads a train
     /// whose fit melee can seal the city's ring prices the city at no heal,
     /// as a sealed city does not heal. See
@@ -9156,6 +9160,10 @@ mod embassy_capital;
 
 /// `racer-keeps-the-spies`: see `advanced/racer_keeps_the_spies.rs`.
 mod racer_keeps_the_spies;
+
+/// Journal only: an urgent racer whose Conquest counter cannot be executed.
+/// See `advanced/silent_counter.rs`.
+mod silent_counter;
 
 mod denial_nearest_finish;
 mod denial_needs_a_road;
@@ -10813,6 +10821,7 @@ impl AdvancedAi {
 
             // ---- append: s-s ----------------------------------------
             second_front_held_noted: BTreeMap::new(),
+            silent_counter_noted: BTreeMap::new(),
             siege_budget_projects_the_seal: false,
             sea_locked_front_moves_on: false,
             siege_tier_before_the_beeline: false,
@@ -47891,6 +47900,9 @@ impl AdvancedAi {
         // See `journal_held_second_front`: a named counter the second front
         // holds, and the gates that hold it. Journal only.
         self.journal_held_second_front(g, pid);
+        // See `journal_silent_counter`: an urgent racer whose Conquest counter
+        // cannot be executed says why. Journal only.
+        self.journal_silent_counter(g, pid);
         // See `denial_keeps_its_rival`: this turn's counter rival, chosen
         // against last turn's, is the incumbent for the next.
         if self.denial_keeps_its_rival {
