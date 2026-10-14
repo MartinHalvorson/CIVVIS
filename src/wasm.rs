@@ -376,6 +376,9 @@ fn route_unversioned(method: &str, target: &str, body: &str) -> Value {
         ("GET", "/gene-program") => with_session(|_session| crate::routes::gene_program(&[])),
 
         ("GET", "/pedia") => with_session(|session| crate::routes::pedia(session)),
+        ("GET", "/policy-effects") => {
+            with_session(|session| crate::routes::policy_effects(session))
+        }
 
         // A save is handed straight to the page, which owns the storage this
         // build has: there is no disk here, so `/saves` and the named half of

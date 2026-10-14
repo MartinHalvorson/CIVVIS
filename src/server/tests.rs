@@ -13774,3 +13774,39 @@ fn every_site_major_plays_the_native_deployment_genome() {
         "every site major must play AdvancedAi::new() + enable_native_deployment()"
     );
 }
+
+/// `/policy-effects` answers for the empire the page describes and prices
+/// each slotted card by the engine's counterfactual: Urban Planning in a
+/// one-city empire is +1 Production, and the deck of one is worth that card.
+#[test]
+fn the_policy_ledger_prices_the_seats_slotted_cards() {
+    let mut params = current();
+    params.num_players = 2;
+    params.num_city_states = 0;
+    params.width = 24;
+    params.height = 16;
+    params.seed = 20_261_014;
+    let mut session = Session::new(params);
+    let settler = session
+        .game
+        .units
+        .values()
+        .find(|unit| unit.owner == 0 && unit.kind == "settler")
+        .map(|unit| unit.pos)
+        .expect("seat 0 opens with a settler");
+    session.game.found_city_for(0, settler, None);
+    session.game.players[0].government = Some("chiefdom".to_string());
+    session.game.players[0].policies.clear();
+    session.game.players[0]
+        .policies
+        .insert(crate::name::Name::new("urban_planning"));
+
+    let answer = crate::routes::policy_effects(&session);
+    assert_eq!(answer["player"], json!(0));
+    assert_eq!(answer["anarchy"], json!(false));
+    let cards = answer["cards"].as_array().expect("cards");
+    assert_eq!(cards.len(), 1, "{answer}");
+    assert_eq!(cards[0]["policy"], json!("urban_planning"));
+    assert_eq!(cards[0]["worth"], json!({"production": 1.0}), "{answer}");
+    assert_eq!(answer["net"], cards[0]["worth"]);
+}
