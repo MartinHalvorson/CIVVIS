@@ -3885,6 +3885,17 @@ pub const GENES: &[Gene] = &[
     // the trigger fired before 27 of them, walls in time for 20, and in 75 of
     // the 149 that held. See `advanced/capital_walls_before_the_surprise.rs`.
     Gene { tag: "capital-walls-before-the-surprise", field: "capital_walls_before_the_surprise", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_walls_before_the_surprise, disable: AdvancedAi::disable_capital_walls_before_the_surprise },
+    // Traced replays at 851192f2e (Tula civvis-20261014T080351Z turns
+    // 136-141, Bhavapura, Sodo, Cincinnati): of 36 gun-turns that read "no
+    // route step and no pass-through destination", 17 had spent part of their
+    // moves and lacked the next tile's cost, and 8 held full moves while the
+    // router's first step went round terrain or our column at an equal or
+    // greater hex distance, which gun-queues-behind-the-column refused. On the
+    // no-route call the queue step follows the road when the route to the post
+    // falls, may land two tiles from a city that cannot strike, and the
+    // short-of-moves case is journaled as such. See
+    // `AdvancedAi::column_queue_step`.
+    Gene { tag: "gun-queue-follows-the-road", field: "gun_queue_follows_the_road", kind: Kind::OptIn, enable: AdvancedAi::enable_gun_queue_follows_the_road, disable: AdvancedAi::disable_gun_queue_follows_the_road },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

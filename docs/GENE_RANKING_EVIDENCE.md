@@ -347,6 +347,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `great-work-completion-value` | off (unmeasured) | Enable `great-work-completion-value` for measurement. | 1 \| 1 |
 | `growth-prices-the-farm` | off (unmeasured) | Opt-in gene `growth-prices-the-farm`; see `AdvancedAi::growth_prices_the_farm`. | — \| 2 |
 | `growth-prices-the-farm-2` | off (unmeasured) | Opt-in gene `growth-prices-the-farm-2`; see `AdvancedAi::growth_prices_the_farm_2`. | — \| 2 |
+| `gun-queue-follows-the-road` | off (unmeasured) | Opt-in gene `gun-queue-follows-the-road`; see `Self::gun_queue_follows_the_road`. | 1 \| 1 |
 | `gun-queues-behind-the-column` | off (unmeasured) | Opt-in gene `gun-queues-behind-the-column`; see `Self::gun_queues_behind_the_column`. | 1 \| 1 |
 | `guns-enter-together` | off (unmeasured) | Opt-in gene `guns-enter-together`; see `Self::guns_enter_together`. | 1 \| 1 |
 | `guns-grind-the-walls` | off (unmeasured) | Opt-in gene `guns-grind-the-walls`; see `Self::guns_grind_the_walls`. | 1 \| 1 |
