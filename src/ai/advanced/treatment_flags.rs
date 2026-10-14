@@ -7629,6 +7629,17 @@ impl AdvancedAi {
         self.siege_budget_projects_the_seal = false;
     }
 
+    /// Opt-in gene `elimination-yields-to-a-launch`; see
+    /// `AdvancedAi::elimination_yields_to_a_launch`.
+    pub fn enable_elimination_yields_to_a_launch(&mut self) {
+        self.elimination_yields_to_a_launch = true;
+    }
+
+    /// The twin of `enable_elimination_yields_to_a_launch`.
+    pub fn disable_elimination_yields_to_a_launch(&mut self) {
+        self.elimination_yields_to_a_launch = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

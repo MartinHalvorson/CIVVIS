@@ -3829,6 +3829,11 @@ pub const GENES: &[Gene] = &[
     // Jenne (civvis-20261013T184508Z) held turns 111-117 with seven to nine
     // units at 23.7-65.0 turns and its ring 0/6. See `train_seals_the_ring`.
     Gene { tag: "siege-budget-projects-the-seal", field: "siege_budget_projects_the_seal", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_budget_projects_the_seal, disable: AdvancedAi::disable_siege_budget_projects_the_seal },
+    // `elimination-yields-to-a-launch`: the Diplomatic Victory elimination
+    // front yields to an at-war rival past its Mars launch or a short culture
+    // clock, without first holding the contender's capital. See
+    // `capital_moves_on::elimination_yields_to_a_launch`.
+    Gene { tag: "elimination-yields-to-a-launch", field: "elimination_yields_to_a_launch", kind: Kind::OptIn, enable: AdvancedAi::enable_elimination_yields_to_a_launch, disable: AdvancedAi::disable_elimination_yields_to_a_launch },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

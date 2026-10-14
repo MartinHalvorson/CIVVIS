@@ -6247,6 +6247,13 @@ pub struct AdvancedAi {
     /// the declaration edge. See `advanced/dvp_leader_front.rs`.
     dvp_leader_is_the_front: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `elimination-yields-to-a-launch`: the Diplomatic Victory elimination
+    /// front (`diplomatic_contender_to_eliminate`) yields, without holding the
+    /// contender's capital, to a rival already at war with us whose Mars stage
+    /// or Exoplanet Expedition has launched or whose engine culture clock is
+    /// short. See `capital_moves_on::elimination_yields_to_a_launch`. Off by
+    /// default.
+    elimination_yields_to_a_launch: bool,
     /// `first-luxury-first-2`: version 2 of `first-luxury-first`. The first
     /// copy of a luxury earns its premium only while the host-calibrated
     /// empire is actually Amenity-short; a content empire keeps the shipped
@@ -10510,6 +10517,7 @@ impl AdvancedAi {
             congress_guards_the_leader: false,
             dvp_leader_is_the_front: false,
             // ---- append: e-f ----------------------------------------
+            elimination_yields_to_a_launch: false,
             first_luxury_first_2: false,
             falling_city_calls_the_takers: false,
             founder_holds_the_holy_city: false,
