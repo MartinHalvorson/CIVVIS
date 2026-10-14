@@ -4009,7 +4009,7 @@ impl AdvancedAi {
                 None => g.wdist(pos, city.pos),
             }
         };
-        let here_nearness = nearness(g, here);
+        let mut here_nearness = nearness(g, here);
         let candidates: Vec<Pos> = g
             .reachable(uid)
             .into_iter()
@@ -4028,6 +4028,27 @@ impl AdvancedAi {
             }
         }
         let by_road = road.is_some();
+        // Keep one safe metric throughout a distant approach. Using a detour
+        // only when the terrain metric stalls makes the next turn walk back
+        // to the old local minimum instead of continuing around the fire.
+        let safe_road = (by_road
+            && distance > MUSTER_BREACH_FAR
+            && risk_here <= limit
+            && !shot_here
+            && !stands.is_empty())
+        .then(|| {
+            muster_detour_steps(g, uid, city.pos, |pos| {
+                field.rotation_danger(pos, uid) <= limit && !ranged_reach(g, &mut field, pos)
+            })
+        })
+        .filter(|steps| steps.contains_key(&here));
+        if let Some(steps) = &safe_road {
+            here_nearness = i32::try_from(steps[&here]).unwrap_or(i32::MAX);
+            stands.retain(|(_, _, pos)| steps.contains_key(pos));
+            for (distance, _, pos) in &mut stands {
+                *distance = i32::try_from(steps[pos]).unwrap_or(i32::MAX);
+            }
+        }
         stands.sort_by(|a, b| {
             a.0.cmp(&b.0)
                 .then_with(|| a.1.total_cmp(&b.1))
@@ -4061,7 +4082,14 @@ impl AdvancedAi {
         {
             let kind = g.units[&uid].kind;
             if self.base.path_walk_to(g, pid, uid, dest) {
-                if by_road {
+                if safe_road.is_some() {
+                    think!(self.journal(), Military, Detail,
+                        "Siege of {name}: the {kind} follows the safe muster road";
+                        "{dest:?} leaves {d} safe road steps to the readiness band \
+                         against {here_nearness} from {here:?}, under the muster danger \
+                         limit of {limit:.0}";
+                        city.pos);
+                } else if by_road {
                     think!(self.journal(), Military, Detail,
                         "Siege of {name}: the {kind} musters at {dest:?} by the road";
                         "{} tiles from the city and {d} steps of dry road from its staging band \
@@ -4077,42 +4105,6 @@ impl AdvancedAi {
                         city.pos);
                 }
                 return Some(true);
-            }
-        }
-        // The terrain road ignores fire. When its safe endpoints cannot make
-        // progress, look for a safe road to the band that already counts in
-        // the muster bill. A member already in that band, or without a legal
-        // terrain road or safe endpoint, needs no additional flood.
-        if road.is_some() && distance > MUSTER_BREACH_FAR && !stands.is_empty() {
-            let detour = muster_detour_steps(g, uid, city.pos, |pos| {
-                field.rotation_danger(pos, uid) <= limit && !ranged_reach(g, &mut field, pos)
-            });
-            if let Some(&from) = detour.get(&here) {
-                let dest = stands
-                    .iter()
-                    .filter_map(|(_, risk, pos)| {
-                        detour
-                            .get(pos)
-                            .filter(|steps| **steps < from)
-                            .map(|steps| (*steps, *risk, *pos))
-                    })
-                    .min_by(|a, b| {
-                        a.0.cmp(&b.0)
-                            .then_with(|| a.1.total_cmp(&b.1))
-                            .then_with(|| a.2.cmp(&b.2))
-                    });
-                if let Some((left, _, dest)) = dest {
-                    let kind = g.units[&uid].kind;
-                    if self.base.path_walk_to(g, pid, uid, dest) {
-                        think!(self.journal(), Military, Detail,
-                            "Siege of {name}: the {kind} takes a safe muster detour";
-                            "{dest:?} leaves {left} safe road steps to the readiness band \
-                             against {from} from {here:?}; the shortest terrain road could \
-                             not advance under the muster danger limit of {limit:.0}";
-                            city.pos);
-                        return Some(true);
-                    }
-                }
             }
         }
         if distance <= STAGING_FAR {

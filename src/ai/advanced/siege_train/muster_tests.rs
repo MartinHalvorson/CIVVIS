@@ -552,8 +552,8 @@ fn muster_detour_board() -> (Game, u32, u32, Pos, Vec<Pos>) {
         tile.feature = None;
         tile.hills = false;
     }
-    // The staging mover submits world-game MoveTo orders, unavailable on an
-    // arena. Keep the posed terrain and use world movement for this check.
+    // Pose a world campaign so the siege member's turn cycle matches the
+    // production staging path.
     g.map_script = crate::setup::MapScript::Pangaea;
     g.turn = 30;
     g.at_war.insert((0, 1));
@@ -576,6 +576,21 @@ fn a_stalled_muster_walks_around_a_neighboring_city() {
     let view = CityView::of(&g, cid).unwrap();
     let mut ai = train(true);
     ai.enable_muster_walks_the_road();
+    let mut move_probe = g.speculative_clone();
+    let move_result = move_probe.apply(
+        0,
+        &Action::MoveTo {
+            unit: uid,
+            to: detour[2],
+        },
+    );
+    assert!(
+        move_result.is_ok(),
+        "fixture's safe first march must execute: {move_result:?}; current={}, winner={:?}",
+        g.current,
+        g.winner
+    );
+    assert_eq!(move_probe.units[&uid].pos, detour[2]);
     let road = g.dry_road_steps(uid, view.pos, STAGING_FAR, MUSTER_ROAD_STEPS);
     assert!(road.contains_key(&start));
     let mut field = super::super::battle_planner::DangerField::with_reach(&g, 0, true);

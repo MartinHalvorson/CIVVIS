@@ -22,5 +22,29 @@ that counts toward readiness. A deterministic scenario places a neighboring
 walled city over the shortest road and a longer southern road whose first
 step moves away from the objective.
 
-Implementation and validation are in progress. No native win-rate or
-advanced-difficulty improvement has been established by this investigation.
+Fresh reconstructions at turns 160 and 166 found zero danger on several
+reachable candidate tiles. These reads do not reproduce the persistent native
+AI memory or the exact decision frame that printed a hold. They do not prove
+that enemy fire caused the native Lagash holds. The hold explanation now says
+that no safe move completed, rather than asserting that every closer tile was
+too dangerous.
+
+The implementation uses a safe-road distance throughout a distant muster
+approach under `muster-walks-the-road`. Its reverse flood starts on safe,
+passable land within the existing ten-tile readiness band and excludes enemy
+ranged or structure fire and danger above half the member's health. Existing
+territory access rules remain authoritative. Only reachable, unoccupied safe
+endpoints can be selected. The flood keeps the existing 128-step bound and
+stops at the member; members already in the readiness band do not run it.
+
+The first fallback prototype successfully moved two tiles onto the detour,
+then followed the ordinary terrain distance back on the next turn. A retained
+per-turn trace exposes four repetitions of that cycle. Consistent safe-road
+ranking addresses the return step as well as the initial local minimum.
+The regression requires the member to reach the readiness band over complete
+turns while never ending under fire. Its cloned-board precondition verifies
+that the first safe `MoveTo` actually executes. Blocked-detour and disabled
+treatment cases must continue holding.
+
+Validation is in progress. No native win-rate or advanced-difficulty
+improvement has been established by this investigation.
