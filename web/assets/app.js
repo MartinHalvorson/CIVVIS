@@ -6842,6 +6842,8 @@ function adoptLivePause(status) {
   // The live time stops and starts with the hold, not with the next frame.
   syncLiveClockRun();
   paintLivePause();
+  // The tree hooks give way to the research box (`drawLaunchBar`).
+  if (livePause.available !== wasAvailable) drawLaunchBar();
   // The turn plate's level row belongs to a live game (`hudTurnPlate`).
   if (livePause.available !== wasAvailable && state) drawPlayerHud();
 }
@@ -25531,10 +25533,15 @@ function drawLaunchBar() {
   // being offered and going dead under the hand. What a watcher can actually
   // use is what stays: the two trees of the civilization it is following, in
   // `LaunchBar.xml`'s own leading position. The hooks bar is the played
-  // seat's alone; the stylesheet keeps it off a watched world.
+  // seat's alone; the stylesheet keeps it off a watched world. Beside a live
+  // Civilization VI game the research box (`liveTrackerHtml`) already carries
+  // both studies and opens both trees, so the two hooks would only repeat it
+  // (operator 2026-10-14: "remove the old tech and civic buttons").
   if (SPEC) {
-    if (tabs) tabs.innerHTML = arrangementSeat() !== null && worldStandingsInPlay()
-      ? launchTreeHook("science") + launchTreeHook("culture") : "";
+    const treeHooks = arrangementSeat() !== null && worldStandingsInPlay() &&
+      !(livePause.available && state.me);
+    if (tabs) tabs.innerHTML = treeHooks ? launchTreeHook("science") + launchTreeHook("culture") : "";
+    bar.classList.toggle("on", treeHooks);
     if (hooks) hooks.innerHTML = "";
     const report = document.getElementById("rankingsbtn");
     if (report) report.setAttribute("aria-pressed", rankingsReportOpen ? "true" : "false");
