@@ -3125,6 +3125,36 @@ const GUN_RESOURCE_BUY_GOLD_RESERVE: i64 = 60;
 const GUN_RESOURCE_BUY_INCOME_FLOOR: f64 = 4.0;
 const GUN_RESOURCE_BUY_CEILING_MIN: i32 = 30;
 const GUN_RESOURCE_BUY_CEILING_MAX: i32 = 900;
+/// `aluminum-ask-tops-up-gold`: the Gold a unit of the air wing's Aluminum
+/// ask may cost on top of its barter, the most the host's counter is let to
+/// ask (`aluminum_ask_ceiling`).
+const ALUMINUM_ASK_GOLD_PER_UNIT: i64 = 8;
+
+/// `aluminum-ask-tops-up-gold`: the Gold ceiling an Aluminum buy order
+/// carries, or `None` when `order` is not one or its ceiling already stands
+/// at or above the top-up. The order's Gold is the ceiling the Lua ask
+/// registers: the host's counter (`EQUALIZE`) may add our Gold to the deal up
+/// to it, and the answer closes only at or under it. The top-up is
+/// [`ALUMINUM_ASK_GOLD_PER_UNIT`] a unit asked, never more than the treasury
+/// above `floor`. Over 10-13/14 every Aluminum ask carried a ceiling of 0 and
+/// 7 of 91 answered closed, against 38% of luxury swaps.
+fn aluminum_ask_ceiling(order: &Order, gold: i64, floor: i64) -> Option<i32> {
+    if order.kind != "buy" {
+        return None;
+    }
+    let verb = order.verb.as_deref()?;
+    let amount: i64 = verb
+        .strip_prefix("RESOURCE_ALUMINUM=")?
+        .split(';')
+        .next()?
+        .parse()
+        .ok()?;
+    let current = i64::from(order.pos.map_or(0, |(gold, _)| gold));
+    let ceiling = (ALUMINUM_ASK_GOLD_PER_UNIT * amount)
+        .min((gold - floor).max(0))
+        .min(i64::from(GUN_RESOURCE_BUY_CEILING_MAX));
+    (ceiling > current).then_some(ceiling as i32)
+}
 
 /// `siege-buys-the-gun-resource`: drop every sale that would give away a
 /// strategic in `held` (`AdvancedAi::siege_gun_resources_held`, host names)
@@ -5166,7 +5196,24 @@ fn decide(
             &worth,
             &give_worth,
         ) {
-            None => note_bits.push("gun_resource_buy=1".to_string()),
+            None => {
+                note_bits.push("gun_resource_buy=1".to_string());
+                // `aluminum-ask-tops-up-gold`: let the host's counter price
+                // the Aluminum block in Gold, up to the ceiling journalled
+                // here; the deal events carry the ceiling and the outcome.
+                if ai.aluminum_ask_tops_up_gold_enabled() {
+                    let floor = (ai
+                        .purchase_upkeep_floor_reading(&mirror_state.game, 0)
+                        .ceil() as i64)
+                        .max(GUN_RESOURCE_BUY_GOLD_RESERVE);
+                    if let Some(order) = orders.last_mut() {
+                        if let Some(ceiling) = aluminum_ask_ceiling(order, state.gold, floor) {
+                            order.pos = Some((ceiling, 0));
+                            note_bits.push(format!("aluminum_ask_ceiling={ceiling}"));
+                        }
+                    }
+                }
+            }
             Some(why) => {
                 // The holds worth a glance: a gun waiting on its resource
                 // while the treasury, the sellers or their working deals
@@ -20006,6 +20053,50 @@ mod tests {
                 "{name} is known to be spelled differently in Civilization VI"
             );
         }
+    }
+    /// `aluminum-ask-tops-up-gold`: the Aluminum ask's ceiling is eight Gold
+    /// a unit, never past the treasury above the floor, and only ever raised.
+    #[test]
+    fn the_aluminum_ask_ceiling_tops_up_within_the_treasury() {
+        let ask = |verb: &str, gold: i32| super::Order {
+            kind: "buy",
+            subject: Some(2),
+            verb: Some(verb.to_string()),
+            pos: Some((gold, 0)),
+        };
+        let barter = ask("RESOURCE_ALUMINUM=6;RESOURCE_AMBER=1", 0);
+        assert_eq!(super::aluminum_ask_ceiling(&barter, 400, 100), Some(48));
+        assert_eq!(
+            super::aluminum_ask_ceiling(&barter, 120, 100),
+            Some(20),
+            "the treasury above the floor"
+        );
+        assert_eq!(
+            super::aluminum_ask_ceiling(&barter, 90, 100),
+            None,
+            "nothing above the floor"
+        );
+        assert_eq!(
+            super::aluminum_ask_ceiling(&ask("RESOURCE_ALUMINUM=6", 60), 400, 100),
+            None,
+            "a higher ceiling stands"
+        );
+        assert_eq!(
+            super::aluminum_ask_ceiling(&ask("RESOURCE_NITER=10;RESOURCE_AMBER=1", 0), 400, 100),
+            None,
+            "Aluminum only"
+        );
+        let sale = super::Order {
+            kind: "sell",
+            subject: Some(2),
+            verb: Some("RESOURCE_ALUMINUM=6".to_string()),
+            pos: Some((0, 0)),
+        };
+        assert_eq!(
+            super::aluminum_ask_ceiling(&sale, 400, 100),
+            None,
+            "buys only"
+        );
     }
 }
 

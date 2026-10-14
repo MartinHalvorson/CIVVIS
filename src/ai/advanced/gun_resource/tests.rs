@@ -431,3 +431,89 @@ fn the_wings_aluminum_is_held_from_sale() {
         "never bartered away"
     );
 }
+
+/// `aluminum-buys-the-tile`: one city of ours, Radio and Advanced Flight
+/// known (the Bomber needs Aluminum), no Aluminum drawn, and an unowned
+/// Aluminum deposit on a ring-two tile beside the city's own. Returns the
+/// game, the city and the deposit.
+fn aluminum_case() -> (Game, u32, crate::Pos) {
+    let mut g = Game::new_full(2, 40, 26, 81_407, 500, 0, false);
+    g.current = 0;
+    let settler = g
+        .units
+        .values()
+        .find(|u| u.kind == "settler" && u.owner == 0)
+        .map(|u| u.pos)
+        .expect("our settler");
+    let city = g.found_city_for(0, settler, None);
+    g.players[0]
+        .techs
+        .extend(["radio", "advanced_flight"].map(crate::name::Name::new));
+    let centre = g.cities[&city].pos;
+    let deposit = g
+        .wdisk(centre, 2)
+        .into_iter()
+        .find(|pos| {
+            g.wdist(*pos, centre) == 2
+                && g.map.get(*pos).is_some_and(|tile| {
+                    tile.owner_city.is_none()
+                        && g.rules.is_passable(tile)
+                        && !g.rules.is_water(tile)
+                })
+                && g.nbrs(*pos)
+                    .into_iter()
+                    .any(|n| g.map.tiles[&n].owner_city == Some(city))
+        })
+        .expect("an unowned ring-two tile beside the city");
+    {
+        let tile = g.map.tiles.get_mut(&deposit).unwrap();
+        tile.terrain = crate::name!("plains");
+        tile.feature = None;
+        tile.resource = Some(crate::name!("aluminum"));
+    }
+    g.players[0].explored.insert(deposit);
+    g.players[0].gold = 500.0;
+    assert!(
+        g.plot_purchase_cost(0, city, deposit).is_some(),
+        "fixture: the deposit is buyable"
+    );
+    assert_eq!(g.strategic_resource_rate(0, "aluminum"), 0.0);
+    (g, city, deposit)
+}
+
+#[test]
+fn the_wanted_aluminum_tile_is_bought_above_the_reserve() {
+    let (mut g, city, deposit) = aluminum_case();
+    let mut ai = AdvancedAi::new();
+    assert!(
+        !ai.aluminum_tile_purchase(&mut g, 0, 100.0),
+        "off by default"
+    );
+    assert!(g.map.tiles[&deposit].owner_city.is_none());
+
+    ai.enable_aluminum_buys_the_tile();
+    assert!(
+        !ai.aluminum_tile_purchase(&mut g, 0, 495.0),
+        "the reserve stands"
+    );
+    assert!(g.map.tiles[&deposit].owner_city.is_none());
+    assert_eq!(g.players[0].gold, 500.0);
+
+    assert!(ai.aluminum_tile_purchase(&mut g, 0, 100.0));
+    assert_eq!(
+        g.map.tiles[&deposit].owner_city,
+        Some(city),
+        "the deposit is ours"
+    );
+    assert!(g.players[0].gold >= 100.0 && g.players[0].gold < 500.0);
+}
+
+#[test]
+fn an_aluminum_tile_is_not_bought_before_radio() {
+    let (mut g, _, deposit) = aluminum_case();
+    g.players[0].techs.remove(&crate::name!("radio"));
+    let mut ai = AdvancedAi::new();
+    ai.enable_aluminum_buys_the_tile();
+    assert!(!ai.aluminum_tile_purchase(&mut g, 0, 100.0), "unrevealed");
+    assert!(g.map.tiles[&deposit].owner_city.is_none());
+}

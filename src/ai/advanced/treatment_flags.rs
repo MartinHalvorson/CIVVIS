@@ -7662,6 +7662,28 @@ impl AdvancedAi {
         self.war_target_prices_the_walls = false;
     }
 
+    /// Opt-in gene `aluminum-buys-the-tile`; see
+    /// `AdvancedAi::aluminum_buys_the_tile`.
+    pub fn enable_aluminum_buys_the_tile(&mut self) {
+        self.aluminum_buys_the_tile = true;
+    }
+
+    /// The twin of `enable_aluminum_buys_the_tile`.
+    pub fn disable_aluminum_buys_the_tile(&mut self) {
+        self.aluminum_buys_the_tile = false;
+    }
+
+    /// Opt-in gene `aluminum-ask-tops-up-gold`; see
+    /// `AdvancedAi::aluminum_ask_tops_up_gold`.
+    pub fn enable_aluminum_ask_tops_up_gold(&mut self) {
+        self.aluminum_ask_tops_up_gold = true;
+    }
+
+    /// The twin of `enable_aluminum_ask_tops_up_gold`.
+    pub fn disable_aluminum_ask_tops_up_gold(&mut self) {
+        self.aluminum_ask_tops_up_gold = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

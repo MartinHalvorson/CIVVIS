@@ -311,6 +311,76 @@ impl AdvancedAi {
         })
     }
 
+    /// `aluminum-buys-the-tile`: whether the empire wants Aluminum it draws
+    /// none of: revealed to us, no income, and either a unit we have the
+    /// technology for needs it (`strategic_deposits_wanted`) or the air wing
+    /// wants Bombers at most [`AIR_WING_RESOURCE_TECHS`] technologies away.
+    fn aluminum_tile_wanted(&self, g: &Game, pid: usize) -> bool {
+        let aluminum = crate::name!("aluminum");
+        let player = &g.players[pid];
+        let revealed = g.rules.resources.get(&aluminum).is_some_and(|spec| {
+            spec.tech
+                .as_ref()
+                .is_none_or(|tech| player.techs.contains(tech))
+        });
+        revealed
+            && g.strategic_resource_rate(pid, aluminum.as_str()) <= 0.0
+            && (self.strategic_deposits_wanted(g, pid).contains(&aluminum)
+                || (Self::air_surge_missing_techs(g, pid) <= AIR_WING_RESOURCE_TECHS
+                    && self.air_wing_wants_bombers(g, pid)))
+    }
+
+    /// `aluminum-buys-the-tile`: buy the cheapest unowned Aluminum tile one
+    /// of our cities can buy, while the empire wants Aluminum and draws none,
+    /// leaving `reserve` (the purchase pass's, `purchases-keep-the-upkeep-
+    /// reserve` included) in the treasury. True when bought. Over 10-13/14,
+    /// 34 of 67 Immortal runs past Radio owned no Aluminum fifteen turns on,
+    /// the air wing journalled "waits on aluminum" in every strong run, and 6
+    /// of the dry runs had an unowned deposit within 3 tiles of a city.
+    pub(super) fn aluminum_tile_purchase(&self, g: &mut Game, pid: usize, reserve: f64) -> bool {
+        if !self.aluminum_buys_the_tile || !self.aluminum_tile_wanted(g, pid) {
+            return false;
+        }
+        let aluminum = crate::name!("aluminum");
+        let best = self
+            .legal_purchase_actions(g, pid)
+            .into_iter()
+            .filter_map(|action| match action {
+                Action::BuyPlot { city, pos, cost }
+                    if g.map.get(pos).is_some_and(|tile| {
+                        tile.resource.as_ref() == Some(&aluminum) && tile.owner_city.is_none()
+                    }) =>
+                {
+                    Some((cost, city, pos, action))
+                }
+                _ => None,
+            })
+            .min_by(|left, right| left.0.total_cmp(&right.0).then(left.2.cmp(&right.2)));
+        let Some((cost, city, pos, action)) = best else {
+            return false;
+        };
+        if g.players[pid].gold + f64::EPSILON < reserve + cost {
+            think!(self.journal(), Economy, Detail,
+                   "The Aluminum tile waits on the treasury";
+                   "aluminum-buys-the-tile: {cost:.0} Gold for the tile at {pos:?} would leave less than the {reserve:.0} reserve";
+                   pos);
+            return false;
+        }
+        if g.apply(pid, &action).is_err() {
+            return false;
+        }
+        let name = g
+            .cities
+            .get(&city)
+            .map(|c| c.name.clone())
+            .unwrap_or_default();
+        think!(self.journal(), Economy, Decision,
+               "{} buys the Aluminum tile", name;
+               "aluminum-buys-the-tile: {cost:.0} Gold; the empire wants Aluminum and draws none";
+               pos);
+        true
+    }
+
     /// The siege guns' wants for the walled campaign target.
     fn siege_gun_wants_for_target(&self, g: &Game, pid: usize) -> Vec<GunResourceWant> {
         if !self.siege_buys_the_gun_resource
