@@ -796,7 +796,13 @@ const POLICY_SCORE_MAX_WORKERS: usize = 4;
 /// repository has ever got value from: the card is applied and the result
 /// measured, rather than a regression predicting what cards tend to accompany
 /// winning. `docs/SUPERHUMAN.md` §0 is the evidence for preferring the former.
-fn empire_reading(g: &Game, pid: usize, w: &Weights, net_maintenance: bool) -> f64 {
+fn empire_reading(
+    g: &Game,
+    pid: usize,
+    w: &Weights,
+    net_maintenance: bool,
+    player_income: bool,
+) -> f64 {
     // A card counterfactual is a read-only whole-empire sweep. Keep one memo
     // scope over it so the city-yield and ownership derivations shared by its
     // cities are answered once, then drop it before the caller changes cards.
@@ -877,8 +883,30 @@ fn empire_reading(g: &Game, pid: usize, w: &Weights, net_maintenance: bool) -> f
     } else {
         0.0
     };
+    // `merchant-confederation-earns-its-slot`: policy income paid to the
+    // PLAYER is no line of any city's ledger (`Game::player_policy_yields`),
+    // so the sweep above read Merchant Confederation's Gold per Envoy and
+    // Raj's yields per tributary as nothing, the policy trace marked both
+    // cards inert, and they scored exactly 0.0 -- the silence influence and
+    // maintenance had above. 165 live runs from 10-13: Merchant
+    // Confederation available in 137, slotted in none, 7,300 turns at 15 or
+    // more placed Envoys (about 216,000 Gold) behind Charismatic Leader's
+    // unweighted influence. For every card that pays no player income the
+    // term is identical either side and cancels exactly.
+    let income = if player_income {
+        let y = g.player_policy_yields(pid);
+        w.pol_food * y.food
+            + w.pol_production * y.production
+            + w.pol_gold * y.gold
+            + w.pol_science * y.science
+            + w.pol_culture * y.culture
+            + w.pol_faith * y.faith
+    } else {
+        0.0
+    };
     value + w.pol_military * strength + w.pol_influence * g.policy_effect(pid, "influence_per_turn")
         - maintenance
+        + income
 }
 
 /// Take the Dedications this age offers, best first.
@@ -1059,6 +1087,7 @@ fn policy_card_score(
     current_reading: f64,
     reads: &PolicyReadSet,
     net_maintenance: bool,
+    player_income: bool,
 ) -> (f64, usize, String, Name) {
     let (priority, slot, card) = candidate;
     let incumbent = g.players[pid].policies.contains(card);
@@ -1083,12 +1112,12 @@ fn policy_card_score(
         (current_reading, current_reading)
     } else if incumbent {
         g.players[pid].policies.remove(card);
-        let without = empire_reading(g, pid, w, net_maintenance);
+        let without = empire_reading(g, pid, w, net_maintenance, player_income);
         g.players[pid].policies.insert(*card);
         (without, current_reading)
     } else {
         g.players[pid].policies.insert(*card);
-        let with = empire_reading(g, pid, w, net_maintenance);
+        let with = empire_reading(g, pid, w, net_maintenance, player_income);
         g.players[pid].policies.remove(card);
         (current_reading, with)
     };
@@ -1114,9 +1143,10 @@ fn reading_with_policy_trace(
     pid: usize,
     w: &Weights,
     net_maintenance: bool,
+    player_income: bool,
 ) -> (f64, PolicyReadSet) {
     let trace = g.trace_policy_reads(pid);
-    let reading = empire_reading(g, pid, w, net_maintenance);
+    let reading = empire_reading(g, pid, w, net_maintenance, player_income);
     let reads = trace.finish();
     (reading, reads)
 }
@@ -1127,6 +1157,7 @@ fn revise_policy_deck(
     w: &Weights,
     pool: Option<&WorkPool>,
     net_maintenance: bool,
+    player_income: bool,
 ) {
     let slots = g.gov_slots(pid);
     let total = slots.military + slots.economic + slots.diplomatic + slots.wildcard;
@@ -1199,7 +1230,7 @@ fn revise_policy_deck(
                     // The trace is taken on the branch, so each worker records
                     // its own and nothing crosses a thread.
                     let (current_reading, reads) =
-                        reading_with_policy_trace(&branch, pid, &weights, net_maintenance);
+                        reading_with_policy_trace(&branch, pid, &weights, net_maintenance, player_income);
                     indices
                         .map(|index| {
                             (
@@ -1212,6 +1243,7 @@ fn revise_policy_deck(
                                     current_reading,
                                     &reads,
                                     net_maintenance,
+                                    player_income,
                                 ),
                             )
                         })
@@ -1220,7 +1252,8 @@ fn revise_policy_deck(
             )
         }
         None => {
-            let (current_reading, reads) = reading_with_policy_trace(g, pid, w, net_maintenance);
+            let (current_reading, reads) =
+                reading_with_policy_trace(g, pid, w, net_maintenance, player_income);
             candidates
                 .iter()
                 .map(|candidate| {
@@ -1232,6 +1265,7 @@ fn revise_policy_deck(
                         current_reading,
                         &reads,
                         net_maintenance,
+                        player_income,
                     )
                 })
                 .collect()
@@ -3805,6 +3839,10 @@ pub struct BasicAi {
     /// no other ranking moves. Entrant `advanced_maintenance_deck`; off in
     /// production pending its screen.
     pub(crate) maintenance_aware_deck: bool,
+    /// `merchant-confederation-earns-its-slot`: the policy counterfactual
+    /// reads the policy income paid to the player (`player_policy_yields`)
+    /// beside the cities' yields. Set by the Advanced gene; off by default.
+    pub(crate) deck_reads_player_income: bool,
     /// Reserve the first usable empty trade slot before ordinary production
     /// and judge safety at the city that can actually start the route. The
     /// old gate vetoes every Trader when any city in the empire has a local
@@ -5881,6 +5919,7 @@ impl BasicAi {
             siege_preempts_the_queue: false,
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
+            deck_reads_player_income: false,
             solvency_first_trade_slot: false,
             builder_tries_the_next_tile: false,
             naval_threat_triage: false,
@@ -6400,6 +6439,7 @@ impl BasicAi {
             siege_preempts_the_queue: false,
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
+            deck_reads_player_income: false,
             solvency_first_trade_slot: false,
             builder_tries_the_next_tile: false,
             naval_threat_triage: false,
@@ -8933,7 +8973,14 @@ impl BasicAi {
                 }
             }
         }
-        revise_policy_deck(g, pid, &self.w, pool, self.maintenance_aware_deck);
+        revise_policy_deck(
+            g,
+            pid,
+            &self.w,
+            pool,
+            self.maintenance_aware_deck,
+            self.deck_reads_player_income,
+        );
         // The engine's own gate, restated here rather than guessed at. This
         // asked once per player per turn for the whole game and was refused
         // every time in any game without the Secret Societies mode — 894
@@ -20567,11 +20614,11 @@ mod tests {
         };
 
         let mut serial = initial.clone();
-        revise_policy_deck(&mut serial, 0, &weights, None, false);
+        revise_policy_deck(&mut serial, 0, &weights, None, false, false);
         for threads in [4, 5] {
             let mut parallel = initial.clone();
             let pool = WorkPool::new(threads);
-            revise_policy_deck(&mut parallel, 0, &weights, Some(&pool), false);
+            revise_policy_deck(&mut parallel, 0, &weights, Some(&pool), false, false);
 
             assert_eq!(serial.log, parallel.log, "threads={threads}");
             assert_eq!(
@@ -20645,7 +20692,7 @@ mod tests {
             assert!(!cities.is_empty(), "a seat with no cities reads nothing");
             for net_maintenance in [false, true] {
                 let (base, reads) =
-                    reading_with_policy_trace(&game, pid, &weights, net_maintenance);
+                    reading_with_policy_trace(&game, pid, &weights, net_maintenance, false);
                 assert!(
                     !reads.is_opaque(),
                     "an ordinary seat carries no runtime attachment"
@@ -20660,7 +20707,7 @@ mod tests {
                     } else {
                         game.players[pid].policies.insert(card);
                     }
-                    let other = empire_reading(&game, pid, &weights, net_maintenance);
+                    let other = empire_reading(&game, pid, &weights, net_maintenance, false);
                     if held {
                         game.players[pid].policies.insert(card);
                     } else {
@@ -20826,24 +20873,64 @@ mod tests {
         // It is also the classifier's own boundary: with the bill unread the
         // sweep never asks for `unit_maintenance_discount`, so the card is
         // reading-inert and the skip returns the same exact 0.0.
-        let (current, reads) = reading_with_policy_trace(&game, 0, &weights, false);
+        let (current, reads) = reading_with_policy_trace(&game, 0, &weights, false, false);
         assert!(reads.card_is_inert(&game.rules, card));
         let (blind, ..) =
-            policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, false);
+            policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, false, false);
         assert_eq!(blind, 0.0, "the defect under test: the card is invisible");
 
         // Aware: the with-side bill is lower by one Gold per unit, so the
         // gain is the discount at the gold weight — strictly positive. The
         // same card is now live to the classifier, because the same sweep now
         // asks the deck for the discount.
-        let (current, reads) = reading_with_policy_trace(&game, 0, &weights, true);
+        let (current, reads) = reading_with_policy_trace(&game, 0, &weights, true, false);
         assert!(!reads.card_is_inert(&game.rules, card));
         let (aware, ..) =
-            policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, true);
+            policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, true, false);
         assert!(
             aware > 0.0,
             "the maintenance discount must score its own relief, got {aware}"
         );
+    }
+
+    /// `merchant-confederation-earns-its-slot`: Merchant Confederation's Gold
+    /// per Envoy is paid to the player, not to a city, so the shipped
+    /// reading never asks for it, the card is reading-inert and scores
+    /// exactly 0.0 at any number of Envoys. Reading the player's policy
+    /// income prices it at the gold weight per Envoy.
+    #[test]
+    fn merchant_confederation_scores_its_envoys_only_when_player_income_reads() {
+        let mut game = Game::new_full(1, 20, 14, 91_483, 120, 0, false);
+        game.players[0].envoys = vec![(5, 7), (6, 5)];
+        let card = crate::name!("merchant_confederation");
+        let spec = &game.rules.policies[&card];
+        let candidate = (0usize, spec.slot.clone(), card);
+        let weights = Weights {
+            policy_deck: PolicyDeck::Live,
+            ..Weights::default()
+        };
+
+        let (current, reads) = reading_with_policy_trace(&game, 0, &weights, false, false);
+        assert!(reads.card_is_inert(&game.rules, card));
+        let (blind, ..) =
+            policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, false, false);
+        assert_eq!(blind, 0.0, "the defect under test: twelve Envoys' Gold is invisible");
+
+        let (current, reads) = reading_with_policy_trace(&game, 0, &weights, false, true);
+        assert!(!reads.card_is_inert(&game.rules, card));
+        let (priced, ..) =
+            policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, false, true);
+        assert!(
+            (priced - 12.0 * weights.pol_gold).abs() < 1e-9,
+            "twelve Envoys at one Gold each, at the gold weight: {priced}"
+        );
+
+        // With no Envoy placed the card is worth nothing either way.
+        game.players[0].envoys.clear();
+        let (current, reads) = reading_with_policy_trace(&game, 0, &weights, false, true);
+        let (empty, ..) =
+            policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, false, true);
+        assert_eq!(empty, 0.0);
     }
 
     #[test]
@@ -20877,23 +20964,23 @@ mod tests {
 
         // Challenger: the current slate is the exact `without` side, so the
         // incremental scorer must agree with the old two-sweep reading.
-        let (current, reads) = reading_with_policy_trace(&game, 0, &weights, false);
+        let (current, reads) = reading_with_policy_trace(&game, 0, &weights, false, false);
         let mut full = game.clone();
-        let without = empire_reading(&full, 0, &weights, false);
+        let without = empire_reading(&full, 0, &weights, false, false);
         full.players[0].policies.insert(card);
-        let with = empire_reading(&full, 0, &weights, false);
+        let with = empire_reading(&full, 0, &weights, false, false);
         let expected_gain = with - without;
         let expected = (expected_gain, candidate.0, candidate.1.clone(), candidate.2);
-        let actual = policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, false);
+        let actual = policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, false, false);
         assert_eq!(actual, expected);
 
         // Incumbent: after putting the card on the slate, the current reading
         // is the exact `with` side and only removal needs a fresh sweep.
         game.players[0].policies.insert(card);
-        let (current, reads) = reading_with_policy_trace(&game, 0, &weights, false);
+        let (current, reads) = reading_with_policy_trace(&game, 0, &weights, false, false);
         let mut full = game.clone();
         full.players[0].policies.remove(&card);
-        let without = empire_reading(&full, 0, &weights, false);
+        let without = empire_reading(&full, 0, &weights, false, false);
         let gain = current - without;
         let expected = (
             gain + weights.pol_swap_margin * gain.abs(),
@@ -20901,7 +20988,7 @@ mod tests {
             candidate.1.clone(),
             candidate.2,
         );
-        let actual = policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, false);
+        let actual = policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, false, false);
         assert_eq!(actual, expected);
         assert!(game.players[0].policies.contains(&card));
     }

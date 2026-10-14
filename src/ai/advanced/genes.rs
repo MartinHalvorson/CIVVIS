@@ -3951,6 +3951,12 @@ pub const GENES: &[Gene] = &[
     // city of ours is converting, peace after five clear turns. See
     // `advanced/faith_war_before_the_flip.rs`.
     Gene { tag: "faith-war-before-the-flip", field: "faith_war_before_the_flip", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_war_before_the_flip, disable: AdvancedAi::disable_faith_war_before_the_flip },
+    // The base deck reads policy income paid to the player (Merchant
+    // Confederation's Gold per Envoy, Raj's yields per tributary), and
+    // Merchant Confederation joins the portfolio ahead of the plan's own
+    // diplomatic cards while our Envoys pay ten Gold a turn. See
+    // `merchant_confederation_pays` in `advanced.rs`.
+    Gene { tag: "merchant-confederation-earns-its-slot", field: "merchant_confederation_earns_its_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_merchant_confederation_earns_its_slot, disable: AdvancedAi::disable_merchant_confederation_earns_its_slot },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
