@@ -20,7 +20,11 @@ fn forecasts(g: &Game, target: Pos, victim: u32) -> [(usize, f64); 3] {
     ]
     .map(|mut field| {
         let blows = field.contributions(target, victim);
-        assert!(blows.iter().all(|(source, _)| source.is_none()));
+        // No unit fires here: every blow is a fort's, tagged as a structure
+        // source for the shared-danger reading.
+        assert!(blows
+            .iter()
+            .all(|(source, _)| source.is_some_and(|id| id & STRUCTURE_SOURCE != 0)));
         (blows.len(), blows.iter().map(|(_, damage)| damage).sum())
     })
 }
