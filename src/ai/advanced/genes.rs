@@ -2395,6 +2395,9 @@ pub const GENES: &[Gene] = &[
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
+    // Guayaquil lost loyalty despite Magnus; save separately earned titles
+    // for Victor regional support. Unmeasured strategy, default off.
+    Gene { tag: "regional-loyalty-governor", field: "regional_loyalty_governor", kind: Kind::OptIn, enable: AdvancedAi::enable_regional_loyalty_governor, disable: AdvancedAi::disable_regional_loyalty_governor },
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
 ];

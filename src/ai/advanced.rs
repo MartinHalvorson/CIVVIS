@@ -29,6 +29,7 @@ mod defensive_apostle;
 mod domination_governors;
 mod domination_modernization;
 mod domination_siege_milestones;
+mod regional_loyalty_governor;
 mod regional_production_commitments;
 
 /// Local strength ratio a force group needs before it will advance or press an
@@ -6439,6 +6440,8 @@ pub struct AdvancedAi {
     lane_delegates_production_2: bool,
 
     // ---- append: p-r ------------------------------------------------
+    /// Reserve titles for regional governor loyalty support; opt-in until evaluated.
+    regional_loyalty_governor: bool,
     /// Independently screenable victory conversion heuristic; see `victory_conversion`.
     reinforce_before_stall: bool,
     /// The stock alliance desk asks for a Research Alliance, on any turn,
@@ -8598,6 +8601,7 @@ impl AdvancedAi {
             lane_delegates_production_2: false,
 
             // ---- append: p-r ----------------------------------------
+            regional_loyalty_governor: false,
             reinforce_before_stall: false,
             research_alliance_first: false,
             research_alliance_asked: BTreeMap::new(),
@@ -22842,6 +22846,20 @@ impl AdvancedAi {
 
     fn strategic_governors(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         while g.governor_titles_available(pid) > 0 {
+            if let Some((action, titles_needed)) = self.regional_loyalty_governor_action(g, pid) {
+                if g.governor_titles_available(pid) < titles_needed {
+                    think!(self.journal(), Government, Decision,
+                           "Saving a title for regional loyalty support";
+                           "a governed city is still losing loyalty; Victor's appointment and promotion need two titles");
+                    break;
+                }
+                if g.apply(pid, &action).is_ok() {
+                    think!(self.journal(), Government, Decision,
+                           "Funding regional loyalty support";
+                           "Garrison Commander can arrest a governed city's loyalty decline");
+                    continue;
+                }
+            }
             let priority = self.governor_priority_for(g, pid, plan.strategy);
             let priority = priority.as_slice();
             // Strategy can change every assessment window, but Governor
