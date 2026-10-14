@@ -6545,14 +6545,44 @@ function liveTrackerHtml(me) {
       `<span class="lt-k">Net policy effect</span>` +
       `<span class="lt-worth">${ledger.anarchy ? none("cards suspended in Anarchy")
         : policyWorthHtml(ledger.net) || none("nothing measurable this turn")}</span></div>`;
-  return study("techs", me.research, me.research_progress, techCost,
+  // Our governors head the box, each under the number of promotions it holds
+  // (operator 2026-10-14: "list the governors at the top of this new box …
+  // just list the number over the governor"). The tooltip says where it
+  // serves and which promotions those are.
+  const governorSpecs = (RULES && RULES.governors) || {};
+  const governorOrder = Object.keys(governorSpecs);
+  const governorRank = id => {
+    const index = governorOrder.indexOf(id);
+    return index < 0 ? governorOrder.length : index;
+  };
+  const governors = Object.entries(me.governor_roster || {})
+    .sort(([a], [b]) => governorRank(a) - governorRank(b) || a.localeCompare(b))
+    .map(([id, posting]) => {
+      const name = (governorSpecs[id] || {}).name || titleCase(id);
+      const promotions = posting.promotions || [];
+      const city = Number.isInteger(posting.city)
+        ? (state.cities || []).find(candidate => candidate.id === posting.city) : null;
+      const settling = city && Number(posting.disabled_until) > Number(state.turn);
+      const where = !city ? "awaiting a city"
+        : `in ${city.name}${settling ? `, established on turn ${posting.disabled_until}` : ""}`;
+      const title = `${name} — ${where} · ${promotions.length} promotion${promotions.length === 1 ? "" : "s"}` +
+        (promotions.length ? `: ${promotions.map(titleCase).join(", ")}` : "");
+      return `<span class="lt-gov${city ? "" : " unassigned"}" title="${escapeAttr(title)}">` +
+        `<b class="lt-gov-n">${promotions.length}</b>` +
+        `<span class="lt-gov-name">${escapeAttr(name)}</span></span>`;
+    });
+  const governorRow = `<div class="lt-govs"><span class="lt-k">Governors</span>` +
+    (governors.length ? governors.join("") : none("none yet")) + `</div>`;
+  // The deck's net effect leads the policies, above the cards it adds up.
+  return governorRow +
+    study("techs", me.research, me.research_progress, techCost,
       (me.boosted_techs || []).includes(me.research)) +
     study("civics", me.civic, me.civic_progress, civicCost,
       (me.boosted_civics || []).includes(me.civic)) +
     `<div class="lt-row"><span class="lt-k">Government</span>` +
     `<b>${me.government ? escapeAttr(titleCase(me.government)) : none("none")}</b></div>` +
-    (cards.length ? `<div class="lt-cards">${cards.join("")}</div>` : `<div class="lt-row">${none("no policy cards slotted")}</div>`) +
-    net;
+    net +
+    (cards.length ? `<div class="lt-cards">${cards.join("")}</div>` : `<div class="lt-row">${none("no policy cards slotted")}</div>`);
 }
 function paintLiveTracker() {
   const panel = document.getElementById("livetracker");
