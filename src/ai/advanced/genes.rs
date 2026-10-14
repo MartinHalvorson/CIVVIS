@@ -3867,6 +3867,16 @@ pub const GENES: &[Gene] = &[
     // asks closed, every one at ceiling 0, against 38% for luxury swaps. See
     // `aluminum_ask_ceiling` in `civvis_orders`.
     Gene { tag: "aluminum-ask-tops-up-gold", field: "aluminum_ask_tops_up_gold", kind: Kind::OptIn, enable: AdvancedAi::enable_aluminum_ask_tops_up_gold, disable: AdvancedAi::disable_aluminum_ask_tops_up_gold },
+    // Live Immortal 050758Z lost to Gaul's Science Victory: our two Spies
+    // ran Foment Unrest in London (the war plan's capital) after Gaul's
+    // Rocketry, both were captured, and the host kept their slots while the
+    // board dropped them, so no Spy could be trained for 19 turns and the
+    // first Disrupt Rocketry came at turn 176. While a space racer exists, a
+    // Spy outside every racer's cities starts no capture-risk operation, an
+    // idle one is posted to the leading racer before any pad is seen, and in
+    // a racer's city it runs Disrupt Rocketry or a safe operation. See
+    // `advanced/racer_keeps_the_spies.rs`.
+    Gene { tag: "racer-keeps-the-spies", field: "racer_keeps_the_spies", kind: Kind::OptIn, enable: AdvancedAi::enable_racer_keeps_the_spies, disable: AdvancedAi::disable_racer_keeps_the_spies },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

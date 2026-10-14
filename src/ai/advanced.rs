@@ -18,7 +18,7 @@ use crate::rules::Yields;
 use crate::think;
 use crate::world::TileBits;
 use crate::Pos;
-use std::cell::RefCell;
+use std::cell::{Cell, RefCell};
 use std::collections::{BTreeMap, BTreeSet, HashSet, VecDeque};
 use std::sync::Arc;
 mod adopted_faith_sanctuary;
@@ -7543,6 +7543,16 @@ pub struct AdvancedAi {
     /// (`append_luxury_swap_order` in `civvis_orders`). Off by default.
     luxury_swap_asks_2: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `racer-keeps-the-spies`: while a space racer exists, a Spy outside
+    /// every racer's cities starts no capture-risk operation, an idle one is
+    /// posted to the leading racer before any pad is seen, and in a racer's
+    /// city it runs Disrupt Rocketry or a safe operation. See
+    /// `advanced/racer_keeps_the_spies.rs`.
+    racer_keeps_the_spies: bool,
+    /// `racer-keeps-the-spies`: the unbroken run of turns every city was
+    /// refused a Spy below capacity (first turn, last turn) and the turn the
+    /// journal last noted it.
+    racer_spies_slot_note: Cell<(u32, u32, u32)>,
     /// `purchases-keep-the-upkeep-reserve`: the discretionary Gold buys keep
     /// the floor the upgrade passes already keep (`upkeep-reserve`): one and
     /// a half turns of the army's bill. The main purchase pass, the
@@ -9128,6 +9138,9 @@ mod war_target_walls;
 
 /// `embassy-finds-the-capital`: see `advanced/embassy_capital.rs`.
 mod embassy_capital;
+
+/// `racer-keeps-the-spies`: see `advanced/racer_keeps_the_spies.rs`.
+mod racer_keeps_the_spies;
 
 mod denial_nearest_finish;
 mod denial_needs_a_road;
@@ -10720,6 +10733,8 @@ impl AdvancedAi {
             launcher_war_ignores_the_edge: false,
             luxury_swap_asks_2: false,
             // ---- append: p-r ----------------------------------------
+            racer_keeps_the_spies: false,
+            racer_spies_slot_note: Cell::new((0, 0, 0)),
             purchases_keep_the_upkeep_reserve: false,
             paused_district_finishes: false,
             peacetime_classical_republic: false,
@@ -28779,6 +28794,20 @@ impl AdvancedAi {
         // `advanced/culture_denial_heist.rs`.
         let culture_heist_targets = self.culture_heist_targets(g, pid);
         let culture_heist_cities = Self::culture_heist_cities(g, pid, &culture_heist_targets);
+        // `racer-keeps-the-spies`: the space racers, the one the Spies go to,
+        // and the owners whose cities a Spy stays in (every racer and every
+        // culture racer). All empty with the gene off. See
+        // `advanced/racer_keeps_the_spies.rs`.
+        let racer_spy_racers = self.racer_spy_racers(g, pid);
+        let racer_spy_leader = Self::racer_spy_leader(g, &racer_spy_racers);
+        let racer_spy_stays: BTreeSet<usize> = if racer_spy_racers.is_empty() {
+            BTreeSet::new()
+        } else {
+            racer_spy_racers
+                .union(&culture_heist_targets)
+                .copied()
+                .collect()
+        };
         let ids: Vec<u32> = g
             .spies
             .values()
@@ -28986,6 +29015,41 @@ impl AdvancedAi {
                     continue;
                 }
             }
+            // `racer-keeps-the-spies`: an idle Spy outside every racer's (and
+            // culture racer's) cities goes to the leading space racer, before
+            // any pad of it is seen. Never taken with the gene off
+            // (`racer_spy_leader` is `None`).
+            if let Some(post) = Self::racer_spy_post(
+                g,
+                spy_id,
+                current_city,
+                racer_spy_leader,
+                &racer_spy_stays,
+                &legal,
+            ) {
+                if let Some(action) = legal.iter().find(
+                    |action| matches!(action, Action::AssignSpy { city, .. } if *city == post),
+                ) {
+                    if g.apply(pid, action).is_ok() {
+                        *g.players[pid]
+                            .counters
+                            .entry("racer_spy_posts".to_string())
+                            .or_insert(0) += 1;
+                        let city_name = g.cities[&post].name.clone();
+                        let racer = g.players[g.cities[&post].owner].civ.to_string();
+                        think!(self.journal(), Military, Decision,
+                               "A Spy goes to {racer}'s {city_name}";
+                               "racer-keeps-the-spies: {racer} leads the space race; the Spy \
+                                waits there for Disrupt Rocketry instead of risking its slot \
+                                elsewhere");
+                    }
+                    self.spy_orders_until.insert(
+                        spy_id,
+                        g.turn + g.standard_duration(SPY_TRAVEL_ORDER_PATIENCE),
+                    );
+                    continue;
+                }
+            }
             let offensive = current_city
                 .and_then(|city| g.cities.get(&city))
                 .is_some_and(|city| city.owner != pid);
@@ -29038,6 +29102,19 @@ impl AdvancedAi {
                     );
                     continue;
                 }
+                // `racer-keeps-the-spies`: in a space racer's city, Disrupt
+                // Rocketry when offered, else only a safe operation, and the
+                // Spy keeps its slot. Never taken with the gene off.
+                if Self::racer_spy_city_is_a_racers(g, &racer_spy_racers, current_city) {
+                    if let Some(action) = Self::racer_spy_operation(&legal).cloned() {
+                        let _ = g.apply(pid, &action);
+                        self.spy_orders_until.insert(
+                            spy_id,
+                            g.turn + g.standard_duration(SPY_MISSION_ORDER_PATIENCE),
+                        );
+                    }
+                    continue;
+                }
                 let science_denial_pressure = current_city
                     .and_then(|city| g.cities.get(&city))
                     .is_some_and(|city| {
@@ -29064,6 +29141,15 @@ impl AdvancedAi {
                         }
                         let city = current_city?;
                         let defender = g.cities[&city].owner;
+                        // `racer-keeps-the-spies`: no capture-risk operation
+                        // outside every racer's cities while a racer exists.
+                        // Never taken with the gene off.
+                        if !racer_spy_racers.is_empty()
+                            && !racer_spy_stays.contains(&defender)
+                            && Self::racer_spy_risky(mission)
+                        {
+                            return None;
+                        }
                         let active = crate::game::SpyMission {
                             kind: mission.clone(),
                             city,

@@ -143,6 +143,12 @@ impl AdvancedAi {
             })
             .map(|cid| (g.city_yields(cid).production, cid))
             .collect();
+        // `racer-keeps-the-spies`: say so when every city is refused a Spy
+        // below our capacity. Exact no-op with that gene off.
+        if self.racer_keeps_the_spies && candidates.is_empty() {
+            let refused_everywhere = city_ids.iter().all(|cid| !g.can_produce(pid, *cid, &spy));
+            self.racer_spy_note_held_slots(g, pid, held, needed, refused_everywhere);
+        }
         candidates.sort_by(|(left, left_city), (right, right_city)| {
             right.total_cmp(left).then(left_city.cmp(right_city))
         });

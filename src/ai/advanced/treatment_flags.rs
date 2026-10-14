@@ -7695,6 +7695,17 @@ impl AdvancedAi {
         self.aluminum_ask_tops_up_gold = false;
     }
 
+    /// Opt-in gene `racer-keeps-the-spies`; see
+    /// `AdvancedAi::racer_keeps_the_spies`.
+    pub fn enable_racer_keeps_the_spies(&mut self) {
+        self.racer_keeps_the_spies = true;
+    }
+
+    /// The twin of `enable_racer_keeps_the_spies`.
+    pub fn disable_racer_keeps_the_spies(&mut self) {
+        self.racer_keeps_the_spies = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
