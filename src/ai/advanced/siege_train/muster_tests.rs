@@ -555,6 +555,10 @@ fn muster_detour_board() -> (Game, u32, u32, Pos, Vec<Pos>) {
     // Pose a world campaign so the siege member's turn cycle matches the
     // production staging path.
     g.map_script = crate::setup::MapScript::Pangaea;
+    // A random storm added 30 non-combat damage on the third march. This
+    // controlled case isolates the neighbouring city's fire and route.
+    g.disaster_intensity = 0;
+    g.storms.clear();
     g.turn = 30;
     g.at_war.insert((0, 1));
     let neighbor = g.found_city_for(1, threat, Some("Road blocker".into()));
@@ -617,7 +621,18 @@ fn a_stalled_muster_walks_around_a_neighboring_city() {
             detour.contains(&pos),
             "the member keeps the safe road: {pos:?}"
         );
-        assert_eq!(danger(&g, uid, pos), 0.0, "no turn ends under fire");
+        let mut check = super::super::battle_planner::DangerField::with_reach(&g, 0, true);
+        check.share(&g);
+        let blows = check.contributions(pos, uid);
+        assert_eq!(
+            check.rotation_danger(pos, uid),
+            0.0,
+            "no turn ends under fire at {pos:?}: {blows:?}; units={:?}",
+            g.units
+                .values()
+                .map(|u| (u.id, u.owner, u.kind, u.pos))
+                .collect::<Vec<_>>()
+        );
         if g.wdist(pos, view.pos) <= MUSTER_BREACH_FAR {
             break;
         }
