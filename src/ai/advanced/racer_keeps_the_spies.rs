@@ -40,7 +40,13 @@
 //! a racer one project behind but making [`RACER_SCIENCE_EDGE`] times the
 //! Science a turn of the racer ahead counts as level with it; level racers
 //! are told apart by the turns their Exoplanet Expedition still needs (when
-//! both have launched it), then Science a turn. Live Emperor 100910Z: the
+//! both have launched it), then by Production a turn, which builds the
+//! projects. Live 192420Z-cont1: France and Hungary stood level on two
+//! projects at turn 205 and on three from 219 to 229; Science a turn named
+//! Hungary (298-462 against 264-359) and the Spies left France, while France
+//! out-built it (606-747 Production against 449-641), launched Mars eight
+//! turns and the Exoplanet first, and won at 234 with no Disrupt Rocketry
+//! against it after turn 197. Live Emperor 100910Z: the
 //! Mapuche landed each stage first, but Greece made 1.3-1.6 times their
 //! Science from turn 201, launched the Exoplanet four turns after them at
 //! 4-5 points a turn against 1, and won at 233; every post of the gene's
@@ -97,15 +103,31 @@ impl AdvancedAi {
         self.denial_spy_racers(g, pid)
     }
 
+    /// A seat's Production a turn: its cities as the board rebuilds them
+    /// plus the host's public figure's difference (`observed_yield_adjustments`),
+    /// so the sum is the host's figure.
+    fn racer_spy_production(g: &Game, seat: usize) -> f64 {
+        g.player_city_ids(seat)
+            .into_iter()
+            .map(|city| g.city_yields(city).production)
+            .sum::<f64>()
+            + g.player_yield_extras(seat).production
+            + g.arena_side_yields(seat).production
+            + g.observed_yield_adjustments
+                .get(&seat)
+                .map_or(0.0, |adjustment| adjustment.production)
+    }
+
     /// The racer the Spies go to: the most space projects landed, a racer
     /// one project short of the most counting level when its Science a turn
     /// is [`RACER_SCIENCE_EDGE`] times the best of those ahead of it; then,
     /// between two that have both launched the Exoplanet Expedition, the
-    /// fewer turns it still needs; then Science a turn, technologies and the
-    /// lowest seat.
+    /// fewer turns it still needs; then Production a turn (the projects are
+    /// built with it), Science a turn, technologies and the lowest seat.
     pub(crate) fn racer_spy_leader(g: &Game, racers: &BTreeSet<usize>) -> Option<usize> {
         let stages = |rival: usize| Self::science_denial_stages(g, rival);
         let science = |rival: usize| Self::seat_science_per_turn(g, rival);
+        let production = |rival: usize| Self::racer_spy_production(g, rival);
         let top = racers.iter().map(|rival| stages(*rival)).max()?;
         let top_science = racers
             .iter()
@@ -137,6 +159,7 @@ impl AdvancedAi {
                     (Some(left), Some(right)) => right.total_cmp(&left),
                     _ => std::cmp::Ordering::Equal,
                 })
+                .then_with(|| production(*left).total_cmp(&production(*right)))
                 .then_with(|| science(*left).total_cmp(&science(*right)))
                 .then_with(|| {
                     g.players[*left]

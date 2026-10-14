@@ -402,9 +402,7 @@ fn a_racer_one_project_behind_with_the_science_edge_leads() {
     // 100910Z at turn 201: the Mapuche (seat 1) three projects at 202 a turn,
     // Greece (seat 2) two at 267.
     let (mut g, _, _, _) = board();
-    two_racers(&mut g, 202.0, 267.0);
-    land(&mut g, 1, 3);
-    land(&mut g, 2, 2);
+    greece_leads(&mut g);
     let racers = BTreeSet::from([1, 2]);
     assert_eq!(AdvancedAi::racer_spy_leader(&g, &racers), Some(2));
     // Turn 195: one behind at 209 against 198 is no edge.
@@ -442,9 +440,7 @@ fn two_launched_expeditions_are_told_apart_by_the_turns_they_need() {
 #[test]
 fn a_spy_at_a_racer_that_no_longer_leads_moves_to_the_leader() {
     let (mut g, capital, _, rival) = board();
-    two_racers(&mut g, 202.0, 267.0);
-    land(&mut g, 1, 3);
-    land(&mut g, 2, 2);
+    greece_leads(&mut g);
     let spy = idle_spy(&mut g, capital);
     keeps().advanced_spies(&mut g, 0, &conquest_on(1));
     assert_eq!(
@@ -457,9 +453,7 @@ fn a_spy_at_a_racer_that_no_longer_leads_moves_to_the_leader() {
 #[test]
 fn a_spy_offered_the_disruption_where_it_stands_stays_for_it() {
     let (mut g, capital, _, _) = board();
-    two_racers(&mut g, 202.0, 267.0);
-    land(&mut g, 1, 3);
-    land(&mut g, 2, 2);
+    greece_leads(&mut g);
     give_pad(&mut g, capital);
     let spy = idle_spy(&mut g, capital);
     keeps().advanced_spies(&mut g, 0, &conquest_on(1));
@@ -471,9 +465,7 @@ fn a_spy_offered_the_disruption_where_it_stands_stays_for_it() {
 fn a_listening_post_at_a_former_leader_does_not_hold_the_spy() {
     let run = |operation: &str| {
         let (mut g, capital, _, rival) = board();
-        two_racers(&mut g, 202.0, 267.0);
-        land(&mut g, 1, 3);
-        land(&mut g, 2, 2);
+        greece_leads(&mut g);
         let spy = idle_spy(&mut g, capital);
         Arc::make_mut(&mut g.host_unit_facts).insert(
             spy,
@@ -506,9 +498,7 @@ fn the_every_pad_post_does_not_pull_a_spy_out_of_the_leaders_city() {
     // the board. The every-pad re-post would send the Spy back to it.
     let run = |mut ai: AdvancedAi| {
         let (mut g, capital, _, rival) = board();
-        two_racers(&mut g, 202.0, 267.0);
-        land(&mut g, 1, 3);
-        land(&mut g, 2, 2);
+        greece_leads(&mut g);
         give_pad(&mut g, capital);
         let spy = idle_spy(&mut g, rival);
         ai.enable_science_denial_every_pad();
@@ -519,4 +509,55 @@ fn the_every_pad_post_does_not_pull_a_spy_out_of_the_leaders_city() {
     assert_eq!(city, Some(capital), "stock every-pad: to the seen pad");
     let (city, _, rival) = run(keeps());
     assert_eq!(city, Some(rival), "the gene: it stays with the leader");
+}
+
+/// The host's Production a turn for `seat`.
+fn set_production(g: &mut Game, seat: usize, production: f64) {
+    let derived = AdvancedAi::racer_spy_production(g, seat)
+        - g.observed_yield_adjustments
+            .get(&seat)
+            .map_or(0.0, |adjustment| adjustment.production);
+    Arc::make_mut(&mut g.observed_yield_adjustments)
+        .entry(seat)
+        .or_default()
+        .production = production - derived;
+}
+
+#[test]
+fn level_racers_are_told_apart_by_production_not_science() {
+    // 192420Z-cont1 at turn 205: France (seat 1) and Hungary (seat 2) both
+    // on two projects; Hungary makes more Science (298 against 264), France
+    // more Production (606 against 449) and launches first.
+    let (mut g, _, _, _) = board();
+    two_racers(&mut g, 264.0, 298.0);
+    land(&mut g, 1, 2);
+    land(&mut g, 2, 2);
+    set_production(&mut g, 1, 606.0);
+    set_production(&mut g, 2, 449.0);
+    let racers = BTreeSet::from([1, 2]);
+    assert_eq!(AdvancedAi::racer_spy_leader(&g, &racers), Some(1));
+    // One project behind, the Science edge makes Hungary level and its
+    // Production then decides (100910Z's Greece out-built the Mapuche too).
+    g.players[2].science_projects.clear();
+    land(&mut g, 2, 1);
+    two_racers(&mut g, 200.0, 260.0);
+    set_production(&mut g, 1, 606.0);
+    set_production(&mut g, 2, 700.0);
+    assert_eq!(AdvancedAi::racer_spy_leader(&g, &racers), Some(2));
+    // Without the edge, Production alone never lifts a racer a project behind.
+    two_racers(&mut g, 200.0, 240.0);
+    set_production(&mut g, 1, 606.0);
+    set_production(&mut g, 2, 700.0);
+    assert_eq!(AdvancedAi::racer_spy_leader(&g, &racers), Some(1));
+}
+
+/// 100910Z at turn 201: the Mapuche (seat 1) on three projects at 202
+/// Science and 362 Production, Greece (seat 2) on two at 267 and 428. The
+/// Science edge makes Greece level and its Production makes it the leader.
+fn greece_leads(g: &mut Game) {
+    two_racers(g, 202.0, 267.0);
+    land(g, 1, 3);
+    land(g, 2, 2);
+    set_production(g, 1, 362.0);
+    set_production(g, 2, 428.0);
 }
