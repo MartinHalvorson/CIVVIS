@@ -6283,6 +6283,16 @@ pub struct AdvancedAi {
     /// capital, by owner, under `capital-walls-before-the-surprise`.
     capital_watch_sightings: BTreeMap<usize, u32>,
     // ---- append: e-f ------------------------------------------------
+    /// `faith-war-before-the-flip`: a defensive war (no siege, no staging) on
+    /// a founding rival whose spreaders stand at our cities while our majority
+    /// still holds out and a city of ours already leans to its faith. See
+    /// `advanced/faith_war_before_the_flip.rs`.
+    faith_war_before_the_flip: bool,
+    /// `faith-war-before-the-flip`: the war the gene opened, if it runs.
+    faith_war_before_the_flip_war: Option<faith_war_before_the_flip::FaithWar>,
+    /// `faith-war-before-the-flip`: the last "held" line per founder (turn,
+    /// gate), so a held war is journalled once per window.
+    faith_war_held_noted: BTreeMap<usize, (u32, &'static str)>,
     /// `embassy-finds-the-capital`: on a Domination plan with Diplomatic
     /// Service known, one Resident Embassy a turn goes to a met rival at
     /// peace whose original capital we have never seen and whose standing
@@ -9230,6 +9240,9 @@ mod holdout_faith_war;
 /// `launched-racer-yields-the-capital`: see `advanced/launched_racer.rs`.
 mod launched_racer;
 
+/// `faith-war-before-the-flip`: see `advanced/faith_war_before_the_flip.rs`.
+mod faith_war_before_the_flip;
+
 mod denial_nearest_finish;
 mod denial_needs_a_road;
 mod city_memory;
@@ -10672,6 +10685,9 @@ impl AdvancedAi {
             capital_walls_before_the_surprise: false,
             capital_watch_sightings: BTreeMap::new(),
             // ---- append: e-f ----------------------------------------
+            faith_war_before_the_flip: false,
+            faith_war_before_the_flip_war: None,
+            faith_war_held_noted: BTreeMap::new(),
             embassy_finds_the_capital: false,
             embassy_capital_asks: BTreeMap::new(),
             elimination_yields_to_a_launch: false,
@@ -23651,7 +23667,11 @@ impl AdvancedAi {
                             // `holdout-keeps-the-faith-war`: see
                             // `advanced/holdout_faith_war.rs`.
                             || (deal.peace
-                                && self.holdout_keeps_the_faith_war_with(g, pid, deal.from)));
+                                && self.holdout_keeps_the_faith_war_with(g, pid, deal.from))
+                            // `faith-war-before-the-flip`: see
+                            // `advanced/faith_war_before_the_flip.rs`.
+                            || (deal.peace
+                                && self.faith_war_keeps_the_war(g, pid, deal.from)));
                     (
                         worth >= 0.0 && !pins_objective,
                         deal.peace,
@@ -23664,6 +23684,9 @@ impl AdvancedAi {
             };
             if peace && !accept && self.holdout_keeps_the_faith_war_with(g, pid, from) {
                 self.journal_holdout_keeps_the_faith_war(g, pid, from, true);
+            }
+            if peace && !accept && self.faith_war_keeps_the_war(g, pid, from) {
+                self.journal_faith_war_keeps(g, pid, from, true);
             }
             if self.journal().wants(crate::reasoning::Level::Decision) {
                 let who = g
@@ -23835,6 +23858,9 @@ impl AdvancedAi {
         self.religious_interception_war = self
             .religious_interception_war
             .filter(|(rival, _)| g.is_at_war(pid, *rival));
+        // `faith-war-before-the-flip`: see
+        // `advanced/faith_war_before_the_flip.rs`.
+        self.faith_war_track(g, pid);
         for other in &rivals {
             // `air-surge-2`: the Domination wing's own front. See
             // `AdvancedAi::air_surge_holds_front`.
@@ -23880,6 +23906,8 @@ impl AdvancedAi {
             let religious_interception = self.religious_interception_holds_war(g, pid, *other);
             let interception_handoff =
                 self.religious_interception_handoff_peace(g, pid, *other, plan);
+            // `faith-war-before-the-flip`: the gene's war has done its work.
+            let faith_war_exit = self.faith_war_exit_peace(g, pid, *other, plan);
             let outmatched = if self.war_policy_via_board {
                 policy_peace.is_some()
             } else {
@@ -23983,6 +24011,7 @@ impl AdvancedAi {
                                 )
                             )))
                     || (interception_handoff && !air_front)
+                    || faith_war_exit
                     || science_defensive_peace)
             {
                 // `no-peace-with-a-launcher`: no peace with a rival past its
@@ -23998,6 +24027,15 @@ impl AdvancedAi {
                 // off. See `advanced/holdout_faith_war.rs`.
                 if self.holdout_keeps_the_faith_war_with(g, pid, *other) {
                     self.journal_holdout_keeps_the_faith_war(g, pid, *other, false);
+                    continue;
+                }
+                // `faith-war-before-the-flip`: no peace with the founder of
+                // the gene's war while a city of ours is still being
+                // converted to its faith, unless our cities are falling.
+                // `false` with the gene off. See
+                // `advanced/faith_war_before_the_flip.rs`.
+                if self.faith_war_keeps_the_war(g, pid, *other) {
+                    self.journal_faith_war_keeps(g, pid, *other, false);
                     continue;
                 }
                 self.peace_offers.insert(*other);
@@ -24048,6 +24086,8 @@ impl AdvancedAi {
                         "the religion plan cannot spread into a war".to_string()
                     } else if interception_handoff {
                         "the religious interception is over and another city is ready for a conquest campaign".to_string()
+                    } else if faith_war_exit {
+                        "faith-war-before-the-flip: no spreader of its faith has stood at our cities for five turns and no city of ours is converting".to_string()
                     } else {
                         "the war has stalled".to_string()
                     };
@@ -24113,6 +24153,12 @@ impl AdvancedAi {
         // A visible spreader can supply an immediate religious counter even
         // when the founder's cities have not yet been discovered.
         if self.religious_interception_opening(g, pid) {
+            return;
+        }
+        // `faith-war-before-the-flip`: a defensive war on a founder whose
+        // spreaders work our cities before our majority flips. The turn's one
+        // declaration. See `advanced/faith_war_before_the_flip.rs`.
+        if self.faith_war_before_the_flip_opening(g, pid) {
             return;
         }
         // `science-threat-denial`: close a denial war that has pillaged the

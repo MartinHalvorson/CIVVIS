@@ -3944,6 +3944,13 @@ pub const GENES: &[Gene] = &[
     // urgent, with a one-turn deadline floor. See
     // `advanced/objective_board.rs`.
     Gene { tag: "city-under-fire-ranks-first", field: "city_under_fire_ranks_first", kind: Kind::OptIn, enable: AdvancedAi::enable_city_under_fire_ranks_first, disable: AdvancedAi::disable_city_under_fire_ranks_first },
+    // A defensive war (no siege, no staging) on a founding rival whose
+    // spreaders stand within six tiles of our cities while our majority does
+    // not follow its faith and a city of ours already leans to it, at 0.7
+    // times its steady power, rout- and solvency-guarded; no peace while a
+    // city of ours is converting, peace after five clear turns. See
+    // `advanced/faith_war_before_the_flip.rs`.
+    Gene { tag: "faith-war-before-the-flip", field: "faith_war_before_the_flip", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_war_before_the_flip, disable: AdvancedAi::disable_faith_war_before_the_flip },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
