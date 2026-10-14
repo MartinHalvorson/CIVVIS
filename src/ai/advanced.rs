@@ -15015,9 +15015,19 @@ impl AdvancedAi {
             let culture = self.rival_culture_pressures(g);
             let pressure =
                 self.rival_victory_pressure_with_culture(g, rival, culture.get(&rival).copied());
+            // A culture race also says how many turns it has left
+            // (`projected_culture_finish`): 073241Z read "its culture race
+            // reads 96%" for 16 turns before Egypt won at 190, and the
+            // percentage alone never said whether the army had time.
+            let finish = denial_nearest_finish::countering_finish_note(
+                pressure.strategy,
+                (pressure.strategy == GrandStrategy::Culture)
+                    .then(|| self.projected_culture_finish(g, rival))
+                    .flatten(),
+            );
             think!(self.journal(), Strategy, Strategy,
                    "Countering {}", g.players[rival].civ;
-                   "its {} race reads {}%", pressure.strategy.as_str(), pressure.progress);
+                   "its {} race reads {}%{finish}", pressure.strategy.as_str(), pressure.progress);
         }
         if let Some(city) = threatened_city.and_then(|id| g.cities.get(&id)) {
             think!(self.journal(), Strategy, Strategy,
