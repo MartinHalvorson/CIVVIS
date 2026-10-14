@@ -496,6 +496,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `war-kills-the-bands` | off (unmeasured) | Enable `war-kills-the-bands`. | — \| 2 |
 | `war-kills-the-bands-2` | off (unmeasured) | Enable `war-kills-the-bands-2`. | — \| 2 |
 | `war-raids-the-pads` | off (unmeasured) | Enable `war-raids-the-pads`. | 1 \| 1 |
+| `war-target-prices-the-walls` | off (unmeasured) | Opt-in gene `war-target-prices-the-walls`; see `AdvancedAi::war_target_prices_the_walls`. | 1 \| 1 |
 | `weak-target-skips-the-muster` | off (unmeasured) | Opt-in gene `weak-target-skips-the-muster`; see `Self::weak_target_skips_the_muster`. | 1 \| 1 |
 | `wounded-taker-finishes-the-breach` | off (unmeasured) | Opt-in gene `wounded-taker-finishes-the-breach`; see `Self::wounded_taker_finishes_the_breach`. | 1 \| 1 |
 
