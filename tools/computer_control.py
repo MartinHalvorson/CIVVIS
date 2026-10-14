@@ -61,6 +61,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import civ6_env as env  # noqa: E402
+import window_layout  # noqa: E402
 
 MENU_BAR_PT = 33
 
@@ -320,10 +321,25 @@ def place_window(frame: "tuple[int, int, int, int]", process: "str | None" = Non
     return f"no visible window matches {title!r}"
 
 
-def layout(assignments=STANDARD_LAYOUT) -> "list[dict]":
+def layout(assignments=STANDARD_LAYOUT, saved: "dict | None" = None) -> "list[dict]":
+    """Place each window in its quadrant.
+
+    A saved operator layout (`window_layout`, operator 2026-10-14) supplies the
+    exact frame for every quadrant it names and adds the quadrants it names
+    that `assignments` leaves out (the lower-right Terminal); without one the
+    computed half-screen quadrants apply as before.
+    """
     size = desktop_points()
     if size is None:
         return [{"error": "desktop size unavailable"}]
+    if saved is None:
+        saved = window_layout.load(size)
+    assignments = list(assignments)
+    named = {spec["quadrant"] for spec in assignments}
+    for quadrant, spec in saved.items():
+        if quadrant not in named and (spec.get("process") or spec.get("title")):
+            assignments.append({"quadrant": quadrant, "process": spec.get("process"),
+                                "title": spec.get("title")})
     report = []
     # Processes this layout positions explicitly. A later title match must not
     # re-claim one of their windows; see `place_window`.
@@ -331,7 +347,8 @@ def layout(assignments=STANDARD_LAYOUT) -> "list[dict]":
         spec["process"] for spec in assignments if spec.get("process")
     )
     for spec in assignments:
-        frame = quadrant_frame(spec["quadrant"], *size)
+        frame = (saved[spec["quadrant"]]["frame"] if spec["quadrant"] in saved
+                 else quadrant_frame(spec["quadrant"], *size))
         error = place_window(frame, process=spec.get("process"),
                              title=spec.get("title"),
                              skip_owners=claimed)
@@ -340,6 +357,64 @@ def layout(assignments=STANDARD_LAYOUT) -> "list[dict]":
                        "placed": error is None,
                        **({"error": error} if error else {})})
     return report
+
+
+def save_layout() -> dict:
+    """Record where the layout's windows are now as the default frames.
+
+    Each STANDARD_LAYOUT target, plus every other visible Terminal window, is
+    measured through System Events and filed under the quadrant holding its
+    centre; the largest window wins a quadrant. Operator 2026-10-14: "set the
+    current window positions and sizings as the default for the 4 quadrants".
+    """
+    size = desktop_points()
+    if size is None:
+        return {"error": "desktop size unavailable"}
+    listing = _osascript(
+        'tell application "System Events"\n'
+        '  set out to ""\n'
+        '  repeat with proc in (every process whose background only is false)\n'
+        '    repeat with win in (every window of proc)\n'
+        '      try\n'
+        '        set {px, py} to position of win\n'
+        '        set {sx, sy} to size of win\n'
+        '        set out to out & (name of proc) & "\t" & (name of win) & "\t" & px & "\t" & py & "\t" & sx & "\t" & sy & "\n"\n'
+        '      end try\n'
+        '    end repeat\n'
+        '  end repeat\n'
+        '  return out\n'
+        'end tell')
+    if listing.returncode != 0:
+        return {"error": (listing.stderr or listing.stdout).strip()}
+    best: dict = {}
+    for line in listing.stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) != 6:
+            continue
+        owner, title = parts[0], parts[1]
+        try:
+            frame = tuple(int(float(v)) for v in parts[2:])
+        except ValueError:
+            continue
+        if frame[2] < 200 or frame[3] < 150:
+            continue  # palettes, popovers, the game's tiny helper windows
+        spec = None
+        for row in STANDARD_LAYOUT:
+            if row.get("process") and row["process"] in owner:
+                spec = {"process": row["process"]}
+            elif row.get("title") and re.search(row["title"], title or "", re.I) \
+                    and "Terminal" not in owner:
+                spec = {"title": row["title"]}
+            if spec:
+                break
+        if spec is None:
+            continue
+        quadrant = window_layout.quadrant_of(frame, size)
+        area = frame[2] * frame[3]
+        if quadrant not in best or area > best[quadrant][0]:
+            best[quadrant] = (area, dict(spec, frame=list(frame)))
+    windows = {q: spec for q, (_, spec) in best.items()}
+    return window_layout.save(windows, size)
 
 
 def running_process_names() -> "set[str] | None":
@@ -537,7 +612,9 @@ def screenshot(out: Path, max_dimension: "int | None" = 1400) -> dict:
 def main() -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     sub = ap.add_subparsers(dest="verb", required=True)
-    sub.add_parser("layout")
+    lay = sub.add_parser("layout")
+    lay.add_argument("--save", action="store_true",
+                     help="record the current window frames as the defaults")
     sub.add_parser("census")
     sub.add_parser("dismiss")
     games = sub.add_parser("games")
@@ -550,7 +627,7 @@ def main() -> int:
     args = ap.parse_args()
 
     if args.verb == "layout":
-        result = layout()
+        result = save_layout() if args.save else layout()
     elif args.verb == "census":
         result = modal_census()
     elif args.verb == "dismiss":

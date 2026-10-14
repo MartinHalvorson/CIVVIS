@@ -214,8 +214,12 @@ def desktop_size() -> tuple[int, int] | None:
 
 def place_game(game_process: str, side: str = "left", fraction: float = 0.5,
                vfraction: float = 1.0, *, get_desktop_size=None,
-               get_game_window=None) -> None:
-    """Park the game on a screen portion without risking a blocking probe."""
+               get_game_window=None, frame=None) -> None:
+    """Park the game on a screen portion without risking a blocking probe.
+
+    `frame` -- an explicit ``(x, y, w, h)`` from the operator's saved layout
+    (`window_layout`) -- wins over the side/fraction arithmetic.
+    """
     if side == "none":
         return
     if get_desktop_size is None:
@@ -227,12 +231,15 @@ def place_game(game_process: str, side: str = "left", fraction: float = 0.5,
         return
     screen_w, screen_h = size
     menu = 33  # a y=0 window hides behind the menu bar
-    width = max(640, int(screen_w * fraction))
-    height = max(480, int((screen_h - menu) * max(0.1, min(1.0, vfraction))))
-    if side == "bottomright":
-        x, y = screen_w - width, screen_h - height
+    if frame is not None:
+        x, y, width, height = (int(v) for v in frame)
     else:
-        x, y = (0 if side == "left" else screen_w - width), menu
+        width = max(640, int(screen_w * fraction))
+        height = max(480, int((screen_h - menu) * max(0.1, min(1.0, vfraction))))
+        if side == "bottomright":
+            x, y = screen_w - width, screen_h - height
+        else:
+            x, y = (0 if side == "left" else screen_w - width), menu
     desired = (x, y, width, height)
     # Repeating an identical placement creates WindowServer traffic and can
     # make unrelated windows reflow, so leave an unchanged frame alone.

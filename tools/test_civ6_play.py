@@ -20,6 +20,8 @@ from types import SimpleNamespace
 from unittest import mock
 from unittest.mock import call, patch
 
+# Never read the operator's real saved window layout (~/.civvis-window-layout.json).
+os.environ["CIVVIS_WINDOW_LAYOUT"] = "/nonexistent/civvis-window-layout.json"
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import civ6_play

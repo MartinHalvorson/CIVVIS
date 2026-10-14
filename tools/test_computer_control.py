@@ -9,6 +9,9 @@ from pathlib import Path
 import subprocess
 from unittest import mock
 
+import os
+# Never read the operator's real saved window layout (~/.civvis-window-layout.json).
+os.environ["CIVVIS_WINDOW_LAYOUT"] = "/nonexistent/civvis-window-layout.json"
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import computer_control as cc  # noqa: E402
