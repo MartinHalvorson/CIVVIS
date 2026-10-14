@@ -5,6 +5,8 @@ use crate::game::{Action, Game, Item};
 use crate::name::Name;
 use std::collections::BTreeSet;
 
+mod air_expedition;
+
 impl AdvancedAi {
     pub(super) fn siege_resource_purchase(
         &self,
@@ -132,7 +134,7 @@ impl AdvancedAi {
                 return true;
             }
         }
-        false
+        self.air_resource_expedition(g, pid, plan)
     }
 
     /// Supply needed by standing/queued consumers and at least a two-Bomber wing.
@@ -200,3 +202,6 @@ impl AdvancedAi {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod air_expedition_tests;

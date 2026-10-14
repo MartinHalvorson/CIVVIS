@@ -15743,7 +15743,6 @@ impl BasicAi {
         if self.village_collection_step(g, pid, uid) {
             return true;
         }
-        let upos = g.units[&uid].pos;
         // `unit_can_traverse` says yes to open water for every land unit the
         // moment embarkation unlocks, so from that turn on the unexplored
         // ocean is a legal exploration goal for the whole army. That is how a
@@ -15751,6 +15750,14 @@ impl BasicAi {
         // pacing between two sea hexes. A land unit explores land.
         let dry_only =
             self.come_ashore && g.rules.units[g.units[&uid].kind].domain.as_deref() != Some("sea");
+        self.explore_step_with_domain(g, pid, uid, dry_only)
+    }
+
+    /// Reuse all exploration commitments and host-refusal retirement while a
+    /// specific recon survey needs water sight. The ordinary caller above
+    /// retains come-ashore; AdvancedAi gates the exception to its one supply eye.
+    fn explore_step_with_domain(&self, g: &mut Game, pid: usize, uid: u32, dry_only: bool) -> bool {
+        let upos = g.units[&uid].pos;
         let mut goal = self.exploration_goal(g, pid, uid, dry_only);
         if self.explore_dead_targets {
             // ★★★★ A goal this unit was already sent at, from this very tile,
