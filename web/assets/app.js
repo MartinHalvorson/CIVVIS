@@ -6729,8 +6729,38 @@ function placeLivePause() {
   const [right, bottom] = spot ?? [edge, edge];
   if (right !== edge) box.style.right = `${right}px`;
   if (bottom !== edge) box.style.bottom = `${bottom}px`;
+  followLiveControls();
 }
 window.addEventListener("resize", placeLivePause);
+// The camera composes into the ground the live controls leave open, so when
+// they appear, grow, move or go, the ground at the old open centre is carried
+// to the new one, as a moving HUD edge does. Page-space, so a canvas that has
+// since moved still compares like with like.
+let liveControlsRect = null;
+function followLiveControls() {
+  const element = document.getElementById("livepause");
+  const rect = element && !element.hidden ? element.getBoundingClientRect() : null;
+  const now = rect && rect.width && rect.height
+    ? {left:rect.left, right:rect.right, top:rect.top, bottom:rect.bottom} : null;
+  const prior = liveControlsRect;
+  liveControlsRect = now;
+  const sameBox = (a, b) => (!a && !b) || (!!a && !!b &&
+    ["left", "right", "top", "bottom"].every(edge => Math.abs(a[edge] - b[edge]) <= .5));
+  if (!state || !MAPW || !MAPH || sameBox(prior, now)) return;
+  const origin = cv.getBoundingClientRect();
+  const local = box => box && {left:box.left - origin.left, right:box.right - origin.left,
+                               top:box.top - origin.top, bottom:box.bottom - origin.top};
+  const open = uncoveredMapBox(origin, Math.max(1, MAPW), Math.max(1, MAPH));
+  const before = openBesideBox(open, local(prior));
+  const after = openBesideBox(open, local(now));
+  if (sameBox(before, after)) return;
+  reframeCurrentMapFocus(screenToWorld((before.left + before.right) / 2,
+                                       (before.top + before.bottom) / 2));
+}
+if (typeof ResizeObserver === "function") {
+  const element = document.getElementById("livepause");
+  if (element) new ResizeObserver(() => followLiveControls()).observe(element);
+}
 // A refusal stays on screen long enough to read: the 2 s status poll answers
 // without an error and must not wipe one a press just got.
 function showLiveError(text) {
@@ -30353,11 +30383,45 @@ function uncoveredMapBox(origin, width, height) {
   if (bottom <= top) { top = 0; bottom = height; }
   return {left, right, top, bottom};
 }
+// The live game's research box and its Pause / New game buttons float over the
+// world the way the lower dock does, so the fitted map still runs beneath them.
+// But they are a column of reading rather than a control at the edge, and the
+// camera composes into the ground they leave open (operator 2026-10-14: "center
+// the map on the open screen"). Box local to `origin`, or null while hidden.
+function liveControlsBox(origin) {
+  const element = document.getElementById("livepause");
+  if (!element || element.hidden) return null;
+  const rect = element.getBoundingClientRect();
+  if (!rect.width || !rect.height) return null;
+  return {left:rect.left - origin.left, right:rect.right - origin.left,
+          top:rect.top - origin.top, bottom:rect.bottom - origin.top};
+}
+// `bounds` with one edge moved to clear `box`: of the four edges that can, the
+// one that leaves the largest open rectangle. A box in the lower-right corner
+// takes the bottom strip when it is wide and short, the right strip when it is
+// tall and narrow. A box outside `bounds` changes nothing.
+function openBesideBox(bounds, box) {
+  if (!box || box.right <= bounds.left || box.left >= bounds.right ||
+      box.bottom <= bounds.top || box.top >= bounds.bottom) return bounds;
+  let open = bounds, openArea = 0;
+  for (const trimmed of [
+    {...bounds, right:Math.min(bounds.right, box.left)},
+    {...bounds, left:Math.max(bounds.left, box.right)},
+    {...bounds, bottom:Math.min(bounds.bottom, box.top)},
+    {...bounds, top:Math.max(bounds.top, box.bottom)},
+  ]) {
+    const area = Math.max(0, trimmed.right - trimmed.left) *
+                 Math.max(0, trimmed.bottom - trimmed.top);
+    if (area > openArea) { open = trimmed; openArea = area; }
+  }
+  return open;
+}
 // Viewport-local. With the map area fitted to the panels this is the whole
 // viewport; a hand-set area parked under the masthead still composes around it.
 function mapFocusBounds() {
-  return uncoveredMapBox(cv.getBoundingClientRect(),
-                         Math.max(1, MAPW), Math.max(1, MAPH));
+  const origin = cv.getBoundingClientRect();
+  return openBesideBox(uncoveredMapBox(origin, Math.max(1, MAPW), Math.max(1, MAPH)),
+                       liveControlsBox(origin));
 }
 function mapFocusPoint() {
   const bounds = mapFocusBounds();
@@ -31005,6 +31069,10 @@ function observedFrameRect() {
   right = Math.min(width, right + mapAreaInsets.right);
   top = Math.max(0, top - mapAreaInsets.top);
   bottom = Math.min(height, bottom + mapAreaInsets.bottom);
+  // The live research box is in none of those reservations; the frame stops
+  // short of it the same way the camera's focus does.
+  ({left, right, top, bottom} = openBesideBox({left, right, top, bottom},
+                                              liveControlsBox(cv.getBoundingClientRect())));
   // Extremely small embedded viewers cannot honor every overlay reservation.
   // Retain a useful stage around the center rather than returning an inverted
   // rectangle and throwing the subjects off-screen.
