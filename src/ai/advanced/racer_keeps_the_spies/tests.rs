@@ -1,8 +1,10 @@
 use std::collections::BTreeSet;
+use std::sync::Arc;
 
 use super::*;
 use crate::ai::advanced::test_support::opt_in_off_in_both_controllers;
 use crate::ai::advanced::{StrategicPlan, VictoryTarget};
+use crate::game::HostUnitFacts;
 
 /// Three majors at peace and mutually known, seat 0 ours. Seat 1, the space
 /// racer, holds Rocketry and a second city; seat 2 is the war plan's rival.
@@ -258,21 +260,39 @@ fn in_the_racers_city_a_safe_operation_until_the_disruption() {
 }
 
 #[test]
-fn a_spy_in_a_city_that_stays_is_not_posted() {
-    let (mut g, _, _, rival) = board();
+fn a_spy_in_the_leaders_or_a_culture_racers_city_is_not_posted() {
+    let (mut g, capital, _, rival) = board();
     let spy = idle_spy(&mut g, rival);
     let legal = g.legal_spy_actions(0, spy);
-    let stays = BTreeSet::from([1, 2]);
+    let none = BTreeSet::new();
+    let racers = BTreeSet::from([1]);
     assert_eq!(
-        AdvancedAi::racer_spy_post(&g, spy, Some(rival), Some(1), &stays, &legal),
-        None
+        AdvancedAi::racer_spy_post(
+            &g,
+            spy,
+            Some(rival),
+            Some(1),
+            &racers,
+            &BTreeSet::from([2]),
+            &legal
+        ),
+        None,
+        "a culture racer's city keeps its Spy"
     );
-    let stays = BTreeSet::from([1]);
-    assert!(AdvancedAi::racer_spy_post(&g, spy, Some(rival), Some(1), &stays, &legal).is_some());
+    assert!(
+        AdvancedAi::racer_spy_post(&g, spy, Some(rival), Some(1), &racers, &none, &legal).is_some()
+    );
     assert_eq!(
-        AdvancedAi::racer_spy_post(&g, spy, Some(rival), None, &stays, &legal),
+        AdvancedAi::racer_spy_post(&g, spy, Some(rival), None, &racers, &none, &legal),
         None,
         "no racer, no post"
+    );
+    let inside = idle_spy(&mut g, capital);
+    let legal = g.legal_spy_actions(0, inside);
+    assert_eq!(
+        AdvancedAi::racer_spy_post(&g, inside, Some(capital), Some(1), &racers, &none, &legal),
+        None,
+        "the leader's city keeps its Spy"
     );
 }
 
@@ -346,4 +366,157 @@ fn slots_held_by_captured_agents_are_journalled_once() {
         off.racer_spy_note_held_slots(&g, 0, 0, 1, true);
     }
     assert_eq!(count(&off), 0, "gene off: nothing");
+}
+
+/// Seat 2 joins the race too; the Science a turn of each racer is set.
+fn two_racers(g: &mut Game, first: f64, second: f64) {
+    g.players[2].techs.insert(crate::name!("rocketry"));
+    for (seat, science) in [(1, first), (2, second)] {
+        let derived = AdvancedAi::seat_science_per_turn(g, seat)
+            - g.observed_yield_adjustments
+                .get(&seat)
+                .map_or(0.0, |adjustment| adjustment.science);
+        Arc::make_mut(&mut g.observed_yield_adjustments)
+            .entry(seat)
+            .or_default()
+            .science = science - derived;
+    }
+}
+
+fn land(g: &mut Game, seat: usize, projects: usize) {
+    for project in [
+        "launch_earth_satellite",
+        "launch_moon_landing",
+        "launch_mars_colony",
+        "exoplanet_expedition",
+    ]
+    .iter()
+    .take(projects)
+    {
+        g.players[seat].science_projects.insert(project.to_string());
+    }
+}
+
+#[test]
+fn a_racer_one_project_behind_with_the_science_edge_leads() {
+    // 100910Z at turn 201: the Mapuche (seat 1) three projects at 202 a turn,
+    // Greece (seat 2) two at 267.
+    let (mut g, _, _, _) = board();
+    two_racers(&mut g, 202.0, 267.0);
+    land(&mut g, 1, 3);
+    land(&mut g, 2, 2);
+    let racers = BTreeSet::from([1, 2]);
+    assert_eq!(AdvancedAi::racer_spy_leader(&g, &racers), Some(2));
+    // Turn 195: one behind at 209 against 198 is no edge.
+    two_racers(&mut g, 198.0, 209.0);
+    assert_eq!(AdvancedAi::racer_spy_leader(&g, &racers), Some(1));
+    // Two behind never counts level.
+    g.players[2].science_projects.clear();
+    land(&mut g, 2, 1);
+    two_racers(&mut g, 100.0, 400.0);
+    assert_eq!(AdvancedAi::racer_spy_leader(&g, &racers), Some(1));
+}
+
+#[test]
+fn two_launched_expeditions_are_told_apart_by_the_turns_they_need() {
+    // 100910Z at turn 231: both launched; the Mapuche at 7 of 25, 1 a turn,
+    // Greece at 13 of 25, 5 a turn. Science is set against Greece here.
+    let (mut g, _, _, _) = board();
+    two_racers(&mut g, 400.0, 300.0);
+    land(&mut g, 1, 4);
+    land(&mut g, 2, 4);
+    for (seat, points, speed) in [(1, 7.0, 1.0), (2, 13.0, 5.0)] {
+        let stats = Arc::make_mut(&mut g.observed_public_empire_stats)
+            .entry(seat)
+            .or_default();
+        stats.science_victory_points = Some(points);
+        stats.science_victory_points_needed = Some(25.0);
+        stats.science_victory_points_per_turn = Some(speed);
+    }
+    assert_eq!(
+        AdvancedAi::racer_spy_leader(&g, &BTreeSet::from([1, 2])),
+        Some(2)
+    );
+}
+
+#[test]
+fn a_spy_at_a_racer_that_no_longer_leads_moves_to_the_leader() {
+    let (mut g, capital, _, rival) = board();
+    two_racers(&mut g, 202.0, 267.0);
+    land(&mut g, 1, 3);
+    land(&mut g, 2, 2);
+    let spy = idle_spy(&mut g, capital);
+    keeps().advanced_spies(&mut g, 0, &conquest_on(1));
+    assert_eq!(
+        g.spies[&spy].city,
+        Some(rival),
+        "Greece leads: the Spy follows"
+    );
+}
+
+#[test]
+fn a_spy_offered_the_disruption_where_it_stands_stays_for_it() {
+    let (mut g, capital, _, _) = board();
+    two_racers(&mut g, 202.0, 267.0);
+    land(&mut g, 1, 3);
+    land(&mut g, 2, 2);
+    give_pad(&mut g, capital);
+    let spy = idle_spy(&mut g, capital);
+    keeps().advanced_spies(&mut g, 0, &conquest_on(1));
+    assert_eq!(g.spies[&spy].city, Some(capital));
+    assert_eq!(mission(&g, spy).as_deref(), Some("disrupt_rocketry"));
+}
+
+#[test]
+fn a_listening_post_at_a_former_leader_does_not_hold_the_spy() {
+    let run = |operation: &str| {
+        let (mut g, capital, _, rival) = board();
+        two_racers(&mut g, 202.0, 267.0);
+        land(&mut g, 1, 3);
+        land(&mut g, 2, 2);
+        let spy = idle_spy(&mut g, capital);
+        Arc::make_mut(&mut g.host_unit_facts).insert(
+            spy,
+            HostUnitFacts {
+                spy_operation: Some(operation.to_string()),
+                ..Default::default()
+            },
+        );
+        // The live seat's patience (a host-only gene): a running order is
+        // left alone.
+        let mut ai = keeps();
+        ai.enable_spy_mission_patience();
+        ai.spy_orders_until.insert(spy, g.turn + 5);
+        ai.advanced_spies(&mut g, 0, &conquest_on(1));
+        (g.spies[&spy].city, capital, rival)
+    };
+    let (city, _, rival) = run("listening_post");
+    assert_eq!(city, Some(rival), "a Listening Post gives way");
+    let (city, capital, _) = run("disrupt_rocketry");
+    assert_eq!(city, Some(capital), "a running disruption finishes");
+    assert!(
+        !AdvancedAi::racer_spy_moves_on(&board().0, 1, None, &BTreeSet::from([1])),
+        "never with the gene off"
+    );
+}
+
+#[test]
+fn the_every_pad_post_does_not_pull_a_spy_out_of_the_leaders_city() {
+    // Greece (seat 2) leads with no pad of it seen; the Mapuche's pad is on
+    // the board. The every-pad re-post would send the Spy back to it.
+    let run = |mut ai: AdvancedAi| {
+        let (mut g, capital, _, rival) = board();
+        two_racers(&mut g, 202.0, 267.0);
+        land(&mut g, 1, 3);
+        land(&mut g, 2, 2);
+        give_pad(&mut g, capital);
+        let spy = idle_spy(&mut g, rival);
+        ai.enable_science_denial_every_pad();
+        ai.advanced_spies(&mut g, 0, &conquest_on(1));
+        (g.spies[&spy].city, capital, rival)
+    };
+    let (city, capital, _) = run(stock());
+    assert_eq!(city, Some(capital), "stock every-pad: to the seen pad");
+    let (city, _, rival) = run(keeps());
+    assert_eq!(city, Some(rival), "the gene: it stays with the leader");
 }

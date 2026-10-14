@@ -141,7 +141,10 @@ impl AdvancedAi {
                         .filter(|(taker, _)| self.capture_holdable(g, pid, cid, *taker))
                     {
                         let origin = g.units[&taker].pos;
+                        // `phantom-capture-keeps-the-siege`: see `capture_is_contingent`.
+                        let contingent = self.capture_is_contingent(g, cid);
                         if capture.iter().all(|action| g.apply(pid, action).is_ok()) {
+                            self.note_board_capture(g, pid, cid, contingent);
                             self.resolve_city_dispositions(g, pid, plan.strategy);
                             reserved.insert(taker);
                             crate::think!(self.journal(), Military, Decision,
@@ -194,7 +197,10 @@ impl AdvancedAi {
                 continue;
             }
             let origin = g.units[&taker].pos;
+            // `phantom-capture-keeps-the-siege`: see `capture_is_contingent`.
+            let contingent = self.capture_is_contingent(g, cid);
             if actions.iter().all(|action| g.apply(pid, action).is_ok()) {
+                self.note_board_capture(g, pid, cid, contingent);
                 self.resolve_city_dispositions(g, pid, plan.strategy);
                 reserved.insert(taker);
                 crate::think!(self.journal(), Military, Decision,
@@ -375,6 +381,8 @@ impl AdvancedAi {
                 }),
             aircraft: sorties,
         };
+        // `phantom-capture-keeps-the-siege`: see `batch_capture_is_contingent`.
+        let contingent = self.batch_capture_is_contingent(g, cid, &opening.actions);
         // All steps were checked together on one branch; replay only those
         // selected steps so unrelated decisions retain the real action log.
         for action in &opening.actions {
@@ -382,6 +390,7 @@ impl AdvancedAi {
                 break;
             }
         }
+        self.note_board_capture(g, pid, cid, contingent);
         // Capturing in a prepass opens the city's disposition prompt. Resolve
         // it through the existing policy before the remaining units act;
         // otherwise every later attack is rejected by the pending prompt.
@@ -549,11 +558,14 @@ impl AdvancedAi {
                 actions.extend(capture);
                 taker
             });
+        // `phantom-capture-keeps-the-siege`: see `batch_capture_is_contingent`.
+        let contingent = self.batch_capture_is_contingent(g, cid, &actions);
         for action in &actions {
             if g.apply(pid, action).is_err() {
                 break;
             }
         }
+        self.note_board_capture(g, pid, cid, contingent);
         self.resolve_city_dispositions(g, pid, plan.strategy);
         reserved.extend(sorties.iter().copied());
         reserved.extend(taker);

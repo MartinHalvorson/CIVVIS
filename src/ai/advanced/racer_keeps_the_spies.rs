@@ -36,6 +36,22 @@
 //!    only Listening Post or Gain Sources, so it keeps its slot for the
 //!    disruption.
 //!
+//! The leading racer is the one with the most space projects landed, where
+//! a racer one project behind but making [`RACER_SCIENCE_EDGE`] times the
+//! Science a turn of the racer ahead counts as level with it; level racers
+//! are told apart by the turns their Exoplanet Expedition still needs (when
+//! both have launched it), then Science a turn. Live Emperor 100910Z: the
+//! Mapuche landed each stage first, but Greece made 1.3-1.6 times their
+//! Science from turn 201, launched the Exoplanet four turns after them at
+//! 4-5 points a turn against 1, and won at 233; every post of the gene's
+//! first version went to the Mapuche.
+//!
+//! A Spy standing in a racer's city that is no longer the leader's moves to
+//! the leader unless Disrupt Rocketry is offered where it stands, and a
+//! Listening Post or Gain Sources it is running there does not hold it (a
+//! Disrupt Rocketry does). In the leader's city the every-pad re-post no
+//! longer pulls it away toward another racer's pad.
+//!
 //! The home counter-spy and the culture-heist posting keep their places
 //! ahead of the post, and a Spy in a culture racer's city keeps the heist.
 //! Under the gene the Spy claim also says when every city is refused a Spy
@@ -61,6 +77,10 @@ pub(crate) const RACER_SPY_RISKY_OPERATIONS: &[&str] = &[
 /// offered, best first.
 const RACER_SPY_SAFE_OPERATIONS: &[&str] = &["listening_post", "gain_sources"];
 
+/// A racer one space project behind the leader counts as level with it when
+/// its Science a turn is at least this many times the leader's.
+pub(crate) const RACER_SCIENCE_EDGE: f64 = 1.25;
+
 /// Standard turns between two journal notes of slots held by captured agents.
 const RACER_SPY_SLOT_NOTE_TURNS: u32 = 10;
 
@@ -77,15 +97,54 @@ impl AdvancedAi {
         self.denial_spy_racers(g, pid)
     }
 
-    /// The racer the Spies go to: most space projects landed, then most
-    /// technologies, then the lowest seat.
+    /// The racer the Spies go to: the most space projects landed, a racer
+    /// one project short of the most counting level when its Science a turn
+    /// is [`RACER_SCIENCE_EDGE`] times the best of those ahead of it; then,
+    /// between two that have both launched the Exoplanet Expedition, the
+    /// fewer turns it still needs; then Science a turn, technologies and the
+    /// lowest seat.
     pub(crate) fn racer_spy_leader(g: &Game, racers: &BTreeSet<usize>) -> Option<usize> {
-        racers.iter().copied().max_by_key(|rival| {
-            (
-                Self::science_denial_stages(g, *rival),
-                g.players[*rival].techs.len(),
-                std::cmp::Reverse(*rival),
-            )
+        let stages = |rival: usize| Self::science_denial_stages(g, rival);
+        let science = |rival: usize| Self::seat_science_per_turn(g, rival);
+        let top = racers.iter().map(|rival| stages(*rival)).max()?;
+        let top_science = racers
+            .iter()
+            .filter(|rival| stages(**rival) == top)
+            .map(|rival| science(*rival))
+            .fold(0.0_f64, f64::max);
+        let level = |rival: usize| {
+            let landed = stages(rival);
+            if landed + 1 == top
+                && top_science > 0.0
+                && science(rival) >= RACER_SCIENCE_EDGE * top_science
+            {
+                top
+            } else {
+                landed
+            }
+        };
+        let finish = |rival: usize| {
+            let speed = g.exoplanet_speed(rival);
+            (speed > 0.0).then(|| {
+                (g.science_victory_points_needed(rival) - g.science_victory_points(rival)).max(0.0)
+                    / speed
+            })
+        };
+        racers.iter().copied().max_by(|left, right| {
+            level(*left)
+                .cmp(&level(*right))
+                .then_with(|| match (finish(*left), finish(*right)) {
+                    (Some(left), Some(right)) => right.total_cmp(&left),
+                    _ => std::cmp::Ordering::Equal,
+                })
+                .then_with(|| science(*left).total_cmp(&science(*right)))
+                .then_with(|| {
+                    g.players[*left]
+                        .techs
+                        .len()
+                        .cmp(&g.players[*right].techs.len())
+                })
+                .then_with(|| right.cmp(left))
         })
     }
 
@@ -106,22 +165,31 @@ impl AdvancedAi {
     }
 
     /// The city of `leader` an idle `spy` standing at `current_city` should
-    /// be posted to, if any: none while it stands in a city of one of
-    /// `stays` (the space racers and the culture racers), otherwise the
-    /// leader's city no other Spy of ours holds, ranked by a seen standing
-    /// Spaceport within three tiles, then the capital, then nearness to the
-    /// capital. Only cities the host lets us post to (`legal`) count.
+    /// be posted to, if any: none while it stands in the leader's city or a
+    /// culture racer's, nor in another racer's city where Disrupt Rocketry
+    /// is offered; otherwise the leader's city no other Spy of ours holds,
+    /// ranked by a seen standing Spaceport within three tiles, then the
+    /// capital, then nearness to the capital. Only cities the host lets us
+    /// post to (`legal`) count.
     pub(crate) fn racer_spy_post(
         g: &Game,
         spy: u32,
         current_city: Option<u32>,
         leader: Option<usize>,
-        stays: &BTreeSet<usize>,
+        racers: &BTreeSet<usize>,
+        culture_racers: &BTreeSet<usize>,
         legal: &[Action],
     ) -> Option<u32> {
         let leader = leader?;
         let pid = g.spies.get(&spy)?.owner;
-        if Self::racer_spy_city_is_a_racers(g, stays, current_city) {
+        let here = current_city
+            .and_then(|city| g.cities.get(&city))
+            .map(|city| city.owner);
+        if here == Some(leader)
+            || here.is_some_and(|owner| culture_racers.contains(&owner))
+            || (here.is_some_and(|owner| racers.contains(&owner))
+                && Self::racer_spy_disrupt_offered(g, spy, legal))
+        {
             return None;
         }
         let explored = &g.players[pid].explored;
@@ -165,6 +233,50 @@ impl AdvancedAi {
                     *cid,
                 )
             })
+    }
+
+    /// Whether Disrupt Rocketry is offered to `spy` where it stands, by the
+    /// board's menu or the host's.
+    pub(crate) fn racer_spy_disrupt_offered(g: &Game, spy: u32, legal: &[Action]) -> bool {
+        legal.iter().any(|action| {
+            matches!(action, Action::SpyMission { mission, .. } if mission == "disrupt_rocketry")
+        }) || g
+            .host_unit_facts
+            .get(&spy)
+            .and_then(|facts| facts.spy_missions.as_ref())
+            .is_some_and(|menu| menu.contains("disrupt_rocketry"))
+    }
+
+    /// Whether `spy`, whose last order is still running, should move on
+    /// anyway: it stands in a racer's city that is not the leader's and is
+    /// running only a Listening Post or Gain Sources there (a Disrupt
+    /// Rocketry, a journey or any other operation runs to its end). Never
+    /// with the gene off (`leader` is `None`).
+    pub(crate) fn racer_spy_moves_on(
+        g: &Game,
+        spy: u32,
+        leader: Option<usize>,
+        racers: &BTreeSet<usize>,
+    ) -> bool {
+        let Some(leader) = leader else {
+            return false;
+        };
+        let Some(agent) = g.spies.get(&spy) else {
+            return false;
+        };
+        let owner = agent
+            .city
+            .and_then(|city| g.cities.get(&city))
+            .map(|city| city.owner);
+        if owner == Some(leader) || !owner.is_some_and(|owner| racers.contains(&owner)) {
+            return false;
+        }
+        let running = g
+            .host_unit_facts
+            .get(&spy)
+            .and_then(|facts| facts.spy_operation.clone())
+            .or_else(|| agent.mission.as_ref().map(|mission| mission.kind.clone()));
+        running.is_some_and(|operation| RACER_SPY_SAFE_OPERATIONS.contains(&operation.as_str()))
     }
 
     /// The operation a Spy in a racer's city runs under the gene: Disrupt

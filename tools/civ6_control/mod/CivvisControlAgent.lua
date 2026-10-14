@@ -15847,10 +15847,26 @@ local function applyOrder(player, pid, row, turn)
 				end
 				return false, "cannot_" .. string.lower(verb);
 			end
+			-- ★★★★ A SORTIE AT A CITY HOLDS ITS STRIKE FRAME, AS A SHOT DOES.
+			-- `CivvisLedger.strike` counts the sortie, so a strike frame opens,
+			-- but only RANGE_ATTACK armed a ticket: the frame exported the board
+			-- before the bomb landed. 311 of 910 sorties (Oct 13-14) resolved
+			-- after the next strike frame's export; at cities 167 of 348. Live
+			-- Emperor 130619Z: bombers left Scone at 1 health behind fallen walls
+			-- on turns 179, 180 and 183, each strike frame re-planned it at its
+			-- pre-strike 20 to 60, no taker moved, and it healed every turn.
+			-- Cities only: a pillage sortie fights nobody and would hold the
+			-- frame for the whole grace.
+			local strikeTicket = nil;
 			if verb == "AIR_ATTACK" then
 				CivvisLedger.strike(unit, subject, verb, x, y, turn);
+				if try(function() return Map.GetPlot(x, y):IsCity(); end, false) then
+					strikeTicket = CivvisFrames.startStrike(pid, subject, turn, x, y);
+				end
 			end
-			return operate(unit, hash, params), verb;
+			local accepted = operate(unit, hash, params);
+			if not accepted then CivvisFrames.finishStrike(strikeTicket); end
+			return accepted, verb;
 		end
 		-- ★★★★★ IMPROVE — the order whose absence made CIVVIS build builders forever.
 		--

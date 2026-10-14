@@ -7720,6 +7720,39 @@ impl AdvancedAi {
         self.gun_queue_follows_the_road = false;
     }
 
+    /// Opt-in gene `phantom-capture-keeps-the-siege`; see
+    /// `advanced/phantom_capture.rs`.
+    pub fn enable_phantom_capture_keeps_the_siege(&mut self) {
+        self.phantom_capture_keeps_the_siege = true;
+    }
+
+    /// The twin of `enable_phantom_capture_keeps_the_siege`.
+    pub fn disable_phantom_capture_keeps_the_siege(&mut self) {
+        self.phantom_capture_keeps_the_siege = false;
+    }
+
+    /// Opt-in gene `holdout-keeps-the-faith-war`; see
+    /// `advanced/holdout_faith_war.rs`.
+    pub fn enable_holdout_keeps_the_faith_war(&mut self) {
+        self.holdout_keeps_the_faith_war = true;
+    }
+
+    /// The twin of `enable_holdout_keeps_the_faith_war`.
+    pub fn disable_holdout_keeps_the_faith_war(&mut self) {
+        self.holdout_keeps_the_faith_war = false;
+    }
+
+    /// Opt-in gene `launched-racer-yields-the-capital`; see
+    /// `advanced/launched_racer.rs`.
+    pub fn enable_launched_racer_yields_the_capital(&mut self) {
+        self.launched_racer_yields_the_capital = true;
+    }
+
+    /// The twin of `enable_launched_racer_yields_the_capital`.
+    pub fn disable_launched_racer_yields_the_capital(&mut self) {
+        self.launched_racer_yields_the_capital = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

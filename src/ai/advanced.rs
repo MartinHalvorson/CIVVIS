@@ -6855,6 +6855,10 @@ pub struct AdvancedAi {
     /// Off by default.
     engineering_for_capped_fresh_water: bool,
     // ---- append: g-k ------------------------------------------------
+    /// `holdout-keeps-the-faith-war`: no peace offered to or accepted from a
+    /// faith's founder while we are its last holdout and a city of ours
+    /// follows or is converting to it. See `advanced/holdout_faith_war.rs`.
+    holdout_keeps_the_faith_war: bool,
     /// `founder-holds-the-holy-city`'s memory: the last threat seen at the
     /// Holy City and the last spread of ours there, by position. See
     /// `advanced/holy_city_guard.rs`.
@@ -7110,6 +7114,12 @@ pub struct AdvancedAi {
     /// `advanced/industrial_zone_claims_the_factory.rs`. Off by default.
     industrial_zone_claims_the_factory: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `launched-racer-yields-the-capital`: a rival that has launched its
+    /// Exoplanet Expedition and holds the city whose capture completes
+    /// Domination is the second front, that city is the objective at peace,
+    /// and the declaration on it skips the major-war, treasury and staging
+    /// holds. See `advanced/launched_racer.rs`.
+    launched_racer_yields_the_capital: bool,
     /// `muster-walks-the-road`: a mustering member of a train that cannot
     /// yet close walks in by the dry road, not by straight distance, to the
     /// stand nearest the city's staging band under the muster's danger line.
@@ -7558,6 +7568,22 @@ pub struct AdvancedAi {
     /// (`append_luxury_swap_order` in `civvis_orders`). Off by default.
     luxury_swap_asks_2: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `phantom-capture-keeps-the-siege`: a capture this frame's planning
+    /// board makes on damage the same frame dealt (a volley the executor
+    /// defers, a shot or another unit's blow the host has not yet executed)
+    /// commits no siege state, and a committed capture the host never
+    /// executed resumes its siege over a falling city. Off by default. See
+    /// `advanced/phantom_capture.rs`.
+    phantom_capture_keeps_the_siege: bool,
+    /// `phantom-capture-keeps-the-siege`: each city's owner and health as the
+    /// host reported them when this frame opened; `None` off the live adapter.
+    phantom_frame_cities: Option<BTreeMap<u32, (usize, i32)>>,
+    /// `phantom-capture-keeps-the-siege`: cities this frame's board captured
+    /// on the frame's own earlier damage.
+    phantom_contingent_captures: BTreeSet<u32>,
+    /// `phantom-capture-keeps-the-siege`: the stage and taker a committed
+    /// capture's siege held before it read Hold, by city.
+    phantom_hold_from: BTreeMap<u32, (siege_train::SiegeStage, Option<u32>)>,
     /// `racer-keeps-the-spies`: while a space racer exists, a Spy outside
     /// every racer's cities starts no capture-risk operation, an idle one is
     /// posted to the leading racer before any pad is seen, and in a racer's
@@ -7900,6 +7926,10 @@ pub struct AdvancedAi {
     /// `SECOND_FRONT_HELD_NOTE_TURNS`. Journal only; see
     /// `one_war::journal_held_second_front`.
     second_front_held_noted: BTreeMap<usize, (String, u32)>,
+    /// The clause each urgent racer's unexecutable Conquest counter last
+    /// read and the turn it was journalled. Journal only; see
+    /// `silent_counter::journal_silent_counter`.
+    silent_counter_noted: BTreeMap<usize, (&'static str, u32)>,
     /// `siege-budget-projects-the-seal`: on the siege's entry reads a train
     /// whose fit melee can seal the city's ring prices the city at no heal,
     /// as a sealed city does not heal. See
@@ -9156,6 +9186,19 @@ mod embassy_capital;
 
 /// `racer-keeps-the-spies`: see `advanced/racer_keeps_the_spies.rs`.
 mod racer_keeps_the_spies;
+
+/// Journal only: an urgent racer whose Conquest counter cannot be executed.
+/// See `advanced/silent_counter.rs`.
+mod silent_counter;
+
+/// `phantom-capture-keeps-the-siege`: see `advanced/phantom_capture.rs`.
+mod phantom_capture;
+
+/// `holdout-keeps-the-faith-war`: see `advanced/holdout_faith_war.rs`.
+mod holdout_faith_war;
+
+/// `launched-racer-yields-the-capital`: see `advanced/launched_racer.rs`.
+mod launched_racer;
 
 mod city_memory;
 mod denial_nearest_finish;
@@ -10660,6 +10703,7 @@ impl AdvancedAi {
             front_weighted_floor_2: false,
             engineering_for_capped_fresh_water: false,
             // ---- append: g-k ----------------------------------------
+            holdout_keeps_the_faith_war: false,
             holy_city_guard: RefCell::new(holy_city_guard::HolyCityGuard::default()),
             gun_queues_behind_the_column: false,
             gun_queue_follows_the_road: false,
@@ -10705,6 +10749,7 @@ impl AdvancedAi {
             industrial_zone_claims_the_producer_queue: false,
             industrial_zone_claims_the_factory: false,
             // ---- append: l-o ----------------------------------------
+            launched_racer_yields_the_capital: false,
             muster_walks_the_road: false,
             near_rival_deterrence: false,
             match_point_interception_ignores_power: false,
@@ -10756,6 +10801,10 @@ impl AdvancedAi {
             launcher_war_ignores_the_edge: false,
             luxury_swap_asks_2: false,
             // ---- append: p-r ----------------------------------------
+            phantom_capture_keeps_the_siege: false,
+            phantom_frame_cities: None,
+            phantom_contingent_captures: BTreeSet::new(),
+            phantom_hold_from: BTreeMap::new(),
             racer_keeps_the_spies: false,
             racer_spies_slot_note: Cell::new((0, 0, 0)),
             purchases_keep_the_upkeep_reserve: false,
@@ -10813,6 +10862,7 @@ impl AdvancedAi {
 
             // ---- append: s-s ----------------------------------------
             second_front_held_noted: BTreeMap::new(),
+            silent_counter_noted: BTreeMap::new(),
             siege_budget_projects_the_seal: false,
             sea_locked_front_moves_on: false,
             siege_tier_before_the_beeline: false,
@@ -15610,6 +15660,10 @@ impl AdvancedAi {
         // beside Madrid, the last capital it needed.
         let finishing_capital = self
             .domination_finish_front(g, pid)
+            // `launched-racer-yields-the-capital`: the launched racer's
+            // finishing capital is the objective at peace too. `None` with
+            // the gene off. See `advanced/launched_racer.rs`.
+            .or_else(|| self.launched_racer_finish(g, pid))
             .filter(|(owner, _)| target_player == Some(*owner))
             .map(|(_, capital)| capital)
             .filter(|capital| {
@@ -23544,7 +23598,11 @@ impl AdvancedAi {
                             || self.air_surge_holds_front(g, pid, deal.from)
                             // `no-peace-with-a-launcher`: see
                             // `advanced/launcher_war.rs`.
-                            || self.launcher_keeps_the_war(g, pid, deal.from));
+                            || self.launcher_keeps_the_war(g, pid, deal.from)
+                            // `holdout-keeps-the-faith-war`: see
+                            // `advanced/holdout_faith_war.rs`.
+                            || (deal.peace
+                                && self.holdout_keeps_the_faith_war_with(g, pid, deal.from)));
                     (
                         worth >= 0.0 && !pins_objective,
                         deal.peace,
@@ -23555,6 +23613,9 @@ impl AdvancedAi {
             else {
                 continue;
             };
+            if peace && !accept && self.holdout_keeps_the_faith_war_with(g, pid, from) {
+                self.journal_holdout_keeps_the_faith_war(g, pid, from, true);
+            }
             if self.journal().wants(crate::reasoning::Level::Decision) {
                 let who = g
                     .players
@@ -23882,6 +23943,14 @@ impl AdvancedAi {
                 if self.launcher_keeps_the_war(g, pid, *other) {
                     continue;
                 }
+                // `holdout-keeps-the-faith-war`: no peace with a faith's
+                // founder while we are its last holdout and it is taking our
+                // cities, unless our cities are falling. `false` with the gene
+                // off. See `advanced/holdout_faith_war.rs`.
+                if self.holdout_keeps_the_faith_war_with(g, pid, *other) {
+                    self.journal_holdout_keeps_the_faith_war(g, pid, *other, false);
+                    continue;
+                }
                 self.peace_offers.insert(*other);
                 if policy_peace.is_some() {
                     self.census.war_policy_peace_offers += 1;
@@ -24088,19 +24157,32 @@ impl AdvancedAi {
         // `one_war_second_front`: the next capital's owner or an urgent clock
         // may be declared on beside the burning war.
         let second_front = self.one_war_second_front(g, pid) == Some(target);
+        // `launched-racer-yields-the-capital`: the racer past its launch
+        // holding the capital that completes Domination. Taking it wins
+        // first, and nothing else stops a launched Expedition, so neither the
+        // running war, the treasury nor the staging holds it. `false` with
+        // the gene off. See `advanced/launched_racer.rs`.
+        let launched_finish = self
+            .launched_racer_finish(g, pid)
+            .is_some_and(|(rival, _)| rival == target);
         if plan.strategy != GrandStrategy::Conquest
-            || (major_wars > 0 && !second_front)
+            || (major_wars > 0 && !second_front && !launched_finish)
             || (!rushing && g.turn < 35)
             || g.turn < self.peace_until
             || (!rushing && g.player_city_ids(pid).len() < 2)
             || g.is_at_war(pid, target)
             || (!emergency_target && !self.campaign_target_legal(g, pid, target))
-            // See `war_needs_a_treasury`. `strategic_policies` already
-            // records the shape of this failure -- "the counter-leader plan
-            // held 85 Gold at -59 per turn before it declared" -- but only
-            // reacts to it with a policy card, after the declaration.
-            || !self.war_is_affordable(g, pid)
         {
+            return;
+        }
+        // See `war_needs_a_treasury`. `strategic_policies` already records
+        // the shape of this failure -- "the counter-leader plan held 85 Gold
+        // at -59 per turn before it declared" -- but only reacts to it with a
+        // policy card, after the declaration. The hold used to be silent: live
+        // Emperor civvis-20261014T155202Z held the war on India, its
+        // Expedition launched, on 7 of turns 217-224 with no line at all.
+        if !launched_finish && !self.war_is_affordable(g, pid) {
+            self.journal_treasury_holds_the_war(g, pid, target);
             return;
         }
         let target_power = g.military_power(target);
@@ -24167,7 +24249,8 @@ impl AdvancedAi {
         // the launch is fought from 0.8 times its steady power, staged or
         // not; its pads are raided, not besieged. `false` with the gene off.
         // See `advanced/launcher_war.rs`.
-        let launcher_ready = !below_counter_floor && self.launcher_war_opens(g, pid, target);
+        let launcher_ready =
+            launched_finish || (!below_counter_floor && self.launcher_war_opens(g, pid, target));
         // See `road_blocker_front` (`blocker-becomes-the-target`): the army
         // already stands at the border the war opens, and the blocker has
         // passed the version-2 edge, so no staged siege or Board bill is
@@ -24437,6 +24520,11 @@ impl AdvancedAi {
             // `launcher-war-ignores-the-edge`: a denouncement's five turns
             // are five turns of launches; the launcher war opens by surprise.
             let opening = match self.preferred_war_opening(g, pid, target) {
+                // `launched-racer-yields-the-capital`: no denouncement's five
+                // turns either; see `advanced/launched_racer.rs`.
+                Some(Action::Denounce { .. }) | None if launched_finish => {
+                    self.launched_racer_opening(g, pid, target, my_power)
+                }
                 Some(Action::Denounce { .. }) | None if launcher_ready => {
                     self.launcher_war_opening(g, pid, target, my_power)
                 }
@@ -24482,6 +24570,9 @@ impl AdvancedAi {
                         "its closed borders have held our siege's march three turns at half our power or under, and the war opens the road"
                     } else if moving_on_ready {
                         "the beaten rival's capital is ours and it refuses peace, so the army moves on to the next capital"
+                    } else if launched_finish && !staged {
+                        // See `launched_racer_finish`.
+                        "launched-racer-yields-the-capital: its Exoplanet Expedition is launched and it holds the last capital Domination needs, so taking that capital wins first"
                     } else if launcher_ready && !staged {
                         // See `launcher_war_opens`.
                         "launcher-war-ignores-the-edge: past its Moon with a pad standing, the war raids its pads rather than besieging a city"
@@ -28918,7 +29009,13 @@ impl AdvancedAi {
             // rebuilt mirror cannot see the running operation, so without
             // this the same order goes out every turn. See
             // `spy_mission_patience`.
-            if self.spy_mission_patience && self.spy_orders_until.contains_key(&spy_id) {
+            // `racer-keeps-the-spies`: …unless it stands in a racer's city
+            // that is no longer the leader's, running only a Listening Post
+            // or Gain Sources. Never taken with the gene off.
+            if self.spy_mission_patience
+                && self.spy_orders_until.contains_key(&spy_id)
+                && !Self::racer_spy_moves_on(g, spy_id, racer_spy_leader, &racer_spy_racers)
+            {
                 continue;
             }
             let legal = g.legal_spy_actions(pid, spy_id);
@@ -29045,8 +29142,16 @@ impl AdvancedAi {
             // `science-denial-every-pad`: an idle spy in a foreign city that
             // is no free pad city of a decisive science threat leaves for the
             // nearest one. Never taken with the gene off (`every_pads` empty).
+            // `racer-keeps-the-spies`: …but not out of the leading racer's
+            // city, where that gene posted it. Never held with it off.
+            let in_racer_leaders_city = racer_spy_leader.is_some_and(|leader| {
+                current_city
+                    .and_then(|city| g.cities.get(&city))
+                    .is_some_and(|city| city.owner == leader)
+            });
             if let Some(pad_city) =
                 Self::every_pad_repost(g, pid, spy_id, current_city, &every_pads)
+                    .filter(|_| !in_racer_leaders_city)
             {
                 if let Some(action) = legal.iter().find(
                     |action| matches!(action, Action::AssignSpy { city, .. } if *city == pad_city),
@@ -29087,8 +29192,9 @@ impl AdvancedAi {
                     continue;
                 }
             }
-            // `racer-keeps-the-spies`: an idle Spy outside every racer's (and
-            // culture racer's) cities goes to the leading space racer, before
+            // `racer-keeps-the-spies`: an idle Spy outside the leading space
+            // racer's cities (and any culture racer's, and any other racer's
+            // where Disrupt Rocketry is offered) goes to the leader, before
             // any pad of it is seen. Never taken with the gene off
             // (`racer_spy_leader` is `None`).
             if let Some(post) = Self::racer_spy_post(
@@ -29096,7 +29202,8 @@ impl AdvancedAi {
                 spy_id,
                 current_city,
                 racer_spy_leader,
-                &racer_spy_stays,
+                &racer_spy_racers,
+                &culture_heist_targets,
                 &legal,
             ) {
                 if let Some(action) = legal.iter().find(
@@ -47170,7 +47277,28 @@ impl AdvancedAi {
             // October 4-5 the live seat razed 23 captured cities and kept 27
             // without a line saying why, and a razed city never reaches the
             // state export, so its Loyalty could not be read afterwards.
-            if self.journal().wants(crate::reasoning::Level::Decision) {
+            // `phantom-capture-keeps-the-siege`: a capture this frame made on
+            // its own earlier damage still needs the board's verdict, but its
+            // Decision line waits for the host to report the city as ours.
+            let provisional = match &action {
+                Action::KeepCity { city }
+                | Action::RazeCity { city }
+                | Action::LiberateCity { city } => self.capture_is_provisional(*city),
+                _ => false,
+            };
+            if provisional && self.journal().wants(crate::reasoning::Level::Detail) {
+                if let Action::KeepCity { city }
+                | Action::RazeCity { city }
+                | Action::LiberateCity { city } = &action
+                {
+                    if let Some(captured) = g.cities.get(city) {
+                        think!(self.journal(), Military, Detail,
+                               "Planned capture of {}: {} if the host takes it", captured.name, Self::disposition_word(&action);
+                               "the board's capture leans on this frame's own damage; the keep/raze line waits for the host";
+                               captured.pos);
+                    }
+                }
+            } else if self.journal().wants(crate::reasoning::Level::Decision) {
                 if let Action::KeepCity { city }
                 | Action::RazeCity { city }
                 | Action::LiberateCity { city } = &action
@@ -47944,6 +48072,9 @@ impl AdvancedAi {
         // See `journal_held_second_front`: a named counter the second front
         // holds, and the gates that hold it. Journal only.
         self.journal_held_second_front(g, pid);
+        // See `journal_silent_counter`: an urgent racer whose Conquest counter
+        // cannot be executed says why. Journal only.
+        self.journal_silent_counter(g, pid);
         // See `denial_keeps_its_rival`: this turn's counter rival, chosen
         // against last turn's, is the incumbent for the next.
         if self.denial_keeps_its_rival {

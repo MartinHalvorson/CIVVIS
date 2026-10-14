@@ -2557,7 +2557,8 @@ class AirVerbsAreWiredTest(unittest.TestCase):
         # decline is named `cannot_<verb>` rather than swallowed.
         self.assertIn("if not canOperate(unit, hash, params) then", block)
         self.assertIn('return false, "cannot_" .. string.lower(verb);', block)
-        self.assertIn("return operate(unit, hash, params), verb;", block)
+        self.assertIn("local accepted = operate(unit, hash, params);", block)
+        self.assertIn("return accepted, verb;", block)
         # An air operation is one hop; nothing here is reach-capped.
         self.assertNotIn("capToTurn", block)
 
@@ -2576,8 +2577,17 @@ class AirVerbsAreWiredTest(unittest.TestCase):
         # The strike is recorded before the request, as RANGE_ATTACK's is, so
         # the preview and the combat frame count follow the sortie.
         self.assertLess(
-            block.index("CivvisLedger.strike("), block.index("return operate(unit, hash, params)")
+            block.index("CivvisLedger.strike("), block.index("local accepted = operate(unit, hash, params)")
         )
+        # A sortie at a city arms a strike-frame ticket before the request,
+        # as RANGE_ATTACK's shot does, so the frame waits for the bomb to
+        # land; a refused request releases it at once.
+        self.assertIn("strikeTicket = CivvisFrames.startStrike(pid, subject, turn, x, y);", block)
+        self.assertIn("Map.GetPlot(x, y):IsCity()", block)
+        self.assertLess(
+            block.index("CivvisFrames.startStrike("), block.index("local accepted = operate(unit, hash, params)")
+        )
+        self.assertIn("if not accepted then CivvisFrames.finishStrike(strikeTicket); end", block)
         # A refused strike files the same event RANGE_ATTACK does, so the
         # decider's blocked_strikes keeps the pair off the next frame.
         self.assertIn('emit("range_attack_refused", {', block)

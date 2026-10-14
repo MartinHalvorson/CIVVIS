@@ -3874,7 +3874,10 @@ pub const GENES: &[Gene] = &[
     // first Disrupt Rocketry came at turn 176. While a space racer exists, a
     // Spy outside every racer's cities starts no capture-risk operation, an
     // idle one is posted to the leading racer before any pad is seen, and in
-    // a racer's city it runs Disrupt Rocketry or a safe operation. See
+    // a racer's city it runs Disrupt Rocketry or a safe operation. The
+    // leader follows the race (a racer one project behind with 1.25x the
+    // Science counts level; Emperor 100910Z's Greece), and a Spy at a racer
+    // that no longer leads moves on unless offered the disruption. See
     // `advanced/racer_keeps_the_spies.rs`.
     Gene { tag: "racer-keeps-the-spies", field: "racer_keeps_the_spies", kind: Kind::OptIn, enable: AdvancedAi::enable_racer_keeps_the_spies, disable: AdvancedAi::disable_racer_keeps_the_spies },
     // `capital-walls-before-the-surprise`: a met major at peace with twice
@@ -3896,6 +3899,28 @@ pub const GENES: &[Gene] = &[
     // short-of-moves case is journaled as such. See
     // `AdvancedAi::column_queue_step`.
     Gene { tag: "gun-queue-follows-the-road", field: "gun_queue_follows_the_road", kind: Kind::OptIn, enable: AdvancedAi::enable_gun_queue_follows_the_road, disable: AdvancedAi::disable_gun_queue_follows_the_road },
+    // Live Emperor civvis-20261014T130619Z: Scone stood behind fallen walls
+    // at 20-60 health turns 180-190 and never fell. The opening board applied
+    // the bombers' volley and the siege's helicopter "joined the assault ...
+    // captured true" behind it; the executor deferred every order after the
+    // volley, so nothing was sent, but the board capture had already written
+    // the siege to Hold, released its taker and freed its members, and the
+    // re-planned frames found a 6-unit force under its bill. 12 of 40
+    // "Captured X" decisions since 10-12 never landed. A capture made on the
+    // frame's own earlier damage (the host reported the city healthier)
+    // commits no siege state and its keep/raze line waits for the host; a
+    // committed capture the host never executed over a falling city resumes
+    // its siege, stage and taker. See `advanced/phantom_capture.rs`.
+    Gene { tag: "phantom-capture-keeps-the-siege", field: "phantom_capture_keeps_the_siege", kind: Kind::OptIn, enable: AdvancedAi::enable_phantom_capture_keeps_the_siege, disable: AdvancedAi::disable_phantom_capture_keeps_the_siege },
+    // No peace offered to, or accepted from, a faith's founder while we are its
+    // last holdout and a city of ours follows or is converting to it, unless a
+    // city of ours is falling. See `advanced/holdout_faith_war.rs`.
+    Gene { tag: "holdout-keeps-the-faith-war", field: "holdout_keeps_the_faith_war", kind: Kind::OptIn, enable: AdvancedAi::enable_holdout_keeps_the_faith_war, disable: AdvancedAi::disable_holdout_keeps_the_faith_war },
+    // A rival that has launched its Exoplanet Expedition and holds the city
+    // whose capture completes Domination: the second front at once, that city
+    // the objective at peace, and a declaration no major-war, treasury or
+    // staging hold delays. See `advanced/launched_racer.rs`.
+    Gene { tag: "launched-racer-yields-the-capital", field: "launched_racer_yields_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_launched_racer_yields_the_capital, disable: AdvancedAi::disable_launched_racer_yields_the_capital },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

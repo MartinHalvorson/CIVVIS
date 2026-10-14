@@ -159,7 +159,10 @@ impl AdvancedAi {
                 .filter(|(taker, _)| self.capture_holdable(g, pid, cid, *taker))
             {
                 let origin = g.units[&taker].pos;
+                // `phantom-capture-keeps-the-siege`: see `capture_is_contingent`.
+                let contingent = self.capture_is_contingent(g, cid);
                 if actions.iter().all(|action| g.apply(pid, action).is_ok()) {
+                    self.note_board_capture(g, pid, cid, contingent);
                     self.resolve_city_dispositions(g, pid, plan.strategy);
                     reserved.insert(taker);
                     crate::think!(self.journal(), Military, Decision,
