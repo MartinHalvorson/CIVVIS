@@ -2334,6 +2334,8 @@ impl AdvancedAi {
         board.forces = forces;
         board.next_force_id = next_id;
         board.requisitions = requisitions;
+        // A journal line only; see `journal_open_city_roll`.
+        self.journal_open_city_roll(g, pid, &visible);
     }
 
     /// `siege-needs-a-breaker`: every free Battering Ram and Siege Tower
@@ -3930,6 +3932,9 @@ mod staging_tests;
 
 #[cfg(test)]
 mod defense_priority_tests;
+
+#[cfg(test)]
+mod open_city_roll_tests;
 
 #[cfg(test)]
 mod siege_member_tests;
