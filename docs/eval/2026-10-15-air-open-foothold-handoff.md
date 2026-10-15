@@ -30,8 +30,12 @@ Seven authored controls cover the shared objective, repeated frames,
 existing siege and victory guards, home Recovery, another rival, air reach,
 a launched rival's Spaceport, and incomplete or still-building packages.
 All seven controls and the full 5,932-test GitHub suite passed on
-`c1a83c989` in run `38680696825`, with 51 existing skips. The local full suite
-will validate the integrated current-main source before readiness. The native cohort
+`c1a83c989` in run `38680696825`, with 51 existing skips. The complete local command
+`cargo test --profile ci --locked -j 4 -- --test-threads=4` passed all 5,932
+Rust tests on `50ccff25d`, with 51 existing test skips and four ignored
+documentation examples. The local source includes the prior current-main
+integration; the final clean merge is type-checked and independently tested
+by the required pushed-head CI before shipping. The native cohort
 also contains conflicts before Bombers exist, so the air overlay cannot be
 assumed to explain every campaign/force mismatch. No native capture,
 win-rate or highest-level improvement is established.
