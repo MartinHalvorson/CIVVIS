@@ -1,0 +1,229 @@
+{
+  "preregistration.json": {
+    "registered_at": "2026-10-15T20:03:07.414405+00:00",
+    "source": "89d1f01bb0be62b0ad739725b3ba5096ec18c773",
+    "source_consumer": "/Users/martbot-mbp-m5-max-128/civvis-pins/codex-1014-frontier-walls-89d1",
+    "binary_sha256": "dc1418d6721d3a1939c8c0f1166c791c8b90f43c8ff86c3b9c3187c8341c57d9",
+    "command": [
+      "nice",
+      "-n",
+      "10",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-14/frontier-walls-before-the-surprise/followup-sixty-game-screen/gene_screen",
+      "--genes",
+      "frontier-walls-before-the-surprise",
+      "--games",
+      "60",
+      "--start-seed",
+      "40631001",
+      "--difficulty",
+      "emperor",
+      "--jobs",
+      "1",
+      "--out",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-14/frontier-walls-before-the-surprise/followup-sixty-game-screen/rows.jsonl"
+    ],
+    "games": 60,
+    "seats": 360,
+    "seed_first": 40631001,
+    "seed_last": 40631060,
+    "previous_pilot_seeds": [
+      40630001,
+      40630006
+    ],
+    "design": "Independent randomized per-seat assignment of this one gene, p_on0.25, all other screen-genome bits fixed. Same standard all-victory/all-target-mix Emperor regime as six-game pilot. Not paired or native; no pooling with the pilot for the fixed follow-up estimate.",
+    "primary_statistics": [
+      "actual analyzer win contrast and its SE",
+      "actual analyzer score-share contrast and its SE"
+    ],
+    "secondary_diagnostics": [
+      "city losses",
+      "cities taken",
+      "assigned Domination target subgroup, descriptive only"
+    ],
+    "stopping_rule": "Exactly60 games; no outcome-dependent stopping, seed replacement or replay of finished games. Preserve partial output on external interruption.",
+    "decision_scope": "Additional simulator evidence only; no automatic deployment or native strength claim."
+  },
+  "completion-audit.json": {
+    "source": "89d1f01bb0be62b0ad739725b3ba5096ec18c773",
+    "binary_sha256": "dc1418d6721d3a1939c8c0f1166c791c8b90f43c8ff86c3b9c3187c8341c57d9",
+    "games": 60,
+    "seats": 360,
+    "on_seats": 87,
+    "off_seats": 273,
+    "all_other_genome_bits_identical": true,
+    "header_matches_preregistered_pilot_regime": true,
+    "rows_sha256": "8d2b58dbef38a1143fe5d3b044870802950e195543d3872a74ca66e9f08ffeb0",
+    "scope": "Additional simulator evidence only; no automatic deployment or native strength claim.",
+    "actual_header_build": {
+      "commit": "1aeaac1c67bf6a52002d01a7baefcc7828162497",
+      "commit_source": "build-tree",
+      "dirty": false,
+      "genes_sha256": "ba6d3f51757a3cd4220ed231cc14f1ec2a22c356fae21894e4c519fab8890723",
+      "binary_sha256": "dc1418d6721d3a1939c8c0f1166c791c8b90f43c8ff86c3b9c3187c8341c57d9"
+    },
+    "compiled_source_equivalence_verified": true
+  },
+  "header-provenance-audit.json": {
+    "observed_at": "2026-10-15T20:04:39.139662+00:00",
+    "actual_header_build": {
+      "commit": "1aeaac1c67bf6a52002d01a7baefcc7828162497",
+      "commit_source": "build-tree",
+      "dirty": false,
+      "genes_sha256": "ba6d3f51757a3cd4220ed231cc14f1ec2a22c356fae21894e4c519fab8890723",
+      "binary_sha256": "dc1418d6721d3a1939c8c0f1166c791c8b90f43c8ff86c3b9c3187c8341c57d9"
+    },
+    "compiled_source": "89d1f01bb0be62b0ad739725b3ba5096ec18c773",
+    "header_build_tree_source_equivalent": true,
+    "source_equivalence_command": [
+      "git",
+      "diff",
+      "--name-only",
+      "89d1f01bb0be62b0ad739725b3ba5096ec18c773",
+      "1aeaac1c67bf6a52002d01a7baefcc7828162497",
+      "--",
+      "src",
+      "data",
+      "Cargo.toml",
+      "Cargo.lock",
+      "build.rs"
+    ],
+    "runtime_header_explanation": "This binary resolves the current original build-tree HEAD at startup when code fingerprints match. The header truthfully reports source-equivalent docs head1aea, while the immutable binary is exact same SHA as original89 compiled screen. Do not rewrite the raw header.",
+    "runner_audit_correction_needed": "At completion the original runner will refuse exact header.build==pilot.build comparison because commit differs. Preserve60games; run corrected independent audit with this already observed source equivalence, never replay games.",
+    "cleanup_constraint": "Preserve public build-source worktree until this healthy followup and analysis finish; immutable gene_screen was compiled with its CARGO_MANIFEST_DIR pointing there."
+  },
+  "decision-receipt.json": {
+    "observed_at": "2026-10-15T21:17:28.274239+00:00",
+    "audit": {
+      "source": "89d1f01bb0be62b0ad739725b3ba5096ec18c773",
+      "binary_sha256": "dc1418d6721d3a1939c8c0f1166c791c8b90f43c8ff86c3b9c3187c8341c57d9",
+      "games": 60,
+      "seats": 360,
+      "on_seats": 87,
+      "off_seats": 273,
+      "all_other_genome_bits_identical": true,
+      "header_matches_preregistered_pilot_regime": true,
+      "rows_sha256": "8d2b58dbef38a1143fe5d3b044870802950e195543d3872a74ca66e9f08ffeb0",
+      "scope": "Additional simulator evidence only; no automatic deployment or native strength claim.",
+      "actual_header_build": {
+        "commit": "1aeaac1c67bf6a52002d01a7baefcc7828162497",
+        "commit_source": "build-tree",
+        "dirty": false,
+        "genes_sha256": "ba6d3f51757a3cd4220ed231cc14f1ec2a22c356fae21894e4c519fab8890723",
+        "binary_sha256": "dc1418d6721d3a1939c8c0f1166c791c8b90f43c8ff86c3b9c3187c8341c57d9"
+      },
+      "compiled_source_equivalence_verified": true
+    },
+    "gene": {
+      "adjusted_pp": -5.30503978779841,
+      "adjusted_se_pp": 4.257727750200321,
+      "civics_inspired_share_pp": {
+        "diff": -1.60264960864707,
+        "n_off": 273,
+        "n_on": 87,
+        "se": 0.8909851257542168,
+        "z": -1.7987389040759023
+      },
+      "compute_cost_pct": 0.6521584043649175,
+      "compute_cost_se_pct": 2.2844492614803125,
+      "cost_games": 60,
+      "done_delta_pp": 0.0,
+      "done_se_pp": 0.0,
+      "forgotten_delta_pp": 0.0,
+      "forgotten_se_pp": 0.0,
+      "n_off": 273,
+      "n_on": 87,
+      "read": "~",
+      "science_end": {
+        "diff": -18.517679500442114,
+        "n_off": 273,
+        "n_on": 87,
+        "se": 33.41130451531357,
+        "z": -0.5542339567123102
+      },
+      "science_pace": {
+        "diff": 0.04294556018694351,
+        "n_off": 273,
+        "n_on": 87,
+        "se": 0.4919440899244937,
+        "z": 0.08729764431875792
+      },
+      "seats": 360,
+      "share_delta_pp": -0.2677618032743606,
+      "share_resolves_pp": 2.4301940509853184,
+      "share_se_pp": 0.8679264467804709,
+      "share_z": -0.30850748271078665,
+      "tag": "frontier-walls-before-the-surprise",
+      "techs_boosted_share_pp": {
+        "diff": 0.2264410043907219,
+        "n_off": 273,
+        "n_on": 87,
+        "se": 0.6026845468744397,
+        "z": 0.37572060801137064
+      },
+      "techs_end": {
+        "diff": -2.103195654919787,
+        "n_off": 273,
+        "n_on": 87,
+        "se": 1.2570614632736103,
+        "z": -1.6731048690671766
+      },
+      "time_cost_pct": 0.09972589811315229,
+      "time_cost_se_pct": 3.7512108701654605,
+      "win_delta_pp": -5.30503978779841,
+      "win_off": 0.1794871794871795,
+      "win_on": 0.12643678160919541,
+      "win_resolves_pp": 11.921637700560899,
+      "win_se_pp": 4.257727750200321,
+      "win_tranches": [
+        {
+          "games": 60,
+          "position": "latest",
+          "seats": 360,
+          "win_delta_pp": -5.30503978779841,
+          "win_se_pp": 4.257727750200321,
+          "win_z": -1.2459790994266402
+        }
+      ],
+      "win_z": -1.2459790994266402
+    },
+    "endings": {
+      "culture": {
+        "games": 6,
+        "median_turn": 159,
+        "seats": 36,
+        "share": 0.1,
+        "won_by_field": 0
+      },
+      "diplomatic": {
+        "games": 1,
+        "median_turn": 225,
+        "seats": 6,
+        "share": 0.016666666666666666,
+        "won_by_field": 0
+      },
+      "science": {
+        "games": 51,
+        "median_turn": 170,
+        "seats": 306,
+        "share": 0.85,
+        "won_by_field": 0
+      },
+      "score": {
+        "games": 2,
+        "median_turn": 250,
+        "seats": 12,
+        "share": 0.03333333333333333,
+        "won_by_field": 0
+      }
+    },
+    "decision": "Keep default off and unchanged verification force selections. Followup point estimates negative, unresolved; no native-strength or causal harm claim. Original6pilot separate and not pooled.",
+    "audit_corrections": [
+      "Original runner rejected docs-equivalent1aea runtimeheader instead of compiled89; source equivalence witnessed before outcomes.",
+      "Independent auditor first expected kind seat but actual source emits kind game; all360records retained and source format assertion corrected, both failurelogs preserved."
+    ]
+  },
+  "compressed_sha256": "fa278edba4280f7c3cc8e78b57e8c3fd34aa9ab12903216e2af7fc44d309dd4b",
+  "raw_sha256": "8d2b58dbef38a1143fe5d3b044870802950e195543d3872a74ca66e9f08ffeb0",
+  "raw_bytes": 4057817,
+  "audit_format_source": "src/bin/gene_screen.rs:2310 emits kind game for measured seat rows"
+}
