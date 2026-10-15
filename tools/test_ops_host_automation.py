@@ -549,6 +549,33 @@ class TheSwitchIsTheTrackedOne(unittest.TestCase):
             self.assertFalse((home / ".civvis-operator-intent").exists(),
                              "a stopped lane must not authorize a replacement")
 
+    def test_only_the_pages_new_game_asks_for_a_restart_in_place(self):
+        with TemporaryDirectory() as raw:
+            home = Path(raw) / "home"
+            home.mkdir()
+            fake_bin = home / "fake-bin"
+            fake_bin.mkdir()
+            argv = home / "retire-argv"
+            python = fake_bin / "python3"
+            python.write_text(
+                "#!/bin/zsh\n"
+                "if [[ \"$1\" == *gamelock.py && \"$2\" == --halt-status ]]; then exit 1; fi\n"
+                f"if [[ \"$1\" == *operator_retire.py ]]; then print -r -- \"$*\" > {argv}; exit 0; fi\n"
+                "exit 0\n")
+            python.chmod(0o755)
+            base = clean_env(HOME=str(home), CIVVIS_REPO=str(REPO),
+                             PATH=str(fake_bin) + os.pathsep + os.environ["PATH"])
+            (home / ".civvis-operator-intent").write_text("running\n")
+
+            done = zsh(SWITCH, "retire", env=base)
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+            self.assertNotIn("--restart", argv.read_text())
+            done = zsh(SWITCH, "retire", "operator: new game",
+                       env={**base, "CIVVIS_RETIRE_RESTART": "1"})
+            self.assertEqual(done.returncode, 0, done.stdout + done.stderr)
+            self.assertTrue(argv.read_text().rstrip().endswith(
+                "--reason operator: new game --restart"), argv.read_text())
+
     def test_ensure_never_clears_a_halt_or_defaults_missing_intent_to_running(self):
         text = SWITCH.read_text()
         start = text.index("ensure)\n")
