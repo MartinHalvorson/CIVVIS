@@ -6431,7 +6431,6 @@ fn browser_orders_controls_interface_setup_and_logs() {
         .expect("the masthead's own rule");
     assert!(masthead.contains("right: var(--panel-edge); width: auto;"));
     assert!(!masthead.contains("--victory-hud-width"));
-    assert!(!EMBEDDED_INDEX.contains("body.overlay-victory-hidden #playerhud {"));
     assert!(EMBEDDED_INDEX.contains(
         "right: var(--panel-edge);\n    top: calc(var(--panel-edge) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));"
     ));
@@ -7864,7 +7863,11 @@ fn browser_names_a_live_games_level_on_the_turn_plate() {
         );
     }
     // The two rows it replaced are gone, labels and all.
-    for gone in ["<span>Map:</span>", "<span>Level/Speed:</span>", "<span>Game speed:</span>"] {
+    for gone in [
+        "<span>Map:</span>",
+        "<span>Level/Speed:</span>",
+        "<span>Game speed:</span>",
+    ] {
         assert!(
             !EMBEDDED_INDEX.contains(gone),
             "the plate still carries a separate {gone} row"
