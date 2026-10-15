@@ -24422,13 +24422,17 @@ impl Game {
         target_height: i32,
         see_through_woods: bool,
     ) -> bool {
+        // One graph-distance query serves both adjacency and arc sampling.
+        let steps = self.wdist(from, to).max(1);
+        if steps <= 1 {
+            return true;
+        }
         let Some(sphere) = self.map.sphere() else {
             return true;
         };
         let (Some(start), Some(end)) = (sphere.center(from), sphere.center(to)) else {
             return true;
         };
-        let steps = self.wdist(from, to).max(1);
         let angle = start
             .iter()
             .zip(end)
@@ -24567,12 +24571,8 @@ impl Game {
         let sphere = self.map.sphere().is_some();
         let wraps = self.map.topology.wraps_east_west();
         // On a cylinder `unwrapped_toward` chooses the same minimum as
-        // `wdist`; let its retained distance answer this fast path below.
-        // A globe does not have a cube ray and an arena must keep its
-        // non-wrapping distance, so both retain the original check.
-        if (sphere || !wraps) && self.wdist(from, to) <= 1 {
-            return true;
-        }
+        // `wdist`; let its retained distance answer the fast path below.
+        // The spherical corridor retains its own distance for arc sampling.
         if sphere {
             return self.arc_is_clear(
                 heights,
@@ -24582,6 +24582,9 @@ impl Game {
                 target_height,
                 see_through_woods,
             );
+        }
+        if !wraps && self.wdist(from, to) <= 1 {
+            return true;
         }
         let (unwrapped, distance) = self.unwrapped_toward(from, to);
         if distance == 0 || (wraps && distance == 1) {
