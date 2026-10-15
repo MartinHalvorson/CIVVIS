@@ -23881,18 +23881,10 @@ function hudTurnPlate() {
   const mapScript = state.map.script || "tenins_ball";
   const mapName = mapScript === "tenins_ball" ? "Tennis Ball" : titleCase(mapScript);
   const speedName = titleCase(state.game_speed || "standard");
-  // Beside a live Civilization VI game the speed row also names the level the
-  // game is played at (operator 2026-10-14: "Difficulty/Speed: Lv 6 /
-  // Online"). Both halves are the host game's own setup, read off its export.
-  // The label says "Level" because "Difficulty/Speed: Lv 6 / Online" is the
-  // widest row by a fifth: the plate cannot hold it even at its smallest type,
-  // where "Level/Speed" fits beside the other rows at the size they already have.
+  // Beside a live Civilization VI game the plate also names the level the game
+  // is played at (operator 2026-10-14: "Difficulty/Speed: Lv 6 / Online"),
+  // read off the host game's export like its speed.
   const liveLevel = livePause.available ? difficultyLevel(state.difficulty) : null;
-  const speedRow = liveLevel
-    ? `<div class="turn-setting" title="${escapeAttr(
-        `${liveLevel.name} difficulty (level ${liveLevel.level} of ${liveLevel.of}) at ${speedName} game speed`)}">` +
-      `<span>Level/Speed:</span><b>Lv ${liveLevel.level} / ${speedName}</b></div>`
-    : `<div class="turn-setting"><span>Game speed:</span><b>${speedName}</b></div>`;
   const paceSelect = document.getElementById("specspeed");
   const paceOption = paceSelect?.selectedOptions[0];
   const watchPace = SPEC ? paceOption?.textContent.trim() || "Blitz" : "Manual";
@@ -23915,6 +23907,15 @@ function hudTurnPlate() {
   // and on which script ("4P Pangaea"). The dealt count includes the fallen.
   const dealtCivs = state.players.filter(p => !p.is_minor && !p.is_barbarian).length;
   const mapRowValue = `${dealtCivs}P ${mapName}`;
+  // The map, a live game's level and the speed are one line with no labels
+  // (operator 2026-10-14: "combine the top 2 rows to be 4P Pangaea Lv 6
+  // Online … all one line"): "4P Pangaea · Lv 6 · Online". Each part reads on
+  // its own, and the tooltip spells them out.
+  const setupLine = [mapRowValue, liveLevel && `Lv ${liveLevel.level}`, speedName]
+    .filter(Boolean).join(" · ");
+  const setupTitle = [`${dealtCivs} civilizations on ${mapName}`,
+    liveLevel && `${liveLevel.name} difficulty (level ${liveLevel.level} of ${liveLevel.of})`,
+    `${speedName} game speed`].filter(Boolean).join(" · ");
   // "Remaining" is a count of who is still playing, so a civilization that has
   // been wiped off the map no longer appears in it. The count it was taken out
   // of is worth as much as the count itself — eight remaining reads very
@@ -24011,8 +24012,8 @@ function hudTurnPlate() {
     (decided ? `<small class="turn-playon">Playing on</small>` : ``) +
     `</div>` +
     `<div class="turn-settings" aria-label="Game setup">` +
-    `<div class="turn-setting"><span>Map:</span><b>${escapeAttr(mapRowValue)}</b></div>` +
-    speedRow +
+    `<div class="turn-setting turn-setup-line" title="${escapeAttr(setupTitle)}">` +
+    `<b>${escapeAttr(setupLine)}</b></div>` +
     `<div class="turn-setting"><span>Turns:</span>${turnStructureValue}</div>` +
     `<div class="turn-setting"><span>Watch pace:</span>${watchPaceValue}</div>` +
     fogRow +
