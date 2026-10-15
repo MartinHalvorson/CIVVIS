@@ -391,6 +391,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `no-peace-with-a-launcher` | off (unmeasured) | Enable `no-peace-with-a-launcher`. | 1 \| 1 |
 | `one-sanctuary` | off (unmeasured) | Opt-in gene `one-sanctuary`; see `Self::one_sanctuary`. | 1 \| 1 |
 | `one-war-swaps-a-stalled-front` | off (unmeasured) | Opt-in gene `one-war-swaps-a-stalled-front`; see `Self::one_war_swaps_a_stalled_front`. | 1 \| 1 |
+| `open-city-draws-the-front` | off (unmeasured) | Opt-in gene `open-city-draws-the-front`; see `advanced/open_city_front.rs`. | 1 \| 1 |
 | `opening-defense-preempts-once` | off (unmeasured) | `BasicAi::opening_defense_preempts_once`; opt-in gene `opening-defense-preempts-once`. | 1 \| 1 |
 | `opening-force-keeps-its-members` | off (unmeasured) | Opt-in gene `opening-force-keeps-its-members`; see `Self::opening_force_keeps_its_members`. | 1 \| 1 |
 | `opening-yields-to-walls` | off (unmeasured) | Opt-in gene `opening-yields-to-walls`; see `Self::opening_yields_to_walls`. | 1 \| 1 |
