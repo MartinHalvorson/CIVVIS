@@ -20,6 +20,23 @@ and leaves its city objective absent. No hidden city is created. Controls
 retain the existing fallback without public evidence, a reported zero,
 peace with the major, a located major city, and an eliminated major.
 
-This checkpoint adds the failed-first regression before changing selection.
-Execution and any repair remain pending. It establishes no native conquest,
-win-rate improvement, or highest-level victory.
+Checkpoint `217fe4827` ran before the repair in GitHub run `38692575247`.
+After all fixture preconditions passed, the production assessment named
+player 2 (the minor) instead of player 1 (the publicly surviving major).
+Four other controls passed before the run stopped on that failure; the
+located-city control was not reached in that fail-fast run.
+
+The repair admits an at-war major when the existing unseen-city guard
+proves it still owns cities, preserving the living-player, war and barbarian
+filters. An absent location stays absent. The six repaired controls and
+full integration checks remain pending.
+
+The verified native source `048be52e8` independently reproduces the same
+selection on the exact recorded turn-48/frame-0 input (snapshot 119,
+6,038,677 bytes, SHA-256
+`490d32cb747899887f23f62daa9b9fde6cbe4aaab41ca7a6ff67d8f1aad9d307`).
+Its fresh one-shot plan names modeled player 4, Cahokia. This is a frozen
+input mechanism check, not a reconstruction of persistent AI state or a
+counterfactual victory. Native repair validation is being built separately.
+No native conquest, win-rate improvement, or highest-level victory is
+established by this repair.
