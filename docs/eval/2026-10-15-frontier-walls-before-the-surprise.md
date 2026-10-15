@@ -70,7 +70,41 @@ repository firing-evidence gate; it does not establish a strength gain and is
 not a native or paired-game result. The JSONL and analyzer output are committed
 under `docs/gene_screens/fires/2026-10-15-frontier-walls.*`.
 
-Native artifact validation, frozen order comparisons and execution remain
-pending. The existing deployment rules, all 141 selected genes, their
-retained-selection rationale and the compute-cost record remain byte-identical.
-No survival benefit is claimed.
+Native ARM64 artifact run `38789844960` builds exact source `89d1f01bb` with
+Rust 1.97.1. Independent verification checks all 2,601 tracked source files,
+178 targeted controls and both executable hashes; the downloaded simulator
+passes a twenty-turn smoke run and the downloaded orders process passes its
+protocol smoke. The orders binary SHA-256 is
+`fd292ce4a19bb4ca06550ea7c96011b3630028c1690d4469f768bf002b175778`.
+Subsequent changes contain only documentation and the recorded firing data.
+
+Six exact captured native requests are queried OFF and ON with that one
+verified binary, identical input prefixes and every other effective treatment
+held fixed. The turn-22 and turn-25 early boards, underway Irrigation at 28,
+and turn-30 Masonry choice produce identical complete order arrays. At turn
+30 the frontier explanation fires, but the old controller already chooses
+Masonry. The arm does not preempt research already underway. On the captured
+turn-36 board it changes Guayaquil and Panama to Walls. On the original
+turn-47 board Guayaquil changes from Granary to Walls; Barinas and Quito also
+choose Walls. These are fresh one-shot queries of captured states, not
+persistent counterfactual game trajectories or executed construction.
+
+A fixed four-arm native study was preregistered before execution: OFF then ON
+from the archived turn-18 board, followed by OFF then ON from turn 27 of that
+same world. Every arm uses source `89d1f01bb`, the same verified binary and
+bridge, captured inputs and the unchanged production-rank retirement rule.
+The first native seat, state, tiles and settlement-pressure exports must
+match within each pair. The runner is queued at a normal game boundary; the
+preceding unowned attempt started no turns and its supervisor is recovering
+a leftover windowless game process. No study arm has started as of this
+checkpoint, and these two starts are not independent maps or fresh ladder
+games. The queued study and its private source consumer survive public
+worktree cleanup. A runtime, genome, archive and outcome audit is prepared.
+
+GitHub run `38794042205` passes the complete Rust and repository gates for the
+firing-data checkpoint. The paired cost gate `38794042351` reports -0.20%
+per completed turn across five 120-turn pairs, inside its +/-1% noise floor
+and +8% budget; no speed change is established. The existing deployment
+rules, all 141 selected genes, their retained-selection rationale and the
+compute-cost record remain byte-identical. The frontier arm stays default-off;
+no native survival, strength or win-rate benefit is claimed.
