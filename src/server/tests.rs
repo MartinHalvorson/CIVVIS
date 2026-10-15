@@ -10567,44 +10567,35 @@ fn closest_victory_reaches_every_major_for_the_spectator_and_only_your_seat_in_p
             turns.windows(2).all(|w| w[0] <= w[1]),
             "soonest first: {eta}"
         );
-        pairs.len()
     };
 
     let mut params = current();
     params.spectate = true;
     let mut session = Session::new(params);
+    while session.game.turn < 30 && !session.game.is_finished() {
+        session.step();
+    }
     let majors = session
         .game
         .players
         .iter()
-        .filter(|seat| !seat.is_minor && !seat.is_barbarian)
+        .filter(|seat| !seat.is_minor && !seat.is_barbarian && seat.alive)
         .count();
-    while session.game.turn < 30 && !session.game.is_finished() {
-        session.step();
+    // On a map this small no road has a clock on it thirty turns in: at
+    // today's science the race is more than the planner's ten thousand turns
+    // away. A seat holding the whole tree has only the launches left to
+    // build, which the planner can always price.
+    let tree: Vec<_> = session
+        .game
+        .rules
+        .techs
+        .iter()
+        .map(|(tech, _)| *tech)
+        .collect();
+    for tech in tree {
+        session.game.players[0].techs.insert(tech);
     }
     let state = session.state();
-    // TIMING-TEMP
-    {
-        let started = Instant::now();
-        for _ in 0..20 {
-            let _ = session.state();
-        }
-        let whole = started.elapsed() / 20;
-        let started = Instant::now();
-        for _ in 0..20 {
-            for id in 0..session.game.players.len() {
-                let _ = super::victory_eta_json(&session.game, id);
-            }
-        }
-        eprintln!(
-            "TIMING-TEMP turn {} cities {} state {:?} eta-all-seats {:?}",
-            session.game.turn,
-            session.game.cities.len(),
-            whole,
-            started.elapsed() / 20
-        );
-    }
-    let mut priced = 0;
     let mut annotated = 0;
     for player in state["players"].as_array().unwrap() {
         let minor = player["is_minor"] == json!(true) || player["is_barbarian"] == json!(true);
@@ -10614,7 +10605,7 @@ fn closest_victory_reaches_every_major_for_the_spectator_and_only_your_seat_in_p
         }
         annotated += 1;
         let id = player["id"].as_u64().unwrap() as usize;
-        let len = well_formed(&player["victory_eta"]);
+        well_formed(&player["victory_eta"]);
         // The head is the planner's own soonest central clock.
         let soonest = crate::ai::AdvancedAi::victory_forecasts(&session.game, id)
             .into_iter()
@@ -10627,17 +10618,18 @@ fn closest_victory_reaches_every_major_for_the_spectator_and_only_your_seat_in_p
             "{}",
             player["civ"]
         );
-        if len > 0 {
-            priced += 1;
-        }
     }
     assert_eq!(
         annotated, majors,
         "every living major is annotated above the world"
     );
     assert!(
-        priced > 0,
-        "a world thirty turns on has a road with a clock on it"
+        state["players"][0]["victory_eta"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|pair| pair[0] == "science"),
+        "the seat holding the whole tree has a clock on the space race"
     );
 
     let state = Session::new(current()).state();
