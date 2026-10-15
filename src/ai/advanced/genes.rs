@@ -4009,6 +4009,9 @@ pub const GENES: &[Gene] = &[
     // after it (Gunboat Diplomacy seated under Communism kept version one
     // out). See `merchant_confederation_pays` in `advanced.rs`.
     Gene { tag: "merchant-confederation-earns-its-slot-2", field: "merchant_confederation_earns_its_slot_2", kind: Kind::OptIn, enable: AdvancedAi::enable_merchant_confederation_earns_its_slot_2, disable: AdvancedAi::disable_merchant_confederation_earns_its_slot_2 },
+    // Early fortification for an exposed non-capital city watched by a
+    // stronger peaceful major. Separate from the original-capital policy.
+    Gene { tag: "frontier-walls-before-the-surprise", field: "frontier_walls_before_the_surprise", kind: Kind::OptIn, enable: AdvancedAi::enable_frontier_walls_before_the_surprise, disable: AdvancedAi::disable_frontier_walls_before_the_surprise },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
