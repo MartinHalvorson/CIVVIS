@@ -6432,11 +6432,47 @@ fn browser_orders_controls_interface_setup_and_logs() {
     assert!(masthead.contains("right: var(--panel-edge); width: auto;"));
     assert!(!masthead.contains("--victory-hud-width"));
     assert!(EMBEDDED_INDEX.contains(
-        "right: var(--panel-edge);\n    top: calc(var(--panel-edge) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));"
+        "right: var(--panel-edge);\n    top: calc(var(--player-hud-top, var(--panel-edge)) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));"
     ));
     assert!(EMBEDDED_INDEX.contains(
         ":where(body.overlay-players-hidden, #maparea:has(> #playerhud.standings-collapsed)) #victoryhud {\n    top: var(--panel-edge);"
     ));
+    // "Under the masthead" is its actual bottom in every layout. A masthead
+    // the viewer moved publishes its top beside its height, and all three
+    // tracker placements (wide rail, narrow band, compact band) read it; a
+    // reset hands both back to the stylesheet together.
+    assert_eq!(
+        EMBEDDED_INDEX
+            .matches("top: calc(var(--player-hud-top, var(--panel-edge)) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));")
+            .count(),
+        3
+    );
+    assert!(!EMBEDDED_INDEX.contains(
+        "top: calc(var(--panel-edge) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));"
+    ));
+    assert!(EMBEDDED_INDEX.contains(
+        "area.style.setProperty(\"--player-hud-top\", `${next.y}px`);\n    area.style.setProperty(\"--player-hud-height\", `${next.height}px`);"
+    ));
+    assert!(EMBEDDED_INDEX.contains(
+        "area.style.removeProperty(\"--player-hud-top\");\n    area.style.removeProperty(\"--player-hud-height\");"
+    ));
+    // A tracker the viewer saved in the corner the masthead now spans steps
+    // down under the standings on a wide map too, giving up height if the gap
+    // is shorter than it; only the minimap's lower stack is compact-only.
+    assert!(!EMBEDDED_INDEX.contains("settleCompactHudWidgets"));
+    for piece in [
+        "function settleHudWidgets() {",
+        "if (responsivePanelGeometry.compact &&\n      minimap?.element?.classList.contains(\"layout-widget-custom\")) {",
+        "minimumY = Math.max(minimumY, player.y + player.height + gap);",
+        "if (room < Math.min(victory.minHeight, metrics.height)) return;",
+        "const height = Math.min(metrics.height, room);",
+        "applyHudWidgetMetrics(\"victory\", {...metrics, y, height});",
+    ] {
+        assert!(
+            EMBEDDED_INDEX.contains(piece),
+            "a saved tracker no longer settles under the masthead: {piece}"
+        );
+    }
     assert!(EMBEDDED_INDEX
         .contains("width: var(--world-minimap-width); height: var(--minimap-height);"));
     assert!(EMBEDDED_INDEX
