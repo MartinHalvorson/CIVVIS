@@ -35,7 +35,8 @@ RETIRE_SEQ = 99_000
 RETIRE_FRAME = 990
 
 
-def request_retire(path: Path, run_tag: str, turn: int, reason: str = "operator") -> bool:
+def request_retire(path: Path, run_tag: str, turn: int, reason: str = "operator",
+                   *, restart: bool = False) -> bool:
     """Ask the running game to Retire, so the attempt is filed as a real loss.
 
     Killing the harness leaves the game unfinished — no `TeamVictory`, no
@@ -50,6 +51,11 @@ def request_retire(path: Path, run_tag: str, turn: int, reason: str = "operator"
     rather than for routing, and the sentinel frame keeps the row out of any
     real batch.
 
+    ``restart`` (the page's New game) puts ``x = 1`` on the row: the mod then
+    parks the game for a restart in place instead of retiring it, and the next
+    run restarts it (`civ6_control.restart_handoff`).  A mod without that path
+    reads any retire row as a retire, so the request degrades to the old one.
+
     Returns whether the row was written.  A missing or unwritable database is
     not fatal: the caller still stops the game, it is simply filed the old way.
     """
@@ -60,8 +66,38 @@ def request_retire(path: Path, run_tag: str, turn: int, reason: str = "operator"
             db.execute(
                 "INSERT OR REPLACE INTO orders"
                 " (run, turn, seq, kind, subject, verb, x, y, frame)"
-                " VALUES (?, ?, ?, 'retire', NULL, ?, NULL, NULL, ?)",
-                (run_tag, int(turn), RETIRE_SEQ, str(reason), RETIRE_FRAME),
+                " VALUES (?, ?, ?, 'retire', NULL, ?, ?, NULL, ?)",
+                (run_tag, int(turn), RETIRE_SEQ, str(reason),
+                 1 if restart else None, RETIRE_FRAME),
+            )
+        return True
+    except Exception:
+        return False
+
+
+#: Sequence and frame for the restart row a NEXT run writes into the parked
+#: run's channel, beside the retire row's.
+RESTART_SEQ = 99_003
+RESTART_FRAME = 993
+
+
+def request_restart(path: Path, run_tag: str, mode: int) -> bool:
+    """Ask the game run `run_tag` parked to start a fresh one in place.
+
+    Written by the next run into the PARKED run's orders database, which that
+    game still has attached; `mode` goes in `x` (see
+    `civ6_control.restart_handoff.MODES`).  Returns whether the row was written.
+    """
+    try:
+        import sqlite3
+
+        uri = Path(path).absolute().as_uri() + "?mode=rw"
+        with sqlite3.connect(uri, uri=True, timeout=5.0) as db:
+            db.execute(
+                "INSERT OR REPLACE INTO orders"
+                " (run, turn, seq, kind, subject, verb, x, y, frame)"
+                " VALUES (?, 0, ?, 'restart', NULL, 'operator', ?, NULL, ?)",
+                (run_tag, RESTART_SEQ, int(mode), RESTART_FRAME),
             )
         return True
     except Exception:

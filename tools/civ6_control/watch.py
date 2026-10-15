@@ -43,6 +43,20 @@ class LogTail:
         # The unterminated tail already relayed whole, so the newline that
         # completes it later does not relay it twice. See `poll`.
         self.delivered: str | None = None
+        # ★ A RESTART IN PLACE SHARES THE LOG. Civilization VI keeps writing
+        # the same Automation.log when a game is restarted inside it
+        # (`civ6_control.restart_handoff`), so the run before this one is in
+        # it too. Set, records that name another run are dropped.
+        self.run: str | None = None
+
+    def skip_to_end(self) -> None:
+        """Start from what is written next, not from what is already there."""
+        try:
+            self.offset = self.path.stat().st_size
+        except OSError:
+            self.offset = 0
+        self.partial = ""
+        self.delivered = None
 
     @staticmethod
     def _decode(line: str) -> dict | None:
@@ -82,7 +96,7 @@ class LogTail:
                 if line == held:
                     continue  # relayed whole while it waited for this newline
             event = self._decode(line)
-            if event is not None:
+            if event is not None and self._ours(event):
                 events.append(event)
         # ★ A COMPLETE RECORD LEFT WITHOUT ITS NEWLINE IS RELAYED NOW.
         # Some records sit in the file unterminated until something else is
@@ -102,9 +116,13 @@ class LogTail:
                 and self.partial.rstrip().endswith("}"):
             event = self._decode(self.partial)
             if event is not None:
-                events.append(event)
+                if self._ours(event):
+                    events.append(event)
                 self.delivered = self.partial
         return events
+
+    def _ours(self, event: dict) -> bool:
+        return self.run is None or event.get("run") in (None, self.run)
 
 
 class EventLogBridge:

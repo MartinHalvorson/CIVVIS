@@ -593,7 +593,7 @@ class AttachSummaryTests(unittest.TestCase):
             self.assertEqual(getattr(civ6_play, name).__name__, name)
             self.assertTrue(hasattr(getattr(civ6_play, name), "__wrapped__"))
         source = Path(civ6_play.__file__).read_text(encoding="utf-8")
-        self.assertIn("setup_clock_start()\n    game_process = launcher.launch(", source)
+        self.assertIn("setup_clock_start()\n        game_process = launcher.launch(", source)
         self.assertIn('setup_mark("menu_reached")', source)
         self.assertIn('setup_mark("configured", stop=True)', source)
         self.assertLess(source.index('setup_mark("configured", stop=True)'),
@@ -4879,7 +4879,9 @@ class DesktopRescueRunsOffTheRelay(unittest.TestCase):
         self.assertIn('run_dir / f"autoclose-stuck-turn-{turn}.png"', rescue)
         # Nothing else drives the desktop while a rescue might be.
         self.assertIn("desktop_rescues.drain(30.0)\n        dismiss_leader_dialogue()", source)
-        self.assertIn("desktop_rescues.close(30.0)\n    game_stopped = launcher.stop()", source)
+        self.assertIn("desktop_rescues.close(30.0)\n    game_stopped = False", source)
+        self.assertLess(source.index("desktop_rescues.close(30.0)"),
+                        source.index("game_stopped = launcher.stop()"))
 
 
 class TheFinalScreenHoldIsForTheWinClip(unittest.TestCase):
@@ -4954,3 +4956,118 @@ class DeitySetupLabelReadback(unittest.TestCase):
              patch.object(civ6_play, "_menu_crop_ocr", return_value=[]):
             self.assertIsNone(civ6_play._observed_label_point(
                 Path("native-deity.png"), "Deity", self.BOUNDS))
+
+
+class RestartInPlaceTests(unittest.TestCase):
+    """New game by restart: the next run starts its game inside the parked Civ VI."""
+
+    class Tail:
+        def __init__(self, batches):
+            self.batches = list(batches)
+            self.run = "unset"
+            self.runs_seen = []
+
+        def poll(self):
+            self.runs_seen.append(self.run)
+            return self.batches.pop(0) if self.batches else []
+
+    def restart(self, batches, *, written=True, **kwargs):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        (root / "civvis-old").mkdir()
+        run_dir = root / "civvis-new"
+        run_dir.mkdir()
+        tail = self.Tail(batches)
+        relayed = []
+        args = SimpleNamespace(tag="civvis-new", leader="LEADER_SIMON_BOLIVAR",
+                               leader_intro_defer=0.0)
+        handoff = {"from_tag": "civvis-old",
+                   "orders_db": str(root / "civvis-old" / "orders.sqlite")}
+        with patch.object(civ6_play, "RUN_ROOT", root), \
+             patch.object(civ6_play, "request_restart", return_value=written) as ask, \
+             patch.object(civ6_play.env, "game_pids", return_value=[4242]), \
+             patch.object(civ6_play, "game_window", return_value=None), \
+             patch.object(civ6_play, "maintain_game_focus") as focus, \
+             patch.object(civ6_play.time, "sleep"), \
+             patch("sys.stdout"), patch("sys.stderr"):
+            started = civ6_play.restart_in_place(tail, relayed.append, run_dir, args,
+                                                 handoff, verify_s=0.05, **kwargs)
+        if written:
+            focus.assert_called_once_with(1.0, 0.0)
+        record = json.loads((run_dir / "restart.json").read_text())
+        parked = root / "civvis-old" / "events.jsonl"
+        parked_kinds = ([json.loads(l)["kind"] for l in parked.read_text().splitlines()]
+                        if parked.exists() else [])
+        return started, record, relayed, tail, ask, parked_kinds
+
+    def test_the_parked_game_restarts_into_this_runs_mod(self):
+        old = {"run": "civvis-old", "ctx": "agent"}
+        new = {"run": "civvis-new", "ctx": "agent"}
+        started, record, relayed, tail, ask, parked = self.restart([
+            [dict(old, kind="restart_issued", map_seed_before=11, map_seed=111),
+             dict(old, kind="restart_called", called=True)],
+            [],
+            [dict(new, ctx="autoclose", kind="autoclose_armed")],
+            [dict(new, kind="loaded"), dict(new, kind="seat", map_seed=111)],
+        ])
+        self.assertTrue(started)
+        ask.assert_called_once()
+        self.assertEqual(ask.call_args.args[1:], ("civvis-old", 1))
+        self.assertEqual([e["kind"] for e in relayed],
+                         ["autoclose_armed", "loaded", "seat"],
+                         "only this run's records reach this run")
+        self.assertEqual(parked, ["restart_issued", "restart_called"],
+                         "the parked run keeps its answer")
+        self.assertEqual(tail.run, "civvis-new")
+        self.assertIsNone(tail.runs_seen[0], "both runs are read until ours shows up")
+        self.assertEqual(record["result"], "started")
+        self.assertEqual((record["map_seed_before"], record["map_seed"]), (11, 111))
+        self.assertIs(record["same_map"], False)
+
+    def test_the_old_scripts_coming_back_is_a_refusal(self):
+        old = {"run": "civvis-old", "ctx": "agent"}
+        started, record, relayed, *_ = self.restart([
+            [dict(old, kind="restart_issued", map_seed_before=11, map_seed=111)],
+            [dict(old, kind="loaded")],
+        ])
+        self.assertFalse(started)
+        self.assertEqual(relayed, [])
+        self.assertEqual(record["result"], "failed")
+        self.assertIn("previous run's scripts", record["why"])
+
+    def test_an_unanswered_or_unwritable_ask_is_a_refusal(self):
+        started, record, *_ = self.restart([], answer_s=0.01)
+        self.assertFalse(started)
+        self.assertIn("did not answer", record["why"])
+        started, record, *_ = self.restart([], written=False)
+        self.assertFalse(started)
+        self.assertEqual(record["result"], "unwritable")
+        old = {"run": "civvis-old", "ctx": "agent"}
+        started, record, *_ = self.restart([
+            [dict(old, kind="restart_issued"), dict(old, kind="restart_called", called=False)],
+        ])
+        self.assertFalse(started)
+        self.assertIn("could not call the restart", record["why"])
+
+    def test_the_parked_runs_exit_leaves_the_game_and_its_mod_to_the_next_run(self):
+        source = Path(civ6_play.__file__).read_text(encoding="utf-8")
+        play = source.split("def _play(args: argparse.Namespace) -> int:")[1]
+        # Claimed before anything stops the game; a refusal falls back to the stop.
+        self.assertLess(play.index("restart_handoff.claim(config, env.game_pids())"),
+                        play.index("if handoff is None and not launcher.stop():"))
+        self.assertIn("modinstall.install(config, drop_index=handoff is None)", play)
+        self.assertIn("restart=bool(request.get(\"restart\"))", play)
+        self.assertIn('if state.get("restart_parked") and env.game_pids():', play)
+        self.assertIn("restart_handoff.write(args.tag, orders_db, config, env.game_pids())",
+                      play)
+        outer = source.split("def play(args: argparse.Namespace) -> int:")[1].split(
+            "def _attach_running_game(")[0]
+        self.assertIn("if not restart_handoff.parked_for(args.tag):\n"
+                      "                launcher.stop()", outer)
+        with patch.object(civ6_play.restart_handoff, "parked_for", return_value=True), \
+             patch.object(civ6_play.modinstall, "installed_config") as installed, \
+             patch.object(civ6_play.modinstall, "uninstall") as uninstall:
+            civ6_play._uninstall_owned_mod("civvis-old")
+        installed.assert_not_called()
+        uninstall.assert_not_called()

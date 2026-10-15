@@ -345,7 +345,14 @@ def _drop_mod_index() -> None:
         _finder_delete(mod_db)
 
 
-def install(config: dict) -> Path:
+def install(config: dict, *, drop_index: bool = True) -> Path:
+    """Write the mod for `config`; `drop_index=False` while Civ VI is running.
+
+    A restart in place (`restart_handoff`) loads the rewritten scripts into the
+    game that is already up, whose modding database is open and already lists
+    every file; the index matters only to the next launch's scan, and a later
+    install with the default drops it before that launch.
+    """
     target = install_dir()
     try:
         _write_mod(target, config)
@@ -363,7 +370,8 @@ def install(config: dict) -> Path:
             ) from direct_error
         finally:
             shutil.rmtree(staging, ignore_errors=True)
-    _drop_mod_index()
+    if drop_index:
+        _drop_mod_index()
     return target
 
 

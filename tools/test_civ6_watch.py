@@ -155,6 +155,45 @@ class HeldLastRecordTest(unittest.TestCase):
             self.assertEqual(bridge.pump(), 0)
 
 
+class RestartInPlaceTailTest(unittest.TestCase):
+    """A game restarted inside Civ VI keeps writing the same Automation.log."""
+
+    def test_the_next_run_starts_after_the_parked_runs_records(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            log = Path(temporary) / "Automation.log"
+            log.write_text(line({"kind": "turn", "run": "civvis-old", "turn": 40})
+                           + PREFIX + json.dumps({"kind": "restart_parked",
+                                                  "run": "civvis-old"}))
+            tail = watch.LogTail(log)
+            tail.skip_to_end()
+            self.assertEqual(tail.poll(), [])
+            with log.open("a") as output:
+                output.write("\n" + line({"kind": "loaded", "run": "civvis-new"}))
+            self.assertEqual([e["run"] for e in tail.poll()], ["civvis-new"])
+
+    def test_a_tail_bound_to_a_run_drops_every_other_runs_records(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            log = Path(temporary) / "Automation.log"
+            log.write_text("")
+            tail = watch.LogTail(log)
+            tail.run = "civvis-new"
+            with log.open("a") as output:
+                output.write(line({"kind": "restart_called", "run": "civvis-old"})
+                             + line({"kind": "autoclose_armed", "run": "civvis-new"})
+                             + line({"kind": "untagged"})
+                             + PREFIX + json.dumps({"kind": "loaded", "run": "civvis-old"}))
+            self.assertEqual([e["kind"] for e in tail.poll()],
+                             ["autoclose_armed", "untagged"])
+            with log.open("a") as output:
+                output.write("\n" + line({"kind": "seat", "run": "civvis-new"}))
+            self.assertEqual([e["kind"] for e in tail.poll()], ["seat"],
+                             "a dropped held record is not relayed when its newline comes")
+            tail.run = None
+            with log.open("a") as output:
+                output.write(line({"kind": "loaded", "run": "civvis-old"}))
+            self.assertEqual([e["run"] for e in tail.poll()], ["civvis-old"])
+
+
 class GameLivenessTest(unittest.TestCase):
     """The relay asks `ps` only to (re)list; known pids are checked by syscall."""
 
