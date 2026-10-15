@@ -2653,6 +2653,9 @@ impl Session {
                     if let Some(plan) = self.ais.get(id).and_then(|ai| ai.plan_report()) {
                         player["ai_plan"] = self.plan_json(&plan);
                     }
+                    if let Some(eta) = victory_eta_json(g, id) {
+                        player["victory_eta"] = eta;
+                    }
                     // What this civilization is actually spending its science
                     // and culture on, for the AI strategy dossier. The
                     // observation only ever carries the *observed* seat's, in
@@ -2727,6 +2730,17 @@ impl Session {
         self.name_seat_odds(&mut o);
         self.name_ai_players(&mut o);
         self.name_human_players(&mut o);
+        // Your own road to a win is yours to read. A rival's would be priced
+        // off the production and research the fog is keeping from you, so
+        // its row stays a dash here.
+        if let Some(eta) = victory_eta_json(&self.game, 0) {
+            if let Some(me) = o["players"]
+                .as_array_mut()
+                .and_then(|players| players.iter_mut().find(|p| p["id"] == json!(0)))
+            {
+                me["victory_eta"] = eta;
+            }
+        }
         o["spectate"] = json!(false);
         o["supervised"] = json!(self.params.supervised);
         o["view_player"] = json!(0);
@@ -3387,6 +3401,38 @@ fn held_frame(token: &str) -> Option<SpectatorFrame> {
         finished,
         sequence,
     })
+}
+
+/// How far each road to a win is for one major, as `[victory, turns]` pairs,
+/// soonest first — the standings' Closest victory column reads the head.
+///
+/// The turns are the victory planner's own central clock
+/// (`AdvancedAi::victory_forecasts`), not a meter extrapolated by the page:
+/// that forecaster already prices the research, the launch production, the
+/// tourism race against every defender and the capitals still to take. A
+/// road it cannot yet put a clock on — no religion founded, no army able to
+/// take a capital — is left out rather than guessed at, so a seat with no
+/// such road at all sends an empty list. Ties keep the victory order the
+/// forecaster lists them in.
+fn victory_eta_json(game: &Game, pid: usize) -> Option<Value> {
+    let seat = game.players.get(pid)?;
+    if seat.is_minor || seat.is_barbarian || !seat.alive {
+        return None;
+    }
+    let now = f64::from(game.turn);
+    let mut etas: Vec<(&str, i64)> = AdvancedAi::victory_forecasts(game, pid)
+        .into_iter()
+        .filter_map(|forecast| {
+            forecast.finish_turn.map(|finish| {
+                (
+                    forecast.target.as_str(),
+                    (finish - now).max(0.0).round() as i64,
+                )
+            })
+        })
+        .collect();
+    etas.sort_by_key(|&(_, turns)| turns);
+    Some(json!(etas))
 }
 
 /// The pre-game teams of a world, one entry per major seat in seat order;
