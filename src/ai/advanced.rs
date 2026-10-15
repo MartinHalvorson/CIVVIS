@@ -39475,7 +39475,7 @@ impl AdvancedAi {
         let mut forecast = g.speculative_clone();
         let city = forecast.found_city_for(pid, site, None);
         let city = &forecast.cities[&city];
-        let loyalty_per_turn = forecast.city_loyalty_per_turn(city);
+        let loyalty_per_turn = forecast.settlement_loyalty_per_turn(city);
         (loyalty_per_turn < -f64::EPSILON)
             .then(|| city.loyalty / -loyalty_per_turn)
             .filter(|turns_to_flip| *turns_to_flip <= SETTLE_TARGET_LOYALTY_RISK_TURNS)
@@ -49362,3 +49362,41 @@ mod builder_mountain_tests;
 
 #[cfg(test)]
 mod defending_district_tests;
+
+#[cfg(test)]
+mod native_settlement_pressure_forecast_tests {
+    use crate::game::Game;
+
+    #[test]
+    fn native_pressure_reaches_destination_forecasts() {
+        let mut game = Game::new_full(2, 30, 20, 918, 250, 0, false);
+        game.clear_mirror_cities();
+        let land: Vec<_> = game
+            .map
+            .tiles
+            .values()
+            .filter(|tile| !game.rules.is_water(tile) && game.rules.is_passable(tile))
+            .map(|tile| tile.pos)
+            .collect();
+        let home = land[0];
+        game.found_city_for(0, home, None);
+        let sites: Vec<_> = land
+            .into_iter()
+            .filter(|site| game.wdist(home, *site) >= 4)
+            .take(2)
+            .collect();
+        assert_eq!(sites.len(), 2);
+        for site in &sites {
+            assert!(super::AdvancedAi::settle_site_forecast_revolt(&game, 0, *site).is_none());
+        }
+        game.observed_settlement_loyalty =
+            Some(std::sync::Arc::new(crate::game::NativeSettlementPressure {
+                player: 0,
+                turn: game.turn,
+                plots: sites.iter().map(|site| (*site, -20.0)).collect(),
+            }));
+        for site in sites {
+            assert!(super::AdvancedAi::settle_site_forecast_revolt(&game, 0, site).is_some());
+        }
+    }
+}
