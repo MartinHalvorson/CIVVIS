@@ -1375,6 +1375,7 @@ def project_improvements(database: Database) -> dict[str, dict]:
             "feature": valid_features,
             "resources": resources.get(name, set()),
             "builder_buildable": name in builder_built,
+            "can_build_outside_territory": truthy(row.get("CanBuildOutsideTerritory")),
             "requires_flat": flat_land and not hills and not mountain,
             "requires_hills": hills_only and not has_resources and not has_features,
             "hills_or_resource": hills_or_resource,
@@ -2697,6 +2698,7 @@ def ours_improvements() -> dict[str, dict]:
             "resources": set(entry.get("resources", [])),
             "builder_buildable": entry.get("builder_buildable", True)
             and not entry.get("unbuildable", False),
+            "can_build_outside_territory": entry.get("can_build_outside_territory", False),
             "requires_flat": entry.get("requires_flat", False),
             "requires_hills": entry.get("requires_hills", False),
             "hills_or_resource": entry.get("hills_or_resource", False),

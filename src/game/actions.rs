@@ -4381,6 +4381,7 @@ impl Game {
             for position in positions {
                 let tile = self.map.tiles.get_mut(&position).unwrap();
                 tile.improvement = Some(crate::name!("national_park"));
+                tile.improvement_owner = Some(pid);
                 tile.pillaged = false;
             }
             bump(&mut self.players[pid], "national_park");
@@ -4399,6 +4400,7 @@ impl Game {
                 t.resource = None;
             } else {
                 t.improvement = Some(Name::new(imp));
+                t.improvement_owner = Some(pid);
                 t.pillaged = false;
             }
             if removes {
@@ -4506,7 +4508,11 @@ impl Game {
                 );
             }
         }
-        if self.units[&uid].charges <= 0 {
+        // A Legion or Toa spends its construction charge and remains a combat
+        // unit. Civilian and support builders are consumed when depleted.
+        if self.units[&uid].charges <= 0
+            && self.rules.units[&self.units[&uid].kind].class != "military"
+        {
             self.remove_unit(uid);
         }
         Ok(())
@@ -5382,14 +5388,21 @@ impl Game {
                                 .sum::<i32>();
                         }
                     }
-                    if tile.improvement.as_deref() == Some("airstrip") && !tile.pillaged {
-                        capacity += self.rules.improvements["airstrip"]
-                            .effects
-                            .get("air_slots")
-                            .copied()
-                            .unwrap_or(3.0) as i32;
-                    }
                 }
+            }
+            let owner = match tile.owner_city {
+                Some(cid) => self.cities.get(&cid).map(|city| city.owner),
+                None => tile.improvement_owner,
+            };
+            if owner == Some(pid)
+                && tile.improvement.as_deref() == Some("airstrip")
+                && !tile.pillaged
+            {
+                capacity += self.rules.improvements["airstrip"]
+                    .effects
+                    .get("air_slots")
+                    .copied()
+                    .unwrap_or(3.0) as i32;
             }
         }
         capacity += self
@@ -11773,3 +11786,7 @@ mod air_domain_tests;
 #[cfg(test)]
 #[path = "air_pillage_refusal_tests.rs"]
 mod air_pillage_refusal_tests;
+
+#[cfg(test)]
+#[path = "neutral_airstrip_tests.rs"]
+mod neutral_airstrip_tests;

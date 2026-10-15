@@ -2,6 +2,7 @@ use super::*;
 
 fn host_grass(x: i32, y: i32) -> Plot {
     Plot {
+        io: None,
         x,
         y,
         t: Some("TERRAIN_GRASS".to_string()),

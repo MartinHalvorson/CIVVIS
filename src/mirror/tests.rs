@@ -55,6 +55,7 @@ mod paused_district_progress;
 
 fn plot(x: i32, y: i32, t: &str) -> Plot {
     Plot {
+        io: None,
         x,
         y,
         im: None,
@@ -1794,6 +1795,7 @@ fn a_revealed_land_plot_becomes_land_and_can_hold_a_city() {
         height: 38,
         chunk: 1,
         plots: vec![Plot {
+            io: None,
             x: 56,
             y: 28,
             im: None,
@@ -5066,6 +5068,7 @@ fn corrections_are_measured_after_population_and_dedications_are_on_the_board() 
     let plots: Vec<Plot> = (0..side)
         .flat_map(|x| {
             (0..side).map(move |y| Plot {
+                io: None,
                 x,
                 y,
                 im: None,
@@ -5208,6 +5211,7 @@ fn a_rivals_route_into_our_city_is_seated_and_the_hosts_trade_policy_pays_it_bef
     let plots: Vec<Plot> = (0..side)
         .flat_map(|x| {
             (0..side).map(move |y| Plot {
+                io: None,
                 x,
                 y,
                 im: None,
@@ -12152,6 +12156,7 @@ fn a_hostile_lands_on_the_barbarian_seat_and_not_on_dormant_free_cities() {
         plots: (0..8)
             .flat_map(|x| {
                 (0..8).map(move |y| Plot {
+                    io: None,
                     x,
                     y,
                     im: None,
@@ -12701,6 +12706,7 @@ fn open_grass_board(side: i32) -> Snapshot {
         plots: (0..side)
             .flat_map(|x| {
                 (0..side).map(move |y| Plot {
+                    io: None,
                     x,
                     y,
                     im: None,
@@ -12907,6 +12913,7 @@ fn a_rivals_districts_and_wonders_cross_with_the_plots() {
     let mut plots: Vec<Plot> = (0..side)
         .flat_map(|x| {
             (0..side).map(move |y| Plot {
+                io: None,
                 x,
                 y,
                 im: None,
@@ -13322,6 +13329,7 @@ fn a_seated_but_cityless_minors_ground_is_still_blocked() {
         plots: (0..8)
             .flat_map(|x| {
                 (0..8).map(move |y| Plot {
+                    io: None,
                     x,
                     y,
                     im: None,
