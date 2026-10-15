@@ -985,6 +985,10 @@ local function survey()
 		-- ones this run asked for.
 		setup = try(function() return GameConfiguration.GetValue("CIVVIS_SETUP"); end)
 			or "(absent)",
+		-- The world's seeds: a restart in place must draw a new map, and only
+		-- these say whether it did (`CivvisBoard.restartPoll`).
+		map_seed = try(function() return MapConfiguration.GetValue("RANDOM_SEED"); end),
+		game_seed = try(function() return GameConfiguration.GetValue("GAME_SYNC_RANDOM_SEED"); end),
 		-- ★★★★ WHAT THIS MOD CAN ACTUATE, read back by the brain. `civvis_orders`
 		-- sends a unit's whole planned sequence (walk, strike, fortify) only
 		-- when the mod that will apply it says it sequences per-unit orders
@@ -22048,6 +22052,86 @@ function CivvisBoard.operatorHold(turn)
 	return true;
 end
 
+-- ★ NEW GAME BY RESTART. Operator 2026-10-15: "new game button can restart
+-- the game if that is faster and we want the same settings". Retiring quits
+-- Civilization VI and the next run launches it again and clicks through Create
+-- Game: about 65 s from the press to turn 1, most of it the relaunch, the logos
+-- and the setup clicks (which also take the keyboard from the operator).
+--
+-- So the page's New game parks this game instead (`x = 1` on the retire row):
+-- it stops playing, says `retired` with `why = "restart"` (the harness files
+-- the run exactly as an operator retirement), and waits with Civilization VI
+-- still up. The NEXT run installs its own settings over this mod and writes a
+-- `restart` row into THIS run's orders channel; the parked agent answers it
+-- here, on the HUD's one-second pulse (the game core publishes nothing while
+-- it waits). The restarted game loads the mod files from disk, so it plays as
+-- the next run. `restart_issued` and the next run's `seat` both carry the
+-- seeds, which is how a restart is told apart from a replay of the same map.
+--
+-- `x` on the restart row picks the call: 1 regenerates the seeds and calls
+-- `Network.RestartGame()` (the shipped in-game menu's Restart: "a fresh game
+-- using the existing game configuration"); 2 regenerates the seeds and hosts
+-- the current configuration again (`Network.HostGame`, never after
+-- `LeaveGame`, see `rehost`); 3 is the stock Restart without new seeds.
+--
+-- ⚠ On `CivvisBoard`: the main chunk is at the register ceiling.
+CivvisBoard.restart = { parked = false, issued = false };
+function CivvisBoard.parkForRestart(turn)
+	local restart = CivvisBoard.restart;
+	if restart.parked then return; end
+	restart.parked = true;
+	finished = true;
+	pcall(CivvisQueue.resetTimescale, "restart");
+	emit("retired", { why = "restart", parked = true, turn = turn });
+	-- The game writes its last record only when the next one is logged.
+	emit("restart_parked", { turn = turn });
+end
+
+function CivvisBoard.seeds()
+	return {
+		map = try(function() return MapConfiguration.GetValue("RANDOM_SEED"); end),
+		game = try(function() return GameConfiguration.GetValue("GAME_SYNC_RANDOM_SEED"); end),
+	};
+end
+
+function CivvisBoard.restartPoll()
+	local restart = CivvisBoard.restart;
+	if restart.issued or not attachOrders() then return; end
+	local mode = nil;
+	pcall(function()
+		local rows = DB.Query(string.format(
+			"SELECT x FROM civvis.orders WHERE run = '%s' AND kind = 'restart'",
+			sqlSafe(cfg.RunTag)));
+		for _, row in ipairs(rows) do mode = tonumber(row.x) or 1; end
+	end);
+	if mode == nil then return; end
+	restart.issued = true;
+	local before = CivvisBoard.seeds();
+	local regenerated = false;
+	if mode ~= 3 then
+		regenerated = pcall(function() GameConfiguration.RegenerateSeeds(); end);
+	end
+	local after = CivvisBoard.seeds();
+	emit("restart_issued", {
+		mode = mode, regenerated = regenerated,
+		map_seed_before = before.map, game_seed_before = before.game,
+		map_seed = after.map, game_seed = after.game,
+	});
+	-- A record right behind it, BEFORE the call: the game writes its last
+	-- record only when the next one is logged, and the call may tear this
+	-- context down before anything else is.
+	emit("restart_issued_flush", { mode = mode });
+	local called = false;
+	if mode == 2 then
+		pcall(function() GameConfiguration.SetValue("CIVVIS_SETUP", "restart"); end);
+		called = pcall(function() Network.HostGame(ServerType.SERVER_TYPE_NONE); end);
+	else
+		called = pcall(function() Network.RestartGame(); end);
+	end
+	emit("restart_called", { mode = mode, called = called });
+	emit("restart_called_flush", { mode = mode });
+end
+
 -- ★ THE WATCH PACE. Operator 2026-10-13: "lets try to have watch pace apply to
 -- verification games too". The page's Watch pace is a whole-turn budget —
 -- Blitz 0.5 s, Fast 1 s, Standard 2 s, Slow 4 s, Lightning none — and on the
@@ -22192,18 +22276,27 @@ local function tick()
 				CivvisBoard.retirePollAt = pollTurn;
 				emit("retire_poll", { turn = pollTurn });
 			end
-			local wanted = false;
+			-- `x = 1` on the row asks for the game to be parked for a restart
+			-- in place instead (`CivvisBoard.parkForRestart`).
+			local wanted, restart = false, false;
 			pcall(function()
 				local rows = DB.Query(string.format(
-					"SELECT count(*) AS n FROM civvis.orders WHERE run = '%s' " ..
+					"SELECT x FROM civvis.orders WHERE run = '%s' " ..
 					"AND kind = 'retire'", sqlSafe(cfg.RunTag)));
-				for _, row in ipairs(rows) do wanted = (tonumber(row.n) or 0) > 0; end
+				for _, row in ipairs(rows) do
+					wanted = true;
+					restart = restart or tonumber(row.x) == 1;
+				end
 			end);
 			if wanted then
 				CivvisBoard.retireAsked = true;
 				-- Retired while paused: the game is over, so its closing screens
 				-- go back to the screen closer.
 				pcall(function() ExposedMembers.CivvisOperatorHold = false; end);
+				if restart then
+					CivvisBoard.parkForRestart(pollTurn);
+					return;
+				end
 				local action = try(function() return ActionTypes.ACTION_RETIRE; end);
 				if action == nil then
 					emit("retire_failed", { why = "no_action_type" });
@@ -23518,6 +23611,8 @@ CivvisQueue.noteUiPulse = function(source, disposition)
 end;
 
 CivvisQueue.onUiPulse = function(source)
+	-- A game parked for a restart in place listens for the next run's order.
+	if CivvisBoard.restart.parked then pcall(CivvisBoard.restartPoll); return; end
 	source = type(source) == "string" and source or "unknown";
 	local rejected = finished and "finished" or inTick and "in_tick"
 		or cfg.Play == false and "disabled" or not cfg.CivvisDecides and "standalone";

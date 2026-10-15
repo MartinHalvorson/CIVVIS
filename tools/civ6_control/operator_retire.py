@@ -122,6 +122,7 @@ def record_retired(run_dir: Path, request: dict[str, Any], detail: str) -> dict[
         "reason": request.get("reason"),
         "requested_utc": request.get("requested_utc"),
         "harness_pid": request.get("harness_pid"),
+        "restart": bool(request.get("restart")),
         "state": "retired",
         "retired_utc": utc_stamp(),
         "detail": detail,
@@ -214,8 +215,12 @@ def _summary_is_current_completion(run_dir: Path) -> bool:
 
 
 def request_active_run(root: Path, reason: str, *, ps_output: str | None = None,
-                       now: str | None = None) -> dict[str, Any]:
-    """Write one operator-retire request for exactly one proven live game."""
+                       now: str | None = None, restart: bool = False) -> dict[str, Any]:
+    """Write one operator-retire request for exactly one proven live game.
+
+    ``restart`` asks for the replacement to be started inside the running
+    Civilization VI rather than after a relaunch (`civ6_control.restart_handoff`).
+    """
     harnesses = live_harnesses(ps_output)
     if not harnesses:
         raise RetireRequestError("no tagged civ6_play harness is active")
@@ -244,6 +249,8 @@ def request_active_run(root: Path, reason: str, *, ps_output: str | None = None,
         "harness_pid": harness["pid"],
         "state": "requested",
     }
+    if restart:
+        request["restart"] = True
     _atomic_json(request_path(run_dir), request)
     return request
 
@@ -254,11 +261,14 @@ def main(argv: list[str] | None = None) -> int:
     request = commands.add_parser("request", help="request retirement of one live run")
     request.add_argument("--runs-root", type=Path, default=RUN_ROOT)
     request.add_argument("--reason", required=True)
+    request.add_argument("--restart", action="store_true",
+                         help="start the replacement inside the running game")
     args = parser.parse_args(argv)
 
     if args.command == "request":
         try:
-            result = request_active_run(args.runs_root, args.reason)
+            result = request_active_run(args.runs_root, args.reason,
+                                        restart=args.restart)
         except RetireRequestError as error:
             print(f"retire request refused: {error}", file=sys.stderr)
             return 2
