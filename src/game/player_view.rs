@@ -41,6 +41,11 @@ impl Game {
         remembered
             .retain(|id, city| !visible.contains(&city.pos) || self.city_at(city.pos) == Some(*id));
         let mut view = self.clone();
+        view.observed_settlement_loyalty = self
+            .observed_settlement_loyalty
+            .as_ref()
+            .filter(|reading| reading.player == pid)
+            .cloned();
         Arc::make_mut(&mut view.rules).enable_unknown_terrain();
         // The chooser exposes which pantheons remain available, including
         // those taken by unmet civilizations, without exposing their owners.

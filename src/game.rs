@@ -2,7 +2,9 @@
 use serde::ser::SerializeMap;
 #[cfg(test)]
 mod host_trade_tests;
+mod native_settlement_loyalty;
 mod player_view;
+pub use native_settlement_loyalty::NativeSettlementPressure;
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, BinaryHeap, HashMap, HashSet, VecDeque};
@@ -6613,6 +6615,10 @@ pub struct Game {
     /// Populated by the live mirror and native player decision views.
     #[serde(default)]
     pub observed_city_loyalty_per_turn: Arc<BTreeMap<u32, f64>>,
+    /// Current local-player settler-lens nearby-city pressure. Used only for
+    /// prospective settlements; an absent plot is not a zero-pressure reading.
+    #[serde(default)]
+    pub observed_settlement_loyalty: Option<Arc<NativeSettlementPressure>>,
     /// Observed banner defense strengths for reconstructed cities.
     #[serde(default)]
     pub observed_city_strength: Arc<BTreeMap<u32, f64>>,
@@ -7432,6 +7438,8 @@ struct GameSer {
     observed_city_specialists: BTreeMap<u32, Vec<String>>,
     #[serde(default)]
     observed_city_loyalty_per_turn: BTreeMap<u32, f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    observed_settlement_loyalty: Option<NativeSettlementPressure>,
     #[serde(default)]
     observed_city_strength: BTreeMap<u32, f64>,
     #[serde(default)]
@@ -7644,6 +7652,7 @@ impl From<GameSer> for Game {
             observed_city_worked_tiles: Arc::new(s.observed_city_worked_tiles),
             observed_city_specialists: Arc::new(s.observed_city_specialists),
             observed_city_loyalty_per_turn: Arc::new(s.observed_city_loyalty_per_turn),
+            observed_settlement_loyalty: s.observed_settlement_loyalty.map(Arc::new),
             observed_city_strength: Arc::new(s.observed_city_strength),
             observed_city_ranged_strength: Arc::new(s.observed_city_ranged_strength),
             observed_city_max_wall_hp: Arc::new(s.observed_city_max_wall_hp),
@@ -7914,6 +7923,7 @@ impl From<Game> for GameSer {
             observed_city_worked_tiles: Arc::unwrap_or_clone(g.observed_city_worked_tiles),
             observed_city_specialists: Arc::unwrap_or_clone(g.observed_city_specialists),
             observed_city_loyalty_per_turn: Arc::unwrap_or_clone(g.observed_city_loyalty_per_turn),
+            observed_settlement_loyalty: g.observed_settlement_loyalty.map(Arc::unwrap_or_clone),
             observed_city_strength: Arc::unwrap_or_clone(g.observed_city_strength),
             observed_city_ranged_strength: Arc::unwrap_or_clone(g.observed_city_ranged_strength),
             observed_city_max_wall_hp: Arc::unwrap_or_clone(g.observed_city_max_wall_hp),
@@ -7992,6 +8002,7 @@ impl Game {
         self.city_by_pos.clear();
         self.routes.clear();
         Arc::make_mut(&mut self.observed_city_loyalty_per_turn).clear();
+        self.observed_settlement_loyalty = None;
         Arc::make_mut(&mut self.observed_city_strength).clear();
         Arc::make_mut(&mut self.observed_city_ranged_strength).clear();
         Arc::make_mut(&mut self.observed_city_palaces).clear();
@@ -8372,6 +8383,7 @@ impl Game {
             observed_city_worked_tiles: Arc::new(BTreeMap::new()),
             observed_city_specialists: Arc::new(BTreeMap::new()),
             observed_city_loyalty_per_turn: Arc::new(BTreeMap::new()),
+            observed_settlement_loyalty: None,
             observed_city_strength: Arc::new(BTreeMap::new()),
             observed_city_ranged_strength: Arc::new(BTreeMap::new()),
             observed_city_max_wall_hp: Arc::new(BTreeMap::new()),
@@ -29559,6 +29571,15 @@ impl Game {
     /// read-only makes the exact value available to clients and AI without
     /// duplicating (and eventually drifting from) the turn processor.
     fn loyalty_change_for_city(&self, pid: usize, cid: u32) -> LoyaltyChange {
+        self.loyalty_change_for_city_with_pressure(pid, cid, None)
+    }
+
+    fn loyalty_change_for_city_with_pressure(
+        &self,
+        pid: usize,
+        cid: u32,
+        population_pressure: Option<f64>,
+    ) -> LoyaltyChange {
         // Loyalty weighs this city against every other within range, and asks
         // several of them the same empire-wide questions.
         let _memo = self.query_memo();
@@ -29643,9 +29664,11 @@ impl Game {
             }
         }
 
-        let mut delta = (10.0 * (domestic_pressure - foreign_pressure)
-            / (domestic_pressure.min(foreign_pressure) + 0.5))
-            .clamp(-20.0, 20.0);
+        let mut delta = population_pressure.unwrap_or(
+            (10.0 * (domestic_pressure - foreign_pressure)
+                / (domestic_pressure.min(foreign_pressure) + 0.5))
+                .clamp(-20.0, 20.0),
+        );
         // `IDENTITY_PER_TURN_FROM_FREE_CITIES` 10 and
         // `IDENTITY_PER_TURN_FROM_CITY_STATES` 20 — a Free City's desire for
         // independence and a city-state's base strength as itself. The Free

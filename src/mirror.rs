@@ -44,6 +44,7 @@ mod dedication_history;
 mod host_deaths;
 pub mod input_capture;
 mod religion_state;
+mod settlement_loyalty;
 mod spy_posting;
 mod strategic_income;
 pub use host_deaths::HostUnitDeath;
@@ -404,6 +405,7 @@ pub struct Snapshot {
     /// reading rather than pay a tile what it paid before the sweep that
     /// dropped it.
     stamped: BTreeMap<(i32, i32), u32>,
+    settlement_loyalty: Option<settlement_loyalty::Observation>,
 }
 
 impl Snapshot {
@@ -640,6 +642,7 @@ pub fn snapshot_from_events_at(
         }
     }
     apply_finished_improvements(&raw, turn, state_start, &mut snapshot);
+    snapshot.settlement_loyalty = settlement_loyalty::read(&raw, state_start, board);
     Ok(snapshot)
 }
 
@@ -13016,6 +13019,7 @@ fn step_observed_host_metrics(ctx: &mut HostStepCtx<'_>) {
 }
 
 fn step_loyalty_doomed_sites(ctx: &mut HostStepCtx<'_>) {
+    settlement_loyalty::apply(ctx.game, ctx.snapshot, ctx.state);
     block_loyalty_doomed_settler_sites(ctx.game);
 }
 
@@ -14758,7 +14762,7 @@ fn block_loyalty_doomed_settler_sites(game: &mut crate::game::Game) {
     for site in sites {
         let mut forecast = game.clone();
         let city = forecast.found_city_for(0, site, None);
-        let loyalty = forecast.city_loyalty_per_turn(&forecast.cities[&city]);
+        let loyalty = forecast.settlement_loyalty_per_turn(&forecast.cities[&city]);
         if loyalty <= DOOMED_LOYALTY_PER_TURN {
             Arc::make_mut(&mut game.blocked_city_sites).insert(site);
         }
