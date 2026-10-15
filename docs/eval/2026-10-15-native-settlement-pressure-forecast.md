@@ -52,12 +52,23 @@ The observation carries its owner and turn, survives save/load and speculative
 clones, and is removed from other players' decision views.
 
 Both the existing immediate founding guard and the AI's destination revolt
-forecast use the prospective accessor. Legacy inputs retain the previous
+forecast use the prospective accessor. A current native reading also reaches
+the ordinary destination verdict when the optional modeled-rate treatment
+is off and no rival city is visible. This closes the move-and-found path.
+Persistent sync retains the mirror's existing blocked-site history while
+clearing missing or stale native pressure readings. Legacy inputs retain the previous
 forecast. No registry or deployment-policy flag changes.
 
 ## Validation status
 
-The baseline failure and legacy pass are established. The repaired code
+The baseline failure and legacy pass are established. The first focused repair
+run passed 27 tests and failed two: a governor roster fixture needed its city
+list synchronized, and a new refresh test incorrectly expected the persistent
+blocked-site union to reopen the site. GitHub independently confirmed only
+the latter failure on the pushed governor correction. Both test corrections
+are retained in the validation history. Review also found that the ordinary
+destination verdict needed the native reading outside optional modeled-rate
+checks; its regression now exercises that ordinary verdict. The repaired code
 passes `cargo check --profile ci --locked --all-targets`. Focused execution,
 full local tests, final GitHub gates, exact native-input comparison, and
 native execution of the repaired controller are still pending. Keep this

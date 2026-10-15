@@ -39374,6 +39374,17 @@ impl AdvancedAi {
         pid: usize,
         site: Pos,
     ) -> Option<String> {
+        // A measured native contribution is stronger evidence than the modeled
+        // rate behind `loyalty-rate-alarm`. Honor it on the ordinary live path
+        // even when no rival city is visible, including move-and-found batches.
+        if g.native_settlement_pressure(pid, site).is_some() {
+            if let Some((per_turn, turns)) = Self::settle_site_forecast_revolt(g, pid, site) {
+                return Some(format!(
+                    "the native nearby-city pressure would leave the city losing {:.1} Loyalty a turn and revolting in about {:.0} turns",
+                    -per_turn, turns.ceil()
+                ));
+            }
+        }
         if self.frontier_loyalty && Self::beyond_loyalty_reach(g, pid, site) {
             return Some(
                 "it lies beyond the empire's Loyalty reach on ground the seat has not \
@@ -49386,8 +49397,12 @@ mod native_settlement_pressure_forecast_tests {
             .take(2)
             .collect();
         assert_eq!(sites.len(), 2);
+        let ai = super::AdvancedAi::new();
+        assert!(!ai.base.loyalty_rate_alarm);
+        assert!(!ai.frontier_loyalty);
         for site in &sites {
             assert!(super::AdvancedAi::settle_site_forecast_revolt(&game, 0, *site).is_none());
+            assert!(ai.settle_site_frontier_loyalty_verdict(&game, 0, *site).is_none());
         }
         game.observed_settlement_loyalty =
             Some(std::sync::Arc::new(crate::game::NativeSettlementPressure {
@@ -49397,6 +49412,7 @@ mod native_settlement_pressure_forecast_tests {
             }));
         for site in sites {
             assert!(super::AdvancedAi::settle_site_forecast_revolt(&game, 0, site).is_some());
+            assert!(ai.settle_site_frontier_loyalty_verdict(&game, 0, site).is_some());
         }
     }
 }

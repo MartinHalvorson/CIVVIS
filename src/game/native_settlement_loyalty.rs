@@ -13,22 +13,26 @@ pub struct NativeSettlementPressure {
 }
 
 impl Game {
-    /// Loyalty for a speculative new settlement. An observed warning is the
-    /// nearby-city contribution, not the full rate. Actual owned-city readbacks
-    /// and normal turn processing continue to use `city_loyalty_per_turn`.
-    pub fn settlement_loyalty_per_turn(&self, city: &City) -> f64 {
-        let pressure = self
-            .observed_settlement_loyalty
+    /// A current reading for this player's revealed plot; absence is unknown.
+    pub(crate) fn native_settlement_pressure(&self, player: usize, position: Pos) -> Option<f64> {
+        self.observed_settlement_loyalty
             .as_deref()
-            .filter(|reading| reading.player == city.owner && reading.turn == self.turn)
+            .filter(|reading| reading.player == player && reading.turn == self.turn)
             .and_then(|reading| {
                 reading
                     .plots
                     .iter()
-                    .find(|(position, _)| *position == city.pos)
+                    .find(|(site, _)| *site == position)
                     .map(|(_, pressure)| *pressure)
             })
-            .filter(|pressure| pressure.is_finite() && (-20.0..=20.0).contains(pressure));
+            .filter(|pressure| pressure.is_finite() && (-20.0..=20.0).contains(pressure))
+    }
+
+    /// Loyalty for a speculative new settlement. An observed warning is the
+    /// nearby-city contribution, not the full rate. Actual owned-city readbacks
+    /// and normal turn processing continue to use `city_loyalty_per_turn`.
+    pub fn settlement_loyalty_per_turn(&self, city: &City) -> f64 {
+        let pressure = self.native_settlement_pressure(city.owner, city.pos);
         match pressure {
             Some(pressure) => {
                 self.loyalty_change_for_city_with_pressure(city.owner, city.id, Some(pressure))

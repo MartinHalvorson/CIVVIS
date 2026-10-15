@@ -69,13 +69,15 @@ fn legacy_snapshot_without_native_warning_keeps_its_forecast() {
 }
 
 #[test]
-fn a_native_refresh_without_a_warning_reopens_the_site() {
+fn a_native_refresh_without_a_warning_clears_the_reading_and_keeps_prior_blocks() {
     let mut live = fixture(Some(-20.0));
     let (snapshot, mut state) = boards(None);
     state.turn += 1;
     live.sync(&snapshot, &state, 0);
     assert!(live.game.observed_settlement_loyalty.is_none());
-    assert!(live.game.can_found_city(live.uid_of[&1441793]));
+    // Persistent sync deliberately unions blocked sites. Clearing an unknown
+    // reading must not erase a previously recorded block or host refusal.
+    assert!(!live.game.can_found_city(live.uid_of[&1441793]));
 }
 
 #[test]
