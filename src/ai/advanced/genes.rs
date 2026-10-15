@@ -3957,6 +3957,10 @@ pub const GENES: &[Gene] = &[
     // diplomatic cards while our Envoys pay ten Gold a turn. See
     // `merchant_confederation_pays` in `advanced.rs`.
     Gene { tag: "merchant-confederation-earns-its-slot", field: "merchant_confederation_earns_its_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_merchant_confederation_earns_its_slot, disable: AdvancedAi::disable_merchant_confederation_earns_its_slot },
+    // After Urbanization, the most housing-capped city with no Aqueduct left
+    // to claim puts its best-housing Neighborhood first, one in flight per
+    // five cities. See `advanced/neighborhood_houses_the_capped_city.rs`.
+    Gene { tag: "neighborhood-houses-the-capped-city", field: "neighborhood_houses_the_capped_city", kind: Kind::OptIn, enable: AdvancedAi::enable_neighborhood_houses_the_capped_city, disable: AdvancedAi::disable_neighborhood_houses_the_capped_city },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
