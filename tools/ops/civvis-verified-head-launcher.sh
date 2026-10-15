@@ -60,6 +60,9 @@
 #                                     see docs/eval/2026-09-20-verification-build-benchmark.md.
 #                                     Production release settings are unchanged.
 #                                     Changes apply when this launcher starts.
+#   CIVVIS_CAPTURE_DECIDER_INPUTS    0 (default) or 1. Archive the exact bytes
+#                                     read by the native decider for replay.
+#                                     Applies at the next launcher start.
 #   CIVVIS_PLAY_ATTEMPTS              games per cycle. Default 1, so EVERY game
 #                                     fetches and builds origin/main afresh
 #                                     (operator, 2026-08-21: "use the latest
@@ -206,6 +209,7 @@ fi
 typeset -A policy
 policy=(
   CIVVIS_CAPTURE_FREE         0
+  CIVVIS_CAPTURE_DECIDER_INPUTS 0
   CIVVIS_BUILD_MODE           release
   CIVVIS_PLAY_ATTEMPTS        1
   CIVVIS_PLAY_TIMEOUT         10800
@@ -257,6 +261,9 @@ if [[ -f "$POLICY" ]]; then
       CIVVIS_CAPTURE_FREE)
         [[ "$value" =~ '^[01]$' ]] \
           || refuse "$POLICY:$lineno CIVVIS_CAPTURE_FREE='$value' must be 0 or 1" ;;
+      CIVVIS_CAPTURE_DECIDER_INPUTS)
+        [[ "$value" =~ '^[01]$' ]] \
+          || refuse "$POLICY:$lineno $key='$value' must be 0 or 1" ;;
       CIVVIS_RESTART_BELOW_LEADER_RATIO)
         [[ "$value" =~ '^(0|1|0?\.[0-9]+|1\.0+)$' ]] \
           || refuse "$POLICY:$lineno $key='$value' must be a ratio from 0 to 1" ;;
@@ -273,7 +280,7 @@ if [[ -f "$POLICY" ]]; then
         [[ "$value" =~ '^[a-z0-9][a-z0-9-]*$' ]] \
           || refuse "$POLICY:$lineno CIVVIS_SCREEN_GENE='$value' is not one gene tag" ;;
       *)
-        say "ignoring unknown policy key '$key' at $POLICY:$lineno (honoured: CIVVIS_HEAD_REPO CIVVIS_DIFFICULTY CIVVIS_LEADER CIVVIS_VICTORY CIVVIS_MAP CIVVIS_MAP_SIZE CIVVIS_SPEED CIVVIS_CAPTURE_FREE CIVVIS_PLAY_ATTEMPTS CIVVIS_RESTART_BELOW_LEADER_RATIO CIVVIS_SCREEN_GENE CIVVIS_DEAL_SESSIONS CIVVIS_PLAY_TIMEOUT CIVVIS_PLAY_TIMEOUT_CEILING CIVVIS_BUILD_MODE)"
+        say "ignoring unknown policy key '$key' at $POLICY:$lineno (honoured: CIVVIS_HEAD_REPO CIVVIS_DIFFICULTY CIVVIS_LEADER CIVVIS_VICTORY CIVVIS_MAP CIVVIS_MAP_SIZE CIVVIS_SPEED CIVVIS_CAPTURE_FREE CIVVIS_PLAY_ATTEMPTS CIVVIS_RESTART_BELOW_LEADER_RATIO CIVVIS_SCREEN_GENE CIVVIS_DEAL_SESSIONS CIVVIS_PLAY_TIMEOUT CIVVIS_PLAY_TIMEOUT_CEILING CIVVIS_BUILD_MODE CIVVIS_CAPTURE_DECIDER_INPUTS)"
         continue ;;
     esac
     policy[$key]=$value
@@ -354,7 +361,7 @@ fi
 # Never inherit a labelled experiment, a retired strategy, an alternate host,
 # or a former restart policy from the window that opened this.
 unset CIVVIS_WITH CIVVIS_WITHOUT CIVVIS_WITH_FILE CIVVIS_SCREEN_GENE CIVVIS_STRATEGY CIVVIS_VICTORY \
-      CIVVIS_MAP CIVVIS_MAP_SIZE CIVVIS_SPEED CIVVIS_BUILD_MODE \
+      CIVVIS_MAP CIVVIS_MAP_SIZE CIVVIS_SPEED CIVVIS_BUILD_MODE CIVVIS_CAPTURE_DECIDER_INPUTS \
       CIVVIS_DIFFICULTY CIVVIS_LEADER CIVVIS_CAPTURE_FREE CIVVIS_PLAY_ATTEMPTS CIVVIS_RESTART_BELOW_LEADER_RATIO \
       CIVVIS_ABANDON_BELOW_WIN_RATE CIVVIS_PLAY_TIMEOUT CIVVIS_PLAY_TIMEOUT_CEILING \
       CIVVIS_HEAD_REPO CIVVIS_LADDER_HOST CIVVIS_LADDER_SUPERVISOR CIVVIS_SUPERVISOR \

@@ -244,6 +244,8 @@ def attach_command(args: argparse.Namespace, tag: str, orders_db: Path) -> list[
         "--civvis-refresh-seconds", str(args.refresh_seconds),
         "--restart-below-leader-ratio", "0",
     ]
+    if getattr(args, "capture_decider_inputs", False):
+        command.append("--civvis-capture-inputs")
     for treatment in args.with_:
         command.extend(("--civvis-with", treatment))
     for treatment in args.without:
@@ -538,6 +540,8 @@ def parser() -> argparse.ArgumentParser:
     ap.add_argument("--launch-timeout", type=float, default=420.0)
     ap.add_argument("--victory", default="science")
     ap.add_argument("--refresh-seconds", type=float, default=0.0)
+    ap.add_argument("--capture-decider-inputs", action="store_true", default=False,
+                    help="archive the native decider's exact input reads for replay")
     ap.add_argument("--with", dest="with_", action="append", default=[])
     ap.add_argument("--without", action="append", default=[])
     ap.add_argument("--logs", default=str(LOG_ROOT))
