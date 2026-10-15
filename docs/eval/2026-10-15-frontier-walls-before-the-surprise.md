@@ -96,10 +96,21 @@ bridge, captured inputs and the unchanged production-rank retirement rule.
 The first native seat, state, tiles and settlement-pressure exports must
 match within each pair. The runner is queued at a normal game boundary; the
 preceding unowned attempt started no turns and its supervisor is recovering
-a leftover windowless game process. No study arm has started as of this
+a game process that Accessibility reports without a window. A direct
+CoreGraphics read and a captured screen instead show a visible Exit To
+Desktop confirmation. Normal UI confirmation attempts have not closed it;
+no forced termination was attempted. No study arm has started as of this
 checkpoint, and these two starts are not independent maps or fresh ladder
 games. The queued study and its private source consumer survive public
 worktree cleanup. A runtime, genome, archive and outcome audit is prepared.
+
+A separate fixed sixty-game follow-up, seeds `40631001..40631060`, starts
+after this pilot with the same independent per-seat assignment, profile and
+unchanged executable. Its results remain pending and are kept separate from
+the pilot estimate. The raw header reports source-equivalent documentation
+head `1aeaac1c6`, resolved from the original build tree at startup; the
+executable hash remains the exact `89d1f01bb` binary recorded above. No Rust,
+rules data, Cargo inputs or build script differ between those revisions.
 
 GitHub run `38794042205` passes the complete Rust and repository gates for the
 firing-data checkpoint. The paired cost gate `38794042351` reports -0.20%
