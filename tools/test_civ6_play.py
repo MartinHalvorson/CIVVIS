@@ -5066,6 +5066,14 @@ class RestartInPlaceTests(unittest.TestCase):
         self.assertIn('if state.get("restart_parked") and env.game_pids():', play)
         self.assertIn("restart_handoff.write(args.tag, orders_db, config, env.game_pids())",
                       play)
+        # The supervisor's played-a-turn test must pass for a parked game, or
+        # it quits Civ VI as a failed start (live 042843Z).
+        parked = play.split("restart_handoff.write(args.tag")[1].split("if not game_stopped:")[0]
+        line = re.search(r'print\(f"(\[turn \{[^}]*\}\][^"]*)"', parked)
+        self.assertIsNotNone(line, parked)
+        self.assertRegex("[turn 19] parked for the next run's restart in place",
+                         r"^\[turn [0-9]+\]")
+        self.assertIn('[turn {max(1, int(state.get(\'turn\') or 1))}] parked for the ', parked)
         outer = source.split("def play(args: argparse.Namespace) -> int:")[1].split(
             "def _attach_running_game(")[0]
         self.assertIn("if not restart_handoff.parked_for(args.tag):\n"
