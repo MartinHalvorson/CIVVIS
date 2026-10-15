@@ -44,6 +44,7 @@ mod dedication_history;
 mod host_deaths;
 pub mod input_capture;
 mod religion_state;
+mod settlement_loyalty;
 mod spy_posting;
 mod strategic_income;
 pub use host_deaths::HostUnitDeath;
