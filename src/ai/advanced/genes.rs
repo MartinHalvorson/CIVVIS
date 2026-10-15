@@ -4015,6 +4015,8 @@ pub const GENES: &[Gene] = &[
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
+    // Affordable suzerainty opens a road already blocking an active siege.
+    Gene { tag: "envoys-open-the-siege-road", field: "envoys_open_the_siege_road", kind: Kind::OptIn, enable: AdvancedAi::enable_envoys_open_the_siege_road, disable: AdvancedAi::disable_envoys_open_the_siege_road },
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
