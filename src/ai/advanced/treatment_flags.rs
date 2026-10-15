@@ -7839,6 +7839,17 @@ impl AdvancedAi {
         self.open_city_draws_the_front = false;
     }
 
+    /// Opt-in gene `medina-quarter-houses-the-districts`; see
+    /// `advanced/medina_quarter.rs`.
+    pub fn enable_medina_quarter_houses_the_districts(&mut self) {
+        self.medina_quarter_houses_the_districts = true;
+    }
+
+    /// The twin of `enable_medina_quarter_houses_the_districts`.
+    pub fn disable_medina_quarter_houses_the_districts(&mut self) {
+        self.medina_quarter_houses_the_districts = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

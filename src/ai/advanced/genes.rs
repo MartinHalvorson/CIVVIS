@@ -3965,6 +3965,13 @@ pub const GENES: &[Gene] = &[
     // until walled, captured or eight turns without progress. See
     // `advanced/open_city_front.rs`.
     Gene { tag: "open-city-draws-the-front", field: "open_city_draws_the_front", kind: Kind::OptIn, enable: AdvancedAi::enable_open_city_draws_the_front, disable: AdvancedAi::disable_open_city_draws_the_front },
+    // Medina Quarter (+2 Housing in every city with three specialty
+    // districts) joins the policy portfolio, ahead of the plan's ordinary
+    // cards, while two or more of our cities are housing-limited with three
+    // specialty districts, and displaces the weakest Economic card the plan
+    // wants least (never a production, Builder or Settler card). See
+    // `advanced/medina_quarter.rs`.
+    Gene { tag: "medina-quarter-houses-the-districts", field: "medina_quarter_houses_the_districts", kind: Kind::OptIn, enable: AdvancedAi::enable_medina_quarter_houses_the_districts, disable: AdvancedAi::disable_medina_quarter_houses_the_districts },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
