@@ -15,6 +15,18 @@ Bomber wing, and an open city in range belonging to the same at-war rival.
 It exercises both overlay and adoption in production order and requires one
 shared objective while preserving the appointment clocks and phase.
 
-The initial checkpoint adds the regression before the repair. Its execution
-is pending. No native purchase, capture, win-rate or highest-level improvement
-is established.
+Checkpoint `82f92c751` adds the regression before the repair. Its GitHub
+execution is pending. A local repair now reconciles the ready version-two
+appointment before its overlay can erase the selected land objective. It
+requires the exact existing capture-opportunity choice, the same at-war
+rival, air reach and a land staging route. It recomputes readiness for the
+new city while preserving the appointment phase and clocks. A city that
+stops the rival's victory retains priority over this handoff.
+
+Seven authored controls cover the shared objective, repeated frames,
+existing siege and victory guards, home Recovery, another rival, air reach,
+a launched rival's Spaceport, and incomplete or still-building packages.
+These controls have not yet executed against the repair. The native cohort
+also contains conflicts before Bombers exist, so the air overlay cannot be
+assumed to explain every campaign/force mismatch. No native capture,
+win-rate or highest-level improvement is established.

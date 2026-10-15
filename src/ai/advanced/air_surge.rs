@@ -1752,17 +1752,72 @@ impl AdvancedAi {
         .then_some(AIR_SURGE_GOAL_TECH)
     }
 
+    /// Keep a ready version-two wing with the open foothold the land planner
+    /// has selected from this untouched siege. This is the existing capture
+    /// opportunity predicate, not a fresh ranking of every enemy city.
+    fn air_surge_follow_open_foothold(&mut self, g: &Game, pid: usize, plan: &StrategicPlan) {
+        if !self.air_surge_2
+            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || plan.strategy != GrandStrategy::Conquest
+            || plan.threatened_city.is_some()
+            || !self.air_surge_status.wing_ready()
+            || !self.air_surge_status.escort_ready()
+            || self.air_surge_status.denial_elsewhere
+        {
+            return;
+        }
+        let Some(mut next) = self.air_surge_plan.clone().filter(|surge| {
+            matches!(surge.phase, AirSurgePhase::Strike | AirSurgePhase::Exploit)
+                && plan.target_player == Some(surge.target_player)
+        }) else {
+            return;
+        };
+        let Some(city) = plan.target_city.and_then(|cid| g.cities.get(&cid)) else {
+            return;
+        };
+        if city.id == next.objective_city
+            || city.owner != next.target_player
+            || !g.is_at_war(pid, city.owner)
+            || self.air_surge_suppression_city(g, pid, next.target_player)
+                == Some(next.objective_city)
+            || self.capture_opportunity_city(g, pid, next.objective_city, plan.strategy)
+                != Some(city.id)
+            || !Self::air_surge_in_range(g, pid, city.pos)
+            || self
+                .war_staging_route(g, pid, city.owner, city.pos)
+                .is_none()
+        {
+            return;
+        }
+        next.objective_city = city.id;
+        next.objective_pos = city.pos;
+        let status = self.air_surge_status(g, pid, &next);
+        if !status.wing_ready() || !status.escort_ready() || status.denial_elsewhere {
+            return;
+        }
+        think!(self.journal(), Military, Strategy,
+               "The ready air surge follows the open foothold at {}", city.name;
+               "the land capture predicate selected this city of the same rival; wing and army keep one objective";
+               city.pos);
+        self.air_surge_plan = Some(next);
+        self.air_surge_status = status;
+    }
+
     /// Once the package is ready the surge owns the grand strategy, exactly
     /// as an appointed timed war does. An appointment made during an existing
     /// war enters Exploit immediately, even with no bombers, so readiness must
     /// gate that phase too. Otherwise it abandons a live ground siege for an
     /// air objective the wing cannot yet attack.
     pub(crate) fn apply_air_surge_to_strategy(
-        &self,
+        &mut self,
         g: &Game,
         pid: usize,
         plan: &mut StrategicPlan,
     ) {
+        // Reconcile this narrow land choice before the appointment can erase
+        // it. The ordinary adoption pass runs after this overlay and skips a
+        // ready wing, which otherwise leaves no opportunity to make the handoff.
+        self.air_surge_follow_open_foothold(g, pid, plan);
         let Some(surge) = &self.air_surge_plan else {
             return;
         };
