@@ -7815,6 +7815,17 @@ impl AdvancedAi {
         self.faith_war_before_the_flip = false;
     }
 
+    /// Opt-in gene `open-city-draws-the-front`; see
+    /// `advanced/open_city_front.rs`.
+    pub fn enable_open_city_draws_the_front(&mut self) {
+        self.open_city_draws_the_front = true;
+    }
+
+    /// The twin of `enable_open_city_draws_the_front`.
+    pub fn disable_open_city_draws_the_front(&mut self) {
+        self.open_city_draws_the_front = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
