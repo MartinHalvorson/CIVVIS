@@ -7840,6 +7840,17 @@ impl AdvancedAi {
         self.open_city_draws_the_front = false;
     }
 
+    /// Opt-in gene `faith-war-before-the-flip-2`; see
+    /// `advanced/faith_war_before_the_flip.rs`.
+    pub fn enable_faith_war_before_the_flip_2(&mut self) {
+        self.faith_war_before_the_flip_2 = true;
+    }
+
+    /// The twin of `enable_faith_war_before_the_flip_2`.
+    pub fn disable_faith_war_before_the_flip_2(&mut self) {
+        self.faith_war_before_the_flip_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

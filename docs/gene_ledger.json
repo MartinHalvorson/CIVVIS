@@ -2786,6 +2786,15 @@
           "expansion-best-idle-city-2": null
         }
       },
+      "faith-war-before-the-flip": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "faith-war-before-the-flip": null,
+          "faith-war-before-the-flip-2": null
+        }
+      },
       "first-builder-reserve": {
         "rule_on": [
           "first-builder-reserve-2"
