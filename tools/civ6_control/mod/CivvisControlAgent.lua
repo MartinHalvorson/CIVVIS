@@ -21737,10 +21737,12 @@ end
 -- `Network.RestartGame()` (the shipped in-game menu's Restart: "a fresh game
 -- using the existing game configuration"); 2 regenerates the seeds and hosts
 -- the current configuration again (`Network.HostGame`, never after
--- `LeaveGame`, see `rehost`); 3 is the stock Restart without new seeds.
+-- `LeaveGame`, see `rehost`); 3 is the stock Restart without new seeds; 4
+-- and 5 are 1 and 2 called from the game core's next publish instead of
+-- from the HUD pulse (see `restartPoll`).
 --
 -- ⚠ On `CivvisBoard`: the main chunk is at the register ceiling.
-CivvisBoard.restart = { parked = false, issued = false };
+CivvisBoard.restart = { parked = false, issued = false, deferred = nil };
 function CivvisBoard.parkForRestart(turn)
 	local restart = CivvisBoard.restart;
 	if restart.parked then return; end
@@ -21786,8 +21788,29 @@ function CivvisBoard.restartPoll()
 	-- record only when the next one is logged, and the call may tear this
 	-- context down before anything else is.
 	emit("restart_issued_flush", { mode = mode });
+	-- ★★ NOT FROM THIS PULSE (modes 4 and 5). Live 2026-10-15 062529Z: mode
+	-- 1 called `Network.RestartGame()` here, inside the HUD's per-frame
+	-- update, and Civ VI died 3 s later (SIGSEGV at 0x18 on WinMain) -- the
+	-- restart tears down the very update it is called from. The shipped
+	-- Restart is a button's click, and the capture-free rehost hosted from
+	-- game-core event handlers without harm. So force the parked turn's end
+	-- (the game core then publishes) and make the call from the next publish
+	-- (`CivvisBoard.restartFromCore`, at the head of `onGameCoreTick`).
+	if mode == 4 or mode == 5 then
+		restart.deferred = mode;
+		local ended = pcall(function()
+			UI.RequestAction(ActionTypes.ACTION_ENDTURN, { REASON = "UserForced" });
+		end);
+		emit("restart_deferred", { mode = mode, ended = ended });
+		return;
+	end
+	CivvisBoard.restartCall(mode);
+end
+
+-- Modes 2 and 5 host the configuration again; the others are the stock Restart.
+function CivvisBoard.restartCall(mode)
 	local called = false;
-	if mode == 2 then
+	if mode == 2 or mode == 5 then
 		pcall(function() GameConfiguration.SetValue("CIVVIS_SETUP", "restart"); end);
 		called = pcall(function() Network.HostGame(ServerType.SERVER_TYPE_NONE); end);
 	else
@@ -21795,6 +21818,14 @@ function CivvisBoard.restartPoll()
 	end
 	emit("restart_called", { mode = mode, called = called });
 	emit("restart_called_flush", { mode = mode });
+end
+
+function CivvisBoard.restartFromCore()
+	local restart = CivvisBoard.restart;
+	local mode = restart.deferred;
+	if mode == nil then return; end
+	restart.deferred = nil;
+	CivvisBoard.restartCall(mode);
 end
 
 -- ★ THE WATCH PACE. Operator 2026-10-13: "lets try to have watch pace apply to
@@ -23204,6 +23235,7 @@ CivvisQueue.ordersLanded = function()
 end;
 
 local function onGameCoreTick()
+	if CivvisBoard.restart.deferred then pcall(CivvisBoard.restartFromCore); return; end
 	ensureStarted();
 	CivvisTrade.pollPeace();
 	ticksSeen = ticksSeen + 1;

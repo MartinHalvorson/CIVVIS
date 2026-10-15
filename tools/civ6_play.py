@@ -5831,7 +5831,9 @@ def _play(args: argparse.Namespace) -> int:
             sent = request_retire(
                 orders_db_path(run_dir, args.orders_db), args.tag, turn,
                 str(request.get("reason") or "operator"),
-                restart=bool(request.get("restart")),
+                # Parked only while a restart mode is on; else the old retire.
+                restart=(bool(request.get("restart"))
+                         and restart_handoff.restart_mode() != restart_handoff.MODE_OFF),
             )
             detail = ("wrote native retire order; awaiting control-mod acknowledgement"
                       if sent else "could not write the native retire order")
