@@ -341,11 +341,19 @@ def governed_duty(*, ceiling: float, cores: int, busy: float, group_cores: float
     on a host that other work saturates, a resumed worker is barely scheduled
     (measured 0.46 cores for nine workers on 2026-09-30), so a duty sized from
     it lets the games take every core the moment the other work pauses.
+
+    The floor is also a ceiling, plus one core for the process's own threads:
+    each worker is one CPU-bound thread, so a reading far above the workers is
+    a mis-timed window, never demand. Uncapped, one such reading latched: the
+    duty fell under 0.1, below which demand is never re-measured, and on
+    mbp-m5-max-128 seven workers sat at a 0.02-0.08 duty for six days
+    (2026-10-09..15, demand 144.6 cores on an 18-core host) while the host
+    stood 23% busy.
     """
     if applied_duty >= 0.1 and group_cores > 0:
         demand_cores = group_cores / applied_duty
     if demand_floor > 0:
-        demand_cores = max(demand_floor, demand_cores or 0.0)
+        demand_cores = min(demand_floor + 1.0, max(demand_floor, demand_cores or 0.0))
     rest = max(0.0, busy * cores - group_cores)
     allowed = ceiling * cores - rest
     if demand_cores is None or demand_cores <= 0:
@@ -482,8 +490,11 @@ class CpuGovernor:
                 if run_for > 0:
                     if not self._signal(group, signal.SIGCONT):
                         return
+                    resumed = time.monotonic()
                     stop.wait(run_for)
-                    running += run_for
+                    # Count the run the group really got: on a saturated host
+                    # this thread wakes late, so the group runs past run_for.
+                    running += time.monotonic() - resumed
                 if period - run_for > 0 and not stop.is_set():
                     if not self._signal(group, signal.SIGSTOP):
                         return

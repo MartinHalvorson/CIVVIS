@@ -977,6 +977,8 @@
     grid-column: 1 / -1; grid-row: 2; align-self: start;
     grid-template-columns: repeat(2, minmax(max-content, 1fr)); column-gap: 14px;
   }
+  /* The map, level and speed line is one reading: it keeps the whole width. */
+  #playerhud.turn-plate-wide .turn-setup-line { grid-column: 1 / -1; }
   #playerhud.turn-plate-wide .victory-turn.has-live-time { grid-template-rows: auto auto minmax(0, 1fr); }
   #playerhud.turn-plate-wide .turn-live { grid-column: 1 / -1; grid-row: 1; }
   #playerhud.turn-plate-wide .has-live-time .turn-era,
@@ -3174,13 +3176,15 @@
   }
 
   /* The standings are the map's masthead, with the turn plate as the left cell
-     and the table filling every pixel through the victory tracker's left edge.
-     The player count changes its height, not that horizontal contract: every
+     and the table filling every pixel through the map's right edge; the
+     victory tracker starts under it (operator 2026-10-14: "top player hud
+     should usually expand to the width of the screen available"). The player
+     count changes its height, not that horizontal contract: every
      civilization shown here receives one fixed-height row. */
   #playerhud {
     position: absolute; z-index: 7; pointer-events: auto;
     top: var(--panel-edge); left: max(var(--panel-edge), var(--player-hud-left, 0px));
-    right: calc(var(--victory-hud-width) + var(--panel-gap) + var(--panel-edge)); width: auto;
+    right: var(--panel-edge); width: auto;
     height: min(var(--player-hud-height, 106px), var(--player-hud-max-height));
     /* Wide enough for the whole of "Watch as" at the fitter's own type size.
        At 68px the button's own text overflowed its content box by a pixel and
@@ -3256,10 +3260,6 @@
     background: linear-gradient(105deg, #091411ed, #0d1a17e8 58%, #091411ed);
     box-shadow: 0 14px 38px #000a, inset 0 1px #ffffff0a;
     backdrop-filter: blur(16px) saturate(130%);
-  }
-  /* Hiding the victory rail hands its column back to the masthead. */
-  body.overlay-victory-hidden #playerhud {
-    right: var(--panel-edge); width: auto;
   }
   /* Across the masthead the plate stacks in its own left cell, which is the one
      place in the panel where height is cheaper than width. */
@@ -3643,12 +3643,14 @@
     color: var(--stat-color); font-size: .78em; line-height: 1;
     letter-spacing: 0; text-shadow: 0 1px 2px #000;
   }
-  /* Victory progress starts in the upper-right corner and continues to the
-     world minimap's top edge. Its paths scroll inside that full-height rail,
-     rather than shortening the tracker to however many rows are present. */
+  /* Victory progress starts at the right edge under the masthead and
+     continues to the world minimap's top edge. Its paths scroll inside that
+     rail, rather than shortening the tracker to however many rows are
+     present. */
   #victoryhud {
     position: absolute; z-index: 7; right: 0; left: auto;
-    right: var(--panel-edge); top: var(--panel-edge);
+    right: var(--panel-edge);
+    top: calc(var(--panel-edge) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));
     bottom: calc(var(--minimap-height) + var(--panel-gap) + var(--panel-edge));
     width: var(--victory-hud-width); height: auto;
     display: grid; grid-template-columns: minmax(0, 1fr);
@@ -3662,6 +3664,12 @@
   /* With no world minimap, the tracker takes the full right edge. */
   body.overlay-minimap-hidden #victoryhud {
     bottom: var(--panel-edge); height: auto;
+  }
+  /* With no masthead across the top — hidden, or folded down to its turn
+     box — the tracker climbs back to the corner. `:where` keeps this at the
+     rail's own weight, so the stacked compact bands below still place it. */
+  :where(body.overlay-players-hidden, #maparea:has(> #playerhud.standings-collapsed)) #victoryhud {
+    top: var(--panel-edge);
   }
   /* Two sections share the rail panel: the arena stats above, the victory
      tracker below, each behind its own heading bar — the drag handle and its
