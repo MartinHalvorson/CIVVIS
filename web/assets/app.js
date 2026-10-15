@@ -6602,7 +6602,7 @@ function liveTrackerHtml(me) {
         `</div>` + (note ? `<div class="lt-card-text">${escapeAttr(note)}</div>` : "") + `</div>`;
     });
   const net = !ledger || !cards.length ? ""
-    : `<div class="lt-net" title="${escapeAttr("What the slotted cards add together this turn, as the engine measures it: the empire with its deck against the same empire with none. A card worth — moves none of these measures this turn (combat against barbarians, spies, experience).")}">` +
+    : `<div class="lt-net" title="${escapeAttr("What the slotted cards add together this turn, as the engine measures it: the empire with its deck against the same empire with none. Each card shows its share, and the shares add up to this: what two cards earn together (a percentage on a flat bonus, amenities crossing a mood line) is split between them. A card worth — moves none of these measures this turn (combat against barbarians, spies, experience).")}">` +
       `<span class="lt-k">Net policy effect</span>` +
       `<span class="lt-worth">${ledger.anarchy ? none("cards suspended in Anarchy")
         : policyWorthHtml(ledger.net) || none("nothing measurable this turn")}</span></div>`;
@@ -23860,18 +23860,10 @@ function hudTurnPlate() {
   const mapScript = state.map.script || "tenins_ball";
   const mapName = mapScript === "tenins_ball" ? "Tennis Ball" : titleCase(mapScript);
   const speedName = titleCase(state.game_speed || "standard");
-  // Beside a live Civilization VI game the speed row also names the level the
-  // game is played at (operator 2026-10-14: "Difficulty/Speed: Lv 6 /
-  // Online"). Both halves are the host game's own setup, read off its export.
-  // The label says "Level" because "Difficulty/Speed: Lv 6 / Online" is the
-  // widest row by a fifth: the plate cannot hold it even at its smallest type,
-  // where "Level/Speed" fits beside the other rows at the size they already have.
+  // Beside a live Civilization VI game the plate also names the level the game
+  // is played at (operator 2026-10-14: "Difficulty/Speed: Lv 6 / Online"),
+  // read off the host game's export like its speed.
   const liveLevel = livePause.available ? difficultyLevel(state.difficulty) : null;
-  const speedRow = liveLevel
-    ? `<div class="turn-setting" title="${escapeAttr(
-        `${liveLevel.name} difficulty (level ${liveLevel.level} of ${liveLevel.of}) at ${speedName} game speed`)}">` +
-      `<span>Level/Speed:</span><b>Lv ${liveLevel.level} / ${speedName}</b></div>`
-    : `<div class="turn-setting"><span>Game speed:</span><b>${speedName}</b></div>`;
   const paceSelect = document.getElementById("specspeed");
   const paceOption = paceSelect?.selectedOptions[0];
   const watchPace = SPEC ? paceOption?.textContent.trim() || "Blitz" : "Manual";
@@ -23894,6 +23886,15 @@ function hudTurnPlate() {
   // and on which script ("4P Pangaea"). The dealt count includes the fallen.
   const dealtCivs = state.players.filter(p => !p.is_minor && !p.is_barbarian).length;
   const mapRowValue = `${dealtCivs}P ${mapName}`;
+  // The map, a live game's level and the speed are one line with no labels
+  // (operator 2026-10-14: "combine the top 2 rows to be 4P Pangaea Lv 6
+  // Online … all one line"): "4P Pangaea · Lv 6 · Online". Each part reads on
+  // its own, and the tooltip spells them out.
+  const setupLine = [mapRowValue, liveLevel && `Lv ${liveLevel.level}`, speedName]
+    .filter(Boolean).join(" · ");
+  const setupTitle = [`${dealtCivs} civilizations on ${mapName}`,
+    liveLevel && `${liveLevel.name} difficulty (level ${liveLevel.level} of ${liveLevel.of})`,
+    `${speedName} game speed`].filter(Boolean).join(" · ");
   // "Remaining" is a count of who is still playing, so a civilization that has
   // been wiped off the map no longer appears in it. The count it was taken out
   // of is worth as much as the count itself — eight remaining reads very
@@ -23990,8 +23991,8 @@ function hudTurnPlate() {
     (decided ? `<small class="turn-playon">Playing on</small>` : ``) +
     `</div>` +
     `<div class="turn-settings" aria-label="Game setup">` +
-    `<div class="turn-setting"><span>Map:</span><b>${escapeAttr(mapRowValue)}</b></div>` +
-    speedRow +
+    `<div class="turn-setting turn-setup-line" title="${escapeAttr(setupTitle)}">` +
+    `<b>${escapeAttr(setupLine)}</b></div>` +
     `<div class="turn-setting"><span>Turns:</span>${turnStructureValue}</div>` +
     `<div class="turn-setting"><span>Watch pace:</span>${watchPaceValue}</div>` +
     fogRow +
@@ -24562,7 +24563,7 @@ function drawPlayerHud() {
         // with the watch action the old full-width stats button carried.
         return `<button class="ribbon-stat ${kind}${isLeader ? " category-leader" : ""}" data-hud-col="${kind}" ` +
           `data-hud-action="watch" data-hud-civ="${p.id}" ` +
-          `title="${label}${marker ? " · Founded religion still followed" : ""}${isLeader ? " · Category leader" : ""} · Watch ${escapeAttr(p.civ)}" ` +
+          `title="${label}${marker ? " · * Founded a religion" : ""}${isLeader ? " · Category leader" : ""} · Watch ${escapeAttr(p.civ)}" ` +
           `aria-label="${label}; watch ${escapeAttr(p.civ)}">` +
           `<b>${kind === "score" ? ribbonScore(value) : ribbonStat(value)}</b>${markerHtml}</button>`;
       };
@@ -25384,8 +25385,9 @@ function policySlotOf(id) { return policySpec(id).slot || "wildcard"; }
 // whether that is two Science or forty — and players install a mod for the
 // number (operator 2026-10-14: "the net policy effect (this is normally a mod
 // - we should include this as standard functionality)"). `/policy-effects` is
-// the engine's own counterfactual: the empire measured with each card and
-// without it, and with the whole deck against none.
+// the engine's own counterfactual: the whole deck against none, and each
+// card's share of it (its gain averaged over every order the cards could be
+// slotted in), so the cards add up to the net (operator 2026-10-15).
 const POLICY_MEASURES = [
   ["science", "⌬", "Science"], ["culture", "❦", "Culture"], ["gold", "💰", "Gold"],
   ["production", "⚙", "Production toward what is being built"], ["food", "🌾", "Food"],
@@ -25435,7 +25437,10 @@ function policyMeasureMark(key, mark) {
 function policyWorthHtml(worth) {
   return POLICY_MEASURES.filter(([key]) => worth && worth[key]).map(([key, mark, word]) => {
     const value = Number(worth[key]);
-    const shown = Math.abs(value) >= 10 ? Math.round(value) : Math.round(value * 10) / 10;
+    // Tenths at any size: the server rounds the cards' shares so they add up
+    // to the net in tenths, and a whole-number net beside tenth cards did not
+    // (Gold +1.9 and +10 under +12).
+    const shown = Math.round(value * 10) / 10;
     const signed = `${shown > 0 ? "+" : ""}${shown}`;
     return `<span class="pw ${value > 0 ? "up" : "down"}" title="${escapeAttr(`${signed} ${word}`)}">` +
       `${signed}${policyMeasureMark(key, mark)}</span>`;
