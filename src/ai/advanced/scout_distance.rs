@@ -92,12 +92,17 @@ impl AdvancedAi {
                     .and_then(|goals| goals.get(&pos))
                     .is_some_and(|expiry| *expiry > g.turn)
         };
-        if usable(force.aimed_at) {
+        let goal = if usable(force.aimed_at) {
             Some(force.aimed_at)
         } else {
             self.find_capital_goal(g, pid, rival)
                 .filter(|pos| usable(*pos))
-        }
+        }?;
+        think!(self.journal(), Military, Detail,
+            "{} {uid} has a capital reconnaissance assignment", g.units[&uid].kind;
+            "force #{} seeks {}'s original capital at unexplored {goal:?} through open ground",
+            force.id, g.players[rival].civ; goal);
+        Some(goal)
     }
 
     /// Existing civilian protection is honored; routine posts cannot recruit

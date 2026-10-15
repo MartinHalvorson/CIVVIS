@@ -386,3 +386,39 @@ fn a_capital_lead_respects_the_explorers_retired_goals() {
         .insert(goal, g.turn + 5);
     assert_eq!(ai.rival_lead_goal(&g, 0, scout), None);
 }
+
+#[test]
+fn a_crossing_member_does_not_hide_another_free_capital_scout() {
+    use super::super::amphibious_siege_train::{AmphibiousPhase, AmphibiousTrain};
+    use std::collections::{BTreeMap, BTreeSet};
+
+    let (mut g, mut ai, locked, plan, goal) = competing_scout_goals();
+    let free = g.spawn_test_unit("scout", 0, at(8, 11));
+    assert!(g.wdist(g.units[&locked].pos, goal) < g.wdist(g.units[&free].pos, goal));
+    ai.enable_amphibious_siege_train_2();
+    let port = g.player_city_ids(0)[0];
+    ai.amphibious_train = Some(AmphibiousTrain {
+        target: g.player_city_ids(1)[0],
+        target_pos: g.cities[&g.player_city_ids(1)[0]].pos,
+        port,
+        port_pos: g.cities[&port].pos,
+        landing: goal,
+        lane: Vec::new(),
+        members: BTreeSet::from([locked]),
+        phase: AmphibiousPhase::Assemble,
+        formed: g.turn,
+        ford: false,
+        progress: BTreeMap::new(),
+        progress_turn: g.turn,
+    });
+    assert!(ai.amphibious_locked(locked));
+    ai.board_rebuild_force_groups(&g, 0, &plan);
+    let hunt = ai
+        .objective_board()
+        .forces
+        .iter()
+        .find(|force| force.objective_key == ObjectiveKey::FindCapital(1))
+        .expect("the free Scout must take the hunt while the nearest Scout keeps its crossing");
+    assert!(hunt.units.contains(&free));
+    assert!(!hunt.units.contains(&locked));
+}
