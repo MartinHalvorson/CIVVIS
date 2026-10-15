@@ -114,3 +114,82 @@ fn an_export_without_native_sight_keeps_its_legacy_air_actions() {
         target
     }));
 }
+
+#[test]
+fn visible_air_target_stays_available_on_a_fresh_board() {
+    let (snapshot, state) = fixture(true, true);
+    let live = LiveMirror::new(&snapshot, &state, 2, 1, 650, 0);
+    let bomber = live.uid_of[&11927570];
+    let action = Action::AirPillage {
+        unit: bomber,
+        target: offset_to_axial(46, 24),
+    };
+    assert!(live
+        .game
+        .legal_doctrine_actions(0, bomber)
+        .contains(&action));
+    assert!(live.game.legal_actions(0).contains(&action));
+}
+
+#[test]
+fn exported_foreign_unit_is_positive_sight_even_without_its_plot_flag() {
+    let (snapshot, mut state) = fixture(false, true);
+    state.rivals[0].units.push(crate::mirror::StateUnit {
+        id: 99,
+        kind: "UNIT_WARRIOR".into(),
+        x: 46,
+        y: 24,
+        hp: 100.0,
+        ..crate::mirror::StateUnit::default()
+    });
+    let live = LiveMirror::new(&snapshot, &state, 2, 1, 650, 0);
+    let bomber = live.uid_of[&11927570];
+    let target = offset_to_axial(46, 24);
+    assert!(live.game.host_observed.contains(&target));
+    assert!(!live.game.blocked_strikes.contains(&(bomber, target)));
+    assert!(live.game.legal_actions(0).contains(&Action::AirStrike {
+        unit: bomber,
+        target
+    }));
+}
+
+#[test]
+fn positive_native_sight_does_not_erase_an_explicit_strike_refusal() {
+    let (snapshot, mut state) = fixture(true, true);
+    state.refused_strikes.insert((11927570, 46, 24));
+    let live = LiveMirror::new(&snapshot, &state, 2, 1, 650, 0);
+    let bomber = live.uid_of[&11927570];
+    let target = offset_to_axial(46, 24);
+    assert!(live.game.host_observed.contains(&target));
+    assert!(live.game.blocked_strikes.contains(&(bomber, target)));
+    assert!(!live.game.legal_actions(0).contains(&Action::AirPillage {
+        unit: bomber,
+        target
+    }));
+}
+
+#[test]
+fn native_air_fog_does_not_block_a_ground_shot() {
+    let (snapshot, mut state) = fixture(false, true);
+    state.units.push(crate::mirror::StateUnit {
+        id: 77,
+        kind: "UNIT_CROSSBOWMAN".into(),
+        x: 44,
+        y: 25,
+        hp: 100.0,
+        moves: 2.0,
+        attacks_remaining: Some(1),
+        ..crate::mirror::StateUnit::default()
+    });
+    let live = LiveMirror::new(&snapshot, &state, 2, 1, 650, 0);
+    let target = offset_to_axial(45, 26);
+    let ground = live.uid_of[&77];
+    let bomber = live.uid_of[&11927570];
+    assert!(!live.game.host_observed.contains(&target));
+    assert!(live.game.blocked_strikes.contains(&(bomber, target)));
+    assert!(!live.game.blocked_strikes.contains(&(ground, target)));
+    assert!(live.game.legal_actions(0).contains(&Action::Ranged {
+        unit: ground,
+        target
+    }));
+}

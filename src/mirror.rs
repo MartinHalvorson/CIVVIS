@@ -13050,6 +13050,7 @@ fn step_record_host_observed(ctx: &mut HostStepCtx<'_>) {
     strategic_income::apply(ctx.game, ctx.state, ctx.unmapped);
     apply_research_quotes(ctx.game, ctx.state, ctx.unmapped);
     record_host_observed(ctx.game, ctx.snapshot);
+    air_fog_targets::apply(ctx.game, ctx.snapshot);
 }
 
 /// The derived net income, and the treasury reading the next call differences

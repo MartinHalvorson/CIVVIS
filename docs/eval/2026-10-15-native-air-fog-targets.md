@@ -21,6 +21,13 @@ There were 18 native `AIR_ATTACK` refusals. All reported
 were under native fog. Three visible improvement targets were also refused;
 their cause remains unresolved and this change does not address them.
 
+A descriptive census of 36 completed native attempts between `040148Z` and
+`090922Z` found 66 refused air attacks in five games: 59 against fogged plots
+and seven against visible plots. All 471 air sorties that passed the native
+start check, across five of those games, targeted currently visible plots.
+These are different worlds and sources, so the census supports an execution
+guard rather than a win-rate comparison.
+
 At turn 170/frame 0, Bomber `11927570` at `(36,25)` targeted the standing,
 unpillaged Spaceport at `(46,24)`. That plot was revealed but not currently
 visible. The nearby Spy stood in Babylon at `(45,26)`. Reconstructed sight
@@ -43,13 +50,32 @@ only rows where `modifier == UnitOperationResults.MODIFIER_IS_TARGET`.
 `CanStartOperation` accepts its parameters. The refusal's native target
 annotation uses these primary interfaces.
 
-## Proposed repair and validation
+## Repair and validation
 
-Validation is in progress. Minimized regressions first exercise excessive
-reconstructed sight near a Spy, a visible alternative, visibility refresh and
-the fallback for older exports without current plot sight. The intended
-repair uses the existing per-unit strike block mechanism for native fogged
-air targets; it does not change simulated visibility rules or game settings.
+The mirror's shared final import step now adds known native fog targets
+within each aircraft's attack range to the existing per-unit strike blocks.
+This runs after host sightings are recorded, on both rebuild and refresh.
+It covers Air Strike and Air Pillage before selection and simulated
+execution. Positive exported foreign-unit sightings remain valid, and
+explicit strike refusals remain blocked even when their plot is visible.
+
+Exports without any positive current plot-visibility flag retain their
+previous behavior. Ground attacks and the simulation's sight derivation are
+unchanged. Native refresh replaces the blocks, reopening newly visible
+targets. Sight gained by a simulated move waits for that native refresh;
+the guard does not predict a new native target offer from reconstructed sight.
+
+Before the repair, checkpoint `f9d054e70561b8517c70d3af6717ce2ff3748dc1`
+failed both minimized fog regressions for the expected assertions; its legacy
+control passed. The local command was
+`cargo test --profile ci --locked --lib mirror::air_fog_targets`
+(10m38s compile, exit 101, one passed and two failed).
+
+Repaired validation is in progress with seven controls: the excessive sight
+case and a usable visible alternative, refresh to visibility, legacy fallback,
+fresh visible target, exported foreign-unit sight, explicit refusal, and a
+ground-shot scope check. Full local and GitHub validation and a frozen native
+binary comparison are still required. No fresh native game has used the guard.
 
 Raw receipts, captures and the frozen one-shot result remain outside the
 repository under
