@@ -3584,7 +3584,8 @@
   #playerhud .diplomacy-civ, #playerhud .diplomacy-leader-name,
   #playerhud .diplomacy-player, #playerhud .diplomacy-elo-delta-value,
   #playerhud .diplomacy-age .civ-age,
-  #playerhud .diplomacy-strategy .ai-plan {
+  #playerhud .diplomacy-strategy .ai-plan,
+  #playerhud .diplomacy-closest-victory .ai-plan {
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   #playerhud .diplomacy-elo-delta, #playerhud .diplomacy-expected {
@@ -3597,6 +3598,7 @@
   #playerhud .diplomacy-age .civ-age.dark { color: #b9a3aa; }
   #playerhud .diplomacy-strategy { padding-right: 11px; }
   #playerhud .diplomacy-strategy .ai-plan { display: block; }
+  #playerhud .diplomacy-closest-victory .ai-plan { display: block; font-variant-numeric: tabular-nums; }
   #playerhud .detail-caret {
     position: absolute; right: 1px; top: 50%; margin: 0; transform: translateY(-50%);
     font-size: var(--type-caption);

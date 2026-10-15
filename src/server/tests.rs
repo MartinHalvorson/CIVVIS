@@ -6576,11 +6576,38 @@ fn browser_orders_controls_interface_setup_and_logs() {
     );
     // A fresh viewer starts without the live Elo delta — it is a second
     // reading of the rating beside it, waiting in the Display Settings
-    // roster — and both the all-hidden recovery and a layout reset return
+    // roster — or the AI's plan, which gives way to the closest victory
+    // beside it; and both the all-hidden recovery and a layout reset return
     // to that same shipped default, not to every column visible.
     assert!(
-        EMBEDDED_INDEX.contains("const PLAYER_HUD_DEFAULT_HIDDEN_COLUMNS = [\"elo_delta\"];"),
-        "the Elo delta column is off until a viewer asks for it"
+        EMBEDDED_INDEX
+            .contains("const PLAYER_HUD_DEFAULT_HIDDEN_COLUMNS = [\"elo_delta\", \"plan\"];"),
+        "the Elo delta and Plan columns are off until a viewer asks for them"
+    );
+    // Closest victory stands right after Plan, and a layout saved before it
+    // existed takes the new default with it instead of keeping Plan.
+    let plan = EMBEDDED_INDEX
+        .find("{key:\"plan\", label:\"Plan\"")
+        .unwrap();
+    let closest = EMBEDDED_INDEX
+        .find("{key:\"closest_victory\", label:\"Closest victory\"")
+        .unwrap();
+    assert_eq!(
+        EMBEDDED_INDEX[plan + 1..].find("{key:\"").unwrap() + plan + 1,
+        closest,
+        "Closest victory belongs immediately after Plan"
+    );
+    assert!(
+        EMBEDDED_INDEX.contains("predatesClosestVictory = !known.includes(\"closest_victory\");")
+    );
+    assert!(EMBEDDED_INDEX
+        .contains("if (predatesClosestVictory) playerHudHiddenColumns.add(\"plan\");"));
+    assert!(EMBEDDED_INDEX.contains(
+        "if (key === \"closest_victory\") return playerClosestVictory(player)?.turns ?? null;"
+    ));
+    assert!(
+        EMBEDDED_INDEX.contains("`${escapeAttr(closest.victory)}-${closest.turns}`"),
+        "the cell reads victory-turns, e.g. science-39"
     );
     assert_eq!(
         EMBEDDED_INDEX
@@ -6798,8 +6825,8 @@ fn browser_orders_controls_interface_setup_and_logs() {
         EMBEDDED_INDEX.contains("if (key === \"rank\") return rankById.get(player.id) ?? null;")
     );
     assert!(EMBEDDED_INDEX.contains(
-        "return key === \"rank\" || PLAYER_HUD_TEXT_SORT_COLUMNS.has(key) ? \"asc\" : \"desc\";"
-    ), "rank should initially put #1 first");
+        "return key === \"rank\" || key === \"closest_victory\" ||\n    PLAYER_HUD_TEXT_SORT_COLUMNS.has(key) ? \"asc\" : \"desc\";"
+    ), "rank should initially put #1 first, and the closest victory the soonest");
     assert!(EMBEDDED_INDEX
         .contains("function sortedPlayerHudPlayers(players, statsByPlayer, rankById)"));
     assert!(EMBEDDED_INDEX.contains("function togglePlayerHudSort(key)"));
@@ -10509,6 +10536,121 @@ fn state_identifies_the_running_server_instance() {
     assert!(state["quick_deals"].is_array());
     assert!(state["active_trade_deals"].is_array());
     assert!(state["me"]["resources"].is_array());
+}
+
+/// The standings' Closest victory column reads `victory_eta`: every road to a
+/// win the victory planner can put a clock on, as `[victory, turns]` pairs,
+/// soonest first. The spectator is owed every major's; a seated player is
+/// owed only their own, since a rival's is priced off what fog hides.
+#[test]
+fn closest_victory_reaches_every_major_for_the_spectator_and_only_your_seat_in_play() {
+    const ROADS: [&str; 6] = [
+        "science",
+        "culture",
+        "religious",
+        "diplomatic",
+        "domination",
+        "score",
+    ];
+    let well_formed = |eta: &Value| {
+        let pairs = eta.as_array().expect("victory_eta is a list");
+        let turns: Vec<i64> = pairs
+            .iter()
+            .map(|pair| {
+                assert!(ROADS.contains(&pair[0].as_str().unwrap()), "{pair}");
+                let turns = pair[1].as_i64().unwrap();
+                assert!(turns >= 0, "{pair}");
+                turns
+            })
+            .collect();
+        assert!(
+            turns.windows(2).all(|w| w[0] <= w[1]),
+            "soonest first: {eta}"
+        );
+        pairs.len()
+    };
+
+    let mut params = current();
+    params.spectate = true;
+    let mut session = Session::new(params);
+    let majors = session
+        .game
+        .players
+        .iter()
+        .filter(|seat| !seat.is_minor && !seat.is_barbarian)
+        .count();
+    while session.game.turn < 30 && !session.game.is_finished() {
+        session.step();
+    }
+    let state = session.state();
+    // TIMING-TEMP
+    {
+        let started = Instant::now();
+        for _ in 0..20 {
+            let _ = session.state();
+        }
+        let whole = started.elapsed() / 20;
+        let started = Instant::now();
+        for _ in 0..20 {
+            for id in 0..session.game.players.len() {
+                let _ = super::victory_eta_json(&session.game, id);
+            }
+        }
+        eprintln!(
+            "TIMING-TEMP turn {} cities {} state {:?} eta-all-seats {:?}",
+            session.game.turn,
+            session.game.cities.len(),
+            whole,
+            started.elapsed() / 20
+        );
+    }
+    let mut priced = 0;
+    let mut annotated = 0;
+    for player in state["players"].as_array().unwrap() {
+        let minor = player["is_minor"] == json!(true) || player["is_barbarian"] == json!(true);
+        if minor || player["alive"] == json!(false) {
+            assert!(player["victory_eta"].is_null(), "{}", player["civ"]);
+            continue;
+        }
+        annotated += 1;
+        let id = player["id"].as_u64().unwrap() as usize;
+        let len = well_formed(&player["victory_eta"]);
+        // The head is the planner's own soonest central clock.
+        let soonest = crate::ai::AdvancedAi::victory_forecasts(&session.game, id)
+            .into_iter()
+            .filter_map(|forecast| forecast.finish_turn)
+            .map(|finish| (finish - f64::from(session.game.turn)).max(0.0).round() as i64)
+            .min();
+        assert_eq!(
+            player["victory_eta"][0][1].as_i64(),
+            soonest,
+            "{}",
+            player["civ"]
+        );
+        if len > 0 {
+            priced += 1;
+        }
+    }
+    assert_eq!(
+        annotated, majors,
+        "every living major is annotated above the world"
+    );
+    assert!(
+        priced > 0,
+        "a world thirty turns on has a road with a clock on it"
+    );
+
+    let state = Session::new(current()).state();
+    for player in state["players"].as_array().unwrap() {
+        if player["id"] == json!(0) {
+            well_formed(&player["victory_eta"]);
+        } else {
+            assert!(
+                player["victory_eta"].is_null(),
+                "a rival's road stays under your fog"
+            );
+        }
+    }
 }
 
 #[test]
