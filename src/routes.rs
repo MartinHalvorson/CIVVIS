@@ -213,28 +213,66 @@ pub fn policy_effects(session: &Session) -> Value {
 ///
 /// A measure a card does not move is left out rather than sent as zero, so a
 /// card the engine reads as worth nothing arrives as an empty `worth`.
+///
+/// Rounded to tenths so that what is printed adds up: the net is rounded, and
+/// the cards' shares of it are rounded to tenths that sum to it exactly
+/// (`tenths_summing_to`). Rounding each card on its own put +0.3 and +0.3
+/// over a deck of +0.5.
 pub fn policy_effects_answer(turn: u32, pid: usize, ledger: &crate::game::PolicyLedger) -> Value {
-    let reading = |reading: &crate::game::EmpireReading| -> Value {
-        let mut out = serde_json::Map::new();
-        for (key, value) in reading.fields() {
-            let rounded = (value * 10.0).round() / 10.0;
-            if rounded != 0.0 {
-                out.insert(key.to_string(), json!(rounded));
+    let mut net = serde_json::Map::new();
+    let mut cards = vec![serde_json::Map::new(); ledger.cards.len()];
+    for (index, (key, total)) in ledger.net.fields().into_iter().enumerate() {
+        let shares: Vec<f64> = ledger
+            .cards
+            .iter()
+            .map(|card| card.worth.fields()[index].1)
+            .collect();
+        let target = (total * 10.0).round() as i64;
+        if target != 0 {
+            net.insert(key.to_string(), json!(target as f64 / 10.0));
+        }
+        for (worth, tenths) in cards.iter_mut().zip(tenths_summing_to(&shares, target)) {
+            if tenths != 0 {
+                worth.insert(key.to_string(), json!(tenths as f64 / 10.0));
             }
         }
-        Value::Object(out)
-    };
+    }
     json!({
         "player": pid,
         "turn": turn,
         "anarchy": ledger.anarchy,
-        "net": reading(&ledger.net),
+        "net": Value::Object(net),
         "cards": ledger
             .cards
             .iter()
-            .map(|card| json!({"policy": card.policy, "worth": reading(&card.worth)}))
+            .zip(cards)
+            .map(|(card, worth)| json!({"policy": card.policy, "worth": Value::Object(worth)}))
             .collect::<Vec<_>>(),
     })
+}
+
+/// `values` in whole tenths that add up to `target` tenths: each rounded
+/// down, then the tenths still owed handed out largest remainder first (or
+/// taken back smallest remainder first). Ties go to the earlier value.
+fn tenths_summing_to(values: &[f64], target: i64) -> Vec<i64> {
+    let mut tenths: Vec<i64> = values.iter().map(|value| (value * 10.0).floor() as i64).collect();
+    let mut order: Vec<usize> = (0..values.len()).collect();
+    let remainder = |i: usize| values[i] * 10.0 - tenths[i] as f64;
+    let remainders: Vec<f64> = (0..values.len()).map(remainder).collect();
+    order.sort_by(|&a, &b| remainders[b].total_cmp(&remainders[a]).then(a.cmp(&b)));
+    let mut owed = target - tenths.iter().sum::<i64>();
+    let mut turn = 0;
+    while owed != 0 && !order.is_empty() {
+        if owed > 0 {
+            tenths[order[turn % order.len()]] += 1;
+            owed -= 1;
+        } else {
+            tenths[order[order.len() - 1 - turn % order.len()]] -= 1;
+            owed += 1;
+        }
+        turn += 1;
+    }
+    tenths
 }
 
 /// `POST /intel` — the one-unit planning read shared by both clients.
