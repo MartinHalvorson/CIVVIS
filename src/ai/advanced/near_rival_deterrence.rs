@@ -197,7 +197,10 @@ impl AdvancedAi {
                 || g.cities[&cid]
                     .queue
                     .first()
-                    .is_some_and(|head| self.capped_aqueduct_holds(g, pid, cid, plan, head))
+                    .is_some_and(|head| {
+                        self.capped_aqueduct_holds(g, pid, cid, plan, head)
+                            || self.capped_neighborhood_holds(g, pid, cid, plan, head)
+                    })
                 || g.cities[&cid]
                     .queue
                     .first()

@@ -153,6 +153,7 @@ impl AdvancedAi {
                         || self.idle_route_trader_holds(g, pid, cid, plan, item)
                         || self.backlog_builder_holds(g, pid, cid, plan, item)
                         || self.capped_aqueduct_holds(g, pid, cid, plan, item)
+                        || self.capped_neighborhood_holds(g, pid, cid, plan, item)
                         || self.producer_zone_claim_holds(g, pid, cid, plan, item)
                         || self.factory_claim_holds(g, pid, cid, plan, item)
                         || Self::queued_wall_breaker(g, item)
