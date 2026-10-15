@@ -1,5 +1,6 @@
 use super::{
-    automatic_successor_seed, chronicle_world_events, final_countdown_ms, held_frame,
+    automatic_successor_seed, chronicle_world_events, control_request_line, final_countdown_ms,
+    held_frame, RequestSender,
     index_with_app_instance, new_game_params, nine_tenths_of, publishes_player_turn_frames,
     query_value, request_path, save_path, seat_delay_ms, simultaneous_jobs_for, spectator_frame,
     spectator_step_completes_frame, staged_next_game_params, strategy_roster, tile_mark,
@@ -14204,4 +14205,52 @@ fn the_policy_ledger_prices_the_seats_slotted_cards() {
     assert_eq!(cards[0]["policy"], json!("urban_planning"));
     assert_eq!(cards[0]["worth"], json!({"production": 1.0}), "{answer}");
     assert_eq!(answer["net"], cards[0]["worth"]);
+}
+
+/// Two live games were ended by "New game from the CIVVIS page" (2026-10-15
+/// 02:19:20Z, 02:35:32Z) with nothing in `server.log` to say who asked. A POST
+/// to a live control now leaves one line naming the sender; nothing else does.
+#[test]
+fn a_post_to_a_live_control_names_its_sender() {
+    let mut sender = RequestSender::default();
+    for header in [
+        "User-Agent: Mozilla/5.0 (Macintosh) Chrome/131\r\n",
+        "Referer: http://127.0.0.1:8610/\r\n",
+        "Origin: http://127.0.0.1:8610\r\n",
+        "Content-Length: 16\r\n",
+    ] {
+        sender.read_header(header, &header.to_ascii_lowercase());
+    }
+    sender.peer = Some("127.0.0.1:53211".to_string());
+    let at = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_792_030_760);
+    let line = control_request_line(
+        "POST",
+        "/live-new-game",
+        &sender,
+        &serde_json::json!({"confirm": true}),
+        at,
+    )
+    .expect("a POST to New game is recorded");
+    assert_eq!(
+        line,
+        "[live control] 2026-10-15T02:19:20Z POST /live-new-game from 127.0.0.1:53211 \
+         user-agent=\"Mozilla/5.0 (Macintosh) Chrome/131\" referer=\"http://127.0.0.1:8610/\" \
+         origin=\"http://127.0.0.1:8610\" body={\"confirm\":true}"
+    );
+    for path in ["/live-pause", "/pace"] {
+        assert!(control_request_line("POST", path, &sender, &serde_json::Value::Null, at).is_some());
+    }
+    // A read of the same route, or a POST elsewhere, is not a control.
+    assert!(control_request_line("GET", "/live-pause", &sender, &serde_json::Value::Null, at).is_none());
+    assert!(control_request_line("POST", "/civ6/start", &sender, &serde_json::Value::Null, at).is_none());
+    // A sender without headers reads as dashes, not as an empty field.
+    let bare = control_request_line(
+        "POST",
+        "/pace",
+        &RequestSender::default(),
+        &serde_json::Value::Null,
+        at,
+    )
+    .unwrap();
+    assert!(bare.contains("from - user-agent=\"-\" referer=\"-\" origin=\"-\" body=null"), "{bare}");
 }

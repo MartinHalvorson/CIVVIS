@@ -3300,6 +3300,66 @@ fn respond_json(stream: &mut TcpStream, v: &Value) -> bool {
     respond(stream, "200 OK", "application/json", &body)
 }
 
+/// The live game's controls whose every POST the server records: the New
+/// game and Pause buttons and the watch pace. Two live games were ended by
+/// "New game from the CIVVIS page" on 2026-10-15 (02:19:20Z and 02:35:32Z)
+/// and `server.log` held nothing to tell an operator's click from a script's
+/// POST. A record only; the routes answer exactly as before.
+const LOGGED_CONTROL_ROUTES: [&str; 3] = ["/live-new-game", "/live-pause", "/pace"];
+
+/// The longest request body the control line repeats.
+const CONTROL_LINE_BODY_CHARS: usize = 200;
+
+/// Who sent a request, read from its headers and socket.
+#[derive(Debug, Default)]
+struct RequestSender {
+    peer: Option<String>,
+    user_agent: Option<String>,
+    referer: Option<String>,
+    origin: Option<String>,
+}
+
+impl RequestSender {
+    /// Keep the sender headers; `lower` is `line` in ASCII lowercase, so the
+    /// header name's length indexes both.
+    fn read_header(&mut self, line: &str, lower: &str) {
+        for (name, slot) in [
+            ("user-agent:", &mut self.user_agent),
+            ("referer:", &mut self.referer),
+            ("origin:", &mut self.origin),
+        ] {
+            if lower.starts_with(name) {
+                *slot = Some(line[name.len()..].trim().to_string());
+            }
+        }
+    }
+}
+
+/// One line for `server.log` when a POST reaches a live control: when (UTC),
+/// the route, the remote address, User-Agent, Referer, Origin and the body.
+/// `None` for every other request.
+fn control_request_line(
+    method: &str,
+    path: &str,
+    sender: &RequestSender,
+    body: &Value,
+    now: std::time::SystemTime,
+) -> Option<String> {
+    if method != "POST" || !LOGGED_CONTROL_ROUTES.contains(&path) {
+        return None;
+    }
+    let shown = |value: &Option<String>| value.as_deref().unwrap_or("-").to_string();
+    let body: String = body.to_string().chars().take(CONTROL_LINE_BODY_CHARS).collect();
+    Some(format!(
+        "[live control] {} POST {path} from {} user-agent={:?} referer={:?} origin={:?} body={body}",
+        civ6::utc_stamp(now),
+        shown(&sender.peer),
+        shown(&sender.user_agent),
+        shown(&sender.referer),
+        shown(&sender.origin),
+    ))
+}
+
 fn request_path(target: &str) -> &str {
     target.split_once('?').map_or(target, |(path, _)| path)
 }
@@ -4273,6 +4333,8 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
     let request_target = parts.next().unwrap_or("/").to_string();
     let path = request_path(&request_target).to_string();
     let mut content_len = 0usize;
+    // Who sent it, for the live controls' request line (`control_request_line`).
+    let mut sender = RequestSender::default();
     loop {
         let mut h = String::new();
         if reader.read_line(&mut h).is_err() || h == "\r\n" || h == "\n" || h.is_empty() {
@@ -4282,12 +4344,23 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
         if let Some(v) = hl.strip_prefix("content-length:") {
             content_len = v.trim().parse().unwrap_or(0);
         }
+        sender.read_header(&h, &hl);
     }
     let mut body = vec![0u8; content_len];
     if content_len > 0 {
         let _ = reader.read_exact(&mut body);
     }
     let parsed: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
+    sender.peer = stream.peer_addr().ok().map(|addr| addr.to_string());
+    if let Some(line) = control_request_line(
+        &method,
+        &path,
+        &sender,
+        &parsed,
+        std::time::SystemTime::now(),
+    ) {
+        eprintln!("{line}");
+    }
     if let Err(error) = crate::protocol::validate_request(&parsed) {
         respond_json(stream, &json!({"error": error}));
         return;
