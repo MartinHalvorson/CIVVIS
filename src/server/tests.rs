@@ -6415,14 +6415,28 @@ fn browser_orders_controls_interface_setup_and_logs() {
         "standings.scrollLeft += direction * (event.shiftKey ? standings.clientWidth * .8 : 48);"
     ));
     // The wide-screen default has three exact seams: the player HUD fills
-    // from its live clear-left edge through the victory tracker's left
-    // edge, the tracker owns ten percent of screen width and reaches the
-    // minimap's top, and the lower-right world minimap measures its frame
-    // diagonal against the screen diagonal. Custom drag layouts still
-    // override these values inline, but an uncustomized viewer always
-    // returns here.
+    // from its live clear-left edge through the map's right edge (operator
+    // 2026-10-14: "top player hud should usually expand to the width of the
+    // screen available"), the tracker owns its share of screen width from
+    // under that masthead down to the minimap's top — climbing back to the
+    // corner when the masthead is hidden or folded to its turn box — and
+    // the lower-right world minimap measures its frame diagonal against the
+    // screen diagonal. Custom drag layouts still override these values
+    // inline, but an uncustomized viewer always returns here.
     assert!(EMBEDDED_INDEX.contains("--victory-hud-width: clamp(156px, 15vw, 280px);"));
-    assert!(EMBEDDED_INDEX.contains("right: var(--panel-edge); top: var(--panel-edge);"));
+    let masthead = EMBEDDED_INDEX
+        .split_once("  #playerhud {\n")
+        .and_then(|(_, rest)| rest.split_once("\n  }"))
+        .map(|(rule, _)| rule)
+        .expect("the masthead's own rule");
+    assert!(masthead.contains("right: var(--panel-edge); width: auto;"));
+    assert!(!masthead.contains("--victory-hud-width"));
+    assert!(EMBEDDED_INDEX.contains(
+        "right: var(--panel-edge);\n    top: calc(var(--panel-edge) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));"
+    ));
+    assert!(EMBEDDED_INDEX.contains(
+        ":where(body.overlay-players-hidden, #maparea:has(> #playerhud.standings-collapsed)) #victoryhud {\n    top: var(--panel-edge);"
+    ));
     assert!(EMBEDDED_INDEX
         .contains("width: var(--world-minimap-width); height: var(--minimap-height);"));
     assert!(EMBEDDED_INDEX
@@ -7825,25 +7839,38 @@ fn browser_lets_the_turn_plate_widen_into_two_columns() {
     }
 }
 
-/// Beside a live Civilization VI game the turn plate names the level and the
-/// speed the game is played at in one row ("Level/Speed: Lv 6 / Online"),
-/// counted on the ruleset's own ladder so "Lv 6" is the verification lane's
-/// Emperor. Any other world keeps the plain speed row. The page learns it is
-/// beside a live game from the pause poll, which can land between frames, so
-/// the masthead redraws when that answer changes.
+/// The turn plate's first line is the map, a live Civilization VI game's
+/// level and the speed, with no labels: "4P Pangaea · Lv 6 · Online"
+/// (operator 2026-10-14: "combine the top 2 rows … all one line"). The level
+/// is counted on the ruleset's own ladder so "Lv 6" is the verification
+/// lane's Emperor; any other world reads "4P Tennis Ball · Standard". The
+/// page learns it is beside a live game from the pause poll, which can land
+/// between frames, so the masthead redraws when that answer changes.
 #[test]
 fn browser_names_a_live_games_level_on_the_turn_plate() {
     for piece in [
         "function difficultyLevel(id) {",
         "return {level: spec.order + 1, of: Object.keys(ladder).length, name: spec.name || titleCase(id)};",
         "const liveLevel = livePause.available ? difficultyLevel(state.difficulty) : null;",
-        "`<span>Level/Speed:</span><b>Lv ${liveLevel.level} / ${speedName}</b></div>`",
-        ": `<div class=\"turn-setting\"><span>Game speed:</span><b>${speedName}</b></div>`;",
+        "const setupLine = [mapRowValue, liveLevel && `Lv ${liveLevel.level}`, speedName]\n    .filter(Boolean).join(\" · \");",
+        "`<div class=\"turn-setting turn-setup-line\" title=\"${escapeAttr(setupTitle)}\">` +\n    `<b>${escapeAttr(setupLine)}</b></div>` +",
+        "#playerhud.turn-plate-wide .turn-setup-line { grid-column: 1 / -1; }",
         "if (livePause.available !== wasAvailable && state) drawPlayerHud();",
     ] {
         assert!(
             EMBEDDED_INDEX.contains(piece),
-            "the live level row is missing {piece}"
+            "the plate's setup line is missing {piece}"
+        );
+    }
+    // The two rows it replaced are gone, labels and all.
+    for gone in [
+        "<span>Map:</span>",
+        "<span>Level/Speed:</span>",
+        "<span>Game speed:</span>",
+    ] {
+        assert!(
+            !EMBEDDED_INDEX.contains(gone),
+            "the plate still carries a separate {gone} row"
         );
     }
     let rules = crate::rules::Rules::embedded();
