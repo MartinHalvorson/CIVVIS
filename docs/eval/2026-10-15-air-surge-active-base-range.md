@@ -46,8 +46,15 @@ The repair enumerates map positions with positive capacity from the existing
 engine predicate. Making that read-only predicate crate-visible lets the
 planner share the rebase engine's ownership, active-field, and carrier rules.
 The existing per-generation two-aircraft reach requirement is unchanged.
-The seven focused controls and the final full suite still need repaired
-execution. No change to actual base capacity or native command transport.
+GitHub run `38769780552` passes all seven focused controls on repair
+`b4612cb67`, plus 2,940 other tests, before an existing negative fixture fails.
+That fixture assigns both domestic cities a new coordinate directly while
+leaving their spatial lookup at the old coordinates. It therefore retains
+old physical bases under the shared engine rule. The fixture now shortens
+the hypothetical Bomber range to one instead of corrupting city positions;
+its unreachable-objective assertion remains. The integrated full local suite
+and final GitHub gates remain pending. Actual base capacity and native
+command transport are unchanged.
 
 A limited geometry screen of the first state per turn in three recorded
 worlds found no existing Aerodrome/carrier that changed the two-Bomber reach

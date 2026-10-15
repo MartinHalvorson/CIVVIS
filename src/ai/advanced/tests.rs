@@ -36843,15 +36843,16 @@ fn the_appointment_names_a_city_the_wing_can_reach() {
         "the objective must sit under one of our airfields"
     );
 
-    // Move the whole empire out of the wing's reach and there is no surge to
-    // appoint, however valuable the city is.
-    let mut distant = game.clone();
-    for cid in distant.player_city_ids(0) {
-        let city = distant.cities.get_mut(&cid).expect("own city");
-        city.pos = (0, 0);
-    }
+    // Shorten the wing's reach rather than moving city coordinates without
+    // updating their spatial index. No rival city is one tile from a base.
+    let mut short_ranged = game.clone();
+    std::sync::Arc::make_mut(&mut short_ranged.rules)
+        .units
+        .get_mut(&crate::name!("bomber"))
+        .expect("the Bomber exists")
+        .range = 1;
     assert!(
-        ai.choose_air_surge(&distant, 0).is_none(),
+        ai.choose_air_surge(&short_ranged, 0).is_none(),
         "a city no bomber can strike is not an air surge"
     );
 }
