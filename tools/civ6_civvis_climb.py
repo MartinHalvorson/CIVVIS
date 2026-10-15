@@ -2236,6 +2236,7 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
          "--civvis-bin", str(orders_bin),
          "--civvis-victory", args.victory,
          "--civvis-strategy", args.strategy]
+        + (["--civvis-capture-inputs"] if getattr(args, "capture_decider_inputs", False) else [])
         + (["--civvis-refresh-seconds", str(args.refresh_seconds)]
            if args.refresh_seconds is not None else [])
         + (["--restart-below-leader-ratio", str(args.restart_below_leader_ratio)]
@@ -2632,6 +2633,8 @@ def main() -> int:
                          "other is its --civvis-with/--civvis-without; a tag with "
                          "no live arm refuses the screen, not the batch "
                          "(docs/LIVE_SCREEN.md)")
+    ap.add_argument("--capture-decider-inputs", action="store_true", default=False,
+                    help="archive the native decider's exact input reads for replay")
     ap.add_argument("--refresh-seconds", type=float, default=None,
                     help="forwarded to civ6_play as --civvis-refresh-seconds; "
                          "defaults to 0 for a pinned batch of more than one "
