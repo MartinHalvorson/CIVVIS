@@ -3661,11 +3661,12 @@
   /* Victory progress starts at the right edge under the masthead and
      continues to the world minimap's top edge. Its paths scroll inside that
      rail, rather than shortening the tracker to however many rows are
-     present. */
+     present. "Under" is the masthead's own bottom: a masthead the viewer
+     moved publishes its top as --player-hud-top beside its height. */
   #victoryhud {
     position: absolute; z-index: 7; right: 0; left: auto;
     right: var(--panel-edge);
-    top: calc(var(--panel-edge) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));
+    top: calc(var(--player-hud-top, var(--panel-edge)) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));
     bottom: calc(var(--minimap-height) + var(--panel-gap) + var(--panel-edge));
     width: var(--victory-hud-width); height: auto;
     display: grid; grid-template-columns: minmax(0, 1fr);
@@ -3960,7 +3961,7 @@
       --hud-ident-min: 31px;
     }
     #victoryhud, body.overlay-minimap-hidden #victoryhud {
-      top: calc(var(--panel-edge) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));
+      top: calc(var(--player-hud-top, var(--panel-edge)) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));
       left: max(var(--panel-edge), var(--player-hud-left, 0px)); right: var(--panel-edge); bottom: auto; width: auto;
       height: var(--compact-victory-hud-height);
       grid-template-columns: minmax(0, 1fr); padding: 4px;
@@ -4008,7 +4009,7 @@
     --hud-stat-min: 32px; --hud-stat-gap: 2px;
   }
   #maparea.player-hud-compact #victoryhud {
-    top: calc(var(--panel-edge) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));
+    top: calc(var(--player-hud-top, var(--panel-edge)) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));
     left: max(var(--panel-edge), var(--player-hud-left, 0px)); right: var(--panel-edge); bottom: auto; width: auto;
     height: var(--compact-victory-hud-height);
     grid-template-columns: minmax(0, 1fr); padding: 4px;
