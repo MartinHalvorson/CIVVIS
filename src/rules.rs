@@ -457,6 +457,10 @@ pub struct ImprovementSpec {
     /// Foreign-territory placement additionally needs an Open Borders treaty.
     #[serde(default)]
     pub requires_open_borders: bool,
+    /// Firaxis `CanBuildOutsideTerritory`: this improvement can also stand
+    /// on neutral ground. Foreign owned land retains its existing rules.
+    #[serde(default)]
+    pub can_build_outside_territory: bool,
     /// Features that may not occur on any adjacent tile. Rapa Nui's Moai
     /// cannot stand beside Woods or Rainforest.
     #[serde(default)]
@@ -3642,9 +3646,12 @@ mod tests {
         // their rivals' read as the stock role. Rows are the loader's
         // `Units`/`UnitReplaces`/`UnitUpgrades`/`Units_XP2.ResourceCost`
         // values; abilities beyond the stat line are not modelled.
+        // Moved again by the six shipped CanBuildOutsideTerritory flags:
+        // Fort, Airstrip, Roman Fort, Mountain Tunnel, Pa and Qhapaq Nan.
+        // The installed Gathering Storm audit agrees across all 29 tables.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:964ac50a10c94a96"
+            "fnv1a64:d05291ed7cbbe612"
         );
     }
 

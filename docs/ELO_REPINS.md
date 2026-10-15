@@ -2206,3 +2206,40 @@ alone measured 18,951 decisions and `0x1c4c_d7be_51af_a50e`; with the
 lookahead filter the unchanged five-profile probe now measures **19,362
 decisions and `0x0f0e_d009_a74c_279c`**, replacing v42's **18,903 decisions and
 `0xbad7_b8b7_5c93_0af0`**. The fingerprint does not establish stronger play.
+
+## v44 (2026-10-15) — military improvements outside territory and surviving combat builders
+
+The installed Gathering Storm rows permit Forts, Airstrips, Roman Forts,
+Mountain Tunnels, Pa and Qhapaq Nan outside territory. The shared placement
+query previously returned before considering any cityless tile. Carrying those
+six permissions into placement deliberately reaches every controller,
+including `AdvancedAi::legacy()`; this is a rules correction, not a gated AI
+policy. Improvement ownership is independent of territorial ownership, as
+Gathering Storm `CityBannerManager.lua:2800` reads with
+`plot:GetImprovementOwner()`.
+
+The first complete suite exposed a changed anchor. An external probe used the
+unchanged five profiles and action hashing function against one compiled
+engine. Disabling only the six new flags restored v43 exactly: **19,362
+decisions and `0x0f0e_d009_a74c_279c`**. With the flags enabled it measured
+**19,299 decisions and `0x4c66_8599_653d_1e2e`**. Three profiles were identical;
+the first difference in each changed profile was a Legion building a Roman
+Fort on neutral ground. An independent repeat agreed on every profile.
+
+That investigation also found `do_improve` deleting every unit after its final
+construction charge. Legions and Toa are land combat units with one build
+charge (`Base/Assets/Gameplay/Data/Units.xml:787` and
+`DLC/Expansion2/Data/Expansion2_Units_Major.xml:63`). The correction spends
+their charge and movement while retaining the combat unit; civilian and
+support builders still disappear when depleted. New production-path controls
+verify both combat units survive their neutral forts and an exhausted Military
+Engineer disappears while leaving a usable Airstrip. This shared correction
+also applies to forts in owned territory.
+
+The final probe measures **19,252 decisions and
+`0x880c_b390_c0a3_3d00`**, replacing v43. Disabling the outside-territory flags
+while keeping combat-builder survival measures **19,359 decisions and
+`0x63e3_fde2_c0f5_c490`**, distinguishing the second shared correction. Two
+independent runs agree on all profiles and both final fingerprints. The pin
+records these deliberate rule changes; it does not establish stronger play
+or a native Domination win.

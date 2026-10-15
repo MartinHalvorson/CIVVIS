@@ -181,6 +181,11 @@ pub struct Plot {
     /// Improvement type name already built here, e.g. `IMPROVEMENT_FARM`.
     #[serde(default)]
     pub im: Option<String>,
+    /// Native improvement owner, independent of territorial owner `o`.
+    /// Missing or negative means no ownership observation, including legacy
+    /// exports. Translate through the host-player map before assigning a seat.
+    #[serde(default)]
+    pub io: Option<i32>,
     /// Whether the improvement or observed district is pillaged. Improvements
     /// use `Plot:IsImprovementPillaged`; districts use `District:IsPillaged`.
     /// Absent reads as not pillaged, preserving older exports.
@@ -467,6 +472,9 @@ impl Snapshot {
     pub fn set_improvement(&mut self, pos: (i32, i32), im: &str) -> bool {
         match self.revealed.get_mut(&pos) {
             Some(plot) => {
+                if plot.im.as_deref() != Some(im) {
+                    plot.io = None;
+                }
                 plot.im = Some(im.to_string());
                 // ⚠ AND THE PLOT'S YIELD READING GOES WITH IT. The tuple was
                 // measured before this improvement existed; keeping it would
@@ -1344,6 +1352,9 @@ fn apply_finished_improvements(
             continue;
         };
         if let Some(plot) = snapshot.revealed.get_mut(&(x as i32, y as i32)) {
+            if plot.im.as_deref() != Some(im) {
+                plot.io = None;
+            }
             plot.im = Some(im.to_string());
             // The plot's exported yields were read before this improvement
             // existed; see `Snapshot::set_improvement` for why they cannot
@@ -1452,6 +1463,7 @@ pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
                 tile.feature = None;
                 tile.resource = None;
                 tile.improvement = None;
+                tile.improvement_owner = None;
                 tile.pillaged = false;
                 tile.district = None;
                 tile.district_foundation = None;
@@ -1514,6 +1526,9 @@ pub(crate) fn apply_terrain(game: &mut crate::game::Game, snapshot: &Snapshot) {
                     None
                 }
             });
+            // Ownership is assigned after the native-player map is known.
+            // Never retain an owner from a previous improvement or export.
+            tile.improvement_owner = None;
             // Own district pillage comes from the city record; foreign district
             // pillage is applied with its infrastructure after city ownership.
             // Neither should be overwritten by the improvement path here.
@@ -14403,6 +14418,10 @@ fn apply_territory(game: &mut crate::game::Game, snapshot: &Snapshot, state: &St
             if !game.map.tiles.contains_key(&pos) {
                 continue;
             }
+            let improvement_owner = plot.io.and_then(|owner| seat_of.get(&owner)).copied();
+            if let Some(tile) = game.map.tiles.get_mut(&pos) {
+                tile.improvement_owner = tile.improvement.and(improvement_owner);
+            }
             let Some(&seat) = seat_of.get(&plot.o) else {
                 // `o = -1` is nobody, and Civilization VI is authoritative about that
                 // too: a tile CIVVIS thinks it owns and the game says is neutral is
@@ -16175,3 +16194,6 @@ mod foreign_district_parent_tests;
 
 #[cfg(test)]
 mod defending_district_observation_tests;
+
+#[cfg(test)]
+mod improvement_owner_tests;

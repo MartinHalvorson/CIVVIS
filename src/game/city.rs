@@ -5016,17 +5016,18 @@ impl Game {
                 return vec![excavation];
             }
         }
-        let oc = match t.owner_city {
-            Some(oc) => oc,
-            None => return vec![],
-        };
         // A remembered or disposable planning tile can outlive its city.
         // Without the city, ownership is unknown and no Builder permission
         // can be inferred from the stale handle.
-        let Some(owner_city) = self.cities.get(&oc) else {
-            return vec![];
+        let (oc, territory_owner) = match t.owner_city {
+            Some(oc) => {
+                let Some(owner_city) = self.cities.get(&oc) else {
+                    return vec![];
+                };
+                (Some(oc), Some(owner_city.owner))
+            }
+            None => (None, None),
         };
-        let territory_owner = owner_city.owner;
         let visible_resource = t
             .resource
             .as_deref()
@@ -5062,7 +5063,7 @@ impl Game {
                 continue;
             }
             if matches!(name.as_str(), "fishery" | "city_park")
-                && self.governor_effect(pid, oc, name) <= 0.0
+                && oc.is_none_or(|city| self.governor_effect(pid, city, name) <= 0.0)
             {
                 continue;
             }
@@ -5201,15 +5202,28 @@ impl Game {
                 .min_appeal
                 .is_some_and(|minimum| self.tile_appeal(pos) < minimum);
             let city_limit_reached = spec.one_per_city
-                && self.cities[&oc].owned_tiles.iter().any(|position| {
-                    self.map.tiles[position].improvement.as_deref() == Some(name.as_str())
+                && oc.is_none_or(|city| {
+                    self.cities[&city].owned_tiles.iter().any(|position| {
+                        self.map.tiles[position].improvement.as_deref() == Some(name.as_str())
+                    })
                 });
             let territory_invalid = if spec.requires_foreign_territory {
-                territory_owner == pid
-                    || self.is_at_war(pid, territory_owner)
-                    || (spec.requires_open_borders && !self.has_open_borders(pid, territory_owner))
+                territory_owner.is_none_or(|owner| {
+                    owner == pid
+                        || self.is_at_war(pid, owner)
+                        || (spec.requires_open_borders && !self.has_open_borders(pid, owner))
+                })
             } else {
-                !self.builder_may_improve_territory(pid, territory_owner)
+                territory_owner.map_or_else(
+                    || {
+                        !spec.can_build_outside_territory
+                            // The native mirror puts unattributed held ground
+                            // here too: a missing owning city is not proof of
+                            // neutral territory. Keep those unknown sites shut.
+                            || self.blocked_city_sites.contains(&pos)
+                    },
+                    |owner| !self.builder_may_improve_territory(pid, owner),
+                )
             };
             if seaside_invalid
                 || same_adjacent_invalid

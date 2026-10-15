@@ -10437,6 +10437,25 @@ end
 -- and re-primes `known`. `TileDelta = false` withholds the deltas.
 -- One bare global table (200-local ceiling).
 CivvisTiles = { known = {}, districtPillage = {}, districtHealth = {}, currentHealth = {}, districtParent = {} };
+CivvisTiles.improvementOwners = {};
+
+-- Gathering Storm CityBannerManager.lua:2800 asks GetImprovementOwner, not
+-- GetOwner: an Airstrip can stand outside any city's territory. Refresh only
+-- in sight; a change hidden by fog must not reveal its new owner.
+CivvisTiles.improvementOwner = function(plot, pid, x, y)
+	local kind = try(function() return plot:GetImprovementType(); end, -1);
+	if type(kind) ~= "number" or kind < 0 then return nil; end
+	local key = pid .. ":" .. x .. ":" .. y .. ":" .. kind;
+	if try(function() return PlayersVisibility[pid]:IsVisible(x, y); end, false) then
+		local owner = try(function() return plot:GetImprovementOwner(); end, nil);
+		if type(owner) == "number" and owner >= 0 and owner % 1 == 0 then
+			CivvisTiles.improvementOwners[key] = owner;
+		else
+			CivvisTiles.improvementOwners[key] = nil;
+		end
+	end
+	return CivvisTiles.improvementOwners[key];
+end;
 
 -- PlotTooltip_Expansion2.lua:34-35 reads these TerrainManager accessors.
 -- Keep false distinct from unknown: a protected lowland can be dry even when
@@ -10748,6 +10767,7 @@ local function exportTiles(player, pid, turn, frame, deltaOnly)
 						.. tostring(CivvisTiles.floodState(plot, "IsFlooded")) .. ":"
 						.. tostring(CivvisTiles.floodState(plot, "IsSubmerged")) .. ":"
 						.. (try(function() return plot:GetImprovementType(); end, -1) or -1) .. ":"
+						.. tostring(CivvisTiles.improvementOwner(plot, pid, x, y)) .. ":"
 						.. (CivvisTiles.pillageState(plot, pid, x, y) and 1 or 0) .. ":"
 						.. CivvisTiles.healthMark(plot, pid, x, y) .. ":"
 						.. (try(function() return plot:GetRouteType(); end, -1) or -1) .. ":"
@@ -10809,6 +10829,7 @@ local function exportTiles(player, pid, turn, frame, deltaOnly)
 						-- no-economy failure, and just as self-defeating.
 						im = typeName("Improvements", "ImprovementType",
 						              try(function() return plot:GetImprovementType(); end, -1)),
+						io = CivvisTiles.improvementOwner(plot, pid, x, y),
 						-- ★★★★ AND WHETHER IT IS PILLAGED. A pillaged Farm still reads
 						-- IMPROVEMENT_FARM above and pays nothing until repaired; without
 						-- this bit the mirror paid every pillaged improvement in full and

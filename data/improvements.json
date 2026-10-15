@@ -608,6 +608,7 @@
   "housing": 2
  },
  "fort": {
+  "can_build_outside_territory": true,
   "tech": "siege_tactics",
   "builder_buildable": false,
   "effects": {
@@ -625,6 +626,7 @@
   ]
  },
  "airstrip": {
+  "can_build_outside_territory": true,
   "tech": "flight",
   "builder_buildable": false,
   "requires_flat": true,
@@ -659,6 +661,7 @@
   ]
  },
  "mountain_tunnel": {
+  "can_build_outside_territory": true,
   "tech": "chemistry",
   "builder_buildable": false,
   "terrain": [
@@ -1233,6 +1236,7 @@
   }
  },
  "maori_pa": {
+  "can_build_outside_territory": true,
   "plunder_type": "heal",
   "plunder_amount": 50,
   "unique_to": "Maori",
@@ -1254,6 +1258,7 @@
   }
  },
  "qhapaq_nan": {
+  "can_build_outside_territory": true,
   "civic": "foreign_trade",
   "unique_to": "Inca",
   "terrain": [
@@ -1265,6 +1270,7 @@
   }
  },
  "roman_fort": {
+  "can_build_outside_territory": true,
   "plunder_type": "heal",
   "plunder_amount": 50,
   "unique_to": "Rome",
