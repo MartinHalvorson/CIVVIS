@@ -6509,7 +6509,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
     // scroll sideways inside their panel instead of crushing their cells.
     assert!(
         EMBEDDED_INDEX.contains(
-            "minmax(var(--hud-ident-min), 2.035fr)\n      \
+            "minmax(var(--hud-closest-min), 2.035fr)\n      \
              repeat(12, minmax(var(--hud-stat-min), 1fr));"
         ),
         "the shipped default tracks end with the twelve value columns"
@@ -6606,7 +6606,10 @@ fn browser_orders_controls_interface_setup_and_logs() {
         "if (key === \"closest_victory\") return playerClosestVictory(player)?.turns ?? null;"
     ));
     assert!(
-        EMBEDDED_INDEX.contains("`${escapeAttr(closest.victory)}-${closest.turns}`"),
+        EMBEDDED_INDEX.contains(
+            "`<span class=\"closest-victory-road\">${escapeAttr(closest.victory)}</span>` +"
+        ) && EMBEDDED_INDEX
+            .contains("`<span class=\"closest-victory-turns\">-${closest.turns}</span>`"),
         "the cell reads victory-turns, e.g. science-39"
     );
     assert_eq!(
@@ -6625,6 +6628,13 @@ fn browser_orders_controls_interface_setup_and_logs() {
         EMBEDDED_INDEX.contains("--hud-odds-min: 27px; --hud-odds-trend-min: 13px;"),
         "the three odds columns stand on floors of their own"
     );
+    // A clipped name still reads; a clipped "science-4418" reads as -44.
+    assert_eq!(
+        EMBEDDED_INDEX.matches("--hud-closest-min:").count(),
+        1,
+        "the Closest victory floor is declared once and holds at every width"
+    );
+    assert!(EMBEDDED_INDEX.contains("--hud-closest-min: 48px;"));
     assert_eq!(
         EMBEDDED_INDEX.matches("--hud-ident-num-min:").count(),
         1,

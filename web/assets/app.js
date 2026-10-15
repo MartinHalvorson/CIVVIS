@@ -1977,7 +1977,7 @@ const PLAYER_HUD_COLUMNS = [
   // The soonest road to a win and how far away it is, as the victory planner
   // prices it: "science-39". The server sends every road it can put a clock
   // on, soonest first (`victory_eta`); this column reads the head of it.
-  {key:"closest_victory", label:"Closest victory", block:"identity", min:"--hud-ident-min", width:1.6},
+  {key:"closest_victory", label:"Closest victory", block:"identity", min:"--hud-closest-min", width:2.035},
   // A column may declare when it exists at all. Everything without that test
   // is a fact every game has from turn one; the nuclear stockpile is the one
   // that has to be invented first, so it joins the table beside the military
@@ -3209,7 +3209,13 @@ function fitResponsiveType() {
     for (const [element, rule] of responsiveTextTargets(root)) targets.set(element, rule);
   }
   responsiveTypeRoots.clear();
-  for (const [element, rule] of targets) element.style.fontSize = `${rule.max}px`;
+  // Read the run as it sets at full size: a cell clipped on the last pass is
+  // unclipped for this one, so a rule whose clipped look changes its own
+  // layout is measured against its natural run rather than against itself.
+  for (const [element, rule] of targets) {
+    element.style.fontSize = `${rule.max}px`;
+    delete element.dataset.fitClipped;
+  }
   const fitted = [];
   for (const [element, rule] of targets) {
     if (!element.isConnected || !element.textContent.trim()) continue;
@@ -24519,10 +24525,17 @@ function drawPlayerHud() {
           case "closest_victory": {
             const closest = playerClosestVictory(p);
             const tone = closest ? CLOSEST_VICTORY_PLAN_CLASS[closest.victory] || "" : "";
+            // The turns are the reading; the road is the label on it. Where
+            // even the smallest type cannot hold both, the road's name gives
+            // way to an ellipsis and the count stays whole.
             return `<button class="diplomacy-identity" data-hud-col="closest_victory" ${dossierAttrs}>` +
               `<span class="diplomacy-identity-field diplomacy-closest-victory" title="${escapeAttr(closestVictoryTitle(p))}">` +
               `<span class="ai-plan${tone ? ` ${tone}` : ""}">` +
-              `${closest ? `${escapeAttr(closest.victory)}-${closest.turns}` : "—"}</span></span></button>`;
+              (closest
+                ? `<span class="closest-victory-road">${escapeAttr(closest.victory)}</span>` +
+                  `<span class="closest-victory-turns">-${closest.turns}</span>`
+                : "—") +
+              `</span></span></button>`;
           }
         }
         const [kind, , value, label, marker = ""] =
