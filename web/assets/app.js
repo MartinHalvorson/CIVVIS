@@ -6541,7 +6541,7 @@ function liveTrackerHtml(me) {
         `</div>` + (note ? `<div class="lt-card-text">${escapeAttr(note)}</div>` : "") + `</div>`;
     });
   const net = !ledger || !cards.length ? ""
-    : `<div class="lt-net" title="${escapeAttr("What the slotted cards add together this turn, as the engine measures it: the empire with its deck against the same empire with none. A card worth — moves none of these measures this turn (combat against barbarians, spies, experience).")}">` +
+    : `<div class="lt-net" title="${escapeAttr("What the slotted cards add together this turn, as the engine measures it: the empire with its deck against the same empire with none. Each card shows its share, and the shares add up to this: what two cards earn together (a percentage on a flat bonus, amenities crossing a mood line) is split between them. A card worth — moves none of these measures this turn (combat against barbarians, spies, experience).")}">` +
       `<span class="lt-k">Net policy effect</span>` +
       `<span class="lt-worth">${ledger.anarchy ? none("cards suspended in Anarchy")
         : policyWorthHtml(ledger.net) || none("nothing measurable this turn")}</span></div>`;
@@ -25309,8 +25309,9 @@ function policySlotOf(id) { return policySpec(id).slot || "wildcard"; }
 // whether that is two Science or forty — and players install a mod for the
 // number (operator 2026-10-14: "the net policy effect (this is normally a mod
 // - we should include this as standard functionality)"). `/policy-effects` is
-// the engine's own counterfactual: the empire measured with each card and
-// without it, and with the whole deck against none.
+// the engine's own counterfactual: the whole deck against none, and each
+// card's share of it (its gain averaged over every order the cards could be
+// slotted in), so the cards add up to the net (operator 2026-10-15).
 const POLICY_MEASURES = [
   ["science", "⌬", "Science"], ["culture", "❦", "Culture"], ["gold", "💰", "Gold"],
   ["production", "⚙", "Production toward what is being built"], ["food", "🌾", "Food"],
@@ -25360,7 +25361,10 @@ function policyMeasureMark(key, mark) {
 function policyWorthHtml(worth) {
   return POLICY_MEASURES.filter(([key]) => worth && worth[key]).map(([key, mark, word]) => {
     const value = Number(worth[key]);
-    const shown = Math.abs(value) >= 10 ? Math.round(value) : Math.round(value * 10) / 10;
+    // Tenths at any size: the server rounds the cards' shares so they add up
+    // to the net in tenths, and a whole-number net beside tenth cards did not
+    // (Gold +1.9 and +10 under +12).
+    const shown = Math.round(value * 10) / 10;
     const signed = `${shown > 0 ? "+" : ""}${shown}`;
     return `<span class="pw ${value > 0 ? "up" : "down"}" title="${escapeAttr(`${signed} ${word}`)}">` +
       `${signed}${policyMeasureMark(key, mark)}</span>`;
