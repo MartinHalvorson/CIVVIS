@@ -38,6 +38,9 @@ class Handoff(unittest.TestCase):
     def setUp(self) -> None:
         self.tmp = TemporaryDirectory()
         self.path = Path(self.tmp.name) / "restart.json"
+        mode = mock.patch.dict(os.environ, {restart_handoff.MODE_ENV: "4"})
+        mode.start()
+        self.addCleanup(mode.stop)
 
     def tearDown(self) -> None:
         self.tmp.cleanup()
@@ -108,18 +111,31 @@ class Handoff(unittest.TestCase):
         self.assertIsNone(restart_handoff.standing([4242, 9], self.path))
         self.assertIsNone(restart_handoff.standing([9], self.path))
 
-    def test_the_default_path_and_the_mode_override(self):
+    def test_restart_in_place_is_off_unless_a_mode_is_named(self):
+        modes = Path(self.tmp.name) / "mode"
         with mock.patch.dict(os.environ, {}, clear=False):
             os.environ.pop(restart_handoff.HANDOFF_ENV, None)
             os.environ.pop(restart_handoff.MODE_ENV, None)
             self.assertEqual(restart_handoff.handoff_path(),
                              Path.home() / ".civvis-live-restart.json")
-            self.assertEqual(restart_handoff.restart_mode(), restart_handoff.MODE_RESTART)
-            for value, mode in (("2", 2), ("3", 3), ("9", 1), ("x", 1)):
-                os.environ[restart_handoff.MODE_ENV] = value
-                self.assertEqual(restart_handoff.restart_mode(), mode)
+            self.assertEqual(restart_handoff.mode_path(),
+                             Path.home() / ".civvis-live-restart-mode")
+            self.assertEqual(restart_handoff.restart_mode(modes), restart_handoff.MODE_OFF)
+            for value, mode in (("4\n", 4), ("5", 5), ("1", 1), ("0", 0), ("9", 0), ("x", 0)):
+                modes.write_text(value)
+                self.assertEqual(restart_handoff.restart_mode(modes), mode, value)
+            os.environ[restart_handoff.MODE_ENV] = "2"
+            self.assertEqual(restart_handoff.restart_mode(modes), 2, "the environment wins")
             os.environ[restart_handoff.HANDOFF_ENV] = str(self.path)
             self.assertEqual(restart_handoff.handoff_path(), self.path)
+
+    def test_switched_off_the_parked_game_is_stopped_and_relaunched(self):
+        self.park(now=1000.0)
+        with mock.patch.dict(os.environ, {restart_handoff.MODE_ENV: "0"}):
+            handoff, why = restart_handoff.claim(CONFIG, [4242], path=self.path, now=1001.0)
+        self.assertIsNone(handoff)
+        self.assertIn("restart in place is off", why)
+        self.assertFalse(self.path.exists())
 
 
 class Rows(unittest.TestCase):

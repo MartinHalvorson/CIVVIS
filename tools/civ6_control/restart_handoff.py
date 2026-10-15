@@ -54,10 +54,14 @@ MODE_ENV = "CIVVIS_LIVE_RESTART_MODE"
 MAX_AGE_S = 300.0
 
 #: What the restarted game is asked to do (`x` on the `restart` row).
+MODE_OFF = 0         # no restart in place: retire natively and relaunch
 MODE_RESTART = 1     # new seeds, then the shipped Restart (`Network.RestartGame`)
 MODE_HOST = 2        # new seeds, then host the current configuration again
 MODE_SAME_MAP = 3    # the shipped Restart with the seeds it had
-MODES = (MODE_RESTART, MODE_HOST, MODE_SAME_MAP)
+MODE_RESTART_FROM_CORE = 4  # 1, called from the game core's next publish
+MODE_HOST_FROM_CORE = 5     # 2, called from the game core's next publish
+MODES = (MODE_RESTART, MODE_HOST, MODE_SAME_MAP, MODE_RESTART_FROM_CORE,
+         MODE_HOST_FROM_CORE)
 
 #: The settings a restart keeps.  The next run must have asked for exactly
 #: these, or the restarted game would be a different game than it records.
@@ -73,13 +77,31 @@ def handoff_path() -> Path:
             else Path.home() / ".civvis-live-restart.json")
 
 
-def restart_mode() -> int:
-    """The restart call to ask for; `CIVVIS_LIVE_RESTART_MODE` overrides."""
+def mode_path() -> Path:
+    return Path.home() / ".civvis-live-restart-mode"
+
+
+def restart_mode(path: Path | None = None) -> int:
+    """The restart call to ask for, or `MODE_OFF`.
+
+    ★ OFF UNLESS ASKED FOR. Live 2026-10-15 062529Z: mode 1 parked, handed
+    over and called `Network.RestartGame()`, and Civ VI crashed 3 s later
+    (SIGSEGV on WinMain); the fallback relaunch made it 80 s from the press,
+    the old path's time plus a crash. So the restart in place runs only while
+    `~/.civvis-live-restart-mode` (or `CIVVIS_LIVE_RESTART_MODE`) names a
+    mode; anything else is the old retire-and-relaunch.
+    """
+    raw = os.environ.get(MODE_ENV)
+    if raw is None:
+        try:
+            raw = (path or mode_path()).read_text().strip()
+        except OSError:
+            return MODE_OFF
     try:
-        mode = int(os.environ.get(MODE_ENV) or MODE_RESTART)
+        mode = int(raw)
     except ValueError:
-        return MODE_RESTART
-    return mode if mode in MODES else MODE_RESTART
+        return MODE_OFF
+    return mode if mode in MODES else MODE_OFF
 
 
 def utc_stamp() -> str:
@@ -181,6 +203,8 @@ def claim(config: dict[str, Any], game_pids: Iterable[int], *,
     discard(target)
     if handoff is None:
         return None, "the restart handoff could not be read"
+    if restart_mode() == MODE_OFF:
+        return None, f"restart in place is off ({mode_path()} names no mode)"
     pids = sorted(int(pid) for pid in game_pids)
     if not pids:
         return None, "the parked game is no longer running"

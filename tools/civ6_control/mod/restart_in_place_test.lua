@@ -8,7 +8,7 @@ local source = handle:read("*a")
 handle:close()
 
 local block = assert(source:match(
-	"(CivvisBoard%.restart = {.-function CivvisBoard%.restartPoll%(%).-\nend\n)"),
+	"(CivvisBoard%.restart = {.-function CivvisBoard%.restartFromCore%(%).-\nend\n)"),
 	"the restart in place is defined on CivvisBoard")
 
 local rows, attached, regenerates = {}, true, true
@@ -54,6 +54,10 @@ local env = {
 		HostGame = function(kind) calls[#calls + 1] = "HostGame:" .. tostring(kind) end,
 	},
 	ServerType = { SERVER_TYPE_NONE = 0 },
+	ActionTypes = { ACTION_ENDTURN = 77 },
+	UI = { RequestAction = function(action, parameters)
+		calls[#calls + 1] = "action:" .. action .. ":" .. tostring(parameters and parameters.REASON)
+	end },
 	emit = function(kind, payload) events[#events + 1] = { kind = kind, payload = payload } end,
 }
 local chunk = assert(loadstring(block))
@@ -130,7 +134,30 @@ board.restartPoll()
 assert(table.concat(calls, ",") == "RestartGame", table.concat(calls, ","))
 assert(events[1].payload.regenerated == false)
 
--- 8. The wiring: the retire row's `x = 1` parks instead of retiring, and the
+-- 8. Modes 4 and 5 make the call from the game core's next publish, not
+-- from the HUD pulse: the pulse forces the parked turn's end and returns.
+for _, case in ipairs({ { 4, "RestartGame" }, { 5, "HostGame:0" } }) do
+	board.restart.issued, board.restart.deferred = false, nil
+	calls, events = {}, {}
+	regenerates = true
+	rows = { { x = case[1] } }
+	board.restartPoll()
+	assert(table.concat(calls, ",") == "regenerate,action:77:UserForced", table.concat(calls, ","))
+	assert(board.restart.deferred == case[1])
+	assert(events[#events].kind == "restart_deferred" and events[#events].payload.ended == true)
+	board.restartPoll()
+	assert(#calls == 2, "the pulse asks once")
+	board.restartFromCore()
+	assert(calls[#calls] == case[2], table.concat(calls, ","))
+	assert(board.restart.deferred == nil)
+	board.restartFromCore()
+	assert(calls[#calls] == case[2] and #events == 5, "called once")
+end
+assert(source:find("local function onGameCoreTick()\n" ..
+	"\tif CivvisBoard.restart.deferred then pcall(CivvisBoard.restartFromCore); return; end", 1, true),
+	"the game core's publish makes a deferred call")
+
+-- 9. The wiring: the retire row's `x = 1` parks instead of retiring, and the
 -- HUD pulse polls a parked game before anything else.
 assert(source:find('"SELECT x FROM civvis.orders WHERE run = \'%s\' " ..\n' ..
 	'\t\t\t\t\t"AND kind = \'retire\'"', 1, true), "the retire poll reads x")
