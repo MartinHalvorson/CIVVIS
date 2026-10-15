@@ -7751,6 +7751,17 @@ impl AdvancedAi {
         self.holdout_keeps_the_faith_war = false;
     }
 
+    /// Opt-in gene `holdout-keeps-the-faith-war-2`; see
+    /// `advanced/holdout_faith_war.rs`.
+    pub fn enable_holdout_keeps_the_faith_war_2(&mut self) {
+        self.holdout_keeps_the_faith_war_2 = true;
+    }
+
+    /// The twin of `enable_holdout_keeps_the_faith_war_2`.
+    pub fn disable_holdout_keeps_the_faith_war_2(&mut self) {
+        self.holdout_keeps_the_faith_war_2 = false;
+    }
+
     /// Opt-in gene `launched-racer-yields-the-capital`; see
     /// `advanced/launched_racer.rs`.
     pub fn enable_launched_racer_yields_the_capital(&mut self) {
@@ -7760,6 +7771,150 @@ impl AdvancedAi {
     /// The twin of `enable_launched_racer_yields_the_capital`.
     pub fn disable_launched_racer_yields_the_capital(&mut self) {
         self.launched_racer_yields_the_capital = false;
+    }
+
+    /// Opt-in gene `racer-blocker-declares`; see `advanced/silent_counter.rs`.
+    pub fn enable_racer_blocker_declares(&mut self) {
+        self.racer_blocker_declares = true;
+    }
+
+    /// The twin of `enable_racer_blocker_declares`.
+    pub fn disable_racer_blocker_declares(&mut self) {
+        self.racer_blocker_declares = false;
+    }
+
+    /// Opt-in gene `astrology-before-the-second-city`; see
+    /// `advanced/astrology_before_the_second_city.rs`.
+    pub fn enable_astrology_before_the_second_city(&mut self) {
+        self.astrology_before_the_second_city = true;
+    }
+
+    /// The twin of `enable_astrology_before_the_second_city`.
+    pub fn disable_astrology_before_the_second_city(&mut self) {
+        self.astrology_before_the_second_city = false;
+    }
+
+    /// Opt-in gene `prophet-race-takes-divine-spark`; see
+    /// `advanced/astrology_before_the_second_city.rs`.
+    pub fn enable_prophet_race_takes_divine_spark(&mut self) {
+        self.prophet_race_takes_divine_spark = true;
+    }
+
+    /// The twin of `enable_prophet_race_takes_divine_spark`.
+    pub fn disable_prophet_race_takes_divine_spark(&mut self) {
+        self.prophet_race_takes_divine_spark = false;
+    }
+
+    /// Opt-in gene `city-under-fire-ranks-first`; see
+    /// `advanced/objective_board.rs`.
+    pub fn enable_city_under_fire_ranks_first(&mut self) {
+        self.city_under_fire_ranks_first = true;
+    }
+
+    /// The twin of `enable_city_under_fire_ranks_first`.
+    pub fn disable_city_under_fire_ranks_first(&mut self) {
+        self.city_under_fire_ranks_first = false;
+    }
+
+    /// Opt-in gene `faith-war-before-the-flip`; see
+    /// `advanced/faith_war_before_the_flip.rs`.
+    pub fn enable_faith_war_before_the_flip(&mut self) {
+        self.faith_war_before_the_flip = true;
+    }
+
+    /// The twin of `enable_faith_war_before_the_flip`.
+    pub fn disable_faith_war_before_the_flip(&mut self) {
+        self.faith_war_before_the_flip = false;
+    }
+
+    /// Opt-in gene `merchant-confederation-earns-its-slot`; the deck reading
+    /// lives on `BasicAi`, the portfolio insert on `AdvancedAi`.
+    pub fn enable_merchant_confederation_earns_its_slot(&mut self) {
+        self.merchant_confederation_earns_its_slot = true;
+        self.base.deck_reads_player_income = true;
+    }
+
+    /// The twin of `enable_merchant_confederation_earns_its_slot`.
+    pub fn disable_merchant_confederation_earns_its_slot(&mut self) {
+        self.merchant_confederation_earns_its_slot = false;
+        self.base.deck_reads_player_income = false;
+    }
+
+    /// Opt-in gene `open-city-draws-the-front`; see
+    /// `advanced/open_city_front.rs`.
+    pub fn enable_open_city_draws_the_front(&mut self) {
+        self.open_city_draws_the_front = true;
+    }
+
+    /// The twin of `enable_open_city_draws_the_front`.
+    pub fn disable_open_city_draws_the_front(&mut self) {
+        self.open_city_draws_the_front = false;
+    }
+
+    /// Opt-in gene `faith-war-before-the-flip-2`; see
+    /// `advanced/faith_war_before_the_flip.rs`.
+    pub fn enable_faith_war_before_the_flip_2(&mut self) {
+        self.faith_war_before_the_flip_2 = true;
+    }
+
+    /// The twin of `enable_faith_war_before_the_flip_2`.
+    pub fn disable_faith_war_before_the_flip_2(&mut self) {
+        self.faith_war_before_the_flip_2 = false;
+    }
+
+    /// Opt-in gene `medina-quarter-houses-the-districts`; see
+    /// `advanced/medina_quarter.rs`.
+    pub fn enable_medina_quarter_houses_the_districts(&mut self) {
+        self.medina_quarter_houses_the_districts = true;
+    }
+
+    /// The twin of `enable_medina_quarter_houses_the_districts`.
+    pub fn disable_medina_quarter_houses_the_districts(&mut self) {
+        self.medina_quarter_houses_the_districts = false;
+    }
+
+    /// Opt-in gene `solvent-or-hold`; see `advanced/solvency.rs`.
+    pub fn enable_solvent_or_hold(&mut self) {
+        self.solvent_or_hold = true;
+    }
+
+    /// The twin of `enable_solvent_or_hold`.
+    pub fn disable_solvent_or_hold(&mut self) {
+        self.solvent_or_hold = false;
+    }
+
+    /// Opt-in gene `bankruptcy-exits-the-drain`; see `advanced/solvency.rs`.
+    pub fn enable_bankruptcy_exits_the_drain(&mut self) {
+        self.bankruptcy_exits_the_drain = true;
+    }
+
+    /// The twin of `enable_bankruptcy_exits_the_drain`.
+    pub fn disable_bankruptcy_exits_the_drain(&mut self) {
+        self.bankruptcy_exits_the_drain = false;
+    }
+
+    /// Opt-in gene `neighborhood-houses-the-capped-city`; see
+    /// `advanced/neighborhood_houses_the_capped_city.rs`.
+    pub fn enable_neighborhood_houses_the_capped_city(&mut self) {
+        self.neighborhood_houses_the_capped_city = true;
+    }
+
+    /// The twin of `enable_neighborhood_houses_the_capped_city`.
+    pub fn disable_neighborhood_houses_the_capped_city(&mut self) {
+        self.neighborhood_houses_the_capped_city = false;
+    }
+
+    /// Opt-in gene `merchant-confederation-earns-its-slot-2`; version one
+    /// plus the seat it may take. See `merchant_confederation_pays`.
+    pub fn enable_merchant_confederation_earns_its_slot_2(&mut self) {
+        self.merchant_confederation_earns_its_slot_2 = true;
+        self.base.deck_reads_player_income = true;
+    }
+
+    /// The twin of `enable_merchant_confederation_earns_its_slot_2`.
+    pub fn disable_merchant_confederation_earns_its_slot_2(&mut self) {
+        self.merchant_confederation_earns_its_slot_2 = false;
+        self.base.deck_reads_player_income = false;
     }
 
     // ---- append: a-b ------------------------------------------------

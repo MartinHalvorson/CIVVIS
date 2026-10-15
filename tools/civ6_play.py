@@ -43,12 +43,12 @@ from civ6_control import install as modinstall  # noqa: E402
 from civ6_control import operator_presence  # noqa: E402
 from civ6_control import (capture_budget, gamelock, launcher, macos_capture,
                           macos_input, macos_ocr, macos_window,
-                          operator_retire, popup_clear, vision,
+                          operator_retire, popup_clear, restart_handoff, vision,
                           watch)  # noqa: E402
 from civ6_control import live_pause  # noqa: E402
-from civ6_control.orders import (orders_db_path, request_retire,  # noqa: E402
-                                 reset_orders_db, set_operator_pace,
-                                 set_operator_pause)
+from civ6_control.orders import (orders_db_path, request_restart,  # noqa: E402
+                                 request_retire, reset_orders_db,
+                                 set_operator_pace, set_operator_pause)
 # The mod's sentinel for a readback it could not resolve, imported rather than
 # repeated: this harness and the ledger have to agree on what "unreadable"
 # looks like, and a second copy of that fact is a second place for it to rot.
@@ -3859,6 +3859,162 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
     return False
 
 
+#: New game by restart (`civ6_control.restart_handoff`). The parked agent
+#: polls on the HUD's one-second pulse, so an unanswered ask is a parked game
+#: that is no longer listening. The load bound covers map generation on a busy
+#: host (a Tiny Pangaea took ~13 s from Begin Game); missing it costs only the
+#: old path, never the run.
+RESTART_ANSWER_S = 20.0
+RESTART_LOAD_S = 150.0
+#: The agent dismisses the load screen itself; the leader-card probe is the
+#: safety net, so give the agent this long before the first capture.
+RESTART_INTRO_DEFER_S = 45.0
+
+
+def _append_event(path: Path, event: dict) -> None:
+    """Keep the parked run's last records (its answer to the ask) in its run."""
+    try:
+        with path.open("a") as handle:
+            handle.write(json.dumps(dict(event, utc=utc_stamp()), sort_keys=True) + "\n")
+    except OSError:
+        pass
+
+
+def restart_in_place(tail: watch.LogTail, on_event, run_dir: Path,
+                     args: argparse.Namespace, handoff: dict, *,
+                     answer_s: float = RESTART_ANSWER_S,
+                     load_s: float = RESTART_LOAD_S,
+                     verify_s: float = 120.0) -> bool:
+    """Start this run's game inside the Civilization VI the last run parked.
+
+    The parked agent answers a `restart` row in ITS run's channel with a fresh
+    game (`CivvisBoard.restartPoll`). The fresh game's contexts read the mod
+    from disk -- this run's, installed over the parked one -- so the first
+    record carrying this run's tag is the proof that this run's mod is the one
+    playing. The parked run's own agent loading again instead means the game
+    kept the old scripts; then, or on any other miss, this returns False and
+    the caller stops Civilization VI and launches it afresh as before.
+
+    Settings are the parked game's, which `restart_handoff.claim` already
+    matched against this run's; the `seat` check in `_play` still reads them
+    back. The seeds are compared here: a restart that drew the same map is
+    reported, not refused.
+    """
+    from_tag = str(handoff["from_tag"])
+    mode = restart_handoff.restart_mode()
+    parked_events = RUN_ROOT / from_tag / "events.jsonl"
+    record = {"from_tag": from_tag, "mode": mode, "asked_utc": utc_stamp()}
+
+    def note(**fields) -> None:
+        record.update(fields)
+        try:
+            (run_dir / "restart.json").write_text(
+                json.dumps(record, indent=2, sort_keys=True) + "\n")
+        except OSError:
+            pass
+
+    # Both runs' records are read until this run's first one arrives.
+    tail.run = None
+    if not request_restart(Path(handoff["orders_db"]), from_tag, mode):
+        print(f"[restart] could not write the restart order into {from_tag}'s "
+              "channel", file=sys.stderr, flush=True)
+        note(result="unwritable")
+        return False
+    setup_mark("restart_asked")
+    print(f"[restart] asked {from_tag}'s parked game for a fresh game (mode {mode})",
+          flush=True)
+    # No setup clicks to make, so the game comes forward only as upkeep does:
+    # never over someone using the Mac (the New game press itself, usually).
+    maintain_game_focus(1.0, 0.0)
+    start = time.monotonic()
+    answered: dict | None = None
+    seat: dict = {}
+    ours = False
+    failure = None
+
+    def relay(event: dict) -> None:
+        if event.get("kind") == "seat" and event.get("ctx") == "agent":
+            seat.update(event)
+        on_event(event)
+
+    while not ours and failure is None:
+        for event in tail.poll():
+            run = event.get("run")
+            if run == args.tag:
+                ours = True
+                relay(event)
+                continue
+            if run != from_tag:
+                continue
+            _append_event(parked_events, event)
+            kind = event.get("kind")
+            if kind == "restart_issued":
+                answered = event
+                print(f"[restart] the parked game answered after "
+                      f"{time.monotonic() - start:.1f}s: map seed "
+                      f"{event.get('map_seed_before')} -> {event.get('map_seed')}",
+                      flush=True)
+            elif kind == "restart_called" and not event.get("called"):
+                failure = "the parked game could not call the restart"
+            elif (kind == "loaded" and event.get("ctx") == "agent"
+                    and answered is not None):
+                failure = ("the restarted game loaded the previous run's scripts, "
+                           "not this run's")
+        if ours or failure is not None:
+            break
+        waited = time.monotonic() - start
+        if answered is None and waited > answer_s:
+            failure = f"the parked game did not answer within {answer_s:.0f}s"
+        elif waited > load_s:
+            failure = f"the restarted game did not load this run's mod within {load_s:.0f}s"
+        elif not env.game_pids():
+            failure = "Civilization VI exited during the restart"
+        else:
+            time.sleep(0.25)
+    if failure is not None:
+        print(f"[restart] {failure}", file=sys.stderr, flush=True)
+        note(result="failed", why=failure, waited_s=round(time.monotonic() - start, 1))
+        return False
+    loaded_s = round(time.monotonic() - start, 1)
+    tail.run = args.tag
+    setup_mark("restart_loaded")
+    print(f"[restart] the restarted game loaded this run's mod {loaded_s:.1f}s "
+          "after the ask", flush=True)
+    note(result="loaded", loaded_s=loaded_s,
+         map_seed_before=(answered or {}).get("map_seed_before"),
+         map_seed_asked=(answered or {}).get("map_seed"))
+
+    board_seen = {"value": False}
+
+    def board_is_ready() -> bool:
+        for event in tail.poll():
+            relay(event)
+            if board_event_proves_intro_is_gone(event):
+                board_seen["value"] = True
+        return board_seen["value"]
+
+    bounds = game_window()
+    if bounds is not None:
+        defer = max(float(getattr(args, "leader_intro_defer", 0.0) or 0.0),
+                    RESTART_INTRO_DEFER_S)
+        advance_leader_intro(bounds, args.leader, run_dir, 1,
+                             retries=max(8, min(120, int(verify_s))), poll_s=1.0,
+                             board_ready=board_is_ready, relay_s=0.05, defer_s=defer)
+    started = board_seen["value"] or wait_for_agent_start(
+        tail, relay, verify_s, still_loading=lambda: bool(env.game_pids()))
+    if seat:
+        same_map = (answered is not None and seat.get("map_seed") is not None
+                    and seat.get("map_seed") == answered.get("map_seed_before"))
+        note(map_seed=seat.get("map_seed"), game_seed=seat.get("game_seed"),
+             same_map=same_map)
+        if same_map:
+            print("[restart] the restarted game kept the previous map seed "
+                  f"{seat.get('map_seed')}", file=sys.stderr, flush=True)
+    note(result="started" if started else "no_board",
+         started_s=round(time.monotonic() - start, 1))
+    return started
+
+
 # Firaxis's rolling autosaves on this build: `AutoSave_NNNN.Civ6Save`, one per
 # turn, the newest ten kept, older ones rotated into `prev/`. The Load Game
 # screen lists them only while its "Autosaves" filter is ticked.
@@ -4211,6 +4367,9 @@ def _uninstall_owned_mod(tag: str, preinstalled_mod: bool = False) -> None:
     if preinstalled_mod:
         print("leaving the preinstalled control mod for its authorized owner")
         return
+    if restart_handoff.parked_for(tag):
+        # The parked game is the next run's; it installs over this mod.
+        return
     try:
         installed = modinstall.installed_config()
         if installed is None or installed.get("RunTag") != tag:
@@ -4296,7 +4455,9 @@ def play(args: argparse.Namespace) -> int:
         # releasing the lock, or our atexit handler can race the next run's
         # installation.
         try:
-            launcher.stop()
+            # A game parked for a restart in place is the next run's to start.
+            if not restart_handoff.parked_for(args.tag):
+                launcher.stop()
         finally:
             try:
                 _uninstall_owned_mod(
@@ -4919,7 +5080,20 @@ def _play(args: argparse.Namespace) -> int:
     # identity and inbound channel that make a stale control mod dangerous.
     preinstalled_mod = os.environ.get("CIVVIS_PREINSTALLED_CONTROL_MOD") == "1"
 
-    if not launcher.stop():
+    # ★ NEW GAME BY RESTART: the run before this one may have left Civilization
+    # VI up with its game parked for us (`civ6_control.restart_handoff`). Taken
+    # or not, the handoff is gone after this; a refusal says why and the game
+    # is stopped and launched afresh exactly as before.
+    handoff = None
+    if not preinstalled_mod and not args.load_save:
+        handoff, refused = restart_handoff.claim(config, env.game_pids())
+        if handoff is not None:
+            print(f"[restart] {handoff['from_tag']} parked Civilization VI for this "
+                  "run; restarting it in place instead of relaunching", flush=True)
+        elif refused:
+            print(f"[restart] not restarting in place: {refused}", flush=True)
+
+    if handoff is None and not launcher.stop():
         print("could not stop the previous Civilization VI process", file=sys.stderr)
         return 3
     if using_default_orders_db:
@@ -4939,7 +5113,7 @@ def _play(args: argparse.Namespace) -> int:
             return 3
         print(f"using preinstalled {target}")
     else:
-        target = modinstall.install(config)
+        target = modinstall.install(config, drop_index=handoff is None)
         print(f"installed {target}")
     print(f"  difficulty {config['Difficulty']}  map {config['MapSize']}"
           f"  speed {config['GameSpeed']}  max turns {config['MaxTurns']}")
@@ -5020,37 +5194,49 @@ def _play(args: argparse.Namespace) -> int:
 
     signal.signal(signal.SIGTERM, _terminate)
 
-    if not args.keep_game_options:
-        apply_verification_options()
-    launcher.clear_run_logs()
-    # Measured before the launch, so placing the window as it appears pays no
-    # AppKit compile (~1.5 s) while it shows full screen.
-    desktop_size()
-    setup_clock_start()
-    game_process = launcher.launch(stdout=run_dir / "stdout.log")
-    setup_mark("launched")
-    placing = threading.Event()
-    placer = place_window_as_it_appears(game_process, placing)
-    reached_menu = launcher.wait_for_launched_main_menu(game_process, args.startup_timeout)
-    placing.set()
-    placer.join(timeout=HOST_PROBE_TIMEOUT_S + 1.0)
-    if not reached_menu:
+    def launch_to_menu() -> bool:
+        """Launch Civilization VI and bring it to a placed main menu."""
+        if not args.keep_game_options:
+            apply_verification_options()
+        launcher.clear_run_logs()
+        # Measured before the launch, so placing the window as it appears pays no
+        # AppKit compile (~1.5 s) while it shows full screen.
+        desktop_size()
+        setup_clock_start()
+        game_process = launcher.launch(stdout=run_dir / "stdout.log")
+        setup_mark("launched")
+        placing = threading.Event()
+        placer = place_window_as_it_appears(game_process, placing)
+        reached_menu = launcher.wait_for_launched_main_menu(game_process,
+                                                            args.startup_timeout)
+        placing.set()
+        placer.join(timeout=HOST_PROBE_TIMEOUT_S + 1.0)
+        if not reached_menu:
+            return False
+        # Direct launch and the log-backed menu wait do not need a screen frame.
+        # Defer the real capture gate until Civ VI is alive and frontmost: that
+        # gives stale-stream recovery a verified game target and avoids waiting on
+        # an old Cmd-Shift-5 helper before the new run has even started.
+        focus_game(GAME_SIDE, GAME_FRACTION)
+        wait_for_safe_screen_capture()
+        # Establish the requested operator layout before taking any measurements.
+        # Menu rows and setup controls are now read from this final geometry.
+        place_game(GAME_SIDE, GAME_FRACTION, GAME_VFRACTION)
+        setup_mark("menu_reached")
+        print("main menu reached; the setup context should host the game now")
+        return True
+
+    if handoff is None and not launch_to_menu():
         stop_brain()
         print("the game did not reach the main menu", file=sys.stderr)
         return 3
-    # Direct launch and the log-backed menu wait do not need a screen frame.
-    # Defer the real capture gate until Civ VI is alive and frontmost: that
-    # gives stale-stream recovery a verified game target and avoids waiting on
-    # an old Cmd-Shift-5 helper before the new run has even started.
-    focus_game(GAME_SIDE, GAME_FRACTION)
-    wait_for_safe_screen_capture()
-    # Establish the requested operator layout before taking any measurements.
-    # Menu rows and setup controls are now read from this final geometry.
-    place_game(GAME_SIDE, GAME_FRACTION, GAME_VFRACTION)
-    setup_mark("menu_reached")
-    print("main menu reached; the setup context should host the game now")
 
     tail = watch.LogTail()
+    if handoff is not None:
+        # The parked game keeps writing the same Automation.log: start after
+        # everything the previous run left in it.
+        tail.skip_to_end()
+        setup_clock_start()
     state = {
         "hosted": False, "seat": None, "turn": -1, "score": -1,
         "outcome": None, "last_progress": time.monotonic(), "configured": False,
@@ -5395,6 +5581,12 @@ def _play(args: argparse.Namespace) -> int:
                 state["operator_retire_event"] = dict(event)
                 detail = ("the control mod acknowledged Civilization VI "
                           "ACTION_RETIRE")
+                if event.get("why") == "restart" and event.get("parked"):
+                    # New game by restart: the game is parked, not retired, and
+                    # the next run starts a fresh one inside it.
+                    state["restart_parked"] = dict(event)
+                    detail = ("the control mod parked the game for the next run "
+                              "to restart in place")
                 try:
                     state["operator_retired"] = operator_retire.record_retired(
                         run_dir, request, detail)
@@ -5552,6 +5744,23 @@ def _play(args: argparse.Namespace) -> int:
     if args.load_save:
         bootstrapped = bootstrap_saved_game(tail, record, run_dir, args,
                                             verify_s=args.load_wait)
+    elif handoff is not None:
+        bootstrapped = restart_in_place(tail, record, run_dir, args, handoff)
+        if not bootstrapped:
+            # Whatever the restart left behind is stopped; the reinstall drops
+            # the mod index the launch's scan needs (see `modinstall.install`).
+            print("[restart] falling back to stopping Civilization VI and "
+                  "launching it afresh", flush=True)
+            if not launcher.stop():
+                stop_brain()
+                print("could not stop the game the restart left", file=sys.stderr)
+                return 3
+            modinstall.install(config)
+            if not launch_to_menu():
+                stop_brain()
+                print("the game did not reach the main menu", file=sys.stderr)
+                return 3
+            bootstrapped = bootstrap_game(tail, record, run_dir, args)
     else:
         bootstrapped = bootstrap_game(tail, record, run_dir, args)
     if not bootstrapped:
@@ -5622,6 +5831,9 @@ def _play(args: argparse.Namespace) -> int:
             sent = request_retire(
                 orders_db_path(run_dir, args.orders_db), args.tag, turn,
                 str(request.get("reason") or "operator"),
+                # Parked only while a restart mode is on; else the old retire.
+                restart=(bool(request.get("restart"))
+                         and restart_handoff.restart_mode() != restart_handoff.MODE_OFF),
             )
             detail = ("wrote native retire order; awaiting control-mod acknowledgement"
                       if sent else "could not write the native retire order")
@@ -5840,7 +6052,7 @@ def _play(args: argparse.Namespace) -> int:
         hold = end_game_hold_seconds(state["outcome"], args.end_game_seconds)
         print(f"holding the final screen for {hold:.0f}s", flush=True)
         time.sleep(hold)
-    elif state.get("operator_retire_event"):
+    elif state.get("operator_retire_event") and not state.get("restart_parked"):
         # ``UI.RequestAction`` crosses from the control mod into the game core
         # asynchronously.  Leave it a small frame window to commit the native
         # retirement before ordinary harness cleanup closes Civilization VI.
@@ -5850,7 +6062,29 @@ def _play(args: argparse.Namespace) -> int:
     end_mark("held")
     # No rescue may click into a game that is being quit (`DesktopRescueQueue`).
     desktop_rescues.close(30.0)
-    game_stopped = launcher.stop()
+    game_stopped = False
+    if state.get("restart_parked") and env.game_pids():
+        # ★ NEW GAME BY RESTART: leave the parked game up for the next run
+        # (`civ6_control.restart_handoff`). From here this run's harness, its
+        # mod uninstall and the climb's teardown all leave the game alone.
+        try:
+            restart_handoff.write(args.tag, orders_db, config, env.game_pids())
+            game_stopped = True
+            print("[restart] left Civilization VI up with the game parked for the "
+                  "next run to restart in place", flush=True)
+            # ★ The supervisor counts a game as played only by a `[turn N]`
+            # line in this log (`^\[turn [0-9]+\]`; the padded turn reports do
+            # not match it), and a game it thinks started nothing gets Civ VI
+            # stopped before the next launch. Live 2026-10-15 042843Z: parked
+            # at t19 with no blocker line, called "PLAYED NO TURNS", and the
+            # parked game was quit 13 s before the next run came to take it.
+            print(f"[turn {max(1, int(state.get('turn') or 1))}] parked for the "
+                  "next run's restart in place", flush=True)
+        except OSError as error:
+            print(f"[restart] could not hand the parked game on ({error}); "
+                  "stopping it", file=sys.stderr, flush=True)
+    if not game_stopped:
+        game_stopped = launcher.stop()
     end_mark("game_stopped")
     stop_brain()
     end_mark("brain_stopped")

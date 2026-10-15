@@ -633,6 +633,10 @@ const TIMED_WAR_CAPTURE_WINDOW: u32 = 10;
 /// governor and the empire's recovery alarm cannot disagree about what counts
 /// as a threat.
 const BASTION_PRESSURE: f64 = 0.45;
+/// `merchant-confederation-earns-its-slot`: the Gold a turn our placed Envoys
+/// must pay under Merchant Confederation before the card joins the portfolio
+/// -- ten Envoys, about what one ordinary economic card is worth mid-game.
+const MERCHANT_CONFEDERATION_GOLD_FLOOR: f64 = 10.0;
 
 /// A legal attack is only an emergency when the attacker is materially
 /// stronger than the City Center it can strike. The aggregate pressure still
@@ -5071,6 +5075,11 @@ pub struct AdvancedAi {
     /// useful land upgrade while retaining its Gold bill and upkeep floor.
     /// See `army_upgrade_materials`. Off by default.
     army_upgrade_materials: bool,
+    /// `astrology-before-the-second-city`: the Prophet race's Astrology is
+    /// researched by a lone capital, once the opening techs are in, instead of
+    /// waiting for the second city that admits the Holy Site. See
+    /// `advanced/astrology_before_the_second_city.rs`. Off by default.
+    astrology_before_the_second_city: bool,
     /// `aluminum-ask-tops-up-gold`: the air wing's Aluminum ask carries a
     /// Gold ceiling, so the host's counter may price the block in Gold on top
     /// of the barter (`aluminum_ask_ceiling` in `civvis_orders`). Off by
@@ -5465,7 +5474,20 @@ pub struct AdvancedAi {
     /// the routine claims, the deterrent and the governor's rescoring. See
     /// `advanced/aqueduct_claims_the_capped_queue.rs`. Off by default.
     aqueduct_claims_the_capped_queue: bool,
+    /// `bankruptcy-exits-the-drain`: while the treasury holds less than one
+    /// turn of a negative income, gold cards first, an extra surplus sale, and
+    /// the cheapest units disbanded before the host's bankruptcy takes the
+    /// costliest. See `advanced/solvency.rs`. Off by default.
+    bankruptcy_exits_the_drain: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `city-under-fire-ranks-first`: a city of ours that lost health since
+    /// the last assessment, or was struck within the last turn, with a
+    /// hostile soldier within [`objective_board::CAPITAL_DEFENSE_CONTACT`] is
+    /// under fire. Its Defend row ranks ahead of every Defend row of a city
+    /// that is not, is urgent, and reads its deadline from its health at the
+    /// rate it is losing it with a floor of one turn, not two. See
+    /// `objective_board::city_under_fire`. Off by default.
+    city_under_fire_ranks_first: bool,
     /// `closed-border-blocker-declares`: a third party whose closed borders
     /// have held a Domination siege's march [`siege_road::ROAD_HOLD_TURNS`]
     /// turns running, at half our power or under (a major, or a city-state
@@ -6273,7 +6295,31 @@ pub struct AdvancedAi {
     /// The turn a watched major's soldier was last seen near the original
     /// capital, by owner, under `capital-walls-before-the-surprise`.
     capital_watch_sightings: BTreeMap<usize, u32>,
+    /// The turn `bankruptcy-exits-the-drain` last slotted a gold card; the
+    /// disband waits that turn for the card's income.
+    drain_card_turn: std::cell::Cell<Option<u32>>,
     // ---- append: e-f ------------------------------------------------
+    /// `faith-war-before-the-flip`: a defensive war (no siege, no staging) on
+    /// a founding rival whose spreaders stand at our cities while our majority
+    /// still holds out and a city of ours already leans to its faith. See
+    /// `advanced/faith_war_before_the_flip.rs`.
+    faith_war_before_the_flip: bool,
+    /// `faith-war-before-the-flip-2`: the same war, held while our own
+    /// founded faith holds our majority (unless two cities of ours lean to
+    /// the rival's faith or our faith is one city from losing its
+    /// majority). See `advanced/faith_war_before_the_flip.rs`.
+    faith_war_before_the_flip_2: bool,
+    /// `faith-war-before-the-flip-2`: the turn each major was last seen at
+    /// war with us.
+    faith_war_war_seen: BTreeMap<usize, u32>,
+    /// `faith-war-before-the-flip-2`: the first turn of the latest peace with
+    /// each major, whatever made it; the faith war's cooldown runs from it.
+    faith_war_peace_at: BTreeMap<usize, u32>,
+    /// `faith-war-before-the-flip`: the war the gene opened, if it runs.
+    faith_war_before_the_flip_war: Option<faith_war_before_the_flip::FaithWar>,
+    /// `faith-war-before-the-flip`: the last "held" line per founder (turn,
+    /// gate), so a held war is journalled once per window.
+    faith_war_held_noted: BTreeMap<usize, (u32, &'static str)>,
     /// `embassy-finds-the-capital`: on a Domination plan with Diplomatic
     /// Service known, one Resident Embassy a turn goes to a met rival at
     /// peace whose original capital we have never seen and whose standing
@@ -6863,6 +6909,10 @@ pub struct AdvancedAi {
     /// faith's founder while we are its last holdout and a city of ours
     /// follows or is converting to it. See `advanced/holdout_faith_war.rs`.
     holdout_keeps_the_faith_war: bool,
+    /// `holdout-keeps-the-faith-war-2`: version two also keeps that war at
+    /// match point, whatever our cities' conversion. See
+    /// `advanced/holdout_faith_war.rs`.
+    holdout_keeps_the_faith_war_2: bool,
     /// `founder-holds-the-holy-city`'s memory: the last threat seen at the
     /// Holy City and the last spread of ours there, by position. See
     /// `advanced/holy_city_guard.rs`.
@@ -7118,6 +7168,47 @@ pub struct AdvancedAi {
     /// `advanced/industrial_zone_claims_the_factory.rs`. Off by default.
     industrial_zone_claims_the_factory: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `medina-quarter-houses-the-districts`: while two or more of our
+    /// cities are housing-limited with three specialty districts, Medina
+    /// Quarter (+2 Housing there) joins the portfolio ahead of the plan's
+    /// ordinary cards and displaces the weakest Economic card the plan
+    /// wants least, never a production, Builder or Settler card. See
+    /// `advanced/medina_quarter.rs`. Off by default.
+    medina_quarter_houses_the_districts: bool,
+    /// `neighborhood-houses-the-capped-city`: after Urbanization, the most
+    /// housing-capped city with no Aqueduct left to claim puts its
+    /// best-housing Neighborhood at the head of its queue, one in flight per
+    /// five cities. See `advanced/neighborhood_houses_the_capped_city.rs`.
+    /// Off by default.
+    neighborhood_houses_the_capped_city: bool,
+    /// `merchant-confederation-earns-its-slot`: the base deck's
+    /// counterfactual reads the policy income paid to the player
+    /// (`BasicAi::deck_reads_player_income`), and while our placed Envoys
+    /// pay [`MERCHANT_CONFEDERATION_GOLD_FLOOR`] Gold or more a turn
+    /// Merchant Confederation joins the portfolio ahead of the plan's own
+    /// diplomatic cards (after a loyalty Praetorium). See
+    /// `AdvancedAi::merchant_confederation_pays`. Off by default.
+    merchant_confederation_earns_its_slot: bool,
+    /// `open-city-draws-the-front`: a siege held on a walled city turns to an
+    /// open city of the same owner the field army can reach, under Recovery
+    /// or Expansion too and past a lightly chipped prior; tier-floored, held
+    /// until walled, captured or stalled. See `advanced/open_city_front.rs`.
+    open_city_draws_the_front: bool,
+    /// `open-city-draws-the-front`: the open city the front turned to.
+    open_city_hold: Option<open_city_front::OpenCityHold>,
+    /// `open-city-draws-the-front`: cities the front turned away from (or
+    /// gave up), with the turn they may be turned to again.
+    open_city_left: BTreeMap<u32, u32>,
+    /// `open-city-draws-the-front`: the plan's objective last turn.
+    open_city_last_target: Option<u32>,
+    /// `merchant-confederation-earns-its-slot-2`: version one, and while the
+    /// card pays it takes a diplomatic seat from a card the portfolio ranks
+    /// after it (never a loyalty Praetorium, a culture-defence or a Nobel
+    /// Peace favour card). Version one ranked it ahead of Gunboat Diplomacy,
+    /// but a desired card never evicts another, so a seated Gunboat kept it
+    /// out: live Emperor civvis-20261014T100910Z t190, 45 Envoys (about 45
+    /// Gold a turn) at -16.5 Gold a turn under Communism. Off by default.
+    merchant_confederation_earns_its_slot_2: bool,
     /// `launched-racer-yields-the-capital`: a rival that has launched its
     /// Exoplanet Expedition and holds the city whose capture completes
     /// Domination is the second front, that city is the objective at peace,
@@ -7572,6 +7663,17 @@ pub struct AdvancedAi {
     /// (`append_luxury_swap_order` in `civvis_orders`). Off by default.
     luxury_swap_asks_2: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `prophet-race-takes-divine-spark`: while the seat runs the Prophet
+    /// race, the pantheon pick ranks Divine Spark right behind Religious
+    /// Settlements (`BasicAi::pantheon_for_the_prophet_race`). See
+    /// `advanced/astrology_before_the_second_city.rs`. Off by default.
+    prophet_race_takes_divine_spark: bool,
+    /// `racer-blocker-declares`: an urgent racer our Conquest counter cannot
+    /// reach, behind one civilization's closed borders, makes that blocker
+    /// the front when it reads weak (`closed_border_blocker_is_weak`), every
+    /// turn and with no held siege march; the objective is its city on the
+    /// road. See `advanced/silent_counter.rs`.
+    racer_blocker_declares: bool,
     /// `phantom-capture-keeps-the-siege`: a capture this frame's planning
     /// board makes on damage the same frame dealt (a volley the executor
     /// defers, a shot or another unit's blow the host has not yet executed)
@@ -8493,6 +8595,10 @@ pub struct AdvancedAi {
     /// lane the counter labels it with. See
     /// `advanced/science_suppression_pads.rs`.
     science_suppression_hits_the_pads: bool,
+    /// `solvent-or-hold`: while income is not positive, no Domination upgrade
+    /// that takes income below zero and no amenity or upkeep card traded
+    /// away. See `advanced/solvency.rs`. Off by default.
+    solvent_or_hold: bool,
     // ---- append: t-z ------------------------------------------------
     /// `war-target-prices-the-walls`: at peace, the Domination campaign names
     /// the rival whose capital our fielded siege guns take soonest. See
@@ -8804,6 +8910,12 @@ pub struct AdvancedAi {
 /// (Animal Husbandry and Mining on every live opening), so the Builder's work
 /// is not delayed and Astrology still lands by about turn 15.
 pub(crate) const PROPHET_RACE_OPENING_TECHS: usize = 2;
+
+/// The cities an empire must hold before the Prophet race admits it: the
+/// Holy Site is a district commitment a lone capital cannot pay beside its
+/// Settlers. `astrology-before-the-second-city` reads our own seat at one
+/// city for the research fee alone.
+pub(crate) const RELIGIOUS_OPENING_CITIES: usize = 2;
 
 /// The short forecast horizon for `skip-the-prophet-race-2`.
 ///
@@ -9205,6 +9317,15 @@ mod holdout_faith_war;
 mod launched_racer;
 
 mod city_memory;
+/// `faith-war-before-the-flip`: see `advanced/faith_war_before_the_flip.rs`.
+mod faith_war_before_the_flip;
+
+/// `open-city-draws-the-front`: see `advanced/open_city_front.rs`.
+mod open_city_front;
+
+/// `medina-quarter-houses-the-districts`: see `advanced/medina_quarter.rs`.
+mod medina_quarter;
+
 mod denial_nearest_finish;
 mod denial_needs_a_road;
 mod runaway_expander;
@@ -9489,6 +9610,9 @@ mod wonder_sites;
 /// escorts cross as one group. See `advanced/amphibious_siege_train.rs`.
 mod amphibious_siege_train;
 mod aqueduct_claims_the_capped_queue;
+/// `astrology-before-the-second-city`: the Prophet race's Astrology before
+/// the second city stands. See `advanced/astrology_before_the_second_city.rs`.
+mod astrology_before_the_second_city;
 mod backlog_builder_takes_the_queue;
 mod band_hunt;
 /// `campus-building-claims-the-queue`: a standing Campus's next building
@@ -9523,6 +9647,7 @@ mod industrial_zone_claims_the_factory;
 /// `advanced/industrial_zone_claims_the_producer_queue.rs`.
 mod industrial_zone_claims_the_producer_queue;
 mod launcher_war;
+mod neighborhood_houses_the_capped_city;
 mod peacetime_republic;
 mod science_denial_every_pad;
 mod science_denial_trains_spies;
@@ -9654,6 +9779,9 @@ mod competitive_economy;
 /// asks for a Research Alliance, ranked by science, and feeds its level with
 /// routes. Opt-in gene `research-alliance-first`.
 mod research_alliance;
+/// `solvent-or-hold` and `bankruptcy-exits-the-drain`: the bankruptcy spiral's
+/// two opt-in genes. See `advanced/solvency.rs`.
+mod solvency;
 /// A unit the next blow could remove leaves the reach of whatever can
 /// strike it; a shooter or scout does not end the turn inside a raider's
 /// reach without a melee unit beside it. Opt-in gene `wounded-out-of-reach`.
@@ -10410,6 +10538,7 @@ impl AdvancedAi {
 
             // ---- append: a-b ----------------------------------------
             army_upgrade_materials: false,
+            astrology_before_the_second_city: false,
             aluminum_ask_tops_up_gold: false,
             aluminum_buys_the_tile: false,
             builders_route_around_mountains: false,
@@ -10491,7 +10620,9 @@ impl AdvancedAi {
             amphibious_train: None,
             amphibious_refused: None,
             aqueduct_claims_the_capped_queue: false,
+            bankruptcy_exits_the_drain: false,
             // ---- append: c-d ----------------------------------------
+            city_under_fire_ranks_first: false,
             closed_border_blocker_declares: false,
             closed_border_holds: BTreeMap::new(),
             dry_road_outlasts_a_blocked_step: false,
@@ -10643,7 +10774,14 @@ impl AdvancedAi {
             dvp_leader_is_the_front: false,
             capital_walls_before_the_surprise: false,
             capital_watch_sightings: BTreeMap::new(),
+            drain_card_turn: std::cell::Cell::new(None),
             // ---- append: e-f ----------------------------------------
+            faith_war_before_the_flip: false,
+            faith_war_before_the_flip_2: false,
+            faith_war_war_seen: BTreeMap::new(),
+            faith_war_peace_at: BTreeMap::new(),
+            faith_war_before_the_flip_war: None,
+            faith_war_held_noted: BTreeMap::new(),
             embassy_finds_the_capital: false,
             embassy_capital_asks: BTreeMap::new(),
             elimination_yields_to_a_launch: false,
@@ -10711,6 +10849,7 @@ impl AdvancedAi {
             engineering_for_capped_fresh_water: false,
             // ---- append: g-k ----------------------------------------
             holdout_keeps_the_faith_war: false,
+            holdout_keeps_the_faith_war_2: false,
             holy_city_guard: RefCell::new(holy_city_guard::HolyCityGuard::default()),
             gun_queues_behind_the_column: false,
             gun_queue_follows_the_road: false,
@@ -10756,6 +10895,14 @@ impl AdvancedAi {
             industrial_zone_claims_the_producer_queue: false,
             industrial_zone_claims_the_factory: false,
             // ---- append: l-o ----------------------------------------
+            medina_quarter_houses_the_districts: false,
+            neighborhood_houses_the_capped_city: false,
+            merchant_confederation_earns_its_slot: false,
+            open_city_draws_the_front: false,
+            open_city_hold: None,
+            open_city_left: BTreeMap::new(),
+            open_city_last_target: None,
+            merchant_confederation_earns_its_slot_2: false,
             launched_racer_yields_the_capital: false,
             muster_walks_the_road: false,
             near_rival_deterrence: false,
@@ -10808,6 +10955,8 @@ impl AdvancedAi {
             launcher_war_ignores_the_edge: false,
             luxury_swap_asks_2: false,
             // ---- append: p-r ----------------------------------------
+            prophet_race_takes_divine_spark: false,
+            racer_blocker_declares: false,
             phantom_capture_keeps_the_siege: false,
             phantom_frame_cities: None,
             phantom_contingent_captures: BTreeSet::new(),
@@ -10968,6 +11117,7 @@ impl AdvancedAi {
             science_denial_trains_spies: false,
             science_denial_refused_pads: BTreeMap::new(),
             science_suppression_hits_the_pads: false,
+            solvent_or_hold: false,
             // ---- append: t-z ----------------------------------------
             war_target_prices_the_walls: false,
             unwalled_city_spares_the_train: false,
@@ -11530,6 +11680,9 @@ impl AdvancedAi {
         // The front and its tide clock; exact no-op with the gene off. See
         // `advanced/one_war.rs`.
         self.one_war_observe(g, pid);
+        // `open-city-draws-the-front`: the open city the front turned to; exact
+        // no-op with the gene off. See `advanced/open_city_front.rs`.
+        self.open_city_observe(g, pid);
         // `war-policy-via-board`: the tide with every major at war and the
         // unserved-Defend clocks; exact no-op with the gene off. See
         // `advanced/war_policy.rs`.
@@ -13002,14 +13155,17 @@ impl AdvancedAi {
             .map(|(_, _, _, _, cid)| cid)
     }
 
-    fn religious_opening_rank(g: &Game, pid: usize) -> Option<(u8, f64, f64)> {
+    /// A Prophet-race contender's rank, for an empire holding at least
+    /// `floor` cities ([`RELIGIOUS_OPENING_CITIES`]; only
+    /// `astrology-before-the-second-city` reads our own seat below it).
+    fn religious_opening_rank_from(g: &Game, pid: usize, floor: usize) -> Option<(u8, f64, f64)> {
         let player = &g.players[pid];
         if !player.alive
             || player.is_minor
             || player.is_barbarian
             || player.religion.is_some()
             || player.prophet_pending
-            || g.player_city_ids(pid).len() < 2
+            || g.player_city_ids(pid).len() < floor
         {
             return None;
         }
@@ -13433,6 +13589,13 @@ impl AdvancedAi {
     }
 
     fn religious_opening_viable(&self, g: &Game, pid: usize) -> bool {
+        self.religious_opening_viable_from(g, pid, RELIGIOUS_OPENING_CITIES)
+    }
+
+    /// `religious_opening_viable` with this seat ranked at `own_floor` cities;
+    /// every rival keeps [`RELIGIOUS_OPENING_CITIES`]. See
+    /// `astrology-before-the-second-city`.
+    fn religious_opening_viable_from(&self, g: &Game, pid: usize, own_floor: usize) -> bool {
         let player = &g.players[pid];
         if player.religion.is_some() {
             return false;
@@ -13449,7 +13612,7 @@ impl AdvancedAi {
         let claimed = founded + pending;
         if claimed >= g.max_religions()
             || g.turn > if founded > 0 { 180 } else { 120 }
-            || Self::religious_opening_rank(g, pid).is_none()
+            || Self::religious_opening_rank_from(g, pid, own_floor).is_none()
         {
             return false;
         }
@@ -13462,7 +13625,13 @@ impl AdvancedAi {
             .players
             .iter()
             .filter_map(|candidate| {
-                Self::religious_opening_rank(g, candidate.id).map(|rank| (candidate.id, rank))
+                let floor = if candidate.id == pid {
+                    own_floor
+                } else {
+                    RELIGIOUS_OPENING_CITIES
+                };
+                Self::religious_opening_rank_from(g, candidate.id, floor)
+                    .map(|rank| (candidate.id, rank))
             })
             .collect();
         contenders.sort_by(|(left_id, left), (right_id, right)| {
@@ -14373,19 +14542,28 @@ impl AdvancedAi {
         prior_id: u32,
         strategy: GrandStrategy,
     ) -> Option<u32> {
+        // `open-city-draws-the-front`: a Recovery or Expansion plan turns too,
+        // a lightly chipped prior still yields, a field-army taker within the
+        // march counts, under a tier floor. See `advanced/open_city_front.rs`.
+        let open = self.open_city_draws_the_front;
         if !self.siege_commitment
-            || strategy != GrandStrategy::Conquest
+            || (strategy != GrandStrategy::Conquest && !self.open_city_strategy_turns(strategy))
             || self.active_victory_target(g) != Some(VictoryTarget::Domination)
         {
             return None;
         }
         let prior = g.cities.get(&prior_id)?;
+        let prior_yields = if open {
+            Self::open_city_prior_yields(g, prior)
+        } else {
+            prior.hp >= CITY_MAX_HP
+                && prior.wall_hp > 0
+                && prior.wall_hp >= g.city_max_wall_hp(prior)
+        };
         if !g.is_at_war(pid, prior.owner)
             || g.players[prior.owner].is_minor
             || g.players[prior.owner].is_barbarian
-            || prior.hp < CITY_MAX_HP
-            || prior.wall_hp <= 0
-            || prior.wall_hp < g.city_max_wall_hp(prior)
+            || !prior_yields
         {
             return None;
         }
@@ -14404,12 +14582,19 @@ impl AdvancedAi {
                     && g.sees(&visible, city.pos)
                     && !self.capture_stood_down_holds(g, city.id)
                     && !Self::should_defer_city_capture(g, pid, city.id)
+                    && (!open
+                        || (!self.open_city_recently_left(g, city.id)
+                            && self.open_city_within_reach_of_our_tier(g, pid, city)))
             })
             .filter(|city| {
                 let fresh = city.hp == CITY_MAX_HP;
                 let minimum_hp = if fresh { 70 } else { 60 };
                 let minimum_strength = if fresh { 25.0 } else { 30.0 };
-                g.units.values().any(|unit| {
+                (open
+                    && self
+                        .open_city_taker(g, pid, city, minimum_hp, minimum_strength)
+                        .is_some())
+                    || g.units.values().any(|unit| {
                     let spec = &g.rules.units[unit.kind];
                     unit.owner == pid
                         && unit.hp >= minimum_hp
@@ -15498,6 +15683,14 @@ impl AdvancedAi {
                     .filter(|rival| target_player == Some(*rival))
                     .and_then(|rival| self.elimination_objective_city(g, pid, rival))
             })
+            // `racer-blocker-declares`: the blocker's city on the land road
+            // to the racer, not its far capital. `None` with the gene off.
+            // See `advanced/silent_counter.rs`.
+            .or_else(|| {
+                self.racer_blocker_objective(g, pid)
+                    .filter(|(blocker, _)| target_player == Some(*blocker))
+                    .map(|(_, city)| city)
+            })
             .or_else(|| {
                 if matches!(suppression_target, Some((_, GrandStrategy::Religion))) {
                     suppression_target_city
@@ -15712,11 +15905,16 @@ impl AdvancedAi {
                    city.pos);
         }
         if let Some(opportunity) = capture_opportunity_city {
-            let city = &g.cities[&opportunity];
-            think!(self.journal(), Strategy, Strategy,
-                   "Campaign seizes open foothold {}", city.name;
-                   "an unbreached prior objective yields to a weaker unwalled city with a land taker nearby";
-                   city.pos);
+            if let (true, Some(prior)) = (self.open_city_draws_the_front, committed_target_city) {
+                // See `advanced/open_city_front.rs`.
+                self.journal_open_city_turn(g, pid, prior, opportunity);
+            } else {
+                let city = &g.cities[&opportunity];
+                think!(self.journal(), Strategy, Strategy,
+                       "Campaign seizes open foothold {}", city.name;
+                       "an unbreached prior objective yields to a weaker unwalled city with a land taker nearby";
+                       city.pos);
+            }
         }
         if let Some(nearer) = stale_walled_city {
             let city = &g.cities[&nearer];
@@ -18398,7 +18596,12 @@ impl AdvancedAi {
                 // lane goal is an ancestor of, so no beeline ever reaches it.
                 // Take it once the opening techs are in, while a Prophet slot
                 // is still open for this seat.
-                _ if self.prophet_race_enterable_for(g, pid, self.victory_target)
+                // `astrology-before-the-second-city`: a lone capital takes it
+                // at the same point, so the Holy Site can start the turn the
+                // second city stands. See
+                // `advanced/astrology_before_the_second_city.rs`.
+                _ if (self.prophet_race_enterable_for(g, pid, self.victory_target)
+                    || self.astrology_before_the_second_city_due(g, pid))
                     && g.players[pid].techs.len() >= PROPHET_RACE_OPENING_TECHS
                     && !g.players[pid].techs.contains(&crate::name!("astrology")) =>
                 {
@@ -19912,6 +20115,39 @@ impl AdvancedAi {
     /// admitted only when their explicit downside is safe for the live empire.
     /// Typed cards preferentially replace cards of their own type so wildcard
     /// capacity remains useful.
+    /// `merchant-confederation-earns-its-slot`: our placed Envoys and the Gold
+    /// a turn Merchant Confederation pays for them, when the card is held or
+    /// available, the government has a diplomatic slot, and the Gold reaches
+    /// [`MERCHANT_CONFEDERATION_GOLD_FLOOR`]. None with the gene off.
+    ///
+    /// The static portfolios never name the card outside Diplomacy, so a
+    /// Conquest deck left it to the base deck, which scored it 0.0 (see
+    /// `empire_reading`), and once the plan's own diplomatic cards unlocked
+    /// they evicted anything else. Live Emperor civvis-20261014T083713Z:
+    /// available from t100, never slotted, 41 Envoys at t150 and 63 at t205
+    /// while income ran -11 to -48 a turn, the slot holding Charismatic
+    /// Leader and then Gunboat Diplomacy.
+    pub(super) fn merchant_confederation_pays(&self, g: &Game, pid: usize) -> Option<(i64, f64)> {
+        if !self.merchant_confederation_earns_its_slot
+            && !self.merchant_confederation_earns_its_slot_2
+        {
+            return None;
+        }
+        let card = crate::name!("merchant_confederation");
+        let spec = g.rules.policies.get(&card)?;
+        let held = g.players[pid].policies.contains(&card);
+        if !held && !g.available_policies(pid).contains(&card) {
+            return None;
+        }
+        if g.gov_slots(pid).diplomatic < 1 {
+            return None;
+        }
+        let per_envoy = spec.effects.get("gold_per_envoy").copied().unwrap_or(0.0);
+        let envoys: i64 = g.players[pid].envoys.iter().map(|(_, count)| *count).sum();
+        let gold = per_envoy * envoys as f64;
+        (gold >= MERCHANT_CONFEDERATION_GOLD_FLOOR).then_some((envoys, gold))
+    }
+
     /// Whether the deck holds a maintenance-relief card (Conscription,
     /// Levée en Masse). With `policy-deck-hysteresis` the deck the turn began
     /// with counts too. The base governor's `revise_policy_deck` runs first
@@ -20628,6 +20864,16 @@ impl AdvancedAi {
             desired.retain(|wanted| *wanted != card);
             desired.insert(0, card);
         }
+        // `medina-quarter-houses-the-districts`: while housing-limited cities
+        // with three specialty districts qualify, the housing card joins the
+        // portfolio here, ahead of the plan's ordinary cards but behind every
+        // card inserted at the front below (a wartime gold card, a treasury
+        // card); see `advanced/medina_quarter.rs`. `None` with the gene off.
+        let medina_quarter = self.medina_quarter_wanted(g, pid);
+        if medina_quarter.is_some() {
+            desired.retain(|wanted| *wanted != "medina_quarter");
+            desired.insert(0, "medina_quarter");
+        }
         let protect_wartime_income = self.domination_wartime_gold_card_pays(
             g,
             pid,
@@ -20644,6 +20890,35 @@ impl AdvancedAi {
                     and a policy swap must not bankrupt the campaign",
                    g.players[pid].gold, g.players[pid].gold_per_turn);
         }
+        // `merchant-confederation-earns-its-slot`: see
+        // `merchant_confederation_pays`. Ahead of the first diplomatic card
+        // the plan names other than a loyalty Praetorium, so Gunboat
+        // Diplomacy and Cryptography no longer evict it, and a desired card
+        // itself, so the ordinary rule keeps it slotted.
+        let merchant_pays = self.merchant_confederation_pays(g, pid);
+        // `merchant-confederation-earns-its-slot-2`: the paying card may take
+        // a diplomatic seat from a wanted card ranked after it; see below.
+        let merchant_takes_a_seat =
+            self.merchant_confederation_earns_its_slot_2 && merchant_pays.is_some();
+        if let Some((envoys, gold)) = merchant_pays {
+            desired.retain(|card| *card != "merchant_confederation");
+            let at = desired
+                .iter()
+                .position(|card| {
+                    *card != "praetorium"
+                        && g.rules
+                            .policies
+                            .get(card)
+                            .is_some_and(|spec| spec.slot == "diplomatic")
+                })
+                .unwrap_or(desired.len());
+            desired.insert(at, "merchant_confederation");
+            think!(self.journal(), Policies, Detail,
+                   "Merchant Confederation pays the envoys";
+                   "merchant-confederation-earns-its-slot: {envoys} Envoys placed, about {gold:.0} Gold a turn; \
+                    wanted at {} of {} in the {} portfolio",
+                   at + 1, desired.len(), objective.as_str());
+        }
         // `urban-planning-fills-the-slot`: Urban Planning at the tail of the
         // portfolio, so it fills a free slot and evicts only an orphaned timed
         // economy card: a Builder or Settler card whose window has closed
@@ -20656,6 +20931,22 @@ impl AdvancedAi {
             };
         if urban_planning_tail {
             desired.push("urban_planning");
+        }
+        // `bankruptcy-exits-the-drain`: the gold cards that pay go first while
+        // the treasury holds less than one turn of the deficit. See
+        // `advanced/solvency.rs`.
+        let drain_cards = self.drain_gold_cards(g, pid);
+        if !drain_cards.is_empty() {
+            for (card, _) in drain_cards.iter().rev() {
+                desired.retain(|wanted| *wanted != *card);
+                desired.insert(0, card);
+            }
+            think!(self.journal(), Policies, Detail,
+                   "Gold cards first to leave the bankruptcy drain";
+                   "bankruptcy-exits-the-drain: {:.0} Gold at {:+.1} a turn; {}",
+                   g.players[pid].gold, g.players[pid].gold_per_turn,
+                   drain_cards.iter().map(|(card, gold)| format!("{} about {gold:.0}", plain(card)))
+                       .collect::<Vec<_>>().join(", "));
         }
         let desired_set: HashSet<&str> = desired.iter().copied().collect();
         // If circumstances changed, remove a downside-bearing Dark Age card
@@ -20700,6 +20991,9 @@ impl AdvancedAi {
 
         let wanted = desired.len();
         let available: HashSet<Name> = g.available_policies(pid).into_iter().collect();
+        // `solvent-or-hold`: each card kept this pass, and the first card it
+        // kept out; journalled once after the pass.
+        let mut solvency_kept: BTreeMap<Name, &str> = BTreeMap::new();
         for (rank, card) in desired.iter().copied().enumerate() {
             if g.players[pid].policies.contains(&Name::new(card))
                 || !available.contains(&Name::new(card))
@@ -20714,9 +21008,18 @@ impl AdvancedAi {
             )
             .is_ok()
             {
+                if let (true, Some(qualifying)) = (card == "medina_quarter", medina_quarter) {
+                    think!(self.journal(), Policies, Decision, "Slotted medina quarter";
+                           "{qualifying} housing-limited cities with 3 or more specialty \
+                            districts gain +2 Housing; into a free slot");
+                    continue;
+                }
                 think!(self.journal(), Policies, Decision, "Slotted {}", plain(card);
                        "priority {} of {wanted} for the {} plan, into a free slot",
                        rank + 1, objective.as_str());
+                if drain_cards.iter().any(|(gold_card, _)| *gold_card == card) {
+                    self.drain_card_turn.set(Some(g.turn));
+                }
                 continue;
             }
 
@@ -20727,6 +21030,18 @@ impl AdvancedAi {
                 .filter(|current| {
                     if protect_wartime_income.is_some() && current.as_str() == "economic_union" {
                         return false;
+                    }
+                    // `medina-quarter-houses-the-districts`: the housing card may
+                    // take an ordinary Economic card's slot (wanted or not),
+                    // never a spared production card or a protected one.
+                    if medina_quarter.is_some() && card == "medina_quarter" {
+                        let current = current.as_str();
+                        return Self::medina_quarter_may_displace(g, current)
+                            && !culture_defense_cards.contains(&current)
+                            && !nobel_peace_direct_favor_cards.contains(&current)
+                            && builder_window_card != Some(current)
+                            && upgrade_card != Some(current)
+                            && race_card != Some(current);
                     }
                     // `urban-planning-fills-the-slot`: the tail entry takes only
                     // an orphaned timed economy card's slot.
@@ -20770,6 +21085,21 @@ impl AdvancedAi {
                             )
                             && !culture_defense_cards.contains(&current.as_str());
                     }
+                    // `bankruptcy-exits-the-drain`: a drain gold card takes an
+                    // ordinary desired card's slot (100910Z t196-199 held
+                    // Merchant Confederation, about 45 Gold, behind conquest
+                    // cards); `solvent-or-hold` still guards amenity and upkeep
+                    // cards below.
+                    if drain_cards.iter().any(|(gold_card, _)| *gold_card == card)
+                        && !drain_cards
+                            .iter()
+                            .any(|(gold_card, _)| *gold_card == current.as_str())
+                        && !culture_defense_cards.contains(&current.as_str())
+                        && !nobel_peace_direct_favor_cards.contains(&current.as_str())
+                        && upgrade_card != Some(current.as_str())
+                    {
+                        return true;
+                    }
                     !desired_set.contains(current.as_str())
                         || self.domination_multiplier_reclaims_fallback(
                             g, card, current.as_str(), &unproductive_economic_cards,
@@ -20789,6 +21119,21 @@ impl AdvancedAi {
                         || (nobel_peace_direct_favor_cards.contains(&card)
                             && !nobel_peace_direct_favor_cards
                                 .contains(&current.as_str()))
+                        // `merchant-confederation-earns-its-slot-2`: the
+                        // paying card takes a diplomatic seat from a wanted
+                        // card the portfolio ranks after it, never from a
+                        // loyalty Praetorium, a culture-defence or a Nobel
+                        // Peace favour card.
+                        || (merchant_takes_a_seat
+                            && card == "merchant_confederation"
+                            && g.rules.policies[current].slot == "diplomatic"
+                            && current.as_str() != "praetorium"
+                            && !culture_defense_cards.contains(&current.as_str())
+                            && !nobel_peace_direct_favor_cards.contains(&current.as_str())
+                            && desired
+                                .iter()
+                                .position(|wanted| *wanted == current.as_str())
+                                .is_none_or(|theirs| theirs > rank))
                         // The race's Revelation takes the wildcard seat from
                         // an ordinary desired card, never from a defensive or
                         // emergency one.
@@ -20804,6 +21149,25 @@ impl AdvancedAi {
                 .filter(|current| Self::policy_swap_fits(g, pid, current, card))
                 .cloned()
                 .collect();
+            // `solvent-or-hold`: while income is not positive an amenity or
+            // upkeep card gives its slot only to a card of the same kind. See
+            // `advanced/solvency.rs`.
+            if self.solvency_guard(g, pid) {
+                let priced = protect_wartime_income.filter(|_| card == "economic_union");
+                let kept: Vec<Name> = replaceable
+                    .iter()
+                    .filter(|current| {
+                        self.solvency_keeps_card_priced(g, pid, current.as_str(), card, priced)
+                    })
+                    .cloned()
+                    .collect();
+                if !kept.is_empty() {
+                    replaceable.retain(|current| !kept.contains(current));
+                    for current in kept {
+                        solvency_kept.entry(current).or_insert(card);
+                    }
+                }
+            }
             replaceable.sort_by(|first, second| {
                 let key = |current: &str| {
                     let policy = &g.rules.policies[current];
@@ -20820,6 +21184,9 @@ impl AdvancedAi {
                 };
                 key(first).cmp(&key(second)).then(first.cmp(second))
             });
+            if medina_quarter.is_some() && card == "medina_quarter" {
+                Self::medina_quarter_weakest_first(g, &desired, &mut replaceable);
+            }
             for current in replaceable {
                 let _ = g.apply(pid, &Action::UnslotPolicy { policy: current });
                 if g.apply(
@@ -20830,10 +21197,21 @@ impl AdvancedAi {
                 )
                 .is_ok()
                 {
+                    if drain_cards.iter().any(|(gold_card, _)| *gold_card == card) {
+                        self.drain_card_turn.set(Some(g.turn));
+                    }
                     if builder_window_card == Some(card) {
                         think!(self.journal(), Policies, Decision,
                                "Slotted {} over {}", plain(card), plain(&current);
                                "a Builder is almost finished; Serfdom adds two build charges");
+                    } else if let (true, Some(qualifying)) =
+                        (card == "medina_quarter", medina_quarter)
+                    {
+                        think!(self.journal(), Policies, Decision,
+                               "Slotted medina quarter over {}", plain(&current);
+                               "{qualifying} housing-limited cities with 3 or more specialty \
+                                districts gain +2 Housing; {} was the Economic card the {} \
+                                plan wants least", plain(&current), objective.as_str());
                     } else {
                         think!(self.journal(), Policies, Decision,
                                "Slotted {} over {}", plain(card), plain(&current);
@@ -20848,6 +21226,12 @@ impl AdvancedAi {
                 // reassessment can never silently empty a government.
                 let _ = g.apply(pid, &Action::SlotPolicy { policy: current });
             }
+        }
+        for (current, card) in solvency_kept {
+            think!(self.journal(), Policies, Decision,
+                   "Keeping {} while income is not positive", plain(&current);
+                   "solvent-or-hold: {:+.1} Gold a turn; {} would have taken its slot",
+                   g.players[pid].gold_per_turn, plain(card));
         }
     }
 
@@ -23612,7 +23996,11 @@ impl AdvancedAi {
                             // `holdout-keeps-the-faith-war`: see
                             // `advanced/holdout_faith_war.rs`.
                             || (deal.peace
-                                && self.holdout_keeps_the_faith_war_with(g, pid, deal.from)));
+                                && self.holdout_keeps_the_faith_war_with(g, pid, deal.from))
+                            // `faith-war-before-the-flip`: see
+                            // `advanced/faith_war_before_the_flip.rs`.
+                            || (deal.peace
+                                && self.faith_war_keeps_the_war(g, pid, deal.from)));
                     (
                         worth >= 0.0 && !pins_objective,
                         deal.peace,
@@ -23625,6 +24013,9 @@ impl AdvancedAi {
             };
             if peace && !accept && self.holdout_keeps_the_faith_war_with(g, pid, from) {
                 self.journal_holdout_keeps_the_faith_war(g, pid, from, true);
+            }
+            if peace && !accept && self.faith_war_keeps_the_war(g, pid, from) {
+                self.journal_faith_war_keeps(g, pid, from, true);
             }
             if self.journal().wants(crate::reasoning::Level::Decision) {
                 let who = g
@@ -23796,6 +24187,9 @@ impl AdvancedAi {
         self.religious_interception_war = self
             .religious_interception_war
             .filter(|(rival, _)| g.is_at_war(pid, *rival));
+        // `faith-war-before-the-flip`: see
+        // `advanced/faith_war_before_the_flip.rs`.
+        self.faith_war_track(g, pid);
         for other in &rivals {
             // `air-surge-2`: the Domination wing's own front. See
             // `AdvancedAi::air_surge_holds_front`.
@@ -23841,6 +24235,8 @@ impl AdvancedAi {
             let religious_interception = self.religious_interception_holds_war(g, pid, *other);
             let interception_handoff =
                 self.religious_interception_handoff_peace(g, pid, *other, plan);
+            // `faith-war-before-the-flip`: the gene's war has done its work.
+            let faith_war_exit = self.faith_war_exit_peace(g, pid, *other, plan);
             let outmatched = if self.war_policy_via_board {
                 policy_peace.is_some()
             } else {
@@ -23944,6 +24340,7 @@ impl AdvancedAi {
                                 )
                             )))
                     || (interception_handoff && !air_front)
+                    || faith_war_exit
                     || science_defensive_peace)
             {
                 // `no-peace-with-a-launcher`: no peace with a rival past its
@@ -23959,6 +24356,15 @@ impl AdvancedAi {
                 // off. See `advanced/holdout_faith_war.rs`.
                 if self.holdout_keeps_the_faith_war_with(g, pid, *other) {
                     self.journal_holdout_keeps_the_faith_war(g, pid, *other, false);
+                    continue;
+                }
+                // `faith-war-before-the-flip`: no peace with the founder of
+                // the gene's war while a city of ours is still being
+                // converted to its faith, unless our cities are falling.
+                // `false` with the gene off. See
+                // `advanced/faith_war_before_the_flip.rs`.
+                if self.faith_war_keeps_the_war(g, pid, *other) {
+                    self.journal_faith_war_keeps(g, pid, *other, false);
                     continue;
                 }
                 self.peace_offers.insert(*other);
@@ -24009,6 +24415,8 @@ impl AdvancedAi {
                         "the religion plan cannot spread into a war".to_string()
                     } else if interception_handoff {
                         "the religious interception is over and another city is ready for a conquest campaign".to_string()
+                    } else if faith_war_exit {
+                        "faith-war-before-the-flip: no spreader of its faith has stood at our cities for five turns and no city of ours is converting".to_string()
                     } else {
                         "the war has stalled".to_string()
                     };
@@ -24074,6 +24482,12 @@ impl AdvancedAi {
         // A visible spreader can supply an immediate religious counter even
         // when the founder's cities have not yet been discovered.
         if self.religious_interception_opening(g, pid) {
+            return;
+        }
+        // `faith-war-before-the-flip`: a defensive war on a founder whose
+        // spreaders work our cities before our majority flips. The turn's one
+        // declaration. See `advanced/faith_war_before_the_flip.rs`.
+        if self.faith_war_before_the_flip_opening(g, pid) {
             return;
         }
         // `science-threat-denial`: close a denial war that has pillaged the
@@ -24310,8 +24724,16 @@ impl AdvancedAi {
         // `declaration-waits-for-the-breaker`: a staged army is not staged
         // for a walled city until a breaker stands on its ring. See
         // `siege_train::declaration_breaker_at_hand`.
-        let objective = plan
-            .target_city
+        // `racer-blocker-declares`: a war on the racer's road blocker is
+        // read at the blocker's city on the road -- its walls, its breach,
+        // its first strike -- not at the running war's objective the plan
+        // keeps. `None` with the gene off. See `advanced/silent_counter.rs`.
+        let racer_road = self
+            .racer_blocker_objective(g, pid)
+            .filter(|(blocker, _)| *blocker == target)
+            .map(|(_, city)| city);
+        let objective = racer_road
+            .or(plan.target_city)
             .and_then(|city| g.cities.get(&city))
             .map(|city| (city.id, city.pos));
         let breaker_absent = self.declaration_waits_for_the_breaker
@@ -24332,8 +24754,15 @@ impl AdvancedAi {
             turns > endurance * siege_train::DECLARATION_BREACH_SHARE
         });
         let breaker_missing = breaker_absent || breach_short;
-        let holdable =
-            breaker_missing && staged && !urgent_denial && !faith_counter_due && !rushing;
+        // `racer-blocker-declares`: the road war answers an urgent racer, as
+        // an urgent denial does, and opens passage rather than a siege, so
+        // the blocker's walls do not hold it either.
+        let holdable = breaker_missing
+            && staged
+            && !urgent_denial
+            && !faith_counter_due
+            && !rushing
+            && racer_road.is_none();
         let breaker_held = self.declaration_hold_patience(
             g,
             objective.map(|(_, pos)| pos),
@@ -24342,7 +24771,7 @@ impl AdvancedAi {
         );
         if breaker_held && breach_short && !breaker_absent {
             if let (Some(city), Some((turns, endurance, guns))) = (
-                plan.target_city.and_then(|city| g.cities.get(&city)),
+                objective.and_then(|(city, _)| g.cities.get(&city)),
                 breach_reading,
             ) {
                 think!(self.journal(), Military, Detail,
@@ -24354,7 +24783,7 @@ impl AdvancedAi {
                        city.pos);
             }
         } else if breaker_held {
-            if let Some(city) = plan.target_city.and_then(|city| g.cities.get(&city)) {
+            if let Some(city) = objective.and_then(|(city, _)| g.cities.get(&city)) {
                 think!(self.journal(), Military, Detail,
                        "Holding the declaration on {} for a wall-breaker", g.players[target].civ;
                        "{} stands behind {} walls and no siege gun, ram or tower of ours is on its ring; \
@@ -24560,6 +24989,7 @@ impl AdvancedAi {
                         }
                         _ => String::new(),
                     };
+                    let racer_reason: String;
                     let readiness = if air_ready {
                         "a ready aircraft can disrupt the rival's Theater Square immediately"
                     } else if culture_counter_ready {
@@ -24575,6 +25005,22 @@ impl AdvancedAi {
                         && self.stood_down_blocker_front(g, pid) == Some(target)
                     {
                         "its closed borders shut the road to a siege we stood down, and the war opens it"
+                    } else if let Some((_, racer, pressure)) = self
+                        .racer_road_blocker(g, pid)
+                        .filter(|(blocker, _, _)| *blocker == target)
+                    {
+                        // See `racer_road_blocker` (`racer-blocker-declares`).
+                        let at = objective
+                            .and_then(|(city, _)| g.cities.get(&city))
+                            .map(|city| format!(" at {}", city.name))
+                            .unwrap_or_default();
+                        racer_reason = format!(
+                            "racer-blocker-declares: they shut the only land road to {} ({} {}%, urgent), and the war opens it{at}",
+                            g.players[racer].civ,
+                            pressure.strategy.as_str(),
+                            pressure.progress
+                        );
+                        racer_reason.as_str()
                     } else if road_opening_ready {
                         // See `closed_border_front` (`closed-border-blocker-declares`).
                         "its closed borders have held our siege's march three turns at half our power or under, and the war opens the road"
@@ -31663,9 +32109,10 @@ impl AdvancedAi {
                 .is_some_and(|(_, item)| self.backlog_builder_holds(g, pid, cid, plan, item));
             // `aqueduct-claims-the-capped-queue`: the claimed Aqueduct finishes
             // while the city still stands at its housing.
-            let capped_aqueduct_commitment = committed
-                .as_ref()
-                .is_some_and(|(_, item)| self.capped_aqueduct_holds(g, pid, cid, plan, item));
+            let capped_aqueduct_commitment = committed.as_ref().is_some_and(|(_, item)| {
+                self.capped_aqueduct_holds(g, pid, cid, plan, item)
+                    || self.capped_neighborhood_holds(g, pid, cid, plan, item)
+            });
             // `campus-building-claims-the-queue`: the claimed Campus building
             // finishes while the Campus still names it.
             let campus_building_commitment = committed
@@ -48010,6 +48457,10 @@ impl AdvancedAi {
                 && active_victory_target == Some(VictoryTarget::Domination));
         let prophet_race_open = self.prophet_race_enterable_for(g, pid, active_victory_target);
         self.base.enter_prophet_race = prophet_race_open;
+        // `prophet-race-takes-divine-spark`: see
+        // `advanced/astrology_before_the_second_city.rs`.
+        self.base.pantheon_for_the_prophet_race =
+            self.prophet_race_takes_divine_spark && self.race_points_wanted(g, pid);
         if prophet_race_open || (prophet_race_enabled && g.players[pid].religion.is_some()) {
             self.base.pursue_religion = true;
         }
@@ -48271,6 +48722,9 @@ impl AdvancedAi {
             self.redirect_unsafe_city_queue_for_defense(g, pid, plan.threatened_city);
         let mut wall_breaker_claims = self.invested_wall_breaker_queues(g, pid, &plan);
         self.advanced_diplomacy(g, pid, &plan);
+        // `bankruptcy-exits-the-drain`: after diplomacy's ordinary trade,
+        // before production and movement. See `advanced/solvency.rs`.
+        self.exit_the_drain(g, pid);
         self.advanced_spies(g, pid, &plan);
         self.byzantium_tagma_production(g, pid, &plan);
 
@@ -48445,6 +48899,10 @@ impl AdvancedAi {
             // and the routine claims. Exact no-op while the gene is off. See
             // `advanced/aqueduct_claims_the_capped_queue.rs`.
             self.claim_capped_aqueduct(g, pid, &plan);
+            // `neighborhood-houses-the-capped-city`: after the Aqueduct, the
+            // most capped city's Neighborhood. Exact no-op while the gene is
+            // off. See `advanced/neighborhood_houses_the_capped_city.rs`.
+            self.claim_capped_neighborhood(g, pid, &plan);
             // `industrial-zone-claims-the-producer-queue`: the producer step's
             // Industrial Zone or Workshop, after the Aqueduct and ahead of the
             // Prophet race and the routine claims. Exact no-op while the gene
@@ -48824,6 +49282,9 @@ mod defensive_repair_queue_tests;
 
 #[cfg(test)]
 mod domination_maintenance_tests;
+
+#[cfg(test)]
+mod merchant_confederation_tests;
 
 #[cfg(test)]
 mod domination_wonder_tests;

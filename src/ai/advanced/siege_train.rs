@@ -6103,6 +6103,131 @@ mod staging_tests;
 #[cfg(test)]
 mod assault_tests;
 
+/// Owner weakness for the open-city roll: our military power over four times
+/// theirs, or no observed hostile soldier of theirs within this of the city.
+const OPEN_CITY_ROLL_OWNER_REACH: i32 = 4;
+/// How far out the roll counts our fit shooters outside the siege.
+const OPEN_CITY_ROLL_REACH: i32 = 8;
+
+impl AdvancedAi {
+    /// The open-city roll: a journal line, no decision. For every Siege row
+    /// on the board whose city stands without walls while its owner is weak
+    /// (our military power over four times theirs, or none of their soldiers
+    /// seen within [`OPEN_CITY_ROLL_OWNER_REACH`]), where the guns and
+    /// shooters stand: in the siege's own force (in range, en route, en route
+    /// to a post on the far side of the city, without a post) and, outside
+    /// it, the fit ones within [`OPEN_CITY_ROLL_REACH`] by the board row that
+    /// holds them. Census of 10-13..15 (212 such turns, 46 games): a shooter
+    /// in range nearly always fires (133 shots, 129 in range), so the gap is
+    /// arrival; instrumented replays found fit shooters held by the Reserve
+    /// or another row (civvis-20261014T235353Z u38, 224200Z t117) and a
+    /// far-side post walked round terrain (235353Z u45). This line sizes both
+    /// from live logs before either is built.
+    pub(super) fn journal_open_city_roll(
+        &self,
+        g: &Game,
+        pid: usize,
+        visible: &crate::world::TileBits,
+    ) {
+        use super::objective_board::{ObjectiveKey, ObjectiveKind};
+        if !self.journal().wants(crate::reasoning::Level::Detail) {
+            return;
+        }
+        let board = &self.objective_board_state;
+        let ours = g.military_power(pid);
+        for row in &board.rows {
+            let ObjectiveKey::Siege(cid) = row.key else {
+                continue;
+            };
+            let Some(city) = g.cities.get(&cid) else {
+                continue;
+            };
+            if city.owner == pid || city.wall_hp > 0 {
+                continue;
+            }
+            let theirs = g.military_power(city.owner);
+            let near_owner = g.units.values().any(|unit| {
+                unit.owner == city.owner
+                    && g.rules.units[unit.kind].class == "military"
+                    && g.wdist(unit.pos, city.pos) <= OPEN_CITY_ROLL_OWNER_REACH
+                    && g.sees(visible, unit.pos)
+                    && g.unit_visible_to(unit.id, pid)
+            });
+            let weak = (ours > 0.0 && theirs <= 0.25 * ours) || !near_owner;
+            if !weak {
+                continue;
+            }
+            let ranged = |uid: &u32| matches!(arm_of(g, *uid), Arm::Siege | Arm::Shooter);
+            let members: BTreeSet<u32> = board
+                .forces
+                .iter()
+                .filter(|force| force.objective_key == row.key && force.domain == ForceDomain::Land)
+                .flat_map(|force| force.units.iter().copied())
+                .filter(|uid| g.units.contains_key(uid))
+                .collect();
+            let posts = self.sieges.get(&cid).map(|siege| &siege.posts);
+            let (mut in_range, mut en_route, mut far_side, mut no_post) = (0, 0, 0, 0);
+            for uid in members.iter().filter(|uid| ranged(uid)) {
+                let here = g.units[uid].pos;
+                if g.wdist(here, city.pos) <= g.unit_attack_range(*uid).max(1) {
+                    in_range += 1;
+                    continue;
+                }
+                en_route += 1;
+                match posts.and_then(|posts| posts.get(uid)) {
+                    Some(post) if g.wdist(here, *post) > g.wdist(here, city.pos) => far_side += 1,
+                    Some(_) => {}
+                    None => no_post += 1,
+                }
+            }
+            let mut outside: BTreeMap<String, usize> = BTreeMap::new();
+            for uid in g.player_unit_ids(pid) {
+                if members.contains(&uid) || !ranged(&uid) {
+                    continue;
+                }
+                let unit = &g.units[&uid];
+                if unit.hp < super::battle_planner::ROTATE_HP
+                    || g.wdist(unit.pos, city.pos) > OPEN_CITY_ROLL_REACH
+                {
+                    continue;
+                }
+                let held = board
+                    .forces
+                    .iter()
+                    .find(|force| force.units.contains(&uid))
+                    .map(|force| match force.objective_key {
+                        ObjectiveKey::Reserve => "Reserve".to_string(),
+                        key => board
+                            .rows
+                            .iter()
+                            .find(|row| row.key == key)
+                            .map_or("gone", |row| ObjectiveKind::as_str(row.kind))
+                            .to_string(),
+                    })
+                    .unwrap_or_else(|| "unassigned".to_string());
+                *outside.entry(held).or_default() += 1;
+            }
+            let outside_count: usize = outside.values().sum();
+            let rows_held = if outside.is_empty() {
+                "none".to_string()
+            } else {
+                outside
+                    .iter()
+                    .map(|(row, count)| format!("{row} {count}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            };
+            think!(self.journal(), Military, Detail,
+                "Siege open-city roll"; "{} walls 0; in siege: {} shooters (in range {in_range}, en route {en_route}, \
+                 far-side detours {far_side}, no post {no_post}); outside: {outside_count} fit shooters within {} in rows {rows_held}; \
+                 owner power {theirs:.0} against ours {ours:.0}, {} of theirs within {}",
+                city.name, in_range + en_route, OPEN_CITY_ROLL_REACH,
+                if near_owner { "some" } else { "none" }, OPEN_CITY_ROLL_OWNER_REACH;
+                city.pos);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::GrandStrategy;

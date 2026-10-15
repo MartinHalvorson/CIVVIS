@@ -5128,7 +5128,8 @@ fn decide(
                     | Action::FoundCity { unit }
                     | Action::Fortify { unit }
                     | Action::Improve { unit, .. }
-                    | Action::UpgradeUnit { unit } => {
+                    | Action::UpgradeUnit { unit }
+                    | Action::DisbandUnit { unit } => {
                         if rebuilt_unit_missing(mirror_state, *unit) {
                             "unit_not_mapped"
                         } else {
@@ -6499,6 +6500,14 @@ fn translate(
             kind: "unit",
             subject: Some(*civ6),
             verb: Some("UPGRADE".to_string()),
+            pos: None,
+        }),
+        // `bankruptcy-exits-the-drain`: the same `UNITCOMMAND_DELETE` the
+        // founded Prophet's retirement sends, verified by the unit's absence.
+        Action::DisbandUnit { unit } => civ6_of.get(unit).map(|civ6| Order {
+            kind: "unit",
+            subject: Some(*civ6),
+            verb: Some("DELETE".to_string()),
             pos: None,
         }),
         Action::Promote { unit, promotion } => civ6_of.get(unit).map(|civ6| Order {

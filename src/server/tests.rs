@@ -1,14 +1,14 @@
 use super::{
-    automatic_successor_seed, chronicle_world_events, final_countdown_ms, held_frame,
-    index_with_app_instance, new_game_params, nine_tenths_of, publishes_player_turn_frames,
-    query_value, request_path, save_path, seat_delay_ms, simultaneous_jobs_for, spectator_frame,
-    spectator_step_completes_frame, staged_next_game_params, strategy_roster, tile_mark,
-    valid_between_game_countdown_ms, viewer_path, ChronicleSnapshot, ChronicleState, FrameDelivery,
-    Params, Session, Shared, SpectatorFrame, BETWEEN_GAME_COUNTDOWN_OPTIONS_MS,
-    DEFAULT_BETWEEN_GAME_COUNTDOWN_MS, EMBEDDED_APP_JS, EMBEDDED_APP_SETUP_JS,
-    EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_CIV6_UNIT_FLAG_PLATES, EMBEDDED_CIV6_YIELD_ICONS,
-    EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_INDEX, MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR,
-    STATE_LONG_POLL, VIEWER_ACTIVE,
+    automatic_successor_seed, chronicle_world_events, control_request_line, final_countdown_ms,
+    held_frame, index_with_app_instance, new_game_params, nine_tenths_of,
+    publishes_player_turn_frames, query_value, request_path, save_path, seat_delay_ms,
+    simultaneous_jobs_for, spectator_frame, spectator_step_completes_frame,
+    staged_next_game_params, strategy_roster, tile_mark, valid_between_game_countdown_ms,
+    viewer_path, ChronicleSnapshot, ChronicleState, FrameDelivery, Params, RequestSender, Session,
+    Shared, SpectatorFrame, BETWEEN_GAME_COUNTDOWN_OPTIONS_MS, DEFAULT_BETWEEN_GAME_COUNTDOWN_MS,
+    EMBEDDED_APP_JS, EMBEDDED_APP_SETUP_JS, EMBEDDED_CIV6_UNIT_FLAGS,
+    EMBEDDED_CIV6_UNIT_FLAG_PLATES, EMBEDDED_CIV6_YIELD_ICONS, EMBEDDED_HIDDEN_MAP_MONSTERS,
+    EMBEDDED_INDEX, MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
 };
 use crate::game::{Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL};
 use crate::server::{
@@ -7962,7 +7962,8 @@ fn browser_names_a_live_games_level_on_the_turn_plate() {
 /// paint green state frames that compete with the red danger signal. The
 /// omniscient spectator uses the public conflict ledger so both sides —
 /// including active allied parties — stay red regardless of whose turn it
-/// is, while a played or Watch-as view remains relative to that seat.
+/// is, while a played or Watch-as view remains relative to that seat — and
+/// that seat's own row is red while anyone is at war with it.
 #[test]
 fn browser_player_rows_use_relationship_color_only_for_active_wars() {
     assert!(!EMBEDDED_INDEX.contains(".diplomacy-card.allied"));
@@ -7975,9 +7976,19 @@ fn browser_player_rows_use_relationship_color_only_for_active_wars() {
     ));
     assert!(EMBEDDED_INDEX
         .contains("const activeWarPlayers = SPEC && !Number.isInteger(state.view_player)"));
-    assert!(EMBEDDED_INDEX.contains(
+    assert!(!EMBEDDED_INDEX.contains(
         "const atWar = activeWarPlayers ? activeWarPlayers.has(p.id) : p.at_war_with_me;"
     ));
+    // `at_war_with_me` is measured from the viewing seat and is never true of
+    // that seat itself, so its own row reads its wars off everyone else's
+    // (barbarians excepted: they are at war with everybody). The live Civ VI
+    // mirror watches as our seat, and its row stayed unmarked through a war.
+    assert!(EMBEDDED_INDEX
+        .contains("const viewSeat = Number.isInteger(state.player) ? state.player : null;"));
+    assert!(EMBEDDED_INDEX.contains(
+        "other.id !== viewSeat && other.alive && !other.is_barbarian && other.at_war_with_me);"
+    ));
+    assert!(EMBEDDED_INDEX.contains(": p.id === viewSeat ? viewSeatAtWar : p.at_war_with_me;"));
     assert!(EMBEDDED_INDEX.contains(
         "const stateClass = `${atWar ? \"at-war\" : \"\"} ${p.alive ? \"\" : \"dead\"}`;"
     ));
@@ -11542,6 +11553,141 @@ fn the_civ6_endpoints_answer_on_any_host() {
     }
 }
 
+/// The live mirror's research box and its Pause / New game buttons stand
+/// in the map's lower-right corner, and the camera used to compose the
+/// followed front at the middle of the whole canvas — under the box. The
+/// operator (2026-10-14): "civvis should center the map on the open
+/// screen. the new tech/civics/policy list should close down the open
+/// screen area automatically". The box now trims the camera's focus (and
+/// the automatic frame's stage) by whichever edge leaves the most open
+/// ground, follows it as it shows, grows, moves or hides, and leaves the
+/// fitted canvas alone: the world still runs beneath it like the dock.
+#[test]
+fn the_camera_centres_in_the_ground_the_live_controls_leave_open() {
+    for piece in [
+        "function liveControlsBox(origin)",
+        "function openBesideBox(bounds, box)",
+        "{...bounds, right:Math.min(bounds.right, box.left)},",
+        "{...bounds, bottom:Math.min(bounds.bottom, box.top)},",
+        "return openBesideBox(uncoveredMapBox(origin, Math.max(1, MAPW), Math.max(1, MAPH)),\n                       liveControlsBox(origin));",
+        "({left, right, top, bottom} = openBesideBox({left, right, top, bottom},\n                                              liveControlsBox(cv.getBoundingClientRect())));",
+        "function followLiveControls()",
+        "if (element) new ResizeObserver(() => followLiveControls()).observe(element);",
+    ] {
+        assert!(
+            EMBEDDED_INDEX.contains(piece),
+            "the live controls' open ground is missing {piece}"
+        );
+    }
+    let place = EMBEDDED_INDEX
+        .split_once("function placeLivePause()")
+        .expect("the live controls' placement")
+        .1
+        .split_once("\nfunction ")
+        .expect("the end of the live controls' placement")
+        .0;
+    assert!(
+        place.contains("  followLiveControls();\n}"),
+        "a moved box must carry the camera's focus with it"
+    );
+    let uncovered = EMBEDDED_INDEX
+        .split_once("function uncoveredMapBox(origin, width, height)")
+        .expect("the uncovered-map measurement")
+        .1
+        .split_once("\nfunction ")
+        .expect("the end of the uncovered-map measurement")
+        .0;
+    assert!(
+        !uncovered.contains("livepause") && !uncovered.contains("liveControlsBox"),
+        "the fitted map must keep running beneath the floating live controls"
+    );
+}
+
+/// The live controls never stand on the standings. On the 830x586 mirror
+/// the victory tracker runs the map's width under the masthead, and with
+/// the research box gripped to 2.5x nothing in the window could hold it:
+/// the most free height left was the strip above the victory band — the
+/// masthead itself, which was not among the obstacles. It is now, and a
+/// grip scale no spot can hold a few lines of is shown at the largest scale
+/// that fits, keeping the viewer's own choice for a roomier window.
+#[test]
+fn the_live_controls_keep_off_the_masthead_at_any_grip_scale() {
+    for piece in [
+        "\"#maparea .minimap-frame, #victoryhud, #playerhud, #zoomctl-main, #skynav\")]",
+        "const LIVE_TRACKER_MIN_HEIGHT = 60;",
+        "while (!placeLiveControls(box) && scale > LIVE_TRACKER_SCALE_MIN) {",
+        "fits = Number.isFinite(room) && room - rest >= (tracking ? LIVE_TRACKER_MIN_HEIGHT : 0);",
+    ] {
+        assert!(
+            EMBEDDED_INDEX.contains(piece),
+            "the live controls' placement is missing {piece}"
+        );
+    }
+    // The shrink is for this window only: the stored grip choice stays put.
+    let place = EMBEDDED_INDEX
+        .split_once("function placeLivePause() {")
+        .expect("the live controls' placement")
+        .1
+        .split_once("\nfunction ")
+        .expect("the end of the live controls' placement")
+        .0;
+    assert!(
+        !place.contains("liveTrackerScale =") && !place.contains("localStorage"),
+        "fitting the window must not overwrite the viewer's grip scale"
+    );
+}
+
+/// The live research box opens with our governors, each under the number
+/// of promotions it holds, and gives the deck's net effect before the cards
+/// it adds up (operator 2026-10-14: "list the governors at the top of this
+/// new box, and list the promotions each has (can just list the number over
+/// the governor). lets list net policy effect above all the indivudla
+/// policies").
+#[test]
+fn the_live_research_box_leads_with_governors_and_the_net_policy_effect() {
+    let tracker = EMBEDDED_INDEX
+        .split_once("function liveTrackerHtml(me)")
+        .expect("the live research box")
+        .1
+        .split_once("\nfunction ")
+        .expect("the end of the live research box")
+        .0;
+    for piece in [
+        "Object.entries(me.governor_roster || {})",
+        "const promotions = posting.promotions || [];",
+        "`<b class=\"lt-gov-n\">${promotions.length}</b>` +",
+        "`<span class=\"lt-gov-name\">${escapeAttr(name)}</span></span>`;",
+        "(governors.length ? governors.join(\"\") : none(\"none yet\"))",
+    ] {
+        assert!(
+            tracker.contains(piece),
+            "the research box is missing {piece}"
+        );
+    }
+    let body = tracker
+        .split_once("return governorRow +")
+        .expect("the governors lead the box")
+        .1;
+    let net = body.find("    net +").expect("the net policy effect");
+    let cards = body
+        .find("`<div class=\"lt-cards\">${cards.join(\"\")}</div>`")
+        .expect("the policy cards");
+    assert!(
+        body.find("study(\"techs\"").expect("the research") < net && net < cards,
+        "the net policy effect must stand above the cards it adds up"
+    );
+    for rule in [
+        "#livetracker .lt-govs {",
+        "#livetracker .lt-gov { display: inline-flex; flex-direction: column;",
+        "#livetracker .lt-gov-n {",
+    ] {
+        assert!(
+            EMBEDDED_INDEX.contains(rule),
+            "the governors' style is missing {rule}"
+        );
+    }
+}
+
 /// Diplomacy needs a complete player-facing action surface. The screen
 /// must retain both war/peace (including city-states) and every major-to-
 /// major relationship action, or a mechanic the engine and AI can use is
@@ -14062,4 +14208,62 @@ fn the_policy_ledger_prices_the_seats_slotted_cards() {
     assert_eq!(cards[0]["policy"], json!("urban_planning"));
     assert_eq!(cards[0]["worth"], json!({"production": 1.0}), "{answer}");
     assert_eq!(answer["net"], cards[0]["worth"]);
+}
+
+/// Two live games were ended by "New game from the CIVVIS page" (2026-10-15
+/// 02:19:20Z, 02:35:32Z) with nothing in `server.log` to say who asked. A POST
+/// to a live control now leaves one line naming the sender; nothing else does.
+#[test]
+fn a_post_to_a_live_control_names_its_sender() {
+    let mut sender = RequestSender::default();
+    for header in [
+        "User-Agent: Mozilla/5.0 (Macintosh) Chrome/131\r\n",
+        "Referer: http://127.0.0.1:8610/\r\n",
+        "Origin: http://127.0.0.1:8610\r\n",
+        "Content-Length: 16\r\n",
+    ] {
+        sender.read_header(header, &header.to_ascii_lowercase());
+    }
+    sender.peer = Some("127.0.0.1:53211".to_string());
+    let at = std::time::UNIX_EPOCH + std::time::Duration::from_secs(1_792_030_760);
+    let line = control_request_line(
+        "POST",
+        "/live-new-game",
+        &sender,
+        &serde_json::json!({"confirm": true}),
+        at,
+    )
+    .expect("a POST to New game is recorded");
+    assert_eq!(
+        line,
+        "[live control] 2026-10-15T02:19:20Z POST /live-new-game from 127.0.0.1:53211 \
+         user-agent=\"Mozilla/5.0 (Macintosh) Chrome/131\" referer=\"http://127.0.0.1:8610/\" \
+         origin=\"http://127.0.0.1:8610\" body={\"confirm\":true}"
+    );
+    for path in ["/live-pause", "/pace"] {
+        assert!(
+            control_request_line("POST", path, &sender, &serde_json::Value::Null, at).is_some()
+        );
+    }
+    // A read of the same route, or a POST elsewhere, is not a control.
+    assert!(
+        control_request_line("GET", "/live-pause", &sender, &serde_json::Value::Null, at).is_none()
+    );
+    assert!(
+        control_request_line("POST", "/civ6/start", &sender, &serde_json::Value::Null, at)
+            .is_none()
+    );
+    // A sender without headers reads as dashes, not as an empty field.
+    let bare = control_request_line(
+        "POST",
+        "/pace",
+        &RequestSender::default(),
+        &serde_json::Value::Null,
+        at,
+    )
+    .unwrap();
+    assert!(
+        bare.contains("from - user-agent=\"-\" referer=\"-\" origin=\"-\" body=null"),
+        "{bare}"
+    );
 }

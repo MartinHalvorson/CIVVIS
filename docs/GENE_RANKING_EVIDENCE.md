@@ -194,7 +194,9 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `amphibious-siege-train-2` | off (unmeasured) | A water-locked siege's crossing fords a strait of one or two water tiles, locks its members, sails on water only and lands on a wider beach. | — \| 2 |
 | `aqueduct-claims-the-capped-queue` | off (unmeasured) | Opt-in gene `aqueduct-claims-the-capped-queue`; see `advanced/aqueduct_claims_the_capped_queue.rs`. | 1 \| 1 |
 | `army-upgrade-materials` | off (unmeasured) | Opt-in `army-upgrade-materials`; see `army_upgrade_materials`. | 1 \| 1 |
+| `astrology-before-the-second-city` | off (unmeasured) | Opt-in gene `astrology-before-the-second-city`; see `advanced/astrology_before_the_second_city.rs`. | 1 \| 1 |
 | `backlog-builder-takes-the-queue` | off (unmeasured) | Opt-in gene `backlog-builder-takes-the-queue`; see `advanced/backlog_builder_takes_the_queue.rs`. | 1 \| 1 |
+| `bankruptcy-exits-the-drain` | off (unmeasured) | Opt-in gene `bankruptcy-exits-the-drain`; see `advanced/solvency.rs`. | 1 \| 1 |
 | `bleeding-capital-loyalty` | off (unmeasured) | Opt-in gene `bleeding-capital-loyalty`; see `Self::bleeding_capital_loyalty`. | 1 \| 1 |
 | `blocker-becomes-the-target` | off (unmeasured) | Opt-in gene `blocker-becomes-the-target`; see `Self::road_blocker_front`. | 1 \| 1 |
 | `bombers-fly-on-a-small-stock` | off (unmeasured) | Opt-in gene `bombers-fly-on-a-small-stock`; see `Self::bombers_fly_on_a_small_stock`. | 1 \| 1 |
@@ -237,6 +239,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `capital-walls-before-the-surprise` | off (unmeasured) | Opt-in gene `capital-walls-before-the-surprise`; see `advanced/capital_walls_before_the_surprise.rs`. | 1 \| 1 |
 | `capture-holds-the-ring` | off (unmeasured) | Opt-in gene `capture-holds-the-ring`; see `Self::capture_holds_the_ring`. | 1 \| 1 |
 | `capture-waits-on-the-march` | off (unmeasured) | Opt-in gene `capture-waits-on-the-march`; see `Self::capture_waits_on_the_march`. | 1 \| 1 |
+| `city-under-fire-ranks-first` | off (unmeasured) | Opt-in gene `city-under-fire-ranks-first`; see `advanced/objective_board.rs`. | 1 \| 1 |
 | `civic-awaits-its-inspiration` | off (unmeasured) | Opt-in gene `civic-awaits-its-inspiration`; see `advanced/civic_inspiration_wait.rs`. | 1 \| 1 |
 | `closed-border-blocker-declares` | off (unmeasured) | A weak third party whose closed borders hold a siege's march three turns is declared on. | 1 \| 1 |
 | `colonization-earns-its-slot` | off (unmeasured) | Opt-in gene `colonization-earns-its-slot`; see `Self::colonization_earns_its_slot`. | — \| 2 |
@@ -293,6 +296,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `engineering-for-capped-fresh-water` | off (unmeasured) | Opt-in gene `engineering-for-capped-fresh-water`; see `advanced/engineering_for_capped_fresh_water.rs`. | 1 \| 1 |
 | `faith-counter-needs-the-edge` | off (unmeasured) | Opt-in gene `faith-counter-needs-the-edge`; see `AdvancedAi::faith_counter_has_the_edge`. | 1 \| 1 |
 | `faith-counter-waits-for-match-point` | off (unmeasured) | Opt-in gene `faith-counter-waits-for-match-point`; see `Self::faith_counter_waits_for_match_point`. | 1 \| 1 |
+| `faith-war-before-the-flip` | off (unmeasured) | Opt-in gene `faith-war-before-the-flip`; see `advanced/faith_war_before_the_flip.rs`. | — \| 2 |
+| `faith-war-before-the-flip-2` | off (unmeasured) | Opt-in gene `faith-war-before-the-flip-2`; see `advanced/faith_war_before_the_flip.rs`. | — \| 2 |
 | `falling-city-calls-the-takers` | off (unmeasured) | Opt-in gene `falling-city-calls-the-takers`; see `advanced/falling_city_takers.rs`. | 1 \| 1 |
 | `falling-city-outranks-the-heal` | off (unmeasured) | Opt-in gene `falling-city-outranks-the-heal`; see `Self::falling_city_outranks_the_heal`. | 1 \| 1 |
 | `favor-bought-before-congress` | off (unmeasured) | Opt-in gene `favor-bought-before-congress`; see `Self::favor_bought_before_congress`. | 1 \| 1 |
@@ -327,7 +332,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `guns-grind-the-walls` | off (unmeasured) | Opt-in gene `guns-grind-the-walls`; see `Self::guns_grind_the_walls`. | 1 \| 1 |
 | `guns-post-for-a-near-breach` | off (unmeasured) | Opt-in gene `guns-post-for-a-near-breach`; see `Self::guns_post_for_a_near_breach`. | 1 \| 1 |
 | `guns-stay-out-of-reach` | off (unmeasured) | Opt-in gene `guns-stay-out-of-reach`; see `Self::guns_stay_out_of_reach`. | 1 \| 1 |
-| `holdout-keeps-the-faith-war` | off (unmeasured) | Opt-in gene `holdout-keeps-the-faith-war`; see `advanced/holdout_faith_war.rs`. | 1 \| 1 |
+| `holdout-keeps-the-faith-war` | off (unmeasured) | Opt-in gene `holdout-keeps-the-faith-war`; see `advanced/holdout_faith_war.rs`. | — \| 2 |
+| `holdout-keeps-the-faith-war-2` | off (unmeasured) | Opt-in gene `holdout-keeps-the-faith-war-2`; see `advanced/holdout_faith_war.rs`. | — \| 2 |
 | `housing-bound-city-builds-its-granary` | off (unmeasured) | Opt-in gene `housing-bound-city-builds-its-granary`; see `BasicAi::housing_bound_city_builds_its_granary`. | 1 \| 1 |
 | `housing-cap-builds-the-aqueduct` | off (unmeasured) | Opt-in gene `housing-cap-builds-the-aqueduct`; see `BasicAi::housing_cap_builds_the_aqueduct`. | 1 \| 1 |
 | `improvement-upgrades-count` | off (unmeasured) | Opt-in gene `improvement-upgrades-count`; see `Self::improvement_upgrades_count`. | 1 \| 1 |
@@ -350,13 +356,18 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `luxury-swap-asks-2` | off (unmeasured) | Opt-in gene `luxury-swap-asks-2`; see `AdvancedAi::luxury_swap_asks_2`. | — \| 2 |
 | `march-uses-its-moves` | off (unmeasured) | Opt-in gene `march-uses-its-moves`; see `Self::march_uses_its_moves`. | 1 \| 1 |
 | `match-point-interception-ignores-power` | off (unmeasured) | Opt-in gene `match-point-interception-ignores-power`; see `Self::last_holdout_interception`. | 1 \| 1 |
+| `medina-quarter-houses-the-districts` | off (unmeasured) | Opt-in gene `medina-quarter-houses-the-districts`; see `advanced/medina_quarter.rs`. | 1 \| 1 |
 | `melee-storms-an-open-city` | off (unmeasured) | Opt-in gene `melee-storms-an-open-city`; see `Self::melee_storms_an_open_city`. | 1 \| 1 |
+| `merchant-confederation-earns-its-slot` | off (unmeasured) | Opt-in gene `merchant-confederation-earns-its-slot`; the deck reading lives on `BasicAi`, the portfolio insert on `AdvancedAi`. | — \| 2 |
+| `merchant-confederation-earns-its-slot-2` | off (unmeasured) | Opt-in gene `merchant-confederation-earns-its-slot-2`; version one plus the seat it may take. | — \| 2 |
 | `monument-first` | off (unmeasured) | A city's Monument ahead of the military floor and the Settler step in the delegated city governor. | 1 \| 1 |
 | `muster-walks-the-road` | off (unmeasured) | Opt-in gene `muster-walks-the-road`; see `Self::muster_walks_the_road`. | 1 \| 1 |
 | `near-rival-deterrence` | off (unmeasured) | Enable `near-rival-deterrence`. | 1 \| 1 |
+| `neighborhood-houses-the-capped-city` | off (unmeasured) | Opt-in gene `neighborhood-houses-the-capped-city`; see `advanced/neighborhood_houses_the_capped_city.rs`. | 1 \| 1 |
 | `no-peace-with-a-launcher` | off (unmeasured) | Enable `no-peace-with-a-launcher`. | 1 \| 1 |
 | `one-sanctuary` | off (unmeasured) | Opt-in gene `one-sanctuary`; see `Self::one_sanctuary`. | 1 \| 1 |
 | `one-war-swaps-a-stalled-front` | off (unmeasured) | Opt-in gene `one-war-swaps-a-stalled-front`; see `Self::one_war_swaps_a_stalled_front`. | 1 \| 1 |
+| `open-city-draws-the-front` | off (unmeasured) | Opt-in gene `open-city-draws-the-front`; see `advanced/open_city_front.rs`. | 1 \| 1 |
 | `opening-defense-preempts-once` | off (unmeasured) | `BasicAi::opening_defense_preempts_once`; opt-in gene `opening-defense-preempts-once`. | 1 \| 1 |
 | `opening-force-keeps-its-members` | off (unmeasured) | Opt-in gene `opening-force-keeps-its-members`; see `Self::opening_force_keeps_its_members`. | 1 \| 1 |
 | `opening-yields-to-walls` | off (unmeasured) | Opt-in gene `opening-yields-to-walls`; see `Self::opening_yields_to_walls`. | 1 \| 1 |
@@ -377,7 +388,9 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `prophet-race-earns-its-points` | off (unmeasured) | Opt-in gene `prophet-race-earns-its-points`; see `Self::reserve_race_shrine` and `Self::race_wants_revelation`. | 1 \| 1 |
 | `prophet-race-takes-a-district-slot` | off (unmeasured) | Opt-in gene `prophet-race-takes-a-district-slot`; see `Self::prophet_race_takes_a_district_slot`. | — \| 2 |
 | `prophet-race-takes-a-district-slot-2` | off (unmeasured) | Opt-in gene `prophet-race-takes-a-district-slot-2`; see `Self::prophet_race_takes_a_district_slot_2`. | — \| 2 |
+| `prophet-race-takes-divine-spark` | off (unmeasured) | Opt-in gene `prophet-race-takes-divine-spark`; see `advanced/astrology_before_the_second_city.rs`. | 1 \| 1 |
 | `purchases-keep-the-upkeep-reserve` | off (unmeasured) | Opt-in gene `purchases-keep-the-upkeep-reserve`; see `AdvancedAi::purchases_keep_the_upkeep_reserve`. | 1 \| 1 |
+| `racer-blocker-declares` | off (unmeasured) | Opt-in gene `racer-blocker-declares`; see `advanced/silent_counter.rs`. | 1 \| 1 |
 | `racer-keeps-the-spies` | off (unmeasured) | Opt-in gene `racer-keeps-the-spies`; see `AdvancedAi::racer_keeps_the_spies`. | 1 \| 1 |
 | `raids-cut-tourism` | off (unmeasured) | Opt-in gene `raids-cut-tourism`; see `Self::raids_cut_tourism`. | 1 \| 1 |
 | `ranged-before-melee` | off (unmeasured) | Opt-in gene `ranged-before-melee`; see `Self::ranged_before_melee`. | 1 \| 1 |
@@ -425,6 +438,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `siege-tier-yields-to-the-bombers` | off (unmeasured) | Opt-in gene `siege-tier-yields-to-the-bombers`; see `Self::siege_tier_yields_to_the_bombers`. | 1 \| 1 |
 | `siege-train-scales-with-walls` | off (unmeasured) | Opt-in gene `siege-train-scales-with-walls`; see `Self::siege_train_scales_with_walls`. | 1 \| 1 |
 | `siege-train-upgrades-first` | off (unmeasured) | Opt-in gene `siege-train-upgrades-first`; see `Self::siege_train_upgrades_first`. | 1 \| 1 |
+| `solvent-or-hold` | off (unmeasured) | Opt-in gene `solvent-or-hold`; see `advanced/solvency.rs`. | 1 \| 1 |
 | `space-denial-spies-from-rocketry` | off (unmeasured) | Opt-in gene `space-denial-spies-from-rocketry`; see `denial_spy_racers` in `advanced/science_denial_every_pad.rs`. | 1 \| 1 |
 | `spreader-steps-out-of-the-apostle` | off (unmeasured) | Opt-in gene `spreader-steps-out-of-the-apostle`; see `advanced/apostle_evasion.rs`. | 1 \| 1 |
 | `stage-march-keeps-to-land` | off (unmeasured) | Opt-in gene `stage-march-keeps-to-land`; see `Self::stage_march_keeps_to_land`. | 1 \| 1 |

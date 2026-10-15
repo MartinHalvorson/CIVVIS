@@ -1,6 +1,6 @@
 use super::*;
 
-fn visible_home_spreaders(g: &Game, pid: usize, rival: usize, faith: &str) -> Vec<u32> {
+pub(super) fn visible_home_spreaders(g: &Game, pid: usize, rival: usize, faith: &str) -> Vec<u32> {
     let visible = g.player_visibility(pid);
     g.player_unit_ids(rival)
         .into_iter()

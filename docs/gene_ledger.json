@@ -2786,6 +2786,15 @@
           "expansion-best-idle-city-2": null
         }
       },
+      "faith-war-before-the-flip": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "faith-war-before-the-flip": null,
+          "faith-war-before-the-flip-2": null
+        }
+      },
       "first-builder-reserve": {
         "rule_on": [
           "first-builder-reserve-2"
@@ -2855,6 +2864,15 @@
           "growth-prices-the-farm-2": null
         }
       },
+      "holdout-keeps-the-faith-war": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "holdout-keeps-the-faith-war": null,
+          "holdout-keeps-the-faith-war-2": null
+        }
+      },
       "holy-site-where-the-threat-is": {
         "rule_on": [],
         "head": "holy-site-where-the-threat-is",
@@ -2911,6 +2929,15 @@
         "versions": {
           "luxury-swap-asks": null,
           "luxury-swap-asks-2": null
+        }
+      },
+      "merchant-confederation-earns-its-slot": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "merchant-confederation-earns-its-slot": null,
+          "merchant-confederation-earns-its-slot-2": null
         }
       },
       "missionary-last-charge-explores": {

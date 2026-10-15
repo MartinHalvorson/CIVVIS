@@ -839,6 +839,34 @@ impl AdvancedAi {
             .any(|unit| self.observed(g, pid, visible, unit))
     }
 
+    /// `city-under-fire-ranks-first`: our city `cid` is under fire. It is
+    /// damaged (hit points or walls), the board has read it losing health
+    /// within the last three turns (`damage_rate` keeps a rate until the city
+    /// goes three turns unstruck), and an observed hostile soldier stands
+    /// within [`CAPITAL_DEFENSE_CONTACT`]. False with the gene off.
+    pub(super) fn city_under_fire(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        visible: &crate::world::TileBits,
+    ) -> bool {
+        if !self.city_under_fire_ranks_first {
+            return false;
+        }
+        let Some(city) = g.cities.get(&cid) else {
+            return false;
+        };
+        city.owner == pid
+            && (city.hp < super::CITY_MAX_HP || city.wall_hp < g.city_max_wall_hp(city))
+            && self
+                .objective_board_state
+                .damage_rate
+                .get(&cid)
+                .is_some_and(|rate| *rate > 0.0)
+            && self.capital_defense_contact(g, pid, city.pos, visible)
+    }
+
     /// Hostile military strength within `radius` of `at`, visible in the
     /// turn-start frame, with the remembered term the belief arm adds.
     fn hostile_strength_near(
@@ -1083,7 +1111,11 @@ impl AdvancedAi {
                 self.capital_defense_holds && self.capital_defense_contact(g, pid, *pos, visible);
             let damaged = self.capital_defense_holds
                 && (city.hp < super::CITY_MAX_HP || city.wall_hp < g.city_max_wall_hp(city));
-            if danger < BASTION_PRESSURE && !(contact && damaged) {
+            // `city-under-fire-ranks-first`: a city losing health with a
+            // hostile beside it keeps its row through the pressure gate. Off,
+            // `under_fire` reads false.
+            let under_fire = self.city_under_fire(g, pid, *cid, visible);
+            if danger < BASTION_PRESSURE && !(contact && damaged) && !under_fire {
                 continue;
             }
             let capital_under_attack =
@@ -1108,7 +1140,12 @@ impl AdvancedAi {
             };
             let deadline = match self.objective_board_state.damage_rate.get(cid) {
                 Some(rate) if *rate > 0.0 => {
-                    ((f64::from(health) / rate).ceil() as u32).max(DEFEND_DEADLINE_FLOOR)
+                    // `city-under-fire-ranks-first`: a city that falls before
+                    // our next turn is due in one turn, not two. Live Emperor
+                    // civvis-20261014T204453Z t51-52: Guayaquil at 32 and 20
+                    // of 200 read deadline 2, the same as Bogota untouched.
+                    let floor = if under_fire { 1 } else { DEFEND_DEADLINE_FLOOR };
+                    ((f64::from(health) / rate).ceil() as u32).max(floor)
                 }
                 _ => {
                     // Not yet hit: the turns the nearest hostile needs to
@@ -1142,7 +1179,7 @@ impl AdvancedAi {
                 land: true,
                 sea: false,
                 label: city.name.clone(),
-                urgent: capital_under_attack,
+                urgent: capital_under_attack || under_fire,
             });
             // Relieve: what the units within reach cannot supply.
             let local: f64 = pool
@@ -1566,6 +1603,77 @@ impl AdvancedAi {
         rows
     }
 
+    /// `city-under-fire-ranks-first`: every Defend row of a city under fire
+    /// (see [`Self::city_under_fire`]) ahead of every other row, keeping the
+    /// ranked order within each group. The shipped order is value over
+    /// deadline, and both a quiet city's reach deadline and a burning city's
+    /// health deadline floor at two turns, so the larger city always won:
+    /// live Emperor civvis-20261014T204453Z t48-52, Defend Guayaquil (value
+    /// 160, the only city hit, 200 to 20 health) ranked under Defend Bogota
+    /// (463, untouched, no hostile within four) and Defend Quito (295), drew
+    /// no force or one body, and Guayaquil fell to Cardiff at t52 and was
+    /// razed. In 170 live runs from 10-13, 78 of 201 cities lost had their
+    /// Defend row under a manned row of an undamaged city in the last three
+    /// boards. Moving a Defend up keeps its Relieve after it and every urgent
+    /// defense above offense, so the dependency and urgency rules still hold.
+    fn city_under_fire_first(
+        &mut self,
+        g: &Game,
+        pid: usize,
+        visible: &crate::world::TileBits,
+        rows: &mut Vec<Objective>,
+    ) {
+        let burning: BTreeSet<ObjectiveKey> = rows
+            .iter()
+            .filter_map(|row| match row.key {
+                ObjectiveKey::Defend(cid) if self.city_under_fire(g, pid, cid, visible) => {
+                    Some(row.key)
+                }
+                _ => None,
+            })
+            .collect();
+        if burning.is_empty() {
+            return;
+        }
+        let passed: Vec<String> = rows
+            .iter()
+            .take_while(|row| !burning.contains(&row.key))
+            .filter(|row| row.kind == ObjectiveKind::Defend)
+            .map(|row| row.label.clone())
+            .collect();
+        Self::rows_first(rows, &burning);
+        if passed.is_empty() {
+            return;
+        }
+        for row in rows.iter().filter(|row| burning.contains(&row.key)) {
+            let ObjectiveKey::Defend(cid) = row.key else {
+                continue;
+            };
+            let city = &g.cities[&cid];
+            let rate = self
+                .objective_board_state
+                .damage_rate
+                .get(&cid)
+                .copied()
+                .unwrap_or(0.0);
+            think!(self.journal(), Military, Decision,
+                "{} is under fire: its defense ranks first", row.label;
+                "city-under-fire-ranks-first: {} of {} health and {} of {} walls, losing {:.0} a turn with a hostile within {}; ahead of Defend {}",
+                city.hp.max(0), super::CITY_MAX_HP, city.wall_hp.max(0), g.city_max_wall_hp(city),
+                rate, CAPITAL_DEFENSE_CONTACT, passed.join(", "));
+        }
+    }
+
+    /// Move the rows keyed in `first` ahead of the rest, each group in its
+    /// existing order.
+    fn rows_first(rows: &mut Vec<Objective>, first: &BTreeSet<ObjectiveKey>) {
+        let (mut lead, rest): (Vec<Objective>, Vec<Objective>) = std::mem::take(rows)
+            .into_iter()
+            .partition(|row| first.contains(&row.key));
+        lead.extend(rest);
+        *rows = lead;
+    }
+
     /// Rank the rows: value over deadline, an urgent Defend above every
     /// offensive row, and no row above one it depends on.
     fn rank_rows(
@@ -1641,6 +1749,9 @@ impl AdvancedAi {
         }
         let mut rows = self.board_rows(g, pid, plan, &visible, &pool);
         Self::rank_rows(g, &mut rows, &pool, &facts);
+        if self.city_under_fire_ranks_first {
+            self.city_under_fire_first(g, pid, &visible, &mut rows);
+        }
 
         // Last turn's forces, less the dead and the departed.
         let pool_set: BTreeSet<u32> = pool.iter().copied().collect();
@@ -2223,6 +2334,8 @@ impl AdvancedAi {
         board.forces = forces;
         board.next_force_id = next_id;
         board.requisitions = requisitions;
+        // A journal line only; see `journal_open_city_roll`.
+        self.journal_open_city_roll(g, pid, &visible);
     }
 
     /// `siege-needs-a-breaker`: every free Battering Ram and Siege Tower
@@ -3819,6 +3932,9 @@ mod staging_tests;
 
 #[cfg(test)]
 mod defense_priority_tests;
+
+#[cfg(test)]
+mod open_city_roll_tests;
 
 #[cfg(test)]
 mod siege_member_tests;
