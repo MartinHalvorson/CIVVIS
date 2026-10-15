@@ -60,6 +60,23 @@ class RetireRequestTest(unittest.TestCase):
             self.assertEqual(operator_retire.read_pending_request(run, "civvis-live"),
                              requested)
             self.assertIsNone(operator_retire.read_pending_request(run, "other-run"))
+            self.assertNotIn("restart", requested, "a plain retire is not a restart")
+
+    def test_the_pages_new_game_asks_for_a_restart_in_place(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "control"
+            run = self.make_live_run(root)
+            with mock.patch("sys.stdout"), \
+                 mock.patch.object(operator_retire, "live_harnesses",
+                                   return_value=[{"pid": 4271, "tag": "civvis-live",
+                                                  "command": "civ6_play.py"}]):
+                self.assertEqual(operator_retire.main(
+                    ["request", "--runs-root", str(root), "--reason", "operator: new game",
+                     "--restart"]), 0)
+            requested = operator_retire.read_pending_request(run, "civvis-live")
+            self.assertIs(requested["restart"], True)
+            recorded = operator_retire.record_retired(run, requested, "parked")
+            self.assertIs(recorded["restart"], True)
 
     def test_request_refuses_setup_ambiguous_or_already_requested_runs(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:

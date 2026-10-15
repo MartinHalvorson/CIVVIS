@@ -6631,14 +6631,44 @@ function liveTrackerHtml(me) {
       `<span class="lt-k">Net policy effect</span>` +
       `<span class="lt-worth">${ledger.anarchy ? none("cards suspended in Anarchy")
         : policyWorthHtml(ledger.net) || none("nothing measurable this turn")}</span></div>`;
-  return study("techs", me.research, me.research_progress, techCost,
+  // Our governors head the box, each under the number of promotions it holds
+  // (operator 2026-10-14: "list the governors at the top of this new box …
+  // just list the number over the governor"). The tooltip says where it
+  // serves and which promotions those are.
+  const governorSpecs = (RULES && RULES.governors) || {};
+  const governorOrder = Object.keys(governorSpecs);
+  const governorRank = id => {
+    const index = governorOrder.indexOf(id);
+    return index < 0 ? governorOrder.length : index;
+  };
+  const governors = Object.entries(me.governor_roster || {})
+    .sort(([a], [b]) => governorRank(a) - governorRank(b) || a.localeCompare(b))
+    .map(([id, posting]) => {
+      const name = (governorSpecs[id] || {}).name || titleCase(id);
+      const promotions = posting.promotions || [];
+      const city = Number.isInteger(posting.city)
+        ? (state.cities || []).find(candidate => candidate.id === posting.city) : null;
+      const settling = city && Number(posting.disabled_until) > Number(state.turn);
+      const where = !city ? "awaiting a city"
+        : `in ${city.name}${settling ? `, established on turn ${posting.disabled_until}` : ""}`;
+      const title = `${name} — ${where} · ${promotions.length} promotion${promotions.length === 1 ? "" : "s"}` +
+        (promotions.length ? `: ${promotions.map(titleCase).join(", ")}` : "");
+      return `<span class="lt-gov${city ? "" : " unassigned"}" title="${escapeAttr(title)}">` +
+        `<b class="lt-gov-n">${promotions.length}</b>` +
+        `<span class="lt-gov-name">${escapeAttr(name)}</span></span>`;
+    });
+  const governorRow = `<div class="lt-govs"><span class="lt-k">Governors</span>` +
+    (governors.length ? governors.join("") : none("none yet")) + `</div>`;
+  // The deck's net effect leads the policies, above the cards it adds up.
+  return governorRow +
+    study("techs", me.research, me.research_progress, techCost,
       (me.boosted_techs || []).includes(me.research)) +
     study("civics", me.civic, me.civic_progress, civicCost,
       (me.boosted_civics || []).includes(me.civic)) +
     `<div class="lt-row"><span class="lt-k">Government</span>` +
     `<b>${me.government ? escapeAttr(titleCase(me.government)) : none("none")}</b></div>` +
-    (cards.length ? `<div class="lt-cards">${cards.join("")}</div>` : `<div class="lt-row">${none("no policy cards slotted")}</div>`) +
-    net;
+    net +
+    (cards.length ? `<div class="lt-cards">${cards.join("")}</div>` : `<div class="lt-row">${none("no policy cards slotted")}</div>`);
 }
 function paintLiveTracker() {
   const panel = document.getElementById("livetracker");
@@ -6756,9 +6786,26 @@ function paintLivePause() {
 // else as far right on the bottom row as is free (left of the minimap), else
 // as little above the corner as clears what holds it. Rerun on every paint
 // (the 2 s poll), on resize, and as the research box is resized.
+//
+// A grip scale no spot in this window can hold even a few lines of — 2.5x on
+// the 830-wide mirror is wider than any column the masthead, victory band,
+// minimap and map tools leave — is shown at the largest scale that fits. The
+// viewer's own choice is kept for a roomier window.
+const LIVE_TRACKER_MIN_HEIGHT = 60;
 function placeLivePause() {
   const box = document.getElementById("livepause");
   if (!box || box.hidden || !box.offsetParent) return;
+  let scale = liveTrackerScale;
+  box.style.setProperty("--lt-scale", String(scale));
+  while (!placeLiveControls(box) && scale > LIVE_TRACKER_SCALE_MIN) {
+    scale = Math.max(LIVE_TRACKER_SCALE_MIN, Math.round(scale * 90) / 100);
+    box.style.setProperty("--lt-scale", String(scale));
+  }
+  followLiveControls();
+}
+// One placement at the box's current scale; false when the best spot left the
+// research box less than LIVE_TRACKER_MIN_HEIGHT to scroll in.
+function placeLiveControls(box) {
   box.style.right = "";
   box.style.bottom = "";
   const tracker = document.getElementById("livetracker");
@@ -6768,8 +6815,10 @@ function placeLivePause() {
   const home = box.getBoundingClientRect();
   const edge = Math.max(0, frame.right - home.right);
   const gap = 8;
+  // The masthead is one of them: with nothing else free, the most height used
+  // to be the strip above the victory band, which is the standings.
   const obstacles = [...document.querySelectorAll(
-    "#maparea .minimap-frame, #victoryhud, #zoomctl-main, #skynav")]
+    "#maparea .minimap-frame, #victoryhud, #playerhud, #zoomctl-main, #skynav")]
     .filter((el) => el.getClientRects().length > 0)
     .map((el) => el.getBoundingClientRect())
     .filter((r) => r.width > 0 && r.height > 0);
@@ -6788,6 +6837,7 @@ function placeLivePause() {
   }
   spots.sort((a, b) => a[1] - b[1] || a[0] - b[0]);
   let spot = spots.find((candidate) => !blocked(candidate));
+  let fits = true;
   if (!spot) {
     // Nothing holds the whole group — on the compact layout the victory
     // tracker runs the map's width under the masthead — so it goes where the
@@ -6807,16 +6857,46 @@ function placeLivePause() {
       const free = roomAt(candidate);
       if (free > room) { room = free; spot = candidate; }
     }
-    if (tracking && Number.isFinite(room)) {
-      const rest = home.height - tracker.getBoundingClientRect().height;
-      tracker.style.maxHeight = `${Math.max(60, Math.floor(room - rest))}px`;
-    }
+    const rest = home.height - (tracking ? tracker.getBoundingClientRect().height : 0);
+    fits = Number.isFinite(room) && room - rest >= (tracking ? LIVE_TRACKER_MIN_HEIGHT : 0);
+    if (tracking && Number.isFinite(room))
+      tracker.style.maxHeight = `${Math.max(LIVE_TRACKER_MIN_HEIGHT, Math.floor(room - rest))}px`;
   }
   const [right, bottom] = spot ?? [edge, edge];
   if (right !== edge) box.style.right = `${right}px`;
   if (bottom !== edge) box.style.bottom = `${bottom}px`;
+  return fits;
 }
 window.addEventListener("resize", placeLivePause);
+// The camera composes into the ground the live controls leave open, so when
+// they appear, grow, move or go, the ground at the old open centre is carried
+// to the new one, as a moving HUD edge does. Page-space, so a canvas that has
+// since moved still compares like with like.
+let liveControlsRect = null;
+function followLiveControls() {
+  const element = document.getElementById("livepause");
+  const rect = element && !element.hidden ? element.getBoundingClientRect() : null;
+  const now = rect && rect.width && rect.height
+    ? {left:rect.left, right:rect.right, top:rect.top, bottom:rect.bottom} : null;
+  const prior = liveControlsRect;
+  liveControlsRect = now;
+  const sameBox = (a, b) => (!a && !b) || (!!a && !!b &&
+    ["left", "right", "top", "bottom"].every(edge => Math.abs(a[edge] - b[edge]) <= .5));
+  if (!state || !MAPW || !MAPH || sameBox(prior, now)) return;
+  const origin = cv.getBoundingClientRect();
+  const local = box => box && {left:box.left - origin.left, right:box.right - origin.left,
+                               top:box.top - origin.top, bottom:box.bottom - origin.top};
+  const open = uncoveredMapBox(origin, Math.max(1, MAPW), Math.max(1, MAPH));
+  const before = openBesideBox(open, local(prior));
+  const after = openBesideBox(open, local(now));
+  if (sameBox(before, after)) return;
+  reframeCurrentMapFocus(screenToWorld((before.left + before.right) / 2,
+                                       (before.top + before.bottom) / 2));
+}
+if (typeof ResizeObserver === "function") {
+  const element = document.getElementById("livepause");
+  if (element) new ResizeObserver(() => followLiveControls()).observe(element);
+}
 // A refusal stays on screen long enough to read: the 2 s status poll answers
 // without an error and must not wipe one a press just got.
 function showLiveError(text) {
@@ -6842,6 +6922,8 @@ function adoptLivePause(status) {
   // The live time stops and starts with the hold, not with the next frame.
   syncLiveClockRun();
   paintLivePause();
+  // The tree hooks give way to the research box (`drawLaunchBar`).
+  if (livePause.available !== wasAvailable) drawLaunchBar();
   // The turn plate's level row belongs to a live game (`hudTurnPlate`).
   if (livePause.available !== wasAvailable && state) drawPlayerHud();
 }
@@ -24322,6 +24404,13 @@ function drawPlayerHud() {
   // relationship-to-me meaning supplied by `at_war_with_me`.
   const activeWarPlayers = SPEC && !Number.isInteger(state.view_player)
     ? activeWarPlayerIds() : null;
+  // `at_war_with_me` is never true of the seat it is measured from, so that
+  // seat's own row stayed unmarked through every war it fought. It is at war
+  // while anyone but the barbarians — who are at war with everybody — is at
+  // war with it.
+  const viewSeat = Number.isInteger(state.player) ? state.player : null;
+  const viewSeatAtWar = !activeWarPlayers && viewSeat !== null && state.players.some(other =>
+    other.id !== viewSeat && other.alive && !other.is_barbarian && other.at_war_with_me);
   // Rank remains the score standing even when the visible rows are sorted by
   // another fact, so a #2 badge never starts meaning "second alphabetically".
   const scoreRankedMajors = state.players
@@ -24418,7 +24507,8 @@ function drawPlayerHud() {
           (capitalHolder ? ` — now held by ${capitalHolder.civ}` : " — now in other hands")
         : `View ${p.civ}'s empire from its capital, ${capital.name}`;
       const alliance = p.alliance;
-      const atWar = activeWarPlayers ? activeWarPlayers.has(p.id) : p.at_war_with_me;
+      const atWar = activeWarPlayers ? activeWarPlayers.has(p.id)
+        : p.id === viewSeat ? viewSeatAtWar : p.at_war_with_me;
       const strategy = p.ai_strategy || "";
       const strategyText = strategy ? `${titleCase(strategy)} plan` : "";
       const relation = !p.alive ? "Defeated"
@@ -25531,10 +25621,15 @@ function drawLaunchBar() {
   // being offered and going dead under the hand. What a watcher can actually
   // use is what stays: the two trees of the civilization it is following, in
   // `LaunchBar.xml`'s own leading position. The hooks bar is the played
-  // seat's alone; the stylesheet keeps it off a watched world.
+  // seat's alone; the stylesheet keeps it off a watched world. Beside a live
+  // Civilization VI game the research box (`liveTrackerHtml`) already carries
+  // both studies and opens both trees, so the two hooks would only repeat it
+  // (operator 2026-10-14: "remove the old tech and civic buttons").
   if (SPEC) {
-    if (tabs) tabs.innerHTML = arrangementSeat() !== null && worldStandingsInPlay()
-      ? launchTreeHook("science") + launchTreeHook("culture") : "";
+    const treeHooks = arrangementSeat() !== null && worldStandingsInPlay() &&
+      !(livePause.available && state.me);
+    if (tabs) tabs.innerHTML = treeHooks ? launchTreeHook("science") + launchTreeHook("culture") : "";
+    bar.classList.toggle("on", treeHooks);
     if (hooks) hooks.innerHTML = "";
     const report = document.getElementById("rankingsbtn");
     if (report) report.setAttribute("aria-pressed", rankingsReportOpen ? "true" : "false");
@@ -30469,11 +30564,45 @@ function uncoveredMapBox(origin, width, height) {
   if (bottom <= top) { top = 0; bottom = height; }
   return {left, right, top, bottom};
 }
+// The live game's research box and its Pause / New game buttons float over the
+// world the way the lower dock does, so the fitted map still runs beneath them.
+// But they are a column of reading rather than a control at the edge, and the
+// camera composes into the ground they leave open (operator 2026-10-14: "center
+// the map on the open screen"). Box local to `origin`, or null while hidden.
+function liveControlsBox(origin) {
+  const element = document.getElementById("livepause");
+  if (!element || element.hidden) return null;
+  const rect = element.getBoundingClientRect();
+  if (!rect.width || !rect.height) return null;
+  return {left:rect.left - origin.left, right:rect.right - origin.left,
+          top:rect.top - origin.top, bottom:rect.bottom - origin.top};
+}
+// `bounds` with one edge moved to clear `box`: of the four edges that can, the
+// one that leaves the largest open rectangle. A box in the lower-right corner
+// takes the bottom strip when it is wide and short, the right strip when it is
+// tall and narrow. A box outside `bounds` changes nothing.
+function openBesideBox(bounds, box) {
+  if (!box || box.right <= bounds.left || box.left >= bounds.right ||
+      box.bottom <= bounds.top || box.top >= bounds.bottom) return bounds;
+  let open = bounds, openArea = 0;
+  for (const trimmed of [
+    {...bounds, right:Math.min(bounds.right, box.left)},
+    {...bounds, left:Math.max(bounds.left, box.right)},
+    {...bounds, bottom:Math.min(bounds.bottom, box.top)},
+    {...bounds, top:Math.max(bounds.top, box.bottom)},
+  ]) {
+    const area = Math.max(0, trimmed.right - trimmed.left) *
+                 Math.max(0, trimmed.bottom - trimmed.top);
+    if (area > openArea) { open = trimmed; openArea = area; }
+  }
+  return open;
+}
 // Viewport-local. With the map area fitted to the panels this is the whole
 // viewport; a hand-set area parked under the masthead still composes around it.
 function mapFocusBounds() {
-  return uncoveredMapBox(cv.getBoundingClientRect(),
-                         Math.max(1, MAPW), Math.max(1, MAPH));
+  const origin = cv.getBoundingClientRect();
+  return openBesideBox(uncoveredMapBox(origin, Math.max(1, MAPW), Math.max(1, MAPH)),
+                       liveControlsBox(origin));
 }
 function mapFocusPoint() {
   const bounds = mapFocusBounds();
@@ -31121,6 +31250,10 @@ function observedFrameRect() {
   right = Math.min(width, right + mapAreaInsets.right);
   top = Math.max(0, top - mapAreaInsets.top);
   bottom = Math.min(height, bottom + mapAreaInsets.bottom);
+  // The live research box is in none of those reservations; the frame stops
+  // short of it the same way the camera's focus does.
+  ({left, right, top, bottom} = openBesideBox({left, right, top, bottom},
+                                              liveControlsBox(cv.getBoundingClientRect())));
   // Extremely small embedded viewers cannot honor every overlay reservation.
   // Retain a useful stage around the center rather than returning an inverted
   // rectangle and throwing the subjects off-screen.

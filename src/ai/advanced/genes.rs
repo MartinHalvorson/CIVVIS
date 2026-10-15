@@ -3876,8 +3876,9 @@ pub const GENES: &[Gene] = &[
     // idle one is posted to the leading racer before any pad is seen, and in
     // a racer's city it runs Disrupt Rocketry or a safe operation. The
     // leader follows the race (a racer one project behind with 1.25x the
-    // Science counts level; Emperor 100910Z's Greece), and a Spy at a racer
-    // that no longer leads moves on unless offered the disruption. See
+    // Science counts level; Emperor 100910Z's Greece; level racers go by
+    // Production, 192420Z-cont1's France), and a Spy at a racer that no
+    // longer leads moves on unless offered the disruption. See
     // `advanced/racer_keeps_the_spies.rs`.
     Gene { tag: "racer-keeps-the-spies", field: "racer_keeps_the_spies", kind: Kind::OptIn, enable: AdvancedAi::enable_racer_keeps_the_spies, disable: AdvancedAi::disable_racer_keeps_the_spies },
     // `capital-walls-before-the-surprise`: a met major at peace with twice
@@ -3927,6 +3928,87 @@ pub const GENES: &[Gene] = &[
     // land upgrade's material, preserving its exact Gold bill. An offer
     // is not acceptance or execution. See `army_upgrade_materials`.
     Gene { tag: "army-upgrade-materials", field: "army_upgrade_materials", kind: Kind::OptIn, enable: AdvancedAi::enable_army_upgrade_materials, disable: AdvancedAi::disable_army_upgrade_materials },
+    // An urgent Culture or Science racer our Conquest counter cannot reach,
+    // behind one civilization's closed borders: that blocker, when weak by
+    // closed-border-blocker-declares' reading, is the front every turn with
+    // no held siege march, aimed at its city on the road. See
+    // `advanced/silent_counter.rs`.
+    Gene { tag: "racer-blocker-declares", field: "racer_blocker_declares", kind: Kind::OptIn, enable: AdvancedAi::enable_racer_blocker_declares, disable: AdvancedAi::disable_racer_blocker_declares },
+    // A faithless seat loses the Prophet race to the 2-city floor: Astrology
+    // waits for the second city and lands at t24-34, after the third Prophet
+    // went at t31-44. The lone capital researches it once the opening techs
+    // are in; the Holy Site still waits for the second city. See
+    // `advanced/astrology_before_the_second_city.rs`.
+    Gene { tag: "astrology-before-the-second-city", field: "astrology_before_the_second_city", kind: Kind::OptIn, enable: AdvancedAi::enable_astrology_before_the_second_city, disable: AdvancedAi::disable_astrology_before_the_second_city },
+    // The race's other cheap lever: Divine Spark (+1 Prophet point a turn
+    // on every Holy Site) ranks behind Religious Settlements and ahead of
+    // Fertility Rites while the seat runs the race. See
+    // `advanced/astrology_before_the_second_city.rs`.
+    Gene { tag: "prophet-race-takes-divine-spark", field: "prophet_race_takes_divine_spark", kind: Kind::OptIn, enable: AdvancedAi::enable_prophet_race_takes_divine_spark, disable: AdvancedAi::disable_prophet_race_takes_divine_spark },
+    // A city of ours losing health with a hostile soldier beside it ranks its
+    // Defend row ahead of every Defend row of a city that is not under fire,
+    // urgent, with a one-turn deadline floor. See
+    // `advanced/objective_board.rs`.
+    Gene { tag: "city-under-fire-ranks-first", field: "city_under_fire_ranks_first", kind: Kind::OptIn, enable: AdvancedAi::enable_city_under_fire_ranks_first, disable: AdvancedAi::disable_city_under_fire_ranks_first },
+    // A defensive war (no siege, no staging) on a founding rival whose
+    // spreaders stand within six tiles of our cities while our majority does
+    // not follow its faith and a city of ours already leans to it, at 0.7
+    // times its steady power, rout- and solvency-guarded; no peace while a
+    // city of ours is converting, peace after five clear turns. See
+    // `advanced/faith_war_before_the_flip.rs`.
+    Gene { tag: "faith-war-before-the-flip", field: "faith_war_before_the_flip", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_war_before_the_flip, disable: AdvancedAi::disable_faith_war_before_the_flip },
+    // The base deck reads policy income paid to the player (Merchant
+    // Confederation's Gold per Envoy, Raj's yields per tributary), and
+    // Merchant Confederation joins the portfolio ahead of the plan's own
+    // diplomatic cards while our Envoys pay ten Gold a turn. See
+    // `merchant_confederation_pays` in `advanced.rs`.
+    Gene { tag: "merchant-confederation-earns-its-slot", field: "merchant_confederation_earns_its_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_merchant_confederation_earns_its_slot, disable: AdvancedAi::disable_merchant_confederation_earns_its_slot },
+    // A siege held on a walled city turns to an open (unwalled or breached)
+    // city of the same owner a healthy field-army melee can reach within
+    // eight tiles and ten land steps, under Recovery or Expansion too and
+    // past a prior with three quarters of its walls; skipped when the open
+    // city's defence exceeds our best field melee by more than 15; held
+    // until walled, captured or eight turns without progress. See
+    // `advanced/open_city_front.rs`.
+    Gene { tag: "open-city-draws-the-front", field: "open_city_draws_the_front", kind: Kind::OptIn, enable: AdvancedAi::enable_open_city_draws_the_front, disable: AdvancedAi::disable_open_city_draws_the_front },
+    // faith-war-before-the-flip, version 2: held while our own founded faith
+    // holds our majority (two cities of ours leaning to the rival's faith, or
+    // our faith one city from losing its majority, open it); otherwise
+    // version 1. See `advanced/faith_war_before_the_flip.rs`.
+    Gene { tag: "faith-war-before-the-flip-2", field: "faith_war_before_the_flip_2", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_war_before_the_flip_2, disable: AdvancedAi::disable_faith_war_before_the_flip_2 },
+    // Version two of `holdout-keeps-the-faith-war`: the last holdout also
+    // keeps the war at match point (the founder's race at 75% or more),
+    // whatever its own cities' conversion, unless a city of ours is falling
+    // or our capital is under siege. See `advanced/holdout_faith_war.rs`.
+    Gene { tag: "holdout-keeps-the-faith-war-2", field: "holdout_keeps_the_faith_war_2", kind: Kind::OptIn, enable: AdvancedAi::enable_holdout_keeps_the_faith_war_2, disable: AdvancedAi::disable_holdout_keeps_the_faith_war_2 },
+    // Medina Quarter (+2 Housing in every city with three specialty
+    // districts) joins the policy portfolio, ahead of the plan's ordinary
+    // cards, while two or more of our cities are housing-limited with three
+    // specialty districts, and displaces the weakest Economic card the plan
+    // wants least (never a production, Builder or Settler card). See
+    // `advanced/medina_quarter.rs`.
+    Gene { tag: "medina-quarter-houses-the-districts", field: "medina_quarter_houses_the_districts", kind: Kind::OptIn, enable: AdvancedAi::enable_medina_quarter_houses_the_districts, disable: AdvancedAi::disable_medina_quarter_houses_the_districts },
+    // `solvent-or-hold`: while income is not positive, no Domination upgrade
+    // whose added upkeep takes income below zero (upkeep-reserve floor), and
+    // no amenity or upkeep card traded for another kind. 10-14 083713Z: unit
+    // bill 30 -> 70 on 24 -> 30 units t128-145 as the modernizer read only the
+    // treasury; Liberalism traded away while broke. See `advanced/solvency.rs`.
+    Gene { tag: "solvent-or-hold", field: "solvent_or_hold", kind: Kind::OptIn, enable: AdvancedAi::enable_solvent_or_hold, disable: AdvancedAi::disable_solvent_or_hold },
+    // `bankruptcy-exits-the-drain`: while the treasury holds less than one
+    // turn of a negative income, gold cards first, two extra surplus sales,
+    // then the cheapest units disbanded before the host takes the costliest.
+    // 10-14: the bankruptcy amenity drain (20-120) turned every city Unhappy
+    // in 083713Z and 100910Z. See `advanced/solvency.rs`.
+    Gene { tag: "bankruptcy-exits-the-drain", field: "bankruptcy_exits_the_drain", kind: Kind::OptIn, enable: AdvancedAi::enable_bankruptcy_exits_the_drain, disable: AdvancedAi::disable_bankruptcy_exits_the_drain },
+    // After Urbanization, the most housing-capped city with no Aqueduct left
+    // to claim puts its best-housing Neighborhood first, one in flight per
+    // five cities. See `advanced/neighborhood_houses_the_capped_city.rs`.
+    Gene { tag: "neighborhood-houses-the-capped-city", field: "neighborhood_houses_the_capped_city", kind: Kind::OptIn, enable: AdvancedAi::enable_neighborhood_houses_the_capped_city, disable: AdvancedAi::disable_neighborhood_houses_the_capped_city },
+    // Version one of merchant-confederation-earns-its-slot, and while the
+    // card pays it takes a diplomatic seat from a card the portfolio ranks
+    // after it (Gunboat Diplomacy seated under Communism kept version one
+    // out). See `merchant_confederation_pays` in `advanced.rs`.
+    Gene { tag: "merchant-confederation-earns-its-slot-2", field: "merchant_confederation_earns_its_slot_2", kind: Kind::OptIn, enable: AdvancedAi::enable_merchant_confederation_earns_its_slot_2, disable: AdvancedAi::disable_merchant_confederation_earns_its_slot_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

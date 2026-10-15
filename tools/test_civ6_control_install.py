@@ -1866,6 +1866,17 @@ class ProtectedInstallTest(unittest.TestCase):
         finally:
             staging.rmdir()
 
+    def test_a_restart_in_place_keeps_the_running_games_mod_index(self) -> None:
+        target = Path("/protected/DLC/CivvisControl")
+        with patch.object(install, "install_dir", return_value=target), \
+             patch.object(install, "_write_mod") as write_mod, \
+             patch.object(install, "_drop_mod_index") as drop:
+            self.assertEqual(install.install({"RunTag": "next"}, drop_index=False), target)
+            write_mod.assert_called_once_with(target, {"RunTag": "next"})
+            drop.assert_not_called()
+            install.install({"RunTag": "next"})
+            drop.assert_called_once_with()
+
     def test_clear_run_tag_rewrites_directly_where_it_can(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
             mod_dir = Path(temporary)

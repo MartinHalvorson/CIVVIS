@@ -218,3 +218,122 @@ fn the_faith_racers_peace_offer_is_refused() {
         "and answered, not left pending"
     );
 }
+
+/// 034356Z's shape for version two: we are the last holdout at match point
+/// (the founder holds three of four majors, 75%) and no city of ours follows
+/// or is converting.
+fn match_point_no_convert() -> (Game, AdvancedAi, StrategicPlan) {
+    let (mut g, ai, plan, following) = holdout_at_war();
+    let city = g.cities.get_mut(&following).unwrap();
+    city.pressure.clear();
+    city.atheist_pressure = 50.0;
+    assert_eq!(AdvancedAi::our_cities_on_the_faith(&g, 0, FAITH), 0);
+    (g, ai, plan)
+}
+
+#[test]
+fn version_two_is_opt_in() {
+    opt_in_off_in_both_controllers("holdout-keeps-the-faith-war-2", |ai| {
+        ai.holdout_keeps_the_faith_war_2
+    });
+}
+
+/// At match point with no city converting, version one lets the peace
+/// through and version two refuses it at both choke points.
+#[test]
+fn version_two_refuses_peace_at_match_point_with_no_city_converting() {
+    let (g, mut ai, _) = match_point_no_convert();
+    ai.enable_holdout_keeps_the_faith_war();
+    assert!(
+        !ai.holdout_keeps_the_faith_war_with(&g, 0, 1),
+        "version one: no city on the faith, no hold"
+    );
+    let (g, mut ai, _) = match_point_no_convert();
+    ai.enable_holdout_keeps_the_faith_war_2();
+    assert_eq!(ai.holdout_match_point(&g, 0, 1), Some(75));
+    assert!(ai.holdout_keeps_the_faith_war_with(&g, 0, 1));
+
+    let (mut g, mut ai, plan) = match_point_no_convert();
+    ai.enable_holdout_keeps_the_faith_war_2();
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!ai.peace_offers.contains(&1), "our offer is withheld");
+    assert!(g.is_at_war(0, 1));
+
+    let (mut g, mut ai, plan) = match_point_no_convert();
+    ai.enable_holdout_keeps_the_faith_war_2();
+    propose_peace_from_the_founder(&mut g);
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(g.is_at_war(0, 1), "the founder's offer is refused");
+}
+
+/// The exits: a city of ours actually falling, or our capital under siege.
+#[test]
+fn version_two_allows_peace_when_a_city_falls_or_the_capital_is_besieged() {
+    let (mut g, mut ai, plan) = match_point_no_convert();
+    ai.enable_holdout_keeps_the_faith_war_2();
+    let turn = g.turn;
+    let town = g
+        .player_city_ids(0)
+        .into_iter()
+        .find(|cid| !g.cities[cid].is_capital)
+        .unwrap();
+    let city = g.cities.get_mut(&town).unwrap();
+    city.last_attacked = turn;
+    city.hp = 80;
+    assert_eq!(ai.holdout_match_point(&g, 0, 1), None, "a falling city");
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(
+        ai.peace_offers.contains(&1),
+        "a falling city reopens the peace"
+    );
+
+    let (mut g, mut ai, plan) = match_point_no_convert();
+    ai.enable_holdout_keeps_the_faith_war_2();
+    let turn = g.turn;
+    let capital = g
+        .player_city_ids(0)
+        .into_iter()
+        .find(|cid| g.cities[cid].is_capital)
+        .unwrap();
+    g.cities.get_mut(&capital).unwrap().last_attacked = turn;
+    assert_eq!(g.cities[&capital].hp, 200, "struck but not falling");
+    assert_eq!(
+        ai.holdout_match_point(&g, 0, 1),
+        None,
+        "the capital besieged"
+    );
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(
+        ai.peace_offers.contains(&1),
+        "a besieged capital reopens the peace"
+    );
+}
+
+/// Short of match point, version two is version one: not the last holdout,
+/// or the founder short of 75% of the living majors.
+#[test]
+fn version_two_short_of_match_point_is_version_one() {
+    let (mut g, mut ai, _) = match_point_no_convert();
+    ai.enable_holdout_keeps_the_faith_war_2();
+    Arc::make_mut(&mut g.observed_majority_religion).insert(3, "Islam".into());
+    assert!(
+        !ai.holdout_keeps_the_faith_war_with(&g, 0, 1),
+        "seat 3 holds out"
+    );
+
+    let (mut g, mut ai, _) = match_point_no_convert();
+    ai.enable_holdout_keeps_the_faith_war_2();
+    g.players[3].alive = false;
+    assert!(AdvancedAi::we_are_the_last_holdout(&g, 0, 1));
+    assert_eq!(
+        ai.holdout_match_point(&g, 0, 1),
+        None,
+        "two of three is 66%"
+    );
+    assert!(!ai.holdout_keeps_the_faith_war_with(&g, 0, 1));
+
+    // With a city on the faith, version two keeps version one's hold.
+    let (g, mut ai, _, _) = holdout_at_war();
+    ai.enable_holdout_keeps_the_faith_war_2();
+    assert!(ai.holdout_keeps_the_faith_war_with(&g, 0, 1));
+}

@@ -376,6 +376,47 @@ class TeardownOwnershipTests(unittest.TestCase):
         release.assert_called_once_with()
 
 
+class RestartInPlaceHandoffTests(unittest.TestCase):
+    """A game the last run parked for a restart in place is the next run's."""
+
+    TAG = "civvis-MINE"
+
+    def test_the_parked_game_is_left_up_and_its_tag_kept_for_the_next_run(self):
+        with mock.patch.object(climb, "installed_run_tag", return_value=self.TAG), \
+             mock.patch.object(climb.gamelock, "acquire", return_value=True), \
+             mock.patch.object(climb.gamelock, "release") as release, \
+             mock.patch.object(climb.restart_handoff, "parked_for",
+                               return_value=True) as parked, \
+             mock.patch.object(climb, "busy", return_value="456"), \
+             mock.patch.object(climb, "run") as run, \
+             mock.patch.object(climb.time, "sleep"), \
+             mock.patch.object(climb.launcher, "stop") as stop, \
+             mock.patch.object(climb.install, "clear_run_tag") as clear, \
+             mock.patch("sys.stdout"):
+            self.assertTrue(climb.teardown(self.TAG))
+
+        parked.assert_called_once_with(self.TAG)
+        self.assertEqual(2, run.call_count, "its own harness and brain are still swept")
+        stop.assert_not_called()
+        clear.assert_not_called()
+        release.assert_called_once_with()
+
+    def test_only_the_parked_game_itself_lets_the_next_run_start(self):
+        with mock.patch.object(climb.env, "game_pids", return_value=[456]), \
+             mock.patch.object(climb.restart_handoff, "standing",
+                               return_value={"civ_pids": [456]}):
+            self.assertTrue(climb.parked_for_restart("456"))
+            self.assertFalse(climb.parked_for_restart("456 789"),
+                             "a harness beside the parked game is somebody's run")
+        with mock.patch.object(climb.env, "game_pids", return_value=[456]), \
+             mock.patch.object(climb.restart_handoff, "standing", return_value=None):
+            self.assertFalse(climb.parked_for_restart("456"))
+        source = Path(climb.__file__).read_text(encoding="utf-8")
+        self.assertIn("    holder = busy()\n    if holder and not parked_for_restart(holder):\n"
+                      "        print(\"something already holds the game; refusing to stop "
+                      "an unowned run\",", source)
+
+
 class ExitConfirmationRecoveryTests(unittest.TestCase):
     TAG = "civvis-MINE"
 
