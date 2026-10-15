@@ -5349,7 +5349,7 @@ impl Game {
             || (spec.promotion_class == "naval_melee" && self.has_ability(pid, "knarr"))
     }
 
-    pub(super) fn air_capacity_at(&self, pid: usize, pos: Pos) -> i32 {
+    pub(crate) fn air_capacity_at(&self, pid: usize, pos: Pos) -> i32 {
         let mut capacity = 0;
         if let Some(cid) = self.city_at(pos) {
             let city = &self.cities[&cid];

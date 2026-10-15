@@ -27,7 +27,7 @@ known objectives were farther away. Neither the range-list omission nor a
 campaign-priority gate has been established as the cause of that loss or
 delay; this change targets the independently reproducible base-list defect.
 
-## Regression under construction
+## Baseline and repair under validation
 
 The controlled board places an owned city center twelve hexes from the
 objective and its Aerodrome ten hexes away. Two ordinary Bombers rebase
@@ -36,5 +36,24 @@ reachable. Equivalent controls cover an owned airstrip and carrier;
 pillaged and foreign bases supply no reach. City-center reach remains valid,
 and one Jet Bomber cannot lend its range to an ordinary partner.
 
-The baseline tests are not yet executed. No repaired native execution,
-performance benefit, campaign capture, or win-rate improvement is claimed.
+Baseline revision `1dea5b872d4758605bfd801b1acbe524fd4ea253` fails
+GitHub run `38767849894`: the Aerodrome and carrier cases both complete the
+two legal rebases and then fail the campaign-range assertion. The runner
+stops early after 138 other passing tests and two failures; this does not
+establish results for the unexecuted airstrip and negative controls.
+
+The repair enumerates map positions with positive capacity from the existing
+engine predicate. Making that read-only predicate crate-visible lets the
+planner share the rebase engine's ownership, active-field, and carrier rules.
+The existing per-generation two-aircraft reach requirement is unchanged.
+The seven focused controls and the final full suite still need repaired
+execution. No change to actual base capacity or native command transport.
+
+A limited geometry screen of the first state per turn in three recorded
+worlds found no existing Aerodrome/carrier that changed the two-Bomber reach
+verdict relative to city centers. It covered 171 states with at least two
+Bombers and 1,768 known at-war rival-city checks. This omission is a reproduced
+planning defect, not an established explanation of those native outcomes.
+
+No repaired native execution, performance benefit, campaign capture, or
+win-rate improvement is claimed yet.

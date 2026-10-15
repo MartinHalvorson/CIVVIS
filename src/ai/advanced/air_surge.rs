@@ -514,13 +514,15 @@ impl AdvancedAi {
         }
     }
 
-    /// Every city of ours that can base an aircraft: the City Center carries
-    /// one slot on its own, so a Bomber has somewhere to sit before the
-    /// Aerodrome finishes, and the Aerodrome adds two more.
+    /// Actual aircraft base tiles, including active Aerodromes, airstrips,
+    /// and carriers. Their coordinates can reach beyond their city centers;
+    /// share the rebase engine's ownership and pillage rules.
     fn air_surge_bases(g: &Game, pid: usize) -> Vec<Pos> {
-        g.player_city_ids(pid)
-            .into_iter()
-            .map(|cid| g.cities[&cid].pos)
+        g.map
+            .tiles
+            .keys()
+            .copied()
+            .filter(|position| g.air_capacity_at(pid, *position) > 0)
             .collect()
     }
 
