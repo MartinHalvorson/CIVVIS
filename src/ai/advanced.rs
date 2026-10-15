@@ -39374,6 +39374,17 @@ impl AdvancedAi {
         pid: usize,
         site: Pos,
     ) -> Option<String> {
+        // A measured native contribution is stronger evidence than the modeled
+        // rate behind `loyalty-rate-alarm`. Honor it on the ordinary live path
+        // even when no rival city is visible, including move-and-found batches.
+        if g.native_settlement_pressure(pid, site).is_some() {
+            if let Some((per_turn, turns)) = Self::settle_site_forecast_revolt(g, pid, site) {
+                return Some(format!(
+                    "the native nearby-city pressure would leave the city losing {:.1} Loyalty a turn and revolting in about {:.0} turns",
+                    -per_turn, turns.ceil()
+                ));
+            }
+        }
         if self.frontier_loyalty && Self::beyond_loyalty_reach(g, pid, site) {
             return Some(
                 "it lies beyond the empire's Loyalty reach on ground the seat has not \
@@ -39475,7 +39486,7 @@ impl AdvancedAi {
         let mut forecast = g.speculative_clone();
         let city = forecast.found_city_for(pid, site, None);
         let city = &forecast.cities[&city];
-        let loyalty_per_turn = forecast.city_loyalty_per_turn(city);
+        let loyalty_per_turn = forecast.settlement_loyalty_per_turn(city);
         (loyalty_per_turn < -f64::EPSILON)
             .then(|| city.loyalty / -loyalty_per_turn)
             .filter(|turns_to_flip| *turns_to_flip <= SETTLE_TARGET_LOYALTY_RISK_TURNS)
@@ -49362,3 +49373,50 @@ mod builder_mountain_tests;
 
 #[cfg(test)]
 mod defending_district_tests;
+
+#[cfg(test)]
+mod native_settlement_pressure_forecast_tests {
+    use crate::game::Game;
+
+    #[test]
+    fn native_pressure_reaches_destination_forecasts() {
+        let mut game = Game::new_full(2, 30, 20, 918, 250, 0, false);
+        game.clear_mirror_cities();
+        let land: Vec<_> = game
+            .map
+            .tiles
+            .values()
+            .filter(|tile| !game.rules.is_water(tile) && game.rules.is_passable(tile))
+            .map(|tile| tile.pos)
+            .collect();
+        let home = land[0];
+        game.found_city_for(0, home, None);
+        let sites: Vec<_> = land
+            .into_iter()
+            .filter(|site| game.wdist(home, *site) >= 4)
+            .take(2)
+            .collect();
+        assert_eq!(sites.len(), 2);
+        let ai = super::AdvancedAi::new();
+        assert!(!ai.base.loyalty_rate_alarm);
+        assert!(!ai.frontier_loyalty);
+        for site in &sites {
+            assert!(super::AdvancedAi::settle_site_forecast_revolt(&game, 0, *site).is_none());
+            assert!(ai
+                .settle_site_frontier_loyalty_verdict(&game, 0, *site)
+                .is_none());
+        }
+        game.observed_settlement_loyalty =
+            Some(std::sync::Arc::new(crate::game::NativeSettlementPressure {
+                player: 0,
+                turn: game.turn,
+                plots: sites.iter().map(|site| (*site, -20.0)).collect(),
+            }));
+        for site in sites {
+            assert!(super::AdvancedAi::settle_site_forecast_revolt(&game, 0, site).is_some());
+            assert!(ai
+                .settle_site_frontier_loyalty_verdict(&game, 0, site)
+                .is_some());
+        }
+    }
+}
