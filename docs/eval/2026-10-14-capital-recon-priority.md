@@ -40,7 +40,9 @@ The initial candidate `2fa49124d` passed all 5,920 tests locally under
 `cargo test --profile ci --locked` and in independent CI, with 51 existing
 ignored tests and four ignored documentation examples. CI also passed 71
 gene-screen, 21 live-differential and 24 evaluator tests and every required
-check. Final validation after merging `02b054b13` and adding the crossing
-control and explicit assignment journal is in progress. No native
+check. After merging `02b054b13`, the reviewed `b1408f0f7` revision passed
+all 17 focused capital tests and all 5,925 full local and independent CI
+tests, including the crossing control. All required CI checks passed.
+No native
 execution reach, win-rate improvement, or highest-difficulty victory has been
 established for this change.
