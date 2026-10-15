@@ -24486,7 +24486,7 @@ function drawPlayerHud() {
         // with the watch action the old full-width stats button carried.
         return `<button class="ribbon-stat ${kind}${isLeader ? " category-leader" : ""}" data-hud-col="${kind}" ` +
           `data-hud-action="watch" data-hud-civ="${p.id}" ` +
-          `title="${label}${marker ? " · Founded religion still followed" : ""}${isLeader ? " · Category leader" : ""} · Watch ${escapeAttr(p.civ)}" ` +
+          `title="${label}${marker ? " · * Founded a religion" : ""}${isLeader ? " · Category leader" : ""} · Watch ${escapeAttr(p.civ)}" ` +
           `aria-label="${label}; watch ${escapeAttr(p.civ)}">` +
           `<b>${kind === "score" ? ribbonScore(value) : ribbonStat(value)}</b>${markerHtml}</button>`;
       };
