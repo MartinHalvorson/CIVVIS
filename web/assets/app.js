@@ -3445,9 +3445,12 @@ function applyHudWidgetMetrics(name, metrics, persist = false) {
   HUD_LAYOUT[name] = serializeHudWidget(config, next);
   // The victory tracker runs down to whatever the world map leaves it, so
   // dragging the map's edge has to move the seam in the same gesture rather
-  // than letting the tracker slide underneath it. The masthead's own height is
-  // published for the narrow layout, where the tracker does stand under it.
-  if (name === "players") area.style.setProperty("--player-hud-height", `${next.height}px`);
+  // than letting the tracker slide underneath it. The masthead's own top and
+  // height are published because the tracker stands under it in every layout.
+  if (name === "players") {
+    area.style.setProperty("--player-hud-top", `${next.y}px`);
+    area.style.setProperty("--player-hud-height", `${next.height}px`);
+  }
   if (name === "minimap") area.style.setProperty("--minimap-height", `${next.height}px`);
   // Victory leaders stack vertically inside each path. Reveal another rank as
   // soon as a resize makes room for a complete row, without replacing the
@@ -3481,16 +3484,19 @@ function horizontalHudOverlap(first, second) {
 }
 
 // A dragged layout remains free-form on the screen where it was arranged. On
-// a later compact resize, however, the default chrome becomes a stack and its
-// old proportional coordinates can put two panels in the same band. Keep the
-// saved sizes and horizontal intent, but settle the movable lower panels into
-// the live gaps before painting the resized frame.
-function settleCompactHudWidgets() {
-  if (!responsivePanelGeometry.compact) return;
+// a later resize, however, the default chrome is a stack under the masthead
+// and old proportional coordinates can put two panels in the same band. Keep
+// the saved sizes and horizontal intent, but settle the movable lower panels
+// into the live gaps before painting the resized frame. The masthead spans
+// the map on wide screens too, so a tracker saved in the top-right corner it
+// once had to itself steps down under the standings there as well; the
+// minimap's lower stack is a compact arrangement only.
+function settleHudWidgets() {
   const margin = hudWidgetMargin();
   const gap = hudWidgetGap();
   const minimap = HUD_WIDGETS.minimap;
-  if (minimap?.element?.classList.contains("layout-widget-custom")) {
+  if (responsivePanelGeometry.compact &&
+      minimap?.element?.classList.contains("layout-widget-custom")) {
     const metrics = visibleHudWidgetMetrics("minimap");
     if (metrics) {
       const maximumY = Math.max(margin, area.clientHeight -
@@ -3506,16 +3512,20 @@ function settleCompactHudWidgets() {
   const player = visibleHudWidgetMetrics("players");
   const minimapMetrics = visibleHudWidgetMetrics("minimap");
   let minimumY = margin;
-  let maximumY = Math.max(margin, area.clientHeight - margin - metrics.height);
+  let floorY = area.clientHeight - margin;
   if (player && horizontalHudOverlap(metrics, player))
     minimumY = Math.max(minimumY, player.y + player.height + gap);
   if (minimapMetrics && horizontalHudOverlap(metrics, minimapMetrics))
-    maximumY = Math.min(maximumY, minimapMetrics.y - gap - metrics.height);
-  if (minimumY <= maximumY) {
-    const y = Math.max(minimumY, Math.min(maximumY, metrics.y));
-    if (Math.abs(y - metrics.y) > .5)
-      applyHudWidgetMetrics("victory", {...metrics, y});
-  }
+    floorY = Math.min(floorY, minimapMetrics.y - gap);
+  // A tracker saved taller than the gap it now has gives up height rather
+  // than staying under the masthead: its paths scroll inside it. With no room
+  // for even its smallest self there is no clear spot, so it stays put.
+  const room = floorY - minimumY;
+  if (room < Math.min(victory.minHeight, metrics.height)) return;
+  const height = Math.min(metrics.height, room);
+  const y = Math.max(minimumY, Math.min(floorY - height, metrics.y));
+  if (Math.abs(y - metrics.y) > .5 || Math.abs(height - metrics.height) > .5)
+    applyHudWidgetMetrics("victory", {...metrics, y, height});
 }
 
 function resetHudWidget(name, persist = true) {
@@ -3537,6 +3547,7 @@ function resetHudWidget(name, persist = true) {
   // The tracker reads its neighbours' heights to know where to start and stop.
   // Hand those back to the stylesheet at the same moment the neighbour returns.
   if (name === "players") {
+    area.style.removeProperty("--player-hud-top");
     area.style.removeProperty("--player-hud-height");
     applyTurnPlateWidth(null);
   }
@@ -4538,7 +4549,7 @@ function resize() {
   mapAreaRefitDepth++;
   try {
     applySavedHudLayouts();
-    settleCompactHudWidgets();
+    settleHudWidgets();
   }
   finally { mapAreaRefitDepth--; }
   // A saved player masthead can scale on this resize. Recompute the compact
@@ -17313,7 +17324,7 @@ function syncSkyNavDockGeometry() {
   if (skyNavRefitFrame) return;
   skyNavRefitFrame = requestAnimationFrame(() => {
     skyNavRefitFrame = 0;
-    settleCompactHudWidgets();
+    settleHudWidgets();
     refitMapAreaToChrome();
   });
 }
