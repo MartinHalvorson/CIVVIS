@@ -68,7 +68,8 @@ CLEANUP_OWNERSHIP_FILE = "cleanup-ownership.json"
 
 sys.path.insert(0, str(HERE))
 from civ6_control import (gamelock, install, launcher, live_pause,  # noqa: E402
-                          macos_input, macos_window, popup_clear)
+                          macos_input, macos_window, popup_clear,
+                          restart_handoff)
 import civ6_env as env  # noqa: E402
 import computer_control as desktop_control  # noqa: E402
 # The objective list is not restated here. This launcher's `--victory` is
@@ -766,6 +767,16 @@ def teardown(expected_tag: str | None = None) -> bool:
             run(["pkill", "-f", pattern])
         time.sleep(1)
 
+        # ★ NEW GAME BY RESTART: this run parked the game for the next one
+        # (`civ6_control.restart_handoff`), which installs over its mod and
+        # restarts the game in place. Its harness and brain are gone; the game
+        # and the installed tag are the next run's to take or to stop.
+        if restart_handoff.parked_for(expected_tag):
+            print(f"[teardown] {expected_tag!r} parked Civilization VI for the next "
+                  "run's restart in place; leaving the game up", flush=True)
+            _cleanup_ownership_path(expected_tag).unlink(missing_ok=True)
+            return True
+
         # launcher.stop is deliberately global, so put the second ownership check
         # immediately beside it while this harness holds gamelock.  A managed foreign
         # controller cannot start between these lines; an unexpected tag change is a
@@ -866,6 +877,21 @@ def busy() -> str | None:
     out = run(["pgrep", "-f", RUNNING_GAME_PATTERN])
     real = [pid for pid in out.split() if _is_really_the_game(pid)]
     return " ".join(real) or None
+
+
+def parked_for_restart(holder: str) -> bool:
+    """Whether everything `busy` found is a game the last run parked for us.
+
+    New game by restart (`civ6_control.restart_handoff`): the previous run left
+    Civilization VI up, game parked, with no harness. That is the lane's own
+    game waiting for this run, not somebody else's -- `civ6_play` restarts it
+    in place or stops it and launches afresh.
+    """
+    standing = restart_handoff.standing(env.game_pids())
+    if standing is None:
+        return False
+    parked = {str(pid) for pid in standing["civ_pids"]}
+    return set(holder.split()) <= parked
 
 
 def _detach(cmd: list[str], log_path: Path, what: str,
@@ -2994,7 +3020,8 @@ def main() -> int:
         print(f"no civvis-orders binary at {orders_bin}", file=sys.stderr)
         return 2
 
-    if busy():
+    holder = busy()
+    if holder and not parked_for_restart(holder):
         print("something already holds the game; refusing to stop an unowned run",
               flush=True)
         return 3

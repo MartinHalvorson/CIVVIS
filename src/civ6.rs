@@ -1154,6 +1154,13 @@ fn live_new_game_outcome(succeeded: bool, stdout: &str, stderr: &str) -> Result<
 /// Ask Civilization VI to retire the live game so the lane starts a fresh one,
 /// and lift any pause: the pause request is host-wide, so standing it would
 /// hold the new game at its first turn, and New game means a game that plays.
+///
+/// The fresh game is a restart inside the running Civilization VI at the same
+/// settings (operator 2026-10-15: "new game button can restart the game if
+/// that is faster and we want the same settings"): `CIVVIS_RETIRE_RESTART`
+/// asks the retiring run to park the game for the next run instead of
+/// retiring it, and the next run falls back to a relaunch whenever the
+/// restart cannot be proven (`tools/civ6_control/restart_handoff.py`).
 pub fn request_live_new_game() -> Result<(), String> {
     let tools = tools_dir()
         .ok_or_else(|| "the CIVVIS tools directory is not beside this server".to_string())?;
@@ -1164,6 +1171,7 @@ pub fn request_live_new_game() -> Result<(), String> {
         .arg(tools.join("ops").join("civvis-games.sh"))
         .args(["retire", LIVE_NEW_GAME_REASON])
         .env("CIVVIS_RUNS_ROOT", run_root())
+        .env("CIVVIS_RETIRE_RESTART", "1")
         .stdin(Stdio::null())
         .output()
         .map_err(|error| format!("could not ask for a new game: {error}"))?;

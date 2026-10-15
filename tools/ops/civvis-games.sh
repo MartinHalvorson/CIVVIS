@@ -380,8 +380,12 @@ retire)
     exit 2
   fi
   say "== retiring the active game =="
+  # CIVVIS_RETIRE_RESTART=1 (the page's New game): the next run restarts the
+  # game inside the running Civ VI instead of relaunching it.
+  restart_flag=()
+  [[ "${CIVVIS_RETIRE_RESTART:-0}" == 1 ]] && restart_flag=(--restart)
   python3 "$REPO/tools/civ6_control/operator_retire.py" request \
-    --runs-root "$RUN_ROOT" --reason "$reason"
+    --runs-root "$RUN_ROOT" --reason "$reason" "${restart_flag[@]}"
   retire_status=$?
   if (( retire_status != 0 )); then
     exit "$retire_status"
