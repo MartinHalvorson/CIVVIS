@@ -49402,7 +49402,9 @@ mod native_settlement_pressure_forecast_tests {
         assert!(!ai.frontier_loyalty);
         for site in &sites {
             assert!(super::AdvancedAi::settle_site_forecast_revolt(&game, 0, *site).is_none());
-            assert!(ai.settle_site_frontier_loyalty_verdict(&game, 0, *site).is_none());
+            assert!(ai
+                .settle_site_frontier_loyalty_verdict(&game, 0, *site)
+                .is_none());
         }
         game.observed_settlement_loyalty =
             Some(std::sync::Arc::new(crate::game::NativeSettlementPressure {
@@ -49412,7 +49414,9 @@ mod native_settlement_pressure_forecast_tests {
             }));
         for site in sites {
             assert!(super::AdvancedAi::settle_site_forecast_revolt(&game, 0, site).is_some());
-            assert!(ai.settle_site_frontier_loyalty_verdict(&game, 0, site).is_some());
+            assert!(ai
+                .settle_site_frontier_loyalty_verdict(&game, 0, site)
+                .is_some());
         }
     }
 }

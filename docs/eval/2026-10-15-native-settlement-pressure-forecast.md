@@ -68,10 +68,20 @@ blocked-site union to reopen the site. GitHub independently confirmed only
 the latter failure on the pushed governor correction. Both test corrections
 are retained in the validation history. Review also found that the ordinary
 destination verdict needed the native reading outside optional modeled-rate
-checks; its regression now exercises that ordinary verdict. The repaired code
-passes `cargo check --profile ci --locked --all-targets`. Focused execution,
-full local tests, final GitHub gates, exact native-input comparison, and
-native execution of the repaired controller are still pending. Keep this
-PR draft until the necessary checks and mechanism evidence are complete.
-No repaired native counterfactual, win-rate, or strength improvement is
-claimed yet.
+checks; its regression now exercises that ordinary verdict.
+
+Revision `4f6c8e8695eaaa3de7b4b2e48410678a79e2347a` passes the complete
+local `cargo test --profile ci --locked` suite with its source hashes unchanged
+throughout execution. GitHub run `38763032894` independently passes 6,061 Rust
+tests with 51 skipped and four ignored documentation examples. Its performance,
+collaboration, overwrite, build, and Lua gates also pass. The quality gate
+requested line wrapping on two test assertions, corrected after the full local
+run; production Rust behavior is unchanged by that formatting correction. The local
+changed-line Rust formatting and Clippy gate passes after the correction.
+
+Hosted native build `38763142565` still targets the exact tested `4f6c8e869`
+source. All tracked-source hashes, both ARM64 executable hashes, native test
+controls, downloaded-binary smokes, the frozen Cumaná input comparison, and
+native execution of the repaired controller remain pending. Keep this PR
+draft until necessary checks and mechanism evidence are complete. No repaired
+native counterfactual, win-rate, or strength improvement is claimed yet.
