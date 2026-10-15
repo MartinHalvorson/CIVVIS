@@ -38,6 +38,11 @@ pub struct Tile {
     pub hills: bool,
     pub resource: Option<Name>,
     pub improvement: Option<Name>,
+    /// Owner of an improvement when no city owns its ground.
+    /// Airstrips keep their own owner on neutral land. Older saves and
+    /// ordinary generated ground have no independent ownership observation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub improvement_owner: Option<usize>,
     /// Improvements and ordinary districts stop producing yields while
     /// pillaged. City/Encampment defenses keep their dedicated damage state.
     #[serde(default)]
@@ -232,6 +237,7 @@ impl Tile {
             hills: false,
             resource: None,
             improvement: None,
+            improvement_owner: None,
             pillaged: false,
             district: None,
             district_foundation: None,

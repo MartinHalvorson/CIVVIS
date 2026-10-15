@@ -364,6 +364,27 @@ class PolicyRosterIsStrict(unittest.TestCase):
         self.assertEqual(result["divergences"], [])
 
 
+
+class ImprovementTerritoryPermission(unittest.TestCase):
+    def test_native_outside_permission_is_independent_of_builder_access(self):
+        database = database_with({"Improvements": [
+            {"ImprovementType": "IMPROVEMENT_AIRSTRIP", "CanBuildOutsideTerritory": "1"},
+            {"ImprovementType": "IMPROVEMENT_MISSILE_SILO", "CanBuildOutsideTerritory": "0"},
+            {"ImprovementType": "IMPROVEMENT_FARM"},
+        ]})
+        projected = civ6_fidelity.project_improvements(database)
+        self.assertTrue(projected["airstrip"]["can_build_outside_territory"])
+        self.assertFalse(projected["airstrip"]["builder_buildable"])
+        self.assertFalse(projected["missile_silo"]["can_build_outside_territory"])
+        self.assertFalse(projected["farm"]["can_build_outside_territory"])
+
+    def test_rules_projection_preserves_default_restrictions(self):
+        ours = civ6_fidelity.ours_improvements()
+        self.assertTrue(ours["airstrip"]["can_build_outside_territory"])
+        self.assertFalse(ours["airstrip"]["builder_buildable"])
+        self.assertFalse(ours["farm"]["can_build_outside_territory"])
+        self.assertFalse(ours["missile_silo"]["can_build_outside_territory"])
+
 if __name__ == "__main__":
     unittest.main()
 

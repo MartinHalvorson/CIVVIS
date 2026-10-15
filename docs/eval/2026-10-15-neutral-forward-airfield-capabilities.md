@@ -34,8 +34,38 @@ The first checkpoint adds two production-path controls without the repair:
 an Engineer can construct an Airstrip on neutral flat land, and a mirrored
 neutral Airstrip whose native improvement owner is local player 1 supplies
 three slots to modeled seat 0. Fixture preconditions distinguish that owner
-from land ownership and from native-to-model player mapping. Baseline results
-and the repair remain pending.
+from land ownership and from native-to-model player mapping. Baseline
+`c178eaa6b` compiles all targets locally. GitHub `38802849666` reaches the
+Engineer neutral-placement assertion after its fixture preconditions and
+fails it. The job passes 3,749 other tests and stops early at 3,750/6,082;
+the mirror ownership control has not run in that fail-fast job. Its synthetic
+PR merge includes the concurrent frontier-walls change. Neither a complete
+baseline suite nor two executed red controls is claimed.
+
+The repair carries `CanBuildOutsideTerritory` from all six stock Gathering
+Storm improvement rows. A neutral plot can offer only an improvement with
+that permission; ordinary Builder work, Missile Silos, foreign territory,
+stale city references, unsafe unattributed native ground, terrain, resources,
+features, unlocks, unit capabilities and charges retain their guards. Building
+records improvement ownership without inventing an owning city. Active neutral
+Airstrips supply three slots to their known owner; owned legacy Airstrips keep
+their territorial fallback. Missing owner observations grant no neutral base.
+
+Native `Plot:GetImprovementOwner()` is exported as `io`, cached per viewer
+only while visible, and included in tile delta identity. The mirror maps
+native owner IDs to modeled seats separately from territorial ownership and
+clears stale owners. New controls cover construction and rebase capacity,
+foreign/unknown owners, ownership changes, pillage, removal, save compatibility
+and hidden-state redaction. The new field defaults to absent on older saves.
+Existing exhaustive plot fixtures initialize `io: None`.
+
+All 107 mod scripts parse under Lua 5.1.5 and all 102 discovered mod tests
+pass, including the new export/fog/delta controls. All 30 fidelity-tool tests
+pass. Both the original and expanded improvement audits against installed
+Gathering Storm data report zero divergences. The compiled cache on this
+host currently lacks Gathering Storm rows and is not used as that reference.
+Full Rust validation, engine soak, cost measurement and native execution
+remain pending. No planner or default selection is promoted in this change.
 
 The intended continuation carries the shipped outside-territory rule and
 improvement ownership through placement, execution, saves, native export,

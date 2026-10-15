@@ -4381,6 +4381,7 @@ impl Game {
             for position in positions {
                 let tile = self.map.tiles.get_mut(&position).unwrap();
                 tile.improvement = Some(crate::name!("national_park"));
+                tile.improvement_owner = Some(pid);
                 tile.pillaged = false;
             }
             bump(&mut self.players[pid], "national_park");
@@ -4399,6 +4400,7 @@ impl Game {
                 t.resource = None;
             } else {
                 t.improvement = Some(Name::new(imp));
+                t.improvement_owner = Some(pid);
                 t.pillaged = false;
             }
             if removes {
@@ -5382,14 +5384,21 @@ impl Game {
                                 .sum::<i32>();
                         }
                     }
-                    if tile.improvement.as_deref() == Some("airstrip") && !tile.pillaged {
-                        capacity += self.rules.improvements["airstrip"]
-                            .effects
-                            .get("air_slots")
-                            .copied()
-                            .unwrap_or(3.0) as i32;
-                    }
                 }
+            }
+            let owner = match tile.owner_city {
+                Some(cid) => self.cities.get(&cid).map(|city| city.owner),
+                None => tile.improvement_owner,
+            };
+            if owner == Some(pid)
+                && tile.improvement.as_deref() == Some("airstrip")
+                && !tile.pillaged
+            {
+                capacity += self.rules.improvements["airstrip"]
+                    .effects
+                    .get("air_slots")
+                    .copied()
+                    .unwrap_or(3.0) as i32;
             }
         }
         capacity += self

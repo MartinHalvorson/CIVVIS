@@ -457,6 +457,10 @@ pub struct ImprovementSpec {
     /// Foreign-territory placement additionally needs an Open Borders treaty.
     #[serde(default)]
     pub requires_open_borders: bool,
+    /// Firaxis `CanBuildOutsideTerritory`: this improvement can also stand
+    /// on neutral ground. Foreign owned land retains its existing rules.
+    #[serde(default)]
+    pub can_build_outside_territory: bool,
     /// Features that may not occur on any adjacent tile. Rapa Nui's Moai
     /// cannot stand beside Woods or Rainforest.
     #[serde(default)]
