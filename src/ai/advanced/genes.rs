@@ -3970,6 +3970,11 @@ pub const GENES: &[Gene] = &[
     // our faith one city from losing its majority, open it); otherwise
     // version 1. See `advanced/faith_war_before_the_flip.rs`.
     Gene { tag: "faith-war-before-the-flip-2", field: "faith_war_before_the_flip_2", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_war_before_the_flip_2, disable: AdvancedAi::disable_faith_war_before_the_flip_2 },
+    // Version two of `holdout-keeps-the-faith-war`: the last holdout also
+    // keeps the war at match point (the founder's race at 75% or more),
+    // whatever its own cities' conversion, unless a city of ours is falling
+    // or our capital is under siege. See `advanced/holdout_faith_war.rs`.
+    Gene { tag: "holdout-keeps-the-faith-war-2", field: "holdout_keeps_the_faith_war_2", kind: Kind::OptIn, enable: AdvancedAi::enable_holdout_keeps_the_faith_war_2, disable: AdvancedAi::disable_holdout_keeps_the_faith_war_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

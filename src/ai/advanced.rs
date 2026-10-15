@@ -6897,6 +6897,10 @@ pub struct AdvancedAi {
     /// faith's founder while we are its last holdout and a city of ours
     /// follows or is converting to it. See `advanced/holdout_faith_war.rs`.
     holdout_keeps_the_faith_war: bool,
+    /// `holdout-keeps-the-faith-war-2`: version two also keeps that war at
+    /// match point, whatever our cities' conversion. See
+    /// `advanced/holdout_faith_war.rs`.
+    holdout_keeps_the_faith_war_2: bool,
     /// `founder-holds-the-holy-city`'s memory: the last threat seen at the
     /// Holy City and the last spread of ours there, by position. See
     /// `advanced/holy_city_guard.rs`.
@@ -10796,6 +10800,7 @@ impl AdvancedAi {
             engineering_for_capped_fresh_water: false,
             // ---- append: g-k ----------------------------------------
             holdout_keeps_the_faith_war: false,
+            holdout_keeps_the_faith_war_2: false,
             holy_city_guard: RefCell::new(holy_city_guard::HolyCityGuard::default()),
             gun_queues_behind_the_column: false,
             gun_queue_follows_the_road: false,
