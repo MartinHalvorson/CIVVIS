@@ -7201,6 +7201,14 @@ pub struct AdvancedAi {
     open_city_left: BTreeMap<u32, u32>,
     /// `open-city-draws-the-front`: the plan's objective last turn.
     open_city_last_target: Option<u32>,
+    /// `merchant-confederation-earns-its-slot-2`: version one, and while the
+    /// card pays it takes a diplomatic seat from a card the portfolio ranks
+    /// after it (never a loyalty Praetorium, a culture-defence or a Nobel
+    /// Peace favour card). Version one ranked it ahead of Gunboat Diplomacy,
+    /// but a desired card never evicts another, so a seated Gunboat kept it
+    /// out: live Emperor civvis-20261014T100910Z t190, 45 Envoys (about 45
+    /// Gold a turn) at -16.5 Gold a turn under Communism. Off by default.
+    merchant_confederation_earns_its_slot_2: bool,
     /// `launched-racer-yields-the-capital`: a rival that has launched its
     /// Exoplanet Expedition and holds the city whose capture completes
     /// Domination is the second front, that city is the objective at peace,
@@ -10894,6 +10902,7 @@ impl AdvancedAi {
             open_city_hold: None,
             open_city_left: BTreeMap::new(),
             open_city_last_target: None,
+            merchant_confederation_earns_its_slot_2: false,
             launched_racer_yields_the_capital: false,
             muster_walks_the_road: false,
             near_rival_deterrence: false,
@@ -20119,7 +20128,7 @@ impl AdvancedAi {
     /// while income ran -11 to -48 a turn, the slot holding Charismatic
     /// Leader and then Gunboat Diplomacy.
     pub(super) fn merchant_confederation_pays(&self, g: &Game, pid: usize) -> Option<(i64, f64)> {
-        if !self.merchant_confederation_earns_its_slot {
+        if !self.merchant_confederation_earns_its_slot && !self.merchant_confederation_earns_its_slot_2 {
             return None;
         }
         let card = crate::name!("merchant_confederation");
@@ -20884,7 +20893,11 @@ impl AdvancedAi {
         // the plan names other than a loyalty Praetorium, so Gunboat
         // Diplomacy and Cryptography no longer evict it, and a desired card
         // itself, so the ordinary rule keeps it slotted.
-        if let Some((envoys, gold)) = self.merchant_confederation_pays(g, pid) {
+        let merchant_pays = self.merchant_confederation_pays(g, pid);
+        // `merchant-confederation-earns-its-slot-2`: the paying card may take
+        // a diplomatic seat from a wanted card ranked after it; see below.
+        let merchant_takes_a_seat = self.merchant_confederation_earns_its_slot_2 && merchant_pays.is_some();
+        if let Some((envoys, gold)) = merchant_pays {
             desired.retain(|card| *card != "merchant_confederation");
             let at = desired
                 .iter()
@@ -21103,6 +21116,21 @@ impl AdvancedAi {
                         || (nobel_peace_direct_favor_cards.contains(&card)
                             && !nobel_peace_direct_favor_cards
                                 .contains(&current.as_str()))
+                        // `merchant-confederation-earns-its-slot-2`: the
+                        // paying card takes a diplomatic seat from a wanted
+                        // card the portfolio ranks after it, never from a
+                        // loyalty Praetorium, a culture-defence or a Nobel
+                        // Peace favour card.
+                        || (merchant_takes_a_seat
+                            && card == "merchant_confederation"
+                            && g.rules.policies[current].slot == "diplomatic"
+                            && current.as_str() != "praetorium"
+                            && !culture_defense_cards.contains(&current.as_str())
+                            && !nobel_peace_direct_favor_cards.contains(&current.as_str())
+                            && desired
+                                .iter()
+                                .position(|wanted| *wanted == current.as_str())
+                                .is_none_or(|theirs| theirs > rank))
                         // The race's Revelation takes the wildcard seat from
                         // an ordinary desired card, never from a defensive or
                         // emergency one.

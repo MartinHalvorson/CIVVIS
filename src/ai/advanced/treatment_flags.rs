@@ -7904,6 +7904,19 @@ impl AdvancedAi {
         self.neighborhood_houses_the_capped_city = false;
     }
 
+    /// Opt-in gene `merchant-confederation-earns-its-slot-2`; version one
+    /// plus the seat it may take. See `merchant_confederation_pays`.
+    pub fn enable_merchant_confederation_earns_its_slot_2(&mut self) {
+        self.merchant_confederation_earns_its_slot_2 = true;
+        self.base.deck_reads_player_income = true;
+    }
+
+    /// The twin of `enable_merchant_confederation_earns_its_slot_2`.
+    pub fn disable_merchant_confederation_earns_its_slot_2(&mut self) {
+        self.merchant_confederation_earns_its_slot_2 = false;
+        self.base.deck_reads_player_income = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

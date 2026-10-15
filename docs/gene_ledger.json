@@ -2931,6 +2931,15 @@
           "luxury-swap-asks-2": null
         }
       },
+      "merchant-confederation-earns-its-slot": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "merchant-confederation-earns-its-slot": null,
+          "merchant-confederation-earns-its-slot-2": null
+        }
+      },
       "missionary-last-charge-explores": {
         "rule_on": [
           "missionary-last-charge-explores-2"

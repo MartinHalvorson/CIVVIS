@@ -120,3 +120,69 @@ fn the_toggle_sets_the_base_deck_reading_too() {
     ai.disable_merchant_confederation_earns_its_slot();
     assert!(!ai.base.deck_reads_player_income);
 }
+
+/// Communism's one diplomatic seat held by Gunboat Diplomacy, which the
+/// Conquest portfolio itself wants, and every wildcard full. Version one
+/// ranks Merchant Confederation ahead of it but cannot evict a wanted card;
+/// version two takes the seat while the card pays, and not under the floor.
+/// Live Emperor civvis-20261014T100910Z t190.
+fn communism_with_gunboat(envoys: i64) -> (Game, AdvancedAi) {
+    let (mut game, ai) = monarchy_with_envoys(envoys);
+    game.players[0].government = Some("communism".to_string());
+    game.players[0].civics.extend([
+        crate::name!("ideology"),
+        crate::name!("class_struggle"),
+    ]);
+    game.players[0].policies.clear();
+    // The diplomatic seat and the wildcard: both cards the Conquest
+    // portfolio itself wants, so no free seat takes a diplomatic card.
+    game.players[0].policies.extend([
+        crate::name!("gunboat_diplomacy"),
+        crate::name!("cryptography"),
+    ]);
+    (game, ai)
+}
+
+#[test]
+fn version_one_cannot_take_a_seated_gunboat_diplomacys_seat() {
+    let (mut game, mut ai) = communism_with_gunboat(45);
+    ai.enable_merchant_confederation_earns_its_slot();
+    assert_eq!(game.gov_slots(0).diplomatic, 1);
+    assert_eq!(game.gov_slots(0).wildcard, 1);
+    ai.strategic_policies(&mut game, 0, GrandStrategy::Conquest);
+    assert!(slotted(&game, "gunboat_diplomacy") && slotted(&game, "cryptography"));
+    assert!(
+        !slotted(&game, "merchant_confederation"),
+        "version one: a wanted card is never evicted, {:?}",
+        game.players[0].policies
+    );
+}
+
+#[test]
+fn version_two_takes_the_diplomatic_seat_while_the_card_pays() {
+    let (mut game, mut ai) = communism_with_gunboat(45);
+    ai.enable_merchant_confederation_earns_its_slot_2();
+    assert!(ai.base.deck_reads_player_income);
+    assert_eq!(ai.merchant_confederation_pays(&game, 0), Some((45, 45.0)));
+    ai.strategic_policies(&mut game, 0, GrandStrategy::Conquest);
+    assert!(
+        slotted(&game, "merchant_confederation"),
+        "{:?}",
+        game.players[0].policies
+    );
+}
+
+#[test]
+fn version_two_under_the_floor_leaves_gunboat_diplomacy_seated() {
+    let (mut game, mut ai) = communism_with_gunboat(9);
+    ai.enable_merchant_confederation_earns_its_slot_2();
+    assert_eq!(ai.merchant_confederation_pays(&game, 0), None);
+    let before = game.players[0].policies.clone();
+    ai.strategic_policies(&mut game, 0, GrandStrategy::Conquest);
+    assert!(!slotted(&game, "merchant_confederation"));
+    assert!(
+        before.is_subset(&game.players[0].policies),
+        "Gunboat Diplomacy and Cryptography stay: {:?}",
+        game.players[0].policies
+    );
+}

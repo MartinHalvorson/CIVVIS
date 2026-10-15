@@ -4004,6 +4004,11 @@ pub const GENES: &[Gene] = &[
     // to claim puts its best-housing Neighborhood first, one in flight per
     // five cities. See `advanced/neighborhood_houses_the_capped_city.rs`.
     Gene { tag: "neighborhood-houses-the-capped-city", field: "neighborhood_houses_the_capped_city", kind: Kind::OptIn, enable: AdvancedAi::enable_neighborhood_houses_the_capped_city, disable: AdvancedAi::disable_neighborhood_houses_the_capped_city },
+    // Version one of merchant-confederation-earns-its-slot, and while the
+    // card pays it takes a diplomatic seat from a card the portfolio ranks
+    // after it (Gunboat Diplomacy seated under Communism kept version one
+    // out). See `merchant_confederation_pays` in `advanced.rs`.
+    Gene { tag: "merchant-confederation-earns-its-slot-2", field: "merchant_confederation_earns_its_slot_2", kind: Kind::OptIn, enable: AdvancedAi::enable_merchant_confederation_earns_its_slot_2, disable: AdvancedAi::disable_merchant_confederation_earns_its_slot_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
