@@ -15,8 +15,11 @@ Bomber wing, and an open city in range belonging to the same at-war rival.
 It exercises both overlay and adoption in production order and requires one
 shared objective while preserving the appointment clocks and phase.
 
-Checkpoint `82f92c751` adds the regression before the repair. Its GitHub
-execution is pending. A local repair now reconciles the ready version-two
+Checkpoint `82f92c751` adds the regression before the repair. GitHub run
+`38679267582` reached the intended target assertion after its fixture proved
+wing readiness, capture-body readiness, air reach and the existing land
+predicate. The overlay returned city 7 while the selected open city was 8.
+The repair now reconciles the ready version-two
 appointment before its overlay can erase the selected land objective. It
 requires the exact existing capture-opportunity choice, the same at-war
 rival, air reach and a land staging route. It recomputes readiness for the
