@@ -97,16 +97,17 @@ impl AdvancedAi {
     /// want's in `wants` (`siege_gun_resource_wants`), and the resource of
     /// every land siege gun and Bomber we field or queue (the Bombard's
     /// Niter, the Artillery's Oil, the Bomber's Aluminum), and the Bomber's
-    /// metal while the air wing wants Bombers. The planner's surplus sale reads a stockpile as
+    /// metal while the air wing wants Bombers. Shared with army upgrade
+    /// materials. The planner's surplus sale reads a stockpile as
     /// surplus once it holds more than a block, so a purchase would otherwise
-    /// go back out as the next sale. Empty with the gene off.
+    /// go back out as the next sale. Empty when both resource policies are off.
     pub fn siege_gun_resources_held(
         &self,
         g: &Game,
         pid: usize,
         wants: &[GunResourceWant],
     ) -> BTreeSet<String> {
-        if !self.siege_buys_the_gun_resource {
+        if !self.siege_buys_the_gun_resource && !self.army_upgrade_materials {
             return BTreeSet::new();
         }
         let fielded = g
@@ -153,14 +154,14 @@ impl AdvancedAi {
     /// is spare above what our queued units cost, what our fielded units'
     /// upgrades cost, [`GUN_RESOURCE_FUEL_TURNS`] of their fuel, and
     /// [`BARTER_STRATEGIC_RESERVE`]. Nothing in `held` (the guns' own,
-    /// `siege_gun_resources_held`) is ever spare. Empty with the gene off.
+    /// `siege_gun_resources_held`) is ever spare. Empty when both resource policies are off.
     pub fn siege_barter_spares(
         &self,
         g: &Game,
         pid: usize,
         held: &BTreeSet<String>,
     ) -> Vec<BarterSpare> {
-        if !self.siege_buys_the_gun_resource {
+        if !self.siege_buys_the_gun_resource && !self.army_upgrade_materials {
             return Vec::new();
         }
         let mut need: BTreeMap<Name, f64> = BTreeMap::new();
