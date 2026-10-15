@@ -1,0 +1,567 @@
+{
+  "schema": 1,
+  "recorded_at": "2026-10-15T22:47:53.466595+00:00",
+  "computer": "MacBook Pro",
+  "cpu": "Apple M5 Max",
+  "rustc_recorded_after_measurement": "rustc 1.97.1 (8bab26f4f 2026-07-14)\nbinary: rustc\ncommit-hash: 8bab26f4f68e0e26f0bb7960be334d5b520ea452\ncommit-date: 2026-07-14\nhost: aarch64-apple-darwin\nrelease: 1.97.1\nLLVM version: 22.1.6\n",
+  "preregistration": {
+    "registered_at": "2026-10-15T21:52:26.415703+00:00",
+    "pr": 4066,
+    "baseline_head": "4b27e9e5ebcc5d9aa8216a988b47dd3dcdc7cca4",
+    "baseline_production_equivalent_main": "f3890953b786be0189b620ad2123b7f56a3d9beb",
+    "scope": "Pure ranged-target height computation: preserve query results and skip redundant district bonus lookups for valid tiles. No measured speedup yet.",
+    "build_profile": "ci; locked dependencies; both binaries built with same profile/toolchain in sole-owned worktree target; source frozen during each build and immutable binaries copied with hashes",
+    "planned_change": "Valid target terrain height + feature sight-through directly, preserving exact old missing-tile fallback. Existing LOS tests, frozen anchor and full suite must pass.",
+    "aa_command": [
+      "python3",
+      "/Users/martbot-mbp-m5-max-128/civvis-ranged-target-height-cost-e12a/tools/speed_ab.py",
+      "--baseline",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-14/performance-leads/ranged-target-height-cost/baseline-civvis",
+      "--candidate",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-14/performance-leads/ranged-target-height-cost/baseline-civvis",
+      "--seeds",
+      "40660901",
+      "--games",
+      "4",
+      "--interleaves",
+      "2",
+      "--players",
+      "6",
+      "--width",
+      "74",
+      "--height",
+      "46",
+      "--city-states",
+      "9",
+      "--turns",
+      "250",
+      "--speed",
+      "online",
+      "--map",
+      "continents",
+      "--shape",
+      "planet"
+    ],
+    "ab_command": [
+      "python3",
+      "/Users/martbot-mbp-m5-max-128/civvis-ranged-target-height-cost-e12a/tools/speed_ab.py",
+      "--baseline",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-14/performance-leads/ranged-target-height-cost/baseline-civvis",
+      "--candidate",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-14/performance-leads/ranged-target-height-cost/candidate-civvis",
+      "--seeds",
+      "40660001",
+      "--games",
+      "8",
+      "--interleaves",
+      "2",
+      "--players",
+      "6",
+      "--width",
+      "74",
+      "--height",
+      "46",
+      "--city-states",
+      "9",
+      "--turns",
+      "250",
+      "--speed",
+      "online",
+      "--map",
+      "continents",
+      "--shape",
+      "planet"
+    ],
+    "rules": [
+      "Wait for all local compilers for this study before timing.",
+      "Run both complete registered blocks without outcome-dependent stopping or seed replacement.",
+      "Reports must match for optimization claims; use actual per-turn user CPU, report scatter and A/A noise.",
+      "Do not edit global cost ledger, default/force selections or Native policy.",
+      "No strength or Native win claim. If gain is unresolved, report that and reconsider shipping a performance-only change."
+    ]
+  },
+  "baseline": {
+    "source": "4b27e9e5ebcc5d9aa8216a988b47dd3dcdc7cca4",
+    "production_equivalent_main": "f3890953b786be0189b620ad2123b7f56a3d9beb",
+    "started_at": "2026-10-15T21:48:28.329570+00:00",
+    "finished_at": "2026-10-15T21:51:13.358528+00:00",
+    "exit_code": 0,
+    "source_bytes_unchanged": true,
+    "binary_sha256": "a549ef8ca319ded23c6d745d42ec41909b2d54b914872fccf5407ae2fca31764"
+  },
+  "candidate": {
+    "source": "3fa46a65181ae656ac8682df94abda39bd61b51d",
+    "command": [
+      "cargo",
+      "build",
+      "--profile",
+      "ci",
+      "--locked",
+      "--bin",
+      "civvis"
+    ],
+    "started_at": "2026-10-15T21:54:38.646367+00:00",
+    "finished_at": "2026-10-15T21:56:49.988613+00:00",
+    "exit_code": 0,
+    "source_bytes_unchanged": true,
+    "binary_sha256": "636979bf239f00489a9693f33b6788a4f1b5ba80b360c1d02ce22e0c2ea7b0f0"
+  },
+  "integration_merge_after_all_timings": {
+    "observed_at": "2026-10-15T22:44:23.193316+00:00",
+    "before": "3fa46a65181ae656ac8682df94abda39bd61b51d",
+    "main": "94fad6d71cb73240cd19cbfe7b7dc9c81916a6eb",
+    "after": "bdb3d78c0d1709dea8091f028eeb013031679d67",
+    "merge_count": 1,
+    "timing_blocks_finished_before_merge": true
+  },
+  "aa": {
+    "pairs": [
+      {
+        "seed": 40660901,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 36.177562,
+          "turns": 234
+        },
+        "candidate": {
+          "cpu": 36.150919,
+          "turns": 234
+        },
+        "agree": true,
+        "delta_pct": -0.07364509526650961
+      },
+      {
+        "seed": 40660902,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 12.499797999999998,
+          "turns": 142
+        },
+        "candidate": {
+          "cpu": 12.475707,
+          "turns": 142
+        },
+        "agree": true,
+        "delta_pct": -0.19273111453479183
+      },
+      {
+        "seed": 40660903,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 40.16820100000001,
+          "turns": 242
+        },
+        "candidate": {
+          "cpu": 40.06307899999999,
+          "turns": 242
+        },
+        "agree": true,
+        "delta_pct": -0.261704525925924
+      },
+      {
+        "seed": 40660904,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 28.282186999999993,
+          "turns": 251
+        },
+        "candidate": {
+          "cpu": 28.340528000000006,
+          "turns": 251
+        },
+        "agree": true,
+        "delta_pct": 0.20628178436133948
+      },
+      {
+        "seed": 40660901,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 36.35263600000002,
+          "turns": 234
+        },
+        "candidate": {
+          "cpu": 37.09814799999998,
+          "turns": 234
+        },
+        "agree": true,
+        "delta_pct": 2.0507783809679214
+      },
+      {
+        "seed": 40660902,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 12.523216000000048,
+          "turns": 142
+        },
+        "candidate": {
+          "cpu": 12.517435999999975,
+          "turns": 142
+        },
+        "agree": true,
+        "delta_pct": -0.0461542785820603
+      },
+      {
+        "seed": 40660903,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 40.20517899999999,
+          "turns": 242
+        },
+        "candidate": {
+          "cpu": 40.17384900000002,
+          "turns": 242
+        },
+        "agree": true,
+        "delta_pct": -0.0779252842027451
+      },
+      {
+        "seed": 40660904,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 28.38014899999996,
+          "turns": 251
+        },
+        "candidate": {
+          "cpu": 28.295389999999998,
+          "turns": 251
+        },
+        "agree": true,
+        "delta_pct": -0.29865593728899187
+      }
+    ],
+    "deltas": [
+      -0.07364509526650961,
+      -0.19273111453479183,
+      -0.261704525925924,
+      0.20628178436133948,
+      2.0507783809679214,
+      -0.0461542785820603,
+      -0.0779252842027451,
+      -0.29865593728899187
+    ],
+    "median_pct": -0.07578518973462736,
+    "spread_pct": 0.3876339417036305,
+    "range_pct": [
+      -0.29865593728899187,
+      2.0507783809679214
+    ],
+    "resolution_pct": 0.2031865002199466,
+    "totals": {
+      "baseline": 234.588928,
+      "candidate": 235.11505599999998
+    },
+    "turns": {
+      "baseline": 1738,
+      "candidate": 1738
+    },
+    "per_turn": {
+      "baseline": 0.13497636823935558,
+      "candidate": 0.13527908860759494
+    },
+    "per_turn_change_pct": 0.22427656943809862,
+    "change_pct": 0.2242765694380817,
+    "length_change_pct": 0.0,
+    "mismatched": [],
+    "seeds": [
+      40660901,
+      40660902,
+      40660903,
+      40660904
+    ],
+    "interleaves": 2,
+    "load": {
+      "start": 12.22607421875,
+      "peak": 12.92138671875,
+      "end": 12.01171875
+    }
+  },
+  "ab": {
+    "pairs": [
+      {
+        "seed": 40660001,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 39.23263500000007,
+          "turns": 230
+        },
+        "candidate": {
+          "cpu": 39.074243999999965,
+          "turns": 230
+        },
+        "agree": true,
+        "delta_pct": -0.4037225641359776
+      },
+      {
+        "seed": 40660002,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 34.75214899999992,
+          "turns": 250
+        },
+        "candidate": {
+          "cpu": 35.180372000000034,
+          "turns": 250
+        },
+        "agree": true,
+        "delta_pct": 1.2322202002532774
+      },
+      {
+        "seed": 40660003,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 36.51663600000006,
+          "turns": 250
+        },
+        "candidate": {
+          "cpu": 36.30305999999996,
+          "turns": 250
+        },
+        "agree": true,
+        "delta_pct": -0.5848731520617172
+      },
+      {
+        "seed": 40660004,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 10.105343999999945,
+          "turns": 114
+        },
+        "candidate": {
+          "cpu": 10.038335000000075,
+          "turns": 114
+        },
+        "agree": true,
+        "delta_pct": -0.6631045909953347
+      },
+      {
+        "seed": 40660005,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 45.93598999999995,
+          "turns": 250
+        },
+        "candidate": {
+          "cpu": 45.67872,
+          "turns": 250
+        },
+        "agree": true,
+        "delta_pct": -0.5600619470701484
+      },
+      {
+        "seed": 40660006,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 36.88311799999997,
+          "turns": 250
+        },
+        "candidate": {
+          "cpu": 36.79482500000006,
+          "turns": 250
+        },
+        "agree": true,
+        "delta_pct": -0.23938594345495984
+      },
+      {
+        "seed": 40660007,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 40.196244999999976,
+          "turns": 250
+        },
+        "candidate": {
+          "cpu": 40.681917,
+          "turns": 250
+        },
+        "agree": true,
+        "delta_pct": 1.2082521638526698
+      },
+      {
+        "seed": 40660008,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 11.502207999999996,
+          "turns": 125
+        },
+        "candidate": {
+          "cpu": 11.481333000000063,
+          "turns": 125
+        },
+        "agree": true,
+        "delta_pct": -0.181486893646267
+      },
+      {
+        "seed": 40660001,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 38.945119999999974,
+          "turns": 230
+        },
+        "candidate": {
+          "cpu": 38.708327000000054,
+          "turns": 230
+        },
+        "agree": true,
+        "delta_pct": -0.6080171276912688
+      },
+      {
+        "seed": 40660002,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 34.950260999999955,
+          "turns": 250
+        },
+        "candidate": {
+          "cpu": 34.607185999999956,
+          "turns": 250
+        },
+        "agree": true,
+        "delta_pct": -0.9816092646632845
+      },
+      {
+        "seed": 40660003,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 36.89447599999994,
+          "turns": 250
+        },
+        "candidate": {
+          "cpu": 36.58475500000009,
+          "turns": 250
+        },
+        "agree": true,
+        "delta_pct": -0.8394779749679971
+      },
+      {
+        "seed": 40660004,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 10.354119000000082,
+          "turns": 114
+        },
+        "candidate": {
+          "cpu": 10.090193999999883,
+          "turns": 114
+        },
+        "agree": true,
+        "delta_pct": -2.5489855776256567
+      },
+      {
+        "seed": 40660005,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 46.81265499999995,
+          "turns": 250
+        },
+        "candidate": {
+          "cpu": 45.42881000000011,
+          "turns": 250
+        },
+        "agree": true,
+        "delta_pct": -2.9561344042542417
+      },
+      {
+        "seed": 40660006,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 36.557813000000124,
+          "turns": 250
+        },
+        "candidate": {
+          "cpu": 36.482540999999856,
+          "turns": 250
+        },
+        "agree": true,
+        "delta_pct": -0.20589853118476092
+      },
+      {
+        "seed": 40660007,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 39.79811399999994,
+          "turns": 250
+        },
+        "candidate": {
+          "cpu": 39.821525000000065,
+          "turns": 250
+        },
+        "agree": true,
+        "delta_pct": 0.05882439554830637
+      },
+      {
+        "seed": 40660008,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 11.34065899999996,
+          "turns": 125
+        },
+        "candidate": {
+          "cpu": 11.357459000000063,
+          "turns": 125
+        },
+        "agree": true,
+        "delta_pct": 0.1481395393345594
+      }
+    ],
+    "deltas": [
+      -0.4037225641359776,
+      1.2322202002532774,
+      -0.5848731520617172,
+      -0.6631045909953347,
+      -0.5600619470701484,
+      -0.23938594345495984,
+      1.2082521638526698,
+      -0.181486893646267,
+      -0.6080171276912688,
+      -0.9816092646632845,
+      -0.8394779749679971,
+      -2.5489855776256567,
+      -2.9561344042542417,
+      -0.20589853118476092,
+      0.05882439554830637,
+      0.1481395393345594
+    ],
+    "median_pct": -0.48189225560306304,
+    "spread_pct": 0.7941312022244945,
+    "range_pct": [
+      -2.9561344042542417,
+      1.2322202002532774
+    ],
+    "resolution_pct": 0.29434069763695125,
+    "totals": {
+      "baseline": 510.7775419999998,
+      "candidate": 508.3136030000002
+    },
+    "turns": {
+      "baseline": 3438,
+      "candidate": 3438
+    },
+    "per_turn": {
+      "baseline": 0.14856822047702148,
+      "candidate": 0.14785154246655038
+    },
+    "per_turn_change_pct": -0.4823898463412912,
+    "change_pct": -0.48238984634128357,
+    "length_change_pct": 0.0,
+    "mismatched": [],
+    "seeds": [
+      40660001,
+      40660002,
+      40660003,
+      40660004,
+      40660005,
+      40660006,
+      40660007,
+      40660008
+    ],
+    "interleaves": 2,
+    "load": {
+      "start": 12.01171875,
+      "peak": 14.681640625,
+      "end": 11.35498046875
+    }
+  },
+  "benchmark_script_sha256": "dddaa4a714c651406545b9f1a8bbf036769ac782272a4c8cd906ad3c791564b5",
+  "method": "Unmodified tools/speed_ab.py timing, ordering and settings. Read-only runtime wrappers save its returned pairs and arm-count progress; child user CPU timing is unchanged.",
+  "driver_recovery": "Original driver ended after successful full-suite receipt before any timing output existed. Resumed only the unplayed registered AA/AB blocks; no tests or games replayed.",
+  "scope": "Small local ci-profile timing effect across eight distinct AB seeds, each measured twice. Identical terminal reports, unchanged frozen action-stream guard. Not a production release-profile, Native game, strength or win-rate result."
+}
