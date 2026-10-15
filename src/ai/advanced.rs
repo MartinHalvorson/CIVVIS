@@ -6292,6 +6292,17 @@ pub struct AdvancedAi {
     /// still holds out and a city of ours already leans to its faith. See
     /// `advanced/faith_war_before_the_flip.rs`.
     faith_war_before_the_flip: bool,
+    /// `faith-war-before-the-flip-2`: the same war, held while our own
+    /// founded faith holds our majority (unless two cities of ours lean to
+    /// the rival's faith or our faith is one city from losing its
+    /// majority). See `advanced/faith_war_before_the_flip.rs`.
+    faith_war_before_the_flip_2: bool,
+    /// `faith-war-before-the-flip-2`: the turn each major was last seen at
+    /// war with us.
+    faith_war_war_seen: BTreeMap<usize, u32>,
+    /// `faith-war-before-the-flip-2`: the first turn of the latest peace with
+    /// each major, whatever made it; the faith war's cooldown runs from it.
+    faith_war_peace_at: BTreeMap<usize, u32>,
     /// `faith-war-before-the-flip`: the war the gene opened, if it runs.
     faith_war_before_the_flip_war: Option<faith_war_before_the_flip::FaithWar>,
     /// `faith-war-before-the-flip`: the last "held" line per founder (turn,
@@ -10713,6 +10724,9 @@ impl AdvancedAi {
             capital_watch_sightings: BTreeMap::new(),
             // ---- append: e-f ----------------------------------------
             faith_war_before_the_flip: false,
+            faith_war_before_the_flip_2: false,
+            faith_war_war_seen: BTreeMap::new(),
+            faith_war_peace_at: BTreeMap::new(),
             faith_war_before_the_flip_war: None,
             faith_war_held_noted: BTreeMap::new(),
             embassy_finds_the_capital: false,

@@ -3965,6 +3965,11 @@ pub const GENES: &[Gene] = &[
     // until walled, captured or eight turns without progress. See
     // `advanced/open_city_front.rs`.
     Gene { tag: "open-city-draws-the-front", field: "open_city_draws_the_front", kind: Kind::OptIn, enable: AdvancedAi::enable_open_city_draws_the_front, disable: AdvancedAi::disable_open_city_draws_the_front },
+    // faith-war-before-the-flip, version 2: held while our own founded faith
+    // holds our majority (two cities of ours leaning to the rival's faith, or
+    // our faith one city from losing its majority, open it); otherwise
+    // version 1. See `advanced/faith_war_before_the_flip.rs`.
+    Gene { tag: "faith-war-before-the-flip-2", field: "faith_war_before_the_flip_2", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_war_before_the_flip_2, disable: AdvancedAi::disable_faith_war_before_the_flip_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
