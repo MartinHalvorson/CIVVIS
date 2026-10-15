@@ -38,6 +38,13 @@ pub(crate) const DRAIN_DISBANDS_PER_TURN: usize = 3;
 /// A gold card estimated below this many Gold a turn is not slotted for the drain.
 pub(crate) const DRAIN_CARD_MIN_GOLD: f64 = 2.0;
 
+/// Turns after the last drained turn that the drain's gold cards already in a
+/// slot stay wanted. Live 084908Z t216-228 (f0e7c4f43) swapped Triangular
+/// Trade and Rationalism every 1-4 turns as the treasury crossed the drain
+/// line, and within t220 itself once the planning board credited a sale the
+/// host never paid.
+pub(crate) const DRAIN_CARD_HOLD_TURNS: u32 = 10;
+
 impl AdvancedAi {
     /// `solvent-or-hold`: income is not positive.
     pub(super) fn solvency_guard(&self, g: &Game, pid: usize) -> bool {
@@ -199,6 +206,7 @@ impl AdvancedAi {
         if !self.drained(g, pid) {
             return Vec::new();
         }
+        self.drain_last_turn.set(Some(g.turn));
         let available: HashSet<Name> = g.available_policies(pid).into_iter().collect();
         let mut cards: Vec<(&'static str, f64)> = g
             .rules
@@ -208,6 +216,37 @@ impl AdvancedAi {
                 available.contains(*name) || g.players[pid].policies.contains(*name)
             })
             .map(|(name, _)| {
+                (
+                    name.as_str(),
+                    Self::card_gold_estimate(g, pid, name.as_str()),
+                )
+            })
+            .filter(|(_, gold)| *gold >= DRAIN_CARD_MIN_GOLD)
+            .collect();
+        cards.sort_by(|a, b| b.1.total_cmp(&a.1).then(a.0.cmp(b.0)));
+        cards
+    }
+
+    /// The drain's gold cards already in a slot, with their estimates, while
+    /// the last drained turn is within [`DRAIN_CARD_HOLD_TURNS`] and the
+    /// treasury no longer reads drained: the policy pass keeps them wanted so
+    /// the ordinary portfolio does not take their slots back and forth. Empty
+    /// with the gene off, while drained (the drain's own list rules), and
+    /// outside the window.
+    pub(super) fn drain_cards_held(&self, g: &Game, pid: usize) -> Vec<(&'static str, f64)> {
+        if !self.bankruptcy_exits_the_drain || self.drained(g, pid) {
+            return Vec::new();
+        }
+        let Some(last) = self.drain_last_turn.get() else {
+            return Vec::new();
+        };
+        if last > g.turn || g.turn - last > DRAIN_CARD_HOLD_TURNS {
+            return Vec::new();
+        }
+        let mut cards: Vec<(&'static str, f64)> = g.players[pid]
+            .policies
+            .iter()
+            .map(|name| {
                 (
                     name.as_str(),
                     Self::card_gold_estimate(g, pid, name.as_str()),

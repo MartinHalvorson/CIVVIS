@@ -330,3 +330,49 @@ fn a_caller_priced_gold_card_is_judged_by_its_price() {
     assert!(!ai.solvency_keeps_card_priced(&g, 0, "civil_prestige", "economic_union", Some(12.0)));
     assert!(ai.solvency_keeps_card_priced(&g, 0, "civil_prestige", "economic_union", Some(5.0)));
 }
+
+/// After a drained turn the drain's gold cards already in a slot stay wanted
+/// through the hold window, also within the same turn once the treasury reads
+/// covered; outside the window, or with the gene off, nothing is held.
+#[test]
+fn the_drain_holds_its_slotted_gold_cards_for_a_window() {
+    let (mut g, _, _) = fixture();
+    g.players[0].civics.insert(crate::name!("foreign_trade"));
+    let origin = g.player_city_ids(0)[0];
+    let dest = g.player_city_ids(1)[0];
+    for _ in 0..3 {
+        g.routes.push(TradeRoute {
+            origin,
+            dest,
+            owner: 0,
+            ends: g.turn + 20,
+        });
+    }
+    g.players[0].policies.insert(crate::name!("caravansaries"));
+    g.players[0].gold = 0.0;
+    g.players[0].gold_per_turn = -5.0;
+    let mut ai = AdvancedAi::new();
+    ai.enable_bankruptcy_exits_the_drain();
+    assert!(
+        ai.drain_cards_held(&g, 0).is_empty(),
+        "drained: the drain's own list rules"
+    );
+    assert!(!ai.drain_gold_cards(&g, 0).is_empty());
+    g.players[0].gold = 300.0;
+    assert!(
+        ai.drain_cards_held(&g, 0)
+            .iter()
+            .any(|(card, _)| *card == "caravansaries"),
+        "covered the same turn: still held"
+    );
+    g.turn += DRAIN_CARD_HOLD_TURNS;
+    assert!(
+        !ai.drain_cards_held(&g, 0).is_empty(),
+        "last turn of the window"
+    );
+    g.turn += 1;
+    assert!(ai.drain_cards_held(&g, 0).is_empty(), "past the window");
+    let mut off = AdvancedAi::new();
+    off.drain_last_turn.set(Some(g.turn));
+    assert!(off.drain_cards_held(&g, 0).is_empty(), "off");
+}

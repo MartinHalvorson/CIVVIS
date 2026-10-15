@@ -6294,6 +6294,9 @@ pub struct AdvancedAi {
     /// The turn `bankruptcy-exits-the-drain` last slotted a gold card; the
     /// disband waits that turn for the card's income.
     drain_card_turn: std::cell::Cell<Option<u32>>,
+    /// The last turn `bankruptcy-exits-the-drain` read the treasury as
+    /// drained; its gold cards stay wanted for a hold window after it.
+    drain_last_turn: std::cell::Cell<Option<u32>>,
     // ---- append: e-f ------------------------------------------------
     /// `faith-war-before-the-flip`: a defensive war (no siege, no staging) on
     /// a founding rival whose spreaders stand at our cities while our majority
@@ -10768,6 +10771,7 @@ impl AdvancedAi {
             capital_walls_before_the_surprise: false,
             capital_watch_sightings: BTreeMap::new(),
             drain_card_turn: std::cell::Cell::new(None),
+            drain_last_turn: std::cell::Cell::new(None),
             // ---- append: e-f ----------------------------------------
             faith_war_before_the_flip: false,
             faith_war_before_the_flip_2: false,
@@ -20929,6 +20933,27 @@ impl AdvancedAi {
                    g.players[pid].gold, g.players[pid].gold_per_turn,
                    drain_cards.iter().map(|(card, gold)| format!("{} about {gold:.0}", plain(card)))
                        .collect::<Vec<_>>().join(", "));
+        }
+        // `bankruptcy-exits-the-drain`: the drain's gold cards already in a
+        // slot stay wanted for a hold window after the last drained turn, so
+        // a treasury crossing the line does not hand their slots back and
+        // forth. See `advanced/solvency.rs`.
+        let held_drain_cards = if drain_cards.is_empty() {
+            self.drain_cards_held(g, pid)
+        } else {
+            Vec::new()
+        };
+        if !held_drain_cards.is_empty() {
+            for (card, _) in held_drain_cards.iter().rev() {
+                desired.retain(|wanted| *wanted != *card);
+                desired.insert(0, card);
+            }
+            think!(self.journal(), Policies, Detail,
+                   "Holding the drain's gold cards";
+                   "bankruptcy-exits-the-drain: last drained on turn {}; {} stay wanted for {} turns after it",
+                   self.drain_last_turn.get().unwrap_or(g.turn),
+                   held_drain_cards.iter().map(|(card, _)| plain(card)).collect::<Vec<_>>().join(", "),
+                   solvency::DRAIN_CARD_HOLD_TURNS);
         }
         let desired_set: HashSet<&str> = desired.iter().copied().collect();
         // If circumstances changed, remove a downside-bearing Dark Age card
