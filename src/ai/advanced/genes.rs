@@ -4012,11 +4012,11 @@ pub const GENES: &[Gene] = &[
     // Early fortification for an exposed non-capital city watched by a
     // stronger peaceful major. Separate from the original-capital policy.
     Gene { tag: "frontier-walls-before-the-surprise", field: "frontier_walls_before_the_surprise", kind: Kind::OptIn, enable: AdvancedAi::enable_frontier_walls_before_the_surprise, disable: AdvancedAi::disable_frontier_walls_before_the_surprise },
+    // Affordable suzerainty opens a road already blocking an active siege.
+    Gene { tag: "envoys-open-the-siege-road", field: "envoys_open_the_siege_road", kind: Kind::OptIn, enable: AdvancedAi::enable_envoys_open_the_siege_road, disable: AdvancedAi::disable_envoys_open_the_siege_road },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
-    // Affordable suzerainty opens a road already blocking an active siege.
-    Gene { tag: "envoys-open-the-siege-road", field: "envoys_open_the_siege_road", kind: Kind::OptIn, enable: AdvancedAi::enable_envoys_open_the_siege_road, disable: AdvancedAi::disable_envoys_open_the_siege_road },
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------

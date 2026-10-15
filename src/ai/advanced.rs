@@ -25368,7 +25368,9 @@ impl AdvancedAi {
                 })
                 .max()
                 .map(|(passage, _, score, _, _, id)| (id, score, passage));
-            let Some((target, score, passage)) = target else { break };
+            let Some((target, score, passage)) = target else {
+                break;
+            };
             if !passage && self.envoy_building_dividends && score <= 0 {
                 think!(self.journal(), Diplomacy, Decision,
                        "Saving envoys for a paying threshold";
