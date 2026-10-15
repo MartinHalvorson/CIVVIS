@@ -37,6 +37,23 @@ their executable bit restored before local smoke tests. Live adoption remains
 a separate step: recheck the latest private publisher, preserve forcing and
 challenge settings, and verify the actual next attempt's source and binary.
 
-The metadata guards are tested locally. The first hosted execution is pending.
-This workflow supplies build and test evidence; it establishes no native
-purchase acceptance, Domination win-rate increase or highest-level victory.
+The first hosted run, [38676990169](https://github.com/MartinHalvorson/CIVVIS/actions/runs/38676990169),
+completed successfully in 33 minutes 34 seconds. It built exact source
+`652c056a7f43590e7d4a9ec3b30849921954adc4` with Rust 1.97.1 and passed
+16 muster, 17 capital-recon and 11 existing open-city controls. The ordinary
+release matrix and publishing job were skipped. After download, all 2,513
+tracked source hashes and both executable hashes matched the receipt; the
+actual downloaded simulator completed a local twenty-turn smoke run, and
+the downloaded decider answered a nonempty turn-one/frame-zero input.
+
+The nine local metadata/architecture guards, seven CI-wiring controls and
+twelve workflow-report controls passed. A separate native army-policy build
+was dispatched on the same fixed workflow revision. Workflow runs keep their
+dispatch commit; advancing the PR after its checks finish does not rewrite
+that running job's automation or requested source.
+
+This workflow supplies build and test evidence. A native verification game
+still needs the verified executable, complete current publisher parent,
+forcing and settings read back from the actual new attempt. No native
+purchase acceptance, Domination win-rate increase or highest-level victory
+is established by the artifact or its smoke tests.
