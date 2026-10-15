@@ -7750,6 +7750,17 @@ impl AdvancedAi {
         self.holdout_keeps_the_faith_war = false;
     }
 
+    /// Opt-in gene `holdout-keeps-the-faith-war-2`; see
+    /// `advanced/holdout_faith_war.rs`.
+    pub fn enable_holdout_keeps_the_faith_war_2(&mut self) {
+        self.holdout_keeps_the_faith_war_2 = true;
+    }
+
+    /// The twin of `enable_holdout_keeps_the_faith_war_2`.
+    pub fn disable_holdout_keeps_the_faith_war_2(&mut self) {
+        self.holdout_keeps_the_faith_war_2 = false;
+    }
+
     /// Opt-in gene `launched-racer-yields-the-capital`; see
     /// `advanced/launched_racer.rs`.
     pub fn enable_launched_racer_yields_the_capital(&mut self) {

@@ -3965,6 +3965,11 @@ pub const GENES: &[Gene] = &[
     // until walled, captured or eight turns without progress. See
     // `advanced/open_city_front.rs`.
     Gene { tag: "open-city-draws-the-front", field: "open_city_draws_the_front", kind: Kind::OptIn, enable: AdvancedAi::enable_open_city_draws_the_front, disable: AdvancedAi::disable_open_city_draws_the_front },
+    // Version two of `holdout-keeps-the-faith-war`: the last holdout also
+    // keeps the war at match point (the founder's race at 75% or more),
+    // whatever its own cities' conversion, unless a city of ours is falling
+    // or our capital is under siege. See `advanced/holdout_faith_war.rs`.
+    Gene { tag: "holdout-keeps-the-faith-war-2", field: "holdout_keeps_the_faith_war_2", kind: Kind::OptIn, enable: AdvancedAi::enable_holdout_keeps_the_faith_war_2, disable: AdvancedAi::disable_holdout_keeps_the_faith_war_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
