@@ -17639,10 +17639,8 @@ fn frontier_loyalty_retires_a_live_target_when_rate_alarm_is_withheld() {
         live.frontier_loyalty,
         "the live deployment ships the frontier guard"
     );
-    assert!(
-        live.base.loyalty_rate_alarm,
-        "the deployment enables the separate rate forecast"
-    );
+    // The separate rate forecast is a screened gene whose default each
+    // published batch re-decides; withhold it whatever the deployment selects.
     live.disable_loyalty_rate_alarm();
     // `settler-never-idles` (pinned on) would take the retired colony rather
     // than hold once nothing else is offered — that is its point, and its own
@@ -17671,7 +17669,6 @@ fn frontier_loyalty_retires_a_live_target_when_rate_alarm_is_withheld() {
     let mut arriving = AdvancedAi::new();
     arriving.enable_live_bridge();
     assert!(arriving.frontier_loyalty);
-    assert!(arriving.base.loyalty_rate_alarm);
     arriving.disable_loyalty_rate_alarm();
     assert!(!arriving.base.loyalty_rate_alarm);
     arriving.settler_targets.insert(settler, target);
@@ -17761,8 +17758,9 @@ fn advanced_settlers_refuse_a_city_that_will_flip_within_its_growth_horizon() {
         "the ordinary controller retains its established non-forecast path"
     );
 
-    // Withhold the separately default-on rate forecast to isolate the frontier
-    // safety floor for a city this close to an already visible rival capital.
+    // Withhold the separate rate forecast (a screened gene whose default each
+    // published batch re-decides) to isolate the frontier safety floor for a
+    // city this close to an already visible rival capital.
     let mut default_live = AdvancedAi::new();
     default_live.enable_live_bridge();
     // `settler-never-idles` (pinned on) takes this colony when it is the only
@@ -17771,7 +17769,6 @@ fn advanced_settlers_refuse_a_city_that_will_flip_within_its_growth_horizon() {
     // it by name in both live arms.
     default_live.disable_settler_never_idles();
     assert!(default_live.frontier_loyalty);
-    assert!(default_live.base.loyalty_rate_alarm);
     default_live.disable_loyalty_rate_alarm();
     assert!(!default_live.base.loyalty_rate_alarm);
     let why = default_live
@@ -17794,9 +17791,10 @@ fn advanced_settlers_refuse_a_city_that_will_flip_within_its_growth_horizon() {
     // site before that forecast gets to speak.
     live.disable_exhaustion_loyalty_guard();
     assert!(!live.exhaustion_loyalty_guard);
-    // The deployed rate forecast remains independently covered after the
-    // withheld frontier-floor control above.
+    // The rate forecast remains independently covered after the withheld
+    // frontier-floor control above, forced on whatever the deployment selects.
     live.frontier_loyalty = false;
+    live.enable_loyalty_rate_alarm();
     assert!(live.base.loyalty_rate_alarm);
     let why = live
         .settle_site_loyalty_verdict(&game, 0, target)
