@@ -271,6 +271,16 @@ ATTEMPTS=${CIVVIS_PLAY_ATTEMPTS:-3}
 # profile uses Online's stock 250-turn clock; a prior 650-turn workaround was
 # an extended score horizon that also postponed the AI's half-clock lane
 # handoff, so long caps belong only to explicitly named experiments.
+# Input archives are independent of desktop screenshots. Both owners can
+# request the existing decider capture protocol, off unless explicitly armed.
+CAPTURE_DECIDER_INPUTS=${CIVVIS_CAPTURE_DECIDER_INPUTS:-0}
+if [[ "$CAPTURE_DECIDER_INPUTS" != 0 && "$CAPTURE_DECIDER_INPUTS" != 1 ]]; then
+  say "invalid CIVVIS_CAPTURE_DECIDER_INPUTS='$CAPTURE_DECIDER_INPUTS'; expected 0 or 1"
+  exit 64
+fi
+typeset -a DECIDER_CAPTURE_ARGS
+DECIDER_CAPTURE_ARGS=()
+[[ "$CAPTURE_DECIDER_INPUTS" == 1 ]] && DECIDER_CAPTURE_ARGS=(--capture-decider-inputs)
 CAPTURE_FREE=${CIVVIS_CAPTURE_FREE:-0}
 if [[ "$CAPTURE_FREE" != 0 && "$CAPTURE_FREE" != 1 ]]; then
   say "invalid CIVVIS_CAPTURE_FREE='${CAPTURE_FREE}'; refusing to choose a launcher"
@@ -980,6 +990,7 @@ while true; do
         "${WITHOUT_ARGS[@]}" \
         "${WITH_ARGS[@]}" \
         "${TIMEOUT_ARGS[@]}" \
+        "${DECIDER_CAPTURE_ARGS[@]}" \
         ${VICTORY:+--victory} ${VICTORY:+"$VICTORY"} \
         --logs "$LOGS" > "$LOGS/climb-$TAG.log" 2>&1
   else
@@ -996,6 +1007,7 @@ while true; do
         "${WITH_ARGS[@]}" \
         "${SCREEN_ARGS[@]}" \
         "${TIMEOUT_ARGS[@]}" \
+        "${DECIDER_CAPTURE_ARGS[@]}" \
         ${VICTORY:+--victory} ${VICTORY:+"$VICTORY"} \
         ${RESTART_BELOW_LEADER_RATIO:+--restart-below-leader-ratio} ${RESTART_BELOW_LEADER_RATIO:+"$RESTART_BELOW_LEADER_RATIO"} \
         --logs "$LOGS" > "$LOGS/climb-$TAG.log" 2>&1
