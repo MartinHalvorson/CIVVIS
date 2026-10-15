@@ -40,6 +40,24 @@
 //! cities for [`FAITH_WAR_CLEAR_TURNS`] standard turns and no city of ours is
 //! converting, the seat offers it peace.
 //!
+//! `faith-war-before-the-flip-2` is the same war with two changes, after its
+//! first three live fires (235353Z t44 Russia, 000225Z t109 Georgia, 001113Z
+//! t134 Norway) cost a 107-turn war and three simultaneous wars, and two of
+//! them came where we had founded Buddhism and our majority followed it --
+//! the case the census did not measure (founders lost to Religion in 2 of 39
+//! games): when we founded a faith and our majority follows it, the war fires
+//! only once [`FAITH_WAR_2_FOUNDER_LEANING`] of our cities follow or are
+//! converting to the rival's faith, or our own faith is one city from losing
+//! its majority (`faith_war_founder_holds`). And after any peace with a
+//! founder, whatever made it, the war is not reopened on that founder for
+//! [`FAITH_WAR_2_COOLDOWN_TURNS`] standard turns unless a city of ours is
+//! actually being converted to its faith (`faith_war_cooldown`): live
+//! 011139Z opened on the Aztecs at 63, the "freeing the Domination army"
+//! peace ended it at 111, and the faith war reopened at 120, nine turns
+//! later. The non-founder trigger, and every other gate, is version 1's:
+//! [`FAITH_WAR_2_MAX_WARS`] counts the war it would open and equals version
+//! 1's limit, so the faith war makes two major wars at most.
+//!
 //! Off: unchanged.
 
 use super::*;
@@ -56,6 +74,24 @@ pub(crate) const FAITH_WAR_ROUT_RATIO: f64 = 1.5;
 
 /// No faith war beside this many major wars already running.
 pub(crate) const FAITH_WAR_MAX_ENEMIES: usize = 2;
+
+/// `faith-war-before-the-flip-2`: with our own founded faith holding our
+/// majority, this many cities of ours following or converting to the
+/// rival's faith open the war.
+pub(crate) const FAITH_WAR_2_FOUNDER_LEANING: usize = 2;
+
+/// `faith-war-before-the-flip-2`: the gate holds once our major wars,
+/// counting the one it would open, reach this many: version 1's limit
+/// ([`FAITH_WAR_MAX_ENEMIES`] running, plus this one). A domination seat is
+/// nearly always at war; a peace-only gate would mute the war in the
+/// non-founder games it exists for (002058Z's non-founder fire at t48 took
+/// Rouen and Guangzhou in that war).
+pub(crate) const FAITH_WAR_2_MAX_WARS: usize = FAITH_WAR_MAX_ENEMIES + 1;
+
+/// `faith-war-before-the-flip-2`: standard turns after any peace with a
+/// founder before the faith war may reopen on it, unless a city of ours is
+/// being converted to its faith.
+pub(crate) const FAITH_WAR_2_COOLDOWN_TURNS: u32 = 20;
 
 /// Standard turns with no spreader of the faith at our cities before the
 /// seat offers the founder peace.
@@ -75,6 +111,56 @@ pub(crate) struct FaithWar {
 }
 
 impl AdvancedAi {
+    /// Whether either version of the gene is on.
+    fn faith_war_active(&self) -> bool {
+        self.faith_war_before_the_flip || self.faith_war_before_the_flip_2
+    }
+
+    /// The journal's name for the version that is on.
+    fn faith_war_tag(&self) -> &'static str {
+        if self.faith_war_before_the_flip_2 {
+            "faith-war-before-the-flip-2"
+        } else {
+            "faith-war-before-the-flip"
+        }
+    }
+
+    /// `faith-war-before-the-flip-2`: whether our own founded faith holds our
+    /// majority firmly enough to leave the war unopened: our majority follows
+    /// the faith we founded, fewer than [`FAITH_WAR_2_FOUNDER_LEANING`] cities
+    /// of ours follow or are converting to `rival`'s faith, and our faith
+    /// would keep its majority after losing one more city. Our cities on our
+    /// faith and our cities, or `None` when the war may open. Always `None`
+    /// with the version off.
+    pub(crate) fn faith_war_founder_holds(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+    ) -> Option<(usize, usize)> {
+        if !self.faith_war_before_the_flip_2 {
+            return None;
+        }
+        let ours = g.players.get(pid)?.religion.as_deref()?;
+        if !g.civ_follows_religion(pid, ours) {
+            return None;
+        }
+        let theirs = Self::faith_war_faith(g, rival)?;
+        if theirs == ours {
+            return None;
+        }
+        let cities = g.player_city_ids(pid).len();
+        let on_ours = g
+            .player_city_ids(pid)
+            .iter()
+            .filter_map(|cid| g.cities.get(cid))
+            .filter(|city| g.city_religion(city) == Some(ours))
+            .count();
+        let leaning = Self::our_cities_on_the_faith(g, pid, theirs);
+        let one_from_flipping = on_ours.saturating_sub(1) * 2 <= cities;
+        (leaning < FAITH_WAR_2_FOUNDER_LEANING && !one_from_flipping).then_some((on_ours, cities))
+    }
+
     /// The faith `rival` founded, when it is a living major with one.
     fn faith_war_faith(g: &Game, rival: usize) -> Option<&str> {
         let player = g.players.get(rival)?;
@@ -114,6 +200,15 @@ impl AdvancedAi {
             return Some(("legal", "not a legal target".to_string()));
         }
         let enemies = self.one_war_enemies(g, pid).len();
+        if self.faith_war_before_the_flip_2 && enemies + 1 >= FAITH_WAR_2_MAX_WARS {
+            return Some((
+                "wars",
+                format!(
+                    "we would be at war with {} majors counting this one",
+                    enemies + 1
+                ),
+            ));
+        }
         if enemies >= FAITH_WAR_MAX_ENEMIES {
             return Some((
                 "enemies",
@@ -203,16 +298,23 @@ impl AdvancedAi {
         }
         self.faith_war_held_noted.insert(rival, (g.turn, gate));
         let (spreaders, on_it) = trigger;
+        let tag = self.faith_war_tag();
+        if gate == "founder" || gate == "cooldown" {
+            think!(self.journal(), Military, Detail,
+                   "Holding the faith war on {}", g.players[rival].civ;
+                   "{reason}; {tag}");
+            return;
+        }
         think!(self.journal(), Military, Detail,
                "Holding the faith war on {}", g.players[rival].civ;
-               "faith-war-before-the-flip: {spreaders} spreader(s) at our cities and {on_it} of ours lean to its faith, but {reason}");
+               "{tag}: {spreaders} spreader(s) at our cities and {on_it} of ours lean to its faith, but {reason}");
     }
 
     /// `faith-war-before-the-flip`: open the defensive war on the founder
     /// whose spreaders are working our cities. The turn's one declaration;
     /// `false` with the gene off or when no founder qualifies.
     pub(super) fn faith_war_before_the_flip_opening(&mut self, g: &mut Game, pid: usize) -> bool {
-        if !self.faith_war_before_the_flip
+        if !self.faith_war_active()
             || !g.victory_conditions.religious
             || self.active_victory_target(g) != Some(VictoryTarget::Domination)
             || self.faith_war_before_the_flip_war.is_some()
@@ -229,6 +331,19 @@ impl AdvancedAi {
         // faith; the lower seat breaks a tie.
         candidates.sort_by(|a, b| b.1.cmp(&a.1).then(a.0.cmp(&b.0)));
         for (rival, trigger) in candidates {
+            if let Some(ago) = self.faith_war_cooldown(g, pid, rival) {
+                let reason = format!("cooldown: peace {ago} turns ago");
+                self.journal_faith_war_held(g, rival, "cooldown", &reason, trigger);
+                continue;
+            }
+            if let Some((on_ours, cities)) = self.faith_war_founder_holds(g, pid, rival) {
+                let (spreaders, on_it) = trigger;
+                let reason = format!(
+                    "founder majority holds ({on_ours} of {cities} ours); {on_it} of ours lean to its faith, {spreaders} spreader(s) at our cities"
+                );
+                self.journal_faith_war_held(g, rival, "founder", &reason, trigger);
+                continue;
+            }
             if let Some((gate, reason)) = self.faith_war_gate(g, pid, rival) {
                 self.journal_faith_war_held(g, rival, gate, &reason, trigger);
                 continue;
@@ -246,9 +361,10 @@ impl AdvancedAi {
                 spreader_seen: g.turn,
             });
             let (spreaders, on_it) = trigger;
+            let tag = self.faith_war_tag();
             think!(self.journal(), Military, Strategy,
                    "Opening a faith war on {}", g.players[rival].civ;
-                   "faith-war-before-the-flip: its spreaders stand at our cities ({spreaders} within 6 tiles) and {on_it} of ours lean to its faith while our majority holds out; defensive, no siege: our soldiers condemn its spreaders; {:.0} power against their steady {:.0}",
+                   "{tag}: its spreaders stand at our cities ({spreaders} within 6 tiles) and {on_it} of ours lean to its faith while our majority holds out; defensive, no siege: our soldiers condemn its spreaders; {:.0} power against their steady {:.0}",
                    g.military_power(pid), self.steady_rival_power(g, rival));
             return true;
         }
@@ -259,6 +375,28 @@ impl AdvancedAi {
     /// over, and note the turn a spreader of the founder's faith last stood
     /// at our cities.
     pub(super) fn faith_war_track(&mut self, g: &Game, pid: usize) {
+        // `faith-war-before-the-flip-2`: the turn each major was last seen at
+        // war with us, and the first turn of the peace that followed, however
+        // the peace was made.
+        if self.faith_war_before_the_flip_2 {
+            for player in &g.players {
+                if player.id == pid || !player.alive || player.is_minor || player.is_barbarian {
+                    continue;
+                }
+                let rival = player.id;
+                if g.is_at_war(pid, rival) {
+                    self.faith_war_war_seen.insert(rival, g.turn);
+                } else if let Some(&war_seen) = self.faith_war_war_seen.get(&rival) {
+                    if self
+                        .faith_war_peace_at
+                        .get(&rival)
+                        .is_none_or(|&peace| peace <= war_seen)
+                    {
+                        self.faith_war_peace_at.insert(rival, g.turn);
+                    }
+                }
+            }
+        }
         let Some(mut war) = self.faith_war_before_the_flip_war else {
             return;
         };
@@ -274,6 +412,22 @@ impl AdvancedAi {
             }
         }
         self.faith_war_before_the_flip_war = Some(war);
+    }
+
+    /// `faith-war-before-the-flip-2`: the standard turns since the last peace
+    /// with `rival`, while that is under [`FAITH_WAR_2_COOLDOWN_TURNS`] and no
+    /// city of ours is being converted to its faith (a city already
+    /// following it, or under a minor pressure, does not lift it). `None`
+    /// when the war may reopen, and always with the version off.
+    pub(crate) fn faith_war_cooldown(&self, g: &Game, pid: usize, rival: usize) -> Option<u32> {
+        if !self.faith_war_before_the_flip_2 {
+            return None;
+        }
+        let peace = *self.faith_war_peace_at.get(&rival)?;
+        let ago = g.turn.saturating_sub(peace);
+        (ago < g.standard_duration(FAITH_WAR_2_COOLDOWN_TURNS).max(1)
+            && Self::faith_war_converting(g, pid, rival) == 0)
+            .then_some(ago)
     }
 
     /// Cities of ours the founder's faith is converting that do not follow it
@@ -295,7 +449,7 @@ impl AdvancedAi {
     /// city of ours is still being converted to the founder's faith, and no
     /// city of ours is falling. `false` with the gene off.
     pub(crate) fn faith_war_keeps_the_war(&self, g: &Game, pid: usize, rival: usize) -> bool {
-        self.faith_war_before_the_flip
+        self.faith_war_active()
             && self
                 .faith_war_before_the_flip_war
                 .is_some_and(|war| war.rival == rival)
@@ -318,7 +472,7 @@ impl AdvancedAi {
         let Some(war) = self.faith_war_before_the_flip_war else {
             return false;
         };
-        self.faith_war_before_the_flip
+        self.faith_war_active()
             && war.rival == rival
             && g.is_at_war(pid, rival)
             && g.turn.saturating_sub(war.spreader_seen)
@@ -348,7 +502,8 @@ impl AdvancedAi {
         };
         think!(self.journal(), Diplomacy, Decision,
                "{what} {}", g.players[rival].civ;
-               "faith-war-before-the-flip: {converting} of our cities are still being converted to its faith; at war our soldiers condemn its spreaders");
+               "{}: {converting} of our cities are still being converted to its faith; at war our soldiers condemn its spreaders",
+               self.faith_war_tag());
     }
 }
 

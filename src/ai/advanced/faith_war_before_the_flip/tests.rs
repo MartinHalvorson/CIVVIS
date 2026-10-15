@@ -294,3 +294,199 @@ fn the_record_follows_the_war() {
     ai.faith_war_track(&g, 0);
     assert_eq!(ai.faith_war_before_the_flip_war, None);
 }
+
+#[test]
+fn version_two_is_opt_in() {
+    opt_in_off_in_both_controllers("faith-war-before-the-flip-2", |ai| {
+        ai.faith_war_before_the_flip_2
+    });
+}
+
+const OURS: &str = "Buddhism";
+
+/// We founded Buddhism and it holds our majority: `ours` of our cities follow
+/// it, `leaning` follow the founder's Orthodoxy, and the rest follow
+/// nothing. Seat 1's Missionary still stands at our leaning city.
+fn founder_majority(
+    ours: usize,
+    leaning: usize,
+    plain: usize,
+) -> (Game, AdvancedAi, StrategicPlan) {
+    let (mut g, mut ai, plan, first, _) = before_the_flip();
+    ai.enable_faith_war_before_the_flip_2();
+    // The fixture's three cities: the first leans to Orthodoxy.
+    let mut ids: Vec<u32> = g
+        .player_city_ids(0)
+        .into_iter()
+        .filter(|cid| *cid != first)
+        .collect();
+    for y in 0..(ours + leaning + plain).saturating_sub(3) {
+        ids.push(g.found_city_for(0, (2 + 5 * (y as i32 % 3), 14 + 4 * (y as i32 / 3)), None));
+    }
+    let mut order = vec![first];
+    order.extend(ids);
+    g.players[0].religion = Some(OURS.into());
+    for (i, cid) in order.iter().enumerate() {
+        let city = g.cities.get_mut(cid).unwrap();
+        city.pressure.clear();
+        if i < leaning {
+            city.atheist_pressure = 0.0;
+            city.pressure.insert(FAITH.into(), 100.0);
+        } else if i < leaning + ours {
+            city.atheist_pressure = 0.0;
+            city.pressure.insert(OURS.into(), 100.0);
+        } else {
+            city.atheist_pressure = 50.0;
+        }
+    }
+    Arc::make_mut(&mut g.observed_majority_religion).insert(0, OURS.into());
+    assert!(g.civ_follows_religion(0, OURS));
+    (g, ai, plan)
+}
+
+/// Our founded faith holds 4 of our 5 cities and only one leans to the
+/// founder's: version 2 holds with the founder line; the original fires.
+#[test]
+fn a_founder_majority_holds_version_two() {
+    let (mut g, mut ai, plan) = founder_majority(4, 1, 0);
+    assert_eq!(ai.faith_war_founder_holds(&g, 0, 1), Some((4, 5)));
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!g.is_at_war(0, 1), "version 2: the founder majority holds");
+
+    let (mut g, mut ai, plan) = founder_majority(4, 1, 0);
+    ai.disable_faith_war_before_the_flip_2();
+    ai.enable_faith_war_before_the_flip();
+    assert_eq!(ai.faith_war_founder_holds(&g, 0, 1), None);
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(g.is_at_war(0, 1), "the original fires");
+}
+
+/// Two of our cities leaning to the founder's faith, or our faith one city
+/// from losing its majority, open version 2's war.
+#[test]
+fn a_founder_with_two_leaning_or_one_city_from_flipping_fires() {
+    let (mut g, mut ai, plan) = founder_majority(5, 2, 0);
+    assert_eq!(
+        ai.faith_war_founder_holds(&g, 0, 1),
+        None,
+        "two lean to its faith"
+    );
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(g.is_at_war(0, 1));
+
+    let (mut g, mut ai, plan) = founder_majority(3, 1, 1);
+    assert_eq!(
+        ai.faith_war_founder_holds(&g, 0, 1),
+        None,
+        "3 of 5: one more loss ends our majority"
+    );
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(g.is_at_war(0, 1));
+}
+
+/// A seat that founded no faith, or whose majority does not follow its own,
+/// fires under version 2 exactly as under the original.
+#[test]
+fn version_two_fires_for_a_non_founder_as_before() {
+    let (mut g, mut ai, plan, _, _) = before_the_flip();
+    ai.enable_faith_war_before_the_flip_2();
+    assert_eq!(ai.faith_war_founder_holds(&g, 0, 1), None);
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(g.is_at_war(0, 1), "non-founder: fires");
+    let war = ai.faith_war_before_the_flip_war.unwrap();
+    assert_eq!((war.rival, war.opened), (1, 60));
+}
+
+/// Version 2's war limit is version 1's: beside one running major war both
+/// open (two wars at most); beside two both hold.
+#[test]
+fn version_two_keeps_version_ones_war_limit() {
+    let at_war_with = |two: bool, enemies: &[usize]| {
+        let (mut g, mut ai, plan, _, _) = before_the_flip();
+        if two {
+            ai.enable_faith_war_before_the_flip_2();
+        } else {
+            ai.enable_faith_war_before_the_flip();
+        }
+        for enemy in enemies {
+            g.at_war.insert((0, *enemy));
+            g.at_war.insert((*enemy, 0));
+            Arc::make_mut(&mut g.observed_military_power).insert(*enemy, 10.0);
+        }
+        let gate = ai.faith_war_gate(&g, 0, 1).map(|(gate, _)| gate);
+        ai.advanced_diplomacy(&mut g, 0, &plan);
+        (gate, g.is_at_war(0, 1))
+    };
+    assert_eq!(
+        at_war_with(true, &[2]),
+        (None, true),
+        "version 2 opens beside one war"
+    );
+    assert_eq!(
+        at_war_with(false, &[2]),
+        (None, true),
+        "as the original does"
+    );
+    assert_eq!(
+        at_war_with(true, &[2, 3]),
+        (Some("wars"), false),
+        "version 2 holds beside two"
+    );
+    assert_eq!(
+        at_war_with(false, &[2, 3]),
+        (Some("enemies"), false),
+        "as the original does"
+    );
+}
+
+/// Version 2's same-founder cooldown: a peace with the founder 9 turns ago
+/// holds the faith war; a city of ours being converted lifts it; 21 turns on
+/// it lapses. The record comes from any peace the board shows.
+#[test]
+fn version_two_waits_twenty_turns_after_a_peace_with_the_founder() {
+    let reopen = |peace_ago: u32, converting: bool| {
+        let (mut g, mut ai, plan, leaning, _) = before_the_flip();
+        ai.enable_faith_war_before_the_flip_2();
+        if converting {
+            let city = g.cities.get_mut(&leaning).unwrap();
+            city.pressure.clear();
+            city.pressure.insert("Islam".into(), 100.0);
+            city.pressure.insert(FAITH.into(), 70.0);
+        }
+        // At war with the founder until the peace, then at peace.
+        let peace_turn = g.turn - peace_ago;
+        g.at_war.insert((0, 1));
+        g.at_war.insert((1, 0));
+        let now = g.turn;
+        g.turn = peace_turn - 1;
+        ai.faith_war_track(&g, 0);
+        g.at_war.clear();
+        g.turn = peace_turn;
+        ai.faith_war_track(&g, 0);
+        assert_eq!(ai.faith_war_peace_at.get(&1), Some(&peace_turn));
+        g.turn = now;
+        let held = ai.faith_war_cooldown(&g, 0, 1);
+        ai.advanced_diplomacy(&mut g, 0, &plan);
+        (held, g.is_at_war(0, 1))
+    };
+    assert_eq!(
+        reopen(9, false),
+        (Some(9), false),
+        "nine turns after the peace: held"
+    );
+    assert_eq!(
+        reopen(9, true),
+        (None, true),
+        "a converting city lifts the cooldown"
+    );
+    assert_eq!(reopen(21, false), (None, true), "21 turns on: reopened");
+
+    let (g, mut ai, _, _, _) = before_the_flip();
+    ai.enable_faith_war_before_the_flip();
+    ai.faith_war_peace_at.insert(1, g.turn - 1);
+    assert_eq!(
+        ai.faith_war_cooldown(&g, 0, 1),
+        None,
+        "version 1 has no cooldown"
+    );
+}
