@@ -156,6 +156,63 @@ class MachineSharing(unittest.TestCase):
             demand_cores=demand, previous_duty=1.0, demand_floor=9.0)
         self.assertAlmostEqual(demand, 9.4)
 
+    def test_a_mistimed_window_cannot_latch_the_games_near_zero(self):
+        # 2026-10-09..15 on mbp-m5-max-128: seven workers, demand latched at
+        # 144.6 cores, so the duty sat near 0.02 -- under 0.1, where demand is
+        # never re-measured -- for six days while most of the host stood idle.
+        duty, demand = scheduler.governed_duty(
+            ceiling=1.0, cores=18, busy=0.75, group_cores=0.06, applied_duty=0.016,
+            demand_cores=144.57, previous_duty=0.016, demand_floor=7.0)
+        self.assertEqual(demand, 8.0, "seven one-thread workers plus the process's own")
+        # 18 - (13.5 - 0.06) = 4.56 allowed cores; half the way from 0.016.
+        self.assertAlmostEqual(duty, 0.016 + 0.5 * (4.56 / 8.0 - 0.016))
+        # A fresh mis-timed reading (group ran far past its counted slices) is
+        # capped the same way rather than re-latching.
+        _, demand = scheduler.governed_duty(
+            ceiling=1.0, cores=18, busy=0.5, group_cores=7.0, applied_duty=0.1,
+            demand_cores=demand, previous_duty=0.5, demand_floor=7.0)
+        self.assertEqual(demand, 8.0)
+
+    def test_governor_counts_the_run_it_really_gave(self):
+        # A governor thread that wakes late lets the games run past run_for;
+        # applied_duty must report the run they got, not the run requested.
+        import threading
+        import time
+
+        class Host:
+            busy = 0
+
+            def ticks(self):
+                Host.busy += 1
+                return (Host.busy, 99 * Host.busy)  # a 1%-busy host
+
+        governor = scheduler.CpuGovernor(
+            100, cores=18, workers=7, host=Host(), group_cpu=lambda _group: 0.0,
+            send=lambda _group, _which: None)
+        governor.duty = 0.1
+        real_wait = threading.Event.wait
+
+        def slow_wait(event, timeout=None):
+            # Every wait overruns by 20 ms, like a starved thread's wake-up.
+            return real_wait(event, None if timeout is None else timeout + 0.02)
+
+        stop = threading.Event()
+        with mock.patch.object(scheduler, "GOVERNOR_WINDOW_SECONDS", 0.2), \
+                mock.patch.object(scheduler, "GOVERNOR_PERIOD_SECONDS", 0.05), \
+                mock.patch.object(threading.Event, "wait", slow_wait):
+            serving = threading.Thread(target=governor._serve, args=(5, stop), daemon=True)
+            serving.start()
+            deadline = time.monotonic() + 3.0
+            while not governor.snapshot() and time.monotonic() < deadline:
+                time.sleep(0.01)
+            snapshot = governor.snapshot()
+            stop.set()
+            serving.join(timeout=3.0)
+        self.assertTrue(snapshot)
+        # Requested 0.1 of each slice (5 ms of 50) but each run lasted ~25 ms:
+        # ~0.28 really applied, where counting run_for reported ~0.06.
+        self.assertGreater(snapshot["applied_duty"], 0.2)
+
     def test_governor_pauses_an_overloaded_host_and_always_resumes_on_release(self):
         import signal as signals
         import threading
