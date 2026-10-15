@@ -4,10 +4,22 @@
 //! adjacency bonuses" says nothing about whether this empire's Campuses earn
 //! two Science or forty from it. Players install a mod for the missing number.
 //! Here it is the engine's own arithmetic, read the way the deck chooser in
-//! `ai.rs` (`empire_reading`) already reads it: measure the empire, take the
-//! card out, measure again. Nothing names an effect key, so every card the
-//! engine implements is covered and a card it does not implement reads zero
-//! instead of quoting its own text back.
+//! `ai.rs` (`empire_reading`) already reads it: measure the empire with and
+//! without cards. Nothing names an effect key, so every card the engine
+//! implements is covered and a card it does not implement reads zero instead
+//! of quoting its own text back.
+//!
+//! ★ THE CARDS ADD UP TO THE DECK. Operator 2026-10-15: "math for net policy
+//! effect appears wrong maybe. sometimes appear not to sum correctly". Each
+//! card used to be priced alone -- the deck with it against the deck without
+//! it -- and cards are not independent: a percentage card multiplies a flat
+//! one, and amenities move yields only across a mood threshold. Live t84
+//! (Civil Prestige + Retainers, both amenity cards) read Faith +0.2 and +0.2
+//! against a deck worth +0.7, Production +1.9 and +1.2 against +2.7. So each
+//! card is now its SHARE of the deck: its gain averaged over every order the
+//! cards could be added in (the Shapley value), which always sums to the
+//! deck's whole effect and splits whatever two cards earn together evenly
+//! between them.
 
 use super::*;
 
@@ -58,6 +70,25 @@ impl EmpireReading {
         ]
     }
 
+    /// Field by field, so a share can be built from weighted gains.
+    fn combine(&self, other: &EmpireReading, f: impl Fn(f64, f64) -> f64) -> EmpireReading {
+        EmpireReading {
+            food: f(self.food, other.food),
+            production: f(self.production, other.production),
+            gold: f(self.gold, other.gold),
+            science: f(self.science, other.science),
+            culture: f(self.culture, other.culture),
+            faith: f(self.faith, other.faith),
+            amenities: f(self.amenities, other.amenities),
+            housing: f(self.housing, other.housing),
+            loyalty: f(self.loyalty, other.loyalty),
+            great_people: f(self.great_people, other.great_people),
+            tourism: f(self.tourism, other.tourism),
+            influence: f(self.influence, other.influence),
+            strength: f(self.strength, other.strength),
+        }
+    }
+
     pub fn minus(&self, other: &EmpireReading) -> EmpireReading {
         EmpireReading {
             food: self.food - other.food,
@@ -77,7 +108,7 @@ impl EmpireReading {
     }
 }
 
-/// One slotted card and what taking it out would cost the empire.
+/// One slotted card and its share of what the deck is worth.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PolicyWorth {
     pub policy: Name,
@@ -91,8 +122,8 @@ pub struct PolicyLedger {
     pub anarchy: bool,
     /// The empire as it stands, with the whole deck in.
     pub with: EmpireReading,
-    /// The whole deck against no deck at all. Not the sum of the cards: two
-    /// cards can multiply each other, and this is what the deck actually does.
+    /// The whole deck against no deck at all, and the sum of the cards'
+    /// shares.
     pub net: EmpireReading,
     pub cards: Vec<PolicyWorth>,
 }
@@ -202,7 +233,18 @@ impl Game {
 
     /// [`Self::policy_ledger`] on a branch the caller has already made — the
     /// server clones under its lock and reads off it.
-    pub fn into_policy_ledger(mut self, pid: usize) -> PolicyLedger {
+    ///
+    /// Every sub-deck is read once (2^n readings, ~1 ms each on a seven-city
+    /// empire, remembered by the server per turn), and each card's share is
+    /// its gain over the sub-decks without it, weighted by how many orders of
+    /// adding the cards pass through that sub-deck. Past
+    /// [`EXACT_SHARE_CARDS`] cards the shares are the gains in deck order
+    /// instead: still the deck's whole effect in sum, no longer even-handed.
+    pub fn into_policy_ledger(self, pid: usize) -> PolicyLedger {
+        self.ledger_sharing_exactly_up_to(pid, EXACT_SHARE_CARDS)
+    }
+
+    fn ledger_sharing_exactly_up_to(mut self, pid: usize, exact_cards: usize) -> PolicyLedger {
         if self
             .players
             .get(pid)
@@ -210,29 +252,69 @@ impl Game {
         {
             return PolicyLedger::default();
         }
-        let deck = self.players[pid].policies.clone();
-        let with = self.empire_reading(pid);
-        let mut cards = Vec::with_capacity(deck.len());
-        for card in &deck {
-            self.players[pid].policies.remove(card);
-            let without = self.empire_reading(pid);
-            self.players[pid].policies.insert(*card);
-            cards.push(PolicyWorth {
-                policy: *card,
-                worth: with.minus(&without),
-            });
+        let held = self.players[pid].policies.clone();
+        let deck: Vec<Name> = held.iter().copied().collect();
+        let n = deck.len();
+        let mut shares = vec![EmpireReading::default(); n];
+        let with;
+        let bare;
+        if n <= exact_cards {
+            let readings: Vec<EmpireReading> = (0..1usize << n)
+                .map(|mask| self.reading_with_cards(pid, &deck, mask))
+                .collect();
+            // A sub-deck of `s` cards precedes card i in s!(n-1-s)! of the n!
+            // orders.
+            let factorial = |k: usize| (1..=k).map(|v| v as f64).product::<f64>();
+            let weight: Vec<f64> = (0..n)
+                .map(|s| factorial(s) * factorial(n - 1 - s) / factorial(n))
+                .collect();
+            for (i, share) in shares.iter_mut().enumerate() {
+                for mask in (0..1usize << n).filter(|mask| mask >> i & 1 == 0) {
+                    let w = weight[mask.count_ones() as usize];
+                    let gain = readings[mask | 1 << i].minus(&readings[mask]);
+                    *share = share.combine(&gain, |a, b| a + w * b);
+                }
+            }
+            with = readings[(1 << n) - 1];
+            bare = readings[0];
+        } else {
+            let mut before = self.reading_with_cards(pid, &deck, 0);
+            bare = before;
+            for (i, share) in shares.iter_mut().enumerate() {
+                let after = self.reading_with_cards(pid, &deck, (1 << (i + 1)) - 1);
+                *share = after.minus(&before);
+                before = after;
+            }
+            with = before;
         }
-        self.players[pid].policies.clear();
-        let bare = self.empire_reading(pid);
-        self.players[pid].policies = deck;
+        self.players[pid].policies = held;
         PolicyLedger {
             anarchy: self.in_anarchy(pid),
             with,
             net: with.minus(&bare),
-            cards,
+            cards: deck
+                .into_iter()
+                .zip(shares)
+                .map(|(policy, worth)| PolicyWorth { policy, worth })
+                .collect(),
         }
     }
+
+    /// The empire read with only the cards of `deck` that `mask` names.
+    fn reading_with_cards(&mut self, pid: usize, deck: &[Name], mask: usize) -> EmpireReading {
+        self.players[pid].policies = deck
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| mask >> i & 1 == 1)
+            .map(|(_, card)| *card)
+            .collect();
+        self.empire_reading(pid)
+    }
 }
+
+/// Above this many slotted cards the exact shares (2^n empire readings) give
+/// way to gains in deck order. Civilization VI's widest deck is about nine.
+pub const EXACT_SHARE_CARDS: usize = 10;
 
 #[cfg(test)]
 mod tests {
@@ -277,6 +359,70 @@ mod tests {
         assert!(game.players[0]
             .policies
             .contains(&Name::new("urban_planning")));
+    }
+
+    fn assert_shares_sum_to_net(ledger: &PolicyLedger) {
+        let mut sum = EmpireReading::default();
+        for card in &ledger.cards {
+            sum = sum.combine(&card.worth, |a, b| a + b);
+        }
+        for ((key, total), (_, net)) in sum.fields().into_iter().zip(ledger.net.fields()) {
+            assert!(
+                (total - net).abs() < 1e-9,
+                "{key}: the cards add to {total}, the deck is worth {net}"
+            );
+        }
+    }
+
+    /// Urban Planning's +1 Production is itself sped by Colonization's +50%
+    /// toward the Settler, so the two earn half a Production together. Each
+    /// card's share carries half of that, and the shares add up to the deck.
+    #[test]
+    fn two_cards_that_multiply_split_what_they_earn_together() {
+        let (mut game, cid) = founded_game();
+        game.players[0].government = Some("chiefdom".to_string());
+        game.players[0].policies.clear();
+        game.players[0].policies.insert(Name::new("urban_planning"));
+        game.players[0].policies.insert(Name::new("colonization"));
+        let city = game.cities.get_mut(&cid).unwrap();
+        city.queue.clear();
+        city.queue.push(Item::Unit {
+            unit: Name::new("settler"),
+        });
+        let mut bare = game.clone();
+        bare.players[0].policies.clear();
+        let base = bare.city_yields_model(cid).production;
+        let ledger = game.policy_ledger(0);
+        let worth = |card: &str| {
+            ledger
+                .cards
+                .iter()
+                .find(|worth| worth.policy == Name::new(card))
+                .unwrap()
+                .worth
+                .production
+        };
+        assert!(
+            (worth("urban_planning") - 1.25).abs() < 1e-6,
+            "+1, and half of the +0.5 Colonization adds to it, read {}",
+            worth("urban_planning")
+        );
+        assert!(
+            (worth("colonization") - (0.5 * base + 0.25)).abs() < 1e-6,
+            "half of {base}, and half of the +0.5 it adds to Urban Planning, read {}",
+            worth("colonization")
+        );
+        assert!((ledger.net.production - (0.5 * base + 1.5)).abs() < 1e-6);
+        assert_shares_sum_to_net(&ledger);
+        // Past the exact limit the shares follow the deck's order instead:
+        // the later card takes what the two earn together, the sum holds.
+        let ordered = game.speculative_clone().ledger_sharing_exactly_up_to(0, 0);
+        assert_eq!(ordered.net, ledger.net);
+        assert_shares_sum_to_net(&ordered);
+        assert_eq!(
+            ordered.cards.iter().map(|card| card.policy).collect::<Vec<_>>(),
+            ledger.cards.iter().map(|card| card.policy).collect::<Vec<_>>()
+        );
     }
 
     #[test]
