@@ -7916,6 +7916,16 @@ impl AdvancedAi {
         self.base.deck_reads_player_income = false;
     }
 
+    /// Opt-in gene `no-third-war`; see `advanced/no_third_war.rs`.
+    pub fn enable_no_third_war(&mut self) {
+        self.no_third_war = true;
+    }
+
+    /// The twin of `enable_no_third_war`.
+    pub fn disable_no_third_war(&mut self) {
+        self.no_third_war = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -7164,6 +7164,13 @@ pub struct AdvancedAi {
     /// `advanced/industrial_zone_claims_the_factory.rs`. Off by default.
     industrial_zone_claims_the_factory: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `no-third-war`: with two majors already at war with us, no war of
+    /// ours opens on a third unless a game-ending clock exempts it. See
+    /// `advanced/no_third_war.rs`.
+    no_third_war: bool,
+    /// `no-third-war`: per rival, whether the last line was a hold (or an
+    /// exemption) and its turn. Journal only.
+    no_third_war_noted: BTreeMap<usize, (bool, u32)>,
     /// `medina-quarter-houses-the-districts`: while two or more of our
     /// cities are housing-limited with three specialty districts, Medina
     /// Quarter (+2 Housing there) joins the portfolio ahead of the plan's
@@ -9321,6 +9328,9 @@ mod open_city_front;
 /// `medina-quarter-houses-the-districts`: see `advanced/medina_quarter.rs`.
 mod medina_quarter;
 
+/// `no-third-war`: see `advanced/no_third_war.rs`.
+mod no_third_war;
+
 mod denial_nearest_finish;
 mod denial_needs_a_road;
 mod city_memory;
@@ -10888,6 +10898,8 @@ impl AdvancedAi {
             industrial_zone_claims_the_producer_queue: false,
             industrial_zone_claims_the_factory: false,
             // ---- append: l-o ----------------------------------------
+            no_third_war: false,
+            no_third_war_noted: BTreeMap::new(),
             medina_quarter_houses_the_districts: false,
             neighborhood_houses_the_capped_city: false,
             merchant_confederation_earns_its_slot: false,
@@ -23809,6 +23821,10 @@ impl AdvancedAi {
             // The launch gate is repeated immediately before the declaration.
             return true;
         }
+        // See `third_war_held` (`no-third-war`).
+        if self.third_war_held(g, pid, target) {
+            return true;
+        }
         // `coalition_before_war`: the package is complete; invite the
         // target's neighbours to a joint war and hold for the answer. See
         // `advanced/coalition.rs`.
@@ -24921,6 +24937,11 @@ impl AdvancedAi {
             return;
         }
         if opens {
+            // See `third_war_held` (`no-third-war`). The launcher and the
+            // launched-racer wars are not gated.
+            if !launcher_ready && !launched_finish && self.third_war_held(g, pid, target) {
+                return;
+            }
             // `coalition_before_war`: invite the target's neighbours to a
             // joint war first, and hold while an answer is due. See
             // `advanced/coalition.rs`. A launcher war does not wait on it.

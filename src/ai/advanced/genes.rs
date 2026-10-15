@@ -4003,6 +4003,11 @@ pub const GENES: &[Gene] = &[
     // after it (Gunboat Diplomacy seated under Communism kept version one
     // out). See `merchant_confederation_pays` in `advanced.rs`.
     Gene { tag: "merchant-confederation-earns-its-slot-2", field: "merchant_confederation_earns_its_slot_2", kind: Kind::OptIn, enable: AdvancedAi::enable_merchant_confederation_earns_its_slot_2, disable: AdvancedAi::disable_merchant_confederation_earns_its_slot_2 },
+    // With two majors at war with us, no war of ours opens on a third unless
+    // a game-ending clock exempts it: on 25 Emperor passers (10-14/15) the
+    // 137 turns at war with three majors took no city. See
+    // `advanced/no_third_war.rs`.
+    Gene { tag: "no-third-war", field: "no_third_war", kind: Kind::OptIn, enable: AdvancedAi::enable_no_third_war, disable: AdvancedAi::disable_no_third_war },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -498,6 +498,10 @@ impl AdvancedAi {
         let Some(opportunity) = self.raid_opportunity(g, pid) else {
             return false;
         };
+        // See `third_war_held` (`no-third-war`).
+        if self.third_war_held(g, pid, opportunity.target) {
+            return false;
+        }
         let Some(action) = self.raid_opening(g, pid, opportunity.target) else {
             return false;
         };

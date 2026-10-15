@@ -2031,6 +2031,10 @@ impl AdvancedAi {
         if !self.declaration_has_production_parity(g, pid, opening.target, objective) {
             return false;
         }
+        // See `third_war_held` (`no-third-war`).
+        if self.third_war_held(g, pid, opening.target) {
+            return false;
+        }
         let Some(action) = self.raid_opening(g, pid, opening.target) else {
             return false;
         };

@@ -395,6 +395,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `near-rival-deterrence` | off (unmeasured) | Enable `near-rival-deterrence`. | 1 \| 1 |
 | `neighborhood-houses-the-capped-city` | off (unmeasured) | Opt-in gene `neighborhood-houses-the-capped-city`; see `advanced/neighborhood_houses_the_capped_city.rs`. | 1 \| 1 |
 | `no-peace-with-a-launcher` | off (unmeasured) | Enable `no-peace-with-a-launcher`. | 1 \| 1 |
+| `no-third-war` | off (unmeasured) | Opt-in gene `no-third-war`; see `advanced/no_third_war.rs`. | 1 \| 1 |
 | `one-sanctuary` | off (unmeasured) | Opt-in gene `one-sanctuary`; see `Self::one_sanctuary`. | 1 \| 1 |
 | `one-war-swaps-a-stalled-front` | off (unmeasured) | Opt-in gene `one-war-swaps-a-stalled-front`; see `Self::one_war_swaps_a_stalled_front`. | 1 \| 1 |
 | `open-city-draws-the-front` | off (unmeasured) | Opt-in gene `open-city-draws-the-front`; see `advanced/open_city_front.rs`. | 1 \| 1 |

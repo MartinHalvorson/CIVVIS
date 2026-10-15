@@ -2653,6 +2653,10 @@ impl AdvancedAi {
         {
             return true;
         }
+        // See `third_war_held` (`no-third-war`).
+        if self.third_war_held(g, pid, target) {
+            return true;
+        }
         let Some(action) = self.preferred_war_opening(g, pid, target) else {
             return true;
         };

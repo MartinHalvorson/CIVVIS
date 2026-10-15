@@ -1450,6 +1450,10 @@ impl AdvancedAi {
         if g.turn < self.peace_until || !self.war_is_affordable(g, pid) {
             return false;
         }
+        // See `third_war_held` (`no-third-war`).
+        if self.third_war_held(g, pid, rival) {
+            return false;
+        }
         let Some(action) = self.preferred_war_opening(g, pid, rival) else {
             return false;
         };
@@ -2791,11 +2795,18 @@ impl AdvancedAi {
             return None;
         }
         // See `declarable_in_reach`.
-        self.one_war_second_front_named(g, pid).filter(|rival| {
-            !self.front_needs_a_declarable_rival
-                || g.is_at_war(pid, *rival)
-                || self.declarable_in_reach(g, pid, *rival)
-        })
+        self.one_war_second_front_named(g, pid)
+            .filter(|rival| {
+                !self.front_needs_a_declarable_rival
+                    || g.is_at_war(pid, *rival)
+                    || self.declarable_in_reach(g, pid, *rival)
+            })
+            // See `third_war_would_open` (`no-third-war`): no front named on a
+            // third major the declaration would hold off.
+            .filter(|rival| {
+                !self.third_war_would_open(g, pid, *rival)
+                    || self.third_war_exemption(g, pid, *rival).is_some()
+            })
     }
 
     /// `front-needs-a-declarable-rival`: whether the declaration could reach
