@@ -13358,6 +13358,9 @@ mod tests {
         );
         let mut ai = victory_lane("science").unwrap();
         ai.enable_doomed_blow_veto_2();
+        // `enable_battle_planner_2` clears version one only; clear whichever
+        // later version the published batch rule ships so v2 plays alone.
+        ai.disable_battle_planner_3();
         ai.enable_battle_planner_2();
         let reply: serde_json::Value = serde_json::from_str(&decide(
             &mut mirror,
