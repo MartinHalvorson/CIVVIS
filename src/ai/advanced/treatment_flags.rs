@@ -7862,6 +7862,17 @@ impl AdvancedAi {
         self.faith_war_before_the_flip_2 = false;
     }
 
+    /// Opt-in gene `medina-quarter-houses-the-districts`; see
+    /// `advanced/medina_quarter.rs`.
+    pub fn enable_medina_quarter_houses_the_districts(&mut self) {
+        self.medina_quarter_houses_the_districts = true;
+    }
+
+    /// The twin of `enable_medina_quarter_houses_the_districts`.
+    pub fn disable_medina_quarter_houses_the_districts(&mut self) {
+        self.medina_quarter_houses_the_districts = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

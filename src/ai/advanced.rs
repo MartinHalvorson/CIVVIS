@@ -7160,6 +7160,13 @@ pub struct AdvancedAi {
     /// `advanced/industrial_zone_claims_the_factory.rs`. Off by default.
     industrial_zone_claims_the_factory: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `medina-quarter-houses-the-districts`: while two or more of our
+    /// cities are housing-limited with three specialty districts, Medina
+    /// Quarter (+2 Housing there) joins the portfolio ahead of the plan's
+    /// ordinary cards and displaces the weakest Economic card the plan
+    /// wants least, never a production, Builder or Settler card. See
+    /// `advanced/medina_quarter.rs`. Off by default.
+    medina_quarter_houses_the_districts: bool,
     /// `merchant-confederation-earns-its-slot`: the base deck's
     /// counterfactual reads the policy income paid to the player
     /// (`BasicAi::deck_reads_player_income`), and while our placed Envoys
@@ -9290,6 +9297,9 @@ mod faith_war_before_the_flip;
 /// `open-city-draws-the-front`: see `advanced/open_city_front.rs`.
 mod open_city_front;
 
+/// `medina-quarter-houses-the-districts`: see `advanced/medina_quarter.rs`.
+mod medina_quarter;
+
 mod denial_nearest_finish;
 mod denial_needs_a_road;
 mod runaway_expander;
@@ -10853,6 +10863,7 @@ impl AdvancedAi {
             industrial_zone_claims_the_producer_queue: false,
             industrial_zone_claims_the_factory: false,
             // ---- append: l-o ----------------------------------------
+            medina_quarter_houses_the_districts: false,
             merchant_confederation_earns_its_slot: false,
             open_city_draws_the_front: false,
             open_city_hold: None,
@@ -20816,6 +20827,16 @@ impl AdvancedAi {
             desired.retain(|wanted| *wanted != card);
             desired.insert(0, card);
         }
+        // `medina-quarter-houses-the-districts`: while housing-limited cities
+        // with three specialty districts qualify, the housing card joins the
+        // portfolio here, ahead of the plan's ordinary cards but behind every
+        // card inserted at the front below (a wartime gold card, a treasury
+        // card); see `advanced/medina_quarter.rs`. `None` with the gene off.
+        let medina_quarter = self.medina_quarter_wanted(g, pid);
+        if medina_quarter.is_some() {
+            desired.retain(|wanted| *wanted != "medina_quarter");
+            desired.insert(0, "medina_quarter");
+        }
         let protect_wartime_income = self.domination_wartime_gold_card_pays(
             g,
             pid,
@@ -20926,6 +20947,12 @@ impl AdvancedAi {
             )
             .is_ok()
             {
+                if let (true, Some(qualifying)) = (card == "medina_quarter", medina_quarter) {
+                    think!(self.journal(), Policies, Decision, "Slotted medina quarter";
+                           "{qualifying} housing-limited cities with 3 or more specialty \
+                            districts gain +2 Housing; into a free slot");
+                    continue;
+                }
                 think!(self.journal(), Policies, Decision, "Slotted {}", plain(card);
                        "priority {} of {wanted} for the {} plan, into a free slot",
                        rank + 1, objective.as_str());
@@ -20939,6 +20966,18 @@ impl AdvancedAi {
                 .filter(|current| {
                     if protect_wartime_income.is_some() && current.as_str() == "economic_union" {
                         return false;
+                    }
+                    // `medina-quarter-houses-the-districts`: the housing card may
+                    // take an ordinary Economic card's slot (wanted or not),
+                    // never a spared production card or a protected one.
+                    if medina_quarter.is_some() && card == "medina_quarter" {
+                        let current = current.as_str();
+                        return Self::medina_quarter_may_displace(g, current)
+                            && !culture_defense_cards.contains(&current)
+                            && !nobel_peace_direct_favor_cards.contains(&current)
+                            && builder_window_card != Some(current)
+                            && upgrade_card != Some(current)
+                            && race_card != Some(current);
                     }
                     // `urban-planning-fills-the-slot`: the tail entry takes only
                     // an orphaned timed economy card's slot.
@@ -21032,6 +21071,9 @@ impl AdvancedAi {
                 };
                 key(first).cmp(&key(second)).then(first.cmp(second))
             });
+            if medina_quarter.is_some() && card == "medina_quarter" {
+                Self::medina_quarter_weakest_first(g, &desired, &mut replaceable);
+            }
             for current in replaceable {
                 let _ = g.apply(pid, &Action::UnslotPolicy { policy: current });
                 if g.apply(
@@ -21046,6 +21088,14 @@ impl AdvancedAi {
                         think!(self.journal(), Policies, Decision,
                                "Slotted {} over {}", plain(card), plain(&current);
                                "a Builder is almost finished; Serfdom adds two build charges");
+                    } else if let (true, Some(qualifying)) =
+                        (card == "medina_quarter", medina_quarter)
+                    {
+                        think!(self.journal(), Policies, Decision,
+                               "Slotted medina quarter over {}", plain(&current);
+                               "{qualifying} housing-limited cities with 3 or more specialty \
+                                districts gain +2 Housing; {} was the Economic card the {} \
+                                plan wants least", plain(&current), objective.as_str());
                     } else {
                         think!(self.journal(), Policies, Decision,
                                "Slotted {} over {}", plain(card), plain(&current);

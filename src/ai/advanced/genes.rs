@@ -3981,6 +3981,13 @@ pub const GENES: &[Gene] = &[
     // whatever its own cities' conversion, unless a city of ours is falling
     // or our capital is under siege. See `advanced/holdout_faith_war.rs`.
     Gene { tag: "holdout-keeps-the-faith-war-2", field: "holdout_keeps_the_faith_war_2", kind: Kind::OptIn, enable: AdvancedAi::enable_holdout_keeps_the_faith_war_2, disable: AdvancedAi::disable_holdout_keeps_the_faith_war_2 },
+    // Medina Quarter (+2 Housing in every city with three specialty
+    // districts) joins the policy portfolio, ahead of the plan's ordinary
+    // cards, while two or more of our cities are housing-limited with three
+    // specialty districts, and displaces the weakest Economic card the plan
+    // wants least (never a production, Builder or Settler card). See
+    // `advanced/medina_quarter.rs`.
+    Gene { tag: "medina-quarter-houses-the-districts", field: "medina_quarter_houses_the_districts", kind: Kind::OptIn, enable: AdvancedAi::enable_medina_quarter_houses_the_districts, disable: AdvancedAi::disable_medina_quarter_houses_the_districts },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
