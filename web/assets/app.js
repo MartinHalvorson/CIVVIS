@@ -6739,6 +6739,7 @@ function showLiveError(text) {
 }
 function adoptLivePause(status) {
   if (!status || typeof status !== "object") return;
+  const wasAvailable = livePause.available;
   livePause.available = status.available === true;
   livePause.requested = status.requested === true;
   livePause.held = status.held === true;
@@ -6755,6 +6756,8 @@ function adoptLivePause(status) {
   // The live time stops and starts with the hold, not with the next frame.
   syncLiveClockRun();
   paintLivePause();
+  // The turn plate's level row belongs to a live game (`hudTurnPlate`).
+  if (livePause.available !== wasAvailable && state) drawPlayerHud();
 }
 async function pollLivePause() {
   clearTimeout(livePause.timer);
@@ -23773,6 +23776,16 @@ function simulationStatsSection() {
     `</div></section>`;
 }
 
+// A difficulty's rung on the ruleset's ladder, counted from one the way the
+// verification lane names its games ("Lv 6" is Emperor, sixth of eight).
+function difficultyLevel(id) {
+  const ladder = RULES?.difficulties && typeof RULES.difficulties === "object"
+    ? RULES.difficulties : null;
+  const spec = ladder?.[id];
+  if (!spec || !Number.isInteger(spec.order)) return null;
+  return {level: spec.order + 1, of: Object.keys(ladder).length, name: spec.name || titleCase(id)};
+}
+
 function hudTurnPlate() {
   const actor = state.players[SPEC ? state.current : 0] || state.players[state.player];
   const viewer = state.players[state.player] || actor;
@@ -23786,6 +23799,18 @@ function hudTurnPlate() {
   const mapScript = state.map.script || "tenins_ball";
   const mapName = mapScript === "tenins_ball" ? "Tennis Ball" : titleCase(mapScript);
   const speedName = titleCase(state.game_speed || "standard");
+  // Beside a live Civilization VI game the speed row also names the level the
+  // game is played at (operator 2026-10-14: "Difficulty/Speed: Lv 6 /
+  // Online"). Both halves are the host game's own setup, read off its export.
+  // The label says "Level" because "Difficulty/Speed: Lv 6 / Online" is the
+  // widest row by a fifth: the plate cannot hold it even at its smallest type,
+  // where "Level/Speed" fits beside the other rows at the size they already have.
+  const liveLevel = livePause.available ? difficultyLevel(state.difficulty) : null;
+  const speedRow = liveLevel
+    ? `<div class="turn-setting" title="${escapeAttr(
+        `${liveLevel.name} difficulty (level ${liveLevel.level} of ${liveLevel.of}) at ${speedName} game speed`)}">` +
+      `<span>Level/Speed:</span><b>Lv ${liveLevel.level} / ${speedName}</b></div>`
+    : `<div class="turn-setting"><span>Game speed:</span><b>${speedName}</b></div>`;
   const paceSelect = document.getElementById("specspeed");
   const paceOption = paceSelect?.selectedOptions[0];
   const watchPace = SPEC ? paceOption?.textContent.trim() || "Blitz" : "Manual";
@@ -23873,6 +23898,7 @@ function hudTurnPlate() {
   const plateLabel = `${context}; ${ageLabel}; turn ${turn} of ${turnCap}; ` +
     (liveTimeText ? `live time ${liveTimeText}; ` : ``) +
     `map ${mapRowValue}; ` +
+    (liveLevel ? `difficulty level ${liveLevel.level}, ${liveLevel.name}; ` : ``) +
     `game speed ${speedName}; ${turnStructureName.toLowerCase()} turns; ` +
     `watch pace ${watchPace}; ` +
     (fogRow ? `in-game fog ${state.tactics.fog ? "on" : "off"}; ` : ``) +
@@ -23904,7 +23930,7 @@ function hudTurnPlate() {
     `</div>` +
     `<div class="turn-settings" aria-label="Game setup">` +
     `<div class="turn-setting"><span>Map:</span><b>${escapeAttr(mapRowValue)}</b></div>` +
-    `<div class="turn-setting"><span>Game speed:</span><b>${speedName}</b></div>` +
+    speedRow +
     `<div class="turn-setting"><span>Turns:</span>${turnStructureValue}</div>` +
     `<div class="turn-setting"><span>Watch pace:</span>${watchPaceValue}</div>` +
     fogRow +
