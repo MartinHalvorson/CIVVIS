@@ -6299,6 +6299,12 @@ pub struct AdvancedAi {
     /// disband waits that turn for the card's income.
     drain_card_turn: std::cell::Cell<Option<u32>>,
     // ---- append: e-f ------------------------------------------------
+    /// Prepare an exposed non-capital city's Masonry and Walls before a
+    /// stronger peaceful neighbour declares. Off by default.
+    frontier_walls_before_the_surprise: bool,
+    /// Last visible soldier by (our city, rival), kept separately from the
+    /// original-capital warning so one frontier cannot arm another.
+    frontier_watch_sightings: BTreeMap<(u32, usize), u32>,
     /// `faith-war-before-the-flip`: a defensive war (no siege, no staging) on
     /// a founding rival whose spreaders stand at our cities while our majority
     /// still holds out and a city of ours already leans to its faith. See
@@ -9775,6 +9781,7 @@ mod capital_walls_before_the_surprise;
 /// gene: it changes no decision. See `docs/COMMITMENTS.md`.
 pub mod commitments;
 mod competitive_economy;
+mod frontier_walls_before_the_surprise;
 /// The alliance an Emperor handicap cannot deny us: the stock alliance desk
 /// asks for a Research Alliance, ranked by science, and feeds its level with
 /// routes. Opt-in gene `research-alliance-first`.
@@ -10776,6 +10783,8 @@ impl AdvancedAi {
             capital_watch_sightings: BTreeMap::new(),
             drain_card_turn: std::cell::Cell::new(None),
             // ---- append: e-f ----------------------------------------
+            frontier_walls_before_the_surprise: false,
+            frontier_watch_sightings: BTreeMap::new(),
             faith_war_before_the_flip: false,
             faith_war_before_the_flip_2: false,
             faith_war_war_seen: BTreeMap::new(),
@@ -11216,6 +11225,7 @@ impl AdvancedAi {
         // `capital-walls-before-the-surprise`: the watched majors' soldiers
         // near the original capital, from the same turn-start frame.
         self.remember_capital_watch_sightings(g, pid);
+        self.remember_frontier_watch_sightings(g, pid);
         if !self.live_formationless_settler_shadow || self.turn_start_hostiles_turn == Some(g.turn)
         {
             return;
@@ -18389,7 +18399,9 @@ impl AdvancedAi {
                 None
             };
             let opening_archery_goal = self.opening_archery_goal(g, pid);
-            let defensive_walls_goal = self.defensive_walls_research_goal(g, pid, plan);
+            let defensive_walls_goal = self
+                .frontier_walls_research_goal(g, pid)
+                .or_else(|| self.defensive_walls_research_goal(g, pid, plan));
             let standing_army_fuel_goal = self.standing_army_fuel_goal(g, pid);
             // `breaker-research-first`: no non-breaker upgrade while a siege
             // is held for its wall-breaker. See `advanced/decisive_window.rs`.
@@ -18471,7 +18483,8 @@ impl AdvancedAi {
                 // at turn 11 to eight turns of Archery, which left the walls
                 // at about turn 31 against a capture at 29.
                 _ if defensive_walls_goal.is_some()
-                    && self.capital_walls_research_threat(g, pid).is_some() =>
+                    && (self.capital_walls_research_threat(g, pid).is_some()
+                        || self.frontier_walls_research_goal(g, pid).is_some()) =>
                 {
                     defensive_walls_goal.as_deref()
                 }
@@ -18843,14 +18856,23 @@ impl AdvancedAi {
                             if opening_archery_goal.as_deref() == Some(goal) {
                                 format!("the first range-two defender is needed against nearby barbarians; unlock {} before the economic beeline", plain(goal))
                             } else if defensive_walls_goal.as_deref() == Some(goal) {
-                                // `capital-walls-before-the-surprise` names its own reason.
-                                match self.capital_walls_research_threat(g, pid) {
-                                    Some((rival, ratio)) => format!(
-                                        "capital-walls-before-the-surprise: unlock Ancient Walls for the capital; {} fields {ratio:.1}x our power and its soldiers stood within {} tiles",
-                                        g.players[rival].civ,
-                                        capital_walls_before_the_surprise::CAPITAL_WATCH_TILES
-                                    ),
-                                    None => "unlock Ancient Walls for wartime recovery or a stronger hostile approaching an exposed city before the longer army upgrade path".to_string(),
+                                if let Some((city, rival, ratio)) =
+                                    self.frontier_walls_research_threat(g, pid)
+                                {
+                                    format!(
+                                        "frontier-walls-before-the-surprise: unlock Ancient Walls for {}; {} fields {ratio:.1}x our power and its soldier was seen near this frontier",
+                                        g.cities[&city].name, g.players[rival].civ
+                                    )
+                                } else {
+                                    // `capital-walls-before-the-surprise` names its own reason.
+                                    match self.capital_walls_research_threat(g, pid) {
+                                        Some((rival, ratio)) => format!(
+                                            "capital-walls-before-the-surprise: unlock Ancient Walls for the capital; {} fields {ratio:.1}x our power and its soldiers stood within {} tiles",
+                                            g.players[rival].civ,
+                                            capital_walls_before_the_surprise::CAPITAL_WATCH_TILES
+                                        ),
+                                        None => "unlock Ancient Walls for wartime recovery or a stronger hostile approaching an exposed city before the longer army upgrade path".to_string(),
+                                    }
                                 }
                             } else if barbarian_military_goal.as_deref() == Some(goal) {
                                 format!(
@@ -49049,6 +49071,7 @@ impl AdvancedAi {
         // `paused-district-finishes`: after every ordinary writer, before the
         // declaration response and the defence handoffs below.
         self.claim_paused_district_finishes(g, pid);
+        self.claim_frontier_walls_before_the_surprise(g, pid);
         // Make the declaration response the final authority over queues this
         // turn. Earlier governors can continue to express their peaceful
         // plan; switching banks that progress and this bounded pass reclaims

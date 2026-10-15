@@ -7917,6 +7917,16 @@ impl AdvancedAi {
         self.base.deck_reads_player_income = false;
     }
 
+    /// Prepare a watched frontier city's first fortifications before war.
+    pub fn enable_frontier_walls_before_the_surprise(&mut self) {
+        self.frontier_walls_before_the_surprise = true;
+    }
+
+    /// The twin of `enable_frontier_walls_before_the_surprise`.
+    pub fn disable_frontier_walls_before_the_surprise(&mut self) {
+        self.frontier_walls_before_the_surprise = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
