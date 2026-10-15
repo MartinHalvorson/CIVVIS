@@ -14659,8 +14659,10 @@ impl AdvancedAi {
         // City-states follow their Suzerain into wars and can also be attacked
         // directly. Once hostilities exist they are real campaign actors, not
         // an uncoordinated side task for whichever unit happens to be nearby.
-        // A rival with no cities may still be marked alive and at war by the
-        // host, but has no campaign objective and must not pin this front.
+        // A public city count can prove a major still owns cities whose
+        // locations this seat has not seen. Keep that war ahead of a joined
+        // minor without manufacturing a city objective. An empty seat with
+        // neither located cities nor this positive evidence cannot pin it.
         let wartime_rivals: Vec<usize> = g
             .players
             .iter()
@@ -14668,7 +14670,8 @@ impl AdvancedAi {
                 p.id != pid
                     && p.alive
                     && !p.is_barbarian
-                    && !g.player_city_ids(p.id).is_empty()
+                    && (!g.player_city_ids(p.id).is_empty()
+                        || (!p.is_minor && g.unseen_city_owners.contains(&p.id)))
                     && g.is_at_war(pid, p.id)
             })
             .map(|p| p.id)
@@ -48905,6 +48908,9 @@ mod faith_army_budget_tests;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod major_war_knowledge_tests;
 
 #[cfg(test)]
 mod hostile_memory_tests;
