@@ -3211,6 +3211,14 @@ fn drop_held_resource_sales(
 /// luxuries first; `worth` prices a block of a resource (its CIVVIS id) to us
 /// by the engine's own book, and `give_worth` what `amount` of one of ours is
 /// worth to the host player `seller` by the same book.
+#[derive(Clone, Copy)]
+struct ResourceBuyBudget {
+    reserve: i64,
+    gold_limit: Option<i64>,
+    credit_income: bool,
+    cadence: bool,
+}
+
 fn append_gun_resource_buy_order(
     wants: &[civvis::ai::GunResourceWant],
     spares: &[civvis::ai::BarterSpare],
@@ -3219,20 +3227,107 @@ fn append_gun_resource_buy_order(
     worth: &dyn Fn(&str, u32) -> f64,
     give_worth: &dyn Fn(i64, &str, u32) -> f64,
 ) -> Option<&'static str> {
+    append_resource_buy_order(
+        wants,
+        spares,
+        state,
+        orders,
+        worth,
+        give_worth,
+        ResourceBuyBudget {
+            reserve: GUN_RESOURCE_BUY_GOLD_RESERVE,
+            gold_limit: None,
+            credit_income: true,
+            cadence: true,
+        },
+    )
+}
+
+fn append_army_upgrade_material_buy_order(
+    wants: &[civvis::ai::ArmyUpgradeMaterialWant],
+    spares: &[civvis::ai::BarterSpare],
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+    worth: &dyn Fn(&str, u32) -> f64,
+    give_worth: &dyn Fn(i64, &str, u32) -> f64,
+    remaining_gold: i64,
+) -> Option<&'static str> {
+    let Some(want) = wants.first() else {
+        return Some("no_need");
+    };
+    // A previously emitted purchase can still change the real treasury.
+    // Finish that market operation before requesting another material.
+    if orders.iter().any(|order| order.kind == "buy") {
+        return Some("deal_in_flight");
+    }
+    let reserve = want.gold_reserve.ceil() as i64;
+    if state.gold.min(remaining_gold) < reserve {
+        return Some("treasury");
+    }
+    // The shared transport reads resource/amount/minimum; its gun-specific
+    // descriptive fields are unused here. The upgrade remains a named want.
+    let request = civvis::ai::GunResourceWant {
+        resource: want.resource.clone(),
+        resource_id: want.resource_id.clone(),
+        amount: want.amount,
+        minimum: want.amount,
+        unit: want.unit.clone(),
+        guns: 1,
+        hit: want.gain,
+        renewal: false,
+    };
+    append_resource_buy_order(
+        &[request],
+        spares,
+        state,
+        orders,
+        worth,
+        give_worth,
+        ResourceBuyBudget {
+            reserve,
+            gold_limit: Some(remaining_gold),
+            credit_income: false,
+            cadence: false,
+        },
+    )
+    .map(|why| match why {
+        "gun_resource_buy_hold:treasury" => "treasury",
+        "gun_resource_buy_hold:deal_in_flight" => "deal_in_flight",
+        "gun_resource_buy_hold:no_seller" => "no_seller",
+        _ => "no_need",
+    })
+}
+
+fn append_resource_buy_order(
+    wants: &[civvis::ai::GunResourceWant],
+    spares: &[civvis::ai::BarterSpare],
+    state: &civvis::mirror::StateSnapshot,
+    orders: &mut Vec<Order>,
+    worth: &dyn Fn(&str, u32) -> f64,
+    give_worth: &dyn Fn(i64, &str, u32) -> f64,
+    budget: ResourceBuyBudget,
+) -> Option<&'static str> {
     if wants.is_empty() {
         return Some("gun_resource_buy_hold:no_need");
     }
-    if state.turn % GUN_RESOURCE_BUY_CADENCE != GUN_RESOURCE_BUY_PHASE {
+    if budget.cadence && state.turn % GUN_RESOURCE_BUY_CADENCE != GUN_RESOURCE_BUY_PHASE {
         return Some("gun_resource_buy_hold:cadence");
     }
     let income = state
         .gold_per_turn
         .filter(|income| income.is_finite())
         .unwrap_or(0.0);
-    let carried = (state.gold - GUN_RESOURCE_BUY_GOLD_RESERVE).max(0)
-        + (25.0 * (income - GUN_RESOURCE_BUY_INCOME_FLOOR))
+    let gold = budget
+        .gold_limit
+        .map_or(state.gold, |limit| state.gold.min(limit));
+    let credit = if budget.credit_income {
+        (25.0 * (income - GUN_RESOURCE_BUY_INCOME_FLOOR))
             .floor()
-            .max(0.0) as i64;
+            .max(0.0) as i64
+    } else {
+        0
+    };
+    let carried = (gold - budget.reserve).max(0) + credit;
     let affordable = carried.min(GUN_RESOURCE_BUY_CEILING_MAX as i64) as i32;
     // What another sale already gives this turn stays off our side.
     let selling: std::collections::BTreeSet<&str> = orders
@@ -5314,6 +5409,49 @@ fn decide(
             if why == "work_sale_hold:no_matching_work" || why == "work_sale_hold:no_buyer" {
                 note_bits.push(why.to_string());
             }
+        }
+    }
+    if ai.army_upgrade_materials_enabled() {
+        let wants = ai.army_upgrade_material_wants(&mirror_state.game, 0);
+        let mut held = ai.siege_gun_resources_held(&mirror_state.game, 0, &[]);
+        held.extend(wants.iter().map(|want| want.resource.clone()));
+        let kept = drop_held_resource_sales(&held, &mut orders);
+        if kept > 0 {
+            note_bits.push(format!("army_material_sale_held={kept}"));
+        }
+        let spares = ai.siege_barter_spares(&mirror_state.game, 0, &held);
+        let worth = |resource: &str, amount: u32| {
+            mirror_state.game.strategic_gold_value(0, resource, amount)
+        };
+        let give_worth = |seller: i64, resource: &str, amount: u32| {
+            (1..mirror_state.game.players.len())
+                .find(|seat| host_player_target(mirror_state, state, *seat) == Some(seller))
+                .map_or(0.0, |seat| {
+                    mirror_state
+                        .game
+                        .resource_gold_value(seat, resource, amount)
+                })
+        };
+        let gold = planned_game.players[0].gold.floor() as i64;
+        match append_army_upgrade_material_buy_order(
+            &wants,
+            &spares,
+            state,
+            &mut orders,
+            &worth,
+            &give_worth,
+            gold,
+        ) {
+            None => {
+                if let Some(want) = wants.first() {
+                    note_bits.push(format!(
+                        "army_material_buy=1 upgrade={} unit={} cash_kept={:.0}",
+                        want.unit, want.uid, want.gold_reserve
+                    ));
+                }
+            }
+            Some("no_need") => {}
+            Some(why) => note_bits.push(format!("army_material_buy_hold:{why}")),
         }
     }
     let sales = orders.iter().filter(|order| order.kind == "sell").count();
@@ -22353,3 +22491,7 @@ mod input_capture_tests;
 #[cfg(test)]
 #[path = "civvis_orders/defending_district_tests.rs"]
 mod defending_district_tests;
+
+#[cfg(test)]
+#[path = "civvis_orders/army_upgrade_materials_tests.rs"]
+mod army_upgrade_materials_tests;

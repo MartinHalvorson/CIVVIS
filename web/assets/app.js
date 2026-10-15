@@ -1974,6 +1974,10 @@ const PLAYER_HUD_COLUMNS = [
   {key:"win", label:"Win odds · now", block:"identity", min:"--hud-odds-min", width:.55},
   {key:"age", label:"Age", block:"identity", min:"--hud-ident-min", width:1.3},
   {key:"plan", label:"Plan", block:"identity", min:"--hud-ident-min", width:2.035},
+  // The soonest road to a win and how far away it is, as the victory planner
+  // prices it: "science-39". The server sends every road it can put a clock
+  // on, soonest first (`victory_eta`); this column reads the head of it.
+  {key:"closest_victory", label:"Closest victory", block:"identity", min:"--hud-closest-min", width:2.035},
   // A column may declare when it exists at all. Everything without that test
   // is a fact every game has from turn one; the nuclear stockpile is the one
   // that has to be invented first, so it joins the table beside the military
@@ -2012,10 +2016,12 @@ const HUD_SORT_STORAGE_KEY = "civvis-player-hud-sort-v1";
 const HUD_COLUMN_LAYOUT_STORAGE_KEY = "civvis-hud-column-layout-v1";
 const playerHudColumnWidths = new Map(PLAYER_HUD_COLUMNS.map(c => [c.key, c.width]));
 let playerHudColumnOrder = PLAYER_HUD_COLUMNS.map(column => column.key);
-// The one column a fresh viewer starts without: the live Elo delta is a
-// second reading of the odds beside it, so it waits in the Display Settings
-// roster until asked for. A saved layout still decides for itself.
-const PLAYER_HUD_DEFAULT_HIDDEN_COLUMNS = ["elo_delta"];
+// The columns a fresh viewer starts without: the live Elo delta is a second
+// reading of the odds beside it, and the AI's plan gives way to the closest
+// victory beside it — which way a seat is actually heading, and how soon,
+// over what it says it is pursuing. Both wait in the Display Settings roster
+// until asked for. A saved layout still decides for itself.
+const PLAYER_HUD_DEFAULT_HIDDEN_COLUMNS = ["elo_delta", "plan"];
 let playerHudHiddenColumns = new Set(PLAYER_HUD_DEFAULT_HIDDEN_COLUMNS);
 const playerHudColumnMinPx = new Map();
 let playerHudColumnGesture = null;
@@ -2037,6 +2043,10 @@ try {
 } catch (_) {}
 try {
   const saved = JSON.parse(localStorage.getItem(HUD_COLUMN_LAYOUT_STORAGE_KEY) || "{}");
+  // A layout saved before Closest victory existed takes that change of
+  // default with it — the new column right after Plan, and Plan checked out —
+  // rather than keeping Plan and gaining the column at the far end.
+  let predatesClosestVictory = false;
   if (Array.isArray(saved.order)) {
     // Saved keys keep their saved places; columns this build has that the
     // save does not know join at the end rather than being lost.
@@ -2054,11 +2064,20 @@ try {
         rest.splice(at < 0 ? rest.length : at, 0, key);
         merged = rest;
       }
+    predatesClosestVictory = !known.includes("closest_victory");
+    if (predatesClosestVictory) {
+      const rest = merged.filter(key => key !== "closest_victory");
+      const at = rest.indexOf("plan");
+      rest.splice(at < 0 ? rest.length : at + 1, 0, "closest_victory");
+      merged = rest;
+    }
     playerHudColumnOrder = merged;
   }
-  if (Array.isArray(saved.hidden))
+  if (Array.isArray(saved.hidden)) {
     playerHudHiddenColumns = new Set(
       saved.hidden.filter(key => PLAYER_HUD_COLUMN_BY_KEY.has(key)));
+    if (predatesClosestVictory) playerHudHiddenColumns.add("plan");
+  }
   if (saved.min && typeof saved.min === "object")
     for (const [key, value] of Object.entries(saved.min)) {
       const floor = Number(value);
@@ -2175,8 +2194,10 @@ function savePlayerHudColumns() {
   } catch (_) {}
 }
 
+// Rank #1, the soonest victory and the alphabet all read best first.
 function playerHudSortDefaultDirection(key) {
-  return key === "rank" || PLAYER_HUD_TEXT_SORT_COLUMNS.has(key) ? "asc" : "desc";
+  return key === "rank" || key === "closest_victory" ||
+    PLAYER_HUD_TEXT_SORT_COLUMNS.has(key) ? "asc" : "desc";
 }
 
 function savePlayerHudSort() {
@@ -2210,11 +2231,43 @@ function playerHudSortValue(player, key, stats, rankById) {
   if (key === "win") return oddsValue(player.odds_now);
   if (key === "age") return PLAYER_HUD_AGE_SORT_ORDER[player.age] ?? null;
   if (key === "plan") return player.ai_strategy?.replaceAll("_", " ") || null;
+  if (key === "closest_victory") return playerClosestVictory(player)?.turns ?? null;
   const statistic = stats?.find(([kind]) => kind === key);
   const rawValue = statistic?.[2];
   if (rawValue === null || rawValue === undefined || rawValue === "") return null;
   const value = Number(rawValue);
   return Number.isFinite(value) ? value : null;
+}
+
+// The soonest victory the planner can put a clock on, read off the head of
+// the server's `victory_eta` pairs, or null where there is none to read: an
+// unmet seat, a rival's road under your own fog, or no road priced yet.
+function playerClosestVictory(player) {
+  const [victory, turns] = player?.victory_eta?.[0] || [];
+  const count = Number(turns);
+  return victory && turns !== null && Number.isFinite(count) ? {victory, turns:count} : null;
+}
+
+// The plan palette already gives every road its colour; a score win is the
+// one road no plan is named for, and keeps the plain cell colour.
+const CLOSEST_VICTORY_PLAN_CLASS = {
+  science:"science", culture:"culture", religious:"religion",
+  diplomatic:"diplomacy", domination:"conquest",
+};
+
+function closestVictoryTitle(player) {
+  if (!Array.isArray(player.victory_eta)) return "Closest victory unavailable";
+  const etas = player.victory_eta.filter(([victory, turns]) =>
+    victory && turns !== null && Number.isFinite(Number(turns)));
+  if (!etas.length) return "No victory the planner can put a clock on yet";
+  const [[victory, turns], ...rest] = etas;
+  const turnsText = count => `${count} turn${Number(count) === 1 ? "" : "s"}`;
+  const head = `Closest victory: ${titleCase(victory)} in about ${turnsText(turns)}` +
+    (Number.isFinite(Number(state?.turn)) ? ` (turn ${Number(state.turn) + Number(turns)})` : "");
+  const others = rest.length
+    ? ` · then ${rest.map(([other, count]) => `${titleCase(other)} ${count}`).join(", ")}`
+    : "";
+  return `${head}${others} · the victory planner's estimate at today's pace`;
 }
 
 function comparePlayerHudSortValues(left, right) {
@@ -2382,6 +2435,7 @@ const PLAYER_HUD_HEAD_LABELS = {
   win_delta:["Δ", "Change in win odds", "odds-trend-head"],
   win:["NOW", "Current win odds", "numeric"],
   age:["AGE", "Civilization age"], plan:["PLAN", "AI active strategy"],
+  closest_victory:["CLOSEST", "Closest victory and the estimated turns to it"],
   cities:["CITY", "Cities controlled"], population:["POP", "Total population"],
   food:["FOOD", "Food per turn"], production:["PROD", "Production per turn"],
   science:["SCI", "Science per turn"], culture:["CUL", "Culture per turn"],
@@ -3027,6 +3081,7 @@ const RESPONSIVE_TEXT_RULES = [
   {selector:"#playerhud .diplomacy-expected span", min:9, max:13},
   {selector:"#playerhud .diplomacy-age .civ-age", min:9, max:12},
   {selector:"#playerhud .diplomacy-strategy .ai-plan", min:9, max:12},
+  {selector:"#playerhud .diplomacy-closest-victory .ai-plan", min:9, max:12},
   // Measured against the cell, not against itself. The figure sits in a grid
   // with place-content:center, so it is sized to its own text: clientWidth and
   // scrollWidth are always equal, the fitter could never detect overflow, and
@@ -3154,7 +3209,13 @@ function fitResponsiveType() {
     for (const [element, rule] of responsiveTextTargets(root)) targets.set(element, rule);
   }
   responsiveTypeRoots.clear();
-  for (const [element, rule] of targets) element.style.fontSize = `${rule.max}px`;
+  // Read the run as it sets at full size: a cell clipped on the last pass is
+  // unclipped for this one, so a rule whose clipped look changes its own
+  // layout is measured against its natural run rather than against itself.
+  for (const [element, rule] of targets) {
+    element.style.fontSize = `${rule.max}px`;
+    delete element.dataset.fitClipped;
+  }
   const fitted = [];
   for (const [element, rule] of targets) {
     if (!element.isConnected || !element.textContent.trim()) continue;
@@ -3445,9 +3506,12 @@ function applyHudWidgetMetrics(name, metrics, persist = false) {
   HUD_LAYOUT[name] = serializeHudWidget(config, next);
   // The victory tracker runs down to whatever the world map leaves it, so
   // dragging the map's edge has to move the seam in the same gesture rather
-  // than letting the tracker slide underneath it. The masthead's own height is
-  // published for the narrow layout, where the tracker does stand under it.
-  if (name === "players") area.style.setProperty("--player-hud-height", `${next.height}px`);
+  // than letting the tracker slide underneath it. The masthead's own top and
+  // height are published because the tracker stands under it in every layout.
+  if (name === "players") {
+    area.style.setProperty("--player-hud-top", `${next.y}px`);
+    area.style.setProperty("--player-hud-height", `${next.height}px`);
+  }
   if (name === "minimap") area.style.setProperty("--minimap-height", `${next.height}px`);
   // Victory leaders stack vertically inside each path. Reveal another rank as
   // soon as a resize makes room for a complete row, without replacing the
@@ -3481,16 +3545,19 @@ function horizontalHudOverlap(first, second) {
 }
 
 // A dragged layout remains free-form on the screen where it was arranged. On
-// a later compact resize, however, the default chrome becomes a stack and its
-// old proportional coordinates can put two panels in the same band. Keep the
-// saved sizes and horizontal intent, but settle the movable lower panels into
-// the live gaps before painting the resized frame.
-function settleCompactHudWidgets() {
-  if (!responsivePanelGeometry.compact) return;
+// a later resize, however, the default chrome is a stack under the masthead
+// and old proportional coordinates can put two panels in the same band. Keep
+// the saved sizes and horizontal intent, but settle the movable lower panels
+// into the live gaps before painting the resized frame. The masthead spans
+// the map on wide screens too, so a tracker saved in the top-right corner it
+// once had to itself steps down under the standings there as well; the
+// minimap's lower stack is a compact arrangement only.
+function settleHudWidgets() {
   const margin = hudWidgetMargin();
   const gap = hudWidgetGap();
   const minimap = HUD_WIDGETS.minimap;
-  if (minimap?.element?.classList.contains("layout-widget-custom")) {
+  if (responsivePanelGeometry.compact &&
+      minimap?.element?.classList.contains("layout-widget-custom")) {
     const metrics = visibleHudWidgetMetrics("minimap");
     if (metrics) {
       const maximumY = Math.max(margin, area.clientHeight -
@@ -3506,16 +3573,20 @@ function settleCompactHudWidgets() {
   const player = visibleHudWidgetMetrics("players");
   const minimapMetrics = visibleHudWidgetMetrics("minimap");
   let minimumY = margin;
-  let maximumY = Math.max(margin, area.clientHeight - margin - metrics.height);
+  let floorY = area.clientHeight - margin;
   if (player && horizontalHudOverlap(metrics, player))
     minimumY = Math.max(minimumY, player.y + player.height + gap);
   if (minimapMetrics && horizontalHudOverlap(metrics, minimapMetrics))
-    maximumY = Math.min(maximumY, minimapMetrics.y - gap - metrics.height);
-  if (minimumY <= maximumY) {
-    const y = Math.max(minimumY, Math.min(maximumY, metrics.y));
-    if (Math.abs(y - metrics.y) > .5)
-      applyHudWidgetMetrics("victory", {...metrics, y});
-  }
+    floorY = Math.min(floorY, minimapMetrics.y - gap);
+  // A tracker saved taller than the gap it now has gives up height rather
+  // than staying under the masthead: its paths scroll inside it. With no room
+  // for even its smallest self there is no clear spot, so it stays put.
+  const room = floorY - minimumY;
+  if (room < Math.min(victory.minHeight, metrics.height)) return;
+  const height = Math.min(metrics.height, room);
+  const y = Math.max(minimumY, Math.min(floorY - height, metrics.y));
+  if (Math.abs(y - metrics.y) > .5 || Math.abs(height - metrics.height) > .5)
+    applyHudWidgetMetrics("victory", {...metrics, y, height});
 }
 
 function resetHudWidget(name, persist = true) {
@@ -3537,6 +3608,7 @@ function resetHudWidget(name, persist = true) {
   // The tracker reads its neighbours' heights to know where to start and stop.
   // Hand those back to the stylesheet at the same moment the neighbour returns.
   if (name === "players") {
+    area.style.removeProperty("--player-hud-top");
     area.style.removeProperty("--player-hud-height");
     applyTurnPlateWidth(null);
   }
@@ -4538,7 +4610,7 @@ function resize() {
   mapAreaRefitDepth++;
   try {
     applySavedHudLayouts();
-    settleCompactHudWidgets();
+    settleHudWidgets();
   }
   finally { mapAreaRefitDepth--; }
   // A saved player masthead can scale on this resize. Recompute the compact
@@ -17313,7 +17385,7 @@ function syncSkyNavDockGeometry() {
   if (skyNavRefitFrame) return;
   skyNavRefitFrame = requestAnimationFrame(() => {
     skyNavRefitFrame = 0;
-    settleCompactHudWidgets();
+    settleHudWidgets();
     refitMapAreaToChrome();
   });
 }
@@ -24462,6 +24534,21 @@ function drawPlayerHud() {
             return `<button class="diplomacy-identity" data-hud-col="plan" ${dossierAttrs}>` +
               `<span class="diplomacy-identity-field diplomacy-strategy">${activeStrategy}</span>` +
               `<span class="detail-caret">${expanded ? "▾" : "▸"}</span></button>`;
+          case "closest_victory": {
+            const closest = playerClosestVictory(p);
+            const tone = closest ? CLOSEST_VICTORY_PLAN_CLASS[closest.victory] || "" : "";
+            // The turns are the reading; the road is the label on it. Where
+            // even the smallest type cannot hold both, the road's name gives
+            // way to an ellipsis and the count stays whole.
+            return `<button class="diplomacy-identity" data-hud-col="closest_victory" ${dossierAttrs}>` +
+              `<span class="diplomacy-identity-field diplomacy-closest-victory" title="${escapeAttr(closestVictoryTitle(p))}">` +
+              `<span class="ai-plan${tone ? ` ${tone}` : ""}">` +
+              (closest
+                ? `<span class="closest-victory-road">${escapeAttr(closest.victory)}</span>` +
+                  `<span class="closest-victory-turns">-${closest.turns}</span>`
+                : "—") +
+              `</span></span></button>`;
+          }
         }
         const [kind, , value, label, marker = ""] =
           stats.find(([statKind]) => statKind === column.key) || [column.key, "", "", ""];

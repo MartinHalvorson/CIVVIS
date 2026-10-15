@@ -3222,6 +3222,11 @@
        label floor only. */
     --hud-ident-min: 30px; --hud-ident-num-min: 60px;
     --hud-odds-min: 27px; --hud-odds-trend-min: 13px;
+    /* Closest victory reads "science-39": the road's name may ellipsize, the
+       turns may not. 48px keeps a four-digit count and the road's first
+       letter whole at the fitter's floor, and like the Elo floor it holds at
+       every width. */
+    --hud-closest-min: 48px;
     --hud-rank-min: 30px;
     /* How much of the flexible width the identity block asks for relative to
        the values, over and above the sum of its own columns. A wide panel can
@@ -3250,6 +3255,7 @@
       minmax(var(--hud-odds-min), .55fr)
       minmax(var(--hud-ident-min), 1.3fr)
       minmax(var(--hud-ident-min), 2.035fr)
+      minmax(var(--hud-closest-min), 2.035fr)
       repeat(12, minmax(var(--hud-stat-min), 1fr));
     --hud-lock-column: 13px; --hud-row-height: 26px; --hud-row-gap: 2px;
     --hud-row-pitch: calc(var(--hud-row-height) + var(--hud-row-gap));
@@ -3584,7 +3590,8 @@
   #playerhud .diplomacy-civ, #playerhud .diplomacy-leader-name,
   #playerhud .diplomacy-player, #playerhud .diplomacy-elo-delta-value,
   #playerhud .diplomacy-age .civ-age,
-  #playerhud .diplomacy-strategy .ai-plan {
+  #playerhud .diplomacy-strategy .ai-plan,
+  #playerhud .diplomacy-closest-victory .ai-plan {
     min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
   }
   #playerhud .diplomacy-elo-delta, #playerhud .diplomacy-expected {
@@ -3597,6 +3604,14 @@
   #playerhud .diplomacy-age .civ-age.dark { color: #b9a3aa; }
   #playerhud .diplomacy-strategy { padding-right: 11px; }
   #playerhud .diplomacy-strategy .ai-plan { display: block; }
+  /* Road and turns sit side by side at their natural width, so the type fitter
+     reads the whole run; only once it is clipped at the smallest size does the
+     road's name shrink to an ellipsis, leaving the turns whole. */
+  #playerhud .diplomacy-closest-victory .ai-plan { display: flex; font-variant-numeric: tabular-nums; }
+  #playerhud .closest-victory-road, #playerhud .closest-victory-turns { flex: none; }
+  #playerhud .diplomacy-closest-victory .ai-plan[data-fit-clipped="true"] .closest-victory-road {
+    flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis;
+  }
   #playerhud .detail-caret {
     position: absolute; right: 1px; top: 50%; margin: 0; transform: translateY(-50%);
     font-size: var(--type-caption);
@@ -3646,11 +3661,12 @@
   /* Victory progress starts at the right edge under the masthead and
      continues to the world minimap's top edge. Its paths scroll inside that
      rail, rather than shortening the tracker to however many rows are
-     present. */
+     present. "Under" is the masthead's own bottom: a masthead the viewer
+     moved publishes its top as --player-hud-top beside its height. */
   #victoryhud {
     position: absolute; z-index: 7; right: 0; left: auto;
     right: var(--panel-edge);
-    top: calc(var(--panel-edge) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));
+    top: calc(var(--player-hud-top, var(--panel-edge)) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));
     bottom: calc(var(--minimap-height) + var(--panel-gap) + var(--panel-edge));
     width: var(--victory-hud-width); height: auto;
     display: grid; grid-template-columns: minmax(0, 1fr);
@@ -3945,7 +3961,7 @@
       --hud-ident-min: 31px;
     }
     #victoryhud, body.overlay-minimap-hidden #victoryhud {
-      top: calc(var(--panel-edge) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));
+      top: calc(var(--player-hud-top, var(--panel-edge)) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));
       left: max(var(--panel-edge), var(--player-hud-left, 0px)); right: var(--panel-edge); bottom: auto; width: auto;
       height: var(--compact-victory-hud-height);
       grid-template-columns: minmax(0, 1fr); padding: 4px;
@@ -3993,7 +4009,7 @@
     --hud-stat-min: 32px; --hud-stat-gap: 2px;
   }
   #maparea.player-hud-compact #victoryhud {
-    top: calc(var(--panel-edge) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));
+    top: calc(var(--player-hud-top, var(--panel-edge)) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));
     left: max(var(--panel-edge), var(--player-hud-left, 0px)); right: var(--panel-edge); bottom: auto; width: auto;
     height: var(--compact-victory-hud-height);
     grid-template-columns: minmax(0, 1fr); padding: 4px;
