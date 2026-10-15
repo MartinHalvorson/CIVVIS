@@ -24538,7 +24538,13 @@ impl Game {
         see_through_woods: bool,
     ) -> bool {
         let mut heights = HeightField::none();
-        let target_height = self.sight_height(to) - self.district_viewpoint_bonus(to);
+        // Read terrain directly instead of adding and removing the district
+        // vantage, which repeats its lookup for every candidate ranged shot.
+        let target_height = if let Some(tile) = self.map.get(to) {
+            Self::terrain_sight_level(tile) + self.feature_sight_through(tile.feature.as_deref())
+        } else {
+            self.sight_height(to) - self.district_viewpoint_bonus(to)
+        };
         self.tile_has_line_to(
             &mut heights,
             from,
