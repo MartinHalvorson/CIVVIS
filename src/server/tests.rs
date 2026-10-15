@@ -6377,7 +6377,12 @@ fn browser_orders_controls_interface_setup_and_logs() {
         .contains("const floor = PLAYER_HUD_MIN_HEIGHT + (SPEC ? playerHudRowPitch() : 0);"));
     assert!(EMBEDDED_INDEX.contains("return Math.max(floor, PLAYER_HUD_CHROME_HEIGHT + rows * playerHudRowPitch());"));
     assert!(EMBEDDED_INDEX
-        .contains("minHeight:PLAYER_HUD_MIN_HEIGHT,\n            avoidsSidebar:true}"));
+        .contains("minHeight:PLAYER_HUD_MIN_HEIGHT,\n            avoidsSidebar:true, fullWidth:true}"));
+    // The masthead spans the window whatever width a drag or a saved layout
+    // carried (operator 2026-10-15: "full width of the window. not ~1\" from
+    // the edge"); only its top and bottom edges are handles.
+    assert!(EMBEDDED_INDEX.contains("if (config.fullWidth) width = maxWidth;"));
+    assert!(EMBEDDED_INDEX.contains("hudResizeHandles(\"player standings\", [\"n\", \"s\"])"));
     assert!(
         !EMBEDDED_INDEX.contains("maxHeightRatio"),
         "the masthead height cap is retired"

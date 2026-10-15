@@ -1907,9 +1907,14 @@ const HUD_WIDGETS = {
   // columns side by side, which is why the standings want the map's width and
   // very little of its height. The default height still ends at the final
   // civilization row, but a dragged edge answers to nothing except the map
-  // itself: how much world the masthead covers is the viewer's own call.
+  // itself: how much world the masthead covers is the viewer's own call. Its
+  // width is not (`fullWidth`): the operator, 2026-10-15, "tables and cols in
+  // the top player hud box should expand to the full width of the window. not
+  // ~1" from the edge". A dragged masthead used to keep a pixel width, rescaled
+  // on the next load by the window's diagonal, so a reload at any other height
+  // or with the deck open stopped the row an inch short of the edge for good.
   players: {element:document.getElementById("playerhud"), minWidth:420, minHeight:PLAYER_HUD_MIN_HEIGHT,
-            avoidsSidebar:true},
+            avoidsSidebar:true, fullWidth:true},
   victory: {element:document.getElementById("victoryhud"), minWidth:150, minHeight:88, avoidsSidebar:true},
   minimap: {element:document.querySelector(".minimap-frame"), minWidth:130, minHeight:96,
             avoidsSidebar:true, square:true},
@@ -3259,8 +3264,8 @@ if (!responsiveTypeSizeObserver)
     }
   });
 
-function hudResizeHandles(label) {
-  return HUD_RESIZE_EDGES.map(([edge, description]) =>
+function hudResizeHandles(label, edges = null) {
+  return HUD_RESIZE_EDGES.filter(([edge]) => !edges || edges.includes(edge)).map(([edge, description]) =>
     `<button class="widget-resize-handle" data-widget-resize="${edge}" type="button" ` +
     `aria-label="Resize ${label} from the ${description}; use arrow keys or drag" ` +
     `title="Drag the ${description} to resize · arrow keys also resize"></button>`
@@ -3360,6 +3365,9 @@ function clampHudWidget(config, metrics) {
   let height = Math.max(minHeight, Math.min(maxHeight, Number(metrics.height) || minHeight));
   if (hudWidgetIsSquare(config))
     width = height = squareHudWidgetSide(config, width, height, maxWidth, maxHeight);
+  // A full-width widget spans from its own inset to the far margin whatever
+  // width was saved or dragged; only its height and top are the viewer's.
+  if (config.fullWidth) width = maxWidth;
   const maxX = Math.max(minX, area.clientWidth - margin - width);
   const maxY = Math.max(margin, area.clientHeight - margin - height);
   return {
@@ -3437,9 +3445,16 @@ function applyHudWidgetMetrics(name, metrics, persist = false) {
   const priorFocus = priorBounds ? currentMapFocusWorld() : null;
   const next = clampHudWidget(config, metrics);
   const style = config.element.style;
-  style.left = `${next.x}px`; style.top = `${next.y}px`;
-  style.right = "auto"; style.bottom = "auto";
-  style.width = `${next.width}px`; style.height = `${next.height}px`;
+  // A full-width widget leaves its sides to the stylesheet, which already
+  // knows every arrangement: the panel edge when the victory rail is hidden,
+  // the rail's inner edge when it stands beside the masthead, the whole band
+  // in the compact layouts. Only its top and height are the viewer's.
+  if (config.fullWidth) {
+    style.removeProperty("left"); style.removeProperty("right"); style.removeProperty("width");
+  } else {
+    style.left = `${next.x}px`; style.right = "auto"; style.width = `${next.width}px`;
+  }
+  style.top = `${next.y}px`; style.bottom = "auto"; style.height = `${next.height}px`;
   style.maxWidth = "none"; style.maxHeight = "none"; style.transform = "none";
   config.element.classList.add("layout-widget-custom");
   HUD_LAYOUT[name] = serializeHudWidget(config, next);
@@ -24585,7 +24600,7 @@ function drawPlayerHud() {
       return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}${locked ? " locked" : ""}${citiesOpen ? " cities-open" : ""}" style="--civ:${color};--civ-border:${pcol2(p.id)}" role="listitem">` +
         visibleColumns.map(rowCell).join("") + `</div>` +
         (citiesOpen ? playerHudCityRows(p, openCities, hiddenCities, visibleColumns) : "");
-    }).join("") + `</div>` + hudResizeHandles("player standings");
+    }).join("") + `</div>` + hudResizeHandles("player standings", ["n", "s"]);
   drawDossierWindows(scoreRankedMajors, rankById, relationById);
   // A repaint mid-gesture would take the bar out from under the pointer along
   // with its pointer capture, so a column drag holds the table exactly as a
