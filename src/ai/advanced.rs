@@ -48693,6 +48693,9 @@ mod faith_army_budget_tests;
 mod tests;
 
 #[cfg(test)]
+mod major_war_knowledge_tests;
+
+#[cfg(test)]
 mod air_rebase_progress_tests;
 
 #[cfg(test)]
