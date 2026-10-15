@@ -193,6 +193,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `amphibious-siege-train` | off (unmeasured) | A water-locked Domination siege objective's guns and escorts cross as one group. | — \| 2 |
 | `amphibious-siege-train-2` | off (unmeasured) | A water-locked siege's crossing fords a strait of one or two water tiles, locks its members, sails on water only and lands on a wider beach. | — \| 2 |
 | `aqueduct-claims-the-capped-queue` | off (unmeasured) | Opt-in gene `aqueduct-claims-the-capped-queue`; see `advanced/aqueduct_claims_the_capped_queue.rs`. | 1 \| 1 |
+| `army-upgrade-materials` | off (unmeasured) | Opt-in `army-upgrade-materials`; see `army_upgrade_materials`. | 1 \| 1 |
 | `backlog-builder-takes-the-queue` | off (unmeasured) | Opt-in gene `backlog-builder-takes-the-queue`; see `advanced/backlog_builder_takes_the_queue.rs`. | 1 \| 1 |
 | `bleeding-capital-loyalty` | off (unmeasured) | Opt-in gene `bleeding-capital-loyalty`; see `Self::bleeding_capital_loyalty`. | 1 \| 1 |
 | `blocker-becomes-the-target` | off (unmeasured) | Opt-in gene `blocker-becomes-the-target`; see `Self::road_blocker_front`. | 1 \| 1 |
