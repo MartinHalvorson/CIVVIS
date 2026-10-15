@@ -3965,6 +3965,12 @@ pub const GENES: &[Gene] = &[
     // until walled, captured or eight turns without progress. See
     // `advanced/open_city_front.rs`.
     Gene { tag: "open-city-draws-the-front", field: "open_city_draws_the_front", kind: Kind::OptIn, enable: AdvancedAi::enable_open_city_draws_the_front, disable: AdvancedAi::disable_open_city_draws_the_front },
+    // Emperor native 230322Z still held ten Heavy Chariots at turn 89,
+    // missing the ten Iron quoted for a Knight upgrade. Peaceful rivals
+    // offered 25 Iron; no Iron buy was submitted. Ask for one useful
+    // land upgrade's material, preserving its exact Gold bill. An offer
+    // is not acceptance or execution. See `army_upgrade_materials`.
+    Gene { tag: "army-upgrade-materials", field: "army_upgrade_materials", kind: Kind::OptIn, enable: AdvancedAi::enable_army_upgrade_materials, disable: AdvancedAi::disable_army_upgrade_materials },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

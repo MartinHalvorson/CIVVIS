@@ -5071,6 +5071,10 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `army-upgrade-materials`: buy the missing upfront material for one
+    /// useful land upgrade while retaining its Gold bill and upkeep floor.
+    /// See `army_upgrade_materials`. Off by default.
+    army_upgrade_materials: bool,
     /// `astrology-before-the-second-city`: the Prophet race's Astrology is
     /// researched by a lone capital, once the opening techs are in, instead of
     /// waiting for the second city that admits the Holy Site. See
@@ -9418,6 +9422,8 @@ mod sea_locked_front;
 /// `advanced/gun_resource.rs`.
 mod gun_resource;
 pub use gun_resource::{BarterSpare, GunResourceWant};
+mod army_upgrade_materials;
+pub use army_upgrade_materials::ArmyUpgradeMaterialWant;
 
 /// `capital-taken-moves-on`: a taken capital's army moves on to the next
 /// capital. See `advanced/capital_moves_on.rs`.
@@ -10476,6 +10482,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            army_upgrade_materials: false,
             astrology_before_the_second_city: false,
             aluminum_ask_tops_up_gold: false,
             aluminum_buys_the_tile: false,

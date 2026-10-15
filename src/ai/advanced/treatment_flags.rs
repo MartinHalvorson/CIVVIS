@@ -6824,6 +6824,15 @@ impl AdvancedAi {
         self.siege_buys_the_gun_resource = false;
     }
 
+    /// Opt-in `army-upgrade-materials`; see `army_upgrade_materials`.
+    pub fn enable_army_upgrade_materials(&mut self) {
+        self.army_upgrade_materials = true;
+    }
+
+    pub fn disable_army_upgrade_materials(&mut self) {
+        self.army_upgrade_materials = false;
+    }
+
     /// Opt-in gene `siege-tier-yields-to-the-bombers`; see
     /// [`Self::siege_tier_yields_to_the_bombers`].
     pub fn enable_siege_tier_yields_to_the_bombers(&mut self) {
