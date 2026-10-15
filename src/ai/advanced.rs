@@ -5067,6 +5067,10 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `army-upgrade-materials`: buy the missing upfront material for one
+    /// useful land upgrade while retaining its Gold bill and upkeep floor.
+    /// See `army_upgrade_materials`. Off by default.
+    army_upgrade_materials: bool,
     /// `aluminum-ask-tops-up-gold`: the air wing's Aluminum ask carries a
     /// Gold ceiling, so the host's counter may price the block in Gold on top
     /// of the barter (`aluminum_ask_ceiling` in `civvis_orders`). Off by
@@ -9348,6 +9352,8 @@ mod siege_road;
 /// `advanced/gun_resource.rs`.
 mod gun_resource;
 pub use gun_resource::{BarterSpare, GunResourceWant};
+mod army_upgrade_materials;
+pub use army_upgrade_materials::ArmyUpgradeMaterialWant;
 
 /// `capital-taken-moves-on`: a taken capital's army moves on to the next
 /// capital. See `advanced/capital_moves_on.rs`.
@@ -10403,6 +10409,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            army_upgrade_materials: false,
             aluminum_ask_tops_up_gold: false,
             aluminum_buys_the_tile: false,
             builders_route_around_mountains: false,

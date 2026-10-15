@@ -6559,7 +6559,7 @@ fn browser_orders_controls_interface_setup_and_logs() {
     // scroll sideways inside their panel instead of crushing their cells.
     assert!(
         EMBEDDED_INDEX.contains(
-            "minmax(var(--hud-ident-min), 2.035fr)\n      \
+            "minmax(var(--hud-closest-min), 2.035fr)\n      \
              repeat(12, minmax(var(--hud-stat-min), 1fr));"
         ),
         "the shipped default tracks end with the twelve value columns"
@@ -6626,11 +6626,41 @@ fn browser_orders_controls_interface_setup_and_logs() {
     );
     // A fresh viewer starts without the live Elo delta — it is a second
     // reading of the rating beside it, waiting in the Display Settings
-    // roster — and both the all-hidden recovery and a layout reset return
+    // roster — or the AI's plan, which gives way to the closest victory
+    // beside it; and both the all-hidden recovery and a layout reset return
     // to that same shipped default, not to every column visible.
     assert!(
-        EMBEDDED_INDEX.contains("const PLAYER_HUD_DEFAULT_HIDDEN_COLUMNS = [\"elo_delta\"];"),
-        "the Elo delta column is off until a viewer asks for it"
+        EMBEDDED_INDEX
+            .contains("const PLAYER_HUD_DEFAULT_HIDDEN_COLUMNS = [\"elo_delta\", \"plan\"];"),
+        "the Elo delta and Plan columns are off until a viewer asks for them"
+    );
+    // Closest victory stands right after Plan, and a layout saved before it
+    // existed takes the new default with it instead of keeping Plan.
+    let plan = EMBEDDED_INDEX
+        .find("{key:\"plan\", label:\"Plan\"")
+        .unwrap();
+    let closest = EMBEDDED_INDEX
+        .find("{key:\"closest_victory\", label:\"Closest victory\"")
+        .unwrap();
+    assert_eq!(
+        EMBEDDED_INDEX[plan + 1..].find("{key:\"").unwrap() + plan + 1,
+        closest,
+        "Closest victory belongs immediately after Plan"
+    );
+    assert!(
+        EMBEDDED_INDEX.contains("predatesClosestVictory = !known.includes(\"closest_victory\");")
+    );
+    assert!(EMBEDDED_INDEX
+        .contains("if (predatesClosestVictory) playerHudHiddenColumns.add(\"plan\");"));
+    assert!(EMBEDDED_INDEX.contains(
+        "if (key === \"closest_victory\") return playerClosestVictory(player)?.turns ?? null;"
+    ));
+    assert!(
+        EMBEDDED_INDEX.contains(
+            "`<span class=\"closest-victory-road\">${escapeAttr(closest.victory)}</span>` +"
+        ) && EMBEDDED_INDEX
+            .contains("`<span class=\"closest-victory-turns\">-${closest.turns}</span>`"),
+        "the cell reads victory-turns, e.g. science-39"
     );
     assert_eq!(
         EMBEDDED_INDEX
@@ -6648,6 +6678,13 @@ fn browser_orders_controls_interface_setup_and_logs() {
         EMBEDDED_INDEX.contains("--hud-odds-min: 27px; --hud-odds-trend-min: 13px;"),
         "the three odds columns stand on floors of their own"
     );
+    // A clipped name still reads; a clipped "science-4418" reads as -44.
+    assert_eq!(
+        EMBEDDED_INDEX.matches("--hud-closest-min:").count(),
+        1,
+        "the Closest victory floor is declared once and holds at every width"
+    );
+    assert!(EMBEDDED_INDEX.contains("--hud-closest-min: 48px;"));
     assert_eq!(
         EMBEDDED_INDEX.matches("--hud-ident-num-min:").count(),
         1,
@@ -6848,8 +6885,8 @@ fn browser_orders_controls_interface_setup_and_logs() {
         EMBEDDED_INDEX.contains("if (key === \"rank\") return rankById.get(player.id) ?? null;")
     );
     assert!(EMBEDDED_INDEX.contains(
-        "return key === \"rank\" || PLAYER_HUD_TEXT_SORT_COLUMNS.has(key) ? \"asc\" : \"desc\";"
-    ), "rank should initially put #1 first");
+        "return key === \"rank\" || key === \"closest_victory\" ||\n    PLAYER_HUD_TEXT_SORT_COLUMNS.has(key) ? \"asc\" : \"desc\";"
+    ), "rank should initially put #1 first, and the closest victory the soonest");
     assert!(EMBEDDED_INDEX
         .contains("function sortedPlayerHudPlayers(players, statsByPlayer, rankById)"));
     assert!(EMBEDDED_INDEX.contains("function togglePlayerHudSort(key)"));
@@ -10572,6 +10609,113 @@ fn state_identifies_the_running_server_instance() {
     assert!(state["quick_deals"].is_array());
     assert!(state["active_trade_deals"].is_array());
     assert!(state["me"]["resources"].is_array());
+}
+
+/// The standings' Closest victory column reads `victory_eta`: every road to a
+/// win the victory planner can put a clock on, as `[victory, turns]` pairs,
+/// soonest first. The spectator is owed every major's; a seated player is
+/// owed only their own, since a rival's is priced off what fog hides.
+#[test]
+fn closest_victory_reaches_every_major_for_the_spectator_and_only_your_seat_in_play() {
+    const ROADS: [&str; 6] = [
+        "science",
+        "culture",
+        "religious",
+        "diplomatic",
+        "domination",
+        "score",
+    ];
+    let well_formed = |eta: &Value| {
+        let pairs = eta.as_array().expect("victory_eta is a list");
+        let turns: Vec<i64> = pairs
+            .iter()
+            .map(|pair| {
+                assert!(ROADS.contains(&pair[0].as_str().unwrap()), "{pair}");
+                let turns = pair[1].as_i64().unwrap();
+                assert!(turns >= 0, "{pair}");
+                turns
+            })
+            .collect();
+        assert!(
+            turns.windows(2).all(|w| w[0] <= w[1]),
+            "soonest first: {eta}"
+        );
+    };
+
+    let mut params = current();
+    params.spectate = true;
+    let mut session = Session::new(params);
+    while session.game.turn < 30 && !session.game.is_finished() {
+        session.step();
+    }
+    let majors = session
+        .game
+        .players
+        .iter()
+        .filter(|seat| !seat.is_minor && !seat.is_barbarian && seat.alive)
+        .count();
+    // On a map this small no road has a clock on it thirty turns in: at
+    // today's science the race is more than the planner's ten thousand turns
+    // away. A seat holding the whole tree has only the launches left to
+    // build, which the planner can always price.
+    let tree: Vec<_> = session
+        .game
+        .rules
+        .techs
+        .iter()
+        .map(|(tech, _)| *tech)
+        .collect();
+    for tech in tree {
+        session.game.players[0].techs.insert(tech);
+    }
+    let state = session.state();
+    let mut annotated = 0;
+    for player in state["players"].as_array().unwrap() {
+        let minor = player["is_minor"] == json!(true) || player["is_barbarian"] == json!(true);
+        if minor || player["alive"] == json!(false) {
+            assert!(player["victory_eta"].is_null(), "{}", player["civ"]);
+            continue;
+        }
+        annotated += 1;
+        let id = player["id"].as_u64().unwrap() as usize;
+        well_formed(&player["victory_eta"]);
+        // The head is the planner's own soonest central clock.
+        let soonest = crate::ai::AdvancedAi::victory_forecasts(&session.game, id)
+            .into_iter()
+            .filter_map(|forecast| forecast.finish_turn)
+            .map(|finish| (finish - f64::from(session.game.turn)).max(0.0).round() as i64)
+            .min();
+        assert_eq!(
+            player["victory_eta"][0][1].as_i64(),
+            soonest,
+            "{}",
+            player["civ"]
+        );
+    }
+    assert_eq!(
+        annotated, majors,
+        "every living major is annotated above the world"
+    );
+    assert!(
+        state["players"][0]["victory_eta"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|pair| pair[0] == "science"),
+        "the seat holding the whole tree has a clock on the space race"
+    );
+
+    let state = Session::new(current()).state();
+    for player in state["players"].as_array().unwrap() {
+        if player["id"] == json!(0) {
+            well_formed(&player["victory_eta"]);
+        } else {
+            assert!(
+                player["victory_eta"].is_null(),
+                "a rival's road stays under your fog"
+            );
+        }
+    }
 }
 
 #[test]
