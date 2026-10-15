@@ -11773,3 +11773,7 @@ mod air_domain_tests;
 #[cfg(test)]
 #[path = "air_pillage_refusal_tests.rs"]
 mod air_pillage_refusal_tests;
+
+#[cfg(test)]
+#[path = "neutral_airstrip_tests.rs"]
+mod neutral_airstrip_tests;
