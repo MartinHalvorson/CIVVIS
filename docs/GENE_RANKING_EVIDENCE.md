@@ -194,7 +194,9 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `amphibious-siege-train-2` | off (unmeasured) | A water-locked siege's crossing fords a strait of one or two water tiles, locks its members, sails on water only and lands on a wider beach. | — \| 2 |
 | `aqueduct-claims-the-capped-queue` | off (unmeasured) | Opt-in gene `aqueduct-claims-the-capped-queue`; see `advanced/aqueduct_claims_the_capped_queue.rs`. | 1 \| 1 |
 | `army-upgrade-materials` | off (unmeasured) | Opt-in `army-upgrade-materials`; see `army_upgrade_materials`. | 1 \| 1 |
+| `astrology-before-the-second-city` | off (unmeasured) | Opt-in gene `astrology-before-the-second-city`; see `advanced/astrology_before_the_second_city.rs`. | 1 \| 1 |
 | `backlog-builder-takes-the-queue` | off (unmeasured) | Opt-in gene `backlog-builder-takes-the-queue`; see `advanced/backlog_builder_takes_the_queue.rs`. | 1 \| 1 |
+| `bankruptcy-exits-the-drain` | off (unmeasured) | Opt-in gene `bankruptcy-exits-the-drain`; see `advanced/solvency.rs`. | 1 \| 1 |
 | `bleeding-capital-loyalty` | off (unmeasured) | Opt-in gene `bleeding-capital-loyalty`; see `Self::bleeding_capital_loyalty`. | 1 \| 1 |
 | `blocker-becomes-the-target` | off (unmeasured) | Opt-in gene `blocker-becomes-the-target`; see `Self::road_blocker_front`. | 1 \| 1 |
 | `bombers-fly-on-a-small-stock` | off (unmeasured) | Opt-in gene `bombers-fly-on-a-small-stock`; see `Self::bombers_fly_on_a_small_stock`. | 1 \| 1 |
@@ -330,7 +332,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `guns-grind-the-walls` | off (unmeasured) | Opt-in gene `guns-grind-the-walls`; see `Self::guns_grind_the_walls`. | 1 \| 1 |
 | `guns-post-for-a-near-breach` | off (unmeasured) | Opt-in gene `guns-post-for-a-near-breach`; see `Self::guns_post_for_a_near_breach`. | 1 \| 1 |
 | `guns-stay-out-of-reach` | off (unmeasured) | Opt-in gene `guns-stay-out-of-reach`; see `Self::guns_stay_out_of_reach`. | 1 \| 1 |
-| `holdout-keeps-the-faith-war` | off (unmeasured) | Opt-in gene `holdout-keeps-the-faith-war`; see `advanced/holdout_faith_war.rs`. | 1 \| 1 |
+| `holdout-keeps-the-faith-war` | off (unmeasured) | Opt-in gene `holdout-keeps-the-faith-war`; see `advanced/holdout_faith_war.rs`. | — \| 2 |
+| `holdout-keeps-the-faith-war-2` | off (unmeasured) | Opt-in gene `holdout-keeps-the-faith-war-2`; see `advanced/holdout_faith_war.rs`. | — \| 2 |
 | `housing-bound-city-builds-its-granary` | off (unmeasured) | Opt-in gene `housing-bound-city-builds-its-granary`; see `BasicAi::housing_bound_city_builds_its_granary`. | 1 \| 1 |
 | `housing-cap-builds-the-aqueduct` | off (unmeasured) | Opt-in gene `housing-cap-builds-the-aqueduct`; see `BasicAi::housing_cap_builds_the_aqueduct`. | 1 \| 1 |
 | `improvement-upgrades-count` | off (unmeasured) | Opt-in gene `improvement-upgrades-count`; see `Self::improvement_upgrades_count`. | 1 \| 1 |
@@ -385,6 +388,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `prophet-race-earns-its-points` | off (unmeasured) | Opt-in gene `prophet-race-earns-its-points`; see `Self::reserve_race_shrine` and `Self::race_wants_revelation`. | 1 \| 1 |
 | `prophet-race-takes-a-district-slot` | off (unmeasured) | Opt-in gene `prophet-race-takes-a-district-slot`; see `Self::prophet_race_takes_a_district_slot`. | — \| 2 |
 | `prophet-race-takes-a-district-slot-2` | off (unmeasured) | Opt-in gene `prophet-race-takes-a-district-slot-2`; see `Self::prophet_race_takes_a_district_slot_2`. | — \| 2 |
+| `prophet-race-takes-divine-spark` | off (unmeasured) | Opt-in gene `prophet-race-takes-divine-spark`; see `advanced/astrology_before_the_second_city.rs`. | 1 \| 1 |
 | `purchases-keep-the-upkeep-reserve` | off (unmeasured) | Opt-in gene `purchases-keep-the-upkeep-reserve`; see `AdvancedAi::purchases_keep_the_upkeep_reserve`. | 1 \| 1 |
 | `racer-blocker-declares` | off (unmeasured) | Opt-in gene `racer-blocker-declares`; see `advanced/silent_counter.rs`. | 1 \| 1 |
 | `racer-keeps-the-spies` | off (unmeasured) | Opt-in gene `racer-keeps-the-spies`; see `AdvancedAi::racer_keeps_the_spies`. | 1 \| 1 |
@@ -434,6 +438,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `siege-tier-yields-to-the-bombers` | off (unmeasured) | Opt-in gene `siege-tier-yields-to-the-bombers`; see `Self::siege_tier_yields_to_the_bombers`. | 1 \| 1 |
 | `siege-train-scales-with-walls` | off (unmeasured) | Opt-in gene `siege-train-scales-with-walls`; see `Self::siege_train_scales_with_walls`. | 1 \| 1 |
 | `siege-train-upgrades-first` | off (unmeasured) | Opt-in gene `siege-train-upgrades-first`; see `Self::siege_train_upgrades_first`. | 1 \| 1 |
+| `solvent-or-hold` | off (unmeasured) | Opt-in gene `solvent-or-hold`; see `advanced/solvency.rs`. | 1 \| 1 |
 | `space-denial-spies-from-rocketry` | off (unmeasured) | Opt-in gene `space-denial-spies-from-rocketry`; see `denial_spy_racers` in `advanced/science_denial_every_pad.rs`. | 1 \| 1 |
 | `spreader-steps-out-of-the-apostle` | off (unmeasured) | Opt-in gene `spreader-steps-out-of-the-apostle`; see `advanced/apostle_evasion.rs`. | 1 \| 1 |
 | `stage-march-keeps-to-land` | off (unmeasured) | Opt-in gene `stage-march-keeps-to-land`; see `Self::stage_march_keeps_to_land`. | 1 \| 1 |
