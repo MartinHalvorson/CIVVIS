@@ -3963,6 +3963,14 @@ pub const GENES: &[Gene] = &[
     // diplomatic cards while our Envoys pay ten Gold a turn. See
     // `merchant_confederation_pays` in `advanced.rs`.
     Gene { tag: "merchant-confederation-earns-its-slot", field: "merchant_confederation_earns_its_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_merchant_confederation_earns_its_slot, disable: AdvancedAi::disable_merchant_confederation_earns_its_slot },
+    // A siege held on a walled city turns to an open (unwalled or breached)
+    // city of the same owner a healthy field-army melee can reach within
+    // eight tiles and ten land steps, under Recovery or Expansion too and
+    // past a prior with three quarters of its walls; skipped when the open
+    // city's defence exceeds our best field melee by more than 15; held
+    // until walled, captured or eight turns without progress. See
+    // `advanced/open_city_front.rs`.
+    Gene { tag: "open-city-draws-the-front", field: "open_city_draws_the_front", kind: Kind::OptIn, enable: AdvancedAi::enable_open_city_draws_the_front, disable: AdvancedAi::disable_open_city_draws_the_front },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
