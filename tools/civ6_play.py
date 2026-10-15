@@ -6070,6 +6070,14 @@ def _play(args: argparse.Namespace) -> int:
             game_stopped = True
             print("[restart] left Civilization VI up with the game parked for the "
                   "next run to restart in place", flush=True)
+            # ★ The supervisor counts a game as played only by a `[turn N]`
+            # line in this log (`^\[turn [0-9]+\]`; the padded turn reports do
+            # not match it), and a game it thinks started nothing gets Civ VI
+            # stopped before the next launch. Live 2026-10-15 042843Z: parked
+            # at t19 with no blocker line, called "PLAYED NO TURNS", and the
+            # parked game was quit 13 s before the next run came to take it.
+            print(f"[turn {max(1, int(state.get('turn') or 1))}] parked for the "
+                  "next run's restart in place", flush=True)
         except OSError as error:
             print(f"[restart] could not hand the parked game on ({error}); "
                   "stopping it", file=sys.stderr, flush=True)
