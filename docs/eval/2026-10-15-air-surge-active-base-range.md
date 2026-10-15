@@ -27,7 +27,7 @@ known objectives were farther away. Neither the range-list omission nor a
 campaign-priority gate has been established as the cause of that loss or
 delay; this change targets the independently reproducible base-list defect.
 
-## Baseline and repair under validation
+## Baseline and validated repair
 
 The controlled board places an owned city center twelve hexes from the
 objective and its Aerodrome ten hexes away. Two ordinary Bombers rebase
@@ -52,9 +52,25 @@ That fixture assigns both domestic cities a new coordinate directly while
 leaving their spatial lookup at the old coordinates. It therefore retains
 old physical bases under the shared engine rule. The fixture now shortens
 the hypothetical Bomber range to one instead of corrupting city positions;
-its unreachable-objective assertion remains. The integrated full local suite
-and final GitHub gates remain pending. Actual base capacity and native
+its unreachable-objective assertion remains. Actual base capacity and native
 command transport are unchanged.
+
+After integrating settlement-pressure main revision `e51760e01` once, exact
+source `6e2f223baf2f857ab8fc67ccd96bf7f43b9aad4f` passes the full local
+`cargo test --profile ci --locked`: 6,068 tests, 51 existing library ignores,
+and four ignored documentation examples. Every registered source hash stays
+unchanged throughout that run. GitHub run `38778374645` independently passes
+all 6,068 tests, including all seven new controls, plus its 116 selected
+regressions. All quality, ownership, overwrite, published-build, and mod gates
+pass on that same source.
+
+Paired-cost run `38778374589` completes five 120-turn simulated pairs. Its
+median cost difference is +0.09%, inside the tool's noise floor and +8%
+budget; this establishes no speed improvement. An additional engine soak is
+not applicable: engine capacity, rebase legality, and state transitions are
+unchanged; only the planner's base enumeration and accessor visibility change.
+The positive controls execute two real legal rebase actions for each field
+kind before checking campaign reach.
 
 A limited geometry screen of the first state per turn in three recorded
 worlds found no existing Aerodrome/carrier that changed the two-Bomber reach
