@@ -186,7 +186,7 @@ fn the_last_luxury_copy_and_an_already_committed_sale_cannot_be_bartered() {
     }
 }
 #[test]
-fn the_production_decider_reserves_cash_after_an_earlier_upgrade() {
+fn the_production_decider_reserves_cash_after_earlier_purchases() {
     use civvis::mirror::{Snapshot, StateCity, StateUnit, TilesChunk};
     let snapshot = Snapshot::from_chunks(&[TilesChunk {
         turn: 89,
@@ -206,103 +206,103 @@ fn the_production_decider_reserves_cash_after_an_earlier_upgrade() {
             })
             .collect(),
     }]);
-    for allow_other_upgrade in [false, true] {
-        let mut state = state();
-        state.gold = 600;
-        state.gold_per_turn = Some(0.0);
-        state.techs = vec!["TECH_IRON_WORKING".into(), "TECH_STIRRUPS".into()];
-        state.luxury_counts = Some(BTreeMap::new());
-        state.cities = vec![StateCity {
-            id: 7,
-            name: "Bogota".into(),
-            x: 4,
+    let mut state = state();
+    state.gold = 600;
+    state.gold_per_turn = Some(0.0);
+    state.techs = vec!["TECH_IRON_WORKING".into(), "TECH_STIRRUPS".into()];
+    state.luxury_counts = Some(BTreeMap::new());
+    state.cities = vec![StateCity {
+        id: 7,
+        name: "Bogota".into(),
+        x: 4,
+        y: 6,
+        pop: 4,
+        capital: true,
+        ..Default::default()
+    }];
+    state.rivals[0].can_declare = Some(false);
+    state.rivals[0].cities = vec![StateCity {
+        id: 70,
+        name: "Berlin".into(),
+        x: 12,
+        y: 6,
+        pop: 4,
+        capital: true,
+        ..Default::default()
+    }];
+    state.units = vec![
+        StateUnit {
+            id: 17,
+            kind: "UNIT_WARRIOR".into(),
+            x: 5,
             y: 6,
-            pop: 4,
-            capital: true,
+            hp: 100.0,
+            moves: 2.0,
+            upgrade_to: Some("UNIT_SWORDSMAN".into()),
+            upgrade_cost: Some(400.0),
+            upgrade_resource_cost: Some(0.0),
+            upgrade_blocked_reason: Some("Unavailable this turn".into()),
             ..Default::default()
-        }];
-        state.rivals[0].can_declare = Some(false);
-        state.rivals[0].cities = vec![StateCity {
-            id: 70,
-            name: "Berlin".into(),
-            x: 12,
+        },
+        StateUnit {
+            id: 18,
+            kind: "UNIT_HEAVY_CHARIOT".into(),
+            x: 6,
             y: 6,
-            pop: 4,
-            capital: true,
+            hp: 100.0,
+            moves: 2.0,
+            upgrade_to: Some("UNIT_KNIGHT".into()),
+            upgrade_cost: Some(160.0),
+            upgrade_resource: Some("RESOURCE_IRON".into()),
+            upgrade_resource_cost: Some(10.0),
+            upgrade_blocked_reason: Some("Insufficient Resources".into()),
             ..Default::default()
-        }];
-        state.units = vec![
-            StateUnit {
-                id: 17,
-                kind: "UNIT_WARRIOR".into(),
-                x: 5,
-                y: 6,
-                hp: 100.0,
-                moves: 2.0,
-                upgrade_to: Some("UNIT_SWORDSMAN".into()),
-                upgrade_cost: Some(400.0),
-                upgrade_resource_cost: Some(0.0),
-                upgrade_blocked_reason: (!allow_other_upgrade)
-                    .then(|| "Unavailable this turn".into()),
-                ..Default::default()
-            },
-            StateUnit {
-                id: 18,
-                kind: "UNIT_HEAVY_CHARIOT".into(),
-                x: 6,
-                y: 6,
-                hp: 100.0,
-                moves: 2.0,
-                upgrade_to: Some("UNIT_KNIGHT".into()),
-                upgrade_cost: Some(160.0),
-                upgrade_resource: Some("RESOURCE_IRON".into()),
-                upgrade_resource_cost: Some(10.0),
-                upgrade_blocked_reason: Some("Insufficient Resources".into()),
-                ..Default::default()
-            },
-        ];
-        let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 250, 0);
-        let mut ai = civvis::ai::AdvancedAi::targeting(civvis::ai::VictoryTarget::Domination);
-        let reply: serde_json::Value = serde_json::from_str(&decide(
-            &mut mirror,
-            &mut ai,
-            &snapshot,
-            &state,
-            DecisionArm {
-                war_from_plan: false,
-                forced_on: &["army-upgrade-materials"],
-                withheld: &[],
-            },
-            DecisionMemory {
-                ours: &mut Default::default(),
-                host_peace_retries: &mut HostPeaceRetries::default(),
-                host_move_refusals: &mut HostMoveRefusals::default(),
-                host_order_refusals: &mut HostOrderRefusals::default(),
-                air_assault_continuation: &mut air_assault_continuation::Continuation::default(),
-            },
-        ))
-        .unwrap();
-        let orders = reply["orders"].as_array().unwrap();
-        assert_eq!(
-            orders
-                .iter()
-                .any(|o| o["subject"] == 17 && o["verb"] == "UPGRADE"),
-            allow_other_upgrade,
-            "the full planner must exercise the earlier cash spend"
-        );
-        let material_buy = orders.iter().any(|o| {
-            o["kind"] == "buy"
-                && o["verb"]
-                    .as_str()
-                    .is_some_and(|v| v.starts_with("RESOURCE_IRON=10"))
-        });
-        assert_eq!(material_buy, !allow_other_upgrade,
-                   "an earlier 400-Gold upgrade leaves only 200; preserve 190 for the Knight instead of quoting Iron against the unchanged 600-Gold mirror: {}", reply);
-        assert_eq!(
-            mirror.game.players[0].gold, 600.0,
-            "the authoritative mirror stays untouched"
-        );
-    }
+        },
+    ];
+    let mut mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 250, 0);
+    let mut ai = civvis::ai::AdvancedAi::targeting(civvis::ai::VictoryTarget::Domination);
+    ai.enable_army_upgrade_materials();
+    let initial = ai.army_upgrade_material_wants(&mirror.game, 0);
+    assert_eq!(initial.len(), 1);
+    assert_eq!(initial[0].gold_reserve, 190.0);
+    let reply: serde_json::Value = serde_json::from_str(&decide(
+        &mut mirror,
+        &mut ai,
+        &snapshot,
+        &state,
+        DecisionArm {
+            war_from_plan: false,
+            forced_on: &["army-upgrade-materials"],
+            withheld: &[],
+        },
+        DecisionMemory {
+            ours: &mut Default::default(),
+            host_peace_retries: &mut HostPeaceRetries::default(),
+            host_move_refusals: &mut HostMoveRefusals::default(),
+            host_order_refusals: &mut HostOrderRefusals::default(),
+            air_assault_continuation: &mut air_assault_continuation::Continuation::default(),
+        },
+    ))
+    .unwrap();
+    let actions = reply["decision"]["native_actions"].as_array().unwrap();
+    assert!(actions
+        .iter()
+        .any(|a| a["type"] == "buy" && a["unit"] == "builder" && a["currency"] == "gold"));
+    assert!(actions.iter().any(|a| a["type"] == "buy_building"
+        && a["building"] == "monument"
+        && a["currency"] == "gold"));
+    let material_buy = reply["orders"].as_array().unwrap().iter().any(|o| {
+        o["kind"] == "buy"
+            && o["verb"]
+                .as_str()
+                .is_some_and(|v| v.starts_with("RESOURCE_IRON=10"))
+    });
+    assert!(!material_buy,
+        "earlier Builder and Monument purchases must reduce the Iron budget and retain the Knight's 190-Gold reservation: {}", reply);
+    assert_eq!(
+        mirror.game.players[0].gold, 600.0,
+        "the authoritative mirror stays untouched"
+    );
 }
 
 #[test]

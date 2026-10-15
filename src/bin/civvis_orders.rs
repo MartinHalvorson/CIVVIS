@@ -3260,6 +3260,10 @@ fn append_army_upgrade_material_buy_order(
     if orders.iter().any(|order| order.kind == "buy") {
         return Some("deal_in_flight");
     }
+    let reserve = want.gold_reserve.ceil() as i64;
+    if state.gold.min(remaining_gold) < reserve {
+        return Some("treasury");
+    }
     // The shared transport reads resource/amount/minimum; its gun-specific
     // descriptive fields are unused here. The upgrade remains a named want.
     let request = civvis::ai::GunResourceWant {
@@ -3280,7 +3284,7 @@ fn append_army_upgrade_material_buy_order(
         worth,
         give_worth,
         ResourceBuyBudget {
-            reserve: want.gold_reserve.ceil() as i64,
+            reserve,
             gold_limit: Some(remaining_gold),
             credit_income: false,
             cadence: false,
@@ -5428,7 +5432,7 @@ fn decide(
                         .resource_gold_value(seat, resource, amount)
                 })
         };
-        let gold = mirror_state.game.players[0].gold.floor() as i64;
+        let gold = planned_game.players[0].gold.floor() as i64;
         match append_army_upgrade_material_buy_order(
             &wants,
             &spares,

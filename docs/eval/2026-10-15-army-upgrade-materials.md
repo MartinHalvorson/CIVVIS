@@ -47,7 +47,19 @@ missing fires waiver; the metadata has been regenerated with all 141
 deployment tags and the operator selection note preserved. The 21 evaluation
 manifest, 17 fires-gate and 186 gene-tooling tests passed locally, as did
 `cargo check --locked --all-targets` and all 14 append-point controls.
-The required local `cargo test --profile ci --locked` is running.
+The initial local library run had 5,593 passes and one server-viewer failure:
+its two-second observation window saw only turns 1, 2 and 3, below its required
+four turns. The unchanged isolated test passed. No assertion was weakened.
+
+Review found the original transport caller read the untouched authoritative
+mirror after planning had spent Gold on a separate copy. A complete decision
+fixture buys a Builder and Monument, then the old caller still bids 386 Gold
+for Iron against its original 600-Gold treasury while reporting 190 reserved
+for a Knight. The corrected caller reads the planning copy. A separate
+control rejects even fully bartered material when earlier spending used the
+upgrade reservation. Both corrected regressions and all seven transport
+controls pass. The complete integrated local suite is being rerun with four
+test threads to reduce contention.
 
 The fires waiver records that simulator `gene_screen` does not execute this
 CLI/native trade channel. No simulator null result is entered as proof that
