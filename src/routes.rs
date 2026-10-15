@@ -255,7 +255,10 @@ pub fn policy_effects_answer(turn: u32, pid: usize, ledger: &crate::game::Policy
 /// down, then the tenths still owed handed out largest remainder first (or
 /// taken back smallest remainder first). Ties go to the earlier value.
 fn tenths_summing_to(values: &[f64], target: i64) -> Vec<i64> {
-    let mut tenths: Vec<i64> = values.iter().map(|value| (value * 10.0).floor() as i64).collect();
+    let mut tenths: Vec<i64> = values
+        .iter()
+        .map(|value| (value * 10.0).floor() as i64)
+        .collect();
     let mut order: Vec<usize> = (0..values.len()).collect();
     let remainder = |i: usize| values[i] * 10.0 - tenths[i] as f64;
     let remainders: Vec<f64> = (0..values.len()).map(remainder).collect();

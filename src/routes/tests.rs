@@ -84,7 +84,10 @@ fn ordinary_save_load_keeps_its_existing_behavior() {
 #[test]
 fn printed_policy_shares_add_up_to_the_printed_net() {
     assert_eq!(tenths_summing_to(&[0.25, 0.25], 5), vec![3, 2]);
-    assert_eq!(tenths_summing_to(&[11.94, 0.02, 0.03], 120), vec![120, 0, 0]);
+    assert_eq!(
+        tenths_summing_to(&[11.94, 0.02, 0.03], 120),
+        vec![120, 0, 0]
+    );
     assert_eq!(tenths_summing_to(&[1.62, 0.33, 0.0], 20), vec![16, 4, 0]);
     assert_eq!(tenths_summing_to(&[-0.25, -0.25], -5), vec![-2, -3]);
     assert_eq!(tenths_summing_to(&[1.0, -0.36, 0.0], 6), vec![10, -4, 0]);
@@ -93,16 +96,35 @@ fn printed_policy_shares_add_up_to_the_printed_net() {
     use crate::game::{EmpireReading, PolicyLedger, PolicyWorth};
     let card = |policy: &str, faith: f64, gold: f64| PolicyWorth {
         policy: crate::name::Name::new(policy),
-        worth: EmpireReading { faith, gold, ..EmpireReading::default() },
+        worth: EmpireReading {
+            faith,
+            gold,
+            ..EmpireReading::default()
+        },
     };
     let ledger = PolicyLedger {
         anarchy: false,
         with: EmpireReading::default(),
-        net: EmpireReading { faith: 0.7, gold: 11.98, ..EmpireReading::default() },
-        cards: vec![card("civil_prestige", 0.35, 1.93), card("retainers", 0.35, 10.05)],
+        net: EmpireReading {
+            faith: 0.7,
+            gold: 11.98,
+            ..EmpireReading::default()
+        },
+        cards: vec![
+            card("civil_prestige", 0.35, 1.93),
+            card("retainers", 0.35, 10.05),
+        ],
     };
     let answer = policy_effects_answer(84, 0, &ledger);
     assert_eq!(answer["net"], json!({"faith": 0.7, "gold": 12.0}));
-    assert_eq!(answer["cards"][0]["worth"], json!({"faith": 0.4, "gold": 1.9}), "{answer}");
-    assert_eq!(answer["cards"][1]["worth"], json!({"faith": 0.3, "gold": 10.1}), "{answer}");
+    assert_eq!(
+        answer["cards"][0]["worth"],
+        json!({"faith": 0.4, "gold": 1.9}),
+        "{answer}"
+    );
+    assert_eq!(
+        answer["cards"][1]["worth"],
+        json!({"faith": 0.3, "gold": 10.1}),
+        "{answer}"
+    );
 }

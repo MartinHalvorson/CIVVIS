@@ -420,8 +420,16 @@ mod tests {
         assert_eq!(ordered.net, ledger.net);
         assert_shares_sum_to_net(&ordered);
         assert_eq!(
-            ordered.cards.iter().map(|card| card.policy).collect::<Vec<_>>(),
-            ledger.cards.iter().map(|card| card.policy).collect::<Vec<_>>()
+            ordered
+                .cards
+                .iter()
+                .map(|card| card.policy)
+                .collect::<Vec<_>>(),
+            ledger
+                .cards
+                .iter()
+                .map(|card| card.policy)
+                .collect::<Vec<_>>()
         );
     }
 
