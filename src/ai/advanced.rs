@@ -7149,6 +7149,18 @@ pub struct AdvancedAi {
     /// diplomatic cards (after a loyalty Praetorium). See
     /// `AdvancedAi::merchant_confederation_pays`. Off by default.
     merchant_confederation_earns_its_slot: bool,
+    /// `open-city-draws-the-front`: a siege held on a walled city turns to an
+    /// open city of the same owner the field army can reach, under Recovery
+    /// or Expansion too and past a lightly chipped prior; tier-floored, held
+    /// until walled, captured or stalled. See `advanced/open_city_front.rs`.
+    open_city_draws_the_front: bool,
+    /// `open-city-draws-the-front`: the open city the front turned to.
+    open_city_hold: Option<open_city_front::OpenCityHold>,
+    /// `open-city-draws-the-front`: cities the front turned away from (or
+    /// gave up), with the turn they may be turned to again.
+    open_city_left: BTreeMap<u32, u32>,
+    /// `open-city-draws-the-front`: the plan's objective last turn.
+    open_city_last_target: Option<u32>,
     /// `launched-racer-yields-the-capital`: a rival that has launched its
     /// Exoplanet Expedition and holds the city whose capture completes
     /// Domination is the second front, that city is the objective at peace,
@@ -9255,6 +9267,9 @@ mod launched_racer;
 /// `faith-war-before-the-flip`: see `advanced/faith_war_before_the_flip.rs`.
 mod faith_war_before_the_flip;
 
+/// `open-city-draws-the-front`: see `advanced/open_city_front.rs`.
+mod open_city_front;
+
 mod denial_nearest_finish;
 mod denial_needs_a_road;
 mod city_memory;
@@ -10813,6 +10828,10 @@ impl AdvancedAi {
             industrial_zone_claims_the_factory: false,
             // ---- append: l-o ----------------------------------------
             merchant_confederation_earns_its_slot: false,
+            open_city_draws_the_front: false,
+            open_city_hold: None,
+            open_city_left: BTreeMap::new(),
+            open_city_last_target: None,
             launched_racer_yields_the_capital: false,
             muster_walks_the_road: false,
             near_rival_deterrence: false,
@@ -11589,6 +11608,9 @@ impl AdvancedAi {
         // The front and its tide clock; exact no-op with the gene off. See
         // `advanced/one_war.rs`.
         self.one_war_observe(g, pid);
+        // `open-city-draws-the-front`: the open city the front turned to; exact
+        // no-op with the gene off. See `advanced/open_city_front.rs`.
+        self.open_city_observe(g, pid);
         // `war-policy-via-board`: the tide with every major at war and the
         // unserved-Defend clocks; exact no-op with the gene off. See
         // `advanced/war_policy.rs`.
@@ -14445,19 +14467,28 @@ impl AdvancedAi {
         prior_id: u32,
         strategy: GrandStrategy,
     ) -> Option<u32> {
+        // `open-city-draws-the-front`: a Recovery or Expansion plan turns too,
+        // a lightly chipped prior still yields, a field-army taker within the
+        // march counts, under a tier floor. See `advanced/open_city_front.rs`.
+        let open = self.open_city_draws_the_front;
         if !self.siege_commitment
-            || strategy != GrandStrategy::Conquest
+            || (strategy != GrandStrategy::Conquest && !self.open_city_strategy_turns(strategy))
             || self.active_victory_target(g) != Some(VictoryTarget::Domination)
         {
             return None;
         }
         let prior = g.cities.get(&prior_id)?;
+        let prior_yields = if open {
+            Self::open_city_prior_yields(g, prior)
+        } else {
+            prior.hp >= CITY_MAX_HP
+                && prior.wall_hp > 0
+                && prior.wall_hp >= g.city_max_wall_hp(prior)
+        };
         if !g.is_at_war(pid, prior.owner)
             || g.players[prior.owner].is_minor
             || g.players[prior.owner].is_barbarian
-            || prior.hp < CITY_MAX_HP
-            || prior.wall_hp <= 0
-            || prior.wall_hp < g.city_max_wall_hp(prior)
+            || !prior_yields
         {
             return None;
         }
@@ -14476,12 +14507,19 @@ impl AdvancedAi {
                     && g.sees(&visible, city.pos)
                     && !self.capture_stood_down_holds(g, city.id)
                     && !Self::should_defer_city_capture(g, pid, city.id)
+                    && (!open
+                        || (!self.open_city_recently_left(g, city.id)
+                            && self.open_city_within_reach_of_our_tier(g, pid, city)))
             })
             .filter(|city| {
                 let fresh = city.hp == CITY_MAX_HP;
                 let minimum_hp = if fresh { 70 } else { 60 };
                 let minimum_strength = if fresh { 25.0 } else { 30.0 };
-                g.units.values().any(|unit| {
+                (open
+                    && self
+                        .open_city_taker(g, pid, city, minimum_hp, minimum_strength)
+                        .is_some())
+                    || g.units.values().any(|unit| {
                     let spec = &g.rules.units[unit.kind];
                     unit.owner == pid
                         && unit.hp >= minimum_hp
@@ -15789,11 +15827,16 @@ impl AdvancedAi {
                    city.pos);
         }
         if let Some(opportunity) = capture_opportunity_city {
-            let city = &g.cities[&opportunity];
-            think!(self.journal(), Strategy, Strategy,
-                   "Campaign seizes open foothold {}", city.name;
-                   "an unbreached prior objective yields to a weaker unwalled city with a land taker nearby";
-                   city.pos);
+            if let (true, Some(prior)) = (self.open_city_draws_the_front, committed_target_city) {
+                // See `advanced/open_city_front.rs`.
+                self.journal_open_city_turn(g, pid, prior, opportunity);
+            } else {
+                let city = &g.cities[&opportunity];
+                think!(self.journal(), Strategy, Strategy,
+                       "Campaign seizes open foothold {}", city.name;
+                       "an unbreached prior objective yields to a weaker unwalled city with a land taker nearby";
+                       city.pos);
+            }
         }
         if let Some(nearer) = stale_walled_city {
             let city = &g.cities[&nearer];
