@@ -18856,14 +18856,23 @@ impl AdvancedAi {
                             if opening_archery_goal.as_deref() == Some(goal) {
                                 format!("the first range-two defender is needed against nearby barbarians; unlock {} before the economic beeline", plain(goal))
                             } else if defensive_walls_goal.as_deref() == Some(goal) {
-                                // `capital-walls-before-the-surprise` names its own reason.
-                                match self.capital_walls_research_threat(g, pid) {
-                                    Some((rival, ratio)) => format!(
-                                        "capital-walls-before-the-surprise: unlock Ancient Walls for the capital; {} fields {ratio:.1}x our power and its soldiers stood within {} tiles",
-                                        g.players[rival].civ,
-                                        capital_walls_before_the_surprise::CAPITAL_WATCH_TILES
-                                    ),
-                                    None => "unlock Ancient Walls for wartime recovery or a stronger hostile approaching an exposed city before the longer army upgrade path".to_string(),
+                                if let Some((city, rival, ratio)) =
+                                    self.frontier_walls_research_threat(g, pid)
+                                {
+                                    format!(
+                                        "frontier-walls-before-the-surprise: unlock Ancient Walls for {}; {} fields {ratio:.1}x our power and its soldier was seen near this frontier",
+                                        g.cities[&city].name, g.players[rival].civ
+                                    )
+                                } else {
+                                    // `capital-walls-before-the-surprise` names its own reason.
+                                    match self.capital_walls_research_threat(g, pid) {
+                                        Some((rival, ratio)) => format!(
+                                            "capital-walls-before-the-surprise: unlock Ancient Walls for the capital; {} fields {ratio:.1}x our power and its soldiers stood within {} tiles",
+                                            g.players[rival].civ,
+                                            capital_walls_before_the_surprise::CAPITAL_WATCH_TILES
+                                        ),
+                                        None => "unlock Ancient Walls for wartime recovery or a stronger hostile approaching an exposed city before the longer army upgrade path".to_string(),
+                                    }
                                 }
                             } else if barbarian_military_goal.as_deref() == Some(goal) {
                                 format!(
