@@ -4508,7 +4508,11 @@ impl Game {
                 );
             }
         }
-        if self.units[&uid].charges <= 0 {
+        // A Legion or Toa spends its construction charge and remains a combat
+        // unit. Civilian and support builders are consumed when depleted.
+        if self.units[&uid].charges <= 0
+            && self.rules.units[&self.units[&uid].kind].class != "military"
+        {
             self.remove_unit(uid);
         }
         Ok(())

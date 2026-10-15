@@ -64,8 +64,15 @@ pass, including the new export/fog/delta controls. All 30 fidelity-tool tests
 pass. Both the original and expanded improvement audits against installed
 Gathering Storm data report zero divergences. The compiled cache on this
 host currently lacks Gathering Storm rows and is not used as that reference.
-Full Rust validation, engine soak, cost measurement and native execution
-remain pending. No planner or default selection is promoted in this change.
+The complete installed Gathering Storm audit reports zero divergent fields
+across all 29 audited tables. Eleven focused engine controls and five mirror
+controls pass. Construction spends the last charge without deleting Legions
+or Toa; an exhausted Military Engineer is still consumed. The shared
+placement and combat-builder corrections deliberately change the legacy
+controller, isolated and measured twice in `docs/ELO_REPINS.md` v44. See PR #4064
+for full-suite, soak and cost validation. Native
+construction and rebase execution remain unverified. No planner or default
+selection is promoted in this change.
 
 The intended continuation carries the shipped outside-territory rule and
 improvement ownership through placement, execution, saves, native export,

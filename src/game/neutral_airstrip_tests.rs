@@ -51,6 +51,57 @@ fn an_engineer_can_build_an_airstrip_on_unowned_flat_ground() {
 }
 
 #[test]
+fn combat_builders_survive_the_last_fort_charge_on_neutral_ground() {
+    for (civ, kind, improvement, hills) in [
+        ("Rome", "legion", "roman_fort", false),
+        ("Maori", "toa", "maori_pa", true),
+    ] {
+        let (mut game, engineer, target) = fixture();
+        game.remove_unit(engineer);
+        game.players[0].civ = civ.to_string();
+        game.map.tiles.get_mut(&target).unwrap().hills = hills;
+        let unit = game.spawn_test_unit(kind, 0, target);
+        assert_eq!(game.units[&unit].charges, 1);
+        let action = Action::Improve {
+            unit,
+            improvement: Name::new(improvement),
+        };
+        assert!(game.legal_actions(0).contains(&action));
+        game.apply(0, &action).unwrap();
+        let tile = &game.map.tiles[&target];
+        assert_eq!(tile.improvement.as_deref(), Some(improvement));
+        assert_eq!(tile.improvement_owner, Some(0));
+        assert!(tile.owner_city.is_none());
+        assert!(
+            game.units.contains_key(&unit),
+            "{kind} remains a combat unit"
+        );
+        assert_eq!(game.units[&unit].charges, 0);
+        assert_eq!(game.units[&unit].moves_left, 0.0);
+    }
+}
+
+#[test]
+fn an_engineer_is_consumed_after_its_last_airstrip_charge() {
+    let (mut game, engineer, target) = fixture();
+    game.units.get_mut(&engineer).unwrap().charges = 1;
+    game.apply(
+        0,
+        &Action::Improve {
+            unit: engineer,
+            improvement: crate::name!("airstrip"),
+        },
+    )
+    .unwrap();
+    assert!(!game.units.contains_key(&engineer));
+    assert_eq!(
+        game.map.tiles[&target].improvement.as_deref(),
+        Some("airstrip")
+    );
+    assert_eq!(game.air_capacity_at(0, target), 3);
+}
+
+#[test]
 fn neutral_permission_does_not_open_ordinary_builder_work_or_a_missile_silo() {
     let (mut game, _, target) = fixture();
     game.players[0].techs.insert(crate::name!("rocketry"));
