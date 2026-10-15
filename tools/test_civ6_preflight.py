@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
@@ -11,6 +12,71 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 import civ6_preflight  # noqa: E402
+
+
+class DeciderArmTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.home = Path(self.tmp.name)
+        self.run = self.home / "civvis-civ6-runs/control/prior"
+        self.run.mkdir(parents=True)
+        (self.run / "events.jsonl").write_text('{}\n')
+        self.binary = self.home / "supplied-decider"
+        self.binary.touch()
+        home = mock.patch.object(civ6_preflight.Path, "home", return_value=self.home)
+        home.start()
+        self.addCleanup(home.stop)
+
+    def check(self, *, code=0, stdout='{"orders": []}\n', stderr="", **arm):
+        report = civ6_preflight.Report()
+        with mock.patch.object(civ6_preflight.subprocess, "run",
+                               return_value=mock.Mock(returncode=code, stdout=stdout,
+                                                      stderr=stderr)) as run:
+            civ6_preflight.check_decider(report, str(self.binary), **arm)
+        return report, run
+
+    def test_requested_treatments_and_lane_reach_the_supplied_binary(self):
+        report, run = self.check(with_=["first", "second"], without=["off"],
+                                 victory="domination", strategy="experimental")
+        self.assertEqual([], report.failures)
+        self.assertEqual(
+            [str(self.binary), "--mirror", str(self.run), "--serve", "--fresh-board",
+             "--victory", "domination", "--strategy", "experimental",
+             "--with", "first", "--with", "second", "--without", "off"],
+            run.call_args.args[0])
+        self.assertEqual("1\n", run.call_args.kwargs["input"])
+
+    def test_unsupported_arm_fails_with_the_decider_diagnostic(self):
+        report, _ = self.check(code=2, stdout="", with_=["new-policy"],
+                               stderr='civvis-orders: unknown --with treatment "new-policy"\n')
+        self.assertEqual(1, len(report.failures))
+        self.assertIn('unknown --with treatment "new-policy"', report.failures[0])
+
+    def test_nonzero_exit_fails_even_after_printing_orders(self):
+        report, _ = self.check(code=2, stderr=" \n")
+        self.assertEqual(1, len(report.failures))
+        self.assertIn("exited 2", report.failures[0])
+
+    def test_empty_orders_are_a_valid_protocol_response(self):
+        report, run = self.check()
+        self.assertEqual([], report.failures)
+        self.assertEqual([str(self.binary), "--mirror", str(self.run), "--serve", "--fresh-board"],
+                         run.call_args.args[0])
+
+    def test_first_game_still_checks_an_unsupported_arm(self):
+        (self.run / "events.jsonl").unlink()
+        report, run = self.check(code=2, stdout="", with_=["new-policy"],
+                                 stderr='unknown --with treatment "new-policy"')
+        run.assert_called_once()
+        self.assertEqual(1, len(report.failures))
+        self.assertIn("new-policy", report.failures[0])
+        self.assertEqual(1, len(report.warnings))
+
+    def test_startup_metadata_is_still_rejected(self):
+        report, _ = self.check(stdout='{"controller": "advanced"}\n{"orders": []}\n')
+        self.assertEqual(1, len(report.failures))
+        self.assertIn("NOT an orders response", report.failures[0])
 
 
 def _helpers(text: str):

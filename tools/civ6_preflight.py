@@ -556,7 +556,9 @@ def check_run(report: Report, tag: str) -> None:
         report.ok("refusals", "none")
 
 
-def check_decider(report: Report, orders_bin: str | None) -> None:
+def check_decider(report: Report, orders_bin: str | None, *,
+                  with_: list[str] | None = None, without: list[str] | None = None,
+                  victory: str | None = None, strategy: str | None = None) -> None:
     """The decider's --serve protocol: one line in, one ORDERS line out.
 
     ⚠ THIS CHECK EXISTS BECAUSE A `println` COST A WHOLE RUN. `--serve` speaks a
@@ -584,18 +586,34 @@ def check_decider(report: Report, orders_bin: str | None) -> None:
     if not binary.is_file():
         report.fail("decider", f"{binary} does not exist")
         return
-    runs = sorted((Path.home() / "civvis-civ6-runs" / "control").glob("*/events.jsonl"),
+    runs_root = Path.home() / "civvis-civ6-runs" / "control"
+    runs = sorted(runs_root.glob("*/events.jsonl"),
                   key=lambda p: p.stat().st_mtime, reverse=True)
     probe = next((p.parent for p in runs if p.stat().st_size > 0), None)
     if probe is None:
-        report.warn("decider", "no finished run to probe against; protocol not checked")
-        return
+        # --serve answers an unavailable board with empty orders. Startup still
+        # validates the requested arm, including on a seat's first native game.
+        report.warn("decider", "no recorded board; checking startup and empty-board protocol")
+        probe = runs_root
+    command = [str(binary), "--mirror", str(probe), "--serve", "--fresh-board"]
+    if victory:
+        command += ["--victory", victory]
+    if strategy:
+        command += ["--strategy", strategy]
+    for flag, treatments in (("--with", with_), ("--without", without)):
+        for treatment in treatments or []:
+            command += [flag, treatment]
     try:
         proc = subprocess.run(
-            [str(binary), "--mirror", str(probe), "--turn", "1"],
-            capture_output=True, text=True, timeout=180)
+            command,
+            input="1\n", capture_output=True, text=True, timeout=180)
     except (subprocess.SubprocessError, OSError) as exc:
         report.fail("decider", f"could not run: {exc}")
+        return
+    if proc.returncode != 0:
+        lines = (proc.stderr or proc.stdout or "").strip().splitlines()
+        detail = (lines or ["no diagnostic"])[0][:240]
+        report.fail("decider", f"requested arm exited {proc.returncode}: {detail}")
         return
     first = next((ln for ln in proc.stdout.splitlines() if ln.startswith("{")), None)
     if first is None:
