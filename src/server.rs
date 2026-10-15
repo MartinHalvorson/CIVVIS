@@ -3349,7 +3349,11 @@ fn control_request_line(
         return None;
     }
     let shown = |value: &Option<String>| value.as_deref().unwrap_or("-").to_string();
-    let body: String = body.to_string().chars().take(CONTROL_LINE_BODY_CHARS).collect();
+    let body: String = body
+        .to_string()
+        .chars()
+        .take(CONTROL_LINE_BODY_CHARS)
+        .collect();
     Some(format!(
         "[live control] {} POST {path} from {} user-agent={:?} referer={:?} origin={:?} body={body}",
         civ6::utc_stamp(now),

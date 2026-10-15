@@ -89,7 +89,9 @@ fn a_capped_city_claims_its_best_housing_neighborhood() {
     let stock = AdvancedAi::new();
     let mut off = busy.clone();
     let plan = stock.assess(&off, 0);
-    assert!(stock.capped_neighborhood_item(&off, 0, city, &plan).is_none());
+    assert!(stock
+        .capped_neighborhood_item(&off, 0, city, &plan)
+        .is_none());
     stock.claim_capped_neighborhood(&mut off, 0, &plan);
     assert_eq!(head(&off, city), Some(warrior()), "off: no claim");
 
@@ -118,7 +120,11 @@ fn a_capped_city_claims_its_best_housing_neighborhood() {
         .fold(f64::MIN, f64::max);
     assert_eq!(claim.housing, best);
     ai.claim_capped_neighborhood(&mut on, 0, &plan);
-    assert_eq!(head(&on, city), Some(claim.item.clone()), "the Neighborhood goes first");
+    assert_eq!(
+        head(&on, city),
+        Some(claim.item.clone()),
+        "the Neighborhood goes first"
+    );
     let plan = ai.assess(&on, 0);
     assert!(ai.capped_neighborhood_holds(&on, 0, city, &plan, &claim.item));
 }
@@ -133,7 +139,8 @@ fn an_unbuilt_aqueduct_room_to_grow_or_a_fresh_attack_keeps_the_queue() {
     roomy.cities.get_mut(&city).unwrap().pop = (housing - 2.0).floor() as i32;
     let plan = ai.assess(&roomy, 0);
     assert!(
-        ai.capped_neighborhood_item(&roomy, 0, city, &plan).is_none(),
+        ai.capped_neighborhood_item(&roomy, 0, city, &plan)
+            .is_none(),
         "two housing to spare grows at full rate"
     );
 
@@ -141,18 +148,25 @@ fn an_unbuilt_aqueduct_room_to_grow_or_a_fresh_attack_keeps_the_queue() {
     let turn = attacked.turn;
     attacked.cities.get_mut(&city).unwrap().last_attacked = turn;
     let plan = ai.assess(&attacked, 0);
-    assert!(ai.capped_neighborhood_item(&attacked, 0, city, &plan).is_none());
+    assert!(ai
+        .capped_neighborhood_item(&attacked, 0, city, &plan)
+        .is_none());
 
     let mut small = game.clone();
     small.cities.get_mut(&city).unwrap().pop = CAPPED_NEIGHBORHOOD_MIN_POP - 1;
     let plan = ai.assess(&small, 0);
-    assert!(ai.capped_neighborhood_item(&small, 0, city, &plan).is_none());
+    assert!(ai
+        .capped_neighborhood_item(&small, 0, city, &plan)
+        .is_none());
 
     let mut early = game.clone();
-    early.players[0].civics.retain(|civic| *civic != "urbanization");
+    early.players[0]
+        .civics
+        .retain(|civic| *civic != "urbanization");
     let plan = ai.assess(&early, 0);
     assert!(
-        ai.capped_neighborhood_item(&early, 0, city, &plan).is_none(),
+        ai.capped_neighborhood_item(&early, 0, city, &plan)
+            .is_none(),
         "no Neighborhood before Urbanization"
     );
 }
@@ -168,5 +182,9 @@ fn one_neighborhood_in_flight_per_five_cities() {
     // One city, one Neighborhood already queued behind the Warrior.
     game.cities.get_mut(&city).unwrap().queue = vec![warrior(), claim.item.clone()];
     ai.claim_capped_neighborhood(&mut game, 0, &plan);
-    assert_eq!(head(&game, city), Some(warrior()), "the one in flight is the cap");
+    assert_eq!(
+        head(&game, city),
+        Some(warrior()),
+        "the one in flight is the cap"
+    );
 }

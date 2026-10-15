@@ -47,7 +47,11 @@ fn a_lone_capital_researches_astrology_for_an_open_race() {
 
     let mut off = game.clone();
     ai.advanced_research(&mut off, 0, &plan);
-    assert_ne!(off.players[0].research.as_deref(), Some("astrology"), "off: unchanged");
+    assert_ne!(
+        off.players[0].research.as_deref(),
+        Some("astrology"),
+        "off: unchanged"
+    );
 
     ai.enable_astrology_before_the_second_city();
     assert!(ai.astrology_before_the_second_city_due(&game, 0));
@@ -149,7 +153,8 @@ fn a_racing_seat_takes_divine_spark_behind_the_founding_pantheon() {
     ai.enable_expansion_pantheon();
 
     let mut shipped = pantheon_board();
-    ai.base.research_with_government(&mut shipped, 0, false, None);
+    ai.base
+        .research_with_government(&mut shipped, 0, false, None);
     assert_eq!(
         shipped.players[0].pantheon.as_deref(),
         Some("fertility_rites"),
@@ -158,7 +163,8 @@ fn a_racing_seat_takes_divine_spark_behind_the_founding_pantheon() {
 
     ai.base.pantheon_for_the_prophet_race = true;
     let mut racing = pantheon_board();
-    ai.base.research_with_government(&mut racing, 0, false, None);
+    ai.base
+        .research_with_government(&mut racing, 0, false, None);
     assert_eq!(racing.players[0].pantheon.as_deref(), Some("divine_spark"));
 
     let mut free = pantheon_board();

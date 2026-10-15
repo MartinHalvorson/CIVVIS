@@ -238,9 +238,12 @@ impl AdvancedAi {
             // The most capped city first; then the site that houses most;
             // then the quickest; then the lowest id.
             let key = (claim.headroom, -claim.housing, claim.turns, cid);
-            if best.as_ref().is_none_or(|(headroom, housing, turns, city, _)| {
-                key < (*headroom, -*housing, *turns, *city)
-            }) {
+            if best
+                .as_ref()
+                .is_none_or(|(headroom, housing, turns, city, _)| {
+                    key < (*headroom, -*housing, *turns, *city)
+                })
+            {
                 best = Some((claim.headroom, claim.housing, claim.turns, cid, claim.item));
             }
         }

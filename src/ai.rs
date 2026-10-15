@@ -1079,6 +1079,7 @@ pub(crate) fn choose_conquest_dedications(
 /// candidate values independent. That lets a headless controller evaluate
 /// this expensive counterfactual batch on worker-private game snapshots while
 /// retaining the serial candidate order and deck commit below.
+#[allow(clippy::too_many_arguments)]
 fn policy_card_score(
     g: &mut Game,
     pid: usize,
@@ -1206,71 +1207,75 @@ fn revise_policy_deck(
                 .map(|spec| (rank(&card), spec.slot.clone(), card))
         })
         .collect();
-    let mut scored: Vec<(f64, usize, String, Name)> = match pool
-        .filter(|pool| pool.threads() > 1 && candidates.len() > 1)
-    {
-        Some(pool) => {
-            // `Game` has worker-local RefCell caches and cannot be shared.
-            // One snapshot per active worker keeps those caches private while
-            // the pool's shared cursor balances uneven candidate costs.
-            let active = pool
-                .threads()
-                .min(candidates.len())
-                .min(POLICY_SCORE_MAX_WORKERS);
-            let states = (0..active).map(|_| g.clone()).collect::<Vec<_>>();
-            let weights = w.clone();
-            pool.map_stateful_limited(
-                candidates.len(),
-                POLICY_SCORE_MAX_WORKERS,
-                states,
-                move |mut branch, indices| {
-                    // The branch is reused for all indices claimed by this
-                    // worker.  Compute the unchanged slate once, before the
-                    // candidate mutations begin, rather than once per card.
-                    // The trace is taken on the branch, so each worker records
-                    // its own and nothing crosses a thread.
-                    let (current_reading, reads) =
-                        reading_with_policy_trace(&branch, pid, &weights, net_maintenance, player_income);
-                    indices
-                        .map(|index| {
-                            (
-                                index,
-                                policy_card_score(
-                                    &mut branch,
-                                    pid,
-                                    &weights,
-                                    &candidates[index],
-                                    current_reading,
-                                    &reads,
-                                    net_maintenance,
-                                    player_income,
-                                ),
-                            )
-                        })
-                        .collect()
-                },
-            )
-        }
-        None => {
-            let (current_reading, reads) =
-                reading_with_policy_trace(g, pid, w, net_maintenance, player_income);
-            candidates
-                .iter()
-                .map(|candidate| {
-                    policy_card_score(
-                        g,
-                        pid,
-                        w,
-                        candidate,
-                        current_reading,
-                        &reads,
-                        net_maintenance,
-                        player_income,
-                    )
-                })
-                .collect()
-        }
-    };
+    let mut scored: Vec<(f64, usize, String, Name)> =
+        match pool.filter(|pool| pool.threads() > 1 && candidates.len() > 1) {
+            Some(pool) => {
+                // `Game` has worker-local RefCell caches and cannot be shared.
+                // One snapshot per active worker keeps those caches private while
+                // the pool's shared cursor balances uneven candidate costs.
+                let active = pool
+                    .threads()
+                    .min(candidates.len())
+                    .min(POLICY_SCORE_MAX_WORKERS);
+                let states = (0..active).map(|_| g.clone()).collect::<Vec<_>>();
+                let weights = w.clone();
+                pool.map_stateful_limited(
+                    candidates.len(),
+                    POLICY_SCORE_MAX_WORKERS,
+                    states,
+                    move |mut branch, indices| {
+                        // The branch is reused for all indices claimed by this
+                        // worker.  Compute the unchanged slate once, before the
+                        // candidate mutations begin, rather than once per card.
+                        // The trace is taken on the branch, so each worker records
+                        // its own and nothing crosses a thread.
+                        let (current_reading, reads) = reading_with_policy_trace(
+                            &branch,
+                            pid,
+                            &weights,
+                            net_maintenance,
+                            player_income,
+                        );
+                        indices
+                            .map(|index| {
+                                (
+                                    index,
+                                    policy_card_score(
+                                        &mut branch,
+                                        pid,
+                                        &weights,
+                                        &candidates[index],
+                                        current_reading,
+                                        &reads,
+                                        net_maintenance,
+                                        player_income,
+                                    ),
+                                )
+                            })
+                            .collect()
+                    },
+                )
+            }
+            None => {
+                let (current_reading, reads) =
+                    reading_with_policy_trace(g, pid, w, net_maintenance, player_income);
+                candidates
+                    .iter()
+                    .map(|candidate| {
+                        policy_card_score(
+                            g,
+                            pid,
+                            w,
+                            candidate,
+                            current_reading,
+                            &reads,
+                            net_maintenance,
+                            player_income,
+                        )
+                    })
+                    .collect()
+            }
+        };
 
     scored.sort_by(|a, b| {
         b.0.partial_cmp(&a.0)
@@ -20913,8 +20918,9 @@ mod tests {
         // reading-inert and the skip returns the same exact 0.0.
         let (current, reads) = reading_with_policy_trace(&game, 0, &weights, false, false);
         assert!(reads.card_is_inert(&game.rules, card));
-        let (blind, ..) =
-            policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, false, false);
+        let (blind, ..) = policy_card_score(
+            &mut game, 0, &weights, &candidate, current, &reads, false, false,
+        );
         assert_eq!(blind, 0.0, "the defect under test: the card is invisible");
 
         // Aware: the with-side bill is lower by one Gold per unit, so the
@@ -20923,8 +20929,9 @@ mod tests {
         // asks the deck for the discount.
         let (current, reads) = reading_with_policy_trace(&game, 0, &weights, true, false);
         assert!(!reads.card_is_inert(&game.rules, card));
-        let (aware, ..) =
-            policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, true, false);
+        let (aware, ..) = policy_card_score(
+            &mut game, 0, &weights, &candidate, current, &reads, true, false,
+        );
         assert!(
             aware > 0.0,
             "the maintenance discount must score its own relief, got {aware}"
@@ -20950,14 +20957,19 @@ mod tests {
 
         let (current, reads) = reading_with_policy_trace(&game, 0, &weights, false, false);
         assert!(reads.card_is_inert(&game.rules, card));
-        let (blind, ..) =
-            policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, false, false);
-        assert_eq!(blind, 0.0, "the defect under test: twelve Envoys' Gold is invisible");
+        let (blind, ..) = policy_card_score(
+            &mut game, 0, &weights, &candidate, current, &reads, false, false,
+        );
+        assert_eq!(
+            blind, 0.0,
+            "the defect under test: twelve Envoys' Gold is invisible"
+        );
 
         let (current, reads) = reading_with_policy_trace(&game, 0, &weights, false, true);
         assert!(!reads.card_is_inert(&game.rules, card));
-        let (priced, ..) =
-            policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, false, true);
+        let (priced, ..) = policy_card_score(
+            &mut game, 0, &weights, &candidate, current, &reads, false, true,
+        );
         assert!(
             (priced - 12.0 * weights.pol_gold).abs() < 1e-9,
             "twelve Envoys at one Gold each, at the gold weight: {priced}"
@@ -20966,8 +20978,9 @@ mod tests {
         // With no Envoy placed the card is worth nothing either way.
         game.players[0].envoys.clear();
         let (current, reads) = reading_with_policy_trace(&game, 0, &weights, false, true);
-        let (empty, ..) =
-            policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, false, true);
+        let (empty, ..) = policy_card_score(
+            &mut game, 0, &weights, &candidate, current, &reads, false, true,
+        );
         assert_eq!(empty, 0.0);
     }
 
@@ -21009,7 +21022,9 @@ mod tests {
         let with = empire_reading(&full, 0, &weights, false, false);
         let expected_gain = with - without;
         let expected = (expected_gain, candidate.0, candidate.1.clone(), candidate.2);
-        let actual = policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, false, false);
+        let actual = policy_card_score(
+            &mut game, 0, &weights, &candidate, current, &reads, false, false,
+        );
         assert_eq!(actual, expected);
 
         // Incumbent: after putting the card on the slate, the current reading
@@ -21026,7 +21041,9 @@ mod tests {
             candidate.1.clone(),
             candidate.2,
         );
-        let actual = policy_card_score(&mut game, 0, &weights, &candidate, current, &reads, false, false);
+        let actual = policy_card_score(
+            &mut game, 0, &weights, &candidate, current, &reads, false, false,
+        );
         assert_eq!(actual, expected);
         assert!(game.players[0].policies.contains(&card));
     }

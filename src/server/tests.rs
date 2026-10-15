@@ -1,15 +1,14 @@
 use super::{
     automatic_successor_seed, chronicle_world_events, control_request_line, final_countdown_ms,
-    held_frame, RequestSender,
-    index_with_app_instance, new_game_params, nine_tenths_of, publishes_player_turn_frames,
-    query_value, request_path, save_path, seat_delay_ms, simultaneous_jobs_for, spectator_frame,
-    spectator_step_completes_frame, staged_next_game_params, strategy_roster, tile_mark,
-    valid_between_game_countdown_ms, viewer_path, ChronicleSnapshot, ChronicleState, FrameDelivery,
-    Params, Session, Shared, SpectatorFrame, BETWEEN_GAME_COUNTDOWN_OPTIONS_MS,
-    DEFAULT_BETWEEN_GAME_COUNTDOWN_MS, EMBEDDED_APP_JS, EMBEDDED_APP_SETUP_JS,
-    EMBEDDED_CIV6_UNIT_FLAGS, EMBEDDED_CIV6_UNIT_FLAG_PLATES, EMBEDDED_CIV6_YIELD_ICONS,
-    EMBEDDED_HIDDEN_MAP_MONSTERS, EMBEDDED_INDEX, MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR,
-    STATE_LONG_POLL, VIEWER_ACTIVE,
+    held_frame, index_with_app_instance, new_game_params, nine_tenths_of,
+    publishes_player_turn_frames, query_value, request_path, save_path, seat_delay_ms,
+    simultaneous_jobs_for, spectator_frame, spectator_step_completes_frame,
+    staged_next_game_params, strategy_roster, tile_mark, valid_between_game_countdown_ms,
+    viewer_path, ChronicleSnapshot, ChronicleState, FrameDelivery, Params, RequestSender, Session,
+    Shared, SpectatorFrame, BETWEEN_GAME_COUNTDOWN_OPTIONS_MS, DEFAULT_BETWEEN_GAME_COUNTDOWN_MS,
+    EMBEDDED_APP_JS, EMBEDDED_APP_SETUP_JS, EMBEDDED_CIV6_UNIT_FLAGS,
+    EMBEDDED_CIV6_UNIT_FLAG_PLATES, EMBEDDED_CIV6_YIELD_ICONS, EMBEDDED_HIDDEN_MAP_MONSTERS,
+    EMBEDDED_INDEX, MAX_EXACT_JAVASCRIPT_INTEGER, SAVE_DIR, STATE_LONG_POLL, VIEWER_ACTIVE,
 };
 use crate::game::{Action, Game, LeaderPool, PlayOnMode, VictoryConditions, CIV6_LEADER_POOL};
 use crate::server::{
@@ -7989,9 +7988,7 @@ fn browser_player_rows_use_relationship_color_only_for_active_wars() {
     assert!(EMBEDDED_INDEX.contains(
         "other.id !== viewSeat && other.alive && !other.is_barbarian && other.at_war_with_me);"
     ));
-    assert!(EMBEDDED_INDEX.contains(
-        ": p.id === viewSeat ? viewSeatAtWar : p.at_war_with_me;"
-    ));
+    assert!(EMBEDDED_INDEX.contains(": p.id === viewSeat ? viewSeatAtWar : p.at_war_with_me;"));
     assert!(EMBEDDED_INDEX.contains(
         "const stateClass = `${atWar ? \"at-war\" : \"\"} ${p.alive ? \"\" : \"dead\"}`;"
     ));
@@ -11662,7 +11659,10 @@ fn the_live_research_box_leads_with_governors_and_the_net_policy_effect() {
         "`<span class=\"lt-gov-name\">${escapeAttr(name)}</span></span>`;",
         "(governors.length ? governors.join(\"\") : none(\"none yet\"))",
     ] {
-        assert!(tracker.contains(piece), "the research box is missing {piece}");
+        assert!(
+            tracker.contains(piece),
+            "the research box is missing {piece}"
+        );
     }
     let body = tracker
         .split_once("return governorRow +")
@@ -11681,7 +11681,10 @@ fn the_live_research_box_leads_with_governors_and_the_net_policy_effect() {
         "#livetracker .lt-gov { display: inline-flex; flex-direction: column;",
         "#livetracker .lt-gov-n {",
     ] {
-        assert!(EMBEDDED_INDEX.contains(rule), "the governors' style is missing {rule}");
+        assert!(
+            EMBEDDED_INDEX.contains(rule),
+            "the governors' style is missing {rule}"
+        );
     }
 }
 
@@ -14238,11 +14241,18 @@ fn a_post_to_a_live_control_names_its_sender() {
          origin=\"http://127.0.0.1:8610\" body={\"confirm\":true}"
     );
     for path in ["/live-pause", "/pace"] {
-        assert!(control_request_line("POST", path, &sender, &serde_json::Value::Null, at).is_some());
+        assert!(
+            control_request_line("POST", path, &sender, &serde_json::Value::Null, at).is_some()
+        );
     }
     // A read of the same route, or a POST elsewhere, is not a control.
-    assert!(control_request_line("GET", "/live-pause", &sender, &serde_json::Value::Null, at).is_none());
-    assert!(control_request_line("POST", "/civ6/start", &sender, &serde_json::Value::Null, at).is_none());
+    assert!(
+        control_request_line("GET", "/live-pause", &sender, &serde_json::Value::Null, at).is_none()
+    );
+    assert!(
+        control_request_line("POST", "/civ6/start", &sender, &serde_json::Value::Null, at)
+            .is_none()
+    );
     // A sender without headers reads as dashes, not as an empty field.
     let bare = control_request_line(
         "POST",
@@ -14252,5 +14262,8 @@ fn a_post_to_a_live_control_names_its_sender() {
         at,
     )
     .unwrap();
-    assert!(bare.contains("from - user-agent=\"-\" referer=\"-\" origin=\"-\" body=null"), "{bare}");
+    assert!(
+        bare.contains("from - user-agent=\"-\" referer=\"-\" origin=\"-\" body=null"),
+        "{bare}"
+    );
 }

@@ -1,7 +1,7 @@
 //! The open-city roll: a journal line on a Siege row whose city stands
 //! without walls while its owner is weak. It must decide nothing.
-use super::*;
 use super::tests::{at, conquest, flat_board, on, war};
+use super::*;
 use crate::ai::Ai;
 
 /// Our capital at (6, 8), the rival's at (14, 8) without walls and with no
@@ -38,7 +38,10 @@ fn an_open_city_with_a_weak_owner_is_rolled_once() {
     let name = g.cities[&rival].name.clone();
     let lines = rolls(&g, rival);
     assert_eq!(lines.len(), 1, "{lines:?}");
-    assert!(lines[0].starts_with(&format!("{name} walls 0; in siege: ")), "{lines:?}");
+    assert!(
+        lines[0].starts_with(&format!("{name} walls 0; in siege: ")),
+        "{lines:?}"
+    );
     assert!(lines[0].contains("none of theirs within 4"), "{lines:?}");
 }
 
@@ -56,7 +59,14 @@ fn a_walled_city_is_not_rolled() {
 #[test]
 fn a_city_its_owner_still_holds_in_force_is_not_rolled() {
     let (mut g, rival) = open_rival();
-    for pos in [at(15, 8), at(15, 7), at(15, 9), at(14, 7), at(14, 9), at(16, 8)] {
+    for pos in [
+        at(15, 8),
+        at(15, 7),
+        at(15, 9),
+        at(14, 7),
+        at(14, 9),
+        at(16, 8),
+    ] {
         g.spawn_test_unit("spearman", 1, pos);
     }
     assert!(g.military_power(1) > 0.25 * g.military_power(0));

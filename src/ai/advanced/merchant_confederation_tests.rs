@@ -129,10 +129,9 @@ fn the_toggle_sets_the_base_deck_reading_too() {
 fn communism_with_gunboat(envoys: i64) -> (Game, AdvancedAi) {
     let (mut game, ai) = monarchy_with_envoys(envoys);
     game.players[0].government = Some("communism".to_string());
-    game.players[0].civics.extend([
-        crate::name!("ideology"),
-        crate::name!("class_struggle"),
-    ]);
+    game.players[0]
+        .civics
+        .extend([crate::name!("ideology"), crate::name!("class_struggle")]);
     game.players[0].policies.clear();
     // The diplomatic seat and the wildcard: both cards the Conquest
     // portfolio itself wants, so no free seat takes a diplomatic card.

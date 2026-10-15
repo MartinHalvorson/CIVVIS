@@ -20128,7 +20128,9 @@ impl AdvancedAi {
     /// while income ran -11 to -48 a turn, the slot holding Charismatic
     /// Leader and then Gunboat Diplomacy.
     pub(super) fn merchant_confederation_pays(&self, g: &Game, pid: usize) -> Option<(i64, f64)> {
-        if !self.merchant_confederation_earns_its_slot && !self.merchant_confederation_earns_its_slot_2 {
+        if !self.merchant_confederation_earns_its_slot
+            && !self.merchant_confederation_earns_its_slot_2
+        {
             return None;
         }
         let card = crate::name!("merchant_confederation");
@@ -20896,7 +20898,8 @@ impl AdvancedAi {
         let merchant_pays = self.merchant_confederation_pays(g, pid);
         // `merchant-confederation-earns-its-slot-2`: the paying card may take
         // a diplomatic seat from a wanted card ranked after it; see below.
-        let merchant_takes_a_seat = self.merchant_confederation_earns_its_slot_2 && merchant_pays.is_some();
+        let merchant_takes_a_seat =
+            self.merchant_confederation_earns_its_slot_2 && merchant_pays.is_some();
         if let Some((envoys, gold)) = merchant_pays {
             desired.retain(|card| *card != "merchant_confederation");
             let at = desired
@@ -20905,7 +20908,7 @@ impl AdvancedAi {
                     *card != "praetorium"
                         && g.rules
                             .policies
-                            .get(*card)
+                            .get(card)
                             .is_some_and(|spec| spec.slot == "diplomatic")
                 })
                 .unwrap_or(desired.len());
@@ -32106,12 +32109,10 @@ impl AdvancedAi {
                 .is_some_and(|(_, item)| self.backlog_builder_holds(g, pid, cid, plan, item));
             // `aqueduct-claims-the-capped-queue`: the claimed Aqueduct finishes
             // while the city still stands at its housing.
-            let capped_aqueduct_commitment = committed
-                .as_ref()
-                .is_some_and(|(_, item)| {
-                    self.capped_aqueduct_holds(g, pid, cid, plan, item)
-                        || self.capped_neighborhood_holds(g, pid, cid, plan, item)
-                });
+            let capped_aqueduct_commitment = committed.as_ref().is_some_and(|(_, item)| {
+                self.capped_aqueduct_holds(g, pid, cid, plan, item)
+                    || self.capped_neighborhood_holds(g, pid, cid, plan, item)
+            });
             // `campus-building-claims-the-queue`: the claimed Campus building
             // finishes while the Campus still names it.
             let campus_building_commitment = committed
