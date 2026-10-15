@@ -843,15 +843,15 @@ fn obs_impl(g: &Game, pid: usize, omniscient: bool, interactive: bool) -> Value 
             // weapons — one blast ring against two, and a maintenance bill to
             // match — and the browser adds them for the one figure it shows.
             let devices = |key: &str| o.counters.get(key).copied().unwrap_or(0).max(0);
-            // Founding is permanent history, but the standings marker is
-            // about a faith that is still present now. Compute that from the
-            // whole current world so fogged or merely remembered cities do
-            // not make the browser hide a public religion marker.
-            let founded_religion_exists = o.religion.as_deref().is_some_and(|religion| {
-                g.cities
-                    .values()
-                    .any(|city| g.city_religion(city) == Some(religion))
-            });
+            // The FPT asterisk marks every civilization that founded a
+            // religion. It used to require a city that still follows the
+            // faith, and in a mirrored game the seat cannot see a fogged
+            // rival city's religion: G235353Z at t149 marked Portugal (our
+            // own cities are Catholic) and missed Nubia's Islam and Hungary's
+            // Confucianism. Founding is public history, so the host's founder
+            // list (`apply_player_religion`) is the whole answer. The key
+            // keeps its name for recorded replays.
+            let founded_religion_exists = o.religion.is_some();
             json!({
                 "id": o.id, "civ": o.civ,
                 "met": true,
@@ -3170,7 +3170,7 @@ mod tests {
     }
 
     #[test]
-    fn observation_marks_only_founded_religions_still_followed_by_a_city() {
+    fn observation_marks_every_civilization_that_founded_a_religion() {
         let mut game = Game::new_full(3, 22, 16, 81_005, 120, 0, false);
         for pid in 0..3 {
             let settler_position = game
@@ -3185,7 +3185,7 @@ mod tests {
         }
 
         game.players[0].religion = Some("Living Faith".to_string());
-        game.players[1].religion = Some("Extinct Faith".to_string());
+        game.players[1].religion = Some("Unseen Faith".to_string());
         let living_city = game.player_city_ids(0)[0];
         let city = game.cities.get_mut(&living_city).unwrap();
         city.atheist_pressure = 0.0;
@@ -3204,8 +3204,8 @@ mod tests {
         assert_eq!(marker(0), json!(true), "a followed founded faith is marked");
         assert_eq!(
             marker(1),
-            json!(false),
-            "an extinct founded faith is not marked"
+            json!(true),
+            "a founder is marked though no city the board can see follows its faith"
         );
         assert_eq!(
             marker(2),
