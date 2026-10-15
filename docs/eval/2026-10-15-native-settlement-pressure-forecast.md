@@ -35,7 +35,7 @@ These warnings are not the final rate after all local modifiers. The
 observer's native readback and limits are in
 `2026-10-15-native-settlement-loyalty-warnings.md`.
 
-## Implementation under validation
+## Implementation
 
 The mirror reads the latest preceding `settlement_loyalty` event at exactly
 the selected state's turn and frame, using the existing cached event index.
@@ -79,9 +79,46 @@ requested line wrapping on two test assertions, corrected after the full local
 run; production Rust behavior is unchanged by that formatting correction. The local
 changed-line Rust formatting and Clippy gate passes after the correction.
 
-Hosted native build `38763142565` still targets the exact tested `4f6c8e869`
-source. All tracked-source hashes, both ARM64 executable hashes, native test
-controls, downloaded-binary smokes, the frozen Cumaná input comparison, and
-native execution of the repaired controller remain pending. Keep this PR
-draft until necessary checks and mechanism evidence are complete. No repaired
-native counterfactual, win-rate, or strength improvement is claimed yet.
+Hosted native build `38763142565` passes on exact source `4f6c8e869`.
+All 2,596 tracked source hashes, both ARM64 executable hashes, 156 selected
+controls, and both downloaded-binary smokes are verified. The orders binary
+SHA-256 is `55b7ceaad9d606baee61ab82dfa5f98b22b69179a388e88414791ed034d2d85f`.
+
+On the same 6,383,227-byte Cumaná prefix and all 282 original CLI flags, the
+repaired fresh decision submits no founding orders. Its journal explicitly
+rejects `(9,18)` and nearby plots for native-pressure forecasts of -20 per
+turn, approximately five turns to revolt. Effective forced and enabled arrays
+match the original comparison exactly: 271 and 446 entries. This demonstrates
+the forecast behavior on the captured request; it is not the original
+persistent agent's exact decision or a native outcome counterfactual.
+
+## Native execution
+
+One fresh native world, `civvis-20261015T164637Z`, uses the verified `4f6c8e869`
+controller and unchanged 282-flag context. Actual seat readback confirms
+Emperor, four major players, Simon Bolívar/Gran Colombia, Tiny Pangaea,
+Online speed, Gathering Storm, six city-states, all victories and 650 turns.
+A freeze at turn 97 triggered the standard watchdog's saved-game recovery
+under `civvis-20261015T164637Z-cont1`; that continuation is part of the same
+world. No manual game intervention or operator retirement occurred.
+
+Across both segments, all 406 decision reports and 7,052 input reads resolve
+to 432 captured snapshots and 26,735,636 archived bytes. Every snapshot is an
+exact prefix of its own native segment's event log. Runtime identities,
+immutable attempt-binary hashes, actual seat settings, and both treatment
+arrays match the verified candidate. The interrupted root summary is partial;
+its provenance is verified independently from runtime startup records and
+the immutable executable snapshot. The continuation has its normal enriched
+summary as well.
+
+There are 406 warning events, 109 available and 107 nonempty. Four native
+journal decisions reject pressure-doomed prospective sites: forecasts of
+-6 at turn 14, -12 at turn 22, and -23 at two sites on turn 61. These are full
+local forecasts after substituting the observed pressure contribution.
+
+The world peaked at five cities, lost five cities whose last exports retained
+loyalty and showed combat damage, and ended with one city. The existing
+production-rank policy retired it at 150: rank four, production 11 against
+364/281/368. It reached no terminal victory or defeat. This is mechanism
+evidence, with no controlled strength or win-rate improvement claimed.
+Global forcing and verification-policy hashes are unchanged after the run.
