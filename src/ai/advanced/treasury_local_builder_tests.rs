@@ -201,7 +201,11 @@ fn treasury_successor_live_identity_matches_the_selected_flags() {
             tags.contains(&"treasury-at-work-2-2"),
             ai.treasury_at_work_2_2
         );
-        assert_ne!(ai.treasury_at_work_2, ai.treasury_at_work_2_2);
-        assert_eq!(ai.treasury_at_work_2_2, !forced.is_empty());
+        assert!(!(ai.treasury_at_work_2 && ai.treasury_at_work_2_2));
+        // Unforced, the version the published batch rule selects; forced,
+        // the successor whatever that selection is.
+        if !forced.is_empty() {
+            assert!(ai.treasury_at_work_2_2 && !ai.treasury_at_work_2);
+        }
     }
 }

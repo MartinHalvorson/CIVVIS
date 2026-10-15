@@ -1238,10 +1238,24 @@ mod tests {
         assert!(version_two.contains(&"border-parity-2"));
         assert!(!version_two.contains(&"border-parity-3"));
 
-        let stacked = deployment_treatments_with_forced_live(&["border-parity-2", "border-parity"]);
-        assert!(stacked.contains(&"border-parity"));
-        assert!(!stacked.contains(&"border-parity-2"));
-        assert!(!stacked.contains(&"border-parity-3"));
+        // Stacked, the last forced arm the ledger holds off wins: a forced arm
+        // the deployment already ships is no override. Which arms are held is
+        // re-decided by every published batch, so read it from the ledger.
+        let order = ["border-parity-2", "border-parity"];
+        let stacked = deployment_treatments_with_forced_live(&order);
+        let winner = order
+            .iter()
+            .rev()
+            .copied()
+            .find(|tag| super::ledger_held_live_treatment(tag) || super::ledger_held_opt_in(tag))
+            .expect("at most one parity version ships, so a forced arm is held");
+        for tag in ["border-parity", "border-parity-2", "border-parity-3"] {
+            assert_eq!(
+                stacked.contains(&tag),
+                tag == winner,
+                "{tag} with {winner} winning"
+            );
+        }
     }
 
     #[test]
