@@ -47,7 +47,30 @@ Twelve focused controls cover the two baseline cases, the actual research
 picker and observed-turn production caller, visibility and power limits,
 unit classes, diplomatic exclusions, separate city memories, stale/future
 sightings, the original capital, invested Walls and nearly finished Settlers.
-All targets compile, but these controls, full validation, firing evidence and
-native execution remain pending. The existing deployment rules, all 141
-selected genes, their retained-selection rationale and the compute-cost
-record remain byte-identical. No survival benefit is claimed.
+Exact integrated source `89d1f01bb` passes all fifteen focused tests: twelve
+frontier controls and three original-capital controls. Its full local suite
+passes 6,080 tests with `RUST_TEST_THREADS=1`, 51 existing library ignores and
+four ignored documentation examples. Source hashes remain unchanged. The
+first parallel run passed 5,742 library tests and failed the unchanged restart
+timing control at 55.8 ms against its 50 ms limit; that control passed alone
+before the successful full serial run. GitHub `38787949153` independently
+passes all 6,080 Rust tests; the job then fails only the missing firing-evidence
+gate, which the following recorded block addresses.
+
+The preregistered six-game firing screen, seeds `40630001..40630006`, completes
+all 36 seats on clean source `89d1f01bb`. Its binary SHA-256 is
+`dc1418d6721d3a1939c8c0f1166c791c8b90f43c8ff86c3b9c3187c8341c57d9`.
+The actual header reads six majors, 74x46 Continents, nine city-states, Online,
+250 turns, Emperor majors and Deity barbarians, with all victories. Only the
+frontier gene varies; the other 624 genome bits are identical. Fourteen seats
+draw it on and 22 off. The actual analyzer reports `~` (unresolved): win
+contrast +7.79 percentage points with 9.21 points standard error, and score
+share contrast +1.94 points with 1.47 points standard error. This satisfies the
+repository firing-evidence gate; it does not establish a strength gain and is
+not a native or paired-game result. The JSONL and analyzer output are committed
+under `docs/gene_screens/fires/2026-10-15-frontier-walls.*`.
+
+Native artifact validation, frozen order comparisons and execution remain
+pending. The existing deployment rules, all 141 selected genes, their
+retained-selection rationale and the compute-cost record remain byte-identical.
+No survival benefit is claimed.
