@@ -23,6 +23,19 @@ on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      native_source_sha:
+        description: "Optional exact SHA: build a native verification artifact without publishing"
+        required: false
+        default: ""
+      native_toolchain:
+        description: "Rust toolchain for the native artifact (match the verification host)"
+        required: false
+        default: "1.97.1"
+      native_tests:
+        description: "Native test filters as JSON, keyed by lib or civvis_orders"
+        required: false
+        default: '{"lib":["siege_train::muster_tests","find_the_capital::tests"]}'
 
 permissions:
   contents: write
@@ -33,6 +46,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.event_name != 'workflow_dispatch' || inputs.native_source_sha == ''
     name: ${{ matrix.asset }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
@@ -148,9 +162,59 @@ jobs:
           path: dist/*
           if-no-files-found: error
 
+  native-candidate:
+    if: github.event_name == 'workflow_dispatch' && inputs.native_source_sha != ''
+    runs-on: macos-15
+    timeout-minutes: 90
+    permissions:
+      contents: read
+    env:
+      NATIVE_SOURCE_SHA: ${{ inputs.native_source_sha }}
+      NATIVE_TESTS: ${{ inputs.native_tests }}
+      NATIVE_TOOLCHAIN: ${{ inputs.native_toolchain }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: automation
+          persist-credentials: false
+      - name: Validate the requested source identity
+        shell: bash
+        run: |
+          [[ "$NATIVE_SOURCE_SHA" =~ ^[0-9a-f]{40}$ ]] || exit 64
+          [[ "$NATIVE_TOOLCHAIN" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || exit 64
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.native_source_sha }}
+          path: source
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ inputs.native_toolchain }}
+      - uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+            ~/.cargo/git/db
+          key: native-registry-${{ inputs.native_toolchain }}-${{ hashFiles('source/Cargo.lock') }}
+      - name: Build and validate the fixed native candidate
+        run: |
+          python3 automation/tools/native_build_artifact.py build \
+            --repo "$GITHUB_WORKSPACE/source" \
+            --artifact "$GITHUB_WORKSPACE/native-artifact" \
+            --sha "$NATIVE_SOURCE_SHA" --tests "$NATIVE_TESTS" \
+            --toolchain "$NATIVE_TOOLCHAIN"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: native-arm64-${{ inputs.native_source_sha }}-${{ github.run_id }}
+          path: native-artifact/
+          if-no-files-found: error
+          retention-days: 7
+
   publish:
     needs: build
-    if: startsWith(github.ref, 'refs/tags/v')
+    if: startsWith(github.ref, 'refs/tags/v') && inputs.native_source_sha == ''
     runs-on: ubuntu-latest
     # Every other job in every workflow here declares one; this was the only
     # one left on the 360-minute default, and it is the job that uploads to a
