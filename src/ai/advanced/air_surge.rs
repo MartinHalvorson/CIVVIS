@@ -2756,3 +2756,6 @@ mod modernization_budget_tests;
 
 #[cfg(test)]
 mod front_hold_tests;
+
+#[cfg(test)]
+mod open_foothold_tests;
