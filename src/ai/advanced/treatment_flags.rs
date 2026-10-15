@@ -7893,6 +7893,17 @@ impl AdvancedAi {
         self.bankruptcy_exits_the_drain = false;
     }
 
+    /// Opt-in gene `neighborhood-houses-the-capped-city`; see
+    /// `advanced/neighborhood_houses_the_capped_city.rs`.
+    pub fn enable_neighborhood_houses_the_capped_city(&mut self) {
+        self.neighborhood_houses_the_capped_city = true;
+    }
+
+    /// The twin of `enable_neighborhood_houses_the_capped_city`.
+    pub fn disable_neighborhood_houses_the_capped_city(&mut self) {
+        self.neighborhood_houses_the_capped_city = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

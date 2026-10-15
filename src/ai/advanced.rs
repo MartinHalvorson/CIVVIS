@@ -7175,6 +7175,12 @@ pub struct AdvancedAi {
     /// wants least, never a production, Builder or Settler card. See
     /// `advanced/medina_quarter.rs`. Off by default.
     medina_quarter_houses_the_districts: bool,
+    /// `neighborhood-houses-the-capped-city`: after Urbanization, the most
+    /// housing-capped city with no Aqueduct left to claim puts its
+    /// best-housing Neighborhood at the head of its queue, one in flight per
+    /// five cities. See `advanced/neighborhood_houses_the_capped_city.rs`.
+    /// Off by default.
+    neighborhood_houses_the_capped_city: bool,
     /// `merchant-confederation-earns-its-slot`: the base deck's
     /// counterfactual reads the policy income paid to the player
     /// (`BasicAi::deck_reads_player_income`), and while our placed Envoys
@@ -9633,6 +9639,7 @@ mod industrial_zone_claims_the_factory;
 /// `advanced/industrial_zone_claims_the_producer_queue.rs`.
 mod industrial_zone_claims_the_producer_queue;
 mod launcher_war;
+mod neighborhood_houses_the_capped_city;
 mod peacetime_republic;
 mod science_denial_every_pad;
 mod science_denial_trains_spies;
@@ -10881,6 +10888,7 @@ impl AdvancedAi {
             industrial_zone_claims_the_factory: false,
             // ---- append: l-o ----------------------------------------
             medina_quarter_houses_the_districts: false,
+            neighborhood_houses_the_capped_city: false,
             merchant_confederation_earns_its_slot: false,
             open_city_draws_the_front: false,
             open_city_hold: None,
@@ -32072,7 +32080,10 @@ impl AdvancedAi {
             // while the city still stands at its housing.
             let capped_aqueduct_commitment = committed
                 .as_ref()
-                .is_some_and(|(_, item)| self.capped_aqueduct_holds(g, pid, cid, plan, item));
+                .is_some_and(|(_, item)| {
+                    self.capped_aqueduct_holds(g, pid, cid, plan, item)
+                        || self.capped_neighborhood_holds(g, pid, cid, plan, item)
+                });
             // `campus-building-claims-the-queue`: the claimed Campus building
             // finishes while the Campus still names it.
             let campus_building_commitment = committed
@@ -48859,6 +48870,10 @@ impl AdvancedAi {
             // and the routine claims. Exact no-op while the gene is off. See
             // `advanced/aqueduct_claims_the_capped_queue.rs`.
             self.claim_capped_aqueduct(g, pid, &plan);
+            // `neighborhood-houses-the-capped-city`: after the Aqueduct, the
+            // most capped city's Neighborhood. Exact no-op while the gene is
+            // off. See `advanced/neighborhood_houses_the_capped_city.rs`.
+            self.claim_capped_neighborhood(g, pid, &plan);
             // `industrial-zone-claims-the-producer-queue`: the producer step's
             // Industrial Zone or Workshop, after the Aqueduct and ahead of the
             // Prophet race and the routine claims. Exact no-op while the gene

@@ -4000,6 +4000,10 @@ pub const GENES: &[Gene] = &[
     // 10-14: the bankruptcy amenity drain (20-120) turned every city Unhappy
     // in 083713Z and 100910Z. See `advanced/solvency.rs`.
     Gene { tag: "bankruptcy-exits-the-drain", field: "bankruptcy_exits_the_drain", kind: Kind::OptIn, enable: AdvancedAi::enable_bankruptcy_exits_the_drain, disable: AdvancedAi::disable_bankruptcy_exits_the_drain },
+    // After Urbanization, the most housing-capped city with no Aqueduct left
+    // to claim puts its best-housing Neighborhood first, one in flight per
+    // five cities. See `advanced/neighborhood_houses_the_capped_city.rs`.
+    Gene { tag: "neighborhood-houses-the-capped-city", field: "neighborhood_houses_the_capped_city", kind: Kind::OptIn, enable: AdvancedAi::enable_neighborhood_houses_the_capped_city, disable: AdvancedAi::disable_neighborhood_houses_the_capped_city },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
