@@ -2814,3 +2814,6 @@ mod front_hold_tests;
 
 #[cfg(test)]
 mod open_foothold_tests;
+
+#[cfg(test)]
+mod air_base_range_tests;
