@@ -3446,9 +3446,8 @@ function applyHudWidgetMetrics(name, metrics, persist = false) {
   const next = clampHudWidget(config, metrics);
   const style = config.element.style;
   // A full-width widget leaves its sides to the stylesheet, which already
-  // knows every arrangement: the panel edge when the victory rail is hidden,
-  // the rail's inner edge when it stands beside the masthead, the whole band
-  // in the compact layouts. Only its top and height are the viewer's.
+  // knows every arrangement (the masthead runs to the panel edge and the
+  // victory rail stands under it). Only its top and height are the viewer's.
   if (config.fullWidth) {
     style.removeProperty("left"); style.removeProperty("right"); style.removeProperty("width");
   } else {
