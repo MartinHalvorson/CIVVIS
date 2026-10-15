@@ -19,6 +19,9 @@ impl AdvancedAi {
     /// scouts swept the generic nearest frontier. A native board has no such
     /// ground, so only the live seat follows a lead.
     pub(super) fn rival_lead_goal(&self, g: &Game, pid: usize, uid: u32) -> Option<Pos> {
+        if let Some(goal) = self.assigned_capital_scout_goal(g, pid, uid) {
+            return Some(goal);
+        }
         if g.unseen_major_borders.is_empty() {
             return None;
         }
@@ -53,6 +56,53 @@ impl AdvancedAi {
                 !explored.contains(pos) && !dead.contains(pos) && g.unit_can_traverse(uid, *pos)
             })
             .min_by_key(|pos| (g.wdist(origin, *pos), *pos))
+    }
+
+    /// Execute the Board's capital reconnaissance through the explorer's
+    /// existing routing and threat checks. A held generic frontier must not
+    /// consume the unit assigned to this named Domination objective.
+    fn assigned_capital_scout_goal(&self, g: &Game, pid: usize, uid: u32) -> Option<Pos> {
+        if !self.find_the_capital || !self.objective_board {
+            return None;
+        }
+        let force = self.objective_board_state.forces.iter().find(|force| {
+            matches!(
+                force.objective_key,
+                super::objective_board::ObjectiveKey::FindCapital(_)
+            ) && force.units.contains(&uid)
+        })?;
+        let super::objective_board::ObjectiveKey::FindCapital(rival) = force.objective_key else {
+            return None;
+        };
+        if !self.unfound_capital_rivals(g, pid).contains(&rival)
+            || !(g.is_at_war(pid, rival)
+                || g.players[rival]
+                    .open_borders_until
+                    .get(&pid)
+                    .is_some_and(|until| *until > g.turn))
+        {
+            return None;
+        }
+        let dead = self.base.explore_dead.borrow();
+        let usable = |pos: Pos| {
+            !g.players[pid].explored.contains(&pos)
+                && g.unit_can_traverse(uid, pos)
+                && !dead
+                    .get(&uid)
+                    .and_then(|goals| goals.get(&pos))
+                    .is_some_and(|expiry| *expiry > g.turn)
+        };
+        let goal = if usable(force.aimed_at) {
+            Some(force.aimed_at)
+        } else {
+            self.find_capital_goal(g, pid, rival)
+                .filter(|pos| usable(*pos))
+        }?;
+        think!(self.journal(), Military, Detail,
+            "{} {uid} has a capital reconnaissance assignment", g.units[&uid].kind;
+            "force #{} seeks {}'s original capital at unexplored {goal:?} through open ground",
+            force.id, g.players[rival].civ; goal);
+        Some(goal)
     }
 
     /// Existing civilian protection is honored; routine posts cannot recruit
