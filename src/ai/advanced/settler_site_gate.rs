@@ -150,8 +150,16 @@ impl AdvancedAi {
         if sites.is_empty() && g.players[pid].techs.contains(&crate::name!("shipbuilding")) {
             sites = self.settle_sites(g, pid, from, g.map.width + g.map.height);
         }
+        // `vetoed-site-sends-a-scout`: remember the good ones for a scout.
+        if self.vetoed_site_sends_a_scout {
+            for (site, worth) in sites.iter() {
+                if self.exhaustion_site_unpriceable(g, pid, *site).is_some() {
+                    self.note_vetoed_site(g, *site, *worth);
+                }
+            }
+        }
         sites.retain(|(site, _)| {
-            self.exhaustion_site_unpriceable(g, *site).is_none()
+            self.exhaustion_site_unpriceable(g, pid, *site).is_none()
                 && !Self::inside_rival_sphere(g, pid, *site)
         });
         let claimed: Vec<Pos> = self

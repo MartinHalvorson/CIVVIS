@@ -3965,6 +3965,12 @@ pub const GENES: &[Gene] = &[
     // until walled, captured or eight turns without progress. See
     // `advanced/open_city_front.rs`.
     Gene { tag: "open-city-draws-the-front", field: "open_city_draws_the_front", kind: Kind::OptIn, enable: AdvancedAi::enable_open_city_draws_the_front, disable: AdvancedAi::disable_open_city_draws_the_front },
+    // A settle site worth 90 or more that the Loyalty guard refuses for a
+    // rival border whose city may be hidden sends the nearest free Scout to
+    // the fog that could hide it (a land unit through a Board Recon row when
+    // no Scout is free); a vetoing plot whose surroundings are all explored no
+    // longer vetoes. See `advanced/vetoed_site_scout.rs`.
+    Gene { tag: "vetoed-site-sends-a-scout", field: "vetoed_site_sends_a_scout", kind: Kind::OptIn, enable: AdvancedAi::enable_vetoed_site_sends_a_scout, disable: AdvancedAi::disable_vetoed_site_sends_a_scout },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

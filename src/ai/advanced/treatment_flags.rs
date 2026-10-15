@@ -7839,6 +7839,17 @@ impl AdvancedAi {
         self.open_city_draws_the_front = false;
     }
 
+    /// Opt-in gene `vetoed-site-sends-a-scout`; see
+    /// `advanced/vetoed_site_scout.rs`.
+    pub fn enable_vetoed_site_sends_a_scout(&mut self) {
+        self.vetoed_site_sends_a_scout = true;
+    }
+
+    /// The twin of `enable_vetoed_site_sends_a_scout`.
+    pub fn disable_vetoed_site_sends_a_scout(&mut self) {
+        self.vetoed_site_sends_a_scout = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

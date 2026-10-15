@@ -154,7 +154,7 @@ impl AdvancedAi {
         pid: usize,
         site: Pos,
     ) -> Option<String> {
-        if let Some(why) = self.exhaustion_site_unpriceable(g, site) {
+        if let Some(why) = self.exhaustion_site_unpriceable(g, pid, site) {
             return Some(why.to_string());
         }
         Self::settle_site_forecast_revolt(g, pid, site)
@@ -190,8 +190,13 @@ impl AdvancedAi {
     /// the mirrored forecast cannot price. Keep this narrow host-only floor
     /// even when the broader, screen-negative `exhaustion-loyalty-guard` is off.
     /// Native boards have no `unseen_major_borders`, so their search is unchanged.
-    pub(super) fn exhaustion_site_unpriceable(&self, g: &Game, site: Pos) -> Option<&'static str> {
-        (self.frontier_loyalty && Self::beside_unresolved_major_border(g, site))
+    pub(super) fn exhaustion_site_unpriceable(
+        &self,
+        g: &Game,
+        pid: usize,
+        site: Pos,
+    ) -> Option<&'static str> {
+        (self.frontier_loyalty && self.unresolved_border_vetoes(g, pid, site))
             .then_some("a rival border within five tiles may hide the city that would press it")
     }
 
@@ -227,7 +232,15 @@ impl AdvancedAi {
     /// exhaustion gene or an explicit Science contract.
     fn set_aside_unpriceable_sites(&self, g: &Game, pid: usize, candidates: &mut Vec<(Pos, f64)>) {
         let before = candidates.len();
-        candidates.retain(|(pos, _)| self.exhaustion_site_unpriceable(g, *pos).is_none());
+        // `vetoed-site-sends-a-scout`: remember the good ones for a scout.
+        if self.vetoed_site_sends_a_scout {
+            for (pos, worth) in candidates.iter() {
+                if self.exhaustion_site_unpriceable(g, pid, *pos).is_some() {
+                    self.note_vetoed_site(g, *pos, *worth);
+                }
+            }
+        }
+        candidates.retain(|(pos, _)| self.exhaustion_site_unpriceable(g, pid, *pos).is_none());
         let unpriceable = before - candidates.len();
         if unpriceable > 0 {
             think!(self.journal(), Expansion, Detail,
@@ -478,7 +491,7 @@ impl AdvancedAi {
         self.settler_closest.remove(&uid);
         if self.early_settler_site_allowed(g, pid, uid, here)
             && g.can_found_city(uid)
-            && self.exhaustion_site_unpriceable(g, here).is_none()
+            && self.exhaustion_site_unpriceable(g, pid, here).is_none()
             && !((self.exhaustion_loyalty_guard || science_targeted)
                 && Self::inside_rival_sphere(g, pid, here))
             && self.exhaustion_site_revolt(g, pid, here).is_none()

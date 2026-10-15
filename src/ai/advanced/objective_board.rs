@@ -307,6 +307,9 @@ pub enum ObjectiveKey {
     /// `find-the-capital`: the hunt for a rival's unseen original capital,
     /// by the rival's seat.
     FindCapital(usize),
+    /// `vetoed-site-sends-a-scout`: the look behind a border that vetoes a
+    /// good settle site, by the site.
+    VetoedBorder(Pos),
     /// The leftovers.
     Reserve,
 }
@@ -1584,6 +1587,13 @@ impl AdvancedAi {
                 rows.push(row);
             }
         }
+        // `vetoed-site-sends-a-scout`: with no Scout free, a land unit looks
+        // behind the border that vetoes a good settle site.
+        if !arena {
+            if let Some(row) = self.vetoed_border_row(g, pid) {
+                rows.push(row);
+            }
+        }
         rows
     }
 
@@ -1876,6 +1886,9 @@ impl AdvancedAi {
                             && !(self.unseen_capital_is_unseen
                                 && !unit.siege
                                 && matches!(row.key, ObjectiveKey::FindCapital(_)))
+                            // `vetoed-site-sends-a-scout`: its row is only
+                            // raised with no Scout free, so a land body looks.
+                            && !(!unit.siege && matches!(row.key, ObjectiveKey::VetoedBorder(_)))
                         {
                             continue;
                         }

@@ -84,9 +84,26 @@ impl AdvancedAi {
         // other scouts, and routes around known threats. When no exploration
         // route remains, the ordinary fallback may use the idle unit.
         let before = g.units[&uid].pos;
-        // See `rival_lead_goal`: the lead becomes the explorer's held goal,
-        // so its routing, threat checks and dead-goal retirement still apply.
-        if let Some(goal) = self.rival_lead_goal(g, pid, uid) {
+        // `vetoed-site-sends-a-scout`: the free scout nearest the fog that may
+        // hide a city vetoing a good site goes to look first, on the same
+        // held goal. See `advanced/vetoed_site_scout.rs`.
+        if let Some((goal, site)) = self.vetoed_site_scout_goal(g, pid, uid) {
+            let fresh = self
+                .base
+                .explore_goal
+                .borrow()
+                .get(&uid)
+                .is_none_or(|(held, _)| *held != goal);
+            self.base
+                .explore_goal
+                .borrow_mut()
+                .insert(uid, (goal, g.turn));
+            if fresh {
+                think!(self.journal(), Military, Detail,
+                    "{} {uid} looks behind the border that vetoes {site:?}", g.units[&uid].kind;
+                    "a good site there is refused for a rival city that may be hidden; the scout heads for the fog at {goal:?} that would show it"; goal);
+            }
+        } else if let Some(goal) = self.rival_lead_goal(g, pid, uid) {
             let fresh = self
                 .base
                 .explore_goal

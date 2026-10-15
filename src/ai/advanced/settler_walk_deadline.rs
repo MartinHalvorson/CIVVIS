@@ -206,7 +206,7 @@ impl AdvancedAi {
                     && !self.settler_capture_scars.contains_key(pos)
                     && !self.settler_target_reserved_by_other(g, pid, uid, *pos)
                     && (*pos == here || g.route_step(uid, *pos, 0).is_some())
-                    && self.exhaustion_site_unpriceable(g, *pos).is_none()
+                    && self.exhaustion_site_unpriceable(g, pid, *pos).is_none()
                     && !(science_targeted && Self::inside_rival_sphere(g, pid, *pos))
                     && if loyalty_rate {
                         self.settle_site_loyalty_verdict(g, pid, *pos).is_none()

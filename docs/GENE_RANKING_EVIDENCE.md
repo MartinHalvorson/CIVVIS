@@ -505,6 +505,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `upkeep-reserve` | off (unmeasured) | Upgrade passes keep one and a half turns of the army's bill in the treasury instead of a flat 30 Gold at war. | 1 \| 1 |
 | `urban-planning-fills-the-slot` | off (unmeasured) | Opt-in gene `urban-planning-fills-the-slot`; see `AdvancedAi::urban_planning_fills_the_slot`. | 1 \| 1 |
 | `urgent-denial-needs-the-edge` | off (unmeasured) | Opt-in gene `urgent-denial-needs-the-edge`; see `AdvancedAi::urgent_denial_has_the_edge`. | 1 \| 1 |
+| `vetoed-site-sends-a-scout` | off (unmeasured) | Opt-in gene `vetoed-site-sends-a-scout`; see `advanced/vetoed_site_scout.rs`. | 1 \| 1 |
 | `victory-deadline-budget` | off (unmeasured) | Enable `victory-deadline-budget` for measurement. | 1 \| 1 |
 | `victory-portfolio` | off (unmeasured) | Preserve victory objectives across temporary expansion and war postures. | 1 \| 1 |
 | `wall-sortie-skips-the-encampment` | off (unmeasured) | Opt-in gene `wall-sortie-skips-the-encampment`; see `Self::wall_sortie_skips_the_encampment`. | 1 \| 1 |

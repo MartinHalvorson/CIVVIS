@@ -8840,6 +8840,12 @@ pub struct AdvancedAi {
     /// credit lost −0.553 pp at scale (#2464). Opt-in gene
     /// `wonder-adjacent-sites-2`; see `advanced/wonder_sites.rs`.
     wonder_adjacent_sites_2: bool,
+    /// `vetoed-site-sends-a-scout`: a good site refused for a rival city that
+    /// may be hidden beside it sends a scout to look, and the refusal ends
+    /// once that ground is explored. See `advanced/vetoed_site_scout.rs`.
+    vetoed_site_sends_a_scout: bool,
+    /// `vetoed-site-sends-a-scout`: the refused sites, by tile.
+    vetoed_sites: RefCell<BTreeMap<Pos, vetoed_site_scout::VetoedSite>>,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -9269,6 +9275,9 @@ mod faith_war_before_the_flip;
 
 /// `open-city-draws-the-front`: see `advanced/open_city_front.rs`.
 mod open_city_front;
+
+/// `vetoed-site-sends-a-scout`: see `advanced/vetoed_site_scout.rs`.
+mod vetoed_site_scout;
 
 mod denial_nearest_finish;
 mod denial_needs_a_road;
@@ -11092,6 +11101,8 @@ impl AdvancedAi {
             wonder_adjacent_sites_2: false,
             wounded_out_of_reach: false,
             wounded_out_of_reach_2: false,
+            vetoed_site_sends_a_scout: false,
+            vetoed_sites: RefCell::new(BTreeMap::new()),
         }
     }
 
@@ -39164,7 +39175,9 @@ impl AdvancedAi {
         // border whose nearest visible city sits on its fifth ownership ring
         // may instead belong to a nearer city we have not seen. It will press
         // the new city from turn one. See `UNRESOLVED_MAJOR_BORDER_RADIUS`.
-        if self.frontier_loyalty && Self::beside_unresolved_major_border(g, site) {
+        // `vetoed-site-sends-a-scout`: a plot whose surroundings are all
+        // explored no longer vetoes. See `advanced/vetoed_site_scout.rs`.
+        if self.frontier_loyalty && self.unresolved_border_vetoes(g, pid, site) {
             return Some(
                 "it lies within five tiles of a rival border whose city may be hidden \
                  — the forecast cannot price that Loyalty pressure"
@@ -39964,6 +39977,15 @@ impl AdvancedAi {
                 think!(self.journal(), Expansion, Detail,
                        "Settler refuses {pos:?} before walking there";
                        "{why}; the site is retired and the next best is asked"; pos);
+                // `vetoed-site-sends-a-scout`: a good site refused for a
+                // hidden rival city is remembered for a scout.
+                if self.vetoed_site_sends_a_scout
+                    && self.frontier_loyalty
+                    && self.unresolved_border_vetoes(g, pid, pos)
+                {
+                    let worth = self.settle_value(g, pid, pos);
+                    self.note_vetoed_site(g, pos, worth);
+                }
                 self.settler_dead_sites.entry(uid).or_default().insert(
                     pos,
                     g.turn + g.standard_duration(SETTLER_DEAD_SITE_AVOID_TURNS),
