@@ -39,5 +39,17 @@ The new library and transport controls cover the host bill, one fundable
 upgrade from a large obsolete army, disabled and other-victory cases,
 reservations, existing stock, invalid successors, cash limits, surplus
 barter, missing or hostile sellers, busy deals and last-copy protection.
-Validation is in progress. No native adoption, execution reach, win-rate
-improvement or highest-difficulty victory is established for this policy.
+CI ran all 5,929 Rust tests successfully, including all ten new library and
+transport regressions, with 51 existing tests skipped. Rust documentation
+examples retained four existing ignores. Rust quality and paired cost checks
+passed. The initial overall gate failed on stale evaluation metadata and a
+missing fires waiver; the metadata has been regenerated with all 141
+deployment tags and the operator selection note preserved. The 21 evaluation
+manifest, 17 fires-gate and 186 gene-tooling tests passed locally, as did
+`cargo check --locked --all-targets` and all 14 append-point controls.
+The required local `cargo test --profile ci --locked` is running.
+
+The fires waiver records that simulator `gene_screen` does not execute this
+CLI/native trade channel. No simulator null result is entered as proof that
+the policy fires. No native adoption, execution reach, win-rate improvement
+or highest-difficulty victory is established for this policy.
