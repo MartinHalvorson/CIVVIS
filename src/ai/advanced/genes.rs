@@ -3957,6 +3957,11 @@ pub const GENES: &[Gene] = &[
     // diplomatic cards while our Envoys pay ten Gold a turn. See
     // `merchant_confederation_pays` in `advanced.rs`.
     Gene { tag: "merchant-confederation-earns-its-slot", field: "merchant_confederation_earns_its_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_merchant_confederation_earns_its_slot, disable: AdvancedAi::disable_merchant_confederation_earns_its_slot },
+    // Version one of merchant-confederation-earns-its-slot, and while the
+    // card pays it takes a diplomatic seat from a card the portfolio ranks
+    // after it (Gunboat Diplomacy seated under Communism kept version one
+    // out). See `merchant_confederation_pays` in `advanced.rs`.
+    Gene { tag: "merchant-confederation-earns-its-slot-2", field: "merchant_confederation_earns_its_slot_2", kind: Kind::OptIn, enable: AdvancedAi::enable_merchant_confederation_earns_its_slot_2, disable: AdvancedAi::disable_merchant_confederation_earns_its_slot_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
