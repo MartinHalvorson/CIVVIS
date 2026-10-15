@@ -4994,6 +4994,7 @@ class RestartInPlaceTests(unittest.TestCase):
              patch.object(civ6_play.env, "game_pids", return_value=[4242]), \
              patch.object(civ6_play, "game_window", return_value=None), \
              patch.object(civ6_play, "maintain_game_focus") as focus, \
+             patch.object(civ6_play.restart_handoff, "restart_mode", return_value=4), \
              patch.object(civ6_play.time, "sleep"), \
              patch("sys.stdout"), patch("sys.stderr"):
             started = civ6_play.restart_in_place(tail, relayed.append, run_dir, args,
@@ -5018,7 +5019,7 @@ class RestartInPlaceTests(unittest.TestCase):
         ])
         self.assertTrue(started)
         ask.assert_called_once()
-        self.assertEqual(ask.call_args.args[1:], ("civvis-old", 1))
+        self.assertEqual(ask.call_args.args[1:], ("civvis-old", 4))
         self.assertEqual([e["kind"] for e in relayed],
                          ["autoclose_armed", "loaded", "seat"],
                          "only this run's records reach this run")
@@ -5062,7 +5063,9 @@ class RestartInPlaceTests(unittest.TestCase):
         self.assertLess(play.index("restart_handoff.claim(config, env.game_pids())"),
                         play.index("if handoff is None and not launcher.stop():"))
         self.assertIn("modinstall.install(config, drop_index=handoff is None)", play)
-        self.assertIn("restart=bool(request.get(\"restart\"))", play)
+        self.assertIn("restart=(bool(request.get(\"restart\"))\n"
+                      "                         and restart_handoff.restart_mode() != "
+                      "restart_handoff.MODE_OFF)", play)
         self.assertIn('if state.get("restart_parked") and env.game_pids():', play)
         self.assertIn("restart_handoff.write(args.tag, orders_db, config, env.game_pids())",
                       play)
