@@ -38,6 +38,7 @@ use std::sync::Arc;
 
 use serde::Deserialize;
 
+mod air_fog_targets;
 mod capital_identity;
 mod dedication_history;
 mod host_deaths;
