@@ -6926,6 +6926,50 @@ CivvisCitizenGrowth.pending = function(final)
 	return pending;
 end;
 
+-- Expansion2/UI/Additions/SettlerInfluenceIconManager.lua:103-112 displays
+-- Map.GetContinentPlotsLoyalty(). Expansion1_InGameText.xml:566 describes
+-- nearby-city influence, not total loyalty after governors and local bonuses.
+-- Diagnostic only: query the native UI value without selecting a unit or lens.
+CivvisSettlementLoyalty = function(pid, turn, frame, units)
+	local result = { turn = turn, frame = frame, available = false, plots = {} };
+	local hasSettler = false;
+	for _, unit in ipairs(units or {}) do
+		if unit.kind == "UNIT_SETTLER" then hasSettler = true; break; end
+	end
+	if not hasSettler then result.reason = "no_settler"; return result; end
+	if try(function() return Game.GetLocalPlayer(); end, -1) ~= pid then
+		result.reason = "not_local_player"; return result;
+	end
+	local values = try(function() return Map.GetContinentPlotsLoyalty(); end, nil);
+	if type(values) ~= "table" then
+		result.reason = "api_unavailable"; return result;
+	end
+	result.available, result.raw_count, result.invalid_count = true, 0, 0;
+	for key, value in pairs(values) do
+		result.raw_count = result.raw_count + 1;
+		local index, loyalty = tonumber(key), tonumber(value);
+		if index == nil or index < 0 or index >= math.huge or index % 1 ~= 0
+				or loyalty == nil or loyalty ~= loyalty or math.abs(loyalty) == math.huge then
+			result.invalid_count = result.invalid_count + 1;
+		else
+			local row = try(function()
+				local plot = Map.GetPlotByIndex(index);
+				local x, y = plot:GetX(), plot:GetY();
+				if type(x) ~= "number" or type(y) ~= "number" or x < 0 or y < 0
+						or x % 1 ~= 0 or y % 1 ~= 0 then return nil; end
+				if PlayersVisibility[pid]:IsRevealed(x, y) ~= true then return nil; end
+				return { x = x, y = y, loyalty = loyalty };
+			end, nil);
+			if row ~= nil then result.plots[#result.plots + 1] = row; end
+		end
+	end
+	table.sort(result.plots, function(a, b)
+		if a.y == b.y then return a.x < b.x; end
+		return a.y < b.y;
+	end);
+	return result;
+end
+
 local function exportState(player, pid, turn, frame, eventKind)
 	-- Keep export-only helpers inside this function: the main chunk is near
 	-- Lua's local-variable ceiling.
@@ -9483,6 +9527,9 @@ local function exportState(player, pid, turn, frame, eventKind)
         holyCityObservation.religion_created = religionCreated;
     end
 	CivvisExportClock.mark("government_religion_policies");
+	if eventKind == nil then
+		emit("settlement_loyalty", CivvisSettlementLoyalty(pid, turn, frame, units));
+	end
 	emit(eventKind or "state", {
 		turn = turn,
 		-- 0 for the turn's opening board; N for the Nth mid-turn combat frame
