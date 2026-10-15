@@ -3646,9 +3646,12 @@ mod tests {
         // their rivals' read as the stock role. Rows are the loader's
         // `Units`/`UnitReplaces`/`UnitUpgrades`/`Units_XP2.ResourceCost`
         // values; abilities beyond the stat line are not modelled.
+        // Moved again by the six shipped CanBuildOutsideTerritory flags:
+        // Fort, Airstrip, Roman Fort, Mountain Tunnel, Pa and Qhapaq Nan.
+        // The installed Gathering Storm audit agrees across all 29 tables.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:964ac50a10c94a96"
+            "fnv1a64:d05291ed7cbbe612"
         );
     }
 
