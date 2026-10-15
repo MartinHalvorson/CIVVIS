@@ -653,12 +653,14 @@ class _Harness:
 
         self.saved = {name: getattr(climb, name) for name in
                       ("LEDGER", "BLOCKED_BACKOFF_S", "teardown", "busy",
-                       "wake_steam", "outcome_of", "code_state", "RUN_ROOT")}
+                       "wake_steam", "outcome_of", "code_state", "RUN_ROOT",
+                       "check_attempt_decider")}
         climb.LEDGER = self.ledger
         climb.RUN_ROOT = self.runs
         climb.BLOCKED_BACKOFF_S = (0.0, 0.0, 0.0)   # the table, without the waiting
         climb.teardown = lambda *args, **kwargs: None
         climb.busy = lambda: None
+        climb.check_attempt_decider = lambda *args: True
         self.woke = []
         climb.wake_steam = lambda: self.woke.append(1)
 
@@ -777,6 +779,44 @@ class _Harness:
         rows = [json.loads(line) for line in
                 self.ledger.read_text().splitlines()] if self.ledger.exists() else []
         return code, rows
+
+class AttemptDeciderPreflightTests(_Harness, unittest.TestCase):
+    def setUp(self):
+        super().setUp()
+        for name in ("ensure_mirror", "ensure_popup_clear", "retire_stale_wedge_watchdog"):
+            patcher = mock.patch.object(climb, name)
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def test_requested_and_dealt_flags_are_checked_on_the_frozen_binary(self):
+        import civ6_preflight
+        climb.check_attempt_decider = self.saved["check_attempt_decider"]
+        with mock.patch.object(civ6_preflight, "check_decider") as checked, \
+             mock.patch.object(climb, "screen_words",
+                               return_value=["--civvis-without", "screen-row"]):
+            code, rows = self.climb_with(
+                [{"last_turn": 150}], attempts=1,
+                argv_extra=["--no-build", "--victory", "domination",
+                            "--with", "new-policy", "--with", "second-policy",
+                            "--without", "disabled-policy"])
+        self.assertEqual(1, code)
+        checked.assert_called_once()
+        binary = Path(checked.call_args.args[1])
+        self.assertNotEqual(self.orders_bin, binary)
+        self.assertEqual(self.orders_bin.read_bytes(), binary.read_bytes())
+        self.assertEqual({"with_": ["new-policy", "second-policy"],
+                          "without": ["disabled-policy", "screen-row"],
+                          "victory": "domination", "strategy": ""}, checked.call_args.kwargs)
+
+    def test_rejected_arm_never_starts_a_player_or_records_a_game(self):
+        climb.check_attempt_decider = lambda *args: False
+        with mock.patch.object(climb.subprocess, "Popen") as player:
+            code, rows = self.climb_with([], attempts=1, argv_extra=["--no-build"])
+        self.assertEqual(4, code)
+        self.assertEqual([], rows)
+        player.assert_not_called()
+        self.assertFalse(any(self.runs.glob("*/orders.sqlite")))
+
 
 class SavedGameDiagnostics(_Harness, unittest.TestCase):
     def setUp(self):

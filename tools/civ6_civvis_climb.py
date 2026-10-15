@@ -2291,6 +2291,28 @@ def play_command(args, tag: str, orders_db: Path, orders_bin: Path,
     )
 
 
+def check_attempt_decider(args, tag: str, binary: Path) -> bool:
+    """Probe the frozen executable with the arm this attempt will actually play.
+
+    A generic preflight accepted an older supplied binary that rejected four
+    requested treatments. The game started, every decision worker exited, and
+    no orders were applied. Check after rebuilding/freezing and before launch;
+    derive the arm from the player command so dealt screens are covered too.
+    """
+    import civ6_preflight
+
+    command = play_command(args, tag, RUN_ROOT / tag / "orders.sqlite", binary)
+
+    def values(flag):
+        return [command[i + 1] for i, word in enumerate(command) if word == flag]
+
+    report = civ6_preflight.Report()
+    civ6_preflight.check_decider(
+        report, str(binary), with_=values("--civvis-with"),
+        without=values("--civvis-without"), victory=args.victory, strategy=args.strategy)
+    return not report.failures
+
+
 def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, args,
                          started_at: float, latest=None, recent=None,
                          used_saves=None, stride_index: int | None = None) -> Path | None:
@@ -3154,6 +3176,10 @@ def main() -> int:
         # The bridge checkout and a supplied binary may be different trees.
         # Report the exact copied image that will drive every continuation.
         print(decider_provenance_line(attempt_bin), flush=True)
+        if not check_attempt_decider(args, tag, attempt_bin):
+            print("refusing to launch: the frozen decider rejected this attempt's arm",
+                  flush=True)
+            return 4
         print(f"\n=== attempt {attempt}/{args.attempts}  {tag}  code={code_rev} ===",
               flush=True)
         # The database path is as much part of a run as its event log.  SQLite
