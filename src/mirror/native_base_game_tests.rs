@@ -37,7 +37,7 @@ fn cold_and_warm_constructor_states_match_for_every_key_input() {
         (4, 20, 18, 71, 2),
         (4, 20, 16, 72, 2),
         (4, 20, 16, 71, 3),
-        (1, 0, -1, 73, 0),
+        (1, 20, 16, 73, 0),
     ] {
         let expected = uncached(players, width, height, seed, minors);
         let cold = native_base_game(players, width, height, seed, minors);
@@ -46,6 +46,27 @@ fn cold_and_warm_constructor_states_match_for_every_key_input() {
         assert_same(&warm, &expected);
         assert!(Arc::ptr_eq(&cold.rules, &warm.rules));
     }
+}
+
+#[test]
+fn unsupported_dimensions_preserve_the_uncached_constructor_failure() {
+    let expected = native_base_game(4, 20, 16, 78, 2);
+    let baseline = std::panic::catch_unwind(|| uncached(1, 0, -1, 73, 0));
+    let cached = std::panic::catch_unwind(|| native_base_game(1, 0, -1, 73, 0));
+    let message = |panic: Box<dyn std::any::Any + Send>| {
+        if let Some(message) = panic.downcast_ref::<String>() {
+            message.clone()
+        } else {
+            panic.downcast_ref::<&str>().unwrap().to_string()
+        }
+    };
+    assert_eq!(
+        message(baseline.err().unwrap()),
+        message(cached.err().unwrap())
+    );
+    // Unwinding the failed constructor must also release the cache borrow
+    // and leave the previous valid setup available without contamination.
+    assert_same(&native_base_game(4, 20, 16, 78, 2), &expected);
 }
 
 #[test]
