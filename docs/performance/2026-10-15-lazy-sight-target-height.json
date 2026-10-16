@@ -1,0 +1,1616 @@
+{
+  "recorded_at": "2026-10-16T01:59:16.464674+00:00",
+  "pr": 4069,
+  "conclusion": "UNRESOLVED; runtime change withdrawn; no speed gain claimed",
+  "acceptance": {
+    "all_reports_match": true,
+    "median_AB_negative": true,
+    "pooled_AB_negative": true,
+    "median_AB_exceeds_AA_absolute_median": false,
+    "median_AB_exceeds_AB_resolution": false
+  },
+  "registration": {
+    "registered_at": "2026-10-16T01:19:25.837560+00:00",
+    "before_candidate_edit_or_any_timing_outcome": true,
+    "pr": 4069,
+    "worktree": "/Users/martbot-mbp-m5-max-128/civvis-lazy-sight-target-height-d7a8",
+    "claim_head": "6fee5b42746d141b470858f85d56d5ab5e630dfd",
+    "main_parent": "3657b284c208fccef39db6ad3887e4cb7067adc0",
+    "baseline_game_sha256": "4c5aa9242e1d1800a2a6b89e951fb9551a515d8f1dca07feca3f8dffbe1cde68",
+    "hypothesis": "Adjacent and same-tile sight/strike rays return clear before using target height. Lazily calculate that height only after those existing early returns; preserve exact height and cover arithmetic on all actual corridors. No established speed gain.",
+    "profile_lead": "C164headlessplanet3sec sample reports tile_has_line_to23selfsamples. Code inspection shows sight_height_via and strike terrain height execute before unconditional adjacency return. Sample is a lead only, not representative Native cost proof.",
+    "profile": "ci",
+    "locked_dependencies": true,
+    "target_directory": "/Users/martbot-mbp-m5-max-128/civvis-lazy-sight-target-height-d7a8/target",
+    "jobs": 1,
+    "workload": {
+      "players": 6,
+      "width": 74,
+      "height": 46,
+      "map": "continents",
+      "shape": "flat",
+      "city_states": 9,
+      "speed": "online",
+      "turn_cap": 250
+    },
+    "aa": {
+      "seeds": [
+        40690901,
+        40690902,
+        40690903,
+        40690904
+      ],
+      "interleaves": 2,
+      "pairs": 8
+    },
+    "ab": {
+      "seeds": [
+        40690001,
+        40690002,
+        40690003,
+        40690004,
+        40690005,
+        40690006,
+        40690007,
+        40690008
+      ],
+      "interleaves": 2,
+      "pairs": 16
+    },
+    "ordering": "Officialspeedtoolalternateperseed/reverseonsecondinterleave. Immutablebaseline/candidate; allpairsretained, no outlierremoval/replacement/adaptiveextension.",
+    "acceptance": "Every fullterminalreport must match. Claim localflatCIprofilecost improvement only when median and pooledABnegative and absmedianABexceeds both absmedianAA and ABtoolresolution. Otherwise unresolved/no gain and withdraw runtimechange.",
+    "scope": "LocalflatCIprofileonly; notPlanet/release/Native/strategystrength. No globalpin,force,policy,performanceledger edit.",
+    "timing_waits_for": "Allownedcompilers/checks terminal. Recordambientcompilers/noisewithoutstoppinghealthyprocesses. IfNativeboundaryunblocks, preserveNativequeuepriority and recordanyoverlap."
+  },
+  "exact_timing_plan": {
+    "registered_at": "2026-10-16T01:19:25.837560+00:00",
+    "before_candidate_edit_or_any_timing_outcome": true,
+    "acceptance": "Every fullterminalreport must match. Claim localflatCIprofilecost improvement only when median and pooledABnegative and absmedianABexceeds both absmedianAA and ABtoolresolution. Otherwise unresolved/no gain and withdraw runtimechange.",
+    "aa_command": [
+      "python3",
+      "/Users/martbot-mbp-m5-max-128/civvis-lazy-sight-target-height-d7a8/tools/speed_ab.py",
+      "--baseline",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-14/performance-leads/lazy-sight-target-height/baseline-civvis",
+      "--candidate",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-14/performance-leads/lazy-sight-target-height/baseline-civvis",
+      "--seeds",
+      "40690901",
+      "--games",
+      "4",
+      "--interleaves",
+      "2",
+      "--players",
+      "6",
+      "--width",
+      "74",
+      "--height",
+      "46",
+      "--city-states",
+      "9",
+      "--turns",
+      "250",
+      "--speed",
+      "online",
+      "--map",
+      "continents",
+      "--shape",
+      "flat"
+    ],
+    "ab_command": [
+      "python3",
+      "/Users/martbot-mbp-m5-max-128/civvis-lazy-sight-target-height-d7a8/tools/speed_ab.py",
+      "--baseline",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-14/performance-leads/lazy-sight-target-height/baseline-civvis",
+      "--candidate",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-14/performance-leads/lazy-sight-target-height/candidate-civvis",
+      "--seeds",
+      "40690001",
+      "--games",
+      "8",
+      "--interleaves",
+      "2",
+      "--players",
+      "6",
+      "--width",
+      "74",
+      "--height",
+      "46",
+      "--city-states",
+      "9",
+      "--turns",
+      "250",
+      "--speed",
+      "online",
+      "--map",
+      "continents",
+      "--shape",
+      "flat"
+    ]
+  },
+  "measured_candidate": "77f04e97b8ee0d7e6c4fcf5abeef583f17375d2a",
+  "main_before_final_docs": "3657b284c208fccef39db6ad3887e4cb7067adc0",
+  "candidate_patch": "diff --git a/src/game.rs b/src/game.rs\nindex 300e94378..2aab2feb1 100644\n--- a/src/game.rs\n+++ b/src/game.rs\n@@ -24512,13 +24512,12 @@ impl Game {\n         viewer_height: i32,\n         see_through_woods: bool,\n     ) -> bool {\n-        let target_height = self.sight_height_via(heights, to);\n         self.tile_has_line_to(\n             heights,\n             from,\n             to,\n             viewer_height,\n-            target_height,\n+            |heights| self.sight_height_via(heights, to),\n             see_through_woods,\n         )\n     }\n@@ -24538,19 +24537,20 @@ impl Game {\n         see_through_woods: bool,\n     ) -> bool {\n         let mut heights = HeightField::none();\n-        // Read terrain directly instead of adding and removing the district\n-        // vantage, which repeats its lookup for every candidate ranged shot.\n-        let target_height = if let Some(tile) = self.map.get(to) {\n-            Self::terrain_sight_level(tile) + self.feature_sight_through(tile.feature.as_deref())\n-        } else {\n-            self.sight_height(to) - self.district_viewpoint_bonus(to)\n-        };\n         self.tile_has_line_to(\n             &mut heights,\n             from,\n             to,\n             viewer_height,\n-            target_height,\n+            |_| {\n+                // A strike target's terrain excludes the district vantage.\n+                if let Some(tile) = self.map.get(to) {\n+                    Self::terrain_sight_level(tile)\n+                        + self.feature_sight_through(tile.feature.as_deref())\n+                } else {\n+                    self.sight_height(to) - self.district_viewpoint_bonus(to)\n+                }\n+            },\n             see_through_woods,\n         )\n     }\n@@ -24561,7 +24561,7 @@ impl Game {\n         from: Pos,\n         to: Pos,\n         viewer_height: i32,\n-        target_height: i32,\n+        target_height: impl FnOnce(&mut HeightField) -> i32,\n         see_through_woods: bool,\n     ) -> bool {\n         let sphere = self.map.sphere().is_some();\n@@ -24574,6 +24574,7 @@ impl Game {\n             return true;\n         }\n         if sphere {\n+            let target_height = target_height(heights);\n             return self.arc_is_clear(\n                 heights,\n                 from,\n@@ -24587,6 +24588,9 @@ impl Game {\n         if distance == 0 || (wraps && distance == 1) {\n             return true;\n         }\n+        // Adjacent rays have no interior cover, so only an actual corridor\n+        // needs the target's height or an entry in the sweep's height cache.\n+        let target_height = target_height(heights);\n         [(1e-6, 1e-6, -2e-6), (-1e-6, -1e-6, 2e-6)]\n             .into_iter()\n             .any(|nudge| {\n",
+  "validation": {
+    "baseline-build": {
+      "source": "6fee5b42746d141b470858f85d56d5ab5e630dfd",
+      "command": [
+        "cargo",
+        "build",
+        "--profile",
+        "ci",
+        "--locked",
+        "--bin",
+        "civvis"
+      ],
+      "started_at": "2026-10-16T01:19:25.897991+00:00",
+      "finished_at": "2026-10-16T01:21:18.608869+00:00",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "binary_sha256": "e93c8bba386cf7a5d3027f89ebf5a28527e31b06e0ee247b7a2e90dd0bcb339c"
+    },
+    "candidate-build": {
+      "source": "77f04e97b8ee0d7e6c4fcf5abeef583f17375d2a",
+      "command": [
+        "cargo",
+        "build",
+        "--profile",
+        "ci",
+        "--locked",
+        "--bin",
+        "civvis"
+      ],
+      "started_at": "2026-10-16T01:22:45.296898+00:00",
+      "finished_at": "2026-10-16T01:24:04.147862+00:00",
+      "exit_code": 0,
+      "source_bytes_unchanged": true,
+      "binary_sha256": "11670d93feaf4ffb65f0400650dd8e1a780d6e95e6328eae1351976e5c4121ab"
+    },
+    "candidate-visibility": {
+      "source": "77f04e97b8ee0d7e6c4fcf5abeef583f17375d2a",
+      "command": [
+        "cargo",
+        "test",
+        "--profile",
+        "ci",
+        "--locked",
+        "--lib",
+        "visibility_tests"
+      ],
+      "started_at": "2026-10-16T01:24:04.203073+00:00",
+      "finished_at": "2026-10-16T01:28:16.091991+00:00",
+      "exit_code": 0,
+      "source_bytes_unchanged": true
+    },
+    "candidate-full-serial": {
+      "source": "77f04e97b8ee0d7e6c4fcf5abeef583f17375d2a",
+      "command": [
+        "cargo",
+        "test",
+        "--profile",
+        "ci",
+        "--locked",
+        "--no-fail-fast"
+      ],
+      "started_at": "2026-10-16T01:28:16.125415+00:00",
+      "finished_at": "2026-10-16T01:31:41.203931+00:00",
+      "exit_code": 0,
+      "source_bytes_unchanged": true
+    },
+    "candidate-all-targets": {
+      "source": "77f04e97b8ee0d7e6c4fcf5abeef583f17375d2a",
+      "command": [
+        "cargo",
+        "check",
+        "--profile",
+        "ci",
+        "--locked",
+        "--all-targets"
+      ],
+      "started_at": "2026-10-16T01:31:41.236941+00:00",
+      "finished_at": "2026-10-16T01:32:15.320916+00:00",
+      "exit_code": 0,
+      "source_bytes_unchanged": true
+    },
+    "candidate-rust-quality": {
+      "source": "77f04e97b8ee0d7e6c4fcf5abeef583f17375d2a",
+      "command": [
+        "python3",
+        "tools/rust_quality.py",
+        "--base",
+        "3657b284c208fccef39db6ad3887e4cb7067adc0",
+        "--head",
+        "77f04e97b8ee0d7e6c4fcf5abeef583f17375d2a"
+      ],
+      "started_at": "2026-10-16T01:32:15.354015+00:00",
+      "finished_at": "2026-10-16T01:33:10.982570+00:00",
+      "exit_code": 0,
+      "source_bytes_unchanged": true
+    }
+  },
+  "candidate_full_pass_count": 6106,
+  "aa": {
+    "pairs": [
+      {
+        "seed": 40690901,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 30.530405999999857,
+          "turns": 237
+        },
+        "candidate": {
+          "cpu": 30.36902800000007,
+          "turns": 237
+        },
+        "agree": true,
+        "delta_pct": -0.5285812445461143
+      },
+      {
+        "seed": 40690902,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 34.574821000000156,
+          "turns": 250
+        },
+        "candidate": {
+          "cpu": 34.32161199999996,
+          "turns": 250
+        },
+        "agree": true,
+        "delta_pct": -0.7323508630751765
+      },
+      {
+        "seed": 40690903,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 32.522854999999936,
+          "turns": 240
+        },
+        "candidate": {
+          "cpu": 32.49039599999992,
+          "turns": 240
+        },
+        "agree": true,
+        "delta_pct": -0.09980366114850024
+      },
+      {
+        "seed": 40690904,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 31.174777000000176,
+          "turns": 238
+        },
+        "candidate": {
+          "cpu": 30.682612999999947,
+          "turns": 238
+        },
+        "agree": true,
+        "delta_pct": -1.5787250057962856
+      },
+      {
+        "seed": 40690901,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 30.54951600000004,
+          "turns": 237
+        },
+        "candidate": {
+          "cpu": 30.45920100000012,
+          "turns": 237
+        },
+        "agree": true,
+        "delta_pct": -0.29563479827279593
+      },
+      {
+        "seed": 40690902,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 34.313071000000036,
+          "turns": 250
+        },
+        "candidate": {
+          "cpu": 34.3277879999996,
+          "turns": 250
+        },
+        "agree": true,
+        "delta_pct": 0.04289036093437163
+      },
+      {
+        "seed": 40690903,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 32.348447000000306,
+          "turns": 240
+        },
+        "candidate": {
+          "cpu": 32.33988799999997,
+          "turns": 240
+        },
+        "agree": true,
+        "delta_pct": -0.026458766321407333
+      },
+      {
+        "seed": 40690904,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 30.453049000000192,
+          "turns": 238
+        },
+        "candidate": {
+          "cpu": 30.434222999999747,
+          "turns": 238
+        },
+        "agree": true,
+        "delta_pct": -0.06181975407599429
+      }
+    ],
+    "deltas": [
+      -0.5285812445461143,
+      -0.7323508630751765,
+      -0.09980366114850024,
+      -1.5787250057962856,
+      -0.29563479827279593,
+      0.04289036093437163,
+      -0.026458766321407333,
+      -0.06181975407599429
+    ],
+    "median_pct": -0.1977192297106481,
+    "spread_pct": 0.646109445182857,
+    "range_pct": [
+      -1.5787250057962856,
+      0.04289036093437163
+    ],
+    "resolution_pct": 0.3386718829336368,
+    "totals": {
+      "baseline": 256.4669420000007,
+      "candidate": 255.42474899999934
+    },
+    "turns": {
+      "baseline": 1930,
+      "candidate": 1930
+    },
+    "per_turn": {
+      "baseline": 0.1328844259067361,
+      "candidate": 0.13234442953367842
+    },
+    "per_turn_change_pct": -0.40636543324999963,
+    "change_pct": -0.40636543325001273,
+    "length_change_pct": 0.0,
+    "mismatched": [],
+    "seeds": [
+      40690901,
+      40690902,
+      40690903,
+      40690904
+    ],
+    "interleaves": 2,
+    "load": {
+      "start": 16.2177734375,
+      "peak": 16.2177734375,
+      "end": 12.322265625
+    }
+  },
+  "ab": {
+    "pairs": [
+      {
+        "seed": 40690001,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 26.680793999999878,
+          "turns": 229
+        },
+        "candidate": {
+          "cpu": 27.28379700000005,
+          "turns": 229
+        },
+        "agree": true,
+        "delta_pct": 2.260063924634988
+      },
+      {
+        "seed": 40690002,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 28.541573999999855,
+          "turns": 228
+        },
+        "candidate": {
+          "cpu": 28.516591999999946,
+          "turns": 228
+        },
+        "agree": true,
+        "delta_pct": -0.08752845936215219
+      },
+      {
+        "seed": 40690003,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 29.59577100000024,
+          "turns": 239
+        },
+        "candidate": {
+          "cpu": 29.31200600000011,
+          "turns": 239
+        },
+        "agree": true,
+        "delta_pct": -0.9588025262127086
+      },
+      {
+        "seed": 40690004,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 12.990490999999565,
+          "turns": 154
+        },
+        "candidate": {
+          "cpu": 13.023113000000194,
+          "turns": 154
+        },
+        "agree": true,
+        "delta_pct": 0.2511221477358256
+      },
+      {
+        "seed": 40690005,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 19.306298999999854,
+          "turns": 188
+        },
+        "candidate": {
+          "cpu": 19.31492100000014,
+          "turns": 188
+        },
+        "agree": true,
+        "delta_pct": 0.04465899963679711
+      },
+      {
+        "seed": 40690006,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 32.19524799999999,
+          "turns": 250
+        },
+        "candidate": {
+          "cpu": 32.16443200000003,
+          "turns": 250
+        },
+        "agree": true,
+        "delta_pct": -0.09571598889364456
+      },
+      {
+        "seed": 40690007,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 41.773307000000386,
+          "turns": 250
+        },
+        "candidate": {
+          "cpu": 42.114032999999836,
+          "turns": 250
+        },
+        "agree": true,
+        "delta_pct": 0.8156548391044267
+      },
+      {
+        "seed": 40690008,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 35.673633999999765,
+          "turns": 250
+        },
+        "candidate": {
+          "cpu": 35.34482100000014,
+          "turns": 250
+        },
+        "agree": true,
+        "delta_pct": -0.9217255522653836
+      },
+      {
+        "seed": 40690001,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 26.8118529999997,
+          "turns": 229
+        },
+        "candidate": {
+          "cpu": 26.853857000000062,
+          "turns": 229
+        },
+        "agree": true,
+        "delta_pct": 0.15666205539900954
+      },
+      {
+        "seed": 40690002,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 28.699055000000044,
+          "turns": 228
+        },
+        "candidate": {
+          "cpu": 28.686097000000245,
+          "turns": 228
+        },
+        "agree": true,
+        "delta_pct": -0.04515131247282822
+      },
+      {
+        "seed": 40690003,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 29.34373699999969,
+          "turns": 239
+        },
+        "candidate": {
+          "cpu": 29.377431000000342,
+          "turns": 239
+        },
+        "agree": true,
+        "delta_pct": 0.11482518399292624
+      },
+      {
+        "seed": 40690004,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 13.534704000000147,
+          "turns": 154
+        },
+        "candidate": {
+          "cpu": 12.975530999999592,
+          "turns": 154
+        },
+        "agree": true,
+        "delta_pct": -4.131401765421309
+      },
+      {
+        "seed": 40690005,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 19.3705030000001,
+          "turns": 188
+        },
+        "candidate": {
+          "cpu": 19.279383000000053,
+          "turns": 188
+        },
+        "agree": true,
+        "delta_pct": -0.4704059569338197
+      },
+      {
+        "seed": 40690006,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 32.25428099999999,
+          "turns": 250
+        },
+        "candidate": {
+          "cpu": 32.251852999999755,
+          "turns": 250
+        },
+        "agree": true,
+        "delta_pct": -0.007527682915128965
+      },
+      {
+        "seed": 40690007,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 41.408882000000176,
+          "turns": 250
+        },
+        "candidate": {
+          "cpu": 41.43889300000001,
+          "turns": 250
+        },
+        "agree": true,
+        "delta_pct": 0.07247478934550756
+      },
+      {
+        "seed": 40690008,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 35.43513500000017,
+          "turns": 250
+        },
+        "candidate": {
+          "cpu": 35.2743089999999,
+          "turns": 250
+        },
+        "agree": true,
+        "delta_pct": -0.45386027173389526
+      }
+    ],
+    "deltas": [
+      2.260063924634988,
+      -0.08752845936215219,
+      -0.9588025262127086,
+      0.2511221477358256,
+      0.04465899963679711,
+      -0.09571598889364456,
+      0.8156548391044267,
+      -0.9217255522653836,
+      0.15666205539900954,
+      -0.04515131247282822,
+      0.11482518399292624,
+      -4.131401765421309,
+      -0.4704059569338197,
+      -0.007527682915128965,
+      0.07247478934550756,
+      -0.45386027173389526
+    ],
+    "median_pct": -0.026339497693978593,
+    "spread_pct": 0.6124723731813273,
+    "range_pct": [
+      -4.131401765421309,
+      2.260063924634988
+    ],
+    "resolution_pct": 0.2270097750857403,
+    "totals": {
+      "baseline": 453.61526799999956,
+      "candidate": 453.2110690000004
+    },
+    "turns": {
+      "baseline": 3576,
+      "candidate": 3576
+    },
+    "per_turn": {
+      "baseline": 0.12684990715883657,
+      "candidate": 0.12673687611856835
+    },
+    "per_turn_change_pct": -0.08910612770625503,
+    "change_pct": -0.08910612770625553,
+    "length_change_pct": 0.0,
+    "mismatched": [],
+    "seeds": [
+      40690001,
+      40690002,
+      40690003,
+      40690004,
+      40690005,
+      40690006,
+      40690007,
+      40690008
+    ],
+    "interleaves": 2,
+    "load": {
+      "start": 12.322265625,
+      "peak": 13.03466796875,
+      "end": 12.7568359375
+    }
+  },
+  "ambient_build_observations": [
+    {
+      "at": "2026-10-16T01:33:40.132262+00:00",
+      "progress": null,
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:33:55.176973+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 1,
+        "last_seed": 40690901,
+        "observed_at": "2026-10-16T01:33:41.975130+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:34:10.222943+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 1,
+        "last_seed": 40690901,
+        "observed_at": "2026-10-16T01:33:41.975130+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:34:25.266540+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 2,
+        "last_seed": 40690901,
+        "observed_at": "2026-10-16T01:34:12.640348+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:34:40.309542+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 2,
+        "last_seed": 40690901,
+        "observed_at": "2026-10-16T01:34:12.640348+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:34:55.351207+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 3,
+        "last_seed": 40690902,
+        "observed_at": "2026-10-16T01:34:47.368734+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:35:10.387740+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 3,
+        "last_seed": 40690902,
+        "observed_at": "2026-10-16T01:34:47.368734+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:35:25.429188+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 4,
+        "last_seed": 40690902,
+        "observed_at": "2026-10-16T01:35:21.842511+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:35:40.468319+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 4,
+        "last_seed": 40690902,
+        "observed_at": "2026-10-16T01:35:21.842511+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:35:55.506500+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 5,
+        "last_seed": 40690903,
+        "observed_at": "2026-10-16T01:35:54.464325+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:36:10.548595+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 5,
+        "last_seed": 40690903,
+        "observed_at": "2026-10-16T01:35:54.464325+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:36:25.587873+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 5,
+        "last_seed": 40690903,
+        "observed_at": "2026-10-16T01:35:54.464325+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:36:40.630773+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 6,
+        "last_seed": 40690903,
+        "observed_at": "2026-10-16T01:36:27.124813+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:36:55.676827+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 6,
+        "last_seed": 40690903,
+        "observed_at": "2026-10-16T01:36:27.124813+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:37:10.718736+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 7,
+        "last_seed": 40690904,
+        "observed_at": "2026-10-16T01:36:58.494756+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:37:25.760724+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 7,
+        "last_seed": 40690904,
+        "observed_at": "2026-10-16T01:36:58.494756+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:37:40.799919+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 8,
+        "last_seed": 40690904,
+        "observed_at": "2026-10-16T01:37:29.303515+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:37:55.841728+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 8,
+        "last_seed": 40690904,
+        "observed_at": "2026-10-16T01:37:29.303515+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:38:10.882930+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 9,
+        "last_seed": 40690901,
+        "observed_at": "2026-10-16T01:37:59.973174+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:38:25.923389+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 9,
+        "last_seed": 40690901,
+        "observed_at": "2026-10-16T01:37:59.973174+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:38:40.963036+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 10,
+        "last_seed": 40690901,
+        "observed_at": "2026-10-16T01:38:30.560480+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:38:56.002799+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 10,
+        "last_seed": 40690901,
+        "observed_at": "2026-10-16T01:38:30.560480+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:39:11.042347+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 11,
+        "last_seed": 40690902,
+        "observed_at": "2026-10-16T01:39:05.032338+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:39:26.080207+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 11,
+        "last_seed": 40690902,
+        "observed_at": "2026-10-16T01:39:05.032338+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:39:41.121704+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 12,
+        "last_seed": 40690902,
+        "observed_at": "2026-10-16T01:39:39.488213+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:39:56.167738+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 12,
+        "last_seed": 40690902,
+        "observed_at": "2026-10-16T01:39:39.488213+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:40:11.212279+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 12,
+        "last_seed": 40690902,
+        "observed_at": "2026-10-16T01:39:39.488213+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:40:26.253724+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 13,
+        "last_seed": 40690903,
+        "observed_at": "2026-10-16T01:40:11.961315+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:40:41.295571+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 13,
+        "last_seed": 40690903,
+        "observed_at": "2026-10-16T01:40:11.961315+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:40:56.338122+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 14,
+        "last_seed": 40690903,
+        "observed_at": "2026-10-16T01:40:44.423242+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:41:11.380228+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 14,
+        "last_seed": 40690903,
+        "observed_at": "2026-10-16T01:40:44.423242+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:41:26.421502+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 15,
+        "last_seed": 40690904,
+        "observed_at": "2026-10-16T01:41:14.979450+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:41:41.460139+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 15,
+        "last_seed": 40690904,
+        "observed_at": "2026-10-16T01:41:14.979450+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:41:56.501182+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 16,
+        "last_seed": 40690904,
+        "observed_at": "2026-10-16T01:41:45.566418+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:42:11.542951+00:00",
+      "progress": {
+        "block": "aa",
+        "completed_arm_runs": 16,
+        "last_seed": 40690904,
+        "observed_at": "2026-10-16T01:41:45.566418+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:42:26.584117+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 1,
+        "last_seed": 40690001,
+        "observed_at": "2026-10-16T01:42:13.695833+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:42:41.627219+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 2,
+        "last_seed": 40690001,
+        "observed_at": "2026-10-16T01:42:40.537858+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:42:56.665962+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 2,
+        "last_seed": 40690001,
+        "observed_at": "2026-10-16T01:42:40.537858+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:43:11.706348+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 3,
+        "last_seed": 40690002,
+        "observed_at": "2026-10-16T01:43:09.196798+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:43:26.747987+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 3,
+        "last_seed": 40690002,
+        "observed_at": "2026-10-16T01:43:09.196798+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:43:41.787561+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 4,
+        "last_seed": 40690002,
+        "observed_at": "2026-10-16T01:43:37.829008+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:43:56.828567+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 4,
+        "last_seed": 40690002,
+        "observed_at": "2026-10-16T01:43:37.829008+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:44:11.868326+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 5,
+        "last_seed": 40690003,
+        "observed_at": "2026-10-16T01:44:07.251527+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:44:26.910365+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 5,
+        "last_seed": 40690003,
+        "observed_at": "2026-10-16T01:44:07.251527+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:44:41.950720+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 6,
+        "last_seed": 40690003,
+        "observed_at": "2026-10-16T01:44:36.965226+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:44:56.990948+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 7,
+        "last_seed": 40690004,
+        "observed_at": "2026-10-16T01:44:50.015912+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:45:12.031736+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 8,
+        "last_seed": 40690004,
+        "observed_at": "2026-10-16T01:45:03.109919+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:45:27.072160+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 9,
+        "last_seed": 40690005,
+        "observed_at": "2026-10-16T01:45:22.520349+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:45:42.116450+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 10,
+        "last_seed": 40690005,
+        "observed_at": "2026-10-16T01:45:41.913034+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:45:57.158183+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 10,
+        "last_seed": 40690005,
+        "observed_at": "2026-10-16T01:45:41.913034+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:46:12.200848+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 10,
+        "last_seed": 40690005,
+        "observed_at": "2026-10-16T01:45:41.913034+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:46:27.245286+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 11,
+        "last_seed": 40690006,
+        "observed_at": "2026-10-16T01:46:14.235812+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:46:42.287199+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 11,
+        "last_seed": 40690006,
+        "observed_at": "2026-10-16T01:46:14.235812+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:46:57.325986+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 12,
+        "last_seed": 40690006,
+        "observed_at": "2026-10-16T01:46:46.529551+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:47:12.367419+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 12,
+        "last_seed": 40690006,
+        "observed_at": "2026-10-16T01:46:46.529551+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:47:27.407735+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 12,
+        "last_seed": 40690006,
+        "observed_at": "2026-10-16T01:46:46.529551+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:47:42.446962+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 13,
+        "last_seed": 40690007,
+        "observed_at": "2026-10-16T01:47:28.871286+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:47:57.483681+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 13,
+        "last_seed": 40690007,
+        "observed_at": "2026-10-16T01:47:28.871286+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:48:12.525487+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 14,
+        "last_seed": 40690007,
+        "observed_at": "2026-10-16T01:48:10.868786+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:48:27.566903+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 14,
+        "last_seed": 40690007,
+        "observed_at": "2026-10-16T01:48:10.868786+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:48:42.608317+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 14,
+        "last_seed": 40690007,
+        "observed_at": "2026-10-16T01:48:10.868786+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:48:57.654196+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 15,
+        "last_seed": 40690008,
+        "observed_at": "2026-10-16T01:48:46.731191+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:49:12.695919+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 15,
+        "last_seed": 40690008,
+        "observed_at": "2026-10-16T01:48:46.731191+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:49:27.737370+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 16,
+        "last_seed": 40690008,
+        "observed_at": "2026-10-16T01:49:22.267815+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:49:42.779075+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 16,
+        "last_seed": 40690008,
+        "observed_at": "2026-10-16T01:49:22.267815+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:49:57.817917+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 17,
+        "last_seed": 40690001,
+        "observed_at": "2026-10-16T01:49:49.226132+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:50:12.861444+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 17,
+        "last_seed": 40690001,
+        "observed_at": "2026-10-16T01:49:49.226132+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:50:27.899733+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 18,
+        "last_seed": 40690001,
+        "observed_at": "2026-10-16T01:50:16.231788+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:50:42.943607+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 18,
+        "last_seed": 40690001,
+        "observed_at": "2026-10-16T01:50:16.231788+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:50:57.989040+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 19,
+        "last_seed": 40690002,
+        "observed_at": "2026-10-16T01:50:45.033762+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:51:13.029332+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 19,
+        "last_seed": 40690002,
+        "observed_at": "2026-10-16T01:50:45.033762+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:51:28.073901+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 20,
+        "last_seed": 40690002,
+        "observed_at": "2026-10-16T01:51:13.893580+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:51:43.115733+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 20,
+        "last_seed": 40690002,
+        "observed_at": "2026-10-16T01:51:13.893580+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:51:58.154016+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 21,
+        "last_seed": 40690003,
+        "observed_at": "2026-10-16T01:51:43.385447+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:52:13.196603+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 22,
+        "last_seed": 40690003,
+        "observed_at": "2026-10-16T01:52:12.916592+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:52:28.234220+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 23,
+        "last_seed": 40690004,
+        "observed_at": "2026-10-16T01:52:25.946209+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:52:43.275167+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 24,
+        "last_seed": 40690004,
+        "observed_at": "2026-10-16T01:52:39.592056+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:52:58.315690+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 24,
+        "last_seed": 40690004,
+        "observed_at": "2026-10-16T01:52:39.592056+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:53:13.352829+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 25,
+        "last_seed": 40690005,
+        "observed_at": "2026-10-16T01:52:59.056823+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:53:28.392336+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 26,
+        "last_seed": 40690005,
+        "observed_at": "2026-10-16T01:53:18.471485+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:53:43.433891+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 26,
+        "last_seed": 40690005,
+        "observed_at": "2026-10-16T01:53:18.471485+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:53:58.474619+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 27,
+        "last_seed": 40690006,
+        "observed_at": "2026-10-16T01:53:50.859310+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:54:13.519468+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 27,
+        "last_seed": 40690006,
+        "observed_at": "2026-10-16T01:53:50.859310+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:54:28.562816+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 28,
+        "last_seed": 40690006,
+        "observed_at": "2026-10-16T01:54:23.244605+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:54:43.601820+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 28,
+        "last_seed": 40690006,
+        "observed_at": "2026-10-16T01:54:23.244605+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:54:58.642632+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 28,
+        "last_seed": 40690006,
+        "observed_at": "2026-10-16T01:54:23.244605+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:55:13.683837+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 29,
+        "last_seed": 40690007,
+        "observed_at": "2026-10-16T01:55:04.827608+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:55:28.722044+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 29,
+        "last_seed": 40690007,
+        "observed_at": "2026-10-16T01:55:04.827608+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:55:43.764802+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 29,
+        "last_seed": 40690007,
+        "observed_at": "2026-10-16T01:55:04.827608+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:55:58.805790+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 30,
+        "last_seed": 40690007,
+        "observed_at": "2026-10-16T01:55:46.419504+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:56:13.847641+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 30,
+        "last_seed": 40690007,
+        "observed_at": "2026-10-16T01:55:46.419504+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:56:28.889930+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 31,
+        "last_seed": 40690008,
+        "observed_at": "2026-10-16T01:56:21.835127+00:00"
+      },
+      "compiler_processes": []
+    },
+    {
+      "at": "2026-10-16T01:56:43.930324+00:00",
+      "progress": {
+        "block": "ab",
+        "completed_arm_runs": 31,
+        "last_seed": 40690008,
+        "observed_at": "2026-10-16T01:56:21.835127+00:00"
+      },
+      "compiler_processes": []
+    }
+  ],
+  "concurrent_local_activity": {
+    "at": "2026-10-16T01:42:39.029189+00:00",
+    "kind": "concurrent_local_activity_disclosure",
+    "timing_block": "AA",
+    "activity": "Ran the other task's fourteen append-point controls during early AA; one initial failure followed by a corrected full14-pass run (about7s each). No owned Rust build/game/query run during timed block. Read-only git/metadata/hash checks and the waiting promotion-driver hash guards continued. All registered pairs retained; do not rerun/exclude any affected pair."
+  },
+  "final_runtime_equivalence": {
+    "main": "3657b284c208fccef39db6ad3887e4cb7067adc0",
+    "files_compared": 751,
+    "all_equal": true
+  },
+  "scope": "Fixed eight distinct AB workloads twice; local flat CI profile only. Every registered pair retained. No Native/release/strategy strength claim or adaptive extension."
+}
