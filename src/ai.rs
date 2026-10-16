@@ -34251,3 +34251,6 @@ mod civilian_pursuit_tests;
 
 #[cfg(test)]
 mod settlement_site_tests;
+
+#[cfg(test)]
+mod native_capital_landmass_tests;
