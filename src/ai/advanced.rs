@@ -49518,3 +49518,6 @@ mod native_settlement_pressure_forecast_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod native_domination_activation_tests;
