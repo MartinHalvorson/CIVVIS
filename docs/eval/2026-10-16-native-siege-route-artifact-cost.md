@@ -1,0 +1,28 @@
+# Land siege routing in the Native ARM64 artifact profile
+
+The candidate used **9.44% less child CPU** by median paired comparison (9.48% pooled) on the fixed captured workload in the Native ARM64 artifact profile. All six registered criteria passed.
+
+This is an independent profile comparison of an existing optimization. The source change and its earlier CI-profile result already existed before this study was registered. This study was registered before either Native-profile artifact build or any timing arm; it does not extend, replace or rescue the closed CI experiment.
+
+The baseline is `553822d9a74f82fffd8331c76c50b8f97bf6bf96`, whose production source matches `0cc28cc2f8609ea874b980a4be78ece92aceb3f0` with test-only support added. The candidate is `e593eb9cbeb20d2b4384e31a512f367b4bc2a13f`. Only the original land siege caller and predicate counterpart differ in runtime source. The original set router stays unchanged; non-land siege queries still use it. No new runtime edit, policy, gene, map, victory setting or Native cohort change occurs in this documentation task.
+
+Both binaries are built through the official ARM64 Native artifact workflow with Rust 1.97.1, `cargo --release --locked -j1`, 16 codegen units, LTO disabled and incremental compilation enabled. This is the **Native ARM64 artifact profile**, not the full production-tag release profile. Exact complete source manifests, compiler/profile settings, ARM64 headers, test selections and binary hashes are independently verified before local simulator/protocol smokes. Baseline and candidate builds run sequentially on the uniquely owned workflow ref; no healthy job is cancelled or restarted.
+
+Baseline workflow `38893602344` verified 2,692 complete source files and passed 235 selected test executions, followed by local 20-turn simulator and orders-protocol smokes. Candidate workflow `38897295560` verified 2,692 complete source files and passed 235 selected test executions, followed by local 20-turn simulator and orders-protocol smokes. The copied executables carry no embedded Git SHA. Their source identity is bound by the official complete-source artifact manifest, compiler/profile/test records and executable checksums; each measured arm also records its exact immutable source working directory. No game-attempt or snapshot provenance is fabricated. All tracked runtime inputs after main integration match the already measured candidate byte for byte; this PR adds only evidence. The frozen registration retains inherited withdrawruntime/CIprofile wording, clarified here by its explicit docs-only scope and Native-profile settings. No runtime withdrawal or new runtime edit is performed by this follow-up.
+
+The fixed study uses eight A/A and sixteen A/B pairs in two balanced reversed interleaves: 48 fresh persistent children and 1,968 requests. Each receives the same 41 increasing original opening prefixes, turns 160–200, from one historical **Emperor** world, `civvis-20261015T120650Z`. Both arms use `--serve --fresh-board --explain` and the same 283 flags: the unchanged global 282 plus `envoys-open-the-siege-road`. Each binary runs from its exact immutable source checkout, and each arm records that working directory.
+
+The metric is per-child user plus system CPU, including startup and child capture I/O. Parent input append, reconstruction and audits are excluded. Normal background services continue. Root performs only status/ambient reads, commentary and waits during timing. All 18 ambient samples are retained; 0 observed rustc and 0 observed an active owned Native cohort. Native games have priority at pair boundaries. All fixed arms are retained without replacement, filtering, extension or an outcome-based retry.
+
+Each complete response series must match the baseline series, excluding only top-level `input_capture` metadata. Every actual archive/index must reconstruct every exact registered original prefix. Acceptance additionally requires negative median and pooled A/B deltas, with absolute A/B median exceeding absolute A/A median and both A/A and A/B interquartile ranges.
+
+All 48 arms completed. Every arm's 41 full parsed responses match the baseline series, excluding only top-level input-capture metadata. A/A median -0.005125%, pooled -0.093477%, IQR 0.490840 percentage points. A/B median -9.443498%, pooled -9.478508%, IQR 0.593589 points. All six CPU criteria passed.
+
+This result covers local ARM64 Mac child CPU for one captured workload in this artifact profile. It establishes no fresh Native game, Deity win, overall game-speed improvement or strength gain. The prior CI percentage is not combined or multiplied with this result. All source/binary hashes, workflow records, complete artifact verification, tests, smokes, registrations, commands, raw responses and metric receipts, actual captured-input indexes, harnesses and ambient observations are retained. The existing committed original input is hash-checked and reused.
+
+- [Summary, artifact verification and independent audits](../performance/2026-10-16-native-siege-route-artifact-cost.json)
+- [Exact baseline-to-candidate runtime patch](../performance/2026-10-16-native-siege-route-artifact-cost.source-patches.json.gz)
+- [All 48 raw CPU receipts](../performance/2026-10-16-native-siege-route-artifact-cost.runs.jsonl.gz)
+- [All 1,968 raw responses](../performance/2026-10-16-native-siege-route-artifact-cost.responses.json.gz)
+- [All actual captured-input indexes](../performance/2026-10-16-native-siege-route-artifact-cost.capture-indexes.json.gz)
+- [Complete source manifests, workflow/test/smoke receipts, hashes, registration, harnesses and ambient observations](../performance/2026-10-16-native-siege-route-artifact-cost.provenance.json.gz)
