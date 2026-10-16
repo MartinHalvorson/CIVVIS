@@ -42,13 +42,17 @@ fn a_walled_campaign_promotes_the_first_gun_toward_shells() {
     let mut off = g.clone();
     on.advanced_promotions(&mut off, 0, GrandStrategy::Conquest);
     assert!(
-        off.units[&gun].promotions.contains("grape_shot"),
+        off.units[&gun]
+            .promotions
+            .contains(&crate::name!("grape_shot")),
         "actual old choice"
     );
     on.enable_siege_promotions_open_the_walls();
     on.enable_promote_when_wounded();
     on.advanced_promotions(&mut g, 0, GrandStrategy::Conquest);
-    assert!(g.units[&gun].promotions.contains("crew_weapons"));
+    assert!(g.units[&gun]
+        .promotions
+        .contains(&crate::name!("crew_weapons")));
     assert_eq!(
         g.players[0].counters.get("siege-promotions:walls"),
         Some(&1)
@@ -82,8 +86,10 @@ fn both_promotion_paths_are_compared_on_an_executed_city_shot() {
         game.apply(0, &Action::Ranged { unit: gun, target })
             .unwrap();
     }
-    assert!(off.units[&gun].promotions.contains("shrapnel"));
-    assert!(on.units[&gun].promotions.contains("shells"));
+    assert!(off.units[&gun]
+        .promotions
+        .contains(&crate::name!("shrapnel")));
+    assert!(on.units[&gun].promotions.contains(&crate::name!("shells")));
     assert!(
         on.cities[&cid].wall_hp < off.cities[&cid].wall_hp,
         "the legal Shells path must deal more actual wall damage"
@@ -196,6 +202,8 @@ fn a_legal_expert_crew_keeps_priority_and_does_not_count_as_a_changed_choice() {
     unit.xp = 90;
     ai.enable_siege_promotions_open_the_walls();
     ai.advanced_promotions(&mut g, 0, GrandStrategy::Conquest);
-    assert!(g.units[&gun].promotions.contains("expert_crew"));
+    assert!(g.units[&gun]
+        .promotions
+        .contains(&crate::name!("expert_crew")));
     assert_eq!(g.players[0].counters.get("siege-promotions:walls"), None);
 }

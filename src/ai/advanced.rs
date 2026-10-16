@@ -9473,6 +9473,7 @@ mod siege_production;
 /// — an enemy city to take, a city of ours to hold. Two opt-in genes; see
 /// `advanced/siege_train.rs`.
 mod siege_train;
+
 /// Choose siege promotions for the active campaign walls.
 mod siege_promotions_open_the_walls;
 
