@@ -709,6 +709,76 @@ fn state_line_can_match_turn(line: &str, turn: Option<u32>) -> bool {
         .is_none_or(|found| found == want)
 }
 
+/// Reject an old state's lexical turn hints before the unchanged exact
+/// classifier/header parser. Hints belong only to the raw log currently held
+/// by EventsRead; a retained older buffer uses the original path.
+fn state_line_can_match_turn_in_log(raw: &str, range: (usize, usize), turn: Option<u32>) -> bool {
+    let Some(want) = turn else {
+        return true;
+    };
+    let wanted = want.to_string();
+    let possible = EVENTS_READ.with(|cell| {
+        let mut slot = cell.borrow_mut();
+        let read = slot.as_mut()?;
+        if !std::ptr::eq(read.text.as_ptr(), raw.as_ptr()) || read.text.len() != raw.len() {
+            return None;
+        }
+        let hints = read
+            .turn_hints
+            .entry(range)
+            .or_insert_with(|| integer_turn_ranges(&raw[range.0..range.1], range.0));
+        Some(
+            hints.is_empty()
+                || hints
+                    .iter()
+                    .any(|&(start, end)| &raw.as_bytes()[start..end] == wanted.as_bytes()),
+        )
+    });
+    if possible == Some(false) {
+        return false;
+    }
+    state_line_can_match_turn(&raw[range.0..range.1], turn)
+}
+
+/// The digit ranges the existing turn_may_be_any scan treats as integer
+/// members. Keep its lexical rules exactly: nesting/duplicate keys are not
+/// interpreted, and ambiguous input still reaches the original parser.
+fn integer_turn_ranges(line: &str, base: usize) -> Vec<(usize, usize)> {
+    let bytes = line.as_bytes();
+    let key = "\"turn\"";
+    let finder = memchr::memmem::Finder::new(key.as_bytes());
+    let mut from = 0;
+    let mut out = Vec::new();
+    while let Some(offset) = finder.find(&bytes[from..]) {
+        let found = from + offset;
+        from = found + 1;
+        let mut at = found + key.len();
+        while at < bytes.len() && matches!(bytes[at], b' ' | b'\t' | b'\n' | b'\r') {
+            at += 1;
+        }
+        if at >= bytes.len() || bytes[at] != b':' {
+            continue;
+        }
+        at += 1;
+        while at < bytes.len() && matches!(bytes[at], b' ' | b'\t' | b'\n' | b'\r') {
+            at += 1;
+        }
+        let digits = bytes[at..]
+            .iter()
+            .take_while(|b| b.is_ascii_digit())
+            .count();
+        if digits == 0 {
+            continue;
+        }
+        let after = bytes.get(at + digits).copied();
+        if after.is_some_and(|b| matches!(b, b'.' | b'e' | b'E')) {
+            continue;
+        }
+        out.push((base + at, base + at + digits));
+    }
+    out
+}
+
 /// False only when `line` spells at least one integer `"turn"` member and none
 /// of them is `want`: a record that cannot be turn `want`'s board. True when
 /// the scan cannot tell (no integer `turn` anywhere), so the exact parse still
@@ -792,6 +862,9 @@ struct EventsRead {
     /// Per needle: the byte ranges of the lines that contain it, and how far
     /// into `text` they were looked for. Kept while the log only grows.
     hits: std::collections::HashMap<String, NeedleHits>,
+    /// Lexical digit offsets, keyed by the enclosing state-line range.
+    /// Prefix offsets survive append-only growth; a full read discards them.
+    turn_hints: std::collections::HashMap<(usize, usize), Vec<(usize, usize)>>,
 }
 
 struct NeedleHits {
@@ -851,15 +924,16 @@ fn read_events_uncaptured(path: &std::path::Path) -> std::io::Result<std::rc::Rc
                         let mut slot = cell.borrow_mut();
                         // The old text is a prefix of the new one, so every
                         // line found in it is still where it was.
-                        let (hits, generation) = slot
+                        let (hits, turn_hints, generation) = slot
                             .take()
-                            .map(|read| (read.hits, read.generation))
+                            .map(|read| (read.hits, read.turn_hints, read.generation))
                             .unwrap_or_default();
                         *slot = Some(EventsRead {
                             path: path.to_path_buf(),
                             text: grown.clone(),
                             generation,
                             hits,
+                            turn_hints,
                         })
                     });
                     return Ok(grown);
@@ -878,6 +952,7 @@ fn read_events_uncaptured(path: &std::path::Path) -> std::io::Result<std::rc::Rc
             text: text.clone(),
             generation,
             hits: Default::default(),
+            turn_hints: Default::default(),
         })
     });
     Ok(text)
@@ -1276,7 +1351,7 @@ fn latest_state_range(raw: &str, turn: Option<u32>) -> Option<((usize, usize), (
     let mut best: Option<(u32, (usize, usize), u32)> = None;
     for (start, end) in line_ranges_containing(raw, "\"state\"") {
         let line = &raw[start..end];
-        if !state_line_can_match_turn(line, turn) {
+        if !state_line_can_match_turn_in_log(raw, (start, end), turn) {
             continue;
         }
         let Ok(state) = state_from_json(line) else {
@@ -7193,7 +7268,7 @@ pub fn state_from_events(path: &std::path::Path, turn: Option<u32>) -> Option<St
                 }
             }
         }
-        if flags & STATE == 0 || !state_line_can_match_turn(line, turn) {
+        if flags & STATE == 0 || !state_line_can_match_turn_in_log(&raw, (start, end), turn) {
             continue;
         }
         let Ok(mut state) = state_from_json(line) else {
@@ -16252,3 +16327,6 @@ mod native_base_game_tests;
 
 #[cfg(test)]
 mod native_strike_scan_tests;
+
+#[cfg(test)]
+mod native_state_turn_hint_tests;
