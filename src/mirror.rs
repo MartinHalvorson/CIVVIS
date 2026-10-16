@@ -1364,6 +1364,58 @@ fn apply_finished_improvements(
     }
 }
 
+#[derive(Clone, Copy, PartialEq, Eq)]
+struct NativeBaseKey {
+    players: usize,
+    width: i32,
+    height: i32,
+    seed: u64,
+    city_states: usize,
+}
+
+thread_local! {
+    // Only the untouched constructor result is retained. Every observed board
+    // starts from its own clone, and a different setup replaces this one slot.
+    static NATIVE_BASE_GAME: std::cell::RefCell<Option<(NativeBaseKey, crate::game::Game)>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+fn native_base_game(
+    players: usize,
+    width: i32,
+    height: i32,
+    seed: u64,
+    city_states: usize,
+) -> crate::game::Game {
+    let key = NativeBaseKey {
+        players: players.max(2),
+        width: width.max(1),
+        height: height.max(1),
+        seed,
+        city_states,
+    };
+    NATIVE_BASE_GAME.with(|cached| {
+        let mut cached = cached.borrow_mut();
+        if let Some((previous, game)) = cached.as_ref() {
+            if *previous == key {
+                return game.clone();
+            }
+        }
+        let mut game = crate::game::Game::new(
+            key.players,
+            key.width,
+            key.height,
+            key.seed,
+            500,
+            key.city_states,
+        );
+        Arc::make_mut(&mut game.rules).enable_unknown_terrain();
+        let result = game.clone();
+        *cached = Some((key, game));
+        result
+    })
+}
+
 /// Rebuild a CIVVIS `Game` whose map is the ground this seat has actually seen.
 ///
 /// ⚠⚠ CIVILIZATION VI EXPORTS **OFFSET** COORDINATES; CIVVIS STORES **AXIAL**.
@@ -1399,11 +1451,7 @@ fn rebuild_game_with_city_states(
     seed: u64,
     city_states: usize,
 ) -> crate::game::Game {
-    use crate::game::Game;
-    let width = snapshot.width.max(1);
-    let height = snapshot.height.max(1);
-    let mut game = Game::new(players.max(2), width, height, seed, 500, city_states);
-    std::sync::Arc::make_mut(&mut game.rules).enable_unknown_terrain();
+    let mut game = native_base_game(players, snapshot.width, snapshot.height, seed, city_states);
 
     apply_terrain(&mut game, snapshot);
     game
@@ -16197,3 +16245,6 @@ mod defending_district_observation_tests;
 
 #[cfg(test)]
 mod improvement_owner_tests;
+
+#[cfg(test)]
+mod native_base_game_tests;
