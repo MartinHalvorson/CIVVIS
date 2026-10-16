@@ -48858,9 +48858,12 @@ impl AdvancedAi {
         // A targeted Science seat still expanding is the narrow exception:
         // do not open a new off-lane activation chain for the named low-impact
         // Scientist while it is short of the plan's city target.  Existing
-        // foundations remain resumable, and every other lane keeps the normal
-        // asset-preserving behavior.
+        // foundations remain resumable. The named Domination seat also keeps
+        // its existing exclusion of Spaceport production on this direct path.
+        let restore_space_race = self.base.exclude_space_race;
+        self.base.exclude_space_race = self.victory_target == Some(VictoryTarget::Domination);
         self.base.prioritize_live_great_person_activation(g, pid);
+        self.base.exclude_space_race = restore_space_race;
         // Native boards have no host need list, but the same blockers: a
         // Writer's points at the price with no open Writing slot pile up
         // forever while a non-Culture lane vetoes every slot building. See
@@ -48882,7 +48885,10 @@ impl AdvancedAi {
         // to utility planning. This also keeps the frozen baseline comparable.
         if self.base.book_pos < 4 {
             self.conquest_opening_production(g, pid, &plan);
+            let restore_space_race = self.base.exclude_space_race;
+            self.base.exclude_space_race = self.victory_target == Some(VictoryTarget::Domination);
             self.base.cities(g, pid);
+            self.base.exclude_space_race = restore_space_race;
         } else {
             if self.victory_planning {
                 // One guarded supply colony may be needed after ordinary
@@ -49518,3 +49524,6 @@ mod native_settlement_pressure_forecast_tests {
         }
     }
 }
+
+#[cfg(test)]
+mod native_domination_activation_tests;
