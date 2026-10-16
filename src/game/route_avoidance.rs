@@ -230,12 +230,22 @@ impl Game {
             return None;
         }
         let _memo = self.query_memo();
-        let mut seen = BTreeSet::new();
-        seen.insert(start);
+        // Dense flags are scratch for this search only. The fallback keeps
+        // the original membership behavior for an unindexable position.
+        let mut seen = vec![false; self.map.tiles.len()];
+        let mut unindexed_seen = BTreeSet::new();
+        if let Some(index) = self.map.tiles.index_of(start) {
+            seen[index] = true;
+        } else {
+            unindexed_seen.insert(start);
+        }
         let mut queue = VecDeque::from([(start, start)]);
         while let Some((current, first)) = queue.pop_front() {
             for next in self.nbrs(current) {
-                if seen.contains(&next) || blocked(next) {
+                let index = self.map.tiles.index_of(next);
+                let visited =
+                    index.map_or_else(|| unindexed_seen.contains(&next), |index| seen[index]);
+                if visited || blocked(next) {
                     continue;
                 }
                 let allowed = if current == start {
@@ -246,7 +256,11 @@ impl Game {
                 if !allowed {
                     continue;
                 }
-                seen.insert(next);
+                if let Some(index) = index {
+                    seen[index] = true;
+                } else {
+                    unindexed_seen.insert(next);
+                }
                 let first = if current == start { next } else { first };
                 if next == target {
                     return Some(first);
