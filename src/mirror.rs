@@ -16330,3 +16330,11 @@ mod native_strike_scan_tests;
 
 #[cfg(test)]
 mod native_state_turn_hint_tests;
+
+#[cfg(test)]
+fn combat_line_may_match_in_log(raw: &str, range: (usize, usize)) -> bool {
+    json_may_have_value(&raw[range.0..range.1], "\"kind\"", "\"combat\"")
+}
+
+#[cfg(test)]
+mod native_combat_kind_hint_tests;
