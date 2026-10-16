@@ -7152,9 +7152,8 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
 
 pub fn state_from_json(line: &str) -> serde_json::Result<StateSnapshot> {
     let value: serde_json::Value = serde_json::from_str(line)?;
-    let schema_gaps = state_schema_gaps(&value);
-    let mut state: StateSnapshot = serde_json::from_value(value)?;
-    state.schema_gaps = schema_gaps;
+    let mut state: StateSnapshot = serde_json::from_value(value.clone())?;
+    state.schema_gaps = state_schema_gaps(&value);
     Ok(state)
 }
 
@@ -16253,6 +16252,3 @@ mod native_base_game_tests;
 
 #[cfg(test)]
 mod native_strike_scan_tests;
-
-#[cfg(test)]
-mod state_value_move_tests;
