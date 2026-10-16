@@ -24512,12 +24512,13 @@ impl Game {
         viewer_height: i32,
         see_through_woods: bool,
     ) -> bool {
+        let target_height = self.sight_height_via(heights, to);
         self.tile_has_line_to(
             heights,
             from,
             to,
             viewer_height,
-            |heights| self.sight_height_via(heights, to),
+            target_height,
             see_through_woods,
         )
     }
@@ -24537,20 +24538,19 @@ impl Game {
         see_through_woods: bool,
     ) -> bool {
         let mut heights = HeightField::none();
+        // Read terrain directly instead of adding and removing the district
+        // vantage, which repeats its lookup for every candidate ranged shot.
+        let target_height = if let Some(tile) = self.map.get(to) {
+            Self::terrain_sight_level(tile) + self.feature_sight_through(tile.feature.as_deref())
+        } else {
+            self.sight_height(to) - self.district_viewpoint_bonus(to)
+        };
         self.tile_has_line_to(
             &mut heights,
             from,
             to,
             viewer_height,
-            |_| {
-                // A strike target's terrain excludes the district vantage.
-                if let Some(tile) = self.map.get(to) {
-                    Self::terrain_sight_level(tile)
-                        + self.feature_sight_through(tile.feature.as_deref())
-                } else {
-                    self.sight_height(to) - self.district_viewpoint_bonus(to)
-                }
-            },
+            target_height,
             see_through_woods,
         )
     }
@@ -24561,7 +24561,7 @@ impl Game {
         from: Pos,
         to: Pos,
         viewer_height: i32,
-        target_height: impl FnOnce(&mut HeightField) -> i32,
+        target_height: i32,
         see_through_woods: bool,
     ) -> bool {
         let sphere = self.map.sphere().is_some();
@@ -24574,7 +24574,6 @@ impl Game {
             return true;
         }
         if sphere {
-            let target_height = target_height(heights);
             return self.arc_is_clear(
                 heights,
                 from,
@@ -24588,9 +24587,6 @@ impl Game {
         if distance == 0 || (wraps && distance == 1) {
             return true;
         }
-        // Adjacent rays have no interior cover, so only an actual corridor
-        // needs the target's height or an entry in the sweep's height cache.
-        let target_height = target_height(heights);
         [(1e-6, 1e-6, -2e-6), (-1e-6, -1e-6, 2e-6)]
             .into_iter()
             .any(|nudge| {
