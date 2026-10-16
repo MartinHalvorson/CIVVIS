@@ -16252,3 +16252,6 @@ mod native_base_game_tests;
 
 #[cfg(test)]
 mod native_strike_scan_tests;
+
+#[cfg(test)]
+mod state_value_move_tests;
