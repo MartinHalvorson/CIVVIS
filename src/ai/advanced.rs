@@ -48885,7 +48885,10 @@ impl AdvancedAi {
         // to utility planning. This also keeps the frozen baseline comparable.
         if self.base.book_pos < 4 {
             self.conquest_opening_production(g, pid, &plan);
+            let restore_space_race = self.base.exclude_space_race;
+            self.base.exclude_space_race = self.victory_target == Some(VictoryTarget::Domination);
             self.base.cities(g, pid);
+            self.base.exclude_space_race = restore_space_race;
         } else {
             if self.victory_planning {
                 // One guarded supply colony may be needed after ordinary
