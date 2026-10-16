@@ -837,6 +837,14 @@ impl AdvancedAi {
         self.price_the_suzerainty = false;
     }
 
+    pub fn enable_envoys_open_the_siege_road(&mut self) {
+        self.envoys_open_the_siege_road = true;
+    }
+
+    pub fn disable_envoys_open_the_siege_road(&mut self) {
+        self.envoys_open_the_siege_road = false;
+    }
+
     /// Rebuild the recon arm when every scout is gone and unexplored ground
     /// remains to chart. Native tournament games leave this disabled so their
     /// recorded ladders stay comparable.

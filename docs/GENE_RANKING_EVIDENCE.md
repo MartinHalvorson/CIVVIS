@@ -294,6 +294,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `elimination-yields-to-a-launch` | off (unmeasured) | Opt-in gene `elimination-yields-to-a-launch`; see `AdvancedAi::elimination_yields_to_a_launch`. | 1 \| 1 |
 | `embassy-finds-the-capital` | off (unmeasured) | Opt-in gene `embassy-finds-the-capital`; see `AdvancedAi::embassy_finds_the_capital`. | 1 \| 1 |
 | `engineering-for-capped-fresh-water` | off (unmeasured) | Opt-in gene `engineering-for-capped-fresh-water`; see `advanced/engineering_for_capped_fresh_water.rs`. | 1 \| 1 |
+| `envoys-open-the-siege-road` | off (unmeasured) | Buy affordable city-state passage for a siege already held by its border. | 1 \| 1 |
 | `faith-counter-needs-the-edge` | off (unmeasured) | Opt-in gene `faith-counter-needs-the-edge`; see `AdvancedAi::faith_counter_has_the_edge`. | 1 \| 1 |
 | `faith-counter-waits-for-match-point` | off (unmeasured) | Opt-in gene `faith-counter-waits-for-match-point`; see `Self::faith_counter_waits_for_match_point`. | 1 \| 1 |
 | `faith-war-before-the-flip` | off (unmeasured) | Opt-in gene `faith-war-before-the-flip`; see `advanced/faith_war_before_the_flip.rs`. | — \| 2 |

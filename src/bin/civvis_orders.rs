@@ -4931,6 +4931,9 @@ fn decide(
         state.turn,
         host_order_refusals,
     ));
+    // The planner must not buy passage with placements the outbound cap
+    // will discard. Reapplied for every disposable decision board.
+    ai.set_envoy_order_budget(Some(ENVOY_ORDERS_PER_TURN));
     let (war_finishers, ai_actions_begin, air_assault_resumed) =
         air_assault_continuation.plan_frame(ai, &mut planned_game, state, &mirror_state.civ6_of);
     // Finishing attacks are translated explicitly below, including the reserve
@@ -19134,6 +19137,55 @@ mod tests {
             "{sent:?}"
         );
         assert_eq!(planned.players[0].envoys_free, 0);
+        // The real caller supplies its outbound budget before planning. With
+        // twenty held envoys, both the planned actions and translated orders
+        // must stop at eight; clipping only the latter invents influence.
+        let mut capped_state = state.clone();
+        capped_state.envoys_free = Some(20);
+        let mut capped = civvis::mirror::LiveMirror::new(&snapshot, &capped_state, 2, 2, 250, 0);
+        let mut bounded_ai = civvis::ai::AdvancedAi::new();
+        bounded_ai.enable_live_bridge();
+        bounded_ai.enable_envoys_open_the_siege_road();
+        bounded_ai.disable_envoy_building_dividends();
+        bounded_ai.disable_bank_envoys();
+        let mut ours = std::collections::BTreeMap::new();
+        let reply: serde_json::Value = serde_json::from_str(&decide(
+            &mut capped,
+            &mut bounded_ai,
+            &snapshot,
+            &capped_state,
+            default_decision_arm(),
+            DecisionMemory {
+                ours: &mut ours,
+                host_peace_retries: &mut HostPeaceRetries::default(),
+                host_move_refusals: &mut HostMoveRefusals::default(),
+                host_order_refusals: &mut HostOrderRefusals::default(),
+                air_assault_continuation: &mut air_assault_continuation::Continuation::default(),
+            },
+        ))
+        .expect("bounded decision is JSON");
+        assert_eq!(
+            reply["orders"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|order| order["kind"] == "envoy")
+                .count(),
+            ENVOY_ORDERS_PER_TURN
+        );
+        assert_eq!(
+            reply["decision"]["native_actions"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter(|action| action["type"] == "send_envoy")
+                .count(),
+            ENVOY_ORDERS_PER_TURN
+        );
+        assert_eq!(
+            capped.game.players[0].envoys_free, 20,
+            "the authoritative mirror is unchanged by planning"
+        );
     }
 
     /// The live planner may intentionally retain envoys after it has secured

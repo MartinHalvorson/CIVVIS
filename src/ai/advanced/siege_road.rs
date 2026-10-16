@@ -100,7 +100,7 @@ impl AdvancedAi {
         city: u32,
         march: &StageMarch,
     ) -> Option<String> {
-        if !self.siege_target_needs_a_road {
+        if !self.siege_target_needs_a_road && !self.envoys_open_the_siege_road {
             return None;
         }
         let tally = self.siege_road_tally.entry(city).or_default();
@@ -171,6 +171,58 @@ impl AdvancedAi {
             }
             _ => march,
         }
+    }
+
+    /// Fresh native boards assign new unit ids. Preserve only holds whose
+    /// actual host unit survived the adapter's explicit identity mapping.
+    pub(super) fn remap_envoy_road_units(&mut self, map: &BTreeMap<u32, u32>) {
+        if !self.envoys_open_the_siege_road {
+            return;
+        }
+        for tally in self.siege_road_tally.values_mut() {
+            tally.held = tally
+                .held
+                .iter()
+                .filter_map(|(uid, owner)| map.get(uid).map(|new| (*new, *owner)))
+                .collect();
+            tally.marched = tally
+                .marched
+                .iter()
+                .filter_map(|uid| map.get(uid).copied())
+                .collect();
+        }
+    }
+
+    /// Current or previous-turn Stage holds on an existing war's major city.
+    /// Recheck the live route and unit owner; a stale hold, dead unit or a
+    /// finished war cannot spend envoys on an unrelated border.
+    pub(super) fn siege_minor_passage_blockers(&self, g: &Game, pid: usize) -> BTreeSet<usize> {
+        self.siege_road_tally
+            .iter()
+            .filter_map(|(cid, tally)| {
+                let city = g.cities.get(cid)?;
+                let enemy = g.players.get(city.owner)?;
+                (tally.turn <= g.turn
+                    && g.turn - tally.turn <= 1
+                    && enemy.alive
+                    && !enemy.is_minor
+                    && !enemy.is_barbarian
+                    && g.is_at_war(pid, city.owner))
+                .then_some((city, tally))
+            })
+            .flat_map(|(city, tally)| {
+                tally.held.iter().filter_map(move |(uid, recorded)| {
+                    let owner = (*recorded)?;
+                    let minor = g.players.get(owner)?;
+                    (minor.alive
+                        && minor.is_minor
+                        && !minor.is_barbarian
+                        && g.units.get(uid).is_some_and(|unit| unit.owner == pid)
+                        && border_blocker(g, *uid, city.pos) == Some(owner))
+                    .then_some(owner)
+                })
+            })
+            .collect()
     }
 
     /// `siege-buys-the-passage`: the majors at peace with us whose closed
