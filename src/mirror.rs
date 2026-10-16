@@ -16248,3 +16248,6 @@ mod improvement_owner_tests;
 
 #[cfg(test)]
 mod native_base_game_tests;
+
+#[cfg(test)]
+mod native_strike_scan_tests;
