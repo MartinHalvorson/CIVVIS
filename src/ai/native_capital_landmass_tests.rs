@@ -89,15 +89,15 @@ fn capital_landmass_keeps_palace_preference_and_lowest_city_id_ties() {
     let a = g.found_city_for(0, first, None);
     let b = g.found_city_for(0, second, None);
     assert!(a < b, "fixture controls the lowest city id");
-    g.observed_city_palaces.insert(a, false);
-    g.observed_city_palaces.insert(b, false);
+    std::sync::Arc::make_mut(&mut g.observed_city_palaces).insert(a, false);
+    std::sync::Arc::make_mut(&mut g.observed_city_palaces).insert(b, false);
     let answer = compare(&g, 0);
     assert!(answer.contains(&first) && !answer.contains(&second));
-    g.observed_city_palaces.insert(b, true);
+    std::sync::Arc::make_mut(&mut g.observed_city_palaces).insert(b, true);
     assert!(g.city_has_palace(&g.cities[&b]));
     let answer = compare(&g, 0);
     assert!(answer.contains(&second) && !answer.contains(&first));
-    g.observed_city_palaces.insert(a, true);
+    std::sync::Arc::make_mut(&mut g.observed_city_palaces).insert(a, true);
     let answer = compare(&g, 0);
     assert!(answer.contains(&first) && !answer.contains(&second));
     assert!(
