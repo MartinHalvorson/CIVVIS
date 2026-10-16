@@ -131,44 +131,44 @@ fn dense_visit_start_target_zoc_and_ordinary_cache_gates_are_unchanged() {
 
 // Frozen pre-experiment predicate router; not a call into the new implementation.
 fn old_predicate_route(
-        g: &Game,
-        uid: u32,
-        target: Pos,
-        blocked: impl Fn(Pos) -> bool,
-    ) -> Option<Pos> {
-        let unit = g.units.get(&uid)?;
-        let start = unit.pos;
-        if start == target || blocked(target) || g.formation_movement_locked_by_zoc(uid) {
-            return None;
-        }
-        let access = g.unit_territory_access(unit);
-        if !g.can_path_through_neighbor(uid, target, &access) {
-            return None;
-        }
-        let _memo = g.query_memo();
-        let mut seen = BTreeSet::new();
-        seen.insert(start);
-        let mut queue = VecDeque::from([(start, start)]);
-        while let Some((current, first)) = queue.pop_front() {
-            for next in g.nbrs(current) {
-                if seen.contains(&next) || blocked(next) {
-                    continue;
-                }
-                let allowed = if current == start {
-                    g.can_enter_neighbor(uid, current, next)
-                } else {
-                    g.can_path_through_neighbor(uid, next, &access)
-                };
-                if !allowed {
-                    continue;
-                }
-                seen.insert(next);
-                let first = if current == start { next } else { first };
-                if next == target {
-                    return Some(first);
-                }
-                queue.push_back((next, first));
-            }
-        }
-        None
+    g: &Game,
+    uid: u32,
+    target: Pos,
+    blocked: impl Fn(Pos) -> bool,
+) -> Option<Pos> {
+    let unit = g.units.get(&uid)?;
+    let start = unit.pos;
+    if start == target || blocked(target) || g.formation_movement_locked_by_zoc(uid) {
+        return None;
     }
+    let access = g.unit_territory_access(unit);
+    if !g.can_path_through_neighbor(uid, target, &access) {
+        return None;
+    }
+    let _memo = g.query_memo();
+    let mut seen = BTreeSet::new();
+    seen.insert(start);
+    let mut queue = VecDeque::from([(start, start)]);
+    while let Some((current, first)) = queue.pop_front() {
+        for next in g.nbrs(current) {
+            if seen.contains(&next) || blocked(next) {
+                continue;
+            }
+            let allowed = if current == start {
+                g.can_enter_neighbor(uid, current, next)
+            } else {
+                g.can_path_through_neighbor(uid, next, &access)
+            };
+            if !allowed {
+                continue;
+            }
+            seen.insert(next);
+            let first = if current == start { next } else { first };
+            if next == target {
+                return Some(first);
+            }
+            queue.push_back((next, first));
+        }
+    }
+    None
+}
