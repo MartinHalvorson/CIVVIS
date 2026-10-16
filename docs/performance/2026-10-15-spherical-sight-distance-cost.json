@@ -1,0 +1,1063 @@
+{
+  "recorded_at": "2026-10-16T00:46:43.647822+00:00",
+  "decision": "UNRESOLVED; runtime patch withdrawn, evidence retained. No measured speed gain or strength claim.",
+  "preregistered": {
+    "registered_at": "2026-10-15T23:53:16.619523+00:00",
+    "pr": 4068,
+    "source": "/Users/martbot-mbp-m5-max-128/civvis-spherical-sight-distance-cost-fa40",
+    "claim_head": "4f2ca63428215aa8e7112b87a89d8e590f6180ab",
+    "main_parent": "2e21bd84b62e16054300625b937d35b784194eeb",
+    "hypothesis": "Reuse one spherical graph-distance query for adjacency and the arc step count; no change to visibility rays or cover rules. Profileleadonly, no establishedspeedgain.",
+    "baseline_game_sha256": "4c5aa9242e1d1800a2a6b89e951fb9551a515d8f1dca07feca3f8dffbe1cde68",
+    "profile": "ci",
+    "locked_dependencies": true,
+    "target_directory": "/Users/martbot-mbp-m5-max-128/civvis-spherical-sight-distance-cost-fa40/target",
+    "jobs": 1,
+    "workload": {
+      "players": 6,
+      "width": 74,
+      "height": 46,
+      "map": "continents",
+      "shape": "planet",
+      "city_states": 9,
+      "speed": "online",
+      "turn_cap": 250
+    },
+    "aa": {
+      "seeds": [
+        40680901,
+        40680902,
+        40680903,
+        40680904
+      ],
+      "interleaves": 2,
+      "pairs": 8
+    },
+    "ab": {
+      "seeds": [
+        40680001,
+        40680002,
+        40680003,
+        40680004,
+        40680005,
+        40680006,
+        40680007,
+        40680008
+      ],
+      "interleaves": 2,
+      "pairs": 16
+    },
+    "ordering": "Alternateperseedandreverseonsecondinterleave; baseline/candidatecopiedimmutable binaries, no replaced games/seeds/outliers.",
+    "timing_waits_for": "Envoyfinal-validation-driver54043terminalandnootherownedheavycompile; do notkillhealthywork. Captureload/noise.",
+    "scope": "LocalCI-profilecostonly; allreportsmustmatch; no Native strength or release-profile speedup claim. No globalperformanceledger/PIN/force/policychange."
+  },
+  "exact_preregistered_commands_and_acceptance": {
+    "registered_at": "2026-10-15T23:54:31.708860+00:00",
+    "before_candidate_edit_or_any_timing_outcome": true,
+    "original_plan": "preregistered.json",
+    "acceptance": "All terminal reports must match. Claim a local CPU improvement only if median and pooled AB changes are negative and absolute median exceeds both absolute AA median and AB tool resolution. Otherwise report unresolved/no speed gain, retain every registered pair, and do not adaptively extend the block.",
+    "aa_command": [
+      "python3",
+      "/Users/martbot-mbp-m5-max-128/civvis-spherical-sight-distance-cost-fa40/tools/speed_ab.py",
+      "--baseline",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-14/performance-leads/spherical-sight-distance-cost/baseline-civvis",
+      "--candidate",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-14/performance-leads/spherical-sight-distance-cost/baseline-civvis",
+      "--seeds",
+      "40680901",
+      "--games",
+      "4",
+      "--interleaves",
+      "2",
+      "--players",
+      "6",
+      "--width",
+      "74",
+      "--height",
+      "46",
+      "--city-states",
+      "9",
+      "--turns",
+      "250",
+      "--speed",
+      "online",
+      "--map",
+      "continents",
+      "--shape",
+      "planet"
+    ],
+    "ab_command": [
+      "python3",
+      "/Users/martbot-mbp-m5-max-128/civvis-spherical-sight-distance-cost-fa40/tools/speed_ab.py",
+      "--baseline",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-14/performance-leads/spherical-sight-distance-cost/baseline-civvis",
+      "--candidate",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-14/performance-leads/spherical-sight-distance-cost/candidate-civvis",
+      "--seeds",
+      "40680001",
+      "--games",
+      "8",
+      "--interleaves",
+      "2",
+      "--players",
+      "6",
+      "--width",
+      "74",
+      "--height",
+      "46",
+      "--city-states",
+      "9",
+      "--turns",
+      "250",
+      "--speed",
+      "online",
+      "--map",
+      "continents",
+      "--shape",
+      "planet"
+    ]
+  },
+  "source": {
+    "baseline": "4f2ca63428215aa8e7112b87a89d8e590f6180ab",
+    "baseline_production_equivalent_main": "2e21bd84b62e16054300625b937d35b784194eeb",
+    "candidate": "70a07bef0444dcb413dbf0bd5461e53e9c4e4823",
+    "candidate_runtime_patch": "diff --git a/src/game.rs b/src/game.rs\nindex 300e94378..d69b11666 100644\n--- a/src/game.rs\n+++ b/src/game.rs\n@@ -24422,13 +24422,17 @@ impl Game {\n         target_height: i32,\n         see_through_woods: bool,\n     ) -> bool {\n+        // One graph-distance query serves both adjacency and arc sampling.\n+        let steps = self.wdist(from, to).max(1);\n+        if steps <= 1 {\n+            return true;\n+        }\n         let Some(sphere) = self.map.sphere() else {\n             return true;\n         };\n         let (Some(start), Some(end)) = (sphere.center(from), sphere.center(to)) else {\n             return true;\n         };\n-        let steps = self.wdist(from, to).max(1);\n         let angle = start\n             .iter()\n             .zip(end)\n@@ -24567,12 +24571,8 @@ impl Game {\n         let sphere = self.map.sphere().is_some();\n         let wraps = self.map.topology.wraps_east_west();\n         // On a cylinder `unwrapped_toward` chooses the same minimum as\n-        // `wdist`; let its retained distance answer this fast path below.\n-        // A globe does not have a cube ray and an arena must keep its\n-        // non-wrapping distance, so both retain the original check.\n-        if (sphere || !wraps) && self.wdist(from, to) <= 1 {\n-            return true;\n-        }\n+        // `wdist`; let its retained distance answer the fast path below.\n+        // The spherical corridor retains its own distance for arc sampling.\n         if sphere {\n             return self.arc_is_clear(\n                 heights,\n@@ -24583,6 +24583,9 @@ impl Game {\n                 see_through_woods,\n             );\n         }\n+        if !wraps && self.wdist(from, to) <= 1 {\n+            return true;\n+        }\n         let (unwrapped, distance) = self.unwrapped_toward(from, to);\n         if distance == 0 || (wraps && distance == 1) {\n             return true;\n",
+    "runtime_after_withdrawal_matches_main": "371bada5a5cfffe9b160ef7b1590e46c33b70153",
+    "source_frozen_for_all_validation_and_timing": true
+  },
+  "builds": {
+    "baseline": {
+      "recorded_at": "2026-10-15T23:59:20.005788+00:00",
+      "source": "4f2ca63428215aa8e7112b87a89d8e590f6180ab",
+      "production_equivalent_main": "2e21bd84b62e16054300625b937d35b784194eeb",
+      "command": [
+        "cargo",
+        "build",
+        "--profile",
+        "ci",
+        "--locked",
+        "--bin",
+        "civvis"
+      ],
+      "exit_code": 0,
+      "source_unchanged_and_clean": true,
+      "binary_sha256": "ceab66a9cd83a9e326f6eaf010c4300508fb0ffe0ae80289f16d422467d57be9",
+      "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)"
+    },
+    "candidate": {
+      "source": "70a07bef0444dcb413dbf0bd5461e53e9c4e4823",
+      "command": [
+        "cargo",
+        "build",
+        "--profile",
+        "ci",
+        "--locked",
+        "--bin",
+        "civvis"
+      ],
+      "started_at": "2026-10-16T00:00:36.157116+00:00",
+      "finished_at": "2026-10-16T00:02:35.020370+00:00",
+      "exit_code": 0,
+      "source_bytes_unchanged": true,
+      "binary_sha256": "b8ada3d1c04b527e4bd3f0b33835b41a8bf2252440c04adbf727df9845aaca5c"
+    }
+  },
+  "validation": {
+    "candidate-visibility": {
+      "source": "70a07bef0444dcb413dbf0bd5461e53e9c4e4823",
+      "command": [
+        "cargo",
+        "test",
+        "--profile",
+        "ci",
+        "--locked",
+        "--lib",
+        "visibility_tests"
+      ],
+      "started_at": "2026-10-16T00:02:35.076188+00:00",
+      "finished_at": "2026-10-16T00:07:20.059909+00:00",
+      "exit_code": 0,
+      "source_bytes_unchanged": true
+    },
+    "candidate-full-serial": {
+      "source": "70a07bef0444dcb413dbf0bd5461e53e9c4e4823",
+      "command": [
+        "cargo",
+        "test",
+        "--profile",
+        "ci",
+        "--locked",
+        "--no-fail-fast"
+      ],
+      "started_at": "2026-10-16T00:07:20.095356+00:00",
+      "finished_at": "2026-10-16T00:10:31.272091+00:00",
+      "exit_code": 0,
+      "source_bytes_unchanged": true
+    },
+    "candidate-all-targets": {
+      "source": "70a07bef0444dcb413dbf0bd5461e53e9c4e4823",
+      "command": [
+        "cargo",
+        "check",
+        "--profile",
+        "ci",
+        "--locked",
+        "--all-targets"
+      ],
+      "started_at": "2026-10-16T00:10:31.304322+00:00",
+      "finished_at": "2026-10-16T00:11:11.714409+00:00",
+      "exit_code": 0,
+      "source_bytes_unchanged": true
+    }
+  },
+  "aa": {
+    "pairs": [
+      {
+        "seed": 40680901,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 34.45088400000009,
+          "turns": 224
+        },
+        "candidate": {
+          "cpu": 34.622625999999855,
+          "turns": 224
+        },
+        "agree": true,
+        "delta_pct": 0.4985126071068643
+      },
+      {
+        "seed": 40680902,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 39.84505200000012,
+          "turns": 243
+        },
+        "candidate": {
+          "cpu": 39.22500699999978,
+          "turns": 243
+        },
+        "agree": true,
+        "delta_pct": -1.5561405215391457
+      },
+      {
+        "seed": 40680903,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 39.96639099999993,
+          "turns": 250
+        },
+        "candidate": {
+          "cpu": 40.08949500000017,
+          "turns": 250
+        },
+        "agree": true,
+        "delta_pct": 0.308018805101121
+      },
+      {
+        "seed": 40680904,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 38.88993800000003,
+          "turns": 250
+        },
+        "candidate": {
+          "cpu": 39.231178,
+          "turns": 250
+        },
+        "agree": true,
+        "delta_pct": 0.8774506146036325
+      },
+      {
+        "seed": 40680901,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 35.28047400000014,
+          "turns": 224
+        },
+        "candidate": {
+          "cpu": 35.03742299999976,
+          "turns": 224
+        },
+        "agree": true,
+        "delta_pct": -0.6889108122537633
+      },
+      {
+        "seed": 40680902,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 39.65829900000017,
+          "turns": 243
+        },
+        "candidate": {
+          "cpu": 40.23584200000005,
+          "turns": 243
+        },
+        "agree": true,
+        "delta_pct": 1.4562979617453453
+      },
+      {
+        "seed": 40680903,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 40.65510899999981,
+          "turns": 250
+        },
+        "candidate": {
+          "cpu": 40.6749490000002,
+          "turns": 250
+        },
+        "agree": true,
+        "delta_pct": 0.04880075466131911
+      },
+      {
+        "seed": 40680904,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 39.243727000000035,
+          "turns": 250
+        },
+        "candidate": {
+          "cpu": 39.58576700000003,
+          "turns": 250
+        },
+        "agree": true,
+        "delta_pct": 0.8715787876110785
+      }
+    ],
+    "deltas": [
+      0.4985126071068643,
+      -1.5561405215391457,
+      0.308018805101121,
+      0.8774506146036325,
+      -0.6889108122537633,
+      1.4562979617453453,
+      0.04880075466131911,
+      0.8715787876110785
+    ],
+    "median_pct": 0.40326570610399265,
+    "spread_pct": 1.3804655783804867,
+    "range_pct": [
+      -1.5561405215391457,
+      1.4562979617453453
+    ],
+    "resolution_pct": 0.7236001272553384,
+    "totals": {
+      "baseline": 307.9898740000003,
+      "candidate": 308.70228699999984
+    },
+    "turns": {
+      "baseline": 1934,
+      "candidate": 1934
+    },
+    "per_turn": {
+      "baseline": 0.15925019338159271,
+      "candidate": 0.15961855584281273
+    },
+    "per_turn_change_pct": 0.23131052678683628,
+    "change_pct": 0.23131052678683653,
+    "length_change_pct": 0.0,
+    "mismatched": [],
+    "seeds": [
+      40680901,
+      40680902,
+      40680903,
+      40680904
+    ],
+    "interleaves": 2,
+    "load": {
+      "start": 13.9423828125,
+      "peak": 13.9423828125,
+      "end": 12.48583984375
+    }
+  },
+  "ab": {
+    "pairs": [
+      {
+        "seed": 40680001,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 38.880269000000226,
+          "turns": 250
+        },
+        "candidate": {
+          "cpu": 38.956228999999894,
+          "turns": 250
+        },
+        "agree": true,
+        "delta_pct": 0.19536901866513942
+      },
+      {
+        "seed": 40680002,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 43.78511500000013,
+          "turns": 250
+        },
+        "candidate": {
+          "cpu": 42.97760199999993,
+          "turns": 250
+        },
+        "agree": true,
+        "delta_pct": -1.844263741228485
+      },
+      {
+        "seed": 40680003,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 36.41729299999997,
+          "turns": 233
+        },
+        "candidate": {
+          "cpu": 36.40649600000006,
+          "turns": 233
+        },
+        "agree": true,
+        "delta_pct": -0.029648002667052756
+      },
+      {
+        "seed": 40680004,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 20.61105899999984,
+          "turns": 192
+        },
+        "candidate": {
+          "cpu": 20.548491000000013,
+          "turns": 192
+        },
+        "agree": true,
+        "delta_pct": -0.30356518798879073
+      },
+      {
+        "seed": 40680005,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 38.9220720000003,
+          "turns": 227
+        },
+        "candidate": {
+          "cpu": 38.92747999999983,
+          "turns": 227
+        },
+        "agree": true,
+        "delta_pct": 0.013894429873967766
+      },
+      {
+        "seed": 40680006,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 43.41027499999973,
+          "turns": 250
+        },
+        "candidate": {
+          "cpu": 44.10549800000035,
+          "turns": 250
+        },
+        "agree": true,
+        "delta_pct": 1.6015171523346272
+      },
+      {
+        "seed": 40680007,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 26.660933999999997,
+          "turns": 194
+        },
+        "candidate": {
+          "cpu": 26.563478999999916,
+          "turns": 194
+        },
+        "agree": true,
+        "delta_pct": -0.365534830850568
+      },
+      {
+        "seed": 40680008,
+        "interleave": 0,
+        "baseline": {
+          "cpu": 24.47210099999984,
+          "turns": 198
+        },
+        "candidate": {
+          "cpu": 24.52508200000011,
+          "turns": 198
+        },
+        "agree": true,
+        "delta_pct": 0.21649551054187602
+      },
+      {
+        "seed": 40680001,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 38.78096800000003,
+          "turns": 250
+        },
+        "candidate": {
+          "cpu": 38.49086899999975,
+          "turns": 250
+        },
+        "agree": true,
+        "delta_pct": -0.7480447625760124
+      },
+      {
+        "seed": 40680002,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 43.12050399999998,
+          "turns": 250
+        },
+        "candidate": {
+          "cpu": 42.912424999999985,
+          "turns": 250
+        },
+        "agree": true,
+        "delta_pct": -0.48255233751442234
+      },
+      {
+        "seed": 40680003,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 36.97122000000036,
+          "turns": 233
+        },
+        "candidate": {
+          "cpu": 36.163450999999895,
+          "turns": 233
+        },
+        "agree": true,
+        "delta_pct": -2.1848589254031983
+      },
+      {
+        "seed": 40680004,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 20.359272000000146,
+          "turns": 192
+        },
+        "candidate": {
+          "cpu": 20.39622899999995,
+          "turns": 192
+        },
+        "agree": true,
+        "delta_pct": 0.18152417237611343
+      },
+      {
+        "seed": 40680005,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 38.69283499999983,
+          "turns": 227
+        },
+        "candidate": {
+          "cpu": 38.709343999999874,
+          "turns": 227
+        },
+        "agree": true,
+        "delta_pct": 0.042666814153168316
+      },
+      {
+        "seed": 40680006,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 43.90740199999982,
+          "turns": 250
+        },
+        "candidate": {
+          "cpu": 43.59363900000017,
+          "turns": 250
+        },
+        "agree": true,
+        "delta_pct": -0.7146016063524985
+      },
+      {
+        "seed": 40680007,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 26.859522000000197,
+          "turns": 194
+        },
+        "candidate": {
+          "cpu": 26.678151999999955,
+          "turns": 194
+        },
+        "agree": true,
+        "delta_pct": -0.675254012339607
+      },
+      {
+        "seed": 40680008,
+        "interleave": 1,
+        "baseline": {
+          "cpu": 24.291733999999906,
+          "turns": 198
+        },
+        "candidate": {
+          "cpu": 24.774288999999953,
+          "turns": 198
+        },
+        "agree": true,
+        "delta_pct": 1.9864987818492
+      }
+    ],
+    "deltas": [
+      0.19536901866513942,
+      -1.844263741228485,
+      -0.029648002667052756,
+      -0.30356518798879073,
+      0.013894429873967766,
+      1.6015171523346272,
+      -0.365534830850568,
+      0.21649551054187602,
+      -0.7480447625760124,
+      -0.48255233751442234,
+      -2.1848589254031983,
+      0.18152417237611343,
+      0.042666814153168316,
+      -0.7146016063524985,
+      -0.675254012339607,
+      1.9864987818492
+    ],
+    "median_pct": -0.16660659532792174,
+    "spread_pct": 0.8966725149421585,
+    "range_pct": [
+      -2.1848589254031983,
+      1.9864987818492
+    ],
+    "resolution_pct": 0.33234711450784227,
+    "totals": {
+      "baseline": 546.1425750000003,
+      "candidate": 544.7287549999996
+    },
+    "turns": {
+      "baseline": 3588,
+      "candidate": 3588
+    },
+    "per_turn": {
+      "baseline": 0.15221364966555193,
+      "candidate": 0.15181960841694528
+    },
+    "per_turn_change_pct": -0.25887379316667414,
+    "change_pct": -0.2588737931666778,
+    "length_change_pct": 0.0,
+    "mismatched": [],
+    "seeds": [
+      40680001,
+      40680002,
+      40680003,
+      40680004,
+      40680005,
+      40680006,
+      40680007,
+      40680008
+    ],
+    "interleaves": 2,
+    "load": {
+      "start": 12.48583984375,
+      "peak": 13.69482421875,
+      "end": 12.189453125
+    }
+  },
+  "acceptance": {
+    "at": "2026-10-16T00:42:46.448388+00:00",
+    "preregistered_acceptance": "exact-timing-plan.json",
+    "criteria": {
+      "median_improves": true,
+      "pooled_improves": true,
+      "median_exceeds_absolute_aa_median": false,
+      "median_exceeds_ab_tool_resolution": false
+    },
+    "accepted_speed_gain": false,
+    "decision": "UNRESOLVED; withdraw own runtime patch, retain complete evidence; no adaptive extension or replacement.",
+    "aa_median_pct": 0.40326570610399265,
+    "aa_resolution_pct": 0.7236001272553384,
+    "ab_median_pct": -0.16660659532792174,
+    "ab_pooled_pct": -0.25887379316667414,
+    "ab_resolution_pct": 0.33234711450784227,
+    "all_reports_identical": true,
+    "aa_pairs": 8,
+    "ab_pairs": 16
+  },
+  "ambient": {
+    "notes": "Managed production compiler during latter AA/early AB; ordinary native UI recovery probes during AA. All pairs retained, no replacement or adaptive extension. Independent CPU comparisons are not isolated release-profile or Native performance measurements.",
+    "observer_started_during_aa": true,
+    "observations": 105,
+    "observations_with_compiler": 28,
+    "first_recorded_compiler_at": "2026-10-16T00:16:19.619700+00:00",
+    "last_recorded_compiler_at": "2026-10-16T00:23:05.758879+00:00",
+    "compiler_observations": [
+      {
+        "at": "2026-10-16T00:16:19.619700+00:00",
+        "progress": {
+          "block": "aa",
+          "completed_arm_runs": 7,
+          "last_seed": 40680904,
+          "observed_at": "2026-10-16T00:15:40.553067+00:00"
+        },
+        "compiler_processes": [
+          "2390  2361       00:08   0.0 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --release --bin civvis",
+          "2395  2390       00:08  98.6 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name civvis --edition=2021 src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C opt-level=3 -C linker-plugin-lto -C codegen-units=1 --check-cfg cfg(docsrs,test) --check-cfg cfg(feature, values(\"closed-experiments\", \"developer-tools\")) -C metadata=caf83e96a72873f3 -C extra-filename=-51ca323560db887b --out-dir /Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps -C strip=debuginfo -L dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps --extern libm=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/liblibm-ac6f273c535c226d.rmeta --extern memchr=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmemchr-3535734fde1cca2b.rmeta --extern mimalloc=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmimalloc-f73abaff7c671674.rmeta --extern serde=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde-fcee37254b4b6f1a.rmeta --extern serde_json=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde_json-ad47c0418c2ef49a.rmeta -L native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out"
+        ]
+      },
+      {
+        "at": "2026-10-16T00:16:34.659276+00:00",
+        "progress": {
+          "block": "aa",
+          "completed_arm_runs": 8,
+          "last_seed": 40680904,
+          "observed_at": "2026-10-16T00:16:19.965703+00:00"
+        },
+        "compiler_processes": [
+          "2390  2361       00:23   0.0 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --release --bin civvis",
+          "2395  2390       00:23  98.5 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name civvis --edition=2021 src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C opt-level=3 -C linker-plugin-lto -C codegen-units=1 --check-cfg cfg(docsrs,test) --check-cfg cfg(feature, values(\"closed-experiments\", \"developer-tools\")) -C metadata=caf83e96a72873f3 -C extra-filename=-51ca323560db887b --out-dir /Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps -C strip=debuginfo -L dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps --extern libm=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/liblibm-ac6f273c535c226d.rmeta --extern memchr=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmemchr-3535734fde1cca2b.rmeta --extern mimalloc=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmimalloc-f73abaff7c671674.rmeta --extern serde=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde-fcee37254b4b6f1a.rmeta --extern serde_json=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde_json-ad47c0418c2ef49a.rmeta -L native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out"
+        ]
+      },
+      {
+        "at": "2026-10-16T00:16:49.703700+00:00",
+        "progress": {
+          "block": "aa",
+          "completed_arm_runs": 8,
+          "last_seed": 40680904,
+          "observed_at": "2026-10-16T00:16:19.965703+00:00"
+        },
+        "compiler_processes": [
+          "2390  2361       00:38   0.0 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --release --bin civvis",
+          "2395  2390       00:38  97.6 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name civvis --edition=2021 src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C opt-level=3 -C linker-plugin-lto -C codegen-units=1 --check-cfg cfg(docsrs,test) --check-cfg cfg(feature, values(\"closed-experiments\", \"developer-tools\")) -C metadata=caf83e96a72873f3 -C extra-filename=-51ca323560db887b --out-dir /Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps -C strip=debuginfo -L dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps --extern libm=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/liblibm-ac6f273c535c226d.rmeta --extern memchr=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmemchr-3535734fde1cca2b.rmeta --extern mimalloc=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmimalloc-f73abaff7c671674.rmeta --extern serde=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde-fcee37254b4b6f1a.rmeta --extern serde_json=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde_json-ad47c0418c2ef49a.rmeta -L native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out"
+        ]
+      },
+      {
+        "at": "2026-10-16T00:17:04.746099+00:00",
+        "progress": {
+          "block": "aa",
+          "completed_arm_runs": 9,
+          "last_seed": 40680901,
+          "observed_at": "2026-10-16T00:16:55.398987+00:00"
+        },
+        "compiler_processes": [
+          "2390  2361       00:53   0.0 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --release --bin civvis",
+          "2395  2390       00:53  98.2 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name civvis --edition=2021 src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C opt-level=3 -C linker-plugin-lto -C codegen-units=1 --check-cfg cfg(docsrs,test) --check-cfg cfg(feature, values(\"closed-experiments\", \"developer-tools\")) -C metadata=caf83e96a72873f3 -C extra-filename=-51ca323560db887b --out-dir /Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps -C strip=debuginfo -L dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps --extern libm=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/liblibm-ac6f273c535c226d.rmeta --extern memchr=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmemchr-3535734fde1cca2b.rmeta --extern mimalloc=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmimalloc-f73abaff7c671674.rmeta --extern serde=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde-fcee37254b4b6f1a.rmeta --extern serde_json=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde_json-ad47c0418c2ef49a.rmeta -L native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out"
+        ]
+      },
+      {
+        "at": "2026-10-16T00:17:19.789231+00:00",
+        "progress": {
+          "block": "aa",
+          "completed_arm_runs": 9,
+          "last_seed": 40680901,
+          "observed_at": "2026-10-16T00:16:55.398987+00:00"
+        },
+        "compiler_processes": [
+          "2390  2361       01:08   0.0 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --release --bin civvis",
+          "2395  2390       01:08  98.2 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name civvis --edition=2021 src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C opt-level=3 -C linker-plugin-lto -C codegen-units=1 --check-cfg cfg(docsrs,test) --check-cfg cfg(feature, values(\"closed-experiments\", \"developer-tools\")) -C metadata=caf83e96a72873f3 -C extra-filename=-51ca323560db887b --out-dir /Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps -C strip=debuginfo -L dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps --extern libm=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/liblibm-ac6f273c535c226d.rmeta --extern memchr=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmemchr-3535734fde1cca2b.rmeta --extern mimalloc=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmimalloc-f73abaff7c671674.rmeta --extern serde=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde-fcee37254b4b6f1a.rmeta --extern serde_json=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde_json-ad47c0418c2ef49a.rmeta -L native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out"
+        ]
+      },
+      {
+        "at": "2026-10-16T00:17:34.829301+00:00",
+        "progress": {
+          "block": "aa",
+          "completed_arm_runs": 10,
+          "last_seed": 40680901,
+          "observed_at": "2026-10-16T00:17:30.592563+00:00"
+        },
+        "compiler_processes": [
+          "2390  2361       01:23   0.0 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --release --bin civvis",
+          "2395  2390       01:23  98.5 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name civvis --edition=2021 src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C opt-level=3 -C linker-plugin-lto -C codegen-units=1 --check-cfg cfg(docsrs,test) --check-cfg cfg(feature, values(\"closed-experiments\", \"developer-tools\")) -C metadata=caf83e96a72873f3 -C extra-filename=-51ca323560db887b --out-dir /Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps -C strip=debuginfo -L dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps --extern libm=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/liblibm-ac6f273c535c226d.rmeta --extern memchr=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmemchr-3535734fde1cca2b.rmeta --extern mimalloc=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmimalloc-f73abaff7c671674.rmeta --extern serde=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde-fcee37254b4b6f1a.rmeta --extern serde_json=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde_json-ad47c0418c2ef49a.rmeta -L native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out"
+        ]
+      },
+      {
+        "at": "2026-10-16T00:17:49.871074+00:00",
+        "progress": {
+          "block": "aa",
+          "completed_arm_runs": 10,
+          "last_seed": 40680901,
+          "observed_at": "2026-10-16T00:17:30.592563+00:00"
+        },
+        "compiler_processes": [
+          "2390  2361       01:38   0.0 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --release --bin civvis",
+          "2395  2390       01:38  98.5 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name civvis --edition=2021 src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C opt-level=3 -C linker-plugin-lto -C codegen-units=1 --check-cfg cfg(docsrs,test) --check-cfg cfg(feature, values(\"closed-experiments\", \"developer-tools\")) -C metadata=caf83e96a72873f3 -C extra-filename=-51ca323560db887b --out-dir /Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps -C strip=debuginfo -L dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps --extern libm=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/liblibm-ac6f273c535c226d.rmeta --extern memchr=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmemchr-3535734fde1cca2b.rmeta --extern mimalloc=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmimalloc-f73abaff7c671674.rmeta --extern serde=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde-fcee37254b4b6f1a.rmeta --extern serde_json=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde_json-ad47c0418c2ef49a.rmeta -L native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out"
+        ]
+      },
+      {
+        "at": "2026-10-16T00:18:04.916430+00:00",
+        "progress": {
+          "block": "aa",
+          "completed_arm_runs": 10,
+          "last_seed": 40680901,
+          "observed_at": "2026-10-16T00:17:30.592563+00:00"
+        },
+        "compiler_processes": [
+          "2390  2361       01:53   0.0 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --release --bin civvis",
+          "2395  2390       01:53  96.7 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name civvis --edition=2021 src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C opt-level=3 -C linker-plugin-lto -C codegen-units=1 --check-cfg cfg(docsrs,test) --check-cfg cfg(feature, values(\"closed-experiments\", \"developer-tools\")) -C metadata=caf83e96a72873f3 -C extra-filename=-51ca323560db887b --out-dir /Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps -C strip=debuginfo -L dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps --extern libm=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/liblibm-ac6f273c535c226d.rmeta --extern memchr=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmemchr-3535734fde1cca2b.rmeta --extern mimalloc=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmimalloc-f73abaff7c671674.rmeta --extern serde=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde-fcee37254b4b6f1a.rmeta --extern serde_json=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde_json-ad47c0418c2ef49a.rmeta -L native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out"
+        ]
+      },
+      {
+        "at": "2026-10-16T00:18:19.960649+00:00",
+        "progress": {
+          "block": "aa",
+          "completed_arm_runs": 11,
+          "last_seed": 40680902,
+          "observed_at": "2026-10-16T00:18:11.071228+00:00"
+        },
+        "compiler_processes": [
+          "2390  2361       02:08   0.0 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --release --bin civvis",
+          "2395  2390       02:08  98.4 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name civvis --edition=2021 src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C opt-level=3 -C linker-plugin-lto -C codegen-units=1 --check-cfg cfg(docsrs,test) --check-cfg cfg(feature, values(\"closed-experiments\", \"developer-tools\")) -C metadata=caf83e96a72873f3 -C extra-filename=-51ca323560db887b --out-dir /Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps -C strip=debuginfo -L dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps --extern libm=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/liblibm-ac6f273c535c226d.rmeta --extern memchr=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmemchr-3535734fde1cca2b.rmeta --extern mimalloc=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmimalloc-f73abaff7c671674.rmeta --extern serde=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde-fcee37254b4b6f1a.rmeta --extern serde_json=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde_json-ad47c0418c2ef49a.rmeta -L native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out"
+        ]
+      },
+      {
+        "at": "2026-10-16T00:18:35.002959+00:00",
+        "progress": {
+          "block": "aa",
+          "completed_arm_runs": 11,
+          "last_seed": 40680902,
+          "observed_at": "2026-10-16T00:18:11.071228+00:00"
+        },
+        "compiler_processes": [
+          "2390  2361       02:23   0.0 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --release --bin civvis",
+          "2395  2390       02:23  97.5 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name civvis --edition=2021 src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C opt-level=3 -C linker-plugin-lto -C codegen-units=1 --check-cfg cfg(docsrs,test) --check-cfg cfg(feature, values(\"closed-experiments\", \"developer-tools\")) -C metadata=caf83e96a72873f3 -C extra-filename=-51ca323560db887b --out-dir /Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps -C strip=debuginfo -L dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps --extern libm=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/liblibm-ac6f273c535c226d.rmeta --extern memchr=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmemchr-3535734fde1cca2b.rmeta --extern mimalloc=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmimalloc-f73abaff7c671674.rmeta --extern serde=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde-fcee37254b4b6f1a.rmeta --extern serde_json=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde_json-ad47c0418c2ef49a.rmeta -L native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out"
+        ]
+      },
+      {
+        "at": "2026-10-16T00:18:50.043549+00:00",
+        "progress": {
+          "block": "aa",
+          "completed_arm_runs": 11,
+          "last_seed": 40680902,
+          "observed_at": "2026-10-16T00:18:11.071228+00:00"
+        },
+        "compiler_processes": [
+          "2390  2361       02:39   0.0 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --release --bin civvis",
+          "2395  2390       02:39  98.8 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name civvis --edition=2021 src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C opt-level=3 -C linker-plugin-lto -C codegen-units=1 --check-cfg cfg(docsrs,test) --check-cfg cfg(feature, values(\"closed-experiments\", \"developer-tools\")) -C metadata=caf83e96a72873f3 -C extra-filename=-51ca323560db887b --out-dir /Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps -C strip=debuginfo -L dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps --extern libm=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/liblibm-ac6f273c535c226d.rmeta --extern memchr=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmemchr-3535734fde1cca2b.rmeta --extern mimalloc=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmimalloc-f73abaff7c671674.rmeta --extern serde=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde-fcee37254b4b6f1a.rmeta --extern serde_json=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde_json-ad47c0418c2ef49a.rmeta -L native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out"
+        ]
+      },
+      {
+        "at": "2026-10-16T00:19:05.085575+00:00",
+        "progress": {
+          "block": "aa",
+          "completed_arm_runs": 12,
+          "last_seed": 40680902,
+          "observed_at": "2026-10-16T00:18:50.888435+00:00"
+        },
+        "compiler_processes": [
+          "2390  2361       02:54   0.0 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --release --bin civvis",
+          "2395  2390       02:54  98.2 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name civvis --edition=2021 src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C opt-level=3 -C linker-plugin-lto -C codegen-units=1 --check-cfg cfg(docsrs,test) --check-cfg cfg(feature, values(\"closed-experiments\", \"developer-tools\")) -C metadata=caf83e96a72873f3 -C extra-filename=-51ca323560db887b --out-dir /Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps -C strip=debuginfo -L dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps --extern libm=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/liblibm-ac6f273c535c226d.rmeta --extern memchr=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmemchr-3535734fde1cca2b.rmeta --extern mimalloc=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmimalloc-f73abaff7c671674.rmeta --extern serde=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde-fcee37254b4b6f1a.rmeta --extern serde_json=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde_json-ad47c0418c2ef49a.rmeta -L native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out"
+        ]
+      },
+      {
+        "at": "2026-10-16T00:19:20.126331+00:00",
+        "progress": {
+          "block": "aa",
+          "completed_arm_runs": 12,
+          "last_seed": 40680902,
+          "observed_at": "2026-10-16T00:18:50.888435+00:00"
+        },
+        "compiler_processes": [
+          "2390  2361       03:09   0.0 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --release --bin civvis",
+          "2395  2390       03:09  97.8 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name civvis --edition=2021 src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C opt-level=3 -C linker-plugin-lto -C codegen-units=1 --check-cfg cfg(docsrs,test) --check-cfg cfg(feature, values(\"closed-experiments\", \"developer-tools\")) -C metadata=caf83e96a72873f3 -C extra-filename=-51ca323560db887b --out-dir /Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps -C strip=debuginfo -L dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps --extern libm=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/liblibm-ac6f273c535c226d.rmeta --extern memchr=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmemchr-3535734fde1cca2b.rmeta --extern mimalloc=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmimalloc-f73abaff7c671674.rmeta --extern serde=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde-fcee37254b4b6f1a.rmeta --extern serde_json=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde_json-ad47c0418c2ef49a.rmeta -L native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out"
+        ]
+      },
+      {
+        "at": "2026-10-16T00:19:35.168300+00:00",
+        "progress": {
+          "block": "aa",
+          "completed_arm_runs": 13,
+          "last_seed": 40680903,
+          "observed_at": "2026-10-16T00:19:31.706763+00:00"
+        },
+        "compiler_processes": [
+          "2390  2361       03:24   0.0 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --release --bin civvis",
+          "2395  2390       03:24  98.3 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name civvis --edition=2021 src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C opt-level=3 -C linker-plugin-lto -C codegen-units=1 --check-cfg cfg(docsrs,test) --check-cfg cfg(feature, values(\"closed-experiments\", \"developer-tools\")) -C metadata=caf83e96a72873f3 -C extra-filename=-51ca323560db887b --out-dir /Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps -C strip=debuginfo -L dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps --extern libm=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/liblibm-ac6f273c535c226d.rmeta --extern memchr=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmemchr-3535734fde1cca2b.rmeta --extern mimalloc=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmimalloc-f73abaff7c671674.rmeta --extern serde=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde-fcee37254b4b6f1a.rmeta --extern serde_json=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde_json-ad47c0418c2ef49a.rmeta -L native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out"
+        ]
+      },
+      {
+        "at": "2026-10-16T00:19:50.210700+00:00",
+        "progress": {
+          "block": "aa",
+          "completed_arm_runs": 13,
+          "last_seed": 40680903,
+          "observed_at": "2026-10-16T00:19:31.706763+00:00"
+        },
+        "compiler_processes": [
+          "2390  2361       03:39   0.0 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --release --bin civvis",
+          "2395  2390       03:39  98.8 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name civvis --edition=2021 src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C opt-level=3 -C linker-plugin-lto -C codegen-units=1 --check-cfg cfg(docsrs,test) --check-cfg cfg(feature, values(\"closed-experiments\", \"developer-tools\")) -C metadata=caf83e96a72873f3 -C extra-filename=-51ca323560db887b --out-dir /Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps -C strip=debuginfo -L dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps --extern libm=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/liblibm-ac6f273c535c226d.rmeta --extern memchr=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmemchr-3535734fde1cca2b.rmeta --extern mimalloc=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmimalloc-f73abaff7c671674.rmeta --extern serde=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde-fcee37254b4b6f1a.rmeta --extern serde_json=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde_json-ad47c0418c2ef49a.rmeta -L native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out"
+        ]
+      },
+      {
+        "at": "2026-10-16T00:20:05.253115+00:00",
+        "progress": {
+          "block": "aa",
+          "completed_arm_runs": 13,
+          "last_seed": 40680903,
+          "observed_at": "2026-10-16T00:19:31.706763+00:00"
+        },
+        "compiler_processes": [
+          "2390  2361       03:54   0.0 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --release --bin civvis",
+          "2395  2390       03:54  98.3 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name civvis --edition=2021 src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C opt-level=3 -C linker-plugin-lto -C codegen-units=1 --check-cfg cfg(docsrs,test) --check-cfg cfg(feature, values(\"closed-experiments\", \"developer-tools\")) -C metadata=caf83e96a72873f3 -C extra-filename=-51ca323560db887b --out-dir /Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps -C strip=debuginfo -L dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps --extern libm=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/liblibm-ac6f273c535c226d.rmeta --extern memchr=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmemchr-3535734fde1cca2b.rmeta --extern mimalloc=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmimalloc-f73abaff7c671674.rmeta --extern serde=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde-fcee37254b4b6f1a.rmeta --extern serde_json=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde_json-ad47c0418c2ef49a.rmeta -L native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out"
+        ]
+      },
+      {
+        "at": "2026-10-16T00:20:20.294316+00:00",
+        "progress": {
+          "block": "aa",
+          "completed_arm_runs": 14,
+          "last_seed": 40680903,
+          "observed_at": "2026-10-16T00:20:12.567775+00:00"
+        },
+        "compiler_processes": [
+          "2390  2361       04:09   0.0 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --release --bin civvis",
+          "2395  2390       04:09  97.6 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name civvis --edition=2021 src/lib.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type lib --emit=dep-info,metadata,link -C opt-level=3 -C linker-plugin-lto -C codegen-units=1 --check-cfg cfg(docsrs,test) --check-cfg cfg(feature, values(\"closed-experiments\", \"developer-tools\")) -C metadata=caf83e96a72873f3 -C extra-filename=-51ca323560db887b --out-dir /Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps -C strip=debuginfo -L dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps --extern libm=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/liblibm-ac6f273c535c226d.rmeta --extern memchr=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmemchr-3535734fde1cca2b.rmeta --extern mimalloc=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmimalloc-f73abaff7c671674.rmeta --extern serde=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde-fcee37254b4b6f1a.rmeta --extern serde_json=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde_json-ad47c0418c2ef49a.rmeta -L native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out"
+        ]
+      },
+      {
+        "at": "2026-10-16T00:20:35.336487+00:00",
+        "progress": {
+          "block": "aa",
+          "completed_arm_runs": 14,
+          "last_seed": 40680903,
+          "observed_at": "2026-10-16T00:20:12.567775+00:00"
+        },
+        "compiler_processes": [
+          "2390  2361       04:24   0.0 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --release --bin civvis",
+          "10604  2390       00:08  98.7 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name civvis --edition=2021 src/main.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type bin --emit=dep-info,link -C opt-level=3 -C lto=thin -C codegen-units=1 --check-cfg cfg(docsrs,test) --check-cfg cfg(feature, values(\"closed-experiments\", \"developer-tools\")) -C metadata=e7702422d354be10 -C extra-filename=-580a0faf5f43c573 --out-dir /Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps -C strip=debuginfo -L dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps --extern civvis=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libcivvis-51ca323560db887b.rlib --extern libm=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/liblibm-ac6f273c535c226d.rlib --extern memchr=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmemchr-3535734fde1cca2b.rlib --extern mimalloc=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmimalloc-f73abaff7c671674.rlib --extern serde=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde-fcee37254b4b6f1a.rlib --extern serde_json=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde_json-ad47c0418c2ef49a.rlib -L native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out"
+        ]
+      },
+      {
+        "at": "2026-10-16T00:20:50.373499+00:00",
+        "progress": {
+          "block": "aa",
+          "completed_arm_runs": 14,
+          "last_seed": 40680903,
+          "observed_at": "2026-10-16T00:20:12.567775+00:00"
+        },
+        "compiler_processes": [
+          "2390  2361       04:39   0.0 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --release --bin civvis",
+          "10604  2390       00:23 191.8 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name civvis --edition=2021 src/main.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type bin --emit=dep-info,link -C opt-level=3 -C lto=thin -C codegen-units=1 --check-cfg cfg(docsrs,test) --check-cfg cfg(feature, values(\"closed-experiments\", \"developer-tools\")) -C metadata=e7702422d354be10 -C extra-filename=-580a0faf5f43c573 --out-dir /Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps -C strip=debuginfo -L dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps --extern civvis=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libcivvis-51ca323560db887b.rlib --extern libm=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/liblibm-ac6f273c535c226d.rlib --extern memchr=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmemchr-3535734fde1cca2b.rlib --extern mimalloc=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmimalloc-f73abaff7c671674.rlib --extern serde=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde-fcee37254b4b6f1a.rlib --extern serde_json=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde_json-ad47c0418c2ef49a.rlib -L native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out"
+        ]
+      },
+      {
+        "at": "2026-10-16T00:21:05.415053+00:00",
+        "progress": {
+          "block": "aa",
+          "completed_arm_runs": 15,
+          "last_seed": 40680904,
+          "observed_at": "2026-10-16T00:20:52.332895+00:00"
+        },
+        "compiler_processes": [
+          "2390  2361       04:54   0.0 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --release --bin civvis",
+          "10604  2390       00:38  97.9 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name civvis --edition=2021 src/main.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type bin --emit=dep-info,link -C opt-level=3 -C lto=thin -C codegen-units=1 --check-cfg cfg(docsrs,test) --check-cfg cfg(feature, values(\"closed-experiments\", \"developer-tools\")) -C metadata=e7702422d354be10 -C extra-filename=-580a0faf5f43c573 --out-dir /Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps -C strip=debuginfo -L dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps --extern civvis=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libcivvis-51ca323560db887b.rlib --extern libm=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/liblibm-ac6f273c535c226d.rlib --extern memchr=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmemchr-3535734fde1cca2b.rlib --extern mimalloc=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmimalloc-f73abaff7c671674.rlib --extern serde=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde-fcee37254b4b6f1a.rlib --extern serde_json=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde_json-ad47c0418c2ef49a.rlib -L native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out"
+        ]
+      },
+      {
+        "at": "2026-10-16T00:21:20.457522+00:00",
+        "progress": {
+          "block": "aa",
+          "completed_arm_runs": 15,
+          "last_seed": 40680904,
+          "observed_at": "2026-10-16T00:20:52.332895+00:00"
+        },
+        "compiler_processes": [
+          "2390  2361       05:09   0.0 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --release --bin civvis",
+          "10604  2390       00:53  98.7 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name civvis --edition=2021 src/main.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type bin --emit=dep-info,link -C opt-level=3 -C lto=thin -C codegen-units=1 --check-cfg cfg(docsrs,test) --check-cfg cfg(feature, values(\"closed-experiments\", \"developer-tools\")) -C metadata=e7702422d354be10 -C extra-filename=-580a0faf5f43c573 --out-dir /Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps -C strip=debuginfo -L dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps --extern civvis=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libcivvis-51ca323560db887b.rlib --extern libm=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/liblibm-ac6f273c535c226d.rlib --extern memchr=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmemchr-3535734fde1cca2b.rlib --extern mimalloc=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmimalloc-f73abaff7c671674.rlib --extern serde=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde-fcee37254b4b6f1a.rlib --extern serde_json=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde_json-ad47c0418c2ef49a.rlib -L native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out"
+        ]
+      },
+      {
+        "at": "2026-10-16T00:21:35.502150+00:00",
+        "progress": {
+          "block": "aa",
+          "completed_arm_runs": 16,
+          "last_seed": 40680904,
+          "observed_at": "2026-10-16T00:21:31.732056+00:00"
+        },
+        "compiler_processes": [
+          "2390  2361       05:24   0.0 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --release --bin civvis",
+          "10604  2390       01:08  98.2 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name civvis --edition=2021 src/main.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type bin --emit=dep-info,link -C opt-level=3 -C lto=thin -C codegen-units=1 --check-cfg cfg(docsrs,test) --check-cfg cfg(feature, values(\"closed-experiments\", \"developer-tools\")) -C metadata=e7702422d354be10 -C extra-filename=-580a0faf5f43c573 --out-dir /Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps -C strip=debuginfo -L dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps --extern civvis=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libcivvis-51ca323560db887b.rlib --extern libm=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/liblibm-ac6f273c535c226d.rlib --extern memchr=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmemchr-3535734fde1cca2b.rlib --extern mimalloc=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmimalloc-f73abaff7c671674.rlib --extern serde=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde-fcee37254b4b6f1a.rlib --extern serde_json=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde_json-ad47c0418c2ef49a.rlib -L native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out"
+        ]
+      },
+      {
+        "at": "2026-10-16T00:21:50.544660+00:00",
+        "progress": {
+          "block": "aa",
+          "completed_arm_runs": 16,
+          "last_seed": 40680904,
+          "observed_at": "2026-10-16T00:21:31.732056+00:00"
+        },
+        "compiler_processes": [
+          "2390  2361       05:39   0.0 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --release --bin civvis",
+          "10604  2390       01:23  98.1 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name civvis --edition=2021 src/main.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type bin --emit=dep-info,link -C opt-level=3 -C lto=thin -C codegen-units=1 --check-cfg cfg(docsrs,test) --check-cfg cfg(feature, values(\"closed-experiments\", \"developer-tools\")) -C metadata=e7702422d354be10 -C extra-filename=-580a0faf5f43c573 --out-dir /Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps -C strip=debuginfo -L dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps --extern civvis=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libcivvis-51ca323560db887b.rlib --extern libm=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/liblibm-ac6f273c535c226d.rlib --extern memchr=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmemchr-3535734fde1cca2b.rlib --extern mimalloc=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmimalloc-f73abaff7c671674.rlib --extern serde=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde-fcee37254b4b6f1a.rlib --extern serde_json=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde_json-ad47c0418c2ef49a.rlib -L native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out"
+        ]
+      },
+      {
+        "at": "2026-10-16T00:22:05.585552+00:00",
+        "progress": {
+          "block": "aa",
+          "completed_arm_runs": 16,
+          "last_seed": 40680904,
+          "observed_at": "2026-10-16T00:21:31.732056+00:00"
+        },
+        "compiler_processes": [
+          "2390  2361       05:54   0.0 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --release --bin civvis",
+          "10604  2390       01:38  98.6 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name civvis --edition=2021 src/main.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type bin --emit=dep-info,link -C opt-level=3 -C lto=thin -C codegen-units=1 --check-cfg cfg(docsrs,test) --check-cfg cfg(feature, values(\"closed-experiments\", \"developer-tools\")) -C metadata=e7702422d354be10 -C extra-filename=-580a0faf5f43c573 --out-dir /Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps -C strip=debuginfo -L dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps --extern civvis=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libcivvis-51ca323560db887b.rlib --extern libm=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/liblibm-ac6f273c535c226d.rlib --extern memchr=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmemchr-3535734fde1cca2b.rlib --extern mimalloc=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmimalloc-f73abaff7c671674.rlib --extern serde=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde-fcee37254b4b6f1a.rlib --extern serde_json=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde_json-ad47c0418c2ef49a.rlib -L native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out"
+        ]
+      },
+      {
+        "at": "2026-10-16T00:22:20.625584+00:00",
+        "progress": {
+          "block": "ab",
+          "completed_arm_runs": 1,
+          "last_seed": 40680001,
+          "observed_at": "2026-10-16T00:22:11.459666+00:00"
+        },
+        "compiler_processes": [
+          "2390  2361       06:09   0.0 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --release --bin civvis",
+          "10604  2390       01:53  97.8 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name civvis --edition=2021 src/main.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type bin --emit=dep-info,link -C opt-level=3 -C lto=thin -C codegen-units=1 --check-cfg cfg(docsrs,test) --check-cfg cfg(feature, values(\"closed-experiments\", \"developer-tools\")) -C metadata=e7702422d354be10 -C extra-filename=-580a0faf5f43c573 --out-dir /Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps -C strip=debuginfo -L dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps --extern civvis=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libcivvis-51ca323560db887b.rlib --extern libm=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/liblibm-ac6f273c535c226d.rlib --extern memchr=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmemchr-3535734fde1cca2b.rlib --extern mimalloc=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmimalloc-f73abaff7c671674.rlib --extern serde=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde-fcee37254b4b6f1a.rlib --extern serde_json=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde_json-ad47c0418c2ef49a.rlib -L native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out"
+        ]
+      },
+      {
+        "at": "2026-10-16T00:22:35.670321+00:00",
+        "progress": {
+          "block": "ab",
+          "completed_arm_runs": 1,
+          "last_seed": 40680001,
+          "observed_at": "2026-10-16T00:22:11.459666+00:00"
+        },
+        "compiler_processes": [
+          "2390  2361       06:24   0.0 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --release --bin civvis",
+          "10604  2390       02:08  98.5 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name civvis --edition=2021 src/main.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type bin --emit=dep-info,link -C opt-level=3 -C lto=thin -C codegen-units=1 --check-cfg cfg(docsrs,test) --check-cfg cfg(feature, values(\"closed-experiments\", \"developer-tools\")) -C metadata=e7702422d354be10 -C extra-filename=-580a0faf5f43c573 --out-dir /Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps -C strip=debuginfo -L dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps --extern civvis=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libcivvis-51ca323560db887b.rlib --extern libm=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/liblibm-ac6f273c535c226d.rlib --extern memchr=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmemchr-3535734fde1cca2b.rlib --extern mimalloc=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmimalloc-f73abaff7c671674.rlib --extern serde=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde-fcee37254b4b6f1a.rlib --extern serde_json=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde_json-ad47c0418c2ef49a.rlib -L native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out"
+        ]
+      },
+      {
+        "at": "2026-10-16T00:22:50.716888+00:00",
+        "progress": {
+          "block": "ab",
+          "completed_arm_runs": 2,
+          "last_seed": 40680001,
+          "observed_at": "2026-10-16T00:22:50.504906+00:00"
+        },
+        "compiler_processes": [
+          "2390  2361       06:39   0.0 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --release --bin civvis",
+          "10604  2390       02:23  91.8 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name civvis --edition=2021 src/main.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type bin --emit=dep-info,link -C opt-level=3 -C lto=thin -C codegen-units=1 --check-cfg cfg(docsrs,test) --check-cfg cfg(feature, values(\"closed-experiments\", \"developer-tools\")) -C metadata=e7702422d354be10 -C extra-filename=-580a0faf5f43c573 --out-dir /Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps -C strip=debuginfo -L dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps --extern civvis=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libcivvis-51ca323560db887b.rlib --extern libm=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/liblibm-ac6f273c535c226d.rlib --extern memchr=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmemchr-3535734fde1cca2b.rlib --extern mimalloc=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmimalloc-f73abaff7c671674.rlib --extern serde=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde-fcee37254b4b6f1a.rlib --extern serde_json=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde_json-ad47c0418c2ef49a.rlib -L native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out"
+        ]
+      },
+      {
+        "at": "2026-10-16T00:23:05.758879+00:00",
+        "progress": {
+          "block": "ab",
+          "completed_arm_runs": 2,
+          "last_seed": 40680001,
+          "observed_at": "2026-10-16T00:22:50.504906+00:00"
+        },
+        "compiler_processes": [
+          "2390  2361       06:54   0.0 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/cargo build --release --bin civvis",
+          "10604  2390       02:38  97.8 /Users/martbot-mbp-m5-max-128/.rustup/toolchains/stable-aarch64-apple-darwin/bin/rustc --crate-name civvis --edition=2021 src/main.rs --error-format=json --json=diagnostic-rendered-ansi,artifacts,future-incompat --crate-type bin --emit=dep-info,link -C opt-level=3 -C lto=thin -C codegen-units=1 --check-cfg cfg(docsrs,test) --check-cfg cfg(feature, values(\"closed-experiments\", \"developer-tools\")) -C metadata=e7702422d354be10 -C extra-filename=-580a0faf5f43c573 --out-dir /Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps -C strip=debuginfo -L dependency=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps --extern civvis=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libcivvis-51ca323560db887b.rlib --extern libm=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/liblibm-ac6f273c535c226d.rlib --extern memchr=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmemchr-3535734fde1cca2b.rlib --extern mimalloc=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libmimalloc-f73abaff7c671674.rlib --extern serde=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde-fcee37254b4b6f1a.rlib --extern serde_json=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/deps/libserde_json-ad47c0418c2ef49a.rlib -L native=/Users/martbot-mbp-m5-max-128/civvis-spectator-src/target/release/build/libmimalloc-sys-68aeae1879bcd8b3/out"
+        ]
+      }
+    ]
+  },
+  "runtime_withdrawal": {
+    "at": "2026-10-16T00:45:02.804485+00:00",
+    "measured_candidate": "70a07bef0444dcb413dbf0bd5461e53e9c4e4823",
+    "candidate_backup_ref": "refs/civvis/measured-pr/4068",
+    "main_merged_once": "371bada5a5cfffe9b160ef7b1590e46c33b70153",
+    "merged_head": "b010d32dad145ba3c03c306ff56f2c69d085a64d",
+    "runtime_now_matches_main_exactly": true,
+    "reason": "Fixed study did not meet preregistered noise threshold; retain evidence without shipping runtime patch."
+  },
+  "limits": "Eight distinct AB worlds measured twice, not sixteen independent worlds. Tool resolution is twice robust median standard error, not a win-rate interval. No global performance ledger, defaults, verification policy, pin or force list is changed."
+}
