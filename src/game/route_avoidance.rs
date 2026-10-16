@@ -257,3 +257,6 @@ impl Game {
         None
     }
 }
+
+#[cfg(test)]
+mod native_dense_visit_tests;
