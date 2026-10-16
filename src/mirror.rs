@@ -865,6 +865,8 @@ struct EventsRead {
     /// Lexical digit offsets, keyed by the enclosing state-line range.
     /// Prefix offsets survive append-only growth; a full read discards them.
     turn_hints: std::collections::HashMap<(usize, usize), Vec<(usize, usize)>>,
+    /// Exact combat-kind predicate per line; follows the same retained prefix.
+    combat_hints: std::collections::HashMap<(usize, usize), bool>,
 }
 
 struct NeedleHits {
@@ -924,9 +926,16 @@ fn read_events_uncaptured(path: &std::path::Path) -> std::io::Result<std::rc::Rc
                         let mut slot = cell.borrow_mut();
                         // The old text is a prefix of the new one, so every
                         // line found in it is still where it was.
-                        let (hits, turn_hints, generation) = slot
+                        let (hits, turn_hints, combat_hints, generation) = slot
                             .take()
-                            .map(|read| (read.hits, read.turn_hints, read.generation))
+                            .map(|read| {
+                                (
+                                    read.hits,
+                                    read.turn_hints,
+                                    read.combat_hints,
+                                    read.generation,
+                                )
+                            })
                             .unwrap_or_default();
                         *slot = Some(EventsRead {
                             path: path.to_path_buf(),
@@ -934,6 +943,7 @@ fn read_events_uncaptured(path: &std::path::Path) -> std::io::Result<std::rc::Rc
                             generation,
                             hits,
                             turn_hints,
+                            combat_hints,
                         })
                     });
                     return Ok(grown);
@@ -953,6 +963,7 @@ fn read_events_uncaptured(path: &std::path::Path) -> std::io::Result<std::rc::Rc
             generation,
             hits: Default::default(),
             turn_hints: Default::default(),
+            combat_hints: Default::default(),
         })
     });
     Ok(text)
@@ -7258,7 +7269,7 @@ pub fn state_from_events(path: &std::path::Path, turn: Option<u32>) -> Option<St
     }
     for ((start, end), flags) in marked {
         let line = &raw[start..end];
-        if flags & COMBAT != 0 {
+        if flags & COMBAT != 0 && combat_line_may_match_in_log(&raw, (start, end)) {
             deaths.observe(line);
         }
         if flags & SEAT != 0 {
@@ -16330,3 +16341,22 @@ mod native_strike_scan_tests;
 
 #[cfg(test)]
 mod native_state_turn_hint_tests;
+
+/// Reuse the exact combat-kind prefilter only for an immutable line in the
+/// current retained log. The observer still decides and records every death.
+fn combat_line_may_match_in_log(raw: &str, range: (usize, usize)) -> bool {
+    let cached = EVENTS_READ.with(|cell| {
+        let mut slot = cell.borrow_mut();
+        let read = slot.as_mut()?;
+        if !std::ptr::eq(read.text.as_ptr(), raw.as_ptr()) || read.text.len() != raw.len() {
+            return None;
+        }
+        Some(*read.combat_hints.entry(range).or_insert_with(|| {
+            json_may_have_value(&raw[range.0..range.1], "\"kind\"", "\"combat\"")
+        }))
+    });
+    cached.unwrap_or_else(|| json_may_have_value(&raw[range.0..range.1], "\"kind\"", "\"combat\""))
+}
+
+#[cfg(test)]
+mod native_combat_kind_hint_tests;
