@@ -1,0 +1,353 @@
+{
+  "schema_version": 1,
+  "kind": "native-constructor-template-cpu",
+  "recorded_at": "2026-10-16T04:27:24.994989+00:00",
+  "baseline_source": "e20437efb5c5a125858743893b781be4ffd5a4c4",
+  "shared_candidate_source": "5bf01e795885df7890d7afc02b621f2ddd8c9a0d",
+  "isolated_candidate_source": "1b28f49b0dbe10d99f93a9c589d277e0dcea46fa",
+  "retention_decision": "retain_isolated_constructor_template_only",
+  "distinct_historical_worlds": 1,
+  "requests_per_run": 41,
+  "runs_per_variant": 48,
+  "total_parsed_responses": 3936,
+  "all_full_responses_identical": true,
+  "all_actual_captured_inputs_verified": true,
+  "shared_variant": {
+    "statistics": {
+      "aa": {
+        "pairs": [
+          {
+            "a_cpu_seconds": 5.668336,
+            "b_cpu_seconds": 5.650728000000001,
+            "delta_percent": -0.31063790149347126
+          },
+          {
+            "a_cpu_seconds": 5.648069,
+            "b_cpu_seconds": 5.632844,
+            "delta_percent": -0.2695611544405563
+          },
+          {
+            "a_cpu_seconds": 5.661739999999998,
+            "b_cpu_seconds": 5.640891999999997,
+            "delta_percent": -0.36822602238889557
+          },
+          {
+            "a_cpu_seconds": 5.660312999999995,
+            "b_cpu_seconds": 5.641234000000004,
+            "delta_percent": -0.3370661657754792
+          },
+          {
+            "a_cpu_seconds": 5.649535999999998,
+            "b_cpu_seconds": 5.660900000000005,
+            "delta_percent": 0.20114926252363663
+          },
+          {
+            "a_cpu_seconds": 5.671731999999999,
+            "b_cpu_seconds": 5.660666000000006,
+            "delta_percent": -0.19510794938816245
+          },
+          {
+            "a_cpu_seconds": 5.6739649999999955,
+            "b_cpu_seconds": 5.658073000000002,
+            "delta_percent": -0.28008632411362644
+          },
+          {
+            "a_cpu_seconds": 5.675620000000009,
+            "b_cpu_seconds": 5.664395999999996,
+            "delta_percent": -0.19775813038950263
+          }
+        ],
+        "median_delta_percent": -0.27482373927709136,
+        "pooled_delta_percent": -0.21977381205372515,
+        "iqr_percentage_points": 0.12014938242480566
+      },
+      "ab": {
+        "pairs": [
+          {
+            "a_cpu_seconds": 5.668079999999989,
+            "b_cpu_seconds": 5.311702999999994,
+            "delta_percent": -6.28743772141529
+          },
+          {
+            "a_cpu_seconds": 5.671605999999997,
+            "b_cpu_seconds": 5.283966000000007,
+            "delta_percent": -6.834748394017332
+          },
+          {
+            "a_cpu_seconds": 5.682795999999996,
+            "b_cpu_seconds": 5.2930510000000055,
+            "delta_percent": -6.858331708546128
+          },
+          {
+            "a_cpu_seconds": 5.6627129999999966,
+            "b_cpu_seconds": 5.292541999999997,
+            "delta_percent": -6.536990308355717
+          },
+          {
+            "a_cpu_seconds": 5.683805000000007,
+            "b_cpu_seconds": 5.333931000000007,
+            "delta_percent": -6.155629899336789
+          },
+          {
+            "a_cpu_seconds": 5.676476000000008,
+            "b_cpu_seconds": 5.289839999999998,
+            "delta_percent": -6.811197651500855
+          },
+          {
+            "a_cpu_seconds": 5.672012999999993,
+            "b_cpu_seconds": 5.288864999999987,
+            "delta_percent": -6.7550620917125155
+          },
+          {
+            "a_cpu_seconds": 5.665918000000005,
+            "b_cpu_seconds": 5.284840000000003,
+            "delta_percent": -6.725794478494073
+          },
+          {
+            "a_cpu_seconds": 5.650686000000007,
+            "b_cpu_seconds": 5.285566999999986,
+            "delta_percent": -6.461498656977593
+          },
+          {
+            "a_cpu_seconds": 5.647395000000017,
+            "b_cpu_seconds": 5.279055,
+            "delta_percent": -6.522299219374894
+          },
+          {
+            "a_cpu_seconds": 5.829024000000004,
+            "b_cpu_seconds": 5.300016999999997,
+            "delta_percent": -9.075395812403697
+          },
+          {
+            "a_cpu_seconds": 5.833417999999995,
+            "b_cpu_seconds": 5.331941999999998,
+            "delta_percent": -8.596606654966221
+          },
+          {
+            "a_cpu_seconds": 5.673566000000022,
+            "b_cpu_seconds": 5.281501999999989,
+            "delta_percent": -6.9103629005114575
+          },
+          {
+            "a_cpu_seconds": 5.6953849999999875,
+            "b_cpu_seconds": 5.276348000000013,
+            "delta_percent": -7.357483295685463
+          },
+          {
+            "a_cpu_seconds": 5.630014999999986,
+            "b_cpu_seconds": 5.267685,
+            "delta_percent": -6.435684451995005
+          },
+          {
+            "a_cpu_seconds": 5.624073999999979,
+            "b_cpu_seconds": 5.2599630000000275,
+            "delta_percent": -6.4741502334420336
+          }
+        ],
+        "median_delta_percent": -6.740428285103294,
+        "pooled_delta_percent": -6.932354677747298,
+        "iqr_percentage_points": 0.4003521672115369
+      }
+    },
+    "criteria": {
+      "every_full_response_identical": true,
+      "median_ab_negative": true,
+      "pooled_ab_negative": true,
+      "exceeds_absolute_aa_median": true,
+      "exceeds_aa_iqr": true,
+      "exceeds_ab_iqr": true
+    },
+    "runtime_retention_eligible": false,
+    "reason": "Ordinary Game cloning retained a shared mutable derived reach cache; excluded from the narrow constructor-only retention decision."
+  },
+  "isolated_variant": {
+    "statistics": {
+      "aa": {
+        "pairs": [
+          {
+            "a_cpu_seconds": 5.650964,
+            "b_cpu_seconds": 5.6349800000000005,
+            "delta_percent": -0.28285439440066673
+          },
+          {
+            "a_cpu_seconds": 5.686612,
+            "b_cpu_seconds": 5.6629640000000006,
+            "delta_percent": -0.41585393904137735
+          },
+          {
+            "a_cpu_seconds": 5.644714999999998,
+            "b_cpu_seconds": 5.740483000000001,
+            "delta_percent": 1.696595842305637
+          },
+          {
+            "a_cpu_seconds": 5.751249999999999,
+            "b_cpu_seconds": 5.845410000000001,
+            "delta_percent": 1.6372093023256262
+          },
+          {
+            "a_cpu_seconds": 5.672772999999999,
+            "b_cpu_seconds": 5.661982999999999,
+            "delta_percent": -0.1902068000958268
+          },
+          {
+            "a_cpu_seconds": 5.658138000000001,
+            "b_cpu_seconds": 5.659531999999999,
+            "delta_percent": 0.024637080254974464
+          },
+          {
+            "a_cpu_seconds": 5.649507999999983,
+            "b_cpu_seconds": 5.649333000000013,
+            "delta_percent": -0.0030976148714279006
+          },
+          {
+            "a_cpu_seconds": 5.644886000000014,
+            "b_cpu_seconds": 5.652588999999992,
+            "delta_percent": 0.13645979741625514
+          }
+        ],
+        "median_delta_percent": 0.010769732691773282,
+        "pooled_delta_percent": 0.32723054726748746,
+        "iqr_percentage_points": 0.7250158723156347
+      },
+      "ab": {
+        "pairs": [
+          {
+            "a_cpu_seconds": 5.642612999999997,
+            "b_cpu_seconds": 5.290910999999994,
+            "delta_percent": -6.232963345173648
+          },
+          {
+            "a_cpu_seconds": 5.650576000000001,
+            "b_cpu_seconds": 5.279953000000006,
+            "delta_percent": -6.559030442206149
+          },
+          {
+            "a_cpu_seconds": 5.652400000000014,
+            "b_cpu_seconds": 5.321228999999988,
+            "delta_percent": -5.858944872974758
+          },
+          {
+            "a_cpu_seconds": 5.66768399999998,
+            "b_cpu_seconds": 5.2678080000000165,
+            "delta_percent": -7.0553686479338795
+          },
+          {
+            "a_cpu_seconds": 5.661936999999995,
+            "b_cpu_seconds": 5.282487000000003,
+            "delta_percent": -6.701770083277003
+          },
+          {
+            "a_cpu_seconds": 5.665051999999974,
+            "b_cpu_seconds": 5.292681000000016,
+            "delta_percent": -6.573125895401488
+          },
+          {
+            "a_cpu_seconds": 5.653357999999997,
+            "b_cpu_seconds": 5.272359000000023,
+            "delta_percent": -6.739339698635294
+          },
+          {
+            "a_cpu_seconds": 5.6667520000000025,
+            "b_cpu_seconds": 5.272363999999982,
+            "delta_percent": -6.959683430649877
+          },
+          {
+            "a_cpu_seconds": 5.662846999999999,
+            "b_cpu_seconds": 5.293810000000008,
+            "delta_percent": -6.5168103605834915
+          },
+          {
+            "a_cpu_seconds": 5.663595999999984,
+            "b_cpu_seconds": 5.292902000000026,
+            "delta_percent": -6.545205554915268
+          },
+          {
+            "a_cpu_seconds": 5.675466,
+            "b_cpu_seconds": 5.278187000000003,
+            "delta_percent": -6.999936216691238
+          },
+          {
+            "a_cpu_seconds": 5.662128999999993,
+            "b_cpu_seconds": 5.307393000000019,
+            "delta_percent": -6.265063900875001
+          },
+          {
+            "a_cpu_seconds": 5.674251000000027,
+            "b_cpu_seconds": 5.297729999999973,
+            "delta_percent": -6.635607060738979
+          },
+          {
+            "a_cpu_seconds": 5.67289199999999,
+            "b_cpu_seconds": 5.321511999999984,
+            "delta_percent": -6.194018853170602
+          },
+          {
+            "a_cpu_seconds": 5.692639999999983,
+            "b_cpu_seconds": 5.295016000000004,
+            "delta_percent": -6.984878720593257
+          },
+          {
+            "a_cpu_seconds": 5.663796999999988,
+            "b_cpu_seconds": 5.295550000000048,
+            "delta_percent": -6.501769042921923
+          }
+        ],
+        "median_delta_percent": -6.566078168803818,
+        "pooled_delta_percent": -6.583063356033647,
+        "iqr_percentage_points": 0.3518328742287462
+      }
+    },
+    "criteria": {
+      "every_full_response_identical": true,
+      "median_ab_negative": true,
+      "pooled_ab_negative": true,
+      "exceeds_absolute_aa_median": true,
+      "exceeds_aa_iqr": true,
+      "exceeds_ab_iqr": true
+    },
+    "runtime_retention_eligible": true,
+    "fresh_derived_reach_cache_regression_passed": true,
+    "constructor_controls": 6,
+    "mirror_controls": 440,
+    "full_tests": 6112
+  },
+  "scope": "CI child user-plus-system CPU on one fixed historical 41-request Native protocol trace. No Native host execution, release speed, overall game speed, or strength claim.",
+  "artifacts": {
+    "2026-10-15-native-base-world-cost.input.events.jsonl.gz": {
+      "bytes": 7149917,
+      "sha256": "54c741b3ed20750b6d48be4b7857aa8c41ed8e58c0a30759d70be82538abf08c"
+    },
+    "2026-10-15-native-base-world-cost.shared.patch.gz": {
+      "bytes": 2558,
+      "sha256": "246696072d5fd2676032b37e95e2ebf0c7b29f475b8fdbe8c901b031ca937879"
+    },
+    "2026-10-15-native-base-world-cost.isolated.patch.gz": {
+      "bytes": 3059,
+      "sha256": "c2b32d162c5a62411c46be108caa4de820b2a2adc981df4a44490b9ff64e8037"
+    },
+    "2026-10-15-native-base-world-cost.shared.runs.jsonl.gz": {
+      "bytes": 27855,
+      "sha256": "8acfc0f32b2e40983e7a5c5a034119dab5a1c3c8944a7cd413ab3c7e4837fa38"
+    },
+    "2026-10-15-native-base-world-cost.isolated.runs.jsonl.gz": {
+      "bytes": 28304,
+      "sha256": "129a28a1d3a91b18c6ed7e01eb6a7296d1eb162cc6d682432b13d46a79ca4342"
+    },
+    "2026-10-15-native-base-world-cost.protocol.json.gz": {
+      "bytes": 41553,
+      "sha256": "9ec5f5b788fd9dc3be62f55a75cfd568cad6ed010a198c25306f12885c9f25f0"
+    },
+    "2026-10-15-native-base-world-cost.responses.jsonl.gz": {
+      "bytes": 4162201,
+      "sha256": "8ea441f745fed3a4fd3ab358dd83d45b1a0104aef8c56d59fc7bae598addf9e2"
+    },
+    "2026-10-15-native-base-world-cost.capture-indexes.json.gz": {
+      "bytes": 3196,
+      "sha256": "d4be4eab3096b434fc856002abca13d3d2828a60e809ad2129d6e6b6e51c9566"
+    },
+    "2026-10-15-native-base-world-cost.provenance.json.gz": {
+      "bytes": 217353,
+      "sha256": "63bb7a1c41906638cd94c7cc3acb33a66accdd59794f2b9b4a23e2ea2a307a80"
+    }
+  }
+}
