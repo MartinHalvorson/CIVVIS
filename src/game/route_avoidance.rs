@@ -210,3 +210,50 @@ impl Game {
         steps
     }
 }
+
+impl Game {
+    /// Predicate counterpart of the set-based exceptional router. The blocked
+    /// predicate is stable throughout this search; no ordinary route is cached.
+    pub(crate) fn route_step_avoiding_when(
+        &self,
+        uid: u32,
+        target: Pos,
+        blocked: impl Fn(Pos) -> bool,
+    ) -> Option<Pos> {
+        let unit = self.units.get(&uid)?;
+        let start = unit.pos;
+        if start == target || blocked(target) || self.formation_movement_locked_by_zoc(uid) {
+            return None;
+        }
+        let access = self.unit_territory_access(unit);
+        if !self.can_path_through_neighbor(uid, target, &access) {
+            return None;
+        }
+        let _memo = self.query_memo();
+        let mut seen = BTreeSet::new();
+        seen.insert(start);
+        let mut queue = VecDeque::from([(start, start)]);
+        while let Some((current, first)) = queue.pop_front() {
+            for next in self.nbrs(current) {
+                if seen.contains(&next) || blocked(next) {
+                    continue;
+                }
+                let allowed = if current == start {
+                    self.can_enter_neighbor(uid, current, next)
+                } else {
+                    self.can_path_through_neighbor(uid, next, &access)
+                };
+                if !allowed {
+                    continue;
+                }
+                seen.insert(next);
+                let first = if current == start { next } else { first };
+                if next == target {
+                    return Some(first);
+                }
+                queue.push_back((next, first));
+            }
+        }
+        None
+    }
+}

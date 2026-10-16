@@ -1629,15 +1629,13 @@ fn siege_route_step(g: &Game, pid: usize, uid: u32, goal: Pos, city: Pos) -> Opt
     // out, every other turn from turn 109 to 145, and none fired; the siege
     // ran seventy turns and Ray never fell.
     if keeps_to_land(g, uid) {
-        avoid.extend(
-            g.map
-                .tiles
-                .iter()
-                .filter(|(pos, tile)| **pos != goal && g.rules.is_water(tile))
-                .map(|(pos, _)| *pos),
-        );
+        g.route_step_avoiding_when(uid, goal, |pos| {
+            avoid.contains(&pos)
+                || (pos != goal && g.map.get(pos).is_some_and(|tile| g.rules.is_water(tile)))
+        })
+    } else {
+        g.route_step_avoiding_tiles(uid, goal, &avoid)
     }
-    g.route_step_avoiding_tiles(uid, goal, &avoid)
 }
 
 /// A land unit standing on land: the train's steps never embark it. See
@@ -6782,3 +6780,6 @@ mod seal_tests;
 
 #[cfg(test)]
 mod post_reachability_tests;
+
+#[cfg(test)]
+mod native_route_predicate_tests;
