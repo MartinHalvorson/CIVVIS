@@ -709,6 +709,11 @@ fn state_line_can_match_turn(line: &str, turn: Option<u32>) -> bool {
         .is_none_or(|found| found == want)
 }
 
+#[cfg(test)]
+fn state_line_can_match_turn_in_log(raw: &str, range: (usize, usize), turn: Option<u32>) -> bool {
+    state_line_can_match_turn(&raw[range.0..range.1], turn)
+}
+
 /// False only when `line` spells at least one integer `"turn"` member and none
 /// of them is `want`: a record that cannot be turn `want`'s board. True when
 /// the scan cannot tell (no integer `turn` anywhere), so the exact parse still
@@ -16252,3 +16257,6 @@ mod native_base_game_tests;
 
 #[cfg(test)]
 mod native_strike_scan_tests;
+
+#[cfg(test)]
+mod native_state_turn_hint_tests;
