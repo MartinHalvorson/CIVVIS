@@ -162,7 +162,7 @@ fn fogged_campaign_reads_the_last_seen_wall_pool() {
     ai.enable_siege_promotions_open_the_walls();
     let available = g.available_promotions(gun);
     assert_eq!(
-        ai.wall_campaign_promotion(&g, 0, gun, GrandStrategy::Conquest, &available),
+        ai.wall_campaign_promotion(&g, 0, gun, GrandStrategy::Conquest, &available, None),
         Some(crate::name!("crew_weapons"))
     );
     g.players[0]
@@ -171,7 +171,7 @@ fn fogged_campaign_reads_the_last_seen_wall_pool() {
         .unwrap()
         .wall_hp = 0;
     assert_eq!(
-        ai.wall_campaign_promotion(&g, 0, gun, GrandStrategy::Conquest, &available),
+        ai.wall_campaign_promotion(&g, 0, gun, GrandStrategy::Conquest, &available, None),
         None
     );
 }
@@ -184,7 +184,7 @@ fn other_classes_and_unearned_promotions_remain_unchanged() {
     g.units.get_mut(&archer).unwrap().xp = 15;
     let available = g.available_promotions(archer);
     assert_eq!(
-        ai.wall_campaign_promotion(&g, 0, archer, GrandStrategy::Conquest, &available),
+        ai.wall_campaign_promotion(&g, 0, archer, GrandStrategy::Conquest, &available, None),
         None
     );
     g.units.get_mut(&gun).unwrap().xp = 14;
@@ -206,4 +206,28 @@ fn a_legal_expert_crew_keeps_priority_and_does_not_count_as_a_changed_choice() {
         .promotions
         .contains(&crate::name!("expert_crew")));
     assert_eq!(g.players[0].counters.get("siege-promotions:walls"), None);
+}
+
+#[test]
+fn the_current_wartime_plan_does_not_need_prewar_campaign_memory() {
+    let (mut g, mut ai, cid, gun) = campaign_gun();
+    ai.campaign = None;
+    ai.enable_siege_promotions_open_the_walls();
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(cid),
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    ai.advanced_command_actions(&mut g, 0, &plan);
+    assert!(g.units[&gun]
+        .promotions
+        .contains(&crate::name!("crew_weapons")));
+    assert_eq!(
+        g.players[0].counters.get("siege-promotions:walls"),
+        Some(&1)
+    );
 }

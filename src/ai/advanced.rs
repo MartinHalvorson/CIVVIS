@@ -46694,6 +46694,16 @@ impl AdvancedAi {
     }
 
     fn advanced_promotions(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
+        self.advanced_promotions_at(g, pid, strategy, None);
+    }
+
+    fn advanced_promotions_at(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        strategy: GrandStrategy,
+        target_city: Option<u32>,
+    ) {
         // Computed at most once a turn, and only if an Apostle actually has a
         // promotion to take: it walks every city and every unit on the board.
         // See [`crate::ai::BasicAi::apostle_promotion_by_role`].
@@ -46735,7 +46745,7 @@ impl AdvancedAi {
                     .unwrap_or(std::cmp::Ordering::Equal)
                     .then_with(|| b.cmp(a))
             });
-            let wall_choice = self.wall_campaign_promotion(g, pid, uid, strategy, &promotions);
+            let wall_choice = self.wall_campaign_promotion(g, pid, uid, strategy, &promotions, target_city);
             if let Some(promotion) = wall_choice.or(legacy_choice) {
                 let applied = g.apply(
                     pid,
@@ -47065,7 +47075,11 @@ impl AdvancedAi {
         self.advanced_city_strikes(g, pid);
         self.advanced_encampment_strikes(g, pid);
         self.advanced_wmd_strikes(g, pid, plan);
-        self.advanced_promotions(g, pid, plan.strategy);
+        if self.siege_promotions_open_the_walls {
+            self.advanced_promotions_at(g, pid, plan.strategy, plan.target_city);
+        } else {
+            self.advanced_promotions(g, pid, plan.strategy);
+        }
         self.advanced_formations(g, pid);
     }
 

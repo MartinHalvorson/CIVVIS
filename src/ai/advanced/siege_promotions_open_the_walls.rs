@@ -9,6 +9,7 @@ impl AdvancedAi {
         _uid: u32,
         _strategy: GrandStrategy,
         _available: &[Name],
+        _target_city: Option<u32>,
     ) -> Option<Name> {
         // Baseline stub: the new regression must fail on the actual old choice.
         None
