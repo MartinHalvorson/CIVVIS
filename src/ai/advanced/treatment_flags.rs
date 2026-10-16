@@ -7935,6 +7935,16 @@ impl AdvancedAi {
         self.frontier_walls_before_the_surprise = false;
     }
 
+    /// Prefer the wall branch for siege guns in a walled major-war campaign.
+    pub fn enable_siege_promotions_open_the_walls(&mut self) {
+        self.siege_promotions_open_the_walls = true;
+    }
+
+    /// The twin of `enable_siege_promotions_open_the_walls`.
+    pub fn disable_siege_promotions_open_the_walls(&mut self) {
+        self.siege_promotions_open_the_walls = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

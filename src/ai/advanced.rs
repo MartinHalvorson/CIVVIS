@@ -8037,6 +8037,9 @@ pub struct AdvancedAi {
     parity_reads_the_front: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// Prefer the wall branch for a siege gun on an active walled campaign.
+    /// Opt-in gene `siege-promotions-open-the-walls`.
+    siege_promotions_open_the_walls: bool,
     /// The gates each held second front last read and the turn it was
     /// journalled, so the journal repeats a held counter once per
     /// `SECOND_FRONT_HELD_NOTE_TURNS`. Journal only; see
@@ -9470,6 +9473,8 @@ mod siege_production;
 /// — an enemy city to take, a city of ours to hold. Two opt-in genes; see
 /// `advanced/siege_train.rs`.
 mod siege_train;
+/// Choose siege promotions for the active campaign walls.
+mod siege_promotions_open_the_walls;
 
 /// `sea-locked-front-moves-on`: a front the army cannot walk to gives way to
 /// an enemy it can. See `advanced/sea_locked_front.rs`.
@@ -11034,6 +11039,7 @@ impl AdvancedAi {
             parity_reads_the_front: false,
 
             // ---- append: s-s ----------------------------------------
+            siege_promotions_open_the_walls: false,
             second_front_held_noted: BTreeMap::new(),
             silent_counter_noted: BTreeMap::new(),
             siege_budget_projects_the_seal: false,
@@ -46722,20 +46728,30 @@ impl AdvancedAi {
                 // An offer out of a modded ruleset naming none of the nine
                 // falls through to the shipped scorer below.
             }
-            let choice = promotions.into_iter().max_by(|a, b| {
+            let legacy_choice = promotions.iter().copied().max_by(|a, b| {
                 self.promotion_value(g, a, strategy)
                     .partial_cmp(&self.promotion_value(g, b, strategy))
                     .unwrap_or(std::cmp::Ordering::Equal)
                     .then_with(|| b.cmp(a))
             });
-            if let Some(promotion) = choice {
-                let _ = g.apply(
+            let wall_choice = self.wall_campaign_promotion(g, pid, uid, strategy, &promotions);
+            if let Some(promotion) = wall_choice.or(legacy_choice) {
+                let applied = g.apply(
                     pid,
                     &Action::Promote {
                         unit: uid,
                         promotion: Name::new(&promotion),
                     },
                 );
+                if applied.is_ok() && wall_choice.is_some() && Some(promotion) != legacy_choice {
+                    *g.players[pid]
+                        .counters
+                        .entry("siege-promotions:walls".to_string())
+                        .or_insert(0) += 1;
+                    think!(self.journal(), Military, Decision,
+                           "Siege promotion follows the walls: {}", promotion;
+                           "siege-promotions-open-the-walls: the active major-war campaign has known walls; Crew Weapons opens Shells instead of the land-unit branch");
+                }
             }
         }
     }

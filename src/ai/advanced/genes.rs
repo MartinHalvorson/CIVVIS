@@ -4014,6 +4014,8 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "frontier-walls-before-the-surprise", field: "frontier_walls_before_the_surprise", kind: Kind::OptIn, enable: AdvancedAi::enable_frontier_walls_before_the_surprise, disable: AdvancedAi::disable_frontier_walls_before_the_surprise },
     // Affordable suzerainty opens a road already blocking an active siege.
     Gene { tag: "envoys-open-the-siege-road", field: "envoys_open_the_siege_road", kind: Kind::OptIn, enable: AdvancedAi::enable_envoys_open_the_siege_road, disable: AdvancedAi::disable_envoys_open_the_siege_road },
+    // Append before all tail markers to preserve every published genome index.
+    Gene { tag: "siege-promotions-open-the-walls", field: "siege_promotions_open_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_promotions_open_the_walls, disable: AdvancedAi::disable_siege_promotions_open_the_walls },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
