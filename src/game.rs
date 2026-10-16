@@ -8101,6 +8101,15 @@ impl Game {
         *self.query_memo.city_ids.borrow_mut() = None;
     }
 
+    /// Copy a constructor template for a newly observed Native board.
+    /// Normal speculative clones share reach answers for the same board;
+    /// a fresh reconstruction must leave its template's read cache untouched.
+    pub(crate) fn clone_for_native_rebuild(&self) -> Self {
+        let mut game = self.clone();
+        game.attack_reach_cache = Arc::new(std::sync::Mutex::new(AttackReachCache::default()));
+        game
+    }
+
     pub fn new(
         num_players: usize,
         width: i32,

@@ -70,6 +70,27 @@ fn unsupported_dimensions_preserve_the_uncached_constructor_failure() {
 }
 
 #[test]
+fn returned_board_reach_answers_do_not_fill_the_constructor_template() {
+    NATIVE_BASE_GAME.with(|cached| *cached.borrow_mut() = None);
+    let observed = native_base_game(4, 20, 16, 79, 2);
+    let uid = observed
+        .player_unit_ids(0)
+        .into_iter()
+        .find(|uid| observed.rules.units[observed.units[uid].kind].class == "military")
+        .unwrap();
+    assert_eq!(observed.attack_reach_cache_computations(), 0);
+    let answer = observed.cached_attack_reach_from_flood((observed.turn, 79), uid);
+    assert!(!answer.flood().is_empty());
+    assert_eq!(observed.attack_reach_cache_computations(), 1);
+    let next = native_base_game(4, 20, 16, 79, 2);
+    assert_eq!(
+        next.attack_reach_cache_computations(),
+        0,
+        "each reconstructed board must start without the previous board's derived answers"
+    );
+}
+
+#[test]
 fn mutated_returned_board_cannot_change_the_untouched_template() {
     NATIVE_BASE_GAME.with(|cached| *cached.borrow_mut() = None);
     let expected = uncached(4, 20, 16, 74, 2);

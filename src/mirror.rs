@@ -1398,7 +1398,7 @@ fn native_base_game(
         let mut cached = cached.borrow_mut();
         if let Some((previous, game)) = cached.as_ref() {
             if *previous == key {
-                return game.clone();
+                return game.clone_for_native_rebuild();
             }
         }
         let mut game = crate::game::Game::new(
@@ -1410,7 +1410,7 @@ fn native_base_game(
             key.city_states,
         );
         Arc::make_mut(&mut game.rules).enable_unknown_terrain();
-        let result = game.clone();
+        let result = game.clone_for_native_rebuild();
         *cached = Some((key, game));
         result
     })
