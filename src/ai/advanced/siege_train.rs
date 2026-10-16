@@ -6782,3 +6782,6 @@ mod seal_tests;
 
 #[cfg(test)]
 mod post_reachability_tests;
+
+#[cfg(test)]
+mod native_route_predicate_tests;

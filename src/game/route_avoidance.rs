@@ -210,3 +210,22 @@ impl Game {
         steps
     }
 }
+
+#[cfg(test)]
+impl Game {
+    pub(crate) fn route_step_avoiding_when(
+        &self,
+        uid: u32,
+        target: Pos,
+        blocked: impl Fn(Pos) -> bool,
+    ) -> Option<Pos> {
+        let avoid: BTreeSet<Pos> = self
+            .map
+            .tiles
+            .iter()
+            .filter(|(pos, _)| blocked(**pos))
+            .map(|(pos, _)| *pos)
+            .collect();
+        self.route_step_avoiding_tiles(uid, target, &avoid)
+    }
+}
