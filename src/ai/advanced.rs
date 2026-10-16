@@ -3953,6 +3953,10 @@ pub struct AdvancedAi {
     ///
     /// Off by default; an addition, not a withheld production behaviour.
     pub price_the_suzerainty: bool,
+    /// Buy affordable city-state passage for a siege already held by its border.
+    pub envoys_open_the_siege_road: bool,
+    /// Adapter limit on physical envoy placements in one decision batch.
+    envoy_order_budget: Option<usize>,
 
     /// Whether the score race is read as a margin over the field instead of as
     /// a clock.
@@ -9781,6 +9785,7 @@ mod capital_walls_before_the_surprise;
 /// gene: it changes no decision. See `docs/COMMITMENTS.md`.
 pub mod commitments;
 mod competitive_economy;
+mod envoys_open_the_siege_road;
 mod frontier_walls_before_the_surprise;
 /// The alliance an Emperor handicap cannot deny us: the stock alliance desk
 /// asks for a Research Alliance, ranked by science, and feeds its level with
@@ -10138,6 +10143,7 @@ impl AdvancedAi {
     pub fn remap_unit_memory(&mut self, map: &BTreeMap<u32, u32>) {
         self.builder_support.clear();
         self.base.remap_unit_memory(map);
+        self.remap_envoy_road_units(map);
         // Recovery follows the host unit through a fresh-board rebuild. An
         // old native id can now belong to a healthy survivor, while a missing
         // mapping means the recovering unit is no longer on the host board.
@@ -10480,6 +10486,8 @@ impl AdvancedAi {
             bounded_recovery: false,
             counter_stand_down: false,
             price_the_suzerainty: false,
+            envoys_open_the_siege_road: false,
+            envoy_order_budget: None,
             early_score_alarm: false,
             congress_counter_leader: false,
             holy_lane_parity: false,
@@ -25195,7 +25203,13 @@ impl AdvancedAi {
         denied_rival: Option<usize>,
     ) {
         let liquidity_reserve = self.banked_envoy_liquidity_reserve(g, pid);
-        while g.players[pid].envoys_free > 0 {
+        let mut placed = 0usize;
+        let budget = if self.envoys_open_the_siege_road {
+            self.envoy_order_budget.unwrap_or(usize::MAX)
+        } else {
+            usize::MAX
+        };
+        while g.players[pid].envoys_free > 0 && placed < budget {
             let target = g
                 .players
                 .iter()
@@ -25342,7 +25356,10 @@ impl AdvancedAi {
                     } else {
                         score
                     };
+                    let passage = self.siege_road_envoy_package(g, pid, minor.id, budget - placed);
                     (
+                        passage.is_some(),
+                        std::cmp::Reverse(passage.unwrap_or(0)),
                         score,
                         std::cmp::Reverse(needed),
                         std::cmp::Reverse(minor.id),
@@ -25350,9 +25367,11 @@ impl AdvancedAi {
                     )
                 })
                 .max()
-                .map(|(score, _, _, id)| (id, score));
-            let Some((target, score)) = target else { break };
-            if self.envoy_building_dividends && score <= 0 {
+                .map(|(passage, _, score, _, _, id)| (id, score, passage));
+            let Some((target, score, passage)) = target else {
+                break;
+            };
+            if !passage && self.envoy_building_dividends && score <= 0 {
                 think!(self.journal(), Diplomacy, Decision,
                        "Saving envoys for a paying threshold";
                        "{} placements available; no reachable building dividend or worthwhile suzerainty",
@@ -25363,7 +25382,11 @@ impl AdvancedAi {
             // once nothing on the board is worth an Envoy. Any surplus has a
             // productive opportunity cost, so it reinforces the best available
             // city-state instead of accumulating indefinitely.
-            if self.bank_envoys && score < 0 && g.players[pid].envoys_free <= liquidity_reserve {
+            if !passage
+                && self.bank_envoys
+                && score < 0
+                && g.players[pid].envoys_free <= liquidity_reserve
+            {
                 think!(self.journal(), Diplomacy, Decision,
                        "Banking {} envoy{}", g.players[pid].envoys_free,
                        if g.players[pid].envoys_free == 1 { "" } else { "s" };
@@ -25392,8 +25415,20 @@ impl AdvancedAi {
                        g.cs_type(&g.players[target].civ), strategy.as_str(),
                        if mine == 1 { "" } else { "s" });
             }
+            if passage {
+                think!(self.journal(), Diplomacy, Decision,
+                       "Buying siege passage through {} with envoys", g.players[target].civ;
+                       "the full suzerainty fits our remaining placements; its closed border held a march toward an existing enemy city");
+            }
             if g.apply(pid, &Action::SendEnvoy { player: target }).is_err() {
                 break;
+            }
+            placed += 1;
+            if passage {
+                *g.players[pid]
+                    .counters
+                    .entry("siege-road:envoys".to_string())
+                    .or_insert(0) += 1;
             }
             if self.coalition_city_state_bonus(g, pid, target, 1) > 0 {
                 *g.players[pid]
@@ -48702,8 +48737,16 @@ impl AdvancedAi {
         }
         // Keep the mature ancillary systems: governments, policies, beliefs,
         // religions, and envoys. Research is already selected.
+        // The advanced envoy pass owns the unissued balance under this
+        // opt-in, including an adapter budget. The ancillary fallback must
+        // not spend it after the bounded pass has stopped.
+        let banked_by_base = self.base.bank_envoys;
+        if self.envoys_open_the_siege_road && self.victory_planning {
+            self.base.bank_envoys = true;
+        }
         self.base
             .research_without_government_with_pool(g, pid, self.work_pool.as_deref());
+        self.base.bank_envoys = banked_by_base;
         self.strategic_government(g, pid, plan.strategy);
         self.base.corporations(g, pid);
         self.advanced_products(g, pid, plan.strategy);
