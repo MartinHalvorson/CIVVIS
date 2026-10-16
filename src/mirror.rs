@@ -8072,8 +8072,8 @@ fn refused_strikes_on(
     };
     // Both streams feed a set, so a line naming both needles is harmless.
     // Reuse the log's indexes instead of scanning every past board again.
-    for line in lines_containing(&raw, "range_attack_refused")
-        .chain(lines_containing(&raw, "war_refused"))
+    for line in
+        lines_containing(&raw, "range_attack_refused").chain(lines_containing(&raw, "war_refused"))
     {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
