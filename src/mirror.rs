@@ -8070,10 +8070,11 @@ fn refused_strikes_on(
     let Ok(raw) = read_events(path) else {
         return refused;
     };
-    for line in raw.lines() {
-        if !line.contains("range_attack_refused") && !line.contains("war_refused") {
-            continue;
-        }
+    // Both streams feed a set, so a line naming both needles is harmless.
+    // Reuse the log's indexes instead of scanning every past board again.
+    for line in
+        lines_containing(&raw, "range_attack_refused").chain(lines_containing(&raw, "war_refused"))
+    {
         let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
             continue;
         };
@@ -16248,3 +16249,6 @@ mod improvement_owner_tests;
 
 #[cfg(test)]
 mod native_base_game_tests;
+
+#[cfg(test)]
+mod native_strike_scan_tests;
