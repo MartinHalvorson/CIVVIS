@@ -46745,7 +46745,8 @@ impl AdvancedAi {
                     .unwrap_or(std::cmp::Ordering::Equal)
                     .then_with(|| b.cmp(a))
             });
-            let wall_choice = self.wall_campaign_promotion(g, pid, uid, strategy, &promotions, target_city);
+            let wall_choice =
+                self.wall_campaign_promotion(g, pid, uid, strategy, &promotions, target_city);
             if let Some(promotion) = wall_choice.or(legacy_choice) {
                 let applied = g.apply(
                     pid,

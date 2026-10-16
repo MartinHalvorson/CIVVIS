@@ -433,6 +433,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `siege-keeps-a-shooter` | off (unmeasured) | Opt-in gene `siege-keeps-a-shooter`; see `Self::siege_keeps_a_shooter`. | 1 \| 1 |
 | `siege-members-use-their-moves` | off (unmeasured) | Opt-in gene `siege-members-use-their-moves`; see `Self::siege_members_use_their_moves`. | 1 \| 1 |
 | `siege-needs-a-breaker` | off (unmeasured) | Opt-in gene `siege-needs-a-breaker`; see `Self::siege_needs_a_breaker`. | 1 \| 1 |
+| `siege-promotions-open-the-walls` | off (unmeasured) | Prefer the wall branch for siege guns in a walled major-war campaign. | 1 \| 1 |
 | `siege-rally-holds` | off (unmeasured) | Opt-in gene `siege-rally-holds`; see `Self::siege_rally_holds`. | 1 \| 1 |
 | `siege-ranged-floor` | off (unmeasured) | Opt-in gene `siege-ranged-floor`; see `Self::siege_ranged_floor`. | 1 \| 1 |
 | `siege-target-needs-a-road` | off (unmeasured) | Opt-in gene `siege-target-needs-a-road`; see `Self::reconcile_siege_roads`. | 1 \| 1 |

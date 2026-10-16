@@ -15,7 +15,12 @@ fn campaign_gun() -> (Game, AdvancedAi, u32, u32) {
     g.found_city_for(0, (2, 6), None);
     let cid = g.found_city_for(1, (10, 6), Some("Siege objective".into()));
     g.found_city_for(2, (20, 6), None);
+    g.players[1].techs.insert(crate::name!("steel"));
     g.cities.get_mut(&cid).unwrap().wall_hp = 400;
+    assert_eq!(g.city_max_wall_hp(&g.cities[&cid]), 400);
+    // A peer-era defender keeps both shots below the engine's 100-damage cap.
+    g.spawn_test_unit("infantry", 1, (15, 6));
+    assert!(g.city_strength(cid) >= 60.0);
     g.record_contact(0, 1);
     g.at_war.insert((0, 1));
     let memory = g.remember_city(&g.cities[&cid]);
@@ -90,9 +95,15 @@ fn both_promotion_paths_are_compared_on_an_executed_city_shot() {
         .promotions
         .contains(&crate::name!("shrapnel")));
     assert!(on.units[&gun].promotions.contains(&crate::name!("shells")));
+    let off_damage = 400 - off.cities[&cid].wall_hp;
+    let on_damage = 400 - on.cities[&cid].wall_hp;
+    assert!((1..100).contains(&off_damage) && (1..100).contains(&on_damage));
+    eprintln!("EXECUTED_WALL_DAMAGE OFF={off_damage} ON={on_damage}");
     assert!(
         on.cities[&cid].wall_hp < off.cities[&cid].wall_hp,
-        "the legal Shells path must deal more actual wall damage"
+        "the legal Shells path must deal more actual wall damage: ON {}, OFF {}",
+        on.cities[&cid].wall_hp,
+        off.cities[&cid].wall_hp
     );
 }
 
@@ -230,4 +241,25 @@ fn the_current_wartime_plan_does_not_need_prewar_campaign_memory() {
         g.players[0].counters.get("siege-promotions:walls"),
         Some(&1)
     );
+}
+
+#[test]
+fn the_current_target_must_still_belong_to_a_living_major_enemy() {
+    for invalid in ["dead", "minor", "peace"] {
+        let (mut g, mut ai, cid, gun) = campaign_gun();
+        ai.campaign = None;
+        ai.enable_siege_promotions_open_the_walls();
+        match invalid {
+            "dead" => g.players[1].alive = false,
+            "minor" => g.players[1].is_minor = true,
+            "peace" => g.at_war.clear(),
+            _ => unreachable!(),
+        }
+        let available = g.available_promotions(gun);
+        assert_eq!(
+            ai.wall_campaign_promotion(&g, 0, gun, GrandStrategy::Conquest, &available, Some(cid)),
+            None,
+            "{invalid}"
+        );
+    }
 }
