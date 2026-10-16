@@ -6,6 +6,7 @@ fn empty_game(map: crate::world::WorldMap) -> Game {
         g.remove_unit(uid);
     }
     g.cities.clear();
+    std::sync::Arc::make_mut(&mut g.rules).enable_unknown_terrain();
     g.map = map;
     for tile in g.map.tiles.values_mut() {
         tile.terrain = crate::name!("grassland");
