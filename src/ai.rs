@@ -12769,6 +12769,14 @@ impl BasicAi {
         )
     }
 
+    /// Keep the targeted governor's production limits on live-person paths.
+    fn live_great_person_activation_path_allowed(
+        &self,
+        need: &crate::game::LiveGreatPersonActivationNeed,
+    ) -> bool {
+        !self.exclude_space_race || Self::live_great_person_district(need) != Some("spaceport")
+    }
+
     /// Production that turns an already-owned physical Great Person into a
     /// usable action. Ordinary/headless games never enter this path because
     /// their mirror-only need list is empty.
@@ -12777,6 +12785,9 @@ impl BasicAi {
             return None;
         }
         for need in &g.players[pid].live_great_person_activation_needs {
+            if !self.live_great_person_activation_path_allowed(need) {
+                continue;
+            }
             if self.defer_low_impact_science_activation_paths
                 && Self::low_impact_science_activation_path(need)
             {
@@ -12917,6 +12928,9 @@ impl BasicAi {
         }
 
         for need in &g.players[pid].live_great_person_activation_needs {
+            if !self.live_great_person_activation_path_allowed(need) {
+                continue;
+            }
             let Some(family) = Self::live_great_person_district(need) else {
                 continue;
             };
@@ -12948,6 +12962,9 @@ impl BasicAi {
         // on it. Military bodies, repairs, walls, wonders, and one-shot
         // projects remain protected by `queue_can_yield` above.
         for need in &g.players[pid].live_great_person_activation_needs {
+            if !self.live_great_person_activation_path_allowed(need) {
+                continue;
+            }
             if need.kind == "engineer"
                 && matches!(
                     need.individual.as_deref(),
@@ -12974,6 +12991,9 @@ impl BasicAi {
         // Open the exact missing slot chain before the ordinary governor
         // spends another turn on it.
         for need in &g.players[pid].live_great_person_activation_needs {
+            if !self.live_great_person_activation_path_allowed(need) {
+                continue;
+            }
             let Some(family) = Self::live_great_person_district(need) else {
                 continue;
             };
