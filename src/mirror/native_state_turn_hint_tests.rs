@@ -101,7 +101,7 @@ fn turn_hints_keep_confirmed_deaths_at_the_selected_state() {
     );
     std::fs::write(&file, text).unwrap();
     let later = state_from_events(&file, Some(4)).unwrap();
-    assert_eq!((later.turn, later.frame, later.gold), (4, 1, 10.0));
+    assert_eq!((later.turn, later.frame, later.gold), (4, 1, 10));
     assert_eq!(later.confirmed_unit_deaths.len(), 1);
     assert_eq!(later.confirmed_unit_deaths[0].unit, 17);
     assert_eq!(later.confirmed_unit_deaths[0].opponent, Some(1));
