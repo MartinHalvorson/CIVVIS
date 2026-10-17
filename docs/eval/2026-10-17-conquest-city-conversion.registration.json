@@ -1,0 +1,55 @@
+{
+  "registered_utc": "2026-10-17T15:55:46Z",
+  "baseline_main": "198eda719c104e719b28d5ebb8c6e0bc93a4dff7",
+  "baseline_compiled_dependency": "e2fbee4dfa6e7c659cd44cf089ed9219fd4c5d07",
+  "baseline_compiled_dependency_tree": "cb721b4ed4aeae53d8d4dd22d09abcb16b860ec0",
+  "baseline_binary_sha256": "d1924d71ac3b7a1bde12ea5f2ce226e653749d22e53bdbce6e5fc5784729cca8",
+  "scope": "An existing siege can breach walls yet fail to reduce city health. Investigate whether its matched artillery requirement and first-weapon reservation incorrectly end with the wall pool. A policy is not a strength improvement merely because it orders guns or increases military power.",
+  "development_cases": [
+    {"difficulty": "immortal", "seed": 47651167238},
+    {"difficulty": "immortal", "seed": 46732028391},
+    {"difficulty": "deity", "seed": 43663176127},
+    {"difficulty": "deity", "seed": 49478848256}
+  ],
+  "development_case_selection": "Previously observed losing maps from PR 4091, selected for recorded siege opportunities. Immortal 47651167238 is the primary mechanism case: Bamako has no standing walls but 200 health from turns 72 through 80 despite ready siege readings. These maps are development evidence, not fresh strength evidence.",
+  "observer_control": "Before interpreting any policy change, unchanged unwrapped and traced executions must reproduce prior complete action and focal-snapshot bytes, traced journals, and semantic terminal results on all four development maps. Only explicit trace and source-provenance metadata may differ. Stop interpreting on any failed control.",
+  "candidate_observer_control": "Run all four candidate development maps with and without the existing read-only observer. Complete actions and focal snapshots must match byte for byte, and terminal results must match apart from expected trace metadata.",
+  "candidate_freeze": "Freeze the full candidate source manifest, source commit/tree, observer source, binary hashes, dependency locks and effective force profile before launching any fresh candidate or baseline outcome. Preserve all outcomes and commands.",
+  "fresh_seed_method": "One secrets.randbelow draw without replacement from [60000000000, 70000000000), before candidate implementation or any new outcome. The first four draws are Immortal; the next four are Deity. No seed replacement, optional map selection, or outcome-dependent stopping within the cohort.",
+  "fresh_pairs": [
+    {"difficulty": "immortal", "seed": 64404190942},
+    {"difficulty": "immortal", "seed": 69607428722},
+    {"difficulty": "immortal", "seed": 68428726463},
+    {"difficulty": "immortal", "seed": 67208704343},
+    {"difficulty": "deity", "seed": 65507113715},
+    {"difficulty": "deity", "seed": 63753502681},
+    {"difficulty": "deity", "seed": 60594796496},
+    {"difficulty": "deity", "seed": 65162802529}
+  ],
+  "profile": {
+    "map": "Pangaea",
+    "width": 60,
+    "height": 38,
+    "speed": "online",
+    "major_players": 4,
+    "city_states": 6,
+    "barbarians": true,
+    "focal": "Gran Colombia, player 0, Domination target, handicap exempt",
+    "rivals": "Three adaptive CIVVIS rivals receive the registered Immortal or Deity difficulty",
+    "victories": "All six normal victory conditions remain enabled",
+    "turn_cap": 250,
+    "policy_bundle": "Unchanged effective ledger plus existing forced treatment bundle used for PR 4091; no new force flags, genome changes, hidden-information access or verification changes"
+  },
+  "promotion_gate": {
+    "all_registered_executions_complete": true,
+    "all_observer_controls_pass": true,
+    "fresh_candidate_domination_wins_minimum": 1,
+    "fresh_candidate_total_focal_wins_not_below_baseline": true,
+    "fresh_candidate_religious_losses_not_above_baseline": true,
+    "mechanism": "Demonstrate actual health reduction and captured cities, not just a new artillery ask, a ready-budget message or more military power",
+    "failure": "Do not promote a policy that fails this gate. Preserve the complete negative evidence and continue pursuing actual conquest victories. A failed candidate does not complete the continuous optimization goal."
+  },
+  "secondary_evidence": "Report per-map terminal outcomes, actual action contrasts, first guns, city-health trajectories, foreign-major-origin and any foreign-origin holdings, original-capital holdings, city count, production, military power, and economy. Do not present minor-city holdings as major captures or forecasts as executions.",
+  "native": "Read-only calibration only. Do not restart or reconfigure the live Native game, controller, pins, genome, difficulty, force profile or victory gates. Simulation outcomes are not Native wins. A highest-difficulty win requires an actual completed Deity Domination result, not an Emperor attempt, abandonment, partial trajectory or forecast.",
+  "dependency_limit": "The preserved external observer lock uses syn 3.0.3 while the repository lock uses syn 3.0.2; its CI profile differs from the repository test CI profile. Match the two experimental arms exactly and do not claim deployed-binary equivalence."
+}

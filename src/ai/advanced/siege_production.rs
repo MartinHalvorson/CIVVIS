@@ -6,6 +6,9 @@ use crate::game::expected_damage;
 /// prefers a faster city and existing/queued weapons close this reservation.
 pub(super) const FIRST_WEAPON_RESERVATION: f64 = 400.0;
 
+const HEALTH_FIRE_MIN_HP: i32 = 160;
+const HEALTH_FIRE_PATIENCE: u32 = 4;
+
 /// The siege guns a walled assault that cannot breach in time may reserve in
 /// total (`siege-positive-damage-budget`).
 pub(super) const SHORTFALL_SIEGE_CAP: usize = 3;
@@ -114,6 +117,51 @@ pub(super) struct BreakerMatch {
 }
 
 impl AdvancedAi {
+    fn city_health_fire_support_needed(&self, game: &Game, player_id: usize, city_id: u32) -> bool {
+        if !self.breakers_match_the_walls || !self.siege_train || !self.siege_positive_damage_budget
+        {
+            return false;
+        }
+        let Some(city) = game.cities.get(&city_id) else {
+            return false;
+        };
+        if city.owner == player_id
+            || city.wall_hp > 0
+            || city.hp <= 0
+            || !game.is_at_war(player_id, city.owner)
+            || self.one_war_front() != Some(city.owner)
+        {
+            return false;
+        }
+        let Some(operation) = self.sieges.get(&city_id).filter(|operation| {
+            operation.stage != super::siege_train::SiegeStage::Hold
+                && game.turn.saturating_sub(operation.assessed) <= 1
+        }) else {
+            return false;
+        };
+        let committed_gun = operation.posts.keys().any(|unit_id| {
+            game.units.get(unit_id).is_some_and(|unit| {
+                let spec = &game.rules.units[unit.kind];
+                unit.owner == player_id
+                    && unit.hp > 0
+                    && spec.class == "military"
+                    && spec.siege
+                    && spec.has_ranged_attack()
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+            })
+        });
+        committed_gun
+            || (city.hp >= HEALTH_FIRE_MIN_HP
+                && self
+                    .front_city_low
+                    .get(&city.pos)
+                    .is_some_and(|(lowest, observed)| {
+                        *lowest <= city.hp
+                            && game.turn.saturating_sub(*observed)
+                                >= game.standard_duration(HEALTH_FIRE_PATIENCE)
+                    }))
+    }
+
     /// Turns a siege gun of `moves` movement takes to cover `distance` tiles
     /// to the siege: at full movement, or under `breaker-reads-the-march` at
     /// [`BREAKER_MARCH_FACTOR`] of it.
@@ -154,7 +202,9 @@ impl AdvancedAi {
             return None;
         }
         let city = g.cities.get(&cid)?;
-        if city.owner == pid || city.wall_hp <= 0 {
+        if city.owner == pid
+            || (city.wall_hp <= 0 && !self.city_health_fire_support_needed(g, pid, cid))
+        {
             return None;
         }
         let land_gun = |spec: &crate::rules::UnitSpec| {
@@ -430,6 +480,7 @@ impl AdvancedAi {
                     && !g.players[city.owner].is_minor
                     && self.breaker_war_with(g, pid, city.owner, plan)
                     && (city.wall_hp > 0
+                        || self.city_health_fire_support_needed(g, pid, city.id)
                         || (city.hp >= 160
                             && g.players[city.owner]
                                 .techs
@@ -437,6 +488,11 @@ impl AdvancedAi {
             })?;
         let objective = target.pos;
         let target_name = target.name.clone();
+        let assault_kind = if self.city_health_fire_support_needed(g, pid, target.id) {
+            "city-health assault"
+        } else {
+            "walled assault"
+        };
         let counts = self.counts(g, pid);
         let nearby_force: Vec<_> = g
             .player_unit_ids(pid)
@@ -678,7 +734,7 @@ impl AdvancedAi {
                 objective);
         }
         think!(self.journal(), Military, Decision,
-            "{} reserves a {} for the walled assault", g.cities[&city].name, unit;
+            "{} reserves a {} for the {}", g.cities[&city].name, unit, assault_kind;
             "{}; expected arrival at {} in about {arrival:.0} turns",
             if breach_shortfall { "the staged force cannot breach before its health runs out" }
             else if faster_than_queued { "the first queued gun would reach the front too late" }
@@ -743,7 +799,7 @@ impl AdvancedAi {
         if let Some(target) = plan.target_city {
             return g.cities.get(&target).is_some_and(|city| {
                 Some(city.owner) == plan.target_player
-                    && city.wall_hp > 0
+                    && (city.wall_hp > 0 || self.city_health_fire_support_needed(g, pid, target))
                     && self.breaker_war_with(g, pid, city.owner, plan)
             });
         }
@@ -785,3 +841,6 @@ mod treasury_tests;
 
 #[cfg(test)]
 mod breaker_match_tests;
+
+#[cfg(test)]
+mod city_health_tests;
