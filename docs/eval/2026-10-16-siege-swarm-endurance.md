@@ -103,8 +103,11 @@ treatment. The source/ledger/bundle audit is retained with the binary hashes.
 All four source-by-rung jobs terminated before the first outcome read. All 32
 games completed with an actual rival victory, at turns 129–171; none was a
 short-clock abandonment. Every focal game lost: 28 rival Science victories and
-4 rival Culture victories across both sources. No focal game ever held a
-foreign city, major or minor. This is explicit negative conquest evidence.
+4 rival Culture victories across both sources. No foreign city, major or
+minor, is held at any sampled turn boundary or at the final state. This is
+negative sustained-conquest evidence, not proof of zero transient captures:
+the observer samples once per full game turn, so a capture and recapture
+within a round could be missed.
 These are paired executions from eight fixed seeds, not 32 independent maps.
 
 | Source | Rung | Spares | Wins / Domination | Own capital held at end | End turns |

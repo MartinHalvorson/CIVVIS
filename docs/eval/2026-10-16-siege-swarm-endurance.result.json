@@ -220,7 +220,7 @@
   "strength_improvement_proven": false,
   "speed_improvement_proven": false,
   "deity_contrast_guard": "Both source jobs exit 2 after four identical policy action pairs; failures retained, not waived.",
-  "conclusion": "Accounting corrected with four red-to-green cases; 32 completed focal losses, zero foreign cities held, unchanged source-level outcomes. No conquest improvement established.",
+  "conclusion": "Accounting corrected with four red-to-green cases; 32 completed focal losses, zero foreign cities held at observed full-turn boundaries or final states, unchanged source-level outcomes. Transient captures are not ruled out; no sustained conquest improvement established.",
   "hosted_pre_repair_fail_fast": {
     "observed_at_utc": "2026-10-17T06:32:20.624196+00:00",
     "expected_red_failures_observed": [
@@ -239,5 +239,17 @@
     ],
     "ci_rerun_or_guard_change_requested": false
   },
-  "distinct_simulator_seeds": 8
+  "distinct_simulator_seeds": 8,
+  "capture_observation_audit": {
+    "audited_at_utc": "2026-10-17T06:39:16.502906+00:00",
+    "source_head": "b5c31c4459ffdbd98e4f16d9185bc2ca2636a70d",
+    "source_sha256": {
+      "src/ai.rs": "f802257fa080a230837a9be3e34bf265b9b72296dbb3824cb74b246a449d7e68",
+      "src/bin/victory_eval/domination_pair.rs": "67f6ab457a2200a80ecd8223615236d40e94713e2784c356b435e1157391da05"
+    },
+    "observer_cadence": "src/ai.rs::run_game_observed calls the observer only when g.turn changes; trial additionally observes the final state. Foreign-city held sets are updated only at those observations.",
+    "supported_claim": "All 32 complete games lose; zero foreign cities are held at observed full-turn boundaries or final states.",
+    "unsupported_claim": "Zero actual transient captures; a capture and recapture within one full round could be missed.",
+    "workflow_recovery": "Stopped only the owned shipping coordinator and disabled its auto-merge before correcting prose. No Native processes or GitHub CI runs were cancelled; no push or body edit while checks run."
+  }
 }
