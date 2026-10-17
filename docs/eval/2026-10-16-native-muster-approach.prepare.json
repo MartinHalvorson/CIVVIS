@@ -1,0 +1,125 @@
+{
+  "schema": 1,
+  "scope": "Cold opening-prefix diagnosis and self-contained native memory repair regressions. No persistent counterfactual, host continuation, speed estimate, strength estimate or victory claim.",
+  "registration": {
+    "at": "2026-10-17T03:41:58.193655+00:00",
+    "source_run": "civvis-20261017T025117Z",
+    "source_hashes": {
+      "events.jsonl": "26009bc1def85ebf4b01314c3abc073ccd22e7f97cf530665be9dd46c8762a81",
+      "decisions.jsonl": "d580f333a442f619fd97f49d383837738d3f45d56a44e8ac7a4d1c95a70212ff",
+      "summary.json": "8b6f06d0dbb5ebdc702aef42d27644bb16d7072804db7e6ac3fa708f277bc919",
+      "why.log": "fb9ec156f0a8aa740817fc0102d987ba15d3ae235dfdbaea99cfb4bdf0966dce"
+    },
+    "cases": [
+      {
+        "turn": 146,
+        "frame": 0,
+        "bytes": 38272265,
+        "sha256": "b939a43ce75ff63700ac540bbf91729a47feaa7787512ad1c6ef3310ae065bb6"
+      },
+      {
+        "turn": 149,
+        "frame": 0,
+        "bytes": 39961519,
+        "sha256": "5899ee1519272a033963055b48eec826b7d979822b4f090a8209013459f86c9d"
+      },
+      {
+        "turn": 150,
+        "frame": 0,
+        "bytes": 40403789,
+        "sha256": "f35aabcb1b274f616bab5aca6edb6f4b743ee8df0e24d5d40f28c59f1bf2c09a"
+      }
+    ],
+    "scope": "Read-only cold reconstruction at three preselected original opening prefixes; inspect every observed land military unit, route metrics, reachable endpoint exclusions, and isolated speculative muster result. No production edit, Native interaction, persistent-replay parity, policy comparison, win, or speed estimate.",
+    "disposition": "Use observed causes to decide the next implementation, or publish an explicitly inconclusive diagnostic. Do not loosen safety, alter verification rules, or substitute a different historical world to obtain a desired outcome.",
+    "original_files_unchanged": true
+  },
+  "source": {
+    "base": "53ee80a45c3c0f798e2ae9c86f9f6bc5f089e983",
+    "red_checkpoint": "d1b4c6eb8ebebd5ef48cbe63813df15188190af3",
+    "repair_source": "a657a9ccfea743666d8873ada0b8a97d32193ab5",
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)",
+    "files": {
+      "src/ai/advanced/siege_train.rs": "536ec5d24d280534a6a5789eb067b817318bf99c722213ba2af80260c210670d",
+      "src/ai/advanced/siege_train/native_muster_approach_tests.rs": "af421e4ffb60f702c50f3914e92be74407649a8fcbd308dc03e9dd788727e7be",
+      "src/ai/advanced/siege_road.rs": "edaadacdf5a55851b1426c3f6facf0db6467b7f9a887e3bb39118e423d39208b",
+      "src/ai/advanced/siege_road/native_memory_tests.rs": "7eead8145dd22d1b30719d6e83189a72b902c3d44e4bd03d013312fd90586bb8"
+    }
+  },
+  "original_decider": {
+    "kind": "frozen_attempt_decider",
+    "revision": "44629581fd661fdf03f94a3801689f615c09e40b",
+    "schema": 1,
+    "sha256": "8d5c9f210c9abb26b6d75cce94899c75383a34deb66948db77a3a299f49851ed",
+    "source_kind": "binary-checkout",
+    "source_path": "/Users/martbot-mbp-m5-max-128/civvis-verification-clean-runtime/target/release/civvis_orders"
+  },
+  "boards": [
+    {
+      "turn": 146,
+      "city": {
+        "id": 94,
+        "name": "Xanadu",
+        "owner": 3,
+        "pos": [
+          33,
+          22
+        ]
+      },
+      "own_land_military": 17,
+      "without_dry_road_here": 17,
+      "stage_march_blocked_by_maya": 15,
+      "envoy_treatment": false
+    },
+    {
+      "turn": 149,
+      "city": {
+        "id": 99,
+        "name": "Xanadu",
+        "owner": 3,
+        "pos": [
+          33,
+          22
+        ]
+      },
+      "own_land_military": 18,
+      "without_dry_road_here": 17,
+      "stage_march_blocked_by_maya": 16,
+      "envoy_treatment": false
+    },
+    {
+      "turn": 150,
+      "city": {
+        "id": 98,
+        "name": "Xanadu",
+        "owner": 3,
+        "pos": [
+          33,
+          22
+        ]
+      },
+      "own_land_military": 17,
+      "without_dry_road_here": 16,
+      "stage_march_blocked_by_maya": 15,
+      "envoy_treatment": false
+    }
+  ],
+  "validation": {
+    "red_regressions_failed": 4,
+    "green_regressions_passed": 4,
+    "historical_diagnostic_passed": 1,
+    "all_targets_passed": 6155,
+    "all_targets_failed": 0,
+    "all_targets_ignored": 56,
+    "all_target_check": "passed; developer-tools enabled",
+    "rust_quality": "passed; committed changed-line scope, all targets and all features",
+    "scoped_format": "passed",
+    "original_files_unchanged": true,
+    "preparation_negative_controls_passed": 2
+  },
+  "provenance": {
+    "filename": "2026-10-16-native-muster-approach.provenance.json.gz",
+    "bytes": 234963,
+    "sha256": "8f79411b52841f1e1696ed9b7e2c730357ae5f6cda4fa4601e2cb01a9bcd581f"
+  }
+}

@@ -29,6 +29,9 @@ use crate::think;
 use crate::Pos;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+#[cfg(test)]
+mod native_memory_tests;
+
 /// Consecutive turns half the train must hold for want of a road before the
 /// capture is stood down. Three is `commitments::STALL_TURNS` and
 /// `COMMITMENT_PATIENCE`, the controller's own "not getting there".
@@ -173,10 +176,27 @@ impl AdvancedAi {
         }
     }
 
+    pub(super) fn remap_siege_road_cities(&mut self, previous: &Game, next: &Game) {
+        let city = |id| {
+            previous
+                .cities
+                .get(&id)
+                .and_then(|city| next.city_at(city.pos))
+        };
+        self.siege_road_tally = std::mem::take(&mut self.siege_road_tally)
+            .into_iter()
+            .filter_map(|(id, tally)| city(id).map(|id| (id, tally)))
+            .collect();
+        self.siege_road_closed = std::mem::take(&mut self.siege_road_closed)
+            .into_iter()
+            .filter_map(|(id, closed)| city(id).map(|id| (id, closed)))
+            .collect();
+    }
+
     /// Fresh native boards assign new unit ids. Preserve only holds whose
     /// actual host unit survived the adapter's explicit identity mapping.
     pub(super) fn remap_envoy_road_units(&mut self, map: &BTreeMap<u32, u32>) {
-        if !self.envoys_open_the_siege_road {
+        if !self.envoys_open_the_siege_road && !self.siege_target_needs_a_road {
             return;
         }
         for tally in self.siege_road_tally.values_mut() {
