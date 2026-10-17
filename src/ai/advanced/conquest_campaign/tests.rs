@@ -62,7 +62,7 @@ fn cash_flow_install_hub(game: &mut Game, controller: &AdvancedAi, city: u32) {
 fn cash_flow_queues(game: &Game) -> Vec<(u32, Vec<Item>)> {
     game.player_city_ids(0)
         .into_iter()
-        .map(|city| (city, game.cities[&city].queue.iter().cloned().collect()))
+        .map(|city| (city, game.cities[&city].queue.to_vec()))
         .collect()
 }
 
@@ -157,7 +157,7 @@ fn conquest_campaign_cash_flow_claims_a_real_market_in_a_deficit() {
     assert!(matches!(expected, Item::Building { .. }));
     assert!(game.players[0].gold_per_turn < -0.5);
     controller.claim_conquest_campaign_cash_flow(&mut game, 0, &plan);
-    assert_eq!(game.cities[&ranked[1]].queue.iter().next(), Some(&expected));
+    assert_eq!(game.cities[&ranked[1]].queue.first(), Some(&expected));
 }
 
 #[test]
@@ -170,7 +170,7 @@ fn conquest_campaign_cash_flow_claims_a_canonical_spare_capacity_trader() {
         .unwrap();
     assert!(matches!(&expected, Item::Unit { unit } if unit == "trader"));
     controller.claim_conquest_campaign_cash_flow(&mut game, 0, &plan);
-    assert_eq!(game.cities[&ranked[1]].queue.iter().next(), Some(&expected));
+    assert_eq!(game.cities[&ranked[1]].queue.first(), Some(&expected));
 }
 
 #[test]
@@ -211,7 +211,7 @@ fn conquest_campaign_cash_flow_utilizes_a_hub_while_another_is_committed() {
         .commercial_hub_step(&game, 0, ranked[1], 6, 0)
         .unwrap();
     controller.claim_conquest_campaign_cash_flow(&mut game, 0, &plan);
-    assert_eq!(game.cities[&ranked[1]].queue.iter().next(), Some(&expected));
+    assert_eq!(game.cities[&ranked[1]].queue.first(), Some(&expected));
     assert_eq!(game.cities[&ranked[2]].queue, original);
 }
 

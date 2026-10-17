@@ -1,5 +1,5 @@
 {
-  "updated_utc": "2026-10-17T22:58:44.928647+00:00",
+  "updated_utc": "2026-10-17T23:08:10.713443+00:00",
   "status": "Development only: ten policies completed the same six known maps,60 candidate executions,18 separately qualified diagnostic/control runs, zero focal/verified Domination wins and zero fresh holdouts. Variant10 is rejected; draft not promotion ready.",
   "variant_01": {
     "analyzed_utc": "2026-10-17T18:02:22.529676+00:00",
@@ -22283,7 +22283,13 @@
       "cash-flow-v11-commercial.log": "7f622de763ce1c50c2035d44cae0d45f12e5af4793fd994c67cc91d0cc5361e9",
       "cash-flow-v11-modernization.log": "a1291b17a98dfeceb5568c0826bdf90983e55d2ebf3b8d08a814cd18ea0d59af",
       "cash-flow-v11-faith.log": "e48388cd2b82fb84d9332612e555672e15be5b78e7e0b0c14febabc9a5a64301",
-      "cash-flow-v11-check-tests.log": "0c7069700da0502cea25082d58658cf6bfbad065ec99d2978b89aff1edbd6e39"
+      "cash-flow-v11-check-tests.log": "0c7069700da0502cea25082d58658cf6bfbad065ec99d2978b89aff1edbd6e39",
+      "cash-flow-v11-qualityfix-campaign.log": "75b655572b372f3c8f5bea8cbe884e2277907903c40639e30791c549a968ad61",
+      "cash-flow-v11-qualityfix-focused.log": "74533125a524e352ff7a75a2861253be110b7314cf68f64177fdb5a9d11c2299",
+      "cash-flow-v11-qualityfix-commercial.log": "e794167107eb6c78238c43078cfbc472ed30eecdd6eecd4e0328b999c59f9b0b",
+      "cash-flow-v11-qualityfix-modernization.log": "3cc571c1b04bb7d945800c2e6b88b1402ad7fc7f0d093cfb9a7fee8696728714",
+      "cash-flow-v11-qualityfix-faith.log": "12f78d66f69b8ec6fe9188a75e6995498510941e301ec129433bd9e6f26b08a3",
+      "cash-flow-v11-qualityfix-check-tests.log": "de943a47a18a07696dc500a74cc206adbb111bf3c0952cde2c5792b97cca4f1a"
     },
     "frozen_candidate_executions": 0,
     "fresh_executions": 0,
@@ -22293,7 +22299,15 @@
     "existing_commercial_tests_passed": 16,
     "existing_modernization_tests_passed": 22,
     "existing_faith_tests_passed": 18,
-    "cargo_check_tests": "pass"
+    "cargo_check_tests": "pass",
+    "initial_quality_gate": {
+      "result": "failed before freeze or push",
+      "local_commit": "18522fe97",
+      "reason": "Four test-only Clippy iterator warnings: one slice iter/cloned/collect and three queue iter/next calls. Corrected to to_vec and first; production policy is unchanged.",
+      "external_relative_path": "source-v11-quality-initial-failed.log",
+      "sha256": "11d885996c4b23a61a84491dd6ac91bd2e52e8831ff18fcdbb5eaacdd072a2dc"
+    },
+    "quality_fix_validation": "All 39 campaign/15 focused/16 commercial/22 modernization/18 faith tests and cargo check --tests passed after the test-only iterator corrections. Exact committed-source quality must still pass before freeze or publication."
   },
   "checkpoint_11_pre_source_metadata_guard": {
     "external_relative_path": "checkpoint11-body-final-ci.json",
@@ -22314,5 +22328,11 @@
         "workflowName": "collaboration-policy"
       }
     ]
+  },
+  "posthoc_prewar_cohort_loss_audit": {
+    "external_relative_path": "prewar-cohort-losses-03-analysis.json",
+    "sha256": "ac1a094dcd6d3b6c6feaed5d49e6a83e5acd7178a0a4314b95377f5151f6f4a7",
+    "qualification": "Existing03 raw data only; no new candidate/control/fresh executions or controller observations. Missing IDs are not assumed to be combat deaths.",
+    "finding": "All four own military units present at80 but missing at100 on Deity43663176127 have actual successful focal disband actions: swordsman2, archer312 and horseman338 at84; horseman438 at89. The contemporaneous journal explicitly identifies bankruptcy-drain disbands. The last observed horseman338 was at100HP, so this power decline cannot be attributed solely to combat attrition. Other missing units on494 and492 have no matching focal disband in the observed disappearance interval; no unobserved cause is asserted."
   }
 }
