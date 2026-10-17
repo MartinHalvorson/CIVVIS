@@ -1124,13 +1124,13 @@ impl AdvancedAi {
             // `ROTATE_HP` (`siege_member_fit`) and the reply leaves it at
             // `ASSAULT_SURVIVOR_HP`. A wounded member rotates out instead and
             // stays the shipped finishing blow.
-            let swarm_reply = (swarm && !ranged && spec.is_melee_capable())
-                .then(|| expected_damage(g.city_strength(cid), attack))
-                .filter(|reply| {
-                    self.siege_member_fit(g, *uid)
-                        && f64::from(unit.hp) - reply
-                            >= f64::from(super::siege_train::ASSAULT_SURVIVOR_HP)
-                });
+            let melee_reply = (swarm && !ranged && spec.is_melee_capable())
+                .then(|| expected_damage(g.city_strength(cid), attack));
+            let swarm_reply = melee_reply.filter(|reply| {
+                self.siege_member_fit(g, *uid)
+                    && f64::from(unit.hp) - reply
+                        >= f64::from(super::siege_train::ASSAULT_SURVIVOR_HP)
+            });
             if swarm_reply.is_some() {
                 city_dps += damage;
             } else if counts_what_fires && !ranged {
@@ -1166,7 +1166,7 @@ impl AdvancedAi {
             };
             // `unwalled-city-takes-the-swarm`: a member that swings every turn
             // takes the city's reply on every swing.
-            if let Some(reply) = swarm_reply {
+            if let Some(reply) = if spared { melee_reply } else { swarm_reply } {
                 incoming += reply;
             }
             endurance += (unit.hp as f64 - 20.0).max(0.0) / incoming.max(1.0);
