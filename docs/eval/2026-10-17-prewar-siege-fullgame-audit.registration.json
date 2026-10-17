@@ -1,0 +1,98 @@
+{
+  "registered_utc": "2026-10-17T09:59:54.214880+00:00",
+  "owner_pr": 4089,
+  "pending_policy_pr": 4036,
+  "source_head": "605f18a1114e2f96b6c5dd1fb61d06c13f1a39ab",
+  "source_base": "2c6b39292af1cba6661b57d3878cc6401c9d75a4",
+  "current_main_at_registration": "fc36519b5e5a62ca42cd2063f286ac08fe78a7e1",
+  "source_scope": "Frozen historical pending-policy checkout, not current main or Native source. Includes one local unpublished test/registry-order commit. No modification of the pending writer worktree.",
+  "original_registration": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-13/native-movement-adoption/campaign-readiness-audit/paired-probe/registration.json",
+  "policy": "prewar-siege-board",
+  "pairs": {
+    "immortal": [
+      202610137000,
+      202610137001
+    ],
+    "deity": [
+      202610138000,
+      202610138001
+    ]
+  },
+  "profile": "Unchanged four-player 60x38 Pangaea, six city-states, Online, barbarians, all victories, natural 250-turn clock; focal seat handicap-exempt; adaptive CIVVIS rivals, not Firaxis.",
+  "common_prerequisites": [
+    "objective-board",
+    "war-policy-via-board"
+  ],
+  "primary": "Completed focal Domination wins in all four pairs. Do not substitute readiness, score share or action contrast for wins.",
+  "secondary": [
+    "all terminal outcomes",
+    "foreign city and original-capital ownership at turn boundaries/end",
+    "prewar Siege row/force exposure",
+    "exact complete applied-action records for both arms"
+  ],
+  "runner_changes": [
+    "include the frozen force-bundle path",
+    "persist existing exact applied-action bytes after both trials; no controller or game change",
+    "Fix pre-existing runner compilation failure by explicitly forwarding Ai::expansion_census; both arms use the same wrapper."
+  ],
+  "promotion": "No promotion or Native win claim authorized by four exploratory pairs on historical source. All four pairs must be retained, including failure/zero-contrast. No seed replacement or early turn cap.",
+  "outcomes_inspected": false,
+  "files": {
+    "pending-policy.patch": {
+      "sha256": "b505f4fa91306b9b8eab0355624a2bfcb73354f4f8b06e76222137cec7f13525",
+      "bytes": 24165
+    },
+    "runner/Cargo.toml": {
+      "sha256": "5cffd1ec64293f3d0a7758798fcfbac6e9c4d474a4b6ebb3a8702979f23cf277",
+      "bytes": 362
+    },
+    "runner/main.rs": {
+      "sha256": "2d57c3b04e9b0af377e94c2321fd13e1532218825876f47e1c27cf07e53dcf9a",
+      "bytes": 205
+    },
+    "runner/prewar_paired_probe.rs": {
+      "sha256": "f35a741cd6a4db1caec7c61c2e3d5573eff718d5546b1fb86bb5db3734952ed3",
+      "bytes": 16720
+    },
+    "frozen-source/Cargo.lock": {
+      "sha256": "e69430762a4ef3fa82e44ff2776d64d420bdd3d7d9caa9f3ff7dbefc1632e57b",
+      "bytes": 3967
+    },
+    "frozen-source/deploy/live-force-on.txt": {
+      "sha256": "a79c0e54e708a92ccf8cd8b286da851fea43b643dff58cdedb8905ce74dfec3b",
+      "bytes": 546
+    },
+    "run_cohort.py": {
+      "sha256": "780a10d39e4eb931078672c810842d39ba37ea4a48ab2f6668d66992f6565d06",
+      "bytes": 2334
+    },
+    "runner/Cargo.lock": {
+      "sha256": "4e89947b5cad1ef1ff2c39b412cf6237ad9252b574b57134935b687ac75bac5b",
+      "bytes": 4090
+    },
+    "build-initial-failed.log": {
+      "sha256": "bb89d5724fe30287e1131afb739f19144c45e3d32a350f7720f30ca08ee0c393",
+      "bytes": 2345
+    },
+    "registration-initial.json": {
+      "sha256": "e060e7e998601a01f24130576842eee7874574e4083897de3ed603a39ae1798e",
+      "bytes": 3000
+    },
+    "runner-initial.rs": {
+      "sha256": "e2cf6045eae8ee3e0e136190a2d99675c404544e3d0c5091cb905f799ef59546",
+      "bytes": 16716
+    },
+    "source-tree.txt": {
+      "sha256": "440467addcef7e03cc2b20370fa2b4d442c04d7a2f3aecbce77f1396ed047b8e",
+      "bytes": 230371
+    }
+  },
+  "pre_launch_amendment_utc": "2026-10-17T10:01:35.031741+00:00",
+  "pre_launch_amendments": [
+    {
+      "utc": "2026-10-17T10:08:16.954999+00:00",
+      "reason": "Original October 13 runner fails E0308 before execution: the inherent expansion_census returns a non-optional census whereas Ai forwarding requires Option. Forward via Ai::expansion_census(&self.inner), preserving the trait wrapper contract. No games have launched or outcomes been inspected.",
+      "retained": "build-initial-failed.log, registration-initial.json and runner-initial.rs"
+    }
+  ]
+}
