@@ -1,0 +1,58 @@
+{
+  "registered_utc": "2026-10-17T14:01:11.140965+00:00",
+  "cases": [
+    {
+      "difficulty": "immortal",
+      "seed": 49293455737
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 47651167238
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 46732028391
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 45312861349
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49478848256
+    },
+    {
+      "difficulty": "deity",
+      "seed": 43663176127
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49220027834
+    },
+    {
+      "difficulty": "deity",
+      "seed": 40171860454
+    }
+  ],
+  "known_cases": "registration.json: four selected losses, mechanism only",
+  "intervention": "Version two faith war requires and executes a forecast-legal same-turn condemnation; all other gates, version one and emergency interception unchanged.",
+  "profile": "Same probe GameOptions, force bundle and ledger as exact controls; all victory conditions unchanged.",
+  "arms": [
+    "production-equivalent baseline",
+    "candidate"
+  ],
+  "stopping": "Complete all eight paired fresh maps to natural terminal or existing 250-turn cap; no seed replacement or outcome-dependent stopping.",
+  "primary": [
+    "focal Domination wins",
+    "all focal wins",
+    "religious losses"
+  ],
+  "secondary": [
+    "focal condemnations by turn 90",
+    "declaration turns",
+    "maximum observed foreign-origin city holdings",
+    "cities, military power and production at turns 60 and 90"
+  ],
+  "production_promotion": "Requires at least one fresh candidate Domination win, no fewer focal wins and no more religious losses; otherwise retain experimental code and report failure, not stronger AI. Native highest-difficulty verification remains independently required.",
+  "source_identity": "Must lock and hash both sources, probes and binaries before launch."
+}
