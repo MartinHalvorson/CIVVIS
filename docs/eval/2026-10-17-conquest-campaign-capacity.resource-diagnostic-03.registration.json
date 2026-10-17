@@ -1,0 +1,58 @@
+{
+  "registered_utc": "2026-10-17T21:48:49.987459+00:00",
+  "purpose": "Read-only root-cause diagnostics on the selected variant-03; no candidate policy or fresh evaluation",
+  "source_commit": "12f146fcfbbdeae2e311cffa19d0b9b3dddd8551",
+  "source_directory": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/source-variant-03",
+  "source_receipt_sha256": "efd0d0bd6b048082262f339b6802adf215682d8959650e050457a1541dd2e6ca",
+  "cases": [
+    {
+      "difficulty": "immortal",
+      "seed": 45312861349
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 47651167238
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 46732028391
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49478848256
+    },
+    {
+      "difficulty": "deity",
+      "seed": 43663176127
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49220027834
+    }
+  ],
+  "observer_source_sha256": {
+    "src/main.rs": "9f9654d3a07bc1500f598827ef0bc3392bdbf0fce48fd429f60458a25398c190",
+    "Cargo.toml": "819f5762045c038d07368b722bcdf6b326bf65b54ee762498841412136030ab2",
+    "Cargo.lock": "299ca8b76645d3dd0b271f3a6b44cfbcf8ab41b2758f5a9892b8e98969c13adb",
+    "source-identity.txt": "30362f806818bb62e718a930e0836c6137707120d0439d0b3ae6eba74d9c2060"
+  },
+  "read_only_additions": [
+    "Focal decision-view upgrade quotes and legal offers",
+    "Focal decision-view strategic quick-deal quotes",
+    "Observer-only world resource banks and incomes"
+  ],
+  "required_AA": [
+    "actions.json",
+    "snapshots.json",
+    "plans.json",
+    "world-states.json",
+    "why.log",
+    "journal-stats.json"
+  ],
+  "acceptance": "Every required artifact must byte-match the existing variant-03 case. If any contrast occurs discard diagnostic conclusions.",
+  "diagnostic_executions_registered": 6,
+  "candidate_policy_executions_added": 0,
+  "fresh_holdout_executions": 0,
+  "force_profile": "Unchanged same 283 live force tags; no gene, observation, seed, difficulty or engine changes",
+  "native_verification": "Not Native verification; host upgrade facts may be absent in self-play"
+}

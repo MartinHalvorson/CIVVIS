@@ -1,349 +1,5 @@
 use super::*;
 
-fn direct_funding_campaign() -> (Game, AdvancedAi, StrategicPlan, Vec<u32>) {
-    let (mut game, ranked) =
-        crate::ai::commercial_hub::tests::emperor_empire("CAMPAIGNDIRECTFUNDING", 20_261_017);
-    game.players[0].gold = 0.0;
-    game.players[0].gold_per_turn = 1.0;
-    for technology in [
-        "archery",
-        "iron_working",
-        "engineering",
-        "machinery",
-        "apprenticeship",
-    ] {
-        game.players[0].techs.insert(Name::new(technology));
-    }
-    Arc::make_mut(&mut game.observed_trade_capacity).insert(0, 0);
-    let position = game.cities[&ranked[0]].pos;
-    for _ in 0..12 {
-        game.spawn_test_unit("warrior", 0, position);
-    }
-    for _ in 0..3 {
-        game.spawn_test_unit("archer", 0, position);
-    }
-    let mut controller = AdvancedAi::targeting(VictoryTarget::Domination);
-    controller.base.book_pos = 4;
-    controller.base.w.city_target = 10.0;
-    controller.enable_commercial_hub_in_the_strategic_queue();
-    let plan = StrategicPlan {
-        strategy: GrandStrategy::Expansion,
-        target_player: None,
-        target_city: None,
-        threatened_city: None,
-        desired_cities: 10,
-        assessed_turn: game.turn,
-        rush: false,
-    };
-    assert!(controller.domination_upgrade_funding_shortfall(&game, 0));
-    assert!(controller.base.commercial_hub_window_open(&game));
-    assert!(controller
-        .base
-        .commercial_hub_step(&game, 0, ranked[1], 6, 0)
-        .is_some());
-    (game, controller, plan, ranked)
-}
-
-fn direct_funding_queues(game: &Game) -> usize {
-    game.player_city_ids(0)
-        .iter()
-        .filter(|city| {
-            game.cities[city].queue.iter().any(|item| match item {
-                Item::District { district, .. } => {
-                    game.district_family(*district) == "commercial_hub"
-                }
-                Item::Building { building } => {
-                    game.rules
-                        .buildings
-                        .get(building)
-                        .is_some_and(|specification| {
-                            specification.district.is_some_and(|district| {
-                                game.district_family(district) == "commercial_hub"
-                            })
-                        })
-                }
-                Item::Unit { unit } => unit == "trader",
-                _ => false,
-            })
-        })
-        .count()
-}
-
-#[test]
-fn conquest_campaign_direct_funding_claims_one_real_queue_before_the_settler_promise() {
-    let (mut game, mut controller, plan, ranked) = direct_funding_campaign();
-    assert!(controller.base.settler_due(&game, 0, ranked[1], 6, 0));
-    let capital = game
-        .player_city_ids(0)
-        .into_iter()
-        .find(|city| game.cities[city].is_capital)
-        .unwrap();
-    let original_capital = game.cities[&capital].queue.clone();
-    controller.claim_conquest_campaign_funding(&mut game, 0, &plan);
-    assert_eq!(direct_funding_queues(&game), 1);
-    assert!(
-        matches!(game.cities[&ranked[1]].queue.first(), Some(Item::District { district, .. }) if game.district_family(*district) == "commercial_hub")
-    );
-    assert_eq!(game.cities[&capital].queue, original_capital);
-    controller.claim_conquest_campaign_funding(&mut game, 0, &plan);
-    assert_eq!(direct_funding_queues(&game), 1);
-}
-
-#[test]
-fn conquest_campaign_direct_funding_preserves_an_actual_capital_settler() {
-    let (mut game, mut controller, plan, _) = direct_funding_campaign();
-    let capital = game
-        .player_city_ids(0)
-        .into_iter()
-        .find(|city| game.cities[city].is_capital)
-        .unwrap();
-    game.apply(
-        0,
-        &Action::Produce {
-            city: capital,
-            item: Item::Unit {
-                unit: Name::new("settler"),
-            },
-        },
-    )
-    .unwrap();
-    let original = game.cities[&capital].queue.clone();
-    controller.claim_conquest_campaign_funding(&mut game, 0, &plan);
-    assert_eq!(game.cities[&capital].queue, original);
-    assert_eq!(direct_funding_queues(&game), 1);
-}
-
-#[test]
-fn conquest_campaign_direct_funding_stops_for_an_existing_trade_commitment() {
-    let (mut game, mut controller, plan, ranked) = direct_funding_campaign();
-    let item = controller
-        .base
-        .commercial_hub_step(&game, 0, ranked[1], 6, 0)
-        .unwrap();
-    game.apply(
-        0,
-        &Action::Produce {
-            city: ranked[1],
-            item,
-        },
-    )
-    .unwrap();
-    let original = game.cities[&ranked[1]].queue.clone();
-    controller.claim_conquest_campaign_funding(&mut game, 0, &plan);
-    assert_eq!(game.cities[&ranked[1]].queue, original);
-    assert_eq!(direct_funding_queues(&game), 1);
-}
-
-#[test]
-fn conquest_campaign_direct_funding_preserves_paused_settler_progress() {
-    let (mut game, mut controller, plan, _) = direct_funding_campaign();
-    for city in game.player_city_ids(0) {
-        if !game.cities[&city].is_capital {
-            game.cities
-                .get_mut(&city)
-                .unwrap()
-                .production_progress
-                .insert("unit:settler".into(), 20.0);
-        }
-    }
-    controller.claim_conquest_campaign_funding(&mut game, 0, &plan);
-    assert_eq!(direct_funding_queues(&game), 0);
-    for city in game.player_city_ids(0) {
-        if !game.cities[&city].is_capital {
-            assert_eq!(
-                game.cities[&city].production_progress.get("unit:settler"),
-                Some(&20.0)
-            );
-        }
-    }
-}
-
-#[test]
-fn conquest_campaign_direct_funding_preserves_an_inflight_market() {
-    let (mut game, mut controller, plan, ranked) = direct_funding_campaign();
-    let Item::District { district, pos } = controller
-        .base
-        .commercial_hub_step(&game, 0, ranked[1], 6, 0)
-        .unwrap()
-    else {
-        panic!("expected a legal Commercial Hub site");
-    };
-    game.cities
-        .get_mut(&ranked[1])
-        .unwrap()
-        .districts
-        .insert(district, pos);
-    let item = controller
-        .base
-        .commercial_hub_step(&game, 0, ranked[1], 6, 0)
-        .unwrap();
-    assert!(matches!(&item, Item::Building { .. }));
-    game.apply(
-        0,
-        &Action::Produce {
-            city: ranked[1],
-            item,
-        },
-    )
-    .unwrap();
-    let original = game.cities[&ranked[1]].queue.clone();
-    controller.claim_conquest_campaign_funding(&mut game, 0, &plan);
-    assert_eq!(game.cities[&ranked[1]].queue, original);
-    assert_eq!(direct_funding_queues(&game), 1);
-}
-
-#[test]
-fn conquest_campaign_direct_funding_preserves_an_inflight_trader() {
-    let (mut game, mut controller, plan, _) = direct_funding_campaign();
-    Arc::make_mut(&mut game.observed_trade_capacity).insert(0, 1);
-    let capital = game
-        .player_city_ids(0)
-        .into_iter()
-        .find(|city| game.cities[city].is_capital)
-        .unwrap();
-    game.apply(
-        0,
-        &Action::Produce {
-            city: capital,
-            item: Item::Unit {
-                unit: Name::new("trader"),
-            },
-        },
-    )
-    .unwrap();
-    let original = game.cities[&capital].queue.clone();
-    controller.claim_conquest_campaign_funding(&mut game, 0, &plan);
-    assert_eq!(game.cities[&capital].queue, original);
-    assert_eq!(direct_funding_queues(&game), 1);
-}
-
-#[test]
-fn conquest_campaign_direct_funding_preserves_the_funded_army() {
-    let (mut game, mut controller, plan, _) = direct_funding_campaign();
-    game.players[0].gold = 100_000.0;
-    assert!(!controller.domination_upgrade_funding_shortfall(&game, 0));
-    controller.claim_conquest_campaign_funding(&mut game, 0, &plan);
-    assert_eq!(direct_funding_queues(&game), 0);
-}
-
-#[test]
-fn conquest_campaign_direct_funding_preserves_other_victory_lanes() {
-    for target in [
-        None,
-        Some(VictoryTarget::Science),
-        Some(VictoryTarget::Religion),
-    ] {
-        let (mut game, mut controller, plan, _) = direct_funding_campaign();
-        controller.victory_target = target;
-        controller.claim_conquest_campaign_funding(&mut game, 0, &plan);
-        assert_eq!(direct_funding_queues(&game), 0);
-    }
-}
-
-#[test]
-fn conquest_campaign_direct_funding_requires_the_existing_trade_and_victory_genes() {
-    for disable_victory in [false, true] {
-        let (mut game, mut controller, plan, _) = direct_funding_campaign();
-        if disable_victory {
-            controller.victory_planning = false;
-        } else {
-            controller.commercial_hub_in_the_strategic_queue = false;
-        }
-        controller.claim_conquest_campaign_funding(&mut game, 0, &plan);
-        assert_eq!(direct_funding_queues(&game), 0);
-    }
-}
-
-#[test]
-fn conquest_campaign_direct_funding_preserves_war_production() {
-    let (mut game, mut controller, plan, _) = direct_funding_campaign();
-    let mut rival = game.players[0].clone();
-    rival.id = game.players.len();
-    rival.team = None;
-    game.at_war.insert((0, rival.id));
-    game.players.push(rival);
-    controller.claim_conquest_campaign_funding(&mut game, 0, &plan);
-    assert_eq!(direct_funding_queues(&game), 0);
-}
-
-#[test]
-fn conquest_campaign_direct_funding_preserves_rushes_and_recovery() {
-    for rush in [false, true] {
-        let (mut game, mut controller, mut plan, _) = direct_funding_campaign();
-        if rush {
-            plan.rush = true;
-        } else {
-            plan.strategy = GrandStrategy::Recovery;
-        }
-        controller.claim_conquest_campaign_funding(&mut game, 0, &plan);
-        assert_eq!(direct_funding_queues(&game), 0);
-    }
-}
-
-#[test]
-fn conquest_campaign_direct_funding_preserves_the_actual_industrial_commitment() {
-    let (mut game, mut controller, plan, ranked) = direct_funding_campaign();
-    controller.enable_industrial_zone_in_the_producers();
-    let item = controller
-        .base
-        .industrial_zone_producer_item(&game, 0, ranked[1], 6, None)
-        .unwrap();
-    game.apply(
-        0,
-        &Action::Produce {
-            city: ranked[1],
-            item,
-        },
-    )
-    .unwrap();
-    let original = game.cities[&ranked[1]].queue.clone();
-    controller.claim_conquest_campaign_funding(&mut game, 0, &plan);
-    assert_eq!(game.cities[&ranked[1]].queue, original);
-}
-
-#[test]
-fn conquest_campaign_direct_funding_preserves_local_threats_and_the_plan_loan() {
-    let (mut game, mut controller, mut plan, ranked) = direct_funding_campaign();
-    controller.base.plan_threatened_city = Some(ranked[0]);
-    plan.threatened_city = Some(ranked[1]);
-    for city in ranked.iter().skip(2) {
-        game.cities.get_mut(city).unwrap().last_attacked = game.turn;
-    }
-    controller.claim_conquest_campaign_funding(&mut game, 0, &plan);
-    assert_eq!(direct_funding_queues(&game), 0);
-    assert_eq!(controller.base.plan_threatened_city, Some(ranked[0]));
-}
-
-#[test]
-fn conquest_campaign_direct_funding_waits_for_the_standing_defense_floor() {
-    let (mut game, mut controller, plan, _) = direct_funding_campaign();
-    for unit in game.player_unit_ids(0) {
-        if game.units[&unit].kind == "warrior" {
-            game.remove_unit(unit);
-        }
-    }
-    assert!(controller.domination_upgrade_funding_shortfall(&game, 0));
-    controller.claim_conquest_campaign_funding(&mut game, 0, &plan);
-    assert_eq!(direct_funding_queues(&game), 0);
-}
-
-#[test]
-fn conquest_campaign_direct_funding_preserves_economic_recovery() {
-    let (mut game, mut controller, plan, _) = direct_funding_campaign();
-    game.players[0].gold_per_turn = -10.0;
-    controller.claim_conquest_campaign_funding(&mut game, 0, &plan);
-    assert_eq!(direct_funding_queues(&game), 0);
-}
-
-#[test]
-fn conquest_campaign_direct_funding_keeps_the_existing_trade_window() {
-    let (mut game, mut controller, plan, _) = direct_funding_campaign();
-    game.turn = 1;
-    assert!(!controller.base.commercial_hub_window_open(&game));
-    controller.claim_conquest_campaign_funding(&mut game, 0, &plan);
-    assert_eq!(direct_funding_queues(&game), 0);
-}
-
 fn campaign() -> (Game, AdvancedAi, u32, u32) {
     let mut game = Game::new_full(4, 60, 38, 581144, 250, 0, false);
     for unit in game.units.keys().copied().collect::<Vec<_>>() {
@@ -732,4 +388,148 @@ fn conquest_campaign_modernization_routes_the_actual_peace_research_choice() {
     };
     controller.advanced_research(&mut game, 0, &plan);
     assert_eq!(game.players[0].research.as_deref(), Some("machinery"));
+}
+
+fn future_discount_campaign() -> (Game, AdvancedAi, StrategicPlan) {
+    let (mut game, controller, nearby) = standing_archers();
+    game.players[0].civics.extend(
+        [
+            "code_of_laws",
+            "craftsmanship",
+            "foreign_trade",
+            "early_empire",
+            "state_workforce",
+            "political_philosophy",
+            "military_tradition",
+            "games_recreation",
+            "defensive_tactics",
+            "feudalism",
+        ]
+        .into_iter()
+        .map(Name::new),
+    );
+    game.players[0].government = Some("monarchy".into());
+    game.players[0].civic = None;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: Some(2),
+        target_city: Some(nearby),
+        threatened_city: None,
+        desired_cities: 5,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    (game, controller, plan)
+}
+
+#[test]
+fn conquest_campaign_discount_prepares_for_the_existing_future_cohort() {
+    let (game, controller, _) = future_discount_campaign();
+    assert_eq!(game.unit_upgrade_target(0, crate::name!("archer")), None);
+    assert_eq!(
+        controller.conquest_campaign_modernization_tech(&game, 0),
+        Some(crate::name!("machinery"))
+    );
+    assert_eq!(
+        controller.domination_upgrade_civic_goal(&game, 0),
+        Some("mercenaries")
+    );
+}
+
+#[test]
+fn conquest_campaign_discount_routes_actual_civic_research_before_the_unit_unlock() {
+    let (mut game, controller, plan) = future_discount_campaign();
+    assert!(!game.players[0].techs.contains(&crate::name!("machinery")));
+    assert!(game
+        .available_civics(0)
+        .contains(&crate::name!("military_training")));
+    controller.advanced_research(&mut game, 0, &plan);
+    assert_eq!(game.players[0].civic.as_deref(), Some("military_training"));
+    assert_eq!(game.players[0].research.as_deref(), Some("machinery"));
+}
+
+#[test]
+fn conquest_campaign_discount_does_not_anticipate_a_two_unit_cohort() {
+    let (mut game, controller, _) = future_discount_campaign();
+    let archer = game.player_unit_ids(0)[0];
+    game.remove_unit(archer);
+    assert_eq!(controller.domination_upgrade_civic_goal(&game, 0), None);
+}
+
+#[test]
+fn conquest_campaign_discount_keeps_government_and_completed_unlock_guards() {
+    for blocked in ["political_philosophy", "mercenaries", "urbanization"] {
+        let (mut game, controller, _) = future_discount_campaign();
+        if blocked == "political_philosophy" {
+            game.players[0].civics.remove(&Name::new(blocked));
+        } else {
+            game.players[0].civics.insert(Name::new(blocked));
+        }
+        assert_eq!(
+            controller.domination_upgrade_civic_goal(&game, 0),
+            None,
+            "{blocked}"
+        );
+    }
+}
+
+#[test]
+fn conquest_campaign_discount_keeps_the_future_cohort_campaign_requirements() {
+    for blocked in ["writing", "second_city", "frontier", "victory_planning"] {
+        let (mut game, mut controller, _) = future_discount_campaign();
+        match blocked {
+            "writing" => {
+                game.players[0].techs.remove(&crate::name!("writing"));
+            }
+            "second_city" => {
+                let second = game.player_city_ids(0)[1];
+                game.cities.remove(&second);
+            }
+            "frontier" => {
+                for rival in game.players.iter_mut().skip(1) {
+                    rival.alive = false;
+                }
+            }
+            "victory_planning" => controller.victory_planning = false,
+            _ => unreachable!(),
+        }
+        assert_eq!(
+            controller.domination_upgrade_civic_goal(&game, 0),
+            None,
+            "{blocked}"
+        );
+    }
+}
+
+#[test]
+fn conquest_campaign_discount_keeps_other_victory_lanes_unchanged() {
+    let (game, _, _) = future_discount_campaign();
+    for target in [
+        VictoryTarget::Science,
+        VictoryTarget::Culture,
+        VictoryTarget::Religion,
+        VictoryTarget::Diplomacy,
+        VictoryTarget::Score,
+    ] {
+        let controller = AdvancedAi::targeting(target);
+        assert_eq!(
+            controller.domination_upgrade_civic_goal(&game, 0),
+            None,
+            "{target:?}"
+        );
+    }
+}
+
+#[test]
+fn conquest_campaign_discount_continues_through_the_actual_upgrade_unlock() {
+    let (mut game, controller, _) = future_discount_campaign();
+    game.players[0].techs.insert(crate::name!("machinery"));
+    assert_eq!(
+        game.unit_upgrade_target(0, crate::name!("archer")),
+        Some(crate::name!("crossbowman"))
+    );
+    assert_eq!(
+        controller.domination_upgrade_civic_goal(&game, 0),
+        Some("mercenaries")
+    );
 }
