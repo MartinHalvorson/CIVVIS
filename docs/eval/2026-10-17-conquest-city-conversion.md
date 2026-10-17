@@ -71,10 +71,14 @@ there is no claim of deployed-binary equivalence.
 
 The initial six-test regression execution has four behavior assertion failures
 and two passing negative controls before the production change. An additional
-assigned-gun continuity test is added with the implementation. One subsequent
-compile attempt fails because the new fixture uses the wrong map accessor;
-that fixture error is repaired and its failed log is retained separately.
-The corrected focused run and full suite are pending at this checkpoint.
+assigned-gun continuity test is added with the implementation. New-fixture map
+accessor and constant-scope compile errors are repaired, with failed logs
+retained separately. The continuity fixture also initially expects two guns;
+the existing regeneration/endurance model actually requires three in that
+position. Its corrected assertion explicitly verifies that two-gun take time
+exceeds the endurance horizon and three guns can finish. The corrected focused
+suite passes all seven tests. Adjacent and full-suite validation remain
+pending at this checkpoint.
 
 Freeze the complete candidate source manifest, commit/tree, binary, observer,
 dependency locks and effective force inputs before any fresh game. Complete

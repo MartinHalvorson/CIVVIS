@@ -141,10 +141,16 @@ fn a_committed_gun_keeps_its_health_role_while_the_city_is_being_reduced() {
     controller
         .front_city_low
         .insert(target_position, (120, game.turn));
-    assert_eq!(
-        controller.breakers_matched_guns(&game, 0, target_city),
-        Some(2)
-    );
+    let matched = controller
+        .breakers_matched_to_walls(&game, 0, target_city)
+        .expect("an assigned gun retains its role below the initial health threshold");
+    let two_gun_fire = matched.hit * 2.0;
+    assert!(two_gun_fire > super::BREAKER_MATCH_CITY_HEAL);
+    let two_gun_take = 120.0 / (two_gun_fire - super::BREAKER_MATCH_CITY_HEAL) + 1.0;
+    assert!(two_gun_take > matched.target_turns);
+    let (guns, _, take_turns) = matched.ask.expect("enough guns can finish the city");
+    assert_eq!(guns, 3);
+    assert!(take_turns <= matched.target_turns);
     assert!(controller.breakers_match_the_row(&game, 0, target_city, 0) > 0);
 }
 
