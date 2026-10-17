@@ -1,0 +1,11 @@
+{
+  "files": 403,
+  "unique_blobs": 189,
+  "compressed_bytes": 30449807,
+  "sha256": "8f0f34a18d70aa5cf6e24a4b99cb29a2ae17b1054af4b7a4d74cca8125c5e8fc",
+  "all_blob_lengths_and_hashes_verified": true,
+  "all_frozen_input_file_hashes_and_selected_source_blobs_verified_from_extract": true,
+  "baseline_controls_and_candidate_aa_independently_verified_from_complete_raw_bytes": true,
+  "derived_analysis_reproduced_byte_identical_from_extracted_raw_data": true,
+  "simulations_not_reexecuted_during_extraction": true
+}
