@@ -1,6 +1,98 @@
 use super::*;
 
 impl AdvancedAi {
+    pub(super) fn claim_conquest_campaign_campus(
+        &self,
+        game: &mut Game,
+        player: usize,
+        plan: &StrategicPlan,
+    ) {
+        let cities = game.player_city_ids(player);
+        if !self.victory_planning
+            || self.active_victory_target(game) != Some(VictoryTarget::Domination)
+            || !(self.base.campus_before_the_army_2 || self.base.campus_before_the_army_3)
+            || self.base.minor
+            || self.base.barb
+            || plan.rush
+            || !matches!(
+                plan.strategy,
+                GrandStrategy::Expansion | GrandStrategy::Conquest
+            )
+            || cities.len() < BasicAi::CAPITAL_CAMPUS_MIN_CITIES
+            || !game.players[player]
+                .techs
+                .contains(&crate::name!("writing"))
+            || self.base.plaza_prophet_race_open(game, player)
+            || game.players.iter().any(|rival| {
+                rival.alive
+                    && !rival.is_minor
+                    && !rival.is_barbarian
+                    && game.is_at_war(player, rival.id)
+            })
+        {
+            return;
+        }
+        let recovery_reserve = 100.0 + 25.0 * cities.len() as f64;
+        if game.players[player].gold_per_turn < -0.5 && game.players[player].gold < recovery_reserve
+        {
+            return;
+        }
+        let standing = game
+            .units
+            .values()
+            .filter(|unit| {
+                let specification = &game.rules.units[unit.kind];
+                unit.owner == player
+                    && specification.class == "military"
+                    && specification.promotion_class != "recon"
+                    && !matches!(specification.domain.as_deref(), Some("sea" | "air"))
+                    && unit.hp as f64 > self.base.w.withdraw_hp
+            })
+            .count();
+        if standing < cities.len()
+            || cities.iter().any(|city| {
+                let city = &game.cities[city];
+                !city.is_capital
+                    && (game.city_has_district_family(city, crate::name!("campus"))
+                        || city.queue.iter().any(|item| {
+                            matches!(item, Item::District { district, .. } if game.district_family(*district) == "campus")
+                        }))
+            })
+        {
+            return;
+        }
+        let recipient = cities
+            .into_iter()
+            .filter(|city| {
+                let held = &game.cities[city];
+                !held.is_capital
+                    && held.queue.is_empty()
+                    && plan.threatened_city != Some(*city)
+                    && !(held.last_attacked > 0
+                        && game.turn.saturating_sub(held.last_attacked) <= 4)
+                    && !self
+                        .base
+                        .barbarian_local_alarm_for_controller(game, player, *city)
+            })
+            .filter_map(|city| {
+                BasicAi::first_campus_item(game, player, city).map(|item| (city, item))
+            })
+            .max_by(|(left, _), (right, _)| {
+                game.city_yields(*left)
+                    .production
+                    .total_cmp(&game.city_yields(*right).production)
+                    .then_with(|| right.cmp(left))
+            });
+        let Some((city, item)) = recipient else {
+            return;
+        };
+        if game.apply(player, &Action::Produce { city, item }).is_ok() {
+            think!(self.journal(), Economy, Decision,
+                "{} starts its noncapital campaign Campus", game.cities[&city].name;
+                "one locally safe idle town funds science without changing the capital's queue; existing commitments and the standing defense floor remain protected");
+        }
+    }
+
     pub(super) fn conquest_campaign_modernization_tech(
         &self,
         game: &Game,

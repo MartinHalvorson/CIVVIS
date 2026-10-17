@@ -1,5 +1,215 @@
 use super::*;
 
+fn conquest_campaign_campus_fixture() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
+    let (mut game, mut controller, _, _) = campaign();
+    let capital = game.player_city_ids(0)[0];
+    let town = game.found_city_for(0, (20, 20), None);
+    game.found_city_for(0, (30, 29), None);
+    for tile in game.map.tiles.values_mut() {
+        tile.hills = true;
+    }
+    for city in game.cities.values_mut().filter(|city| city.owner == 0) {
+        city.pop = 6;
+    }
+    game.turn = 40;
+    game.players[0].gold = 1000.0;
+    game.players[0].gold_per_turn = 5.0;
+    for technology in ["pottery", "writing", "mining"] {
+        game.players[0].techs.insert(Name::new(technology));
+    }
+    for _ in 0..3 {
+        game.spawn_test_unit("warrior", 0, (30, 20));
+    }
+    controller.victory_planning = true;
+    controller.base.campus_before_the_army_2 = true;
+    controller.capital_campus_before_the_plaza = true;
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 10,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    assert!(BasicAi::first_campus_item(&game, 0, town).is_some());
+    (game, controller, plan, capital, town)
+}
+
+fn conquest_campaign_noncapital_campus_queues(game: &Game) -> usize {
+    game.player_city_ids(0)
+        .iter()
+        .filter(|city| {
+            !game.cities[city].is_capital
+                && matches!(game.cities[city].queue.first(), Some(Item::District { district, .. }) if game.district_family(*district) == "campus")
+        })
+        .count()
+}
+
+#[test]
+fn conquest_campaign_campus_funds_one_town_without_taking_the_capital_settler() {
+    let (mut game, controller, plan, capital, _) = conquest_campaign_campus_fixture();
+    assert!(controller.base.settler_due(&game, 0, capital, 3, 0));
+    assert!(controller
+        .capital_campus_claim_item(&game, 0, &plan)
+        .is_none());
+    controller.claim_conquest_campaign_campus(&mut game, 0, &plan);
+    assert_eq!(conquest_campaign_noncapital_campus_queues(&game), 1);
+    assert!(game.cities[&capital].queue.is_empty());
+    controller.claim_conquest_campaign_campus(&mut game, 0, &plan);
+    assert_eq!(conquest_campaign_noncapital_campus_queues(&game), 1);
+}
+
+#[test]
+fn conquest_campaign_campus_preserves_an_actual_capital_settler_queue() {
+    let (mut game, controller, plan, capital, _) = conquest_campaign_campus_fixture();
+    let settler = Item::Unit {
+        unit: Name::new("settler"),
+    };
+    game.apply(
+        0,
+        &Action::Produce {
+            city: capital,
+            item: settler,
+        },
+    )
+    .unwrap();
+    let original = game.cities[&capital].queue.clone();
+    controller.claim_conquest_campaign_campus(&mut game, 0, &plan);
+    assert_eq!(game.cities[&capital].queue, original);
+    assert_eq!(conquest_campaign_noncapital_campus_queues(&game), 1);
+}
+
+#[test]
+fn conquest_campaign_campus_preserves_rushes_and_requires_writing() {
+    for rush in [false, true] {
+        let (mut game, controller, mut plan, _, _) = conquest_campaign_campus_fixture();
+        if rush {
+            plan.rush = true;
+        } else {
+            game.players[0].techs.remove(&crate::name!("writing"));
+        }
+        controller.claim_conquest_campaign_campus(&mut game, 0, &plan);
+        assert_eq!(conquest_campaign_noncapital_campus_queues(&game), 0);
+    }
+}
+
+#[test]
+fn conquest_campaign_campus_preserves_existing_noncapital_campus_work() {
+    let (mut game, controller, plan, _, town) = conquest_campaign_campus_fixture();
+    let item = BasicAi::first_campus_item(&game, 0, town).unwrap();
+    game.apply(0, &Action::Produce { city: town, item })
+        .unwrap();
+    let original = game.cities[&town].queue.clone();
+    controller.claim_conquest_campaign_campus(&mut game, 0, &plan);
+    assert_eq!(game.cities[&town].queue, original);
+    assert_eq!(conquest_campaign_noncapital_campus_queues(&game), 1);
+}
+
+#[test]
+fn conquest_campaign_campus_does_not_add_a_second_completed_town_campus() {
+    let (mut game, controller, plan, _, town) = conquest_campaign_campus_fixture();
+    let Item::District { district, pos } = BasicAi::first_campus_item(&game, 0, town).unwrap()
+    else {
+        panic!("expected a legal Campus site");
+    };
+    game.cities
+        .get_mut(&town)
+        .unwrap()
+        .districts
+        .insert(district, pos);
+    controller.claim_conquest_campaign_campus(&mut game, 0, &plan);
+    assert_eq!(conquest_campaign_noncapital_campus_queues(&game), 0);
+}
+
+#[test]
+fn conquest_campaign_campus_keeps_other_victory_lanes_unchanged() {
+    for target in [
+        None,
+        Some(VictoryTarget::Science),
+        Some(VictoryTarget::Religion),
+    ] {
+        let (mut game, mut controller, plan, _, _) = conquest_campaign_campus_fixture();
+        controller.victory_target = target;
+        controller.claim_conquest_campaign_campus(&mut game, 0, &plan);
+        assert_eq!(conquest_campaign_noncapital_campus_queues(&game), 0);
+    }
+}
+
+#[test]
+fn conquest_campaign_campus_requires_the_existing_science_and_victory_genes() {
+    for disable_victory in [false, true] {
+        let (mut game, mut controller, plan, _, _) = conquest_campaign_campus_fixture();
+        if disable_victory {
+            controller.victory_planning = false;
+        } else {
+            controller.base.campus_before_the_army_2 = false;
+            controller.base.campus_before_the_army_3 = false;
+        }
+        controller.claim_conquest_campaign_campus(&mut game, 0, &plan);
+        assert_eq!(conquest_campaign_noncapital_campus_queues(&game), 0);
+    }
+}
+
+#[test]
+fn conquest_campaign_campus_preserves_war_and_recovery_production() {
+    for war in [false, true] {
+        let (mut game, controller, mut plan, _, _) = conquest_campaign_campus_fixture();
+        if war {
+            game.at_war.insert((0, 1));
+        } else {
+            plan.strategy = GrandStrategy::Recovery;
+        }
+        controller.claim_conquest_campaign_campus(&mut game, 0, &plan);
+        assert_eq!(conquest_campaign_noncapital_campus_queues(&game), 0);
+    }
+}
+
+#[test]
+fn conquest_campaign_campus_keeps_actual_queues_and_recently_attacked_towns() {
+    let (mut game, controller, mut plan, capital, town) = conquest_campaign_campus_fixture();
+    for city in game.player_city_ids(0) {
+        if city != capital && city != town {
+            game.cities.get_mut(&city).unwrap().last_attacked = game.turn;
+        }
+    }
+    plan.threatened_city = Some(town);
+    controller.claim_conquest_campaign_campus(&mut game, 0, &plan);
+    assert_eq!(conquest_campaign_noncapital_campus_queues(&game), 0);
+    plan.threatened_city = None;
+    game.cities
+        .get_mut(&town)
+        .unwrap()
+        .queue
+        .push(Item::Building {
+            building: Name::new("monument"),
+        });
+    controller.claim_conquest_campaign_campus(&mut game, 0, &plan);
+    assert_eq!(conquest_campaign_noncapital_campus_queues(&game), 0);
+    assert!(
+        matches!(game.cities[&town].queue.first(), Some(Item::Building { building }) if building == "monument")
+    );
+}
+
+#[test]
+fn conquest_campaign_campus_waits_for_a_standing_army() {
+    let (mut game, controller, plan, _, _) = conquest_campaign_campus_fixture();
+    for unit in game.player_unit_ids(0) {
+        game.remove_unit(unit);
+    }
+    controller.claim_conquest_campaign_campus(&mut game, 0, &plan);
+    assert_eq!(conquest_campaign_noncapital_campus_queues(&game), 0);
+}
+
+#[test]
+fn conquest_campaign_campus_does_not_spend_the_economic_recovery_queue() {
+    let (mut game, controller, plan, _, _) = conquest_campaign_campus_fixture();
+    game.players[0].gold = 0.0;
+    game.players[0].gold_per_turn = -1.0;
+    controller.claim_conquest_campaign_campus(&mut game, 0, &plan);
+    assert_eq!(conquest_campaign_noncapital_campus_queues(&game), 0);
+}
+
 fn campaign() -> (Game, AdvancedAi, u32, u32) {
     let mut game = Game::new_full(4, 60, 38, 581144, 250, 0, false);
     for unit in game.units.keys().copied().collect::<Vec<_>>() {
