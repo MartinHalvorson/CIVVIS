@@ -1,0 +1,48 @@
+{
+  "complete": true,
+  "selected": [
+    "civvis-20261017T045045Z",
+    "civvis-20261017T045855Z",
+    "civvis-20261017T050815Z"
+  ],
+  "aa_frames": 411,
+  "aa_matched_frames": 328,
+  "aa_mismatched_frames": 83,
+  "aa_passed": false,
+  "ab_run": false,
+  "registration_sha256": "b00c10a83c4b36554153434bc2ffa52545293bf392ae38d2d40ed63d01a86354",
+  "archive": {
+    "file": "2026-10-16-native-road-rollout.provenance.json.gz",
+    "bytes": 77820,
+    "sha256": "1d680cb9bda6d4d93a3d164d9358f6d7ee7a6ac45d1647ceafc2c1174111b3ff"
+  },
+  "cohort": [
+    {
+      "run": "civvis-20261017T045045Z",
+      "terminal": true,
+      "last_turn": 150,
+      "reason": "abandoned",
+      "cities_taken": 0,
+      "cities_lost": 4,
+      "road_stand_down_lines": 0
+    },
+    {
+      "run": "civvis-20261017T045855Z",
+      "terminal": true,
+      "last_turn": 150,
+      "reason": "abandoned",
+      "cities_taken": 0,
+      "cities_lost": 0,
+      "road_stand_down_lines": 0
+    },
+    {
+      "run": "civvis-20261017T050815Z",
+      "terminal": true,
+      "last_turn": 150,
+      "reason": "abandoned",
+      "cities_taken": 0,
+      "cities_lost": 0,
+      "road_stand_down_lines": 0
+    }
+  ]
+}
