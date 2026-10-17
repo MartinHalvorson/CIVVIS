@@ -136,15 +136,11 @@ impl AdvancedAi {
             if !g.can_stop(uid, pos) || g.route_step(uid, pos, 0).is_none() {
                 continue;
             }
-            let stepped = if self.builder_reach_safety_on() {
-                self.builder_step_out_of_reach(g, pid, uid, pos)
-            } else {
-                self.builder_step_toward_barbarian_safe(g, pid, uid, pos)
-            };
-            if stepped {
-                self.builder_targets.insert(uid, pos);
-                think!(self.journal(), Expansion, Decision, "Builder chooses more useful work";
-                    "job at {pos:?} adds {best:.1} after travel, versus {here:.1} here; guard and route safety still apply"; pos);
+            if self.builder_step_toward_job(g, pid, uid, pos) {
+                if self.builder_targets.get(&uid) == Some(&pos) {
+                    think!(self.journal(), Expansion, Decision, "Builder chooses more useful work";
+                        "job at {pos:?} adds {best:.1} after travel, versus {here:.1} here; guard and route safety still apply"; pos);
+                }
                 return Some(true);
             }
         }

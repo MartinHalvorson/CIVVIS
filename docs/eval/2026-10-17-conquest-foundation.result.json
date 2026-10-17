@@ -1,0 +1,5533 @@
+{
+  "kind": "civvis-builder-job-progress-full-game-audit",
+  "assembled_utc": "2026-10-17T12:56:26.308683+00:00",
+  "reference_source": "262d7e37dfcc3cb6c1d78dbafc9ac7519b2e1bd7",
+  "decision": "Ship a narrowly tested assignment-progress repair, not a strength promotion. No focal victory or observed foreign-origin hold in either fresh cohort. Conquest remains unresolved.",
+  "first_unexposed_cohort": {
+    "scope": "Matched whole-build regression, not focal-only treatment isolation: this bug fix affects every AdvancedAi controller in the candidate, including rivals. No Firaxis/Native or promotion inference from these games.",
+    "analysis_script_sha256": "5f4417b47615f21e382fefb88ec815592b7d93b6c0b50a6f2d2f34e01a04e744",
+    "registration_sha256": "22d17d225992da8d537f818a6106bc2adfd8341264a0e8ac2bff29dae6be8d7f",
+    "pairs": [
+      {
+        "difficulty": "immortal",
+        "seed": 10517214999,
+        "reference": {
+          "turn": 148,
+          "winner": 3,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 52,
+          "improve_actions_through_60": 4,
+          "improve_actions_total": 4,
+          "improvements": [
+            [
+              28,
+              "chop_woods"
+            ],
+            [
+              30,
+              "chop_woods"
+            ],
+            [
+              46,
+              "farm"
+            ],
+            [
+              60,
+              "farm"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 4,
+              "production": 20.6,
+              "military_power": 75.65
+            },
+            "60": {
+              "cities": 3,
+              "production": 22.0,
+              "military_power": 206.48999999999998
+            },
+            "100": {
+              "cities": 0,
+              "production": 0,
+              "military_power": 0.0
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 0,
+          "actions_sha256": "a87962d5d8336a25421c0e82098b0078e08cb3dda0fb457e08446b425f1c0e4e"
+        },
+        "candidate": {
+          "turn": 148,
+          "winner": 3,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 52,
+          "improve_actions_through_60": 4,
+          "improve_actions_total": 4,
+          "improvements": [
+            [
+              28,
+              "chop_woods"
+            ],
+            [
+              30,
+              "chop_woods"
+            ],
+            [
+              46,
+              "farm"
+            ],
+            [
+              60,
+              "farm"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 4,
+              "production": 20.6,
+              "military_power": 75.65
+            },
+            "60": {
+              "cities": 3,
+              "production": 22.0,
+              "military_power": 206.48999999999998
+            },
+            "100": {
+              "cities": 0,
+              "production": 0,
+              "military_power": 0.0
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 0,
+          "actions_sha256": "a87962d5d8336a25421c0e82098b0078e08cb3dda0fb457e08446b425f1c0e4e"
+        },
+        "first_action_difference": null,
+        "first_focal_action_difference": null
+      },
+      {
+        "difficulty": "immortal",
+        "seed": 10850141024,
+        "reference": {
+          "turn": 158,
+          "winner": 2,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 129,
+          "improve_actions_through_60": 6,
+          "improve_actions_total": 21,
+          "improvements": [
+            [
+              27,
+              "pasture"
+            ],
+            [
+              31,
+              "farm"
+            ],
+            [
+              31,
+              "mine"
+            ],
+            [
+              32,
+              "farm"
+            ],
+            [
+              33,
+              "chop_woods"
+            ],
+            [
+              36,
+              "mine"
+            ],
+            [
+              66,
+              "plantation"
+            ],
+            [
+              69,
+              "chop_woods"
+            ],
+            [
+              71,
+              "lumber_mill"
+            ],
+            [
+              76,
+              "chop_woods"
+            ],
+            [
+              82,
+              "pasture"
+            ],
+            [
+              85,
+              "farm"
+            ],
+            [
+              88,
+              "mine"
+            ],
+            [
+              92,
+              "quarry"
+            ],
+            [
+              97,
+              "lumber_mill"
+            ],
+            [
+              104,
+              "plantation"
+            ],
+            [
+              106,
+              "lumber_mill"
+            ],
+            [
+              110,
+              "lumber_mill"
+            ],
+            [
+              115,
+              "camp"
+            ],
+            [
+              128,
+              "mine"
+            ],
+            [
+              131,
+              "mine"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 3,
+              "production": 24.0,
+              "military_power": 82.75
+            },
+            "60": {
+              "cities": 4,
+              "production": 35.0,
+              "military_power": 165.15
+            },
+            "100": {
+              "cities": 6,
+              "production": 71.3,
+              "military_power": 327.24
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 0,
+          "actions_sha256": "8fbb37b8b3fd6a6eba53cdd9aa84bd683d2cc6ca846783f18959106290016ed5"
+        },
+        "candidate": {
+          "turn": 158,
+          "winner": 2,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 129,
+          "improve_actions_through_60": 6,
+          "improve_actions_total": 21,
+          "improvements": [
+            [
+              27,
+              "pasture"
+            ],
+            [
+              31,
+              "farm"
+            ],
+            [
+              31,
+              "mine"
+            ],
+            [
+              32,
+              "farm"
+            ],
+            [
+              33,
+              "chop_woods"
+            ],
+            [
+              36,
+              "mine"
+            ],
+            [
+              66,
+              "plantation"
+            ],
+            [
+              69,
+              "chop_woods"
+            ],
+            [
+              71,
+              "lumber_mill"
+            ],
+            [
+              76,
+              "chop_woods"
+            ],
+            [
+              82,
+              "pasture"
+            ],
+            [
+              85,
+              "farm"
+            ],
+            [
+              88,
+              "mine"
+            ],
+            [
+              92,
+              "quarry"
+            ],
+            [
+              97,
+              "lumber_mill"
+            ],
+            [
+              104,
+              "plantation"
+            ],
+            [
+              106,
+              "lumber_mill"
+            ],
+            [
+              110,
+              "lumber_mill"
+            ],
+            [
+              115,
+              "camp"
+            ],
+            [
+              128,
+              "mine"
+            ],
+            [
+              131,
+              "mine"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 3,
+              "production": 24.0,
+              "military_power": 82.75
+            },
+            "60": {
+              "cities": 4,
+              "production": 35.0,
+              "military_power": 165.15
+            },
+            "100": {
+              "cities": 6,
+              "production": 71.3,
+              "military_power": 327.24
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 0,
+          "actions_sha256": "8fbb37b8b3fd6a6eba53cdd9aa84bd683d2cc6ca846783f18959106290016ed5"
+        },
+        "first_action_difference": null,
+        "first_focal_action_difference": null
+      },
+      {
+        "difficulty": "immortal",
+        "seed": 10088186705,
+        "reference": {
+          "turn": 164,
+          "winner": 2,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 210,
+          "improve_actions_through_60": 4,
+          "improve_actions_total": 66,
+          "improvements": [
+            [
+              32,
+              "chop_woods"
+            ],
+            [
+              34,
+              "pasture"
+            ],
+            [
+              37,
+              "chop_woods"
+            ],
+            [
+              53,
+              "quarry"
+            ],
+            [
+              61,
+              "pasture"
+            ],
+            [
+              64,
+              "pasture"
+            ],
+            [
+              65,
+              "farm"
+            ],
+            [
+              67,
+              "chop_woods"
+            ],
+            [
+              70,
+              "chop_woods"
+            ],
+            [
+              71,
+              "farm"
+            ],
+            [
+              72,
+              "farm"
+            ],
+            [
+              74,
+              "plantation"
+            ],
+            [
+              75,
+              "farm"
+            ],
+            [
+              75,
+              "farm"
+            ],
+            [
+              79,
+              "chop_woods"
+            ],
+            [
+              80,
+              "farm"
+            ],
+            [
+              80,
+              "farm"
+            ],
+            [
+              86,
+              "chop_woods"
+            ],
+            [
+              89,
+              "farm"
+            ],
+            [
+              93,
+              "chop_woods"
+            ],
+            [
+              93,
+              "plantation"
+            ],
+            [
+              94,
+              "mine"
+            ],
+            [
+              94,
+              "plantation"
+            ],
+            [
+              98,
+              "plantation"
+            ],
+            [
+              98,
+              "lumber_mill"
+            ],
+            [
+              99,
+              "plantation"
+            ],
+            [
+              99,
+              "lumber_mill"
+            ],
+            [
+              100,
+              "lumber_mill"
+            ],
+            [
+              101,
+              "lumber_mill"
+            ],
+            [
+              103,
+              "hacienda"
+            ],
+            [
+              107,
+              "mine"
+            ],
+            [
+              109,
+              "lumber_mill"
+            ],
+            [
+              109,
+              "lumber_mill"
+            ],
+            [
+              111,
+              "mine"
+            ],
+            [
+              111,
+              "lumber_mill"
+            ],
+            [
+              113,
+              "lumber_mill"
+            ],
+            [
+              113,
+              "hacienda"
+            ],
+            [
+              115,
+              "mine"
+            ],
+            [
+              115,
+              "plantation"
+            ],
+            [
+              116,
+              "hacienda"
+            ],
+            [
+              116,
+              "fishing_boats"
+            ],
+            [
+              116,
+              "lumber_mill"
+            ],
+            [
+              118,
+              "lumber_mill"
+            ],
+            [
+              118,
+              "lumber_mill"
+            ],
+            [
+              118,
+              "plantation"
+            ],
+            [
+              118,
+              "mine"
+            ],
+            [
+              118,
+              "lumber_mill"
+            ],
+            [
+              118,
+              "lumber_mill"
+            ],
+            [
+              119,
+              "hacienda"
+            ],
+            [
+              119,
+              "lumber_mill"
+            ],
+            [
+              120,
+              "lumber_mill"
+            ],
+            [
+              120,
+              "lumber_mill"
+            ],
+            [
+              120,
+              "camp"
+            ],
+            [
+              122,
+              "hacienda"
+            ],
+            [
+              122,
+              "mine"
+            ],
+            [
+              124,
+              "lumber_mill"
+            ],
+            [
+              124,
+              "lumber_mill"
+            ],
+            [
+              126,
+              "lumber_mill"
+            ],
+            [
+              128,
+              "lumber_mill"
+            ],
+            [
+              129,
+              "mine"
+            ],
+            [
+              129,
+              "mine"
+            ],
+            [
+              130,
+              "mine"
+            ],
+            [
+              131,
+              "mine"
+            ],
+            [
+              137,
+              "lumber_mill"
+            ],
+            [
+              145,
+              "hacienda"
+            ],
+            [
+              159,
+              "mine"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 4,
+              "production": 25.7,
+              "military_power": 113.5
+            },
+            "60": {
+              "cities": 5,
+              "production": 38.0,
+              "military_power": 328.78999999999996
+            },
+            "100": {
+              "cities": 7,
+              "production": 74.0,
+              "military_power": 629.07
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 0,
+          "actions_sha256": "9f7983da3049cdfc4bd12d29f4b8e91a2de505eeee78b40f9348d0311c05caa2"
+        },
+        "candidate": {
+          "turn": 164,
+          "winner": 2,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 210,
+          "improve_actions_through_60": 4,
+          "improve_actions_total": 66,
+          "improvements": [
+            [
+              32,
+              "chop_woods"
+            ],
+            [
+              34,
+              "pasture"
+            ],
+            [
+              37,
+              "chop_woods"
+            ],
+            [
+              53,
+              "quarry"
+            ],
+            [
+              61,
+              "pasture"
+            ],
+            [
+              64,
+              "pasture"
+            ],
+            [
+              65,
+              "farm"
+            ],
+            [
+              67,
+              "chop_woods"
+            ],
+            [
+              70,
+              "chop_woods"
+            ],
+            [
+              71,
+              "farm"
+            ],
+            [
+              72,
+              "farm"
+            ],
+            [
+              74,
+              "plantation"
+            ],
+            [
+              75,
+              "farm"
+            ],
+            [
+              75,
+              "farm"
+            ],
+            [
+              79,
+              "chop_woods"
+            ],
+            [
+              80,
+              "farm"
+            ],
+            [
+              80,
+              "farm"
+            ],
+            [
+              86,
+              "chop_woods"
+            ],
+            [
+              89,
+              "farm"
+            ],
+            [
+              93,
+              "chop_woods"
+            ],
+            [
+              93,
+              "plantation"
+            ],
+            [
+              94,
+              "mine"
+            ],
+            [
+              94,
+              "plantation"
+            ],
+            [
+              98,
+              "plantation"
+            ],
+            [
+              98,
+              "lumber_mill"
+            ],
+            [
+              99,
+              "plantation"
+            ],
+            [
+              99,
+              "lumber_mill"
+            ],
+            [
+              100,
+              "lumber_mill"
+            ],
+            [
+              101,
+              "lumber_mill"
+            ],
+            [
+              103,
+              "hacienda"
+            ],
+            [
+              107,
+              "mine"
+            ],
+            [
+              109,
+              "lumber_mill"
+            ],
+            [
+              109,
+              "lumber_mill"
+            ],
+            [
+              111,
+              "mine"
+            ],
+            [
+              111,
+              "lumber_mill"
+            ],
+            [
+              113,
+              "lumber_mill"
+            ],
+            [
+              113,
+              "hacienda"
+            ],
+            [
+              115,
+              "mine"
+            ],
+            [
+              115,
+              "plantation"
+            ],
+            [
+              116,
+              "hacienda"
+            ],
+            [
+              116,
+              "fishing_boats"
+            ],
+            [
+              116,
+              "lumber_mill"
+            ],
+            [
+              118,
+              "lumber_mill"
+            ],
+            [
+              118,
+              "lumber_mill"
+            ],
+            [
+              118,
+              "plantation"
+            ],
+            [
+              118,
+              "mine"
+            ],
+            [
+              118,
+              "lumber_mill"
+            ],
+            [
+              118,
+              "lumber_mill"
+            ],
+            [
+              119,
+              "hacienda"
+            ],
+            [
+              119,
+              "lumber_mill"
+            ],
+            [
+              120,
+              "lumber_mill"
+            ],
+            [
+              120,
+              "lumber_mill"
+            ],
+            [
+              120,
+              "camp"
+            ],
+            [
+              122,
+              "hacienda"
+            ],
+            [
+              122,
+              "mine"
+            ],
+            [
+              124,
+              "lumber_mill"
+            ],
+            [
+              124,
+              "lumber_mill"
+            ],
+            [
+              126,
+              "lumber_mill"
+            ],
+            [
+              128,
+              "lumber_mill"
+            ],
+            [
+              129,
+              "mine"
+            ],
+            [
+              129,
+              "mine"
+            ],
+            [
+              130,
+              "mine"
+            ],
+            [
+              131,
+              "mine"
+            ],
+            [
+              137,
+              "lumber_mill"
+            ],
+            [
+              145,
+              "hacienda"
+            ],
+            [
+              159,
+              "mine"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 4,
+              "production": 25.7,
+              "military_power": 113.5
+            },
+            "60": {
+              "cities": 5,
+              "production": 38.0,
+              "military_power": 328.78999999999996
+            },
+            "100": {
+              "cities": 7,
+              "production": 74.0,
+              "military_power": 629.07
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 0,
+          "actions_sha256": "9f7983da3049cdfc4bd12d29f4b8e91a2de505eeee78b40f9348d0311c05caa2"
+        },
+        "first_action_difference": null,
+        "first_focal_action_difference": null
+      },
+      {
+        "difficulty": "immortal",
+        "seed": 10250021098,
+        "reference": {
+          "turn": 143,
+          "winner": 1,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 293,
+          "improve_actions_through_60": 4,
+          "improve_actions_total": 59,
+          "improvements": [
+            [
+              32,
+              "chop_woods"
+            ],
+            [
+              37,
+              "pasture"
+            ],
+            [
+              40,
+              "chop_woods"
+            ],
+            [
+              58,
+              "camp"
+            ],
+            [
+              66,
+              "pasture"
+            ],
+            [
+              76,
+              "mine"
+            ],
+            [
+              76,
+              "chop_woods"
+            ],
+            [
+              77,
+              "chop_rainforest"
+            ],
+            [
+              77,
+              "camp"
+            ],
+            [
+              80,
+              "camp"
+            ],
+            [
+              83,
+              "farm"
+            ],
+            [
+              89,
+              "quarry"
+            ],
+            [
+              89,
+              "plantation"
+            ],
+            [
+              90,
+              "farm"
+            ],
+            [
+              91,
+              "pasture"
+            ],
+            [
+              91,
+              "chop_rainforest"
+            ],
+            [
+              92,
+              "chop_rainforest"
+            ],
+            [
+              92,
+              "chop_rainforest"
+            ],
+            [
+              93,
+              "lumber_mill"
+            ],
+            [
+              93,
+              "farm"
+            ],
+            [
+              94,
+              "chop_woods"
+            ],
+            [
+              95,
+              "farm"
+            ],
+            [
+              96,
+              "mine"
+            ],
+            [
+              96,
+              "farm"
+            ],
+            [
+              96,
+              "mine"
+            ],
+            [
+              97,
+              "mine"
+            ],
+            [
+              97,
+              "farm"
+            ],
+            [
+              97,
+              "chop_rainforest"
+            ],
+            [
+              97,
+              "chop_rainforest"
+            ],
+            [
+              98,
+              "farm"
+            ],
+            [
+              98,
+              "farm"
+            ],
+            [
+              99,
+              "mine"
+            ],
+            [
+              100,
+              "lumber_mill"
+            ],
+            [
+              100,
+              "plantation"
+            ],
+            [
+              102,
+              "farm"
+            ],
+            [
+              102,
+              "lumber_mill"
+            ],
+            [
+              103,
+              "pasture"
+            ],
+            [
+              103,
+              "mine"
+            ],
+            [
+              103,
+              "mine"
+            ],
+            [
+              103,
+              "farm"
+            ],
+            [
+              103,
+              "farm"
+            ],
+            [
+              104,
+              "farm"
+            ],
+            [
+              105,
+              "lumber_mill"
+            ],
+            [
+              105,
+              "farm"
+            ],
+            [
+              105,
+              "mine"
+            ],
+            [
+              107,
+              "farm"
+            ],
+            [
+              108,
+              "lumber_mill"
+            ],
+            [
+              109,
+              "farm"
+            ],
+            [
+              117,
+              "mine"
+            ],
+            [
+              118,
+              "farm"
+            ],
+            [
+              119,
+              "plantation"
+            ],
+            [
+              119,
+              "lumber_mill"
+            ],
+            [
+              123,
+              "farm"
+            ],
+            [
+              128,
+              "farm"
+            ],
+            [
+              129,
+              "farm"
+            ],
+            [
+              131,
+              "chop_woods"
+            ],
+            [
+              139,
+              "mine"
+            ],
+            [
+              141,
+              "lumber_mill"
+            ],
+            [
+              143,
+              "mine"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 2,
+              "production": 12.5,
+              "military_power": 108.6
+            },
+            "60": {
+              "cities": 4,
+              "production": 33.0,
+              "military_power": 219.3
+            },
+            "100": {
+              "cities": 6,
+              "production": 79.0,
+              "military_power": 756.1500000000001
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 0,
+          "actions_sha256": "ec044df4e6f8e75a47cdc6c30d8c5bbb02d580d80880924d1a4fe42cdcd64353"
+        },
+        "candidate": {
+          "turn": 143,
+          "winner": 1,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 293,
+          "improve_actions_through_60": 4,
+          "improve_actions_total": 59,
+          "improvements": [
+            [
+              32,
+              "chop_woods"
+            ],
+            [
+              37,
+              "pasture"
+            ],
+            [
+              40,
+              "chop_woods"
+            ],
+            [
+              58,
+              "camp"
+            ],
+            [
+              66,
+              "pasture"
+            ],
+            [
+              76,
+              "mine"
+            ],
+            [
+              76,
+              "chop_woods"
+            ],
+            [
+              77,
+              "chop_rainforest"
+            ],
+            [
+              77,
+              "camp"
+            ],
+            [
+              80,
+              "camp"
+            ],
+            [
+              83,
+              "farm"
+            ],
+            [
+              89,
+              "quarry"
+            ],
+            [
+              89,
+              "plantation"
+            ],
+            [
+              90,
+              "farm"
+            ],
+            [
+              91,
+              "pasture"
+            ],
+            [
+              91,
+              "chop_rainforest"
+            ],
+            [
+              92,
+              "chop_rainforest"
+            ],
+            [
+              92,
+              "chop_rainforest"
+            ],
+            [
+              93,
+              "lumber_mill"
+            ],
+            [
+              93,
+              "farm"
+            ],
+            [
+              94,
+              "chop_woods"
+            ],
+            [
+              95,
+              "farm"
+            ],
+            [
+              96,
+              "mine"
+            ],
+            [
+              96,
+              "farm"
+            ],
+            [
+              96,
+              "mine"
+            ],
+            [
+              97,
+              "mine"
+            ],
+            [
+              97,
+              "farm"
+            ],
+            [
+              97,
+              "chop_rainforest"
+            ],
+            [
+              97,
+              "chop_rainforest"
+            ],
+            [
+              98,
+              "farm"
+            ],
+            [
+              98,
+              "farm"
+            ],
+            [
+              99,
+              "mine"
+            ],
+            [
+              100,
+              "lumber_mill"
+            ],
+            [
+              100,
+              "plantation"
+            ],
+            [
+              102,
+              "farm"
+            ],
+            [
+              102,
+              "lumber_mill"
+            ],
+            [
+              103,
+              "pasture"
+            ],
+            [
+              103,
+              "mine"
+            ],
+            [
+              103,
+              "mine"
+            ],
+            [
+              103,
+              "farm"
+            ],
+            [
+              103,
+              "farm"
+            ],
+            [
+              104,
+              "farm"
+            ],
+            [
+              105,
+              "lumber_mill"
+            ],
+            [
+              105,
+              "farm"
+            ],
+            [
+              105,
+              "mine"
+            ],
+            [
+              107,
+              "farm"
+            ],
+            [
+              108,
+              "lumber_mill"
+            ],
+            [
+              109,
+              "farm"
+            ],
+            [
+              117,
+              "mine"
+            ],
+            [
+              118,
+              "farm"
+            ],
+            [
+              119,
+              "plantation"
+            ],
+            [
+              119,
+              "lumber_mill"
+            ],
+            [
+              123,
+              "farm"
+            ],
+            [
+              128,
+              "farm"
+            ],
+            [
+              129,
+              "farm"
+            ],
+            [
+              131,
+              "chop_woods"
+            ],
+            [
+              139,
+              "mine"
+            ],
+            [
+              141,
+              "lumber_mill"
+            ],
+            [
+              143,
+              "mine"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 2,
+              "production": 12.5,
+              "military_power": 108.6
+            },
+            "60": {
+              "cities": 4,
+              "production": 33.0,
+              "military_power": 219.3
+            },
+            "100": {
+              "cities": 6,
+              "production": 79.0,
+              "military_power": 756.1500000000001
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 0,
+          "actions_sha256": "ec044df4e6f8e75a47cdc6c30d8c5bbb02d580d80880924d1a4fe42cdcd64353"
+        },
+        "first_action_difference": null,
+        "first_focal_action_difference": null
+      },
+      {
+        "difficulty": "deity",
+        "seed": 10368823545,
+        "reference": {
+          "turn": 141,
+          "winner": 1,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 186,
+          "improve_actions_through_60": 6,
+          "improve_actions_total": 15,
+          "improvements": [
+            [
+              15,
+              "camp"
+            ],
+            [
+              16,
+              "farm"
+            ],
+            [
+              24,
+              "farm"
+            ],
+            [
+              41,
+              "chop_rainforest"
+            ],
+            [
+              43,
+              "farm"
+            ],
+            [
+              45,
+              "farm"
+            ],
+            [
+              70,
+              "mine"
+            ],
+            [
+              72,
+              "farm"
+            ],
+            [
+              74,
+              "lumber_mill"
+            ],
+            [
+              84,
+              "camp"
+            ],
+            [
+              89,
+              "chop_woods"
+            ],
+            [
+              91,
+              "lumber_mill"
+            ],
+            [
+              92,
+              "farm"
+            ],
+            [
+              113,
+              "chop_woods"
+            ],
+            [
+              114,
+              "farm"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 2,
+              "production": 16.0,
+              "military_power": 103.30000000000001
+            },
+            "60": {
+              "cities": 3,
+              "production": 25.0,
+              "military_power": 214.75
+            },
+            "100": {
+              "cities": 3,
+              "production": 34.2,
+              "military_power": 535.15
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 0,
+          "actions_sha256": "5f4748f303b7a84e572e46c5052121318365f762bfdafce773ea0d25664f327f"
+        },
+        "candidate": {
+          "turn": 141,
+          "winner": 1,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 186,
+          "improve_actions_through_60": 6,
+          "improve_actions_total": 15,
+          "improvements": [
+            [
+              15,
+              "camp"
+            ],
+            [
+              16,
+              "farm"
+            ],
+            [
+              24,
+              "farm"
+            ],
+            [
+              41,
+              "chop_rainforest"
+            ],
+            [
+              43,
+              "farm"
+            ],
+            [
+              45,
+              "farm"
+            ],
+            [
+              70,
+              "mine"
+            ],
+            [
+              72,
+              "farm"
+            ],
+            [
+              74,
+              "lumber_mill"
+            ],
+            [
+              84,
+              "camp"
+            ],
+            [
+              89,
+              "chop_woods"
+            ],
+            [
+              91,
+              "lumber_mill"
+            ],
+            [
+              92,
+              "farm"
+            ],
+            [
+              113,
+              "chop_woods"
+            ],
+            [
+              114,
+              "farm"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 2,
+              "production": 16.0,
+              "military_power": 103.30000000000001
+            },
+            "60": {
+              "cities": 3,
+              "production": 25.0,
+              "military_power": 214.75
+            },
+            "100": {
+              "cities": 3,
+              "production": 34.2,
+              "military_power": 535.15
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 0,
+          "actions_sha256": "5f4748f303b7a84e572e46c5052121318365f762bfdafce773ea0d25664f327f"
+        },
+        "first_action_difference": null,
+        "first_focal_action_difference": null
+      },
+      {
+        "difficulty": "deity",
+        "seed": 10372621442,
+        "reference": {
+          "turn": 139,
+          "winner": 1,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 88,
+          "improve_actions_through_60": 4,
+          "improve_actions_total": 18,
+          "improvements": [
+            [
+              40,
+              "farm"
+            ],
+            [
+              43,
+              "chop_woods"
+            ],
+            [
+              46,
+              "pasture"
+            ],
+            [
+              59,
+              "farm"
+            ],
+            [
+              65,
+              "alcazar"
+            ],
+            [
+              65,
+              "mine"
+            ],
+            [
+              70,
+              "farm"
+            ],
+            [
+              71,
+              "farm"
+            ],
+            [
+              86,
+              "chop_woods"
+            ],
+            [
+              88,
+              "farm"
+            ],
+            [
+              90,
+              "mine"
+            ],
+            [
+              93,
+              "lumber_mill"
+            ],
+            [
+              97,
+              "camp"
+            ],
+            [
+              97,
+              "plantation"
+            ],
+            [
+              101,
+              "lumber_mill"
+            ],
+            [
+              103,
+              "lumber_mill"
+            ],
+            [
+              107,
+              "mine"
+            ],
+            [
+              113,
+              "mine"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 2,
+              "production": 15.5,
+              "military_power": 102.5
+            },
+            "60": {
+              "cities": 4,
+              "production": 25.200000000000003,
+              "military_power": 229.8
+            },
+            "100": {
+              "cities": 4,
+              "production": 52.400000000000006,
+              "military_power": 431.52
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 0,
+          "actions_sha256": "a19acb9e2fc48cc9c645d862e9406794d158bcdbc55053bd6b7ad93e4c1d342c"
+        },
+        "candidate": {
+          "turn": 139,
+          "winner": 1,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 88,
+          "improve_actions_through_60": 4,
+          "improve_actions_total": 18,
+          "improvements": [
+            [
+              40,
+              "farm"
+            ],
+            [
+              43,
+              "chop_woods"
+            ],
+            [
+              46,
+              "pasture"
+            ],
+            [
+              59,
+              "farm"
+            ],
+            [
+              65,
+              "alcazar"
+            ],
+            [
+              65,
+              "mine"
+            ],
+            [
+              70,
+              "farm"
+            ],
+            [
+              71,
+              "farm"
+            ],
+            [
+              86,
+              "chop_woods"
+            ],
+            [
+              88,
+              "farm"
+            ],
+            [
+              90,
+              "mine"
+            ],
+            [
+              93,
+              "lumber_mill"
+            ],
+            [
+              97,
+              "camp"
+            ],
+            [
+              97,
+              "plantation"
+            ],
+            [
+              101,
+              "lumber_mill"
+            ],
+            [
+              103,
+              "lumber_mill"
+            ],
+            [
+              107,
+              "mine"
+            ],
+            [
+              113,
+              "mine"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 2,
+              "production": 15.5,
+              "military_power": 102.5
+            },
+            "60": {
+              "cities": 4,
+              "production": 25.200000000000003,
+              "military_power": 229.8
+            },
+            "100": {
+              "cities": 4,
+              "production": 52.400000000000006,
+              "military_power": 431.52
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 0,
+          "actions_sha256": "a19acb9e2fc48cc9c645d862e9406794d158bcdbc55053bd6b7ad93e4c1d342c"
+        },
+        "first_action_difference": null,
+        "first_focal_action_difference": null
+      },
+      {
+        "difficulty": "deity",
+        "seed": 10207187195,
+        "reference": {
+          "turn": 133,
+          "winner": 1,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 173,
+          "improve_actions_through_60": 6,
+          "improve_actions_total": 22,
+          "improvements": [
+            [
+              34,
+              "chop_woods"
+            ],
+            [
+              38,
+              "farm"
+            ],
+            [
+              39,
+              "quarry"
+            ],
+            [
+              41,
+              "mine"
+            ],
+            [
+              43,
+              "mine"
+            ],
+            [
+              44,
+              "farm"
+            ],
+            [
+              68,
+              "farm"
+            ],
+            [
+              71,
+              "mine"
+            ],
+            [
+              74,
+              "mine"
+            ],
+            [
+              76,
+              "mine"
+            ],
+            [
+              79,
+              "mine"
+            ],
+            [
+              82,
+              "chop_woods"
+            ],
+            [
+              88,
+              "farm"
+            ],
+            [
+              94,
+              "lumber_mill"
+            ],
+            [
+              97,
+              "mine"
+            ],
+            [
+              99,
+              "mine"
+            ],
+            [
+              102,
+              "lumber_mill"
+            ],
+            [
+              106,
+              "lumber_mill"
+            ],
+            [
+              110,
+              "lumber_mill"
+            ],
+            [
+              111,
+              "farm"
+            ],
+            [
+              111,
+              "lumber_mill"
+            ],
+            [
+              119,
+              "chop_woods"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 2,
+              "production": 13.3,
+              "military_power": 122.05000000000001
+            },
+            "60": {
+              "cities": 2,
+              "production": 16.15,
+              "military_power": 335.75
+            },
+            "100": {
+              "cities": 3,
+              "production": 28.150000000000006,
+              "military_power": 509.75
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 0,
+          "actions_sha256": "07028661a6409db13ad8c78244f637dd22bd85c1c65a673b120497c860be16be"
+        },
+        "candidate": {
+          "turn": 133,
+          "winner": 1,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 173,
+          "improve_actions_through_60": 6,
+          "improve_actions_total": 22,
+          "improvements": [
+            [
+              34,
+              "chop_woods"
+            ],
+            [
+              38,
+              "farm"
+            ],
+            [
+              39,
+              "quarry"
+            ],
+            [
+              41,
+              "mine"
+            ],
+            [
+              43,
+              "mine"
+            ],
+            [
+              44,
+              "farm"
+            ],
+            [
+              68,
+              "farm"
+            ],
+            [
+              71,
+              "mine"
+            ],
+            [
+              74,
+              "mine"
+            ],
+            [
+              76,
+              "mine"
+            ],
+            [
+              79,
+              "mine"
+            ],
+            [
+              82,
+              "chop_woods"
+            ],
+            [
+              88,
+              "farm"
+            ],
+            [
+              94,
+              "lumber_mill"
+            ],
+            [
+              97,
+              "mine"
+            ],
+            [
+              99,
+              "mine"
+            ],
+            [
+              102,
+              "lumber_mill"
+            ],
+            [
+              106,
+              "lumber_mill"
+            ],
+            [
+              110,
+              "lumber_mill"
+            ],
+            [
+              111,
+              "farm"
+            ],
+            [
+              111,
+              "lumber_mill"
+            ],
+            [
+              119,
+              "chop_woods"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 2,
+              "production": 13.3,
+              "military_power": 122.05000000000001
+            },
+            "60": {
+              "cities": 2,
+              "production": 16.15,
+              "military_power": 335.75
+            },
+            "100": {
+              "cities": 3,
+              "production": 28.150000000000006,
+              "military_power": 509.75
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 0,
+          "actions_sha256": "07028661a6409db13ad8c78244f637dd22bd85c1c65a673b120497c860be16be"
+        },
+        "first_action_difference": null,
+        "first_focal_action_difference": null
+      },
+      {
+        "difficulty": "deity",
+        "seed": 10757163679,
+        "reference": {
+          "turn": 139,
+          "winner": 2,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 266,
+          "improve_actions_through_60": 4,
+          "improve_actions_total": 27,
+          "improvements": [
+            [
+              19,
+              "chop_woods"
+            ],
+            [
+              52,
+              "mine"
+            ],
+            [
+              56,
+              "mine"
+            ],
+            [
+              59,
+              "pasture"
+            ],
+            [
+              64,
+              "plantation"
+            ],
+            [
+              65,
+              "farm"
+            ],
+            [
+              67,
+              "camp"
+            ],
+            [
+              70,
+              "mine"
+            ],
+            [
+              83,
+              "chop_woods"
+            ],
+            [
+              84,
+              "farm"
+            ],
+            [
+              87,
+              "lumber_mill"
+            ],
+            [
+              87,
+              "lumber_mill"
+            ],
+            [
+              88,
+              "lumber_mill"
+            ],
+            [
+              95,
+              "farm"
+            ],
+            [
+              102,
+              "lumber_mill"
+            ],
+            [
+              103,
+              "quarry"
+            ],
+            [
+              104,
+              "lumber_mill"
+            ],
+            [
+              105,
+              "pasture"
+            ],
+            [
+              107,
+              "plantation"
+            ],
+            [
+              107,
+              "lumber_mill"
+            ],
+            [
+              108,
+              "lumber_mill"
+            ],
+            [
+              109,
+              "chop_woods"
+            ],
+            [
+              111,
+              "lumber_mill"
+            ],
+            [
+              111,
+              "lumber_mill"
+            ],
+            [
+              112,
+              "lumber_mill"
+            ],
+            [
+              121,
+              "lumber_mill"
+            ],
+            [
+              137,
+              "lumber_mill"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 1,
+              "production": 11.0,
+              "military_power": 58.7
+            },
+            "60": {
+              "cities": 3,
+              "production": 26.0,
+              "military_power": 214.4
+            },
+            "100": {
+              "cities": 5,
+              "production": 65.9,
+              "military_power": 545.05
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 0,
+          "actions_sha256": "bf645a1bb1d9b82a3d5e9bfaa44594709e494a21c0425fc8b1fe91c22b46c480"
+        },
+        "candidate": {
+          "turn": 139,
+          "winner": 2,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 266,
+          "improve_actions_through_60": 4,
+          "improve_actions_total": 27,
+          "improvements": [
+            [
+              19,
+              "chop_woods"
+            ],
+            [
+              52,
+              "mine"
+            ],
+            [
+              56,
+              "mine"
+            ],
+            [
+              59,
+              "pasture"
+            ],
+            [
+              64,
+              "plantation"
+            ],
+            [
+              65,
+              "farm"
+            ],
+            [
+              67,
+              "camp"
+            ],
+            [
+              70,
+              "mine"
+            ],
+            [
+              83,
+              "chop_woods"
+            ],
+            [
+              84,
+              "farm"
+            ],
+            [
+              87,
+              "lumber_mill"
+            ],
+            [
+              87,
+              "lumber_mill"
+            ],
+            [
+              88,
+              "lumber_mill"
+            ],
+            [
+              95,
+              "farm"
+            ],
+            [
+              102,
+              "lumber_mill"
+            ],
+            [
+              103,
+              "quarry"
+            ],
+            [
+              104,
+              "lumber_mill"
+            ],
+            [
+              105,
+              "pasture"
+            ],
+            [
+              107,
+              "plantation"
+            ],
+            [
+              107,
+              "lumber_mill"
+            ],
+            [
+              108,
+              "lumber_mill"
+            ],
+            [
+              109,
+              "chop_woods"
+            ],
+            [
+              111,
+              "lumber_mill"
+            ],
+            [
+              111,
+              "lumber_mill"
+            ],
+            [
+              112,
+              "lumber_mill"
+            ],
+            [
+              121,
+              "lumber_mill"
+            ],
+            [
+              137,
+              "lumber_mill"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 1,
+              "production": 11.0,
+              "military_power": 58.7
+            },
+            "60": {
+              "cities": 3,
+              "production": 26.0,
+              "military_power": 214.4
+            },
+            "100": {
+              "cities": 5,
+              "production": 65.9,
+              "military_power": 545.05
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 0,
+          "actions_sha256": "bf645a1bb1d9b82a3d5e9bfaa44594709e494a21c0425fc8b1fe91c22b46c480"
+        },
+        "first_action_difference": null,
+        "first_focal_action_difference": null
+      }
+    ],
+    "reference_wins": 0,
+    "candidate_wins": 0,
+    "global_action_contrasts": 0,
+    "action_contrasts": 0,
+    "maps": 8,
+    "limitations": [
+      "Whole-build change affects the rivals too; no isolated focal treatment effect.",
+      "CIVVIS simulation against adaptive CIVVIS opponents, not Native/Firaxis verification.",
+      "Improve counts include charges spent on feature removals; more actions alone is not a yield gain.",
+      "Foreign-origin holds are observed only at full-round snapshots; no claim that every capture is recorded.",
+      "Fixed checkpoints after an earlier natural terminal stay absent, not fabricated or extended."
+    ]
+  },
+  "normal_sweep_cohort": {
+    "scope": "Matched whole-build regression; all AdvancedAi controllers receive the source change, including rivals. Not an isolated focal-treatment effect.",
+    "analysis_script_sha256": "142221f2454ebfcef399f1eb4d98f8395ed949f2ea522315d24b972800d887af",
+    "registration_sha256": "3c311a3c2e9740d3cf0db7e64d54a55a27ba79d3274fe0383907ff5f6b5daa4e",
+    "pairs": [
+      {
+        "difficulty": "immortal",
+        "seed": 20603809636,
+        "reference": {
+          "turn": 163,
+          "winner": 1,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 136,
+          "improve_actions_through_60": 0,
+          "improve_actions_total": 14,
+          "improvements": [
+            [
+              62,
+              "pasture"
+            ],
+            [
+              68,
+              "plantation"
+            ],
+            [
+              72,
+              "camp"
+            ],
+            [
+              75,
+              "mine"
+            ],
+            [
+              80,
+              "chop_woods"
+            ],
+            [
+              93,
+              "lumber_mill"
+            ],
+            [
+              95,
+              "lumber_mill"
+            ],
+            [
+              107,
+              "mine"
+            ],
+            [
+              110,
+              "lumber_mill"
+            ],
+            [
+              119,
+              "lumber_mill"
+            ],
+            [
+              124,
+              "lumber_mill"
+            ],
+            [
+              127,
+              "farm"
+            ],
+            [
+              148,
+              "mine"
+            ],
+            [
+              149,
+              "mine"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 2,
+              "production": 17.5,
+              "military_power": 149.2
+            },
+            "60": {
+              "cities": 3,
+              "production": 27.35,
+              "military_power": 308.9
+            },
+            "100": {
+              "cities": 4,
+              "production": 57.0,
+              "military_power": 522.3299999999999
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 0,
+          "actions_sha256": "3b134e694cce86b0cf9dde09277a6ce3f27a151b8de00a626e5bdafedf8bbaba"
+        },
+        "candidate": {
+          "turn": 156,
+          "winner": 3,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 110,
+          "improve_actions_through_60": 2,
+          "improve_actions_total": 12,
+          "improvements": [
+            [
+              53,
+              "farm"
+            ],
+            [
+              57,
+              "farm"
+            ],
+            [
+              65,
+              "chop_woods"
+            ],
+            [
+              69,
+              "camp"
+            ],
+            [
+              70,
+              "pasture"
+            ],
+            [
+              75,
+              "plantation"
+            ],
+            [
+              111,
+              "lumber_mill"
+            ],
+            [
+              124,
+              "camp"
+            ],
+            [
+              124,
+              "mine"
+            ],
+            [
+              129,
+              "mine"
+            ],
+            [
+              129,
+              "quarry"
+            ],
+            [
+              139,
+              "mine"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 2,
+              "production": 17.5,
+              "military_power": 129.1
+            },
+            "60": {
+              "cities": 2,
+              "production": 20.9,
+              "military_power": 116.25
+            },
+            "100": {
+              "cities": 4,
+              "production": 48.75,
+              "military_power": 321.88
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 6,
+          "actions_sha256": "e737589f45a0720c5c3f972e72ca48d33b716f947f915f0b4ff724ceb05aefe9"
+        },
+        "first_action_difference": {
+          "index": 1884,
+          "reference_turn": 24,
+          "candidate_turn": 24,
+          "reference_action": [
+            1,
+            {
+              "to": [
+                2,
+                19
+              ],
+              "type": "move",
+              "unit": 116
+            }
+          ],
+          "candidate_action": [
+            1,
+            {
+              "to": [
+                4,
+                17
+              ],
+              "type": "move",
+              "unit": 116
+            }
+          ]
+        },
+        "first_focal_action_difference": {
+          "focal_index": 204,
+          "reference_global_index": 2708,
+          "candidate_global_index": 2706,
+          "reference_turn": 31,
+          "candidate_turn": 31,
+          "reference_action": {
+            "to": [
+              27,
+              18
+            ],
+            "type": "move_to",
+            "unit": 2
+          },
+          "candidate_action": {
+            "target": [
+              30,
+              16
+            ],
+            "type": "attack",
+            "unit": 2
+          }
+        }
+      },
+      {
+        "difficulty": "immortal",
+        "seed": 20153601825,
+        "reference": {
+          "turn": 158,
+          "winner": 1,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 410,
+          "improve_actions_through_60": 5,
+          "improve_actions_total": 70,
+          "improvements": [
+            [
+              40,
+              "chop_woods"
+            ],
+            [
+              42,
+              "pasture"
+            ],
+            [
+              49,
+              "farm"
+            ],
+            [
+              54,
+              "mine"
+            ],
+            [
+              57,
+              "mine"
+            ],
+            [
+              63,
+              "mine"
+            ],
+            [
+              65,
+              "pasture"
+            ],
+            [
+              67,
+              "lumber_mill"
+            ],
+            [
+              74,
+              "chop_woods"
+            ],
+            [
+              79,
+              "chop_woods"
+            ],
+            [
+              82,
+              "chop_woods"
+            ],
+            [
+              83,
+              "chop_woods"
+            ],
+            [
+              86,
+              "chop_woods"
+            ],
+            [
+              88,
+              "harvest_resource"
+            ],
+            [
+              91,
+              "farm"
+            ],
+            [
+              92,
+              "farm"
+            ],
+            [
+              92,
+              "lumber_mill"
+            ],
+            [
+              93,
+              "farm"
+            ],
+            [
+              94,
+              "farm"
+            ],
+            [
+              94,
+              "farm"
+            ],
+            [
+              95,
+              "fishing_boats"
+            ],
+            [
+              95,
+              "farm"
+            ],
+            [
+              97,
+              "lumber_mill"
+            ],
+            [
+              97,
+              "plantation"
+            ],
+            [
+              99,
+              "lumber_mill"
+            ],
+            [
+              101,
+              "pasture"
+            ],
+            [
+              102,
+              "lumber_mill"
+            ],
+            [
+              104,
+              "farm"
+            ],
+            [
+              104,
+              "mine"
+            ],
+            [
+              105,
+              "farm"
+            ],
+            [
+              109,
+              "lumber_mill"
+            ],
+            [
+              109,
+              "farm"
+            ],
+            [
+              110,
+              "mine"
+            ],
+            [
+              111,
+              "farm"
+            ],
+            [
+              113,
+              "lumber_mill"
+            ],
+            [
+              115,
+              "fishing_boats"
+            ],
+            [
+              116,
+              "lumber_mill"
+            ],
+            [
+              117,
+              "farm"
+            ],
+            [
+              117,
+              "lumber_mill"
+            ],
+            [
+              118,
+              "mine"
+            ],
+            [
+              119,
+              "pasture"
+            ],
+            [
+              119,
+              "fishing_boats"
+            ],
+            [
+              119,
+              "mine"
+            ],
+            [
+              120,
+              "plantation"
+            ],
+            [
+              121,
+              "farm"
+            ],
+            [
+              121,
+              "mine"
+            ],
+            [
+              123,
+              "lumber_mill"
+            ],
+            [
+              123,
+              "mine"
+            ],
+            [
+              124,
+              "camp"
+            ],
+            [
+              125,
+              "farm"
+            ],
+            [
+              129,
+              "camp"
+            ],
+            [
+              131,
+              "mine"
+            ],
+            [
+              133,
+              "farm"
+            ],
+            [
+              134,
+              "farm"
+            ],
+            [
+              138,
+              "plantation"
+            ],
+            [
+              139,
+              "farm"
+            ],
+            [
+              140,
+              "farm"
+            ],
+            [
+              140,
+              "farm"
+            ],
+            [
+              141,
+              "farm"
+            ],
+            [
+              146,
+              "mine"
+            ],
+            [
+              147,
+              "fishing_boats"
+            ],
+            [
+              147,
+              "lumber_mill"
+            ],
+            [
+              147,
+              "mine"
+            ],
+            [
+              148,
+              "farm"
+            ],
+            [
+              148,
+              "farm"
+            ],
+            [
+              153,
+              "mine"
+            ],
+            [
+              156,
+              "lumber_mill"
+            ],
+            [
+              156,
+              "lumber_mill"
+            ],
+            [
+              157,
+              "hacienda"
+            ],
+            [
+              158,
+              "lumber_mill"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 2,
+              "production": 19.4,
+              "military_power": 143.2
+            },
+            "60": {
+              "cities": 3,
+              "production": 32.5,
+              "military_power": 252.0
+            },
+            "100": {
+              "cities": 8,
+              "production": 82.0,
+              "military_power": 581.7
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 0,
+          "actions_sha256": "dc28631f0078af78400d15b5f8e42afcfdbd8a47f7f67e36d8ad8544c76330cc"
+        },
+        "candidate": {
+          "turn": 156,
+          "winner": 3,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 288,
+          "improve_actions_through_60": 10,
+          "improve_actions_total": 34,
+          "improvements": [
+            [
+              33,
+              "chop_woods"
+            ],
+            [
+              35,
+              "pasture"
+            ],
+            [
+              39,
+              "chop_woods"
+            ],
+            [
+              50,
+              "plantation"
+            ],
+            [
+              51,
+              "farm"
+            ],
+            [
+              51,
+              "farm"
+            ],
+            [
+              53,
+              "farm"
+            ],
+            [
+              55,
+              "lumber_mill"
+            ],
+            [
+              56,
+              "pasture"
+            ],
+            [
+              59,
+              "farm"
+            ],
+            [
+              61,
+              "chop_woods"
+            ],
+            [
+              62,
+              "lumber_mill"
+            ],
+            [
+              75,
+              "farm"
+            ],
+            [
+              76,
+              "farm"
+            ],
+            [
+              84,
+              "harvest_resource"
+            ],
+            [
+              85,
+              "mine"
+            ],
+            [
+              87,
+              "lumber_mill"
+            ],
+            [
+              89,
+              "pasture"
+            ],
+            [
+              92,
+              "chop_rainforest"
+            ],
+            [
+              94,
+              "mine"
+            ],
+            [
+              96,
+              "lumber_mill"
+            ],
+            [
+              99,
+              "mine"
+            ],
+            [
+              101,
+              "mine"
+            ],
+            [
+              105,
+              "farm"
+            ],
+            [
+              110,
+              "lumber_mill"
+            ],
+            [
+              113,
+              "pasture"
+            ],
+            [
+              113,
+              "fishing_boats"
+            ],
+            [
+              117,
+              "mine"
+            ],
+            [
+              136,
+              "farm"
+            ],
+            [
+              145,
+              "farm"
+            ],
+            [
+              151,
+              "lumber_mill"
+            ],
+            [
+              152,
+              "plantation"
+            ],
+            [
+              155,
+              "mine"
+            ],
+            [
+              155,
+              "mine"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 3,
+              "production": 24.0,
+              "military_power": 132.9
+            },
+            "60": {
+              "cities": 4,
+              "production": 48.5,
+              "military_power": 200.9
+            },
+            "100": {
+              "cities": 6,
+              "production": 84.20000000000002,
+              "military_power": 655.26
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 17,
+          "actions_sha256": "e01ef805948a0dfc1646382262901e44bae68abefbd5da712b8d2e1c42d4a44e"
+        },
+        "first_action_difference": {
+          "index": 1827,
+          "reference_turn": 22,
+          "candidate_turn": 22,
+          "reference_action": [
+            3,
+            {
+              "to": [
+                19,
+                8
+              ],
+              "type": "move",
+              "unit": 70
+            }
+          ],
+          "candidate_action": [
+            3,
+            {
+              "to": [
+                7,
+                19
+              ],
+              "type": "move",
+              "unit": 151
+            }
+          ]
+        },
+        "first_focal_action_difference": {
+          "focal_index": 204,
+          "reference_global_index": 2544,
+          "candidate_global_index": 2549,
+          "reference_turn": 28,
+          "candidate_turn": 28,
+          "reference_action": {
+            "target": [
+              32,
+              18
+            ],
+            "type": "ranged",
+            "unit": 191
+          },
+          "candidate_action": {
+            "city": 63,
+            "item": {
+              "building": "walls"
+            },
+            "type": "produce"
+          }
+        }
+      },
+      {
+        "difficulty": "immortal",
+        "seed": 20233954517,
+        "reference": {
+          "turn": 171,
+          "winner": 1,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 175,
+          "improve_actions_through_60": 7,
+          "improve_actions_total": 59,
+          "improvements": [
+            [
+              18,
+              "camp"
+            ],
+            [
+              25,
+              "mine"
+            ],
+            [
+              36,
+              "pasture"
+            ],
+            [
+              44,
+              "mine"
+            ],
+            [
+              48,
+              "mine"
+            ],
+            [
+              55,
+              "farm"
+            ],
+            [
+              58,
+              "farm"
+            ],
+            [
+              63,
+              "lumber_mill"
+            ],
+            [
+              65,
+              "mine"
+            ],
+            [
+              69,
+              "farm"
+            ],
+            [
+              70,
+              "mine"
+            ],
+            [
+              70,
+              "farm"
+            ],
+            [
+              75,
+              "farm"
+            ],
+            [
+              76,
+              "lumber_mill"
+            ],
+            [
+              76,
+              "farm"
+            ],
+            [
+              82,
+              "fishing_boats"
+            ],
+            [
+              85,
+              "mine"
+            ],
+            [
+              90,
+              "lumber_mill"
+            ],
+            [
+              91,
+              "chop_woods"
+            ],
+            [
+              93,
+              "mine"
+            ],
+            [
+              94,
+              "lumber_mill"
+            ],
+            [
+              94,
+              "lumber_mill"
+            ],
+            [
+              96,
+              "mine"
+            ],
+            [
+              98,
+              "mine"
+            ],
+            [
+              100,
+              "mine"
+            ],
+            [
+              103,
+              "lumber_mill"
+            ],
+            [
+              107,
+              "quarry"
+            ],
+            [
+              108,
+              "mine"
+            ],
+            [
+              112,
+              "chop_woods"
+            ],
+            [
+              112,
+              "lumber_mill"
+            ],
+            [
+              113,
+              "mine"
+            ],
+            [
+              115,
+              "fishing_boats"
+            ],
+            [
+              116,
+              "chop_woods"
+            ],
+            [
+              118,
+              "alcazar"
+            ],
+            [
+              119,
+              "mine"
+            ],
+            [
+              120,
+              "fishing_boats"
+            ],
+            [
+              121,
+              "farm"
+            ],
+            [
+              122,
+              "mine"
+            ],
+            [
+              122,
+              "mine"
+            ],
+            [
+              123,
+              "lumber_mill"
+            ],
+            [
+              123,
+              "mine"
+            ],
+            [
+              125,
+              "mine"
+            ],
+            [
+              126,
+              "mine"
+            ],
+            [
+              126,
+              "alcazar"
+            ],
+            [
+              128,
+              "farm"
+            ],
+            [
+              129,
+              "alcazar"
+            ],
+            [
+              130,
+              "farm"
+            ],
+            [
+              132,
+              "mine"
+            ],
+            [
+              132,
+              "mine"
+            ],
+            [
+              133,
+              "lumber_mill"
+            ],
+            [
+              134,
+              "lumber_mill"
+            ],
+            [
+              134,
+              "mine"
+            ],
+            [
+              135,
+              "farm"
+            ],
+            [
+              136,
+              "mine"
+            ],
+            [
+              137,
+              "mine"
+            ],
+            [
+              142,
+              "farm"
+            ],
+            [
+              143,
+              "farm"
+            ],
+            [
+              144,
+              "farm"
+            ],
+            [
+              151,
+              "farm"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 3,
+              "production": 23.4,
+              "military_power": 70.0
+            },
+            "60": {
+              "cities": 5,
+              "production": 40.7,
+              "military_power": 274.6
+            },
+            "100": {
+              "cities": 7,
+              "production": 96.3,
+              "military_power": 447.79999999999995
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 0,
+          "actions_sha256": "5e5268bb47072e7a557db379d76fb74e6117f3295701d83f73b24a5299d5beac"
+        },
+        "candidate": {
+          "turn": 165,
+          "winner": 1,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 263,
+          "improve_actions_through_60": 10,
+          "improve_actions_total": 49,
+          "improvements": [
+            [
+              18,
+              "camp"
+            ],
+            [
+              25,
+              "mine"
+            ],
+            [
+              36,
+              "pasture"
+            ],
+            [
+              41,
+              "mine"
+            ],
+            [
+              45,
+              "mine"
+            ],
+            [
+              49,
+              "farm"
+            ],
+            [
+              59,
+              "mine"
+            ],
+            [
+              59,
+              "farm"
+            ],
+            [
+              60,
+              "farm"
+            ],
+            [
+              60,
+              "farm"
+            ],
+            [
+              63,
+              "lumber_mill"
+            ],
+            [
+              70,
+              "lumber_mill"
+            ],
+            [
+              70,
+              "farm"
+            ],
+            [
+              70,
+              "lumber_mill"
+            ],
+            [
+              71,
+              "mine"
+            ],
+            [
+              74,
+              "lumber_mill"
+            ],
+            [
+              77,
+              "fishing_boats"
+            ],
+            [
+              79,
+              "quarry"
+            ],
+            [
+              79,
+              "lumber_mill"
+            ],
+            [
+              81,
+              "mine"
+            ],
+            [
+              88,
+              "chop_woods"
+            ],
+            [
+              89,
+              "fishing_boats"
+            ],
+            [
+              92,
+              "mine"
+            ],
+            [
+              93,
+              "mine"
+            ],
+            [
+              94,
+              "lumber_mill"
+            ],
+            [
+              94,
+              "mine"
+            ],
+            [
+              97,
+              "mine"
+            ],
+            [
+              105,
+              "mine"
+            ],
+            [
+              105,
+              "lumber_mill"
+            ],
+            [
+              106,
+              "lumber_mill"
+            ],
+            [
+              108,
+              "mine"
+            ],
+            [
+              108,
+              "farm"
+            ],
+            [
+              110,
+              "mine"
+            ],
+            [
+              117,
+              "mine"
+            ],
+            [
+              119,
+              "chop_woods"
+            ],
+            [
+              120,
+              "farm"
+            ],
+            [
+              121,
+              "chop_woods"
+            ],
+            [
+              122,
+              "mine"
+            ],
+            [
+              122,
+              "farm"
+            ],
+            [
+              127,
+              "mine"
+            ],
+            [
+              130,
+              "lumber_mill"
+            ],
+            [
+              131,
+              "farm"
+            ],
+            [
+              132,
+              "lumber_mill"
+            ],
+            [
+              132,
+              "mine"
+            ],
+            [
+              132,
+              "mine"
+            ],
+            [
+              133,
+              "mine"
+            ],
+            [
+              140,
+              "farm"
+            ],
+            [
+              144,
+              "mine"
+            ],
+            [
+              147,
+              "mine"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 3,
+              "production": 24.4,
+              "military_power": 85.0
+            },
+            "60": {
+              "cities": 5,
+              "production": 41.0,
+              "military_power": 335.3
+            },
+            "100": {
+              "cities": 6,
+              "production": 102.8,
+              "military_power": 427.82000000000005
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 34,
+          "actions_sha256": "8595f36fdb06328dfa97f11ed7a04418334691aa891a4aa4d3d533575144f52a"
+        },
+        "first_action_difference": {
+          "index": 1528,
+          "reference_turn": 19,
+          "candidate_turn": 19,
+          "reference_action": [
+            3,
+            {
+              "to": [
+                15,
+                10
+              ],
+              "type": "move",
+              "unit": 128
+            }
+          ],
+          "candidate_action": [
+            3,
+            {
+              "to": [
+                15,
+                10
+              ],
+              "type": "move",
+              "unit": 20
+            }
+          ]
+        },
+        "first_focal_action_difference": {
+          "focal_index": 170,
+          "reference_global_index": 2397,
+          "candidate_global_index": 2387,
+          "reference_turn": 27,
+          "candidate_turn": 27,
+          "reference_action": {
+            "to": [
+              16,
+              26
+            ],
+            "type": "move",
+            "unit": 186
+          },
+          "candidate_action": {
+            "to": [
+              16,
+              26
+            ],
+            "type": "move",
+            "unit": 187
+          }
+        }
+      },
+      {
+        "difficulty": "immortal",
+        "seed": 20987614614,
+        "reference": {
+          "turn": 144,
+          "winner": 2,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 327,
+          "improve_actions_through_60": 3,
+          "improve_actions_total": 46,
+          "improvements": [
+            [
+              52,
+              "farm"
+            ],
+            [
+              56,
+              "mine"
+            ],
+            [
+              60,
+              "pasture"
+            ],
+            [
+              68,
+              "lumber_mill"
+            ],
+            [
+              69,
+              "pasture"
+            ],
+            [
+              69,
+              "farm"
+            ],
+            [
+              70,
+              "plantation"
+            ],
+            [
+              75,
+              "chop_woods"
+            ],
+            [
+              76,
+              "farm"
+            ],
+            [
+              78,
+              "mine"
+            ],
+            [
+              79,
+              "mine"
+            ],
+            [
+              79,
+              "camp"
+            ],
+            [
+              81,
+              "farm"
+            ],
+            [
+              83,
+              "fishing_boats"
+            ],
+            [
+              83,
+              "lumber_mill"
+            ],
+            [
+              90,
+              "lumber_mill"
+            ],
+            [
+              96,
+              "lumber_mill"
+            ],
+            [
+              97,
+              "mine"
+            ],
+            [
+              98,
+              "pasture"
+            ],
+            [
+              101,
+              "lumber_mill"
+            ],
+            [
+              102,
+              "mine"
+            ],
+            [
+              103,
+              "mine"
+            ],
+            [
+              105,
+              "fishing_boats"
+            ],
+            [
+              106,
+              "mine"
+            ],
+            [
+              109,
+              "lumber_mill"
+            ],
+            [
+              110,
+              "farm"
+            ],
+            [
+              111,
+              "farm"
+            ],
+            [
+              112,
+              "farm"
+            ],
+            [
+              116,
+              "farm"
+            ],
+            [
+              117,
+              "farm"
+            ],
+            [
+              128,
+              "lumber_mill"
+            ],
+            [
+              128,
+              "farm"
+            ],
+            [
+              130,
+              "farm"
+            ],
+            [
+              130,
+              "lumber_mill"
+            ],
+            [
+              130,
+              "lumber_mill"
+            ],
+            [
+              131,
+              "farm"
+            ],
+            [
+              132,
+              "quarry"
+            ],
+            [
+              134,
+              "farm"
+            ],
+            [
+              135,
+              "quarry"
+            ],
+            [
+              135,
+              "lumber_mill"
+            ],
+            [
+              135,
+              "lumber_mill"
+            ],
+            [
+              136,
+              "farm"
+            ],
+            [
+              139,
+              "farm"
+            ],
+            [
+              140,
+              "farm"
+            ],
+            [
+              140,
+              "lumber_mill"
+            ],
+            [
+              142,
+              "farm"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 4,
+              "production": 31.0,
+              "military_power": 120.5
+            },
+            "60": {
+              "cities": 5,
+              "production": 42.2,
+              "military_power": 337.25
+            },
+            "100": {
+              "cities": 6,
+              "production": 68.0,
+              "military_power": 774.1899999999999
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 0,
+          "actions_sha256": "ac607e65fc6111cad73c1e0ef7777de6f5b306813c2a612aca28fe719ab51732"
+        },
+        "candidate": {
+          "turn": 149,
+          "winner": 2,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 384,
+          "improve_actions_through_60": 4,
+          "improve_actions_total": 63,
+          "improvements": [
+            [
+              45,
+              "harvest_resource"
+            ],
+            [
+              48,
+              "mine"
+            ],
+            [
+              53,
+              "pasture"
+            ],
+            [
+              56,
+              "farm"
+            ],
+            [
+              61,
+              "chop_woods"
+            ],
+            [
+              62,
+              "pasture"
+            ],
+            [
+              63,
+              "farm"
+            ],
+            [
+              65,
+              "lumber_mill"
+            ],
+            [
+              70,
+              "chop_woods"
+            ],
+            [
+              73,
+              "camp"
+            ],
+            [
+              74,
+              "pasture"
+            ],
+            [
+              75,
+              "plantation"
+            ],
+            [
+              80,
+              "chop_woods"
+            ],
+            [
+              80,
+              "chop_rainforest"
+            ],
+            [
+              80,
+              "fishing_boats"
+            ],
+            [
+              84,
+              "camp"
+            ],
+            [
+              85,
+              "lumber_mill"
+            ],
+            [
+              88,
+              "lumber_mill"
+            ],
+            [
+              90,
+              "farm"
+            ],
+            [
+              91,
+              "mine"
+            ],
+            [
+              93,
+              "farm"
+            ],
+            [
+              94,
+              "farm"
+            ],
+            [
+              97,
+              "lumber_mill"
+            ],
+            [
+              100,
+              "farm"
+            ],
+            [
+              100,
+              "camp"
+            ],
+            [
+              102,
+              "quarry"
+            ],
+            [
+              102,
+              "lumber_mill"
+            ],
+            [
+              105,
+              "chop_woods"
+            ],
+            [
+              108,
+              "lumber_mill"
+            ],
+            [
+              109,
+              "lumber_mill"
+            ],
+            [
+              111,
+              "mine"
+            ],
+            [
+              111,
+              "mine"
+            ],
+            [
+              111,
+              "mine"
+            ],
+            [
+              113,
+              "lumber_mill"
+            ],
+            [
+              114,
+              "lumber_mill"
+            ],
+            [
+              115,
+              "mine"
+            ],
+            [
+              117,
+              "farm"
+            ],
+            [
+              117,
+              "quarry"
+            ],
+            [
+              118,
+              "farm"
+            ],
+            [
+              118,
+              "farm"
+            ],
+            [
+              119,
+              "farm"
+            ],
+            [
+              120,
+              "farm"
+            ],
+            [
+              121,
+              "fishing_boats"
+            ],
+            [
+              122,
+              "farm"
+            ],
+            [
+              123,
+              "farm"
+            ],
+            [
+              123,
+              "farm"
+            ],
+            [
+              125,
+              "lumber_mill"
+            ],
+            [
+              125,
+              "mine"
+            ],
+            [
+              127,
+              "farm"
+            ],
+            [
+              128,
+              "mine"
+            ],
+            [
+              129,
+              "farm"
+            ],
+            [
+              129,
+              "farm"
+            ],
+            [
+              137,
+              "farm"
+            ],
+            [
+              141,
+              "farm"
+            ],
+            [
+              145,
+              "lumber_mill"
+            ],
+            [
+              145,
+              "lumber_mill"
+            ],
+            [
+              147,
+              "mine"
+            ],
+            [
+              147,
+              "mine"
+            ],
+            [
+              147,
+              "lumber_mill"
+            ],
+            [
+              147,
+              "lumber_mill"
+            ],
+            [
+              148,
+              "mine"
+            ],
+            [
+              148,
+              "lumber_mill"
+            ],
+            [
+              148,
+              "hacienda"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 4,
+              "production": 31.0,
+              "military_power": 111.0
+            },
+            "60": {
+              "cities": 6,
+              "production": 44.2,
+              "military_power": 310.45
+            },
+            "100": {
+              "cities": 7,
+              "production": 77.3,
+              "military_power": 645.75
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 11,
+          "actions_sha256": "8a0b6d5e35b47e7ed17b5511b7d0bae1d4e240a734cb88740af7d73b91c58ec1"
+        },
+        "first_action_difference": {
+          "index": 1839,
+          "reference_turn": 21,
+          "candidate_turn": 21,
+          "reference_action": [
+            2,
+            {
+              "type": "end_turn"
+            }
+          ],
+          "candidate_action": [
+            2,
+            {
+              "to": [
+                13,
+                18
+              ],
+              "type": "move",
+              "unit": 132
+            }
+          ]
+        },
+        "first_focal_action_difference": {
+          "focal_index": 166,
+          "reference_global_index": 2164,
+          "candidate_global_index": 2167,
+          "reference_turn": 24,
+          "candidate_turn": 24,
+          "reference_action": {
+            "to": [
+              7,
+              15
+            ],
+            "type": "move_to",
+            "unit": 172
+          },
+          "candidate_action": {
+            "to": [
+              7,
+              15
+            ],
+            "type": "move_to",
+            "unit": 170
+          }
+        }
+      },
+      {
+        "difficulty": "deity",
+        "seed": 20196447569,
+        "reference": {
+          "turn": 152,
+          "winner": 1,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 84,
+          "improve_actions_through_60": 3,
+          "improve_actions_total": 7,
+          "improvements": [
+            [
+              28,
+              "farm"
+            ],
+            [
+              31,
+              "farm"
+            ],
+            [
+              38,
+              "mine"
+            ],
+            [
+              67,
+              "farm"
+            ],
+            [
+              69,
+              "mine"
+            ],
+            [
+              84,
+              "mine"
+            ],
+            [
+              88,
+              "farm"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 2,
+              "production": 13.3,
+              "military_power": 149.9
+            },
+            "60": {
+              "cities": 3,
+              "production": 21.5,
+              "military_power": 173.05
+            },
+            "100": {
+              "cities": 3,
+              "production": 37.2,
+              "military_power": 77.63
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 0,
+          "actions_sha256": "f3ad9c5dedbf994998a15a9f6081e117e31bcb9057efbe08cb28e6e29623c584"
+        },
+        "candidate": {
+          "turn": 145,
+          "winner": 1,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 145,
+          "improve_actions_through_60": 3,
+          "improve_actions_total": 19,
+          "improvements": [
+            [
+              36,
+              "chop_woods"
+            ],
+            [
+              37,
+              "mine"
+            ],
+            [
+              39,
+              "farm"
+            ],
+            [
+              66,
+              "mine"
+            ],
+            [
+              77,
+              "farm"
+            ],
+            [
+              88,
+              "chop_woods"
+            ],
+            [
+              91,
+              "mine"
+            ],
+            [
+              93,
+              "mine"
+            ],
+            [
+              98,
+              "mine"
+            ],
+            [
+              102,
+              "mine"
+            ],
+            [
+              103,
+              "farm"
+            ],
+            [
+              106,
+              "lumber_mill"
+            ],
+            [
+              107,
+              "lumber_mill"
+            ],
+            [
+              111,
+              "mine"
+            ],
+            [
+              114,
+              "farm"
+            ],
+            [
+              120,
+              "lumber_mill"
+            ],
+            [
+              125,
+              "mine"
+            ],
+            [
+              127,
+              "farm"
+            ],
+            [
+              129,
+              "camp"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 2,
+              "production": 14.3,
+              "military_power": 101.05000000000001
+            },
+            "60": {
+              "cities": 3,
+              "production": 18.0,
+              "military_power": 219.7
+            },
+            "100": {
+              "cities": 4,
+              "production": 28.55,
+              "military_power": 433.6
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 35,
+          "actions_sha256": "194dd4bbf93b43882574ff74edb21b8c8c42582976dd787b279b25c8ef456a5d"
+        },
+        "first_action_difference": {
+          "index": 1207,
+          "reference_turn": 13,
+          "candidate_turn": 13,
+          "reference_action": [
+            3,
+            {
+              "to": [
+                34,
+                21
+              ],
+              "type": "move",
+              "unit": 115
+            }
+          ],
+          "candidate_action": [
+            3,
+            {
+              "to": [
+                31,
+                21
+              ],
+              "type": "move",
+              "unit": 26
+            }
+          ]
+        },
+        "first_focal_action_difference": {
+          "focal_index": 90,
+          "reference_global_index": 1399,
+          "candidate_global_index": 1399,
+          "reference_turn": 15,
+          "candidate_turn": 15,
+          "reference_action": {
+            "to": [
+              19,
+              24
+            ],
+            "type": "move_to",
+            "unit": 152
+          },
+          "candidate_action": {
+            "to": [
+              19,
+              24
+            ],
+            "type": "move_to",
+            "unit": 153
+          }
+        }
+      },
+      {
+        "difficulty": "deity",
+        "seed": 20757887598,
+        "reference": {
+          "turn": 138,
+          "winner": 3,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 56,
+          "improve_actions_through_60": 6,
+          "improve_actions_total": 14,
+          "improvements": [
+            [
+              30,
+              "mine"
+            ],
+            [
+              31,
+              "farm"
+            ],
+            [
+              32,
+              "camp"
+            ],
+            [
+              52,
+              "chop_woods"
+            ],
+            [
+              55,
+              "pasture"
+            ],
+            [
+              59,
+              "plantation"
+            ],
+            [
+              62,
+              "farm"
+            ],
+            [
+              63,
+              "farm"
+            ],
+            [
+              81,
+              "lumber_mill"
+            ],
+            [
+              82,
+              "mine"
+            ],
+            [
+              84,
+              "farm"
+            ],
+            [
+              86,
+              "farm"
+            ],
+            [
+              88,
+              "mine"
+            ],
+            [
+              93,
+              "lumber_mill"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 2,
+              "production": 15.0,
+              "military_power": 121.75
+            },
+            "60": {
+              "cities": 5,
+              "production": 28.5,
+              "military_power": 239.89000000000001
+            },
+            "100": {
+              "cities": 0,
+              "production": 0,
+              "military_power": 0.0
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 0,
+          "actions_sha256": "55454c8ed338c15ef21beb0fdb7c6831e15e608821a2ec40e9c813eb71f00e0d"
+        },
+        "candidate": {
+          "turn": 150,
+          "winner": 1,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 91,
+          "improve_actions_through_60": 6,
+          "improve_actions_total": 22,
+          "improvements": [
+            [
+              30,
+              "mine"
+            ],
+            [
+              31,
+              "farm"
+            ],
+            [
+              32,
+              "camp"
+            ],
+            [
+              46,
+              "chop_woods"
+            ],
+            [
+              53,
+              "mine"
+            ],
+            [
+              55,
+              "farm"
+            ],
+            [
+              71,
+              "mine"
+            ],
+            [
+              73,
+              "mine"
+            ],
+            [
+              74,
+              "mine"
+            ],
+            [
+              76,
+              "plantation"
+            ],
+            [
+              80,
+              "fishing_boats"
+            ],
+            [
+              83,
+              "pasture"
+            ],
+            [
+              85,
+              "farm"
+            ],
+            [
+              86,
+              "mine"
+            ],
+            [
+              89,
+              "mine"
+            ],
+            [
+              89,
+              "plantation"
+            ],
+            [
+              90,
+              "farm"
+            ],
+            [
+              95,
+              "lumber_mill"
+            ],
+            [
+              96,
+              "mine"
+            ],
+            [
+              96,
+              "farm"
+            ],
+            [
+              100,
+              "lumber_mill"
+            ],
+            [
+              102,
+              "mine"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 2,
+              "production": 15.0,
+              "military_power": 121.75
+            },
+            "60": {
+              "cities": 4,
+              "production": 28.0,
+              "military_power": 254.79999999999998
+            },
+            "100": {
+              "cities": 5,
+              "production": 68.2,
+              "military_power": 226.0
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 10,
+          "actions_sha256": "ecc003a888b8cc6ce60d0aa9a066fe9d2f1faf46ea22d9e876b887596b2786a9"
+        },
+        "first_action_difference": {
+          "index": 2791,
+          "reference_turn": 27,
+          "candidate_turn": 27,
+          "reference_action": [
+            1,
+            {
+              "to": [
+                18,
+                9
+              ],
+              "type": "move",
+              "unit": 202
+            }
+          ],
+          "candidate_action": [
+            1,
+            {
+              "to": [
+                19,
+                8
+              ],
+              "type": "move",
+              "unit": 202
+            }
+          ]
+        },
+        "first_focal_action_difference": {
+          "focal_index": 244,
+          "reference_global_index": 4073,
+          "candidate_global_index": 4078,
+          "reference_turn": 35,
+          "candidate_turn": 35,
+          "reference_action": {
+            "to": [
+              13,
+              24
+            ],
+            "type": "move",
+            "unit": 268
+          },
+          "candidate_action": {
+            "to": [
+              12,
+              23
+            ],
+            "type": "move",
+            "unit": 270
+          }
+        }
+      },
+      {
+        "difficulty": "deity",
+        "seed": 20340810738,
+        "reference": {
+          "turn": 135,
+          "winner": 2,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 96,
+          "improve_actions_through_60": 6,
+          "improve_actions_total": 31,
+          "improvements": [
+            [
+              39,
+              "mine"
+            ],
+            [
+              43,
+              "chop_woods"
+            ],
+            [
+              45,
+              "mine"
+            ],
+            [
+              55,
+              "farm"
+            ],
+            [
+              57,
+              "harvest_resource"
+            ],
+            [
+              58,
+              "farm"
+            ],
+            [
+              69,
+              "plantation"
+            ],
+            [
+              70,
+              "pasture"
+            ],
+            [
+              70,
+              "plantation"
+            ],
+            [
+              72,
+              "farm"
+            ],
+            [
+              74,
+              "mine"
+            ],
+            [
+              79,
+              "farm"
+            ],
+            [
+              79,
+              "lumber_mill"
+            ],
+            [
+              81,
+              "pasture"
+            ],
+            [
+              83,
+              "chop_woods"
+            ],
+            [
+              85,
+              "lumber_mill"
+            ],
+            [
+              85,
+              "farm"
+            ],
+            [
+              87,
+              "mine"
+            ],
+            [
+              87,
+              "chop_woods"
+            ],
+            [
+              90,
+              "fishing_boats"
+            ],
+            [
+              91,
+              "lumber_mill"
+            ],
+            [
+              92,
+              "mine"
+            ],
+            [
+              94,
+              "lumber_mill"
+            ],
+            [
+              94,
+              "lumber_mill"
+            ],
+            [
+              96,
+              "mine"
+            ],
+            [
+              109,
+              "lumber_mill"
+            ],
+            [
+              110,
+              "pasture"
+            ],
+            [
+              110,
+              "farm"
+            ],
+            [
+              111,
+              "farm"
+            ],
+            [
+              114,
+              "lumber_mill"
+            ],
+            [
+              116,
+              "mine"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 2,
+              "production": 13.6,
+              "military_power": 90.30000000000001
+            },
+            "60": {
+              "cities": 4,
+              "production": 29.5,
+              "military_power": 204.3
+            },
+            "100": {
+              "cities": 5,
+              "production": 58.300000000000004,
+              "military_power": 151.0
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 0,
+          "actions_sha256": "a54ccf6f0418eb79b90cfbc1823600d8698bbb42b4e070b67fa17b6dbb642f68"
+        },
+        "candidate": {
+          "turn": 134,
+          "winner": 2,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 148,
+          "improve_actions_through_60": 3,
+          "improve_actions_total": 22,
+          "improvements": [
+            [
+              35,
+              "mine"
+            ],
+            [
+              36,
+              "farm"
+            ],
+            [
+              40,
+              "chop_woods"
+            ],
+            [
+              74,
+              "mine"
+            ],
+            [
+              78,
+              "farm"
+            ],
+            [
+              78,
+              "farm"
+            ],
+            [
+              81,
+              "plantation"
+            ],
+            [
+              85,
+              "chop_woods"
+            ],
+            [
+              88,
+              "mine"
+            ],
+            [
+              88,
+              "mine"
+            ],
+            [
+              91,
+              "camp"
+            ],
+            [
+              93,
+              "farm"
+            ],
+            [
+              94,
+              "lumber_mill"
+            ],
+            [
+              99,
+              "mine"
+            ],
+            [
+              101,
+              "lumber_mill"
+            ],
+            [
+              102,
+              "plantation"
+            ],
+            [
+              106,
+              "pasture"
+            ],
+            [
+              111,
+              "mine"
+            ],
+            [
+              112,
+              "lumber_mill"
+            ],
+            [
+              115,
+              "chop_woods"
+            ],
+            [
+              122,
+              "mine"
+            ],
+            [
+              124,
+              "farm"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 2,
+              "production": 15.4,
+              "military_power": 80.2
+            },
+            "60": {
+              "cities": 3,
+              "production": 16.35,
+              "military_power": 248.95
+            },
+            "100": {
+              "cities": 3,
+              "production": 34.0,
+              "military_power": 127.5
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 5,
+          "actions_sha256": "8a8f28854ca36299ee4b93df35501be9a9b6036e04c9621492ad16a96824169e"
+        },
+        "first_action_difference": {
+          "index": 1959,
+          "reference_turn": 20,
+          "candidate_turn": 20,
+          "reference_action": [
+            1,
+            {
+              "to": [
+                41,
+                19
+              ],
+              "type": "move",
+              "unit": 162
+            }
+          ],
+          "candidate_action": [
+            1,
+            {
+              "to": [
+                39,
+                19
+              ],
+              "type": "move",
+              "unit": 162
+            }
+          ]
+        },
+        "first_focal_action_difference": {
+          "focal_index": 173,
+          "reference_global_index": 2745,
+          "candidate_global_index": 2731,
+          "reference_turn": 25,
+          "candidate_turn": 25,
+          "reference_action": {
+            "target": [
+              20,
+              13
+            ],
+            "type": "ranged",
+            "unit": 120
+          },
+          "candidate_action": {
+            "target": [
+              21,
+              12
+            ],
+            "type": "ranged",
+            "unit": 120
+          }
+        }
+      },
+      {
+        "difficulty": "deity",
+        "seed": 20562812303,
+        "reference": {
+          "turn": 129,
+          "winner": 2,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 76,
+          "improve_actions_through_60": 3,
+          "improve_actions_total": 7,
+          "improvements": [
+            [
+              23,
+              "farm"
+            ],
+            [
+              26,
+              "mine"
+            ],
+            [
+              29,
+              "farm"
+            ],
+            [
+              83,
+              "camp"
+            ],
+            [
+              91,
+              "mine"
+            ],
+            [
+              92,
+              "farm"
+            ],
+            [
+              100,
+              "pasture"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 3,
+              "production": 15.899999999999999,
+              "military_power": 70.1
+            },
+            "60": {
+              "cities": 3,
+              "production": 18.5,
+              "military_power": 285.75
+            },
+            "100": {
+              "cities": 3,
+              "production": 15.8,
+              "military_power": 113.9
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 0,
+          "actions_sha256": "4a32114261186264210a926d6397244d370d6b8e5a02dfc97f49392e2a456c4c"
+        },
+        "candidate": {
+          "turn": 137,
+          "winner": 2,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 114,
+          "improve_actions_through_60": 3,
+          "improve_actions_total": 12,
+          "improvements": [
+            [
+              23,
+              "farm"
+            ],
+            [
+              26,
+              "mine"
+            ],
+            [
+              29,
+              "farm"
+            ],
+            [
+              64,
+              "pasture"
+            ],
+            [
+              66,
+              "plantation"
+            ],
+            [
+              69,
+              "camp"
+            ],
+            [
+              92,
+              "pasture"
+            ],
+            [
+              94,
+              "farm"
+            ],
+            [
+              96,
+              "quarry"
+            ],
+            [
+              135,
+              "lumber_mill"
+            ],
+            [
+              136,
+              "fishing_boats"
+            ],
+            [
+              136,
+              "camp"
+            ]
+          ],
+          "checkpoints": {
+            "40": {
+              "cities": 2,
+              "production": 13.2,
+              "military_power": 107.5
+            },
+            "60": {
+              "cities": 3,
+              "production": 18.0,
+              "military_power": 266.3
+            },
+            "100": {
+              "cities": 2,
+              "production": 14.0,
+              "military_power": 490.55
+            }
+          },
+          "observed_foreign_origin_holds": [],
+          "job_parking_journal_events": 5,
+          "actions_sha256": "f5043c2c0819e4a92c01b473213d6f697d6ece5ed8beee2cdf0b49f018577197"
+        },
+        "first_action_difference": {
+          "index": 2086,
+          "reference_turn": 21,
+          "candidate_turn": 21,
+          "reference_action": [
+            2,
+            {
+              "to": [
+                28,
+                21
+              ],
+              "type": "move",
+              "unit": 115
+            }
+          ],
+          "candidate_action": [
+            2,
+            {
+              "to": [
+                27,
+                23
+              ],
+              "type": "move",
+              "unit": 115
+            }
+          ]
+        },
+        "first_focal_action_difference": {
+          "focal_index": 174,
+          "reference_global_index": 2825,
+          "candidate_global_index": 2851,
+          "reference_turn": 27,
+          "candidate_turn": 27,
+          "reference_action": {
+            "type": "fortify",
+            "unit": 192
+          },
+          "candidate_action": {
+            "type": "fortify",
+            "unit": 195
+          }
+        }
+      }
+    ],
+    "reference_wins": 0,
+    "candidate_wins": 0,
+    "global_action_contrasts": 8,
+    "action_contrasts": 8,
+    "maps": 8,
+    "limitations": [
+      "Whole-build change affects the rivals too; no isolated focal treatment effect.",
+      "CIVVIS simulation against adaptive CIVVIS opponents, not Native/Firaxis verification.",
+      "Improve counts include charges spent on feature removals; more actions alone is not a yield gain.",
+      "Foreign-origin holds are observed only at full-round snapshots; no claim that every capture is recorded.",
+      "Fixed checkpoints after an earlier natural terminal stay absent, not fabricated or extended."
+    ]
+  },
+  "normal_sweep_economy": {
+    "improve_actions_through_60_reference": 33,
+    "improve_actions_through_60_candidate": 41,
+    "production_at_60_higher_maps": 3,
+    "production_at_60_lower_maps": 5,
+    "production_at_60_aggregate_delta": -5.8,
+    "production_at_60_median_delta": -0.5,
+    "postponement_events": 123,
+    "interpretation": "Mixed descriptive economy indicators; more Improve actions include feature removals, not necessarily larger yields. Whole-build change affects opponents too. No isolated focal strength inference."
+  },
+  "known_map_regressions": {
+    "scope": "Known-map exploratory full-game regression, not a fresh promotion cohort or isolated focal treatment. Unit IDs may diverge; no same-ID causal claims.",
+    "pairs": [
+      {
+        "difficulty": "immortal",
+        "seed": 43250000,
+        "reference": {
+          "source": "262d7e37dfcc3cb6c1d78dbafc9ac7519b2e1bd7",
+          "turn": 159,
+          "winner": 1,
+          "victory": "science",
+          "focal_won": false,
+          "improve_actions_through_60": 5,
+          "improve_actions_total": 23,
+          "parking_events": 0,
+          "actions_sha256": "c23c860de9b83045f03160970a7b55fbe7878ca97aa06b341720f6bf96cd02f7"
+        },
+        "candidate": {
+          "source": "git-tree:cb721b4ed4aeae53d8d4dd22d09abcb16b860ec0",
+          "turn": 142,
+          "winner": 1,
+          "victory": "culture",
+          "focal_won": false,
+          "improve_actions_through_60": 10,
+          "improve_actions_total": 57,
+          "parking_events": 25,
+          "actions_sha256": "780d888ed3126cb05654a2404e48a087b18c979371830578eb4e563a537c665b"
+        },
+        "global_actions_differ": true
+      },
+      {
+        "difficulty": "immortal",
+        "seed": 43250001,
+        "reference": {
+          "source": "262d7e37dfcc3cb6c1d78dbafc9ac7519b2e1bd7",
+          "turn": 154,
+          "winner": 1,
+          "victory": "science",
+          "focal_won": false,
+          "improve_actions_through_60": 9,
+          "improve_actions_total": 47,
+          "parking_events": 0,
+          "actions_sha256": "b6237a79ce45dce664748af1056eba2eb4c38425b32314ebd08c2e22ef8b4ab2"
+        },
+        "candidate": {
+          "source": "git-tree:cb721b4ed4aeae53d8d4dd22d09abcb16b860ec0",
+          "turn": 154,
+          "winner": 1,
+          "victory": "science",
+          "focal_won": false,
+          "improve_actions_through_60": 8,
+          "improve_actions_total": 48,
+          "parking_events": 34,
+          "actions_sha256": "09d4929577a9724a4436d76a8b56045bb3abd8e0520148aac6a10fd15d063d10"
+        },
+        "global_actions_differ": true
+      },
+      {
+        "difficulty": "deity",
+        "seed": 43250100,
+        "reference": {
+          "source": "262d7e37dfcc3cb6c1d78dbafc9ac7519b2e1bd7",
+          "turn": 124,
+          "winner": 3,
+          "victory": "culture",
+          "focal_won": false,
+          "improve_actions_through_60": 9,
+          "improve_actions_total": 47,
+          "parking_events": 0,
+          "actions_sha256": "b0d159bbb1f6895043af213cb7e4c9a0b377e0f2bb4463fb17f3b4e91f7004a8"
+        },
+        "candidate": {
+          "source": "git-tree:cb721b4ed4aeae53d8d4dd22d09abcb16b860ec0",
+          "turn": 135,
+          "winner": 3,
+          "victory": "science",
+          "focal_won": false,
+          "improve_actions_through_60": 6,
+          "improve_actions_total": 27,
+          "parking_events": 4,
+          "actions_sha256": "04bdf2d99e7ed6f3f523e457482b183e087efc0f918e07a09cd16ef3b3f3b0aa"
+        },
+        "global_actions_differ": true
+      },
+      {
+        "difficulty": "deity",
+        "seed": 43250101,
+        "reference": {
+          "source": "262d7e37dfcc3cb6c1d78dbafc9ac7519b2e1bd7",
+          "turn": 138,
+          "winner": 1,
+          "victory": "science",
+          "focal_won": false,
+          "improve_actions_through_60": 9,
+          "improve_actions_total": 58,
+          "parking_events": 0,
+          "actions_sha256": "74b4840c0d33ba78031f355ee3ac7891eb13bb27afe8d0dca5a92476ae7c8385"
+        },
+        "candidate": {
+          "source": "git-tree:cb721b4ed4aeae53d8d4dd22d09abcb16b860ec0",
+          "turn": 145,
+          "winner": 1,
+          "victory": "science",
+          "focal_won": false,
+          "improve_actions_through_60": 12,
+          "improve_actions_total": 44,
+          "parking_events": 47,
+          "actions_sha256": "e71cd91666172122c393752413d7e195da7e05af570d1ce79024a9420d2dd4eb"
+        },
+        "global_actions_differ": true
+      }
+    ]
+  },
+  "validation": {
+    "recorded_utc": "2026-10-17T12:53:49.592067+00:00",
+    "source": {
+      "recorded_utc": "2026-10-17T12:46:51.270339+00:00",
+      "validated_source_commit": "a6550cb6435b3c431e96fb8b6b280950f59fe6cd",
+      "validated_source_identity": "git-tree:3e32b26ed425b48e6999320a55c5b31ecfc1473d",
+      "evaluated_source_identity": "git-tree:cb721b4ed4aeae53d8d4dd22d09abcb16b860ec0",
+      "evaluated_source_commit": "e2fbee4dfa6e7c659cd44cf089ed9219fd4c5d07",
+      "all_tree_differences": [
+        "src/ai/advanced/tests.rs"
+      ],
+      "difference_is_cfg_test_only": true,
+      "all_production_source_blobs_identical": true,
+      "unchanged_evaluated_changed_source_sha256": {
+        "src/ai/advanced.rs": "30638c574f31e1f03c2b54b57baf99980467798199078c180c6dc2472f912617",
+        "src/ai/advanced/builder_job_safety_tests.rs": "a489eaf8551655ba14892f448034c6eda6af02159e60be9f9de4270565b0d8a0",
+        "src/ai/advanced/marginal_usefulness.rs": "a77e9f13e9808ca51c9e6d72903de678e36ae7fc125ba76af29f4ab8fad49e1d"
+      },
+      "updated_test_sha256": "e5a9312b82b2b84562ee63ba4f1575245014074d223bd31272bf5c7b52f4610a",
+      "reason": "Existing Barbarian-only safety negative control asserted a retained pin, intentionally invalidated by safe-retreat bookkeeping. It now compares physical movement, moves remaining, assignment and avoidance against an otherwise identical untreated major-war controller. Direct capture/hold assertions are untouched. Both local and hosted failures are preserved."
+    },
+    "rust": {
+      "command": "CARGO_TARGET_DIR=<study>/target-validation-final cargo test --profile ci --locked",
+      "exit": 0,
+      "passed": 6177,
+      "ignored": 56,
+      "suite_counts": [
+        {
+          "passed": 5840,
+          "failed": 0,
+          "ignored": 52
+        },
+        {
+          "passed": 14,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 302,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 17,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 4,
+          "failed": 0,
+          "ignored": 0
+        },
+        {
+          "passed": 0,
+          "failed": 0,
+          "ignored": 4
+        }
+      ],
+      "log_sha256": "553ac39b3e3176026f365869c3182be0757a23b3e66b2af3e8a51280104cb8cb"
+    },
+    "focused": {
+      "tests": 8,
+      "all_passed_in_full_suite": true,
+      "normal_sweep_red_failures": 2,
+      "names": [
+        "the_original_job_returns_after_the_temporary_backoff_expires",
+        "a_routed_terrain_detour_keeps_its_improvement_assignment",
+        "a_new_improvement_assignment_does_not_pin_a_safe_retreat",
+        "leaving_local_work_for_a_better_job_also_records_a_retreat",
+        "a_safe_retreat_does_not_keep_a_pinned_improvement_job",
+        "the_normal_sweep_does_not_pin_a_new_job_after_a_safe_retreat",
+        "the_normal_sweep_does_not_retain_a_job_after_a_safe_retreat",
+        "legacy_movement_keeps_the_historical_assignment"
+      ]
+    },
+    "rust_quality": {
+      "exit": 0,
+      "command": "CARGO_TARGET_DIR=<study>/target-quality-final python3 tools/rust_quality.py --base 262d7e37dfcc3cb6c1d78dbafc9ac7519b2e1bd7 --head a6550cb6435b3c431e96fb8b6b280950f59fe6cd",
+      "log_sha256": "2515671852fd0be17b76e19d18ad05b54c07561d10ac72f6aa80a0f31d12104d"
+    },
+    "initial_revised_rust_failure": {
+      "passed": 5839,
+      "failed": 1,
+      "ignored": 52,
+      "reason": "Obsolete major-war negative-control pin-retention assertion; final control compares unchanged movement and bookkeeping to untreated major-war behavior. All direct-capture and safe-hold assertions remain."
+    },
+    "tools": {
+      "ran_on_first_candidate": true,
+      "command": "python3 -m unittest discover -s tools -p 'test_*.py'",
+      "run": 3415,
+      "failed": 1,
+      "skipped": 1,
+      "failure": "test_conflict_hotspots.TheCheckIsWiredAndOneDirectional.test_the_live_roadmap_passes_its_own_check",
+      "independently_reproduced_on_clean_262d7e37": true,
+      "no_unrelated_fix": true
+    },
+    "soak": "All sixteen newly registered reference/candidate full games and eight corrected candidate known-map wrapper-control games complete naturally; exact control checks pass. Earlier unexposed cohort and controls also retained."
+  },
+  "candidate_wrapper_control_pairs": {
+    "first": 4,
+    "normal_sweep": 4,
+    "all_actions_and_focal_snapshots_byte_identical": true,
+    "results_identical_except_expected_traced_metadata": true
+  },
+  "all_full_game_executions_included": 58,
+  "counting_warning": "58 includes exact-control repetitions, logging-only replays and known maps. Only each separately registered eight-map fresh cohort is a fresh paired regression sample; do not treat all executions as independent strength games.",
+  "provenance": {
+    "file": "2026-10-17-conquest-foundation.provenance.json.gz",
+    "files": 494,
+    "unique_blobs": 319,
+    "compressed_bytes": 39018302,
+    "sha256": "c1d93ec1f8fe21ec8184a2650f713419148bfc1d243b36b4528e669d12f49fd8",
+    "all_blob_lengths_and_hashes_verified": true,
+    "extracted_full_cohort_analysis_byte_identical": true,
+    "candidate_controls_independently_verified_from_extracted_raw_files": true
+  },
+  "pre_ready_main_merge": {
+    "main": "262d7e37dfcc3cb6c1d78dbafc9ac7519b2e1bd7",
+    "result": "Already up to date; performed after all old-head checks became terminal."
+  },
+  "no_native_or_firaxis_verification": true,
+  "limits": [
+    "Simulation opponents are adaptive CIVVIS controllers with Immortal/Deity handicaps, while focal seat 0 is handicap-exempt.",
+    "All victories and natural 250-turn clock are unchanged.",
+    "Probe locks match within comparison but use syn 3.0.3 rather than repository lock syn 3.0.2.",
+    "All losses, unexposed pairs, failed assertions, verifier corrections and interrupted-build receipts are retained.",
+    "Local tools suite retains an independently reproduced baseline-only roadmap/hotspot failure; it is not described as green."
+  ]
+}
