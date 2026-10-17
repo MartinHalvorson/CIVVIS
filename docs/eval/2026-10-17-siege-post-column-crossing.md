@@ -28,4 +28,16 @@ Report every game, source-arm contrast, actual completion status, focal wins, vi
 
 ## Results
 
-Pending. No performance or victory gain is claimed at registration.
+### Behavioral reproduction and repair
+
+Registration checkpoint `3ece4209a6d0000fdbb87eb4996c254c64840a6e` precedes regression-only checkpoint `897b8f26e73dcf9ccdcb64c16973ef785247d80f`. The registration was pushed before the baseline test results were available. Unchanged production fails exactly the three predicted post-assignment assertions (Catapult, Archer and previous-post case): six controls pass, three fail, exit 101. The positive cases fail before their recorded-movement and wall-damage assertions, not because of a fixture setup error.
+
+Repair checkpoint `582dd9ce6` changes only `src/ai/advanced/siege_train.rs` in production. It preserves the ordinary route as first choice. Its fallback requires a complete engine-legal `path_to` the post this turn; every step must remain dry for a land unit already on land and outside the city's reserved inner ring except for the post itself. Both new and previous firing-post admission use this predicate. Melee posts, candidate ranking, line of sight, occupancy, movement execution, entry-danger margins and endurance budgets are unchanged.
+
+The repaired siege suite passes **245 tests, zero failures, one existing ignore**. All nine firing-post cases pass, including Catapult and Archer assignment followed by recorded `MoveTo` through a stationary friendly Swordsman, arrival and actual wall damage on the next turn. The original regression file remains byte-identical to the red checkpoint (SHA-256 `dd00f8ec39a6f9de433b22436eef116fda9071b30b2f4ad8dcdcdd4d13f9232d`). This establishes the constructed arrival-and-fire defect and repair, not its frequency in real games or a victory gain.
+
+### Fixed full-game probe
+
+Baseline production is frozen from regression-only checkpoint `897b8f26e73dcf9ccdcb64c16973ef785247d80f`; its `victory_eval` executable SHA-256 is `f339065672e1215bd8f1750dac1ac9df63e9d03028b2c87d5ed0f4721ec17163`. Candidate production is frozen from `582dd9ce6acecebab4d96669563d0d86f5d0e840`; its executable SHA-256 is `62b89fff9c9af5accfbb59152e470e2a0aae263e948aff120be2cbda65045927`. The complete committed-tree comparison differs only in firing-post admission. Both arms' 768 tracked source/data/deployment/Cargo inputs are hashed, with supplemental build-script, mod, vocabulary and test-asset inputs also confirmed unchanged.
+
+Both source arms' fixed jobs are running. Full Rust validation and all fixed full-game outcomes remain pending and unread. No performance or victory gain is claimed.
