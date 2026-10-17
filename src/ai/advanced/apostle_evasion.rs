@@ -117,6 +117,30 @@ impl AdvancedAi {
             })
     }
 
+    fn theological_threat_reaches(
+        game: &Game,
+        ours: u32,
+        position: Pos,
+        threat: &TheologicalThreat,
+    ) -> bool {
+        threat
+            .strike_from
+            .iter()
+            .any(|from| *from != position && game.wdist(*from, position) <= 1)
+            && Self::rival_wins_the_exchange(game, threat.rival, ours, position)
+    }
+
+    fn theological_tile_is_safe(
+        game: &Game,
+        ours: u32,
+        position: Pos,
+        threats: &[TheologicalThreat],
+    ) -> bool {
+        threats
+            .iter()
+            .all(|threat| !Self::theological_threat_reaches(game, ours, position, threat))
+    }
+
     /// How many threats can strike `ours` standing on `pos` and win.
     fn theological_threats_reaching(
         g: &Game,
@@ -126,13 +150,7 @@ impl AdvancedAi {
     ) -> usize {
         threats
             .iter()
-            .filter(|threat| {
-                threat
-                    .strike_from
-                    .iter()
-                    .any(|from| *from != pos && g.wdist(*from, pos) <= 1)
-                    && Self::rival_wins_the_exchange(g, threat.rival, ours, pos)
-            })
+            .filter(|threat| Self::theological_threat_reaches(g, ours, pos, threat))
             .count()
     }
 
@@ -151,7 +169,8 @@ impl AdvancedAi {
             return None;
         }
         let current = g.units.get(&uid)?.pos;
-        if Self::theological_threats_reaching(g, uid, current, &threats) == 0 {
+        let current_reaching = Self::theological_threats_reaching(g, uid, current, &threats);
+        if current_reaching == 0 {
             return None;
         }
         let kind = g.units[&uid].kind.as_str().to_string();
@@ -196,7 +215,7 @@ impl AdvancedAi {
         let reachable_safe = g
             .reachable(uid)
             .into_iter()
-            .filter(|position| Self::theological_threats_reaching(g, uid, *position, &threats) == 0)
+            .filter(|position| Self::theological_tile_is_safe(g, uid, *position, &threats))
             .map(|position| {
                 (
                     g.wdist(current, position),
@@ -234,9 +253,7 @@ impl AdvancedAi {
             return Some(g.apply(pid, &Action::Spread { unit: uid }).is_ok());
         }
         match flight {
-            Some((reaching, _, position))
-                if reaching < Self::theological_threats_reaching(g, uid, current, &threats) =>
-            {
+            Some((reaching, _, position)) if reaching < current_reaching => {
                 Some(self.base.path_move(g, pid, uid, position))
             }
             _ => Some(false),
@@ -288,7 +305,7 @@ impl AdvancedAi {
         // winning rival's reach it walks exactly as it always did.
         if g.nbrs(current)
             .into_iter()
-            .all(|position| Self::theological_threats_reaching(g, uid, position, &threats) == 0)
+            .all(|position| Self::theological_tile_is_safe(g, uid, position, &threats))
         {
             return None;
         }
@@ -299,7 +316,7 @@ impl AdvancedAi {
         let route = g
             .route_step(uid, target, stop_range)
             .filter(|next| g.can_move(uid, *next))
-            .filter(|next| Self::theological_threats_reaching(g, uid, *next, &threats) == 0);
+            .filter(|next| Self::theological_tile_is_safe(g, uid, *next, &threats));
         if let Some(next) = route {
             return Some(self.base.path_move(g, pid, uid, next));
         }
@@ -307,7 +324,7 @@ impl AdvancedAi {
             .nbrs(current)
             .into_iter()
             .filter(|position| g.can_move(uid, *position))
-            .filter(|position| Self::theological_threats_reaching(g, uid, *position, &threats) == 0)
+            .filter(|position| Self::theological_tile_is_safe(g, uid, *position, &threats))
             .map(|position| (g.wdist(position, target), position))
             .filter(|(distance, _)| *distance < here)
             .min();

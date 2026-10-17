@@ -1,6 +1,8 @@
 use super::*;
 use std::collections::HashSet;
 
+mod safety;
+
 /// A cleared two-player board with a rival Orthodox Apostle on a land tile
 /// and our Buddhist Missionary on a land tile its strike envelope reaches,
 /// chosen so a single step leaves the envelope. Returns the game, our unit,
