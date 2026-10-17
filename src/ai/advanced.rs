@@ -41581,16 +41581,11 @@ impl AdvancedAi {
         };
         let target = match best {
             Ok(pos) => Some(pos),
-            Err(found) => found.inspect(|pos| {
-                self.builder_targets.insert(uid, *pos);
-            }),
+            Err(found) => found,
         };
         target.is_some_and(|pos| {
-            if self.builder_reach_safety_on() {
-                self.builder_step_out_of_reach(g, pid, uid, pos)
-            } else {
-                self.builder_step_toward_barbarian_safe(g, pid, uid, pos)
-            }
+            self.builder_targets.insert(uid, pos);
+            self.builder_step_toward_job(g, pid, uid, pos)
         })
     }
 
@@ -41602,7 +41597,7 @@ impl AdvancedAi {
         target: Pos,
     ) -> bool {
         let before = game.units[&uid].pos;
-        let track_progress = self.base.builder_tries_the_next_tile;
+        let track_progress = !self.base.legacy_movement;
         let routed = if track_progress {
             game.route_step(uid, target, 0)
         } else {

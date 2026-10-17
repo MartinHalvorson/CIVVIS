@@ -129,9 +129,34 @@ fn the_original_job_returns_after_the_temporary_backoff_expires() {
 }
 
 #[test]
-fn disabled_next_job_behavior_keeps_the_historical_assignment() {
+fn the_normal_sweep_does_not_retain_a_job_after_a_safe_retreat() {
     let (mut game, mut ai, builder, preferred, _) = ranged_pressure_jobs();
     ai.base.builder_tries_the_next_tile = false;
+    ai.builder_targets.insert(builder, preferred);
+    assert!(ai.advanced_builder_step(&mut game, 0, builder, GrandStrategy::Expansion));
+    assert!(!ai.builder_targets.contains_key(&builder));
+    assert_eq!(
+        ai.builder_avoid.get(&builder).map(|entry| entry.0),
+        Some(preferred)
+    );
+}
+
+#[test]
+fn the_normal_sweep_does_not_pin_a_new_job_after_a_safe_retreat() {
+    let (mut game, mut ai, builder, preferred, _) = ranged_pressure_jobs();
+    ai.base.builder_tries_the_next_tile = false;
+    assert!(ai.advanced_builder_step(&mut game, 0, builder, GrandStrategy::Expansion));
+    assert!(!ai.builder_targets.contains_key(&builder));
+    assert_eq!(
+        ai.builder_avoid.get(&builder).map(|entry| entry.0),
+        Some(preferred)
+    );
+}
+
+#[test]
+fn legacy_movement_keeps_the_historical_assignment() {
+    let (mut game, mut ai, builder, preferred, _) = ranged_pressure_jobs();
+    ai.base.legacy_movement = true;
     ai.builder_targets.insert(builder, preferred);
     assert!(ai.advanced_builder_step(&mut game, 0, builder, GrandStrategy::Expansion));
     assert_eq!(ai.builder_targets.get(&builder), Some(&preferred));
