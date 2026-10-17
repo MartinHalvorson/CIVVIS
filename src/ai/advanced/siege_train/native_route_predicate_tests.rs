@@ -230,9 +230,9 @@ fn predicate_routes_keep_boundary_zoc_target_and_cache_rules() {
 
 #[test]
 fn siege_exclusions_preserve_sparse_grid_and_unindexable_positions() {
-    let (mut g, uid, city) = open_game();
-    let start = g.units[&uid].pos;
-    let mut serialized = serde_json::to_value(&g.map).unwrap();
+    let (mut game, uid, city) = open_game();
+    let start = game.units[&uid].pos;
+    let mut serialized = serde_json::to_value(&game.map).unwrap();
     let tiles = serialized["tiles"].as_array_mut().unwrap();
     let mut index = 0;
     tiles.retain(|tile| {
@@ -240,39 +240,43 @@ fn siege_exclusions_preserve_sparse_grid_and_unindexable_positions() {
         let pos: Pos = serde_json::from_value(tile["pos"].clone()).unwrap();
         pos == start || pos == city || index % 7 != 0
     });
-    g.map = serde_json::from_value(serialized).unwrap();
-    assert!(g.map.tiles.len() < (g.map.width * g.map.height) as usize);
+    game.map = serde_json::from_value(serialized).unwrap();
+    assert!(game.map.tiles.len() < (game.map.width * game.map.height) as usize);
     let outside = (-100, -100);
-    let blocker = g.spawn_unit("warrior", 1, start);
-    g.units.get_mut(&blocker).unwrap().pos = outside;
-    assert!(g.map.tiles.index_of(outside).is_none());
-    assert!(compare_siege(&g, uid, city) > 0);
-    assert_eq!(siege_route_step(&g, 0, uid, outside, city), None);
-    g.units.get_mut(&uid).unwrap().pos = outside;
-    compare_siege(&g, uid, city);
+    let blocker = game.spawn_unit("warrior", 1, start);
+    game.units.get_mut(&blocker).unwrap().pos = outside;
+    assert!(game.map.tiles.index_of(outside).is_none());
+    assert!(compare_siege(&game, uid, city) > 0);
+    assert_eq!(siege_route_step(&game, 0, uid, outside, city), None);
+    game.units.get_mut(&uid).unwrap().pos = outside;
+    compare_siege(&game, uid, city);
 }
 
 #[test]
 fn siege_exclusions_preserve_stacked_units_and_the_goal_exception() {
-    let (mut g, uid, city) = open_game();
-    let start = g.units[&uid].pos;
-    let goal = g.nbrs(start).into_iter().find(|pos| *pos != city).unwrap();
-    g.spawn_unit("builder", 0, goal);
-    g.spawn_unit("fighter", 1, goal);
-    assert_eq!(siege_route_step(&g, 0, uid, goal, city), Some(goal));
-    assert_eq!(old_siege_route_step(&g, 0, uid, goal, city), Some(goal));
-    let soldier = g.spawn_unit("warrior", 0, goal);
-    assert_eq!(siege_route_step(&g, 0, uid, goal, city), None);
-    assert_eq!(old_siege_route_step(&g, 0, uid, goal, city), None);
-    g.remove_unit(soldier);
-    g.players[0].techs.insert(crate::name!("shipbuilding"));
-    g.map.tiles.get_mut(&goal).unwrap().terrain = crate::name!("coast");
-    assert_eq!(siege_route_step(&g, 0, uid, goal, city), Some(goal));
-    assert_eq!(old_siege_route_step(&g, 0, uid, goal, city), Some(goal));
+    let (mut game, uid, city) = open_game();
+    let start = game.units[&uid].pos;
+    let goal = game
+        .nbrs(start)
+        .into_iter()
+        .find(|pos| *pos != city)
+        .unwrap();
+    game.spawn_unit("builder", 0, goal);
+    game.spawn_unit("fighter", 1, goal);
+    assert_eq!(siege_route_step(&game, 0, uid, goal, city), Some(goal));
+    assert_eq!(old_siege_route_step(&game, 0, uid, goal, city), Some(goal));
+    let soldier = game.spawn_unit("warrior", 0, goal);
+    assert_eq!(siege_route_step(&game, 0, uid, goal, city), None);
+    assert_eq!(old_siege_route_step(&game, 0, uid, goal, city), None);
+    game.remove_unit(soldier);
+    game.players[0].techs.insert(crate::name!("shipbuilding"));
+    game.map.tiles.get_mut(&goal).unwrap().terrain = crate::name!("coast");
+    assert_eq!(siege_route_step(&game, 0, uid, goal, city), Some(goal));
+    assert_eq!(old_siege_route_step(&game, 0, uid, goal, city), Some(goal));
     for kind in ["warrior", "builder"] {
-        g.spawn_unit(kind, 0, start);
+        game.spawn_unit(kind, 0, start);
     }
-    assert!(compare_siege(&g, uid, city) > 0);
+    assert!(compare_siege(&game, uid, city) > 0);
 }
 
 fn old_siege_route_step(g: &Game, pid: usize, uid: u32, goal: Pos, city: Pos) -> Option<Pos> {
