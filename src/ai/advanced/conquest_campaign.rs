@@ -66,35 +66,6 @@ impl AdvancedAi {
             .map(|(technology, _)| technology)
     }
 
-    pub(super) fn conquest_campaign_upgrade_window(
-        &self,
-        game: &Game,
-        player: usize,
-        plan: &StrategicPlan,
-    ) -> bool {
-        self.victory_planning
-            && self.active_victory_target(game) == Some(VictoryTarget::Domination)
-            && plan.strategy == GrandStrategy::Expansion
-            && plan.threatened_city.is_none()
-            && game.player_city_ids(player).len() >= 2
-            && game.players[player]
-                .techs
-                .contains(&crate::name!("writing"))
-            && !game.players.iter().any(|rival| {
-                rival.id != player
-                    && rival.alive
-                    && !rival.is_minor
-                    && !rival.is_barbarian
-                    && game.is_at_war(player, rival.id)
-            })
-            && plan.target_player.is_some_and(|target| {
-                self.campaign_target_legal(game, player, target)
-                    && game.player_city_ids(target).iter().any(|city| {
-                        Self::city_within_declaration_range(game, player, game.cities[city].pos)
-                    })
-            })
-    }
-
     pub(super) fn conquest_campaign_objective(
         &self,
         game: &Game,

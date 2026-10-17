@@ -1329,7 +1329,17 @@ impl AdvancedAi {
             }) || siege_at
                 .iter()
                 .any(|pos| g.wdist(*pos, at) <= THREAT_RELIEF_RADIUS);
-            if covered {
+            let camp_covered = self.active_victory_target(g) == Some(VictoryTarget::Domination)
+                && force.len() == 1
+                && !arena
+                && turn < g.standard_duration(CAMP_TURN_LIMIT)
+                && Some(g.units[&force[0]].owner) == g.barb_pid
+                && g.barb_camps.contains_key(&at)
+                && our_cities
+                    .iter()
+                    .any(|(_, pos)| g.wdist(*pos, at) <= CAMP_RADIUS)
+                && !self.base.camp_is_a_neighbours_problem(g, pid, at);
+            if covered || camp_covered {
                 continue;
             }
             let strength: f64 = force
@@ -3141,6 +3151,101 @@ mod tests {
         let mut ai = AdvancedAi::new();
         ai.enable_objective_board();
         ai
+    }
+
+    fn conquest_campaign_camp() -> (Game, AdvancedAi, StrategicPlan, Pos, u32) {
+        let mut game = flat_board(202_610_17, &[at(6, 8), at(30, 8)], true);
+        let camp = at(11, 8);
+        game.barb_camps.insert(camp, game.turn);
+        let barbarian = game.barb_pid.unwrap();
+        let guard = spawn(&mut game, "spearman", barbarian, camp);
+        for position in [at(8, 8), at(9, 8), at(10, 8)] {
+            spawn(&mut game, "warrior", 0, position);
+        }
+        let mut controller = on();
+        controller.victory_target = Some(VictoryTarget::Domination);
+        let plan = conquest(&game, None);
+        (game, controller, plan, camp, guard)
+    }
+
+    #[test]
+    fn conquest_campaign_camp_owns_its_singleton_guard_bill() {
+        let (game, mut controller, plan, camp, guard) = conquest_campaign_camp();
+        controller.rebuild_force_groups(&game, 0, &plan);
+        let camp_row = row(&controller, ObjectiveKey::Camp(camp)).unwrap();
+        assert_eq!(camp_row.requirement.bodies, CAMP_NEAR_BODIES);
+        assert_eq!(camp_row.requirement.melee, 1);
+        assert_eq!(
+            camp_row.requirement.strength,
+            effective_strength(game.unit_strength(&game.units[&guard], true), 100) * CAMP_MARGIN
+        );
+        assert!(row(&controller, ObjectiveKey::Destroy(guard)).is_none());
+    }
+
+    #[test]
+    fn conquest_campaign_camp_keeps_a_real_party_in_one_assignment() {
+        let (game, mut controller, plan, camp, _) = conquest_campaign_camp();
+        controller.rebuild_force_groups(&game, 0, &plan);
+        let party = force_for(&controller, ObjectiveKey::Camp(camp)).unwrap();
+        assert!(party.units.len() >= CAMP_NEAR_BODIES);
+    }
+
+    #[test]
+    fn conquest_campaign_camp_preserves_other_victory_lanes() {
+        for target in [
+            None,
+            Some(VictoryTarget::Science),
+            Some(VictoryTarget::Religion),
+        ] {
+            let (game, mut controller, plan, camp, guard) = conquest_campaign_camp();
+            controller.victory_target = target;
+            controller.rebuild_force_groups(&game, 0, &plan);
+            assert!(row(&controller, ObjectiveKey::Camp(camp)).is_some());
+            assert!(row(&controller, ObjectiveKey::Destroy(guard)).is_some());
+        }
+    }
+
+    #[test]
+    fn conquest_campaign_camp_keeps_grouped_hostile_forces() {
+        let (mut game, mut controller, plan, camp, guard) = conquest_campaign_camp();
+        let barbarian = game.barb_pid.unwrap();
+        spawn(&mut game, "warrior", barbarian, at(12, 8));
+        let home = game.player_city_ids(0)[0];
+        std::sync::Arc::make_mut(&mut game.observed_city_strength).insert(home, 100.0);
+        assert_eq!(game.city_strength(home), 100.0);
+        controller.rebuild_force_groups(&game, 0, &plan);
+        assert!(row(&controller, ObjectiveKey::Camp(camp)).is_some());
+        let hostile = row(&controller, ObjectiveKey::Destroy(guard)).unwrap();
+        assert!(hostile.requirement.strength > 25.0 * DESTROY_MARGIN);
+    }
+
+    #[test]
+    fn conquest_campaign_camp_keeps_the_guard_target_after_the_camp_window() {
+        let (mut game, mut controller, plan, camp, guard) = conquest_campaign_camp();
+        game.turn = game.standard_duration(CAMP_TURN_LIMIT);
+        controller.rebuild_force_groups(&game, 0, &plan);
+        assert!(row(&controller, ObjectiveKey::Camp(camp)).is_none());
+        assert!(row(&controller, ObjectiveKey::Destroy(guard)).is_some());
+    }
+
+    #[test]
+    fn conquest_campaign_camp_keeps_a_raider_without_a_camp() {
+        let (mut game, mut controller, plan, camp, guard) = conquest_campaign_camp();
+        game.barb_camps.remove(&camp);
+        controller.rebuild_force_groups(&game, 0, &plan);
+        assert!(row(&controller, ObjectiveKey::Camp(camp)).is_none());
+        assert!(row(&controller, ObjectiveKey::Destroy(guard)).is_some());
+    }
+
+    #[test]
+    fn conquest_campaign_camp_does_not_absorb_a_major_enemy_on_the_tile() {
+        let (mut game, mut controller, plan, camp, guard) = conquest_campaign_camp();
+        game.remove_unit(guard);
+        let enemy = spawn(&mut game, "spearman", 1, camp);
+        war(&mut game, 0, 1);
+        controller.rebuild_force_groups(&game, 0, &plan);
+        assert!(row(&controller, ObjectiveKey::Camp(camp)).is_some());
+        assert!(row(&controller, ObjectiveKey::Destroy(enemy)).is_some());
     }
 
     fn city_of(g: &Game, pid: usize, pos: Pos) -> u32 {

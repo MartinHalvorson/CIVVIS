@@ -336,9 +336,7 @@ impl AdvancedAi {
                     p.alive
                         && !p.is_minor
                         && !p.is_barbarian
-                        && (plan.strategy == GrandStrategy::Conquest
-                            || self.conquest_campaign_upgrade_window(g, pid, plan)
-                            || g.is_at_war(pid, target))
+                        && (plan.strategy == GrandStrategy::Conquest || g.is_at_war(pid, target))
                 })
             })
         {
