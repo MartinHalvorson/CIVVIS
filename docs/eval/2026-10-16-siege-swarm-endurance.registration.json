@@ -1,0 +1,49 @@
+{
+  "kind": "siege_swarm_endurance_accounting_validation",
+  "registered_at_utc": "2026-10-17T05:56:09Z",
+  "base_revision": "06185631dfb2e041ecd2135cbc3e40d7c3511fbc",
+  "regression_only_revision": "b0a6af22a",
+  "hypothesis": "A resting, recovering or reply-floor-rejected melee finisher still owes its melee reply when an unwalled city spares the train from ranged strikes. It must not lend nearly free endurance to the entry budget.",
+  "repair_scope": "Separate the unfiltered melee exchange cost from fitness-filtered recurring melee damage; use the unfiltered cost only in the existing spared entry branch.",
+  "red_controls": [
+    "resting member exchange cost",
+    "resting member false-ready entry",
+    "recovering full-HP member exchange cost",
+    "fit member failing reply survivor floor"
+  ],
+  "positive_controls": [
+    "fit three-member swarm still ready",
+    "swarm off unchanged",
+    "non-entry and spares off unchanged"
+  ],
+  "simulation": {
+    "tool": "victory_eval --domination-pair unwalled-city-spares-the-train",
+    "build": "cargo build --profile ci --locked --features developer-tools --bin victory_eval",
+    "source_arms": ["baseline", "candidate"],
+    "policy_arms_per_source": ["off", "on"],
+    "cohorts": [
+      {"difficulty": "immortal", "games": 4, "start_seed": 43240000},
+      {"difficulty": "deity", "games": 4, "start_seed": 43240100}
+    ],
+    "total_complete_games": 32,
+    "max_turns": 250,
+    "profile": "Four players, 60x38 Pangaea, six city-states, Online, barbarians, all victory conditions; Gran Colombia focal Domination seat versus adaptive CIVVIS, not Firaxis AI. Explicit difficulty sets player and barbarian difficulty; focal seat remains handicap-exempt as in the existing tool.",
+    "bundle": "Each binary compiles the same repository live-force-on bundle; only focal spares-the-train is toggled within source. Record ledger/default and bundle hashes. Do not assume rival policy isolation without checking.",
+    "execution": "Freeze baseline before the production edit; freeze candidate after the repair. Run each complete cohort exactly once. Preserve all rows, logs and exit codes, including exit 2 for no within-source action contrast. No seed replacement, clock shortening or settings changes. Do not inspect simulation outcomes until all four source-by-rung jobs terminate.",
+    "readout": [
+      "Compare every OFF outcome field across sources as a reported-outcome negative control; investigate any difference.",
+      "Report all focal wins, Domination wins, conquest progress and end turns per source, rung and policy arm.",
+      "Keep the tool's within-source canonical-action equality gate; a no-contrast failure is not evidence of improvement.",
+      "Cross-source matching outcomes do not prove canonical-action identity: the existing tool does not persist those bytes or hashes.",
+      "This small simulator cohort is descriptive validation, not a Native verification, promotion screen or strength claim. Ship accounting correctness only if the regression controls and ordinary quality gates pass; unexpected simulation effects require investigation, not hidden exclusions."
+    ]
+  },
+  "native_lead": "civvis-20261017T050815Z opened a defensive faith war at turn 39 and successfully condemned a spreader immediately. A turn-41 scout city attack is not proof that this budget defect caused that game's failure. The failed prior historical replay does not authorize A/B or causal claims.",
+  "invariants": [
+    "No Native actions, restarts, policy/pin/difficulty/verification or safety-threshold changes.",
+    "No gene/default changes or ordinary war-declaration gate changes.",
+    "Recurring damage, finishing blow and ready threshold remain unchanged.",
+    "Production/non-entry, swarm-off, spares-off, walled and fit-active-member behavior remain unchanged.",
+    "Retain all red failures and complete simulation outcomes."
+  ]
+}
