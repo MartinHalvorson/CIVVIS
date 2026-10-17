@@ -137,6 +137,7 @@ saved golden references are previous executions, not additional fresh samples.
 | Focal Domination wins | 0/8 | 0/8 |
 | Religious losses | 0/8 | 0/8 |
 | Games with observed foreign-major-origin city holdings | 0/8 | 0/8 |
+| Games with observed foreign-origin city holdings, any owner | 2/8 | 1/8 |
 | Condemnations executed by turn 90 | 3 | 4 |
 | Rival Science victories | 6 | 7 |
 | Rival Culture victories | 2 | 1 |
@@ -148,6 +149,9 @@ on four (aggregate delta +875.36), but that army captures no observed foreign
 major city. Production is higher on two, lower on two and equal on four
 (aggregate delta +1.5). Aggregate city count falls by one. A larger army and one
 extra condemnation do not establish conquest strength.
+The non-major holdings are not hidden by the zero-major metric: Immortal
+49293455737 holds one foreign-origin non-major city in both arms; Deity
+40171860454 holds one in baseline and none in candidate.
 
 Known-map mechanism results are also mixed: Immortal 43250001 postpones the
 first war from 59 to 68 and executes a condemnation; Immortal 20603809636 delays
