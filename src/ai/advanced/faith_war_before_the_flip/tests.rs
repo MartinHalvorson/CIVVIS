@@ -41,6 +41,7 @@ fn before_the_flip() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
     g.players[0].gold_per_turn = 5.0;
     let missionary = g.spawn_test_unit("missionary", 1, (4, 8));
     g.units.get_mut(&missionary).unwrap().religion = Some(FAITH.into());
+    g.spawn_test_unit("warrior", 0, (3, 8));
     Arc::make_mut(&mut g.observed_military_power).extend([(0, 100.0), (1, 120.0)]);
     let ai = AdvancedAi::targeting(VictoryTarget::Domination);
     let plan = StrategicPlan {
@@ -388,13 +389,72 @@ fn a_founder_with_two_leaning_or_one_city_from_flipping_fires() {
 /// fires under version 2 exactly as under the original.
 #[test]
 fn version_two_fires_for_a_non_founder_as_before() {
-    let (mut g, mut ai, plan, _, _) = before_the_flip();
+    let (mut g, mut ai, plan, _, missionary) = before_the_flip();
     ai.enable_faith_war_before_the_flip_2();
     assert_eq!(ai.faith_war_founder_holds(&g, 0, 1), None);
     ai.advanced_diplomacy(&mut g, 0, &plan);
     assert!(g.is_at_war(0, 1), "non-founder: fires");
     let war = ai.faith_war_before_the_flip_war.unwrap();
     assert_eq!((war.rival, war.opened), (1, 60));
+    assert!(!g.units.contains_key(&missionary));
+    assert!(g.log.iter().any(|(player, action)| {
+        *player == 0
+            && matches!(action, Action::CondemnHeretic { target_unit, .. } if *target_unit == missionary)
+    }));
+}
+
+#[test]
+fn version_two_does_not_open_without_an_executable_condemnation() {
+    for obstruction in [
+        "absent",
+        "wounded",
+        "spent",
+        "last_move",
+        "mountain",
+        "distant",
+    ] {
+        let (mut game, mut ai, _, _, missionary) = before_the_flip();
+        ai.enable_faith_war_before_the_flip_2();
+        let interceptor = game.player_unit_ids(0)[0];
+        match obstruction {
+            "absent" => game.remove_unit(interceptor),
+            "wounded" => game.units.get_mut(&interceptor).unwrap().hp = 1,
+            "spent" => game.units.get_mut(&interceptor).unwrap().moves_left = 0.0,
+            "last_move" => game.units.get_mut(&interceptor).unwrap().moves_left = 1.0,
+            "mountain" => {
+                game.map.tiles.get_mut(&(4, 8)).unwrap().terrain = crate::name!("mountain")
+            }
+            "distant" => game.units.get_mut(&interceptor).unwrap().pos = (2, 8),
+            _ => unreachable!(),
+        }
+        assert!(ai.faith_war_trigger(&game, 0, 1).is_some(), "{obstruction}");
+        assert_eq!(ai.faith_war_gate(&game, 0, 1), None, "{obstruction}");
+        let before = game.log.len();
+        assert!(
+            !ai.faith_war_before_the_flip_opening(&mut game, 0),
+            "{obstruction}"
+        );
+        assert!(!game.is_at_war(0, 1), "{obstruction}");
+        assert!(game.units.contains_key(&missionary), "{obstruction}");
+        assert_eq!(
+            game.log.len(),
+            before,
+            "forecast leaked actions: {obstruction}"
+        );
+        assert_eq!(ai.faith_war_before_the_flip_war, None, "{obstruction}");
+    }
+}
+
+#[test]
+fn version_one_still_opens_without_an_interceptor() {
+    let (mut game, mut ai, _, _, missionary) = before_the_flip();
+    for unit in game.player_unit_ids(0) {
+        game.remove_unit(unit);
+    }
+    ai.enable_faith_war_before_the_flip();
+    assert!(ai.faith_war_before_the_flip_opening(&mut game, 0));
+    assert!(game.is_at_war(0, 1));
+    assert!(game.units.contains_key(&missionary));
 }
 
 /// Version 2's war limit is version 1's: beside one running major war both
