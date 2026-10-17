@@ -1,386 +1,150 @@
 use super::*;
 
-fn cash_flow_campaign() -> (Game, AdvancedAi, StrategicPlan, Vec<u32>) {
-    let (mut game, ranked) =
-        crate::ai::commercial_hub::tests::emperor_empire("CAMPAIGNCASHFLOW", 20_261_017);
+fn bankruptcy_cleanup_campaign(kind: &str) -> (Game, AdvancedAi) {
+    let mut game = Game::new_full(2, 24, 16, 20_261_017, 250, 0, false);
+    game.units.clear();
+    for tile in game.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.resource = None;
+    }
+    game.found_city_for(0, (4, 4), None);
+    game.found_city_for(1, (18, 10), None);
+    game.current = 0;
+    game.turn = 125;
     game.players[0].gold = 0.0;
-    game.players[0].gold_per_turn = -4.0;
-    for technology in [
-        "archery",
-        "iron_working",
-        "engineering",
-        "machinery",
-        "apprenticeship",
-    ] {
-        game.players[0].techs.insert(Name::new(technology));
-    }
-    Arc::make_mut(&mut game.observed_trade_capacity).insert(0, 0);
-    let position = game.cities[&ranked[0]].pos;
-    for _ in 0..12 {
-        game.spawn_test_unit("warrior", 0, position);
-    }
-    for _ in 0..3 {
-        game.spawn_test_unit("archer", 0, position);
+    game.players[0].gold_per_turn = -1.0;
+    game.players[0].policies.clear();
+    for position in [(6, 6), (6, 7), (7, 6), (7, 7)] {
+        game.spawn_test_unit(kind, 0, position);
     }
     let mut controller = AdvancedAi::targeting(VictoryTarget::Domination);
-    controller.base.book_pos = 4;
-    controller.base.w.city_target = 10.0;
-    controller.enable_commercial_hub_in_the_strategic_queue();
-    let plan = StrategicPlan {
-        strategy: GrandStrategy::Expansion,
-        target_player: None,
-        target_city: None,
-        threatened_city: None,
-        desired_cities: 10,
-        assessed_turn: game.turn,
-        rush: false,
-    };
-    assert!(controller.domination_upgrade_funding_shortfall(&game, 0));
-    assert!(controller.base.commercial_hub_window_open(&game));
-    assert!(controller
-        .base
-        .commercial_hub_step(&game, 0, ranked[1], 6, 0)
-        .is_some());
-    (game, controller, plan, ranked)
-}
-
-fn cash_flow_install_hub(game: &mut Game, controller: &AdvancedAi, city: u32) {
-    let Item::District { district, pos } = controller
-        .base
-        .commercial_hub_step(game, 0, city, game.player_city_ids(0).len(), 0)
-        .unwrap()
-    else {
-        panic!("expected canonical Hub proposal");
-    };
-    game.cities
-        .get_mut(&city)
-        .unwrap()
-        .districts
-        .insert(district, pos);
-}
-
-fn cash_flow_queues(game: &Game) -> Vec<(u32, Vec<Item>)> {
-    game.player_city_ids(0)
-        .into_iter()
-        .map(|city| (city, game.cities[&city].queue.to_vec()))
-        .collect()
+    controller.enable_bankruptcy_exits_the_drain();
+    (game, controller)
 }
 
 #[test]
-fn conquest_campaign_cash_flow_counts_active_routes_without_standing_traders() {
-    let (mut game, mut controller, plan, ranked) = cash_flow_campaign();
-    Arc::make_mut(&mut game.observed_trade_capacity).insert(0, 1);
-    game.routes.push(crate::game::TradeRoute {
-        origin: ranked[0],
-        dest: ranked[1],
-        owner: 0,
-        ends: game.turn + 20,
-    });
-    assert_eq!(controller.counts(&game, 0).traders, 0);
-    assert_eq!(game.active_routes(0), game.trade_capacity(0));
-    controller.claim_conquest_campaign_cash_flow(&mut game, 0, &plan);
-    assert!(cash_flow_queues(&game)
-        .iter()
-        .all(|(_, queue)| queue.is_empty()));
+fn conquest_campaign_bankruptcy_preserves_units_with_zero_discounted_upkeep() {
+    let (mut game, controller) = bankruptcy_cleanup_campaign("archer");
+    game.players[0]
+        .policies
+        .insert(crate::name!("conscription"));
+    assert_eq!(game.policy_effect(0, "unit_maintenance_discount"), 1.0);
+    assert_eq!(game.unit_gold_maintenance(0), 0.0);
+    controller.exit_the_drain(&mut game, 0);
+    assert_eq!(game.player_unit_ids(0).len(), 4);
 }
 
 #[test]
-fn conquest_campaign_cash_flow_preserves_local_defense_emergencies() {
-    for emergency in ["recent_attack", "barbarian_raider"] {
-        let (mut game, mut controller, plan, ranked) = cash_flow_campaign();
-        cash_flow_install_hub(&mut game, &controller, ranked[1]);
-        if emergency == "recent_attack" {
-            game.cities.get_mut(&ranked[1]).unwrap().last_attacked = game.turn;
-        } else {
-            game.barb_pid = Some(1);
-            let position = game.cities[&ranked[1]].pos;
-            game.spawn_test_unit("warrior", 1, position);
-            assert!(controller
-                .base
-                .barbarian_local_alarm_for_controller(&game, 0, ranked[1]));
-        }
-        controller.claim_conquest_campaign_cash_flow(&mut game, 0, &plan);
-        assert!(
-            cash_flow_queues(&game)
-                .iter()
-                .all(|(_, queue)| queue.is_empty()),
-            "{emergency}"
-        );
-    }
-}
-
-#[test]
-fn conquest_campaign_cash_flow_preserves_a_preexisting_threat_hint() {
-    let (mut game, mut controller, plan, ranked) = cash_flow_campaign();
-    cash_flow_install_hub(&mut game, &controller, ranked[1]);
-    controller.base.plan_threatened_city = Some(ranked[0]);
-    controller.claim_conquest_campaign_cash_flow(&mut game, 0, &plan);
-    assert_eq!(controller.base.plan_threatened_city, Some(ranked[0]));
-    assert!(cash_flow_queues(&game)
-        .iter()
-        .all(|(_, queue)| queue.is_empty()));
-}
-
-#[test]
-fn conquest_campaign_cash_flow_preserves_canonical_housing_priority() {
-    let (mut game, mut controller, plan, ranked) = cash_flow_campaign();
-    cash_flow_install_hub(&mut game, &controller, ranked[1]);
-    game.cities
-        .get_mut(&ranked[1])
-        .unwrap()
-        .buildings
-        .retain(|building| *building != "granary");
-    let housing = game.city_housing(&game.cities[&ranked[1]]);
-    let population = game.cities[&ranked[1]].pop as f64;
-    *Arc::make_mut(&mut game.observed_city_housing_adjustments)
-        .entry(ranked[1])
-        .or_insert(0.0) += population - housing;
-    assert_eq!(game.city_housing(&game.cities[&ranked[1]]), population);
-    assert!(controller
-        .base
-        .commercial_hub_step(&game, 0, ranked[1], 6, 0)
-        .is_none());
-    controller.claim_conquest_campaign_cash_flow(&mut game, 0, &plan);
-    assert!(cash_flow_queues(&game)
-        .iter()
-        .all(|(_, queue)| queue.is_empty()));
-}
-
-#[test]
-fn conquest_campaign_cash_flow_claims_a_real_market_in_a_deficit() {
-    let (mut game, mut controller, plan, ranked) = cash_flow_campaign();
-    cash_flow_install_hub(&mut game, &controller, ranked[1]);
-    let expected = controller
-        .base
-        .commercial_hub_step(&game, 0, ranked[1], 6, 0)
-        .unwrap();
-    assert!(matches!(expected, Item::Building { .. }));
-    assert!(game.players[0].gold_per_turn < -0.5);
-    controller.claim_conquest_campaign_cash_flow(&mut game, 0, &plan);
-    assert_eq!(game.cities[&ranked[1]].queue.first(), Some(&expected));
-}
-
-#[test]
-fn conquest_campaign_cash_flow_claims_a_canonical_spare_capacity_trader() {
-    let (mut game, mut controller, plan, ranked) = cash_flow_campaign();
-    Arc::make_mut(&mut game.observed_trade_capacity).insert(0, 1);
-    let expected = controller
-        .base
-        .commercial_hub_step(&game, 0, ranked[1], 6, 0)
-        .unwrap();
-    assert!(matches!(&expected, Item::Unit { unit } if unit == "trader"));
-    controller.claim_conquest_campaign_cash_flow(&mut game, 0, &plan);
-    assert_eq!(game.cities[&ranked[1]].queue.first(), Some(&expected));
-}
-
-#[test]
-fn conquest_campaign_cash_flow_never_starts_a_new_hub() {
-    let (mut game, mut controller, plan, ranked) = cash_flow_campaign();
-    assert!(matches!(
-        controller
-            .base
-            .commercial_hub_step(&game, 0, ranked[1], 6, 0),
-        Some(Item::District { .. })
-    ));
-    controller.claim_conquest_campaign_cash_flow(&mut game, 0, &plan);
-    assert!(cash_flow_queues(&game)
-        .iter()
-        .all(|(_, queue)| queue.is_empty()));
-}
-
-#[test]
-fn conquest_campaign_cash_flow_utilizes_a_hub_while_another_is_committed() {
-    let (mut game, mut controller, plan, ranked) = cash_flow_campaign();
-    cash_flow_install_hub(&mut game, &controller, ranked[1]);
-    let hub = controller
-        .base
-        .commercial_hub_step(&game, 0, ranked[2], 6, 0)
-        .unwrap();
-    assert!(matches!(hub, Item::District { .. }));
-    game.apply(
-        0,
-        &Action::Produce {
-            city: ranked[2],
-            item: hub,
-        },
-    )
-    .unwrap();
-    let original = game.cities[&ranked[2]].queue.clone();
-    let expected = controller
-        .base
-        .commercial_hub_step(&game, 0, ranked[1], 6, 0)
-        .unwrap();
-    controller.claim_conquest_campaign_cash_flow(&mut game, 0, &plan);
-    assert_eq!(game.cities[&ranked[1]].queue.first(), Some(&expected));
-    assert_eq!(game.cities[&ranked[2]].queue, original);
-}
-
-#[test]
-fn conquest_campaign_cash_flow_preserves_an_existing_market_or_trader_queue() {
-    for kind in ["market", "trader"] {
-        let (mut game, mut controller, plan, ranked) = cash_flow_campaign();
-        cash_flow_install_hub(&mut game, &controller, ranked[1]);
-        if kind == "market" {
-            cash_flow_install_hub(&mut game, &controller, ranked[2]);
-        } else {
-            Arc::make_mut(&mut game.observed_trade_capacity).insert(0, 1);
-        }
-        let item = controller
-            .base
-            .commercial_hub_step(&game, 0, ranked[2], 6, 0)
-            .unwrap();
-        assert!(matches!(&item, Item::Building { .. } | Item::Unit { .. }));
-        game.apply(
-            0,
-            &Action::Produce {
-                city: ranked[2],
-                item,
+fn conquest_campaign_bankruptcy_preserves_units_with_zero_host_quoted_upkeep() {
+    let (mut game, controller) = bankruptcy_cleanup_campaign("horseman");
+    for identifier in game.player_unit_ids(0) {
+        Arc::make_mut(&mut game.host_unit_facts).insert(
+            identifier,
+            crate::game::HostUnitFacts {
+                maintenance: Some(0.0),
+                ..Default::default()
             },
-        )
-        .unwrap();
-        let original = cash_flow_queues(&game);
-        controller.claim_conquest_campaign_cash_flow(&mut game, 0, &plan);
-        assert_eq!(cash_flow_queues(&game), original, "{kind}");
+        );
     }
+    assert_eq!(game.unit_gold_maintenance(0), 0.0);
+    controller.exit_the_drain(&mut game, 0);
+    assert_eq!(game.player_unit_ids(0).len(), 4);
 }
 
 #[test]
-fn conquest_campaign_cash_flow_preserves_actual_and_paused_commitments() {
-    for kind in ["actual", "paused"] {
-        let (mut game, mut controller, plan, ranked) = cash_flow_campaign();
-        cash_flow_install_hub(&mut game, &controller, ranked[1]);
-        for city in game.player_city_ids(0) {
-            if kind == "actual" {
-                game.apply(
-                    0,
-                    &Action::Produce {
-                        city,
-                        item: Item::Unit {
-                            unit: crate::name!("builder"),
-                        },
-                    },
-                )
-                .unwrap();
-            } else {
-                game.cities
-                    .get_mut(&city)
-                    .unwrap()
-                    .production_progress
-                    .insert("unit:settler".to_string(), 20.0);
-            }
-        }
-        let original = cash_flow_queues(&game);
-        controller.claim_conquest_campaign_cash_flow(&mut game, 0, &plan);
-        assert_eq!(cash_flow_queues(&game), original, "{kind}");
-        if kind == "paused" {
-            assert!(game
-                .player_city_ids(0)
-                .iter()
-                .all(
-                    |city| game.cities[city].production_progress.get("unit:settler") == Some(&20.0)
-                ));
-        }
-    }
+fn conquest_campaign_bankruptcy_does_not_repeat_a_sufficient_batch_this_turn() {
+    let (mut game, controller) = bankruptcy_cleanup_campaign("horseman");
+    controller.exit_the_drain(&mut game, 0);
+    assert_eq!(game.player_unit_ids(0).len(), 3);
+    assert_eq!(game.players[0].gold_per_turn, -1.0);
+    controller.exit_the_drain(&mut game, 0);
+    assert_eq!(game.player_unit_ids(0).len(), 3);
 }
 
 #[test]
-fn conquest_campaign_cash_flow_preserves_war_and_global_emergencies() {
-    for blocked in ["war", "rush", "recovery", "threatened_city"] {
-        let (mut game, mut controller, mut plan, ranked) = cash_flow_campaign();
-        cash_flow_install_hub(&mut game, &controller, ranked[1]);
-        match blocked {
-            "war" => {
-                let mut rival = game.players[0].clone();
-                rival.id = game.players.len();
-                rival.team = None;
-                game.at_war.insert((0, rival.id));
-                game.players.push(rival);
-            }
-            "rush" => plan.rush = true,
-            "recovery" => plan.strategy = GrandStrategy::Recovery,
-            "threatened_city" => plan.threatened_city = Some(ranked[0]),
+fn conquest_campaign_bankruptcy_caps_the_whole_turn_not_each_frame() {
+    let (mut game, controller) = bankruptcy_cleanup_campaign("horseman");
+    game.players[0].gold_per_turn = -100.0;
+    controller.exit_the_drain(&mut game, 0);
+    assert_eq!(game.player_unit_ids(0).len(), 1);
+    controller.exit_the_drain(&mut game, 0);
+    assert_eq!(game.player_unit_ids(0).len(), 1);
+}
+
+#[test]
+fn conquest_campaign_bankruptcy_allows_a_fresh_pass_next_turn() {
+    let (mut game, controller) = bankruptcy_cleanup_campaign("horseman");
+    controller.exit_the_drain(&mut game, 0);
+    assert_eq!(game.player_unit_ids(0).len(), 3);
+    game.turn += 1;
+    game.players[0].gold = 0.0;
+    game.players[0].gold_per_turn = -1.0;
+    controller.exit_the_drain(&mut game, 0);
+    assert_eq!(game.player_unit_ids(0).len(), 2);
+}
+
+#[test]
+fn conquest_campaign_bankruptcy_no_candidate_does_not_consume_the_pass() {
+    let (mut game, controller) = bankruptcy_cleanup_campaign("horseman");
+    let city = game.player_city_ids(0)[0];
+    let home = game.cities[&city].pos;
+    for identifier in game.player_unit_ids(0) {
+        game.units.get_mut(&identifier).unwrap().pos = home;
+    }
+    controller.exit_the_drain(&mut game, 0);
+    assert_eq!(game.player_unit_ids(0).len(), 4);
+    let identifier = game.player_unit_ids(0)[0];
+    game.units.get_mut(&identifier).unwrap().pos = (6, 6);
+    controller.exit_the_drain(&mut game, 0);
+    assert_eq!(game.player_unit_ids(0).len(), 3);
+}
+
+#[test]
+fn conquest_campaign_bankruptcy_controller_clone_remembers_the_same_turn_batch() {
+    let (mut game, controller) = bankruptcy_cleanup_campaign("horseman");
+    controller.exit_the_drain(&mut game, 0);
+    assert_eq!(game.player_unit_ids(0).len(), 3);
+    let cloned = controller.clone();
+    cloned.exit_the_drain(&mut game, 0);
+    assert_eq!(game.player_unit_ids(0).len(), 3);
+}
+
+#[test]
+fn conquest_campaign_bankruptcy_preserves_existing_no_op_controls() {
+    for control in ["gene_off", "covered_deficit", "new_gold_card"] {
+        let (mut game, mut controller) = bankruptcy_cleanup_campaign("horseman");
+        match control {
+            "gene_off" => controller.disable_bankruptcy_exits_the_drain(),
+            "covered_deficit" => game.players[0].gold = 10.0,
+            "new_gold_card" => controller.drain_card_turn.set(Some(game.turn)),
             _ => unreachable!(),
         }
-        controller.claim_conquest_campaign_cash_flow(&mut game, 0, &plan);
-        assert!(
-            cash_flow_queues(&game)
-                .iter()
-                .all(|(_, queue)| queue.is_empty()),
-            "{blocked}"
-        );
+        controller.exit_the_drain(&mut game, 0);
+        assert_eq!(game.player_unit_ids(0).len(), 4, "{control}");
     }
 }
 
 #[test]
-fn conquest_campaign_cash_flow_leaves_an_already_funded_army_unchanged() {
-    let (mut game, mut controller, plan, ranked) = cash_flow_campaign();
-    cash_flow_install_hub(&mut game, &controller, ranked[1]);
-    game.players[0].gold = 10_000.0;
-    assert!(!controller.domination_upgrade_funding_shortfall(&game, 0));
-    controller.claim_conquest_campaign_cash_flow(&mut game, 0, &plan);
-    assert!(cash_flow_queues(&game)
-        .iter()
-        .all(|(_, queue)| queue.is_empty()));
-}
-
-#[test]
-fn conquest_campaign_cash_flow_preserves_other_victory_lanes() {
-    for target in [
-        VictoryTarget::Science,
-        VictoryTarget::Culture,
-        VictoryTarget::Religion,
-        VictoryTarget::Diplomacy,
-        VictoryTarget::Score,
-    ] {
-        let (mut game, controller, plan, ranked) = cash_flow_campaign();
-        cash_flow_install_hub(&mut game, &controller, ranked[1]);
-        let mut other = AdvancedAi::targeting(target);
-        other.enable_commercial_hub_in_the_strategic_queue();
-        other.claim_conquest_campaign_cash_flow(&mut game, 0, &plan);
-        assert!(
-            cash_flow_queues(&game)
-                .iter()
-                .all(|(_, queue)| queue.is_empty()),
-            "{target:?}"
+fn conquest_campaign_bankruptcy_uses_host_formation_bill_then_discount() {
+    let (mut game, controller) = bankruptcy_cleanup_campaign("horseman");
+    game.players[0].gold_per_turn = -1.5;
+    game.players[0]
+        .policies
+        .insert(crate::name!("conscription"));
+    for identifier in game.player_unit_ids(0) {
+        game.units.get_mut(&identifier).unwrap().formation = 1;
+        Arc::make_mut(&mut game.host_unit_facts).insert(
+            identifier,
+            crate::game::HostUnitFacts {
+                maintenance: Some(2.0),
+                ..Default::default()
+            },
         );
     }
-}
-
-#[test]
-fn conquest_campaign_cash_flow_keeps_the_existing_genes_window_and_defense_floor() {
-    for blocked in ["gene", "victory_planning", "window", "army"] {
-        let (mut game, mut controller, plan, ranked) = cash_flow_campaign();
-        cash_flow_install_hub(&mut game, &controller, ranked[1]);
-        match blocked {
-            "gene" => controller.commercial_hub_in_the_strategic_queue = false,
-            "victory_planning" => controller.victory_planning = false,
-            "window" => game.turn = 1,
-            "army" => {
-                for unit in game.player_unit_ids(0) {
-                    game.remove_unit(unit);
-                }
-            }
-            _ => unreachable!(),
-        }
-        controller.claim_conquest_campaign_cash_flow(&mut game, 0, &plan);
-        assert!(
-            cash_flow_queues(&game)
-                .iter()
-                .all(|(_, queue)| queue.is_empty()),
-            "{blocked}"
-        );
-    }
-}
-
-#[test]
-fn conquest_campaign_cash_flow_does_not_take_the_capitals_idle_queue() {
-    let (mut game, mut controller, plan, ranked) = cash_flow_campaign();
-    assert!(game.cities[&ranked[0]].is_capital);
-    cash_flow_install_hub(&mut game, &controller, ranked[0]);
-    controller.claim_conquest_campaign_cash_flow(&mut game, 0, &plan);
-    assert!(cash_flow_queues(&game)
-        .iter()
-        .all(|(_, queue)| queue.is_empty()));
+    assert_eq!(game.unit_gold_maintenance(0), 4.0);
+    controller.exit_the_drain(&mut game, 0);
+    assert_eq!(game.player_unit_ids(0).len(), 2);
 }
 
 fn campaign() -> (Game, AdvancedAi, u32, u32) {

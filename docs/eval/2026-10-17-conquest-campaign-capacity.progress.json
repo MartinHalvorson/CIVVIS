@@ -1,6 +1,6 @@
 {
-  "updated_utc": "2026-10-17T23:08:10.713443+00:00",
-  "status": "Development only: ten policies completed the same six known maps,60 candidate executions,18 separately qualified diagnostic/control runs, zero focal/verified Domination wins and zero fresh holdouts. Variant10 is rejected; draft not promotion ready.",
+  "updated_utc": "2026-10-17T23:36:23.732713+00:00",
+  "status": "Development only: eleven policies completed the same six known maps,66 candidate executions,18 separately qualified diagnostic/control runs, zero focal/verified Domination wins and zero fresh holdouts. Variant11 is rejected as null; registered12 corrects bankruptcy accounting/repeated cleanup. Draft not promotion ready.",
   "variant_01": {
     "analyzed_utc": "2026-10-17T18:02:22.529676+00:00",
     "variant": "variant-01",
@@ -770,7 +770,7 @@
     "all_candidate_source_blobs_and_binary_hashes_reverified_before_packing": true
   },
   "execution_counts": {
-    "development_executions": 60,
+    "development_executions": 66,
     "independent_known_development_maps": 6,
     "new_baseline_observer_control_executions": 4,
     "fresh_holdout_executions": 0,
@@ -797,7 +797,7 @@
       "faith_war_opening_journal_turn": 117
     }
   ],
-  "next_development": "Investigate a bounded cash-flow recovery claim for an existing Market or a canonically legal spare-capacity Trader during an actual army upgrade funding shortfall. No new Commercial Hub or other district under the insolvency exception. Existing safe idle noncapital/paused commitments/standing defense/emergency/war/gene/window/route legality and ETA gates remain. Original fresh and final-source observer A/A gates remain unchanged; do not lower national war safety thresholds merely because an army exists.",
+  "next_development": "Freeze/push the exact quality-clean registered12 source only after both public-claim and corrected-metadata workflow pairs are terminal success. Execute all six known maps, then audit actual disbands and canonical billing effects against03. Strength remains unestablished without an engine-verified Deity Domination/all-original-capitals win; no fresh execution or relaxed strict final-source A/A, national declaration threshold, or Native verification setting is authorized.",
   "variant_03": {
     "analyzed_utc": "2026-10-17T19:12:26.852483+00:00",
     "variant": "variant-03",
@@ -22291,9 +22291,9 @@
       "cash-flow-v11-qualityfix-faith.log": "12f78d66f69b8ec6fe9188a75e6995498510941e301ec129433bd9e6f26b08a3",
       "cash-flow-v11-qualityfix-check-tests.log": "de943a47a18a07696dc500a74cc206adbb111bf3c0952cde2c5792b97cca4f1a"
     },
-    "frozen_candidate_executions": 0,
+    "frozen_candidate_executions": 6,
     "fresh_executions": 0,
-    "exact_source_quality_gate": "Required after clean source commit and before freeze/push; not claimed by these unit selectors.",
+    "exact_source_quality_gate": "Pass on exact4acdfd2cce2a9fb4248db0c568de0c9a4ec2a019 before freezing and the single acknowledged push.",
     "new_cash_flow_tests_passed": 15,
     "focused_conquest_tests_passed": 39,
     "existing_commercial_tests_passed": 16,
@@ -22305,9 +22305,33 @@
       "local_commit": "18522fe97",
       "reason": "Four test-only Clippy iterator warnings: one slice iter/cloned/collect and three queue iter/next calls. Corrected to to_vec and first; production policy is unchanged.",
       "external_relative_path": "source-v11-quality-initial-failed.log",
-      "sha256": "11d885996c4b23a61a84491dd6ac91bd2e52e8831ff18fcdbb5eaacdd072a2dc"
+      "sha256": "11d885996c4b23a61a84491dd6ac91bd2e52e8831ff18fcdbb5eaacdd072a2dc",
+      "ancestor_qualification": "18522fe97 was not frozen, evaluated or a standalone remote PR head. After test-only fixes it later reached GitHub as an ancestor included in the single normal push of4acdfd2cc; the public checkpoint wording was corrected explicitly."
     },
-    "quality_fix_validation": "All 39 campaign/15 focused/16 commercial/22 modernization/18 faith tests and cargo check --tests passed after the test-only iterator corrections. Exact committed-source quality must still pass before freeze or publication."
+    "quality_fix_validation": "All 39 campaign/15 focused/16 commercial/22 modernization/18 faith tests and cargo check --tests passed after the test-only iterator corrections. Exact committed-source quality must still pass before freeze or publication.",
+    "quality_log": {
+      "external_relative_path": "source-v11-quality.log",
+      "sha256": "fc5cdabc23f987ed62ef4b2ce981fb84b48e97316a9e2d9e93ac7fd780af6e5e"
+    },
+    "source_specific_remote_ci": {
+      "status": "All eight source checks terminal SUCCESS",
+      "nextest_passed": 6219,
+      "nextest_skipped": 52,
+      "auxiliary_test_summaries": [
+        "test result: ok. 0 passed; 0 failed; 4 ignored; 0 measured; 0 filtered out; finished in 0.00s",
+        "test result: ok. 71 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.08s",
+        "test result: ok. 21 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.27s",
+        "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 3.81s"
+      ],
+      "receipt": {
+        "external_relative_path": "source-v11-final-ci.json",
+        "sha256": "e67e9702aa0f295cc506e0e224cea8fe855100a6d0119ef2732e82e4f477ccdb"
+      },
+      "cargo_log": {
+        "external_relative_path": "source-v11-remote-cargo.log",
+        "sha256": "1751bb4fe9f62efdd01bdc3e901e625931fa575d337b2f265fa2e4ccde81c388"
+      }
+    }
   },
   "checkpoint_11_pre_source_metadata_guard": {
     "external_relative_path": "checkpoint11-body-final-ci.json",
@@ -22334,5 +22358,3153 @@
     "sha256": "ac1a094dcd6d3b6c6feaed5d49e6a83e5acd7178a0a4314b95377f5151f6f4a7",
     "qualification": "Existing03 raw data only; no new candidate/control/fresh executions or controller observations. Missing IDs are not assumed to be combat deaths.",
     "finding": "All four own military units present at80 but missing at100 on Deity43663176127 have actual successful focal disband actions: swordsman2, archer312 and horseman338 at84; horseman438 at89. The contemporaneous journal explicitly identifies bankruptcy-drain disbands. The last observed horseman338 was at100HP, so this power decline cannot be attributed solely to combat attrition. Other missing units on494 and492 have no matching focal disband in the observed disappearance interval; no unobserved cause is asserted."
-  }
+  },
+  "variant_11": {
+    "analyzed_utc": "2026-10-17T23:15:45.739017+00:00",
+    "variant": "variant-11",
+    "development_only_not_fresh_strength_evidence": true,
+    "registration_sha256": "2c8cb2eff49e0682a1af251d7ac7afcf2b32061b25b013e8b41e09c1baa4b813",
+    "frozen_source_sha256": "3c989d8ee8c9c4ca1e315299bf02c2a8ec3dfe88fdc0046c294394e97a0cac41",
+    "locked_launch_sha256": "4af4a54d38f824f619b26472cda623d02b4e0c8898f7dbeaec2096ba8e9ebaca",
+    "analyzer_sha256": "5fc74caf8f57503f7b708ab275883942d1b968ced618af79750fbaca711a88eb",
+    "cases": [
+      {
+        "difficulty": "immortal",
+        "seed": 45312861349,
+        "baseline": {
+          "winner": 1,
+          "victory": "science",
+          "turn": 152,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [
+            0
+          ],
+          "foreign_major_holdings_observed_at_round_boundaries": [],
+          "focal_major_declarations": 0,
+          "focal_actions": 5650,
+          "focal_action_sha256": "eed67189c31b67097e116c2cc30e034d6adc0b61b56e2fcc44ddbb60aa57d7c4",
+          "folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-45312861349-baseline",
+          "world_folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/additional-baseline-controls/immortal-45312861349-trace",
+          "raw_artifact_sha256": {
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-45312861349-baseline/result.json": "cdb751ac2dd7955b076e98630fad934726bb9b78fad8bc93c294c908c8b2fe3e",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-45312861349-baseline/actions.json": "c50232bea440a13c38bb832b34cefc7f379baf8513f732630b81099523563792",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-45312861349-baseline/plans.json": "a185ad6ab41683a241d8fbb90d7eb0dd49e0ca8f58e15d04b9b8cd9629d67e7a",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-45312861349-baseline/snapshots.json": "26c4d8025c941882eda80ba6268eaf0a40710ec18adacf6896174631d5f49926",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-45312861349-baseline/why.log": "a8fc8cbf571eeaecb14f6a4d243982da20586a49dc8c92c74e9a4c4a0d476b2f",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/additional-baseline-controls/immortal-45312861349-trace/world-states.json": "ab14c0bdf4f6306e1c1886814ccdb04e5b1f32789791f07103fe0aec6fbbb9e4"
+          }
+        },
+        "candidate": {
+          "winner": 1,
+          "victory": "science",
+          "turn": 159,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [
+            0
+          ],
+          "foreign_major_holdings_observed_at_round_boundaries": [],
+          "focal_major_declarations": 0,
+          "focal_actions": 5892,
+          "focal_action_sha256": "30f952f2b8cca4029633eb70161c9070e2a08f1585ac64a1a2098e1eca394b0d",
+          "folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/immortal-45312861349",
+          "world_folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/immortal-45312861349",
+          "raw_artifact_sha256": {
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/immortal-45312861349/result.json": "8cc2a36aee3d5b7e1981a9f54d680d28b3ad5b89a079f35b150266aab8121964",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/immortal-45312861349/actions.json": "2108cff043378da19c6016ee61b05982646ba82244231cd656fc409088d25446",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/immortal-45312861349/plans.json": "67a1c91ca256c07dfdaf6f1f1416f8418ca5694ea206eded16bcb91e6bdce37c",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/immortal-45312861349/snapshots.json": "bf3334a7683717b1b442696ccf49d0c9327af243092183ece9eeecb0e63ce789",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/immortal-45312861349/why.log": "8cf419855d920857bf4c1ac6c2ea5c85abe2aaa28f91c2e9b99d431e706ea642",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/immortal-45312861349/world-states.json": "225460ddfbdf376c91455688b53717cc03f9092eca7088ad91c242cbf9a907c3"
+          }
+        },
+        "focal_action_contrast": true
+      },
+      {
+        "difficulty": "immortal",
+        "seed": 47651167238,
+        "baseline": {
+          "winner": 3,
+          "victory": "science",
+          "turn": 150,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [],
+          "foreign_major_holdings_observed_at_round_boundaries": [],
+          "focal_major_declarations": 1,
+          "focal_actions": 2922,
+          "focal_action_sha256": "6f0ca054fd9c3fb52783286931919ffa4145a3a08b3e14fee9c946fabe54cf0e",
+          "folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-47651167238-baseline",
+          "world_folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-city-conversion/world-controls/immortal-47651167238-trace",
+          "raw_artifact_sha256": {
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-47651167238-baseline/result.json": "df610ab3aca679e21fb321f3535e365af2e932985d9629e843e2020e6def1f09",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-47651167238-baseline/actions.json": "e1fd43d7b93bfa9d9e178f713b1f017a9390a8f74d78d54a41b0feb52494fa4d",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-47651167238-baseline/plans.json": "041b628bd005a1f20033a4972fa2c1b419ba8893f239e9a2776e7a6d9531c980",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-47651167238-baseline/snapshots.json": "eeb41f3d8fd7c7a783592900a369034508f104b44eea5dd186bd2ab791289fbe",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-47651167238-baseline/why.log": "853021679717201cbbf9ff271fc343dfb6e5a22b317e2a116e373367c67d8ea0",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-city-conversion/world-controls/immortal-47651167238-trace/world-states.json": "a731829e0eba7054cfba2892d1af7748b301aa874402025faad7c5aeb58a985e"
+          }
+        },
+        "candidate": {
+          "winner": 3,
+          "victory": "science",
+          "turn": 148,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [],
+          "foreign_major_holdings_observed_at_round_boundaries": [],
+          "focal_major_declarations": 0,
+          "focal_actions": 3090,
+          "focal_action_sha256": "7adc1694d4c92f652c669f1792f92bab55d4a6eb9ce80db1f90d055b330d3245",
+          "folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/immortal-47651167238",
+          "world_folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/immortal-47651167238",
+          "raw_artifact_sha256": {
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/immortal-47651167238/result.json": "b0d0413f4657a949f571c0fad0a68afa572731391b1d399365c4934d879afdfd",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/immortal-47651167238/actions.json": "8998aa20fd49cc5fcc99d1fc4120faf1149b229410d01e46091c914fb3e48f77",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/immortal-47651167238/plans.json": "2bea553454037501887a28067a3b41ccf189e71361bc19c82834d00ce4a6679e",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/immortal-47651167238/snapshots.json": "210f5dd535a8d6156c99f577fd20459a7f37ea931a8629de700b349429099e5e",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/immortal-47651167238/why.log": "12b87df24a52fd5e2bff2bc3cfc12f9148985e94d039024d0f6f4f4250025d2b",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/immortal-47651167238/world-states.json": "12222f082a1bb504dbe6e05f89b49d07ac7774e2650ff3654750608a447f1c17"
+          }
+        },
+        "focal_action_contrast": true
+      },
+      {
+        "difficulty": "immortal",
+        "seed": 46732028391,
+        "baseline": {
+          "winner": 2,
+          "victory": "science",
+          "turn": 147,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [
+            0
+          ],
+          "foreign_major_holdings_observed_at_round_boundaries": [],
+          "focal_major_declarations": 1,
+          "focal_actions": 3096,
+          "focal_action_sha256": "7ece2cfd6f26a399527c83d98d29ea3ff7f397f4289396973c396e1003dfe55c",
+          "folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-46732028391-baseline",
+          "world_folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-city-conversion/world-controls/immortal-46732028391-trace",
+          "raw_artifact_sha256": {
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-46732028391-baseline/result.json": "6f67eeec0a26c57e34a720e61243869a4999209976cc073d94ce12a6f4b9ddb7",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-46732028391-baseline/actions.json": "b326de72869eb8c0538462c693dd4eb9e22bf0d992d3d464cc5d0079ea085156",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-46732028391-baseline/plans.json": "a5099206ece3e013dfb009e3aedcc49b16cf4d0750f1f479491211ac0f977060",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-46732028391-baseline/snapshots.json": "eb9c2558ade32b5d3a44de46a50161d45aa2e3f38260de9b93eb6e2f60683177",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-46732028391-baseline/why.log": "93350a808bf89f4c43a16e8e06b4399974b68d7a3c03087e0e1bc6295acc3762",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-city-conversion/world-controls/immortal-46732028391-trace/world-states.json": "fc7dac6422c13ba370fd14e242e90d2b22ed42fd1f68e8da81492d19934c46ea"
+          }
+        },
+        "candidate": {
+          "winner": 2,
+          "victory": "science",
+          "turn": 147,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [
+            0
+          ],
+          "foreign_major_holdings_observed_at_round_boundaries": [],
+          "focal_major_declarations": 0,
+          "focal_actions": 4044,
+          "focal_action_sha256": "f126c6a7213e530b590eb1f37dc7392245e6d263b09a05c5177f46086846810b",
+          "folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/immortal-46732028391",
+          "world_folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/immortal-46732028391",
+          "raw_artifact_sha256": {
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/immortal-46732028391/result.json": "a613888e1b33fefe06af89aac62cd81f4ac3662eb277a6fbad778d96a461f116",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/immortal-46732028391/actions.json": "f3b47320ca1f742b4ebeafaf23c5364ed043b757d2b799c9ab13b694c5afd681",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/immortal-46732028391/plans.json": "7e88a76581373b134c6d86432746cef508fbdd22eacfc5914c1a988a07596185",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/immortal-46732028391/snapshots.json": "465fd0947deb92ddfd577b17240a90b2587f1c948cc8d6428096e2c350cd6a01",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/immortal-46732028391/why.log": "09426dc20cd2fa7aa556a3f948f6c3827ac2e7e976287d58477a24307dc04362",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/immortal-46732028391/world-states.json": "e200f4d921cc57545cac1c08c583e75bb5e5254560aed1476a00036d313d8472"
+          }
+        },
+        "focal_action_contrast": true
+      },
+      {
+        "difficulty": "deity",
+        "seed": 49478848256,
+        "baseline": {
+          "winner": 1,
+          "victory": "culture",
+          "turn": 109,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [
+            0
+          ],
+          "foreign_major_holdings_observed_at_round_boundaries": [],
+          "focal_major_declarations": 0,
+          "focal_actions": 2068,
+          "focal_action_sha256": "ed2666eed8257cdfc20c53b9d9c14c4c02117cad30f728a182121922f673ec24",
+          "folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-49478848256-baseline",
+          "world_folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-city-conversion/world-controls/deity-49478848256-trace",
+          "raw_artifact_sha256": {
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-49478848256-baseline/result.json": "d3e25a10c2561ec521dbcf702d7555a28f34eda09214e04b4fc02f1fea427918",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-49478848256-baseline/actions.json": "64a13370e96d9a1a90ae11048a403855b92ec7d7ed8d3a9271e24eead77c5da5",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-49478848256-baseline/plans.json": "9bf3378f6a34113c19bbd303da2f6a86fea5c94e337cd19513d1eaa5e5cedad7",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-49478848256-baseline/snapshots.json": "b49d3c74585f69c1920901039544a1e84f929efc639a4ded4d941421aaa4fe9a",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-49478848256-baseline/why.log": "b12f24241bf41f7f3a8c26156a964cb9b50af2f378082afd9d38643aa43d7518",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-city-conversion/world-controls/deity-49478848256-trace/world-states.json": "07bd0bdb44839611926eee0ec8682226e44f545fb85ff88e395510d1bb7aa9c8"
+          }
+        },
+        "candidate": {
+          "winner": 1,
+          "victory": "science",
+          "turn": 128,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [],
+          "foreign_major_holdings_observed_at_round_boundaries": [],
+          "focal_major_declarations": 0,
+          "focal_actions": 1895,
+          "focal_action_sha256": "4ab8c6abb5fb2e5a0a1a49cf3f81fede978aae988721caa9fcb21251d7c401e9",
+          "folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/deity-49478848256",
+          "world_folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/deity-49478848256",
+          "raw_artifact_sha256": {
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/deity-49478848256/result.json": "f231e667a5c1698a5011c52c40be68c5e64ceafafac9a379ea85a79f9269bb53",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/deity-49478848256/actions.json": "2fd829fb4fde68574f4de3618adf23e599c292e332ba701f6c74be76eab47d62",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/deity-49478848256/plans.json": "2a8a8751fe90e9b368d77bbdc587ffe22819245a293c6f3b5284eff8dcfc8108",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/deity-49478848256/snapshots.json": "0e44c13f649ce8d4e41115c84e45ff38adc395e236d4d9fcce363becec1c4035",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/deity-49478848256/why.log": "e60e4d774b6267f6d9ab9d4348a9aa44e54d83efc58cd7034f782dbe54d247c7",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/deity-49478848256/world-states.json": "eab3bc5cfaaf5a2e864b3676a457a4c10a9a8728e14ba06f77f92b6e9cd9e523"
+          }
+        },
+        "focal_action_contrast": true
+      },
+      {
+        "difficulty": "deity",
+        "seed": 43663176127,
+        "baseline": {
+          "winner": 3,
+          "victory": "science",
+          "turn": 139,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [
+            0
+          ],
+          "foreign_major_holdings_observed_at_round_boundaries": [],
+          "focal_major_declarations": 1,
+          "focal_actions": 2404,
+          "focal_action_sha256": "1a3f688aa4289985b7d3224d685d05b0819019c02c71903817a8fb9b7538a809",
+          "folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-43663176127-baseline",
+          "world_folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-city-conversion/world-controls/deity-43663176127-trace",
+          "raw_artifact_sha256": {
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-43663176127-baseline/result.json": "ca07209c3e03da125f48769012ecf5a2e03a64bc6efa1fe5a881f549a9d533af",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-43663176127-baseline/actions.json": "eb41f13cb2dd42e4b95e50f93b7f3aff786a6bfd060ef3857362428d75efb9e2",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-43663176127-baseline/plans.json": "c55cfbf212ab18a94f085ff8faefb67368ae67bda88206f6b07e79db94751929",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-43663176127-baseline/snapshots.json": "08a04106ebe2fb9c960f340780b3893ed6be54fc607a98b95fff63aed3bc1427",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-43663176127-baseline/why.log": "7302f26cedf43f5bb89f027ce488796d510297a2f4bb06ddab650e8db5f23524",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-city-conversion/world-controls/deity-43663176127-trace/world-states.json": "e5d90934bfa214f2ee874469a7d28383d2443d242f29423d5ed0784c254778a2"
+          }
+        },
+        "candidate": {
+          "winner": 3,
+          "victory": "science",
+          "turn": 147,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [
+            0
+          ],
+          "foreign_major_holdings_observed_at_round_boundaries": [],
+          "focal_major_declarations": 0,
+          "focal_actions": 3151,
+          "focal_action_sha256": "2388b3ba8eb9fe3243aaae56bdd273a0308bf03d931afc41fddebe6fd4311d74",
+          "folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/deity-43663176127",
+          "world_folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/deity-43663176127",
+          "raw_artifact_sha256": {
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/deity-43663176127/result.json": "77a11252953cd7bd555390b9d0c4f931f733f23d43ae43ef10b5da154c905829",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/deity-43663176127/actions.json": "26f1cb845f1782246f55d79a3488b6af7edf5cfa050d83e3844ec6c5b6eadda0",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/deity-43663176127/plans.json": "577fd0557e9c0a793dad9a2306570fa287042b9bb683f8497714985af534245d",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/deity-43663176127/snapshots.json": "ee0b69b4bbcd2913ae801116c95f7c6ef11e393734caa54118408cbcd3c381e5",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/deity-43663176127/why.log": "32845eec96907e9f746a583ca8c116adade56e79c6d5b76f60f5c2060f0d34a0",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/deity-43663176127/world-states.json": "5038b5312dfcdb6c475a7fca72baaeab7703dc771c61fbda26e06380cd26c2c3"
+          }
+        },
+        "focal_action_contrast": true
+      },
+      {
+        "difficulty": "deity",
+        "seed": 49220027834,
+        "baseline": {
+          "winner": 1,
+          "victory": "culture",
+          "turn": 107,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [
+            0
+          ],
+          "foreign_major_holdings_observed_at_round_boundaries": [],
+          "focal_major_declarations": 1,
+          "focal_actions": 3153,
+          "focal_action_sha256": "3c348cd65b9167b8dd8fa75bf53778c3513a62e60f8c06a0c9b721736e4fab51",
+          "folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-49220027834-baseline",
+          "world_folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/additional-baseline-controls/deity-49220027834-trace",
+          "raw_artifact_sha256": {
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-49220027834-baseline/result.json": "cc771b638be06a0045d63c8f6bd09851dd7f2453bd9ca679e22dd1a26fcc6c72",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-49220027834-baseline/actions.json": "1ec3b102e77117aed3f96fdf9ee00e682fcd2c58821dd1d87f75639af66072a1",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-49220027834-baseline/plans.json": "94ee7129c5e395ce65400a91a2247359c520681256c8020490a7c2fc1d2b1f5b",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-49220027834-baseline/snapshots.json": "75d3dc5068c321e5b701a40feeeace0dd6dcf2b551ef09af98107680d2cf510f",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-49220027834-baseline/why.log": "9688589640b540e39118bb9604cc90121ac988e680901e5b95d4608e731e1866",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/additional-baseline-controls/deity-49220027834-trace/world-states.json": "6d2c1b8a1ac460338554e6b2063848ba28f5246f321c5697988a4856a577342b"
+          }
+        },
+        "candidate": {
+          "winner": 2,
+          "victory": "culture",
+          "turn": 139,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [
+            0
+          ],
+          "foreign_major_holdings_observed_at_round_boundaries": [],
+          "focal_major_declarations": 1,
+          "focal_actions": 4060,
+          "focal_action_sha256": "3fc14038dfd0ce8e69da9a6ae5ad83bd80e4e419c80d4c795a1458a6581f9c16",
+          "folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/deity-49220027834",
+          "world_folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/deity-49220027834",
+          "raw_artifact_sha256": {
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/deity-49220027834/result.json": "51aa7a6c9955b5410b07557f79e5d0778adcaa5fd64a0fd29db52e458ab05409",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/deity-49220027834/actions.json": "835507426001622d71e4e45b2d5f4fe1742820db6086f83c5f3b35da129aa0b2",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/deity-49220027834/plans.json": "cd5f4279acde46ef37508b3d58e6166b13917080ff3aafec48ff38a97b4c870a",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/deity-49220027834/snapshots.json": "d034157d004a619affec0f6c2e9d8c6caaf6bbfb2a5bd98a7bf0d06417e8cfde",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/deity-49220027834/why.log": "fbdcf820cdc8e93360a4b9bc4374ac631892e3730207e017d8941b7750d4c1cc",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/deity-49220027834/world-states.json": "cdbb1359a7b723615bbbf3ac3a5323ce0989137cd9046255b0e5264178e3389c"
+          }
+        },
+        "focal_action_contrast": true
+      }
+    ],
+    "all_six_complete": true,
+    "candidate_focal_wins": 0,
+    "candidate_verified_domination_wins": 0,
+    "candidate_verified_deity_domination_wins": 0,
+    "development_gate_pass": false,
+    "fresh_holdouts_authorized_by_development_gate": false,
+    "caution": "Observed holdings are round-boundary states, not proof of military capture; absence does not exclude an intra-turn transient capture. Terminal Domination requires the engine victory plus all four original capitals owned by the focal seat. Known-map outcomes never count as fresh strength evidence."
+  },
+  "variant_11_source": {
+    "frozen_utc": "2026-10-17T23:08:33.777487+00:00",
+    "commit": "4acdfd2cce2a9fb4248db0c568de0c9a4ec2a019",
+    "tree": "c7583e178a9d731c154ad8de0e54c780fe5e370c",
+    "source": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/source-variant-11",
+    "probe": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/probe-variant-11",
+    "source_files": 2795,
+    "input_files": {
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/registration.json": "2c8cb2eff49e0682a1af251d7ac7afcf2b32061b25b013e8b41e09c1baa4b813",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/development.py": "8df8417d4b3f15a0038d4dd7b42f3325e8356a4bda0b81a4d4608ad4f1e86306",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-foundation/source-baseline/deploy/live-force-on.txt": "d7ac5367dda9dc54093ebc55f59d3630c908c577fe84309bbe5378cecec3de55",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/probe-variant-11/Cargo.toml": "9af9d7a7658352fbea2854c22ceba07594e4c8919880afd37c386d8d5e024a16",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/probe-variant-11/Cargo.lock": "2ee86851ecb421cacf0f888263e072e41a02e674da09c86bb88f00a92f8666c7",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/probe-variant-11/source-identity.txt": "d7341b5220b366435f90065c38b845e39d0d7546f30e3c05d2624d02b541240f",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/probe-variant-11/src/main.rs": "25e32cef6d2dae1ca97439ee993c5f6dc1fb67f74993e678097ddff16f327242",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-11/source-manifest.json": "fa4ae212c2265c412f2041e2d674a29ad50570c7ea60fedd6ac7d18917d8d0f3"
+    },
+    "scope": "Known development maps only; no fresh holdouts authorized by this runner"
+  },
+  "variant_11_binary": {
+    "locked_utc": "2026-10-17T23:13:56.178606+00:00",
+    "frozen_source_sha256": "3c989d8ee8c9c4ca1e315299bf02c2a8ec3dfe88fdc0046c294394e97a0cac41",
+    "binary": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/target-variant-11/ci/conquest-city-health-world-probe",
+    "binary_sha256": "b68a50fa68d780d8f97b0b88e6d7b2ba1f77c4b4c16187964719f1d24c75beaa",
+    "commit": "4acdfd2cce2a9fb4248db0c568de0c9a4ec2a019"
+  },
+  "variant_11_vs_variant_03": {
+    "analyzed_utc": "2026-10-17T23:15:46.766128+00:00",
+    "parent": "variant-03",
+    "candidate": "variant-11",
+    "analyses_sha256": {
+      "variant-03": "c754482fd91460c724a2fe3a164bc4083a969fe028d17a772b9aa79636b23ce2",
+      "variant-11": "544bdf3643ea1daba327faeaf439f63e0e3e042f06cce62de14f431795c52924"
+    },
+    "comparison_helper_sha256": "bd28457b4683a100802016ee0c8d219bd9412470d97fbb21d881d7f22052e015",
+    "all_six_complete": true,
+    "cases": [
+      {
+        "difficulty": "immortal",
+        "seed": 45312861349,
+        "focal_action_contrast": false,
+        "first_differing_focal_action_index_zero_based": null,
+        "parent_first_differing_action": null,
+        "candidate_first_differing_action": null,
+        "parent": {
+          "first_observed_technology_boundary": {
+            "writing": 33,
+            "machinery": 64,
+            "iron_working": 46,
+            "stirrups": 75
+          },
+          "dedicated_upgrade_journal_turns": [
+            88,
+            88,
+            93,
+            96,
+            109,
+            123,
+            123,
+            130,
+            133,
+            139,
+            139,
+            139,
+            141,
+            141,
+            143,
+            146,
+            148,
+            149,
+            153,
+            156,
+            158,
+            159,
+            159
+          ],
+          "selected_observed_boundaries": {
+            "60": {
+              "cities": 7,
+              "gold": 305.4,
+              "gold_per_turn": 11.0,
+              "power": 377.43,
+              "science": 21.0,
+              "units": {
+                "archer": 10,
+                "builder": 3,
+                "heavy_chariot": 7,
+                "scout": 2,
+                "settler": 2,
+                "warrior": 2
+              }
+            },
+            "69": {
+              "cities": 8,
+              "gold": 208.39999999999998,
+              "gold_per_turn": 6.0,
+              "power": 489.32,
+              "science": 28.4,
+              "units": {
+                "archer": 9,
+                "builder": 3,
+                "catapult": 2,
+                "crossbowman": 1,
+                "heavy_chariot": 8,
+                "horseman": 1,
+                "scout": 2,
+                "settler": 1,
+                "warrior": 1
+              }
+            },
+            "70": {
+              "cities": 8,
+              "gold": 216.09999999999997,
+              "gold_per_turn": 7.699999999999999,
+              "power": 496.87,
+              "science": 32.4,
+              "units": {
+                "archer": 9,
+                "builder": 4,
+                "catapult": 2,
+                "crossbowman": 1,
+                "heavy_chariot": 8,
+                "horseman": 1,
+                "scout": 2,
+                "settler": 1,
+                "warrior": 1
+              }
+            },
+            "74": {
+              "cities": 9,
+              "gold": 243.39999999999995,
+              "gold_per_turn": 6.5,
+              "power": 505.55,
+              "science": 36.599999999999994,
+              "units": {
+                "archer": 9,
+                "builder": 5,
+                "catapult": 2,
+                "crossbowman": 1,
+                "heavy_chariot": 8,
+                "horseman": 1,
+                "scout": 2,
+                "warrior": 1
+              }
+            },
+            "80": {
+              "cities": 9,
+              "gold": 174.59999999999997,
+              "gold_per_turn": 1.6000000000000014,
+              "power": 513.78,
+              "science": 40.449999999999996,
+              "units": {
+                "archer": 8,
+                "builder": 7,
+                "catapult": 2,
+                "crossbowman": 2,
+                "heavy_chariot": 8,
+                "horseman": 1,
+                "scout": 2,
+                "settler": 1,
+                "swordsman": 1
+              }
+            },
+            "100": {
+              "cities": 10,
+              "gold": 355.69999999999993,
+              "gold_per_turn": 44.099999999999994,
+              "power": 638.83,
+              "science": 83.4,
+              "units": {
+                "archer": 2,
+                "builder": 7,
+                "catapult": 2,
+                "crossbowman": 8,
+                "galley": 1,
+                "heavy_chariot": 7,
+                "horseman": 2,
+                "scout": 1,
+                "skirmisher": 1,
+                "swordsman": 1
+              }
+            }
+          },
+          "budget_truncated_turns": 0
+        },
+        "candidate": {
+          "first_observed_technology_boundary": {
+            "writing": 33,
+            "machinery": 64,
+            "iron_working": 46,
+            "stirrups": 75
+          },
+          "dedicated_upgrade_journal_turns": [
+            88,
+            88,
+            93,
+            96,
+            109,
+            123,
+            123,
+            130,
+            133,
+            139,
+            139,
+            139,
+            141,
+            141,
+            143,
+            146,
+            148,
+            149,
+            153,
+            156,
+            158,
+            159,
+            159
+          ],
+          "selected_observed_boundaries": {
+            "60": {
+              "cities": 7,
+              "gold": 305.4,
+              "gold_per_turn": 11.0,
+              "power": 377.43,
+              "science": 21.0,
+              "units": {
+                "archer": 10,
+                "builder": 3,
+                "heavy_chariot": 7,
+                "scout": 2,
+                "settler": 2,
+                "warrior": 2
+              }
+            },
+            "69": {
+              "cities": 8,
+              "gold": 208.39999999999998,
+              "gold_per_turn": 6.0,
+              "power": 489.32,
+              "science": 28.4,
+              "units": {
+                "archer": 9,
+                "builder": 3,
+                "catapult": 2,
+                "crossbowman": 1,
+                "heavy_chariot": 8,
+                "horseman": 1,
+                "scout": 2,
+                "settler": 1,
+                "warrior": 1
+              }
+            },
+            "70": {
+              "cities": 8,
+              "gold": 216.09999999999997,
+              "gold_per_turn": 7.699999999999999,
+              "power": 496.87,
+              "science": 32.4,
+              "units": {
+                "archer": 9,
+                "builder": 4,
+                "catapult": 2,
+                "crossbowman": 1,
+                "heavy_chariot": 8,
+                "horseman": 1,
+                "scout": 2,
+                "settler": 1,
+                "warrior": 1
+              }
+            },
+            "74": {
+              "cities": 9,
+              "gold": 243.39999999999995,
+              "gold_per_turn": 6.5,
+              "power": 505.55,
+              "science": 36.599999999999994,
+              "units": {
+                "archer": 9,
+                "builder": 5,
+                "catapult": 2,
+                "crossbowman": 1,
+                "heavy_chariot": 8,
+                "horseman": 1,
+                "scout": 2,
+                "warrior": 1
+              }
+            },
+            "80": {
+              "cities": 9,
+              "gold": 174.59999999999997,
+              "gold_per_turn": 1.6000000000000014,
+              "power": 513.78,
+              "science": 40.449999999999996,
+              "units": {
+                "archer": 8,
+                "builder": 7,
+                "catapult": 2,
+                "crossbowman": 2,
+                "heavy_chariot": 8,
+                "horseman": 1,
+                "scout": 2,
+                "settler": 1,
+                "swordsman": 1
+              }
+            },
+            "100": {
+              "cities": 10,
+              "gold": 355.69999999999993,
+              "gold_per_turn": 44.099999999999994,
+              "power": 638.83,
+              "science": 83.4,
+              "units": {
+                "archer": 2,
+                "builder": 7,
+                "catapult": 2,
+                "crossbowman": 8,
+                "galley": 1,
+                "heavy_chariot": 7,
+                "horseman": 2,
+                "scout": 1,
+                "skirmisher": 1,
+                "swordsman": 1
+              }
+            }
+          },
+          "budget_truncated_turns": 0
+        },
+        "candidate_engine_outcome": {
+          "winner": 1,
+          "victory": "science",
+          "turn": 159,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [
+            0
+          ],
+          "foreign_major_holdings_observed_at_round_boundaries": []
+        },
+        "inputs_sha256": {
+          "variant-03": {
+            "actions.json": "2108cff043378da19c6016ee61b05982646ba82244231cd656fc409088d25446",
+            "snapshots.json": "bf3334a7683717b1b442696ccf49d0c9327af243092183ece9eeecb0e63ce789",
+            "why.log": "15ecb8c40537d4220412db7d9666e9c09589bfd960cbe5f69498eddebfe05da3",
+            "journal-stats.json": "f70fa032e7d5f9220eb59d6bdb41f7697c0dd2525d3daa5096206f145a80f32d"
+          },
+          "variant-11": {
+            "actions.json": "2108cff043378da19c6016ee61b05982646ba82244231cd656fc409088d25446",
+            "snapshots.json": "bf3334a7683717b1b442696ccf49d0c9327af243092183ece9eeecb0e63ce789",
+            "why.log": "8cf419855d920857bf4c1ac6c2ea5c85abe2aaa28f91c2e9b99d431e706ea642",
+            "journal-stats.json": "5129c9371e7201b3adf54b7de4345eda1a6984ecb3eac9c34b56b0f371f436cb"
+          }
+        }
+      },
+      {
+        "difficulty": "immortal",
+        "seed": 47651167238,
+        "focal_action_contrast": false,
+        "first_differing_focal_action_index_zero_based": null,
+        "parent_first_differing_action": null,
+        "candidate_first_differing_action": null,
+        "parent": {
+          "first_observed_technology_boundary": {
+            "writing": 63,
+            "machinery": 98,
+            "iron_working": 71,
+            "stirrups": 114
+          },
+          "dedicated_upgrade_journal_turns": [
+            101,
+            110,
+            112,
+            117
+          ],
+          "selected_observed_boundaries": {
+            "60": {
+              "cities": 4,
+              "gold": 144.29999999999976,
+              "gold_per_turn": 7.6,
+              "power": 394.58,
+              "science": 7.200000000000001,
+              "units": {
+                "archer": 11,
+                "builder": 1,
+                "galley": 1,
+                "heavy_chariot": 2,
+                "scout": 3,
+                "settler": 1,
+                "warrior": 6
+              }
+            },
+            "69": {
+              "cities": 4,
+              "gold": 244.49999999999972,
+              "gold_per_turn": 7.699999999999999,
+              "power": 463.85,
+              "science": 7.65,
+              "units": {
+                "archer": 12,
+                "battering_ram": 1,
+                "galley": 1,
+                "heavy_chariot": 5,
+                "scout": 2,
+                "settler": 2,
+                "warrior": 6
+              }
+            },
+            "70": {
+              "cities": 4,
+              "gold": 178.1999999999997,
+              "gold_per_turn": 7.699999999999999,
+              "power": 446.85,
+              "science": 7.65,
+              "units": {
+                "archer": 12,
+                "battering_ram": 1,
+                "builder": 1,
+                "galley": 1,
+                "heavy_chariot": 5,
+                "scout": 2,
+                "settler": 2,
+                "warrior": 5
+              }
+            },
+            "74": {
+              "cities": 4,
+              "gold": 223.09999999999968,
+              "gold_per_turn": 8.6,
+              "power": 520.65,
+              "science": 9.049999999999999,
+              "units": {
+                "archer": 14,
+                "battering_ram": 1,
+                "builder": 1,
+                "galley": 1,
+                "heavy_chariot": 6,
+                "scout": 2,
+                "settler": 2,
+                "warrior": 5
+              }
+            },
+            "80": {
+              "cities": 5,
+              "gold": 93.1999999999997,
+              "gold_per_turn": 11.9,
+              "power": 621.65,
+              "science": 10.75,
+              "units": {
+                "archer": 15,
+                "battering_ram": 1,
+                "builder": 1,
+                "galley": 1,
+                "heavy_chariot": 9,
+                "scout": 2,
+                "settler": 1,
+                "warrior": 5
+              }
+            },
+            "100": {
+              "cities": 6,
+              "gold": 148.4,
+              "gold_per_turn": 28.6,
+              "power": 685.0,
+              "science": 20.5,
+              "units": {
+                "archer": 17,
+                "battering_ram": 1,
+                "builder": 3,
+                "galley": 1,
+                "heavy_chariot": 10,
+                "scout": 2,
+                "settler": 1,
+                "warrior": 5
+              }
+            }
+          },
+          "budget_truncated_turns": 0
+        },
+        "candidate": {
+          "first_observed_technology_boundary": {
+            "writing": 63,
+            "machinery": 98,
+            "iron_working": 71,
+            "stirrups": 114
+          },
+          "dedicated_upgrade_journal_turns": [
+            101,
+            110,
+            112,
+            117
+          ],
+          "selected_observed_boundaries": {
+            "60": {
+              "cities": 4,
+              "gold": 144.29999999999976,
+              "gold_per_turn": 7.6,
+              "power": 394.58,
+              "science": 7.200000000000001,
+              "units": {
+                "archer": 11,
+                "builder": 1,
+                "galley": 1,
+                "heavy_chariot": 2,
+                "scout": 3,
+                "settler": 1,
+                "warrior": 6
+              }
+            },
+            "69": {
+              "cities": 4,
+              "gold": 244.49999999999972,
+              "gold_per_turn": 7.699999999999999,
+              "power": 463.85,
+              "science": 7.65,
+              "units": {
+                "archer": 12,
+                "battering_ram": 1,
+                "galley": 1,
+                "heavy_chariot": 5,
+                "scout": 2,
+                "settler": 2,
+                "warrior": 6
+              }
+            },
+            "70": {
+              "cities": 4,
+              "gold": 178.1999999999997,
+              "gold_per_turn": 7.699999999999999,
+              "power": 446.85,
+              "science": 7.65,
+              "units": {
+                "archer": 12,
+                "battering_ram": 1,
+                "builder": 1,
+                "galley": 1,
+                "heavy_chariot": 5,
+                "scout": 2,
+                "settler": 2,
+                "warrior": 5
+              }
+            },
+            "74": {
+              "cities": 4,
+              "gold": 223.09999999999968,
+              "gold_per_turn": 8.6,
+              "power": 520.65,
+              "science": 9.049999999999999,
+              "units": {
+                "archer": 14,
+                "battering_ram": 1,
+                "builder": 1,
+                "galley": 1,
+                "heavy_chariot": 6,
+                "scout": 2,
+                "settler": 2,
+                "warrior": 5
+              }
+            },
+            "80": {
+              "cities": 5,
+              "gold": 93.1999999999997,
+              "gold_per_turn": 11.9,
+              "power": 621.65,
+              "science": 10.75,
+              "units": {
+                "archer": 15,
+                "battering_ram": 1,
+                "builder": 1,
+                "galley": 1,
+                "heavy_chariot": 9,
+                "scout": 2,
+                "settler": 1,
+                "warrior": 5
+              }
+            },
+            "100": {
+              "cities": 6,
+              "gold": 148.4,
+              "gold_per_turn": 28.6,
+              "power": 685.0,
+              "science": 20.5,
+              "units": {
+                "archer": 17,
+                "battering_ram": 1,
+                "builder": 3,
+                "galley": 1,
+                "heavy_chariot": 10,
+                "scout": 2,
+                "settler": 1,
+                "warrior": 5
+              }
+            }
+          },
+          "budget_truncated_turns": 0
+        },
+        "candidate_engine_outcome": {
+          "winner": 3,
+          "victory": "science",
+          "turn": 148,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [],
+          "foreign_major_holdings_observed_at_round_boundaries": []
+        },
+        "inputs_sha256": {
+          "variant-03": {
+            "actions.json": "8998aa20fd49cc5fcc99d1fc4120faf1149b229410d01e46091c914fb3e48f77",
+            "snapshots.json": "210f5dd535a8d6156c99f577fd20459a7f37ea931a8629de700b349429099e5e",
+            "why.log": "82881c10600c027eb16a08d5420cc5bf281d62f232ef065e205b45b269f37c7d",
+            "journal-stats.json": "307e3f7f9f86dc715ba2e098efd6b79f639bda85421100c7ca6ed7d4ea9c580c"
+          },
+          "variant-11": {
+            "actions.json": "8998aa20fd49cc5fcc99d1fc4120faf1149b229410d01e46091c914fb3e48f77",
+            "snapshots.json": "210f5dd535a8d6156c99f577fd20459a7f37ea931a8629de700b349429099e5e",
+            "why.log": "12b87df24a52fd5e2bff2bc3cfc12f9148985e94d039024d0f6f4f4250025d2b",
+            "journal-stats.json": "307e3f7f9f86dc715ba2e098efd6b79f639bda85421100c7ca6ed7d4ea9c580c"
+          }
+        }
+      },
+      {
+        "difficulty": "immortal",
+        "seed": 46732028391,
+        "focal_action_contrast": false,
+        "first_differing_focal_action_index_zero_based": null,
+        "parent_first_differing_action": null,
+        "candidate_first_differing_action": null,
+        "parent": {
+          "first_observed_technology_boundary": {
+            "writing": 46,
+            "machinery": 83,
+            "iron_working": 59,
+            "stirrups": 120
+          },
+          "dedicated_upgrade_journal_turns": [
+            83,
+            84,
+            103,
+            109,
+            111,
+            113,
+            114,
+            115,
+            117,
+            120,
+            122,
+            124,
+            126,
+            130
+          ],
+          "selected_observed_boundaries": {
+            "60": {
+              "cities": 4,
+              "gold": 48.20000000000001,
+              "gold_per_turn": 16.9,
+              "power": 178.8,
+              "science": 11.0,
+              "units": {
+                "archer": 7,
+                "scout": 2,
+                "settler": 1,
+                "warrior": 4
+              }
+            },
+            "69": {
+              "cities": 6,
+              "gold": 150.30000000000007,
+              "gold_per_turn": 13.9,
+              "power": 359.6,
+              "science": 14.0,
+              "units": {
+                "archer": 10,
+                "builder": 1,
+                "galley": 1,
+                "scout": 2,
+                "spearman": 4,
+                "warrior": 4
+              }
+            },
+            "70": {
+              "cities": 6,
+              "gold": 164.20000000000007,
+              "gold_per_turn": 13.9,
+              "power": 371.6,
+              "science": 14.0,
+              "units": {
+                "archer": 10,
+                "builder": 1,
+                "galley": 1,
+                "scout": 2,
+                "spearman": 4,
+                "warrior": 4
+              }
+            },
+            "74": {
+              "cities": 6,
+              "gold": 169.8000000000001,
+              "gold_per_turn": 10.9,
+              "power": 396.6,
+              "science": 17.5,
+              "units": {
+                "archer": 11,
+                "builder": 1,
+                "galley": 1,
+                "scout": 3,
+                "spearman": 4,
+                "warrior": 4
+              }
+            },
+            "80": {
+              "cities": 6,
+              "gold": 248.5000000000001,
+              "gold_per_turn": 8.9,
+              "power": 477.5,
+              "science": 19.2,
+              "units": {
+                "archer": 12,
+                "builder": 2,
+                "galley": 1,
+                "heavy_chariot": 1,
+                "horseman": 1,
+                "scout": 3,
+                "spearman": 4,
+                "warrior": 4
+              }
+            },
+            "100": {
+              "cities": 7,
+              "gold": 68.6000000000001,
+              "gold_per_turn": 5.9,
+              "power": 613.0,
+              "science": 29.5,
+              "units": {
+                "archer": 11,
+                "builder": 3,
+                "catapult": 3,
+                "crossbowman": 1,
+                "galley": 1,
+                "heavy_chariot": 2,
+                "horseman": 1,
+                "scout": 3,
+                "settler": 3,
+                "spearman": 4,
+                "swordsman": 1,
+                "warrior": 3
+              }
+            }
+          },
+          "budget_truncated_turns": 0
+        },
+        "candidate": {
+          "first_observed_technology_boundary": {
+            "writing": 46,
+            "machinery": 83,
+            "iron_working": 59,
+            "stirrups": 120
+          },
+          "dedicated_upgrade_journal_turns": [
+            83,
+            84,
+            103,
+            109,
+            111,
+            113,
+            114,
+            115,
+            117,
+            120,
+            122,
+            124,
+            126,
+            130
+          ],
+          "selected_observed_boundaries": {
+            "60": {
+              "cities": 4,
+              "gold": 48.20000000000001,
+              "gold_per_turn": 16.9,
+              "power": 178.8,
+              "science": 11.0,
+              "units": {
+                "archer": 7,
+                "scout": 2,
+                "settler": 1,
+                "warrior": 4
+              }
+            },
+            "69": {
+              "cities": 6,
+              "gold": 150.30000000000007,
+              "gold_per_turn": 13.9,
+              "power": 359.6,
+              "science": 14.0,
+              "units": {
+                "archer": 10,
+                "builder": 1,
+                "galley": 1,
+                "scout": 2,
+                "spearman": 4,
+                "warrior": 4
+              }
+            },
+            "70": {
+              "cities": 6,
+              "gold": 164.20000000000007,
+              "gold_per_turn": 13.9,
+              "power": 371.6,
+              "science": 14.0,
+              "units": {
+                "archer": 10,
+                "builder": 1,
+                "galley": 1,
+                "scout": 2,
+                "spearman": 4,
+                "warrior": 4
+              }
+            },
+            "74": {
+              "cities": 6,
+              "gold": 169.8000000000001,
+              "gold_per_turn": 10.9,
+              "power": 396.6,
+              "science": 17.5,
+              "units": {
+                "archer": 11,
+                "builder": 1,
+                "galley": 1,
+                "scout": 3,
+                "spearman": 4,
+                "warrior": 4
+              }
+            },
+            "80": {
+              "cities": 6,
+              "gold": 248.5000000000001,
+              "gold_per_turn": 8.9,
+              "power": 477.5,
+              "science": 19.2,
+              "units": {
+                "archer": 12,
+                "builder": 2,
+                "galley": 1,
+                "heavy_chariot": 1,
+                "horseman": 1,
+                "scout": 3,
+                "spearman": 4,
+                "warrior": 4
+              }
+            },
+            "100": {
+              "cities": 7,
+              "gold": 68.6000000000001,
+              "gold_per_turn": 5.9,
+              "power": 613.0,
+              "science": 29.5,
+              "units": {
+                "archer": 11,
+                "builder": 3,
+                "catapult": 3,
+                "crossbowman": 1,
+                "galley": 1,
+                "heavy_chariot": 2,
+                "horseman": 1,
+                "scout": 3,
+                "settler": 3,
+                "spearman": 4,
+                "swordsman": 1,
+                "warrior": 3
+              }
+            }
+          },
+          "budget_truncated_turns": 0
+        },
+        "candidate_engine_outcome": {
+          "winner": 2,
+          "victory": "science",
+          "turn": 147,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [
+            0
+          ],
+          "foreign_major_holdings_observed_at_round_boundaries": []
+        },
+        "inputs_sha256": {
+          "variant-03": {
+            "actions.json": "f3b47320ca1f742b4ebeafaf23c5364ed043b757d2b799c9ab13b694c5afd681",
+            "snapshots.json": "465fd0947deb92ddfd577b17240a90b2587f1c948cc8d6428096e2c350cd6a01",
+            "why.log": "f839a7f7e7a82cbed43cf935436e13b7a7c1740ae621d919c0c3ecea7026e01e",
+            "journal-stats.json": "307e3f7f9f86dc715ba2e098efd6b79f639bda85421100c7ca6ed7d4ea9c580c"
+          },
+          "variant-11": {
+            "actions.json": "f3b47320ca1f742b4ebeafaf23c5364ed043b757d2b799c9ab13b694c5afd681",
+            "snapshots.json": "465fd0947deb92ddfd577b17240a90b2587f1c948cc8d6428096e2c350cd6a01",
+            "why.log": "09426dc20cd2fa7aa556a3f948f6c3827ac2e7e976287d58477a24307dc04362",
+            "journal-stats.json": "307e3f7f9f86dc715ba2e098efd6b79f639bda85421100c7ca6ed7d4ea9c580c"
+          }
+        }
+      },
+      {
+        "difficulty": "deity",
+        "seed": 49478848256,
+        "focal_action_contrast": false,
+        "first_differing_focal_action_index_zero_based": null,
+        "parent_first_differing_action": null,
+        "candidate_first_differing_action": null,
+        "parent": {
+          "first_observed_technology_boundary": {
+            "writing": 38,
+            "machinery": 77,
+            "iron_working": 48,
+            "stirrups": null
+          },
+          "dedicated_upgrade_journal_turns": [
+            83,
+            100
+          ],
+          "selected_observed_boundaries": {
+            "60": {
+              "cities": 2,
+              "gold": 160.00000000000003,
+              "gold_per_turn": 8.0,
+              "power": 229.14999999999998,
+              "science": 7.5,
+              "units": {
+                "archer": 7,
+                "builder": 1,
+                "galley": 1,
+                "scout": 2,
+                "spearman": 2,
+                "warrior": 4
+              }
+            },
+            "69": {
+              "cities": 2,
+              "gold": 231.75000000000003,
+              "gold_per_turn": 8.75,
+              "power": 327.59,
+              "science": 7.5,
+              "units": {
+                "archer": 9,
+                "builder": 1,
+                "galley": 1,
+                "heavy_chariot": 3,
+                "scout": 2,
+                "spearman": 2,
+                "warrior": 3
+              }
+            },
+            "70": {
+              "cities": 2,
+              "gold": 67.05000000000003,
+              "gold_per_turn": 8.4,
+              "power": 318.69,
+              "science": 7.0,
+              "units": {
+                "archer": 9,
+                "builder": 1,
+                "galley": 1,
+                "heavy_chariot": 3,
+                "scout": 2,
+                "spearman": 2,
+                "warrior": 3
+              }
+            },
+            "74": {
+              "cities": 2,
+              "gold": 100.65000000000005,
+              "gold_per_turn": 8.3,
+              "power": 356.13,
+              "science": 7.5,
+              "units": {
+                "archer": 9,
+                "builder": 1,
+                "galley": 1,
+                "heavy_chariot": 4,
+                "scout": 2,
+                "spearman": 2,
+                "warrior": 3
+              }
+            },
+            "80": {
+              "cities": 1,
+              "gold": 113.45000000000009,
+              "gold_per_turn": 6.3,
+              "power": 428.5799999999999,
+              "science": 6.5,
+              "units": {
+                "archer": 9,
+                "catapult": 1,
+                "galley": 1,
+                "heavy_chariot": 5,
+                "scout": 2,
+                "spearman": 2,
+                "warrior": 3
+              }
+            },
+            "100": {
+              "cities": 1,
+              "gold": 157.35000000000014,
+              "gold_per_turn": 6.0,
+              "power": 439.45000000000005,
+              "science": 9.0,
+              "units": {
+                "archer": 8,
+                "catapult": 1,
+                "crossbowman": 1,
+                "galley": 1,
+                "heavy_chariot": 5,
+                "scout": 1,
+                "settler": 1,
+                "siege_tower": 1,
+                "spearman": 2,
+                "warrior": 2
+              }
+            }
+          },
+          "budget_truncated_turns": 0
+        },
+        "candidate": {
+          "first_observed_technology_boundary": {
+            "writing": 38,
+            "machinery": 77,
+            "iron_working": 48,
+            "stirrups": null
+          },
+          "dedicated_upgrade_journal_turns": [
+            83,
+            100
+          ],
+          "selected_observed_boundaries": {
+            "60": {
+              "cities": 2,
+              "gold": 160.00000000000003,
+              "gold_per_turn": 8.0,
+              "power": 229.14999999999998,
+              "science": 7.5,
+              "units": {
+                "archer": 7,
+                "builder": 1,
+                "galley": 1,
+                "scout": 2,
+                "spearman": 2,
+                "warrior": 4
+              }
+            },
+            "69": {
+              "cities": 2,
+              "gold": 231.75000000000003,
+              "gold_per_turn": 8.75,
+              "power": 327.59,
+              "science": 7.5,
+              "units": {
+                "archer": 9,
+                "builder": 1,
+                "galley": 1,
+                "heavy_chariot": 3,
+                "scout": 2,
+                "spearman": 2,
+                "warrior": 3
+              }
+            },
+            "70": {
+              "cities": 2,
+              "gold": 67.05000000000003,
+              "gold_per_turn": 8.4,
+              "power": 318.69,
+              "science": 7.0,
+              "units": {
+                "archer": 9,
+                "builder": 1,
+                "galley": 1,
+                "heavy_chariot": 3,
+                "scout": 2,
+                "spearman": 2,
+                "warrior": 3
+              }
+            },
+            "74": {
+              "cities": 2,
+              "gold": 100.65000000000005,
+              "gold_per_turn": 8.3,
+              "power": 356.13,
+              "science": 7.5,
+              "units": {
+                "archer": 9,
+                "builder": 1,
+                "galley": 1,
+                "heavy_chariot": 4,
+                "scout": 2,
+                "spearman": 2,
+                "warrior": 3
+              }
+            },
+            "80": {
+              "cities": 1,
+              "gold": 113.45000000000009,
+              "gold_per_turn": 6.3,
+              "power": 428.5799999999999,
+              "science": 6.5,
+              "units": {
+                "archer": 9,
+                "catapult": 1,
+                "galley": 1,
+                "heavy_chariot": 5,
+                "scout": 2,
+                "spearman": 2,
+                "warrior": 3
+              }
+            },
+            "100": {
+              "cities": 1,
+              "gold": 157.35000000000014,
+              "gold_per_turn": 6.0,
+              "power": 439.45000000000005,
+              "science": 9.0,
+              "units": {
+                "archer": 8,
+                "catapult": 1,
+                "crossbowman": 1,
+                "galley": 1,
+                "heavy_chariot": 5,
+                "scout": 1,
+                "settler": 1,
+                "siege_tower": 1,
+                "spearman": 2,
+                "warrior": 2
+              }
+            }
+          },
+          "budget_truncated_turns": 0
+        },
+        "candidate_engine_outcome": {
+          "winner": 1,
+          "victory": "science",
+          "turn": 128,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [],
+          "foreign_major_holdings_observed_at_round_boundaries": []
+        },
+        "inputs_sha256": {
+          "variant-03": {
+            "actions.json": "2fd829fb4fde68574f4de3618adf23e599c292e332ba701f6c74be76eab47d62",
+            "snapshots.json": "0e44c13f649ce8d4e41115c84e45ff38adc395e236d4d9fcce363becec1c4035",
+            "why.log": "e60e4d774b6267f6d9ab9d4348a9aa44e54d83efc58cd7034f782dbe54d247c7",
+            "journal-stats.json": "307e3f7f9f86dc715ba2e098efd6b79f639bda85421100c7ca6ed7d4ea9c580c"
+          },
+          "variant-11": {
+            "actions.json": "2fd829fb4fde68574f4de3618adf23e599c292e332ba701f6c74be76eab47d62",
+            "snapshots.json": "0e44c13f649ce8d4e41115c84e45ff38adc395e236d4d9fcce363becec1c4035",
+            "why.log": "e60e4d774b6267f6d9ab9d4348a9aa44e54d83efc58cd7034f782dbe54d247c7",
+            "journal-stats.json": "307e3f7f9f86dc715ba2e098efd6b79f639bda85421100c7ca6ed7d4ea9c580c"
+          }
+        }
+      },
+      {
+        "difficulty": "deity",
+        "seed": 43663176127,
+        "focal_action_contrast": false,
+        "first_differing_focal_action_index_zero_based": null,
+        "parent_first_differing_action": null,
+        "candidate_first_differing_action": null,
+        "parent": {
+          "first_observed_technology_boundary": {
+            "writing": 36,
+            "machinery": 74,
+            "iron_working": 64,
+            "stirrups": 98
+          },
+          "dedicated_upgrade_journal_turns": [
+            108,
+            110,
+            119
+          ],
+          "selected_observed_boundaries": {
+            "60": {
+              "cities": 5,
+              "gold": 262.8,
+              "gold_per_turn": 11.3,
+              "power": 244.7,
+              "science": 13.25,
+              "units": {
+                "archer": 8,
+                "builder": 2,
+                "horseman": 1,
+                "scout": 2,
+                "settler": 1,
+                "spearman": 1,
+                "warrior": 3
+              }
+            },
+            "69": {
+              "cities": 5,
+              "gold": 210.60000000000002,
+              "gold_per_turn": 1.0999999999999996,
+              "power": 330.65999999999997,
+              "science": 16.65,
+              "units": {
+                "archer": 9,
+                "builder": 1,
+                "heavy_chariot": 2,
+                "horseman": 2,
+                "scout": 2,
+                "settler": 1,
+                "spearman": 1,
+                "trader": 1,
+                "warrior": 3
+              }
+            },
+            "70": {
+              "cities": 5,
+              "gold": 213.40000000000003,
+              "gold_per_turn": 2.8000000000000007,
+              "power": 354.65999999999997,
+              "science": 16.3,
+              "units": {
+                "archer": 9,
+                "builder": 1,
+                "heavy_chariot": 2,
+                "horseman": 2,
+                "scout": 2,
+                "settler": 1,
+                "spearman": 1,
+                "warrior": 3
+              }
+            },
+            "74": {
+              "cities": 6,
+              "gold": 222.60000000000002,
+              "gold_per_turn": 1.9000000000000004,
+              "power": 364.14,
+              "science": 16.75,
+              "units": {
+                "archer": 9,
+                "builder": 2,
+                "catapult": 1,
+                "heavy_chariot": 2,
+                "horseman": 2,
+                "scout": 2,
+                "spearman": 1,
+                "warrior": 3
+              }
+            },
+            "80": {
+              "cities": 6,
+              "gold": 14.000000000000027,
+              "gold_per_turn": -4.299999999999999,
+              "power": 448.46000000000004,
+              "science": 24.200000000000003,
+              "units": {
+                "archer": 9,
+                "builder": 3,
+                "catapult": 2,
+                "heavy_chariot": 2,
+                "horseman": 3,
+                "scout": 2,
+                "spearman": 1,
+                "swordsman": 1,
+                "warrior": 2
+              }
+            },
+            "100": {
+              "cities": 6,
+              "gold": 0.7000000000000028,
+              "gold_per_turn": -3.3000000000000007,
+              "power": 347.0,
+              "science": 41.85000000000001,
+              "units": {
+                "archer": 8,
+                "builder": 2,
+                "catapult": 2,
+                "heavy_chariot": 2,
+                "horseman": 1,
+                "scout": 2,
+                "spearman": 1,
+                "warrior": 2
+              }
+            }
+          },
+          "budget_truncated_turns": 0
+        },
+        "candidate": {
+          "first_observed_technology_boundary": {
+            "writing": 36,
+            "machinery": 74,
+            "iron_working": 64,
+            "stirrups": 98
+          },
+          "dedicated_upgrade_journal_turns": [
+            108,
+            110,
+            119
+          ],
+          "selected_observed_boundaries": {
+            "60": {
+              "cities": 5,
+              "gold": 262.8,
+              "gold_per_turn": 11.3,
+              "power": 244.7,
+              "science": 13.25,
+              "units": {
+                "archer": 8,
+                "builder": 2,
+                "horseman": 1,
+                "scout": 2,
+                "settler": 1,
+                "spearman": 1,
+                "warrior": 3
+              }
+            },
+            "69": {
+              "cities": 5,
+              "gold": 210.60000000000002,
+              "gold_per_turn": 1.0999999999999996,
+              "power": 330.65999999999997,
+              "science": 16.65,
+              "units": {
+                "archer": 9,
+                "builder": 1,
+                "heavy_chariot": 2,
+                "horseman": 2,
+                "scout": 2,
+                "settler": 1,
+                "spearman": 1,
+                "trader": 1,
+                "warrior": 3
+              }
+            },
+            "70": {
+              "cities": 5,
+              "gold": 213.40000000000003,
+              "gold_per_turn": 2.8000000000000007,
+              "power": 354.65999999999997,
+              "science": 16.3,
+              "units": {
+                "archer": 9,
+                "builder": 1,
+                "heavy_chariot": 2,
+                "horseman": 2,
+                "scout": 2,
+                "settler": 1,
+                "spearman": 1,
+                "warrior": 3
+              }
+            },
+            "74": {
+              "cities": 6,
+              "gold": 222.60000000000002,
+              "gold_per_turn": 1.9000000000000004,
+              "power": 364.14,
+              "science": 16.75,
+              "units": {
+                "archer": 9,
+                "builder": 2,
+                "catapult": 1,
+                "heavy_chariot": 2,
+                "horseman": 2,
+                "scout": 2,
+                "spearman": 1,
+                "warrior": 3
+              }
+            },
+            "80": {
+              "cities": 6,
+              "gold": 14.000000000000027,
+              "gold_per_turn": -4.299999999999999,
+              "power": 448.46000000000004,
+              "science": 24.200000000000003,
+              "units": {
+                "archer": 9,
+                "builder": 3,
+                "catapult": 2,
+                "heavy_chariot": 2,
+                "horseman": 3,
+                "scout": 2,
+                "spearman": 1,
+                "swordsman": 1,
+                "warrior": 2
+              }
+            },
+            "100": {
+              "cities": 6,
+              "gold": 0.7000000000000028,
+              "gold_per_turn": -3.3000000000000007,
+              "power": 347.0,
+              "science": 41.85000000000001,
+              "units": {
+                "archer": 8,
+                "builder": 2,
+                "catapult": 2,
+                "heavy_chariot": 2,
+                "horseman": 1,
+                "scout": 2,
+                "spearman": 1,
+                "warrior": 2
+              }
+            }
+          },
+          "budget_truncated_turns": 0
+        },
+        "candidate_engine_outcome": {
+          "winner": 3,
+          "victory": "science",
+          "turn": 147,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [
+            0
+          ],
+          "foreign_major_holdings_observed_at_round_boundaries": []
+        },
+        "inputs_sha256": {
+          "variant-03": {
+            "actions.json": "26f1cb845f1782246f55d79a3488b6af7edf5cfa050d83e3844ec6c5b6eadda0",
+            "snapshots.json": "ee0b69b4bbcd2913ae801116c95f7c6ef11e393734caa54118408cbcd3c381e5",
+            "why.log": "32845eec96907e9f746a583ca8c116adade56e79c6d5b76f60f5c2060f0d34a0",
+            "journal-stats.json": "307e3f7f9f86dc715ba2e098efd6b79f639bda85421100c7ca6ed7d4ea9c580c"
+          },
+          "variant-11": {
+            "actions.json": "26f1cb845f1782246f55d79a3488b6af7edf5cfa050d83e3844ec6c5b6eadda0",
+            "snapshots.json": "ee0b69b4bbcd2913ae801116c95f7c6ef11e393734caa54118408cbcd3c381e5",
+            "why.log": "32845eec96907e9f746a583ca8c116adade56e79c6d5b76f60f5c2060f0d34a0",
+            "journal-stats.json": "307e3f7f9f86dc715ba2e098efd6b79f639bda85421100c7ca6ed7d4ea9c580c"
+          }
+        }
+      },
+      {
+        "difficulty": "deity",
+        "seed": 49220027834,
+        "focal_action_contrast": false,
+        "first_differing_focal_action_index_zero_based": null,
+        "parent_first_differing_action": null,
+        "candidate_first_differing_action": null,
+        "parent": {
+          "first_observed_technology_boundary": {
+            "writing": 40,
+            "machinery": 69,
+            "iron_working": 60,
+            "stirrups": 87
+          },
+          "dedicated_upgrade_journal_turns": [
+            74,
+            76,
+            84,
+            90,
+            94,
+            94,
+            95,
+            98,
+            102,
+            104,
+            119,
+            119,
+            120,
+            122,
+            122,
+            125,
+            127,
+            130,
+            135,
+            135
+          ],
+          "selected_observed_boundaries": {
+            "60": {
+              "cities": 3,
+              "gold": 163.40000000000003,
+              "gold_per_turn": 16.700000000000003,
+              "power": 314.24,
+              "science": 11.6,
+              "units": {
+                "archer": 9,
+                "builder": 2,
+                "heavy_chariot": 3,
+                "scout": 2,
+                "settler": 2,
+                "warrior": 5
+              }
+            },
+            "69": {
+              "cities": 5,
+              "gold": 256.3,
+              "gold_per_turn": 14.899999999999999,
+              "power": 350.3,
+              "science": 19.799999999999997,
+              "units": {
+                "archer": 10,
+                "builder": 2,
+                "heavy_chariot": 4,
+                "scout": 2,
+                "warrior": 5
+              }
+            },
+            "70": {
+              "cities": 5,
+              "gold": 141.5,
+              "gold_per_turn": 10.2,
+              "power": 383.6,
+              "science": 18.95,
+              "units": {
+                "archer": 10,
+                "builder": 2,
+                "catapult": 1,
+                "heavy_chariot": 4,
+                "scout": 1,
+                "settler": 1,
+                "skirmisher": 1,
+                "trader": 1,
+                "warrior": 5
+              }
+            },
+            "74": {
+              "cities": 5,
+              "gold": 260.4,
+              "gold_per_turn": 10.9,
+              "power": 483.2,
+              "science": 21.549999999999997,
+              "units": {
+                "archer": 10,
+                "builder": 2,
+                "catapult": 1,
+                "heavy_chariot": 6,
+                "horseman": 1,
+                "settler": 1,
+                "skirmisher": 1,
+                "warrior": 5
+              }
+            },
+            "80": {
+              "cities": 6,
+              "gold": 76.49999999999997,
+              "gold_per_turn": 11.300000000000004,
+              "power": 598.88,
+              "science": 23.849999999999998,
+              "units": {
+                "archer": 8,
+                "builder": 2,
+                "catapult": 1,
+                "crossbowman": 3,
+                "heavy_chariot": 8,
+                "horseman": 1,
+                "skirmisher": 1,
+                "warrior": 5
+              }
+            },
+            "100": {
+              "cities": 6,
+              "gold": 62.099999999999966,
+              "gold_per_turn": 15.0,
+              "power": 718.78,
+              "science": 39.0,
+              "units": {
+                "archer": 5,
+                "builder": 4,
+                "catapult": 1,
+                "crossbowman": 6,
+                "galley": 1,
+                "heavy_chariot": 8,
+                "horseman": 1,
+                "settler": 2,
+                "skirmisher": 2,
+                "swordsman": 2,
+                "warrior": 3
+              }
+            }
+          },
+          "budget_truncated_turns": 0
+        },
+        "candidate": {
+          "first_observed_technology_boundary": {
+            "writing": 40,
+            "machinery": 69,
+            "iron_working": 60,
+            "stirrups": 87
+          },
+          "dedicated_upgrade_journal_turns": [
+            74,
+            76,
+            84,
+            90,
+            94,
+            94,
+            95,
+            98,
+            102,
+            104,
+            119,
+            119,
+            120,
+            122,
+            122,
+            125,
+            127,
+            130,
+            135,
+            135
+          ],
+          "selected_observed_boundaries": {
+            "60": {
+              "cities": 3,
+              "gold": 163.40000000000003,
+              "gold_per_turn": 16.700000000000003,
+              "power": 314.24,
+              "science": 11.6,
+              "units": {
+                "archer": 9,
+                "builder": 2,
+                "heavy_chariot": 3,
+                "scout": 2,
+                "settler": 2,
+                "warrior": 5
+              }
+            },
+            "69": {
+              "cities": 5,
+              "gold": 256.3,
+              "gold_per_turn": 14.899999999999999,
+              "power": 350.3,
+              "science": 19.799999999999997,
+              "units": {
+                "archer": 10,
+                "builder": 2,
+                "heavy_chariot": 4,
+                "scout": 2,
+                "warrior": 5
+              }
+            },
+            "70": {
+              "cities": 5,
+              "gold": 141.5,
+              "gold_per_turn": 10.2,
+              "power": 383.6,
+              "science": 18.95,
+              "units": {
+                "archer": 10,
+                "builder": 2,
+                "catapult": 1,
+                "heavy_chariot": 4,
+                "scout": 1,
+                "settler": 1,
+                "skirmisher": 1,
+                "trader": 1,
+                "warrior": 5
+              }
+            },
+            "74": {
+              "cities": 5,
+              "gold": 260.4,
+              "gold_per_turn": 10.9,
+              "power": 483.2,
+              "science": 21.549999999999997,
+              "units": {
+                "archer": 10,
+                "builder": 2,
+                "catapult": 1,
+                "heavy_chariot": 6,
+                "horseman": 1,
+                "settler": 1,
+                "skirmisher": 1,
+                "warrior": 5
+              }
+            },
+            "80": {
+              "cities": 6,
+              "gold": 76.49999999999997,
+              "gold_per_turn": 11.300000000000004,
+              "power": 598.88,
+              "science": 23.849999999999998,
+              "units": {
+                "archer": 8,
+                "builder": 2,
+                "catapult": 1,
+                "crossbowman": 3,
+                "heavy_chariot": 8,
+                "horseman": 1,
+                "skirmisher": 1,
+                "warrior": 5
+              }
+            },
+            "100": {
+              "cities": 6,
+              "gold": 62.099999999999966,
+              "gold_per_turn": 15.0,
+              "power": 718.78,
+              "science": 39.0,
+              "units": {
+                "archer": 5,
+                "builder": 4,
+                "catapult": 1,
+                "crossbowman": 6,
+                "galley": 1,
+                "heavy_chariot": 8,
+                "horseman": 1,
+                "settler": 2,
+                "skirmisher": 2,
+                "swordsman": 2,
+                "warrior": 3
+              }
+            }
+          },
+          "budget_truncated_turns": 0
+        },
+        "candidate_engine_outcome": {
+          "winner": 2,
+          "victory": "culture",
+          "turn": 139,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [
+            0
+          ],
+          "foreign_major_holdings_observed_at_round_boundaries": []
+        },
+        "inputs_sha256": {
+          "variant-03": {
+            "actions.json": "835507426001622d71e4e45b2d5f4fe1742820db6086f83c5f3b35da129aa0b2",
+            "snapshots.json": "d034157d004a619affec0f6c2e9d8c6caaf6bbfb2a5bd98a7bf0d06417e8cfde",
+            "why.log": "6753e7a10c7647cf766ad60587b51823c72bbe8d2798f48b03160cf7a8d5fa41",
+            "journal-stats.json": "8cca3204ea0311ebc8d0793fff543466fc71a59479a593dee15c1661754df4e3"
+          },
+          "variant-11": {
+            "actions.json": "835507426001622d71e4e45b2d5f4fe1742820db6086f83c5f3b35da129aa0b2",
+            "snapshots.json": "d034157d004a619affec0f6c2e9d8c6caaf6bbfb2a5bd98a7bf0d06417e8cfde",
+            "why.log": "fbdcf820cdc8e93360a4b9bc4374ac631892e3730207e017d8941b7750d4c1cc",
+            "journal-stats.json": "adc6ed377e652539dc5a09a35a6c3d8191e1a3ee6247e2a142b20dd851efc0a8"
+          }
+        }
+      }
+    ],
+    "candidate_verified_deity_domination_wins": 0,
+    "development_gate_pass": false,
+    "fresh_executions": 0,
+    "caution": "Known-map development only. Technology observations are round boundaries, not exact completion events. Earlier upgrades or increased power do not establish a conquest win or Native verification."
+  },
+  "variant_11_cash_flow_mechanism": {
+    "observed_utc": "2026-10-17T23:15:48.443628+00:00",
+    "helper_sha256": "c5a436d577df0e3a6590e3d8f3d3686d27b1f9207ee6ce60363e5459613b351e",
+    "all_six_complete": true,
+    "cases": [
+      {
+        "difficulty": "immortal",
+        "seed": 45312861349,
+        "parent": {
+          "raw_successful_claim_journal_matches": 0,
+          "unique_claim_turn_name_item_pairs": 0,
+          "claim_effects": [],
+          "boundaries": [
+            {
+              "turn": 40,
+              "cities": 3,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 0,
+              "successful_upgrade_actions_before_boundary": 2,
+              "military_power": 106.6,
+              "gold": 186.0,
+              "gold_per_turn": 10.0,
+              "science_per_turn": 8.5
+            },
+            {
+              "turn": 60,
+              "cities": 7,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 1,
+              "successful_upgrade_actions_before_boundary": 2,
+              "military_power": 377.43,
+              "gold": 305.4,
+              "gold_per_turn": 11.0,
+              "science_per_turn": 21.0
+            },
+            {
+              "turn": 80,
+              "cities": 9,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 2,
+              "successful_upgrade_actions_before_boundary": 5,
+              "military_power": 513.78,
+              "gold": 174.59999999999997,
+              "gold_per_turn": 1.6000000000000014,
+              "science_per_turn": 40.449999999999996
+            },
+            {
+              "turn": 100,
+              "cities": 10,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 3,
+              "successful_upgrade_actions_before_boundary": 11,
+              "military_power": 638.83,
+              "gold": 355.69999999999993,
+              "gold_per_turn": 44.099999999999994,
+              "science_per_turn": 83.4
+            }
+          ],
+          "journal_stats": {
+            "budget_truncated_turns": 0,
+            "ring_dropped": 1649,
+            "traced": true
+          },
+          "input_sha256": {
+            "actions.json": "2108cff043378da19c6016ee61b05982646ba82244231cd656fc409088d25446",
+            "plans.json": "67a1c91ca256c07dfdaf6f1f1416f8418ca5694ea206eded16bcb91e6bdce37c",
+            "snapshots.json": "bf3334a7683717b1b442696ccf49d0c9327af243092183ece9eeecb0e63ce789",
+            "why.log": "15ecb8c40537d4220412db7d9666e9c09589bfd960cbe5f69498eddebfe05da3",
+            "journal-stats.json": "f70fa032e7d5f9220eb59d6bdb41f7697c0dd2525d3daa5096206f145a80f32d"
+          }
+        },
+        "candidate": {
+          "raw_successful_claim_journal_matches": 0,
+          "unique_claim_turn_name_item_pairs": 0,
+          "claim_effects": [],
+          "boundaries": [
+            {
+              "turn": 40,
+              "cities": 3,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 0,
+              "successful_upgrade_actions_before_boundary": 2,
+              "military_power": 106.6,
+              "gold": 186.0,
+              "gold_per_turn": 10.0,
+              "science_per_turn": 8.5
+            },
+            {
+              "turn": 60,
+              "cities": 7,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 1,
+              "successful_upgrade_actions_before_boundary": 2,
+              "military_power": 377.43,
+              "gold": 305.4,
+              "gold_per_turn": 11.0,
+              "science_per_turn": 21.0
+            },
+            {
+              "turn": 80,
+              "cities": 9,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 2,
+              "successful_upgrade_actions_before_boundary": 5,
+              "military_power": 513.78,
+              "gold": 174.59999999999997,
+              "gold_per_turn": 1.6000000000000014,
+              "science_per_turn": 40.449999999999996
+            },
+            {
+              "turn": 100,
+              "cities": 10,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 3,
+              "successful_upgrade_actions_before_boundary": 11,
+              "military_power": 638.83,
+              "gold": 355.69999999999993,
+              "gold_per_turn": 44.099999999999994,
+              "science_per_turn": 83.4
+            }
+          ],
+          "journal_stats": {
+            "budget_truncated_turns": 0,
+            "ring_dropped": 1654,
+            "traced": true
+          },
+          "input_sha256": {
+            "actions.json": "2108cff043378da19c6016ee61b05982646ba82244231cd656fc409088d25446",
+            "plans.json": "67a1c91ca256c07dfdaf6f1f1416f8418ca5694ea206eded16bcb91e6bdce37c",
+            "snapshots.json": "bf3334a7683717b1b442696ccf49d0c9327af243092183ece9eeecb0e63ce789",
+            "why.log": "8cf419855d920857bf4c1ac6c2ea5c85abe2aaa28f91c2e9b99d431e706ea642",
+            "journal-stats.json": "5129c9371e7201b3adf54b7de4345eda1a6984ecb3eac9c34b56b0f371f436cb"
+          }
+        }
+      },
+      {
+        "difficulty": "immortal",
+        "seed": 47651167238,
+        "parent": {
+          "raw_successful_claim_journal_matches": 0,
+          "unique_claim_turn_name_item_pairs": 0,
+          "claim_effects": [],
+          "boundaries": [
+            {
+              "turn": 40,
+              "cities": 2,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 1,
+              "successful_upgrade_actions_before_boundary": 1,
+              "military_power": 152.25,
+              "gold": 198.89999999999992,
+              "gold_per_turn": 2.7,
+              "science_per_turn": 3.9
+            },
+            {
+              "turn": 60,
+              "cities": 4,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 2,
+              "successful_upgrade_actions_before_boundary": 1,
+              "military_power": 394.58,
+              "gold": 144.29999999999976,
+              "gold_per_turn": 7.6,
+              "science_per_turn": 7.200000000000001
+            },
+            {
+              "turn": 80,
+              "cities": 5,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 3,
+              "successful_upgrade_actions_before_boundary": 1,
+              "military_power": 621.65,
+              "gold": 93.1999999999997,
+              "gold_per_turn": 11.9,
+              "science_per_turn": 10.75
+            },
+            {
+              "turn": 100,
+              "cities": 6,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 4,
+              "successful_upgrade_actions_before_boundary": 1,
+              "military_power": 685.0,
+              "gold": 148.4,
+              "gold_per_turn": 28.6,
+              "science_per_turn": 20.5
+            }
+          ],
+          "journal_stats": {
+            "budget_truncated_turns": 0,
+            "ring_dropped": 0,
+            "traced": true
+          },
+          "input_sha256": {
+            "actions.json": "8998aa20fd49cc5fcc99d1fc4120faf1149b229410d01e46091c914fb3e48f77",
+            "plans.json": "2bea553454037501887a28067a3b41ccf189e71361bc19c82834d00ce4a6679e",
+            "snapshots.json": "210f5dd535a8d6156c99f577fd20459a7f37ea931a8629de700b349429099e5e",
+            "why.log": "82881c10600c027eb16a08d5420cc5bf281d62f232ef065e205b45b269f37c7d",
+            "journal-stats.json": "307e3f7f9f86dc715ba2e098efd6b79f639bda85421100c7ca6ed7d4ea9c580c"
+          }
+        },
+        "candidate": {
+          "raw_successful_claim_journal_matches": 0,
+          "unique_claim_turn_name_item_pairs": 0,
+          "claim_effects": [],
+          "boundaries": [
+            {
+              "turn": 40,
+              "cities": 2,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 1,
+              "successful_upgrade_actions_before_boundary": 1,
+              "military_power": 152.25,
+              "gold": 198.89999999999992,
+              "gold_per_turn": 2.7,
+              "science_per_turn": 3.9
+            },
+            {
+              "turn": 60,
+              "cities": 4,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 2,
+              "successful_upgrade_actions_before_boundary": 1,
+              "military_power": 394.58,
+              "gold": 144.29999999999976,
+              "gold_per_turn": 7.6,
+              "science_per_turn": 7.200000000000001
+            },
+            {
+              "turn": 80,
+              "cities": 5,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 3,
+              "successful_upgrade_actions_before_boundary": 1,
+              "military_power": 621.65,
+              "gold": 93.1999999999997,
+              "gold_per_turn": 11.9,
+              "science_per_turn": 10.75
+            },
+            {
+              "turn": 100,
+              "cities": 6,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 4,
+              "successful_upgrade_actions_before_boundary": 1,
+              "military_power": 685.0,
+              "gold": 148.4,
+              "gold_per_turn": 28.6,
+              "science_per_turn": 20.5
+            }
+          ],
+          "journal_stats": {
+            "budget_truncated_turns": 0,
+            "ring_dropped": 0,
+            "traced": true
+          },
+          "input_sha256": {
+            "actions.json": "8998aa20fd49cc5fcc99d1fc4120faf1149b229410d01e46091c914fb3e48f77",
+            "plans.json": "2bea553454037501887a28067a3b41ccf189e71361bc19c82834d00ce4a6679e",
+            "snapshots.json": "210f5dd535a8d6156c99f577fd20459a7f37ea931a8629de700b349429099e5e",
+            "why.log": "12b87df24a52fd5e2bff2bc3cfc12f9148985e94d039024d0f6f4f4250025d2b",
+            "journal-stats.json": "307e3f7f9f86dc715ba2e098efd6b79f639bda85421100c7ca6ed7d4ea9c580c"
+          }
+        }
+      },
+      {
+        "difficulty": "immortal",
+        "seed": 46732028391,
+        "parent": {
+          "raw_successful_claim_journal_matches": 0,
+          "unique_claim_turn_name_item_pairs": 0,
+          "claim_effects": [],
+          "boundaries": [
+            {
+              "turn": 40,
+              "cities": 3,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 1,
+              "successful_upgrade_actions_before_boundary": 1,
+              "military_power": 124.2,
+              "gold": 127.0,
+              "gold_per_turn": 12.0,
+              "science_per_turn": 6.5
+            },
+            {
+              "turn": 60,
+              "cities": 4,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 2,
+              "successful_upgrade_actions_before_boundary": 1,
+              "military_power": 178.8,
+              "gold": 48.20000000000001,
+              "gold_per_turn": 16.9,
+              "science_per_turn": 11.0
+            },
+            {
+              "turn": 80,
+              "cities": 6,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 3,
+              "successful_upgrade_actions_before_boundary": 1,
+              "military_power": 477.5,
+              "gold": 248.5000000000001,
+              "gold_per_turn": 8.9,
+              "science_per_turn": 19.2
+            },
+            {
+              "turn": 100,
+              "cities": 7,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 4,
+              "successful_upgrade_actions_before_boundary": 3,
+              "military_power": 613.0,
+              "gold": 68.6000000000001,
+              "gold_per_turn": 5.9,
+              "science_per_turn": 29.5
+            }
+          ],
+          "journal_stats": {
+            "budget_truncated_turns": 0,
+            "ring_dropped": 0,
+            "traced": true
+          },
+          "input_sha256": {
+            "actions.json": "f3b47320ca1f742b4ebeafaf23c5364ed043b757d2b799c9ab13b694c5afd681",
+            "plans.json": "7e88a76581373b134c6d86432746cef508fbdd22eacfc5914c1a988a07596185",
+            "snapshots.json": "465fd0947deb92ddfd577b17240a90b2587f1c948cc8d6428096e2c350cd6a01",
+            "why.log": "f839a7f7e7a82cbed43cf935436e13b7a7c1740ae621d919c0c3ecea7026e01e",
+            "journal-stats.json": "307e3f7f9f86dc715ba2e098efd6b79f639bda85421100c7ca6ed7d4ea9c580c"
+          }
+        },
+        "candidate": {
+          "raw_successful_claim_journal_matches": 0,
+          "unique_claim_turn_name_item_pairs": 0,
+          "claim_effects": [],
+          "boundaries": [
+            {
+              "turn": 40,
+              "cities": 3,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 1,
+              "successful_upgrade_actions_before_boundary": 1,
+              "military_power": 124.2,
+              "gold": 127.0,
+              "gold_per_turn": 12.0,
+              "science_per_turn": 6.5
+            },
+            {
+              "turn": 60,
+              "cities": 4,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 2,
+              "successful_upgrade_actions_before_boundary": 1,
+              "military_power": 178.8,
+              "gold": 48.20000000000001,
+              "gold_per_turn": 16.9,
+              "science_per_turn": 11.0
+            },
+            {
+              "turn": 80,
+              "cities": 6,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 3,
+              "successful_upgrade_actions_before_boundary": 1,
+              "military_power": 477.5,
+              "gold": 248.5000000000001,
+              "gold_per_turn": 8.9,
+              "science_per_turn": 19.2
+            },
+            {
+              "turn": 100,
+              "cities": 7,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 4,
+              "successful_upgrade_actions_before_boundary": 3,
+              "military_power": 613.0,
+              "gold": 68.6000000000001,
+              "gold_per_turn": 5.9,
+              "science_per_turn": 29.5
+            }
+          ],
+          "journal_stats": {
+            "budget_truncated_turns": 0,
+            "ring_dropped": 0,
+            "traced": true
+          },
+          "input_sha256": {
+            "actions.json": "f3b47320ca1f742b4ebeafaf23c5364ed043b757d2b799c9ab13b694c5afd681",
+            "plans.json": "7e88a76581373b134c6d86432746cef508fbdd22eacfc5914c1a988a07596185",
+            "snapshots.json": "465fd0947deb92ddfd577b17240a90b2587f1c948cc8d6428096e2c350cd6a01",
+            "why.log": "09426dc20cd2fa7aa556a3f948f6c3827ac2e7e976287d58477a24307dc04362",
+            "journal-stats.json": "307e3f7f9f86dc715ba2e098efd6b79f639bda85421100c7ca6ed7d4ea9c580c"
+          }
+        }
+      },
+      {
+        "difficulty": "deity",
+        "seed": 49478848256,
+        "parent": {
+          "raw_successful_claim_journal_matches": 0,
+          "unique_claim_turn_name_item_pairs": 0,
+          "claim_effects": [],
+          "boundaries": [
+            {
+              "turn": 40,
+              "cities": 2,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 0,
+              "successful_upgrade_actions_before_boundary": 1,
+              "military_power": 101.5,
+              "gold": 153.0,
+              "gold_per_turn": 3.0,
+              "science_per_turn": 5.5
+            },
+            {
+              "turn": 60,
+              "cities": 2,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 0,
+              "successful_upgrade_actions_before_boundary": 1,
+              "military_power": 229.14999999999998,
+              "gold": 160.00000000000003,
+              "gold_per_turn": 8.0,
+              "science_per_turn": 7.5
+            },
+            {
+              "turn": 80,
+              "cities": 1,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 0,
+              "successful_upgrade_actions_before_boundary": 1,
+              "military_power": 428.5799999999999,
+              "gold": 113.45000000000009,
+              "gold_per_turn": 6.3,
+              "science_per_turn": 6.5
+            },
+            {
+              "turn": 100,
+              "cities": 1,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 1,
+              "successful_upgrade_actions_before_boundary": 2,
+              "military_power": 439.45000000000005,
+              "gold": 157.35000000000014,
+              "gold_per_turn": 6.0,
+              "science_per_turn": 9.0
+            }
+          ],
+          "journal_stats": {
+            "budget_truncated_turns": 0,
+            "ring_dropped": 0,
+            "traced": true
+          },
+          "input_sha256": {
+            "actions.json": "2fd829fb4fde68574f4de3618adf23e599c292e332ba701f6c74be76eab47d62",
+            "plans.json": "2a8a8751fe90e9b368d77bbdc587ffe22819245a293c6f3b5284eff8dcfc8108",
+            "snapshots.json": "0e44c13f649ce8d4e41115c84e45ff38adc395e236d4d9fcce363becec1c4035",
+            "why.log": "e60e4d774b6267f6d9ab9d4348a9aa44e54d83efc58cd7034f782dbe54d247c7",
+            "journal-stats.json": "307e3f7f9f86dc715ba2e098efd6b79f639bda85421100c7ca6ed7d4ea9c580c"
+          }
+        },
+        "candidate": {
+          "raw_successful_claim_journal_matches": 0,
+          "unique_claim_turn_name_item_pairs": 0,
+          "claim_effects": [],
+          "boundaries": [
+            {
+              "turn": 40,
+              "cities": 2,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 0,
+              "successful_upgrade_actions_before_boundary": 1,
+              "military_power": 101.5,
+              "gold": 153.0,
+              "gold_per_turn": 3.0,
+              "science_per_turn": 5.5
+            },
+            {
+              "turn": 60,
+              "cities": 2,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 0,
+              "successful_upgrade_actions_before_boundary": 1,
+              "military_power": 229.14999999999998,
+              "gold": 160.00000000000003,
+              "gold_per_turn": 8.0,
+              "science_per_turn": 7.5
+            },
+            {
+              "turn": 80,
+              "cities": 1,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 0,
+              "successful_upgrade_actions_before_boundary": 1,
+              "military_power": 428.5799999999999,
+              "gold": 113.45000000000009,
+              "gold_per_turn": 6.3,
+              "science_per_turn": 6.5
+            },
+            {
+              "turn": 100,
+              "cities": 1,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 1,
+              "successful_upgrade_actions_before_boundary": 2,
+              "military_power": 439.45000000000005,
+              "gold": 157.35000000000014,
+              "gold_per_turn": 6.0,
+              "science_per_turn": 9.0
+            }
+          ],
+          "journal_stats": {
+            "budget_truncated_turns": 0,
+            "ring_dropped": 0,
+            "traced": true
+          },
+          "input_sha256": {
+            "actions.json": "2fd829fb4fde68574f4de3618adf23e599c292e332ba701f6c74be76eab47d62",
+            "plans.json": "2a8a8751fe90e9b368d77bbdc587ffe22819245a293c6f3b5284eff8dcfc8108",
+            "snapshots.json": "0e44c13f649ce8d4e41115c84e45ff38adc395e236d4d9fcce363becec1c4035",
+            "why.log": "e60e4d774b6267f6d9ab9d4348a9aa44e54d83efc58cd7034f782dbe54d247c7",
+            "journal-stats.json": "307e3f7f9f86dc715ba2e098efd6b79f639bda85421100c7ca6ed7d4ea9c580c"
+          }
+        }
+      },
+      {
+        "difficulty": "deity",
+        "seed": 43663176127,
+        "parent": {
+          "raw_successful_claim_journal_matches": 0,
+          "unique_claim_turn_name_item_pairs": 0,
+          "claim_effects": [],
+          "boundaries": [
+            {
+              "turn": 40,
+              "cities": 4,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 0,
+              "successful_upgrade_actions_before_boundary": 0,
+              "military_power": 94.55000000000001,
+              "gold": 197.80000000000007,
+              "gold_per_turn": 1.2999999999999998,
+              "science_per_turn": 6.750000000000001
+            },
+            {
+              "turn": 60,
+              "cities": 5,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 1,
+              "successful_upgrade_actions_before_boundary": 0,
+              "military_power": 244.7,
+              "gold": 262.8,
+              "gold_per_turn": 11.3,
+              "science_per_turn": 13.25
+            },
+            {
+              "turn": 80,
+              "cities": 6,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 2,
+              "successful_upgrade_actions_before_boundary": 1,
+              "military_power": 448.46000000000004,
+              "gold": 14.000000000000027,
+              "gold_per_turn": -4.299999999999999,
+              "science_per_turn": 24.200000000000003
+            },
+            {
+              "turn": 100,
+              "cities": 6,
+              "commercial_hubs": 2,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 3,
+              "successful_upgrade_actions_before_boundary": 1,
+              "military_power": 347.0,
+              "gold": 0.7000000000000028,
+              "gold_per_turn": -3.3000000000000007,
+              "science_per_turn": 41.85000000000001
+            }
+          ],
+          "journal_stats": {
+            "budget_truncated_turns": 0,
+            "ring_dropped": 0,
+            "traced": true
+          },
+          "input_sha256": {
+            "actions.json": "26f1cb845f1782246f55d79a3488b6af7edf5cfa050d83e3844ec6c5b6eadda0",
+            "plans.json": "577fd0557e9c0a793dad9a2306570fa287042b9bb683f8497714985af534245d",
+            "snapshots.json": "ee0b69b4bbcd2913ae801116c95f7c6ef11e393734caa54118408cbcd3c381e5",
+            "why.log": "32845eec96907e9f746a583ca8c116adade56e79c6d5b76f60f5c2060f0d34a0",
+            "journal-stats.json": "307e3f7f9f86dc715ba2e098efd6b79f639bda85421100c7ca6ed7d4ea9c580c"
+          }
+        },
+        "candidate": {
+          "raw_successful_claim_journal_matches": 0,
+          "unique_claim_turn_name_item_pairs": 0,
+          "claim_effects": [],
+          "boundaries": [
+            {
+              "turn": 40,
+              "cities": 4,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 0,
+              "successful_upgrade_actions_before_boundary": 0,
+              "military_power": 94.55000000000001,
+              "gold": 197.80000000000007,
+              "gold_per_turn": 1.2999999999999998,
+              "science_per_turn": 6.750000000000001
+            },
+            {
+              "turn": 60,
+              "cities": 5,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 1,
+              "successful_upgrade_actions_before_boundary": 0,
+              "military_power": 244.7,
+              "gold": 262.8,
+              "gold_per_turn": 11.3,
+              "science_per_turn": 13.25
+            },
+            {
+              "turn": 80,
+              "cities": 6,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 2,
+              "successful_upgrade_actions_before_boundary": 1,
+              "military_power": 448.46000000000004,
+              "gold": 14.000000000000027,
+              "gold_per_turn": -4.299999999999999,
+              "science_per_turn": 24.200000000000003
+            },
+            {
+              "turn": 100,
+              "cities": 6,
+              "commercial_hubs": 2,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 3,
+              "successful_upgrade_actions_before_boundary": 1,
+              "military_power": 347.0,
+              "gold": 0.7000000000000028,
+              "gold_per_turn": -3.3000000000000007,
+              "science_per_turn": 41.85000000000001
+            }
+          ],
+          "journal_stats": {
+            "budget_truncated_turns": 0,
+            "ring_dropped": 0,
+            "traced": true
+          },
+          "input_sha256": {
+            "actions.json": "26f1cb845f1782246f55d79a3488b6af7edf5cfa050d83e3844ec6c5b6eadda0",
+            "plans.json": "577fd0557e9c0a793dad9a2306570fa287042b9bb683f8497714985af534245d",
+            "snapshots.json": "ee0b69b4bbcd2913ae801116c95f7c6ef11e393734caa54118408cbcd3c381e5",
+            "why.log": "32845eec96907e9f746a583ca8c116adade56e79c6d5b76f60f5c2060f0d34a0",
+            "journal-stats.json": "307e3f7f9f86dc715ba2e098efd6b79f639bda85421100c7ca6ed7d4ea9c580c"
+          }
+        }
+      },
+      {
+        "difficulty": "deity",
+        "seed": 49220027834,
+        "parent": {
+          "raw_successful_claim_journal_matches": 0,
+          "unique_claim_turn_name_item_pairs": 0,
+          "claim_effects": [],
+          "boundaries": [
+            {
+              "turn": 40,
+              "cities": 3,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 1,
+              "successful_upgrade_actions_before_boundary": 1,
+              "military_power": 125.0,
+              "gold": 175.00000000000006,
+              "gold_per_turn": 7.699999999999999,
+              "science_per_turn": 8.100000000000001
+            },
+            {
+              "turn": 60,
+              "cities": 3,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 2,
+              "successful_upgrade_actions_before_boundary": 1,
+              "military_power": 314.24,
+              "gold": 163.40000000000003,
+              "gold_per_turn": 16.700000000000003,
+              "science_per_turn": 11.6
+            },
+            {
+              "turn": 80,
+              "cities": 6,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 3,
+              "successful_upgrade_actions_before_boundary": 4,
+              "military_power": 598.88,
+              "gold": 76.49999999999997,
+              "gold_per_turn": 11.300000000000004,
+              "science_per_turn": 23.849999999999998
+            },
+            {
+              "turn": 100,
+              "cities": 6,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 3,
+              "successful_upgrade_actions_before_boundary": 9,
+              "military_power": 718.78,
+              "gold": 62.099999999999966,
+              "gold_per_turn": 15.0,
+              "science_per_turn": 39.0
+            }
+          ],
+          "journal_stats": {
+            "budget_truncated_turns": 0,
+            "ring_dropped": 654,
+            "traced": true
+          },
+          "input_sha256": {
+            "actions.json": "835507426001622d71e4e45b2d5f4fe1742820db6086f83c5f3b35da129aa0b2",
+            "plans.json": "cd5f4279acde46ef37508b3d58e6166b13917080ff3aafec48ff38a97b4c870a",
+            "snapshots.json": "d034157d004a619affec0f6c2e9d8c6caaf6bbfb2a5bd98a7bf0d06417e8cfde",
+            "why.log": "6753e7a10c7647cf766ad60587b51823c72bbe8d2798f48b03160cf7a8d5fa41",
+            "journal-stats.json": "8cca3204ea0311ebc8d0793fff543466fc71a59479a593dee15c1661754df4e3"
+          }
+        },
+        "candidate": {
+          "raw_successful_claim_journal_matches": 0,
+          "unique_claim_turn_name_item_pairs": 0,
+          "claim_effects": [],
+          "boundaries": [
+            {
+              "turn": 40,
+              "cities": 3,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 1,
+              "successful_upgrade_actions_before_boundary": 1,
+              "military_power": 125.0,
+              "gold": 175.00000000000006,
+              "gold_per_turn": 7.699999999999999,
+              "science_per_turn": 8.100000000000001
+            },
+            {
+              "turn": 60,
+              "cities": 3,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 2,
+              "successful_upgrade_actions_before_boundary": 1,
+              "military_power": 314.24,
+              "gold": 163.40000000000003,
+              "gold_per_turn": 16.700000000000003,
+              "science_per_turn": 11.6
+            },
+            {
+              "turn": 80,
+              "cities": 6,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 3,
+              "successful_upgrade_actions_before_boundary": 4,
+              "military_power": 598.88,
+              "gold": 76.49999999999997,
+              "gold_per_turn": 11.300000000000004,
+              "science_per_turn": 23.849999999999998
+            },
+            {
+              "turn": 100,
+              "cities": 6,
+              "commercial_hubs": 0,
+              "markets": 0,
+              "traders": 0,
+              "successful_route_actions_before_boundary": 3,
+              "successful_upgrade_actions_before_boundary": 9,
+              "military_power": 718.78,
+              "gold": 62.099999999999966,
+              "gold_per_turn": 15.0,
+              "science_per_turn": 39.0
+            }
+          ],
+          "journal_stats": {
+            "budget_truncated_turns": 0,
+            "ring_dropped": 655,
+            "traced": true
+          },
+          "input_sha256": {
+            "actions.json": "835507426001622d71e4e45b2d5f4fe1742820db6086f83c5f3b35da129aa0b2",
+            "plans.json": "cd5f4279acde46ef37508b3d58e6166b13917080ff3aafec48ff38a97b4c870a",
+            "snapshots.json": "d034157d004a619affec0f6c2e9d8c6caaf6bbfb2a5bd98a7bf0d06417e8cfde",
+            "why.log": "fbdcf820cdc8e93360a4b9bc4374ac631892e3730207e017d8941b7750d4c1cc",
+            "journal-stats.json": "adc6ed377e652539dc5a09a35a6c3d8191e1a3ee6247e2a142b20dd851efc0a8"
+          }
+        }
+      }
+    ],
+    "candidate_verified_deity_domination_wins": 0,
+    "development_gate_pass": false,
+    "fresh_executions": 0,
+    "limitations": "Known-map mechanism observations, not independent strength evidence or Native verification. A successful claim need not finish or persist: same-turn production actions and every next-boundary nonempty queue are retained. The new claim refuses to add an investment while an existing Market-family building or Trader is queued; unrelated Hub construction does not veto utilization elsewhere; later legacy production paths may still add queues, so that local guard alone is not proof of an empire-wide concurrency invariant. Route actions may renew routes and upgrade totals include every focal upgrade path. The final partial turn can lack a later observation or flushed journal. Zero claim messages do not prove the helper was never queried. Cash, earlier upgrades, trade queues and changed rival victory times never override the engine winner/original-capital gate."
+  },
+  "archive_checkpoint_11": {
+    "verified_utc": "2026-10-17T23:15:52.854766+00:00",
+    "archive": "/Users/martbot-mbp-m5-max-128/civvis-conquest-campaign-capacity-ecd1/docs/eval/2026-10-17-conquest-campaign-capacity.checkpoint-11.delta.provenance.json.gz",
+    "bytes": 6459775,
+    "sha256": "6e77b088f19ac9500de49a417503f6f225e55f64aa0de0307ea639fb3e502657",
+    "files": 339,
+    "unique_blobs": 265,
+    "base_archive": {
+      "repository_path": "docs/eval/2026-10-17-conquest-campaign-capacity.checkpoint-03.provenance.json.gz",
+      "sha256": "2044cb598cf83dc4d8d73bedafdeb28883f2f11c7ed8c48ee8acf30c28b4f542",
+      "bytes": 26037957
+    },
+    "logical_merged_files": 636,
+    "every_base_and_delta_file_verified": true,
+    "delta_requires_the_named_base_archive": true,
+    "every_blob_hash_and_file_length_verified_after_extraction": true,
+    "complete_development_analyses_reproduced": [
+      "variant-03",
+      "variant-11"
+    ],
+    "comparison_exception": "Only analyzed_utc and relocated absolute filesystem paths are normalized; every other analysis field and raw artifact hash matches.",
+    "simulations_reexecuted_during_extraction": false,
+    "executables_bundled": false,
+    "all_candidate_source_blobs_and_binary_hashes_reverified_before_packing": true
+  },
+  "variant_11_push_reconciliation": {
+    "observed_utc": "2026-10-17T23:08:53.841646+00:00",
+    "head": "4acdfd2cce2a9fb4248db0c568de0c9a4ec2a019",
+    "remote_branch_sha": "4acdfd2cce2a9fb4248db0c568de0c9a4ec2a019",
+    "pr_head": "4acdfd2cce2a9fb4248db0c568de0c9a4ec2a019",
+    "push_attempts": 1
+  },
+  "variant_11_parent_artifact_identity": [
+    {
+      "case": "immortal-45312861349",
+      "byte_identical": {
+        "actions.json": true,
+        "snapshots.json": true,
+        "plans.json": true,
+        "world-states.json": true,
+        "why.log": false
+      }
+    },
+    {
+      "case": "immortal-47651167238",
+      "byte_identical": {
+        "actions.json": true,
+        "snapshots.json": true,
+        "plans.json": true,
+        "world-states.json": true,
+        "why.log": false
+      }
+    },
+    {
+      "case": "immortal-46732028391",
+      "byte_identical": {
+        "actions.json": true,
+        "snapshots.json": true,
+        "plans.json": true,
+        "world-states.json": true,
+        "why.log": false
+      }
+    },
+    {
+      "case": "deity-49478848256",
+      "byte_identical": {
+        "actions.json": true,
+        "snapshots.json": true,
+        "plans.json": true,
+        "world-states.json": true,
+        "why.log": true
+      }
+    },
+    {
+      "case": "deity-43663176127",
+      "byte_identical": {
+        "actions.json": true,
+        "snapshots.json": true,
+        "plans.json": true,
+        "world-states.json": true,
+        "why.log": true
+      }
+    },
+    {
+      "case": "deity-49220027834",
+      "byte_identical": {
+        "actions.json": true,
+        "snapshots.json": true,
+        "plans.json": true,
+        "world-states.json": true,
+        "why.log": false
+      }
+    }
+  ],
+  "variant_11_disposition": "Reject as a null experiment: all six action/snapshot/plan/world streams match03 byte-for-byte and zero successful cash-flow claim messages appear. The helper may still have been queried. Four raw journals differ, so this is not claimed as strict journal observer A/A. All focal/verified Domination wins and foreign-original-capital boundary holdings remain zero; selected03 restored before12.",
+  "variant_12_registration": {
+    "external_relative_path": "variant-12.registration.json",
+    "sha256": "d0dd7495fbd9e295f046ccfc3569f5f04269b6f2e1c49c35a43f4fdf94d825ae",
+    "hypothesis": "A bankruptcy cleanup pass must use the canonical net per-unit maintenance quote and must not repeat a successful disband batch on the same turn's cached income across observation replans. Preserve genuinely free units and stop re-liquidating the same army before refreshed income is observed."
+  },
+  "variant_12_validation": {
+    "new_tests_authored": 9,
+    "semantic_red": {
+      "passed": 3,
+      "failed": 6,
+      "log": {
+        "external_relative_path": "cleanup-v12-red.log",
+        "sha256": "9dec7240fb8e2235bc44bc42bdaf26c01c9344a6d305a9b1b05e76171b11e086"
+      },
+      "failed_tests": [
+        "ai::advanced::conquest_campaign::tests::conquest_campaign_bankruptcy_preserves_units_with_zero_discounted_upkeep",
+        "ai::advanced::conquest_campaign::tests::conquest_campaign_bankruptcy_caps_the_whole_turn_not_each_frame",
+        "ai::advanced::conquest_campaign::tests::conquest_campaign_bankruptcy_preserves_units_with_zero_host_quoted_upkeep",
+        "ai::advanced::conquest_campaign::tests::conquest_campaign_bankruptcy_controller_clone_remembers_the_same_turn_batch",
+        "ai::advanced::conquest_campaign::tests::conquest_campaign_bankruptcy_does_not_repeat_a_sufficient_batch_this_turn",
+        "ai::advanced::conquest_campaign::tests::conquest_campaign_bankruptcy_uses_host_formation_bill_then_discount"
+      ]
+    },
+    "implementation": "The existing cleanup now uses Game's unchanged canonical per-unit net maintenance quote. A successful disband stamps the controller's turn; additional cleanup calls in that turn skip another disband batch, but a no-candidate pass does not consume it and a new turn can act again. Existing gene, drained trigger, sale logic, gold-card wait, protected garrisons/siege/air, strength/upkeep ranking and maximum-three batch remain. The quote visibility alone widens to crate scope; no engine arithmetic or host observation changes.",
+    "legacy_fixture_isolation": "Two existing tests reused a controller across independent same-turn cloned Game scenarios. The deep-deficit scenario now uses an AI clone made before the small-deficit pass; the no-siege control uses an independent cloned AI. Existing outcome/protection assertions remain intact; production behavior is not weakened to accommodate independent fixtures.",
+    "unit_fixture_qualification": "Controlled unit-test Game terrain, unit, policy and HostUnitFacts inputs only. Canonical engine maintenance is asserted before exercising cleanup. No evaluation-profile or Native observation, force, controller selection, difficulty, resource, cost, yield or verification-setting changes.",
+    "log_sha256": {
+      "cleanup-v12-green.log": "e0904062ad0e5bf1362f54bc7924dd7d59266a82e8279c313cdd675b6ca3cede",
+      "cleanup-v12-campaign.log": "6e6f6898632b4e694bd965b9089d0d88ef8a056bf6c1e58a0008efad6e95eec2",
+      "cleanup-v12-solvency.log": "66ef0d9b561e4712be017101500908d7a1a047e875c3ef628452b106e44fba4b",
+      "cleanup-v12-modernization.log": "8220fdd00814a5f299ca9aeba5672962b538c80946cee9a5ea052727f3333032",
+      "cleanup-v12-faith.log": "68b98120ecc6b5c522937452adb8e9b3014c67f3d87706706d0a084ad9d09de0",
+      "cleanup-v12-maintenance-policy.log": "9984afbddd22ab8c890f394478df414ac80f9829c22d86c8a6f05f3cb5259f2a",
+      "cleanup-v12-observation-frames.log": "870b2d74351bfdc376b711a21a8671cb56b26b2494631185f17162ec9b0cb859",
+      "cleanup-v12-check-tests.log": "2f8517706743c77867ce76eab118dd261ee8bdbdb45998097edad90c29f31030"
+    },
+    "frozen_candidate_executions": 0,
+    "fresh_executions": 0,
+    "exact_source_quality_gate": "Required after clean source commit and before freeze/push; these unit receipts alone do not claim it.",
+    "new_bankruptcy_tests_passed": 9,
+    "focused_conquest_tests_passed": 33,
+    "existing_solvency_tests_passed": 14,
+    "existing_modernization_tests_passed": 22,
+    "existing_faith_tests_passed": 18,
+    "canonical_maintenance_policy_tests_passed": 5,
+    "observation_frame_tests_passed": 10,
+    "cargo_check_tests": "pass"
+  },
+  "checkpoint_12_public_claim_metadata_guard": {
+    "external_relative_path": "checkpoint12-body-final-ci.json",
+    "sha256": "359b4e192e7e2d907ceae75bc1488455a405453dc66b7665e2c0b46fe7945429",
+    "new_metadata_runs": [
+      {
+        "conclusion": "success",
+        "databaseId": 39078917487,
+        "headSha": "4acdfd2cce2a9fb4248db0c568de0c9a4ec2a019",
+        "status": "completed",
+        "workflowName": "overwrite-guard"
+      },
+      {
+        "conclusion": "success",
+        "databaseId": 39078917501,
+        "headSha": "4acdfd2cce2a9fb4248db0c568de0c9a4ec2a019",
+        "status": "completed",
+        "workflowName": "collaboration-policy"
+      }
+    ]
+  },
+  "checkpoint_12_corrected_metadata_guard": {
+    "external_relative_path": "checkpoint12-correction-final-ci.json",
+    "sha256": "ccae81ebd4af986c25dc29033e55b4d1e60ef89f97e9cf6ab9cc3b39ffa64cc3",
+    "new_metadata_runs": [
+      {
+        "conclusion": "success",
+        "databaseId": 39079413396,
+        "headSha": "4acdfd2cce2a9fb4248db0c568de0c9a4ec2a019",
+        "status": "completed",
+        "workflowName": "overwrite-guard"
+      },
+      {
+        "conclusion": "success",
+        "databaseId": 39079413337,
+        "headSha": "4acdfd2cce2a9fb4248db0c568de0c9a4ec2a019",
+        "status": "completed",
+        "workflowName": "collaboration-policy"
+      }
+    ]
+  },
+  "checkpoint_12_metadata_recovery": {
+    "initial_attempt": {
+      "external_relative_path": "checkpoint12-metadata-initial-failed.log",
+      "sha256": "1d2064e84e2103f54d7e7d43c0f0f27d2e1d625842323452fb227e60a1cce659"
+    },
+    "qualification": "The first parser failed on GitHub's caret-encoded ANSI before creating a PR body file or calling the edit. The retained before-CI receipt was revalidated and reused; the corrected parser made one body edit. After those two new workflows finished, a separate provenance/RED-status correction made one more body edit and waited for its own two distinct workflow IDs. No source push occurred with any of those checks in flight."
+  },
+  "posthoc_disband_billing_audit": {
+    "external_relative_path": "disband-billing-03-analysis.json",
+    "sha256": "fea458553a9e69fa2932bb51594f93b596f10988543252d6a08962614fc8a716",
+    "initial_failed_read": {
+      "external_relative_path": "disband-billing-03-analysis-initial-failed.log",
+      "sha256": "8528ad74c9c143b4106fcbd9db443d4912a9694b8b44ff2c31117aafcd184ac3"
+    },
+    "qualification": "World observer records omit formation; the initial read failed before output creation. The corrected helper reads formation from the exact matching owned snapshot and asserts type/HP agreement. Policy-data model estimates are qualified, not Native quotes. No new executions or observations."
+  },
+  "variant_11_restored_policy_parent": "Selected03 production source restored byte-for-byte before12 regression development; rejected11 helper, dispatch and15 tests removed. All immutable11 inputs, binary/source hashes, complete raw artifacts and archive retained."
 }

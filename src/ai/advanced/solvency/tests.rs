@@ -150,6 +150,7 @@ fn the_drain_disbands_the_cheapest_strength_and_spares_garrisons_and_guns() {
     let mut ai = AdvancedAi::new();
     ai.enable_bankruptcy_exits_the_drain();
     ai.base.journal = crate::reasoning::Journal::recording();
+    let deep_ai = ai.clone();
     let mut small = g.clone();
     ai.exit_the_drain(&mut small, 0);
     assert!(
@@ -170,7 +171,7 @@ fn the_drain_disbands_the_cheapest_strength_and_spares_garrisons_and_guns() {
 
     let mut deep = g.clone();
     deep.players[0].gold_per_turn = -40.0;
-    ai.exit_the_drain(&mut deep, 0);
+    deep_ai.exit_the_drain(&mut deep, 0);
     assert_eq!(ours(&deep), before - 3, "three a turn at most");
     assert!(deep.units.contains_key(&units[0]), "the garrison stays");
     assert!(deep.units.contains_key(&gun), "the siege gun stays");
@@ -237,7 +238,7 @@ fn the_drain_spares_a_unit_the_siege_needs() {
     let mut ai = AdvancedAi::new();
     ai.enable_bankruptcy_exits_the_drain();
     let mut free = g.clone();
-    ai.exit_the_drain(&mut free, 0);
+    ai.clone().exit_the_drain(&mut free, 0);
     assert!(
         !free.units.contains_key(&ringed),
         "fixture: with no siege the knight is the cheapest strength to lose"
