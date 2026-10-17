@@ -43,22 +43,6 @@ impl AdvancedAi {
             if !successor.buildable || game.players[player].techs.contains(&technology) {
                 continue;
             }
-            if successor.requires_resource.is_some_and(|resource| {
-                game.resource_visible_to(player, resource.as_str())
-                    && game.strategic_stockpile(player, resource) <= 0.0
-                    && game.strategic_resource_rate(player, resource.as_str()) <= 0.0
-                    && !game.cities.values().any(|city| {
-                        city.owner == player
-                            && city.owned_tiles.iter().any(|position| {
-                                game.map
-                                    .tiles
-                                    .get(position)
-                                    .is_some_and(|tile| tile.resource == Some(resource))
-                            })
-                    })
-            }) {
-                continue;
-            }
             let gain = successor.strength.max(successor.ranged_attack_strength())
                 - held.strength.max(held.ranged_attack_strength());
             if gain > 0.0 {
@@ -80,6 +64,55 @@ impl AdvancedAi {
                     .then_with(|| right.cmp(left))
             })
             .map(|(technology, _)| technology)
+    }
+
+    pub(super) fn conquest_campaign_needs_funding(
+        &self,
+        game: &Game,
+        player: usize,
+        plan: &StrategicPlan,
+    ) -> bool {
+        self.victory_planning
+            && self.active_victory_target(game) == Some(VictoryTarget::Domination)
+            && matches!(
+                plan.strategy,
+                GrandStrategy::Conquest | GrandStrategy::Expansion
+            )
+            && self.industrial_zone_in_the_producers
+            && self.commercial_hub_in_the_strategic_queue
+            && self.base.commercial_hub_window_open(game)
+            && !game.players.iter().any(|rival| {
+                rival.id != player
+                    && rival.alive
+                    && !rival.is_minor
+                    && !rival.is_barbarian
+                    && game.is_at_war(player, rival.id)
+            })
+            && self.domination_upgrade_funding_shortfall(game, player)
+    }
+
+    pub(super) fn conquest_campaign_trade_item(
+        &mut self,
+        game: &Game,
+        player: usize,
+        city: u32,
+        plan: &StrategicPlan,
+        counts: &EmpireCounts,
+    ) -> Option<Item> {
+        let cities = game.player_city_ids(player).len();
+        if self
+            .base
+            .settler_due(game, player, city, cities, counts.settlers)
+        {
+            return None;
+        }
+        let previous = self.base.plan_threatened_city;
+        self.base.plan_threatened_city = plan.threatened_city;
+        let item = self
+            .base
+            .commercial_hub_step(game, player, city, cities, counts.traders);
+        self.base.plan_threatened_city = previous;
+        item
     }
 
     pub(super) fn conquest_campaign_objective(

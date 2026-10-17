@@ -312,103 +312,158 @@ fn standing_archers() -> (Game, AdvancedAi, u32) {
     (game, controller, nearby)
 }
 
-fn standing_resource_army() -> (Game, AdvancedAi) {
-    let (mut game, controller, _) = standing_archers();
-    game.players[0].techs.remove(&crate::name!("iron_working"));
-    for _ in 0..4 {
-        game.spawn_test_unit("warrior", 0, (30, 20));
+fn funding_campaign() -> (Game, AdvancedAi, StrategicPlan, Vec<u32>) {
+    let (mut game, ranked) =
+        crate::ai::commercial_hub::tests::emperor_empire("CAMPAIGNFUNDING", 20261017);
+    game.players[0].gold = 0.0;
+    game.players[0].gold_per_turn = 1.0;
+    for technology in [
+        "archery",
+        "iron_working",
+        "engineering",
+        "machinery",
+        "apprenticeship",
+    ] {
+        game.players[0].techs.insert(Name::new(technology));
     }
-    (game, controller)
-}
-
-#[test]
-fn conquest_campaign_modernization_avoids_a_revealed_but_inaccessible_resource() {
-    let (game, controller) = standing_resource_army();
-    assert!(game.resource_visible_to(0, "iron"));
-    assert_eq!(game.strategic_stockpile(0, crate::name!("iron")), 0.0);
-    assert_eq!(game.strategic_resource_rate(0, "iron"), 0.0);
-    assert_eq!(
-        controller.wartime_modernization_tech(&game, 0).as_deref(),
-        Some("machinery")
-    );
-}
-
-#[test]
-fn conquest_campaign_modernization_keeps_unrevealed_resource_discovery() {
-    let (mut game, controller) = standing_resource_army();
-    game.players[0]
-        .techs
-        .remove(&crate::name!("bronze_working"));
-    assert!(!game.resource_visible_to(0, "iron"));
-    assert_eq!(
-        controller.wartime_modernization_tech(&game, 0).as_deref(),
-        Some("iron_working")
-    );
-}
-
-#[test]
-fn conquest_campaign_modernization_keeps_an_imported_stockpile() {
-    let (mut game, controller) = standing_resource_army();
-    game.players[0]
-        .strategic_resources
-        .insert(crate::name!("iron"), 1.0);
-    assert_eq!(
-        controller.wartime_modernization_tech(&game, 0).as_deref(),
-        Some("iron_working")
-    );
-}
-
-#[test]
-fn conquest_campaign_modernization_keeps_observed_resource_income() {
-    let (mut game, controller) = standing_resource_army();
-    Arc::make_mut(&mut game.observed_strategic_income_adjustments)
-        .entry(0)
-        .or_default()
-        .insert(crate::name!("iron"), 2.0);
-    assert!(game.strategic_resource_rate(0, "iron") > 0.0);
-    assert_eq!(
-        controller.wartime_modernization_tech(&game, 0).as_deref(),
-        Some("iron_working")
-    );
-}
-
-#[test]
-fn conquest_campaign_modernization_keeps_an_owned_unimproved_deposit() {
-    let (mut game, controller) = standing_resource_army();
-    let city = game.player_city_ids(0)[0];
-    let position = (29, 20);
-    let owned = &mut game.cities.get_mut(&city).unwrap().owned_tiles;
-    if !owned.contains(&position) {
-        owned.push(position);
+    Arc::make_mut(&mut game.observed_trade_capacity).insert(0, 0);
+    let position = game.cities[&ranked[0]].pos;
+    for _ in 0..12 {
+        game.spawn_test_unit("warrior", 0, position);
     }
-    let tile = game.map.tiles.get_mut(&position).unwrap();
-    tile.owner_city = Some(city);
-    tile.resource = Some(crate::name!("iron"));
-    tile.improvement = None;
-    assert_eq!(game.strategic_resource_rate(0, "iron"), 0.0);
-    assert_eq!(
-        controller.wartime_modernization_tech(&game, 0).as_deref(),
-        Some("iron_working")
+    for _ in 0..3 {
+        game.spawn_test_unit("archer", 0, position);
+    }
+    let mut controller = AdvancedAi::targeting(VictoryTarget::Domination);
+    controller.base.book_pos = 4;
+    controller.base.w.city_target = 6.0;
+    controller.enable_industrial_zone_in_the_producers();
+    controller.enable_commercial_hub_in_the_strategic_queue();
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 6,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    assert!(controller.domination_upgrade_funding_shortfall(&game, 0));
+    assert!(controller
+        .base
+        .industrial_zone_producer_item(&game, 0, ranked[0], 6, None)
+        .is_some());
+    (game, controller, plan, ranked)
+}
+
+#[test]
+fn conquest_campaign_funds_its_existing_cohort_before_new_industry() {
+    let (mut game, mut controller, plan, ranked) = funding_campaign();
+    controller.advanced_production(&mut game, 0, &plan, false);
+    assert!(
+        matches!(game.cities[&ranked[0]].queue.first(), Some(Item::District { district, .. })
+            if game.district_family(*district) == "commercial_hub"),
+        "{:?}",
+        game.cities[&ranked[0]].queue
     );
 }
 
 #[test]
-fn conquest_campaign_modernization_does_not_spend_another_players_deposit() {
-    let (mut game, controller) = standing_resource_army();
-    game.map.tiles.get_mut(&(35, 20)).unwrap().resource = Some(crate::name!("iron"));
-    assert_eq!(
-        controller.wartime_modernization_tech(&game, 0).as_deref(),
-        Some("machinery")
+fn conquest_campaign_funding_keeps_an_already_funded_industrial_step() {
+    let (mut game, mut controller, plan, ranked) = funding_campaign();
+    game.players[0].gold = 10000.0;
+    assert!(!controller.domination_upgrade_funding_shortfall(&game, 0));
+    controller.advanced_production(&mut game, 0, &plan, false);
+    assert!(
+        matches!(game.cities[&ranked[0]].queue.first(), Some(Item::District { district, .. })
+            if game.district_family(*district) == "industrial_zone"),
+        "{:?}",
+        game.cities[&ranked[0]].queue
     );
 }
 
 #[test]
-fn conquest_campaign_modernization_preserves_the_existing_wartime_resource_policy() {
-    let (mut game, controller) = standing_resource_army();
-    game.at_war.insert((0, 1));
-    assert_eq!(
-        controller.wartime_modernization_tech(&game, 0).as_deref(),
-        Some("iron_working")
+fn conquest_campaign_funding_follows_the_existing_army_through_expansion() {
+    let (mut game, mut controller, mut plan, ranked) = funding_campaign();
+    plan.strategy = GrandStrategy::Expansion;
+    controller.advanced_production(&mut game, 0, &plan, false);
+    assert!(
+        matches!(game.cities[&ranked[0]].queue.first(), Some(Item::District { district, .. })
+            if game.district_family(*district) == "commercial_hub")
+    );
+}
+
+#[test]
+fn conquest_campaign_funding_preserves_other_victory_lanes_and_recovery() {
+    let (game, mut controller, mut plan, _) = funding_campaign();
+    for target in [
+        None,
+        Some(VictoryTarget::Science),
+        Some(VictoryTarget::Religion),
+    ] {
+        controller.victory_target = target;
+        assert!(!controller.conquest_campaign_needs_funding(&game, 0, &plan));
+    }
+    controller.victory_target = Some(VictoryTarget::Domination);
+    for strategy in [GrandStrategy::Science, GrandStrategy::Recovery] {
+        plan.strategy = strategy;
+        assert!(!controller.conquest_campaign_needs_funding(&game, 0, &plan));
+    }
+}
+
+#[test]
+fn conquest_campaign_funding_preserves_major_war_production() {
+    let (mut game, controller, plan, _) = funding_campaign();
+    let mut rival = game.players[0].clone();
+    let rival_id = game.players.len();
+    rival.id = rival_id;
+    rival.team = None;
+    game.players.push(rival);
+    game.at_war.insert((0, rival_id));
+    assert!(game.is_at_war(0, rival_id));
+    assert!(!controller.conquest_campaign_needs_funding(&game, 0, &plan));
+}
+
+#[test]
+fn conquest_campaign_funding_retains_already_committed_industry() {
+    let (mut game, mut controller, plan, ranked) = funding_campaign();
+    let item = controller
+        .base
+        .industrial_zone_producer_item(&game, 0, ranked[0], 6, None)
+        .unwrap();
+    game.apply(
+        0,
+        &Action::Produce {
+            city: ranked[0],
+            item: item.clone(),
+        },
+    )
+    .unwrap();
+    controller.advanced_production(&mut game, 0, &plan, false);
+    assert_eq!(game.cities[&ranked[0]].queue.first(), Some(&item));
+}
+
+#[test]
+fn conquest_campaign_funding_preserves_city_threats_and_restores_the_loan() {
+    let (game, mut controller, mut plan, ranked) = funding_campaign();
+    plan.threatened_city = Some(ranked[0]);
+    controller.base.plan_threatened_city = Some(ranked[1]);
+    let counts = controller.counts(&game, 0);
+    assert!(controller
+        .conquest_campaign_trade_item(&game, 0, ranked[0], &plan, &counts)
+        .is_none());
+    assert_eq!(controller.base.plan_threatened_city, Some(ranked[1]));
+}
+
+#[test]
+fn conquest_campaign_funding_requires_the_existing_trade_gene() {
+    let (mut game, mut controller, plan, ranked) = funding_campaign();
+    controller.disable_commercial_hub_in_the_strategic_queue();
+    assert!(!controller.conquest_campaign_needs_funding(&game, 0, &plan));
+    controller.advanced_production(&mut game, 0, &plan, false);
+    assert!(
+        matches!(game.cities[&ranked[0]].queue.first(), Some(Item::District { district, .. })
+            if game.district_family(*district) == "industrial_zone")
     );
 }
 

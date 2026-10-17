@@ -31939,6 +31939,7 @@ impl AdvancedAi {
         let science_specialized = self.phase_specialization_active(g) && science_targeted;
         let domination_research_catchup =
             !economic_recovery && self.domination_research_catchup_needed(g, pid, plan);
+        let campaign_funding_priority = self.conquest_campaign_needs_funding(g, pid, plan);
         if self.first_builder_reserve_2 && counts.builders > 0 {
             self.first_builder_reserve_2_paid = true;
         }
@@ -32549,7 +32550,13 @@ impl AdvancedAi {
             // keep their precedence; a due Settler keeps the city, and so
             // does the delegated governor's emergency (a major war with
             // fewer soldiers than cities).
+            let campaign_trade = if campaign_funding_priority && committed.is_none() {
+                self.conquest_campaign_trade_item(g, pid, cid, plan, &counts)
+            } else {
+                None
+            };
             if committed.is_none()
+                && campaign_trade.is_none()
                 && self.industrial_zone_in_the_producers
                 && !(counts.military < n_cities
                     && g.players.iter().any(|player| {
@@ -32595,7 +32602,7 @@ impl AdvancedAi {
             }
             // `commercial-hub-in-the-strategic-queue`: the Commercial Hub step
             // the delegated governor asks behind its industry steps, for this
-            // idle queue, behind the industrial-zone step. The reservations
+            // idle queue. The reservations
             // above keep their precedence; a due Settler keeps the city, and so
             // does the delegated governor's emergency (a major war with fewer
             // soldiers than cities). The plan's threatened city is lent for
@@ -32618,9 +32625,11 @@ impl AdvancedAi {
             {
                 let restore_threatened = self.base.plan_threatened_city;
                 self.base.plan_threatened_city = plan.threatened_city;
-                let step = self
-                    .base
-                    .commercial_hub_step(g, pid, cid, n_cities, counts.traders)
+                let step = campaign_trade
+                    .or_else(|| {
+                        self.base
+                            .commercial_hub_step(g, pid, cid, n_cities, counts.traders)
+                    })
                     .map(|item| {
                         self.base
                             .campus_building_takes_the_hub_slot(g, pid, cid, item)
