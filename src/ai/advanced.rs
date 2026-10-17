@@ -9330,6 +9330,7 @@ mod holdout_faith_war;
 mod launched_racer;
 
 mod city_memory;
+mod conquest_campaign;
 /// `faith-war-before-the-flip`: see `advanced/faith_war_before_the_flip.rs`.
 mod faith_war_before_the_flip;
 
@@ -15949,6 +15950,8 @@ impl AdvancedAi {
                    city.pos);
         }
 
+        let (target_player, target_city) =
+            self.conquest_campaign_objective(g, pid, strategy, target_player, target_city);
         if self.journal().wants(crate::reasoning::Level::Strategy) {
             match target_player.and_then(|id| g.players.get(id)) {
                 Some(rival) => {
