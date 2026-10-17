@@ -76,7 +76,8 @@ a changed strategy, or evidence of a win-rate or whole-game speed improvement.
 | --- | --- |
 | Unchanged-production focused controls | 4 passed |
 | Candidate focused controls | 6 passed; benchmark separately invoked |
-| Full locked, serial CI-profile suite | 6,149 passed, 0 failed, 56 ignored including doctests |
+| Final locked, serial CI-profile suite | 6,149 passed, 0 failed, 55 ignored including doctests |
+| Census reporter regression suite | 29 passed |
 | Changed-Rust format and all-feature clippy gate | Passed, changed lines warning-free |
 | Simulator compatibility | All six arms match after removing only the timing line; games finish at turns 86, 151 and 73 |
 | Native compatibility | All 576 complete parsed replies and all 24 journals match exactly |
@@ -99,8 +100,8 @@ both interquartile ranges. Other fleet compilation was observed in all 24
 ambient samples. No pair was filtered, replaced or extended, and no fresh
 game was scored as strength evidence for this change.
 
-The measured candidate is `e9b6246a9cc7749b908c46de36749cc74c450646`; subsequent
-evidence-only integration retains its production inputs byte for byte. Its
+The measured candidate is `e9b6246a9cc7749b908c46de36749cc74c450646`; integration
+retains its runtime implementation byte for byte. Its
 Native executable SHA-256 is
 `6250ffd6e277ce481c75268c1f305082582c7ae6c3da5c5b9c42673c5b2bf5a0`.
 The frozen 282-tag force list has SHA-256
@@ -117,10 +118,24 @@ Rebuilding the two recorded source revisions with the registered Native fast
 profile and running the archived harness on that prefix reproduces the same
 24-request workload and fixed A/A–A/B schedule.
 
+The one-off timing test is preserved in the provenance archive and measured
+candidate revision, not in the final test inventory. CI correctly rejected its
+addition to the repository's automatically discovered nightly census set. The
+integration fix removes only that timing test, retains both deterministic
+regressions, and leaves the census guard and production implementation unchanged.
+The final Rust suite and all 29 census-tool tests pass after that removal.
+
 ```sh
 cargo test --profile ci --locked -- --test-threads=1
-cargo test --profile ci --locked --lib overlapping_threat_query_cost -- --ignored --nocapture --test-threads=1
+python3 -m unittest discover -s tools -p test_census_report.py
 python3 tools/rust_quality.py --base 44629581fd661fdf03f94a3801689f615c09e40b --head e9b6246a9cc7749b908c46de36749cc74c450646
+```
+
+For the separately invoked timing experiment, use the measured candidate
+revision `e9b6246a9cc7749b908c46de36749cc74c450646` and run:
+
+```sh
+cargo test --profile ci --locked --lib overlapping_threat_query_cost -- --ignored --nocapture --test-threads=1
 ```
 
 - [Summary and independent audit](../performance/2026-10-16-religious-safety.json)

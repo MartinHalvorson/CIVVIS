@@ -682,5 +682,14 @@
     },
     "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)"
   },
-  "native_arm64_headers_verified": true
+  "native_arm64_headers_verified": true,
+  "integration_validation": {
+    "rust_passed": 6149,
+    "rust_failed": 0,
+    "rust_ignored_including_doctests": 55,
+    "census_tool_tests_passed": 29,
+    "runtime_implementation_unchanged_from_measured_candidate": true,
+    "one_off_microbenchmark_source_archived": true,
+    "nightly_census_guard_unchanged": true
+  }
 }
