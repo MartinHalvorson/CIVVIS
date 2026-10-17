@@ -1,0 +1,165 @@
+{
+  "kind": "civvis-builder-job-progress-registration-collection",
+  "assembled_utc": "2026-10-17T12:49:09.474212+00:00",
+  "assembly_is_not_preregistration": "Post-game evidence collection, not itself a preregistration. Original timestamped registrations and amendments are retained verbatim; no original seed, parameter or timestamp is rewritten.",
+  "reference_source": "262d7e37dfcc3cb6c1d78dbafc9ac7519b2e1bd7",
+  "diagnosis_registration": {
+    "registered_utc": "2026-10-17T10:44:45.043845+00:00",
+    "source": "262d7e37dfcc3cb6c1d78dbafc9ac7519b2e1bd7",
+    "purpose": "Current-source exploratory diagnosis of build/research/objective timing; no policy intervention yet. Previously observed map outcomes are known; no claim of an unbiased promotion cohort.",
+    "seeds": {
+      "immortal": [
+        43250000,
+        43250001
+      ],
+      "deity": [
+        43250100,
+        43250101
+      ]
+    },
+    "profile": "Current public compiled focal bundle, Gran Colombia Domination, handicap exempt; adaptive CIVVIS rivals, 4p Tiny 60x38 Pangaea Online 6 city-states barbarians all victories natural 250-turn clock.",
+    "control": "Unwrapped/no-journal baseline versus same controller with read-only focal plan/journal trace. Require exact full applied-action and per-turn snapshot identity for every map before interpreting trace. All eight games retained.",
+    "primary_goal": "Completed highest-difficulty Domination wins remain unproved. Diagnostics are not wins.",
+    "next": "Identify an actual erroneous production/research/movement decision before changing AI; never waive declaration, economy or verification safety.",
+    "files": {
+      "probe/Cargo.toml": "e8b74ebb3b7bb25e79924883e1901c2061d1a34655e88505a97415783f2be58b",
+      "probe/src/main.rs": "26da2ff95648542c2033b94c8c4d4ed9afa048762f2f2dda0b0c141b4af3f374",
+      "probe/Cargo.lock": "84822826481ec0ff94419ee7be43e640f0692dd734b397ebcfe672d6e7616018",
+      "run_controls.py": "85a018f4ac38d8d7af74db438b07dbff7c0f0f194c1fc902134adb97e273fc65",
+      "source-tree.txt": "e82f5a3ddfc8e9be2cdba4a23645e3caa18464f80a7fb01432885ee1c1c1ad2a"
+    },
+    "pre_launch_amendments": [
+      {
+        "utc": "2026-10-17T10:45:52.929273+00:00",
+        "reason": "Before first launch, include worked-tile choices and applied-action offsets per snapshot, final focal city/unit state and the final undrained journal suffix. No game decisions change. Original runner/registration retained.",
+        "outcomes_inspected": false
+      },
+      {
+        "utc": "2026-10-17T10:46:50.745007+00:00",
+        "reason": "Freeze two-worker eight-game command launcher and complete source-tree listing before first launch. No cohort or game-profile change.",
+        "outcomes_inspected": false
+      }
+    ]
+  },
+  "first_unexposed_cohort": {
+    "registered_utc": "2026-10-17T11:23:13.406605+00:00",
+    "reference_source": "262d7e37dfcc3cb6c1d78dbafc9ac7519b2e1bd7",
+    "seeds": {
+      "immortal": [
+        10517214999,
+        10850141024,
+        10088186705,
+        10250021098
+      ],
+      "deity": [
+        10368823545,
+        10372621442,
+        10207187195,
+        10757163679
+      ]
+    },
+    "profile": "Same frozen current public force bundle and natural 250-turn 4p 60x38 Pangaea Online six-city-state setup as registration.json. Gran Colombia Domination focal seat 0 remains handicap-exempt; all adaptive CIVVIS rivals receive the chosen Immortal/Deity handicap. All six victories remain enabled.",
+    "intervention_locked_before_reference_launch": "Keep every actual safe movement decision. With builder-tries-the-next-tile enabled, after a successful adjacent step that neither follows the pre-step A* first tile nor reduces hex distance to the improvement job, clear the job pin and temporarily park it for the existing scaled six-standard-turn Builder avoidance window. Apply the same recording rule to pinned, freshly-ranked, and marginal-usefulness assignments. A routed terrain detour stays assigned. No capture thresholds, global movement scores, difficulty, genome, force bundle, or game clocks change.",
+    "comparison_scope": "Matched whole-build regression, not focal-only treatment isolation: this bug fix affects every AdvancedAi controller in the candidate, including rivals. No Firaxis/Native or promotion inference from these games.",
+    "primary": "All terminal focal wins/losses and actual victory type, every seed retained.",
+    "secondary": [
+      "Full focal applied-action contrast and first differing action",
+      "Focal Improve actions through turn 60 and total; include chops/removals encoded as Improve instead of counting only final farms/mines",
+      "Focal total city production, city count and military power at fixed pre-turn snapshots 40,60,100 when observed; missing due to earlier natural terminal remains missing",
+      "Observed snapshot foreign-origin focal city holds, explicitly not every capture between snapshots",
+      "Descriptive job-parking journal events in candidate, not wins"
+    ],
+    "controls": "Prior four known-seed exact wrapper controls and two logging-only exact controls; current-source four known maps are root-cause replays, not fresh strength sample. Fresh references stay outcome-blinded until all candidate runs finish.",
+    "runner_sha256": "d09dea2f6e49dc97265c0f27d4be8e9e7b08684282172ae884e79845d32fc3b9",
+    "reference_binary_sha256": "30197a4955c37b2e0fb137a383dca129ad5367f67ce7541d9401d7d12a77c412",
+    "no_selection": "Eight fresh random seeds chosen once before launch; no dropped losses, replaced seeds, shortened games, or victory gating. Implementation changes in response to these outcomes require a new explicitly exploratory cohort, not reusing this registration."
+  },
+  "normal_sweep_cohort": {
+    "registered_utc": "2026-10-17T12:25:13.993992+00:00",
+    "reference_source": "262d7e37dfcc3cb6c1d78dbafc9ac7519b2e1bd7",
+    "seeds": {
+      "immortal": [
+        20603809636,
+        20153601825,
+        20233954517,
+        20987614614
+      ],
+      "deity": [
+        20196447569,
+        20757887598,
+        20340810738,
+        20562812303
+      ]
+    },
+    "profile": "Same frozen current public force bundle and natural 250-turn 4p 60x38 Pangaea Online six-city-state setup as registration.json. Gran Colombia Domination focal seat 0 remains handicap-exempt; all adaptive CIVVIS rivals receive the chosen Immortal/Deity handicap. All six victories remain enabled.",
+    "intervention_locked_before_reference_launch": "Keep safe movement unchanged. Apply the job-progress helper to both normal and next-job sweeps and marginal-usefulness jobs. Track progress for risk-aware movement, not the unrelated builder-tries-the-next-tile opt-in. After a successful adjacent step not equal to the pre-step A* first tile and not closer to the job, clear its pin and park it for the existing six-standard-turn scaled avoidance. Preserve legacy movement, routed terrain detours, capture thresholds, genome, force bundle, clocks and all victories.",
+    "prior_knowledge": "The first eight fresh pairs and four known-map replays were action-identical and had no postponements. Static source inspection finds next-job mode absent from DEPLOYMENT_GENOME; the earlier helper was gated on that mode and the normal sweep bypassed it. Those results are retained as a separate unexposed negative cohort. No strength success has been observed.",
+    "outcome_blinding": "Do not inspect the new reference outcomes until all eight corrected-candidate fresh games and all eight candidate wrapper controls finish.",
+    "runner_sha256": "d09dea2f6e49dc97265c0f27d4be8e9e7b08684282172ae884e79845d32fc3b9",
+    "reference_binary_sha256": "30197a4955c37b2e0fb137a383dca129ad5367f67ce7541d9401d7d12a77c412",
+    "no_selection": "New seeds chosen once before launch following the first unexposed cohort. Retain all seeds, losses, action-identical pairs and natural terminals. Changes after these outcomes require another registration; this is whole-build regression, not isolated focal strength or Native verification."
+  },
+  "candidate_sources": {
+    "first": {
+      "recorded_utc": "2026-10-17T11:47:49.893355+00:00",
+      "base_commit": "262d7e37dfcc3cb6c1d78dbafc9ac7519b2e1bd7",
+      "source_identity": "git-tree:c9c1407bbd838f3f8cf5b69fecf2e1ad8e25ab0b",
+      "source_kind": "Prospective Git tree from a temporary index; not a commit or baseline-main revision. Exact three-file changes on the frozen base.",
+      "tracked_blobs_checked": 2757,
+      "changed_source_sha256": {
+        "src/ai/advanced.rs": "9a4b7f1a527a3c65e9ac7eb89caba8211ca230e725902c990e64e2e57bcfcbff",
+        "src/ai/advanced/marginal_usefulness.rs": "a77e9f13e9808ca51c9e6d72903de678e36ae7fc125ba76af29f4ab8fad49e1d",
+        "src/ai/advanced/builder_job_safety_tests.rs": "31f808c0ce0a96c1c015243a0768dcd86c7c65b4c9c8039c8da5309e84ba272d"
+      },
+      "runner_sha256": "8b535265fedc5d082ceba3e5dc4031257b13e9e0581b5423059b788bb9a9c64e",
+      "manifest_sha256": "609f0523951e555c390aae9504a2a66dc5560e6ef409e34a00804be7dbcd2858",
+      "force_bundle_sha256": "d7ac5367dda9dc54093ebc55f59d3630c908c577fe84309bbe5378cecec3de55",
+      "test_history": "Initial unchanged-runtime RED: expected pin assertions fail in 2/4 tests. First implementation: parking assertions pass, but an alternate-mine fixture incorrectly assumed the safe endpoint was (4,5); actual unchanged safe endpoint is (5,6). Corrected that fixture coordinate; no movement or safety policy change in response. Original failed logs retained. Final focused run pending. Final focused run passed 6/6 before this parameter-only cleanup; 98 builder tests and 9 marginal-usefulness tests passed. Full final-source validation is rerun rather than relying on interrupted builds.",
+      "pre_launch_source_cleanup": "Renamed the newly introduced helper parameter g to game to follow coding instructions. No logic change. Stopped only our two exact cargo processes after verifying both working directories, retained interrupted logs and initial source receipt, then rebuilt the final frozen tree before any candidate game.",
+      "pre_launch_formatting_cleanup": "Restored three unrelated whole-file rustfmt hunks (two module declaration reorderings and one indentation-only hunk). Stopped only our exact two cargo processes after confirming their work directories, before any candidate game. Retained all interrupted logs and prior source receipts. Final source has only job-progress production changes plus the test module. No cohort outcome was inspected or discarded."
+    },
+    "normal_sweep": {
+      "recorded_utc": "2026-10-17T12:31:07.747836+00:00",
+      "source_commit": "e2fbee4dfa6e7c659cd44cf089ed9219fd4c5d07",
+      "base_commit": "262d7e37dfcc3cb6c1d78dbafc9ac7519b2e1bd7",
+      "source_identity": "git-tree:cb721b4ed4aeae53d8d4dd22d09abcb16b860ec0",
+      "source_kind": "Exact checkpoint tree on the frozen base; only three source files differ. The untracked evaluation report is not part of the compiled source.",
+      "tracked_blobs_checked": 2757,
+      "changed_source_sha256": {
+        "src/ai/advanced.rs": "30638c574f31e1f03c2b54b57baf99980467798199078c180c6dc2472f912617",
+        "src/ai/advanced/builder_job_safety_tests.rs": "a489eaf8551655ba14892f448034c6eda6af02159e60be9f9de4270565b0d8a0",
+        "src/ai/advanced/marginal_usefulness.rs": "a77e9f13e9808ca51c9e6d72903de678e36ae7fc125ba76af29f4ab8fad49e1d"
+      },
+      "runner_sha256": "8b535265fedc5d082ceba3e5dc4031257b13e9e0581b5423059b788bb9a9c64e",
+      "force_bundle_sha256": "d7ac5367dda9dc54093ebc55f59d3630c908c577fe84309bbe5378cecec3de55",
+      "normal_sweep_red_exit": 101,
+      "normal_sweep_red_failures": 2
+    }
+  },
+  "limits": [
+    "Matched whole-build regression; every AdvancedAi controller receives the source change, including rivals.",
+    "Focal seat 0 is handicap-exempt; Immortal/Deity applies to adaptive CIVVIS opponents.",
+    "All six victories and natural game clock retained. No Native/Firaxis hardest-difficulty victory is established.",
+    "No discarded losses, seeds, or action-identical pairs.",
+    "Current-source diagnosis maps are known exploratory cases, not fresh promotion evidence."
+  ],
+  "test_only_validated_source": {
+    "recorded_utc": "2026-10-17T12:46:51.270339+00:00",
+    "validated_source_commit": "a6550cb6435b3c431e96fb8b6b280950f59fe6cd",
+    "validated_source_identity": "git-tree:3e32b26ed425b48e6999320a55c5b31ecfc1473d",
+    "evaluated_source_identity": "git-tree:cb721b4ed4aeae53d8d4dd22d09abcb16b860ec0",
+    "evaluated_source_commit": "e2fbee4dfa6e7c659cd44cf089ed9219fd4c5d07",
+    "all_tree_differences": [
+      "src/ai/advanced/tests.rs"
+    ],
+    "difference_is_cfg_test_only": true,
+    "all_production_source_blobs_identical": true,
+    "unchanged_evaluated_changed_source_sha256": {
+      "src/ai/advanced.rs": "30638c574f31e1f03c2b54b57baf99980467798199078c180c6dc2472f912617",
+      "src/ai/advanced/builder_job_safety_tests.rs": "a489eaf8551655ba14892f448034c6eda6af02159e60be9f9de4270565b0d8a0",
+      "src/ai/advanced/marginal_usefulness.rs": "a77e9f13e9808ca51c9e6d72903de678e36ae7fc125ba76af29f4ab8fad49e1d"
+    },
+    "updated_test_sha256": "e5a9312b82b2b84562ee63ba4f1575245014074d223bd31272bf5c7b52f4610a",
+    "reason": "Existing Barbarian-only safety negative control asserted a retained pin, intentionally invalidated by safe-retreat bookkeeping. It now compares physical movement, moves remaining, assignment and avoidance against an otherwise identical untreated major-war controller. Direct capture/hold assertions are untouched. Both local and hosted failures are preserved."
+  }
+}
