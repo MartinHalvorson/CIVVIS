@@ -4,7 +4,7 @@ use serde_json::json;
 fn configured_agent(summary: &serde_json::Value) -> AdvancedAi {
     let mut agent = AdvancedAi::new();
     agent.enable_live_bridge_universe();
-    let forced: Vec<&str> = summary["forced"]
+    let forced: Vec<&str> = summary["genome_treatments"]["forced"]
         .as_array()
         .unwrap()
         .iter()
@@ -16,6 +16,17 @@ fn configured_agent(summary: &serde_json::Value) -> AdvancedAi {
                 .tag
         })
         .collect();
+    let reconstructed: BTreeSet<_> =
+        crate::ai::gene_ledger::deployment_treatments_with_forced_live(&forced)
+            .into_iter()
+            .collect();
+    let original: BTreeSet<_> = summary["genome_treatments"]["treatments"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|tag| tag.as_str().unwrap())
+        .collect();
+    assert_eq!(reconstructed, original);
     agent.apply_gene_ledger_with_forced_live(&forced);
     assert!(summary["withheld"].as_array().unwrap().is_empty());
     agent
@@ -121,7 +132,13 @@ fn diagnose_original_native_opening_prefixes_without_host_actions() {
             });
             let mut probe = game.speculative_clone();
             let mut agent = configured_agent(&summary);
-            let acted = agent.muster_step(&mut probe, 0, *uid, &view);
+            let march = stage_march(game, *uid, city.pos, STAGING_FAR);
+            let march = agent.long_road_holds(game, *uid, city.pos, march);
+            let blocker = agent.note_stage_march(game, *uid, city.id, &march);
+            let muster_dispatch_eligible = arm_of(game, *uid) != Arm::Siege;
+            let acted = muster_dispatch_eligible
+                .then(|| agent.muster_step(&mut probe, 0, *uid, &view))
+                .flatten();
             members.push(json!({
                 "host_uid": host_uid,
                 "uid": uid,
@@ -141,6 +158,9 @@ fn diagnose_original_native_opening_prefixes_without_host_actions() {
                 "eligible_endpoints": eligible,
                 "reachable": candidates,
                 "muster_result": acted,
+                "muster_dispatch_eligible": muster_dispatch_eligible,
+                "stage_march": format!("{march:?}"),
+                "closed_border_blocker": blocker,
                 "pos_after": probe.units[uid].pos,
                 "moves_after": probe.units[uid].moves_left,
             }));
@@ -151,6 +171,7 @@ fn diagnose_original_native_opening_prefixes_without_host_actions() {
             "city": {"id": city.id, "pos": city.pos, "owner": city.owner, "name": city.name},
             "shared_danger": configured.shared_danger,
             "muster_walks_the_road": configured.muster_walks_the_road,
+            "envoys_open_the_siege_road": configured.envoys_open_the_siege_road,
             "members": members,
         }));
     }

@@ -2050,6 +2050,7 @@ impl AdvancedAi {
             .values()
             .filter_map(|siege| siege.taker)
             .collect();
+        self.remap_siege_road_cities(previous, next);
         // `amphibious-siege-train`: the crossing in hand follows its target,
         // port and members the same way.
         self.remap_amphibious_train(previous, next, units);
