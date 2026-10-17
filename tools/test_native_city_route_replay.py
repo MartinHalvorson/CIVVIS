@@ -9,6 +9,7 @@ so the output files and exit status are checked without a game installation.
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 from pathlib import Path
 import subprocess
@@ -254,28 +255,39 @@ class ReplayCliTests(unittest.TestCase):
         self.force.write_text("anvil\n")
         self.out = self.root / "out"
 
-    def binary(self, name, replies, mutate=None):
+    def binary(self, name, replies, mutate=None, expected_prefixes=None):
         path = self.root / name
         path.write_text(
             f"#!{sys.executable}\n"
             "import json, pathlib, sys\n"
             f"replies = {replies!r}\n"
             f"mutate = {str(mutate) if mutate else None!r}\n"
+            f"expected_prefixes = {expected_prefixes!r}\n"
+            "events = pathlib.Path(sys.argv[sys.argv.index('--mirror') + 1]) / 'events.jsonl'\n"
             "if mutate:\n"
             "    pathlib.Path(mutate).write_text('changed input\\n')\n"
             "for index, line in enumerate(sys.stdin):\n"
+            "    if expected_prefixes is not None:\n"
+            "        observed = [json.loads(raw) for raw in events.read_text().splitlines()]\n"
+            "        if observed != expected_prefixes[index]:\n"
+            "            print('unexpected event prefix', file=sys.stderr, flush=True)\n"
+            "            sys.exit(7)\n"
             "    print(json.dumps(replies[index]), flush=True)\n")
         path.chmod(0o755)
         return path
 
-    def execute(self, original, candidate, recorded, mutate=None, extra=()):
-        self.source.write_text("".join(json.dumps({"kind": "state", "turn": i + 1, "frame": 0})
-                                      + "\n" for i in range(len(original))))
+    def execute(self, original, candidate, recorded, mutate=None, extra=(),
+                events=None, expected_prefixes=None):
+        if events is None:
+            events = [event for index in range(len(original)) for event in (
+                {"kind": "state", "turn": index + 1, "frame": 0},
+                {"kind": "await", "turn": index + 1, "polls": 0})]
+        self.source.write_text("".join(json.dumps(event) + "\n" for event in events))
         self.native.write_text("".join(json.dumps({"binary": "native", **r}) + "\n"
                                       for r in recorded))
         before = {p: p.read_bytes() for p in (self.source, self.native, self.force)}
-        baseline = self.binary("baseline", original)
-        candidate_bin = self.binary("candidate", candidate, mutate)
+        baseline = self.binary("baseline", original, expected_prefixes=expected_prefixes)
+        candidate_bin = self.binary("candidate", candidate, mutate, expected_prefixes)
         result = subprocess.run(
             [sys.executable, str(Path(replay.__file__)), "--run", str(self.run),
              "--baseline", str(baseline), "--candidate", str(candidate_bin),
@@ -371,6 +383,117 @@ class ReplayCliTests(unittest.TestCase):
         self.assertTrue(control["native_history_gate_passed"])
         self.assertFalse(metadata["validation_passed"])
         self.assertEqual(control["request_identity_errors"][0]["arm"], "candidate")
+
+    def test_first_request_includes_terrain_but_not_current_orders(self):
+        first = reply()
+        events = [
+            {"kind": "state", "turn": 1, "frame": 0},
+            {"kind": "export_timing", "turn": 1},
+            {"kind": "tiles", "turn": 1, "plots": [{"x": 3, "y": 4}]},
+            {"kind": "tiles_done", "turn": 1},
+            {"kind": "await", "turn": 1, "polls": 0},
+            {"kind": "orders", "turn": 1, "frame": 0},
+        ]
+        result, control, metadata = self.execute(
+            [first], [first], [first], events=events, expected_prefixes=[events[:5]])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertTrue(control["gate_passed"])
+        self.assertEqual(metadata["request_boundary"], "first-matching-controller-poll")
+        prefixes = [json.loads(raw) for raw in (self.out / "frame-prefixes.jsonl").read_text().splitlines()]
+        prefix = "".join(json.dumps(event) + "\n" for event in events[:5]).encode()
+        self.assertEqual(prefixes, [{"turn": 1, "frame": 0, "boundary_kind": "await",
+                                     "source_line": 5, "prefix_bytes": len(prefix),
+                                     "prefix_sha256": hashlib.sha256(prefix).hexdigest()}])
+
+    def test_same_turn_replan_uses_its_own_poll_and_prior_history(self):
+        first, replan = reply(), reply(frame=1)
+        events = [
+            {"kind": "state", "turn": 1, "frame": 0},
+            {"kind": "tiles", "turn": 1},
+            {"kind": "tiles_done", "turn": 1},
+            {"kind": "await", "turn": 1, "polls": 0},
+            {"kind": "combat_policy_applied", "turn": 1, "frame": 0},
+            {"kind": "orders", "turn": 1, "frame": 0},
+            {"kind": "host_move", "turn": 1},
+            {"kind": "tiles", "turn": 1, "frame": 1},
+            {"kind": "tiles_delta", "turn": 1, "frame": 1},
+            {"kind": "state", "turn": 1, "frame": 1},
+            {"kind": "export_timing", "turn": 1, "frame": 1},
+            {"kind": "orders_peek_wake", "turn": 1, "frame": 1},
+            {"kind": "await", "turn": 1, "polls": 1},
+            {"kind": "orders", "turn": 1, "frame": 1},
+        ]
+        result, control, metadata = self.execute(
+            [first, replan], [first, replan], [first, replan], events=events,
+            expected_prefixes=[events[:4], events[:12]])
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(control["matched_frames"], 2)
+        self.assertEqual(metadata["frames"], 2)
+
+    def test_eof_cannot_release_an_unfinished_frame(self):
+        first = reply()
+        events = [{"kind": "state", "turn": 1, "frame": 0},
+                  {"kind": "tiles", "turn": 1}]
+        result, control, metadata = self.execute([first], [first], [first], events=events)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(control["frames"], 0)
+        self.assertIn("incomplete state frame", metadata["error"])
+        self.assertFalse(metadata["validation_passed"])
+
+    def test_cutoff_cannot_release_an_unfinished_frame(self):
+        first = reply()
+        events = [{"kind": "state", "turn": 1, "frame": 0},
+                  {"kind": "tiles", "turn": 2}]
+        result, control, metadata = self.execute(
+            [first], [first], [first], events=events, extra=("--through-turn", "1"))
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(control["frames"], 0)
+        self.assertIn("incomplete state frame", metadata["error"])
+
+    def test_new_state_cannot_release_an_earlier_unfinished_frame(self):
+        first, later = reply(), reply(2)
+        events = [{"kind": "state", "turn": 1, "frame": 0},
+                  {"kind": "state", "turn": 2, "frame": 0},
+                  {"kind": "await", "turn": 2}]
+        result, control, metadata = self.execute(
+            [first, later], [first, later], [first, later], events=events)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(control["frames"], 0)
+        self.assertIn("incomplete state frame", metadata["error"])
+
+    def test_another_turns_poll_cannot_release_the_frame(self):
+        first = reply()
+        events = [{"kind": "state", "turn": 1, "frame": 0},
+                  {"kind": "await", "turn": 2}]
+        result, control, metadata = self.execute([first], [first], [first], events=events)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(control["frames"], 0)
+        self.assertIn("poll does not match state frame", metadata["error"])
+
+    def test_another_frames_wake_cannot_release_the_frame(self):
+        first = reply()
+        events = [{"kind": "state", "turn": 1, "frame": 0},
+                  {"kind": "orders_peek_wake", "turn": 1, "frame": 1}]
+        result, control, metadata = self.execute([first], [first], [first], events=events)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertEqual(control["frames"], 0)
+        self.assertIn("poll does not match state frame", metadata["error"])
+
+    def test_current_order_receipts_cannot_become_decision_inputs(self):
+        first = reply()
+        for kind in ("combat_policy_applied", "orders"):
+            with self.subTest(kind=kind):
+                self.out = self.root / kind
+                events = [{"kind": "state", "turn": 1, "frame": 0},
+                          {"kind": kind, "turn": 1, "frame": 0},
+                          {"kind": "await", "turn": 1}]
+                result, control, metadata = self.execute([first], [first], [first], events=events)
+                self.assertNotEqual(result.returncode, 0)
+                self.assertEqual(control["frames"], 0)
+                self.assertIn("order execution before replay boundary", metadata["error"])
+                for arm in ("baseline", "candidate"):
+                    observed = (self.out / arm / "events.jsonl").read_text().splitlines()
+                    self.assertEqual([json.loads(raw) for raw in observed], events[:1])
 
 
 if __name__ == "__main__":

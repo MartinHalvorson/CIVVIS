@@ -13,6 +13,12 @@ With identical arms, every original frame must match. Failed controls exit 2
 after preserving the diagnostics. This gate does not estimate native wins.
 Both arms must also identify the requested integer turn and decision frame;
 matching native planning fields cannot license a reply to another request.
+
+A state may precede its terrain export. Request at the first matching controller
+poll (await or orders_peek_wake), never at the state line or after order execution.
+Incomplete frames fail closed. Each request records its mirrored prefix digest.
+This export boundary is not a capture of the live brain's precise read timing;
+the recorded-history control must still pass before interpreting an arm change.
 """
 
 from __future__ import annotations
@@ -41,6 +47,37 @@ def actionable_orders(reply: dict) -> list[dict]:
     # CivvisVerify.isVerdict routes all three as telemetry, not game actions.
     return [order for order in reply["orders"]
             if order["kind"] not in ("order_verified", "order_failed", "turn_verified")]
+
+
+class FrameBoundary:
+    def __init__(self) -> None:
+        self.pending: tuple[int, int] | None = None
+
+    def observe(self, event: dict) -> tuple[int, int] | None:
+        kind = event.get("kind")
+        if kind == "state":
+            if self.pending is not None:
+                raise ValueError(f"incomplete state frame {self.pending} before next state")
+            turn, frame = event.get("turn"), event.get("frame")
+            if type(turn) is not int or type(frame) is not int:
+                raise ValueError("state frame needs explicit integer turn and frame")
+            self.pending = turn, frame
+        elif self.pending is not None:
+            if kind in ("combat_policy_applied", "orders"):
+                raise ValueError(f"order execution before replay boundary for {self.pending}")
+            if kind in ("await", "orders_peek_wake"):
+                turn = event.get("turn")
+                frame = event.get("frame", self.pending[1] if kind == "await" else None)
+                if (type(turn) is not int or type(frame) is not int
+                        or (turn, frame) != self.pending):
+                    raise ValueError(f"poll does not match state frame {self.pending}")
+                request, self.pending = self.pending, None
+                return request
+        return None
+
+    def finish(self) -> None:
+        if self.pending is not None:
+            raise ValueError(f"incomplete state frame {self.pending} at end of replay prefix")
 
 
 def frame_key(record: dict) -> tuple[int, int] | None:
@@ -194,6 +231,7 @@ def main() -> int:
         "through_turn": args.through_turn,
         "recorded_decisions": str(recorded),
         "recorded_decisions_sha256": digest(recorded),
+        "request_boundary": "first-matching-controller-poll",
     }
     inputs = {"events": source, "recorded_decisions": recorded,
               "force_file": args.force_file.resolve(), **binaries}
@@ -204,8 +242,11 @@ def main() -> int:
     frames = changed_orders = changed_actions = no_board_frames = 0
     changed_routes = []
     prefix_sha = hashlib.sha256()
+    prefix_bytes = 0
+    boundary = FrameBoundary()
     try:
         with ExitStack() as stack:
+            prefixes = stack.enter_context((args.out / "frame-prefixes.jsonl").open("w"))
             arms = {}
             for name, binary in binaries.items():
                 directory = args.out / name
@@ -227,7 +268,7 @@ def main() -> int:
                 arms[name] = events, replies
                 metadata.setdefault("commands", {})[name] = command
             with source.open("rb") as history:
-                for line in history:
+                for source_line, line in enumerate(history, 1):
                     try:
                         event = json.loads(line)
                     except json.JSONDecodeError:
@@ -236,14 +277,20 @@ def main() -> int:
                     if (args.through_turn is not None and isinstance(turn, int)
                             and turn > args.through_turn):
                         break
+                    request = boundary.observe(event)
                     prefix_sha.update(line)
+                    prefix_bytes += len(line)
                     for events, _ in arms.values():
                         events.write(line)
-                    if event.get("kind") != "state":
+                    if request is None:
                         continue
-                    frame = event.get("frame")
-                    if type(turn) is not int or type(frame) is not int:
-                        raise ValueError("state frame needs explicit integer turn and frame")
+                    turn, frame = request
+                    prefixes.write(json.dumps({
+                        "turn": turn, "frame": frame, "boundary_kind": event["kind"],
+                        "source_line": source_line, "prefix_bytes": prefix_bytes,
+                        "prefix_sha256": prefix_sha.hexdigest(),
+                    }) + "\n")
+                    prefixes.flush()
                     answers = {}
                     for name, (events, replies) in arms.items():
                         events.flush()
@@ -261,14 +308,12 @@ def main() -> int:
                     if actionable_orders(before) != actionable_orders(after):
                         changed_orders += 1
                         changed_routes.append({
-                            "turn": turn, "frame": event.get("frame", 0),
+                            "turn": turn, "frame": frame,
                             "baseline": actionable_orders(before),
                             "candidate": actionable_orders(after),
                         })
                     before_decision, after_decision = before.get("decision"), after.get("decision")
                     if before_decision is None and after_decision is None:
-                        # The initial state can precede the first terrain export.
-                        # Keep both protocol replies, including their empty orders.
                         no_board_frames += 1
                     elif (before_decision is None or after_decision is None or
                           before_decision["native_actions"] != after_decision["native_actions"]):
@@ -279,6 +324,7 @@ def main() -> int:
                                           "changed_order_frames": changed_orders,
                                           "elapsed": round(time.monotonic() - started, 1)}),
                               flush=True)
+            boundary.finish()
             for name, process in processes.items():
                 process.stdin.close()
                 code = process.wait(timeout=30)
