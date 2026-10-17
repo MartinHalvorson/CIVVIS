@@ -1760,6 +1760,22 @@ fn siege_posts(
     siege_posts_keeping(g, pid, city, force, taker, &BTreeMap::new())
 }
 
+fn firing_post_reachable(
+    game: &Game,
+    player_id: usize,
+    unit_id: u32,
+    post: Pos,
+    city: Pos,
+) -> bool {
+    siege_route_step(game, player_id, unit_id, post, city).is_some()
+        || game.path_to(unit_id, post).is_some_and(|steps| {
+            steps.iter().all(|position| {
+                dry_stand(game, unit_id, *position)
+                    && (*position == post || game.wdist(*position, city) > 1)
+            })
+        })
+}
+
 /// [`siege_posts`], keeping each unit still walking in on last turn's post
 /// (`previous`) while that post still serves.
 fn siege_posts_keeping(
@@ -1903,16 +1919,13 @@ fn siege_posts_keeping(
                 && g.unit_can_traverse(uid, *pos)
                 && g.unit_has_line_of_sight_from(uid, *pos, city.pos)
                 && g.unit_ids_at(*pos).is_empty()
-                && siege_route_step(g, pid, uid, *pos, city.pos).is_some()
+                && firing_post_reachable(g, pid, uid, *pos, city.pos)
         });
         if let Some(pos) = kept {
             posts.insert(uid, pos);
             fire_taken.insert(pos);
             continue;
         }
-        // Each band offers its candidates in the existing order and keeps the
-        // first one `siege_route_step` can reach: the approach's own route
-        // rules (#4016). A gun with no reachable firing tile gets no post.
         let best = (1..=range).rev().find_map(|distance| {
             let mut candidates: Vec<Pos> = g
                 .wring(city.pos, distance)
@@ -1948,7 +1961,7 @@ fn siege_posts_keeping(
             });
             candidates
                 .into_iter()
-                .find(|pos| siege_route_step(g, pid, uid, *pos, city.pos).is_some())
+                .find(|pos| firing_post_reachable(g, pid, uid, *pos, city.pos))
         });
         if let Some(pos) = best {
             posts.insert(uid, pos);
