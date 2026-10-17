@@ -1,0 +1,373 @@
+{
+  "schema": 1,
+  "classification": "exploratory historical-source full-game policy audit; not a promotion screen",
+  "source_head": "605f18a1114e2f96b6c5dd1fb61d06c13f1a39ab",
+  "current_main_at_registration": "fc36519b5e5a62ca42cd2063f286ac08fe78a7e1",
+  "registration_sha256": "8f77095b11a317d0e6087f9a20c515aa5ff10ed4fe821673b0076bc726ba0748",
+  "pair_count": 4,
+  "game_count": 8,
+  "contrasting_pairs": 3,
+  "focal_wins": {
+    "off": 0,
+    "on": 0
+  },
+  "focal_domination_wins": {
+    "off": 0,
+    "on": 0
+  },
+  "foreign_hold_games": {
+    "off": 0,
+    "on": 0
+  },
+  "prewar_force_exposed_games": {
+    "off": 0,
+    "on": 3
+  },
+  "promotion_authorized": false,
+  "native_victory_proved": false,
+  "job_exits": {
+    "immortal": 0,
+    "deity": 0
+  },
+  "pairs": [
+    {
+      "difficulty": "immortal",
+      "seed": 202610137000,
+      "actions_identical": false,
+      "action_sha256": {
+        "off": "c77f1dba3fe1838ef4a72caba1d0691278128b5c5a5ce78d31e342762a9f93ae",
+        "on": "98e0239c17904038df2b11cb6ac55fa6bd7aae62a31ffb4cd077ea4378cb98e2"
+      },
+      "first_action_difference_index_zero_based": 25688,
+      "first_different_actions": {
+        "off": [
+          0,
+          {
+            "type": "move",
+            "unit": 488,
+            "to": [
+              38,
+              25
+            ]
+          }
+        ],
+        "on": [
+          0,
+          {
+            "type": "fortify",
+            "unit": 197
+          }
+        ]
+      },
+      "off": {
+        "applied_actions": 35389,
+        "conquest": {
+          "first_focal_major_declaration_observed_turn": null,
+          "first_foreign_capital_held_observed_turn": null,
+          "first_major_city_held_observed_turn": null,
+          "first_major_war_observed_turn": 151,
+          "focal_major_declarations": 0,
+          "focal_minor_declarations": 0,
+          "foreign_capitals_held_at_end": 0,
+          "foreign_capitals_observed_held": [],
+          "foreign_major_cities_observed_held": [],
+          "own_original_capital_held_at_end": true
+        },
+        "first_peace_siege_force_turn": null,
+        "focal_domination_won": false,
+        "focal_score": 390,
+        "focal_score_share": 0.10970464135021098,
+        "focal_won": false,
+        "foreign_cities_held_at_end": 0,
+        "foreign_cities_observed_held": 0,
+        "peace_siege_force_observations": 0,
+        "peace_siege_row_observations": 0,
+        "turn": 156,
+        "victory": "science",
+        "winner": 1
+      },
+      "on": {
+        "applied_actions": 34498,
+        "conquest": {
+          "first_focal_major_declaration_observed_turn": null,
+          "first_foreign_capital_held_observed_turn": null,
+          "first_major_city_held_observed_turn": null,
+          "first_major_war_observed_turn": 151,
+          "focal_major_declarations": 0,
+          "focal_minor_declarations": 0,
+          "foreign_capitals_held_at_end": 0,
+          "foreign_capitals_observed_held": [],
+          "foreign_major_cities_observed_held": [],
+          "own_original_capital_held_at_end": true
+        },
+        "first_peace_siege_force_turn": 128,
+        "focal_domination_won": false,
+        "focal_score": 393,
+        "focal_score_share": 0.10999160369437448,
+        "focal_won": false,
+        "foreign_cities_held_at_end": 0,
+        "foreign_cities_observed_held": 0,
+        "peace_siege_force_observations": 4,
+        "peace_siege_row_observations": 4,
+        "turn": 154,
+        "victory": "science",
+        "winner": 1
+      }
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 202610137001,
+      "actions_identical": false,
+      "action_sha256": {
+        "off": "9b27ad63ccdcec59d88e3b62e699bc7735541eaa69722b136657fb15d0fe3d01",
+        "on": "2a0251fe81afb217cfe27f6de3f1b73264dfd7a8e178cbde1222572dfa281f78"
+      },
+      "first_action_difference_index_zero_based": 21703,
+      "first_different_actions": {
+        "off": [
+          0,
+          {
+            "type": "move",
+            "unit": 516,
+            "to": [
+              5,
+              21
+            ]
+          }
+        ],
+        "on": [
+          0,
+          {
+            "type": "move",
+            "unit": 516,
+            "to": [
+              7,
+              20
+            ]
+          }
+        ]
+      },
+      "off": {
+        "applied_actions": 31887,
+        "conquest": {
+          "first_focal_major_declaration_observed_turn": 79,
+          "first_foreign_capital_held_observed_turn": null,
+          "first_major_city_held_observed_turn": null,
+          "first_major_war_observed_turn": 79,
+          "focal_major_declarations": 2,
+          "focal_minor_declarations": 0,
+          "foreign_capitals_held_at_end": 0,
+          "foreign_capitals_observed_held": [],
+          "foreign_major_cities_observed_held": [],
+          "own_original_capital_held_at_end": false
+        },
+        "first_peace_siege_force_turn": null,
+        "focal_domination_won": false,
+        "focal_score": 303,
+        "focal_score_share": 0.09665071770334928,
+        "focal_won": false,
+        "foreign_cities_held_at_end": 0,
+        "foreign_cities_observed_held": 0,
+        "peace_siege_force_observations": 0,
+        "peace_siege_row_observations": 1,
+        "turn": 151,
+        "victory": "science",
+        "winner": 1
+      },
+      "on": {
+        "applied_actions": 30794,
+        "conquest": {
+          "first_focal_major_declaration_observed_turn": 79,
+          "first_foreign_capital_held_observed_turn": null,
+          "first_major_city_held_observed_turn": null,
+          "first_major_war_observed_turn": 79,
+          "focal_major_declarations": 2,
+          "focal_minor_declarations": 0,
+          "foreign_capitals_held_at_end": 0,
+          "foreign_capitals_observed_held": [],
+          "foreign_major_cities_observed_held": [],
+          "own_original_capital_held_at_end": false
+        },
+        "first_peace_siege_force_turn": 105,
+        "focal_domination_won": false,
+        "focal_score": 208,
+        "focal_score_share": 0.06502031884964052,
+        "focal_won": false,
+        "foreign_cities_held_at_end": 0,
+        "foreign_cities_observed_held": 0,
+        "peace_siege_force_observations": 6,
+        "peace_siege_row_observations": 7,
+        "turn": 150,
+        "victory": "science",
+        "winner": 1
+      }
+    },
+    {
+      "difficulty": "deity",
+      "seed": 202610138000,
+      "actions_identical": true,
+      "action_sha256": {
+        "off": "195b8602b83781e9810bee9d2cd45748671489b995df3edb0015c3d9554c4ad5",
+        "on": "195b8602b83781e9810bee9d2cd45748671489b995df3edb0015c3d9554c4ad5"
+      },
+      "first_action_difference_index_zero_based": null,
+      "first_different_actions": null,
+      "off": {
+        "applied_actions": 37641,
+        "conquest": {
+          "first_focal_major_declaration_observed_turn": null,
+          "first_foreign_capital_held_observed_turn": null,
+          "first_major_city_held_observed_turn": null,
+          "first_major_war_observed_turn": 111,
+          "focal_major_declarations": 0,
+          "focal_minor_declarations": 0,
+          "foreign_capitals_held_at_end": 0,
+          "foreign_capitals_observed_held": [],
+          "foreign_major_cities_observed_held": [],
+          "own_original_capital_held_at_end": false
+        },
+        "first_peace_siege_force_turn": null,
+        "focal_domination_won": false,
+        "focal_score": 127,
+        "focal_score_share": 0.0353661932609301,
+        "focal_won": false,
+        "foreign_cities_held_at_end": 0,
+        "foreign_cities_observed_held": 0,
+        "peace_siege_force_observations": 0,
+        "peace_siege_row_observations": 0,
+        "turn": 149,
+        "victory": "science",
+        "winner": 1
+      },
+      "on": {
+        "applied_actions": 37641,
+        "conquest": {
+          "first_focal_major_declaration_observed_turn": null,
+          "first_foreign_capital_held_observed_turn": null,
+          "first_major_city_held_observed_turn": null,
+          "first_major_war_observed_turn": 111,
+          "focal_major_declarations": 0,
+          "focal_minor_declarations": 0,
+          "foreign_capitals_held_at_end": 0,
+          "foreign_capitals_observed_held": [],
+          "foreign_major_cities_observed_held": [],
+          "own_original_capital_held_at_end": false
+        },
+        "first_peace_siege_force_turn": null,
+        "focal_domination_won": false,
+        "focal_score": 127,
+        "focal_score_share": 0.0353661932609301,
+        "focal_won": false,
+        "foreign_cities_held_at_end": 0,
+        "foreign_cities_observed_held": 0,
+        "peace_siege_force_observations": 0,
+        "peace_siege_row_observations": 0,
+        "turn": 149,
+        "victory": "science",
+        "winner": 1
+      }
+    },
+    {
+      "difficulty": "deity",
+      "seed": 202610138001,
+      "actions_identical": false,
+      "action_sha256": {
+        "off": "48a21076272662995d4c78c91c923ef0ae369494c5fb2d8a07ea2d2f112843b2",
+        "on": "7646a4451083996eafce61c476cde20a1e2326cabce6ecfeaff1982fa5d2f628"
+      },
+      "first_action_difference_index_zero_based": 31305,
+      "first_different_actions": {
+        "off": [
+          0,
+          {
+            "type": "move",
+            "unit": 426,
+            "to": [
+              26,
+              21
+            ]
+          }
+        ],
+        "on": [
+          0,
+          {
+            "type": "move",
+            "unit": 426,
+            "to": [
+              26,
+              23
+            ]
+          }
+        ]
+      },
+      "off": {
+        "applied_actions": 35900,
+        "conquest": {
+          "first_focal_major_declaration_observed_turn": null,
+          "first_foreign_capital_held_observed_turn": null,
+          "first_major_city_held_observed_turn": null,
+          "first_major_war_observed_turn": null,
+          "focal_major_declarations": 0,
+          "focal_minor_declarations": 0,
+          "foreign_capitals_held_at_end": 0,
+          "foreign_capitals_observed_held": [],
+          "foreign_major_cities_observed_held": [],
+          "own_original_capital_held_at_end": true
+        },
+        "first_peace_siege_force_turn": null,
+        "focal_domination_won": false,
+        "focal_score": 306,
+        "focal_score_share": 0.08947368421052632,
+        "focal_won": false,
+        "foreign_cities_held_at_end": 0,
+        "foreign_cities_observed_held": 0,
+        "peace_siege_force_observations": 0,
+        "peace_siege_row_observations": 0,
+        "turn": 142,
+        "victory": "science",
+        "winner": 1
+      },
+      "on": {
+        "applied_actions": 35878,
+        "conquest": {
+          "first_focal_major_declaration_observed_turn": null,
+          "first_foreign_capital_held_observed_turn": null,
+          "first_major_city_held_observed_turn": null,
+          "first_major_war_observed_turn": null,
+          "focal_major_declarations": 0,
+          "focal_minor_declarations": 0,
+          "foreign_capitals_held_at_end": 0,
+          "foreign_capitals_observed_held": [],
+          "foreign_major_cities_observed_held": [],
+          "own_original_capital_held_at_end": true
+        },
+        "first_peace_siege_force_turn": 126,
+        "focal_domination_won": false,
+        "focal_score": 305,
+        "focal_score_share": 0.08933801991798476,
+        "focal_won": false,
+        "foreign_cities_held_at_end": 0,
+        "foreign_cities_observed_held": 0,
+        "peace_siege_force_observations": 2,
+        "peace_siege_row_observations": 2,
+        "turn": 142,
+        "victory": "science",
+        "winner": 1
+      }
+    }
+  ],
+  "provenance": "2026-10-17-prewar-siege-fullgame-audit.provenance.json.gz",
+  "cautions": [
+    "Historical pending source, not current main or Native.",
+    "All eight games retained; four exploratory pairs do not authorize promotion.",
+    "First assigned peace force is not readiness; held-city observations can miss transient intra-turn capture.",
+    "One original runner compile error was corrected and preregistered before any game."
+  ],
+  "archive_verification": {
+    "files": 47,
+    "unique_blobs": 45,
+    "compressed_bytes": 10323874,
+    "sha256": "96158c87643b823a4712eb611dcb2dcb2624e9dd9ba36390b738ef4efcc5977f",
+    "all_files_verified": true
+  }
+}
