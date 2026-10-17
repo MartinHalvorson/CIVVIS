@@ -41,7 +41,7 @@ is introduced. A count is still required when ranking escape destinations.
 - Run separate fixed-seed simulator compatibility games against the saved
   unchanged-production executable and compare their complete non-timing output:
   seeds 40820001–40820003, four players, 44×28 Continents Flat, four city-states,
-  Online speed, Deity, 160-turn limit and all six victory conditions. These are
+  Online speed, Deity/Deity, 160-turn limit and all six victory conditions. These are
   stock-controller compatibility checks, not gene-strength measurements.
 
 ## Live lane
@@ -67,4 +67,65 @@ Production restart policy and `deal_sessions=trade`. New batches track main.
 
 ## Results
 
-Pending validation; this document is not a performance or strength claim.
+The exact query simplification is retained. It stops at the first winning
+rival when only safety is needed and reuses the unchanged origin count in the
+flee fallback. Escape ranking still counts every rival. This is not a new gene,
+a changed strategy, or evidence of a win-rate or whole-game speed improvement.
+
+| Check | Result |
+| --- | --- |
+| Unchanged-production focused controls | 4 passed |
+| Candidate focused controls | 6 passed; benchmark separately invoked |
+| Full locked, serial CI-profile suite | 6,149 passed, 0 failed, 56 ignored including doctests |
+| Changed-Rust format and all-feature clippy gate | Passed, changed lines warning-free |
+| Simulator compatibility | All six arms match after removing only the timing line; games finish at turns 86, 151 and 73 |
+| Native compatibility | All 576 complete parsed replies and all 24 journals match exactly |
+| Original input and binaries | Unchanged; archived prefix independently hash-verified; both Native executables verified ARM64 |
+
+The fixed query microbenchmark ran eight alternating-order pairs, 12,000
+queries per arm, across twelve overlapping tiles reached by two winning rival
+Apostles. Median paired elapsed time was **53.92% lower**, with individual
+pairs ranging from 38.63% to 83.37% lower. These are deliberately short,
+synthetic wall-time measurements on a live host, not Native frame timings.
+The deterministic benefit is fewer predicate evaluations: the safety query
+does not evaluate a second winning rival after the first already proves danger.
+
+The Native CPU result is **unresolved**. All 24 children completed, giving
+576 requests. Each arm produced 24 explanations from the active religious
+evasion gene. A/A median was -0.5534%, pooled -1.3123%, IQR 3.6934 percentage
+points. A/B median was -0.2020%, pooled -0.1916%, IQR 3.4223 points. The
+candidate's apparent 0.20% saving is smaller than the absolute A/A median and
+both interquartile ranges. Other fleet compilation was observed in all 24
+ambient samples. No pair was filtered, replaced or extended, and no fresh
+game was scored as strength evidence for this change.
+
+The measured candidate is `e9b6246a9cc7749b908c46de36749cc74c450646`; subsequent
+evidence-only integration retains its production inputs byte for byte. Its
+Native executable SHA-256 is
+`6250ffd6e277ce481c75268c1f305082582c7ae6c3da5c5b9c42673c5b2bf5a0`.
+The frozen 282-tag force list has SHA-256
+`285cd68ff5fcbf7dd8f205d8f9098ea16e2f94c974053b21b8c2db93fcdf1591`.
+
+## Reproduction and evidence
+
+The provenance archive includes the exact replay harness, frozen force list,
+compiler/profile, production-input hashes and all local validation logs. The
+input archive contains the byte-exact original prefix through opening turn
+113, SHA-256
+`1bdf3eed6732bf71c64e18162fd5a988afed5f230b48d0505d160cfce450f5dd`.
+Rebuilding the two recorded source revisions with the registered Native fast
+profile and running the archived harness on that prefix reproduces the same
+24-request workload and fixed A/A–A/B schedule.
+
+```sh
+cargo test --profile ci --locked -- --test-threads=1
+cargo test --profile ci --locked --lib overlapping_threat_query_cost -- --ignored --nocapture --test-threads=1
+python3 tools/rust_quality.py --base 44629581fd661fdf03f94a3801689f615c09e40b --head e9b6246a9cc7749b908c46de36749cc74c450646
+```
+
+- [Summary and independent audit](../performance/2026-10-16-religious-safety.json)
+- [Every raw CPU receipt](../performance/2026-10-16-religious-safety.receipts.jsonl.gz)
+- [All parsed replies](../performance/2026-10-16-religious-safety.replies.json.gz) and [all journals](../performance/2026-10-16-religious-safety.journals.json.gz)
+- [Original input prefix](../performance/2026-10-16-religious-safety.input.jsonl.gz)
+- [All six simulator reports](../performance/2026-10-16-religious-safety.headless.json.gz)
+- [Source provenance, harness and validation logs](../performance/2026-10-16-religious-safety.provenance.json.gz)
