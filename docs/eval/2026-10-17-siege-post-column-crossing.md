@@ -34,10 +34,41 @@ Registration checkpoint `3ece4209a6d0000fdbb87eb4996c254c64840a6e` precedes regr
 
 Repair checkpoint `582dd9ce6` changes only `src/ai/advanced/siege_train.rs` in production. It preserves the ordinary route as first choice. Its fallback requires a complete engine-legal `path_to` the post this turn; every step must remain dry for a land unit already on land and outside the city's reserved inner ring except for the post itself. Both new and previous firing-post admission use this predicate. Melee posts, candidate ranking, line of sight, occupancy, movement execution, entry-danger margins and endurance budgets are unchanged.
 
-The repaired siege suite passes **245 tests, zero failures, one existing ignore**. All nine firing-post cases pass, including Catapult and Archer assignment followed by recorded `MoveTo` through a stationary friendly Swordsman, arrival and actual wall damage on the next turn. The original regression file remains byte-identical to the red checkpoint (SHA-256 `dd00f8ec39a6f9de433b22436eef116fda9071b30b2f4ad8dcdcdd4d13f9232d`). This establishes the constructed arrival-and-fire defect and repair, not its frequency in real games or a victory gain.
+The initial repaired siege suite passes **245 tests, zero failures, one existing ignore**. All nine firing-post cases pass, including Catapult and Archer assignment followed by recorded `MoveTo` through a stationary friendly Swordsman, arrival and actual wall damage on the next turn. The original regression file is preserved as an unchanged prefix of the final file (prefix SHA-256 `dd00f8ec39a6f9de433b22436eef116fda9071b30b2f4ad8dcdcdd4d13f9232d`).
+
+Review found that the shared positive helper invokes the ranged-shooter substep for both kinds. A separately appended test therefore exercises the actual Catapult `Arm::Siege` handler, including natural assignment, recorded crossing, no same-turn shot after crossing and wall damage after the turn reset. This supplemental case is not part of the original red run. Its first compilation was interrupted before execution to correct a boolean expectation: existing `fortify_or_stop` returns false, meaning no progress, even when it fortifies. The interruption and unchanged original assertions are retained in the provenance. The final siege suite passes **246 tests, zero failures, one existing ignore**; all ten post cases pass. Complete `cargo test --profile ci --locked` passes **6,169 tests, zero failures, 56 existing ignores**. These tests establish the constructed arrival-and-fire defect and repair, not its frequency in games or a victory gain.
 
 ### Fixed full-game probe
 
 Baseline production is frozen from regression-only checkpoint `897b8f26e73dcf9ccdcb64c16973ef785247d80f`; its `victory_eval` executable SHA-256 is `f339065672e1215bd8f1750dac1ac9df63e9d03028b2c87d5ed0f4721ec17163`. Candidate production is frozen from `582dd9ce6acecebab4d96669563d0d86f5d0e840`; its executable SHA-256 is `62b89fff9c9af5accfbb59152e470e2a0aae263e948aff120be2cbda65045927`. The complete committed-tree comparison differs only in firing-post admission. Both arms' 768 tracked source/data/deployment/Cargo inputs are hashed, with supplemental build-script, mod, vocabulary and test-asset inputs also confirmed unchanged.
 
-Both source arms' fixed jobs are running. Full Rust validation and all fixed full-game outcomes remain pending and unread. No performance or victory gain is claimed.
+All four source/rung jobs terminated before the first outcome inspection. **All 32 game executions lose**: 28 rival Science victories and four rival Culture victories, ending on turns 124–162. No foreign city is held at the sampled full-turn boundaries or final state. A transient capture and recapture between observations cannot be excluded.
+
+All four variants (baseline/candidate × policy OFF/ON) have identical reported trial fields on each map, including the recorded economy and conquest fields. The table therefore represents all four executions of each map, not only a favorable variant.
+
+| Difficulty | Seed | End turn | Winning rival seat | Victory | Focal original capital held at end |
+| --- | ---: | ---: | ---: | --- | --- |
+| Immortal | 43250000 | 159 | 1 | Science | No |
+| Immortal | 43250001 | 154 | 1 | Science | No |
+| Immortal | 43250002 | 147 | 2 | Science | No |
+| Immortal | 43250003 | 162 | 1 | Science | Yes |
+| Deity | 43250100 | 124 | 3 | Culture | Yes |
+| Deity | 43250101 | 138 | 1 | Science | Yes |
+| Deity | 43250102 | 144 | 3 | Science | No |
+| Deity | 43250103 | 147 | 3 | Science | No |
+
+Each of the four child jobs exits **2**, failing the existing no-policy-action-contrast guard: **0/4 changed OFF/ON action streams at each rung in each source arm**. These failures are retained, not waived or rerun. Completion of the parent receipt-writing wrapper is not success of its child contrast gates. This OFF/ON comparison is not an ablation of the unconditional routing repair. The completed source-arm outcomes remain descriptive negative evidence, not an exposed treatment-effect estimate.
+
+All **16 cross-source journal pairs are byte-identical**. Together with identical reported fields, this shows no recorded field impact in the fixed cohort, but does not prove cross-source canonical action identity: those bytes are not persisted. There is no dedicated repair-activation counter, so its activation frequency is unmeasured. Journal phase rows include Invest/Reduce in several maps and no Take rows; these are planning observations, not executed-shot or actual-capture counts. Six of the eight candidate-ON maps record a focal major declaration; the losses cannot all be explained by failure to declare war. No strength, survival, speed or victory improvement is established, and no Native adoption or highest-difficulty Native victory is verified by this simulator study.
+
+### Integration validation and retained evidence
+
+- All 768 registered source/data/deployment/Cargo hashes match the frozen candidate except the intentionally appended test file. Every original test byte remains its unchanged prefix; the production repair is unchanged.
+- `rustfmt --edition 2021 --config skip_children=true --check` passes for both changed Rust files; `git diff --check` passes.
+- `python3 tools/rust_quality.py --base origin/main --head HEAD` passes, including the supplemental test: changed lines are formatted and warning-free.
+- Source checkpoint `15bf25b8e220567f6e0058e08d9fe13181ab383c` passes every published check. Its paired-cost run `39015419297` measures −0.64% median over five pairs, inside the ±1% noise floor and +8% budget; IQR 1.16 percentage points, resolution ±0.77%, pooled −0.30% over 600 turns. No speedup is claimed. The final evidence/test checkpoint must pass its own gate before merge.
+- No engine mechanic changes; no Native process, installed mod, policy/default, difficulty, ledger, pin, readiness threshold or safety margin is changed.
+
+The adjacent `2026-10-17-siege-post-column-crossing.result.json` contains the compact complete trial readout, validation results, source/binary identities and limitations. The adjacent `2026-10-17-siege-post-column-crossing.provenance.json.gz` contains 81 retained files: original registration, runners/auditors, all raw cohort rows and journals, build/source receipts, original red output, initial/final green and full Rust output, the interrupted supplemental compile, quality output and source-checkpoint CI evidence. Its SHA-256 is `c376c79ef3b1f870576622ceb1d8e6fe7639ce977cb7dcb0e428812e90aafc5c` (3,565,892 bytes). Frozen executables and the uncompressed study remain under `/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/siege-post-column-crossing/`; binaries are not included in the archive.
+
+Ship this as an arrival-planning correctness repair, not a strength promotion. The negative full-game evidence keeps coordinated pressure, wall-breaker availability and the production race open as the next investigation; safety and victory requirements remain unchanged.
