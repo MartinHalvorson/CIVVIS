@@ -14793,6 +14793,14 @@ fn builder_barbarian_safety_rejects_and_escapes_a_barbarian_capture_envelope() {
     major_game.players[1].is_barbarian = false;
     major_game.barb_pid = None;
     let builder = major_game.spawn_test_unit("builder", 0, home);
+    let mut untreated_major_game = major_game.clone();
+    let mut untreated_major = AdvancedAi::new();
+    assert!(untreated_major.advanced_builder_step(
+        &mut untreated_major_game,
+        0,
+        builder,
+        GrandStrategy::Expansion
+    ));
     let mut barbarian_only = AdvancedAi::new();
     barbarian_only.enable_builder_barbarian_safety();
     let visible = barbarian_only.battlefront_visibility(&major_game, 0);
@@ -14807,7 +14815,19 @@ fn builder_barbarian_safety_rejects_and_escapes_a_barbarian_capture_envelope() {
         builder,
         GrandStrategy::Expansion
     ));
-    assert_eq!(barbarian_only.builder_targets.get(&builder), Some(&target));
+    assert_eq!(
+        major_game.units[&builder].pos,
+        untreated_major_game.units[&builder].pos
+    );
+    assert_eq!(
+        major_game.units[&builder].moves_left,
+        untreated_major_game.units[&builder].moves_left
+    );
+    assert_eq!(
+        barbarian_only.builder_targets.get(&builder),
+        untreated_major.builder_targets.get(&builder)
+    );
+    assert_eq!(barbarian_only.builder_avoid, untreated_major.builder_avoid);
 
     // A military unit already standing on a *future* Builder tile does not
     // erase a direct Barbarian capture threat: it can walk away before the
