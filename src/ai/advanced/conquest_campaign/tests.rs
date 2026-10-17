@@ -312,6 +312,106 @@ fn standing_archers() -> (Game, AdvancedAi, u32) {
     (game, controller, nearby)
 }
 
+fn standing_resource_army() -> (Game, AdvancedAi) {
+    let (mut game, controller, _) = standing_archers();
+    game.players[0].techs.remove(&crate::name!("iron_working"));
+    for _ in 0..4 {
+        game.spawn_test_unit("warrior", 0, (30, 20));
+    }
+    (game, controller)
+}
+
+#[test]
+fn conquest_campaign_modernization_avoids_a_revealed_but_inaccessible_resource() {
+    let (game, controller) = standing_resource_army();
+    assert!(game.resource_visible_to(0, "iron"));
+    assert_eq!(game.strategic_stockpile(0, crate::name!("iron")), 0.0);
+    assert_eq!(game.strategic_resource_rate(0, "iron"), 0.0);
+    assert_eq!(
+        controller.wartime_modernization_tech(&game, 0).as_deref(),
+        Some("machinery")
+    );
+}
+
+#[test]
+fn conquest_campaign_modernization_keeps_unrevealed_resource_discovery() {
+    let (mut game, controller) = standing_resource_army();
+    game.players[0]
+        .techs
+        .remove(&crate::name!("bronze_working"));
+    assert!(!game.resource_visible_to(0, "iron"));
+    assert_eq!(
+        controller.wartime_modernization_tech(&game, 0).as_deref(),
+        Some("iron_working")
+    );
+}
+
+#[test]
+fn conquest_campaign_modernization_keeps_an_imported_stockpile() {
+    let (mut game, controller) = standing_resource_army();
+    game.players[0]
+        .strategic_resources
+        .insert(crate::name!("iron"), 1.0);
+    assert_eq!(
+        controller.wartime_modernization_tech(&game, 0).as_deref(),
+        Some("iron_working")
+    );
+}
+
+#[test]
+fn conquest_campaign_modernization_keeps_observed_resource_income() {
+    let (mut game, controller) = standing_resource_army();
+    Arc::make_mut(&mut game.observed_strategic_income_adjustments)
+        .entry(0)
+        .or_default()
+        .insert(crate::name!("iron"), 2.0);
+    assert!(game.strategic_resource_rate(0, "iron") > 0.0);
+    assert_eq!(
+        controller.wartime_modernization_tech(&game, 0).as_deref(),
+        Some("iron_working")
+    );
+}
+
+#[test]
+fn conquest_campaign_modernization_keeps_an_owned_unimproved_deposit() {
+    let (mut game, controller) = standing_resource_army();
+    let city = game.player_city_ids(0)[0];
+    let position = (29, 20);
+    let owned = &mut game.cities.get_mut(&city).unwrap().owned_tiles;
+    if !owned.contains(&position) {
+        owned.push(position);
+    }
+    let tile = game.map.tiles.get_mut(&position).unwrap();
+    tile.owner_city = Some(city);
+    tile.resource = Some(crate::name!("iron"));
+    tile.improvement = None;
+    assert_eq!(game.strategic_resource_rate(0, "iron"), 0.0);
+    assert_eq!(
+        controller.wartime_modernization_tech(&game, 0).as_deref(),
+        Some("iron_working")
+    );
+}
+
+#[test]
+fn conquest_campaign_modernization_does_not_spend_another_players_deposit() {
+    let (mut game, controller) = standing_resource_army();
+    game.map.tiles.get_mut(&(35, 20)).unwrap().resource = Some(crate::name!("iron"));
+    assert_eq!(
+        controller.wartime_modernization_tech(&game, 0).as_deref(),
+        Some("machinery")
+    );
+}
+
+#[test]
+fn conquest_campaign_modernization_preserves_the_existing_wartime_resource_policy() {
+    let (mut game, controller) = standing_resource_army();
+    game.at_war.insert((0, 1));
+    assert_eq!(
+        controller.wartime_modernization_tech(&game, 0).as_deref(),
+        Some("iron_working")
+    );
+}
+
 #[test]
 fn conquest_campaign_researches_the_standing_archer_upgrade_before_war() {
     let (game, controller, _) = standing_archers();

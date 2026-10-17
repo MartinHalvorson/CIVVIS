@@ -43,6 +43,22 @@ impl AdvancedAi {
             if !successor.buildable || game.players[player].techs.contains(&technology) {
                 continue;
             }
+            if successor.requires_resource.is_some_and(|resource| {
+                game.resource_visible_to(player, resource.as_str())
+                    && game.strategic_stockpile(player, resource) <= 0.0
+                    && game.strategic_resource_rate(player, resource.as_str()) <= 0.0
+                    && !game.cities.values().any(|city| {
+                        city.owner == player
+                            && city.owned_tiles.iter().any(|position| {
+                                game.map
+                                    .tiles
+                                    .get(position)
+                                    .is_some_and(|tile| tile.resource == Some(resource))
+                            })
+                    })
+            }) {
+                continue;
+            }
             let gain = successor.strength.max(successor.ranged_attack_strength())
                 - held.strength.max(held.ranged_attack_strength());
             if gain > 0.0 {
