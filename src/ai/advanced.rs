@@ -41594,6 +41594,44 @@ impl AdvancedAi {
         })
     }
 
+    fn builder_step_toward_job(
+        &mut self,
+        game: &mut Game,
+        pid: usize,
+        uid: u32,
+        target: Pos,
+    ) -> bool {
+        let before = game.units[&uid].pos;
+        let track_progress = self.base.builder_tries_the_next_tile;
+        let routed = if track_progress {
+            game.route_step(uid, target, 0)
+        } else {
+            None
+        };
+        let stepped = if self.builder_reach_safety_on() {
+            self.builder_step_out_of_reach(game, pid, uid, target)
+        } else {
+            self.builder_step_toward_barbarian_safe(game, pid, uid, target)
+        };
+        if stepped {
+            let after = game.units[&uid].pos;
+            if track_progress
+                && game.wdist(before, after) == 1
+                && Some(after) != routed
+                && game.wdist(after, target) >= game.wdist(before, target)
+            {
+                let until = game.turn + game.standard_duration(SETTLER_TARGET_HYSTERESIS_TURNS);
+                self.builder_targets.remove(&uid);
+                self.builder_avoid.insert(uid, (target, until));
+                think!(self.journal(), Expansion, Decision, "Builder postpones a job after a safe retreat";
+                    "Builder {uid} moves from {before:?} to {after:?}, not along the route or closer to {target:?}; keep the safe step and reconsider that job from turn {until}"; after);
+            } else {
+                self.builder_targets.insert(uid, target);
+            }
+        }
+        stepped
+    }
+
     /// Every job this Builder could take, best first, under the same score the
     /// untreated branch of [`Self::advanced_builder_step`] maximises.
     ///
@@ -41704,12 +41742,7 @@ impl AdvancedAi {
         };
         let mut attempts = BUILDER_ROUTE_ATTEMPTS;
         if let Some(pos) = pinned {
-            let stepped = if self.builder_reach_safety_on() {
-                self.builder_step_out_of_reach(g, pid, uid, pos)
-            } else {
-                self.builder_step_toward_barbarian_safe(g, pid, uid, pos)
-            };
-            if stepped {
+            if self.builder_step_toward_job(g, pid, uid, pos) {
                 return true;
             }
             // ⚠ A Builder with nothing left to spend refuses EVERY tile, and
@@ -41734,13 +41767,7 @@ impl AdvancedAi {
             .filter(|pos| Some(*pos) != pinned)
             .take(attempts)
         {
-            let stepped = if self.builder_reach_safety_on() {
-                self.builder_step_out_of_reach(g, pid, uid, pos)
-            } else {
-                self.builder_step_toward_barbarian_safe(g, pid, uid, pos)
-            };
-            if stepped {
-                self.builder_targets.insert(uid, pos);
+            if self.builder_step_toward_job(g, pid, uid, pos) {
                 return true;
             }
             if g.units[&uid].moves_left <= 0.0 {
@@ -49527,3 +49554,6 @@ mod native_settlement_pressure_forecast_tests {
 
 #[cfg(test)]
 mod native_domination_activation_tests;
+
+#[cfg(test)]
+mod builder_job_safety_tests;
