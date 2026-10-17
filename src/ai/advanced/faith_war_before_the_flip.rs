@@ -310,49 +310,6 @@ impl AdvancedAi {
                "{tag}: {spreaders} spreader(s) at our cities and {on_it} of ours lean to its faith, but {reason}");
     }
 
-    fn faith_war_condemnation(&self, g: &Game, pid: usize, rival: usize) -> Option<Vec<Action>> {
-        let faith = Self::faith_war_faith(g, rival)?;
-        let spreaders = super::religious_interception::visible_home_spreaders(g, pid, rival, faith);
-        for interceptor in g.player_unit_ids(pid) {
-            let unit = &g.units[&interceptor];
-            let spec = &g.rules.units[unit.kind];
-            if spec.class != "military"
-                || spec.domain.as_deref() == Some("air")
-                || unit.hp as f64 <= self.base.w.withdraw_hp
-                || unit.moves_left <= 0.0
-            {
-                continue;
-            }
-            for target in &spreaders {
-                let spreader = &g.units[target];
-                if g.wdist(unit.pos, spreader.pos) > 1
-                    || self.preserve_competing_faith(g, pid, spreader)
-                {
-                    continue;
-                }
-                let mut actions = Vec::new();
-                if unit.pos != spreader.pos {
-                    actions.push(Action::Move {
-                        unit: interceptor,
-                        to: spreader.pos,
-                    });
-                }
-                actions.push(Action::CondemnHeretic {
-                    unit: interceptor,
-                    target_unit: *target,
-                });
-                let mut forecast = g.speculative_clone();
-                if actions
-                    .iter()
-                    .all(|action| forecast.apply(pid, action).is_ok())
-                {
-                    return Some(actions);
-                }
-            }
-        }
-        None
-    }
-
     /// `faith-war-before-the-flip`: open the defensive war on the founder
     /// whose spreaders are working our cities. The turn's one declaration;
     /// `false` with the gene off or when no founder qualifies.
@@ -395,32 +352,9 @@ impl AdvancedAi {
                 self.journal_faith_war_held(g, rival, "opening", "no legal declaration", trigger);
                 continue;
             };
-            let interception = if self.faith_war_before_the_flip_2 {
-                let mut declared = g.speculative_clone();
-                if declared.apply(pid, &opening).is_err() {
-                    continue;
-                }
-                let Some(actions) = self.faith_war_condemnation(&declared, pid, rival) else {
-                    self.journal_faith_war_held(
-                        g,
-                        rival,
-                        "interceptor",
-                        "no healthy, unspent soldier can reach and condemn its visible spreader this turn",
-                        trigger,
-                    );
-                    continue;
-                };
-                actions
-            } else {
-                Vec::new()
-            };
             if g.apply(pid, &opening).is_err() {
                 continue;
             }
-            let condemned = !interception.is_empty()
-                && interception
-                    .iter()
-                    .all(|action| g.apply(pid, action).is_ok());
             self.faith_war_before_the_flip_war = Some(FaithWar {
                 rival,
                 opened: g.turn,
@@ -428,14 +362,9 @@ impl AdvancedAi {
             });
             let (spreaders, on_it) = trigger;
             let tag = self.faith_war_tag();
-            let execution = if self.faith_war_before_the_flip_2 {
-                format!("; condemnation executed: {condemned}")
-            } else {
-                String::new()
-            };
             think!(self.journal(), Military, Strategy,
                    "Opening a faith war on {}", g.players[rival].civ;
-                   "{tag}: its spreaders stand at our cities ({spreaders} within 6 tiles) and {on_it} of ours lean to its faith while our majority holds out; defensive, no siege: our soldiers condemn its spreaders; {:.0} power against their steady {:.0}{execution}",
+                   "{tag}: its spreaders stand at our cities ({spreaders} within 6 tiles) and {on_it} of ours lean to its faith while our majority holds out; defensive, no siege: our soldiers condemn its spreaders; {:.0} power against their steady {:.0}",
                    g.military_power(pid), self.steady_rival_power(g, rival));
             return true;
         }
