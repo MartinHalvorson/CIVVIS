@@ -1,0 +1,75 @@
+{
+  "registered_utc": "2026-10-17T22:00:46.124273+00:00",
+  "purpose": "Fresh paired read-only observer controls after the strict original journal-byte control failed; no diagnostic conclusions admitted from03 until these controls finish",
+  "source_commit": "12f146fcfbbdeae2e311cffa19d0b9b3dddd8551",
+  "source_directory": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/source-variant-03",
+  "source_receipt_sha256": "efd0d0bd6b048082262f339b6802adf215682d8959650e050457a1541dd2e6ca",
+  "cases": [
+    {
+      "difficulty": "immortal",
+      "seed": 45312861349
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 47651167238
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 46732028391
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49478848256
+    },
+    {
+      "difficulty": "deity",
+      "seed": 43663176127
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49220027834
+    }
+  ],
+  "observer_source_sha256": {
+    "src/main.rs": "9f9654d3a07bc1500f598827ef0bc3392bdbf0fce48fd429f60458a25398c190",
+    "Cargo.toml": "819f5762045c038d07368b722bcdf6b326bf65b54ee762498841412136030ab2",
+    "Cargo.lock": "299ca8b76645d3dd0b271f3a6b44cfbcf8ab41b2758f5a9892b8e98969c13adb",
+    "source-identity.txt": "30362f806818bb62e718a930e0836c6137707120d0439d0b3ae6eba74d9c2060"
+  },
+  "read_only_additions": [
+    "Focal decision-view upgrade quotes and legal offers",
+    "Focal decision-view strategic quick-deal quotes",
+    "Observer-only world resource banks and incomes"
+  ],
+  "required_AA": [
+    "actions.json",
+    "snapshots.json",
+    "plans.json",
+    "world-states.json",
+    "why.log",
+    "journal-stats.json"
+  ],
+  "acceptance": "Run BOTH the immutable original03 binary and the diagnostic observer binary on ALL six original maps. All non-journal required artifacts plus result.json must byte-match both each other and the immutable original03 records. For why.log preserve every raw byte and require exact equality after sorting ONLY adjacent same-turn Military/Detail messages with the exact stops re-asking a move the host keeps refusing headline. All other journal bytes/order must match. Report strict raw equality separately. Any other contrast fails.",
+  "diagnostic_executions_registered": 12,
+  "candidate_policy_executions_added": 0,
+  "fresh_holdout_executions": 0,
+  "force_profile": "Unchanged same 283 live force tags; no gene, observation, seed, difficulty or engine changes",
+  "native_verification": "Not Native verification; host upgrade facts may be absent in self-play",
+  "original_strict_control_failed": true,
+  "original_failure_receipt_sha256": "85bc03747f39672c6d0bd4f9530acb6792b3cc2c7e344c8a6a71c78d2aac0963",
+  "original_failure": {
+    "map": "immortal45312861349",
+    "difference": "Exactly two adjacent t106 Military/Detail move-refusal messages exchanged order; actions, snapshots, plans, world, result and journal statistics all byte-identical on every map. Five other journals byte-identical."
+  },
+  "source_explanation": "src/ai.rs:8179-8233 collects move-refusal Detail messages by iterating move_refusal_watch, a HashMap declared at3888. No source fix or controller input change made. Preserve the raw failure.",
+  "normalization_scope": "Diagnostic root-cause evidence only. Does not relax the original development victory gate or the final selected-source observer A/A prerequisite for fresh holdouts.",
+  "original_binary": {
+    "locked_utc": "2026-10-17T19:09:37.571305+00:00",
+    "frozen_source_sha256": "efd0d0bd6b048082262f339b6802adf215682d8959650e050457a1541dd2e6ca",
+    "binary": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/target-variant-03/ci/conquest-city-health-world-probe",
+    "binary_sha256": "73b06e328e8a667562d709920d067d720e2bc8e0146e19c8ae978638185279b0",
+    "commit": "12f146fcfbbdeae2e311cffa19d0b9b3dddd8551"
+  },
+  "diagnostic_binary_sha256": "48e63753bbf852c19c18d5ef890cc4ef4999182a8a1132c8bca0558b8aee7d17",
+  "completed_executions_at_registration": 0
+}
