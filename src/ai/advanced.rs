@@ -49112,7 +49112,7 @@ impl AdvancedAi {
             // then its Library, ahead of the Plaza and the shortfall. Exact
             // no-op while the gene is off. See `advanced/capital_campus_claim.rs`.
             self.claim_capital_campus(g, pid, &plan);
-            self.claim_conquest_campaign_campus(g, pid, &plan);
+            self.claim_conquest_campaign_funding(g, pid, &plan);
             self.reserve_government_plaza(g, pid, &plan);
             self.reserve_higher_level_investment(g, pid, &plan);
             self.reserve_idle_entertainment_path_for_widespread_crisis(g, pid, &plan);

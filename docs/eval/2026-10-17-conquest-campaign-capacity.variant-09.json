@@ -1,0 +1,53 @@
+{
+  "registered_utc": "2026-10-17T21:22:33.290621+00:00",
+  "phase": "variant-09: known-map development only, before freezing or game execution",
+  "policy_parent_source": "12f146fcfbbdeae2e311cffa19d0b9b3dddd8551",
+  "rejected_intermediate_source": "8965301438d87adb2231e9f63b886578bc58bf9f",
+  "rejected_intermediate_development": {
+    "cases": 6,
+    "focal_wins": 0,
+    "verified_deity_domination_wins": 0,
+    "fresh_games": 0,
+    "successful_new_campus_claim_journal_pairs": 5,
+    "focal_action_contrast_maps": 4,
+    "qualification": "Variant08 completed noncapital Campuses earlier on four maps but did not improve the Deity victory gate. Two Deity focal action streams were unchanged; on Deity49220027834, turn100 power fell from719 to650 while science was39.0 versus39.1 and the rival won Culture on132 instead of139. Preserve full mixed results; reject this claim for the next candidate and restore variant03. Exact-source local Rust quality and remote rust-quality passed; remaining source08 CI is still pending at this registration."
+  },
+  "prior_null_experiment": "Variant05 admitted trade economy only before a newly idle industrial investment; all six action streams were identical to variant03. It did not establish that funding is sufficient, nor that its helper could never run. Variant09 tests an actual earlier idle-queue claim, not another copy of the unused-before-industry slot.",
+  "observed_mechanism": {
+    "parent_source": "variant03",
+    "deity_49220027834": {
+      "currency_first_observed_turn": 71,
+      "turn80_gold": 76,
+      "turn80_net_gold_per_turn": 11.3,
+      "turn80_archers": 8,
+      "turn80_crossbowmen": 3,
+      "first_observed_major_war_turn": 118
+    },
+    "deity_43663176127": {
+      "currency_first_observed_turn": 77,
+      "first_observed_major_war_turn": 112
+    },
+    "qualification": "These are known-map development observations. Cash, earlier upgrades or earlier trade builds alone are not strength evidence; variant06 already demonstrated that earlier upgrades can lower later field power."
+  },
+  "hypothesis": "When the assigned Domination lane has an existing upgrade funding shortfall, claim one safe idle noncapital queue for the existing bounded Commercial Hub/Market/Trader path before broad production. Keep the existing trade genes, window, legal placement, route-safety, housing and build-ETA rules. Preserve the capital, all actual commitments, rushes, major wars, local threats, recent attacks, barbarian alarms, the existing standing land defense floor and the economic-recovery bar. Do not let an unfunded global due-Settler promise veto this separate noncapital funding investment. Allow at most one trade-economy investment in flight across the empire. No gold, upkeep, upgrade costs or trade yields change.",
+  "scope": [
+    "src/ai/advanced.rs: direct claim after existing capital-campus claim",
+    "src/ai/advanced/conquest_campaign.rs: funding-aware bounded noncapital queue claim",
+    "src/ai/advanced/conquest_campaign/tests.rs: actual production and preservation regressions"
+  ],
+  "unchanged": [
+    "initial registration",
+    "all eight fresh holdouts",
+    "engine",
+    "Native controller",
+    "host observations in evaluation games",
+    "genes and pins",
+    "283-gene force file",
+    "difficulty and bonuses",
+    "all victory conditions",
+    "global war-opening edge gates",
+    "upgrade price/resource/solvency checks",
+    "existing research and civic priorities"
+  ],
+  "gate": "Run all six original known development maps with the unchanged matched observer profile. Fresh play remains forbidden until an engine-verified focal Deity Domination win owns every original capital and all six cases complete. Before fresh play, freeze the final selected source and run exact observer A/A. The fresh gate remains eight paired complete maps, at least one Deity Domination win, no fewer focal wins and no more Religion losses."
+}

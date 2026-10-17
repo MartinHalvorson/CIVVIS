@@ -1,8 +1,8 @@
 use super::*;
 
 impl AdvancedAi {
-    pub(super) fn claim_conquest_campaign_campus(
-        &self,
+    pub(super) fn claim_conquest_campaign_funding(
+        &mut self,
         game: &mut Game,
         player: usize,
         plan: &StrategicPlan,
@@ -10,21 +10,18 @@ impl AdvancedAi {
         let cities = game.player_city_ids(player);
         if !self.victory_planning
             || self.active_victory_target(game) != Some(VictoryTarget::Domination)
-            || !(self.base.campus_before_the_army_2 || self.base.campus_before_the_army_3)
-            || self.base.minor
-            || self.base.barb
+            || !self.commercial_hub_in_the_strategic_queue
+            || !self.base.commercial_hub_window_open(game)
             || plan.rush
             || !matches!(
                 plan.strategy,
                 GrandStrategy::Expansion | GrandStrategy::Conquest
             )
-            || cities.len() < BasicAi::CAPITAL_CAMPUS_MIN_CITIES
-            || !game.players[player]
-                .techs
-                .contains(&crate::name!("writing"))
-            || self.base.plaza_prophet_race_open(game, player)
+            || cities.len() < 3
+            || !self.domination_upgrade_funding_shortfall(game, player)
             || game.players.iter().any(|rival| {
-                rival.alive
+                rival.id != player
+                    && rival.alive
                     && !rival.is_minor
                     && !rival.is_barbarian
                     && game.is_at_war(player, rival.id)
@@ -51,22 +48,41 @@ impl AdvancedAi {
             .count();
         if standing < cities.len()
             || cities.iter().any(|city| {
-                let city = &game.cities[city];
-                !city.is_capital
-                    && (game.city_has_district_family(city, crate::name!("campus"))
-                        || city.queue.iter().any(|item| {
-                            matches!(item, Item::District { district, .. } if game.district_family(*district) == "campus")
-                        }))
+                game.cities[city].queue.iter().any(|item| match item {
+                    Item::District { district, .. } => {
+                        game.district_family(*district) == "commercial_hub"
+                    }
+                    Item::Building { building } => {
+                        game.rules
+                            .buildings
+                            .get(building)
+                            .is_some_and(|specification| {
+                                specification.district.is_some_and(|district| {
+                                    game.district_family(district) == "commercial_hub"
+                                })
+                            })
+                    }
+                    Item::Unit { unit } => unit == "trader",
+                    _ => false,
+                })
             })
         {
             return;
         }
+        let counts = self.counts(game, player);
+        let city_count = cities.len();
+        let previous_threat = self.base.plan_threatened_city;
+        self.base.plan_threatened_city = plan.threatened_city;
         let recipient = cities
             .into_iter()
             .filter(|city| {
                 let held = &game.cities[city];
                 !held.is_capital
                     && held.queue.is_empty()
+                    && !held
+                        .production_progress
+                        .values()
+                        .any(|progress| *progress > 0.0)
                     && plan.threatened_city != Some(*city)
                     && !(held.last_attacked > 0
                         && game.turn.saturating_sub(held.last_attacked) <= 4)
@@ -75,7 +91,9 @@ impl AdvancedAi {
                         .barbarian_local_alarm_for_controller(game, player, *city)
             })
             .filter_map(|city| {
-                BasicAi::first_campus_item(game, player, city).map(|item| (city, item))
+                self.base
+                    .commercial_hub_step(game, player, city, city_count, counts.traders)
+                    .map(|item| (city, item))
             })
             .max_by(|(left, _), (right, _)| {
                 game.city_yields(*left)
@@ -83,13 +101,15 @@ impl AdvancedAi {
                     .total_cmp(&game.city_yields(*right).production)
                     .then_with(|| right.cmp(left))
             });
+        self.base.plan_threatened_city = previous_threat;
         let Some((city, item)) = recipient else {
             return;
         };
+        let description = Self::plain_item(&item);
         if game.apply(player, &Action::Produce { city, item }).is_ok() {
             think!(self.journal(), Economy, Decision,
-                "{} starts its noncapital campaign Campus", game.cities[&city].name;
-                "one locally safe idle town funds science without changing the capital's queue; existing commitments and the standing defense floor remain protected");
+                "{} starts {} for its campaign upgrade funding", game.cities[&city].name, description;
+                "the existing army has an upgrade funding shortfall; one safe idle noncapital funds trade while actual commitments, the capital and the standing defense floor stay protected");
         }
     }
 
