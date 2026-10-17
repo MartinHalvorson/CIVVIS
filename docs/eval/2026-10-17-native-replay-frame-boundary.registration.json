@@ -1,0 +1,87 @@
+{
+  "schema": 1,
+  "registered_utc": "2026-10-17T08:58:14.892823+00:00",
+  "task_pr": 4088,
+  "task_head": "f7e2c40afbac293b4c1a65ad2fdeb2052f98f553",
+  "scope": "Offline replay fidelity only; no survival, policy quality, win rate or highest-difficulty evidence.",
+  "selection": "Run outcome was known before selection. This abandoned Emperor attempt is selected for its preserved exact decider snapshot and complete 394-frame history, not favorable performance.",
+  "source_run": "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261017T072826Z",
+  "original_binary": "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/decider-snapshots/civvis-20261017T072826Z/civvis_orders",
+  "original_revision": "712a48e638dcdd2464b321f9fff9acbb4ee4eb23",
+  "binary_sha256": "d66c8d1a3950592633e1a3d4ba3c1b996dbe6b722ea92dfca0d82605c30a0164",
+  "forced_count": 282,
+  "withheld": [],
+  "seat_civ": "CIVILIZATION_GRAN_COLOMBIA",
+  "victory": "domination",
+  "strategy": "stock (default; no strategy switch)",
+  "request_mode": [
+    "--serve",
+    "--fresh-board",
+    "--explain"
+  ],
+  "protocol_evidence": "Each of the 394 state segments has an await or orders_peek_wake before order execution. Initial state is before tiles and tiles_done. Replans generally have no tiles_done. Brain polls a live append-only file, not an explicit export-ready signal.",
+  "workload": {
+    "baseline_and_candidate": "Both use the same frozen original binary and all 282 original force flags.",
+    "through_turn": 150,
+    "expected_native_frames": 394,
+    "frame_subset": "Every recorded turn/frame, including same-turn replans and empty orders; no exclusions or substitute run.",
+    "attempts": [
+      "unchanged replay harness control",
+      "repaired frame-boundary harness control"
+    ]
+  },
+  "boundary_plan": "Request once per state only after its first matching await or orders_peek_wake; include preceding terrain exports but reject an unclosed frame at a newer state, current-frame order execution receipt, cutoff or EOF. Record each request prefix hash and byte count. Do not read into future frame or current-frame action receipts to manufacture matches.",
+  "gate": "All 394 baseline replies must exactly equal Native orders and complete decision; both arms must be identical with correct integer request identity, zero exits, unchanged input hashes. Any mismatch is a failed control, not proof of policy or game strength. No A/B until the full-history gate passes.",
+  "required_tests": [
+    "event-sensitive initial full terrain export",
+    "same-turn replan and prior history",
+    "no future frame/current action receipt leakage",
+    "missing/mismatched polling boundary fail closed",
+    "EOF/cutoff/second state before boundary fail closed",
+    "existing exact-comparison, process-exit and immutable-input tests"
+  ],
+  "frozen_inputs": {
+    "brain.log": {
+      "sha256": "ec1ea0d9b13d811e4af6265ad0133aa12054de1fbe11ecbc3d6bf57bbad7c97b",
+      "bytes": 136569
+    },
+    "civvis_orders": {
+      "sha256": "d66c8d1a3950592633e1a3d4ba3c1b996dbe6b722ea92dfca0d82605c30a0164",
+      "bytes": 25548400
+    },
+    "civvis_orders.provenance.json": {
+      "sha256": "32c98b644f7c7f7db44fdb60319ace791731bf0b4c950f237f93afc2365fa594",
+      "bytes": 327
+    },
+    "decisions.jsonl": {
+      "sha256": "79a03a75d0ec6789893a25302381cdf2e42556734941877f355a0d690038fd2c",
+      "bytes": 1428181
+    },
+    "events.jsonl": {
+      "sha256": "ddac57587b9865b4f6b9dca63d4b623997c00bcfef2d234900200a3e6a815d6d",
+      "bytes": 34704336
+    },
+    "forced-policies.txt": {
+      "sha256": "5924cea003af80dcbdc998867254b4a724cb38576675aaf600308d6899bd5ba4",
+      "bytes": 7726
+    },
+    "summary.json": {
+      "sha256": "83546de5962fa25d8e15c7924ee32975a1b2f116e7841068bff649c8e23bf8ec",
+      "bytes": 45567
+    }
+  },
+  "immutable_source_hashes": {
+    "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261017T072826Z/events.jsonl": "ddac57587b9865b4f6b9dca63d4b623997c00bcfef2d234900200a3e6a815d6d",
+    "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261017T072826Z/decisions.jsonl": "79a03a75d0ec6789893a25302381cdf2e42556734941877f355a0d690038fd2c",
+    "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261017T072826Z/summary.json": "83546de5962fa25d8e15c7924ee32975a1b2f116e7841068bff649c8e23bf8ec",
+    "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261017T072826Z/brain.log": "ec1ea0d9b13d811e4af6265ad0133aa12054de1fbe11ecbc3d6bf57bbad7c97b",
+    "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/decider-snapshots/civvis-20261017T072826Z/civvis_orders": "d66c8d1a3950592633e1a3d4ba3c1b996dbe6b722ea92dfca0d82605c30a0164",
+    "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/decider-snapshots/civvis-20261017T072826Z/civvis_orders.provenance.json": "32c98b644f7c7f7db44fdb60319ace791731bf0b4c950f237f93afc2365fa594"
+  },
+  "not_changed": [
+    "Native game, brain, orders database, runtime",
+    "policy pins/force bundle/difficulty/verification",
+    "AI strategy or battle policy",
+    "acceptance gates"
+  ]
+}

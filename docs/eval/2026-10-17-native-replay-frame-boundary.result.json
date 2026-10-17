@@ -1,0 +1,925 @@
+{
+  "scope": "Fixed full-history A/A replay fidelity; not an AI policy or game-outcome comparison.",
+  "registration_sha256": "790c72d725c8aabab07dc76cf707bebd771c6b479896685ba0fb00e601e3aa49",
+  "arms": {
+    "original-control": {
+      "frames": 394,
+      "no_board_frames": 1,
+      "elapsed_seconds": 36.864,
+      "returncodes": {
+        "baseline": 0,
+        "candidate": 0
+      },
+      "inputs_unchanged": {
+        "events": true,
+        "recorded_decisions": true,
+        "force_file": true,
+        "baseline": true,
+        "candidate": true
+      },
+      "validation_passed": false,
+      "matched_frames": 276,
+      "missing_record_frames": 0,
+      "changed_complete_reply_frames": 0,
+      "invalid_request_reply_frames": 0,
+      "gate_passed": false,
+      "first_mismatch": {
+        "index": 0,
+        "turn": 1,
+        "frame": 0,
+        "orders_match": false,
+        "complete_decision_match": false
+      },
+      "mismatches": [
+        {
+          "turn": 1,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 1,
+          "frame": 1,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 1,
+          "frame": 2,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 2,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 2,
+          "frame": 1,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 3,
+          "frame": 0,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 3,
+          "frame": 1,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 4,
+          "frame": 0,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 4,
+          "frame": 1,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 5,
+          "frame": 0,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 5,
+          "frame": 1,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 6,
+          "frame": 0,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 6,
+          "frame": 1,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 6,
+          "frame": 2,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 7,
+          "frame": 0,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 7,
+          "frame": 1,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 7,
+          "frame": 2,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 8,
+          "frame": 0,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 8,
+          "frame": 1,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 8,
+          "frame": 2,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 9,
+          "frame": 0,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 9,
+          "frame": 1,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 10,
+          "frame": 0,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 10,
+          "frame": 1,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 11,
+          "frame": 0,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 11,
+          "frame": 1,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 12,
+          "frame": 0,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 12,
+          "frame": 1,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 12,
+          "frame": 2,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 13,
+          "frame": 0,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 13,
+          "frame": 1,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 13,
+          "frame": 2,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 14,
+          "frame": 0,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 14,
+          "frame": 1,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 15,
+          "frame": 0,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 15,
+          "frame": 1,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 16,
+          "frame": 0,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 16,
+          "frame": 1,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 16,
+          "frame": 2,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 17,
+          "frame": 0,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 17,
+          "frame": 1,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 17,
+          "frame": 2,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 22,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 22,
+          "frame": 1,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 23,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": true
+        },
+        {
+          "turn": 28,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 28,
+          "frame": 1,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 29,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": true
+        },
+        {
+          "turn": 31,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 32,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 33,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 34,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": true
+        },
+        {
+          "turn": 35,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 36,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": true
+        },
+        {
+          "turn": 46,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 47,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": true
+        },
+        {
+          "turn": 47,
+          "frame": 1,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 48,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 48,
+          "frame": 1,
+          "orders_match": false,
+          "complete_decision_match": true
+        },
+        {
+          "turn": 49,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 50,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": true
+        },
+        {
+          "turn": 50,
+          "frame": 1,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 51,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": true
+        },
+        {
+          "turn": 56,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 56,
+          "frame": 1,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 56,
+          "frame": 2,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 57,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 57,
+          "frame": 1,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 58,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 58,
+          "frame": 1,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 59,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 59,
+          "frame": 1,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 60,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": true
+        },
+        {
+          "turn": 63,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 64,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 64,
+          "frame": 1,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 65,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 65,
+          "frame": 1,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 66,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 66,
+          "frame": 1,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 66,
+          "frame": 2,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 67,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 67,
+          "frame": 1,
+          "orders_match": false,
+          "complete_decision_match": true
+        },
+        {
+          "turn": 68,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 68,
+          "frame": 1,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 69,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 69,
+          "frame": 1,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 69,
+          "frame": 2,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 70,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 71,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 73,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 74,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 74,
+          "frame": 1,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 74,
+          "frame": 2,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 75,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 76,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 77,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 77,
+          "frame": 1,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 78,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 79,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 80,
+          "frame": 1,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 81,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 82,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 83,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 83,
+          "frame": 1,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 84,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 85,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": true
+        },
+        {
+          "turn": 86,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 87,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 88,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": true
+        },
+        {
+          "turn": 121,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 121,
+          "frame": 1,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 122,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 123,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 124,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": true
+        },
+        {
+          "turn": 130,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 146,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 147,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": true
+        }
+      ]
+    },
+    "repaired-control": {
+      "frames": 394,
+      "no_board_frames": 0,
+      "elapsed_seconds": 34.43,
+      "returncodes": {
+        "baseline": 0,
+        "candidate": 0
+      },
+      "inputs_unchanged": {
+        "events": true,
+        "recorded_decisions": true,
+        "force_file": true,
+        "baseline": true,
+        "candidate": true
+      },
+      "validation_passed": false,
+      "matched_frames": 372,
+      "missing_record_frames": 0,
+      "changed_complete_reply_frames": 0,
+      "invalid_request_reply_frames": 0,
+      "gate_passed": false,
+      "first_mismatch": {
+        "index": 126,
+        "turn": 52,
+        "frame": 0,
+        "orders_match": false,
+        "complete_decision_match": false
+      },
+      "mismatches": [
+        {
+          "turn": 52,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 71,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 72,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": true
+        },
+        {
+          "turn": 76,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 77,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": true
+        },
+        {
+          "turn": 80,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 81,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": true
+        },
+        {
+          "turn": 126,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 127,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": true
+        },
+        {
+          "turn": 138,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 138,
+          "frame": 1,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 139,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": true
+        },
+        {
+          "turn": 144,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 145,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 146,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": true
+        },
+        {
+          "turn": 147,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 147,
+          "frame": 1,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 148,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": true
+        },
+        {
+          "turn": 149,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 149,
+          "frame": 1,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 149,
+          "frame": 2,
+          "orders_match": true,
+          "complete_decision_match": false
+        },
+        {
+          "turn": 150,
+          "frame": 0,
+          "orders_match": false,
+          "complete_decision_match": true
+        }
+      ]
+    }
+  },
+  "request_prefixes": {
+    "count": 394,
+    "boundary_kinds": {
+      "await": 137,
+      "orders_peek_wake": 257
+    },
+    "all_exact_source_prefixes_verified": true
+  },
+  "immutable_original_sources": {
+    "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261017T072826Z/events.jsonl": true,
+    "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261017T072826Z/decisions.jsonl": true,
+    "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261017T072826Z/summary.json": true,
+    "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261017T072826Z/brain.log": true,
+    "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/decider-snapshots/civvis-20261017T072826Z/civvis_orders": true,
+    "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/decider-snapshots/civvis-20261017T072826Z/civvis_orders.provenance.json": true
+  },
+  "conclusion": "Boundary defect repaired and matches increased 276 to 372 of 394, but both controls fail. Retain all 22 remaining mismatches; no A/B or conquest-strength inference is authorized."
+}
