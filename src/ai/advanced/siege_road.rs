@@ -29,6 +29,9 @@ use crate::think;
 use crate::Pos;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 
+#[cfg(test)]
+mod native_memory_tests;
+
 /// Consecutive turns half the train must hold for want of a road before the
 /// capture is stood down. Three is `commitments::STALL_TURNS` and
 /// `COMMITMENT_PATIENCE`, the controller's own "not getting there".
