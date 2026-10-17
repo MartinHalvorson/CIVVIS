@@ -219,3 +219,43 @@ fn a_water_crossing_does_not_make_a_dry_firing_post_reachable() {
     assert_eq!(siege_route_step(&game, 0, shooter, post, city.pos), None);
     assert!(!siege_posts(&game, 0, &city, &[shooter], None).contains_key(&shooter));
 }
+
+#[test]
+fn the_siege_gun_handler_crosses_the_column_then_fires_after_the_turn_reset() {
+    let (mut game, city_id, gun, screen, post) = column_firing_tile("catapult");
+    let city = CityView::of(&game, city_id).unwrap();
+    let screen_pos = game.units[&screen].pos;
+    let posts = siege_posts(&game, 0, &city, &[gun], None);
+    assert_eq!(arm_of(&game, gun), Arm::Siege);
+    assert_eq!(posts.get(&gun), Some(&post));
+    let mut ai = AdvancedAi::new();
+    ai.enable_siege_train();
+    ai.enable_recorded_tactical_step();
+    ai.sieges.insert(
+        city_id,
+        Siege {
+            stage: SiegeStage::Reduce,
+            taker: None,
+            entered: game.turn,
+            assessed: game.turn,
+            posts,
+            short_since: None,
+        },
+    );
+    let walls_before = game.cities[&city_id].wall_hp;
+    assert!(ai.siege_gun_step(&mut game, 0, gun, &city));
+    assert_eq!(game.units[&gun].pos, post);
+    assert_eq!(game.units[&screen].pos, screen_pos);
+    assert_eq!(game.cities[&city_id].wall_hp, walls_before);
+    assert!(game.log.since(0).any(|(seat, action)| {
+        *seat == 0 && matches!(action, Action::MoveTo { unit, to } if *unit == gun && *to == post)
+    }));
+    assert!(!ai.siege_gun_step(&mut game, 0, gun, &city));
+    assert_eq!(game.cities[&city_id].wall_hp, walls_before);
+    game.apply(0, &Action::EndTurn).unwrap();
+    game.apply(1, &Action::EndTurn).unwrap();
+    let city = CityView::of(&game, city_id).unwrap();
+    let walls_before = game.cities[&city_id].wall_hp;
+    assert!(ai.siege_gun_step(&mut game, 0, gun, &city));
+    assert!(game.cities[&city_id].wall_hp < walls_before);
+}
