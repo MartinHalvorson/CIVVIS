@@ -228,6 +228,57 @@ fn predicate_routes_keep_boundary_zoc_target_and_cache_rules() {
     assert_eq!(g.route_step_avoiding_when(uid, target, |_| false), None);
 }
 
+#[test]
+fn siege_exclusions_preserve_sparse_grid_and_unindexable_positions() {
+    let (mut game, uid, city) = open_game();
+    let start = game.units[&uid].pos;
+    let mut serialized = serde_json::to_value(&game.map).unwrap();
+    let tiles = serialized["tiles"].as_array_mut().unwrap();
+    let mut index = 0;
+    tiles.retain(|tile| {
+        index += 1;
+        let pos: Pos = serde_json::from_value(tile["pos"].clone()).unwrap();
+        pos == start || pos == city || index % 7 != 0
+    });
+    game.map = serde_json::from_value(serialized).unwrap();
+    assert!(game.map.tiles.len() < (game.map.width * game.map.height) as usize);
+    let outside = (-100, -100);
+    let blocker = game.spawn_unit("warrior", 1, start);
+    game.units.get_mut(&blocker).unwrap().pos = outside;
+    assert!(game.map.tiles.index_of(outside).is_none());
+    assert!(compare_siege(&game, uid, city) > 0);
+    assert_eq!(siege_route_step(&game, 0, uid, outside, city), None);
+    game.units.get_mut(&uid).unwrap().pos = outside;
+    compare_siege(&game, uid, city);
+}
+
+#[test]
+fn siege_exclusions_preserve_stacked_units_and_the_goal_exception() {
+    let (mut game, uid, city) = open_game();
+    let start = game.units[&uid].pos;
+    let goal = game
+        .nbrs(start)
+        .into_iter()
+        .find(|pos| *pos != city)
+        .unwrap();
+    game.spawn_unit("builder", 0, goal);
+    game.spawn_unit("fighter", 1, goal);
+    assert_eq!(siege_route_step(&game, 0, uid, goal, city), Some(goal));
+    assert_eq!(old_siege_route_step(&game, 0, uid, goal, city), Some(goal));
+    let soldier = game.spawn_unit("warrior", 0, goal);
+    assert_eq!(siege_route_step(&game, 0, uid, goal, city), None);
+    assert_eq!(old_siege_route_step(&game, 0, uid, goal, city), None);
+    game.remove_unit(soldier);
+    game.players[0].techs.insert(crate::name!("shipbuilding"));
+    game.map.tiles.get_mut(&goal).unwrap().terrain = crate::name!("coast");
+    assert_eq!(siege_route_step(&game, 0, uid, goal, city), Some(goal));
+    assert_eq!(old_siege_route_step(&game, 0, uid, goal, city), Some(goal));
+    for kind in ["warrior", "builder"] {
+        game.spawn_unit(kind, 0, start);
+    }
+    assert!(compare_siege(&game, uid, city) > 0);
+}
+
 fn old_siege_route_step(g: &Game, pid: usize, uid: u32, goal: Pos, city: Pos) -> Option<Pos> {
     let unit = g.units.get(&uid)?;
     let mut avoid: BTreeSet<Pos> = g
