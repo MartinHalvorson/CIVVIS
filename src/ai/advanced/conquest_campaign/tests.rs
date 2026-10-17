@@ -312,161 +312,6 @@ fn standing_archers() -> (Game, AdvancedAi, u32) {
     (game, controller, nearby)
 }
 
-fn funding_campaign() -> (Game, AdvancedAi, StrategicPlan, Vec<u32>) {
-    let (mut game, ranked) =
-        crate::ai::commercial_hub::tests::emperor_empire("CAMPAIGNFUNDING", 20261017);
-    game.players[0].gold = 0.0;
-    game.players[0].gold_per_turn = 1.0;
-    for technology in [
-        "archery",
-        "iron_working",
-        "engineering",
-        "machinery",
-        "apprenticeship",
-    ] {
-        game.players[0].techs.insert(Name::new(technology));
-    }
-    Arc::make_mut(&mut game.observed_trade_capacity).insert(0, 0);
-    let position = game.cities[&ranked[0]].pos;
-    for _ in 0..12 {
-        game.spawn_test_unit("warrior", 0, position);
-    }
-    for _ in 0..3 {
-        game.spawn_test_unit("archer", 0, position);
-    }
-    let mut controller = AdvancedAi::targeting(VictoryTarget::Domination);
-    controller.base.book_pos = 4;
-    controller.base.w.city_target = 6.0;
-    controller.enable_industrial_zone_in_the_producers();
-    controller.enable_commercial_hub_in_the_strategic_queue();
-    let plan = StrategicPlan {
-        strategy: GrandStrategy::Conquest,
-        target_player: None,
-        target_city: None,
-        threatened_city: None,
-        desired_cities: 6,
-        assessed_turn: game.turn,
-        rush: false,
-    };
-    assert!(controller.domination_upgrade_funding_shortfall(&game, 0));
-    assert!(controller
-        .base
-        .industrial_zone_producer_item(&game, 0, ranked[0], 6, None)
-        .is_some());
-    (game, controller, plan, ranked)
-}
-
-#[test]
-fn conquest_campaign_funds_its_existing_cohort_before_new_industry() {
-    let (mut game, mut controller, plan, ranked) = funding_campaign();
-    controller.advanced_production(&mut game, 0, &plan, false);
-    assert!(
-        matches!(game.cities[&ranked[0]].queue.first(), Some(Item::District { district, .. })
-            if game.district_family(*district) == "commercial_hub"),
-        "{:?}",
-        game.cities[&ranked[0]].queue
-    );
-}
-
-#[test]
-fn conquest_campaign_funding_keeps_an_already_funded_industrial_step() {
-    let (mut game, mut controller, plan, ranked) = funding_campaign();
-    game.players[0].gold = 10000.0;
-    assert!(!controller.domination_upgrade_funding_shortfall(&game, 0));
-    controller.advanced_production(&mut game, 0, &plan, false);
-    assert!(
-        matches!(game.cities[&ranked[0]].queue.first(), Some(Item::District { district, .. })
-            if game.district_family(*district) == "industrial_zone"),
-        "{:?}",
-        game.cities[&ranked[0]].queue
-    );
-}
-
-#[test]
-fn conquest_campaign_funding_follows_the_existing_army_through_expansion() {
-    let (mut game, mut controller, mut plan, ranked) = funding_campaign();
-    plan.strategy = GrandStrategy::Expansion;
-    controller.advanced_production(&mut game, 0, &plan, false);
-    assert!(
-        matches!(game.cities[&ranked[0]].queue.first(), Some(Item::District { district, .. })
-            if game.district_family(*district) == "commercial_hub")
-    );
-}
-
-#[test]
-fn conquest_campaign_funding_preserves_other_victory_lanes_and_recovery() {
-    let (game, mut controller, mut plan, _) = funding_campaign();
-    for target in [
-        None,
-        Some(VictoryTarget::Science),
-        Some(VictoryTarget::Religion),
-    ] {
-        controller.victory_target = target;
-        assert!(!controller.conquest_campaign_needs_funding(&game, 0, &plan));
-    }
-    controller.victory_target = Some(VictoryTarget::Domination);
-    for strategy in [GrandStrategy::Science, GrandStrategy::Recovery] {
-        plan.strategy = strategy;
-        assert!(!controller.conquest_campaign_needs_funding(&game, 0, &plan));
-    }
-}
-
-#[test]
-fn conquest_campaign_funding_preserves_major_war_production() {
-    let (mut game, controller, plan, _) = funding_campaign();
-    let mut rival = game.players[0].clone();
-    let rival_id = game.players.len();
-    rival.id = rival_id;
-    rival.team = None;
-    game.players.push(rival);
-    game.at_war.insert((0, rival_id));
-    assert!(game.is_at_war(0, rival_id));
-    assert!(!controller.conquest_campaign_needs_funding(&game, 0, &plan));
-}
-
-#[test]
-fn conquest_campaign_funding_retains_already_committed_industry() {
-    let (mut game, mut controller, plan, ranked) = funding_campaign();
-    let item = controller
-        .base
-        .industrial_zone_producer_item(&game, 0, ranked[0], 6, None)
-        .unwrap();
-    game.apply(
-        0,
-        &Action::Produce {
-            city: ranked[0],
-            item: item.clone(),
-        },
-    )
-    .unwrap();
-    controller.advanced_production(&mut game, 0, &plan, false);
-    assert_eq!(game.cities[&ranked[0]].queue.first(), Some(&item));
-}
-
-#[test]
-fn conquest_campaign_funding_preserves_city_threats_and_restores_the_loan() {
-    let (game, mut controller, mut plan, ranked) = funding_campaign();
-    plan.threatened_city = Some(ranked[0]);
-    controller.base.plan_threatened_city = Some(ranked[1]);
-    let counts = controller.counts(&game, 0);
-    assert!(controller
-        .conquest_campaign_trade_item(&game, 0, ranked[0], &plan, &counts)
-        .is_none());
-    assert_eq!(controller.base.plan_threatened_city, Some(ranked[1]));
-}
-
-#[test]
-fn conquest_campaign_funding_requires_the_existing_trade_gene() {
-    let (mut game, mut controller, plan, ranked) = funding_campaign();
-    controller.disable_commercial_hub_in_the_strategic_queue();
-    assert!(!controller.conquest_campaign_needs_funding(&game, 0, &plan));
-    controller.advanced_production(&mut game, 0, &plan, false);
-    assert!(
-        matches!(game.cities[&ranked[0]].queue.first(), Some(Item::District { district, .. })
-            if game.district_family(*district) == "industrial_zone")
-    );
-}
-
 #[test]
 fn conquest_campaign_researches_the_standing_archer_upgrade_before_war() {
     let (game, controller, _) = standing_archers();
@@ -543,4 +388,140 @@ fn conquest_campaign_modernization_routes_the_actual_peace_research_choice() {
     };
     controller.advanced_research(&mut game, 0, &plan);
     assert_eq!(game.players[0].research.as_deref(), Some("machinery"));
+}
+
+fn expansion_upgrade_campaign() -> (Game, AdvancedAi, StrategicPlan, Vec<u32>) {
+    let (mut game, controller, nearby) = standing_archers();
+    game.turn = 69;
+    game.players[0].techs.insert(crate::name!("machinery"));
+    game.players[0].gold = 1000.0;
+    game.players[0].gold_per_turn = 18.0;
+    let units = game.player_unit_ids(0);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: Some(2),
+        target_city: Some(nearby),
+        threatened_city: None,
+        desired_cities: 7,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    (game, controller, plan, units)
+}
+
+#[test]
+fn conquest_campaign_expansion_executes_the_affordable_standing_upgrade() {
+    let (mut game, controller, plan, units) = expansion_upgrade_campaign();
+    let price = game.unit_gold_upgrade_offer(0, units[0]).unwrap().1;
+    game.players[0].gold = price + 31.0;
+    assert!(!game.is_at_war(0, 2));
+    controller.fund_domination_upgrades(&mut game, 0, &plan);
+    assert_eq!(game.units[&units[0]].kind, "crossbowman");
+    assert_eq!(game.units[&units[1]].kind, "archer");
+    assert_eq!(game.players[0].gold, 31.0);
+    assert_eq!(plan.strategy, GrandStrategy::Expansion);
+}
+
+#[test]
+fn conquest_campaign_expansion_upgrade_preserves_the_emergency_floor() {
+    let (mut game, controller, plan, units) = expansion_upgrade_campaign();
+    let price = game.unit_gold_upgrade_offer(0, units[0]).unwrap().1;
+    game.players[0].gold = price + 40.0;
+    game.players[0].gold_per_turn = -11.0;
+    controller.fund_domination_upgrades(&mut game, 0, &plan);
+    assert!(units.iter().all(|unit| game.units[unit].kind == "archer"));
+    assert_eq!(game.players[0].gold, price + 40.0);
+}
+
+#[test]
+fn conquest_campaign_expansion_upgrade_requires_writing_and_two_cities() {
+    let (mut game, controller, plan, units) = expansion_upgrade_campaign();
+    game.players[0].techs.remove(&crate::name!("writing"));
+    controller.fund_domination_upgrades(&mut game, 0, &plan);
+    assert!(units.iter().all(|unit| game.units[unit].kind == "archer"));
+    game.players[0].techs.insert(crate::name!("writing"));
+    let second = game.player_city_ids(0)[1];
+    game.cities.get_mut(&second).unwrap().owner = 3;
+    controller.fund_domination_upgrades(&mut game, 0, &plan);
+    assert!(units.iter().all(|unit| game.units[unit].kind == "archer"));
+}
+
+#[test]
+fn conquest_campaign_expansion_upgrade_requires_a_reachable_named_target() {
+    let (mut game, controller, mut plan, units) = expansion_upgrade_campaign();
+    plan.target_player = Some(1);
+    plan.target_city = Some(game.player_city_ids(1)[0]);
+    controller.fund_domination_upgrades(&mut game, 0, &plan);
+    assert!(units.iter().all(|unit| game.units[unit].kind == "archer"));
+    plan.target_player = None;
+    plan.target_city = None;
+    controller.fund_domination_upgrades(&mut game, 0, &plan);
+    assert!(units.iter().all(|unit| game.units[unit].kind == "archer"));
+}
+
+#[test]
+fn conquest_campaign_expansion_upgrade_respects_friendship_and_contact() {
+    let (mut game, mut controller, plan, units) = expansion_upgrade_campaign();
+    game.players[0].friends_until.insert(2, game.turn + 20);
+    controller.fund_domination_upgrades(&mut game, 0, &plan);
+    assert!(units.iter().all(|unit| game.units[unit].kind == "archer"));
+    game.players[0].friends_until.clear();
+    controller.battlefront_observation = true;
+    assert!(!game.has_met(0, 2));
+    controller.fund_domination_upgrades(&mut game, 0, &plan);
+    assert!(units.iter().all(|unit| game.units[unit].kind == "archer"));
+}
+
+#[test]
+fn conquest_campaign_expansion_upgrade_keeps_other_victory_lanes_unchanged() {
+    for target in [
+        None,
+        Some(VictoryTarget::Science),
+        Some(VictoryTarget::Religion),
+    ] {
+        let (mut game, mut controller, plan, units) = expansion_upgrade_campaign();
+        controller.victory_target = target;
+        controller.fund_domination_upgrades(&mut game, 0, &plan);
+        assert!(units.iter().all(|unit| game.units[unit].kind == "archer"));
+        assert_eq!(game.players[0].gold, 1000.0);
+    }
+}
+
+#[test]
+fn conquest_campaign_expansion_upgrade_does_not_spend_a_threatened_city_budget() {
+    let (mut game, controller, mut plan, units) = expansion_upgrade_campaign();
+    plan.threatened_city = Some(game.player_city_ids(0)[0]);
+    controller.fund_domination_upgrades(&mut game, 0, &plan);
+    assert!(units.iter().all(|unit| game.units[unit].kind == "archer"));
+}
+
+#[test]
+fn conquest_campaign_expansion_upgrade_preserves_legal_action_constraints() {
+    let (mut game, controller, plan, units) = expansion_upgrade_campaign();
+    for unit in &units {
+        game.units.get_mut(unit).unwrap().acted = true;
+    }
+    controller.fund_domination_upgrades(&mut game, 0, &plan);
+    assert!(units.iter().all(|unit| game.units[unit].kind == "archer"));
+    assert_eq!(game.players[0].gold, 1000.0);
+}
+
+#[test]
+fn conquest_campaign_expansion_upgrade_preserves_existing_named_wars() {
+    let (mut game, controller, plan, units) = expansion_upgrade_campaign();
+    game.at_war.insert((0, 2));
+    assert!(game.is_at_war(0, 2));
+    controller.fund_domination_upgrades(&mut game, 0, &plan);
+    assert!(units
+        .iter()
+        .all(|unit| game.units[unit].kind == "crossbowman"));
+}
+
+#[test]
+fn conquest_campaign_expansion_upgrade_does_not_open_another_war_budget() {
+    let (mut game, controller, plan, units) = expansion_upgrade_campaign();
+    game.at_war.insert((0, 1));
+    assert!(game.is_at_war(0, 1));
+    controller.fund_domination_upgrades(&mut game, 0, &plan);
+    assert!(units.iter().all(|unit| game.units[unit].kind == "archer"));
 }

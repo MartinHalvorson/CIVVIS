@@ -1,6 +1,6 @@
 {
-  "updated_utc": "2026-10-17T19:43:02.533653+00:00",
-  "status": "Development continues; no candidate is approved for promotion",
+  "updated_utc": "2026-10-17T20:09:00.611140+00:00",
+  "status": "Active development, still not promotion-ready: five complete six-map variants, no focal or verified Domination win; zero fresh executions. Variant 06 fixes the Expansion upgrade entry mismatch against policy parent 03.",
   "variant_01": {
     "analyzed_utc": "2026-10-17T18:02:22.529676+00:00",
     "variant": "variant-01",
@@ -770,7 +770,7 @@
     "all_candidate_source_blobs_and_binary_hashes_reverified_before_packing": true
   },
   "execution_counts": {
-    "development_executions": 24,
+    "development_executions": 30,
     "independent_known_development_maps": 6,
     "new_baseline_observer_control_executions": 4,
     "fresh_holdout_executions": 0
@@ -795,7 +795,7 @@
       "faith_war_opening_journal_turn": 117
     }
   ],
-  "next_development": "Variant-05 removes rejected variant-04 filtering and tests whether the existing legal trade-economy step should precede new idle industry when the existing Domination upgrade-funding shortfall is true. Eight funding tests pass, including actual production queue contrast, funded industry, Expansion, other lanes/recovery, major war, committed industry, threatened-city loan restoration and gene-off preservation. The core regression fails without the priority change. Adjacent commercial (16), industry (29), faith (18), conquest (32) and cargo-check tests pass; no variant-05 games or fresh holdouts have run.",
+  "next_development": "Variant 06, registered before execution: preserve variant-03 policy and admit the existing upgrade pass during peaceful, unthreatened Expansion with Writing/two cities and a legal, reachable named major frontier. Pass the original Expansion plan unchanged. No fresh execution is authorized until the original verified Deity Domination development gate is met.",
   "variant_03": {
     "analyzed_utc": "2026-10-17T19:12:26.852483+00:00",
     "variant": "variant-03",
@@ -1934,5 +1934,610 @@
     "simulations_reexecuted_during_extraction": false,
     "executables_bundled": false,
     "all_candidate_source_blobs_and_binary_hashes_reverified_before_packing": true
+  },
+  "variant_05": {
+    "analyzed_utc": "2026-10-17T19:54:41.064779+00:00",
+    "variant": "variant-05",
+    "development_only_not_fresh_strength_evidence": true,
+    "registration_sha256": "2c8cb2eff49e0682a1af251d7ac7afcf2b32061b25b013e8b41e09c1baa4b813",
+    "frozen_source_sha256": "a1f2180d60e3d4d74c2040bfcf7646fc5385b7ad28e7c0f697a64f8c92e490a3",
+    "locked_launch_sha256": "1943de88743cc031c6a1c4f862450e29b6b7e76d196b895b0d2b0432e135460e",
+    "analyzer_sha256": "5fc74caf8f57503f7b708ab275883942d1b968ced618af79750fbaca711a88eb",
+    "cases": [
+      {
+        "difficulty": "immortal",
+        "seed": 45312861349,
+        "baseline": {
+          "winner": 1,
+          "victory": "science",
+          "turn": 152,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [
+            0
+          ],
+          "foreign_major_holdings_observed_at_round_boundaries": [],
+          "focal_major_declarations": 0,
+          "focal_actions": 5650,
+          "focal_action_sha256": "eed67189c31b67097e116c2cc30e034d6adc0b61b56e2fcc44ddbb60aa57d7c4",
+          "folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-45312861349-baseline",
+          "world_folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/additional-baseline-controls/immortal-45312861349-trace",
+          "raw_artifact_sha256": {
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-45312861349-baseline/result.json": "cdb751ac2dd7955b076e98630fad934726bb9b78fad8bc93c294c908c8b2fe3e",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-45312861349-baseline/actions.json": "c50232bea440a13c38bb832b34cefc7f379baf8513f732630b81099523563792",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-45312861349-baseline/plans.json": "a185ad6ab41683a241d8fbb90d7eb0dd49e0ca8f58e15d04b9b8cd9629d67e7a",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-45312861349-baseline/snapshots.json": "26c4d8025c941882eda80ba6268eaf0a40710ec18adacf6896174631d5f49926",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-45312861349-baseline/why.log": "a8fc8cbf571eeaecb14f6a4d243982da20586a49dc8c92c74e9a4c4a0d476b2f",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/additional-baseline-controls/immortal-45312861349-trace/world-states.json": "ab14c0bdf4f6306e1c1886814ccdb04e5b1f32789791f07103fe0aec6fbbb9e4"
+          }
+        },
+        "candidate": {
+          "winner": 1,
+          "victory": "science",
+          "turn": 159,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [
+            0
+          ],
+          "foreign_major_holdings_observed_at_round_boundaries": [],
+          "focal_major_declarations": 0,
+          "focal_actions": 5892,
+          "focal_action_sha256": "30f952f2b8cca4029633eb70161c9070e2a08f1585ac64a1a2098e1eca394b0d",
+          "folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/immortal-45312861349",
+          "world_folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/immortal-45312861349",
+          "raw_artifact_sha256": {
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/immortal-45312861349/result.json": "d17b8675e2d1232576faac53cf2fa10425fdab0b73ae033405d099f7d079762c",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/immortal-45312861349/actions.json": "2108cff043378da19c6016ee61b05982646ba82244231cd656fc409088d25446",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/immortal-45312861349/plans.json": "67a1c91ca256c07dfdaf6f1f1416f8418ca5694ea206eded16bcb91e6bdce37c",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/immortal-45312861349/snapshots.json": "bf3334a7683717b1b442696ccf49d0c9327af243092183ece9eeecb0e63ce789",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/immortal-45312861349/why.log": "79d8d7379d90e016a8f6eb87d55d502e28580409ace3d455736bfe34de25a930",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/immortal-45312861349/world-states.json": "225460ddfbdf376c91455688b53717cc03f9092eca7088ad91c242cbf9a907c3"
+          }
+        },
+        "focal_action_contrast": true
+      },
+      {
+        "difficulty": "immortal",
+        "seed": 47651167238,
+        "baseline": {
+          "winner": 3,
+          "victory": "science",
+          "turn": 150,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [],
+          "foreign_major_holdings_observed_at_round_boundaries": [],
+          "focal_major_declarations": 1,
+          "focal_actions": 2922,
+          "focal_action_sha256": "6f0ca054fd9c3fb52783286931919ffa4145a3a08b3e14fee9c946fabe54cf0e",
+          "folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-47651167238-baseline",
+          "world_folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-city-conversion/world-controls/immortal-47651167238-trace",
+          "raw_artifact_sha256": {
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-47651167238-baseline/result.json": "df610ab3aca679e21fb321f3535e365af2e932985d9629e843e2020e6def1f09",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-47651167238-baseline/actions.json": "e1fd43d7b93bfa9d9e178f713b1f017a9390a8f74d78d54a41b0feb52494fa4d",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-47651167238-baseline/plans.json": "041b628bd005a1f20033a4972fa2c1b419ba8893f239e9a2776e7a6d9531c980",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-47651167238-baseline/snapshots.json": "eeb41f3d8fd7c7a783592900a369034508f104b44eea5dd186bd2ab791289fbe",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-47651167238-baseline/why.log": "853021679717201cbbf9ff271fc343dfb6e5a22b317e2a116e373367c67d8ea0",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-city-conversion/world-controls/immortal-47651167238-trace/world-states.json": "a731829e0eba7054cfba2892d1af7748b301aa874402025faad7c5aeb58a985e"
+          }
+        },
+        "candidate": {
+          "winner": 3,
+          "victory": "science",
+          "turn": 148,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [],
+          "foreign_major_holdings_observed_at_round_boundaries": [],
+          "focal_major_declarations": 0,
+          "focal_actions": 3090,
+          "focal_action_sha256": "7adc1694d4c92f652c669f1792f92bab55d4a6eb9ce80db1f90d055b330d3245",
+          "folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/immortal-47651167238",
+          "world_folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/immortal-47651167238",
+          "raw_artifact_sha256": {
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/immortal-47651167238/result.json": "ffefe9f13a959134d94708724b0dabbcba0905d15e07f611ce2fc2f5a16ab18b",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/immortal-47651167238/actions.json": "8998aa20fd49cc5fcc99d1fc4120faf1149b229410d01e46091c914fb3e48f77",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/immortal-47651167238/plans.json": "2bea553454037501887a28067a3b41ccf189e71361bc19c82834d00ce4a6679e",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/immortal-47651167238/snapshots.json": "210f5dd535a8d6156c99f577fd20459a7f37ea931a8629de700b349429099e5e",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/immortal-47651167238/why.log": "82881c10600c027eb16a08d5420cc5bf281d62f232ef065e205b45b269f37c7d",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/immortal-47651167238/world-states.json": "12222f082a1bb504dbe6e05f89b49d07ac7774e2650ff3654750608a447f1c17"
+          }
+        },
+        "focal_action_contrast": true
+      },
+      {
+        "difficulty": "immortal",
+        "seed": 46732028391,
+        "baseline": {
+          "winner": 2,
+          "victory": "science",
+          "turn": 147,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [
+            0
+          ],
+          "foreign_major_holdings_observed_at_round_boundaries": [],
+          "focal_major_declarations": 1,
+          "focal_actions": 3096,
+          "focal_action_sha256": "7ece2cfd6f26a399527c83d98d29ea3ff7f397f4289396973c396e1003dfe55c",
+          "folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-46732028391-baseline",
+          "world_folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-city-conversion/world-controls/immortal-46732028391-trace",
+          "raw_artifact_sha256": {
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-46732028391-baseline/result.json": "6f67eeec0a26c57e34a720e61243869a4999209976cc073d94ce12a6f4b9ddb7",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-46732028391-baseline/actions.json": "b326de72869eb8c0538462c693dd4eb9e22bf0d992d3d464cc5d0079ea085156",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-46732028391-baseline/plans.json": "a5099206ece3e013dfb009e3aedcc49b16cf4d0750f1f479491211ac0f977060",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-46732028391-baseline/snapshots.json": "eb9c2558ade32b5d3a44de46a50161d45aa2e3f38260de9b93eb6e2f60683177",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-immortal-46732028391-baseline/why.log": "93350a808bf89f4c43a16e8e06b4399974b68d7a3c03087e0e1bc6295acc3762",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-city-conversion/world-controls/immortal-46732028391-trace/world-states.json": "fc7dac6422c13ba370fd14e242e90d2b22ed42fd1f68e8da81492d19934c46ea"
+          }
+        },
+        "candidate": {
+          "winner": 2,
+          "victory": "science",
+          "turn": 147,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [
+            0
+          ],
+          "foreign_major_holdings_observed_at_round_boundaries": [],
+          "focal_major_declarations": 0,
+          "focal_actions": 4044,
+          "focal_action_sha256": "f126c6a7213e530b590eb1f37dc7392245e6d263b09a05c5177f46086846810b",
+          "folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/immortal-46732028391",
+          "world_folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/immortal-46732028391",
+          "raw_artifact_sha256": {
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/immortal-46732028391/result.json": "6f7de0707ff5123d9ad3f80ebec15c2d567f19db08cbaac4499bc317078740ab",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/immortal-46732028391/actions.json": "f3b47320ca1f742b4ebeafaf23c5364ed043b757d2b799c9ab13b694c5afd681",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/immortal-46732028391/plans.json": "7e88a76581373b134c6d86432746cef508fbdd22eacfc5914c1a988a07596185",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/immortal-46732028391/snapshots.json": "465fd0947deb92ddfd577b17240a90b2587f1c948cc8d6428096e2c350cd6a01",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/immortal-46732028391/why.log": "f839a7f7e7a82cbed43cf935436e13b7a7c1740ae621d919c0c3ecea7026e01e",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/immortal-46732028391/world-states.json": "e200f4d921cc57545cac1c08c583e75bb5e5254560aed1476a00036d313d8472"
+          }
+        },
+        "focal_action_contrast": true
+      },
+      {
+        "difficulty": "deity",
+        "seed": 49478848256,
+        "baseline": {
+          "winner": 1,
+          "victory": "culture",
+          "turn": 109,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [
+            0
+          ],
+          "foreign_major_holdings_observed_at_round_boundaries": [],
+          "focal_major_declarations": 0,
+          "focal_actions": 2068,
+          "focal_action_sha256": "ed2666eed8257cdfc20c53b9d9c14c4c02117cad30f728a182121922f673ec24",
+          "folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-49478848256-baseline",
+          "world_folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-city-conversion/world-controls/deity-49478848256-trace",
+          "raw_artifact_sha256": {
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-49478848256-baseline/result.json": "d3e25a10c2561ec521dbcf702d7555a28f34eda09214e04b4fc02f1fea427918",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-49478848256-baseline/actions.json": "64a13370e96d9a1a90ae11048a403855b92ec7d7ed8d3a9271e24eead77c5da5",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-49478848256-baseline/plans.json": "9bf3378f6a34113c19bbd303da2f6a86fea5c94e337cd19513d1eaa5e5cedad7",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-49478848256-baseline/snapshots.json": "b49d3c74585f69c1920901039544a1e84f929efc639a4ded4d941421aaa4fe9a",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-49478848256-baseline/why.log": "b12f24241bf41f7f3a8c26156a964cb9b50af2f378082afd9d38643aa43d7518",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-city-conversion/world-controls/deity-49478848256-trace/world-states.json": "07bd0bdb44839611926eee0ec8682226e44f545fb85ff88e395510d1bb7aa9c8"
+          }
+        },
+        "candidate": {
+          "winner": 1,
+          "victory": "science",
+          "turn": 128,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [],
+          "foreign_major_holdings_observed_at_round_boundaries": [],
+          "focal_major_declarations": 0,
+          "focal_actions": 1895,
+          "focal_action_sha256": "4ab8c6abb5fb2e5a0a1a49cf3f81fede978aae988721caa9fcb21251d7c401e9",
+          "folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/deity-49478848256",
+          "world_folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/deity-49478848256",
+          "raw_artifact_sha256": {
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/deity-49478848256/result.json": "8c83da738d59ee3c223d59d2f36f759f76c1326651f9482dcc83100b9ad32c67",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/deity-49478848256/actions.json": "2fd829fb4fde68574f4de3618adf23e599c292e332ba701f6c74be76eab47d62",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/deity-49478848256/plans.json": "2a8a8751fe90e9b368d77bbdc587ffe22819245a293c6f3b5284eff8dcfc8108",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/deity-49478848256/snapshots.json": "0e44c13f649ce8d4e41115c84e45ff38adc395e236d4d9fcce363becec1c4035",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/deity-49478848256/why.log": "e60e4d774b6267f6d9ab9d4348a9aa44e54d83efc58cd7034f782dbe54d247c7",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/deity-49478848256/world-states.json": "eab3bc5cfaaf5a2e864b3676a457a4c10a9a8728e14ba06f77f92b6e9cd9e523"
+          }
+        },
+        "focal_action_contrast": true
+      },
+      {
+        "difficulty": "deity",
+        "seed": 43663176127,
+        "baseline": {
+          "winner": 3,
+          "victory": "science",
+          "turn": 139,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [
+            0
+          ],
+          "foreign_major_holdings_observed_at_round_boundaries": [],
+          "focal_major_declarations": 1,
+          "focal_actions": 2404,
+          "focal_action_sha256": "1a3f688aa4289985b7d3224d685d05b0819019c02c71903817a8fb9b7538a809",
+          "folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-43663176127-baseline",
+          "world_folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-city-conversion/world-controls/deity-43663176127-trace",
+          "raw_artifact_sha256": {
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-43663176127-baseline/result.json": "ca07209c3e03da125f48769012ecf5a2e03a64bc6efa1fe5a881f549a9d533af",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-43663176127-baseline/actions.json": "eb41f13cb2dd42e4b95e50f93b7f3aff786a6bfd060ef3857362428d75efb9e2",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-43663176127-baseline/plans.json": "c55cfbf212ab18a94f085ff8faefb67368ae67bda88206f6b07e79db94751929",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-43663176127-baseline/snapshots.json": "08a04106ebe2fb9c960f340780b3893ed6be54fc607a98b95fff63aed3bc1427",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-43663176127-baseline/why.log": "7302f26cedf43f5bb89f027ce488796d510297a2f4bb06ddab650e8db5f23524",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-city-conversion/world-controls/deity-43663176127-trace/world-states.json": "e5d90934bfa214f2ee874469a7d28383d2443d242f29423d5ed0784c254778a2"
+          }
+        },
+        "candidate": {
+          "winner": 3,
+          "victory": "science",
+          "turn": 147,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [
+            0
+          ],
+          "foreign_major_holdings_observed_at_round_boundaries": [],
+          "focal_major_declarations": 0,
+          "focal_actions": 3151,
+          "focal_action_sha256": "2388b3ba8eb9fe3243aaae56bdd273a0308bf03d931afc41fddebe6fd4311d74",
+          "folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/deity-43663176127",
+          "world_folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/deity-43663176127",
+          "raw_artifact_sha256": {
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/deity-43663176127/result.json": "0ab7cb8cd3c3c6eab376210699b7f2b6b3e648065850da85dd8bea921a658f6b",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/deity-43663176127/actions.json": "26f1cb845f1782246f55d79a3488b6af7edf5cfa050d83e3844ec6c5b6eadda0",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/deity-43663176127/plans.json": "577fd0557e9c0a793dad9a2306570fa287042b9bb683f8497714985af534245d",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/deity-43663176127/snapshots.json": "ee0b69b4bbcd2913ae801116c95f7c6ef11e393734caa54118408cbcd3c381e5",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/deity-43663176127/why.log": "9400c332983f7ba662ed156f773a75b449871fc3e5db1d3a14744651a3dd400f",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/deity-43663176127/world-states.json": "5038b5312dfcdb6c475a7fca72baaeab7703dc771c61fbda26e06380cd26c2c3"
+          }
+        },
+        "focal_action_contrast": true
+      },
+      {
+        "difficulty": "deity",
+        "seed": 49220027834,
+        "baseline": {
+          "winner": 1,
+          "victory": "culture",
+          "turn": 107,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [
+            0
+          ],
+          "foreign_major_holdings_observed_at_round_boundaries": [],
+          "focal_major_declarations": 1,
+          "focal_actions": 3153,
+          "focal_action_sha256": "3c348cd65b9167b8dd8fa75bf53778c3513a62e60f8c06a0c9b721736e4fab51",
+          "folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-49220027834-baseline",
+          "world_folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/additional-baseline-controls/deity-49220027834-trace",
+          "raw_artifact_sha256": {
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-49220027834-baseline/result.json": "cc771b638be06a0045d63c8f6bd09851dd7f2453bd9ca679e22dd1a26fcc6c72",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-49220027834-baseline/actions.json": "1ec3b102e77117aed3f96fdf9ee00e682fcd2c58821dd1d87f75639af66072a1",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-49220027834-baseline/plans.json": "94ee7129c5e395ce65400a91a2247359c520681256c8020490a7c2fc1d2b1f5b",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-49220027834-baseline/snapshots.json": "75d3dc5068c321e5b701a40feeeace0dd6dcf2b551ef09af98107680d2cf510f",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/paired-evaluation/fresh-deity-49220027834-baseline/why.log": "9688589640b540e39118bb9604cc90121ac988e680901e5b95d4608e731e1866",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/additional-baseline-controls/deity-49220027834-trace/world-states.json": "6d2c1b8a1ac460338554e6b2063848ba28f5246f321c5697988a4856a577342b"
+          }
+        },
+        "candidate": {
+          "winner": 2,
+          "victory": "culture",
+          "turn": 139,
+          "focal_won": false,
+          "verified_domination": false,
+          "terminal_original_capitals_owned": [
+            0
+          ],
+          "foreign_major_holdings_observed_at_round_boundaries": [],
+          "focal_major_declarations": 1,
+          "focal_actions": 4060,
+          "focal_action_sha256": "3fc14038dfd0ce8e69da9a6ae5ad83bd80e4e419c80d4c795a1458a6581f9c16",
+          "folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/deity-49220027834",
+          "world_folder": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/deity-49220027834",
+          "raw_artifact_sha256": {
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/deity-49220027834/result.json": "50e138bb4015dde2a2b9cc566facf986dd51aa9c93c1b5f07886f067b86177b4",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/deity-49220027834/actions.json": "835507426001622d71e4e45b2d5f4fe1742820db6086f83c5f3b35da129aa0b2",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/deity-49220027834/plans.json": "cd5f4279acde46ef37508b3d58e6166b13917080ff3aafec48ff38a97b4c870a",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/deity-49220027834/snapshots.json": "d034157d004a619affec0f6c2e9d8c6caaf6bbfb2a5bd98a7bf0d06417e8cfde",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/deity-49220027834/why.log": "6753e7a10c7647cf766ad60587b51823c72bbe8d2798f48b03160cf7a8d5fa41",
+            "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/deity-49220027834/world-states.json": "cdbb1359a7b723615bbbf3ac3a5323ce0989137cd9046255b0e5264178e3389c"
+          }
+        },
+        "focal_action_contrast": true
+      }
+    ],
+    "all_six_complete": true,
+    "candidate_focal_wins": 0,
+    "candidate_verified_domination_wins": 0,
+    "candidate_verified_deity_domination_wins": 0,
+    "development_gate_pass": false,
+    "fresh_holdouts_authorized_by_development_gate": false,
+    "caution": "Observed holdings are round-boundary states, not proof of military capture; absence does not exclude an intra-turn transient capture. Terminal Domination requires the engine victory plus all four original capitals owned by the focal seat. Known-map outcomes never count as fresh strength evidence."
+  },
+  "variant_05_source": {
+    "frozen_utc": "2026-10-17T19:48:06.021765+00:00",
+    "commit": "03e2a8c59ac9ff59ce9d1263bf50e5dcd2121830",
+    "tree": "3e9144b0d7c0e74c4f48f863c19a815719b744d8",
+    "source": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/source-variant-05",
+    "probe": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/probe-variant-05",
+    "source_files": 2780,
+    "input_files": {
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/registration.json": "2c8cb2eff49e0682a1af251d7ac7afcf2b32061b25b013e8b41e09c1baa4b813",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/development.py": "8df8417d4b3f15a0038d4dd7b42f3325e8356a4bda0b81a4d4608ad4f1e86306",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-foundation/source-baseline/deploy/live-force-on.txt": "d7ac5367dda9dc54093ebc55f59d3630c908c577fe84309bbe5378cecec3de55",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/probe-variant-05/Cargo.toml": "3ecda5bf1365d3284e476cd7640a3318aa9bf1ae78d06c36e4efa9369c93d0db",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/probe-variant-05/Cargo.lock": "2ee86851ecb421cacf0f888263e072e41a02e674da09c86bb88f00a92f8666c7",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/probe-variant-05/source-identity.txt": "efb686c9d9824d215c571d566f5d183c73d62544bc1527d8da209cd3ed38ff77",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/probe-variant-05/src/main.rs": "25e32cef6d2dae1ca97439ee993c5f6dc1fb67f74993e678097ddff16f327242",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/variant-05/source-manifest.json": "0d4e31802eeaa3d5650f17a980d6e72caa8286cb6bc34c51d71dcab0334184cf"
+    },
+    "scope": "Known development maps only; no fresh holdouts authorized by this runner"
+  },
+  "variant_05_binary": {
+    "locked_utc": "2026-10-17T19:52:04.506710+00:00",
+    "frozen_source_sha256": "a1f2180d60e3d4d74c2040bfcf7646fc5385b7ad28e7c0f697a64f8c92e490a3",
+    "binary": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/target-variant-05/ci/conquest-city-health-world-probe",
+    "binary_sha256": "fb2752cc42ffac3a55f05827185c08cd412bd67cd882c7f88133c2f516064c71",
+    "commit": "03e2a8c59ac9ff59ce9d1263bf50e5dcd2121830"
+  },
+  "variant_05_vs_variant_03": {
+    "observed_utc": "2026-10-17T19:58:59.573376+00:00",
+    "parent_source": "12f146fcfbbdeae2e311cffa19d0b9b3dddd8551",
+    "candidate_source": "03e2a8c59ac9ff59ce9d1263bf50e5dcd2121830",
+    "all_six_complete": true,
+    "cases": [
+      {
+        "difficulty": "immortal",
+        "seed": 45312861349,
+        "focal_actions_identical": true,
+        "complete_raw_file_bytes_identical": {
+          "actions.json": true,
+          "world-states.json": true,
+          "snapshots.json": true,
+          "result.json": false
+        },
+        "budget_truncated_turns": 0
+      },
+      {
+        "difficulty": "immortal",
+        "seed": 47651167238,
+        "focal_actions_identical": true,
+        "complete_raw_file_bytes_identical": {
+          "actions.json": true,
+          "world-states.json": true,
+          "snapshots.json": true,
+          "result.json": false
+        },
+        "budget_truncated_turns": 0
+      },
+      {
+        "difficulty": "immortal",
+        "seed": 46732028391,
+        "focal_actions_identical": true,
+        "complete_raw_file_bytes_identical": {
+          "actions.json": true,
+          "world-states.json": true,
+          "snapshots.json": true,
+          "result.json": false
+        },
+        "budget_truncated_turns": 0
+      },
+      {
+        "difficulty": "deity",
+        "seed": 49478848256,
+        "focal_actions_identical": true,
+        "complete_raw_file_bytes_identical": {
+          "actions.json": true,
+          "world-states.json": true,
+          "snapshots.json": true,
+          "result.json": false
+        },
+        "budget_truncated_turns": 0
+      },
+      {
+        "difficulty": "deity",
+        "seed": 43663176127,
+        "focal_actions_identical": true,
+        "complete_raw_file_bytes_identical": {
+          "actions.json": true,
+          "world-states.json": true,
+          "snapshots.json": true,
+          "result.json": false
+        },
+        "budget_truncated_turns": 0
+      },
+      {
+        "difficulty": "deity",
+        "seed": 49220027834,
+        "focal_actions_identical": true,
+        "complete_raw_file_bytes_identical": {
+          "actions.json": true,
+          "world-states.json": true,
+          "snapshots.json": true,
+          "result.json": false
+        },
+        "budget_truncated_turns": 0
+      }
+    ],
+    "fresh_executions": 0,
+    "interpretation": "No focal action contrast with policy parent; no demonstrated funding-policy execution or conquest improvement on these development maps."
+  },
+  "archive_checkpoint_05": {
+    "verified_utc": "2026-10-17T19:59:48.610948+00:00",
+    "archive": "/Users/martbot-mbp-m5-max-128/civvis-conquest-campaign-capacity-ecd1/docs/eval/2026-10-17-conquest-campaign-capacity.checkpoint-05.delta.provenance.json.gz",
+    "bytes": 2181597,
+    "sha256": "f7114393a08110abccd2c637792dac81d4b855010174a630073c82b8420aa90c",
+    "files": 112,
+    "unique_blobs": 57,
+    "base_archive": {
+      "repository_path": "docs/eval/2026-10-17-conquest-campaign-capacity.checkpoint-03.provenance.json.gz",
+      "sha256": "2044cb598cf83dc4d8d73bedafdeb28883f2f11c7ed8c48ee8acf30c28b4f542",
+      "bytes": 26037957
+    },
+    "logical_merged_files": 409,
+    "every_base_and_delta_file_verified": true,
+    "delta_requires_the_named_base_archive": true,
+    "every_blob_hash_and_file_length_verified_after_extraction": true,
+    "complete_development_analyses_reproduced": [
+      "variant-03",
+      "variant-05"
+    ],
+    "comparison_exception": "Only analyzed_utc and relocated absolute filesystem paths are normalized; every other analysis field and raw artifact hash matches.",
+    "simulations_reexecuted_during_extraction": false,
+    "executables_bundled": false,
+    "all_candidate_source_blobs_and_binary_hashes_reverified_before_packing": true
+  },
+  "variant_05_validation": {
+    "source_commit": "03e2a8c59ac9ff59ce9d1263bf50e5dcd2121830",
+    "focused_conquest_tests_passed": 32,
+    "focused_commercial_tests_passed": 16,
+    "focused_industry_tests_passed": 29,
+    "focused_faith_tests_passed": 18,
+    "cargo_check_tests": "pass",
+    "repository_rust_quality": "pass",
+    "remote_checks": {
+      "headRefOid": "03e2a8c59ac9ff59ce9d1263bf50e5dcd2121830",
+      "statusCheckRollup": [
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-17T20:02:57Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39064012890/job/117487726149",
+          "name": "cargo-test",
+          "startedAt": "2026-10-17T19:48:11Z",
+          "status": "COMPLETED",
+          "workflowName": "cargo-test"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-17T19:52:21Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39064012873/job/117487726208",
+          "name": "collaboration-policy",
+          "startedAt": "2026-10-17T19:48:12Z",
+          "status": "COMPLETED",
+          "workflowName": "collaboration-policy"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-17T20:07:30Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39065071846/job/117490877912",
+          "name": "collaboration-policy",
+          "startedAt": "2026-10-17T20:03:12Z",
+          "status": "COMPLETED",
+          "workflowName": "collaboration-policy"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-17T19:50:20Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39064012866/job/117487726315",
+          "name": "overwrite-guard",
+          "startedAt": "2026-10-17T19:48:11Z",
+          "status": "COMPLETED",
+          "workflowName": "overwrite-guard"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-17T20:05:03Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39065071938/job/117490878356",
+          "name": "overwrite-guard",
+          "startedAt": "2026-10-17T20:03:12Z",
+          "status": "COMPLETED",
+          "workflowName": "overwrite-guard"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-17T19:51:39Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39064012879/job/117487726272",
+          "name": "rust-quality",
+          "startedAt": "2026-10-17T19:48:11Z",
+          "status": "COMPLETED",
+          "workflowName": "rust-quality"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-17T20:01:05Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39064012902/job/117487726320",
+          "name": "paired-cost",
+          "startedAt": "2026-10-17T19:48:11Z",
+          "status": "COMPLETED",
+          "workflowName": "speed"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-17T19:49:20Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39064012890/job/117487726512",
+          "name": "published-build",
+          "startedAt": "2026-10-17T19:48:12Z",
+          "status": "COMPLETED",
+          "workflowName": "cargo-test"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-17T19:48:41Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39064012890/job/117487726276",
+          "name": "control-mod",
+          "startedAt": "2026-10-17T19:48:11Z",
+          "status": "COMPLETED",
+          "workflowName": "cargo-test"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-17T19:48:24Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://dashboard.gitguardian.com",
+          "name": "GitGuardian Security Checks",
+          "startedAt": "2026-10-17T19:48:07Z",
+          "status": "COMPLETED",
+          "workflowName": ""
+        }
+      ],
+      "observed_utc": "2026-10-17T20:07:52.191162+00:00"
+    },
+    "remote_nextest_passed": 6212,
+    "remote_nextest_skipped": 52,
+    "remote_documentation_ignored": 4,
+    "remote_extra_feature_tests_passed": [
+      71,
+      21,
+      24
+    ],
+    "complete_source_ci_receipt_postdates_raw_archive": true,
+    "all_six_budget_truncated_turns": 0
+  },
+  "variant_05_disposition": "Reject the queue funding policy for the next candidate: all six focal action streams, complete all-player action streams, world states and focal snapshots are identical to variant 03. This establishes no execution contrast or strength improvement, not that every query or proposal inside the policy was necessarily skipped. Keep its exact frozen source, binary hash, raw games and verified delta archive.",
+  "variant_06_validation": {
+    "new_actual_execution_tests": 10,
+    "semantic_red_before_entry_change": {
+      "passed": 9,
+      "failed": 1,
+      "failure": "Affordable Expansion archer remained an Archer instead of becoming a Crossbowman."
+    },
+    "first_entry_patch_attempt": "Matched the earlier upkeep-relief guard, not fund_domination_upgrades; focused suite still failed the intended execution regression. The unintended earlier-guard edit was restored, and a function-scoped patch changed only the actual funding-entry guard. No experiment was frozen or run from that intermediate edit.",
+    "corrected_focused_conquest_tests_passed": 33,
+    "existing_domination_modernization_tests_passed": 22,
+    "faith_tests_passed": 18,
+    "cargo_check_tests": "pass",
+    "repository_rust_quality": "pending after source commit",
+    "full_local_ci": "not rerun for this candidate; source-specific remote CI remains required",
+    "fresh_executions": 0
   }
 }

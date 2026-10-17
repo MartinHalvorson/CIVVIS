@@ -66,7 +66,7 @@ impl AdvancedAi {
             .map(|(technology, _)| technology)
     }
 
-    pub(super) fn conquest_campaign_needs_funding(
+    pub(super) fn conquest_campaign_upgrade_window(
         &self,
         game: &Game,
         player: usize,
@@ -74,13 +74,12 @@ impl AdvancedAi {
     ) -> bool {
         self.victory_planning
             && self.active_victory_target(game) == Some(VictoryTarget::Domination)
-            && matches!(
-                plan.strategy,
-                GrandStrategy::Conquest | GrandStrategy::Expansion
-            )
-            && self.industrial_zone_in_the_producers
-            && self.commercial_hub_in_the_strategic_queue
-            && self.base.commercial_hub_window_open(game)
+            && plan.strategy == GrandStrategy::Expansion
+            && plan.threatened_city.is_none()
+            && game.player_city_ids(player).len() >= 2
+            && game.players[player]
+                .techs
+                .contains(&crate::name!("writing"))
             && !game.players.iter().any(|rival| {
                 rival.id != player
                     && rival.alive
@@ -88,31 +87,12 @@ impl AdvancedAi {
                     && !rival.is_barbarian
                     && game.is_at_war(player, rival.id)
             })
-            && self.domination_upgrade_funding_shortfall(game, player)
-    }
-
-    pub(super) fn conquest_campaign_trade_item(
-        &mut self,
-        game: &Game,
-        player: usize,
-        city: u32,
-        plan: &StrategicPlan,
-        counts: &EmpireCounts,
-    ) -> Option<Item> {
-        let cities = game.player_city_ids(player).len();
-        if self
-            .base
-            .settler_due(game, player, city, cities, counts.settlers)
-        {
-            return None;
-        }
-        let previous = self.base.plan_threatened_city;
-        self.base.plan_threatened_city = plan.threatened_city;
-        let item = self
-            .base
-            .commercial_hub_step(game, player, city, cities, counts.traders);
-        self.base.plan_threatened_city = previous;
-        item
+            && plan.target_player.is_some_and(|target| {
+                self.campaign_target_legal(game, player, target)
+                    && game.player_city_ids(target).iter().any(|city| {
+                        Self::city_within_declaration_range(game, player, game.cities[city].pos)
+                    })
+            })
     }
 
     pub(super) fn conquest_campaign_objective(
