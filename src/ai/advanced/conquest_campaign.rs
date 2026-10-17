@@ -1,6 +1,123 @@
 use super::*;
 
 impl AdvancedAi {
+    pub(super) fn claim_conquest_campaign_cash_flow(
+        &mut self,
+        game: &mut Game,
+        player: usize,
+        plan: &StrategicPlan,
+    ) {
+        let cities = game.player_city_ids(player);
+        if !self.victory_planning
+            || self.active_victory_target(game) != Some(VictoryTarget::Domination)
+            || !self.commercial_hub_in_the_strategic_queue
+            || !self.base.commercial_hub_window_open(game)
+            || plan.rush
+            || plan.threatened_city.is_some()
+            || self.base.plan_threatened_city.is_some()
+            || !matches!(
+                plan.strategy,
+                GrandStrategy::Expansion | GrandStrategy::Conquest
+            )
+            || cities.len() < 3
+            || !self.domination_upgrade_funding_shortfall(game, player)
+            || game.players.iter().any(|rival| {
+                rival.id != player
+                    && rival.alive
+                    && !rival.is_minor
+                    && !rival.is_barbarian
+                    && game.is_at_war(player, rival.id)
+            })
+        {
+            return;
+        }
+        let market = |building: &Name| {
+            *building == "market"
+                || game
+                    .rules
+                    .buildings
+                    .get(building)
+                    .is_some_and(|specification| {
+                        specification.replaces == Some(crate::name!("market"))
+                    })
+        };
+        let trader = |unit: &Name| {
+            *unit == "trader"
+                || game.rules.units.get(unit).is_some_and(|specification| {
+                    specification.replaces == Some(crate::name!("trader"))
+                })
+        };
+        let standing = game
+            .units
+            .values()
+            .filter(|unit| {
+                let specification = &game.rules.units[unit.kind];
+                unit.owner == player
+                    && specification.class == "military"
+                    && specification.promotion_class != "recon"
+                    && !matches!(specification.domain.as_deref(), Some("sea" | "air"))
+                    && unit.hp as f64 > self.base.w.withdraw_hp
+            })
+            .count();
+        if standing < cities.len()
+            || cities.iter().any(|city| {
+                game.cities[city].queue.iter().any(|item| match item {
+                    Item::Building { building } => market(building),
+                    Item::Unit { unit } => trader(unit),
+                    _ => false,
+                })
+            })
+        {
+            return;
+        }
+        let counts = self.counts(game, player);
+        let city_count = cities.len();
+        let previous_threat = self.base.plan_threatened_city;
+        self.base.plan_threatened_city = plan.threatened_city;
+        let recipient = cities
+            .into_iter()
+            .filter(|city| {
+                let held = &game.cities[city];
+                !held.is_capital
+                    && held.queue.is_empty()
+                    && !held
+                        .production_progress
+                        .values()
+                        .any(|progress| *progress > 0.0)
+                    && !(held.last_attacked > 0
+                        && game.turn.saturating_sub(held.last_attacked) <= 4)
+                    && !self
+                        .base
+                        .barbarian_local_alarm_for_controller(game, player, *city)
+            })
+            .filter_map(|city| {
+                self.base
+                    .commercial_hub_step(game, player, city, city_count, counts.traders)
+                    .filter(|item| match item {
+                        Item::Building { building } => market(building),
+                        Item::Unit { unit } => trader(unit),
+                        _ => false,
+                    })
+                    .map(|item| (city, item))
+            })
+            .max_by(|(left, _), (right, _)| {
+                game.city_yields(*left)
+                    .production
+                    .total_cmp(&game.city_yields(*right).production)
+                    .then_with(|| right.cmp(left))
+            });
+        self.base.plan_threatened_city = previous_threat;
+        let Some((city, item)) = recipient else {
+            return;
+        };
+        let description = Self::plain_item(&item);
+        if game.apply(player, &Action::Produce { city, item }).is_ok() {
+            think!(self.journal(), Economy, Decision,
+                "{} starts {} for its campaign cash flow", game.cities[&city].name, description;
+                "an existing army has an upgrade funding shortfall; a safe idle noncapital uses an existing Hub or a canonical open trade slot without starting another district or displacing a commitment");
+        }
+    }
+
     pub(super) fn conquest_campaign_modernization_tech(
         &self,
         game: &Game,

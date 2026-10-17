@@ -299,8 +299,7 @@ impl AdvancedAi {
             || g.players[pid]
                 .civics
                 .contains(&crate::name!("urbanization"))
-            || (self.domination_upgrade_need(g, pid).len() < 2
-                && self.conquest_campaign_modernization_tech(g, pid).is_none())
+            || self.domination_upgrade_need(g, pid).len() < 2
         {
             return None;
         }

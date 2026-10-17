@@ -1,0 +1,64 @@
+{
+  "registered_utc": "2026-10-17T22:33:42.238527+00:00",
+  "variant": "variant-11",
+  "selected_policy_parent": "12f146fcfbbdeae2e311cffa19d0b9b3dddd8551",
+  "rejected_previous_policy": "5a3197afe44886106ad05135806aa6d628d033ca",
+  "hypothesis": "An actual army-upgrade funding shortfall can leave a completed Commercial Hub without its Market while the generic economic-recovery veto forbids the investment needed to recover. Directly claim a bounded safe idle noncapital queue for a canonically legal Market or spare-capacity Trader, including during a deficit, but never a fresh Commercial Hub or other district.",
+  "prior_evidence": "Parent03 Deity436 has two completed Hubs, no Markets,Gold0.7 and netincome-3.3 at100. Variant09 direct funding required positive/recovered finances before permitting any such claim and recorded no new claim on436; variant10 earlier discount alone reduced its100 power347\u2192296. These are posthoc known-map diagnostics, not independent strength samples.",
+  "route_caution": "Zero standing Trader units does not mean no routes. Parent436 has three cumulative successful route actions before100; active capacity must be read through the existing canonical commercial helper, not inferred from absent Trader units.",
+  "bounded_change": [
+    "Victory planning and explicit Domination, existing commercial gene/window, Expansion or Conquest and actual upgrade funding shortfall remain mandatory",
+    "At least three cities and one healthy non-recon land military unit per city",
+    "No major war, rush, Recovery plan, plan/global threatened city or local threat/recent attack/barbarian alarm",
+    "No capital, existing actual queue or positive paused production progress is displaced",
+    "Only canonical commercial_hub_step Market-or-civilization-replacement or Trader proposals; no new district, Bank, Stock Exchange, Granary or other investment",
+    "A preexisting Hub construction does not veto utilization of another completed Hub; an already queued Market-family building or Trader does veto this helper",
+    "Existing housing, placement, route safety, active capacity, actual/queued Trader count and ETA checks remain authoritative",
+    "Restore the temporarily loaned plan threat hint before applying the real Produce action; journal only after successful apply",
+    "No global declaration threshold, research, civic, costs, yields, resources, force, Native state or observations change"
+  ],
+  "unit_tests_planned": [
+    "Actual Market claim in a deficit and retained next queue",
+    "Canonical spare-capacity Trader claim in a deficit",
+    "No new Hub even when it is the only canonical proposal",
+    "Existing Hub construction does not suppress a completed Hub Market",
+    "Existing Market or Trader queue preserved without a duplicate claim",
+    "Actual and paused commitments preserved",
+    "Capital, local/global emergencies, war/rush/Recovery and standing defense floor protected",
+    "Funded army, other victory lanes, existing gene/window controls unchanged"
+  ],
+  "comparison_parent": "variant-03",
+  "cases": [
+    {
+      "difficulty": "immortal",
+      "seed": 45312861349
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 47651167238
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 46732028391
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49478848256
+    },
+    {
+      "difficulty": "deity",
+      "seed": 43663176127
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49220027834
+    }
+  ],
+  "required_all_six_complete": true,
+  "original_registration_sha256": "2c8cb2eff49e0682a1af251d7ac7afcf2b32061b25b013e8b41e09c1baa4b813",
+  "development_gate": "Original engine-winner/original-capital verified Deity Domination gate before any fresh execution; no final-source observer A/A relaxation.",
+  "candidate_executions_at_registration": 0,
+  "fresh_holdout_executions_at_registration": 0,
+  "native_verification": "Unestablished. Controlled commercial observations are unit-test fixtures only, never evaluation inputs.",
+  "concurrency_qualification": "The helper refuses an already present Market/Trader queue. Later legacy production may add another investment; no global one-in-flight invariant is claimed."
+}
