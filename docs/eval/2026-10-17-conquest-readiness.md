@@ -169,6 +169,10 @@ failing), then all 16 focused tests pass on the experimental code. Its complete
 repository's changed-line Rust quality check passes. These checks establish the
 experiment's mechanics, not its strength. Both production source and tests are
 then restored exactly to `43f33edd80d09c5a6e09349aa7ee09bbd7355502`.
+The restored documentation-only tree separately reruns the complete command:
+6,177 pass, 56 are ignored. All 2,761 existing base blobs are independently
+verified byte-identical; only four new evaluation files are added. No engine
+soak or Native restart is needed for this documentation-only final change.
 
 The companion registration and result JSON files retain the preregistered seeds,
 acceptance rule, exact source/binary identities and every paired metric. The
@@ -180,3 +184,7 @@ deduplicated, not replaced by summaries. Restoring the archive and rerunning
 `analyze_diagnosis.py` and `analyze_pairs.py` must reproduce the saved reports
 byte for byte. Raw baseline controls, candidate observer controls and Native
 calibration are independently checked during archive verification.
+
+The verified archive contains 304 file records, 187 unique blobs and 41,649,822
+compressed bytes. Its SHA-256 is
+`c2573b957ed9b36da0f276b54ade2919765da9b9caf65a101af21ab4f875d968`.

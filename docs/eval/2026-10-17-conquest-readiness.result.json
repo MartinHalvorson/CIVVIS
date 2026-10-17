@@ -1,0 +1,1079 @@
+{
+  "registration_sha256": "736157211934e8b634b631b2abfd50e111a9368def48b75359ee0e40b583d383",
+  "sources": {
+    "locked_utc": "2026-10-17T14:28:57.153449+00:00",
+    "registration_sha256": "736157211934e8b634b631b2abfd50e111a9368def48b75359ee0e40b583d383",
+    "force_bundle_sha256": "d7ac5367dda9dc54093ebc55f59d3630c908c577fe84309bbe5378cecec3de55",
+    "candidate_integrity_sha256": "ff212013634a905d7b9fe33ccb66f142bb9acab09a839bd442988f013542c79f",
+    "rustc": "rustc 1.97.1 (8bab26f4f 2026-07-14)\nbinary: rustc\ncommit-hash: 8bab26f4f68e0e26f0bb7960be334d5b520ea452\ncommit-date: 2026-07-14\nhost: aarch64-apple-darwin\nrelease: 1.97.1\nLLVM version: 22.1.6\n",
+    "dependency_locks_match_except_probe_package_name": true,
+    "profile": "ci inherits release, LTO false, codegen-units 16; identical external probe profiles, not repository CI profile",
+    "native_verification": false,
+    "baseline": {
+      "binary": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-foundation/normal-sweep/target-candidate/ci/conquest-readiness-probe",
+      "binary_sha256": "d1924d71ac3b7a1bde12ea5f2ce226e653749d22e53bdbce6e5fc5784729cca8",
+      "source": "git-tree:cb721b4ed4aeae53d8d4dd22d09abcb16b860ec0",
+      "probe_source_sha256": "591aad70ed7a648d2de3401d14de19e2b17aa9dba3d82b4b6d69026140faf16a"
+    },
+    "candidate": {
+      "binary": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-readiness/target-probe-candidate/ci/conquest-readiness-candidate-probe",
+      "binary_sha256": "feb62214b92852f58742738884ddc58d8c4cd60ead98e3e0dbab908f18174fdf",
+      "source": "git-tree:0b71a88812a8e129fde80eb89f3e2634a1bd6c94",
+      "probe_source_sha256": "2473747dbb737a4e499f3de1529d1ba51569ea08006e8d4ae95237fbbfdb6b11"
+    }
+  },
+  "known_map_mechanism_pairs": [
+    {
+      "difficulty": "immortal",
+      "seed": 43250001,
+      "baseline": {
+        "result": {
+          "turn": 154,
+          "winner": 1,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 215
+        },
+        "declarations": [
+          {
+            "turn": 59,
+            "action": {
+              "player": 2,
+              "type": "declare_war"
+            }
+          }
+        ],
+        "condemnations": 0,
+        "condemnations_by_90": 0,
+        "maximum_observed_foreign_origin_holdings": 0,
+        "maximum_observed_foreign_major_origin_holdings": 0,
+        "economy": {
+          "60": {
+            "cities": 3,
+            "military_power": 335.25,
+            "production": 32.0
+          },
+          "90": {
+            "cities": 5,
+            "military_power": 590.92,
+            "production": 70.0
+          }
+        },
+        "actions_sha256": "09d4929577a9724a4436d76a8b56045bb3abd8e0520148aac6a10fd15d063d10",
+        "focal_actions_sha256": "dceafcac43011e98344d0e736d35e4c71706bfd207b6b1585355678d8d69d203",
+        "journal_stats": {
+          "budget_truncated_turns": 0,
+          "ring_dropped": 2838,
+          "traced": true
+        }
+      },
+      "candidate": {
+        "result": {
+          "turn": 154,
+          "winner": 1,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 118
+        },
+        "declarations": [
+          {
+            "turn": 68,
+            "action": {
+              "player": 2,
+              "type": "declare_war"
+            }
+          }
+        ],
+        "condemnations": 1,
+        "condemnations_by_90": 1,
+        "maximum_observed_foreign_origin_holdings": 0,
+        "maximum_observed_foreign_major_origin_holdings": 0,
+        "economy": {
+          "60": {
+            "cities": 3,
+            "military_power": 333.59999999999997,
+            "production": 32.0
+          },
+          "90": {
+            "cities": 5,
+            "military_power": 507.74000000000007,
+            "production": 71.0
+          }
+        },
+        "actions_sha256": "b6853f5e0284f880c0e5abfaaf51962832244bf0c23927ec0a08f114c40a74e1",
+        "focal_actions_sha256": "09982d2f8adc62f56f2848939958ae18e878abd75c7c6c018437ce6030e6122e",
+        "journal_stats": {
+          "budget_truncated_turns": 0,
+          "ring_dropped": 1489,
+          "traced": true
+        }
+      },
+      "observer_aa_exact": true
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 20603809636,
+      "baseline": {
+        "result": {
+          "turn": 156,
+          "winner": 3,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 110
+        },
+        "declarations": [
+          {
+            "turn": 45,
+            "action": {
+              "player": 3,
+              "type": "declare_war"
+            }
+          }
+        ],
+        "condemnations": 0,
+        "condemnations_by_90": 0,
+        "maximum_observed_foreign_origin_holdings": 0,
+        "maximum_observed_foreign_major_origin_holdings": 0,
+        "economy": {
+          "60": {
+            "cities": 2,
+            "military_power": 116.25,
+            "production": 20.9
+          },
+          "90": {
+            "cities": 4,
+            "military_power": 288.22,
+            "production": 48.0
+          }
+        },
+        "actions_sha256": "e737589f45a0720c5c3f972e72ca48d33b716f947f915f0b4ff724ceb05aefe9",
+        "focal_actions_sha256": "2e7af77a02840bc013faafa70b19c2617f8f92252993852df9c4be93730a9083",
+        "journal_stats": {
+          "budget_truncated_turns": 0,
+          "ring_dropped": 0,
+          "traced": true
+        }
+      },
+      "candidate": {
+        "result": {
+          "turn": 164,
+          "winner": 3,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 261
+        },
+        "declarations": [
+          {
+            "turn": 112,
+            "action": {
+              "player": 2,
+              "type": "declare_war"
+            }
+          }
+        ],
+        "condemnations": 2,
+        "condemnations_by_90": 0,
+        "maximum_observed_foreign_origin_holdings": 0,
+        "maximum_observed_foreign_major_origin_holdings": 0,
+        "economy": {
+          "60": {
+            "cities": 3,
+            "military_power": 281.03999999999996,
+            "production": 26.9
+          },
+          "90": {
+            "cities": 4,
+            "military_power": 551.69,
+            "production": 40.0
+          }
+        },
+        "actions_sha256": "7e1458972515884410c57e9a896dbe508e3464344c0fb6d0f6ae4c9a06f5e4e2",
+        "focal_actions_sha256": "435dae9f8d08736a1ccf4efd768d488dd7b2569271563f110ac7bfcded8999d7",
+        "journal_stats": {
+          "budget_truncated_turns": 0,
+          "ring_dropped": 0,
+          "traced": true
+        }
+      },
+      "observer_aa_exact": true
+    },
+    {
+      "difficulty": "deity",
+      "seed": 43250101,
+      "baseline": {
+        "result": {
+          "turn": 145,
+          "winner": 1,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 140
+        },
+        "declarations": [
+          {
+            "turn": 78,
+            "action": {
+              "player": 1,
+              "type": "declare_war"
+            }
+          }
+        ],
+        "condemnations": 0,
+        "condemnations_by_90": 0,
+        "maximum_observed_foreign_origin_holdings": 0,
+        "maximum_observed_foreign_major_origin_holdings": 0,
+        "economy": {
+          "60": {
+            "cities": 4,
+            "military_power": 173.65,
+            "production": 41.3
+          },
+          "90": {
+            "cities": 7,
+            "military_power": 535.8000000000001,
+            "production": 90.0
+          }
+        },
+        "actions_sha256": "e71cd91666172122c393752413d7e195da7e05af570d1ce79024a9420d2dd4eb",
+        "focal_actions_sha256": "6c03631ac77b84d15ab3d53c5c970e3238a3a179e81e1ec76ee53bf12abb3f60",
+        "journal_stats": {
+          "budget_truncated_turns": 0,
+          "ring_dropped": 1498,
+          "traced": true
+        }
+      },
+      "candidate": {
+        "result": {
+          "turn": 147,
+          "winner": 1,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 323
+        },
+        "declarations": [],
+        "condemnations": 1,
+        "condemnations_by_90": 0,
+        "maximum_observed_foreign_origin_holdings": 0,
+        "maximum_observed_foreign_major_origin_holdings": 0,
+        "economy": {
+          "60": {
+            "cities": 4,
+            "military_power": 173.65,
+            "production": 41.3
+          },
+          "90": {
+            "cities": 6,
+            "military_power": 589.7700000000001,
+            "production": 83.0
+          }
+        },
+        "actions_sha256": "1242525549831c1277874530423f6c595efb906f87716913169d55e6a896ae5b",
+        "focal_actions_sha256": "072576335b806d6f0d50fcce499b82d159e2a6bf9fa43c2ae5471969ac2b12cb",
+        "journal_stats": {
+          "budget_truncated_turns": 0,
+          "ring_dropped": 1293,
+          "traced": true
+        }
+      },
+      "observer_aa_exact": true
+    },
+    {
+      "difficulty": "deity",
+      "seed": 20196447569,
+      "baseline": {
+        "result": {
+          "turn": 145,
+          "winner": 1,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 145
+        },
+        "declarations": [],
+        "condemnations": 0,
+        "condemnations_by_90": 0,
+        "maximum_observed_foreign_origin_holdings": 0,
+        "maximum_observed_foreign_major_origin_holdings": 0,
+        "economy": {
+          "60": {
+            "cities": 3,
+            "military_power": 219.7,
+            "production": 18.0
+          },
+          "90": {
+            "cities": 3,
+            "military_power": 383.85,
+            "production": 25.950000000000003
+          }
+        },
+        "actions_sha256": "194dd4bbf93b43882574ff74edb21b8c8c42582976dd787b279b25c8ef456a5d",
+        "focal_actions_sha256": "0312dd85922a243fe05a35b2a577541437583255587202c383c3564d05d40414",
+        "journal_stats": {
+          "budget_truncated_turns": 0,
+          "ring_dropped": 0,
+          "traced": true
+        }
+      },
+      "candidate": {
+        "result": {
+          "turn": 145,
+          "winner": 1,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 145
+        },
+        "declarations": [],
+        "condemnations": 0,
+        "condemnations_by_90": 0,
+        "maximum_observed_foreign_origin_holdings": 0,
+        "maximum_observed_foreign_major_origin_holdings": 0,
+        "economy": {
+          "60": {
+            "cities": 3,
+            "military_power": 219.7,
+            "production": 18.0
+          },
+          "90": {
+            "cities": 3,
+            "military_power": 383.85,
+            "production": 25.950000000000003
+          }
+        },
+        "actions_sha256": "194dd4bbf93b43882574ff74edb21b8c8c42582976dd787b279b25c8ef456a5d",
+        "focal_actions_sha256": "0312dd85922a243fe05a35b2a577541437583255587202c383c3564d05d40414",
+        "journal_stats": {
+          "budget_truncated_turns": 0,
+          "ring_dropped": 0,
+          "traced": true
+        }
+      },
+      "observer_aa_exact": true
+    }
+  ],
+  "fresh_pairs": [
+    {
+      "difficulty": "immortal",
+      "seed": 49293455737,
+      "baseline": {
+        "result": {
+          "turn": 149,
+          "winner": 2,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 395
+        },
+        "declarations": [],
+        "condemnations": 0,
+        "condemnations_by_90": 0,
+        "maximum_observed_foreign_origin_holdings": 1,
+        "maximum_observed_foreign_major_origin_holdings": 0,
+        "economy": {
+          "60": {
+            "cities": 3,
+            "military_power": 172.95,
+            "production": 29.0
+          },
+          "90": {
+            "cities": 6,
+            "military_power": 258.04999999999995,
+            "production": 61.0
+          }
+        },
+        "actions_sha256": "37ba2c055dd76acc33389ac2ba49ec14bb4c0cbce3ab6bc556df7efd5a496449",
+        "focal_actions_sha256": "93b84c7dc686d192bcdac7df31997288f11a18a889f63b028fcbad40f47a3942",
+        "journal_stats": {
+          "budget_truncated_turns": 0,
+          "ring_dropped": 0,
+          "traced": true
+        }
+      },
+      "candidate": {
+        "result": {
+          "turn": 149,
+          "winner": 2,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 395
+        },
+        "declarations": [],
+        "condemnations": 0,
+        "condemnations_by_90": 0,
+        "maximum_observed_foreign_origin_holdings": 1,
+        "maximum_observed_foreign_major_origin_holdings": 0,
+        "economy": {
+          "60": {
+            "cities": 3,
+            "military_power": 172.95,
+            "production": 29.0
+          },
+          "90": {
+            "cities": 6,
+            "military_power": 258.04999999999995,
+            "production": 61.0
+          }
+        },
+        "actions_sha256": "37ba2c055dd76acc33389ac2ba49ec14bb4c0cbce3ab6bc556df7efd5a496449",
+        "focal_actions_sha256": "93b84c7dc686d192bcdac7df31997288f11a18a889f63b028fcbad40f47a3942",
+        "journal_stats": {
+          "budget_truncated_turns": 0,
+          "ring_dropped": 0,
+          "traced": true
+        }
+      },
+      "action_contrast": false,
+      "focal_action_contrast": false
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 47651167238,
+      "baseline": {
+        "result": {
+          "turn": 150,
+          "winner": 3,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 81
+        },
+        "declarations": [
+          {
+            "turn": 60,
+            "action": {
+              "player": 3,
+              "type": "declare_war"
+            }
+          }
+        ],
+        "condemnations": 1,
+        "condemnations_by_90": 1,
+        "maximum_observed_foreign_origin_holdings": 0,
+        "maximum_observed_foreign_major_origin_holdings": 0,
+        "economy": {
+          "60": {
+            "cities": 4,
+            "military_power": 394.58,
+            "production": 25.2
+          },
+          "90": {
+            "cities": 5,
+            "military_power": 398.20000000000005,
+            "production": 38.95
+          }
+        },
+        "actions_sha256": "e1fd43d7b93bfa9d9e178f713b1f017a9390a8f74d78d54a41b0feb52494fa4d",
+        "focal_actions_sha256": "6f0ca054fd9c3fb52783286931919ffa4145a3a08b3e14fee9c946fabe54cf0e",
+        "journal_stats": {
+          "budget_truncated_turns": 0,
+          "ring_dropped": 0,
+          "traced": true
+        }
+      },
+      "candidate": {
+        "result": {
+          "turn": 150,
+          "winner": 3,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 81
+        },
+        "declarations": [
+          {
+            "turn": 60,
+            "action": {
+              "player": 3,
+              "type": "declare_war"
+            }
+          }
+        ],
+        "condemnations": 1,
+        "condemnations_by_90": 1,
+        "maximum_observed_foreign_origin_holdings": 0,
+        "maximum_observed_foreign_major_origin_holdings": 0,
+        "economy": {
+          "60": {
+            "cities": 4,
+            "military_power": 394.58,
+            "production": 25.2
+          },
+          "90": {
+            "cities": 5,
+            "military_power": 398.20000000000005,
+            "production": 38.95
+          }
+        },
+        "actions_sha256": "e458877e2de3a2f587d20b6d320664497260200ca7c074a2946d5d4ccc07ecb3",
+        "focal_actions_sha256": "36330b608746f13fdff8948b34ade9627ec9a3acb6a1d6e1fc266c955c5ec174",
+        "journal_stats": {
+          "budget_truncated_turns": 0,
+          "ring_dropped": 0,
+          "traced": true
+        }
+      },
+      "action_contrast": true,
+      "focal_action_contrast": true
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 46732028391,
+      "baseline": {
+        "result": {
+          "turn": 147,
+          "winner": 2,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 261
+        },
+        "declarations": [
+          {
+            "turn": 78,
+            "action": {
+              "player": 3,
+              "type": "declare_war"
+            }
+          }
+        ],
+        "condemnations": 1,
+        "condemnations_by_90": 0,
+        "maximum_observed_foreign_origin_holdings": 0,
+        "maximum_observed_foreign_major_origin_holdings": 0,
+        "economy": {
+          "60": {
+            "cities": 4,
+            "military_power": 205.99,
+            "production": 26.0
+          },
+          "90": {
+            "cities": 6,
+            "military_power": 227.48,
+            "production": 47.0
+          }
+        },
+        "actions_sha256": "b326de72869eb8c0538462c693dd4eb9e22bf0d992d3d464cc5d0079ea085156",
+        "focal_actions_sha256": "7ece2cfd6f26a399527c83d98d29ea3ff7f397f4289396973c396e1003dfe55c",
+        "journal_stats": {
+          "budget_truncated_turns": 0,
+          "ring_dropped": 0,
+          "traced": true
+        }
+      },
+      "candidate": {
+        "result": {
+          "turn": 146,
+          "winner": 2,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 261
+        },
+        "declarations": [
+          {
+            "turn": 96,
+            "action": {
+              "player": 3,
+              "type": "declare_war"
+            }
+          }
+        ],
+        "condemnations": 5,
+        "condemnations_by_90": 0,
+        "maximum_observed_foreign_origin_holdings": 0,
+        "maximum_observed_foreign_major_origin_holdings": 0,
+        "economy": {
+          "60": {
+            "cities": 4,
+            "military_power": 205.99,
+            "production": 26.0
+          },
+          "90": {
+            "cities": 7,
+            "military_power": 552.94,
+            "production": 48.0
+          }
+        },
+        "actions_sha256": "89c55cb12b3f1d549ea0c7e83307adc043067bf2762db7c96b2ab5895916aaa3",
+        "focal_actions_sha256": "716d11e02a641c3158c8cbcac9cd2085e13ca9b5d4df4640732efd0094689c21",
+        "journal_stats": {
+          "budget_truncated_turns": 0,
+          "ring_dropped": 310,
+          "traced": true
+        }
+      },
+      "action_contrast": true,
+      "focal_action_contrast": true
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 45312861349,
+      "baseline": {
+        "result": {
+          "turn": 152,
+          "winner": 1,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 564
+        },
+        "declarations": [],
+        "condemnations": 0,
+        "condemnations_by_90": 0,
+        "maximum_observed_foreign_origin_holdings": 0,
+        "maximum_observed_foreign_major_origin_holdings": 0,
+        "economy": {
+          "60": {
+            "cities": 5,
+            "military_power": 430.6,
+            "production": 73.7
+          },
+          "90": {
+            "cities": 8,
+            "military_power": 764.6800000000001,
+            "production": 101.0
+          }
+        },
+        "actions_sha256": "c50232bea440a13c38bb832b34cefc7f379baf8513f732630b81099523563792",
+        "focal_actions_sha256": "eed67189c31b67097e116c2cc30e034d6adc0b61b56e2fcc44ddbb60aa57d7c4",
+        "journal_stats": {
+          "budget_truncated_turns": 0,
+          "ring_dropped": 1260,
+          "traced": true
+        }
+      },
+      "candidate": {
+        "result": {
+          "turn": 152,
+          "winner": 1,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 564
+        },
+        "declarations": [],
+        "condemnations": 0,
+        "condemnations_by_90": 0,
+        "maximum_observed_foreign_origin_holdings": 0,
+        "maximum_observed_foreign_major_origin_holdings": 0,
+        "economy": {
+          "60": {
+            "cities": 5,
+            "military_power": 430.6,
+            "production": 73.7
+          },
+          "90": {
+            "cities": 8,
+            "military_power": 764.6800000000001,
+            "production": 101.0
+          }
+        },
+        "actions_sha256": "c50232bea440a13c38bb832b34cefc7f379baf8513f732630b81099523563792",
+        "focal_actions_sha256": "eed67189c31b67097e116c2cc30e034d6adc0b61b56e2fcc44ddbb60aa57d7c4",
+        "journal_stats": {
+          "budget_truncated_turns": 0,
+          "ring_dropped": 1260,
+          "traced": true
+        }
+      },
+      "action_contrast": false,
+      "focal_action_contrast": false
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49478848256,
+      "baseline": {
+        "result": {
+          "turn": 109,
+          "winner": 1,
+          "victory": "culture",
+          "focal_won": false,
+          "focal_score": 103
+        },
+        "declarations": [],
+        "condemnations": 0,
+        "condemnations_by_90": 0,
+        "maximum_observed_foreign_origin_holdings": 0,
+        "maximum_observed_foreign_major_origin_holdings": 0,
+        "economy": {
+          "60": {
+            "cities": 2,
+            "military_power": 225.6,
+            "production": 16.0
+          },
+          "90": {
+            "cities": 3,
+            "military_power": 431.15999999999997,
+            "production": 13.0
+          }
+        },
+        "actions_sha256": "64a13370e96d9a1a90ae11048a403855b92ec7d7ed8d3a9271e24eead77c5da5",
+        "focal_actions_sha256": "ed2666eed8257cdfc20c53b9d9c14c4c02117cad30f728a182121922f673ec24",
+        "journal_stats": {
+          "budget_truncated_turns": 0,
+          "ring_dropped": 0,
+          "traced": true
+        }
+      },
+      "candidate": {
+        "result": {
+          "turn": 109,
+          "winner": 1,
+          "victory": "culture",
+          "focal_won": false,
+          "focal_score": 103
+        },
+        "declarations": [],
+        "condemnations": 0,
+        "condemnations_by_90": 0,
+        "maximum_observed_foreign_origin_holdings": 0,
+        "maximum_observed_foreign_major_origin_holdings": 0,
+        "economy": {
+          "60": {
+            "cities": 2,
+            "military_power": 225.6,
+            "production": 16.0
+          },
+          "90": {
+            "cities": 3,
+            "military_power": 431.15999999999997,
+            "production": 13.0
+          }
+        },
+        "actions_sha256": "64a13370e96d9a1a90ae11048a403855b92ec7d7ed8d3a9271e24eead77c5da5",
+        "focal_actions_sha256": "ed2666eed8257cdfc20c53b9d9c14c4c02117cad30f728a182121922f673ec24",
+        "journal_stats": {
+          "budget_truncated_turns": 0,
+          "ring_dropped": 0,
+          "traced": true
+        }
+      },
+      "action_contrast": false,
+      "focal_action_contrast": false
+    },
+    {
+      "difficulty": "deity",
+      "seed": 43663176127,
+      "baseline": {
+        "result": {
+          "turn": 139,
+          "winner": 3,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 129
+        },
+        "declarations": [
+          {
+            "turn": 65,
+            "action": {
+              "player": 2,
+              "type": "declare_war"
+            }
+          }
+        ],
+        "condemnations": 4,
+        "condemnations_by_90": 1,
+        "maximum_observed_foreign_origin_holdings": 0,
+        "maximum_observed_foreign_major_origin_holdings": 0,
+        "economy": {
+          "60": {
+            "cities": 5,
+            "military_power": 267.65,
+            "production": 34.6
+          },
+          "90": {
+            "cities": 6,
+            "military_power": 293.80000000000007,
+            "production": 59.0
+          }
+        },
+        "actions_sha256": "eb41f13cb2dd42e4b95e50f93b7f3aff786a6bfd060ef3857362428d75efb9e2",
+        "focal_actions_sha256": "1a3f688aa4289985b7d3224d685d05b0819019c02c71903817a8fb9b7538a809",
+        "journal_stats": {
+          "budget_truncated_turns": 0,
+          "ring_dropped": 0,
+          "traced": true
+        }
+      },
+      "candidate": {
+        "result": {
+          "turn": 143,
+          "winner": 3,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 222
+        },
+        "declarations": [
+          {
+            "turn": 65,
+            "action": {
+              "player": 3,
+              "type": "declare_war"
+            }
+          },
+          {
+            "turn": 89,
+            "action": {
+              "player": 3,
+              "type": "declare_war"
+            }
+          }
+        ],
+        "condemnations": 7,
+        "condemnations_by_90": 3,
+        "maximum_observed_foreign_origin_holdings": 0,
+        "maximum_observed_foreign_major_origin_holdings": 0,
+        "economy": {
+          "60": {
+            "cities": 5,
+            "military_power": 267.65,
+            "production": 34.6
+          },
+          "90": {
+            "cities": 5,
+            "military_power": 626.72,
+            "production": 69.5
+          }
+        },
+        "actions_sha256": "8ef3a5b3777af0e80d811cc9f31d490f3ddbc35abac34bef92e6b4ec60c10b27",
+        "focal_actions_sha256": "1b8f43b01ff8528cb9c71d97889dd19ae0c29ed0af7a64b5e9509d00b18e8ce7",
+        "journal_stats": {
+          "budget_truncated_turns": 0,
+          "ring_dropped": 429,
+          "traced": true
+        }
+      },
+      "action_contrast": true,
+      "focal_action_contrast": true
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49220027834,
+      "baseline": {
+        "result": {
+          "turn": 107,
+          "winner": 1,
+          "victory": "culture",
+          "focal_won": false,
+          "focal_score": 236
+        },
+        "declarations": [
+          {
+            "turn": 74,
+            "action": {
+              "player": 2,
+              "type": "declare_war"
+            }
+          }
+        ],
+        "condemnations": 0,
+        "condemnations_by_90": 0,
+        "maximum_observed_foreign_origin_holdings": 0,
+        "maximum_observed_foreign_major_origin_holdings": 0,
+        "economy": {
+          "60": {
+            "cities": 3,
+            "military_power": 349.0,
+            "production": 28.5
+          },
+          "90": {
+            "cities": 6,
+            "military_power": 760.6,
+            "production": 54.0
+          }
+        },
+        "actions_sha256": "1ec3b102e77117aed3f96fdf9ee00e682fcd2c58821dd1d87f75639af66072a1",
+        "focal_actions_sha256": "3c348cd65b9167b8dd8fa75bf53778c3513a62e60f8c06a0c9b721736e4fab51",
+        "journal_stats": {
+          "budget_truncated_turns": 0,
+          "ring_dropped": 0,
+          "traced": true
+        }
+      },
+      "candidate": {
+        "result": {
+          "turn": 138,
+          "winner": 2,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 308
+        },
+        "declarations": [
+          {
+            "turn": 106,
+            "action": {
+              "player": 1,
+              "type": "declare_war"
+            }
+          }
+        ],
+        "condemnations": 1,
+        "condemnations_by_90": 0,
+        "maximum_observed_foreign_origin_holdings": 0,
+        "maximum_observed_foreign_major_origin_holdings": 0,
+        "economy": {
+          "60": {
+            "cities": 3,
+            "military_power": 349.0,
+            "production": 28.5
+          },
+          "90": {
+            "cities": 6,
+            "military_power": 830.0,
+            "production": 47.0
+          }
+        },
+        "actions_sha256": "1c0ada3d0932416352d556204d24797d02994177fa6d567f465c9f4267cfb541",
+        "focal_actions_sha256": "36af4e4dbe2efe0f02f4887bc86df08053a7c72dd8ae4f6b8628ce3b03e37135",
+        "journal_stats": {
+          "budget_truncated_turns": 0,
+          "ring_dropped": 0,
+          "traced": true
+        }
+      },
+      "action_contrast": true,
+      "focal_action_contrast": true
+    },
+    {
+      "difficulty": "deity",
+      "seed": 40171860454,
+      "baseline": {
+        "result": {
+          "turn": 133,
+          "winner": 2,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 231
+        },
+        "declarations": [
+          {
+            "turn": 63,
+            "action": {
+              "player": 3,
+              "type": "declare_war"
+            }
+          },
+          {
+            "turn": 129,
+            "action": {
+              "player": 3,
+              "type": "declare_war"
+            }
+          }
+        ],
+        "condemnations": 1,
+        "condemnations_by_90": 1,
+        "maximum_observed_foreign_origin_holdings": 1,
+        "maximum_observed_foreign_major_origin_holdings": 0,
+        "economy": {
+          "60": {
+            "cities": 5,
+            "military_power": 173.35,
+            "production": 28.05
+          },
+          "90": {
+            "cities": 5,
+            "military_power": 304.37,
+            "production": 40.0
+          }
+        },
+        "actions_sha256": "731c76a59bb168c9a56468da4c1e1934e9509dee3567be3a8aeec81eb61d5bf7",
+        "focal_actions_sha256": "37c41e5db6cd8b5d48907c4b4881bf6c4d77023feff2aedf2a13e27ad4d60e20",
+        "journal_stats": {
+          "budget_truncated_turns": 0,
+          "ring_dropped": 0,
+          "traced": true
+        }
+      },
+      "candidate": {
+        "result": {
+          "turn": 131,
+          "winner": 2,
+          "victory": "science",
+          "focal_won": false,
+          "focal_score": 118
+        },
+        "declarations": [],
+        "condemnations": 0,
+        "condemnations_by_90": 0,
+        "maximum_observed_foreign_origin_holdings": 0,
+        "maximum_observed_foreign_major_origin_holdings": 0,
+        "economy": {
+          "60": {
+            "cities": 5,
+            "military_power": 173.35,
+            "production": 28.05
+          },
+          "90": {
+            "cities": 4,
+            "military_power": 451.95000000000005,
+            "production": 37.0
+          }
+        },
+        "actions_sha256": "ecebc0e71f885e45c2735be92d2b81905fa4729577a2b1e4d2a3319f2627dde3",
+        "focal_actions_sha256": "4ddf040ed92fdbfaf0995073f4429339837e8e1ea981c9ac7b16c7c8f59ba457",
+        "journal_stats": {
+          "budget_truncated_turns": 0,
+          "ring_dropped": 0,
+          "traced": true
+        }
+      },
+      "action_contrast": true,
+      "focal_action_contrast": true
+    }
+  ],
+  "fresh_totals": {
+    "baseline": {
+      "games": 8,
+      "focal_wins": 0,
+      "focal_domination_wins": 0,
+      "religious_losses": 0,
+      "condemnations_by_90": 3,
+      "foreign_major_holding_games": 0
+    },
+    "candidate": {
+      "games": 8,
+      "focal_wins": 0,
+      "focal_domination_wins": 0,
+      "religious_losses": 0,
+      "condemnations_by_90": 4,
+      "foreign_major_holding_games": 0
+    }
+  },
+  "fresh_action_contrasts": 5,
+  "fresh_focal_action_contrasts": 5,
+  "fresh_economy_comparison": {
+    "60": {
+      "cities": {
+        "higher": 0,
+        "lower": 0,
+        "equal": 8,
+        "aggregate_delta": 0
+      },
+      "military_power": {
+        "higher": 0,
+        "lower": 0,
+        "equal": 8,
+        "aggregate_delta": 0.0
+      },
+      "production": {
+        "higher": 0,
+        "lower": 0,
+        "equal": 8,
+        "aggregate_delta": 0.0
+      }
+    },
+    "90": {
+      "cities": {
+        "higher": 1,
+        "lower": 2,
+        "equal": 5,
+        "aggregate_delta": -1
+      },
+      "military_power": {
+        "higher": 4,
+        "lower": 0,
+        "equal": 4,
+        "aggregate_delta": 875.36
+      },
+      "production": {
+        "higher": 2,
+        "lower": 2,
+        "equal": 4,
+        "aggregate_delta": 1.5
+      }
+    }
+  },
+  "registered_production_promotion_gate_passes": false,
+  "native_victory_established": false
+}
