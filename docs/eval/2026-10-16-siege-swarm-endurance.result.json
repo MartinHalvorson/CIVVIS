@@ -1,0 +1,255 @@
+{
+  "kind": "siege_swarm_endurance_accounting_result",
+  "created_at_utc": "2026-10-17T06:30:11.575046+00:00",
+  "registration_sha256": "846bb96c5525741fbc94a20a2a32ff16fa46580d63b41bf3a662c629b6f025e1",
+  "accounting_controls": {
+    "red": {
+      "recorded_at_utc": "2026-10-17T05:59:03.306776+00:00",
+      "command": "cargo test --profile ci --locked --lib ai::advanced::victory_conversion::tests:: -- --nocapture",
+      "exit_code": 101,
+      "passed": 22,
+      "failed": 4,
+      "ignored": 1,
+      "failures": [
+        "a_recovering_swarm_finisher_pays_its_reply_even_at_full_health",
+        "a_resting_swarm_finisher_pays_its_melee_reply_in_the_entry_budget",
+        "a_resting_swarm_member_cannot_supply_a_free_entry_window",
+        "a_swarm_member_that_cannot_survive_the_reply_does_not_lend_free_endurance"
+      ],
+      "log_sha256": "ecd9668152055fe8b81edc50fa15dd90d4fe45c5e74c4341e5a53022495a2b09",
+      "production_source_sha256": "bd242e2247667860b89164e97d83c4ed2bc4c660891e349a67104defa3d76c17",
+      "measurements": {
+        "resting_endurance_before": 31.666666666666668,
+        "resting_exchange_endurance": 3.6333333333333333,
+        "capture_turns": 18.0,
+        "recovering_endurance_before": 82.66666666666667,
+        "recovering_exchange_endurance": 5.333333333333333,
+        "reply_floor_endurance_before": 110.0,
+        "reply_floor_exchange_endurance": 1.1
+      }
+    },
+    "green": {
+      "recorded_at_utc": "2026-10-17T06:12:40.214711+00:00",
+      "head": "66199bcfdb7f9c6055aeb874858f1f27b06b4a4d",
+      "command": "cargo test --profile ci --locked --lib ai::advanced::victory_conversion::tests:: -- --nocapture",
+      "exit_code": 0,
+      "passed": 26,
+      "failed": 0,
+      "ignored": 1,
+      "log_sha256": "eddf2dadbcdc11734e77aa04b0623db1dea6fb5bfe201de581ecef909022a1ea",
+      "production_source_sha256": "4ff976d5b40707a77d6a155b7db7a93d6977a2e340e3d7be428ceb6d345250d2"
+    }
+  },
+  "validation": {
+    "recorded_at_utc": "2026-10-17T06:24:41.797053+00:00",
+    "head": "66199bcfdb7f9c6055aeb874858f1f27b06b4a4d",
+    "commands": [
+      "cargo test --profile ci --locked",
+      "python3 tools/rust_quality.py --base origin/main --head HEAD"
+    ],
+    "passed": 6162,
+    "failed": 0,
+    "ignored": 56,
+    "logs": {
+      "full-tests.log": "c4be8fe0891e52b255e6059967e062cc0a8d34e14f9dd85c720c2834b86b956d",
+      "rust-quality.log": "7f663536555bc8ec061853c86ded2d71f22afd79cdb33b4ea92ca34cd2200044",
+      "green-format.log": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "complete_simulator_games": 32,
+  "simulation_summary": [
+    {
+      "source": "baseline",
+      "difficulty": "immortal",
+      "policy": "off",
+      "games": 4,
+      "focal_wins": 0,
+      "focal_domination_wins": 0,
+      "own_capital_held_at_end": 2,
+      "foreign_major_cities_observed_held_sum": 0,
+      "foreign_capitals_held_at_end_sum": 0,
+      "end_turns": [
+        138,
+        154,
+        171,
+        133
+      ],
+      "within_source_policy_contrast_pairs": 3,
+      "process_exit_code": 0
+    },
+    {
+      "source": "baseline",
+      "difficulty": "immortal",
+      "policy": "on",
+      "games": 4,
+      "focal_wins": 0,
+      "focal_domination_wins": 0,
+      "own_capital_held_at_end": 1,
+      "foreign_major_cities_observed_held_sum": 0,
+      "foreign_capitals_held_at_end_sum": 0,
+      "end_turns": [
+        133,
+        157,
+        156,
+        133
+      ],
+      "within_source_policy_contrast_pairs": 3,
+      "process_exit_code": 0
+    },
+    {
+      "source": "baseline",
+      "difficulty": "deity",
+      "policy": "off",
+      "games": 4,
+      "focal_wins": 0,
+      "focal_domination_wins": 0,
+      "own_capital_held_at_end": 2,
+      "foreign_major_cities_observed_held_sum": 0,
+      "foreign_capitals_held_at_end_sum": 0,
+      "end_turns": [
+        142,
+        144,
+        139,
+        129
+      ],
+      "within_source_policy_contrast_pairs": 0,
+      "process_exit_code": 2
+    },
+    {
+      "source": "baseline",
+      "difficulty": "deity",
+      "policy": "on",
+      "games": 4,
+      "focal_wins": 0,
+      "focal_domination_wins": 0,
+      "own_capital_held_at_end": 2,
+      "foreign_major_cities_observed_held_sum": 0,
+      "foreign_capitals_held_at_end_sum": 0,
+      "end_turns": [
+        142,
+        144,
+        139,
+        129
+      ],
+      "within_source_policy_contrast_pairs": 0,
+      "process_exit_code": 2
+    },
+    {
+      "source": "candidate",
+      "difficulty": "immortal",
+      "policy": "off",
+      "games": 4,
+      "focal_wins": 0,
+      "focal_domination_wins": 0,
+      "own_capital_held_at_end": 2,
+      "foreign_major_cities_observed_held_sum": 0,
+      "foreign_capitals_held_at_end_sum": 0,
+      "end_turns": [
+        138,
+        154,
+        171,
+        133
+      ],
+      "within_source_policy_contrast_pairs": 3,
+      "process_exit_code": 0
+    },
+    {
+      "source": "candidate",
+      "difficulty": "immortal",
+      "policy": "on",
+      "games": 4,
+      "focal_wins": 0,
+      "focal_domination_wins": 0,
+      "own_capital_held_at_end": 1,
+      "foreign_major_cities_observed_held_sum": 0,
+      "foreign_capitals_held_at_end_sum": 0,
+      "end_turns": [
+        133,
+        157,
+        156,
+        133
+      ],
+      "within_source_policy_contrast_pairs": 3,
+      "process_exit_code": 0
+    },
+    {
+      "source": "candidate",
+      "difficulty": "deity",
+      "policy": "off",
+      "games": 4,
+      "focal_wins": 0,
+      "focal_domination_wins": 0,
+      "own_capital_held_at_end": 2,
+      "foreign_major_cities_observed_held_sum": 0,
+      "foreign_capitals_held_at_end_sum": 0,
+      "end_turns": [
+        142,
+        144,
+        139,
+        129
+      ],
+      "within_source_policy_contrast_pairs": 0,
+      "process_exit_code": 2
+    },
+    {
+      "source": "candidate",
+      "difficulty": "deity",
+      "policy": "on",
+      "games": 4,
+      "focal_wins": 0,
+      "focal_domination_wins": 0,
+      "own_capital_held_at_end": 2,
+      "foreign_major_cities_observed_held_sum": 0,
+      "foreign_capitals_held_at_end_sum": 0,
+      "end_turns": [
+        142,
+        144,
+        139,
+        129
+      ],
+      "within_source_policy_contrast_pairs": 0,
+      "process_exit_code": 2
+    }
+  ],
+  "off_outcomes_all_equal": true,
+  "on_outcomes_changed": 0,
+  "on_games_with_endurance_content_changes": 4,
+  "on_changed_endurance_journal_lines": 16,
+  "cross_source_canonical_action_identity_proven": false,
+  "native_verification_wins_proven": false,
+  "strength_improvement_proven": false,
+  "speed_improvement_proven": false,
+  "deity_contrast_guard": "Both source jobs exit 2 after four identical policy action pairs; failures retained, not waived.",
+  "conclusion": "Accounting corrected with four red-to-green cases; 32 completed focal losses, zero foreign cities held at observed full-turn boundaries or final states, unchanged source-level outcomes. Transient captures are not ruled out; no sustained conquest improvement established.",
+  "hosted_pre_repair_fail_fast": {
+    "observed_at_utc": "2026-10-17T06:32:20.624196+00:00",
+    "expected_red_failures_observed": [
+      "a_recovering_swarm_finisher_pays_its_reply_even_at_full_health",
+      "a_resting_swarm_finisher_pays_its_melee_reply_in_the_entry_budget"
+    ],
+    "passed_before_fail_fast": 3220,
+    "failed_before_fail_fast": 2,
+    "not_run_due_to_fail_fast": 2940,
+    "skipped": 52,
+    "exit_code": 100,
+    "log_sha256": "4f547185d94aed710780c345cfb2f663811afb3262a85cb961cb5ee853bdde02",
+    "initial_audit_assumptions_rejected": [
+      "The first audit assumed plain cargo and all four failures; hosted nextest stops after two expected failures.",
+      "The second audit stripped actual ANSI bytes, but gh log output contains printable caret escapes; both forms are handled here."
+    ],
+    "ci_rerun_or_guard_change_requested": false
+  },
+  "distinct_simulator_seeds": 8,
+  "capture_observation_audit": {
+    "audited_at_utc": "2026-10-17T06:39:16.502906+00:00",
+    "source_head": "b5c31c4459ffdbd98e4f16d9185bc2ca2636a70d",
+    "source_sha256": {
+      "src/ai.rs": "f802257fa080a230837a9be3e34bf265b9b72296dbb3824cb74b246a449d7e68",
+      "src/bin/victory_eval/domination_pair.rs": "67f6ab457a2200a80ecd8223615236d40e94713e2784c356b435e1157391da05"
+    },
+    "observer_cadence": "src/ai.rs::run_game_observed calls the observer only when g.turn changes; trial additionally observes the final state. Foreign-city held sets are updated only at those observations.",
+    "supported_claim": "All 32 complete games lose; zero foreign cities are held at observed full-turn boundaries or final states.",
+    "unsupported_claim": "Zero actual transient captures; a capture and recapture within one full round could be missed.",
+    "workflow_recovery": "Stopped only the owned shipping coordinator and disabled its auto-merge before correcting prose. No Native process actions or CI cancellation were requested. Existing CI runs are allowed to finish before a push or body edit."
+  }
+}

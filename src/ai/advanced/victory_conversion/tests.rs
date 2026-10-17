@@ -428,6 +428,164 @@ fn siege_budget_rejects_an_archer_only_train_and_accepts_a_capable_force() {
     assert!(ai.conversion_siege_ready(&g, 0, enemy, &[archer]));
 }
 
+fn unwalled_swarm_with_a_resting_member() -> (Game, AdvancedAi, u32, [u32; 2]) {
+    let (mut game, mut ai, _, enemy) = board(VictoryTarget::Domination);
+    game.at_war.insert((0, 1));
+    let city = game.cities[&enemy].pos;
+    game.cities.get_mut(&enemy).unwrap().wall_hp = 0;
+    std::sync::Arc::make_mut(&mut game.observed_city_max_wall_hp).insert(enemy, 0);
+    std::sync::Arc::make_mut(&mut game.observed_city_strength).insert(enemy, 45.0);
+    std::sync::Arc::make_mut(&mut game.observed_city_ranged_strength).insert(enemy, 40.0);
+    let active = game.spawn_test_unit("man_at_arms", 0, (city.0 - 2, city.1));
+    let resting = game.spawn_test_unit("man_at_arms", 0, (city.0 - 3, city.1));
+    game.units.get_mut(&resting).unwrap().hp = super::super::battle_planner::ROTATE_HP - 1;
+    ai.enable_siege_positive_damage_budget();
+    ai.enable_siege_budget_counts_what_fires();
+    ai.enable_unwalled_city_takes_the_swarm();
+    ai.enable_unwalled_city_spares_the_train();
+    let (sealed, ring) = super::super::siege_train::ring_state(&game, enemy);
+    assert!(sealed < ring);
+    assert!(ai.siege_member_fit(&game, active));
+    assert!(!ai.siege_member_fit(&game, resting));
+    (game, ai, enemy, [active, resting])
+}
+
+fn swarm_melee_exchange_endurance(game: &Game, city: u32, force: &[u32]) -> f64 {
+    force
+        .iter()
+        .map(|uid| {
+            let unit = &game.units[uid];
+            let reply = expected_damage(game.city_strength(city), game.unit_strength(unit, true));
+            f64::from((unit.hp - 20).max(0)) / reply.max(1.0)
+        })
+        .sum()
+}
+
+#[test]
+fn a_resting_swarm_finisher_pays_its_melee_reply_in_the_entry_budget() {
+    let (game, ai, city, force) = unwalled_swarm_with_a_resting_member();
+    let (_, endurance) = ai
+        .conversion_siege_entry_budget(&game, 0, city, &force, 5)
+        .unwrap();
+    let expected = swarm_melee_exchange_endurance(&game, city, &force);
+    assert!(
+        (endurance - expected).abs() < 1e-9,
+        "{endurance} against {expected}"
+    );
+}
+
+#[test]
+fn a_resting_swarm_member_cannot_supply_a_free_entry_window() {
+    let (game, ai, city, force) = unwalled_swarm_with_a_resting_member();
+    let (turns, endurance) = ai
+        .conversion_siege_entry_budget(&game, 0, city, &force, 5)
+        .unwrap();
+    assert!(turns.is_finite());
+    assert!(
+        turns > endurance * 0.8,
+        "{turns} turns against {endurance} endurance"
+    );
+    assert!(!ai.conversion_siege_ready(&game, 0, city, &force));
+}
+
+#[test]
+fn a_recovering_swarm_finisher_pays_its_reply_even_at_full_health() {
+    let (mut game, mut ai, city, force) = unwalled_swarm_with_a_resting_member();
+    game.units.get_mut(&force[1]).unwrap().hp = 100;
+    ai.battle_planner_recovering.insert(force[1]);
+    assert!(!ai.siege_member_fit(&game, force[1]));
+    let (_, endurance) = ai
+        .conversion_siege_entry_budget(&game, 0, city, &force, 5)
+        .unwrap();
+    let expected = swarm_melee_exchange_endurance(&game, city, &force);
+    assert!(
+        (endurance - expected).abs() < 1e-9,
+        "{endurance} against {expected}"
+    );
+    assert!(!ai.conversion_siege_ready(&game, 0, city, &force));
+}
+
+#[test]
+fn a_swarm_member_that_cannot_survive_the_reply_does_not_lend_free_endurance() {
+    let (mut game, ai, city, force) = unwalled_swarm_with_a_resting_member();
+    game.units.get_mut(&force[1]).unwrap().hp = super::super::battle_planner::ROTATE_HP;
+    std::sync::Arc::make_mut(&mut game.observed_city_strength).insert(city, 90.0);
+    assert!(ai.siege_member_fit(&game, force[1]));
+    let reply = expected_damage(
+        game.city_strength(city),
+        game.unit_strength(&game.units[&force[1]], true),
+    );
+    assert!(
+        f64::from(game.units[&force[1]].hp) - reply
+            < f64::from(super::super::siege_train::ASSAULT_SURVIVOR_HP)
+    );
+    let (_, endurance) = ai
+        .conversion_siege_entry_budget(&game, 0, city, &force, 5)
+        .unwrap();
+    let expected = swarm_melee_exchange_endurance(&game, city, &force);
+    assert!(
+        (endurance - expected).abs() < 1e-9,
+        "{endurance} against {expected}"
+    );
+}
+
+#[test]
+fn a_fit_unwalled_swarm_still_has_a_ready_entry() {
+    let (mut game, ai, city, force) = unwalled_swarm_with_a_resting_member();
+    game.units.get_mut(&force[1]).unwrap().hp = 100;
+    let position = game.cities[&city].pos;
+    let third = game.spawn_test_unit("man_at_arms", 0, (position.0, position.1 + 2));
+    let force = [force[0], force[1], third];
+    let (_, endurance) = ai
+        .conversion_siege_entry_budget(&game, 0, city, &force, 5)
+        .unwrap();
+    let expected = swarm_melee_exchange_endurance(&game, city, &force);
+    assert!((endurance - expected).abs() < 1e-9);
+    assert!(ai.conversion_siege_ready(&game, 0, city, &force));
+}
+
+#[test]
+fn a_swarm_off_entry_keeps_the_existing_unwalled_budget() {
+    let (game, mut ai, city, force) = unwalled_swarm_with_a_resting_member();
+    ai.disable_unwalled_city_takes_the_swarm();
+    let (_, endurance) = ai
+        .conversion_siege_entry_budget(&game, 0, city, &force, 5)
+        .unwrap();
+    let expected: f64 = force
+        .iter()
+        .map(|uid| f64::from((game.units[uid].hp - 20).max(0)))
+        .sum();
+    assert!((endurance - expected).abs() < 1e-9);
+}
+
+#[test]
+fn production_and_spares_off_swarm_reads_keep_the_existing_reply_cost() {
+    let (game, mut ai, city, force) = unwalled_swarm_with_a_resting_member();
+    let expected: f64 = force
+        .iter()
+        .map(|uid| {
+            let unit = &game.units[uid];
+            let strike = expected_damage(
+                game.city_ranged_strength(city),
+                game.unit_strength(unit, false),
+            );
+            let reply = if ai.siege_member_fit(&game, *uid) {
+                expected_damage(game.city_strength(city), game.unit_strength(unit, true))
+            } else {
+                0.0
+            };
+            f64::from((unit.hp - 20).max(0)) / (strike + reply).max(1.0)
+        })
+        .sum();
+    let production = ai.conversion_siege_budget(&game, 0, city, &force).unwrap();
+    assert!((production.1 - expected).abs() < 1e-9);
+    ai.disable_unwalled_city_spares_the_train();
+    let entry = ai
+        .conversion_siege_entry_budget(&game, 0, city, &force, 5)
+        .unwrap();
+    assert_eq!(entry, production);
+}
+
 #[test]
 fn staged_siege_can_budget_a_last_seen_city_outside_current_sight() {
     let (mut g, mut ai, _, enemy) = board(VictoryTarget::Domination);
