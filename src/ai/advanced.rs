@@ -18291,16 +18291,17 @@ impl AdvancedAi {
     /// requesting another generation. Do not require stockpiled resources here:
     /// the missing prerequisite may be the technology that reveals them.
     fn wartime_modernization_tech(&self, g: &Game, pid: usize) -> Option<Name> {
-        if !self.victory_planning
-            || !g.players.iter().any(|other| {
-                other.id != pid
-                    && other.alive
-                    && !other.is_minor
-                    && !other.is_barbarian
-                    && g.is_at_war(pid, other.id)
-            })
-        {
+        if !self.victory_planning {
             return None;
+        }
+        if !g.players.iter().any(|other| {
+            other.id != pid
+                && other.alive
+                && !other.is_minor
+                && !other.is_barbarian
+                && g.is_at_war(pid, other.id)
+        }) {
+            return self.conquest_campaign_modernization_tech(g, pid);
         }
         let mut goals: BTreeMap<Name, (usize, f64)> = BTreeMap::new();
         for unit in g.units.values().filter(|unit| unit.owner == pid) {
@@ -18935,7 +18936,7 @@ impl AdvancedAi {
                                 )
                             } else if wartime_modernization_goal.as_deref() == Some(goal) {
                                 format!(
-                                    "the {step} step toward {}, needed to modernize the standing army at war",
+                                    "the {step} step toward {}, needed to modernize the standing army for its campaign",
                                     plain(goal)
                                 )
                             } else if domination_campus_goal == Some(goal) {

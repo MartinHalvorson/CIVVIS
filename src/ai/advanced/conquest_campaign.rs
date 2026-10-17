@@ -1,6 +1,71 @@
 use super::*;
 
 impl AdvancedAi {
+    pub(super) fn conquest_campaign_modernization_tech(
+        &self,
+        game: &Game,
+        player: usize,
+    ) -> Option<Name> {
+        if !self.victory_planning
+            || self.active_victory_target(game) != Some(VictoryTarget::Domination)
+            || game.player_city_ids(player).len() < 2
+            || !game.players[player]
+                .techs
+                .contains(&crate::name!("writing"))
+            || !game.players.iter().any(|rival| {
+                rival.alive
+                    && !rival.is_minor
+                    && !rival.is_barbarian
+                    && self.campaign_target_legal(game, player, rival.id)
+                    && game.player_city_ids(rival.id).iter().any(|city| {
+                        Self::city_within_declaration_range(game, player, game.cities[city].pos)
+                    })
+            })
+        {
+            return None;
+        }
+        let mut goals: BTreeMap<Name, (usize, f64)> = BTreeMap::new();
+        for unit in game.units.values().filter(|unit| unit.owner == player) {
+            let held = &game.rules.units[unit.kind];
+            if held.class != "military"
+                || held.promotion_class == "recon"
+                || matches!(held.domain.as_deref(), Some("sea" | "air"))
+            {
+                continue;
+            }
+            let Some(successor) = held.upgrade_to else {
+                continue;
+            };
+            let successor = &game.rules.units[game.player_unit_replacement(player, successor)];
+            let Some(technology) = successor.tech else {
+                continue;
+            };
+            if !successor.buildable || game.players[player].techs.contains(&technology) {
+                continue;
+            }
+            let gain = successor.strength.max(successor.ranged_attack_strength())
+                - held.strength.max(held.ranged_attack_strength());
+            if gain > 0.0 {
+                let entry = goals.entry(technology).or_default();
+                entry.0 += 1;
+                entry.1 += gain;
+            }
+        }
+        goals
+            .into_iter()
+            .filter(|(_, (count, _))| *count >= 3)
+            .map(|(technology, (_, gain))| {
+                let cost = Self::war_remaining_research_cost(game, player, technology).max(1.0);
+                (technology, gain / cost)
+            })
+            .max_by(|(left, left_value), (right, right_value)| {
+                left_value
+                    .total_cmp(right_value)
+                    .then_with(|| right.cmp(left))
+            })
+            .map(|(technology, _)| technology)
+    }
+
     pub(super) fn conquest_campaign_objective(
         &self,
         game: &Game,
@@ -10,7 +75,7 @@ impl AdvancedAi {
         target_city: Option<u32>,
     ) -> (Option<usize>, Option<u32>) {
         let unchanged = (target_player, target_city);
-        if strategy != GrandStrategy::Conquest
+        if !matches!(strategy, GrandStrategy::Conquest | GrandStrategy::Expansion)
             || self.active_victory_target(game) != Some(VictoryTarget::Domination)
             || self.forced_target_player.is_some()
             || game.emergency_objective(player).is_some()

@@ -141,11 +141,7 @@ fn conquest_campaign_leaves_adaptive_rivals_unchanged() {
 #[test]
 fn conquest_campaign_leaves_other_plans_unchanged() {
     let (game, controller, distant, _) = campaign();
-    for strategy in [
-        GrandStrategy::Expansion,
-        GrandStrategy::Recovery,
-        GrandStrategy::Science,
-    ] {
+    for strategy in [GrandStrategy::Recovery, GrandStrategy::Science] {
         assert_eq!(
             controller.conquest_campaign_objective(&game, 0, strategy, Some(1), Some(distant)),
             (Some(1), Some(distant))
@@ -276,4 +272,120 @@ fn conquest_campaign_keeps_the_existing_eighteen_tile_boundary() {
         ),
         (Some(1), Some(border))
     );
+}
+
+#[test]
+fn conquest_campaign_keeps_the_expansion_army_on_a_reachable_frontier() {
+    let (game, controller, distant, nearby) = campaign();
+    assert_eq!(
+        controller.conquest_campaign_objective(
+            &game,
+            0,
+            GrandStrategy::Expansion,
+            Some(1),
+            Some(distant)
+        ),
+        (Some(2), Some(nearby))
+    );
+}
+
+fn standing_archers() -> (Game, AdvancedAi, u32) {
+    let (mut game, controller, _, nearby) = campaign();
+    game.found_city_for(0, (25, 20), None);
+    game.current = 0;
+    game.turn = 50;
+    for technology in [
+        "pottery",
+        "mining",
+        "writing",
+        "archery",
+        "wheel",
+        "bronze_working",
+        "iron_working",
+        "engineering",
+    ] {
+        game.players[0].techs.insert(Name::new(technology));
+    }
+    for _ in 0..3 {
+        game.spawn_test_unit("archer", 0, (30, 20));
+    }
+    (game, controller, nearby)
+}
+
+#[test]
+fn conquest_campaign_researches_the_standing_archer_upgrade_before_war() {
+    let (game, controller, _) = standing_archers();
+    assert!(!game.is_at_war(0, 2));
+    assert_eq!(
+        controller.wartime_modernization_tech(&game, 0).as_deref(),
+        Some("machinery")
+    );
+}
+
+#[test]
+fn conquest_campaign_modernization_keeps_writing_first() {
+    let (mut game, controller, _) = standing_archers();
+    game.players[0].techs.remove(&crate::name!("writing"));
+    assert_eq!(controller.wartime_modernization_tech(&game, 0), None);
+}
+
+#[test]
+fn conquest_campaign_modernization_does_not_beeline_for_two_archers() {
+    let (mut game, controller, _) = standing_archers();
+    let unit = game.player_unit_ids(0)[0];
+    game.remove_unit(unit);
+    assert_eq!(controller.wartime_modernization_tech(&game, 0), None);
+}
+
+#[test]
+fn conquest_campaign_modernization_requires_an_actionable_frontier() {
+    let (mut game, controller, _) = standing_archers();
+    game.players[2].alive = false;
+    assert_eq!(controller.wartime_modernization_tech(&game, 0), None);
+}
+
+#[test]
+fn conquest_campaign_modernization_keeps_peaceful_other_lanes_unchanged() {
+    let (game, mut controller, _) = standing_archers();
+    for target in [
+        None,
+        Some(VictoryTarget::Science),
+        Some(VictoryTarget::Religion),
+    ] {
+        controller.victory_target = target;
+        assert_eq!(controller.wartime_modernization_tech(&game, 0), None);
+    }
+}
+
+#[test]
+fn conquest_campaign_modernization_accounts_for_the_full_prerequisite_bill() {
+    let (mut game, controller, _) = standing_archers();
+    for _ in 0..5 {
+        game.spawn_test_unit("heavy_chariot", 0, (30, 20));
+    }
+    assert_eq!(
+        controller.wartime_modernization_tech(&game, 0).as_deref(),
+        Some("machinery")
+    );
+    game.at_war.insert((0, 1));
+    assert_eq!(
+        controller.wartime_modernization_tech(&game, 0).as_deref(),
+        Some("stirrups")
+    );
+}
+
+#[test]
+fn conquest_campaign_modernization_routes_the_actual_peace_research_choice() {
+    let (mut game, controller, nearby) = standing_archers();
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Expansion,
+        target_player: Some(2),
+        target_city: Some(nearby),
+        threatened_city: None,
+        desired_cities: 5,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    controller.advanced_research(&mut game, 0, &plan);
+    assert_eq!(game.players[0].research.as_deref(), Some("machinery"));
 }
