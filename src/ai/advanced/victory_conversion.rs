@@ -1259,16 +1259,18 @@ impl AdvancedAi {
         // city's health through standing walls every turn; Ram-supported
         // swings bring the walls down, after which the fit melee swarm the
         // open city every turn rather than wait to land one finishing blow.
-        let towered = (tower_swingers && tower_city_dps > heal)
-            .then(|| f64::from(city_hp.max(0)) / (tower_city_dps - heal) + 1.0)
-            .unwrap_or(f64::INFINITY);
-        let rammed = (ram_at_hand && taker && wall_dps > 0.0 && city_dps + ram_swarm_dps > heal)
-            .then(|| {
-                f64::from(wall_hp.max(0)) / wall_dps.max(1.0)
-                    + f64::from(city_hp.max(0)) / (city_dps + ram_swarm_dps - heal)
-                    + 1.0
-            })
-            .unwrap_or(f64::INFINITY);
+        let towered = if tower_swingers && tower_city_dps > heal {
+            f64::from(city_hp.max(0)) / (tower_city_dps - heal) + 1.0
+        } else {
+            f64::INFINITY
+        };
+        let rammed = if ram_at_hand && taker && wall_dps > 0.0 && city_dps + ram_swarm_dps > heal {
+            f64::from(wall_hp.max(0)) / wall_dps.max(1.0)
+                + f64::from(city_hp.max(0)) / (city_dps + ram_swarm_dps - heal)
+                + 1.0
+        } else {
+            f64::INFINITY
+        };
         let supported_turns = towered.min(rammed);
         if !taker || fire_short || (wall_hp > 0 && wall_dps <= 0.0) {
             return Some((supported_turns, endurance));
