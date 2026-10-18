@@ -4039,6 +4039,11 @@ pub const GENES: &[Gene] = &[
     // Walls for Rams queued in 1-3 Production cities while the treasury held
     // about 150 Gold. See `advanced/siege_train/breaker_purchase.rs`.
     Gene { tag: "breaker-bought-for-the-siege", field: "breaker_bought_for_the_siege", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_bought_for_the_siege, disable: AdvancedAi::disable_breaker_bought_for_the_siege },
+    // `gold-buys-the-idle-trader`: the first route slot stood empty at t30 in
+    // 45 of 51 live Emperor games and at t60 in 24, while the bank held
+    // 121-150 Gold and a Trader sold for about 95. See
+    // `advanced/trader_fills_the_idle_route/purchase.rs`.
+    Gene { tag: "gold-buys-the-idle-trader", field: "gold_buys_the_idle_trader", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_buys_the_idle_trader, disable: AdvancedAi::disable_gold_buys_the_idle_trader },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

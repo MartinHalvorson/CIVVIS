@@ -6932,6 +6932,10 @@ pub struct AdvancedAi {
     /// Off by default.
     engineering_for_capped_fresh_water: bool,
     // ---- append: g-k ------------------------------------------------
+    /// `gold-buys-the-idle-trader`: an empty trade route slot's Trader,
+    /// bought with the idle bank at peace. See
+    /// `advanced/trader_fills_the_idle_route/purchase.rs`. Off by default.
+    gold_buys_the_idle_trader: bool,
     /// `holdout-keeps-the-faith-war`: no peace offered to or accepted from a
     /// faith's founder while we are its last holdout and a city of ours
     /// follows or is converting to it. See `advanced/holdout_faith_war.rs`.
@@ -10904,6 +10908,7 @@ impl AdvancedAi {
             front_weighted_floor_2: false,
             engineering_for_capped_fresh_water: false,
             // ---- append: g-k ----------------------------------------
+            gold_buys_the_idle_trader: false,
             holdout_keeps_the_faith_war: false,
             holdout_keeps_the_faith_war_2: false,
             holy_city_guard: RefCell::new(holy_city_guard::HolyCityGuard::default()),
@@ -48776,6 +48781,12 @@ impl AdvancedAi {
         // `advanced/siege_train/breaker_purchase.rs`.
         if !emergency_city_defense && !surprise_defense_purchase {
             self.siege_breaker_purchase(g, pid);
+        }
+        // `gold-buys-the-idle-trader`: after the city-saving purchases, an
+        // empty route slot's Trader. See
+        // `advanced/trader_fills_the_idle_route/purchase.rs`.
+        if !emergency_city_defense && !surprise_defense_purchase {
+            self.idle_trader_purchase(g, pid, &plan);
         }
         // Once a city-saving purchase has had its one action, the turn a
         // breakthrough arrives still upgrades appointed predecessors before

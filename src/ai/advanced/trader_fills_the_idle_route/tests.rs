@@ -3,7 +3,7 @@ use super::*;
 /// One major with two cities 4-15 tiles apart (a domestic route), Foreign
 /// Trade known (one route slot), every unit removed, the capital's queue
 /// cleared and the turn past the opening. Returns the game and the capital.
-fn two_city_trade_empire() -> Option<(Game, u32)> {
+pub(super) fn two_city_trade_empire() -> Option<(Game, u32)> {
     let mut game = Game::new_full(1, 32, 20, 936_221, 200, 0, false);
     let settler = game
         .player_unit_ids(0)
