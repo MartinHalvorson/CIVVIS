@@ -372,7 +372,9 @@ mod tests {
         off.turn += 3;
         ai.propose_protective_friendship(&mut off, 0);
         assert!(
-            off.pending_deals.iter().any(|deal| deal.from == 0 && deal.to == 1),
+            off.pending_deals
+                .iter()
+                .any(|deal| deal.from == 0 && deal.to == 1),
             "without the gene the prey is asked next"
         );
 
