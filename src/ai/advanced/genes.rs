@@ -4039,6 +4039,11 @@ pub const GENES: &[Gene] = &[
     // eligible city a turn. Version one's live claims began around turn 80; 23
     // of its t45-65 free-slot samples were held by the three-citizen floor.
     Gene { tag: "campus-claims-the-free-slot-2", field: "campus_claims_the_free_slot_2", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_claims_the_free_slot_2, disable: AdvancedAi::disable_campus_claims_the_free_slot_2 },
+    // `gold-buys-the-idle-trader`: the first route slot stood empty at t30 in
+    // 45 of 51 live Emperor games and at t60 in 24, while the bank held
+    // 121-150 Gold and a Trader sold for about 95. See
+    // `advanced/trader_fills_the_idle_route/purchase.rs`.
+    Gene { tag: "gold-buys-the-idle-trader", field: "gold_buys_the_idle_trader", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_buys_the_idle_trader, disable: AdvancedAi::disable_gold_buys_the_idle_trader },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

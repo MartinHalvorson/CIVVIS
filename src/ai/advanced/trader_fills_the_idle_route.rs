@@ -245,5 +245,12 @@ impl AdvancedAi {
     }
 }
 
+/// `gold-buys-the-idle-trader`: the empty slot's Trader, bought. See
+/// `trader_fills_the_idle_route/purchase.rs`.
+mod purchase;
+
+#[cfg(test)]
+mod purchase_tests;
+
 #[cfg(test)]
 mod tests;
