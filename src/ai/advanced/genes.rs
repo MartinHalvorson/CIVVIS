@@ -4023,7 +4023,6 @@ pub const GENES: &[Gene] = &[
     // (civvis-20261018T011334Z) held Stage turns 79-84 with a Ram, 12 of 14
     // units staged against Ancient Walls, at "70.2 turns / 25.0 endurance".
     Gene { tag: "siege-budget-counts-the-ram", field: "siege_budget_counts_the_ram", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_budget_counts_the_ram, disable: AdvancedAi::disable_siege_budget_counts_the_ram },
-||||||| 047945067
     // `campus-claims-the-free-slot`: 69% of our Emperor cities at t50 held a
     // free district slot and no Campus while the routine floor built Archers
     // and Walls in them; Science per citizen ran 0.8 against the rivals' 1.8,
