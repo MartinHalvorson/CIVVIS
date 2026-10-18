@@ -41,7 +41,10 @@ fn walled_train(support: &str, melee: usize) -> (Game, AdvancedAi, u32, Vec<u32>
     }
     force.push(g.spawn_test_unit(support, 0, (city.0 - 2, city.1 + melee as i32)));
     for uid in &force {
-        assert!(g.wdist(g.units[uid].pos, city) >= 2, "nobody stands beside the city");
+        assert!(
+            g.wdist(g.units[uid].pos, city) >= 2,
+            "nobody stands beside the city"
+        );
     }
     let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
     ai.enable_siege_positive_damage_budget();
@@ -57,13 +60,19 @@ fn a_train_held_ram_turns_an_infinite_wall_budget_finite() {
     let (off, _) = ai
         .conversion_siege_entry_budget(&g, 0, city, &force, 5)
         .unwrap();
-    assert!(off.is_infinite(), "without the gene the melee price no wall damage: {off}");
+    assert!(
+        off.is_infinite(),
+        "without the gene the melee price no wall damage: {off}"
+    );
 
     ai.enable_siege_budget_counts_the_ram();
     let (on, endurance) = ai
         .conversion_siege_entry_budget(&g, 0, city, &force, 5)
         .unwrap();
-    assert!(on.is_finite(), "four Spearmen beside a Ram open Ancient Walls: {on}");
+    assert!(
+        on.is_finite(),
+        "four Spearmen beside a Ram open Ancient Walls: {on}"
+    );
     assert!(endurance > 0.0);
     // The walls fall to the Ram-supported swings at whole damage, then the
     // fit Spearmen swarm the open city.
