@@ -18426,6 +18426,7 @@ impl AdvancedAi {
             // is held for its wall-breaker. See `advanced/decisive_window.rs`.
             let wartime_modernization_goal = self
                 .wartime_modernization_tech(g, pid)
+                .or_else(|| self.conquest_campaign_frontline_tech(g, pid, plan))
                 .filter(|tech| !self.modernization_yields_to_the_breaker(g, pid, *tech));
             let production_technology_goal = self.named_production_technology_goal(g, pid, plan);
             let domination_siege_goal = self.domination_siege_research_goal(g, pid, plan);
