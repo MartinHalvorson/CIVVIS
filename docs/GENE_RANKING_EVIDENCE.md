@@ -207,6 +207,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `breach-reads-the-air` | off (unmeasured) | Opt-in gene `breach-reads-the-air`; see `Self::breach_reads_the_air`. | 1 \| 1 |
 | `breach-support-reads-the-wall-tier` | off (unmeasured) | Opt-in gene `breach-support-reads-the-wall-tier`; see `Self::breach_support_reads_the_wall_tier`. | 1 \| 1 |
 | `breaker-before-the-war` | off (unmeasured) | Opt-in gene `breaker-before-the-war`; see `Self::breaker_before_the_war`. | 1 \| 1 |
+| `breaker-bought-for-the-siege` | off (unmeasured) | Buy the wall-breaker a held siege waits for. | 1 \| 1 |
 | `breaker-keeps-its-queue` | off (unmeasured) | The strategic scorer does not displace a queued siege unit that holds production while its city is not threatened. | 1 \| 1 |
 | `breaker-reads-the-march` | off (unmeasured) | Opt-in gene `breaker-reads-the-march`; see `Self::breaker_reads_the_march`. | 1 \| 1 |
 | `breaker-research-first` | off (unmeasured) | Opt-in gene `breaker-research-first`; see `Self::breaker_research_first`. | 1 \| 1 |
@@ -230,6 +231,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `campus-before-the-army-3` | off (unmeasured) | `campus-before-the-army-3`: version 2, on through the University and the Research Lab. | — \| 3 |
 | `campus-building-claims-the-queue` | off (unmeasured) | A standing Campus's next building (Library, else University, else Research Lab) claims its city's queue over a deferrable head. | 1 \| 1 |
 | `campus-buildings-first` | off (unmeasured) | Opt-in gene `campus-buildings-first`; see `BasicAi::campus_buildings_first` and `Self::reserve_culture_defense_theater`. | 1 \| 1 |
+| `campus-claims-the-free-slot` | off (unmeasured) | Claim a free district slot for a first Campus. | — \| 2 |
+| `campus-claims-the-free-slot-2` | off (unmeasured) | Version 2 of the free-slot Campus claim. | — \| 2 |
 | `capital-campus-before-the-plaza` | off (unmeasured) | Opt-in gene `capital-campus-before-the-plaza`; see `advanced/capital_campus_claim.rs`. | 1 \| 1 |
 | `capital-defense-holds` | off (unmeasured) | Opt-in gene `capital-defense-holds`; see `Self::capital_defense_contact`. | 1 \| 1 |
 | `capital-prey-opens-a-front` | off (unmeasured) | Opt-in gene `capital-prey-opens-a-front`; see `Self::capital_prey_opens_a_front`. | — \| 2 |
@@ -321,6 +324,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `front-weighted-floor` | off (unmeasured) | The delegated governor's military floor builds where the unit reaches the campaign's target city soonest. | — \| 2 |
 | `front-weighted-floor-2` | off (unmeasured) | `front-weighted-floor-2`: while the floor is unmet, a city near the campaign's target builds the floor's unit ahead of its economy steps. | — \| 2 |
 | `frontier-walls-before-the-surprise` | off (unmeasured) | Prepare a watched frontier city's first fortifications before war. | 1 \| 1 |
+| `gold-buys-the-idle-trader` | off (unmeasured) | Buy an empty route slot's Trader with the idle bank. | 1 \| 1 |
 | `gold-buys-the-settler` | off (unmeasured) | Opt-in gene `gold-buys-the-settler`; see `advanced/gold_buys_the_settler.rs`. | 1 \| 1 |
 | `golden-dedication-serves-the-conquest` | off (unmeasured) | Opt-in gene `golden-dedication-serves-the-conquest`; see `Self::golden_dedication_serves_the_conquest`. | 1 \| 1 |
 | `granary-before-the-army` | off (unmeasured) | The delegated city governor's housing reserve (Granary, else Aqueduct) ahead of the military floor. | — \| 2 |
@@ -423,6 +427,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `settler-marches-alone-when-clear` | off (unmeasured) | Opt-in gene `settler-marches-alone-when-clear`; see `AdvancedAi::settler_path_clear`. | 1 \| 1 |
 | `settler-walks-to-the-better-site` | off (unmeasured) | Opt-in gene `settler-walks-to-the-better-site`; see `Self::better_site_beyond_the_turn`. | 1 \| 1 |
 | `shared-danger` | off (unmeasured) | Opt-in gene `shared-danger`; see `Self::shared_danger`. | 1 \| 1 |
+| `siege-budget-counts-the-ram` | off (unmeasured) | Price a train-held Ram or Tower in the siege damage budget. | 1 \| 1 |
 | `siege-budget-counts-what-fires` | off (unmeasured) | Opt-in gene `siege-budget-counts-what-fires`; see `Self::siege_budget_counts_what_fires`. | 1 \| 1 |
 | `siege-budget-projects-the-seal` | off (unmeasured) | Opt-in gene `siege-budget-projects-the-seal`; see `AdvancedAi::siege_budget_projects_the_seal`. | 1 \| 1 |
 | `siege-buys-the-gun-resource` | off (unmeasured) | Opt-in gene `siege-buys-the-gun-resource`; see `Self::siege_buys_the_gun_resource`. | 1 \| 1 |

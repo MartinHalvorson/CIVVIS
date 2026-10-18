@@ -500,6 +500,30 @@ fn breach_support_works(g: &Game, uid: u32, cid: u32) -> bool {
     })
 }
 
+/// `siege-budget-counts-the-ram`: whether `pid` holds, within `radius` of
+/// city `cid`, a Battering Ram and a Siege Tower that work on its walls
+/// (`breach_support_works`), as `(ram, tower)`.
+pub(super) fn breach_support_at_hand(g: &Game, pid: usize, cid: u32, radius: i32) -> (bool, bool) {
+    let Some(city) = g.cities.get(&cid) else {
+        return (false, false);
+    };
+    let (mut ram, mut tower) = (false, false);
+    for unit in g.units.values() {
+        if unit.owner != pid
+            || g.wdist(unit.pos, city.pos) > radius
+            || !breach_support_works(g, unit.id, cid)
+        {
+            continue;
+        }
+        match unit.kind.as_str() {
+            "battering_ram" => ram = true,
+            "siege_tower" => tower = true,
+            _ => {}
+        }
+    }
+    (ram, tower)
+}
+
 /// A land siege gun: the Catapult's line, the units that break walls whole.
 fn land_gun(g: &Game, kind: crate::name::Name) -> bool {
     let spec = &g.rules.units[kind];
@@ -845,7 +869,7 @@ impl AdvancedAi {
 
 /// A melee unit a ram or tower lends its effect to: `siege_support_effects`
 /// answers only for the melee and anti-cavalry classes.
-fn breach_support_user(g: &Game, uid: u32) -> bool {
+pub(super) fn breach_support_user(g: &Game, uid: u32) -> bool {
     g.units
         .get(&uid)
         .is_some_and(|unit| crate::ai::siege_support::eligible_attacker(&g.rules.units[unit.kind]))
@@ -6099,6 +6123,13 @@ mod capture_tests;
 
 #[cfg(test)]
 mod breach_tests;
+
+/// `breaker-bought-for-the-siege`: the wall-breaker a held siege waits for,
+/// bought. See `siege_train/breaker_purchase.rs`.
+mod breaker_purchase;
+
+#[cfg(test)]
+mod breaker_purchase_tests;
 
 #[cfg(test)]
 mod breaker_tests;
