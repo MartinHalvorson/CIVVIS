@@ -2596,7 +2596,10 @@ impl AdvancedAi {
     }
 
     /// `siege-needs-a-breaker`: what the train holds within the staging ring
-    /// that can bring the walls down. See [`BreachReading`].
+    /// that can bring the walls down. See [`BreachReading`]. The Stage step
+    /// reads [`Self::stage_breach_radius`] through
+    /// [`Self::breach_reading_within`]; the tests read the staging ring here.
+    #[cfg(test)]
     fn breach_reading(
         &self,
         g: &Game,
