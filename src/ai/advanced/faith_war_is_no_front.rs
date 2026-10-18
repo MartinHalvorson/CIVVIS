@@ -18,33 +18,62 @@
 //! Inca, at a sixth of our power by 150, took the capital at 180. The one
 //! domination win (090059Z) declared its own war on adjacent America.
 //!
+//! **Version 2** (`faith-war-is-no-front-2`) also exempts the war a religious
+//! interception opened (`religious_interception_war`) and a war on a major
+//! none of whose cities we have located. civvis-20261018T115456Z, the first
+//! game under version one, opened an interception on the Khmer "as its last
+//! holdout" at turn 78; the campaign read "already at war; no city objective
+//! yet" until the Khmer won on Culture at 144, while India, three cities
+//! beside us at 33-40 power against our 591-646, was never attacked.
+//!
 //! Off, nothing changes.
 
 use super::*;
 
 impl AdvancedAi {
-    /// The rival of the running faith war while the gene is on.
-    pub(super) fn faith_war_front_exempt(&self, g: &Game, pid: usize) -> Option<usize> {
-        if !self.faith_war_is_no_front {
-            return None;
+    /// The rivals at war with us that are no front: the faith war's, and
+    /// under version 2 the religious interception's and every major none of
+    /// whose cities we have located. Empty with both versions off.
+    pub(super) fn no_front_rivals(&self, g: &Game, pid: usize) -> Vec<usize> {
+        let mut exempt: Vec<usize> = Vec::new();
+        if self.faith_war_is_no_front || self.faith_war_is_no_front_2 {
+            if let Some(war) = self.faith_war_before_the_flip_war.as_ref() {
+                exempt.push(war.rival);
+            }
         }
-        self.faith_war_before_the_flip_war
-            .as_ref()
-            .map(|war| war.rival)
-            .filter(|rival| g.is_at_war(pid, *rival))
+        if self.faith_war_is_no_front_2 {
+            if let Some((rival, _)) = self.religious_interception_war {
+                exempt.push(rival);
+            }
+            exempt.extend(
+                g.players
+                    .iter()
+                    .filter(|other| {
+                        other.id != pid
+                            && other.alive
+                            && !other.is_minor
+                            && !other.is_barbarian
+                            && g.player_city_ids(other.id).is_empty()
+                    })
+                    .map(|other| other.id),
+            );
+        }
+        exempt.retain(|rival| g.is_at_war(pid, *rival));
+        exempt.sort_unstable();
+        exempt.dedup();
+        exempt
     }
 
-    /// `enemies` less the running faith war's rival; unchanged with the gene
-    /// off or no faith war running.
+    /// `enemies` less [`Self::no_front_rivals`]; unchanged with both
+    /// versions off or no such war running.
     pub(super) fn without_faith_war(
         &self,
         g: &Game,
         pid: usize,
         mut enemies: Vec<usize>,
     ) -> Vec<usize> {
-        if let Some(rival) = self.faith_war_front_exempt(g, pid) {
-            enemies.retain(|enemy| *enemy != rival);
-        }
+        let exempt = self.no_front_rivals(g, pid);
+        enemies.retain(|enemy| !exempt.contains(enemy));
         enemies
     }
 }
