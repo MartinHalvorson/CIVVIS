@@ -4085,6 +4085,11 @@ pub const GENES: &[Gene] = &[
     // and a healthy gun 6-8 tiles out, past the 5-tile staging read. See
     // `advanced/siege_train/stage_reads_the_muster.rs`.
     Gene { tag: "stage-reads-the-muster-breakers", field: "stage_reads_the_muster_breakers", kind: Kind::OptIn, enable: AdvancedAi::enable_stage_reads_the_muster_breakers, disable: AdvancedAi::disable_stage_reads_the_muster_breakers },
+    // `faith-war-is-no-front`: 51 of 106 live pin-era wars were faith wars;
+    // the campaign aimed at their rival on 810 of 1,023 turns and took 1.0
+    // cities per 100, against 6.4 for our conquest wars. See
+    // `advanced/faith_war_is_no_front.rs`.
+    Gene { tag: "faith-war-is-no-front", field: "faith_war_is_no_front", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_war_is_no_front, disable: AdvancedAi::disable_faith_war_is_no_front },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

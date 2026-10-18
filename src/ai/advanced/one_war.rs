@@ -784,7 +784,8 @@ impl AdvancedAi {
             self.one_war_second = None;
             return;
         }
-        let enemies = self.one_war_enemies(g, pid);
+        // `faith-war-is-no-front`: see `advanced/faith_war_is_no_front.rs`.
+        let enemies = self.without_faith_war(g, pid, self.one_war_enemies(g, pid));
         let Some(target) = self.one_war_choose_front(g, pid, &enemies) else {
             self.one_war = None;
             self.one_war_second = None;
@@ -3106,8 +3107,9 @@ impl AdvancedAi {
         {
             return false;
         }
+        // `faith-war-is-no-front`: see `advanced/faith_war_is_no_front.rs`.
         let other_war = self
-            .one_war_enemies(g, pid)
+            .without_faith_war(g, pid, self.one_war_enemies(g, pid))
             .into_iter()
             .any(|enemy| enemy != target);
         other_war && !self.urgent_victory_threat(g, target)
