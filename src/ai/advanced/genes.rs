@@ -4066,6 +4066,11 @@ pub const GENES: &[Gene] = &[
     // counter to Canada's 54% Culture race was barred by it. See
     // `protective_friendship::FRIENDSHIP_RACE_CEILING`.
     Gene { tag: "friendship-ends-at-the-race", field: "friendship_ends_at_the_race", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_ends_at_the_race, disable: AdvancedAi::disable_friendship_ends_at_the_race },
+    // `foothold-faces-the-capital`: 56% of our war turns against a rival
+    // capital's owner after turn 120 had no city of ours within Bomber range
+    // of it; the campaign aimed at that range's town 154 of 408 turns. See
+    // `advanced/foothold_faces_the_capital.rs`.
+    Gene { tag: "foothold-faces-the-capital", field: "foothold_faces_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_foothold_faces_the_capital, disable: AdvancedAi::disable_foothold_faces_the_capital },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
