@@ -4103,6 +4103,10 @@ pub const GENES: &[Gene] = &[
     // against 30 on the ring, and the open ring healed the city 20 a turn.
     // See `advanced/siege_train/unwalled_ring.rs`.
     Gene { tag: "unwalled-ring-steps-in", field: "unwalled_ring_steps_in", kind: Kind::OptIn, enable: AdvancedAi::enable_unwalled_ring_steps_in, disable: AdvancedAi::disable_unwalled_ring_steps_in },
+    // `friendship-spares-the-prey`: at turn 100 in 11 of the 20 live games
+    // with a rival under 0.4 times our power, that rival was our declared
+    // friend. See `protective_friendship::FRIENDSHIP_PREY_RATIO`.
+    Gene { tag: "friendship-spares-the-prey", field: "friendship_spares_the_prey", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_spares_the_prey, disable: AdvancedAi::disable_friendship_spares_the_prey },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

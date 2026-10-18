@@ -58,6 +58,16 @@ pub(super) const FRIENDSHIP_RACE_CEILING: i32 = 45;
 // turn 81 while renewing the friendship at 93 and 114; China stood at 7
 // military power against our 579 at turn 100, a declared friend.
 
+/// `friendship-spares-the-prey`: a rival whose military power is below this
+/// share of ours is not offered (or re-offered) a friendship. Live Emperor,
+/// 2026-10-18 (44 pin-era games): at turn 100, 20 games held a rival under 0.4
+/// times our power, and in 11 of them that rival was our declared friend, out
+/// of reach (China at 0.01 in civvis-20261018T125943Z, Kongo at 0.10, France at
+/// 0.27, Poland at 0.28). Of the 9 we were at war with, 3 lost a city to us.
+/// Half, not the parity of `friendship-only-with-the-stronger`: the domination
+/// win 090059Z kept India at 0.87 a friend while it took America.
+pub(super) const FRIENDSHIP_PREY_RATIO: f64 = 0.5;
+
 impl AdvancedAi {
     /// `friendship-ends-at-the-race`: whether `rival`'s best race reads
     /// [`FRIENDSHIP_RACE_CEILING`] or more, or the counter reads it urgent.
@@ -109,6 +119,11 @@ impl AdvancedAi {
                     && !(self.friendship_ends_at_the_race && self.friend_is_racing(g, other.id))
                     // `friendship-only-with-the-stronger`: a weaker rival is a
                     // conquest to make, not a war to forestall.
+                    // `friendship-spares-the-prey`: a rival this much weaker is
+                    // a conquest to make, not a war to forestall.
+                    && !(self.friendship_spares_the_prey
+                        && g.military_power(other.id)
+                            < FRIENDSHIP_PREY_RATIO * g.military_power(pid))
                     // `friendship-spares-the-target`: the rival the campaign
                     // is aimed at is a war to open, not one to forbid.
                     && !(self.friendship_spares_the_target
@@ -335,6 +350,42 @@ mod tests {
             .find(|deal| deal.from == 0)
             .expect("another rival is asked");
         assert_eq!(deal.to, 1, "the campaign target is passed over");
+    }
+
+    /// `friendship-spares-the-prey`: with the strongest rival befriended,
+    /// a rival under half our power is not asked next.
+    #[test]
+    fn a_rival_weak_enough_to_be_prey_is_not_befriended() {
+        let mut game = three_majors();
+        let capital = game.cities[&game.player_city_ids(0)[0]].pos;
+        for _ in 0..3 {
+            game.spawn_test_unit("warrior", 0, capital);
+        }
+        assert!(
+            game.military_power(1) < super::FRIENDSHIP_PREY_RATIO * game.military_power(0),
+            "fixture: major 1 is prey"
+        );
+        let mut ai = AdvancedAi::new();
+        ai.enable_befriend_the_strongest();
+        let mut off = game.clone();
+        ai.propose_protective_friendship(&mut off, 0);
+        off.turn += 3;
+        ai.propose_protective_friendship(&mut off, 0);
+        assert!(
+            off.pending_deals
+                .iter()
+                .any(|deal| deal.from == 0 && deal.to == 1),
+            "without the gene the prey is asked next"
+        );
+
+        ai.enable_friendship_spares_the_prey();
+        ai.propose_protective_friendship(&mut game, 0);
+        game.turn += 3;
+        ai.propose_protective_friendship(&mut game, 0);
+        assert!(
+            !game.pending_deals.iter().any(|deal| deal.to == 1),
+            "the prey is left to the conquest"
+        );
     }
 
     #[test]

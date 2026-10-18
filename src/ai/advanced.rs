@@ -6345,6 +6345,10 @@ pub struct AdvancedAi {
     /// `friendship-spares-the-target`: `befriend-the-strongest` offers no
     /// friendship to the plan's campaign target. Off by default.
     friendship_spares_the_target: bool,
+    /// `friendship-spares-the-prey`: `befriend-the-strongest` offers no
+    /// friendship to a rival under `protective_friendship::FRIENDSHIP_PREY_RATIO`
+    /// of our military power. Off by default.
+    friendship_spares_the_prey: bool,
     /// `foothold-faces-the-capital`: a Domination conquest values a rival
     /// town within Bomber range of a rival capital no city of ours reaches.
     /// See `advanced/foothold_faces_the_capital.rs`. Off by default.
@@ -10908,6 +10912,7 @@ impl AdvancedAi {
             friendship_ends_at_the_race: false,
             friendship_only_with_the_stronger: false,
             friendship_spares_the_target: false,
+            friendship_spares_the_prey: false,
             foothold_faces_the_capital: false,
             faith_war_is_no_front: false,
             faith_war_is_no_front_2: false,
