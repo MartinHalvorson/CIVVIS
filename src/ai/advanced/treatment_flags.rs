@@ -8022,6 +8022,50 @@ impl AdvancedAi {
         self.air_wing_grows_with_the_aluminum = false;
     }
 
+    /// Lead the running wars with the rival the counter names. See
+    /// [`Self::denial_target_leads_the_fronts`].
+    pub fn enable_denial_target_leads_the_fronts(&mut self) {
+        self.denial_target_leads_the_fronts = true;
+    }
+
+    /// The twin of `enable_denial_target_leads_the_fronts`.
+    pub fn disable_denial_target_leads_the_fronts(&mut self) {
+        self.denial_target_leads_the_fronts = false;
+    }
+
+    /// Let a friendship lapse once the friend is racing to win. See
+    /// [`Self::friendship_ends_at_the_race`].
+    pub fn enable_friendship_ends_at_the_race(&mut self) {
+        self.friendship_ends_at_the_race = true;
+    }
+
+    /// The twin of `enable_friendship_ends_at_the_race`.
+    pub fn disable_friendship_ends_at_the_race(&mut self) {
+        self.friendship_ends_at_the_race = false;
+    }
+
+    /// Offer a friendship only to a rival at least as strong as us. See
+    /// [`Self::friendship_only_with_the_stronger`].
+    pub fn enable_friendship_only_with_the_stronger(&mut self) {
+        self.friendship_only_with_the_stronger = true;
+    }
+
+    /// The twin of `enable_friendship_only_with_the_stronger`.
+    pub fn disable_friendship_only_with_the_stronger(&mut self) {
+        self.friendship_only_with_the_stronger = false;
+    }
+
+    /// Aim a Domination conquest at a foothold within Bomber range of a rival
+    /// capital. See [`Self::foothold_faces_the_capital`].
+    pub fn enable_foothold_faces_the_capital(&mut self) {
+        self.foothold_faces_the_capital = true;
+    }
+
+    /// The twin of `enable_foothold_faces_the_capital`.
+    pub fn disable_foothold_faces_the_capital(&mut self) {
+        self.foothold_faces_the_capital = false;
+    }
+
     /// Send a diplomatic mission to every rival we have met. See
     /// [`Self::delegations_reach_every_rival`].
     pub fn enable_delegations_reach_every_rival(&mut self) {

@@ -5496,6 +5496,9 @@ pub struct AdvancedAi {
     /// costliest. See `advanced/solvency.rs`. Off by default.
     bankruptcy_exits_the_drain: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `denial-target-leads-the-fronts`: see
+    /// `advanced/denial_target_front.rs`. Off by default.
+    denial_target_leads_the_fronts: bool,
     /// `delegations-reach-every-rival`: the diplomatic-mission step skips
     /// a rival already hosting our mission, asks every second turn, and waits
     /// before asking the same rival again. See
@@ -6331,6 +6334,18 @@ pub struct AdvancedAi {
     /// disband waits that turn for the card's income.
     drain_card_turn: std::cell::Cell<Option<u32>>,
     // ---- append: e-f ------------------------------------------------
+    /// `friendship-ends-at-the-race`: `befriend-the-strongest` offers no
+    /// friendship to a rival racing to win (see
+    /// `protective_friendship::FRIENDSHIP_RACE_CEILING`). Off by default.
+    friendship_ends_at_the_race: bool,
+    /// `friendship-only-with-the-stronger`: `befriend-the-strongest` offers
+    /// a friendship only to a rival whose military power is at least ours.
+    /// Off by default.
+    friendship_only_with_the_stronger: bool,
+    /// `foothold-faces-the-capital`: a Domination conquest values a rival
+    /// town within Bomber range of a rival capital no city of ours reaches.
+    /// See `advanced/foothold_faces_the_capital.rs`. Off by default.
+    foothold_faces_the_capital: bool,
     /// Prepare an exposed non-capital city's Masonry and Walls before a
     /// stronger peaceful neighbour declares. Off by default.
     frontier_walls_before_the_surprise: bool,
@@ -9387,6 +9402,9 @@ mod medina_quarter;
 
 mod denial_nearest_finish;
 mod denial_needs_a_road;
+/// `denial-target-leads-the-fronts`: the countered rival we are fighting
+/// leads the wartime fronts. See `advanced/denial_target_front.rs`.
+mod denial_target_front;
 mod runaway_expander;
 // `found-against-a-rival-faith`. See `advanced/faith_veto.rs`.
 mod faith_veto;
@@ -9395,6 +9413,10 @@ mod capture_march;
 /// `delegations-reach-every-rival`: a mission to every rival we have met.
 /// See `advanced/delegations_reach_every_rival.rs`.
 mod delegations_reach_every_rival;
+/// `foothold-faces-the-capital`: a Domination conquest values the rival town
+/// within Bomber range of a capital. See
+/// `advanced/foothold_faces_the_capital.rs`.
+mod foothold_faces_the_capital;
 // `formations-heed-refusals`. See `advanced/formation_refusals.rs`.
 mod formation_refusals;
 mod siege_resource_purchase;
@@ -10702,6 +10724,7 @@ impl AdvancedAi {
             aqueduct_claims_the_capped_queue: false,
             bankruptcy_exits_the_drain: false,
             // ---- append: c-d ----------------------------------------
+            denial_target_leads_the_fronts: false,
             delegations_reach_every_rival: false,
             delegations_asked: BTreeMap::new(),
             campus_claims_the_free_slot: false,
@@ -10860,6 +10883,9 @@ impl AdvancedAi {
             capital_watch_sightings: BTreeMap::new(),
             drain_card_turn: std::cell::Cell::new(None),
             // ---- append: e-f ----------------------------------------
+            friendship_ends_at_the_race: false,
+            friendship_only_with_the_stronger: false,
+            foothold_faces_the_capital: false,
             frontier_walls_before_the_surprise: false,
             frontier_watch_sightings: BTreeMap::new(),
             faith_war_before_the_flip: false,
@@ -15578,6 +15604,10 @@ impl AdvancedAi {
                     self.diplomatic_contender_to_eliminate(g, pid)
                         .filter(|rival| active_fronts.contains(rival))
                 })
+                // `denial-target-leads-the-fronts`: the countered rival we are
+                // already fighting, ahead of the second front and the running
+                // front. See `advanced/denial_target_front.rs`.
+                .or_else(|| self.denial_target_front(actionable_denial, active_fronts))
                 .or_else(|| {
                     self.one_war_second_front(g, pid)
                         // See `second_front_waits_for_the_front` and
@@ -37771,6 +37801,7 @@ impl AdvancedAi {
             - liberation_value
             - siege_commitment
             - self.strategic_deposit_prey_value(g, pid, city, strategy)
+            - self.foothold_value(g, pid, city, strategy)
     }
 
     /// Rank settleable ground the way this agent would, for a caller outside the
