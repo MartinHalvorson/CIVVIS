@@ -43,6 +43,14 @@ const FRIENDSHIP_CADENCE: u32 = 3;
 /// Conquest counter is barred: we are declared friends".
 pub(super) const FRIENDSHIP_RACE_CEILING: i32 = 45;
 
+// `friendship-only-with-the-stronger`: a friendship is offered (and renewed)
+// only to a rival whose military power is at least ours. Live Emperor, the
+// four games after `befriend-the-strongest` was armed (2026-10-18): of 1,483
+// rival-frames under a declared friendship, 1,258 (85%) were with a rival
+// weaker than us; civvis-20261018T084359Z kept Greece and France, two cities
+// each at turn 120, friends from turn 105 to the end and lost a Technology
+// race at 240 holding no rival capital.
+
 impl AdvancedAi {
     /// `friendship-ends-at-the-race`: whether `rival`'s best race reads
     /// [`FRIENDSHIP_RACE_CEILING`] or more, or the counter reads it urgent.
@@ -92,6 +100,10 @@ impl AdvancedAi {
                     // `friendship-ends-at-the-race`: a rival racing to win is
                     // left to the counter once the friendship lapses.
                     && !(self.friendship_ends_at_the_race && self.friend_is_racing(g, other.id))
+                    // `friendship-only-with-the-stronger`: a weaker rival is a
+                    // conquest to make, not a war to forestall.
+                    && !(self.friendship_only_with_the_stronger
+                        && g.military_power(other.id) < g.military_power(pid))
                     && !g.pending_deals.iter().any(|deal| {
                         (deal.from == pid && deal.to == other.id)
                             || (deal.from == other.id && deal.to == pid)
@@ -248,6 +260,34 @@ mod tests {
             .find(|deal| deal.from == 0)
             .expect("another rival is asked");
         assert_eq!(deal.to, 1, "the racer is passed over");
+    }
+
+    /// `friendship-only-with-the-stronger`: a rival weaker than us is not
+    /// asked, so once the stronger one has an offer pending nobody else is.
+    #[test]
+    fn only_a_rival_at_least_as_strong_as_us_is_befriended() {
+        let mut game = three_majors();
+        let capital = game.cities[&game.player_city_ids(0)[0]].pos;
+        for _ in 0..2 {
+            game.spawn_test_unit("warrior", 0, capital);
+        }
+        assert!(game.military_power(0) > game.military_power(1));
+        assert!(game.military_power(0) < game.military_power(2));
+        let mut ai = AdvancedAi::new();
+        ai.enable_befriend_the_strongest();
+        ai.enable_friendship_only_with_the_stronger();
+        ai.propose_protective_friendship(&mut game, 0);
+        assert!(game
+            .pending_deals
+            .iter()
+            .any(|deal| deal.from == 0 && deal.to == 2 && deal.friendship));
+
+        game.turn += 3;
+        ai.propose_protective_friendship(&mut game, 0);
+        assert!(
+            !game.pending_deals.iter().any(|deal| deal.to == 1),
+            "the weaker rival is left to the conquest"
+        );
     }
 
     #[test]

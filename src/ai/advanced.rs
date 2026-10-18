@@ -6335,6 +6335,10 @@ pub struct AdvancedAi {
     /// town within Bomber range of a rival capital no city of ours reaches.
     /// See `advanced/foothold_faces_the_capital.rs`. Off by default.
     foothold_faces_the_capital: bool,
+    /// `friendship-only-with-the-stronger`: `befriend-the-strongest` offers
+    /// a friendship only to a rival whose military power is at least ours.
+    /// Off by default.
+    friendship_only_with_the_stronger: bool,
     /// Prepare an exposed non-capital city's Masonry and Walls before a
     /// stronger peaceful neighbour declares. Off by default.
     frontier_walls_before_the_surprise: bool,
@@ -10869,6 +10873,7 @@ impl AdvancedAi {
             // ---- append: e-f ----------------------------------------
             friendship_ends_at_the_race: false,
             foothold_faces_the_capital: false,
+            friendship_only_with_the_stronger: false,
             frontier_walls_before_the_surprise: false,
             frontier_watch_sightings: BTreeMap::new(),
             faith_war_before_the_flip: false,
