@@ -1,150 +1,289 @@
 use super::*;
 
-fn bankruptcy_cleanup_campaign(kind: &str) -> (Game, AdvancedAi) {
-    let mut game = Game::new_full(2, 24, 16, 20_261_017, 250, 0, false);
-    game.units.clear();
-    for tile in game.map.tiles.values_mut() {
-        tile.terrain = crate::name!("grassland");
-        tile.feature = None;
-        tile.resource = None;
+#[test]
+fn conquest_campaign_frontline_respects_threats_and_recent_attacks() {
+    let (game, controller, plan, cities) = frontline_campaign();
+    let mut threatened = plan.clone();
+    threatened.threatened_city = Some(cities[0]);
+    assert_eq!(
+        controller.claim_conquest_frontline(&mut game.clone(), 0, &threatened),
+        None
+    );
+    let mut alarmed = controller.clone();
+    alarmed.base.plan_threatened_city = Some(cities[0]);
+    assert_eq!(
+        alarmed.claim_conquest_frontline(&mut game.clone(), 0, &plan),
+        None
+    );
+    let mut attacked = game;
+    for city in cities {
+        attacked.cities.get_mut(&city).unwrap().last_attacked = attacked.turn;
     }
-    game.found_city_for(0, (4, 4), None);
-    game.found_city_for(1, (18, 10), None);
+    assert_eq!(
+        controller.claim_conquest_frontline(&mut attacked, 0, &plan),
+        None
+    );
+}
+
+#[test]
+fn conquest_campaign_frontline_budgets_the_military_upkeep_surcharge() {
+    let (mut game, controller, plan, _) = frontline_campaign();
+    game.players[0]
+        .policies
+        .insert(crate::name!("elite_forces"));
+    assert_eq!(game.policy_effect(0, "unit_maintenance_surcharge"), 2.0);
+    game.players[0].gold_per_turn = 13.9;
+    assert_eq!(
+        controller.claim_conquest_frontline(&mut game, 0, &plan),
+        None
+    );
+    game.players[0].gold_per_turn = 14.0;
+    assert!(controller
+        .claim_conquest_frontline(&mut game, 0, &plan)
+        .is_some());
+}
+
+#[test]
+fn conquest_campaign_frontline_keeps_writing_and_other_victory_lanes_first() {
+    let (game, controller, plan, _) = frontline_campaign();
+    let mut unwritten = game.clone();
+    unwritten.players[0].techs.remove(&crate::name!("writing"));
+    assert_eq!(
+        controller.claim_conquest_frontline(&mut unwritten, 0, &plan),
+        None
+    );
+    let science = AdvancedAi::targeting(VictoryTarget::Science);
+    assert_eq!(
+        science.claim_conquest_frontline(&mut game.clone(), 0, &plan),
+        None
+    );
+    let (mut small, _, _, _) = campaign();
+    small.players[0].gold = 200.0;
+    small.players[0].gold_per_turn = 20.0;
+    small.players[0].techs.insert(crate::name!("writing"));
+    small.players[0].techs.insert(crate::name!("metal_casting"));
+    for _ in 0..3 {
+        small.spawn_test_unit("heavy_chariot", 0, (30, 20));
+    }
+    assert_eq!(
+        controller.claim_conquest_frontline(&mut small, 0, &plan),
+        None
+    );
+}
+
+fn frontline_campaign() -> (Game, AdvancedAi, StrategicPlan, Vec<u32>) {
+    let (mut game, controller, _, nearby) = campaign();
+    game.found_city_for(0, (25, 20), None);
+    game.found_city_for(0, (20, 20), None);
     game.current = 0;
-    game.turn = 125;
-    game.players[0].gold = 0.0;
-    game.players[0].gold_per_turn = -1.0;
-    game.players[0].policies.clear();
-    for position in [(6, 6), (6, 7), (7, 6), (7, 7)] {
-        game.spawn_test_unit(kind, 0, position);
+    game.turn = 100;
+    game.players[0].gold = 200.0;
+    game.players[0].gold_per_turn = 20.0;
+    game.players[0].techs.insert(crate::name!("writing"));
+    game.players[0].techs.insert(crate::name!("metal_casting"));
+    for _ in 0..3 {
+        game.spawn_test_unit("heavy_chariot", 0, (30, 20));
     }
-    let mut controller = AdvancedAi::targeting(VictoryTarget::Domination);
-    controller.enable_bankruptcy_exits_the_drain();
-    (game, controller)
-}
-
-#[test]
-fn conquest_campaign_bankruptcy_preserves_units_with_zero_discounted_upkeep() {
-    let (mut game, controller) = bankruptcy_cleanup_campaign("archer");
-    game.players[0]
-        .policies
-        .insert(crate::name!("conscription"));
-    assert_eq!(game.policy_effect(0, "unit_maintenance_discount"), 1.0);
-    assert_eq!(game.unit_gold_maintenance(0), 0.0);
-    controller.exit_the_drain(&mut game, 0);
-    assert_eq!(game.player_unit_ids(0).len(), 4);
-}
-
-#[test]
-fn conquest_campaign_bankruptcy_preserves_units_with_zero_host_quoted_upkeep() {
-    let (mut game, controller) = bankruptcy_cleanup_campaign("horseman");
-    for identifier in game.player_unit_ids(0) {
-        Arc::make_mut(&mut game.host_unit_facts).insert(
-            identifier,
-            crate::game::HostUnitFacts {
-                maintenance: Some(0.0),
-                ..Default::default()
-            },
-        );
+    let cities = game.player_city_ids(0);
+    for city in &cities {
+        game.cities.get_mut(city).unwrap().queue.clear();
+        game.cities
+            .get_mut(city)
+            .unwrap()
+            .production_progress
+            .clear();
     }
-    assert_eq!(game.unit_gold_maintenance(0), 0.0);
-    controller.exit_the_drain(&mut game, 0);
-    assert_eq!(game.player_unit_ids(0).len(), 4);
-}
-
-#[test]
-fn conquest_campaign_bankruptcy_does_not_repeat_a_sufficient_batch_this_turn() {
-    let (mut game, controller) = bankruptcy_cleanup_campaign("horseman");
-    controller.exit_the_drain(&mut game, 0);
-    assert_eq!(game.player_unit_ids(0).len(), 3);
-    assert_eq!(game.players[0].gold_per_turn, -1.0);
-    controller.exit_the_drain(&mut game, 0);
-    assert_eq!(game.player_unit_ids(0).len(), 3);
-}
-
-#[test]
-fn conquest_campaign_bankruptcy_caps_the_whole_turn_not_each_frame() {
-    let (mut game, controller) = bankruptcy_cleanup_campaign("horseman");
-    game.players[0].gold_per_turn = -100.0;
-    controller.exit_the_drain(&mut game, 0);
-    assert_eq!(game.player_unit_ids(0).len(), 1);
-    controller.exit_the_drain(&mut game, 0);
-    assert_eq!(game.player_unit_ids(0).len(), 1);
-}
-
-#[test]
-fn conquest_campaign_bankruptcy_allows_a_fresh_pass_next_turn() {
-    let (mut game, controller) = bankruptcy_cleanup_campaign("horseman");
-    controller.exit_the_drain(&mut game, 0);
-    assert_eq!(game.player_unit_ids(0).len(), 3);
-    game.turn += 1;
-    game.players[0].gold = 0.0;
-    game.players[0].gold_per_turn = -1.0;
-    controller.exit_the_drain(&mut game, 0);
-    assert_eq!(game.player_unit_ids(0).len(), 2);
-}
-
-#[test]
-fn conquest_campaign_bankruptcy_no_candidate_does_not_consume_the_pass() {
-    let (mut game, controller) = bankruptcy_cleanup_campaign("horseman");
-    let city = game.player_city_ids(0)[0];
-    let home = game.cities[&city].pos;
-    for identifier in game.player_unit_ids(0) {
-        game.units.get_mut(&identifier).unwrap().pos = home;
-    }
-    controller.exit_the_drain(&mut game, 0);
-    assert_eq!(game.player_unit_ids(0).len(), 4);
-    let identifier = game.player_unit_ids(0)[0];
-    game.units.get_mut(&identifier).unwrap().pos = (6, 6);
-    controller.exit_the_drain(&mut game, 0);
-    assert_eq!(game.player_unit_ids(0).len(), 3);
-}
-
-#[test]
-fn conquest_campaign_bankruptcy_controller_clone_remembers_the_same_turn_batch() {
-    let (mut game, controller) = bankruptcy_cleanup_campaign("horseman");
-    controller.exit_the_drain(&mut game, 0);
-    assert_eq!(game.player_unit_ids(0).len(), 3);
-    let cloned = controller.clone();
-    cloned.exit_the_drain(&mut game, 0);
-    assert_eq!(game.player_unit_ids(0).len(), 3);
-}
-
-#[test]
-fn conquest_campaign_bankruptcy_preserves_existing_no_op_controls() {
-    for control in ["gene_off", "covered_deficit", "new_gold_card"] {
-        let (mut game, mut controller) = bankruptcy_cleanup_campaign("horseman");
-        match control {
-            "gene_off" => controller.disable_bankruptcy_exits_the_drain(),
-            "covered_deficit" => game.players[0].gold = 10.0,
-            "new_gold_card" => controller.drain_card_turn.set(Some(game.turn)),
-            _ => unreachable!(),
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(2),
+        target_city: Some(nearby),
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    assert!(game.can_produce(
+        0,
+        cities[1],
+        &Item::Unit {
+            unit: crate::name!("pike_and_shot")
         }
-        controller.exit_the_drain(&mut game, 0);
-        assert_eq!(game.player_unit_ids(0).len(), 4, "{control}");
+    ));
+    (game, controller, plan, cities)
+}
+
+#[test]
+fn conquest_campaign_frontline_claims_a_real_resource_free_upgrade() {
+    let (mut game, controller, plan, _) = frontline_campaign();
+    let (city, item) = controller
+        .claim_conquest_frontline(&mut game, 0, &plan)
+        .unwrap();
+    assert!(!game.cities[&city].is_capital);
+    assert_eq!(game.cities[&city].queue.first(), Some(&item));
+    let Item::Unit { unit } = item else {
+        panic!("expected unit")
+    };
+    let spec = &game.rules.units[unit];
+    assert!(spec.strength >= 55.0);
+    assert!(spec.requires_resource.is_none());
+    assert!(!spec.has_ranged_attack());
+}
+
+#[test]
+fn conquest_campaign_frontline_stops_after_two_queued_bodies_across_replans() {
+    let (mut game, controller, plan, _) = frontline_campaign();
+    assert!(controller
+        .claim_conquest_frontline(&mut game, 0, &plan)
+        .is_some());
+    assert!(controller
+        .claim_conquest_frontline(&mut game, 0, &plan)
+        .is_some());
+    assert_eq!(
+        controller.claim_conquest_frontline(&mut game, 0, &plan),
+        None
+    );
+}
+
+#[test]
+fn conquest_campaign_frontline_counts_already_fielded_modern_bodies() {
+    let (mut game, controller, plan, _) = frontline_campaign();
+    game.spawn_test_unit("pike_and_shot", 0, (30, 20));
+    assert!(controller
+        .claim_conquest_frontline(&mut game, 0, &plan)
+        .is_some());
+    assert_eq!(
+        controller.claim_conquest_frontline(&mut game, 0, &plan),
+        None
+    );
+}
+
+#[test]
+fn conquest_campaign_frontline_leaves_a_sufficient_modern_line_alone() {
+    let (mut game, controller, plan, _) = frontline_campaign();
+    for _ in 0..2 {
+        game.spawn_test_unit("pike_and_shot", 0, (30, 20));
+    }
+    assert_eq!(
+        controller.claim_conquest_frontline(&mut game, 0, &plan),
+        None
+    );
+}
+
+#[test]
+fn conquest_campaign_frontline_requires_three_obsolete_melee_bodies() {
+    let (game, controller, plan, _) = frontline_campaign();
+    for replacement in [None, Some("archer"), Some("scout")] {
+        let mut reduced = game.clone();
+        reduced.remove_unit(reduced.player_unit_ids(0)[0]);
+        if let Some(kind) = replacement {
+            reduced.spawn_test_unit(kind, 0, (30, 20));
+        }
+        assert_eq!(
+            controller.claim_conquest_frontline(&mut reduced, 0, &plan),
+            None
+        );
     }
 }
 
 #[test]
-fn conquest_campaign_bankruptcy_uses_host_formation_bill_then_discount() {
-    let (mut game, controller) = bankruptcy_cleanup_campaign("horseman");
-    game.players[0].gold_per_turn = -1.5;
-    game.players[0]
-        .policies
-        .insert(crate::name!("conscription"));
-    for identifier in game.player_unit_ids(0) {
-        game.units.get_mut(&identifier).unwrap().formation = 1;
-        Arc::make_mut(&mut game.host_unit_facts).insert(
-            identifier,
-            crate::game::HostUnitFacts {
-                maintenance: Some(2.0),
-                ..Default::default()
-            },
+fn conquest_campaign_frontline_reserves_sustainable_un_discounted_upkeep() {
+    let (game, controller, plan, _) = frontline_campaign();
+    for (gold, income) in [(29.0, 20.0), (200.0, 9.9), (200.0, -1.0)] {
+        let mut poor = game.clone();
+        poor.players[0].gold = gold;
+        poor.players[0].gold_per_turn = income;
+        assert_eq!(
+            controller.claim_conquest_frontline(&mut poor, 0, &plan),
+            None
         );
     }
-    assert_eq!(game.unit_gold_maintenance(0), 4.0);
-    controller.exit_the_drain(&mut game, 0);
-    assert_eq!(game.player_unit_ids(0).len(), 2);
+    let mut funded = game;
+    funded.players[0].gold_per_turn = 10.0;
+    assert!(controller
+        .claim_conquest_frontline(&mut funded, 0, &plan)
+        .is_some());
+}
+
+#[test]
+fn conquest_campaign_frontline_respects_lane_war_and_plan_controls() {
+    let (game, controller, plan, _) = frontline_campaign();
+    for strategy in [GrandStrategy::Recovery, GrandStrategy::Science] {
+        let mut changed = plan.clone();
+        changed.strategy = strategy;
+        assert_eq!(
+            controller.claim_conquest_frontline(&mut game.clone(), 0, &changed),
+            None
+        );
+    }
+    let mut rush = plan.clone();
+    rush.rush = true;
+    assert_eq!(
+        controller.claim_conquest_frontline(&mut game.clone(), 0, &rush),
+        None
+    );
+    let mut off = controller.clone();
+    off.victory_planning = false;
+    assert_eq!(
+        off.claim_conquest_frontline(&mut game.clone(), 0, &plan),
+        None
+    );
+    off = controller.clone();
+    off.victory_target = None;
+    assert_eq!(
+        off.claim_conquest_frontline(&mut game.clone(), 0, &plan),
+        None
+    );
+    let mut war = game;
+    war.at_war.insert((0, 2));
+    assert_eq!(
+        controller.claim_conquest_frontline(&mut war, 0, &plan),
+        None
+    );
+}
+
+#[test]
+fn conquest_campaign_frontline_preserves_queued_and_paused_work() {
+    let (game, controller, plan, cities) = frontline_campaign();
+    for paused in [false, true] {
+        let mut busy = game.clone();
+        for city in &cities {
+            let held = busy.cities.get_mut(city).unwrap();
+            let item = Item::Unit {
+                unit: crate::name!("builder"),
+            };
+            if paused {
+                held.production_progress
+                    .insert("unit:builder".to_string(), 1.0);
+            } else {
+                held.queue = vec![item];
+            }
+        }
+        assert_eq!(
+            controller.claim_conquest_frontline(&mut busy, 0, &plan),
+            None
+        );
+    }
+}
+
+#[test]
+fn conquest_campaign_frontline_requires_tech_and_a_reachable_frontier() {
+    let (game, controller, plan, _) = frontline_campaign();
+    let mut unready = game.clone();
+    unready.players[0]
+        .techs
+        .remove(&crate::name!("metal_casting"));
+    assert_eq!(
+        controller.claim_conquest_frontline(&mut unready, 0, &plan),
+        None
+    );
+    let mut isolated = game;
+    for rival in 1..4 {
+        isolated.players[rival].alive = false;
+    }
+    assert_eq!(
+        controller.claim_conquest_frontline(&mut isolated, 0, &plan),
+        None
+    );
 }
 
 fn campaign() -> (Game, AdvancedAi, u32, u32) {

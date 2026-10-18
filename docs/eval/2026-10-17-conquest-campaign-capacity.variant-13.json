@@ -1,0 +1,66 @@
+{
+  "registered_utc": "2026-10-17T23:57:20.566761+00:00",
+  "variant": "variant-13",
+  "selected_policy_parent": "12f146fcfbbdeae2e311cffa19d0b9b3dddd8551",
+  "rejected_previous_policy": "c6f42fb219eaae1c53f805a8e94bcc975f6079eb",
+  "hypothesis": "A head-count-saturated obsolete melee cohort still needs a bounded modern frontline. Claim at most two resource-free, materially stronger melee units before routine delegated production, without replacing committed queues or consuming scarce upgrade material.",
+  "prior_evidence": [
+    "All twelve policies completed the same six development maps:72 candidate executions,0 focal/verified Domination wins and0 fresh holdouts. Variant12 has fewer observed focal disbands on436(9 to6) but worse turn100 power347 to272 and Gold0.7 to0/income-3.3 to-8.1; reject it as a strength parent rather than claiming a win from corrected billing.",
+    "Selected03 Deity492 starts research Metal Casting at100, yet produce actions100-119 contain one Musketman and no Pike and Shot; at118 its observed army still has eight Heavy Chariots. Earlier produce actions60-79 include six Heavy Chariot queue actions, not six proven completions.",
+    "Adaptive delegation calls BasicAi cities rather than Advanced production_value. The existing Advanced ceiling also counts obsolete land bodies. This trial uses an explicit idle-queue claim, not an unconsumed score-only bonus.",
+    "The Pike and Shot is strength55 with no strategic-resource requirement in unchanged canonical rules. No new unit stats, technologies, costs or force flags are introduced."
+  ],
+  "bounded_change": [
+    "Restore03 production policy before implementation. Explicit assigned Domination and victory planning only; Expansion/Conquest, non-rush, at least3 cities, Writing and an existing legal reachable known major frontier.",
+    "No active major war, threatened-city plan, controller alarm or emergency objective. Leave recovery, other victory lanes and adaptive nonassigned rivals unchanged.",
+    "Only idle safe noncapital cities, no positive paused production, no recent attack or local barbarian alarm. Never displace an existing queue or modify defense, settlement, research or civic decisions.",
+    "Select an actually producible resource-free nonranged non-recon land melee unit, strongest first then earliest build and lower city/unit identity. Require at least3 existing non-recon land melee bodies at least15 strength below that unit.",
+    "Count all own fielded and queued non-recon land melee units at the candidate strength or above; stop at2. One successful queue claim per call, with the shared census preventing more than2 across repeated calls.",
+    "Require current military bodies at least city count, treasury at least30 and income at least2 plus the conservative un-discounted upkeep of every still-missing strong body. Canonical military maintenance surcharge is included. No unit disbands or speculative future-income credit.",
+    "Use Game.apply Produce and journal only successful claims. No national declaration threshold, engine balance, host facts, Native settings, force/genome, victory, difficulty, handicap or verification changes."
+  ],
+  "unit_tests_planned": [
+    "Successful legal resource-free frontline claim despite obsolete body saturation.",
+    "At most2 strong fielded-plus-queued bodies across repeated calls.",
+    "Already-fielded modern units consume the same cap.",
+    "Three genuinely obsolete melee bodies are required; ranged/scouts do not count.",
+    "Treasury and conservative sustainable-income controls.",
+    "Assigned Domination/victory planning/strategy/rush/war/emergency/frontier controls.",
+    "Existing queues and paused work/capital/local-threat controls.",
+    "Unavailable tech/resource-requiring units are not fabricated or selected."
+  ],
+  "comparison_parent": "variant-03",
+  "cases": [
+    {
+      "difficulty": "immortal",
+      "seed": 45312861349
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 47651167238
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 46732028391
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49478848256
+    },
+    {
+      "difficulty": "deity",
+      "seed": 43663176127
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49220027834
+    }
+  ],
+  "required_all_six_complete": true,
+  "original_registration_sha256": "2c8cb2eff49e0682a1af251d7ac7afcf2b32061b25b013e8b41e09c1baa4b813",
+  "development_gate": "All six known maps complete and at least one verified focal Deity Domination win owning all original capitals; then frozen final source and strict observer A/A before any fresh holdouts. No diagnostic exception relaxes final-source A/A.",
+  "candidate_executions_at_registration": 72,
+  "resource_diagnostic_control_executions_at_registration": 18,
+  "fresh_holdout_executions_at_registration": 0,
+  "native_verification": "Unestablished; controlled unit fixtures and reduced headless runs are not Native victory verification or deployed-binary equivalence."
+}

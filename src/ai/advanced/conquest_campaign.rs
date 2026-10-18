@@ -1,6 +1,155 @@
 use super::*;
 
 impl AdvancedAi {
+    pub(super) fn claim_conquest_frontline(
+        &self,
+        game: &mut Game,
+        player: usize,
+        plan: &StrategicPlan,
+    ) -> Option<(u32, Item)> {
+        if !self.victory_planning
+            || self.active_victory_target(game) != Some(VictoryTarget::Domination)
+            || self.base.minor
+            || self.base.barb
+            || !matches!(
+                plan.strategy,
+                GrandStrategy::Expansion | GrandStrategy::Conquest
+            )
+            || plan.rush
+            || plan.threatened_city.is_some()
+            || self.base.plan_threatened_city.is_some()
+            || self.threatened_city(game, player).is_some()
+            || game.emergency_objective(player).is_some()
+            || game.players[player].gold < 30.0
+            || !game.players[player]
+                .techs
+                .contains(&crate::name!("writing"))
+            || game.players.iter().any(|rival| {
+                rival.id != player
+                    && rival.alive
+                    && !rival.is_minor
+                    && !rival.is_barbarian
+                    && game.is_at_war(player, rival.id)
+            })
+        {
+            return None;
+        }
+        let cities = game.player_city_ids(player);
+        if cities.len() < 3
+            || !game.players.iter().any(|rival| {
+                rival.alive
+                    && !rival.is_minor
+                    && !rival.is_barbarian
+                    && self.campaign_target_legal(game, player, rival.id)
+                    && game.player_city_ids(rival.id).iter().any(|city| {
+                        Self::city_within_declaration_range(game, player, game.cities[city].pos)
+                    })
+            })
+        {
+            return None;
+        }
+        let frontline = |spec: &crate::rules::UnitSpec| {
+            spec.class == "military"
+                && spec.promotion_class != "recon"
+                && !spec.siege
+                && !spec.has_ranged_attack()
+                && spec.is_melee_capable()
+                && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+        };
+        let fielded: Vec<_> = game
+            .player_unit_ids(player)
+            .into_iter()
+            .map(|unit| &game.rules.units[game.units[&unit].kind])
+            .collect();
+        if fielded
+            .iter()
+            .filter(|spec| spec.class == "military")
+            .count()
+            < cities.len()
+        {
+            return None;
+        }
+        let mut candidates = Vec::new();
+        for city in &cities {
+            let held = &game.cities[city];
+            if held.is_capital
+                || !held.queue.is_empty()
+                || held
+                    .production_progress
+                    .values()
+                    .any(|progress| *progress > 0.0)
+                || (held.last_attacked > 0 && game.turn.saturating_sub(held.last_attacked) <= 4)
+                || self
+                    .base
+                    .barbarian_local_alarm_for_controller(game, player, *city)
+            {
+                continue;
+            }
+            for item in game.producible_items(player, *city) {
+                let Item::Unit { unit } = item else { continue };
+                let spec = &game.rules.units[unit];
+                if !frontline(spec) || spec.requires_resource.is_some() {
+                    continue;
+                }
+                let obsolete = fielded
+                    .iter()
+                    .filter(|held| frontline(held) && held.strength + 15.0 <= spec.strength)
+                    .count();
+                if obsolete < 3 {
+                    continue;
+                }
+                let fielded_strong = fielded
+                    .iter()
+                    .filter(|held| frontline(held) && held.strength >= spec.strength)
+                    .count();
+                let queued_strong = cities
+                    .iter()
+                    .flat_map(|held| game.cities[held].queue.iter())
+                    .filter(|queued| match queued {
+                        Item::Unit { unit } => {
+                            let held = &game.rules.units[unit];
+                            frontline(held) && held.strength >= spec.strength
+                        }
+                        _ => false,
+                    })
+                    .count();
+                let missing = 2usize.saturating_sub(fielded_strong + queued_strong);
+                let upkeep = spec.maintenance.max(0.0)
+                    + game
+                        .policy_effect(player, "unit_maintenance_surcharge")
+                        .max(0.0);
+                if missing == 0
+                    || game.players[player].gold_per_turn < 2.0 + upkeep * missing as f64
+                {
+                    continue;
+                }
+                let turns = self.production_build_turns(game, player, *city, &Item::Unit { unit });
+                candidates.push((spec.strength, turns, *city, unit));
+            }
+        }
+        let (_, turns, city, unit) = candidates.into_iter().max_by(|left, right| {
+            left.0
+                .total_cmp(&right.0)
+                .then_with(|| right.1.total_cmp(&left.1))
+                .then_with(|| right.2.cmp(&left.2))
+                .then_with(|| right.3.cmp(&left.3))
+        })?;
+        let item = Item::Unit { unit };
+        game.apply(
+            player,
+            &Action::Produce {
+                city,
+                item: item.clone(),
+            },
+        )
+        .ok()?;
+        think!(self.journal(), Military, Decision,
+            "{} claims a {} for the modern frontline", game.cities[&city].name, unit;
+            "at least three obsolete melee bodies need a stronger line; the two-body fielded-and-queued cap and conservative upkeep reserve hold; about {turns:.0} build turns";
+            game.cities[&city].pos);
+        Some((city, item))
+    }
+
     pub(super) fn conquest_campaign_modernization_tech(
         &self,
         game: &Game,

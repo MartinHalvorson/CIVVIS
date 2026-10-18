@@ -6302,7 +6302,6 @@ pub struct AdvancedAi {
     /// The turn `bankruptcy-exits-the-drain` last slotted a gold card; the
     /// disband waits that turn for the card's income.
     drain_card_turn: std::cell::Cell<Option<u32>>,
-    drain_disband_turn: std::cell::Cell<Option<u32>>,
     // ---- append: e-f ------------------------------------------------
     /// Prepare an exposed non-capital city's Masonry and Walls before a
     /// stronger peaceful neighbour declares. Off by default.
@@ -10798,7 +10797,6 @@ impl AdvancedAi {
             capital_walls_before_the_surprise: false,
             capital_watch_sightings: BTreeMap::new(),
             drain_card_turn: std::cell::Cell::new(None),
-            drain_disband_turn: std::cell::Cell::new(None),
             // ---- append: e-f ----------------------------------------
             frontier_walls_before_the_surprise: false,
             frontier_watch_sightings: BTreeMap::new(),
@@ -49114,6 +49112,7 @@ impl AdvancedAi {
             // then its Library, ahead of the Plaza and the shortfall. Exact
             // no-op while the gene is off. See `advanced/capital_campus_claim.rs`.
             self.claim_capital_campus(g, pid, &plan);
+            let _ = self.claim_conquest_frontline(g, pid, &plan);
             self.reserve_government_plaza(g, pid, &plan);
             self.reserve_higher_level_investment(g, pid, &plan);
             self.reserve_idle_entertainment_path_for_widespread_crisis(g, pid, &plan);

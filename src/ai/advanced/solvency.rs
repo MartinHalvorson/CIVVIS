@@ -276,12 +276,6 @@ impl AdvancedAi {
                 "bankruptcy-exits-the-drain: a gold card slotted this turn pays from the next");
             return;
         }
-        if self.drain_disband_turn.get() == Some(g.turn) {
-            think!(self.journal(), Military, Detail,
-                "Waiting for refreshed income before another bankruptcy batch";
-                "a cleanup batch already disbanded units this turn; keep the surviving army until the next turn's income observation");
-            return;
-        }
         let mut income = g.players[pid].gold_per_turn;
         let mut candidates: Vec<(f64, u32, f64)> = g
             .player_unit_ids(pid)
@@ -289,7 +283,12 @@ impl AdvancedAi {
             .filter_map(|uid| {
                 let unit = &g.units[&uid];
                 let spec = &g.rules.units[unit.kind];
-                let upkeep = g.unit_gold_maintenance_cost(pid, unit);
+                let formation = match unit.formation {
+                    1 => 1.5,
+                    2.. => 2.0,
+                    _ => 1.0,
+                };
+                let upkeep = spec.maintenance * formation;
                 let garrison = g
                     .city_at(unit.pos)
                     .is_some_and(|cid| g.cities[&cid].owner == pid);
@@ -316,7 +315,6 @@ impl AdvancedAi {
             if g.apply(pid, &Action::DisbandUnit { unit: uid }).is_err() {
                 continue;
             }
-            self.drain_disband_turn.set(Some(g.turn));
             income += upkeep;
             think!(self.journal(), Military, Decision,
                 "Disbanding a {} to leave the bankruptcy drain", crate::reasoning::plain(kind.as_str());

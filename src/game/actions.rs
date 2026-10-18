@@ -9726,7 +9726,7 @@ impl Game {
     /// Civ VI charges each unit its own upkeep. Corps/Fleets cost 150% of a
     /// base unit and Armies/Armadas cost 200%; policy reductions then apply
     /// once because each formation is a single unit on the map.
-    pub(crate) fn unit_gold_maintenance_cost(&self, pid: usize, unit: &Unit) -> f64 {
+    pub(super) fn unit_gold_maintenance_cost(&self, pid: usize, unit: &Unit) -> f64 {
         // An arena has no empire behind it — no cities, no income, no
         // treasury — so an army on one costs nothing to keep. Charged the
         // ordinary upkeep, a Tactics side would run a deficit it could never
