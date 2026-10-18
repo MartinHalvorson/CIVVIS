@@ -8022,6 +8022,17 @@ impl AdvancedAi {
         self.air_wing_grows_with_the_aluminum = false;
     }
 
+    /// Lead the running wars with the rival the counter names. See
+    /// [`Self::denial_target_leads_the_fronts`].
+    pub fn enable_denial_target_leads_the_fronts(&mut self) {
+        self.denial_target_leads_the_fronts = true;
+    }
+
+    /// The twin of `enable_denial_target_leads_the_fronts`.
+    pub fn disable_denial_target_leads_the_fronts(&mut self) {
+        self.denial_target_leads_the_fronts = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
