@@ -43,7 +43,7 @@ fn a_faith_war_holds_no_declaration_only_under_the_gene() {
     );
 
     ai.enable_faith_war_is_no_front();
-    assert_eq!(ai.faith_war_front_exempt(&game, 0), Some(1));
+    assert_eq!(ai.no_front_rivals(&game, 0), vec![1]);
     assert!(ai.without_faith_war(&game, 0, vec![1]).is_empty());
     assert!(!ai.one_war_holds_declaration(&game, 0, 2));
 }
@@ -58,6 +58,31 @@ fn another_war_still_holds_and_a_closed_faith_war_exempts_nobody() {
 
     // Peace with major 1: nothing is exempt any more.
     game.at_war.remove(&(0, 1));
-    assert_eq!(ai.faith_war_front_exempt(&game, 0), None);
+    assert!(ai.no_front_rivals(&game, 0).is_empty());
     assert_eq!(ai.without_faith_war(&game, 0, vec![2]), vec![2]);
+}
+
+#[test]
+fn version_two_also_exempts_an_interception_and_an_unlocated_rival() {
+    let (mut game, mut ai) = faith_war_on_one();
+    ai.faith_war_before_the_flip_war = None;
+    ai.religious_interception_war = Some((1, 88));
+    ai.enable_faith_war_is_no_front();
+    assert_eq!(
+        ai.without_faith_war(&game, 0, vec![1]),
+        vec![1],
+        "version one exempts only the faith war"
+    );
+
+    ai.enable_faith_war_is_no_front_2();
+    assert!(ai.without_faith_war(&game, 0, vec![1]).is_empty());
+    assert!(!ai.one_war_holds_declaration(&game, 0, 2));
+
+    // A war on major 2, none of whose cities we have located.
+    ai.religious_interception_war = None;
+    game.at_war.insert((0, 2));
+    for cid in game.player_city_ids(2) {
+        game.cities.remove(&cid);
+    }
+    assert_eq!(ai.no_front_rivals(&game, 0), vec![2]);
 }

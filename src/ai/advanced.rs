@@ -6331,6 +6331,10 @@ pub struct AdvancedAi {
     /// campaign front, nor the war that holds a declaration. See
     /// `advanced/faith_war_is_no_front.rs`. Off by default.
     faith_war_is_no_front: bool,
+    /// `faith-war-is-no-front-2`: version 1 plus the religious
+    /// interception's war and a war on a major with no city we have located.
+    /// Off by default.
+    faith_war_is_no_front_2: bool,
     /// Prepare an exposed non-capital city's Masonry and Walls before a
     /// stronger peaceful neighbour declares. Off by default.
     frontier_walls_before_the_surprise: bool,
@@ -10862,6 +10866,7 @@ impl AdvancedAi {
             drain_card_turn: std::cell::Cell::new(None),
             // ---- append: e-f ----------------------------------------
             faith_war_is_no_front: false,
+            faith_war_is_no_front_2: false,
             frontier_walls_before_the_surprise: false,
             frontier_watch_sightings: BTreeMap::new(),
             faith_war_before_the_flip: false,

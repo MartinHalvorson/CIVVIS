@@ -8044,6 +8044,17 @@ impl AdvancedAi {
         self.faith_war_is_no_front = false;
     }
 
+    /// Version 2 of `faith-war-is-no-front`. See
+    /// [`Self::faith_war_is_no_front_2`].
+    pub fn enable_faith_war_is_no_front_2(&mut self) {
+        self.faith_war_is_no_front_2 = true;
+    }
+
+    /// The twin of `enable_faith_war_is_no_front_2`.
+    pub fn disable_faith_war_is_no_front_2(&mut self) {
+        self.faith_war_is_no_front_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -2804,6 +2804,15 @@
           "faith-war-before-the-flip-2": null
         }
       },
+      "faith-war-is-no-front": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "faith-war-is-no-front": null,
+          "faith-war-is-no-front-2": null
+        }
+      },
       "first-builder-reserve": {
         "rule_on": [
           "first-builder-reserve-2"
