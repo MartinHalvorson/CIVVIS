@@ -5492,6 +5492,9 @@ pub struct AdvancedAi {
     /// costliest. See `advanced/solvency.rs`. Off by default.
     bankruptcy_exits_the_drain: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `denial-target-leads-the-fronts`: see
+    /// `advanced/denial_target_front.rs`. Off by default.
+    denial_target_leads_the_fronts: bool,
     /// `campus-claims-the-free-slot`: a city of three or more citizens with
     /// a free district slot and no Campus puts its first Campus at the head
     /// of its queue over an idle or deferrable head. See
@@ -9366,6 +9369,9 @@ mod open_city_front;
 mod medina_quarter;
 
 mod denial_nearest_finish;
+/// `denial-target-leads-the-fronts`: the countered rival we are fighting
+/// leads the wartime fronts. See `advanced/denial_target_front.rs`.
+mod denial_target_front;
 mod denial_needs_a_road;
 mod runaway_expander;
 // `found-against-a-rival-faith`. See `advanced/faith_veto.rs`.
@@ -10674,6 +10680,7 @@ impl AdvancedAi {
             aqueduct_claims_the_capped_queue: false,
             bankruptcy_exits_the_drain: false,
             // ---- append: c-d ----------------------------------------
+            denial_target_leads_the_fronts: false,
             campus_claims_the_free_slot: false,
             campus_claims_the_free_slot_2: false,
             city_under_fire_ranks_first: false,
@@ -15545,6 +15552,10 @@ impl AdvancedAi {
                     self.diplomatic_contender_to_eliminate(g, pid)
                         .filter(|rival| active_fronts.contains(rival))
                 })
+                // `denial-target-leads-the-fronts`: the countered rival we are
+                // already fighting, ahead of the second front and the running
+                // front. See `advanced/denial_target_front.rs`.
+                .or_else(|| self.denial_target_front(actionable_denial, active_fronts))
                 .or_else(|| {
                     self.one_war_second_front(g, pid)
                         // See `second_front_waits_for_the_front` and

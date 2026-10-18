@@ -4039,6 +4039,11 @@ pub const GENES: &[Gene] = &[
     // Walls for Rams queued in 1-3 Production cities while the treasury held
     // about 150 Gold. See `advanced/siege_train/breaker_purchase.rs`.
     Gene { tag: "breaker-bought-for-the-siege", field: "breaker_bought_for_the_siege", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_bought_for_the_siege, disable: AdvancedAi::disable_breaker_bought_for_the_siege },
+    // `denial-target-leads-the-fronts`: live Emperor 071140Z was at war with
+    // Byzantium from turn 140 at 1.4-2.9 times its power while the counter
+    // named it; the campaign stayed on the Aztecs until 165 and Byzantium won
+    // on Culture at 176. See `advanced/denial_target_front.rs`.
+    Gene { tag: "denial-target-leads-the-fronts", field: "denial_target_leads_the_fronts", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_target_leads_the_fronts, disable: AdvancedAi::disable_denial_target_leads_the_fronts },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
