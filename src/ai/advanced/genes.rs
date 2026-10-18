@@ -4016,6 +4016,29 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "envoys-open-the-siege-road", field: "envoys_open_the_siege_road", kind: Kind::OptIn, enable: AdvancedAi::enable_envoys_open_the_siege_road, disable: AdvancedAi::disable_envoys_open_the_siege_road },
     // Append before all tail markers to preserve every published genome index.
     Gene { tag: "siege-promotions-open-the-walls", field: "siege_promotions_open_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_promotions_open_the_walls, disable: AdvancedAi::disable_siege_promotions_open_the_walls },
+    // `siege-budget-counts-the-ram`: the damage budget priced a melee wall
+    // swing at 0.15 only once a Ram already stood beside the city, and at 0
+    // before, while the host lets a Ram-supported swing strike the walls
+    // whole and a Tower carry it into the city. Live Emperor Lyon
+    // (civvis-20261018T011334Z) held Stage turns 79-84 with a Ram, 12 of 14
+    // units staged against Ancient Walls, at "70.2 turns / 25.0 endurance".
+    Gene { tag: "siege-budget-counts-the-ram", field: "siege_budget_counts_the_ram", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_budget_counts_the_ram, disable: AdvancedAi::disable_siege_budget_counts_the_ram },
+    // `campus-claims-the-free-slot`: 69% of our Emperor cities at t50 held a
+    // free district slot and no Campus while the routine floor built Archers
+    // and Walls in them; Science per citizen ran 0.8 against the rivals' 1.8,
+    // and games with 2+ Campuses at t60 reached r150 0.62 against 0.30 with
+    // none. See `advanced/campus_claims_the_free_slot.rs`.
+    Gene { tag: "campus-claims-the-free-slot", field: "campus_claims_the_free_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_claims_the_free_slot, disable: AdvancedAi::disable_campus_claims_the_free_slot },
+    // Version 2 of campus-claims-the-free-slot: from two citizens and in every
+    // eligible city a turn. Version one's live claims began around turn 80; 23
+    // of its t45-65 free-slot samples were held by the three-citizen floor.
+    Gene { tag: "campus-claims-the-free-slot-2", field: "campus_claims_the_free_slot_2", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_claims_the_free_slot_2, disable: AdvancedAi::disable_campus_claims_the_free_slot_2 },
+    // `breaker-bought-for-the-siege`: 1,009 live Emperor siege-turns in 52 of
+    // 62 games held a walled city with no breaker coming; Lyon
+    // (civvis-20261018T011334Z) waited from turn 44 to 79 behind Ancient
+    // Walls for Rams queued in 1-3 Production cities while the treasury held
+    // about 150 Gold. See `advanced/siege_train/breaker_purchase.rs`.
+    Gene { tag: "breaker-bought-for-the-siege", field: "breaker_bought_for_the_siege", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_bought_for_the_siege, disable: AdvancedAi::disable_breaker_bought_for_the_siege },
     // `gold-buys-the-idle-trader`: the first route slot stood empty at t30 in
     // 45 of 51 live Emperor games and at t60 in 24, while the bank held
     // 121-150 Gold and a Trader sold for about 95. See
