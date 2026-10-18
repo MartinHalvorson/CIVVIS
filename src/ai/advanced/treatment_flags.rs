@@ -7945,6 +7945,17 @@ impl AdvancedAi {
         self.siege_promotions_open_the_walls = false;
     }
 
+    /// Buy the wall-breaker a held siege waits for. See
+    /// [`Self::breaker_bought_for_the_siege`].
+    pub fn enable_breaker_bought_for_the_siege(&mut self) {
+        self.breaker_bought_for_the_siege = true;
+    }
+
+    /// The twin of `enable_breaker_bought_for_the_siege`.
+    pub fn disable_breaker_bought_for_the_siege(&mut self) {
+        self.breaker_bought_for_the_siege = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

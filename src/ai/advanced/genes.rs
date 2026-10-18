@@ -4016,6 +4016,12 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "envoys-open-the-siege-road", field: "envoys_open_the_siege_road", kind: Kind::OptIn, enable: AdvancedAi::enable_envoys_open_the_siege_road, disable: AdvancedAi::disable_envoys_open_the_siege_road },
     // Append before all tail markers to preserve every published genome index.
     Gene { tag: "siege-promotions-open-the-walls", field: "siege_promotions_open_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_promotions_open_the_walls, disable: AdvancedAi::disable_siege_promotions_open_the_walls },
+    // `breaker-bought-for-the-siege`: 1,009 live Emperor siege-turns in 52 of
+    // 62 games held a walled city with no breaker coming; Lyon
+    // (civvis-20261018T011334Z) waited from turn 44 to 79 behind Ancient
+    // Walls for Rams queued in 1-3 Production cities while the treasury held
+    // about 150 Gold. See `advanced/siege_train/breaker_purchase.rs`.
+    Gene { tag: "breaker-bought-for-the-siege", field: "breaker_bought_for_the_siege", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_bought_for_the_siege, disable: AdvancedAi::disable_breaker_bought_for_the_siege },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
