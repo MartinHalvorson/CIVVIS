@@ -1,6 +1,6 @@
 {
-  "updated_utc": "2026-10-18T14:25:21.883999+00:00",
-  "status": "Development only:24 policies complete SAME6,144 candidate executions/78 separate diagnostic controls/0 fresh.24 focal wins 0,verified Domination 0,verified Deity Domination 0;foreign-major holdings observed on 0 maps.24 versus03/20 focal-action contrasts 3/0 of6. Registered development gate unmet;03 fallback. No final STRICT A/A,fresh authorization,Native success or promotion readiness.",
+  "updated_utc": "2026-10-18T14:49:34.433131+00:00",
+  "status": "Development only:24 completed policies on SAME6,144 candidate executions/90 separately counted passive diagnostic controls/0fresh.24 is all6 action-null20,0 focal wins/verifiedDom/foreign-major holdings.24h identifies actual first-return capital-science gates with all6 nonjournal triple raw byte equality;registered journal Detail-order exception is diagnostic-only,not final STRICT AA.No25 policy selected/evaluated.03 remains fallback;no Native success or promotion readiness.",
   "variant_01": {
     "analyzed_utc": "2026-10-17T18:02:22.529676+00:00",
     "variant": "variant-01",
@@ -775,7 +775,7 @@
     "new_baseline_observer_control_executions": 4,
     "fresh_holdout_executions": 0,
     "registered_resource_diagnostic_executions": 78,
-    "completed_resource_diagnostic_executions": 78
+    "completed_resource_diagnostic_executions": 90
   },
   "variant_02_deity_diagnosis": [
     {
@@ -245627,6 +245627,3084 @@
           "conclusion": "success",
           "databaseId": 39134151904,
           "headSha": "f8a3f22bafbf778c271b27bd8d19ebb72c6039eb",
+          "status": "completed",
+          "workflowName": "cargo-test"
+        }
+      ]
+    }
+  },
+  "capital_route_diagnostic_24h": {
+    "analysis": {
+      "analyzed_utc": "2026-10-18T14:34:35.196014+00:00",
+      "registration_sha256": "fb9a4ec55ed4dc6f01dbb59f2f3308417bb9f6859a0c29280b79b3807acd18d1",
+      "runner_sha256": "5ac8cd18469850ce08a4ae45df57493070006609c92d91fc1f3a57aca1278c85",
+      "all_six_complete": true,
+      "all_six_diagnostic_controls_pass": true,
+      "raw_journals_exact_cases": 5,
+      "nonjournal_raw_exact_cases": 6,
+      "final_source_strict_AA": false,
+      "new_policy_executions": 0,
+      "new_diagnostic_control_executions": 12,
+      "fresh_executions": 0,
+      "cases": [
+        {
+          "difficulty": "immortal",
+          "seed": 45312861349,
+          "all_seat_records": 680,
+          "focal_records": 680,
+          "stderr_sha256": "b1bc0654665d1a174cd6d280b5677c2afb71537f1a3a056ce13d0cb9a5093125",
+          "focal_kind_counts": {
+            "entry": 291,
+            "veto": 266,
+            "field-order": 73,
+            "campus-option": 25,
+            "library-option": 25
+          },
+          "focal_first_veto_counts": {
+            "writing": 10,
+            "local-barbarian-alarm": 48,
+            "not-military": 60,
+            "protected-nonunit": 67,
+            "already-invested": 5,
+            "already-base45": 7,
+            "economic-recovery": 12,
+            "sea-or-air": 1,
+            "grand-strategy": 24,
+            "major-war": 32
+          },
+          "focal_actual_campus_options": [
+            [
+              "campus-option",
+              "67",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "campus-option",
+              "70",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "campus-option",
+              "73",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "campus-option",
+              "77",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "campus-option",
+              "82",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "campus-option",
+              "97",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "campus-option",
+              "99",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "campus-option",
+              "99",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "campus-option",
+              "101",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "campus-option",
+              "103",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "campus-option",
+              "105",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "campus-option",
+              "107",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "campus-option",
+              "107",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "campus-option",
+              "110",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "campus-option",
+              "112",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "campus-option",
+              "114",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "campus-option",
+              "114",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "campus-option",
+              "119",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "campus-option",
+              "122",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "campus-option",
+              "122",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "campus-option",
+              "125",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "campus-option",
+              "128",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "campus-option",
+              "129",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "campus-option",
+              "131",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "campus-option",
+              "131",
+              "0",
+              "67",
+              "false"
+            ]
+          ],
+          "focal_actual_library_options": [
+            [
+              "library-option",
+              "67",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "library-option",
+              "70",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "library-option",
+              "73",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "library-option",
+              "77",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "library-option",
+              "82",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "library-option",
+              "97",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "library-option",
+              "99",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "library-option",
+              "99",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "library-option",
+              "101",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "library-option",
+              "103",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "library-option",
+              "105",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "library-option",
+              "107",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "library-option",
+              "107",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "library-option",
+              "110",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "library-option",
+              "112",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "library-option",
+              "114",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "library-option",
+              "114",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "library-option",
+              "119",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "library-option",
+              "122",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "library-option",
+              "122",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "library-option",
+              "125",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "library-option",
+              "128",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "library-option",
+              "129",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "library-option",
+              "131",
+              "0",
+              "67",
+              "false"
+            ],
+            [
+              "library-option",
+              "131",
+              "0",
+              "67",
+              "false"
+            ]
+          ],
+          "focal_actual_field_orders": [
+            [
+              "field-order",
+              "34",
+              "0",
+              "settler",
+              "0",
+              "5.666666666666667"
+            ],
+            [
+              "field-order",
+              "34",
+              "0",
+              "settler",
+              "0",
+              "5.666666666666667"
+            ],
+            [
+              "field-order",
+              "35",
+              "0",
+              "settler",
+              "0",
+              "15.666666666666668"
+            ],
+            [
+              "field-order",
+              "36",
+              "0",
+              "settler",
+              "0",
+              "65.66666666666667"
+            ],
+            [
+              "field-order",
+              "41",
+              "0",
+              "archer",
+              "15",
+              "12"
+            ],
+            [
+              "field-order",
+              "49",
+              "0",
+              "archer",
+              "15",
+              "11.100000000000001"
+            ],
+            [
+              "field-order",
+              "50",
+              "0",
+              "archer",
+              "15",
+              "29.85"
+            ],
+            [
+              "field-order",
+              "50",
+              "0",
+              "archer",
+              "15",
+              "29.85"
+            ],
+            [
+              "field-order",
+              "51",
+              "0",
+              "archer",
+              "15",
+              "15.88"
+            ],
+            [
+              "field-order",
+              "68",
+              "0",
+              "builder",
+              "0",
+              "17.241988571428564"
+            ],
+            [
+              "field-order",
+              "68",
+              "0",
+              "builder",
+              "0",
+              "17.241988571428564"
+            ],
+            [
+              "field-order",
+              "68",
+              "0",
+              "builder",
+              "0",
+              "17.241988571428564"
+            ],
+            [
+              "field-order",
+              "69",
+              "0",
+              "builder",
+              "0",
+              "32.241988571428564"
+            ],
+            [
+              "field-order",
+              "69",
+              "0",
+              "builder",
+              "0",
+              "32.241988571428564"
+            ],
+            [
+              "field-order",
+              "70",
+              "0",
+              "builder",
+              "0",
+              "6.241988571428564"
+            ],
+            [
+              "field-order",
+              "71",
+              "0",
+              "builder",
+              "0",
+              "23.241988571428564"
+            ],
+            [
+              "field-order",
+              "71",
+              "0",
+              "builder",
+              "0",
+              "23.241988571428564"
+            ],
+            [
+              "field-order",
+              "72",
+              "0",
+              "builder",
+              "0",
+              "43.241988571428564"
+            ],
+            [
+              "field-order",
+              "72",
+              "0",
+              "builder",
+              "0",
+              "43.241988571428564"
+            ],
+            [
+              "field-order",
+              "73",
+              "0",
+              "man_at_arms",
+              "45",
+              "18.241988571428564"
+            ],
+            [
+              "field-order",
+              "74",
+              "0",
+              "man_at_arms",
+              "45",
+              "38.241988571428564"
+            ],
+            [
+              "field-order",
+              "74",
+              "0",
+              "man_at_arms",
+              "45",
+              "38.241988571428564"
+            ],
+            [
+              "field-order",
+              "75",
+              "0",
+              "man_at_arms",
+              "45",
+              "58.241988571428564"
+            ],
+            [
+              "field-order",
+              "75",
+              "0",
+              "man_at_arms",
+              "45",
+              "58.241988571428564"
+            ],
+            [
+              "field-order",
+              "76",
+              "0",
+              "man_at_arms",
+              "45",
+              "78.24198857142856"
+            ],
+            [
+              "field-order",
+              "76",
+              "0",
+              "man_at_arms",
+              "45",
+              "78.24198857142856"
+            ],
+            [
+              "field-order",
+              "78",
+              "0",
+              "builder",
+              "0",
+              "38.241988571428564"
+            ],
+            [
+              "field-order",
+              "82",
+              "0",
+              "builder",
+              "0",
+              "13.241988571428564"
+            ],
+            [
+              "field-order",
+              "89",
+              "0",
+              "builder",
+              "0",
+              "0"
+            ],
+            [
+              "field-order",
+              "90",
+              "0",
+              "builder",
+              "0",
+              "26.91"
+            ],
+            [
+              "field-order",
+              "90",
+              "0",
+              "builder",
+              "0",
+              "26.91"
+            ],
+            [
+              "field-order",
+              "91",
+              "0",
+              "builder",
+              "0",
+              "0"
+            ],
+            [
+              "field-order",
+              "92",
+              "0",
+              "builder",
+              "0",
+              "29.900000000000002"
+            ],
+            [
+              "field-order",
+              "92",
+              "0",
+              "builder",
+              "0",
+              "29.900000000000002"
+            ],
+            [
+              "field-order",
+              "92",
+              "0",
+              "builder",
+              "0",
+              "29.900000000000002"
+            ],
+            [
+              "field-order",
+              "99",
+              "0",
+              "builder",
+              "0",
+              "13.988142417582438"
+            ],
+            [
+              "field-order",
+              "100",
+              "0",
+              "builder",
+              "0",
+              "41.98814241758244"
+            ],
+            [
+              "field-order",
+              "100",
+              "0",
+              "builder",
+              "0",
+              "41.98814241758244"
+            ],
+            [
+              "field-order",
+              "100",
+              "0",
+              "builder",
+              "0",
+              "41.98814241758244"
+            ],
+            [
+              "field-order",
+              "101",
+              "0",
+              "builder",
+              "0",
+              "10.988142417582438"
+            ],
+            [
+              "field-order",
+              "101",
+              "0",
+              "builder",
+              "0",
+              "10.988142417582438"
+            ],
+            [
+              "field-order",
+              "102",
+              "0",
+              "builder",
+              "0",
+              "38.98814241758244"
+            ],
+            [
+              "field-order",
+              "102",
+              "0",
+              "builder",
+              "0",
+              "38.98814241758244"
+            ],
+            [
+              "field-order",
+              "102",
+              "0",
+              "builder",
+              "0",
+              "38.98814241758244"
+            ],
+            [
+              "field-order",
+              "103",
+              "0",
+              "builder",
+              "0",
+              "5.988142417582438"
+            ],
+            [
+              "field-order",
+              "104",
+              "0",
+              "builder",
+              "0",
+              "35.98814241758244"
+            ],
+            [
+              "field-order",
+              "104",
+              "0",
+              "builder",
+              "0",
+              "35.98814241758244"
+            ],
+            [
+              "field-order",
+              "105",
+              "0",
+              "builder",
+              "0",
+              "6.683186475063415"
+            ],
+            [
+              "field-order",
+              "105",
+              "0",
+              "builder",
+              "0",
+              "6.683186475063415"
+            ],
+            [
+              "field-order",
+              "106",
+              "0",
+              "builder",
+              "0",
+              "44.38318647506342"
+            ],
+            [
+              "field-order",
+              "106",
+              "0",
+              "builder",
+              "0",
+              "44.38318647506342"
+            ],
+            [
+              "field-order",
+              "108",
+              "0",
+              "builder",
+              "0",
+              "40.06398959620263"
+            ],
+            [
+              "field-order",
+              "108",
+              "0",
+              "builder",
+              "0",
+              "40.06398959620263"
+            ],
+            [
+              "field-order",
+              "108",
+              "0",
+              "builder",
+              "0",
+              "40.06398959620263"
+            ],
+            [
+              "field-order",
+              "109",
+              "0",
+              "builder",
+              "0",
+              "70.06398959620263"
+            ],
+            [
+              "field-order",
+              "110",
+              "0",
+              "builder",
+              "0",
+              "29.06398959620263"
+            ],
+            [
+              "field-order",
+              "111",
+              "0",
+              "builder",
+              "0",
+              "59.06398959620263"
+            ],
+            [
+              "field-order",
+              "118",
+              "0",
+              "trader",
+              "0",
+              "30.56398959620263"
+            ],
+            [
+              "field-order",
+              "119",
+              "0",
+              "builder",
+              "0",
+              "49.56398959620263"
+            ],
+            [
+              "field-order",
+              "119",
+              "0",
+              "builder",
+              "0",
+              "49.56398959620263"
+            ],
+            [
+              "field-order",
+              "125",
+              "0",
+              "builder",
+              "0",
+              "0"
+            ],
+            [
+              "field-order",
+              "126",
+              "0",
+              "builder",
+              "0",
+              "39"
+            ],
+            [
+              "field-order",
+              "126",
+              "0",
+              "builder",
+              "0",
+              "39"
+            ],
+            [
+              "field-order",
+              "126",
+              "0",
+              "builder",
+              "0",
+              "39"
+            ],
+            [
+              "field-order",
+              "127",
+              "0",
+              "builder",
+              "0",
+              "79"
+            ],
+            [
+              "field-order",
+              "127",
+              "0",
+              "builder",
+              "0",
+              "79"
+            ],
+            [
+              "field-order",
+              "128",
+              "0",
+              "builder",
+              "0",
+              "36"
+            ],
+            [
+              "field-order",
+              "128",
+              "0",
+              "builder",
+              "0",
+              "36"
+            ],
+            [
+              "field-order",
+              "131",
+              "0",
+              "builder",
+              "0",
+              "11.145223833365861"
+            ],
+            [
+              "field-order",
+              "132",
+              "0",
+              "builder",
+              "0",
+              "57.14522383336586"
+            ],
+            [
+              "field-order",
+              "132",
+              "0",
+              "builder",
+              "0",
+              "57.14522383336586"
+            ],
+            [
+              "field-order",
+              "132",
+              "0",
+              "builder",
+              "0",
+              "57.14522383336586"
+            ],
+            [
+              "field-order",
+              "133",
+              "0",
+              "bomber",
+              "85",
+              "12.145223833365861"
+            ]
+          ]
+        },
+        {
+          "difficulty": "immortal",
+          "seed": 47651167238,
+          "all_seat_records": 656,
+          "focal_records": 656,
+          "stderr_sha256": "045749a8dc728789fff673c670f29b70b9256ed4ade4c824467f165827c03aeb",
+          "focal_kind_counts": {
+            "entry": 286,
+            "veto": 283,
+            "field-order": 81,
+            "campus-option": 3,
+            "library-option": 3
+          },
+          "focal_first_veto_counts": {
+            "writing": 97,
+            "threatened-city": 7,
+            "not-military": 29,
+            "already-invested": 40,
+            "protected-nonunit": 52,
+            "economic-recovery": 3,
+            "not-field-soldier": 12,
+            "grand-strategy": 43
+          },
+          "focal_actual_campus_options": [
+            [
+              "campus-option",
+              "84",
+              "0",
+              "70",
+              "false"
+            ],
+            [
+              "campus-option",
+              "91",
+              "0",
+              "70",
+              "false"
+            ],
+            [
+              "campus-option",
+              "93",
+              "0",
+              "70",
+              "false"
+            ]
+          ],
+          "focal_actual_library_options": [
+            [
+              "library-option",
+              "84",
+              "0",
+              "70",
+              "false"
+            ],
+            [
+              "library-option",
+              "91",
+              "0",
+              "70",
+              "false"
+            ],
+            [
+              "library-option",
+              "93",
+              "0",
+              "70",
+              "false"
+            ]
+          ],
+          "focal_actual_field_orders": [
+            [
+              "field-order",
+              "63",
+              "0",
+              "settler",
+              "0",
+              "110.6"
+            ],
+            [
+              "field-order",
+              "63",
+              "0",
+              "settler",
+              "0",
+              "110.6"
+            ],
+            [
+              "field-order",
+              "64",
+              "0",
+              "heavy_chariot",
+              "28",
+              "12.066666666666663"
+            ],
+            [
+              "field-order",
+              "64",
+              "0",
+              "heavy_chariot",
+              "28",
+              "12.066666666666663"
+            ],
+            [
+              "field-order",
+              "64",
+              "0",
+              "heavy_chariot",
+              "28",
+              "12.066666666666663"
+            ],
+            [
+              "field-order",
+              "65",
+              "0",
+              "heavy_chariot",
+              "28",
+              "22.066666666666663"
+            ],
+            [
+              "field-order",
+              "65",
+              "0",
+              "heavy_chariot",
+              "28",
+              "22.066666666666663"
+            ],
+            [
+              "field-order",
+              "66",
+              "0",
+              "heavy_chariot",
+              "28",
+              "0.6533333333333307"
+            ],
+            [
+              "field-order",
+              "66",
+              "0",
+              "heavy_chariot",
+              "28",
+              "0.6533333333333307"
+            ],
+            [
+              "field-order",
+              "66",
+              "0",
+              "heavy_chariot",
+              "28",
+              "0.6533333333333307"
+            ],
+            [
+              "field-order",
+              "67",
+              "0",
+              "heavy_chariot",
+              "28",
+              "11.90333333333333"
+            ],
+            [
+              "field-order",
+              "67",
+              "0",
+              "heavy_chariot",
+              "28",
+              "11.90333333333333"
+            ],
+            [
+              "field-order",
+              "67",
+              "0",
+              "heavy_chariot",
+              "28",
+              "11.90333333333333"
+            ],
+            [
+              "field-order",
+              "68",
+              "0",
+              "heavy_chariot",
+              "28",
+              "23.15333333333333"
+            ],
+            [
+              "field-order",
+              "68",
+              "0",
+              "heavy_chariot",
+              "28",
+              "23.15333333333333"
+            ],
+            [
+              "field-order",
+              "69",
+              "0",
+              "heavy_chariot",
+              "28",
+              "1.5226666666666633"
+            ],
+            [
+              "field-order",
+              "69",
+              "0",
+              "heavy_chariot",
+              "28",
+              "1.5226666666666633"
+            ],
+            [
+              "field-order",
+              "70",
+              "0",
+              "heavy_chariot",
+              "28",
+              "12.772666666666662"
+            ],
+            [
+              "field-order",
+              "70",
+              "0",
+              "heavy_chariot",
+              "28",
+              "12.772666666666662"
+            ],
+            [
+              "field-order",
+              "70",
+              "0",
+              "heavy_chariot",
+              "28",
+              "12.772666666666662"
+            ],
+            [
+              "field-order",
+              "71",
+              "0",
+              "heavy_chariot",
+              "28",
+              "24.022666666666662"
+            ],
+            [
+              "field-order",
+              "71",
+              "0",
+              "heavy_chariot",
+              "28",
+              "24.022666666666662"
+            ],
+            [
+              "field-order",
+              "71",
+              "0",
+              "heavy_chariot",
+              "28",
+              "24.022666666666662"
+            ],
+            [
+              "field-order",
+              "72",
+              "0",
+              "archer",
+              "15",
+              "2.2181333333333297"
+            ],
+            [
+              "field-order",
+              "72",
+              "0",
+              "archer",
+              "15",
+              "2.2181333333333297"
+            ],
+            [
+              "field-order",
+              "73",
+              "0",
+              "archer",
+              "15",
+              "18.46813333333333"
+            ],
+            [
+              "field-order",
+              "73",
+              "0",
+              "archer",
+              "15",
+              "18.46813333333333"
+            ],
+            [
+              "field-order",
+              "74",
+              "0",
+              "heavy_chariot",
+              "28",
+              "3.774506666666664"
+            ],
+            [
+              "field-order",
+              "74",
+              "0",
+              "heavy_chariot",
+              "28",
+              "3.774506666666664"
+            ],
+            [
+              "field-order",
+              "74",
+              "0",
+              "heavy_chariot",
+              "28",
+              "3.774506666666664"
+            ],
+            [
+              "field-order",
+              "75",
+              "0",
+              "heavy_chariot",
+              "28",
+              "20.024506666666664"
+            ],
+            [
+              "field-order",
+              "75",
+              "0",
+              "heavy_chariot",
+              "28",
+              "20.024506666666664"
+            ],
+            [
+              "field-order",
+              "75",
+              "0",
+              "heavy_chariot",
+              "28",
+              "20.024506666666664"
+            ],
+            [
+              "field-order",
+              "76",
+              "0",
+              "heavy_chariot",
+              "28",
+              "3.019605333333331"
+            ],
+            [
+              "field-order",
+              "76",
+              "0",
+              "heavy_chariot",
+              "28",
+              "3.019605333333331"
+            ],
+            [
+              "field-order",
+              "76",
+              "0",
+              "heavy_chariot",
+              "28",
+              "3.019605333333331"
+            ],
+            [
+              "field-order",
+              "77",
+              "0",
+              "heavy_chariot",
+              "28",
+              "19.26960533333333"
+            ],
+            [
+              "field-order",
+              "77",
+              "0",
+              "heavy_chariot",
+              "28",
+              "19.26960533333333"
+            ],
+            [
+              "field-order",
+              "77",
+              "0",
+              "heavy_chariot",
+              "28",
+              "19.26960533333333"
+            ],
+            [
+              "field-order",
+              "78",
+              "0",
+              "archer",
+              "15",
+              "2.4156842666666645"
+            ],
+            [
+              "field-order",
+              "78",
+              "0",
+              "archer",
+              "15",
+              "2.4156842666666645"
+            ],
+            [
+              "field-order",
+              "78",
+              "0",
+              "archer",
+              "15",
+              "2.4156842666666645"
+            ],
+            [
+              "field-order",
+              "87",
+              "0",
+              "builder",
+              "0",
+              "0"
+            ],
+            [
+              "field-order",
+              "87",
+              "0",
+              "builder",
+              "0",
+              "0"
+            ],
+            [
+              "field-order",
+              "87",
+              "0",
+              "builder",
+              "0",
+              "0"
+            ],
+            [
+              "field-order",
+              "88",
+              "0",
+              "builder",
+              "0",
+              "13"
+            ],
+            [
+              "field-order",
+              "88",
+              "0",
+              "builder",
+              "0",
+              "13"
+            ],
+            [
+              "field-order",
+              "88",
+              "0",
+              "builder",
+              "0",
+              "13"
+            ],
+            [
+              "field-order",
+              "89",
+              "0",
+              "builder",
+              "0",
+              "22.75"
+            ],
+            [
+              "field-order",
+              "89",
+              "0",
+              "builder",
+              "0",
+              "22.75"
+            ],
+            [
+              "field-order",
+              "89",
+              "0",
+              "builder",
+              "0",
+              "22.75"
+            ],
+            [
+              "field-order",
+              "90",
+              "0",
+              "builder",
+              "0",
+              "32.5"
+            ],
+            [
+              "field-order",
+              "90",
+              "0",
+              "builder",
+              "0",
+              "32.5"
+            ],
+            [
+              "field-order",
+              "90",
+              "0",
+              "builder",
+              "0",
+              "32.5"
+            ],
+            [
+              "field-order",
+              "96",
+              "0",
+              "builder",
+              "0",
+              "13"
+            ],
+            [
+              "field-order",
+              "96",
+              "0",
+              "builder",
+              "0",
+              "13"
+            ],
+            [
+              "field-order",
+              "96",
+              "0",
+              "builder",
+              "0",
+              "13"
+            ],
+            [
+              "field-order",
+              "97",
+              "0",
+              "builder",
+              "0",
+              "30"
+            ],
+            [
+              "field-order",
+              "97",
+              "0",
+              "builder",
+              "0",
+              "30"
+            ],
+            [
+              "field-order",
+              "97",
+              "0",
+              "builder",
+              "0",
+              "30"
+            ],
+            [
+              "field-order",
+              "98",
+              "0",
+              "builder",
+              "0",
+              "8"
+            ],
+            [
+              "field-order",
+              "98",
+              "0",
+              "builder",
+              "0",
+              "8"
+            ],
+            [
+              "field-order",
+              "98",
+              "0",
+              "builder",
+              "0",
+              "8"
+            ],
+            [
+              "field-order",
+              "99",
+              "0",
+              "builder",
+              "0",
+              "25"
+            ],
+            [
+              "field-order",
+              "99",
+              "0",
+              "builder",
+              "0",
+              "25"
+            ],
+            [
+              "field-order",
+              "99",
+              "0",
+              "builder",
+              "0",
+              "25"
+            ],
+            [
+              "field-order",
+              "107",
+              "0",
+              "catapult",
+              "25",
+              "13.012132444814654"
+            ],
+            [
+              "field-order",
+              "107",
+              "0",
+              "catapult",
+              "25",
+              "13.012132444814654"
+            ],
+            [
+              "field-order",
+              "107",
+              "0",
+              "catapult",
+              "25",
+              "13.012132444814654"
+            ],
+            [
+              "field-order",
+              "108",
+              "0",
+              "catapult",
+              "25",
+              "30.512132444814654"
+            ],
+            [
+              "field-order",
+              "108",
+              "0",
+              "catapult",
+              "25",
+              "30.512132444814654"
+            ],
+            [
+              "field-order",
+              "108",
+              "0",
+              "catapult",
+              "25",
+              "30.512132444814654"
+            ],
+            [
+              "field-order",
+              "109",
+              "0",
+              "catapult",
+              "25",
+              "48.012132444814654"
+            ],
+            [
+              "field-order",
+              "109",
+              "0",
+              "catapult",
+              "25",
+              "48.012132444814654"
+            ],
+            [
+              "field-order",
+              "109",
+              "0",
+              "catapult",
+              "25",
+              "48.012132444814654"
+            ],
+            [
+              "field-order",
+              "110",
+              "0",
+              "trebuchet",
+              "35",
+              "60"
+            ],
+            [
+              "field-order",
+              "110",
+              "0",
+              "trebuchet",
+              "35",
+              "60"
+            ],
+            [
+              "field-order",
+              "110",
+              "0",
+              "trebuchet",
+              "35",
+              "60"
+            ],
+            [
+              "field-order",
+              "111",
+              "0",
+              "builder",
+              "0",
+              "0"
+            ],
+            [
+              "field-order",
+              "111",
+              "0",
+              "builder",
+              "0",
+              "0"
+            ],
+            [
+              "field-order",
+              "111",
+              "0",
+              "builder",
+              "0",
+              "0"
+            ]
+          ]
+        },
+        {
+          "difficulty": "immortal",
+          "seed": 46732028391,
+          "all_seat_records": 585,
+          "focal_records": 585,
+          "stderr_sha256": "39bd6d7bdcc87be9b7424432ff6938ecc4b33cb246fe20d36d6d149011bc9b71",
+          "focal_kind_counts": {
+            "entry": 244,
+            "veto": 238,
+            "field-order": 91,
+            "campus-option": 6,
+            "library-option": 6
+          },
+          "focal_first_veto_counts": {
+            "writing": 46,
+            "threatened-city": 7,
+            "not-military": 37,
+            "local-barbarian-alarm": 4,
+            "protected-nonunit": 27,
+            "already-invested": 22,
+            "not-field-soldier": 14,
+            "already-base45": 18,
+            "major-war": 4,
+            "grand-strategy": 59
+          },
+          "focal_actual_campus_options": [
+            [
+              "campus-option",
+              "84",
+              "0",
+              "63",
+              "false"
+            ],
+            [
+              "campus-option",
+              "92",
+              "0",
+              "63",
+              "false"
+            ],
+            [
+              "campus-option",
+              "99",
+              "0",
+              "63",
+              "false"
+            ],
+            [
+              "campus-option",
+              "102",
+              "0",
+              "63",
+              "false"
+            ],
+            [
+              "campus-option",
+              "105",
+              "0",
+              "63",
+              "false"
+            ],
+            [
+              "campus-option",
+              "108",
+              "0",
+              "63",
+              "false"
+            ]
+          ],
+          "focal_actual_library_options": [
+            [
+              "library-option",
+              "84",
+              "0",
+              "63",
+              "false"
+            ],
+            [
+              "library-option",
+              "92",
+              "0",
+              "63",
+              "false"
+            ],
+            [
+              "library-option",
+              "99",
+              "0",
+              "63",
+              "false"
+            ],
+            [
+              "library-option",
+              "102",
+              "0",
+              "63",
+              "false"
+            ],
+            [
+              "library-option",
+              "105",
+              "0",
+              "63",
+              "false"
+            ],
+            [
+              "library-option",
+              "108",
+              "0",
+              "63",
+              "false"
+            ]
+          ],
+          "focal_actual_field_orders": [
+            [
+              "field-order",
+              "46",
+              "0",
+              "settler",
+              "0",
+              "23.941915227629508"
+            ],
+            [
+              "field-order",
+              "46",
+              "0",
+              "settler",
+              "0",
+              "23.941915227629508"
+            ],
+            [
+              "field-order",
+              "46",
+              "0",
+              "settler",
+              "0",
+              "23.941915227629508"
+            ],
+            [
+              "field-order",
+              "47",
+              "0",
+              "settler",
+              "0",
+              "35.94191522762951"
+            ],
+            [
+              "field-order",
+              "47",
+              "0",
+              "settler",
+              "0",
+              "35.94191522762951"
+            ],
+            [
+              "field-order",
+              "53",
+              "0",
+              "archer",
+              "15",
+              "2.441915227629508"
+            ],
+            [
+              "field-order",
+              "54",
+              "0",
+              "archer",
+              "15",
+              "21.691915227629508"
+            ],
+            [
+              "field-order",
+              "54",
+              "0",
+              "archer",
+              "15",
+              "21.691915227629508"
+            ],
+            [
+              "field-order",
+              "55",
+              "0",
+              "settler",
+              "0",
+              "6.252522987216862"
+            ],
+            [
+              "field-order",
+              "55",
+              "0",
+              "settler",
+              "0",
+              "6.252522987216862"
+            ],
+            [
+              "field-order",
+              "56",
+              "0",
+              "settler",
+              "0",
+              "22.752522987216864"
+            ],
+            [
+              "field-order",
+              "56",
+              "0",
+              "settler",
+              "0",
+              "22.752522987216864"
+            ],
+            [
+              "field-order",
+              "56",
+              "0",
+              "settler",
+              "0",
+              "22.752522987216864"
+            ],
+            [
+              "field-order",
+              "57",
+              "0",
+              "settler",
+              "0",
+              "39.252522987216864"
+            ],
+            [
+              "field-order",
+              "57",
+              "0",
+              "settler",
+              "0",
+              "39.252522987216864"
+            ],
+            [
+              "field-order",
+              "58",
+              "0",
+              "settler",
+              "0",
+              "57.40252298721687"
+            ],
+            [
+              "field-order",
+              "59",
+              "0",
+              "settler",
+              "0",
+              "75.40252298721687"
+            ],
+            [
+              "field-order",
+              "59",
+              "0",
+              "settler",
+              "0",
+              "75.40252298721687"
+            ],
+            [
+              "field-order",
+              "59",
+              "0",
+              "settler",
+              "0",
+              "75.40252298721687"
+            ],
+            [
+              "field-order",
+              "60",
+              "0",
+              "settler",
+              "0",
+              "93.40252298721687"
+            ],
+            [
+              "field-order",
+              "61",
+              "0",
+              "spearman",
+              "25",
+              "7.601681991477913"
+            ],
+            [
+              "field-order",
+              "61",
+              "0",
+              "spearman",
+              "25",
+              "7.601681991477913"
+            ],
+            [
+              "field-order",
+              "62",
+              "0",
+              "spearman",
+              "25",
+              "21.351681991477914"
+            ],
+            [
+              "field-order",
+              "62",
+              "0",
+              "spearman",
+              "25",
+              "21.351681991477914"
+            ],
+            [
+              "field-order",
+              "63",
+              "0",
+              "archer",
+              "15",
+              "2.0813455931823306"
+            ],
+            [
+              "field-order",
+              "63",
+              "0",
+              "archer",
+              "15",
+              "2.0813455931823306"
+            ],
+            [
+              "field-order",
+              "64",
+              "0",
+              "archer",
+              "15",
+              "15.83134559318233"
+            ],
+            [
+              "field-order",
+              "64",
+              "0",
+              "archer",
+              "15",
+              "15.83134559318233"
+            ],
+            [
+              "field-order",
+              "65",
+              "0",
+              "archer",
+              "15",
+              "29.58134559318233"
+            ],
+            [
+              "field-order",
+              "65",
+              "0",
+              "archer",
+              "15",
+              "29.58134559318233"
+            ],
+            [
+              "field-order",
+              "65",
+              "0",
+              "archer",
+              "15",
+              "29.58134559318233"
+            ],
+            [
+              "field-order",
+              "66",
+              "0",
+              "archer",
+              "15",
+              "10.665076474545865"
+            ],
+            [
+              "field-order",
+              "66",
+              "0",
+              "archer",
+              "15",
+              "10.665076474545865"
+            ],
+            [
+              "field-order",
+              "67",
+              "0",
+              "archer",
+              "15",
+              "24.415076474545863"
+            ],
+            [
+              "field-order",
+              "67",
+              "0",
+              "archer",
+              "15",
+              "24.415076474545863"
+            ],
+            [
+              "field-order",
+              "76",
+              "0",
+              "heavy_chariot",
+              "28",
+              "9.032061179636692"
+            ],
+            [
+              "field-order",
+              "76",
+              "0",
+              "heavy_chariot",
+              "28",
+              "9.032061179636692"
+            ],
+            [
+              "field-order",
+              "77",
+              "0",
+              "heavy_chariot",
+              "28",
+              "30.282061179636692"
+            ],
+            [
+              "field-order",
+              "77",
+              "0",
+              "heavy_chariot",
+              "28",
+              "30.282061179636692"
+            ],
+            [
+              "field-order",
+              "78",
+              "0",
+              "catapult",
+              "25",
+              "15.225648943709354"
+            ],
+            [
+              "field-order",
+              "78",
+              "0",
+              "catapult",
+              "25",
+              "15.225648943709354"
+            ],
+            [
+              "field-order",
+              "79",
+              "0",
+              "catapult",
+              "25",
+              "36.47564894370935"
+            ],
+            [
+              "field-order",
+              "79",
+              "0",
+              "catapult",
+              "25",
+              "36.47564894370935"
+            ],
+            [
+              "field-order",
+              "80",
+              "0",
+              "catapult",
+              "25",
+              "57.72564894370935"
+            ],
+            [
+              "field-order",
+              "80",
+              "0",
+              "catapult",
+              "25",
+              "57.72564894370935"
+            ],
+            [
+              "field-order",
+              "80",
+              "0",
+              "catapult",
+              "25",
+              "57.72564894370935"
+            ],
+            [
+              "field-order",
+              "81",
+              "0",
+              "catapult",
+              "25",
+              "15.180519154967481"
+            ],
+            [
+              "field-order",
+              "81",
+              "0",
+              "catapult",
+              "25",
+              "15.180519154967481"
+            ],
+            [
+              "field-order",
+              "81",
+              "0",
+              "catapult",
+              "25",
+              "15.180519154967481"
+            ],
+            [
+              "field-order",
+              "82",
+              "0",
+              "catapult",
+              "25",
+              "36.430519154967484"
+            ],
+            [
+              "field-order",
+              "82",
+              "0",
+              "catapult",
+              "25",
+              "36.430519154967484"
+            ],
+            [
+              "field-order",
+              "83",
+              "0",
+              "catapult",
+              "25",
+              "57.680519154967484"
+            ],
+            [
+              "field-order",
+              "83",
+              "0",
+              "catapult",
+              "25",
+              "57.680519154967484"
+            ],
+            [
+              "field-order",
+              "84",
+              "0",
+              "settler",
+              "0",
+              "15.144415323973988"
+            ],
+            [
+              "field-order",
+              "85",
+              "0",
+              "settler",
+              "0",
+              "32.14441532397399"
+            ],
+            [
+              "field-order",
+              "85",
+              "0",
+              "settler",
+              "0",
+              "32.14441532397399"
+            ],
+            [
+              "field-order",
+              "85",
+              "0",
+              "settler",
+              "0",
+              "32.14441532397399"
+            ],
+            [
+              "field-order",
+              "86",
+              "0",
+              "settler",
+              "0",
+              "49.14441532397399"
+            ],
+            [
+              "field-order",
+              "86",
+              "0",
+              "settler",
+              "0",
+              "49.14441532397399"
+            ],
+            [
+              "field-order",
+              "86",
+              "0",
+              "settler",
+              "0",
+              "49.14441532397399"
+            ],
+            [
+              "field-order",
+              "87",
+              "0",
+              "settler",
+              "0",
+              "68.14441532397399"
+            ],
+            [
+              "field-order",
+              "87",
+              "0",
+              "settler",
+              "0",
+              "188.144415323974"
+            ],
+            [
+              "field-order",
+              "93",
+              "0",
+              "pikeman",
+              "45",
+              "18.144415323973988"
+            ],
+            [
+              "field-order",
+              "93",
+              "0",
+              "pikeman",
+              "45",
+              "18.144415323973988"
+            ],
+            [
+              "field-order",
+              "93",
+              "0",
+              "pikeman",
+              "45",
+              "18.144415323973988"
+            ],
+            [
+              "field-order",
+              "94",
+              "0",
+              "pikeman",
+              "45",
+              "30.144415323973988"
+            ],
+            [
+              "field-order",
+              "94",
+              "0",
+              "pikeman",
+              "45",
+              "30.144415323973988"
+            ],
+            [
+              "field-order",
+              "95",
+              "0",
+              "pikeman",
+              "45",
+              "42.14441532397399"
+            ],
+            [
+              "field-order",
+              "95",
+              "0",
+              "pikeman",
+              "45",
+              "42.14441532397399"
+            ],
+            [
+              "field-order",
+              "96",
+              "0",
+              "pikeman",
+              "45",
+              "54.14441532397399"
+            ],
+            [
+              "field-order",
+              "96",
+              "0",
+              "pikeman",
+              "45",
+              "54.14441532397399"
+            ],
+            [
+              "field-order",
+              "97",
+              "0",
+              "pikeman",
+              "45",
+              "66.14441532397399"
+            ],
+            [
+              "field-order",
+              "97",
+              "0",
+              "pikeman",
+              "45",
+              "66.14441532397399"
+            ],
+            [
+              "field-order",
+              "97",
+              "0",
+              "pikeman",
+              "45",
+              "66.14441532397399"
+            ],
+            [
+              "field-order",
+              "98",
+              "0",
+              "pikeman",
+              "45",
+              "78.14441532397399"
+            ],
+            [
+              "field-order",
+              "98",
+              "0",
+              "pikeman",
+              "45",
+              "78.14441532397399"
+            ],
+            [
+              "field-order",
+              "98",
+              "0",
+              "pikeman",
+              "45",
+              "78.14441532397399"
+            ],
+            [
+              "field-order",
+              "99",
+              "0",
+              "builder",
+              "0",
+              "1.1444153239739876"
+            ],
+            [
+              "field-order",
+              "100",
+              "0",
+              "builder",
+              "0",
+              "14.144415323973988"
+            ],
+            [
+              "field-order",
+              "101",
+              "0",
+              "builder",
+              "0",
+              "27.144415323973988"
+            ],
+            [
+              "field-order",
+              "101",
+              "0",
+              "builder",
+              "0",
+              "27.144415323973988"
+            ],
+            [
+              "field-order",
+              "102",
+              "0",
+              "pikeman",
+              "45",
+              "5.144415323973988"
+            ],
+            [
+              "field-order",
+              "103",
+              "0",
+              "pikeman",
+              "45",
+              "19.144415323973988"
+            ],
+            [
+              "field-order",
+              "104",
+              "0",
+              "pikeman",
+              "45",
+              "33.14441532397399"
+            ],
+            [
+              "field-order",
+              "105",
+              "0",
+              "builder",
+              "0",
+              "2.1444153239739876"
+            ],
+            [
+              "field-order",
+              "106",
+              "0",
+              "builder",
+              "0",
+              "16.144415323973988"
+            ],
+            [
+              "field-order",
+              "106",
+              "0",
+              "builder",
+              "0",
+              "16.144415323973988"
+            ],
+            [
+              "field-order",
+              "107",
+              "0",
+              "builder",
+              "0",
+              "30.144415323973988"
+            ],
+            [
+              "field-order",
+              "107",
+              "0",
+              "builder",
+              "0",
+              "30.144415323973988"
+            ],
+            [
+              "field-order",
+              "109",
+              "0",
+              "builder",
+              "0",
+              "23.144415323973988"
+            ],
+            [
+              "field-order",
+              "109",
+              "0",
+              "builder",
+              "0",
+              "23.144415323973988"
+            ]
+          ]
+        },
+        {
+          "difficulty": "deity",
+          "seed": 49478848256,
+          "all_seat_records": 317,
+          "focal_records": 317,
+          "stderr_sha256": "a339be7ff12ba033e1b5d215d9e8804aaf6d76565a8ccedab7d864f7c6856884",
+          "focal_kind_counts": {
+            "entry": 157,
+            "veto": 157,
+            "field-order": 3
+          },
+          "focal_first_veto_counts": {
+            "local-barbarian-alarm": 69,
+            "threatened-city": 6,
+            "economic-recovery": 3,
+            "already-invested": 3,
+            "fewer-than-two-cities": 39,
+            "grand-strategy": 37
+          },
+          "focal_actual_campus_options": [],
+          "focal_actual_library_options": [],
+          "focal_actual_field_orders": [
+            [
+              "field-order",
+              "78",
+              "0",
+              "crossbowman",
+              "30",
+              "16.68257863375974"
+            ],
+            [
+              "field-order",
+              "78",
+              "0",
+              "crossbowman",
+              "30",
+              "16.68257863375974"
+            ],
+            [
+              "field-order",
+              "78",
+              "0",
+              "crossbowman",
+              "30",
+              "16.68257863375974"
+            ]
+          ]
+        },
+        {
+          "difficulty": "deity",
+          "seed": 43663176127,
+          "all_seat_records": 537,
+          "focal_records": 537,
+          "stderr_sha256": "6ba58cf936ff253ce6551834b491c52be3d308d38f23ee4113d8788132fe3f32",
+          "focal_kind_counts": {
+            "entry": 265,
+            "veto": 265,
+            "field-order": 7
+          },
+          "focal_first_veto_counts": {
+            "writing": 26,
+            "threatened-city": 9,
+            "local-barbarian-alarm": 100,
+            "already-invested": 7,
+            "protected-nonunit": 6,
+            "economic-recovery": 48,
+            "major-war": 1,
+            "grand-strategy": 68
+          },
+          "focal_actual_campus_options": [],
+          "focal_actual_library_options": [],
+          "focal_actual_field_orders": [
+            [
+              "field-order",
+              "49",
+              "0",
+              "archer",
+              "15",
+              "21.200000000000006"
+            ],
+            [
+              "field-order",
+              "49",
+              "0",
+              "archer",
+              "15",
+              "21.200000000000006"
+            ],
+            [
+              "field-order",
+              "50",
+              "0",
+              "horseman",
+              "36",
+              "2.9000000000000075"
+            ],
+            [
+              "field-order",
+              "50",
+              "0",
+              "horseman",
+              "36",
+              "2.9000000000000075"
+            ],
+            [
+              "field-order",
+              "51",
+              "0",
+              "horseman",
+              "36",
+              "14.600000000000009"
+            ],
+            [
+              "field-order",
+              "51",
+              "0",
+              "horseman",
+              "36",
+              "14.600000000000009"
+            ],
+            [
+              "field-order",
+              "68",
+              "0",
+              "horseman",
+              "36",
+              "37.66790123456794"
+            ]
+          ]
+        },
+        {
+          "difficulty": "deity",
+          "seed": 49220027834,
+          "all_seat_records": 447,
+          "focal_records": 447,
+          "stderr_sha256": "b2ff8d2750005d662368d7f52dc204998efe45039598eb564eb63be9482f06bf",
+          "focal_kind_counts": {
+            "entry": 213,
+            "veto": 213,
+            "field-order": 21
+          },
+          "focal_first_veto_counts": {
+            "writing": 5,
+            "local-barbarian-alarm": 47,
+            "threatened-city": 57,
+            "protected-nonunit": 43,
+            "not-military": 10,
+            "not-field-soldier": 3,
+            "already-invested": 8,
+            "major-war": 23,
+            "grand-strategy": 17
+          },
+          "focal_actual_campus_options": [],
+          "focal_actual_library_options": [],
+          "focal_actual_field_orders": [
+            [
+              "field-order",
+              "58",
+              "0",
+              "builder",
+              "0",
+              "6.230452674897116"
+            ],
+            [
+              "field-order",
+              "59",
+              "0",
+              "builder",
+              "0",
+              "16.230452674897116"
+            ],
+            [
+              "field-order",
+              "68",
+              "0",
+              "catapult",
+              "25",
+              "43.1772712883824"
+            ],
+            [
+              "field-order",
+              "68",
+              "0",
+              "catapult",
+              "25",
+              "43.1772712883824"
+            ],
+            [
+              "field-order",
+              "68",
+              "0",
+              "catapult",
+              "25",
+              "43.1772712883824"
+            ],
+            [
+              "field-order",
+              "74",
+              "0",
+              "crossbowman",
+              "30",
+              "19.6772712883824"
+            ],
+            [
+              "field-order",
+              "74",
+              "0",
+              "crossbowman",
+              "30",
+              "19.6772712883824"
+            ],
+            [
+              "field-order",
+              "75",
+              "0",
+              "crossbowman",
+              "30",
+              "31.6772712883824"
+            ],
+            [
+              "field-order",
+              "77",
+              "0",
+              "crossbowman",
+              "30",
+              "55.6772712883824"
+            ],
+            [
+              "field-order",
+              "78",
+              "0",
+              "crossbowman",
+              "30",
+              "67.6772712883824"
+            ],
+            [
+              "field-order",
+              "79",
+              "0",
+              "crossbowman",
+              "30",
+              "79.6772712883824"
+            ],
+            [
+              "field-order",
+              "79",
+              "0",
+              "crossbowman",
+              "30",
+              "79.6772712883824"
+            ],
+            [
+              "field-order",
+              "79",
+              "0",
+              "crossbowman",
+              "30",
+              "79.6772712883824"
+            ],
+            [
+              "field-order",
+              "80",
+              "0",
+              "builder",
+              "0",
+              "1.6772712883824"
+            ],
+            [
+              "field-order",
+              "80",
+              "0",
+              "builder",
+              "0",
+              "1.6772712883824"
+            ],
+            [
+              "field-order",
+              "81",
+              "0",
+              "builder",
+              "0",
+              "12.6772712883824"
+            ],
+            [
+              "field-order",
+              "81",
+              "0",
+              "builder",
+              "0",
+              "12.6772712883824"
+            ],
+            [
+              "field-order",
+              "82",
+              "0",
+              "builder",
+              "0",
+              "23.6772712883824"
+            ],
+            [
+              "field-order",
+              "83",
+              "0",
+              "builder",
+              "0",
+              "34.6772712883824"
+            ],
+            [
+              "field-order",
+              "84",
+              "0",
+              "builder",
+              "0",
+              "10.6772712883824"
+            ],
+            [
+              "field-order",
+              "85",
+              "0",
+              "builder",
+              "0",
+              "22.6772712883824"
+            ]
+          ]
+        }
+      ],
+      "limitations": [
+        "First failed condition only;later short-circuited conditions are not measured.",
+        "Selector invocation depends on unchanged callers;absence of logs is not eligibility.All-seat stderr retained;focal0 separated.",
+        "An actual Basic None does not identify its inner private feasibility veto.",
+        "Passive mechanism/control evidence is not strength,Native/deployed equivalence or finalsource STRICT AA."
+      ]
+    },
+    "archive": {
+      "verified_utc": "2026-10-18T14:34:38.602201+00:00",
+      "archive": "/Users/martbot-mbp-m5-max-128/civvis-conquest-campaign-capacity-ecd1/docs/eval/2026-10-17-conquest-campaign-capacity.capital-route-diagnostic-24h.provenance.json.gz",
+      "bytes": 12591136,
+      "sha256": "186c4f81b31c97a56e22e29d04d0e00a50b700c99aadc2c1046804222f786ed6",
+      "files": 154,
+      "unique_blobs": 90,
+      "standalone_no_base_archive_required": true,
+      "every_blob_hash_and_file_length_verified": true,
+      "mechanical_instrumentation_inverse_exact_after_extraction": true,
+      "simulations_reexecuted_during_extraction": false,
+      "diagnostic_analyzer_reexecuted_during_extraction": false,
+      "executables_or_full_trees_bundled": false
+    },
+    "policy_source": "f8a3f22bafbf778c271b27bd8d19ebb72c6039eb",
+    "documentation_parent": "f276c65c9d1ecdb54bc4315ef4a8f42382e4e58d",
+    "candidate_executions_added": 0,
+    "diagnostic_controls_added": 12,
+    "fresh_executions_added": 0,
+    "preflight_failure_not_game_or_red": {
+      "recorded_utc": "2026-10-18T14:24:11.200750+00:00",
+      "original_runner_sha256": "f890673bef5d9d95ae4f724a9d74353cd67c684987b51aae3131803b693dbea0",
+      "failure": "Exact Settler guard literal assumed one-line formatting;actual source24 header is multiline. Failed before instrumented source write,registration,build or control game. Only whitespace-matching literal corrected;resume unexecuted instrumentation/registration tail from unchanged extraction.",
+      "original_plan_sha256": "cc7f90e7f28feadb9ca6c02b6076b627a292025e3936a91c180059f8207c5a34",
+      "builds_before_correction": 0,
+      "control_executions_before_correction": 0
+    },
+    "body_metadata_terminal_green": {
+      "head": "f276c65c9d1ecdb54bc4315ef4a8f42382e4e58d",
+      "observed_utc": "2026-10-18T14:49:34.432525+00:00",
+      "new_metadata_runs": [
+        {
+          "conclusion": "success",
+          "databaseId": 39137342395,
+          "headSha": "f276c65c9d1ecdb54bc4315ef4a8f42382e4e58d",
+          "status": "completed",
+          "workflowName": "overwrite-guard"
+        },
+        {
+          "conclusion": "success",
+          "databaseId": 39137342405,
+          "headSha": "f276c65c9d1ecdb54bc4315ef4a8f42382e4e58d",
+          "status": "completed",
+          "workflowName": "collaboration-policy"
+        }
+      ],
+      "checks": [
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T14:43:50Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39135978142/job/117700455819",
+          "name": "cargo-test",
+          "startedAt": "2026-10-18T14:26:18Z",
+          "status": "COMPLETED",
+          "workflowName": "cargo-test"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T14:30:53Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39135978151/job/117700455930",
+          "name": "collaboration-policy",
+          "startedAt": "2026-10-18T14:26:19Z",
+          "status": "COMPLETED",
+          "workflowName": "collaboration-policy"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T14:49:28Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39137342405/job/117704446814",
+          "name": "collaboration-policy",
+          "startedAt": "2026-10-18T14:44:30Z",
+          "status": "COMPLETED",
+          "workflowName": "collaboration-policy"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T14:28:26Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39135978148/job/117700455849",
+          "name": "overwrite-guard",
+          "startedAt": "2026-10-18T14:26:19Z",
+          "status": "COMPLETED",
+          "workflowName": "overwrite-guard"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T14:47:08Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39137342395/job/117704446879",
+          "name": "overwrite-guard",
+          "startedAt": "2026-10-18T14:44:30Z",
+          "status": "COMPLETED",
+          "workflowName": "overwrite-guard"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T14:31:24Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39135978249/job/117700456132",
+          "name": "rust-quality",
+          "startedAt": "2026-10-18T14:26:19Z",
+          "status": "COMPLETED",
+          "workflowName": "rust-quality"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T14:38:01Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39135978197/job/117700455962",
+          "name": "paired-cost",
+          "startedAt": "2026-10-18T14:26:19Z",
+          "status": "COMPLETED",
+          "workflowName": "speed"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T14:27:52Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39135978142/job/117700455697",
+          "name": "published-build",
+          "startedAt": "2026-10-18T14:26:18Z",
+          "status": "COMPLETED",
+          "workflowName": "cargo-test"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T14:27:25Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39135978142/job/117700455826",
+          "name": "control-mod",
+          "startedAt": "2026-10-18T14:26:18Z",
+          "status": "COMPLETED",
+          "workflowName": "cargo-test"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T14:26:28Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://dashboard.gitguardian.com",
+          "name": "GitGuardian Security Checks",
+          "startedAt": "2026-10-18T14:26:17Z",
+          "status": "COMPLETED",
+          "workflowName": ""
+        }
+      ],
+      "all_source_runs": [
+        {
+          "conclusion": "success",
+          "databaseId": 39137342395,
+          "headSha": "f276c65c9d1ecdb54bc4315ef4a8f42382e4e58d",
+          "status": "completed",
+          "workflowName": "overwrite-guard"
+        },
+        {
+          "conclusion": "success",
+          "databaseId": 39137342405,
+          "headSha": "f276c65c9d1ecdb54bc4315ef4a8f42382e4e58d",
+          "status": "completed",
+          "workflowName": "collaboration-policy"
+        },
+        {
+          "conclusion": "success",
+          "databaseId": 39135978151,
+          "headSha": "f276c65c9d1ecdb54bc4315ef4a8f42382e4e58d",
+          "status": "completed",
+          "workflowName": "collaboration-policy"
+        },
+        {
+          "conclusion": "success",
+          "databaseId": 39135978249,
+          "headSha": "f276c65c9d1ecdb54bc4315ef4a8f42382e4e58d",
+          "status": "completed",
+          "workflowName": "rust-quality"
+        },
+        {
+          "conclusion": "success",
+          "databaseId": 39135978197,
+          "headSha": "f276c65c9d1ecdb54bc4315ef4a8f42382e4e58d",
+          "status": "completed",
+          "workflowName": "speed"
+        },
+        {
+          "conclusion": "success",
+          "databaseId": 39135978148,
+          "headSha": "f276c65c9d1ecdb54bc4315ef4a8f42382e4e58d",
+          "status": "completed",
+          "workflowName": "overwrite-guard"
+        },
+        {
+          "conclusion": "success",
+          "databaseId": 39135978142,
+          "headSha": "f276c65c9d1ecdb54bc4315ef4a8f42382e4e58d",
           "status": "completed",
           "workflowName": "cargo-test"
         }

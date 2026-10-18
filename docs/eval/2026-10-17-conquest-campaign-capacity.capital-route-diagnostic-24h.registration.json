@@ -1,0 +1,71 @@
+{
+  "registered_utc": "2026-10-18T14:23:18.273566+00:00",
+  "source_policy_commit": "f8a3f22bafbf778c271b27bd8d19ebb72c6039eb",
+  "scope": "Passive frozen source24 capital science first-return diagnostic only; no candidate25 policy selected or executed. SAME6 known maps,two workers,each original24 then instrumented24,12 control executions,0fresh.",
+  "question": "All6 source24 action streams equal20 and no capital science ordinary Produce claim occurs. Which existing short-circuit scope/economy/defence/queue/Settler gate returns first at actual selector calls,or does the existing Basic Campus/Library choice return None? Never compute counterfactual eligibility.",
+  "instrumentation": "Only owned Conquest module in separate extracted copy. Every original OR operand is evaluated once in the original order through an identity Boolean stderr wrapper;AND/OR short-circuit behavior is unchanged. Record only already computed gate values,capital/unit/economy fields and actual Basic Campus/Library Options. No new Game/AI policy helper query,clone,journal,action,input or setup change. Mechanical inverse exact24.",
+  "soundness": "All6 complete;actions,snapshots,plans,world-states,result exactly byte equal across retained24,new original24 and diagnostic24. Raw journals retained;diagnostic-only registered same-turn contiguous move-refusal Detail ordering exception separately reported,never final STRICT AA. Any other discrepancy rejects diagnostic inference;no cherry-picked rerun.",
+  "required_raw": [
+    "actions.json",
+    "snapshots.json",
+    "plans.json",
+    "world-states.json",
+    "result.json",
+    "why.log"
+  ],
+  "cases": [
+    {
+      "difficulty": "immortal",
+      "seed": 45312861349
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 47651167238
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 46732028391
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49478848256
+    },
+    {
+      "difficulty": "deity",
+      "seed": 43663176127
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49220027834
+    }
+  ],
+  "original_launch_sha256": "baf86f085a20ed133b1959504cb9db2b7d67f86ad4eeaa9ce487e631ab377bbe",
+  "original_module_sha256": "136e5f62d88ffab1a77a9d650b8c343acb74e1f0593c7b727e1467148c38804e",
+  "runner_sha256": "5ac8cd18469850ce08a4ae45df57493070006609c92d91fc1f3a57aca1278c85",
+  "limitations": [
+    "First failed condition only;later short-circuited conditions are not measured.",
+    "Selector invocation depends on unchanged callers;absence of logs is not eligibility.All-seat stderr retained;focal0 separated.",
+    "An actual Basic None does not identify its inner private feasibility veto.",
+    "Passive mechanism/control evidence is not strength,Native/deployed equivalence or finalsource STRICT AA."
+  ],
+  "prebuild_preflight_correction": {
+    "recorded_utc": "2026-10-18T14:24:11.200750+00:00",
+    "original_runner_sha256": "f890673bef5d9d95ae4f724a9d74353cd67c684987b51aae3131803b693dbea0",
+    "failure": "Exact Settler guard literal assumed one-line formatting;actual source24 header is multiline. Failed before instrumented source write,registration,build or control game. Only whitespace-matching literal corrected;resume unexecuted instrumentation/registration tail from unchanged extraction.",
+    "original_plan_sha256": "cc7f90e7f28feadb9ca6c02b6076b627a292025e3936a91c180059f8207c5a34",
+    "builds_before_correction": 0,
+    "control_executions_before_correction": 0
+  },
+  "registered_before_build_and_games_utc": "2026-10-18T14:24:12.037487+00:00",
+  "diagnostic_input_sha256": {
+    "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/source-capital-route-24h/src/ai/advanced/conquest_campaign.rs": "dcad7765c595046f260010a07b8c7b256e62f18c99767d20068ce217601625fa",
+    "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/probe-capital-route-24h/Cargo.toml": "3aa33aadff40af371ca4d5e505a4adb219e3767687602cd2118c771e745414ff",
+    "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/probe-capital-route-24h/Cargo.lock": "2ee86851ecb421cacf0f888263e072e41a02e674da09c86bb88f00a92f8666c7",
+    "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/probe-capital-route-24h/source-identity.txt": "9dbea0193f7b6dfa5cd9dfa3f09a6bdf95c7825cb9c13bf490a8b6a58e0cfb28",
+    "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/probe-capital-route-24h/src/main.rs": "25e32cef6d2dae1ca97439ee993c5f6dc1fb67f74993e678097ddff16f327242",
+    "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/capital-route-diagnostic-24h/plan.json": "4092541021a15e4d89e1ac3cbfd72f3d2c47b44bab236adaa4a90ffaf267508d",
+    "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/capital-route-diagnostic-24h/instrumentation.patch.json": "684abed2857ea343b847f88cc8ac2d7a92aaa1d51e3c5d1477aaee8b8f06dfa1",
+    "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-foundation/source-baseline/deploy/live-force-on.txt": "d7ac5367dda9dc54093ebc55f59d3630c908c577fe84309bbe5378cecec3de55"
+  },
+  "mechanical_instrumentation_inverse_exact": true
+}
