@@ -4080,6 +4080,15 @@ pub const GENES: &[Gene] = &[
     // step asked only the friendliest rival and sent nothing once it held
     // ours. See `advanced/delegations_reach_every_rival.rs`.
     Gene { tag: "delegations-reach-every-rival", field: "delegations_reach_every_rival", kind: Kind::OptIn, enable: AdvancedAi::enable_delegations_reach_every_rival, disable: AdvancedAi::disable_delegations_reach_every_rival },
+    // `faith-war-is-no-front`: 51 of 106 live pin-era wars were faith wars;
+    // the campaign aimed at their rival on 810 of 1,023 turns and took 1.0
+    // cities per 100, against 6.4 for our conquest wars. See
+    // `advanced/faith_war_is_no_front.rs`.
+    Gene { tag: "faith-war-is-no-front", field: "faith_war_is_no_front", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_war_is_no_front, disable: AdvancedAi::disable_faith_war_is_no_front },
+    // `faith-war-is-no-front-2`: 115456Z's interception on the Khmer, no
+    // Khmer city ever located, held the campaign from 78 to the Culture loss
+    // at 144 beside a three-city India at a fifteenth of our power.
+    Gene { tag: "faith-war-is-no-front-2", field: "faith_war_is_no_front_2", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_war_is_no_front_2, disable: AdvancedAi::disable_faith_war_is_no_front_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
