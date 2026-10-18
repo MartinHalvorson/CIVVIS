@@ -43,7 +43,7 @@ impl AdvancedAi {
         }
         let retry = g.standard_duration(MISSION_RETRY_TURNS);
         if self
-            .mission_asked
+            .delegations_asked
             .get(&other)
             .is_some_and(|asked| g.turn.saturating_sub(*asked) < retry)
         {
@@ -66,7 +66,7 @@ impl AdvancedAi {
             return;
         }
         if let Action::SendDelegation { player } | Action::SendEmbassy { player } = action {
-            self.mission_asked.insert(*player, g.turn);
+            self.delegations_asked.insert(*player, g.turn);
         }
     }
 }

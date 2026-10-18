@@ -5502,7 +5502,7 @@ pub struct AdvancedAi {
     /// `advanced/delegations_reach_every_rival.rs`. Off by default.
     delegations_reach_every_rival: bool,
     /// `delegations-reach-every-rival`: the turn each rival was last asked.
-    mission_asked: BTreeMap<usize, u32>,
+    delegations_asked: BTreeMap<usize, u32>,
     /// `campus-claims-the-free-slot`: a city of three or more citizens with
     /// a free district slot and no Campus puts its first Campus at the head
     /// of its queue over an idle or deferrable head. See
@@ -10703,7 +10703,7 @@ impl AdvancedAi {
             bankruptcy_exits_the_drain: false,
             // ---- append: c-d ----------------------------------------
             delegations_reach_every_rival: false,
-            mission_asked: BTreeMap::new(),
+            delegations_asked: BTreeMap::new(),
             campus_claims_the_free_slot: false,
             campus_claims_the_free_slot_2: false,
             city_under_fire_ranks_first: false,
