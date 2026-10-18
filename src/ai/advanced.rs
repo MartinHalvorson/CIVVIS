@@ -5489,6 +5489,10 @@ pub struct AdvancedAi {
     /// of its queue over an idle or deferrable head. See
     /// `advanced/campus_claims_the_free_slot.rs`. Off by default.
     campus_claims_the_free_slot: bool,
+    /// `campus-claims-the-free-slot-2`: version 2 of the free-slot Campus
+    /// claim, from two citizens and in every eligible city a turn. See
+    /// `advanced/campus_claims_the_free_slot.rs`. Off by default.
+    campus_claims_the_free_slot_2: bool,
     /// `city-under-fire-ranks-first`: a city of ours that lost health since
     /// the last assessment, or was struck within the last turn, with a
     /// hostile soldier within [`objective_board::CAPITAL_DEFENSE_CONTACT`] is
@@ -10652,6 +10656,7 @@ impl AdvancedAi {
             bankruptcy_exits_the_drain: false,
             // ---- append: c-d ----------------------------------------
             campus_claims_the_free_slot: false,
+            campus_claims_the_free_slot_2: false,
             city_under_fire_ranks_first: false,
             closed_border_blocker_declares: false,
             closed_border_holds: BTreeMap::new(),

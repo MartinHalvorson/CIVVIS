@@ -248,3 +248,33 @@ fn at_war_a_unit_keeps_its_queue() {
         .iter()
         .all(|cid| head(&game, *cid) == Some(unit("knight"))));
 }
+
+/// Version 2: a two-citizen city claims, and every eligible city claims in
+/// the same turn.
+#[test]
+fn version_two_claims_every_eligible_city_from_two_citizens() {
+    let (mut game, ranked) = campus_less_empire(95_107, 1);
+    all_queue(&mut game, &ranked, &unit("knight"));
+    for cid in &ranked {
+        game.cities.get_mut(cid).unwrap().pop = FREE_SLOT_CAMPUS_MIN_POP_2;
+    }
+    let mut v1 = game.clone();
+    let ai = armed();
+    let plan = ai.assess(&v1, 0);
+    ai.claim_free_slot_campus(&mut v1, 0, &plan);
+    assert!(ranked
+        .iter()
+        .all(|cid| head(&v1, *cid) == Some(unit("knight"))), "v1: two citizens are under its floor");
+
+    let mut ai = AdvancedAi::new();
+    ai.enable_campus_claims_the_free_slot_2();
+    let plan = ai.assess(&game, 0);
+    ai.claim_free_slot_campus(&mut game, 0, &plan);
+    let claimed = ranked
+        .iter()
+        .filter(|cid| is_campus(&game, &head(&game, **cid)))
+        .count();
+    assert_eq!(claimed, ranked.len(), "every city claims in one turn");
+    let campus = head(&game, ranked[0]).unwrap();
+    assert!(ai.free_slot_campus_holds(&game, 0, ranked[0], &plan, &campus));
+}

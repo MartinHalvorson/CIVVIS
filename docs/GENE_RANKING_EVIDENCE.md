@@ -230,7 +230,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `campus-before-the-army-3` | off (unmeasured) | `campus-before-the-army-3`: version 2, on through the University and the Research Lab. | — \| 3 |
 | `campus-building-claims-the-queue` | off (unmeasured) | A standing Campus's next building (Library, else University, else Research Lab) claims its city's queue over a deferrable head. | 1 \| 1 |
 | `campus-buildings-first` | off (unmeasured) | Opt-in gene `campus-buildings-first`; see `BasicAi::campus_buildings_first` and `Self::reserve_culture_defense_theater`. | 1 \| 1 |
-| `campus-claims-the-free-slot` | off (unmeasured) | Claim a free district slot for a first Campus. | 1 \| 1 |
+| `campus-claims-the-free-slot` | off (unmeasured) | Claim a free district slot for a first Campus. | — \| 2 |
+| `campus-claims-the-free-slot-2` | off (unmeasured) | Version 2 of the free-slot Campus claim. | — \| 2 |
 | `capital-campus-before-the-plaza` | off (unmeasured) | Opt-in gene `capital-campus-before-the-plaza`; see `advanced/capital_campus_claim.rs`. | 1 \| 1 |
 | `capital-defense-holds` | off (unmeasured) | Opt-in gene `capital-defense-holds`; see `Self::capital_defense_contact`. | 1 \| 1 |
 | `capital-prey-opens-a-front` | off (unmeasured) | Opt-in gene `capital-prey-opens-a-front`; see `Self::capital_prey_opens_a_front`. | — \| 2 |

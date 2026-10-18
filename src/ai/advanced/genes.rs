@@ -4022,6 +4022,10 @@ pub const GENES: &[Gene] = &[
     // and games with 2+ Campuses at t60 reached r150 0.62 against 0.30 with
     // none. See `advanced/campus_claims_the_free_slot.rs`.
     Gene { tag: "campus-claims-the-free-slot", field: "campus_claims_the_free_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_claims_the_free_slot, disable: AdvancedAi::disable_campus_claims_the_free_slot },
+    // Version 2 of campus-claims-the-free-slot: from two citizens and in every
+    // eligible city a turn. Version one's live claims began around turn 80; 23
+    // of its t45-65 free-slot samples were held by the three-citizen floor.
+    Gene { tag: "campus-claims-the-free-slot-2", field: "campus_claims_the_free_slot_2", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_claims_the_free_slot_2, disable: AdvancedAi::disable_campus_claims_the_free_slot_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
