@@ -4029,6 +4029,12 @@ pub const GENES: &[Gene] = &[
     // and games with 2+ Campuses at t60 reached r150 0.62 against 0.30 with
     // none. See `advanced/campus_claims_the_free_slot.rs`.
     Gene { tag: "campus-claims-the-free-slot", field: "campus_claims_the_free_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_claims_the_free_slot, disable: AdvancedAi::disable_campus_claims_the_free_slot },
+    // `breaker-bought-for-the-siege`: 1,009 live Emperor siege-turns in 52 of
+    // 62 games held a walled city with no breaker coming; Lyon
+    // (civvis-20261018T011334Z) waited from turn 44 to 79 behind Ancient
+    // Walls for Rams queued in 1-3 Production cities while the treasury held
+    // about 150 Gold. See `advanced/siege_train/breaker_purchase.rs`.
+    Gene { tag: "breaker-bought-for-the-siege", field: "breaker_bought_for_the_siege", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_bought_for_the_siege, disable: AdvancedAi::disable_breaker_bought_for_the_siege },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

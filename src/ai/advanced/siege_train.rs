@@ -6124,6 +6124,13 @@ mod capture_tests;
 #[cfg(test)]
 mod breach_tests;
 
+/// `breaker-bought-for-the-siege`: the wall-breaker a held siege waits for,
+/// bought. See `siege_train/breaker_purchase.rs`.
+mod breaker_purchase;
+
+#[cfg(test)]
+mod breaker_purchase_tests;
+
 #[cfg(test)]
 mod breaker_tests;
 
