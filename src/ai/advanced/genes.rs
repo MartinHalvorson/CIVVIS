@@ -4075,6 +4075,11 @@ pub const GENES: &[Gene] = &[
     // rival-frames in the first four live games under `befriend-the-strongest`
     // were with a rival weaker than us. See `protective_friendship.rs`.
     Gene { tag: "friendship-only-with-the-stronger", field: "friendship_only_with_the_stronger", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_only_with_the_stronger, disable: AdvancedAi::disable_friendship_only_with_the_stronger },
+    // `delegations-reach-every-rival`: 19 of 97 rivals met by turn 80 in
+    // the live Emperor pin era held our Delegation or Embassy; the mission
+    // step asked only the friendliest rival and sent nothing once it held
+    // ours. See `advanced/delegations_reach_every_rival.rs`.
+    Gene { tag: "delegations-reach-every-rival", field: "delegations_reach_every_rival", kind: Kind::OptIn, enable: AdvancedAi::enable_delegations_reach_every_rival, disable: AdvancedAi::disable_delegations_reach_every_rival },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
