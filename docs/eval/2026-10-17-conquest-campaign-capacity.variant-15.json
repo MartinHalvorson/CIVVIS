@@ -1,0 +1,99 @@
+{
+  "registered_utc": "2026-10-18T01:25:10.884613+00:00",
+  "variant": "variant-15",
+  "selected_policy_parent": "variant-03 remains the selected fallback; variant-14 is the immediate experimental source parent only, not a promoted strength winner.",
+  "rejected_previous_policy": "Variant14 completed all6 known maps with0 focal/verified Domination wins and0 foreign-major boundary holdings. Not promotion-ready. Retain14 only as the immediate experimental parent to isolate the narrowly diagnosed allocation change;03 remains selected fallback.",
+  "hypothesis": "A useful Retinues card cannot reclaim a wildcard occupied by a currently zero-yield economic multiplier because the special upgrade-card donor branch accepts only military donors. Permit that card alone to replace a held member of the existing measured unproductive economic-card set, after unchanged legal slot-fit and safety guards. This may seat a useful material discount earlier without displacing productive yields, treasury, loyalty, maintenance or complementary Gold cards.",
+  "prior_evidence": {
+    "source14": "18c9365ab014898aaa03552b8202edbf1b7eb1b3",
+    "source14_binary_sha256": "8e87f37356188e265b1787f27221272308d155bff68fc490a80af9cb4b282add",
+    "actual_retinues_slot_turns": {
+      "immortal-45312861349": [
+        86,
+        120
+      ],
+      "deity-49220027834": [
+        112,
+        128
+      ]
+    },
+    "four_other_maps_focal_actions_identical_to03": true,
+    "deity492_comparison": "03 rival Culture139;14 rival Science142. Turn120 own power661.94 to720.78, Gold161.1 to164.1, income31 to32, same8 own cities. Actual upgrades23 to25. This telemetry is not a strength win or verified Domination.",
+    "imm453_comparison": "Same rival Science159 outcome. Actual upgrades32 to21; turn120 power859.24 to916.78 but Gold196.35 to108.45 and income17.75 to6.15. Do not conceal the economic regression.",
+    "allocation_qualification": "Source14 why log t100 Deity492 wants Retinues but no successful Slot occurs until112. The log only lists desired already-held cards, not the entire deck, and planning attempts are not actual actions. The proposed wildcard blocker is a code-path hypothesis to prove with semantic RED, not a reconstructed runtime donor identity.",
+    "archive14": {
+      "verified_utc": "2026-10-18T01:18:13.419840+00:00",
+      "archive": "/Users/martbot-mbp-m5-max-128/civvis-conquest-campaign-capacity-ecd1/docs/eval/2026-10-17-conquest-campaign-capacity.checkpoint-14.delta.provenance.json.gz",
+      "bytes": 13557689,
+      "sha256": "a1370eb36aff152c311b69b20fdaababb1c6a2648156902049a2727489ae09f6",
+      "files": 497,
+      "unique_blobs": 420,
+      "base_archive": {
+        "repository_path": "docs/eval/2026-10-17-conquest-campaign-capacity.checkpoint-03.provenance.json.gz",
+        "sha256": "2044cb598cf83dc4d8d73bedafdeb28883f2f11c7ed8c48ee8acf30c28b4f542",
+        "bytes": 26037957
+      },
+      "logical_merged_files": 794,
+      "every_base_and_delta_file_verified": true,
+      "delta_requires_the_named_base_archive": true,
+      "every_blob_hash_and_file_length_verified_after_extraction": true,
+      "complete_development_analyses_reproduced": [
+        "variant-03",
+        "variant-14"
+      ],
+      "comparison_exception": "Only analyzed_utc and relocated absolute filesystem paths are normalized; every other analysis field and raw artifact hash matches.",
+      "simulations_reexecuted_during_extraction": false,
+      "executables_bundled": false,
+      "all_candidate_source_blobs_and_binary_hashes_reverified_before_packing": true
+    },
+    "native_or_fresh_execution": false
+  },
+  "bounded_change": [
+    "Start from exact14 production policy, including material-cohort valuation and canonical/host quote authority. Add only one alternative donor predicate in the existing upgrade-card replacement branch: material_upgrade_card==Some(card) and unproductive_economic_cards contains current.",
+    "Use the already computed read-only marginal-yield classification from domination_productive_policy_fallbacks. No new valuation implementation, synthetic observation, global slot, engine balance, forced action, civic/research/production priority or national war threshold changes.",
+    "Existing Conscription/Levee, Professional Army/Force Modernization, loyalty and culture-defense exclusions remain; existing policy_swap_fits remains final and solvency filtering remains unchanged. Non-military donors outside the measured zero-yield multiplier set remain ineligible.",
+    "Scope: owned Advanced policy region and owned conquest_campaign/tests.rs only. No new claim or takeover; new tests are UNIT-only controlled boards, not Native or evaluation configuration changes."
+  ],
+  "unit_tests_planned": [
+    "A full legal Monarchy deck with two protected military cards and zero-yield economic multipliers in wildcard capacity must seat useful Retinues without removing the protected cards.",
+    "The same ordinary legal pass must make a real currently quoted Warrior upgrade affordable in material and keep the shared Gold/resource bank authoritative.",
+    "No material gap means no Retinues request.",
+    "A non-Domination lane cannot use the special donor path.",
+    "Productive Campus/Library and Theater/Amphitheater multipliers stay protected from this special path.",
+    "A full Oligarchy whose wildcard holds a diplomatic card cannot invent another military seat or treat that card as a measured empty economic multiplier."
+  ],
+  "comparison_parent": "variant-14",
+  "cases": [
+    {
+      "difficulty": "immortal",
+      "seed": 45312861349
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 47651167238
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 46732028391
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49478848256
+    },
+    {
+      "difficulty": "deity",
+      "seed": 43663176127
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49220027834
+    }
+  ],
+  "required_all_six_complete": true,
+  "original_registration_sha256": "2c8cb2eff49e0682a1af251d7ac7afcf2b32061b25b013e8b41e09c1baa4b813",
+  "development_gate": "All six known maps complete and at least one verified focal Deity Domination owning all original capitals before fresh holdouts; then freeze the final selected source and pass strict observer A/A. The diagnostic journal exception never relaxes final-source A/A.",
+  "candidate_executions_at_registration": 84,
+  "resource_diagnostic_control_executions_at_registration": 18,
+  "fresh_holdout_executions_at_registration": 0,
+  "native_verification": "Unestablished. Controlled unit fixtures, nominal policy-value projections and reduced headless development runs are not Native wins or deployed-binary equivalence."
+}

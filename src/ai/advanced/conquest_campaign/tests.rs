@@ -720,3 +720,151 @@ fn conquest_campaign_modernization_routes_the_actual_peace_research_choice() {
     controller.advanced_research(&mut game, 0, &plan);
     assert_eq!(game.players[0].research.as_deref(), Some("machinery"));
 }
+
+fn material_wildcard_campaign() -> (Game, AdvancedAi, StrategicPlan, Vec<u32>) {
+    let (mut game, controller, plan, units) = material_campaign();
+    for _ in 0..3 {
+        game.spawn_test_unit("warrior", 0, (30, 20));
+    }
+    let military = game
+        .player_unit_ids(0)
+        .into_iter()
+        .filter(|unit| game.rules.units[game.units[unit].kind].class == "military")
+        .count();
+    assert!(military >= game.player_city_ids(0).len().saturating_mul(2));
+    game.players[0].civics.extend([
+        crate::name!("recorded_history"),
+        crate::name!("medieval_faires"),
+        crate::name!("the_enlightenment"),
+        crate::name!("opera_ballet"),
+    ]);
+    game.players[0].policies = [
+        "conscription",
+        "professional_army",
+        "rationalism",
+        "grand_opera",
+        "urban_planning",
+        "charismatic_leader",
+    ]
+    .into_iter()
+    .map(Name::new)
+    .collect();
+    let slots = game.gov_slots(0);
+    assert_eq!(
+        game.players[0].policies.len() as i64,
+        slots.military + slots.economic + slots.diplomatic + slots.wildcard
+    );
+    assert_eq!(
+        controller.conquest_campaign_material_upgrade_policy(&game, 0),
+        Some("retinues")
+    );
+    (game, controller, plan, units)
+}
+
+#[test]
+fn conquest_campaign_wildcard_reclaims_an_empty_multiplier_for_retinues() {
+    let (mut game, controller, _, _) = material_wildcard_campaign();
+    let mut desired = vec!["rationalism", "grand_opera"];
+    let empty = controller.domination_productive_policy_fallbacks(&game, 0, &mut desired);
+    assert!(empty.contains("rationalism") && empty.contains("grand_opera"));
+    let before = game.players[0].policies.clone();
+    controller.strategic_policies(&mut game, 0, GrandStrategy::Conquest);
+    assert!(game.players[0].policies.contains(&crate::name!("retinues")));
+    assert!(game.players[0]
+        .policies
+        .contains(&crate::name!("professional_army")));
+    assert!(game.players[0]
+        .policies
+        .contains(&crate::name!("conscription")));
+    assert!(before
+        .difference(&game.players[0].policies)
+        .any(|card| empty.contains(card.as_str())));
+    let slots = game.gov_slots(0);
+    assert!(
+        game.players[0].policies.len() as i64
+            <= slots.military + slots.economic + slots.diplomatic + slots.wildcard
+    );
+}
+
+#[test]
+fn conquest_campaign_wildcard_reclaimed_card_enables_only_a_legal_upgrade() {
+    let (mut game, controller, _, units) = material_wildcard_campaign();
+    assert!(game.unit_gold_upgrade_offer(0, units[0]).is_none());
+    controller.strategic_policies(&mut game, 0, GrandStrategy::Conquest);
+    assert!(game.players[0].policies.contains(&crate::name!("retinues")));
+    let (_, gold, resources) = game.unit_gold_upgrade_offer(0, units[0]).unwrap();
+    assert_eq!(resources, 10.0);
+    let bank = game.players[0].gold;
+    assert!(game
+        .apply(0, &Action::UpgradeUnit { unit: units[0] })
+        .is_ok());
+    assert_eq!(game.players[0].gold, bank - gold);
+    assert_eq!(game.strategic_stockpile(0, crate::name!("iron")), 2.0);
+    assert!(game.unit_gold_upgrade_offer(0, units[1]).is_none());
+}
+
+#[test]
+fn conquest_campaign_wildcard_does_not_request_material_without_a_gap() {
+    let (mut game, controller, _, _) = material_wildcard_campaign();
+    game.players[0]
+        .strategic_resources
+        .insert(crate::name!("iron"), 20.0);
+    controller.strategic_policies(&mut game, 0, GrandStrategy::Conquest);
+    assert!(!game.players[0].policies.contains(&crate::name!("retinues")));
+}
+
+#[test]
+fn conquest_campaign_wildcard_does_not_override_another_victory_lane() {
+    let (mut game, _, _, _) = material_wildcard_campaign();
+    let controller = AdvancedAi::targeting(VictoryTarget::Science);
+    controller.strategic_policies(&mut game, 0, GrandStrategy::Science);
+    assert!(!game.players[0].policies.contains(&crate::name!("retinues")));
+}
+
+#[test]
+fn conquest_campaign_wildcard_preserves_productive_economic_multipliers() {
+    let (mut game, controller, _, _) = material_wildcard_campaign();
+    let city = game.player_city_ids(0)[0];
+    crate::game::install_test_district(&mut game, city, "campus");
+    crate::game::install_test_district(&mut game, city, "theater_square");
+    let capital = game.cities.get_mut(&city).unwrap();
+    capital.pop = 15;
+    capital
+        .buildings
+        .extend([crate::name!("library"), crate::name!("amphitheater")]);
+    let mut desired = vec!["rationalism", "grand_opera"];
+    assert!(controller
+        .domination_productive_policy_fallbacks(&game, 0, &mut desired)
+        .is_empty());
+    controller.strategic_policies(&mut game, 0, GrandStrategy::Conquest);
+    assert!(!game.players[0].policies.contains(&crate::name!("retinues")));
+    assert!(game.players[0]
+        .policies
+        .contains(&crate::name!("rationalism")));
+    assert!(game.players[0]
+        .policies
+        .contains(&crate::name!("grand_opera")));
+}
+
+#[test]
+fn conquest_campaign_wildcard_cannot_borrow_an_unrelated_diplomatic_seat() {
+    let (mut game, controller, _, _) = material_wildcard_campaign();
+    game.players[0].government = Some("oligarchy".into());
+    game.players[0].policies = [
+        "conscription",
+        "professional_army",
+        "urban_planning",
+        "charismatic_leader",
+    ]
+    .into_iter()
+    .map(Name::new)
+    .collect();
+    controller.strategic_policies(&mut game, 0, GrandStrategy::Conquest);
+    assert!(!game.players[0].policies.contains(&crate::name!("retinues")));
+    assert!(game.players[0]
+        .policies
+        .contains(&crate::name!("conscription")));
+    assert!(game.players[0]
+        .policies
+        .contains(&crate::name!("professional_army")));
+}

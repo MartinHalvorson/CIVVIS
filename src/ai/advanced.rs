@@ -21124,7 +21124,9 @@ impl AdvancedAi {
                             && !culture_defense_cards.contains(&current.as_str());
                     }
                     if upgrade_card == Some(card) || material_upgrade_card == Some(card) {
-                        return g.rules.policies[current].slot == "military"
+                        return (g.rules.policies[current].slot == "military"
+                            || (material_upgrade_card == Some(card)
+                                && unproductive_economic_cards.contains(current.as_str())))
                             && !matches!(
                                 current.as_str(),
                                 "conscription" | "levee_en_masse" | "limitanei" | "praetorium"

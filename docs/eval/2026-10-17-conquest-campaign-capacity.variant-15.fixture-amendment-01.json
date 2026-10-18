@@ -1,0 +1,12 @@
+{
+  "variant": "variant-15",
+  "amendment": "fixture-01",
+  "registered_utc": "2026-10-18T01:46:29.988714+00:00",
+  "original_registration_sha256": "7ee3ca6410ba9d0010f3d5acb2c515fac46750bf68e98a457708d9648619b7c4",
+  "initial_production_patch_sha256": "6cb876e4dfcd85d47700515371ff4dc1df54d94733e7bfdb74b03a4e6bbdc9c4",
+  "reason": "The dedicated wildcard fixture had3 military/3 cities. The unchanged strategic portfolio only asks the science/culture multiplier set once military>=2*cities. Directly querying the classifier with a manually provided multiplier list did not prove that the strategic pass itself classified those held cards. The initial4/2 RED is therefore NOT valid isolated donor-path proof; the first implementation run repeated the same4/2 failures.",
+  "bounded_fixture_change": "UNIT ONLY: add3 otherwise identical Warriors to the dedicated wildcard fixture, making6 military/3 cities, and assert the actual army-size prerequisite before the policy call. Keep canonical quotes, civ, six-card legal Monarchy capacity, all prior assertions and production proposal unchanged.",
+  "recovery": "Restore exact14 production predicate, rerun corrected six-test semantic RED before reapplying the same15 proposal. Retain original RED and first failed GREEN as invalid-fixture chronology, not passing evidence.",
+  "candidate_game_executions": 0,
+  "native_or_force_configuration_change": false
+}
