@@ -5499,6 +5499,13 @@ pub struct AdvancedAi {
     /// `denial-target-leads-the-fronts`: see
     /// `advanced/denial_target_front.rs`. Off by default.
     denial_target_leads_the_fronts: bool,
+    /// `delegations-reach-every-rival`: the diplomatic-mission step skips
+    /// a rival already hosting our mission, asks every second turn, and waits
+    /// before asking the same rival again. See
+    /// `advanced/delegations_reach_every_rival.rs`. Off by default.
+    delegations_reach_every_rival: bool,
+    /// `delegations-reach-every-rival`: the turn each rival was last asked.
+    delegations_asked: BTreeMap<usize, u32>,
     /// `campus-claims-the-free-slot`: a city of three or more citizens with
     /// a free district slot and no Campus puts its first Campus at the head
     /// of its queue over an idle or deferrable head. See
@@ -9403,6 +9410,9 @@ mod runaway_expander;
 mod faith_veto;
 // `capture-waits-on-the-march`. See `advanced/capture_march.rs`.
 mod capture_march;
+/// `delegations-reach-every-rival`: a mission to every rival we have met.
+/// See `advanced/delegations_reach_every_rival.rs`.
+mod delegations_reach_every_rival;
 /// `foothold-faces-the-capital`: a Domination conquest values the rival town
 /// within Bomber range of a capital. See
 /// `advanced/foothold_faces_the_capital.rs`.
@@ -10715,6 +10725,8 @@ impl AdvancedAi {
             bankruptcy_exits_the_drain: false,
             // ---- append: c-d ----------------------------------------
             denial_target_leads_the_fronts: false,
+            delegations_reach_every_rival: false,
+            delegations_asked: BTreeMap::new(),
             campus_claims_the_free_slot: false,
             campus_claims_the_free_slot_2: false,
             city_under_fire_ranks_first: false,
@@ -24249,7 +24261,7 @@ impl AdvancedAi {
         // Send one mission to the best non-hostile major, preferring the
         // Embassy that supersedes a prior Delegation. This mirrors the basic
         // controller's cadence but uses the plan-aware relationship score.
-        if !embassy_sent && g.turn % 8 == pid as u32 % 8 {
+        if !embassy_sent && (g.turn % 8 == pid as u32 % 8 || self.mission_cadence_due(g, pid)) {
             let mission = g
                 .players
                 .iter()
@@ -24267,6 +24279,9 @@ impl AdvancedAi {
                             .copied()
                             .unwrap_or(0.0)
                             < 50.0
+                        // `delegations-reach-every-rival`: skip a rival that
+                        // already hosts our mission or was just asked.
+                        && self.mission_partner_open(g, pid, other.id)
                 })
                 .max_by(|left, right| {
                     g.relationship_opinion(pid, left.id)
@@ -24294,6 +24309,7 @@ impl AdvancedAi {
                 });
             if let Some(action) = mission {
                 let _ = g.apply(pid, &action);
+                self.record_mission_ask(g, &action);
             }
         }
         let my_power = g.military_power(pid);

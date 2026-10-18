@@ -4075,6 +4075,11 @@ pub const GENES: &[Gene] = &[
     // of it; the campaign aimed at that range's town 154 of 408 turns. See
     // `advanced/foothold_faces_the_capital.rs`.
     Gene { tag: "foothold-faces-the-capital", field: "foothold_faces_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_foothold_faces_the_capital, disable: AdvancedAi::disable_foothold_faces_the_capital },
+    // `delegations-reach-every-rival`: 19 of 97 rivals met by turn 80 in
+    // the live Emperor pin era held our Delegation or Embassy; the mission
+    // step asked only the friendliest rival and sent nothing once it held
+    // ours. See `advanced/delegations_reach_every_rival.rs`.
+    Gene { tag: "delegations-reach-every-rival", field: "delegations_reach_every_rival", kind: Kind::OptIn, enable: AdvancedAi::enable_delegations_reach_every_rival, disable: AdvancedAi::disable_delegations_reach_every_rival },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

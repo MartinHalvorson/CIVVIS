@@ -8066,6 +8066,17 @@ impl AdvancedAi {
         self.foothold_faces_the_capital = false;
     }
 
+    /// Send a diplomatic mission to every rival we have met. See
+    /// [`Self::delegations_reach_every_rival`].
+    pub fn enable_delegations_reach_every_rival(&mut self) {
+        self.delegations_reach_every_rival = true;
+    }
+
+    /// The twin of `enable_delegations_reach_every_rival`.
+    pub fn disable_delegations_reach_every_rival(&mut self) {
+        self.delegations_reach_every_rival = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
