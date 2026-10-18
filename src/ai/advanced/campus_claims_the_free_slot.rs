@@ -33,12 +33,22 @@
 //!
 //! The claim runs after `campus-building-claims-the-queue` and before the
 //! Prophet race's site and the routine claims. Off, nothing runs.
+//!
+//! **Version 2** (`campus-claims-the-free-slot-2`) claims from
+//! [`FREE_SLOT_CAMPUS_MIN_POP_2`] citizens and in every eligible city each
+//! turn rather than one. Live, version one's claims began only around turn
+//! 80: across its first five Emperor games 23 of the t45-65 city samples with
+//! a free slot and a buildable Campus were held back by the three-citizen
+//! floor alone, and the one-a-turn pace left others on a routine unit.
 
 use super::*;
 
 /// The fewest citizens a city holds before its free slot goes to a Campus:
 /// a smaller city's slot is its only one and its Campus its slowest.
 pub(super) const FREE_SLOT_CAMPUS_MIN_POP: i32 = 3;
+
+/// Version 2's floor: a two-citizen city's first slot goes to its Campus.
+pub(super) const FREE_SLOT_CAMPUS_MIN_POP_2: i32 = 2;
 
 impl AdvancedAi {
     /// The Campus `cid` would claim and how long it takes: the first Campus
@@ -52,12 +62,17 @@ impl AdvancedAi {
         cid: u32,
         plan: &StrategicPlan,
     ) -> Option<(Item, f64)> {
-        if !self.campus_claims_the_free_slot {
+        if !self.campus_claims_the_free_slot && !self.campus_claims_the_free_slot_2 {
             return None;
         }
+        let min_pop = if self.campus_claims_the_free_slot_2 {
+            FREE_SLOT_CAMPUS_MIN_POP_2
+        } else {
+            FREE_SLOT_CAMPUS_MIN_POP
+        };
         let city = g.cities.get(&cid)?;
         if city.owner != pid
-            || city.pop < FREE_SLOT_CAMPUS_MIN_POP
+            || city.pop < min_pop
             || plan.threatened_city == Some(cid)
             || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
         {
@@ -95,7 +110,7 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         item: &Item,
     ) -> bool {
-        if !self.campus_claims_the_free_slot {
+        if !self.campus_claims_the_free_slot && !self.campus_claims_the_free_slot_2 {
             return false;
         }
         let Item::District { district, .. } = item else {
@@ -115,9 +130,25 @@ impl AdvancedAi {
     /// it at the head of its queue, idle or over a deferrable item. One claim
     /// a turn. Exact no-op with the gene off.
     pub(super) fn claim_free_slot_campus(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
-        if !self.campus_claims_the_free_slot {
+        if !self.campus_claims_the_free_slot && !self.campus_claims_the_free_slot_2 {
             return;
         }
+        // Version 2: every eligible city, each the quickest of those left.
+        let claims = if self.campus_claims_the_free_slot_2 {
+            g.player_city_ids(pid).len()
+        } else {
+            1
+        };
+        for _ in 0..claims {
+            if !self.claim_one_free_slot_campus(g, pid, plan) {
+                return;
+            }
+        }
+    }
+
+    /// One claim: the city that finishes its first Campus soonest. True when
+    /// a Campus was put at the head of a queue.
+    fn claim_one_free_slot_campus(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) -> bool {
         let at_major_war = g.players.iter().any(|other| {
             other.id != pid
                 && other.alive
@@ -171,25 +202,28 @@ impl AdvancedAi {
             }
         }
         let Some((turns, cid, campus)) = best else {
-            return;
+            return false;
         };
         let head = g.cities[&cid].queue.first().cloned();
         let name = g.cities[&cid].name.clone();
-        if g.apply(
-            pid,
-            &Action::Produce {
-                city: cid,
-                item: campus.clone(),
-            },
-        )
-        .is_ok()
+        if g
+            .apply(
+                pid,
+                &Action::Produce {
+                    city: cid,
+                    item: campus.clone(),
+                },
+            )
+            .is_err()
         {
-            think!(self.journal(), Cities, Decision,
-                   "{name} claims its free district slot for a Campus";
-                   "campus-claims-the-free-slot: {turns:.1} turns, ahead of {}",
-                   head.map_or_else(|| "an idle queue".to_string(), |item| format!(
-                       "{} (it keeps its progress)", Self::plain_item(&item))));
+            return false;
         }
+        think!(self.journal(), Cities, Decision,
+               "{name} claims its free district slot for a Campus";
+               "campus-claims-the-free-slot: {turns:.1} turns, ahead of {}",
+               head.map_or_else(|| "an idle queue".to_string(), |item| format!(
+                   "{} (it keeps its progress)", Self::plain_item(&item))));
+        true
     }
 }
 

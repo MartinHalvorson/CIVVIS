@@ -7978,6 +7978,17 @@ impl AdvancedAi {
         self.breaker_bought_for_the_siege = false;
     }
 
+    /// Version 2 of the free-slot Campus claim. See
+    /// [`Self::campus_claims_the_free_slot_2`].
+    pub fn enable_campus_claims_the_free_slot_2(&mut self) {
+        self.campus_claims_the_free_slot_2 = true;
+    }
+
+    /// The twin of `enable_campus_claims_the_free_slot_2`.
+    pub fn disable_campus_claims_the_free_slot_2(&mut self) {
+        self.campus_claims_the_free_slot_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
