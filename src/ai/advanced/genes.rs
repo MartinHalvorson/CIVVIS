@@ -4044,6 +4044,13 @@ pub const GENES: &[Gene] = &[
     // 121-150 Gold and a Trader sold for about 95. See
     // `advanced/trader_fills_the_idle_route/purchase.rs`.
     Gene { tag: "gold-buys-the-idle-trader", field: "gold_buys_the_idle_trader", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_buys_the_idle_trader, disable: AdvancedAi::disable_gold_buys_the_idle_trader },
+    // `threatened-city-buys-its-defender`: live Emperor Cali
+    // (civvis-20261018T045526Z) sold an Archer for 120 at turns 38-40 with
+    // 151-172 Gold banked while it was the plan's threatened city, bought
+    // nothing, and fell at 43 once a unit in it closed the menu. 37 of 164
+    // Emperor runs lost a city by turn 100. See
+    // `advanced/threatened_city_purchase.rs`.
+    Gene { tag: "threatened-city-buys-its-defender", field: "threatened_city_buys_its_defender", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_city_buys_its_defender, disable: AdvancedAi::disable_threatened_city_buys_its_defender },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

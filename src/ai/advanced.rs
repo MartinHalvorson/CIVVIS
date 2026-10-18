@@ -8643,6 +8643,11 @@ pub struct AdvancedAi {
     /// away. See `advanced/solvency.rs`. Off by default.
     solvent_or_hold: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `threatened-city-buys-its-defender`: see
+    /// `advanced/threatened_city_purchase.rs`. Off by default.
+    threatened_city_buys_its_defender: bool,
+    /// `threatened-city-buys-its-defender`: the turn each city last bought.
+    threatened_defender_bought: BTreeMap<u32, u32>,
     /// `war-target-prices-the-walls`: at peace, the Domination campaign names
     /// the rival whose capital our fielded siege guns take soonest. See
     /// `advanced/war_target_walls.rs`.
@@ -9793,6 +9798,10 @@ mod siege_response;
 /// A Settler past its walk allowance takes a safe site within reach. One
 /// opt-in gene; see `advanced/stalled_settler_site.rs`.
 mod stalled_settler_site;
+/// `threatened-city-buys-its-defender`: the plan's threatened city buys
+/// its land defender while its menu sells one. See
+/// `advanced/threatened_city_purchase.rs`.
+mod threatened_city_purchase;
 
 /// `first-luxury-first`: the Builder opens the empire's FIRST copy of a
 /// luxury ahead of an ordinary tile, priced by the Amenities the empire is
@@ -11182,6 +11191,8 @@ impl AdvancedAi {
             science_suppression_hits_the_pads: false,
             solvent_or_hold: false,
             // ---- append: t-z ----------------------------------------
+            threatened_city_buys_its_defender: false,
+            threatened_defender_bought: BTreeMap::new(),
             war_target_prices_the_walls: false,
             unwalled_city_spares_the_train: false,
             theology_fights_only_to_win: false,
@@ -48765,7 +48776,10 @@ impl AdvancedAi {
         // emergency spends at most one action and suppresses that later
         // generic pass for this turn.
         let emergency_city_defense = self.emergency_city_defense_purchase(g, pid, &plan)
-            || self.imminent_major_war_defense_purchase(g, pid, plan.threatened_city);
+            || self.imminent_major_war_defense_purchase(g, pid, plan.threatened_city)
+            // `threatened-city-buys-its-defender`: see
+            // `advanced/threatened_city_purchase.rs`.
+            || self.threatened_city_defender_purchase(g, pid, plan.threatened_city);
         // A surprise declaration is itself a timing attack. Before the
         // peaceful purchase portfolio can spend the treasury, put one body in
         // the city nearest the declarer. An already executed city-saving
