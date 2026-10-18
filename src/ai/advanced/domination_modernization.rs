@@ -307,16 +307,7 @@ impl AdvancedAi {
     }
 
     pub(super) fn domination_upgrade_policy(&self, g: &Game, pid: usize) -> Option<&'static str> {
-        let need = self.domination_upgrade_need(g, pid).len().max(
-            if self
-                .conquest_campaign_material_upgrade_policy(g, pid)
-                .is_some()
-            {
-                2
-            } else {
-                0
-            },
-        );
+        let need = self.domination_upgrade_need(g, pid).len();
         let held = g.players[pid]
             .policies
             .iter()
@@ -339,6 +330,7 @@ impl AdvancedAi {
     /// City-saving purchases run before this pass; appointed war packages own
     /// their own budget. Neither legal offers nor host prices are relaxed.
     pub(super) fn fund_domination_upgrades(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
+        self.conquest_campaign_prepare_frontline(g, pid, plan);
         if self.war_plan.is_some()
             || !plan.target_player.is_some_and(|target| {
                 g.players.get(target).is_some_and(|p| {
@@ -355,13 +347,9 @@ impl AdvancedAi {
         // newly useful discount now; an already-held card needs no extra pass.
         // A mirrored host quote remains authoritative until the next frame,
         // even when the local policy swap projects a cheaper upgrade.
-        if [
-            self.domination_upgrade_policy(g, pid),
-            self.conquest_campaign_material_upgrade_policy(g, pid),
-        ]
-        .into_iter()
-        .flatten()
-        .any(|card| !g.players[pid].policies.contains(&Name::new(card)))
+        if self
+            .domination_upgrade_policy(g, pid)
+            .is_some_and(|card| !g.players[pid].policies.contains(&Name::new(card)))
         {
             self.strategic_policies(g, pid, self.policy_lane(g, pid, plan));
         }

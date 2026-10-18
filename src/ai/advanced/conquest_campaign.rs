@@ -1,99 +1,134 @@
 use super::*;
 
 impl AdvancedAi {
-    pub(super) fn conquest_campaign_material_upgrade_policy(
+    pub(super) fn conquest_campaign_prepare_frontline(
         &self,
-        game: &Game,
+        game: &mut Game,
         player: usize,
-    ) -> Option<&'static str> {
-        let card = crate::name!("retinues");
+        plan: &StrategicPlan,
+    ) {
         if !self.victory_planning
             || self.active_victory_target(game) != Some(VictoryTarget::Domination)
-            || game.players[player].gold_per_turn < 0.0
-            || (!game.players[player].policies.contains(&card)
-                && !game.available_policies(player).contains(&card))
+            || plan.strategy != GrandStrategy::Expansion
+            || plan.rush
+            || self.war_plan.is_some()
+            || game.player_city_ids(player).len() < 2
+            || !game.players[player]
+                .techs
+                .contains(&crate::name!("writing"))
+            || !plan.target_player.is_some_and(|target| {
+                game.players.get(target).is_some_and(|rival| {
+                    rival.alive
+                        && !rival.is_minor
+                        && !rival.is_barbarian
+                        && self.campaign_target_legal(game, player, target)
+                        && plan.target_city.is_some_and(|city_id| {
+                            game.cities.get(&city_id).is_some_and(|city| {
+                                city.owner == target
+                                    && Self::city_within_declaration_range(game, player, city.pos)
+                            })
+                        })
+                })
+            })
+            || game.players.iter().any(|rival| {
+                rival.id != player
+                    && rival.alive
+                    && !rival.is_minor
+                    && !rival.is_barbarian
+                    && game.is_at_war(player, rival.id)
+            })
         {
-            return None;
+            return;
         }
-        let discount = game
-            .rules
-            .policies
-            .get(&card)?
-            .effects
-            .get("upgrade_resource_discount_pct")
-            .copied()
-            .unwrap_or(0.0);
-        if discount <= 0.0 {
-            return None;
-        }
-        let held_discount = if game.players[player].policies.contains(&card) {
-            discount
-        } else {
-            0.0
+        let is_frontliner = |kind: Name| {
+            let spec = &game.rules.units[kind];
+            spec.class == "military"
+                && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                && spec.ranged_strength == 0.0
+                && spec.bombard_strength == 0.0
+                && matches!(
+                    spec.promotion_class.as_str(),
+                    "melee" | "anti_cavalry" | "light_cavalry" | "heavy_cavalry"
+                )
         };
-        let other_discount =
-            (game.policy_effect(player, "upgrade_resource_discount_pct") - held_discount).max(0.0);
-        if other_discount + f64::EPSILON >= 50.0 {
-            return None;
+        let frontliner_kinds: std::collections::HashSet<Name> = game
+            .rules
+            .units
+            .keys()
+            .copied()
+            .filter(|kind| is_frontliner(*kind))
+            .collect();
+        let mut floor = 30.0 + (-game.players[player].gold_per_turn).max(0.0);
+        if self.solvent_or_hold {
+            floor = super::gold_and_cards::upgrade_floor_from(
+                floor,
+                game.unit_gold_maintenance(player),
+            );
         }
-        let mut cohort = 0usize;
-        let mut cash_ready = false;
-        for unit_id in game.player_unit_ids(player) {
-            let unit = &game.units[&unit_id];
-            let from = &game.rules.units[unit.kind];
-            if from.class != "military"
-                || from.promotion_class == "recon"
-                || matches!(from.domain.as_deref(), Some("sea" | "air"))
-                || unit.hp <= 0
+        let mut income = game.players[player].gold_per_turn;
+        for _attempt in 0..2 {
+            let offers: Vec<_> = game
+                .player_unit_ids(player)
+                .into_iter()
+                .filter_map(|unit_id| {
+                    let unit = &game.units[&unit_id];
+                    if unit.hp < 75 || !frontliner_kinds.contains(&unit.kind) {
+                        return None;
+                    }
+                    let (target, gold, resources) =
+                        game.unit_gold_upgrade_offer(player, unit_id)?;
+                    if game.unit_upgrade_target(player, unit.kind) != Some(target)
+                        || !frontliner_kinds.contains(&target)
+                        || game.players[player].gold - gold < floor
+                        || !self.air_resource_upgrade_preserves_wing(
+                            game, player, unit_id, target, resources,
+                        )
+                    {
+                        return None;
+                    }
+                    let strength = game.rules.units[target].strength;
+                    let gain = strength - game.rules.units[unit.kind].strength;
+                    let upkeep = Self::upgrade_upkeep_delta(game, unit_id, target);
+                    (gain >= 15.0 && income - upkeep >= 2.0).then_some((
+                        unit_id,
+                        gain * unit.hp as f64 / 100.0 / gold.max(1.0),
+                        strength,
+                        upkeep,
+                    ))
+                })
+                .collect();
+            let strongest = offers.iter().map(|offer| offer.2).fold(0.0, f64::max);
+            let contemporary = game
+                .player_unit_ids(player)
+                .into_iter()
+                .filter(|unit_id| {
+                    let unit = &game.units[unit_id];
+                    unit.hp >= 75
+                        && frontliner_kinds.contains(&unit.kind)
+                        && game.unit_strength(unit, false) >= strongest
+                })
+                .count();
+            if contemporary >= 2 {
+                break;
+            }
+            let Some((unit_id, _, _, upkeep)) = offers.into_iter().max_by(|left, right| {
+                left.1
+                    .total_cmp(&right.1)
+                    .then_with(|| right.0.cmp(&left.0))
+            }) else {
+                break;
+            };
+            if game
+                .apply(player, &Action::UpgradeUnit { unit: unit_id })
+                .is_err()
             {
-                continue;
+                break;
             }
-            let Some(target) = game.unit_upgrade_target(player, unit.kind) else {
-                continue;
-            };
-            let successor = &game.rules.units[target];
-            let gain = successor.strength.max(successor.ranged_attack_strength())
-                - from.strength.max(from.ranged_attack_strength());
-            let Some(resource) = successor.requires_resource else {
-                continue;
-            };
-            if gain < 5.0 || successor.resource_cost <= 0.0 {
-                continue;
-            }
-            let bodies = match unit.formation {
-                0 => 1.0,
-                1 => 2.0,
-                _ => 3.0,
-            };
-            let base = successor.resource_cost * bodies;
-            let without = base * (1.0 - other_discount / 100.0).max(0.0);
-            let projected = base * (1.0 - (other_discount + discount) / 100.0).max(0.0);
-            let stock = game.strategic_stockpile(player, resource);
-            if projected <= 0.0
-                || stock + f64::EPSILON < projected
-                || stock + f64::EPSILON >= without
-            {
-                continue;
-            }
-            let Some((modeled_gold, _)) =
-                game.unit_upgrade_price_in_formation(player, unit.kind, target, unit.formation)
-            else {
-                continue;
-            };
-            let gold = game
-                .host_unit_facts
-                .get(&unit_id)
-                .and_then(|facts| facts.upgrade.as_ref())
-                .filter(|offer| offer.to.is_none_or(|offered| offered == target))
-                .and_then(|offer| offer.cost)
-                .unwrap_or(modeled_gold);
-            cohort += 1;
-            cash_ready |= game.players[player].gold + f64::EPSILON >= gold + 30.0;
-            if cohort >= 2 && cash_ready {
-                return Some("retinues");
-            }
+            income -= upkeep;
+            think!(self.journal(), Military, Decision,
+                "Preparing a contemporary conquest frontliner";
+                "peaceful expansion toward the named frontier; current legal upgrade preserves {floor:.0} Gold and projected income {income:+.1}, at most two healthy contemporary takers");
         }
-        None
     }
 
     pub(super) fn conquest_campaign_modernization_tech(
