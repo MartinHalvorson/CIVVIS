@@ -4098,6 +4098,11 @@ pub const GENES: &[Gene] = &[
     // pins g-m went to the campaign's own target; 125943Z befriended China at
     // 7 power while aiming at it. See `protective_friendship.rs`.
     Gene { tag: "friendship-spares-the-target", field: "friendship_spares_the_target", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_spares_the_target, disable: AdvancedAi::disable_friendship_spares_the_target },
+    // `unwalled-ring-steps-in`: in 12 of 20 live walls-down sieges the city
+    // never fell below 150; melee stood 2-3 tiles out on 56 unit-turns
+    // against 30 on the ring, and the open ring healed the city 20 a turn.
+    // See `advanced/siege_train/unwalled_ring.rs`.
+    Gene { tag: "unwalled-ring-steps-in", field: "unwalled_ring_steps_in", kind: Kind::OptIn, enable: AdvancedAi::enable_unwalled_ring_steps_in, disable: AdvancedAi::disable_unwalled_ring_steps_in },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
