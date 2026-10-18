@@ -487,6 +487,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `unseen-capital-is-unseen` | off (unmeasured) | `unseen-capital-is-unseen`: the decider re-takes the seat's city memory after the host's capital and founder facts land, so a fogged rival city is no longer remembered as the capital the rebuild's planting crowned it. | 1 \| 1 |
 | `unwalled-city-spares-the-train` | off (unmeasured) | Opt-in gene `unwalled-city-spares-the-train`; see `AdvancedAi::unwalled_city_spares_the_train`. | 1 \| 1 |
 | `unwalled-city-takes-the-swarm` | off (unmeasured) | Opt-in gene `unwalled-city-takes-the-swarm`; see `Self::unwalled_city_takes_the_swarm`. | 1 \| 1 |
+| `unwalled-ring-steps-in` | off (unmeasured) | Step melee onto the open ring of an unwalled city. | 1 \| 1 |
 | `unwalled-target-declares-into-the-strike` | off (unmeasured) | Opt-in gene `unwalled-target-declares-into-the-strike`; see `Self::unwalled_target_declares_into_the_strike`. | 1 \| 1 |
 | `upkeep-reserve` | off (unmeasured) | Upgrade passes keep one and a half turns of the army's bill in the treasury instead of a flat 30 Gold at war. | 1 \| 1 |
 | `urban-planning-fills-the-slot` | off (unmeasured) | Opt-in gene `urban-planning-fills-the-slot`; see `AdvancedAi::urban_planning_fills_the_slot`. | 1 \| 1 |

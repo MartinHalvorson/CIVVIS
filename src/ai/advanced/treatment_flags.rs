@@ -8121,6 +8121,17 @@ impl AdvancedAi {
         self.stage_reads_the_muster_breakers = false;
     }
 
+    /// Step melee onto the open ring of an unwalled city. See
+    /// [`Self::unwalled_ring_steps_in`].
+    pub fn enable_unwalled_ring_steps_in(&mut self) {
+        self.unwalled_ring_steps_in = true;
+    }
+
+    /// The twin of `enable_unwalled_ring_steps_in`.
+    pub fn disable_unwalled_ring_steps_in(&mut self) {
+        self.unwalled_ring_steps_in = false;
+    }
+
     /// Offer no friendship to a rival weak enough to be prey. See
     /// [`Self::friendship_spares_the_prey`].
     pub fn enable_friendship_spares_the_prey(&mut self) {
