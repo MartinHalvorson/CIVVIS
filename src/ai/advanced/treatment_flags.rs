@@ -8132,6 +8132,17 @@ impl AdvancedAi {
         self.unwalled_ring_steps_in = false;
     }
 
+    /// Offer no friendship to a rival weak enough to be prey. See
+    /// [`Self::friendship_spares_the_prey`].
+    pub fn enable_friendship_spares_the_prey(&mut self) {
+        self.friendship_spares_the_prey = true;
+    }
+
+    /// The twin of `enable_friendship_spares_the_prey`.
+    pub fn disable_friendship_spares_the_prey(&mut self) {
+        self.friendship_spares_the_prey = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
