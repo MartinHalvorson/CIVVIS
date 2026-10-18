@@ -231,6 +231,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `campus-before-the-army-3` | off (unmeasured) | `campus-before-the-army-3`: version 2, on through the University and the Research Lab. | — \| 3 |
 | `campus-building-claims-the-queue` | off (unmeasured) | A standing Campus's next building (Library, else University, else Research Lab) claims its city's queue over a deferrable head. | 1 \| 1 |
 | `campus-buildings-first` | off (unmeasured) | Opt-in gene `campus-buildings-first`; see `BasicAi::campus_buildings_first` and `Self::reserve_culture_defense_theater`. | 1 \| 1 |
+| `campus-claims-the-free-slot` | off (unmeasured) | Claim a free district slot for a first Campus. | — \| 2 |
+| `campus-claims-the-free-slot-2` | off (unmeasured) | Version 2 of the free-slot Campus claim. | — \| 2 |
 | `capital-campus-before-the-plaza` | off (unmeasured) | Opt-in gene `capital-campus-before-the-plaza`; see `advanced/capital_campus_claim.rs`. | 1 \| 1 |
 | `capital-defense-holds` | off (unmeasured) | Opt-in gene `capital-defense-holds`; see `Self::capital_defense_contact`. | 1 \| 1 |
 | `capital-prey-opens-a-front` | off (unmeasured) | Opt-in gene `capital-prey-opens-a-front`; see `Self::capital_prey_opens_a_front`. | — \| 2 |
@@ -424,6 +426,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `settler-marches-alone-when-clear` | off (unmeasured) | Opt-in gene `settler-marches-alone-when-clear`; see `AdvancedAi::settler_path_clear`. | 1 \| 1 |
 | `settler-walks-to-the-better-site` | off (unmeasured) | Opt-in gene `settler-walks-to-the-better-site`; see `Self::better_site_beyond_the_turn`. | 1 \| 1 |
 | `shared-danger` | off (unmeasured) | Opt-in gene `shared-danger`; see `Self::shared_danger`. | 1 \| 1 |
+| `siege-budget-counts-the-ram` | off (unmeasured) | Price a train-held Ram or Tower in the siege damage budget. | 1 \| 1 |
 | `siege-budget-counts-what-fires` | off (unmeasured) | Opt-in gene `siege-budget-counts-what-fires`; see `Self::siege_budget_counts_what_fires`. | 1 \| 1 |
 | `siege-budget-projects-the-seal` | off (unmeasured) | Opt-in gene `siege-budget-projects-the-seal`; see `AdvancedAi::siege_budget_projects_the_seal`. | 1 \| 1 |
 | `siege-buys-the-gun-resource` | off (unmeasured) | Opt-in gene `siege-buys-the-gun-resource`; see `Self::siege_buys_the_gun_resource`. | 1 \| 1 |

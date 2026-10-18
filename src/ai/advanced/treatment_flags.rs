@@ -7945,6 +7945,39 @@ impl AdvancedAi {
         self.siege_promotions_open_the_walls = false;
     }
 
+    /// Price a train-held Ram or Tower in the siege damage budget. See
+    /// [`Self::siege_budget_counts_the_ram`].
+    pub fn enable_siege_budget_counts_the_ram(&mut self) {
+        self.siege_budget_counts_the_ram = true;
+    }
+
+    /// The twin of `enable_siege_budget_counts_the_ram`.
+    pub fn disable_siege_budget_counts_the_ram(&mut self) {
+        self.siege_budget_counts_the_ram = false;
+    }
+
+    /// Claim a free district slot for a first Campus. See
+    /// [`Self::campus_claims_the_free_slot`].
+    pub fn enable_campus_claims_the_free_slot(&mut self) {
+        self.campus_claims_the_free_slot = true;
+    }
+
+    /// The twin of `enable_campus_claims_the_free_slot`.
+    pub fn disable_campus_claims_the_free_slot(&mut self) {
+        self.campus_claims_the_free_slot = false;
+    }
+
+    /// Version 2 of the free-slot Campus claim. See
+    /// [`Self::campus_claims_the_free_slot_2`].
+    pub fn enable_campus_claims_the_free_slot_2(&mut self) {
+        self.campus_claims_the_free_slot_2 = true;
+    }
+
+    /// The twin of `enable_campus_claims_the_free_slot_2`.
+    pub fn disable_campus_claims_the_free_slot_2(&mut self) {
+        self.campus_claims_the_free_slot_2 = false;
+    }
+
     /// Buy the wall-breaker a held siege waits for. See
     /// [`Self::breaker_bought_for_the_siege`].
     pub fn enable_breaker_bought_for_the_siege(&mut self) {
