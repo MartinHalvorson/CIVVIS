@@ -1,6 +1,6 @@
 {
-  "updated_utc": "2026-10-18T10:59:17.273902+00:00",
-  "status": "Development only:21 policies completed SAME6,126 candidate executions/66 separate diagnostic controls/0 fresh.21 focal wins 0,verified Domination 0,verified Deity Domination 0;foreign-major holdings observed on 0 maps.21 versus03/20 focal-action contrasts 4/1 of6. Registered development gate unmet;03 fallback. No final STRICT A/A,fresh authorization,Native success or promotion readiness.",
+  "updated_utc": "2026-10-18T11:51:16.551223+00:00",
+  "status": "Development only:21 policies completed SAME6,126 candidate executions/78 separate diagnostic controls/0 fresh;0 verified Deity Domination wins,03 fallback.22 registered relative full-research-cost admission has genuine5pass/3 intended-positive parent21 RED and8 new GREEN plus broader suites.21 guards/20 production/18 scoring and Advanced hook unchanged. No22 commit/freeze/push/games yet at this validation checkpoint. No Native success or promotion readiness.",
   "variant_01": {
     "analyzed_utc": "2026-10-17T18:02:22.529676+00:00",
     "variant": "variant-01",
@@ -774,8 +774,8 @@
     "independent_known_development_maps": 6,
     "new_baseline_observer_control_executions": 4,
     "fresh_holdout_executions": 0,
-    "registered_resource_diagnostic_executions": 66,
-    "completed_resource_diagnostic_executions": 66
+    "registered_resource_diagnostic_executions": 78,
+    "completed_resource_diagnostic_executions": 78
   },
   "variant_02_deity_diagnosis": [
     {
@@ -185297,5 +185297,2804 @@
         }
       ]
     }
+  },
+  "frontline_route_diagnostic_21g": {
+    "analysis": {
+      "analyzed_utc": "2026-10-18T11:03:57.473619+00:00",
+      "registration_sha256": "21c37b26b8631586ebb15cd5f2504cab9c8a8b20621819087f27f82b1ef1f6ae",
+      "runner_sha256": "8432f4ec7e06e66eb46c2f208307f304784e7f6e6c9d88314b2a83084ade514c",
+      "all_six_complete": true,
+      "all_six_diagnostic_controls_pass": true,
+      "raw_journals_exact_cases": 5,
+      "nonjournal_raw_exact_cases": 6,
+      "final_source_strict_AA": false,
+      "new_policy_executions": 0,
+      "new_diagnostic_control_executions": 12,
+      "fresh_executions": 0,
+      "cases": [
+        {
+          "difficulty": "immortal",
+          "seed": 45312861349,
+          "all_seat_records": 678,
+          "focal_records": 153,
+          "stderr_sha256": "df147018c988753218162b96dc2b83dbc9cd500e9c5ed496ab11e8c79da368ec",
+          "focal_kind_counts": {
+            "research_entry": 54,
+            "material_veto": 54,
+            "material_successor": 40,
+            "material_quote": 5
+          },
+          "focal_material_first_veto_counts": {
+            "no-ordinary-goal": 14,
+            "successor-not-buildable-frontliner": 29,
+            "resource-available-or-invalid": 5,
+            "successor-resource-free": 6
+          },
+          "focal_research_first_veto_counts": {},
+          "focal_actual_material_cohorts": [],
+          "focal_actual_material_quotes": [
+            [
+              "material_quote",
+              "64",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "6",
+              "2"
+            ],
+            [
+              "material_quote",
+              "65",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "8",
+              "2"
+            ],
+            [
+              "material_quote",
+              "65",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "8",
+              "2"
+            ],
+            [
+              "material_quote",
+              "69",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "16",
+              "2"
+            ],
+            [
+              "material_quote",
+              "161",
+              "0",
+              "llanero",
+              "helicopter",
+              "aluminum",
+              "0.5",
+              "0",
+              "2"
+            ]
+          ],
+          "focal_actual_research_candidates": [],
+          "focal_actual_research_budgets": [],
+          "focal_returned_goals": []
+        },
+        {
+          "difficulty": "immortal",
+          "seed": 47651167238,
+          "all_seat_records": 733,
+          "focal_records": 182,
+          "stderr_sha256": "60a83d1e1342ee1d52ffd3fbd0344d8dc3855186b8a0e2fb0788f5847dff904d",
+          "focal_kind_counts": {
+            "research_entry": 24,
+            "material_veto": 18,
+            "material_successor": 60,
+            "material_quote": 56,
+            "material_cohort": 6,
+            "research_candidate": 15,
+            "research_goal": 2,
+            "research_veto": 1
+          },
+          "focal_material_first_veto_counts": {
+            "no-ordinary-goal": 14,
+            "successor-not-buildable-frontliner": 4
+          },
+          "focal_research_first_veto_counts": {
+            "strategy": 1
+          },
+          "focal_actual_material_cohorts": [
+            [
+              "material_cohort",
+              "63",
+              "0",
+              "iron_working",
+              "6"
+            ],
+            [
+              "material_cohort",
+              "98",
+              "0",
+              "stirrups",
+              "10"
+            ],
+            [
+              "material_cohort",
+              "100",
+              "0",
+              "stirrups",
+              "10"
+            ],
+            [
+              "material_cohort",
+              "106",
+              "0",
+              "stirrups",
+              "10"
+            ],
+            [
+              "material_cohort",
+              "110",
+              "0",
+              "stirrups",
+              "10"
+            ],
+            [
+              "material_cohort",
+              "112",
+              "0",
+              "stirrups",
+              "10"
+            ]
+          ],
+          "focal_actual_material_quotes": [
+            [
+              "material_quote",
+              "63",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "63",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "63",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "63",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "63",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "63",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "98",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "98",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "98",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "98",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "98",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "98",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "98",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "98",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "98",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "98",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "100",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "100",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "100",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "100",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "100",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "100",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "100",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "100",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "100",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "100",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "106",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "106",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "106",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "106",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "106",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "106",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "106",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "106",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "106",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "106",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "110",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "110",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "110",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "110",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "110",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "110",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "110",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "110",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "110",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "110",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "112",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "112",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "112",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "112",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "112",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "112",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "112",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "112",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "112",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "112",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ]
+          ],
+          "focal_actual_research_candidates": [
+            [
+              "research_candidate",
+              "63",
+              "0",
+              "military_tactics",
+              "8",
+              "310",
+              "6.65"
+            ],
+            [
+              "research_candidate",
+              "98",
+              "0",
+              "chemistry",
+              "15",
+              "5070",
+              "20"
+            ],
+            [
+              "research_candidate",
+              "98",
+              "0",
+              "composites",
+              "15",
+              "8020",
+              "20"
+            ],
+            [
+              "research_candidate",
+              "98",
+              "0",
+              "metal_casting",
+              "15",
+              "1265",
+              "20"
+            ],
+            [
+              "research_candidate",
+              "98",
+              "0",
+              "military_tactics",
+              "15",
+              "310",
+              "20"
+            ],
+            [
+              "research_candidate",
+              "100",
+              "0",
+              "chemistry",
+              "15",
+              "5010",
+              "20.5"
+            ],
+            [
+              "research_candidate",
+              "100",
+              "0",
+              "composites",
+              "15",
+              "7960",
+              "20.5"
+            ],
+            [
+              "research_candidate",
+              "100",
+              "0",
+              "metal_casting",
+              "15",
+              "1205",
+              "20.5"
+            ],
+            [
+              "research_candidate",
+              "100",
+              "0",
+              "military_tactics",
+              "15",
+              "250",
+              "20.5"
+            ],
+            [
+              "research_candidate",
+              "106",
+              "0",
+              "chemistry",
+              "15",
+              "4860",
+              "27.55"
+            ],
+            [
+              "research_candidate",
+              "106",
+              "0",
+              "metal_casting",
+              "15",
+              "1055",
+              "27.55"
+            ],
+            [
+              "research_candidate",
+              "106",
+              "0",
+              "military_tactics",
+              "15",
+              "250",
+              "27.55"
+            ],
+            [
+              "research_candidate",
+              "110",
+              "0",
+              "chemistry",
+              "15",
+              "4665",
+              "28.5"
+            ],
+            [
+              "research_candidate",
+              "110",
+              "0",
+              "metal_casting",
+              "15",
+              "860",
+              "28.5"
+            ],
+            [
+              "research_candidate",
+              "110",
+              "0",
+              "military_tactics",
+              "15",
+              "250",
+              "28.5"
+            ]
+          ],
+          "focal_actual_research_budgets": [],
+          "focal_returned_goals": [
+            [
+              "research_goal",
+              "106",
+              "0",
+              "military_tactics"
+            ],
+            [
+              "research_goal",
+              "110",
+              "0",
+              "military_tactics"
+            ]
+          ]
+        },
+        {
+          "difficulty": "immortal",
+          "seed": 46732028391,
+          "all_seat_records": 576,
+          "focal_records": 94,
+          "stderr_sha256": "8d1b26f5f2ab5beea696babebb20fb761059d68b77163176c3a0eb6fafbc7f88",
+          "focal_kind_counts": {
+            "research_entry": 35,
+            "material_veto": 34,
+            "material_successor": 20,
+            "material_quote": 3,
+            "material_cohort": 1,
+            "research_veto": 1
+          },
+          "focal_material_first_veto_counts": {
+            "no-ordinary-goal": 17,
+            "successor-not-buildable-frontliner": 13,
+            "successor-resource-free": 4
+          },
+          "focal_research_first_veto_counts": {
+            "target": 1
+          },
+          "focal_actual_material_cohorts": [
+            [
+              "material_cohort",
+              "52",
+              "0",
+              "iron_working",
+              "3"
+            ]
+          ],
+          "focal_actual_material_quotes": [
+            [
+              "material_quote",
+              "52",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "52",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "52",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ]
+          ],
+          "focal_actual_research_candidates": [],
+          "focal_actual_research_budgets": [],
+          "focal_returned_goals": []
+        },
+        {
+          "difficulty": "deity",
+          "seed": 49478848256,
+          "all_seat_records": 578,
+          "focal_records": 60,
+          "stderr_sha256": "1be13916595858ab4fde5e7a2232ea48324b93c05d0b95c7c3da41b13e3aac20",
+          "focal_kind_counts": {
+            "research_entry": 19,
+            "material_veto": 17,
+            "material_successor": 13,
+            "material_quote": 9,
+            "material_cohort": 2
+          },
+          "focal_material_first_veto_counts": {
+            "no-ordinary-goal": 13,
+            "successor-not-buildable-frontliner": 4
+          },
+          "focal_research_first_veto_counts": {},
+          "focal_actual_material_cohorts": [
+            [
+              "material_cohort",
+              "38",
+              "0",
+              "iron_working",
+              "4"
+            ],
+            [
+              "material_cohort",
+              "77",
+              "0",
+              "stirrups",
+              "5"
+            ]
+          ],
+          "focal_actual_material_quotes": [
+            [
+              "material_quote",
+              "38",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "38",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "38",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "38",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "77",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "77",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "77",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "77",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "77",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ]
+          ],
+          "focal_actual_research_candidates": [],
+          "focal_actual_research_budgets": [],
+          "focal_returned_goals": []
+        },
+        {
+          "difficulty": "deity",
+          "seed": 43663176127,
+          "all_seat_records": 662,
+          "focal_records": 111,
+          "stderr_sha256": "d79f38e05d2c527983fd7472a828364e12d17e8be8f2cc6c88a99b3c17f87ddc",
+          "focal_kind_counts": {
+            "research_entry": 35,
+            "material_veto": 31,
+            "material_successor": 21,
+            "material_quote": 14,
+            "material_cohort": 4,
+            "research_candidate": 6
+          },
+          "focal_material_first_veto_counts": {
+            "no-ordinary-goal": 22,
+            "successor-not-buildable-frontliner": 7,
+            "resource-available-or-invalid": 2
+          },
+          "focal_research_first_veto_counts": {},
+          "focal_actual_material_cohorts": [
+            [
+              "material_cohort",
+              "46",
+              "0",
+              "iron_working",
+              "3"
+            ],
+            [
+              "material_cohort",
+              "50",
+              "0",
+              "iron_working",
+              "3"
+            ],
+            [
+              "material_cohort",
+              "59",
+              "0",
+              "iron_working",
+              "3"
+            ],
+            [
+              "material_cohort",
+              "59",
+              "0",
+              "iron_working",
+              "3"
+            ]
+          ],
+          "focal_actual_material_quotes": [
+            [
+              "material_quote",
+              "46",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "46",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "46",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "50",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "50",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "50",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "59",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "59",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "59",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "59",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "59",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "59",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "77",
+              "0",
+              "horseman",
+              "courser",
+              "horses",
+              "20",
+              "50",
+              "4"
+            ],
+            [
+              "material_quote",
+              "77",
+              "0",
+              "horseman",
+              "courser",
+              "horses",
+              "20",
+              "50",
+              "4"
+            ]
+          ],
+          "focal_actual_research_candidates": [
+            [
+              "research_candidate",
+              "46",
+              "0",
+              "military_tactics",
+              "3",
+              "310",
+              "8.65"
+            ],
+            [
+              "research_candidate",
+              "50",
+              "0",
+              "chemistry",
+              "4",
+              "5170",
+              "9"
+            ],
+            [
+              "research_candidate",
+              "50",
+              "0",
+              "metal_casting",
+              "4",
+              "1365",
+              "9"
+            ],
+            [
+              "research_candidate",
+              "50",
+              "0",
+              "military_tactics",
+              "4",
+              "310",
+              "9"
+            ],
+            [
+              "research_candidate",
+              "59",
+              "0",
+              "military_tactics",
+              "4",
+              "310",
+              "13.25"
+            ],
+            [
+              "research_candidate",
+              "59",
+              "0",
+              "military_tactics",
+              "4",
+              "310",
+              "13.25"
+            ]
+          ],
+          "focal_actual_research_budgets": [],
+          "focal_returned_goals": []
+        },
+        {
+          "difficulty": "deity",
+          "seed": 49220027834,
+          "all_seat_records": 729,
+          "focal_records": 180,
+          "stderr_sha256": "46eceaa9510b6ef593230bd198281204aaa3e31f2e9d2e87cc94a212da1b5958",
+          "focal_kind_counts": {
+            "research_entry": 37,
+            "material_veto": 29,
+            "material_successor": 56,
+            "material_quote": 38,
+            "material_cohort": 8,
+            "research_veto": 2,
+            "research_candidate": 10
+          },
+          "focal_material_first_veto_counts": {
+            "no-ordinary-goal": 9,
+            "successor-not-buildable-frontliner": 18,
+            "resource-available-or-invalid": 2
+          },
+          "focal_research_first_veto_counts": {
+            "target": 1,
+            "threatened-city": 1
+          },
+          "focal_actual_material_cohorts": [
+            [
+              "material_cohort",
+              "40",
+              "0",
+              "iron_working",
+              "4"
+            ],
+            [
+              "material_cohort",
+              "45",
+              "0",
+              "iron_working",
+              "5"
+            ],
+            [
+              "material_cohort",
+              "47",
+              "0",
+              "iron_working",
+              "5"
+            ],
+            [
+              "material_cohort",
+              "54",
+              "0",
+              "iron_working",
+              "5"
+            ],
+            [
+              "material_cohort",
+              "54",
+              "0",
+              "iron_working",
+              "5"
+            ],
+            [
+              "material_cohort",
+              "69",
+              "0",
+              "stirrups",
+              "4"
+            ],
+            [
+              "material_cohort",
+              "69",
+              "0",
+              "stirrups",
+              "4"
+            ],
+            [
+              "material_cohort",
+              "71",
+              "0",
+              "stirrups",
+              "4"
+            ]
+          ],
+          "focal_actual_material_quotes": [
+            [
+              "material_quote",
+              "40",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "40",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "40",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "40",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "45",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "45",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "45",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "45",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "45",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "47",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "47",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "47",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "47",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "47",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "54",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "54",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "54",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "54",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "54",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "54",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "54",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "54",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "54",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "54",
+              "0",
+              "warrior",
+              "swordsman",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "69",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "69",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "69",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "69",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "69",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "69",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "69",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "69",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "71",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "71",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "71",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "71",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "0",
+              "0"
+            ],
+            [
+              "material_quote",
+              "78",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "8",
+              "2"
+            ],
+            [
+              "material_quote",
+              "83",
+              "0",
+              "heavy_chariot",
+              "knight",
+              "iron",
+              "20",
+              "18",
+              "2"
+            ]
+          ],
+          "focal_actual_research_candidates": [
+            [
+              "research_candidate",
+              "47",
+              "0",
+              "military_tactics",
+              "5",
+              "310",
+              "9.5"
+            ],
+            [
+              "research_candidate",
+              "69",
+              "0",
+              "chemistry",
+              "9",
+              "5170",
+              "19.799999999999997"
+            ],
+            [
+              "research_candidate",
+              "69",
+              "0",
+              "metal_casting",
+              "9",
+              "1365",
+              "19.799999999999997"
+            ],
+            [
+              "research_candidate",
+              "69",
+              "0",
+              "military_tactics",
+              "9",
+              "310",
+              "19.799999999999997"
+            ],
+            [
+              "research_candidate",
+              "69",
+              "0",
+              "chemistry",
+              "9",
+              "5170",
+              "19.799999999999997"
+            ],
+            [
+              "research_candidate",
+              "69",
+              "0",
+              "metal_casting",
+              "9",
+              "1365",
+              "19.799999999999997"
+            ],
+            [
+              "research_candidate",
+              "69",
+              "0",
+              "military_tactics",
+              "9",
+              "310",
+              "19.799999999999997"
+            ],
+            [
+              "research_candidate",
+              "71",
+              "0",
+              "chemistry",
+              "10",
+              "5110",
+              "20.35"
+            ],
+            [
+              "research_candidate",
+              "71",
+              "0",
+              "metal_casting",
+              "10",
+              "1305",
+              "20.35"
+            ],
+            [
+              "research_candidate",
+              "71",
+              "0",
+              "military_tactics",
+              "9",
+              "250",
+              "20.35"
+            ]
+          ],
+          "focal_actual_research_budgets": [],
+          "focal_returned_goals": []
+        }
+      ],
+      "limitations": [
+        "First failed condition only; later short-circuited conditions are not measured.",
+        "Research helper invocation depends on unchanged callers; absence of logging is not eligibility. All-seat logs are retained, focal player0 observations are explicitly separated.",
+        "Positive helper output does not mean the router or producer selected it.",
+        "Known-map mechanism/control evidence is not held-out strength or Native/deployed-binary equivalence."
+      ]
+    },
+    "archive": {
+      "verified_utc": "2026-10-18T11:04:14.764027+00:00",
+      "archive": "/Users/martbot-mbp-m5-max-128/civvis-conquest-campaign-capacity-ecd1/docs/eval/2026-10-17-conquest-campaign-capacity.frontline-route-diagnostic-21g.provenance.json.gz",
+      "bytes": 12603262,
+      "sha256": "e904ce4cc5f5bece3c5498099c42353cf0e8b2c9216e277caf19a2b316647c1c",
+      "files": 142,
+      "unique_blobs": 80,
+      "standalone_no_base_archive_required": true,
+      "every_blob_hash_and_file_length_verified": true,
+      "mechanical_instrumentation_inverse_exact_after_extraction": true,
+      "simulations_reexecuted_during_extraction": false,
+      "diagnostic_analyzer_reexecuted_during_extraction": false,
+      "executables_or_full_trees_bundled": false
+    },
+    "registration_sha256": "21c37b26b8631586ebb15cd5f2504cab9c8a8b20621819087f27f82b1ef1f6ae",
+    "controls_not_strength_or_final_AA": true,
+    "initial_helper_author_shell_error": "An unset ROOT in the authoring command prevented generator execution;corrected before runner registration,source extraction,build or controls. No game was replayed."
+  },
+  "variant_22_registration": {
+    "registered_utc": "2026-10-18T11:12:01.089602+00:00",
+    "phase": "Known development only,candidate22;no fresh or promotion authorization",
+    "experimental_parent": "39e4a1464bfbcdab28f1334bdeefc813d56d6430",
+    "experimental_parent_policy": "223dc534e4a506e8d6398fbc728925368cbeb99d",
+    "selected_fallback": "12f146fcfbbdeae2e311cffa19d0b9b3dddd8551",
+    "parent_status": "21 failed all6 fixed games:0 focal wins/verified Domination/foreign-major holdings. One action contrast versus20,on Immortal476;no3 Deity contrasts.03 remains fallback.",
+    "proposal": {
+      "proposed_utc": "2026-10-18T11:08:36.038655+00:00",
+      "parent_documentation_head": "39e4a1464bfbcdab28f1334bdeefc813d56d6430",
+      "parent_source": "223dc534e4a506e8d6398fbc728925368cbeb99d",
+      "source21_failed_gate": true,
+      "passive21g": {
+        "all_six_complete": true,
+        "all_six_diagnostic_controls_pass": true,
+        "nonjournal_raw_exact_cases": 6,
+        "raw_journals_exact_cases": 5,
+        "new_diagnostic_control_executions": 12
+      },
+      "passive21g_analysis_sha256": "59ea5e38530a4a15a72cbc3c92d61309167d6524f2eb9494e4389017362354f7",
+      "observed_motivation": "Source21 has only one action contrast versus20,on Immortal476,none on3 Deity maps,and0 wins. Qualified passive21g records Deity492 turn69 material-starved Stirrups4-body cohort and a MilitaryTactics full bill310/science19.8>12;candidate not returned. It does not measure the current blocked-goal full bill,so relative admissibility or a resulting policy benefit is not assumed.494 reaches material cohort5 at77 but has no logged candidate;no exclusive cause asserted.",
+      "single_policy_change": "Retain source21 absolute12-Science-turn admission. Additionally allow a candidate past12 only when its positive finite full missing-prerequisite research bill is no greater than the positive finite full current material-starved ordinary-goal bill. Both bills use existing own-state host-aware war_remaining_research_cost,including current progress. No free fallback when ordinary goal None,strategic-income/material/quiet/legal-target/modern-body/Gold/two-body-upkeep/cohort gates and ranking unchanged.20 production and18 gap/score unchanged.",
+      "new_tests": 8,
+      "expected_parent_red": {
+        "passed": 5,
+        "intended_positive_failures": 3
+      },
+      "old_test_contract_update": "Existing full12-turn negative is renamed and gives the blocked goal a full12-turn quote,so a13-turn alternative remains rejected under both old and new contracts. No evaluated game setup changed.",
+      "original_module_sha256": "7c29d6d61b31add619413ac1b1649dee18e1b7e52ee437e12d65674fdd4b49ca",
+      "original_tests_sha256": "79041b79189bb9804316fd70804b63336f7d879be15e9b9d99e12110eb1c8cd5",
+      "implementation_module_sha256": "e3901a3463fdf0955b418073bf7905a7135ac3789b5a7f77d8bf7928b761f943",
+      "test_file_sha256": "b2dbc284a25782b960e13b56660e351f7b8a4a4a64e575bd3641c073403c24ff",
+      "fresh_executions_authorized": false,
+      "pre_registration_api_correction": {
+        "corrected_utc": "2026-10-18T11:09:26.753862+00:00",
+        "scope": "Proposed UNIT test action-log field corrected from nonexistent game.action_log to existing game.log before registration/source edits/compiler/tests. No RED or policy outcome has been observed.",
+        "prior_test_proposal_sha256": "fafea25cf957a32871f783e07c422e171524c41aba97a026ed8923f09e67e0c4"
+      }
+    },
+    "single_policy_change": "Retain source21 absolute12-Science-turn admission. Additionally allow a candidate past12 only when its positive finite full missing-prerequisite research bill is no greater than the positive finite full current material-starved ordinary-goal bill. Both bills use existing own-state host-aware war_remaining_research_cost,including current progress. No free fallback when ordinary goal None,strategic-income/material/quiet/legal-target/modern-body/Gold/two-body-upkeep/cohort gates and ranking unchanged.20 production and18 gap/score unchanged.",
+    "tests": {
+      "new": 8,
+      "expected_parent_red": {
+        "passed": 5,
+        "intended_positive_failures": 3
+      },
+      "old_test_contract_update": "Existing full12-turn negative is renamed and gives the blocked goal a full12-turn quote,so a13-turn alternative remains rejected under both old and new contracts. No evaluated game setup changed.",
+      "no_compile_or_fixture_failure_claimed_as_genuine_red": true,
+      "scope": "Controlled UNIT own-state host research quotes only;no evaluated or Native setup change."
+    },
+    "candidate_execution_plan": "All SAME6 known maps,2 workers,no selection/early stop.Only after all6 complete compare BOTH03 fallback and21 experimental parent;separately compare20 as needed. Actual actions/research/rosters/outcomes are observations,not private-helper activation or causal strength proof.",
+    "gates": "Original development>=1 verified focal Deity Domination owning all original capitals;then FINAL-source exact STRICT A/A;then all8 fresh pairs,>=1 Deity Domination,no fewer focal wins/no more Religion losses. Single Main integration/revalidation before Ready;ship only with all gates green.",
+    "unchanged": [
+      "Game/runtime/controller/pins/force283/genome/brain",
+      "map/difficulty/handicap/victory/verification/observer inputs",
+      "20 production and18 scoring/gap parameters",
+      "21 material/quiet/target/modern-body/Gold/upkeep/cohort guards and ranking",
+      "Advanced hook and research interruption semantics",
+      "war thresholds",
+      "final STRICT A/A and fresh thresholds"
+    ],
+    "original_registration_sha256": "2c8cb2eff49e0682a1af251d7ac7afcf2b32061b25b013e8b41e09c1baa4b813",
+    "implementation_module_sha256": "e3901a3463fdf0955b418073bf7905a7135ac3789b5a7f77d8bf7928b761f943",
+    "proposed_full_test_file_sha256": "b2dbc284a25782b960e13b56660e351f7b8a4a4a64e575bd3641c073403c24ff",
+    "proposal_overlap_check": {
+      "observed_utc": "2026-10-18T11:08:50.512878+00:00",
+      "open_prs_discovered": 30,
+      "planned_context_markers": [],
+      "records": [
+        {
+          "number": 4104,
+          "head": "5c541a7eaf6a2e0a9f8c920da330bacb72fca6c3",
+          "changed_files": 9,
+          "findings": [
+            {
+              "path": "src/ai/advanced.rs",
+              "owned_module_or_test_file_overlap": false,
+              "planned_context_marker_matches": [],
+              "hunk_headers": [
+                "@@ -8062,6 +8062,10 @@ pub struct AdvancedAi {",
+                "@@ -11092,6 +11096,7 @@ impl AdvancedAi {"
+              ]
+            }
+          ]
+        },
+        {
+          "number": 4103,
+          "head": "1a0c9fc96cf2ea06c32502f3ec133f89f272563d",
+          "changed_files": 8,
+          "findings": [
+            {
+              "path": "src/ai/advanced.rs",
+              "owned_module_or_test_file_overlap": false,
+              "planned_context_marker_matches": [],
+              "hunk_headers": [
+                "@@ -5496,6 +5496,13 @@ pub struct AdvancedAi {",
+                "@@ -9385,6 +9392,9 @@ mod runaway_expander;",
+                "@@ -10692,6 +10702,8 @@ impl AdvancedAi {",
+                "@@ -24219,7 +24231,7 @@ impl AdvancedAi {",
+                "@@ -24237,6 +24249,9 @@ impl AdvancedAi {",
+                "@@ -24264,6 +24279,7 @@ impl AdvancedAi {"
+              ]
+            }
+          ]
+        },
+        {
+          "number": 4102,
+          "head": "d252ca2c241e25d105e52ca0c0796d7326a00f9a",
+          "changed_files": 9,
+          "findings": [
+            {
+              "path": "src/ai/advanced.rs",
+              "owned_module_or_test_file_overlap": false,
+              "planned_context_marker_matches": [],
+              "hunk_headers": [
+                "@@ -6320,6 +6320,10 @@ pub struct AdvancedAi {",
+                "@@ -9381,6 +9385,10 @@ mod runaway_expander;",
+                "@@ -10843,6 +10851,7 @@ impl AdvancedAi {",
+                "@@ -37750,6 +37759,7 @@ impl AdvancedAi {"
+              ]
+            }
+          ]
+        },
+        {
+          "number": 4101,
+          "head": "11703534d3f8d3d15fd76cbebeb7d7ca0dee2fdb",
+          "changed_files": 8,
+          "findings": [
+            {
+              "path": "src/ai/advanced.rs",
+              "owned_module_or_test_file_overlap": false,
+              "planned_context_marker_matches": [],
+              "hunk_headers": [
+                "@@ -6320,6 +6320,14 @@ pub struct AdvancedAi {",
+                "@@ -10834,6 +10842,8 @@ impl AdvancedAi {"
+              ]
+            }
+          ]
+        },
+        {
+          "number": 4100,
+          "head": "baa614d7ae296d9ad8e18183d4b03eaa5bb3bb3c",
+          "changed_files": 8,
+          "findings": [
+            {
+              "path": "src/ai/advanced.rs",
+              "owned_module_or_test_file_overlap": false,
+              "planned_context_marker_matches": [],
+              "hunk_headers": [
+                "@@ -5496,6 +5496,9 @@ pub struct AdvancedAi {",
+                "@@ -9380,6 +9383,9 @@ mod medina_quarter;",
+                "@@ -10692,6 +10698,7 @@ impl AdvancedAi {",
+                "@@ -15566,6 +15573,10 @@ impl AdvancedAi {"
+              ]
+            }
+          ]
+        },
+        {
+          "number": 4036,
+          "head": "f6c5d09284fe44ef9d2283343e622713e4567694",
+          "changed_files": 5,
+          "findings": [
+            {
+              "path": "src/ai/advanced.rs",
+              "owned_module_or_test_file_overlap": false,
+              "planned_context_marker_matches": [],
+              "hunk_headers": [
+                "@@ -6147,6 +6147,10 @@ pub struct AdvancedAi {",
+                "@@ -8573,6 +8577,7 @@ impl AdvancedAi {"
+              ]
+            }
+          ]
+        },
+        {
+          "number": 3962,
+          "head": "3f09405ac377f78c3d301d23294c9adc4388d621",
+          "changed_files": 18,
+          "findings": [
+            {
+              "path": "src/ai/advanced.rs",
+              "owned_module_or_test_file_overlap": false,
+              "planned_context_marker_matches": [],
+              "hunk_headers": [
+                "@@ -4962,6 +4962,10 @@ pub struct AdvancedAi {",
+                "@@ -7554,6 +7558,7 @@ mod threatened_reserve;",
+                "@@ -8399,6 +8404,8 @@ impl AdvancedAi {",
+                "@@ -35542,6 +35549,11 @@ impl AdvancedAi {",
+                "@@ -35609,6 +35621,9 @@ impl AdvancedAi {",
+                "@@ -35694,7 +35709,10 @@ impl AdvancedAi {",
+                "@@ -35756,13 +35774,14 @@ impl AdvancedAi {",
+                "@@ -42264,6 +42283,7 @@ impl AdvancedAi {"
+              ]
+            }
+          ]
+        },
+        {
+          "number": 3845,
+          "head": "e17569a4657b0bf2e8bde87fc3f3da6151324c25",
+          "changed_files": 4,
+          "findings": [
+            {
+              "path": "src/ai/advanced.rs",
+              "owned_module_or_test_file_overlap": false,
+              "planned_context_marker_matches": [],
+              "hunk_headers": [
+                "@@ -29,6 +29,7 @@ mod defensive_apostle;",
+                "@@ -6436,6 +6437,8 @@ pub struct AdvancedAi {",
+                "@@ -8590,6 +8593,7 @@ impl AdvancedAi {",
+                "@@ -22800,6 +22804,20 @@ impl AdvancedAi {"
+              ]
+            }
+          ]
+        },
+        {
+          "number": 3800,
+          "head": "391f7cd60e3da4fdf8ba41303f7747eb674eaf3d",
+          "changed_files": 9,
+          "findings": [
+            {
+              "path": "src/ai/advanced.rs",
+              "owned_module_or_test_file_overlap": false,
+              "planned_context_marker_matches": [],
+              "hunk_headers": [
+                "@@ -5517,6 +5517,10 @@ pub struct AdvancedAi {",
+                "@@ -7306,6 +7310,7 @@ pub use air_city_assault::AirCityAssault;",
+                "@@ -8454,6 +8459,8 @@ impl AdvancedAi {",
+                "@@ -14788,7 +14795,9 @@ impl AdvancedAi {"
+              ]
+            }
+          ]
+        },
+        {
+          "number": 3796,
+          "head": "dd98d82dc4401323142cc00eb4d614d5ca7c319f",
+          "changed_files": 9,
+          "findings": [
+            {
+              "path": "src/ai/advanced.rs",
+              "owned_module_or_test_file_overlap": false,
+              "planned_context_marker_matches": [],
+              "hunk_headers": [
+                "@@ -6549,6 +6549,11 @@ pub struct AdvancedAi {",
+                "@@ -7271,8 +7276,8 @@ mod surprise_defense;",
+                "@@ -7394,6 +7399,7 @@ mod siege_train;",
+                "@@ -8531,6 +8537,8 @@ impl AdvancedAi {",
+                "@@ -36945,6 +36953,7 @@ impl AdvancedAi {",
+                "@@ -37136,18 +37145,20 @@ impl AdvancedAi {"
+              ]
+            }
+          ]
+        },
+        {
+          "number": 3791,
+          "head": "841c715b5fba5c1a97a0e7ac18acd0440ee2e1e9",
+          "changed_files": 10,
+          "findings": [
+            {
+              "path": "src/ai/advanced.rs",
+              "owned_module_or_test_file_overlap": false,
+              "planned_context_marker_matches": [],
+              "hunk_headers": [
+                "@@ -5501,6 +5501,11 @@ pub struct AdvancedAi {",
+                "@@ -8426,6 +8431,8 @@ impl AdvancedAi {",
+                "@@ -36930,14 +36937,22 @@ impl AdvancedAi {",
+                "@@ -37136,19 +37151,26 @@ impl AdvancedAi {",
+                "@@ -39726,6 +39748,7 @@ impl AdvancedAi {",
+                "@@ -39803,6 +39826,18 @@ impl AdvancedAi {"
+              ]
+            }
+          ]
+        },
+        {
+          "number": 3580,
+          "head": "17bd1e53ea33ddab70191a3d63354a5ec6398f17",
+          "changed_files": 10,
+          "findings": [
+            {
+              "path": "src/ai/advanced.rs",
+              "owned_module_or_test_file_overlap": false,
+              "planned_context_marker_matches": [],
+              "hunk_headers": [
+                "@@ -5910,6 +5910,8 @@ pub struct AdvancedAi {",
+                "@@ -7158,6 +7160,7 @@ use district_planning::DistrictPlanCache;",
+                "@@ -8299,6 +8302,7 @@ impl AdvancedAi {",
+                "@@ -26823,15 +26827,17 @@ impl AdvancedAi {"
+              ]
+            }
+          ]
+        }
+      ],
+      "same_marked_hooks_or_owned_modules_overlap": false,
+      "scope": "Proposal22 changes only the owned Conquest module and its owned tests,not Advanced hook lines. Full owned-path overlap is checked. File overlap alone is not line overlap; exact planned hook context and all new owned helper/test file paths are checked. Every overlapping PR head is re-read unchanged; complete per-PR file pagination is verified. No source mutation, takeover, PR body edit or push."
+    },
+    "fixture_correction_before_policy_implementation": {
+      "corrected_utc": "2026-10-18T11:19:27.584486+00:00",
+      "initial_parent_red_log": "relative-cost-v22-red.log",
+      "initial_parent_red_sha256": "67471da05e1204a78857452510e0adb5508cdbd9e61975071d0f5fe6404f87bc",
+      "initial_result": "4pass/4fail:two genuine intended-positive failures;the full-blocked-prerequisite positive and the blocked-goal-progress negative fail their numeric fixture precondition before the policy assertion. Not the intended5/3 RED.",
+      "cause": "The new relative-cost UNIT fixture inherited HorsebackRiding while its canonical AnimalHusbandry ancestor was unlearned. war_remaining_research_cost correctly counts every missing ancestor,so the actual blocked-goal full bill includes that missing cost.",
+      "correction": "Learn AnimalHusbandry only inside the new8-test controlled UNIT fixture. No policy thresholds,expected policy choices,evaluated setup,source21 policy module or older fixture changed. All8 corrected tests must rerun against exact parent21 before implementing22.",
+      "policy_module_unchanged_sha256": "7c29d6d61b31add619413ac1b1649dee18e1b7e52ee437e12d65674fdd4b49ca",
+      "original_formatted_test_file_sha256": "a3772916f1454325ac00d58f17f1c5712c8980f0eab77ee167849928556925be",
+      "corrected_unformatted_test_file_sha256": "226773c68d1dee1354ddf20a9ab347fc1459108c6a7b64160581c734998f6543",
+      "corrected_parent_red_required": {
+        "passed": 5,
+        "intended_positive_failures": 3
+      }
+    },
+    "corrected_full_test_file_sha256_before_rustfmt": "226773c68d1dee1354ddf20a9ab347fc1459108c6a7b64160581c734998f6543",
+    "full_budget_fixture_correction_after_first_green": {
+      "corrected_utc": "2026-10-18T11:38:24.552818+00:00",
+      "observed": "Exact registered policy first GREEN8;broader campaign65pass/1fail at the changed old full-budget negative.",
+      "cause": "That changed old UNIT negative also inherited HorsebackRiding without AnimalHusbandry. Its quoted direct Stirrups12-turn cost was not a full12-turn bill;the new relative policy correctly counted the extra missing ancestor and admitted the cheaper alternative.",
+      "correction": "Only the explicit old-contract UNIT negative learns AnimalHusbandry and asserts the actual full blocked bill is12 current Science-turns before expecting rejection of the13-turn alternative. New8 tests/fixtures and policy remain byte-exact. No evaluated or Native setup changed.",
+      "failed_campaign_sha256": "edace3c81d11ee0045ec26806dcc07af2418e49ba0180efbb2415c86963bc264",
+      "policy_unchanged_sha256": "e3901a3463fdf0955b418073bf7905a7135ac3789b5a7f77d8bf7928b761f943",
+      "new8_parent_red_preserved": "The complete corrected8-test parent21 RED5pass/3intended-positive failures is unchanged;no second parent rerun claimed for this separate old negative.",
+      "full_suite_rerun_required": true
+    }
+  },
+  "variant_22_registration_sha256": "36b4864c02f0e39d6c18f653e0c2275729eafd53d8b5d9b154d131ad04a16d42",
+  "variant_22_game_executions_at_checkpoint": 0,
+  "variant_22_fixture_prerequisite_correction": {
+    "corrected_utc": "2026-10-18T11:19:27.584486+00:00",
+    "initial_parent_red_log": "relative-cost-v22-red.log",
+    "initial_parent_red_sha256": "67471da05e1204a78857452510e0adb5508cdbd9e61975071d0f5fe6404f87bc",
+    "initial_result": "4pass/4fail:two genuine intended-positive failures;the full-blocked-prerequisite positive and the blocked-goal-progress negative fail their numeric fixture precondition before the policy assertion. Not the intended5/3 RED.",
+    "cause": "The new relative-cost UNIT fixture inherited HorsebackRiding while its canonical AnimalHusbandry ancestor was unlearned. war_remaining_research_cost correctly counts every missing ancestor,so the actual blocked-goal full bill includes that missing cost.",
+    "correction": "Learn AnimalHusbandry only inside the new8-test controlled UNIT fixture. No policy thresholds,expected policy choices,evaluated setup,source21 policy module or older fixture changed. All8 corrected tests must rerun against exact parent21 before implementing22.",
+    "policy_module_unchanged_sha256": "7c29d6d61b31add619413ac1b1649dee18e1b7e52ee437e12d65674fdd4b49ca",
+    "original_formatted_test_file_sha256": "a3772916f1454325ac00d58f17f1c5712c8980f0eab77ee167849928556925be",
+    "corrected_unformatted_test_file_sha256": "226773c68d1dee1354ddf20a9ab347fc1459108c6a7b64160581c734998f6543",
+    "corrected_parent_red_required": {
+      "passed": 5,
+      "intended_positive_failures": 3
+    }
+  },
+  "variant_22_full_budget_fixture_correction": {
+    "corrected_utc": "2026-10-18T11:38:24.552818+00:00",
+    "observed": "Exact registered policy first GREEN8;broader campaign65pass/1fail at the changed old full-budget negative.",
+    "cause": "That changed old UNIT negative also inherited HorsebackRiding without AnimalHusbandry. Its quoted direct Stirrups12-turn cost was not a full12-turn bill;the new relative policy correctly counted the extra missing ancestor and admitted the cheaper alternative.",
+    "correction": "Only the explicit old-contract UNIT negative learns AnimalHusbandry and asserts the actual full blocked bill is12 current Science-turns before expecting rejection of the13-turn alternative. New8 tests/fixtures and policy remain byte-exact. No evaluated or Native setup changed.",
+    "failed_campaign_sha256": "edace3c81d11ee0045ec26806dcc07af2418e49ba0180efbb2415c86963bc264",
+    "policy_unchanged_sha256": "e3901a3463fdf0955b418073bf7905a7135ac3789b5a7f77d8bf7928b761f943",
+    "new8_parent_red_preserved": "The complete corrected8-test parent21 RED5pass/3intended-positive failures is unchanged;no second parent rerun claimed for this separate old negative.",
+    "full_suite_rerun_required": true
+  },
+  "variant_22_validation": {
+    "red": {
+      "passed": 5,
+      "intended_failed": 3,
+      "log": "relative-cost-v22-red-canonical.log"
+    },
+    "green_suites_passed": {
+      "green": 8,
+      "campaign": 66,
+      "research": 23,
+      "research-all": 234,
+      "modernization": 22,
+      "faith": 29,
+      "policy": 71,
+      "production": 237,
+      "siege": 492,
+      "solvency": 14
+    },
+    "green_suites_ignored": {
+      "green": 0,
+      "campaign": 0,
+      "research": 0,
+      "research-all": 5,
+      "modernization": 0,
+      "faith": 0,
+      "policy": 0,
+      "production": 1,
+      "siege": 1,
+      "solvency": 0
+    },
+    "cargo_check_tests": "PASS",
+    "20_production_and_18_gap_after_new_helper_byte_exact": true,
+    "registered_parameters_and_evaluated_setup_unchanged": true,
+    "source_quality": "Required on exact committed source before freeze/push;not yet claimed",
+    "body_metadata_terminal_green": {
+      "head": "39e4a1464bfbcdab28f1334bdeefc813d56d6430",
+      "observed_utc": "2026-10-18T11:51:16.550680+00:00",
+      "new_metadata_runs": [
+        {
+          "conclusion": "success",
+          "databaseId": 39124579815,
+          "headSha": "39e4a1464bfbcdab28f1334bdeefc813d56d6430",
+          "status": "completed",
+          "workflowName": "overwrite-guard"
+        },
+        {
+          "conclusion": "success",
+          "databaseId": 39124579765,
+          "headSha": "39e4a1464bfbcdab28f1334bdeefc813d56d6430",
+          "status": "completed",
+          "workflowName": "collaboration-policy"
+        }
+      ],
+      "checks": [
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T11:13:26Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39121450335/job/117657728710",
+          "name": "cargo-test",
+          "startedAt": "2026-10-18T11:00:06Z",
+          "status": "COMPLETED",
+          "workflowName": "cargo-test"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T11:04:44Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39121450447/job/117657728857",
+          "name": "collaboration-policy",
+          "startedAt": "2026-10-18T11:00:06Z",
+          "status": "COMPLETED",
+          "workflowName": "collaboration-policy"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T11:50:55Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39124579765/job/117666909495",
+          "name": "collaboration-policy",
+          "startedAt": "2026-10-18T11:46:23Z",
+          "status": "COMPLETED",
+          "workflowName": "collaboration-policy"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T11:04:28Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39121450584/job/117657729406",
+          "name": "overwrite-guard",
+          "startedAt": "2026-10-18T11:00:06Z",
+          "status": "COMPLETED",
+          "workflowName": "overwrite-guard"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T11:48:43Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39124579815/job/117666909618",
+          "name": "overwrite-guard",
+          "startedAt": "2026-10-18T11:46:24Z",
+          "status": "COMPLETED",
+          "workflowName": "overwrite-guard"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T11:03:25Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39121450400/job/117657728925",
+          "name": "rust-quality",
+          "startedAt": "2026-10-18T11:00:06Z",
+          "status": "COMPLETED",
+          "workflowName": "rust-quality"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T11:10:41Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39121450271/job/117657728417",
+          "name": "paired-cost",
+          "startedAt": "2026-10-18T11:00:05Z",
+          "status": "COMPLETED",
+          "workflowName": "speed"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T11:01:25Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39121450335/job/117657728875",
+          "name": "published-build",
+          "startedAt": "2026-10-18T11:00:06Z",
+          "status": "COMPLETED",
+          "workflowName": "cargo-test"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T11:00:50Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39121450335/job/117657728832",
+          "name": "control-mod",
+          "startedAt": "2026-10-18T11:00:06Z",
+          "status": "COMPLETED",
+          "workflowName": "cargo-test"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T11:00:10Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://dashboard.gitguardian.com",
+          "name": "GitGuardian Security Checks",
+          "startedAt": "2026-10-18T11:00:02Z",
+          "status": "COMPLETED",
+          "workflowName": ""
+        }
+      ],
+      "all_source_runs": [
+        {
+          "conclusion": "success",
+          "databaseId": 39124579815,
+          "headSha": "39e4a1464bfbcdab28f1334bdeefc813d56d6430",
+          "status": "completed",
+          "workflowName": "overwrite-guard"
+        },
+        {
+          "conclusion": "success",
+          "databaseId": 39124579765,
+          "headSha": "39e4a1464bfbcdab28f1334bdeefc813d56d6430",
+          "status": "completed",
+          "workflowName": "collaboration-policy"
+        },
+        {
+          "conclusion": "success",
+          "databaseId": 39121450400,
+          "headSha": "39e4a1464bfbcdab28f1334bdeefc813d56d6430",
+          "status": "completed",
+          "workflowName": "rust-quality"
+        },
+        {
+          "conclusion": "success",
+          "databaseId": 39121450447,
+          "headSha": "39e4a1464bfbcdab28f1334bdeefc813d56d6430",
+          "status": "completed",
+          "workflowName": "collaboration-policy"
+        },
+        {
+          "conclusion": "success",
+          "databaseId": 39121450584,
+          "headSha": "39e4a1464bfbcdab28f1334bdeefc813d56d6430",
+          "status": "completed",
+          "workflowName": "overwrite-guard"
+        },
+        {
+          "conclusion": "success",
+          "databaseId": 39121450335,
+          "headSha": "39e4a1464bfbcdab28f1334bdeefc813d56d6430",
+          "status": "completed",
+          "workflowName": "cargo-test"
+        },
+        {
+          "conclusion": "success",
+          "databaseId": 39121450271,
+          "headSha": "39e4a1464bfbcdab28f1334bdeefc813d56d6430",
+          "status": "completed",
+          "workflowName": "speed"
+        }
+      ]
+    }
+  },
+  "variant_22_final_overlap_check": {
+    "observed_utc": "2026-10-18T11:51:38.585197+00:00",
+    "open_prs_discovered": 29,
+    "planned_context_markers": [],
+    "records": [
+      {
+        "number": 4105,
+        "head": "0b8eb8fe3b10db4244e5971f516184bcf6f686f6",
+        "changed_files": 9,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -6327,6 +6327,10 @@ pub struct AdvancedAi {",
+              "@@ -9374,6 +9378,8 @@ mod launched_racer;",
+              "@@ -10855,6 +10861,7 @@ impl AdvancedAi {",
+              "@@ -15387,6 +15394,11 @@ impl AdvancedAi {",
+              "@@ -24693,7 +24705,13 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 4104,
+        "head": "642dc681a629db52e89bb744c7f76e1867128be1",
+        "changed_files": 10,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -8062,6 +8062,10 @@ pub struct AdvancedAi {",
+              "@@ -11092,6 +11096,7 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 4103,
+        "head": "7f38f7ed91d1f4fbb7f2b47392b601ee7f4e5894",
+        "changed_files": 9,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -5496,6 +5496,13 @@ pub struct AdvancedAi {",
+              "@@ -9385,6 +9392,9 @@ mod runaway_expander;",
+              "@@ -10692,6 +10702,8 @@ impl AdvancedAi {",
+              "@@ -24219,7 +24231,7 @@ impl AdvancedAi {",
+              "@@ -24237,6 +24249,9 @@ impl AdvancedAi {",
+              "@@ -24264,6 +24279,7 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 4102,
+        "head": "d252ca2c241e25d105e52ca0c0796d7326a00f9a",
+        "changed_files": 9,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -6320,6 +6320,10 @@ pub struct AdvancedAi {",
+              "@@ -9381,6 +9385,10 @@ mod runaway_expander;",
+              "@@ -10843,6 +10851,7 @@ impl AdvancedAi {",
+              "@@ -37750,6 +37759,7 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 4036,
+        "head": "f6c5d09284fe44ef9d2283343e622713e4567694",
+        "changed_files": 5,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -6147,6 +6147,10 @@ pub struct AdvancedAi {",
+              "@@ -8573,6 +8577,7 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3962,
+        "head": "3f09405ac377f78c3d301d23294c9adc4388d621",
+        "changed_files": 18,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -4962,6 +4962,10 @@ pub struct AdvancedAi {",
+              "@@ -7554,6 +7558,7 @@ mod threatened_reserve;",
+              "@@ -8399,6 +8404,8 @@ impl AdvancedAi {",
+              "@@ -35542,6 +35549,11 @@ impl AdvancedAi {",
+              "@@ -35609,6 +35621,9 @@ impl AdvancedAi {",
+              "@@ -35694,7 +35709,10 @@ impl AdvancedAi {",
+              "@@ -35756,13 +35774,14 @@ impl AdvancedAi {",
+              "@@ -42264,6 +42283,7 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3845,
+        "head": "e17569a4657b0bf2e8bde87fc3f3da6151324c25",
+        "changed_files": 4,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -29,6 +29,7 @@ mod defensive_apostle;",
+              "@@ -6436,6 +6437,8 @@ pub struct AdvancedAi {",
+              "@@ -8590,6 +8593,7 @@ impl AdvancedAi {",
+              "@@ -22800,6 +22804,20 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3800,
+        "head": "391f7cd60e3da4fdf8ba41303f7747eb674eaf3d",
+        "changed_files": 9,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -5517,6 +5517,10 @@ pub struct AdvancedAi {",
+              "@@ -7306,6 +7310,7 @@ pub use air_city_assault::AirCityAssault;",
+              "@@ -8454,6 +8459,8 @@ impl AdvancedAi {",
+              "@@ -14788,7 +14795,9 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3796,
+        "head": "dd98d82dc4401323142cc00eb4d614d5ca7c319f",
+        "changed_files": 9,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -6549,6 +6549,11 @@ pub struct AdvancedAi {",
+              "@@ -7271,8 +7276,8 @@ mod surprise_defense;",
+              "@@ -7394,6 +7399,7 @@ mod siege_train;",
+              "@@ -8531,6 +8537,8 @@ impl AdvancedAi {",
+              "@@ -36945,6 +36953,7 @@ impl AdvancedAi {",
+              "@@ -37136,18 +37145,20 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3791,
+        "head": "841c715b5fba5c1a97a0e7ac18acd0440ee2e1e9",
+        "changed_files": 10,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -5501,6 +5501,11 @@ pub struct AdvancedAi {",
+              "@@ -8426,6 +8431,8 @@ impl AdvancedAi {",
+              "@@ -36930,14 +36937,22 @@ impl AdvancedAi {",
+              "@@ -37136,19 +37151,26 @@ impl AdvancedAi {",
+              "@@ -39726,6 +39748,7 @@ impl AdvancedAi {",
+              "@@ -39803,6 +39826,18 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3580,
+        "head": "17bd1e53ea33ddab70191a3d63354a5ec6398f17",
+        "changed_files": 10,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -5910,6 +5910,8 @@ pub struct AdvancedAi {",
+              "@@ -7158,6 +7160,7 @@ use district_planning::DistrictPlanCache;",
+              "@@ -8299,6 +8302,7 @@ impl AdvancedAi {",
+              "@@ -26823,15 +26827,17 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      }
+    ],
+    "same_marked_hooks_or_owned_modules_overlap": false,
+    "scope": "Final22 precommit refresh changes only the owned Conquest module and its owned tests,not Advanced hook lines. Full owned-path overlap is checked. File overlap alone is not line overlap; exact planned hook context and all new owned helper/test file paths are checked. Every overlapping PR head is re-read unchanged; complete per-PR file pagination is verified. No source mutation, takeover, PR body edit or push."
   }
 }

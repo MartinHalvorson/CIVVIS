@@ -174,6 +174,7 @@ impl AdvancedAi {
         if !queued_upkeep.is_finite() {
             return None;
         }
+        let ordinary_cost = Self::war_remaining_research_cost(game, player, ordinary_goal);
         game.rules
             .units
             .iter()
@@ -224,7 +225,13 @@ impl AdvancedAi {
                         )
                     });
                 let cost = Self::war_remaining_research_cost(game, player, technology);
-                (obsolete >= 3 && cost.is_finite() && cost > 0.0 && cost / science <= 12.0)
+                (obsolete >= 3
+                    && cost.is_finite()
+                    && cost > 0.0
+                    && (cost / science <= 12.0
+                        || (ordinary_cost.is_finite()
+                            && ordinary_cost > 0.0
+                            && cost <= ordinary_cost)))
                     .then_some((technology, gain / cost))
             })
             .max_by(|(left, left_value), (right, right_value)| {

@@ -1089,7 +1089,8 @@ fn conquest_campaign_material_free_frontline_preserves_quiet_target_and_major_wa
 }
 
 #[test]
-fn conquest_campaign_material_free_frontline_counts_the_full_twelve_turn_research_bill() {
+fn conquest_campaign_material_free_frontline_counts_the_full_research_bill_before_a_relative_override(
+) {
     let (mut game, controller, plan, _, _) = material_free_frontline_research();
     let science = AdvancedAi::war_science_per_turn(&game, 0);
     game.players[0].techs.remove(&crate::name!("mathematics"));
@@ -1103,6 +1104,22 @@ fn conquest_campaign_material_free_frontline_counts_the_full_twelve_turn_researc
                 progress: Some(0.0),
             },
         );
+    game.players[0].techs.insert(crate::name!("apprenticeship"));
+    std::sync::Arc::make_mut(&mut game.host_research_quotes)
+        .entry(0)
+        .or_default()
+        .insert(
+            crate::name!("stirrups"),
+            crate::game::HostResearchQuote {
+                cost: Some(science * 12.0),
+                progress: Some(0.0),
+            },
+        );
+    game.players[0]
+        .techs
+        .insert(crate::name!("animal_husbandry"));
+    let ordinary_bill = AdvancedAi::war_remaining_research_cost(&game, 0, crate::name!("stirrups"));
+    assert!((ordinary_bill / science - 12.0).abs() < 1e-9);
     assert_eq!(
         material_free_frontline_goal(&game, &controller, &plan),
         None
@@ -1119,6 +1136,150 @@ fn conquest_campaign_material_free_frontline_respects_current_treasury_and_two_b
     );
     game.players[0].gold = 500.0;
     game.players[0].gold_per_turn = 5.0;
+    assert_eq!(
+        material_free_frontline_goal(&game, &controller, &plan),
+        None
+    );
+}
+
+fn material_free_relative_quote(game: &mut Game, technology: Name, cost: f64, progress: f64) {
+    std::sync::Arc::make_mut(&mut game.host_research_quotes)
+        .entry(0)
+        .or_default()
+        .insert(
+            technology,
+            crate::game::HostResearchQuote {
+                cost: Some(cost),
+                progress: Some(progress),
+            },
+        );
+}
+
+fn material_free_relative_research(
+    candidate_turns: f64,
+    ordinary_turns: f64,
+) -> (Game, AdvancedAi, StrategicPlan) {
+    let (mut game, controller, plan, _, _) = material_free_frontline_research();
+    game.players[0]
+        .techs
+        .insert(crate::name!("animal_husbandry"));
+    game.players[0].techs.insert(crate::name!("apprenticeship"));
+    let science = AdvancedAi::war_science_per_turn(&game, 0);
+    material_free_relative_quote(
+        &mut game,
+        crate::name!("military_tactics"),
+        science * candidate_turns,
+        0.0,
+    );
+    material_free_relative_quote(
+        &mut game,
+        crate::name!("stirrups"),
+        science * ordinary_turns,
+        0.0,
+    );
+    assert_eq!(
+        controller.wartime_modernization_tech(&game, 0).as_deref(),
+        Some("stirrups")
+    );
+    (game, controller, plan)
+}
+
+#[test]
+fn conquest_campaign_material_free_relative_accepts_a_no_costlier_unlock_over_twelve_turns() {
+    let (game, controller, plan) = material_free_relative_research(13.0, 14.0);
+    let before = game.log.len();
+    assert_eq!(
+        material_free_frontline_goal(&game, &controller, &plan).as_deref(),
+        Some("military_tactics")
+    );
+    assert_eq!(game.log.len(), before);
+}
+
+#[test]
+fn conquest_campaign_material_free_relative_reaches_the_actual_research_choice() {
+    let (mut game, controller, plan) = material_free_relative_research(13.0, 14.0);
+    controller.advanced_research(&mut game, 0, &plan);
+    assert_eq!(
+        game.players[0].research.as_deref(),
+        Some("military_tactics")
+    );
+}
+
+#[test]
+fn conquest_campaign_material_free_relative_counts_the_blocked_goals_missing_prerequisites() {
+    let (mut game, controller, plan) = material_free_relative_research(13.0, 14.0);
+    let science = AdvancedAi::war_science_per_turn(&game, 0);
+    game.players[0]
+        .techs
+        .remove(&crate::name!("apprenticeship"));
+    material_free_relative_quote(&mut game, crate::name!("stirrups"), science * 8.0, 0.0);
+    material_free_relative_quote(
+        &mut game,
+        crate::name!("apprenticeship"),
+        science * 6.0,
+        0.0,
+    );
+    let bill = AdvancedAi::war_remaining_research_cost(&game, 0, crate::name!("stirrups"));
+    assert!((bill / science - 14.0).abs() < 1e-9);
+    assert_eq!(
+        material_free_frontline_goal(&game, &controller, &plan).as_deref(),
+        Some("military_tactics")
+    );
+}
+
+#[test]
+fn conquest_campaign_material_free_relative_rejects_a_costlier_unlock_over_twelve_turns() {
+    let (game, controller, plan) = material_free_relative_research(13.0, 12.0);
+    assert_eq!(
+        material_free_frontline_goal(&game, &controller, &plan),
+        None
+    );
+}
+
+#[test]
+fn conquest_campaign_material_free_relative_counts_all_alternative_prerequisites() {
+    let (mut game, controller, plan) = material_free_relative_research(13.0, 14.0);
+    let science = AdvancedAi::war_science_per_turn(&game, 0);
+    game.players[0].techs.remove(&crate::name!("mathematics"));
+    material_free_relative_quote(&mut game, crate::name!("mathematics"), science * 2.0, 0.0);
+    let bill = AdvancedAi::war_remaining_research_cost(&game, 0, crate::name!("military_tactics"));
+    assert!((bill / science - 15.0).abs() < 1e-9);
+    assert_eq!(
+        material_free_frontline_goal(&game, &controller, &plan),
+        None
+    );
+}
+
+#[test]
+fn conquest_campaign_material_free_relative_subtracts_actual_blocked_goal_progress() {
+    let (mut game, controller, plan) = material_free_relative_research(13.0, 15.0);
+    let science = AdvancedAi::war_science_per_turn(&game, 0);
+    material_free_relative_quote(
+        &mut game,
+        crate::name!("stirrups"),
+        science * 15.0,
+        science * 3.0,
+    );
+    let bill = AdvancedAi::war_remaining_research_cost(&game, 0, crate::name!("stirrups"));
+    assert!((bill / science - 12.0).abs() < 1e-9);
+    assert_eq!(
+        material_free_frontline_goal(&game, &controller, &plan),
+        None
+    );
+}
+
+#[test]
+fn conquest_campaign_material_free_relative_rejects_a_zero_blocked_goal_budget() {
+    let (game, controller, plan) = material_free_relative_research(13.0, 0.0);
+    assert_eq!(
+        material_free_frontline_goal(&game, &controller, &plan),
+        None
+    );
+}
+
+#[test]
+fn conquest_campaign_material_free_relative_rejects_a_zero_alternative_bill() {
+    let (game, controller, plan) = material_free_relative_research(0.0, 14.0);
     assert_eq!(
         material_free_frontline_goal(&game, &controller, &plan),
         None
