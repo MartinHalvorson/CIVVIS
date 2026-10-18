@@ -1,6 +1,121 @@
 use super::*;
 
 impl AdvancedAi {
+    pub(super) fn reserve_conquest_capital_science(
+        &self,
+        game: &mut Game,
+        player: usize,
+        plan: &StrategicPlan,
+    ) -> Option<(u32, Item)> {
+        let (city, item) = self.conquest_campaign_capital_science_item(game, player, plan)?;
+        game.apply(
+            player,
+            &Action::Produce {
+                city,
+                item: item.clone(),
+            },
+        )
+        .ok()?;
+        think!(self.journal(), Economy, Decision,
+            "{} reserves {} for conquest's capital science foundation", game.cities[&city].name, Self::plain_item(&item);
+            "the existing capital Campus reservation reaches two-city quiet Domination staging; only an idle queue or an uninvested pre-45 field soldier yields, while actual legal site, host build-time, Settler, treasury, Prophet and defence gates hold");
+        Some((city, item))
+    }
+
+    pub(super) fn conquest_campaign_capital_science_item(
+        &self,
+        game: &Game,
+        player: usize,
+        plan: &StrategicPlan,
+    ) -> Option<(u32, Item)> {
+        if !self.capital_campus_before_the_plaza
+            || !self.lane_delegates_now(
+                self.active_victory_target(game),
+                self.phase_specialization_active(game),
+            )
+            || self.base.minor
+            || self.base.barb
+            || self.active_victory_target(game) != Some(VictoryTarget::Domination)
+            || self.war_plan.is_some()
+            || !matches!(
+                plan.strategy,
+                GrandStrategy::Expansion | GrandStrategy::Conquest
+            )
+            || plan.rush
+            || plan.threatened_city.is_some()
+            || !game.players[player]
+                .techs
+                .contains(&crate::name!("writing"))
+            || game.players.iter().any(|rival| {
+                rival.id != player
+                    && rival.alive
+                    && !rival.is_minor
+                    && !rival.is_barbarian
+                    && game.is_at_war(player, rival.id)
+            })
+        {
+            return None;
+        }
+        let cities = game.player_city_ids(player);
+        let income = game.players[player].gold_per_turn;
+        let treasury = game.players[player].gold;
+        if cities.len() < 2
+            || !income.is_finite()
+            || !treasury.is_finite()
+            || (income < -0.5 && treasury < 100.0 + 25.0 * cities.len() as f64)
+            || self.base.plaza_prophet_race_open(game, player)
+        {
+            return None;
+        }
+        let capital = cities.iter().copied().find(|city| {
+            let held = &game.cities[city];
+            held.is_capital && held.original_owner == player
+        })?;
+        let held = &game.cities[&capital];
+        if (held.last_attacked > 0 && game.turn.saturating_sub(held.last_attacked) <= 4)
+            || self
+                .base
+                .barbarian_local_alarm_for_controller(game, player, capital)
+            || held.queue.len() > 1
+        {
+            return None;
+        }
+        if let Some(item) = held.queue.first() {
+            let Item::Unit { unit } = item else {
+                return None;
+            };
+            let specification = &game.rules.units[*unit];
+            let invested = game.item_invested_production(capital, item);
+            if specification.class != "military"
+                || matches!(specification.domain.as_deref(), Some("sea" | "air"))
+                || !matches!(
+                    specification.promotion_class.as_str(),
+                    "melee" | "ranged" | "anti_cavalry" | "light_cavalry" | "heavy_cavalry"
+                )
+                || specification.strength >= 45.0
+                || !invested.is_finite()
+                || invested > 0.0
+            {
+                return None;
+            }
+        }
+        let settlers = game.player_unit_ids(player).into_iter()
+            .filter(|unit| game.units[unit].kind == "settler")
+            .count()
+            + cities.iter().filter(|city| {
+                matches!(game.cities[city].queue.first(), Some(Item::Unit { unit }) if unit == "settler")
+            }).count();
+        if self
+            .base
+            .settler_due(game, player, capital, cities.len(), settlers)
+        {
+            return None;
+        }
+        BasicAi::first_campus_item(game, player, capital)
+            .or_else(|| BasicAi::campus_library_item(game, player, capital))
+            .map(|item| (capital, item))
+    }
+
     pub(super) fn reserve_delegated_conquest_frontline(
         &self,
         game: &mut Game,
@@ -138,7 +253,7 @@ impl AdvancedAi {
                     obsolete + usize::from(strength + 15.0 <= spec.strength),
                 )
             });
-        if modern >= obsolete || obsolete < 3 {
+        if modern >= 2 || obsolete < 3 {
             return 0;
         }
         let surcharge = game
@@ -174,10 +289,7 @@ impl AdvancedAi {
                     )
                 },
             );
-        if queued_modern >= 2 {
-            return 0;
-        }
-        let gap = obsolete.saturating_sub(modern + queued_modern);
+        let gap = 2usize.saturating_sub(modern + queued_modern);
         let income = game.players[player].gold_per_turn;
         let mut floor = 30.0 + (-income).max(0.0);
         if self.solvent_or_hold {

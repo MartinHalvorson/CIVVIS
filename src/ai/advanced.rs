@@ -49117,6 +49117,7 @@ impl AdvancedAi {
             // no-op while the gene is off. See `advanced/capital_campus_claim.rs`.
             self.claim_capital_campus(g, pid, &plan);
             if lane_delegating {
+                let _ = self.reserve_conquest_capital_science(g, pid, &plan);
                 let _ = self.reserve_delegated_conquest_frontline(g, pid, &plan);
             }
             self.reserve_government_plaza(g, pid, &plan);

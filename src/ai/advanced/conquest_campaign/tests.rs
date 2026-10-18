@@ -430,13 +430,13 @@ fn frontline_production() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
 }
 
 #[test]
-fn conquest_campaign_frontline_gap_values_the_current_obsolete_cohort_without_actions() {
+fn conquest_campaign_frontline_gap_values_two_current_bodies_without_actions() {
     let (game, controller, plan, home, _) = frontline_production();
     let actions = game.log.len();
     let gold = game.players[0].gold;
     assert_eq!(
         controller.conquest_campaign_frontline_gap(&game, 0, home, &plan, crate::name!("pikeman")),
-        3
+        2
     );
     assert_eq!(game.log.len(), actions);
     assert_eq!(game.players[0].gold, gold);
@@ -464,7 +464,6 @@ fn conquest_campaign_frontline_gap_counts_wounded_modern_bodies_toward_the_cap()
     game.spawn_test_unit("pikeman", 0, (29, 20));
     let wounded = game.spawn_test_unit("man_at_arms", 0, (31, 20));
     game.units.get_mut(&wounded).unwrap().hp = 25;
-    game.spawn_test_unit("pikeman", 0, (30, 21));
     assert_eq!(
         controller.conquest_campaign_frontline_gap(&game, 0, home, &plan, crate::name!("pikeman")),
         0
@@ -479,10 +478,9 @@ fn conquest_campaign_frontline_gap_counts_other_cities_queues() {
     }];
     assert_eq!(
         controller.conquest_campaign_frontline_gap(&game, 0, home, &plan, crate::name!("pikeman")),
-        2
+        1
     );
     game.spawn_test_unit("man_at_arms", 0, (31, 20));
-    game.spawn_test_unit("pikeman", 0, (30, 21));
     assert_eq!(
         controller.conquest_campaign_frontline_gap(&game, 0, home, &plan, crate::name!("pikeman")),
         0
@@ -498,7 +496,7 @@ fn conquest_campaign_frontline_gap_does_not_self_block_a_current_queue() {
     game.spawn_test_unit("man_at_arms", 0, (31, 20));
     assert_eq!(
         controller.conquest_campaign_frontline_gap(&game, 0, home, &plan, crate::name!("pikeman")),
-        2
+        1
     );
 }
 
@@ -606,7 +604,7 @@ fn conquest_campaign_frontline_gap_reserves_upkeep_for_queued_bodies() {
     game.players[0].gold_per_turn = 4.0;
     assert_eq!(
         controller.conquest_campaign_frontline_gap(&game, 0, home, &plan, crate::name!("pikeman")),
-        3
+        2
     );
     game.cities.get_mut(&second).unwrap().queue = vec![Item::Unit {
         unit: crate::name!("heavy_chariot"),
@@ -766,7 +764,6 @@ fn conquest_campaign_delegated_frontline_respects_wounded_body_and_formation_cap
     let (mut game, controller, plan, _, second) = delegated_frontline();
     let wounded = game.spawn_test_unit("pikeman", 0, (29, 20));
     game.units.get_mut(&wounded).unwrap().hp = 25;
-    game.spawn_test_unit("pikeman", 0, (30, 21));
     game.cities.get_mut(&second).unwrap().queue = vec![Item::Formation {
         unit: crate::name!("pikeman"),
         formation: 1,
@@ -865,161 +862,343 @@ fn conquest_campaign_delegated_frontline_uses_the_current_city_item_eta() {
     );
 }
 
-fn cohort_sized_frontline() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
-    let (game, controller, plan, home, second) = delegated_frontline();
-    assert_eq!(game.players[0].civ, "Gran Colombia");
-    assert_eq!(
-        game.units
-            .values()
-            .filter(|unit| unit.owner == 0 && unit.hp > 0 && unit.kind == "warrior")
-            .count(),
-        3
+fn capital_science_foundation() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
+    let (mut game, mut controller, plan, home, second) = delegated_frontline();
+    controller.enable_capital_campus_before_the_plaza();
+    controller.base.w.city_target = 1.0;
+    std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+        home,
+        crate::rules::Yields {
+            production: 30.0,
+            ..crate::rules::Yields::default()
+        },
     );
+    assert!(game.cities[&home].is_capital);
+    assert_eq!(game.player_city_ids(0).len(), 2);
+    assert_eq!(controller.capital_campus_claim_item(&game, 0, &plan), None);
+    assert!(BasicAi::first_campus_item(&game, 0, home).is_some());
     (game, controller, plan, home, second)
 }
 
+fn capital_science_completed_campus(game: &mut Game, home: u32) {
+    let Item::District { district, pos } = BasicAi::first_campus_item(game, 0, home).unwrap()
+    else {
+        panic!("fixture needs a legal current Campus");
+    };
+    game.map.tiles.get_mut(&pos).unwrap().district = Some(district);
+    game.cities
+        .get_mut(&home)
+        .unwrap()
+        .districts
+        .insert(district, pos);
+    assert!(BasicAi::campus_library_item(game, 0, home).is_some());
+}
+
 #[test]
-fn conquest_campaign_cohort_sized_frontline_prices_the_existing_obsolete_army() {
-    let (mut game, controller, plan, home, _) = cohort_sized_frontline();
-    for _ in 0..2 {
-        game.spawn_test_unit("warrior", 0, (30, 20));
-    }
+fn conquest_campaign_capital_science_selects_a_current_legal_two_city_campus_without_actions() {
+    let (game, controller, plan, home, _) = capital_science_foundation();
     let before = game.log.len();
+    let expected = BasicAi::first_campus_item(&game, 0, home).unwrap();
     assert_eq!(
-        controller.conquest_campaign_frontline_gap(&game, 0, home, &plan, crate::name!("pikeman")),
-        5
+        controller.conquest_campaign_capital_science_item(&game, 0, &plan),
+        Some((home, expected))
     );
     assert_eq!(game.log.len(), before);
+    assert!(game.cities[&home].queue.is_empty());
 }
 
 #[test]
-fn conquest_campaign_cohort_sized_frontline_keeps_one_slot_after_two_owned_bodies() {
-    let (mut game, controller, plan, home, _) = cohort_sized_frontline();
-    for _ in 0..2 {
-        game.spawn_test_unit("pikeman", 0, (30, 20));
+fn conquest_campaign_capital_science_replaces_only_uninvested_early_field_orders() {
+    let (game, controller, plan, home, _) = capital_science_foundation();
+    for unit in [crate::name!("archer"), crate::name!("heavy_chariot")] {
+        let mut current = game.clone();
+        current
+            .cities
+            .get_mut(&home)
+            .unwrap()
+            .queue
+            .push(Item::Unit { unit });
+        assert_eq!(
+            current.item_invested_production(home, &Item::Unit { unit }),
+            0.0
+        );
+        assert!(controller
+            .conquest_campaign_capital_science_item(&current, 0, &plan)
+            .is_some());
     }
+}
+
+#[test]
+fn conquest_campaign_capital_science_finishes_the_existing_campus_with_its_library() {
+    let (mut game, controller, plan, home, _) = capital_science_foundation();
+    capital_science_completed_campus(&mut game, home);
+    let expected = BasicAi::campus_library_item(&game, 0, home).unwrap();
     assert_eq!(
-        controller.conquest_campaign_frontline_gap(&game, 0, home, &plan, crate::name!("pikeman")),
-        1
+        controller.conquest_campaign_capital_science_item(&game, 0, &plan),
+        Some((home, expected))
     );
 }
 
 #[test]
-fn conquest_campaign_cohort_sized_frontline_counts_owned_and_queued_formations() {
-    let (mut game, controller, plan, home, second) = cohort_sized_frontline();
-    for _ in 0..2 {
-        game.spawn_test_unit("warrior", 0, (30, 20));
-        game.spawn_test_unit("pikeman", 0, (30, 20));
-    }
-    game.cities.get_mut(&second).unwrap().queue = vec![Item::Formation {
-        unit: crate::name!("pikeman"),
-        formation: 1,
-    }];
-    assert_eq!(
-        controller.conquest_campaign_frontline_gap(&game, 0, home, &plan, crate::name!("pikeman")),
-        2
-    );
-}
-
-#[test]
-fn conquest_campaign_cohort_sized_frontline_reserves_a_funded_third_body() {
-    let (mut game, controller, plan, _, _) = cohort_sized_frontline();
-    for _ in 0..2 {
-        game.spawn_test_unit("pikeman", 0, (30, 20));
-    }
+fn conquest_campaign_capital_science_issues_one_ordinary_produce_without_grants_or_debits() {
+    let (mut game, controller, plan, home, _) = capital_science_foundation();
     let before = game.log.len();
+    let treasury = game.players[0].gold;
+    let research = game.players[0].research.clone();
+    let units = game.units.len();
     let (city, item) = controller
-        .reserve_delegated_conquest_frontline(&mut game, 0, &plan)
+        .reserve_conquest_capital_science(&mut game, 0, &plan)
         .unwrap();
-    assert_eq!(
-        item,
-        Item::Unit {
-            unit: crate::name!("pikeman")
-        }
-    );
-    assert_eq!(game.cities[&city].queue.first(), Some(&item));
+    assert_eq!(city, home);
+    assert_eq!(game.cities[&home].queue.first(), Some(&item));
     assert_eq!(game.log.len(), before + 1);
+    assert!(
+        matches!(&game.log.last().unwrap().1, Action::Produce { city: ordered, item: requested } if *ordered == home && *requested == item)
+    );
+    assert_eq!(game.players[0].gold, treasury);
+    assert_eq!(game.players[0].research, research);
+    assert_eq!(game.units.len(), units);
 }
 
 #[test]
-fn conquest_campaign_cohort_sized_frontline_stops_when_the_existing_cohort_is_matched() {
-    let (mut game, controller, plan, home, _) = cohort_sized_frontline();
-    for _ in 0..3 {
-        game.spawn_test_unit("pikeman", 0, (30, 20));
-    }
+fn conquest_campaign_capital_science_respects_the_existing_capital_reservation_switch() {
+    let (game, mut controller, plan, _, _) = capital_science_foundation();
+    controller.capital_campus_before_the_plaza = false;
     assert_eq!(
-        controller.conquest_campaign_frontline_gap(&game, 0, home, &plan, crate::name!("pikeman")),
-        0
+        controller.conquest_campaign_capital_science_item(&game, 0, &plan),
+        None
     );
 }
 
 #[test]
-fn conquest_campaign_cohort_sized_frontline_retains_the_three_obsolete_body_floor() {
-    let (mut game, controller, plan, home, _) = cohort_sized_frontline();
-    let warrior = game
-        .units
-        .values()
-        .find(|unit| unit.owner == 0 && unit.kind == "warrior")
+fn conquest_campaign_capital_science_leaves_the_nondelegated_governor_alone() {
+    let (game, _, plan, _, _) = capital_science_foundation();
+    let mut controller = AdvancedAi::targeting(VictoryTarget::Domination);
+    controller.enable_capital_campus_before_the_plaza();
+    assert_eq!(
+        controller.conquest_campaign_capital_science_item(&game, 0, &plan),
+        None
+    );
+}
+
+#[test]
+fn conquest_campaign_capital_science_does_not_change_other_victory_targets() {
+    let (game, _, plan, _, _) = capital_science_foundation();
+    let mut controller = AdvancedAi::targeting(VictoryTarget::Science);
+    controller.enable_lane_delegates_production_2();
+    controller.enable_capital_campus_before_the_plaza();
+    assert_eq!(
+        controller.conquest_campaign_capital_science_item(&game, 0, &plan),
+        None
+    );
+}
+
+#[test]
+fn conquest_campaign_capital_science_preserves_the_first_city_expansion_floor() {
+    let (mut game, controller, plan, _, second) = capital_science_foundation();
+    game.cities.get_mut(&second).unwrap().owner = 2;
+    assert_eq!(game.player_city_ids(0).len(), 1);
+    assert_eq!(
+        controller.conquest_campaign_capital_science_item(&game, 0, &plan),
+        None
+    );
+}
+
+#[test]
+fn conquest_campaign_capital_science_does_not_research_or_unlock_writing() {
+    let (mut game, controller, plan, _, _) = capital_science_foundation();
+    game.players[0].techs.remove(&crate::name!("writing"));
+    assert_eq!(
+        controller.conquest_campaign_capital_science_item(&game, 0, &plan),
+        None
+    );
+}
+
+#[test]
+fn conquest_campaign_capital_science_preserves_threat_rush_and_open_major_war() {
+    let (game, controller, plan, home, _) = capital_science_foundation();
+    let mut threatened = plan.clone();
+    threatened.threatened_city = Some(home);
+    assert_eq!(
+        controller.conquest_campaign_capital_science_item(&game, 0, &threatened),
+        None
+    );
+    let mut rush = plan.clone();
+    rush.rush = true;
+    assert_eq!(
+        controller.conquest_campaign_capital_science_item(&game, 0, &rush),
+        None
+    );
+    let mut war = game.clone();
+    war.at_war.insert((0, 2));
+    war.at_war.insert((2, 0));
+    assert_eq!(
+        controller.conquest_campaign_capital_science_item(&war, 0, &plan),
+        None
+    );
+}
+
+#[test]
+fn conquest_campaign_capital_science_keeps_the_recent_attack_veto() {
+    let (mut game, controller, plan, home, _) = capital_science_foundation();
+    game.cities.get_mut(&home).unwrap().last_attacked = game.turn - 1;
+    assert_eq!(
+        controller.conquest_campaign_capital_science_item(&game, 0, &plan),
+        None
+    );
+}
+
+#[test]
+fn conquest_campaign_capital_science_preserves_civilian_and_recon_queues() {
+    let (game, controller, plan, home, _) = capital_science_foundation();
+    for unit in [
+        crate::name!("builder"),
+        crate::name!("settler"),
+        crate::name!("scout"),
+        crate::name!("trader"),
+    ] {
+        let mut current = game.clone();
+        current
+            .cities
+            .get_mut(&home)
+            .unwrap()
+            .queue
+            .push(Item::Unit { unit });
+        assert_eq!(
+            controller.conquest_campaign_capital_science_item(&current, 0, &plan),
+            None
+        );
+    }
+}
+
+#[test]
+fn conquest_campaign_capital_science_keeps_invested_military_production() {
+    let (mut game, controller, plan, home, _) = capital_science_foundation();
+    let item = Item::Unit {
+        unit: crate::name!("archer"),
+    };
+    let city = game.cities.get_mut(&home).unwrap();
+    city.queue.push(item.clone());
+    city.production = 1.0;
+    assert!(game.item_invested_production(home, &item) > 0.0);
+    assert_eq!(
+        controller.conquest_campaign_capital_science_item(&game, 0, &plan),
+        None
+    );
+}
+
+#[test]
+fn conquest_campaign_capital_science_preserves_modern_and_siege_orders() {
+    let (game, controller, plan, home, _) = capital_science_foundation();
+    for unit in [crate::name!("pikeman"), crate::name!("catapult")] {
+        let mut current = game.clone();
+        current
+            .cities
+            .get_mut(&home)
+            .unwrap()
+            .queue
+            .push(Item::Unit { unit });
+        assert_eq!(
+            controller.conquest_campaign_capital_science_item(&current, 0, &plan),
+            None
+        );
+    }
+}
+
+#[test]
+fn conquest_campaign_capital_science_does_not_replace_other_reservations() {
+    let (game, controller, plan, home, _) = capital_science_foundation();
+    for item in [
+        Item::Building {
+            building: crate::name!("monument"),
+        },
+        BasicAi::first_campus_item(&game, 0, home).unwrap(),
+    ] {
+        let mut current = game.clone();
+        current.cities.get_mut(&home).unwrap().queue.push(item);
+        assert_eq!(
+            controller.conquest_campaign_capital_science_item(&current, 0, &plan),
+            None
+        );
+    }
+}
+
+#[test]
+fn conquest_campaign_capital_science_keeps_current_economic_recovery_and_finite_funding() {
+    let (game, controller, plan, _, _) = capital_science_foundation();
+    for (treasury, income) in [(10.0, -1.0), (f64::NAN, 5.0), (500.0, f64::NAN)] {
+        let mut current = game.clone();
+        current.players[0].gold = treasury;
+        current.players[0].gold_per_turn = income;
+        assert_eq!(
+            controller.conquest_campaign_capital_science_item(&current, 0, &plan),
+            None
+        );
+    }
+}
+
+#[test]
+fn conquest_campaign_capital_science_never_creates_an_unavailable_district_slot() {
+    let (mut game, controller, plan, home, _) = capital_science_foundation();
+    let city = game.cities.get_mut(&home).unwrap();
+    city.pop = 1;
+    city.districts.insert(crate::name!("holy_site"), city.pos);
+    assert_eq!(BasicAi::first_campus_item(&game, 0, home), None);
+    assert_eq!(
+        controller.conquest_campaign_capital_science_item(&game, 0, &plan),
+        None
+    );
+}
+
+#[test]
+fn conquest_campaign_capital_science_uses_the_existing_actual_host_build_time_cap() {
+    let (game, controller, plan, home, _) = capital_science_foundation();
+    let item = BasicAi::first_campus_item(&game, 0, home).unwrap();
+    for turns in [16.0, f64::NAN] {
+        let mut current = game.clone();
+        std::sync::Arc::make_mut(&mut current.host_buildable)
+            .entry(home)
+            .or_default()
+            .insert(
+                Game::production_block_key(&item),
+                crate::game::HostMenuEntry {
+                    cost: Some(100.0),
+                    turns: Some(turns),
+                },
+            );
+        assert_eq!(BasicAi::first_campus_item(&current, 0, home), None);
+        assert_eq!(
+            controller.conquest_campaign_capital_science_item(&current, 0, &plan),
+            None
+        );
+    }
+}
+
+#[test]
+fn conquest_campaign_capital_science_stops_after_the_library_is_complete() {
+    let (mut game, controller, plan, home, _) = capital_science_foundation();
+    capital_science_completed_campus(&mut game, home);
+    game.cities
+        .get_mut(&home)
         .unwrap()
-        .id;
-    game.remove_unit(warrior);
+        .buildings
+        .push(crate::name!("library"));
+    assert_eq!(BasicAi::campus_library_item(&game, 0, home), None);
     assert_eq!(
-        controller.conquest_campaign_frontline_gap(&game, 0, home, &plan, crate::name!("pikeman")),
-        0
+        controller.conquest_campaign_capital_science_item(&game, 0, &plan),
+        None
     );
 }
 
 #[test]
-fn conquest_campaign_cohort_sized_frontline_keeps_the_current_treasury_floor() {
-    let (mut game, controller, plan, home, _) = cohort_sized_frontline();
-    game.players[0].gold = 29.0;
+fn conquest_campaign_capital_science_does_not_take_a_due_capital_settler() {
+    let (mut game, mut controller, mut plan, home, _) = capital_science_foundation();
+    game.turn = 20;
+    plan.assessed_turn = game.turn;
+    controller.base.w.city_target = 10.0;
+    assert!(controller.base.settler_due(&game, 0, home, 2, 0));
     assert_eq!(
-        controller.conquest_campaign_frontline_gap(&game, 0, home, &plan, crate::name!("pikeman")),
-        0
-    );
-}
-
-#[test]
-fn conquest_campaign_cohort_sized_frontline_reserves_existing_queued_upkeep() {
-    let (mut game, controller, plan, home, second) = cohort_sized_frontline();
-    game.players[0].gold_per_turn = 4.0;
-    game.cities.get_mut(&second).unwrap().queue = vec![Item::Unit {
-        unit: crate::name!("heavy_chariot"),
-    }];
-    assert_eq!(
-        controller.conquest_campaign_frontline_gap(&game, 0, home, &plan, crate::name!("pikeman")),
-        0
-    );
-}
-
-#[test]
-fn conquest_campaign_cohort_sized_frontline_keeps_the_threatened_city_veto() {
-    let (game, controller, mut plan, home, _) = cohort_sized_frontline();
-    plan.threatened_city = Some(home);
-    assert_eq!(
-        controller.conquest_campaign_frontline_gap(&game, 0, home, &plan, crate::name!("pikeman")),
-        0
-    );
-}
-
-#[test]
-fn conquest_campaign_cohort_sized_frontline_still_limits_concurrent_current_tier_queues() {
-    let (mut game, controller, plan, home, second) = cohort_sized_frontline();
-    for _ in 0..2 {
-        game.spawn_test_unit("warrior", 0, (30, 20));
-    }
-    let third = game.found_city_for(0, (25, 17), None);
-    for city in [second, third] {
-        game.cities.get_mut(&city).unwrap().queue = vec![Item::Unit {
-            unit: crate::name!("pikeman"),
-        }];
-    }
-    assert_eq!(
-        controller.conquest_campaign_frontline_gap(&game, 0, home, &plan, crate::name!("pikeman")),
-        0
-    );
-    assert_eq!(
-        controller.reserve_delegated_conquest_frontline(&mut game, 0, &plan),
+        controller.conquest_campaign_capital_science_item(&game, 0, &plan),
         None
     );
 }
