@@ -36721,6 +36721,7 @@ impl AdvancedAi {
         // `contested_land_first`: the ground between us and a neighbour,
         // while the army can hold it. Zero with the gene off.
         value += self.contested_land_credit(g, pid, pos);
+        value += self.conquest_campaign_supply_site_credit(g, pid, pos);
         if self.defensible_sites {
             value += self.defensibility(g, pid, pos);
         }
@@ -37987,7 +37988,12 @@ impl AdvancedAi {
                         score
                     })
                     .unwrap_or(0.0);
-                Some((pos, prefilter_score))
+                let supply_credit = if prefilter_limit.is_some() {
+                    self.conquest_campaign_supply_site_credit(g, pid, pos)
+                } else {
+                    0.0
+                };
+                Some((pos, prefilter_score + supply_credit))
             })
             .collect::<Vec<_>>();
         let mut overflow = Vec::new();

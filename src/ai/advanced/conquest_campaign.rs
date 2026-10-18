@@ -1,6 +1,152 @@
 use super::*;
 
 impl AdvancedAi {
+    pub(super) fn conquest_campaign_supply_site_credit(
+        &self,
+        game: &Game,
+        player: usize,
+        position: Pos,
+    ) -> f64 {
+        if !self.settlement_safety
+            || !self.victory_planning
+            || self.active_victory_target(game) != Some(VictoryTarget::Domination)
+            || self.war_plan.is_some()
+            || game.player_city_ids(player).len() < 2
+            || !game.players[player]
+                .techs
+                .contains(&crate::name!("writing"))
+            || game.blocked_city_sites.contains(&position)
+        {
+            return 0.0;
+        }
+        let Some(plan) = self.plan.as_ref() else {
+            return 0.0;
+        };
+        if !matches!(
+            plan.strategy,
+            GrandStrategy::Expansion | GrandStrategy::Conquest
+        ) || plan.rush
+            || plan.threatened_city.is_some()
+            || !plan.target_player.is_some_and(|target| {
+                game.players.get(target).is_some_and(|rival| {
+                    rival.alive
+                        && !rival.is_minor
+                        && !rival.is_barbarian
+                        && self.campaign_target_legal(game, player, target)
+                })
+            })
+            || game.players.iter().any(|rival| {
+                rival.id != player
+                    && rival.alive
+                    && !rival.is_minor
+                    && !rival.is_barbarian
+                    && game.is_at_war(player, rival.id)
+            })
+        {
+            return 0.0;
+        }
+        let Some(center) = game.map.get(position) else {
+            return 0.0;
+        };
+        if center.owner_city.is_some()
+            || center.flooded
+            || center.submerged
+            || game.rules.is_water(center)
+            || !game.rules.is_passable(center)
+            || game.tile_is_natural_wonder(center)
+        {
+            return 0.0;
+        }
+        let resources: BTreeSet<Name> = game
+            .wdisk(position, 1)
+            .into_iter()
+            .filter(|tile_position| game.players[player].explored.contains(tile_position))
+            .filter_map(|tile_position| game.map.get(tile_position))
+            .filter(|tile| {
+                tile.owner_city.is_none()
+                    && !tile.flooded
+                    && !tile.submerged
+                    && !tile.pillaged
+                    && tile.district.is_none()
+                    && tile.district_foundation.is_none()
+                    && !game.rules.is_water(tile)
+                    && game.rules.is_passable(tile)
+                    && !game.tile_is_natural_wonder(tile)
+            })
+            .filter_map(|tile| tile.resource)
+            .filter(|resource| {
+                game.resource_visible_to(player, resource.as_str())
+                    && game.rules.resources[*resource].class == "strategic"
+            })
+            .collect();
+        if resources.is_empty() {
+            return 0.0;
+        }
+        let mut cohorts: BTreeMap<Name, (usize, f64)> = BTreeMap::new();
+        for unit in game
+            .units
+            .values()
+            .filter(|unit| unit.owner == player && unit.hp > 0)
+        {
+            let held = &game.rules.units[unit.kind];
+            if held.class != "military"
+                || held.promotion_class == "recon"
+                || matches!(held.domain.as_deref(), Some("sea" | "air"))
+            {
+                continue;
+            }
+            let Some(successor) = held.upgrade_to else {
+                continue;
+            };
+            let successor = game.player_unit_replacement(player, successor);
+            let target = &game.rules.units[successor];
+            let Some(resource) = target
+                .requires_resource
+                .filter(|resource| resources.contains(resource))
+            else {
+                continue;
+            };
+            let gain = target.strength.max(target.ranged_attack_strength())
+                - held.strength.max(held.ranged_attack_strength());
+            if !target.buildable || gain < 15.0 {
+                continue;
+            }
+            let Some(bill) = game
+                .unit_upgrade_resource_price(player, unit.id, successor)
+                .filter(|bill| bill.is_finite() && *bill > 0.0)
+            else {
+                continue;
+            };
+            let entry = cohorts.entry(resource).or_insert((0, bill));
+            entry.0 += 1;
+            entry.1 = entry.1.min(bill);
+        }
+        let needs_access = cohorts.into_iter().any(|(resource, (count, bill))| {
+            count >= 3
+                && game.strategic_stockpile(player, resource) < 2.0 * bill
+                && game.strategic_resource_rate(player, resource.as_str()) <= 0.0
+                && !game.player_city_ids(player).iter().any(|city| {
+                    game.cities[city].owned_tiles.iter().any(|tile_position| {
+                        game.map
+                            .get(*tile_position)
+                            .is_some_and(|tile| tile.resource == Some(resource))
+                    })
+                })
+        });
+        if !needs_access {
+            return 0.0;
+        }
+        let visible = self.battlefront_visibility(game, player);
+        if self.settlement_tile_risk(game, player, None, position, &visible) > 0.0
+            || self
+                .settle_site_frontier_loyalty_verdict(game, player, position)
+                .is_some()
+        {
+            return 0.0;
+        }
+        12.0
+    }
+
     pub(super) fn conquest_campaign_prepare_frontline(
         &self,
         game: &mut Game,

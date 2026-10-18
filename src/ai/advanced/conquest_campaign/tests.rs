@@ -638,3 +638,189 @@ fn conquest_campaign_preparation_tracks_upkeep_between_actual_upgrades() {
     assert_eq!(game.players[0].gold, 920.0);
     assert_eq!(game.strategic_stockpile(0, crate::name!("iron")), 30.0);
 }
+
+fn supply_site_campaign() -> (Game, AdvancedAi, Pos, Vec<u32>) {
+    let (mut game, mut controller, plan, _) = preparation_campaign();
+    game.units.clear();
+    game.players[0].techs.remove(&crate::name!("stirrups"));
+    game.players[0].techs.insert(crate::name!("bronze_working"));
+    game.players[0]
+        .strategic_resources
+        .insert(crate::name!("iron"), 0.0);
+    let position = (25, 15);
+    let explored = game.wdisk(position, 3);
+    game.players[0].explored.extend(explored);
+    game.map.tiles.get_mut(&position).unwrap().resource = Some(crate::name!("iron"));
+    game.map.tiles.get_mut(&position).unwrap().hills = true;
+    let units: Vec<u32> = (0..3)
+        .map(|_| game.spawn_test_unit("warrior", 0, (10, 10)))
+        .collect();
+    assert!(game.resource_visible_to(0, "iron"));
+    assert!(!game.players[0]
+        .techs
+        .contains(&crate::name!("iron_working")));
+    assert_eq!(
+        game.unit_upgrade_resource_price(0, units[0], crate::name!("swordsman")),
+        Some(20.0)
+    );
+    controller.settlement_safety = true;
+    let mut supply_plan = plan;
+    supply_plan.threatened_city = None;
+    controller.plan = Some(supply_plan);
+    (game, controller, position, units)
+}
+
+#[test]
+fn conquest_campaign_supply_values_a_revealed_future_cohort_without_founding() {
+    let (game, controller, position, _) = supply_site_campaign();
+    let actions = game.log.len();
+    let gold = game.players[0].gold;
+    let cities = game.player_city_ids(0).len();
+    assert_eq!(
+        controller.conquest_campaign_supply_site_credit(&game, 0, position),
+        12.0
+    );
+    assert_eq!(game.log.len(), actions);
+    assert_eq!(game.players[0].gold, gold);
+    assert_eq!(game.player_city_ids(0).len(), cities);
+}
+
+#[test]
+fn conquest_campaign_supply_enters_the_dynamic_site_score_only_once() {
+    let (mut game, controller, position, units) = supply_site_campaign();
+    game.remove_unit(units[2]);
+    let before = controller.settle_value(&game, 0, position);
+    let static_before = controller.settlement_static_value_uncached(&game, 0, position);
+    game.spawn_test_unit("warrior", 0, (10, 10));
+    let static_after = controller.settlement_static_value_uncached(&game, 0, position);
+    let after = controller.settle_value(&game, 0, position);
+    assert_eq!(static_before, static_after);
+    assert!((after - before - 12.0).abs() < 0.000001);
+}
+
+#[test]
+fn conquest_campaign_supply_cannot_see_an_unrevealed_material() {
+    let (mut game, controller, position, _) = supply_site_campaign();
+    game.players[0]
+        .techs
+        .remove(&crate::name!("bronze_working"));
+    assert!(!game.resource_visible_to(0, "iron"));
+    assert_eq!(
+        controller.conquest_campaign_supply_site_credit(&game, 0, position),
+        0.0
+    );
+}
+
+#[test]
+fn conquest_campaign_supply_cannot_value_uncharted_material() {
+    let (mut game, controller, position, _) = supply_site_campaign();
+    game.players[0].explored.remove(&position);
+    assert_eq!(
+        controller.conquest_campaign_supply_site_credit(&game, 0, position),
+        0.0
+    );
+}
+
+#[test]
+fn conquest_campaign_supply_requires_three_standing_material_users() {
+    let (mut game, controller, position, units) = supply_site_campaign();
+    game.remove_unit(units[2]);
+    assert_eq!(
+        controller.conquest_campaign_supply_site_credit(&game, 0, position),
+        0.0
+    );
+}
+
+#[test]
+fn conquest_campaign_supply_does_not_invent_material_need_for_archers() {
+    let (mut game, controller, position, _) = supply_site_campaign();
+    game.units.clear();
+    for _unit in 0..3 {
+        game.spawn_test_unit("archer", 0, (10, 10));
+    }
+    assert_eq!(
+        controller.conquest_campaign_supply_site_credit(&game, 0, position),
+        0.0
+    );
+}
+
+#[test]
+fn conquest_campaign_supply_keeps_other_lanes_and_legacy_scoring() {
+    let (game, mut controller, position, _) = supply_site_campaign();
+    let mut science = AdvancedAi::targeting(VictoryTarget::Science);
+    science.plan = controller.plan.clone();
+    assert_eq!(
+        science.conquest_campaign_supply_site_credit(&game, 0, position),
+        0.0
+    );
+    controller.settlement_safety = false;
+    assert_eq!(
+        controller.conquest_campaign_supply_site_credit(&game, 0, position),
+        0.0
+    );
+}
+
+#[test]
+fn conquest_campaign_supply_does_not_duplicate_an_existing_owned_source() {
+    let (mut game, controller, position, _) = supply_site_campaign();
+    let owned = (12, 12);
+    game.map.tiles.get_mut(&owned).unwrap().resource = Some(crate::name!("iron"));
+    game.found_city_for(0, owned, None);
+    assert_eq!(
+        controller.conquest_campaign_supply_site_credit(&game, 0, position),
+        0.0
+    );
+}
+
+#[test]
+fn conquest_campaign_supply_respects_the_unique_successor_material_bill() {
+    let (mut game, controller, position, units) = supply_site_campaign();
+    game.players[0].civ = "Rome".to_string();
+    game.players[0]
+        .strategic_resources
+        .insert(crate::name!("iron"), 25.0);
+    assert_eq!(
+        game.unit_upgrade_resource_price(0, units[0], crate::name!("legion")),
+        Some(10.0)
+    );
+    assert_eq!(
+        controller.conquest_campaign_supply_site_credit(&game, 0, position),
+        0.0
+    );
+}
+
+#[test]
+fn conquest_campaign_supply_does_not_promise_a_second_ring_claim() {
+    let (mut game, controller, position, _) = supply_site_campaign();
+    game.map.tiles.get_mut(&position).unwrap().resource = None;
+    game.map.tiles.get_mut(&(27, 15)).unwrap().resource = Some(crate::name!("iron"));
+    assert_eq!(
+        controller.conquest_campaign_supply_site_credit(&game, 0, position),
+        0.0
+    );
+}
+
+#[test]
+fn conquest_campaign_supply_stands_down_in_an_active_major_war() {
+    let (mut game, controller, position, _) = supply_site_campaign();
+    game.at_war.extend([(0, 2), (2, 0)]);
+    assert_eq!(
+        controller.conquest_campaign_supply_site_credit(&game, 0, position),
+        0.0
+    );
+}
+
+#[test]
+fn conquest_campaign_supply_does_not_value_flooded_or_pillaged_material() {
+    let (game, controller, position, _) = supply_site_campaign();
+    for flooded in [false, true] {
+        let mut control = game.clone();
+        let tile = control.map.tiles.get_mut(&position).unwrap();
+        tile.flooded = flooded;
+        tile.pillaged = !flooded;
+        assert_eq!(
+            controller.conquest_campaign_supply_site_credit(&control, 0, position),
+            0.0
+        );
+    }
+}
