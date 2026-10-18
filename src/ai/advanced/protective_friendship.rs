@@ -51,6 +51,13 @@ pub(super) const FRIENDSHIP_RACE_CEILING: i32 = 45;
 // each at turn 120, friends from turn 105 to the end and lost a Technology
 // race at 240 holding no rival capital.
 
+// `friendship-spares-the-target`: no friendship is offered (or renewed) to
+// the rival the strategic plan's campaign is aimed at. Live Emperor pins g-m
+// (25 games, 2026-10-18): 46 of 153 friendship offers went to the current
+// campaign target. civvis-20261018T125943Z aimed its campaign at China from
+// turn 81 while renewing the friendship at 93 and 114; China stood at 7
+// military power against our 579 at turn 100, a declared friend.
+
 impl AdvancedAi {
     /// `friendship-ends-at-the-race`: whether `rival`'s best race reads
     /// [`FRIENDSHIP_RACE_CEILING`] or more, or the counter reads it urgent.
@@ -102,6 +109,11 @@ impl AdvancedAi {
                     && !(self.friendship_ends_at_the_race && self.friend_is_racing(g, other.id))
                     // `friendship-only-with-the-stronger`: a weaker rival is a
                     // conquest to make, not a war to forestall.
+                    // `friendship-spares-the-target`: the rival the campaign
+                    // is aimed at is a war to open, not one to forbid.
+                    && !(self.friendship_spares_the_target
+                        && self.plan.as_ref().and_then(|plan| plan.target_player)
+                            == Some(other.id))
                     && !(self.friendship_only_with_the_stronger
                         && g.military_power(other.id) < g.military_power(pid))
                     && !g.pending_deals.iter().any(|deal| {
@@ -288,6 +300,41 @@ mod tests {
             !game.pending_deals.iter().any(|deal| deal.to == 1),
             "the weaker rival is left to the conquest"
         );
+    }
+
+    /// `friendship-spares-the-target`: the strongest rival, named by the
+    /// plan as the campaign's target, is passed over for the next.
+    #[test]
+    fn the_campaign_target_is_not_befriended() {
+        let mut game = three_majors();
+        let mut ai = AdvancedAi::new();
+        ai.enable_befriend_the_strongest();
+        ai.plan = Some(super::super::StrategicPlan {
+            strategy: super::super::GrandStrategy::Conquest,
+            target_player: Some(2),
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        });
+        let mut v1 = game.clone();
+        ai.propose_protective_friendship(&mut v1, 0);
+        assert!(
+            v1.pending_deals
+                .iter()
+                .any(|deal| deal.from == 0 && deal.to == 2),
+            "without the gene the target is asked"
+        );
+
+        ai.enable_friendship_spares_the_target();
+        ai.propose_protective_friendship(&mut game, 0);
+        let deal = game
+            .pending_deals
+            .iter()
+            .find(|deal| deal.from == 0)
+            .expect("another rival is asked");
+        assert_eq!(deal.to, 1, "the campaign target is passed over");
     }
 
     #[test]

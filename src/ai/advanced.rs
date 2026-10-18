@@ -6338,6 +6338,13 @@ pub struct AdvancedAi {
     /// friendship to a rival racing to win (see
     /// `protective_friendship::FRIENDSHIP_RACE_CEILING`). Off by default.
     friendship_ends_at_the_race: bool,
+    /// `friendship-only-with-the-stronger`: `befriend-the-strongest` offers
+    /// a friendship only to a rival whose military power is at least ours.
+    /// Off by default.
+    friendship_only_with_the_stronger: bool,
+    /// `friendship-spares-the-target`: `befriend-the-strongest` offers no
+    /// friendship to the plan's campaign target. Off by default.
+    friendship_spares_the_target: bool,
     /// `foothold-faces-the-capital`: a Domination conquest values a rival
     /// town within Bomber range of a rival capital no city of ours reaches.
     /// See `advanced/foothold_faces_the_capital.rs`. Off by default.
@@ -10898,6 +10905,8 @@ impl AdvancedAi {
             drain_card_turn: std::cell::Cell::new(None),
             // ---- append: e-f ----------------------------------------
             friendship_ends_at_the_race: false,
+            friendship_only_with_the_stronger: false,
+            friendship_spares_the_target: false,
             foothold_faces_the_capital: false,
             friendship_only_with_the_stronger: false,
             faith_war_is_no_front: false,
