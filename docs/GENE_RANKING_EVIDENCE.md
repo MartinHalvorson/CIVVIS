@@ -310,6 +310,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `first-granary-reserve-3` | off (unmeasured) | `first-granary-reserve-3`: version one's rule (population within one of housing, no Granary) reaches the delegated city governor too, and an Aqueduct follows the Granary while the city is still housing-bound. | 1 \| 3 |
 | `first-luxury-first-2` | off (unmeasured) | Opt-in gene `first-luxury-first-2`; see `advanced/first_luxury.rs`. | 1 \| 2 |
 | `flipped-capital-finishes` | off (unmeasured) | Opt-in gene `flipped-capital-finishes`; see `Self::flipped_capital_finishes`. | 1 \| 1 |
+| `foothold-faces-the-capital` | off (unmeasured) | Aim a Domination conquest at a foothold within Bomber range of a rival capital. | 1 \| 1 |
 | `formations-heed-refusals` | off (unmeasured) | Opt-in gene `formations-heed-refusals`; see `Self::formations_heed_refusals`. | 1 \| 1 |
 | `found-against-a-rival-faith` | off (unmeasured) | Opt-in gene `found-against-a-rival-faith`; see `Self::found_against_a_rival_faith`. | 1 \| 1 |
 | `founder-converts-its-own-cities` | off (unmeasured) | Opt-in gene `founder-converts-its-own-cities`; see `Self::founder_converts_its_own_cities`. | 1 \| 1 |

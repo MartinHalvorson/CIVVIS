@@ -6320,6 +6320,10 @@ pub struct AdvancedAi {
     /// disband waits that turn for the card's income.
     drain_card_turn: std::cell::Cell<Option<u32>>,
     // ---- append: e-f ------------------------------------------------
+    /// `foothold-faces-the-capital`: a Domination conquest values a rival
+    /// town within Bomber range of a rival capital no city of ours reaches.
+    /// See `advanced/foothold_faces_the_capital.rs`. Off by default.
+    foothold_faces_the_capital: bool,
     /// Prepare an exposed non-capital city's Masonry and Walls before a
     /// stronger peaceful neighbour declares. Off by default.
     frontier_walls_before_the_surprise: bool,
@@ -9381,6 +9385,10 @@ mod runaway_expander;
 mod faith_veto;
 // `capture-waits-on-the-march`. See `advanced/capture_march.rs`.
 mod capture_march;
+/// `foothold-faces-the-capital`: a Domination conquest values the rival town
+/// within Bomber range of a capital. See
+/// `advanced/foothold_faces_the_capital.rs`.
+mod foothold_faces_the_capital;
 // `formations-heed-refusals`. See `advanced/formation_refusals.rs`.
 mod formation_refusals;
 mod siege_resource_purchase;
@@ -10843,6 +10851,7 @@ impl AdvancedAi {
             capital_watch_sightings: BTreeMap::new(),
             drain_card_turn: std::cell::Cell::new(None),
             // ---- append: e-f ----------------------------------------
+            foothold_faces_the_capital: false,
             frontier_walls_before_the_surprise: false,
             frontier_watch_sightings: BTreeMap::new(),
             faith_war_before_the_flip: false,
@@ -37750,6 +37759,7 @@ impl AdvancedAi {
             - liberation_value
             - siege_commitment
             - self.strategic_deposit_prey_value(g, pid, city, strategy)
+            - self.foothold_value(g, pid, city, strategy)
     }
 
     /// Rank settleable ground the way this agent would, for a caller outside the

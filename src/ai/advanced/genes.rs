@@ -4051,6 +4051,11 @@ pub const GENES: &[Gene] = &[
     // Emperor runs lost a city by turn 100. See
     // `advanced/threatened_city_purchase.rs`.
     Gene { tag: "threatened-city-buys-its-defender", field: "threatened_city_buys_its_defender", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_city_buys_its_defender, disable: AdvancedAi::disable_threatened_city_buys_its_defender },
+    // `foothold-faces-the-capital`: 56% of our war turns against a rival
+    // capital's owner after turn 120 had no city of ours within Bomber range
+    // of it; the campaign aimed at that range's town 154 of 408 turns. See
+    // `advanced/foothold_faces_the_capital.rs`.
+    Gene { tag: "foothold-faces-the-capital", field: "foothold_faces_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_foothold_faces_the_capital, disable: AdvancedAi::disable_foothold_faces_the_capital },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
