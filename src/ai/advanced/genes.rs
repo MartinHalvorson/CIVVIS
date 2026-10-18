@@ -4056,6 +4056,11 @@ pub const GENES: &[Gene] = &[
     // wing, and that wing took Sydney's 400 walls in six turns; the wing's
     // ceiling, not the metal, held it at four. See `AIR_WING_GROWN_BOMBERS`.
     Gene { tag: "air-wing-grows-with-the-aluminum", field: "air_wing_grows_with_the_aluminum", kind: Kind::OptIn, enable: AdvancedAi::enable_air_wing_grows_with_the_aluminum, disable: AdvancedAi::disable_air_wing_grows_with_the_aluminum },
+    // `denial-target-leads-the-fronts`: live Emperor 071140Z was at war with
+    // Byzantium from turn 140 at 1.4-2.9 times its power while the counter
+    // named it; the campaign stayed on the Aztecs until 165 and Byzantium won
+    // on Culture at 176. See `advanced/denial_target_front.rs`.
+    Gene { tag: "denial-target-leads-the-fronts", field: "denial_target_leads_the_fronts", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_target_leads_the_fronts, disable: AdvancedAi::disable_denial_target_leads_the_fronts },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
