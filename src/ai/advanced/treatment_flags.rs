@@ -8011,6 +8011,17 @@ impl AdvancedAi {
         self.threatened_city_buys_its_defender = false;
     }
 
+    /// Grow the Bomber wing past four while the Aluminum sustains it. See
+    /// [`Self::air_wing_grows_with_the_aluminum`].
+    pub fn enable_air_wing_grows_with_the_aluminum(&mut self) {
+        self.air_wing_grows_with_the_aluminum = true;
+    }
+
+    /// The twin of `enable_air_wing_grows_with_the_aluminum`.
+    pub fn disable_air_wing_grows_with_the_aluminum(&mut self) {
+        self.air_wing_grows_with_the_aluminum = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

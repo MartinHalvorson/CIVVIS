@@ -4051,6 +4051,11 @@ pub const GENES: &[Gene] = &[
     // Emperor runs lost a city by turn 100. See
     // `advanced/threatened_city_purchase.rs`.
     Gene { tag: "threatened-city-buys-its-defender", field: "threatened_city_buys_its_defender", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_city_buys_its_defender, disable: AdvancedAi::disable_threatened_city_buys_its_defender },
+    // `air-wing-grows-with-the-aluminum`: live Emperor 052256Z banked 25
+    // Aluminum (the cap) on +4 to +8 a turn from turn 150 with a four-Bomber
+    // wing, and that wing took Sydney's 400 walls in six turns; the wing's
+    // ceiling, not the metal, held it at four. See `AIR_WING_GROWN_BOMBERS`.
+    Gene { tag: "air-wing-grows-with-the-aluminum", field: "air_wing_grows_with_the_aluminum", kind: Kind::OptIn, enable: AdvancedAi::enable_air_wing_grows_with_the_aluminum, disable: AdvancedAi::disable_air_wing_grows_with_the_aluminum },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

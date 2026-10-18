@@ -5083,6 +5083,10 @@ pub struct AdvancedAi {
     /// `breaker-bought-for-the-siege`: the turn a breaker was last bought for
     /// each besieged city, for the cooldown.
     breaker_bought: BTreeMap<u32, u32>,
+    /// `air-wing-grows-with-the-aluminum`: the air surge's Bomber goal
+    /// reads the wing ceiling at `air_surge::AIR_WING_GROWN_BOMBERS` instead
+    /// of `AIR_SURGE_BOMBERS` while the Aluminum sustains it. Off by default.
+    air_wing_grows_with_the_aluminum: bool,
     /// `army-upgrade-materials`: buy the missing upfront material for one
     /// useful land upgrade while retaining its Gold bill and upkeep floor.
     /// See `army_upgrade_materials`. Off by default.
@@ -10602,6 +10606,7 @@ impl AdvancedAi {
             // ---- append: a-b ----------------------------------------
             breaker_bought_for_the_siege: false,
             breaker_bought: BTreeMap::new(),
+            air_wing_grows_with_the_aluminum: false,
             army_upgrade_materials: false,
             astrology_before_the_second_city: false,
             aluminum_ask_tops_up_gold: false,

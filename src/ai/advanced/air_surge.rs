@@ -104,6 +104,12 @@ pub(crate) const AIR_SURGE_TECH_HORIZON: usize = 12;
 /// actual target is capped by the income available after other Aluminum users;
 /// see [`AdvancedAi::air_surge_bomber_goal`].
 pub(crate) const AIR_SURGE_BOMBERS: usize = 4;
+/// `air-wing-grows-with-the-aluminum`: the wing ceiling while the Aluminum
+/// income and bank sustain more than [`AIR_SURGE_BOMBERS`]. Live Emperor
+/// civvis-20261018T052256Z held 25 Aluminum (the cap) on +4 to +8 a turn from
+/// turn 150 with a four-Bomber wing, and Sydney's 400 walls fell to that wing
+/// in about six turns; the cap, not the metal, held the wing at four.
+pub(crate) const AIR_WING_GROWN_BOMBERS: usize = 8;
 /// The first two Bombers are enough to empty a defended city in a turn. The
 /// other two make the campaign resilient to interception and able to clear a
 /// continent, but are not a reason to leave a vulnerable neighbour at peace.
@@ -566,6 +572,18 @@ impl AdvancedAi {
     /// The bomber goal the seat plays: [`Self::air_surge_bomber_goal`], read
     /// with `bombers-fly-on-a-small-stock` when that gene is on.
     pub(crate) fn air_wing_bomber_goal(&self, g: &Game, pid: usize) -> usize {
+        // `air-wing-grows-with-the-aluminum`: the same reading under the
+        // grown ceiling.
+        if self.air_wing_grows_with_the_aluminum {
+            return Self::air_surge_bomber_goal_capped(
+                g,
+                pid,
+                0.0,
+                0.0,
+                self.bombers_fly_on_a_small_stock,
+                AIR_WING_GROWN_BOMBERS,
+            );
+        }
         if self.bombers_fly_on_a_small_stock {
             Self::air_surge_bomber_goal_after_spending(g, pid, 0.0, 0.0, true)
         } else {
@@ -584,20 +602,40 @@ impl AdvancedAi {
         resource_cost: f64,
         small_stock: bool,
     ) -> usize {
+        Self::air_surge_bomber_goal_capped(
+            g,
+            pid,
+            extra_demand,
+            resource_cost,
+            small_stock,
+            AIR_SURGE_BOMBERS,
+        )
+    }
+
+    /// [`Self::air_surge_bomber_goal_after_spending`] under the wing ceiling
+    /// `cap` ([`AIR_SURGE_BOMBERS`] there).
+    pub(super) fn air_surge_bomber_goal_capped(
+        g: &Game,
+        pid: usize,
+        extra_demand: f64,
+        resource_cost: f64,
+        small_stock: bool,
+        cap: usize,
+    ) -> usize {
         let Some(bomber) = Self::air_surge_bomber(g, pid) else {
             return 0;
         };
         let spec = &g.rules.units[bomber];
         let Some(resource) = spec.requires_resource else {
-            return AIR_SURGE_BOMBERS;
+            return cap;
         };
         if spec.resource_maintenance <= f64::EPSILON {
-            return AIR_SURGE_BOMBERS;
+            return cap;
         }
 
         let income = Self::air_surge_metal_income(g, pid, resource, extra_demand);
         let sustainable = (income.max(0.0) / spec.resource_maintenance).floor() as usize;
-        let sustainable = sustainable.min(AIR_SURGE_BOMBERS);
+        let sustainable = sustainable.min(cap);
         if sustainable >= AIR_SURGE_LAUNCH_BOMBERS {
             // ★★ A BANKED STOCKPILE IS A STRIKE WINDOW. Live King
             // 20261001T030914Z mined two Aluminum a turn, banked 25 and flew a
@@ -613,7 +651,7 @@ impl AdvancedAi {
             } else {
                 0
             };
-            return (sustainable + extra).min(AIR_SURGE_BOMBERS);
+            return (sustainable + extra).min(cap);
         }
 
         // The deposit may be pillaged, traded away, or still be on a Builder's
@@ -2801,6 +2839,9 @@ pub(crate) mod bomber_wing;
 
 #[cfg(test)]
 mod bomber_wing_tests;
+
+#[cfg(test)]
+mod wing_grows_tests;
 
 mod raids;
 
