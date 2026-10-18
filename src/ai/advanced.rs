@@ -6349,10 +6349,6 @@ pub struct AdvancedAi {
     /// town within Bomber range of a rival capital no city of ours reaches.
     /// See `advanced/foothold_faces_the_capital.rs`. Off by default.
     foothold_faces_the_capital: bool,
-    /// `friendship-only-with-the-stronger`: `befriend-the-strongest` offers
-    /// a friendship only to a rival whose military power is at least ours.
-    /// Off by default.
-    friendship_only_with_the_stronger: bool,
     /// `faith-war-is-no-front`: a running faith war's rival is not a
     /// campaign front, nor the war that holds a declaration. See
     /// `advanced/faith_war_is_no_front.rs`. Off by default.
@@ -10908,7 +10904,6 @@ impl AdvancedAi {
             friendship_only_with_the_stronger: false,
             friendship_spares_the_target: false,
             foothold_faces_the_capital: false,
-            friendship_only_with_the_stronger: false,
             faith_war_is_no_front: false,
             faith_war_is_no_front_2: false,
             frontier_walls_before_the_surprise: false,
