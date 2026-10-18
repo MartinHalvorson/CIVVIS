@@ -6320,6 +6320,10 @@ pub struct AdvancedAi {
     /// disband waits that turn for the card's income.
     drain_card_turn: std::cell::Cell<Option<u32>>,
     // ---- append: e-f ------------------------------------------------
+    /// `friendship-ends-at-the-race`: `befriend-the-strongest` offers no
+    /// friendship to a rival racing to win (see
+    /// `protective_friendship::FRIENDSHIP_RACE_CEILING`). Off by default.
+    friendship_ends_at_the_race: bool,
     /// Prepare an exposed non-capital city's Masonry and Walls before a
     /// stronger peaceful neighbour declares. Off by default.
     frontier_walls_before_the_surprise: bool,
@@ -10834,6 +10838,7 @@ impl AdvancedAi {
             capital_watch_sightings: BTreeMap::new(),
             drain_card_turn: std::cell::Cell::new(None),
             // ---- append: e-f ----------------------------------------
+            friendship_ends_at_the_race: false,
             frontier_walls_before_the_surprise: false,
             frontier_watch_sightings: BTreeMap::new(),
             faith_war_before_the_flip: false,

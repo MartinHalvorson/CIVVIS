@@ -4044,6 +4044,11 @@ pub const GENES: &[Gene] = &[
     // 121-150 Gold and a Trader sold for about 95. See
     // `advanced/trader_fills_the_idle_route/purchase.rs`.
     Gene { tag: "gold-buys-the-idle-trader", field: "gold_buys_the_idle_trader", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_buys_the_idle_trader, disable: AdvancedAi::disable_gold_buys_the_idle_trader },
+    // `friendship-ends-at-the-race`: live Emperor 075143Z renewed its
+    // friendship with Canada every 21 turns to 114, and at 150 the Conquest
+    // counter to Canada's 54% Culture race was barred by it. See
+    // `protective_friendship::FRIENDSHIP_RACE_CEILING`.
+    Gene { tag: "friendship-ends-at-the-race", field: "friendship_ends_at_the_race", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_ends_at_the_race, disable: AdvancedAi::disable_friendship_ends_at_the_race },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

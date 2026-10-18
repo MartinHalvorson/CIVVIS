@@ -36,7 +36,21 @@ use super::*;
 /// again before long without re-proposing every turn.
 const FRIENDSHIP_CADENCE: u32 = 3;
 
+/// `friendship-ends-at-the-race`: the race progress at which a rival is no
+/// longer offered (or re-offered) a friendship. Live Emperor
+/// civvis-20261018T075143Z renewed its friendship with Canada at turns 30,
+/// 51, 72, 93 and 114; at 150 Canada's Culture race read 54% and "the
+/// Conquest counter is barred: we are declared friends".
+pub(super) const FRIENDSHIP_RACE_CEILING: i32 = 45;
+
 impl AdvancedAi {
+    /// `friendship-ends-at-the-race`: whether `rival`'s best race reads
+    /// [`FRIENDSHIP_RACE_CEILING`] or more, or the counter reads it urgent.
+    fn friend_is_racing(&self, g: &Game, rival: usize) -> bool {
+        self.rival_pressure(g, rival).1 >= FRIENDSHIP_RACE_CEILING
+            || self.urgent_victory_threat(g, rival)
+    }
+
     /// Offer a friendship-only deal to the strongest met major at peace with
     /// us that is not already a friend, is not denounced either way, and has
     /// no deal pending with us. Exact no-op with the gene off.
@@ -75,6 +89,9 @@ impl AdvancedAi {
                         .observed_diplomatic_state
                         .get(&pid)
                         .is_none_or(|state| state == "FRIENDLY")
+                    // `friendship-ends-at-the-race`: a rival racing to win is
+                    // left to the counter once the friendship lapses.
+                    && !(self.friendship_ends_at_the_race && self.friend_is_racing(g, other.id))
                     && !g.pending_deals.iter().any(|deal| {
                         (deal.from == pid && deal.to == other.id)
                             || (deal.from == other.id && deal.to == pid)
@@ -204,6 +221,31 @@ mod tests {
             .find(|deal| deal.from == 0)
             .expect("the Friendly rival is asked");
         assert_eq!(deal.to, 1, "the Neutral strongest rival is passed over");
+    }
+
+    /// `friendship-ends-at-the-race`: the strongest rival, racing to a
+    /// Diplomatic Victory at half the points, is passed over for the next.
+    #[test]
+    fn a_rival_racing_to_win_is_not_befriended() {
+        let mut game = three_majors();
+        game.players[2].dvp = 10;
+        let mut v1 = game.clone();
+        let mut ai = AdvancedAi::new();
+        ai.enable_befriend_the_strongest();
+        ai.propose_protective_friendship(&mut v1, 0);
+        assert!(
+            v1.pending_deals.iter().any(|deal| deal.from == 0 && deal.to == 2),
+            "without the gene the racer is asked"
+        );
+
+        ai.enable_friendship_ends_at_the_race();
+        ai.propose_protective_friendship(&mut game, 0);
+        let deal = game
+            .pending_deals
+            .iter()
+            .find(|deal| deal.from == 0)
+            .expect("another rival is asked");
+        assert_eq!(deal.to, 1, "the racer is passed over");
     }
 
     #[test]
