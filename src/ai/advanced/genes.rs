@@ -4061,6 +4061,11 @@ pub const GENES: &[Gene] = &[
     // named it; the campaign stayed on the Aztecs until 165 and Byzantium won
     // on Culture at 176. See `advanced/denial_target_front.rs`.
     Gene { tag: "denial-target-leads-the-fronts", field: "denial_target_leads_the_fronts", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_target_leads_the_fronts, disable: AdvancedAi::disable_denial_target_leads_the_fronts },
+    // `friendship-ends-at-the-race`: live Emperor 075143Z renewed its
+    // friendship with Canada every 21 turns to 114, and at 150 the Conquest
+    // counter to Canada's 54% Culture race was barred by it. See
+    // `protective_friendship::FRIENDSHIP_RACE_CEILING`.
+    Gene { tag: "friendship-ends-at-the-race", field: "friendship_ends_at_the_race", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_ends_at_the_race, disable: AdvancedAi::disable_friendship_ends_at_the_race },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

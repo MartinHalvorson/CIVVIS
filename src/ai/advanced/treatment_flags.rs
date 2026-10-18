@@ -8033,6 +8033,17 @@ impl AdvancedAi {
         self.denial_target_leads_the_fronts = false;
     }
 
+    /// Let a friendship lapse once the friend is racing to win. See
+    /// [`Self::friendship_ends_at_the_race`].
+    pub fn enable_friendship_ends_at_the_race(&mut self) {
+        self.friendship_ends_at_the_race = true;
+    }
+
+    /// The twin of `enable_friendship_ends_at_the_race`.
+    pub fn disable_friendship_ends_at_the_race(&mut self) {
+        self.friendship_ends_at_the_race = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
