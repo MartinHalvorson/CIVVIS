@@ -7945,6 +7945,17 @@ impl AdvancedAi {
         self.siege_promotions_open_the_walls = false;
     }
 
+    /// Buy the threatened city's defender while its menu sells one. See
+    /// [`Self::threatened_city_buys_its_defender`].
+    pub fn enable_threatened_city_buys_its_defender(&mut self) {
+        self.threatened_city_buys_its_defender = true;
+    }
+
+    /// The twin of `enable_threatened_city_buys_its_defender`.
+    pub fn disable_threatened_city_buys_its_defender(&mut self) {
+        self.threatened_city_buys_its_defender = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -4016,6 +4016,13 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "envoys-open-the-siege-road", field: "envoys_open_the_siege_road", kind: Kind::OptIn, enable: AdvancedAi::enable_envoys_open_the_siege_road, disable: AdvancedAi::disable_envoys_open_the_siege_road },
     // Append before all tail markers to preserve every published genome index.
     Gene { tag: "siege-promotions-open-the-walls", field: "siege_promotions_open_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_promotions_open_the_walls, disable: AdvancedAi::disable_siege_promotions_open_the_walls },
+    // `threatened-city-buys-its-defender`: live Emperor Cali
+    // (civvis-20261018T045526Z) sold an Archer for 120 at turns 38-40 with
+    // 151-172 Gold banked while it was the plan's threatened city, bought
+    // nothing, and fell at 43 once a unit in it closed the menu. 37 of 164
+    // Emperor runs lost a city by turn 100. See
+    // `advanced/threatened_city_purchase.rs`.
+    Gene { tag: "threatened-city-buys-its-defender", field: "threatened_city_buys_its_defender", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_city_buys_its_defender, disable: AdvancedAi::disable_threatened_city_buys_its_defender },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
