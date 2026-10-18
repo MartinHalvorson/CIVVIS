@@ -8022,6 +8022,94 @@ impl AdvancedAi {
         self.air_wing_grows_with_the_aluminum = false;
     }
 
+    /// Lead the running wars with the rival the counter names. See
+    /// [`Self::denial_target_leads_the_fronts`].
+    pub fn enable_denial_target_leads_the_fronts(&mut self) {
+        self.denial_target_leads_the_fronts = true;
+    }
+
+    /// The twin of `enable_denial_target_leads_the_fronts`.
+    pub fn disable_denial_target_leads_the_fronts(&mut self) {
+        self.denial_target_leads_the_fronts = false;
+    }
+
+    /// Let a friendship lapse once the friend is racing to win. See
+    /// [`Self::friendship_ends_at_the_race`].
+    pub fn enable_friendship_ends_at_the_race(&mut self) {
+        self.friendship_ends_at_the_race = true;
+    }
+
+    /// The twin of `enable_friendship_ends_at_the_race`.
+    pub fn disable_friendship_ends_at_the_race(&mut self) {
+        self.friendship_ends_at_the_race = false;
+    }
+
+    /// Offer a friendship only to a rival at least as strong as us. See
+    /// [`Self::friendship_only_with_the_stronger`].
+    pub fn enable_friendship_only_with_the_stronger(&mut self) {
+        self.friendship_only_with_the_stronger = true;
+    }
+
+    /// The twin of `enable_friendship_only_with_the_stronger`.
+    pub fn disable_friendship_only_with_the_stronger(&mut self) {
+        self.friendship_only_with_the_stronger = false;
+    }
+
+    /// Aim a Domination conquest at a foothold within Bomber range of a rival
+    /// capital. See [`Self::foothold_faces_the_capital`].
+    pub fn enable_foothold_faces_the_capital(&mut self) {
+        self.foothold_faces_the_capital = true;
+    }
+
+    /// The twin of `enable_foothold_faces_the_capital`.
+    pub fn disable_foothold_faces_the_capital(&mut self) {
+        self.foothold_faces_the_capital = false;
+    }
+
+    /// Send a diplomatic mission to every rival we have met. See
+    /// [`Self::delegations_reach_every_rival`].
+    pub fn enable_delegations_reach_every_rival(&mut self) {
+        self.delegations_reach_every_rival = true;
+    }
+
+    /// The twin of `enable_delegations_reach_every_rival`.
+    pub fn disable_delegations_reach_every_rival(&mut self) {
+        self.delegations_reach_every_rival = false;
+    }
+
+    /// Keep a faith war from choosing the campaign front. See
+    /// [`Self::faith_war_is_no_front`].
+    pub fn enable_faith_war_is_no_front(&mut self) {
+        self.faith_war_is_no_front = true;
+    }
+
+    /// The twin of `enable_faith_war_is_no_front`.
+    pub fn disable_faith_war_is_no_front(&mut self) {
+        self.faith_war_is_no_front = false;
+    }
+
+    /// Version 2 of `faith-war-is-no-front`. See
+    /// [`Self::faith_war_is_no_front_2`].
+    pub fn enable_faith_war_is_no_front_2(&mut self) {
+        self.faith_war_is_no_front_2 = true;
+    }
+
+    /// The twin of `enable_faith_war_is_no_front_2`.
+    pub fn disable_faith_war_is_no_front_2(&mut self) {
+        self.faith_war_is_no_front_2 = false;
+    }
+
+    /// Offer no friendship to the campaign's target. See
+    /// [`Self::friendship_spares_the_target`].
+    pub fn enable_friendship_spares_the_target(&mut self) {
+        self.friendship_spares_the_target = true;
+    }
+
+    /// The twin of `enable_friendship_spares_the_target`.
+    pub fn disable_friendship_spares_the_target(&mut self) {
+        self.friendship_spares_the_target = false;
+    }
+
     /// Let a mustered siege count the guns it mustered when it stages. See
     /// [`Self::stage_reads_the_muster_breakers`].
     pub fn enable_stage_reads_the_muster_breakers(&mut self) {
