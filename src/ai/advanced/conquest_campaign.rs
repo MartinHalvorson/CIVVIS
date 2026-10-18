@@ -1,6 +1,240 @@
 use super::*;
 
 impl AdvancedAi {
+    pub(super) fn conquest_campaign_material_free_frontline_tech(
+        &self,
+        game: &Game,
+        player: usize,
+        plan: &StrategicPlan,
+        ordinary_goal: Option<Name>,
+    ) -> Option<Name> {
+        let is_frontliner = |kind: Name| {
+            let spec = &game.rules.units[kind];
+            spec.class == "military"
+                && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                && matches!(
+                    spec.promotion_class.as_str(),
+                    "melee" | "anti_cavalry" | "light_cavalry" | "heavy_cavalry"
+                )
+                && !spec.has_ranged_attack()
+                && spec.ranged_attack_strength() <= 0.0
+        };
+        let ordinary_goal = ordinary_goal?;
+        if game.players[player].techs.contains(&ordinary_goal) {
+            return None;
+        }
+        let mut material_starved = 0usize;
+        for held in game
+            .units
+            .values()
+            .filter(|held| held.owner == player && held.hp > 0)
+        {
+            let current = &game.rules.units[held.kind];
+            let Some(successor) = current.upgrade_to else {
+                continue;
+            };
+            let successor = game.player_unit_replacement(player, successor);
+            let next = &game.rules.units[successor];
+            if next.tech != Some(ordinary_goal) {
+                continue;
+            }
+            if !next.buildable || !is_frontliner(successor) {
+                return None;
+            }
+            let resource = next.requires_resource?;
+            let bill = game.unit_upgrade_resource_price(player, held.id, successor)?;
+            let stock = game.strategic_stockpile(player, resource);
+            let income = game.strategic_resource_rate(player, resource.as_str());
+            if !bill.is_finite()
+                || bill <= 0.0
+                || !stock.is_finite()
+                || !income.is_finite()
+                || stock + f64::EPSILON >= bill
+                || income > 0.0
+            {
+                return None;
+            }
+            material_starved += 1;
+        }
+        if material_starved < 3 {
+            return None;
+        }
+        let cities = game.player_city_ids(player);
+        if !self.victory_planning
+            || self.active_victory_target(game) != Some(VictoryTarget::Domination)
+            || self.war_plan.is_some()
+            || !matches!(
+                plan.strategy,
+                GrandStrategy::Expansion | GrandStrategy::Conquest
+            )
+            || plan.rush
+            || plan.threatened_city.is_some()
+            || cities.len() < 2
+            || !game.players[player]
+                .techs
+                .contains(&crate::name!("writing"))
+            || !plan.target_player.is_some_and(|target| {
+                game.players.get(target).is_some_and(|rival| {
+                    rival.alive
+                        && !rival.is_minor
+                        && !rival.is_barbarian
+                        && self.campaign_target_legal(game, player, target)
+                        && plan.target_city.is_some_and(|target_city| {
+                            game.cities.get(&target_city).is_some_and(|objective| {
+                                objective.owner == target
+                                    && Self::city_within_declaration_range(
+                                        game,
+                                        player,
+                                        objective.pos,
+                                    )
+                            })
+                        })
+                })
+            })
+            || game.players.iter().any(|rival| {
+                rival.id != player
+                    && rival.alive
+                    && !rival.is_minor
+                    && !rival.is_barbarian
+                    && game.is_at_war(player, rival.id)
+            })
+            || game.units.values().any(|unit| {
+                unit.owner == player
+                    && unit.hp > 0
+                    && is_frontliner(unit.kind)
+                    && game.rules.units[unit.kind].strength >= 45.0
+            })
+            || cities.iter().any(|city| {
+                game.cities[city]
+                    .queue
+                    .first()
+                    .and_then(Self::war_item_unit)
+                    .is_some_and(|(unit, _)| {
+                        is_frontliner(unit) && game.rules.units[unit].strength >= 45.0
+                    })
+            })
+        {
+            return None;
+        }
+        if game.rules.units.iter().any(|(unit, spec)| {
+            is_frontliner(*unit)
+                && spec.strength >= 45.0
+                && cities
+                    .iter()
+                    .any(|city| game.can_produce(player, *city, &Item::Unit { unit: *unit }))
+        }) {
+            return None;
+        }
+        let income = game.players[player].gold_per_turn;
+        let mut floor = 30.0 + (-income).max(0.0);
+        if self.solvent_or_hold {
+            floor = super::gold_and_cards::upgrade_floor_from(
+                floor,
+                game.unit_gold_maintenance(player),
+            );
+        }
+        let science: f64 = cities
+            .iter()
+            .map(|city| game.city_yields(*city).science)
+            .sum();
+        if !income.is_finite()
+            || !game.players[player].gold.is_finite()
+            || game.players[player].gold < floor
+            || !science.is_finite()
+            || science <= 0.0
+        {
+            return None;
+        }
+        let surcharge = game
+            .policy_effect(player, "unit_maintenance_surcharge")
+            .max(0.0);
+        let queued_upkeep: f64 = cities
+            .iter()
+            .filter_map(|city| {
+                game.cities[city]
+                    .queue
+                    .first()
+                    .and_then(Self::war_item_unit)
+            })
+            .map(|(unit, formation)| {
+                let spec = &game.rules.units[unit];
+                let bodies = match formation {
+                    1 => 1.5,
+                    2.. => 2.0,
+                    _ => 1.0,
+                };
+                spec.maintenance.max(0.0) * bodies
+                    + if spec.class == "military" {
+                        surcharge
+                    } else {
+                        0.0
+                    }
+            })
+            .sum();
+        if !queued_upkeep.is_finite() {
+            return None;
+        }
+        game.rules
+            .units
+            .iter()
+            .filter_map(|(unit, spec)| {
+                let technology = spec.tech?;
+                if !is_frontliner(*unit)
+                    || !spec.buildable
+                    || spec.strength < 45.0
+                    || !spec.strength.is_finite()
+                    || spec
+                        .unique_to
+                        .as_deref()
+                        .is_some_and(|civilization| civilization != game.players[player].civ)
+                    || game.player_unit_replacement(player, *unit) != *unit
+                    || spec.requires_resource.is_some()
+                    || spec.resource_cost != 0.0
+                    || spec.resource_maintenance != 0.0
+                    || spec.civic.is_some()
+                    || spec.requires_building.is_some()
+                    || spec.requires_district.is_some()
+                    || game.players[player].techs.contains(&technology)
+                    || spec
+                        .obsolete_tech
+                        .is_some_and(|obsolete| game.players[player].techs.contains(&obsolete))
+                    || !spec.maintenance.is_finite()
+                    || income - queued_upkeep - 2.0 * (spec.maintenance.max(0.0) + surcharge) < 2.0
+                {
+                    return None;
+                }
+                let key = Game::production_block_key(&Item::Unit { unit: *unit });
+                if cities.iter().any(|city| {
+                    game.host_unit_resource_prices
+                        .get(city)
+                        .and_then(|prices| prices.get(&key))
+                        .is_some_and(|price| !price.is_finite() || *price != 0.0)
+                }) {
+                    return None;
+                }
+                let (obsolete, gain) = game
+                    .units
+                    .values()
+                    .filter(|held| held.owner == player && held.hp > 0 && is_frontliner(held.kind))
+                    .filter(|held| game.rules.units[held.kind].strength + 15.0 <= spec.strength)
+                    .fold((0usize, 0.0), |(count, gain), held| {
+                        (
+                            count + 1,
+                            gain + spec.strength - game.rules.units[held.kind].strength,
+                        )
+                    });
+                let cost = Self::war_remaining_research_cost(game, player, technology);
+                (obsolete >= 3 && cost.is_finite() && cost > 0.0 && cost / science <= 12.0)
+                    .then_some((technology, gain / cost))
+            })
+            .max_by(|(left, left_value), (right, right_value)| {
+                left_value
+                    .total_cmp(right_value)
+                    .then_with(|| right.cmp(left))
+            })
+            .map(|(technology, _)| technology)
+    }
+
     pub(super) fn reserve_delegated_conquest_frontline(
         &self,
         game: &mut Game,

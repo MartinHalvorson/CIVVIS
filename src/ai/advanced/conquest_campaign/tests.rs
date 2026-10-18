@@ -861,3 +861,266 @@ fn conquest_campaign_delegated_frontline_uses_the_current_city_item_eta() {
         Some((second, item))
     );
 }
+
+fn material_free_frontline_research() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
+    let (mut game, controller, plan, home, second) = frontline_production();
+    game.players[0].civ = "Gran Colombia".into();
+    assert!(game.rules.civs.get("Gran Colombia").is_some());
+    let archers: Vec<_> = game
+        .units
+        .values()
+        .filter(|unit| unit.owner == 0 && unit.kind == "archer")
+        .map(|unit| unit.id)
+        .collect();
+    for unit in archers {
+        game.remove_unit(unit);
+    }
+    game.players[0]
+        .techs
+        .remove(&crate::name!("military_tactics"));
+    for technology in [
+        "pottery",
+        "mining",
+        "archery",
+        "wheel",
+        "bronze_working",
+        "iron_working",
+        "currency",
+        "mathematics",
+        "horseback_riding",
+    ] {
+        game.players[0].techs.insert(Name::new(technology));
+    }
+    for _ in 0..3 {
+        game.spawn_test_unit("heavy_chariot", 0, (30, 20));
+    }
+    game.players[0]
+        .strategic_resources
+        .insert(crate::name!("iron"), 0.0);
+    game.current = 0;
+    game.turn = 60;
+    let science = AdvancedAi::war_science_per_turn(&game, 0);
+    assert!(science > 0.0 && science.is_finite());
+    std::sync::Arc::make_mut(&mut game.host_research_quotes)
+        .entry(0)
+        .or_default()
+        .insert(
+            crate::name!("military_tactics"),
+            crate::game::HostResearchQuote {
+                cost: Some(science * 10.0),
+                progress: Some(0.0),
+            },
+        );
+    assert_eq!(game.strategic_resource_rate(0, "iron"), 0.0);
+    assert_eq!(
+        controller.wartime_modernization_tech(&game, 0).as_deref(),
+        Some("stirrups")
+    );
+    (game, controller, plan, home, second)
+}
+
+fn material_free_frontline_goal(
+    game: &Game,
+    controller: &AdvancedAi,
+    plan: &StrategicPlan,
+) -> Option<Name> {
+    controller.conquest_campaign_material_free_frontline_tech(
+        game,
+        0,
+        plan,
+        controller.wartime_modernization_tech(game, 0),
+    )
+}
+
+#[test]
+fn conquest_campaign_material_free_frontline_selects_a_bounded_unlock_without_actions() {
+    let (game, controller, plan, _, _) = material_free_frontline_research();
+    let before = game.log.len();
+    assert_eq!(
+        material_free_frontline_goal(&game, &controller, &plan).as_deref(),
+        Some("military_tactics")
+    );
+    assert_eq!(game.log.len(), before);
+    assert!(game.players[0].research.is_none());
+}
+
+#[test]
+fn conquest_campaign_material_free_frontline_reaches_the_actual_research_choice() {
+    let (mut game, controller, plan, _, _) = material_free_frontline_research();
+    controller.advanced_research(&mut game, 0, &plan);
+    assert_eq!(
+        game.players[0].research.as_deref(),
+        Some("military_tactics")
+    );
+}
+
+#[test]
+fn conquest_campaign_material_free_frontline_does_not_create_an_open_fallback() {
+    let (game, controller, plan, _, _) = material_free_frontline_research();
+    assert_eq!(
+        controller.conquest_campaign_material_free_frontline_tech(&game, 0, &plan, None),
+        None
+    );
+}
+
+#[test]
+fn conquest_campaign_material_free_frontline_preserves_a_funded_material_goal() {
+    let (mut game, controller, plan, _, _) = material_free_frontline_research();
+    game.players[0]
+        .strategic_resources
+        .insert(crate::name!("iron"), 1000.0);
+    assert_eq!(
+        material_free_frontline_goal(&game, &controller, &plan),
+        None
+    );
+    controller.advanced_research(&mut game, 0, &plan);
+    assert_ne!(
+        game.players[0].research.as_deref(),
+        Some("military_tactics")
+    );
+}
+
+#[test]
+fn conquest_campaign_material_free_frontline_preserves_positive_current_material_income() {
+    let (mut game, controller, plan, _, _) = material_free_frontline_research();
+    std::sync::Arc::make_mut(&mut game.observed_strategic_income_adjustments)
+        .entry(0)
+        .or_default()
+        .insert(crate::name!("iron"), 2.0);
+    assert!(game.strategic_resource_rate(0, "iron") > 0.0);
+    assert_eq!(
+        material_free_frontline_goal(&game, &controller, &plan),
+        None
+    );
+}
+
+#[test]
+fn conquest_campaign_material_free_frontline_preserves_a_resource_free_ranged_goal() {
+    let (mut game, controller, plan, _, _) = material_free_frontline_research();
+    for _ in 0..8 {
+        game.spawn_test_unit("archer", 0, (30, 20));
+    }
+    assert_eq!(
+        controller.wartime_modernization_tech(&game, 0).as_deref(),
+        Some("machinery")
+    );
+    assert_eq!(
+        material_free_frontline_goal(&game, &controller, &plan),
+        None
+    );
+    controller.advanced_research(&mut game, 0, &plan);
+    assert_eq!(game.players[0].research.as_deref(), Some("engineering"));
+}
+
+#[test]
+fn conquest_campaign_material_free_frontline_requires_three_material_starved_bodies() {
+    let (mut game, controller, plan, _, _) = material_free_frontline_research();
+    let chariot = game
+        .units
+        .values()
+        .find(|unit| unit.owner == 0 && unit.kind == "heavy_chariot")
+        .unwrap()
+        .id;
+    game.remove_unit(chariot);
+    assert_eq!(
+        controller.conquest_campaign_material_free_frontline_tech(
+            &game,
+            0,
+            &plan,
+            Some(crate::name!("stirrups"))
+        ),
+        None
+    );
+}
+
+#[test]
+fn conquest_campaign_material_free_frontline_yields_to_wounded_owned_modern_bodies() {
+    let (mut game, controller, plan, _, _) = material_free_frontline_research();
+    let modern = game.spawn_test_unit("pikeman", 0, (30, 20));
+    game.units.get_mut(&modern).unwrap().hp = 1;
+    assert_eq!(
+        material_free_frontline_goal(&game, &controller, &plan),
+        None
+    );
+}
+
+#[test]
+fn conquest_campaign_material_free_frontline_yields_to_first_queued_formations_and_current_unlocks()
+{
+    let (mut game, controller, plan, _, second) = material_free_frontline_research();
+    game.cities.get_mut(&second).unwrap().queue = vec![Item::Formation {
+        unit: crate::name!("pikeman"),
+        formation: 1,
+    }];
+    assert_eq!(
+        material_free_frontline_goal(&game, &controller, &plan),
+        None
+    );
+    game.cities.get_mut(&second).unwrap().queue.clear();
+    game.players[0]
+        .techs
+        .insert(crate::name!("military_tactics"));
+    assert_eq!(
+        material_free_frontline_goal(&game, &controller, &plan),
+        None
+    );
+}
+
+#[test]
+fn conquest_campaign_material_free_frontline_preserves_quiet_target_and_major_war_guards() {
+    let (mut game, controller, mut plan, home, _) = material_free_frontline_research();
+    plan.threatened_city = Some(home);
+    assert_eq!(
+        material_free_frontline_goal(&game, &controller, &plan),
+        None
+    );
+    plan.threatened_city = None;
+    plan.target_city = None;
+    assert_eq!(
+        material_free_frontline_goal(&game, &controller, &plan),
+        None
+    );
+    plan.target_city = Some(game.player_city_ids(2)[0]);
+    game.at_war.insert((0, 2));
+    assert_eq!(
+        material_free_frontline_goal(&game, &controller, &plan),
+        None
+    );
+}
+
+#[test]
+fn conquest_campaign_material_free_frontline_counts_the_full_twelve_turn_research_bill() {
+    let (mut game, controller, plan, _, _) = material_free_frontline_research();
+    let science = AdvancedAi::war_science_per_turn(&game, 0);
+    game.players[0].techs.remove(&crate::name!("mathematics"));
+    std::sync::Arc::make_mut(&mut game.host_research_quotes)
+        .entry(0)
+        .or_default()
+        .insert(
+            crate::name!("mathematics"),
+            crate::game::HostResearchQuote {
+                cost: Some(science * 3.0),
+                progress: Some(0.0),
+            },
+        );
+    assert_eq!(
+        material_free_frontline_goal(&game, &controller, &plan),
+        None
+    );
+}
+
+#[test]
+fn conquest_campaign_material_free_frontline_respects_current_treasury_and_two_body_upkeep() {
+    let (mut game, controller, plan, _, _) = material_free_frontline_research();
+    game.players[0].gold = 29.0;
+    assert_eq!(
+        material_free_frontline_goal(&game, &controller, &plan),
+        None
+    );
+    game.players[0].gold = 500.0;
+    game.players[0].gold_per_turn = 5.0;
+    assert_eq!(
+        material_free_frontline_goal(&game, &controller, &plan),
+        None
+    );
+}

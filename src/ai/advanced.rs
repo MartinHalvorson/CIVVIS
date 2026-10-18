@@ -18424,8 +18424,15 @@ impl AdvancedAi {
             let standing_army_fuel_goal = self.standing_army_fuel_goal(g, pid);
             // `breaker-research-first`: no non-breaker upgrade while a siege
             // is held for its wall-breaker. See `advanced/decisive_window.rs`.
+            let ordinary_modernization_goal = self.wartime_modernization_tech(g, pid);
             let wartime_modernization_goal = self
-                .wartime_modernization_tech(g, pid)
+                .conquest_campaign_material_free_frontline_tech(
+                    g,
+                    pid,
+                    plan,
+                    ordinary_modernization_goal,
+                )
+                .or(ordinary_modernization_goal)
                 .filter(|tech| !self.modernization_yields_to_the_breaker(g, pid, *tech));
             let production_technology_goal = self.named_production_technology_goal(g, pid, plan);
             let domination_siege_goal = self.domination_siege_research_goal(g, pid, plan);

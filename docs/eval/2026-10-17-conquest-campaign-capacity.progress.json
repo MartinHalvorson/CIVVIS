@@ -1,6 +1,6 @@
 {
-  "updated_utc": "2026-10-18T10:02:56.998467+00:00",
-  "status": "Development only:20 policies completed SAME6 known maps,120 candidate executions/66 separate diagnostic controls/0 fresh.20 focal wins 0;verified Domination 0;verified Deity Domination 0;foreign-major holdings observed on 0 maps.20 vs03/18 focal-action contrasts 3/3 of6.20 fails the registered development gate;03 remains fallback. No Native success, final STRICT A/A, fresh authorization or promotion readiness.",
+  "updated_utc": "2026-10-18T10:31:33.807255+00:00",
+  "status": "Development only:20 policies completed SAME6,120 candidate executions/66 separate diagnostic controls/0 fresh;0 verified Deity Domination wins,03 fallback.21 preregistered material-starved ordinary-goal alternative has genuine10pass/2 intended-positive no-op RED and12 new GREEN plus broader local suites.20 production/18 scoring parameters unchanged. No21 commit/freeze/push/games yet at this validation checkpoint. No Native success or promotion readiness.",
   "variant_01": {
     "analyzed_utc": "2026-10-17T18:02:22.529676+00:00",
     "variant": "variant-01",
@@ -166115,5 +166115,712 @@
         }
       ]
     }
+  },
+  "variant_21_registration": {
+    "registered_utc": "2026-10-18T10:07:47.566246+00:00",
+    "phase": "Known development only,candidate21;no fresh or promotion authorization",
+    "experimental_parent": "4e91e7d326ebe81bbecaee41b743bcae59f55b5a",
+    "experimental_parent_policy": "e64430e4cc986900550acffbd0b980111aba9576",
+    "selected_fallback": "12f146fcfbbdeae2e311cffa19d0b9b3dddd8551",
+    "parent_status": "20 fails the development gate despite earlier modern bodies/5 successful delegated queue claims on3 known maps.20 production is experimental,not a proven strength improvement;03 fallback.",
+    "proposal": {
+      "status": "Draft implementation/tests only;not yet registered or applied to the worktree",
+      "parent_policy": "variant-20",
+      "selected_fallback": "variant-03",
+      "observed_evidence": "20 all6 complete,0 focal/verified Deity Domination wins.3 focal-action contrasts vs03;5 successful delegated claims on3 maps.494 remains action-null with0 owned base45+ frontliners. Its actual Research/Decision journal at77 selects Horseback Riding toward Stirrups; this is not proof the new guard is live-eligible or an exclusive loss cause.",
+      "hypothesis": "Only when the existing ordinary standing-cohort goal has at least3 living direct nonranged land frontliner successors, every one currently short of its actual own upgrade-material bill and with no positive current gross income of that material, prefer a bounded resource-free contemporary-frontliner unlock. Otherwise preserve the ordinary goal. No new open fallback when ordinary goal is None.",
+      "retained_guards": "19 quiet Expansion/Conquest,named living legal reachable major,no rush/threat/major war/war package,Writing+2cities,no owned/first-queued/current-buildable base45+ frontliner,3 obsolete bodies at least15 weaker,full missing research bill<=12 current finite science turns,Gold floor and conservative two-body upkeep. Existing breaker veto filters the selected goal.20 production bridge+18 scoring remain unchanged.",
+      "not_changed": "Game/runtime/controller pins/force/genomes/brain/difficulty/handicap/victory/verification/observer inputs/material grants/research interruption/war thresholds/production quotas",
+      "new_tests": 12,
+      "expected_noop_red": "10pass,2 intended positive failures,provided all fixtures are valid;do not relabel fixture/compile failures as genuine RED",
+      "implementation_sha256": "39c81bc147eebd4abdcc836630db039b855826957c5a32caecb3db3f2616def0",
+      "test_proposal_sha256": "dddf43c20d8700cf2963c3489d7a37a70a3f25b0bca5a28ab1a8311e6d9fd482",
+      "no_new_executions": true
+    },
+    "single_policy_change": "Before the ordinary standing-cohort goal,consider the resource-free alternative only if that existing goal is Some and at least3 living direct nonranged land successors all have positive finite actual upgrade-material bills,insufficient finite own current stock and no positive finite own current gross resource income. A resource-free/ranged/funded/positive-income ordinary goal is preserved. Existing breaker veto still filters the result. No fallback when ordinary goal is None.",
+    "same_bounded_selector_as_19": "Future candidate is resource-free at canonical and current host city material prices,base45+ nonranged land frontliner,legal own civilization/building/civic/obsolete restrictions,3 current older frontliners at least15 weaker,full missing prerequisite bill<=12 current science turns;two-body current upkeep and ordinary Gold floor.19 quiet/named-target/war/owned/queued/buildable guards remain unchanged. No new declared war or production quota.",
+    "tests": {
+      "new": 12,
+      "expected_noop_red": {
+        "passed": 10,
+        "intended_positive_failures": 2
+      },
+      "no_compile_or_fixture_failure_claimed_as_genuine_red": true,
+      "scope": "New controlled UNIT fixtures only,canonical Gran Colombia/current own resource/science quotes. No evaluated or Native setup change."
+    },
+    "candidate_execution_plan": "All SAME6 known maps,2 workers,no selection or early stop.Only after all6 complete compare BOTH03 fallback and20 experimental parent;record actual selected research/actions/rosters/outcomes without claiming same-phase private eligibility from snapshots.",
+    "gates": "Original development>=1 verified focal Deity Domination owning all original capitals;then FINAL-source exact STRICT A/A;then all8 fresh pairs,>=1 Deity Domination,no fewer focal wins/no more Religion losses. Single Main integration/revalidation before Ready;ship only with all gates green.",
+    "unchanged": [
+      "Game/runtime/controller/pins/force283/genome/brain",
+      "map/difficulty/handicap/victory/verification/observer inputs",
+      "20 production bridge and18 scoring/gap parameters",
+      "war thresholds",
+      "research interruption semantics",
+      "final STRICT A/A and fresh thresholds"
+    ],
+    "original_registration_sha256": "2c8cb2eff49e0682a1af251d7ac7afcf2b32061b25b013e8b41e09c1baa4b813",
+    "new_method_sha256": "39c81bc147eebd4abdcc836630db039b855826957c5a32caecb3db3f2616def0",
+    "new_tests_sha256": "dddf43c20d8700cf2963c3489d7a37a70a3f25b0bca5a28ab1a8311e6d9fd482",
+    "new_hook_sha256": "a0572c029e3967a41f667382b3d0d75ea5132a00c983c138e89f133d6f588d96",
+    "proposal_overlap_check": {
+      "observed_utc": "2026-10-18T10:06:14.421415+00:00",
+      "open_prs_discovered": 29,
+      "planned_context_markers": [
+        "let wartime_modernization_goal = self",
+        ".wartime_modernization_tech(g, pid)",
+        ".filter(|tech| !self.modernization_yields_to_the_breaker(g, pid, *tech))",
+        "conquest_campaign_material_free_frontline_tech"
+      ],
+      "records": [
+        {
+          "number": 4103,
+          "head": "1a0c9fc96cf2ea06c32502f3ec133f89f272563d",
+          "changed_files": 8,
+          "findings": [
+            {
+              "path": "src/ai/advanced.rs",
+              "owned_module_or_test_file_overlap": false,
+              "planned_context_marker_matches": [],
+              "hunk_headers": [
+                "@@ -5496,6 +5496,13 @@ pub struct AdvancedAi {",
+                "@@ -9385,6 +9392,9 @@ mod runaway_expander;",
+                "@@ -10692,6 +10702,8 @@ impl AdvancedAi {",
+                "@@ -24219,7 +24231,7 @@ impl AdvancedAi {",
+                "@@ -24237,6 +24249,9 @@ impl AdvancedAi {",
+                "@@ -24264,6 +24279,7 @@ impl AdvancedAi {"
+              ]
+            }
+          ]
+        },
+        {
+          "number": 4102,
+          "head": "ae14dfba097e139a51f7b5424d3b2d9869fcf743",
+          "changed_files": 8,
+          "findings": [
+            {
+              "path": "src/ai/advanced.rs",
+              "owned_module_or_test_file_overlap": false,
+              "planned_context_marker_matches": [],
+              "hunk_headers": [
+                "@@ -6320,6 +6320,10 @@ pub struct AdvancedAi {",
+                "@@ -9381,6 +9385,10 @@ mod runaway_expander;",
+                "@@ -10843,6 +10851,7 @@ impl AdvancedAi {",
+                "@@ -37750,6 +37759,7 @@ impl AdvancedAi {"
+              ]
+            }
+          ]
+        },
+        {
+          "number": 4101,
+          "head": "1fbf23d44d671ea9a26127be2b9e54fb818aa395",
+          "changed_files": 7,
+          "findings": [
+            {
+              "path": "src/ai/advanced.rs",
+              "owned_module_or_test_file_overlap": false,
+              "planned_context_marker_matches": [],
+              "hunk_headers": [
+                "@@ -6320,6 +6320,14 @@ pub struct AdvancedAi {",
+                "@@ -10834,6 +10842,8 @@ impl AdvancedAi {"
+              ]
+            }
+          ]
+        },
+        {
+          "number": 4100,
+          "head": "0ce29efdd1d1c9837cd7583788aa418836d686ed",
+          "changed_files": 8,
+          "findings": [
+            {
+              "path": "src/ai/advanced.rs",
+              "owned_module_or_test_file_overlap": false,
+              "planned_context_marker_matches": [],
+              "hunk_headers": [
+                "@@ -5492,6 +5492,9 @@ pub struct AdvancedAi {",
+                "@@ -9367,6 +9370,9 @@ mod medina_quarter;",
+                "@@ -10674,6 +10680,7 @@ impl AdvancedAi {",
+                "@@ -15545,6 +15552,10 @@ impl AdvancedAi {"
+              ]
+            }
+          ]
+        },
+        {
+          "number": 4036,
+          "head": "f6c5d09284fe44ef9d2283343e622713e4567694",
+          "changed_files": 5,
+          "findings": [
+            {
+              "path": "src/ai/advanced.rs",
+              "owned_module_or_test_file_overlap": false,
+              "planned_context_marker_matches": [],
+              "hunk_headers": [
+                "@@ -6147,6 +6147,10 @@ pub struct AdvancedAi {",
+                "@@ -8573,6 +8577,7 @@ impl AdvancedAi {"
+              ]
+            }
+          ]
+        },
+        {
+          "number": 3962,
+          "head": "3f09405ac377f78c3d301d23294c9adc4388d621",
+          "changed_files": 18,
+          "findings": [
+            {
+              "path": "src/ai/advanced.rs",
+              "owned_module_or_test_file_overlap": false,
+              "planned_context_marker_matches": [],
+              "hunk_headers": [
+                "@@ -4962,6 +4962,10 @@ pub struct AdvancedAi {",
+                "@@ -7554,6 +7558,7 @@ mod threatened_reserve;",
+                "@@ -8399,6 +8404,8 @@ impl AdvancedAi {",
+                "@@ -35542,6 +35549,11 @@ impl AdvancedAi {",
+                "@@ -35609,6 +35621,9 @@ impl AdvancedAi {",
+                "@@ -35694,7 +35709,10 @@ impl AdvancedAi {",
+                "@@ -35756,13 +35774,14 @@ impl AdvancedAi {",
+                "@@ -42264,6 +42283,7 @@ impl AdvancedAi {"
+              ]
+            }
+          ]
+        },
+        {
+          "number": 3845,
+          "head": "e17569a4657b0bf2e8bde87fc3f3da6151324c25",
+          "changed_files": 4,
+          "findings": [
+            {
+              "path": "src/ai/advanced.rs",
+              "owned_module_or_test_file_overlap": false,
+              "planned_context_marker_matches": [],
+              "hunk_headers": [
+                "@@ -29,6 +29,7 @@ mod defensive_apostle;",
+                "@@ -6436,6 +6437,8 @@ pub struct AdvancedAi {",
+                "@@ -8590,6 +8593,7 @@ impl AdvancedAi {",
+                "@@ -22800,6 +22804,20 @@ impl AdvancedAi {"
+              ]
+            }
+          ]
+        },
+        {
+          "number": 3800,
+          "head": "391f7cd60e3da4fdf8ba41303f7747eb674eaf3d",
+          "changed_files": 9,
+          "findings": [
+            {
+              "path": "src/ai/advanced.rs",
+              "owned_module_or_test_file_overlap": false,
+              "planned_context_marker_matches": [],
+              "hunk_headers": [
+                "@@ -5517,6 +5517,10 @@ pub struct AdvancedAi {",
+                "@@ -7306,6 +7310,7 @@ pub use air_city_assault::AirCityAssault;",
+                "@@ -8454,6 +8459,8 @@ impl AdvancedAi {",
+                "@@ -14788,7 +14795,9 @@ impl AdvancedAi {"
+              ]
+            }
+          ]
+        },
+        {
+          "number": 3796,
+          "head": "dd98d82dc4401323142cc00eb4d614d5ca7c319f",
+          "changed_files": 9,
+          "findings": [
+            {
+              "path": "src/ai/advanced.rs",
+              "owned_module_or_test_file_overlap": false,
+              "planned_context_marker_matches": [],
+              "hunk_headers": [
+                "@@ -6549,6 +6549,11 @@ pub struct AdvancedAi {",
+                "@@ -7271,8 +7276,8 @@ mod surprise_defense;",
+                "@@ -7394,6 +7399,7 @@ mod siege_train;",
+                "@@ -8531,6 +8537,8 @@ impl AdvancedAi {",
+                "@@ -36945,6 +36953,7 @@ impl AdvancedAi {",
+                "@@ -37136,18 +37145,20 @@ impl AdvancedAi {"
+              ]
+            }
+          ]
+        },
+        {
+          "number": 3791,
+          "head": "841c715b5fba5c1a97a0e7ac18acd0440ee2e1e9",
+          "changed_files": 10,
+          "findings": [
+            {
+              "path": "src/ai/advanced.rs",
+              "owned_module_or_test_file_overlap": false,
+              "planned_context_marker_matches": [],
+              "hunk_headers": [
+                "@@ -5501,6 +5501,11 @@ pub struct AdvancedAi {",
+                "@@ -8426,6 +8431,8 @@ impl AdvancedAi {",
+                "@@ -36930,14 +36937,22 @@ impl AdvancedAi {",
+                "@@ -37136,19 +37151,26 @@ impl AdvancedAi {",
+                "@@ -39726,6 +39748,7 @@ impl AdvancedAi {",
+                "@@ -39803,6 +39826,18 @@ impl AdvancedAi {"
+              ]
+            }
+          ]
+        },
+        {
+          "number": 3580,
+          "head": "17bd1e53ea33ddab70191a3d63354a5ec6398f17",
+          "changed_files": 10,
+          "findings": [
+            {
+              "path": "src/ai/advanced.rs",
+              "owned_module_or_test_file_overlap": false,
+              "planned_context_marker_matches": [],
+              "hunk_headers": [
+                "@@ -5910,6 +5910,8 @@ pub struct AdvancedAi {",
+                "@@ -7158,6 +7160,7 @@ use district_planning::DistrictPlanCache;",
+                "@@ -8299,6 +8302,7 @@ impl AdvancedAi {",
+                "@@ -26823,15 +26827,17 @@ impl AdvancedAi {"
+              ]
+            }
+          ]
+        }
+      ],
+      "same_marked_hooks_or_owned_modules_overlap": false,
+      "scope": "Proposal21 changed-line audit of a material-starved standing-cohort research alternative and its existing breaker-filtered hook;20 production remains unchanged. No source mutation. File overlap alone is not line overlap; exact planned hook context and all new owned helper/test file paths are checked. Every overlapping PR head is re-read unchanged; complete per-PR file pagination is verified. No source mutation, takeover, PR body edit or push."
+    }
+  },
+  "variant_21_registration_sha256": "b448e2904d5be478849f35d19b2087ea8243b8f708342f9dc32fd341947c9d52",
+  "variant_21_game_executions_at_checkpoint": 0,
+  "variant_21_validation": {
+    "red": {
+      "passed": 10,
+      "intended_failed": 2,
+      "log": "material-free-v21-red.log"
+    },
+    "green_suites_passed": {
+      "green": 12,
+      "campaign": 58,
+      "research": 23,
+      "modernization": 22,
+      "faith": 29,
+      "policy": 71,
+      "production": 237,
+      "siege": 492,
+      "solvency": 14
+    },
+    "green_suites_ignored": {
+      "green": 0,
+      "campaign": 0,
+      "research": 0,
+      "modernization": 0,
+      "faith": 0,
+      "policy": 0,
+      "production": 1,
+      "siege": 1,
+      "solvency": 0
+    },
+    "cargo_check_tests": "PASS",
+    "20_production_and_18_gap_after_new_helper_byte_exact": true,
+    "registered_parameters_and_evaluated_setup_unchanged": true,
+    "source_quality": "Required on exact committed source before freeze/push;not yet claimed",
+    "body_metadata_terminal_green": {
+      "head": "4e91e7d326ebe81bbecaee41b743bcae59f55b5a",
+      "observed_utc": "2026-10-18T10:31:33.806711+00:00",
+      "new_metadata_runs": [
+        {
+          "conclusion": "success",
+          "databaseId": 39119270995,
+          "headSha": "4e91e7d326ebe81bbecaee41b743bcae59f55b5a",
+          "status": "completed",
+          "workflowName": "overwrite-guard"
+        },
+        {
+          "conclusion": "success",
+          "databaseId": 39119270990,
+          "headSha": "4e91e7d326ebe81bbecaee41b743bcae59f55b5a",
+          "status": "completed",
+          "workflowName": "collaboration-policy"
+        }
+      ],
+      "checks": [
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T10:22:01Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39117761685/job/117646915747",
+          "name": "cargo-test",
+          "startedAt": "2026-10-18T10:03:40Z",
+          "status": "COMPLETED",
+          "workflowName": "cargo-test"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T10:08:03Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39117761680/job/117646915581",
+          "name": "collaboration-policy",
+          "startedAt": "2026-10-18T10:03:40Z",
+          "status": "COMPLETED",
+          "workflowName": "collaboration-policy"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T10:31:04Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39119270990/job/117651332781",
+          "name": "collaboration-policy",
+          "startedAt": "2026-10-18T10:26:42Z",
+          "status": "COMPLETED",
+          "workflowName": "collaboration-policy"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T10:06:38Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39117761718/job/117646915775",
+          "name": "overwrite-guard",
+          "startedAt": "2026-10-18T10:03:40Z",
+          "status": "COMPLETED",
+          "workflowName": "overwrite-guard"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T10:29:38Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39119270995/job/117651333096",
+          "name": "overwrite-guard",
+          "startedAt": "2026-10-18T10:26:42Z",
+          "status": "COMPLETED",
+          "workflowName": "overwrite-guard"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T10:07:27Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39117761696/job/117646915643",
+          "name": "rust-quality",
+          "startedAt": "2026-10-18T10:03:40Z",
+          "status": "COMPLETED",
+          "workflowName": "rust-quality"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T10:18:31Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39117761693/job/117646915675",
+          "name": "paired-cost",
+          "startedAt": "2026-10-18T10:03:40Z",
+          "status": "COMPLETED",
+          "workflowName": "speed"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T10:04:50Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39117761685/job/117646915498",
+          "name": "published-build",
+          "startedAt": "2026-10-18T10:03:39Z",
+          "status": "COMPLETED",
+          "workflowName": "cargo-test"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T10:04:19Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39117761685/job/117646915666",
+          "name": "control-mod",
+          "startedAt": "2026-10-18T10:03:39Z",
+          "status": "COMPLETED",
+          "workflowName": "cargo-test"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T10:04:11Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://dashboard.gitguardian.com",
+          "name": "GitGuardian Security Checks",
+          "startedAt": "2026-10-18T10:04:07Z",
+          "status": "COMPLETED",
+          "workflowName": ""
+        }
+      ],
+      "all_source_runs": [
+        {
+          "conclusion": "success",
+          "databaseId": 39119270995,
+          "headSha": "4e91e7d326ebe81bbecaee41b743bcae59f55b5a",
+          "status": "completed",
+          "workflowName": "overwrite-guard"
+        },
+        {
+          "conclusion": "success",
+          "databaseId": 39119270990,
+          "headSha": "4e91e7d326ebe81bbecaee41b743bcae59f55b5a",
+          "status": "completed",
+          "workflowName": "collaboration-policy"
+        },
+        {
+          "conclusion": "success",
+          "databaseId": 39117761718,
+          "headSha": "4e91e7d326ebe81bbecaee41b743bcae59f55b5a",
+          "status": "completed",
+          "workflowName": "overwrite-guard"
+        },
+        {
+          "conclusion": "success",
+          "databaseId": 39117761696,
+          "headSha": "4e91e7d326ebe81bbecaee41b743bcae59f55b5a",
+          "status": "completed",
+          "workflowName": "rust-quality"
+        },
+        {
+          "conclusion": "success",
+          "databaseId": 39117761680,
+          "headSha": "4e91e7d326ebe81bbecaee41b743bcae59f55b5a",
+          "status": "completed",
+          "workflowName": "collaboration-policy"
+        },
+        {
+          "conclusion": "success",
+          "databaseId": 39117761693,
+          "headSha": "4e91e7d326ebe81bbecaee41b743bcae59f55b5a",
+          "status": "completed",
+          "workflowName": "speed"
+        },
+        {
+          "conclusion": "success",
+          "databaseId": 39117761685,
+          "headSha": "4e91e7d326ebe81bbecaee41b743bcae59f55b5a",
+          "status": "completed",
+          "workflowName": "cargo-test"
+        }
+      ]
+    }
+  },
+  "variant_21_final_overlap_check": {
+    "observed_utc": "2026-10-18T10:31:55.102818+00:00",
+    "open_prs_discovered": 30,
+    "planned_context_markers": [
+      "let wartime_modernization_goal = self",
+      ".wartime_modernization_tech(g, pid)",
+      ".filter(|tech| !self.modernization_yields_to_the_breaker(g, pid, *tech))",
+      "conquest_campaign_material_free_frontline_tech"
+    ],
+    "records": [
+      {
+        "number": 4104,
+        "head": "5c541a7eaf6a2e0a9f8c920da330bacb72fca6c3",
+        "changed_files": 9,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -8062,6 +8062,10 @@ pub struct AdvancedAi {",
+              "@@ -11092,6 +11096,7 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 4103,
+        "head": "1a0c9fc96cf2ea06c32502f3ec133f89f272563d",
+        "changed_files": 8,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -5496,6 +5496,13 @@ pub struct AdvancedAi {",
+              "@@ -9385,6 +9392,9 @@ mod runaway_expander;",
+              "@@ -10692,6 +10702,8 @@ impl AdvancedAi {",
+              "@@ -24219,7 +24231,7 @@ impl AdvancedAi {",
+              "@@ -24237,6 +24249,9 @@ impl AdvancedAi {",
+              "@@ -24264,6 +24279,7 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 4102,
+        "head": "d252ca2c241e25d105e52ca0c0796d7326a00f9a",
+        "changed_files": 9,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -6320,6 +6320,10 @@ pub struct AdvancedAi {",
+              "@@ -9381,6 +9385,10 @@ mod runaway_expander;",
+              "@@ -10843,6 +10851,7 @@ impl AdvancedAi {",
+              "@@ -37750,6 +37759,7 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 4101,
+        "head": "11703534d3f8d3d15fd76cbebeb7d7ca0dee2fdb",
+        "changed_files": 8,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -6320,6 +6320,14 @@ pub struct AdvancedAi {",
+              "@@ -10834,6 +10842,8 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 4100,
+        "head": "baa614d7ae296d9ad8e18183d4b03eaa5bb3bb3c",
+        "changed_files": 8,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -5496,6 +5496,9 @@ pub struct AdvancedAi {",
+              "@@ -9380,6 +9383,9 @@ mod medina_quarter;",
+              "@@ -10692,6 +10698,7 @@ impl AdvancedAi {",
+              "@@ -15566,6 +15573,10 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 4036,
+        "head": "f6c5d09284fe44ef9d2283343e622713e4567694",
+        "changed_files": 5,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -6147,6 +6147,10 @@ pub struct AdvancedAi {",
+              "@@ -8573,6 +8577,7 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3962,
+        "head": "3f09405ac377f78c3d301d23294c9adc4388d621",
+        "changed_files": 18,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -4962,6 +4962,10 @@ pub struct AdvancedAi {",
+              "@@ -7554,6 +7558,7 @@ mod threatened_reserve;",
+              "@@ -8399,6 +8404,8 @@ impl AdvancedAi {",
+              "@@ -35542,6 +35549,11 @@ impl AdvancedAi {",
+              "@@ -35609,6 +35621,9 @@ impl AdvancedAi {",
+              "@@ -35694,7 +35709,10 @@ impl AdvancedAi {",
+              "@@ -35756,13 +35774,14 @@ impl AdvancedAi {",
+              "@@ -42264,6 +42283,7 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3845,
+        "head": "e17569a4657b0bf2e8bde87fc3f3da6151324c25",
+        "changed_files": 4,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -29,6 +29,7 @@ mod defensive_apostle;",
+              "@@ -6436,6 +6437,8 @@ pub struct AdvancedAi {",
+              "@@ -8590,6 +8593,7 @@ impl AdvancedAi {",
+              "@@ -22800,6 +22804,20 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3800,
+        "head": "391f7cd60e3da4fdf8ba41303f7747eb674eaf3d",
+        "changed_files": 9,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -5517,6 +5517,10 @@ pub struct AdvancedAi {",
+              "@@ -7306,6 +7310,7 @@ pub use air_city_assault::AirCityAssault;",
+              "@@ -8454,6 +8459,8 @@ impl AdvancedAi {",
+              "@@ -14788,7 +14795,9 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3796,
+        "head": "dd98d82dc4401323142cc00eb4d614d5ca7c319f",
+        "changed_files": 9,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -6549,6 +6549,11 @@ pub struct AdvancedAi {",
+              "@@ -7271,8 +7276,8 @@ mod surprise_defense;",
+              "@@ -7394,6 +7399,7 @@ mod siege_train;",
+              "@@ -8531,6 +8537,8 @@ impl AdvancedAi {",
+              "@@ -36945,6 +36953,7 @@ impl AdvancedAi {",
+              "@@ -37136,18 +37145,20 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3791,
+        "head": "841c715b5fba5c1a97a0e7ac18acd0440ee2e1e9",
+        "changed_files": 10,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -5501,6 +5501,11 @@ pub struct AdvancedAi {",
+              "@@ -8426,6 +8431,8 @@ impl AdvancedAi {",
+              "@@ -36930,14 +36937,22 @@ impl AdvancedAi {",
+              "@@ -37136,19 +37151,26 @@ impl AdvancedAi {",
+              "@@ -39726,6 +39748,7 @@ impl AdvancedAi {",
+              "@@ -39803,6 +39826,18 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3580,
+        "head": "17bd1e53ea33ddab70191a3d63354a5ec6398f17",
+        "changed_files": 10,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -5910,6 +5910,8 @@ pub struct AdvancedAi {",
+              "@@ -7158,6 +7160,7 @@ use district_planning::DistrictPlanCache;",
+              "@@ -8299,6 +8302,7 @@ impl AdvancedAi {",
+              "@@ -26823,15 +26827,17 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      }
+    ],
+    "same_marked_hooks_or_owned_modules_overlap": false,
+    "scope": "Final21 precommit changed-line audit of a material-starved standing-cohort research alternative and its existing breaker-filtered hook;20 production remains unchanged. No source mutation. File overlap alone is not line overlap; exact planned hook context and all new owned helper/test file paths are checked. Every overlapping PR head is re-read unchanged; complete per-PR file pagination is verified. No source mutation, takeover, PR body edit or push."
   }
 }
