@@ -52,7 +52,9 @@ impl AdvancedAi {
         if self
             .threatened_defender_bought
             .get(&cid)
-            .is_some_and(|bought| turn.saturating_sub(*bought) < g.standard_duration(THREATENED_PURCHASE_COOLDOWN))
+            .is_some_and(|bought| {
+                turn.saturating_sub(*bought) < g.standard_duration(THREATENED_PURCHASE_COOLDOWN)
+            })
         {
             return false;
         }

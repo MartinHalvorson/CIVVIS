@@ -27,7 +27,11 @@ fn threatened(distance: i32) -> (Game, AdvancedAi, u32) {
     let at = g
         .wring(g.cities[&home].pos, distance)
         .into_iter()
-        .find(|pos| g.map.get(*pos).is_some_and(|t| g.rules.is_passable(t) && !g.rules.is_water(t)))
+        .find(|pos| {
+            g.map
+                .get(*pos)
+                .is_some_and(|t| g.rules.is_passable(t) && !g.rules.is_water(t))
+        })
         .expect("a tile for the raider");
     g.spawn_test_unit("warrior", 1, at);
     let mut ai = AdvancedAi::new();
@@ -39,19 +43,25 @@ fn soldiers_in(g: &Game, cid: u32) -> usize {
     let at = g.cities[&cid].pos;
     g.units
         .values()
-        .filter(|unit| unit.owner == 0 && unit.pos == at && g.rules.units[unit.kind].class == "military")
+        .filter(|unit| {
+            unit.owner == 0 && unit.pos == at && g.rules.units[unit.kind].class == "military"
+        })
         .count()
 }
 
 #[test]
 fn a_threatened_city_buys_its_defender_before_the_blow() {
     let (mut g, mut ai, home) = threatened(2);
-    assert!(g.player_visibility(0).contains(
-        &g.units.values().find(|u| u.owner == 1).unwrap().pos
-    ));
+    assert!(g
+        .player_visibility(0)
+        .contains(&g.units.values().find(|u| u.owner == 1).unwrap().pos));
     let gold = g.players[0].gold;
     assert!(ai.threatened_city_defender_purchase(&mut g, 0, Some(home)));
-    assert_eq!(soldiers_in(&g, home), 1, "one defender bought into the city");
+    assert_eq!(
+        soldiers_in(&g, home),
+        1,
+        "one defender bought into the city"
+    );
     assert!(g.players[0].gold < gold);
     // The cooldown: none again this turn.
     assert!(!ai.threatened_city_defender_purchase(&mut g, 0, Some(home)));
