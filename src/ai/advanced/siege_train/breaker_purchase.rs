@@ -153,8 +153,14 @@ impl AdvancedAi {
                         cid,
                     );
                     let better = best.as_ref().is_none_or(|old| {
-                        (!offer.0, offer.1, -offer.2, offer.3, offer.4, offer.5.as_str())
-                            < (!old.0, old.1, -old.2, old.3, old.4, old.5.as_str())
+                        (
+                            !offer.0,
+                            offer.1,
+                            -offer.2,
+                            offer.3,
+                            offer.4,
+                            offer.5.as_str(),
+                        ) < (!old.0, old.1, -old.2, old.3, old.4, old.5.as_str())
                     });
                     if better {
                         best = Some(offer);

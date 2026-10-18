@@ -29,7 +29,13 @@ fn held_siege(melee: usize, ranged: usize) -> (Game, AdvancedAi, u32, u32) {
         .min()
         .expect("room for a city of ours");
     let own = g.found_city_for(0, site, None);
-    for tech in ["masonry", "bronze_working", "construction", "mining", "the_wheel"] {
+    for tech in [
+        "masonry",
+        "bronze_working",
+        "construction",
+        "mining",
+        "the_wheel",
+    ] {
         g.players[0].techs.insert(crate::name::Name::new(tech));
     }
     g.players[0].gold = 2_000.0;
@@ -82,7 +88,10 @@ fn a_held_siege_behind_ancient_walls_buys_a_ram() {
         .values()
         .find(|unit| unit.owner == 0 && unit.kind == "battering_ram")
         .unwrap();
-    assert_eq!(ram.pos, g.cities[&own].pos, "bought in the city nearest the siege");
+    assert_eq!(
+        ram.pos, g.cities[&own].pos,
+        "bought in the city nearest the siege"
+    );
     // One per city within the cooldown.
     assert!(!ai.siege_breaker_purchase(&mut g, 0));
     assert_eq!(owned(&g, "battering_ram"), 1);
