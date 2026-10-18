@@ -4061,6 +4061,25 @@ pub const GENES: &[Gene] = &[
     // named it; the campaign stayed on the Aztecs until 165 and Byzantium won
     // on Culture at 176. See `advanced/denial_target_front.rs`.
     Gene { tag: "denial-target-leads-the-fronts", field: "denial_target_leads_the_fronts", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_target_leads_the_fronts, disable: AdvancedAi::disable_denial_target_leads_the_fronts },
+    // `friendship-ends-at-the-race`: live Emperor 075143Z renewed its
+    // friendship with Canada every 21 turns to 114, and at 150 the Conquest
+    // counter to Canada's 54% Culture race was barred by it. See
+    // `protective_friendship::FRIENDSHIP_RACE_CEILING`.
+    Gene { tag: "friendship-ends-at-the-race", field: "friendship_ends_at_the_race", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_ends_at_the_race, disable: AdvancedAi::disable_friendship_ends_at_the_race },
+    // `friendship-only-with-the-stronger`: 85% of the declared-friend
+    // rival-frames in the first four live games under `befriend-the-strongest`
+    // were with a rival weaker than us. See `protective_friendship.rs`.
+    Gene { tag: "friendship-only-with-the-stronger", field: "friendship_only_with_the_stronger", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_only_with_the_stronger, disable: AdvancedAi::disable_friendship_only_with_the_stronger },
+    // `foothold-faces-the-capital`: 56% of our war turns against a rival
+    // capital's owner after turn 120 had no city of ours within Bomber range
+    // of it; the campaign aimed at that range's town 154 of 408 turns. See
+    // `advanced/foothold_faces_the_capital.rs`.
+    Gene { tag: "foothold-faces-the-capital", field: "foothold_faces_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_foothold_faces_the_capital, disable: AdvancedAi::disable_foothold_faces_the_capital },
+    // `delegations-reach-every-rival`: 19 of 97 rivals met by turn 80 in
+    // the live Emperor pin era held our Delegation or Embassy; the mission
+    // step asked only the friendliest rival and sent nothing once it held
+    // ours. See `advanced/delegations_reach_every_rival.rs`.
+    Gene { tag: "delegations-reach-every-rival", field: "delegations_reach_every_rival", kind: Kind::OptIn, enable: AdvancedAi::enable_delegations_reach_every_rival, disable: AdvancedAi::disable_delegations_reach_every_rival },
     // `faith-war-is-no-front`: 51 of 106 live pin-era wars were faith wars;
     // the campaign aimed at their rival on 810 of 1,023 turns and took 1.0
     // cities per 100, against 6.4 for our conquest wars. See

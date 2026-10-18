@@ -277,6 +277,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `declaration-waits-for-the-breach` | off (unmeasured) | Opt-in gene `declaration-waits-for-the-breach`; see `Self::declaration_waits_for_the_breach`. | 1 \| 1 |
 | `declaration-waits-for-the-breaker` | off (unmeasured) | Opt-in gene `declaration-waits-for-the-breaker`; see `Self::declaration_waits_for_the_breaker`. | 1 \| 1 |
 | `defeated-majors-leave-the-board` | off (unmeasured) | Opt-in gene `defeated-majors-leave-the-board`; see `Self::retire_defeated_majors`. | 1 \| 1 |
+| `delegations-reach-every-rival` | off (unmeasured) | Send a diplomatic mission to every rival we have met. | 1 \| 1 |
 | `denial-keeps-its-rival` | off (unmeasured) | Opt-in gene `denial-keeps-its-rival`; see `Self::denial_keeps_its_rival`. | 1 \| 1 |
 | `denial-nearest-finish` | off (unmeasured) | Opt-in gene `denial-nearest-finish`; see `Self::denial_nearest_finish`. | 1 \| 1 |
 | `denial-needs-a-road` | off (unmeasured) | Opt-in gene `denial-needs-a-road`; see `Self::denial_needs_a_road`. | 1 \| 1 |
@@ -314,6 +315,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `first-granary-reserve-3` | off (unmeasured) | `first-granary-reserve-3`: version one's rule (population within one of housing, no Granary) reaches the delegated city governor too, and an Aqueduct follows the Granary while the city is still housing-bound. | 1 \| 3 |
 | `first-luxury-first-2` | off (unmeasured) | Opt-in gene `first-luxury-first-2`; see `advanced/first_luxury.rs`. | 1 \| 2 |
 | `flipped-capital-finishes` | off (unmeasured) | Opt-in gene `flipped-capital-finishes`; see `Self::flipped_capital_finishes`. | 1 \| 1 |
+| `foothold-faces-the-capital` | off (unmeasured) | Aim a Domination conquest at a foothold within Bomber range of a rival capital. | 1 \| 1 |
 | `formations-heed-refusals` | off (unmeasured) | Opt-in gene `formations-heed-refusals`; see `Self::formations_heed_refusals`. | 1 \| 1 |
 | `found-against-a-rival-faith` | off (unmeasured) | Opt-in gene `found-against-a-rival-faith`; see `Self::found_against_a_rival_faith`. | 1 \| 1 |
 | `founder-converts-its-own-cities` | off (unmeasured) | Opt-in gene `founder-converts-its-own-cities`; see `Self::founder_converts_its_own_cities`. | 1 \| 1 |
@@ -322,6 +324,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `founder-holds-the-holy-city` | off (unmeasured) | Opt-in gene `founder-holds-the-holy-city`; see `advanced/holy_city_guard.rs`. | 1 \| 1 |
 | `founder-keeps-two-sources` | off (unmeasured) | Opt-in gene `founder-keeps-two-sources`; see `advanced/second_faith_source.rs`. | 1 \| 1 |
 | `founder-spreads-only-its-faith` | off (unmeasured) | Opt-in gene `founder-spreads-only-its-faith`; see `advanced/founder_faith.rs`. | 1 \| 1 |
+| `friendship-ends-at-the-race` | off (unmeasured) | Let a friendship lapse once the friend is racing to win. | 1 \| 1 |
+| `friendship-only-with-the-stronger` | off (unmeasured) | Offer a friendship only to a rival at least as strong as us. | 1 \| 1 |
 | `front-finishes-its-capital` | off (unmeasured) | Opt-in gene `front-finishes-its-capital`; see `Self::front_finishes_its_capital`. | 1 \| 1 |
 | `front-finishes-its-siege` | off (unmeasured) | Opt-in gene `front-finishes-its-siege`; see `Self::front_finishes_its_siege`. | 1 \| 1 |
 | `front-needs-a-declarable-rival` | off (unmeasured) | Opt-in gene `front-needs-a-declarable-rival`; see `Self::front_needs_a_declarable_rival`. | 1 \| 1 |
