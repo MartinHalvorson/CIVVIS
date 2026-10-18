@@ -6349,6 +6349,14 @@ pub struct AdvancedAi {
     /// town within Bomber range of a rival capital no city of ours reaches.
     /// See `advanced/foothold_faces_the_capital.rs`. Off by default.
     foothold_faces_the_capital: bool,
+    /// `faith-war-is-no-front`: a running faith war's rival is not a
+    /// campaign front, nor the war that holds a declaration. See
+    /// `advanced/faith_war_is_no_front.rs`. Off by default.
+    faith_war_is_no_front: bool,
+    /// `faith-war-is-no-front-2`: version 1 plus the religious
+    /// interception's war and a war on a major with no city we have located.
+    /// Off by default.
+    faith_war_is_no_front_2: bool,
     /// Prepare an exposed non-capital city's Masonry and Walls before a
     /// stronger peaceful neighbour declares. Off by default.
     frontier_walls_before_the_surprise: bool,
@@ -9396,6 +9404,8 @@ mod launched_racer;
 mod city_memory;
 /// `faith-war-before-the-flip`: see `advanced/faith_war_before_the_flip.rs`.
 mod faith_war_before_the_flip;
+/// `faith-war-is-no-front`: see `advanced/faith_war_is_no_front.rs`.
+mod faith_war_is_no_front;
 
 /// `open-city-draws-the-front`: see `advanced/open_city_front.rs`.
 mod open_city_front;
@@ -10890,6 +10900,8 @@ impl AdvancedAi {
             friendship_only_with_the_stronger: false,
             friendship_spares_the_target: false,
             foothold_faces_the_capital: false,
+            faith_war_is_no_front: false,
+            faith_war_is_no_front_2: false,
             frontier_walls_before_the_surprise: false,
             frontier_watch_sightings: BTreeMap::new(),
             faith_war_before_the_flip: false,
@@ -15422,6 +15434,11 @@ impl AdvancedAi {
                 .unwrap_or(false)
                 && self.campaign_target_legal(g, pid, *target)
         });
+        // `faith-war-is-no-front`: a running faith war's rival is not a front
+        // the campaign target is chosen among. See
+        // `advanced/faith_war_is_no_front.rs`.
+        let wartime_rivals = self.without_faith_war(g, pid, wartime_rivals);
+        let wartime_majors = self.without_faith_war(g, pid, wartime_majors);
         let finishing_front = domination_finish.filter(|(rival, _)| {
             strategy == GrandStrategy::Conquest
                 && rush_victim.is_none()
@@ -24732,7 +24749,13 @@ impl AdvancedAi {
             .launched_racer_finish(g, pid)
             .is_some_and(|(rival, _)| rival == target);
         if plan.strategy != GrandStrategy::Conquest
-            || (major_wars > 0 && !second_front && !launched_finish)
+            // `faith-war-is-no-front`: a running faith war is not the war
+            // that holds this declaration.
+            || (!self
+                .without_faith_war(g, pid, self.one_war_enemies(g, pid))
+                .is_empty()
+                && !second_front
+                && !launched_finish)
             || (!rushing && g.turn < 35)
             || g.turn < self.peace_until
             || (!rushing && g.player_city_ids(pid).len() < 2)
