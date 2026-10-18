@@ -2930,7 +2930,9 @@ impl AdvancedAi {
         // not besieged — the melee would hold a ring under the city's fire
         // with nothing to show for it. See `BreachReading`.
         let breach = self.siege_needs_a_breaker.then(|| {
-            let mut reading = self.breach_reading(g, pid, &city, &force);
+            // `stage-reads-the-muster-breakers`: a closed muster's guns.
+            let mut reading =
+                self.breach_reading_within(g, pid, &city, &force, self.stage_breach_radius(cid));
             reading.air_walls = self.air_breach_walls(g, pid, cid);
             if strength >= DOMINANT_BILL_SHARE * bill {
                 reading.horizon = SHOOTER_BREACH_TURNS_DOMINANT;
@@ -6831,3 +6833,9 @@ mod native_route_predicate_tests;
 
 #[cfg(test)]
 mod native_muster_approach_tests;
+
+/// `stage-reads-the-muster-breakers`: see the module.
+mod stage_reads_the_muster;
+
+#[cfg(test)]
+mod stage_reads_the_muster_tests;

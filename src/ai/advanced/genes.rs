@@ -4080,6 +4080,11 @@ pub const GENES: &[Gene] = &[
     // step asked only the friendliest rival and sent nothing once it held
     // ours. See `advanced/delegations_reach_every_rival.rs`.
     Gene { tag: "delegations-reach-every-rival", field: "delegations_reach_every_rival", kind: Kind::OptIn, enable: AdvancedAi::enable_delegations_reach_every_rival, disable: AdvancedAi::disable_delegations_reach_every_rival },
+    // `stage-reads-the-muster-breakers`: 140 Stage turns over 57 live
+    // pin-era sieges held "nothing to open the walls" with the muster closed
+    // and a healthy gun 6-8 tiles out, past the 5-tile staging read. See
+    // `advanced/siege_train/stage_reads_the_muster.rs`.
+    Gene { tag: "stage-reads-the-muster-breakers", field: "stage_reads_the_muster_breakers", kind: Kind::OptIn, enable: AdvancedAi::enable_stage_reads_the_muster_breakers, disable: AdvancedAi::disable_stage_reads_the_muster_breakers },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
