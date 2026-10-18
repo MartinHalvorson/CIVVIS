@@ -4039,6 +4039,23 @@ pub const GENES: &[Gene] = &[
     // Walls for Rams queued in 1-3 Production cities while the treasury held
     // about 150 Gold. See `advanced/siege_train/breaker_purchase.rs`.
     Gene { tag: "breaker-bought-for-the-siege", field: "breaker_bought_for_the_siege", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_bought_for_the_siege, disable: AdvancedAi::disable_breaker_bought_for_the_siege },
+    // `gold-buys-the-idle-trader`: the first route slot stood empty at t30 in
+    // 45 of 51 live Emperor games and at t60 in 24, while the bank held
+    // 121-150 Gold and a Trader sold for about 95. See
+    // `advanced/trader_fills_the_idle_route/purchase.rs`.
+    Gene { tag: "gold-buys-the-idle-trader", field: "gold_buys_the_idle_trader", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_buys_the_idle_trader, disable: AdvancedAi::disable_gold_buys_the_idle_trader },
+    // `threatened-city-buys-its-defender`: live Emperor Cali
+    // (civvis-20261018T045526Z) sold an Archer for 120 at turns 38-40 with
+    // 151-172 Gold banked while it was the plan's threatened city, bought
+    // nothing, and fell at 43 once a unit in it closed the menu. 37 of 164
+    // Emperor runs lost a city by turn 100. See
+    // `advanced/threatened_city_purchase.rs`.
+    Gene { tag: "threatened-city-buys-its-defender", field: "threatened_city_buys_its_defender", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_city_buys_its_defender, disable: AdvancedAi::disable_threatened_city_buys_its_defender },
+    // `air-wing-grows-with-the-aluminum`: live Emperor 052256Z banked 25
+    // Aluminum (the cap) on +4 to +8 a turn from turn 150 with a four-Bomber
+    // wing, and that wing took Sydney's 400 walls in six turns; the wing's
+    // ceiling, not the metal, held it at four. See `AIR_WING_GROWN_BOMBERS`.
+    Gene { tag: "air-wing-grows-with-the-aluminum", field: "air_wing_grows_with_the_aluminum", kind: Kind::OptIn, enable: AdvancedAi::enable_air_wing_grows_with_the_aluminum, disable: AdvancedAi::disable_air_wing_grows_with_the_aluminum },
     // `denial-target-leads-the-fronts`: live Emperor 071140Z was at war with
     // Byzantium from turn 140 at 1.4-2.9 times its power while the counter
     // named it; the campaign stayed on the Aztecs until 165 and Byzantium won

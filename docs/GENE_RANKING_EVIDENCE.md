@@ -188,6 +188,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `air-fire-counts-on-the-city` | off (unmeasured) | Opt-in gene `air-fire-counts-on-the-city`; see `Self::air_fire_counts_on_the_city`. | 1 \| 1 |
 | `air-surge-strikes-through-urgency` | off (unmeasured) | Opt-in gene `air-surge-strikes-through-urgency`; see `Self::air_surge_strikes_through_urgency`. | 1 \| 1 |
 | `air-volley-needs-a-road` | off (unmeasured) | Opt-in gene `air-volley-needs-a-road`; see `Self::air_volley_needs_a_road`. | 1 \| 1 |
+| `air-wing-grows-with-the-aluminum` | off (unmeasured) | Grow the Bomber wing past four while the Aluminum sustains it. | 1 \| 1 |
 | `aluminum-ask-tops-up-gold` | off (unmeasured) | Opt-in gene `aluminum-ask-tops-up-gold`; see `AdvancedAi::aluminum_ask_tops_up_gold`. | 1 \| 1 |
 | `aluminum-buys-the-tile` | off (unmeasured) | Opt-in gene `aluminum-buys-the-tile`; see `AdvancedAi::aluminum_buys_the_tile`. | 1 \| 1 |
 | `amphibious-siege-train` | off (unmeasured) | A water-locked Domination siege objective's guns and escorts cross as one group. | — \| 2 |
@@ -325,6 +326,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `front-weighted-floor` | off (unmeasured) | The delegated governor's military floor builds where the unit reaches the campaign's target city soonest. | — \| 2 |
 | `front-weighted-floor-2` | off (unmeasured) | `front-weighted-floor-2`: while the floor is unmet, a city near the campaign's target builds the floor's unit ahead of its economy steps. | — \| 2 |
 | `frontier-walls-before-the-surprise` | off (unmeasured) | Prepare a watched frontier city's first fortifications before war. | 1 \| 1 |
+| `gold-buys-the-idle-trader` | off (unmeasured) | Buy an empty route slot's Trader with the idle bank. | 1 \| 1 |
 | `gold-buys-the-settler` | off (unmeasured) | Opt-in gene `gold-buys-the-settler`; see `advanced/gold_buys_the_settler.rs`. | 1 \| 1 |
 | `golden-dedication-serves-the-conquest` | off (unmeasured) | Opt-in gene `golden-dedication-serves-the-conquest`; see `Self::golden_dedication_serves_the_conquest`. | 1 \| 1 |
 | `granary-before-the-army` | off (unmeasured) | The delegated city governor's housing reserve (Granary, else Aqueduct) ahead of the military floor. | — \| 2 |
@@ -466,6 +468,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `surge-fields-the-bombers` | off (unmeasured) | Opt-in gene `surge-fields-the-bombers`; see `Self::surge_fields_the_bombers`. | 1 \| 1 |
 | `theater-keeps-its-amphitheater` | off (unmeasured) | Opt-in gene `theater-keeps-its-amphitheater`; see `AdvancedAi::theater_keeps_its_amphitheater`. | 1 \| 1 |
 | `theology-fights-only-to-win` | off (unmeasured) | Opt-in gene `theology-fights-only-to-win`; see `advanced/theology_fights.rs`. | 1 \| 1 |
+| `threatened-city-buys-its-defender` | off (unmeasured) | Buy the threatened city's defender while its menu sells one. | 1 \| 1 |
 | `tier-gap-priced-once` | off (unmeasured) | Opt-in gene `tier-gap-priced-once`; see `Self::tier_gap_priced_once`. | 1 \| 1 |
 | `tier-gap-reads-the-fielded-line` | off (unmeasured) | Opt-in gene `tier-gap-reads-the-fielded-line`; see `Self::tier_gap_reads_the_fielded_line`. | 1 \| 1 |
 | `tower-assault` | off (unmeasured) | Opt-in gene `tower-assault`; see `Self::tower_assault`. | 1 \| 1 |

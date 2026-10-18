@@ -7989,6 +7989,39 @@ impl AdvancedAi {
         self.breaker_bought_for_the_siege = false;
     }
 
+    /// Buy an empty route slot's Trader with the idle bank. See
+    /// [`Self::gold_buys_the_idle_trader`].
+    pub fn enable_gold_buys_the_idle_trader(&mut self) {
+        self.gold_buys_the_idle_trader = true;
+    }
+
+    /// The twin of `enable_gold_buys_the_idle_trader`.
+    pub fn disable_gold_buys_the_idle_trader(&mut self) {
+        self.gold_buys_the_idle_trader = false;
+    }
+
+    /// Buy the threatened city's defender while its menu sells one. See
+    /// [`Self::threatened_city_buys_its_defender`].
+    pub fn enable_threatened_city_buys_its_defender(&mut self) {
+        self.threatened_city_buys_its_defender = true;
+    }
+
+    /// The twin of `enable_threatened_city_buys_its_defender`.
+    pub fn disable_threatened_city_buys_its_defender(&mut self) {
+        self.threatened_city_buys_its_defender = false;
+    }
+
+    /// Grow the Bomber wing past four while the Aluminum sustains it. See
+    /// [`Self::air_wing_grows_with_the_aluminum`].
+    pub fn enable_air_wing_grows_with_the_aluminum(&mut self) {
+        self.air_wing_grows_with_the_aluminum = true;
+    }
+
+    /// The twin of `enable_air_wing_grows_with_the_aluminum`.
+    pub fn disable_air_wing_grows_with_the_aluminum(&mut self) {
+        self.air_wing_grows_with_the_aluminum = false;
+    }
+
     /// Lead the running wars with the rival the counter names. See
     /// [`Self::denial_target_leads_the_fronts`].
     pub fn enable_denial_target_leads_the_fronts(&mut self) {

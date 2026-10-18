@@ -5083,6 +5083,10 @@ pub struct AdvancedAi {
     /// `breaker-bought-for-the-siege`: the turn a breaker was last bought for
     /// each besieged city, for the cooldown.
     breaker_bought: BTreeMap<u32, u32>,
+    /// `air-wing-grows-with-the-aluminum`: the air surge's Bomber goal
+    /// reads the wing ceiling at `air_surge::AIR_WING_GROWN_BOMBERS` instead
+    /// of `AIR_SURGE_BOMBERS` while the Aluminum sustains it. Off by default.
+    air_wing_grows_with_the_aluminum: bool,
     /// `army-upgrade-materials`: buy the missing upfront material for one
     /// useful land upgrade while retaining its Gold bill and upkeep floor.
     /// See `army_upgrade_materials`. Off by default.
@@ -6935,6 +6939,10 @@ pub struct AdvancedAi {
     /// Off by default.
     engineering_for_capped_fresh_water: bool,
     // ---- append: g-k ------------------------------------------------
+    /// `gold-buys-the-idle-trader`: an empty trade route slot's Trader,
+    /// bought with the idle bank at peace. See
+    /// `advanced/trader_fills_the_idle_route/purchase.rs`. Off by default.
+    gold_buys_the_idle_trader: bool,
     /// `holdout-keeps-the-faith-war`: no peace offered to or accepted from a
     /// faith's founder while we are its last holdout and a city of ours
     /// follows or is converting to it. See `advanced/holdout_faith_war.rs`.
@@ -8642,6 +8650,11 @@ pub struct AdvancedAi {
     /// away. See `advanced/solvency.rs`. Off by default.
     solvent_or_hold: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `threatened-city-buys-its-defender`: see
+    /// `advanced/threatened_city_purchase.rs`. Off by default.
+    threatened_city_buys_its_defender: bool,
+    /// `threatened-city-buys-its-defender`: the turn each city last bought.
+    threatened_defender_bought: BTreeMap<u32, u32>,
     /// `war-target-prices-the-walls`: at peace, the Domination campaign names
     /// the rival whose capital our fielded siege guns take soonest. See
     /// `advanced/war_target_walls.rs`.
@@ -9795,6 +9808,10 @@ mod siege_response;
 /// A Settler past its walk allowance takes a safe site within reach. One
 /// opt-in gene; see `advanced/stalled_settler_site.rs`.
 mod stalled_settler_site;
+/// `threatened-city-buys-its-defender`: the plan's threatened city buys
+/// its land defender while its menu sells one. See
+/// `advanced/threatened_city_purchase.rs`.
+mod threatened_city_purchase;
 
 /// `first-luxury-first`: the Builder opens the empire's FIRST copy of a
 /// luxury ahead of an ordinary tile, priced by the Amenities the empire is
@@ -10595,6 +10612,7 @@ impl AdvancedAi {
             // ---- append: a-b ----------------------------------------
             breaker_bought_for_the_siege: false,
             breaker_bought: BTreeMap::new(),
+            air_wing_grows_with_the_aluminum: false,
             army_upgrade_materials: false,
             astrology_before_the_second_city: false,
             aluminum_ask_tops_up_gold: false,
@@ -10911,6 +10929,7 @@ impl AdvancedAi {
             front_weighted_floor_2: false,
             engineering_for_capped_fresh_water: false,
             // ---- append: g-k ----------------------------------------
+            gold_buys_the_idle_trader: false,
             holdout_keeps_the_faith_war: false,
             holdout_keeps_the_faith_war_2: false,
             holy_city_guard: RefCell::new(holy_city_guard::HolyCityGuard::default()),
@@ -11184,6 +11203,8 @@ impl AdvancedAi {
             science_suppression_hits_the_pads: false,
             solvent_or_hold: false,
             // ---- append: t-z ----------------------------------------
+            threatened_city_buys_its_defender: false,
+            threatened_defender_bought: BTreeMap::new(),
             war_target_prices_the_walls: false,
             unwalled_city_spares_the_train: false,
             theology_fights_only_to_win: false,
@@ -48771,7 +48792,10 @@ impl AdvancedAi {
         // emergency spends at most one action and suppresses that later
         // generic pass for this turn.
         let emergency_city_defense = self.emergency_city_defense_purchase(g, pid, &plan)
-            || self.imminent_major_war_defense_purchase(g, pid, plan.threatened_city);
+            || self.imminent_major_war_defense_purchase(g, pid, plan.threatened_city)
+            // `threatened-city-buys-its-defender`: see
+            // `advanced/threatened_city_purchase.rs`.
+            || self.threatened_city_defender_purchase(g, pid, plan.threatened_city);
         // A surprise declaration is itself a timing attack. Before the
         // peaceful purchase portfolio can spend the treasury, put one body in
         // the city nearest the declarer. An already executed city-saving
@@ -48787,6 +48811,12 @@ impl AdvancedAi {
         // `advanced/siege_train/breaker_purchase.rs`.
         if !emergency_city_defense && !surprise_defense_purchase {
             self.siege_breaker_purchase(g, pid);
+        }
+        // `gold-buys-the-idle-trader`: after the city-saving purchases, an
+        // empty route slot's Trader. See
+        // `advanced/trader_fills_the_idle_route/purchase.rs`.
+        if !emergency_city_defense && !surprise_defense_purchase {
+            self.idle_trader_purchase(g, pid, &plan);
         }
         // Once a city-saving purchase has had its one action, the turn a
         // breakthrough arrives still upgrades appointed predecessors before
