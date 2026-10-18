@@ -4093,6 +4093,11 @@ pub const GENES: &[Gene] = &[
     // pins g-m went to the campaign's own target; 125943Z befriended China at
     // 7 power while aiming at it. See `protective_friendship.rs`.
     Gene { tag: "friendship-spares-the-target", field: "friendship_spares_the_target", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_spares_the_target, disable: AdvancedAi::disable_friendship_spares_the_target },
+    // `stage-reads-the-muster-breakers`: 140 Stage turns over 57 live
+    // pin-era sieges held "nothing to open the walls" with the muster closed
+    // and a healthy gun 6-8 tiles out, past the 5-tile staging read. See
+    // `advanced/siege_train/stage_reads_the_muster.rs`.
+    Gene { tag: "stage-reads-the-muster-breakers", field: "stage_reads_the_muster_breakers", kind: Kind::OptIn, enable: AdvancedAi::enable_stage_reads_the_muster_breakers, disable: AdvancedAi::disable_stage_reads_the_muster_breakers },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
