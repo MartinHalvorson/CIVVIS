@@ -188,6 +188,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `air-fire-counts-on-the-city` | off (unmeasured) | Opt-in gene `air-fire-counts-on-the-city`; see `Self::air_fire_counts_on_the_city`. | 1 \| 1 |
 | `air-surge-strikes-through-urgency` | off (unmeasured) | Opt-in gene `air-surge-strikes-through-urgency`; see `Self::air_surge_strikes_through_urgency`. | 1 \| 1 |
 | `air-volley-needs-a-road` | off (unmeasured) | Opt-in gene `air-volley-needs-a-road`; see `Self::air_volley_needs_a_road`. | 1 \| 1 |
+| `air-wing-grows-with-the-aluminum` | off (unmeasured) | Grow the Bomber wing past four while the Aluminum sustains it. | 1 \| 1 |
 | `aluminum-ask-tops-up-gold` | off (unmeasured) | Opt-in gene `aluminum-ask-tops-up-gold`; see `AdvancedAi::aluminum_ask_tops_up_gold`. | 1 \| 1 |
 | `aluminum-buys-the-tile` | off (unmeasured) | Opt-in gene `aluminum-buys-the-tile`; see `AdvancedAi::aluminum_buys_the_tile`. | 1 \| 1 |
 | `amphibious-siege-train` | off (unmeasured) | A water-locked Domination siege objective's guns and escorts cross as one group. | — \| 2 |
@@ -279,6 +280,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `denial-keeps-its-rival` | off (unmeasured) | Opt-in gene `denial-keeps-its-rival`; see `Self::denial_keeps_its_rival`. | 1 \| 1 |
 | `denial-nearest-finish` | off (unmeasured) | Opt-in gene `denial-nearest-finish`; see `Self::denial_nearest_finish`. | 1 \| 1 |
 | `denial-needs-a-road` | off (unmeasured) | Opt-in gene `denial-needs-a-road`; see `Self::denial_needs_a_road`. | 1 \| 1 |
+| `denial-target-leads-the-fronts` | off (unmeasured) | Lead the running wars with the rival the counter names. | 1 \| 1 |
 | `deterrence-spares-the-faith-defence` | off (unmeasured) | Opt-in gene `deterrence-spares-the-faith-defence`; see `deterrence_may_displace` in `advanced/near_rival_deterrence.rs`. | 1 \| 1 |
 | `dialogue-never-declares-war` | off (unmeasured) | Opt-in gene `dialogue-never-declares-war`; see `Self::dialogue_never_declares_war`. | 1 \| 1 |
 | `diplomatic-contender-eliminated` | off (unmeasured) | Opt-in gene `diplomatic-contender-eliminated`; see `Self::diplomatic_contender_eliminated`. | 1 \| 1 |
@@ -468,6 +470,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `surge-fields-the-bombers` | off (unmeasured) | Opt-in gene `surge-fields-the-bombers`; see `Self::surge_fields_the_bombers`. | 1 \| 1 |
 | `theater-keeps-its-amphitheater` | off (unmeasured) | Opt-in gene `theater-keeps-its-amphitheater`; see `AdvancedAi::theater_keeps_its_amphitheater`. | 1 \| 1 |
 | `theology-fights-only-to-win` | off (unmeasured) | Opt-in gene `theology-fights-only-to-win`; see `advanced/theology_fights.rs`. | 1 \| 1 |
+| `threatened-city-buys-its-defender` | off (unmeasured) | Buy the threatened city's defender while its menu sells one. | 1 \| 1 |
 | `tier-gap-priced-once` | off (unmeasured) | Opt-in gene `tier-gap-priced-once`; see `Self::tier_gap_priced_once`. | 1 \| 1 |
 | `tier-gap-reads-the-fielded-line` | off (unmeasured) | Opt-in gene `tier-gap-reads-the-fielded-line`; see `Self::tier_gap_reads_the_fielded_line`. | 1 \| 1 |
 | `tower-assault` | off (unmeasured) | Opt-in gene `tower-assault`; see `Self::tower_assault`. | 1 \| 1 |

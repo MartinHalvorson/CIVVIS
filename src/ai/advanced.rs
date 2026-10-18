@@ -5083,6 +5083,10 @@ pub struct AdvancedAi {
     /// `breaker-bought-for-the-siege`: the turn a breaker was last bought for
     /// each besieged city, for the cooldown.
     breaker_bought: BTreeMap<u32, u32>,
+    /// `air-wing-grows-with-the-aluminum`: the air surge's Bomber goal
+    /// reads the wing ceiling at `air_surge::AIR_WING_GROWN_BOMBERS` instead
+    /// of `AIR_SURGE_BOMBERS` while the Aluminum sustains it. Off by default.
+    air_wing_grows_with_the_aluminum: bool,
     /// `army-upgrade-materials`: buy the missing upfront material for one
     /// useful land upgrade while retaining its Gold bill and upkeep floor.
     /// See `army_upgrade_materials`. Off by default.
@@ -5492,6 +5496,9 @@ pub struct AdvancedAi {
     /// costliest. See `advanced/solvency.rs`. Off by default.
     bankruptcy_exits_the_drain: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `denial-target-leads-the-fronts`: see
+    /// `advanced/denial_target_front.rs`. Off by default.
+    denial_target_leads_the_fronts: bool,
     /// `campus-claims-the-free-slot`: a city of three or more citizens with
     /// a free district slot and no Campus puts its first Campus at the head
     /// of its queue over an idle or deferrable head. See
@@ -8651,6 +8658,11 @@ pub struct AdvancedAi {
     /// away. See `advanced/solvency.rs`. Off by default.
     solvent_or_hold: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `threatened-city-buys-its-defender`: see
+    /// `advanced/threatened_city_purchase.rs`. Off by default.
+    threatened_city_buys_its_defender: bool,
+    /// `threatened-city-buys-its-defender`: the turn each city last bought.
+    threatened_defender_bought: BTreeMap<u32, u32>,
     /// `war-target-prices-the-walls`: at peace, the Domination campaign names
     /// the rival whose capital our fielded siege guns take soonest. See
     /// `advanced/war_target_walls.rs`.
@@ -9379,6 +9391,9 @@ mod medina_quarter;
 
 mod denial_nearest_finish;
 mod denial_needs_a_road;
+/// `denial-target-leads-the-fronts`: the countered rival we are fighting
+/// leads the wartime fronts. See `advanced/denial_target_front.rs`.
+mod denial_target_front;
 mod runaway_expander;
 // `found-against-a-rival-faith`. See `advanced/faith_veto.rs`.
 mod faith_veto;
@@ -9801,6 +9816,10 @@ mod siege_response;
 /// A Settler past its walk allowance takes a safe site within reach. One
 /// opt-in gene; see `advanced/stalled_settler_site.rs`.
 mod stalled_settler_site;
+/// `threatened-city-buys-its-defender`: the plan's threatened city buys
+/// its land defender while its menu sells one. See
+/// `advanced/threatened_city_purchase.rs`.
+mod threatened_city_purchase;
 
 /// `first-luxury-first`: the Builder opens the empire's FIRST copy of a
 /// luxury ahead of an ordinary tile, priced by the Amenities the empire is
@@ -10601,6 +10620,7 @@ impl AdvancedAi {
             // ---- append: a-b ----------------------------------------
             breaker_bought_for_the_siege: false,
             breaker_bought: BTreeMap::new(),
+            air_wing_grows_with_the_aluminum: false,
             army_upgrade_materials: false,
             astrology_before_the_second_city: false,
             aluminum_ask_tops_up_gold: false,
@@ -10686,6 +10706,7 @@ impl AdvancedAi {
             aqueduct_claims_the_capped_queue: false,
             bankruptcy_exits_the_drain: false,
             // ---- append: c-d ----------------------------------------
+            denial_target_leads_the_fronts: false,
             campus_claims_the_free_slot: false,
             campus_claims_the_free_slot_2: false,
             city_under_fire_ranks_first: false,
@@ -11192,6 +11213,8 @@ impl AdvancedAi {
             science_suppression_hits_the_pads: false,
             solvent_or_hold: false,
             // ---- append: t-z ----------------------------------------
+            threatened_city_buys_its_defender: false,
+            threatened_defender_bought: BTreeMap::new(),
             war_target_prices_the_walls: false,
             unwalled_city_spares_the_train: false,
             theology_fights_only_to_win: false,
@@ -15560,6 +15583,10 @@ impl AdvancedAi {
                     self.diplomatic_contender_to_eliminate(g, pid)
                         .filter(|rival| active_fronts.contains(rival))
                 })
+                // `denial-target-leads-the-fronts`: the countered rival we are
+                // already fighting, ahead of the second front and the running
+                // front. See `advanced/denial_target_front.rs`.
+                .or_else(|| self.denial_target_front(actionable_denial, active_fronts))
                 .or_else(|| {
                     self.one_war_second_front(g, pid)
                         // See `second_front_waits_for_the_front` and
@@ -48775,7 +48802,10 @@ impl AdvancedAi {
         // emergency spends at most one action and suppresses that later
         // generic pass for this turn.
         let emergency_city_defense = self.emergency_city_defense_purchase(g, pid, &plan)
-            || self.imminent_major_war_defense_purchase(g, pid, plan.threatened_city);
+            || self.imminent_major_war_defense_purchase(g, pid, plan.threatened_city)
+            // `threatened-city-buys-its-defender`: see
+            // `advanced/threatened_city_purchase.rs`.
+            || self.threatened_city_defender_purchase(g, pid, plan.threatened_city);
         // A surprise declaration is itself a timing attack. Before the
         // peaceful purchase portfolio can spend the treasury, put one body in
         // the city nearest the declarer. An already executed city-saving
