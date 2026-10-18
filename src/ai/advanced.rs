@@ -5484,6 +5484,11 @@ pub struct AdvancedAi {
     /// costliest. See `advanced/solvency.rs`. Off by default.
     bankruptcy_exits_the_drain: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `campus-claims-the-free-slot`: a city of three or more citizens with
+    /// a free district slot and no Campus puts its first Campus at the head
+    /// of its queue over an idle or deferrable head. See
+    /// `advanced/campus_claims_the_free_slot.rs`. Off by default.
+    campus_claims_the_free_slot: bool,
     /// `city-under-fire-ranks-first`: a city of ours that lost health since
     /// the last assessment, or was struck within the last turn, with a
     /// hostile soldier within [`objective_board::CAPITAL_DEFENSE_CONTACT`] is
@@ -9634,6 +9639,9 @@ mod band_hunt;
 /// `campus-building-claims-the-queue`: a standing Campus's next building
 /// claims its city's queue. See `advanced/campus_building_claims_the_queue.rs`.
 mod campus_building_claims_the_queue;
+/// `campus-claims-the-free-slot`: a city's free district slot claims its
+/// first Campus. See `advanced/campus_claims_the_free_slot.rs`.
+mod campus_claims_the_free_slot;
 /// `civic-awaits-its-inspiration`: the civic chooser waits for a near
 /// inspiration. See `advanced/civic_inspiration_wait.rs`.
 mod civic_inspiration_wait;
@@ -10643,6 +10651,7 @@ impl AdvancedAi {
             aqueduct_claims_the_capped_queue: false,
             bankruptcy_exits_the_drain: false,
             // ---- append: c-d ----------------------------------------
+            campus_claims_the_free_slot: false,
             city_under_fire_ranks_first: false,
             closed_border_blocker_declares: false,
             closed_border_holds: BTreeMap::new(),
@@ -32179,9 +32188,12 @@ impl AdvancedAi {
             });
             // `campus-building-claims-the-queue`: the claimed Campus building
             // finishes while the Campus still names it.
-            let campus_building_commitment = committed
-                .as_ref()
-                .is_some_and(|(_, item)| self.campus_building_claim_holds(g, pid, cid, plan, item));
+            let campus_building_commitment = committed.as_ref().is_some_and(|(_, item)| {
+                self.campus_building_claim_holds(g, pid, cid, plan, item)
+                    // `campus-claims-the-free-slot`: the claimed first Campus
+                    // finishes while its slot is still free.
+                    || self.free_slot_campus_holds(g, pid, cid, plan, item)
+            });
             // `industrial-zone-in-the-producers`: a queued Industrial Zone or
             // Workshop finishes before routine rescoring can claim the city.
             let industrial_zone_commitment = committed.as_ref().is_some_and(|(_, item)| {
@@ -49055,6 +49067,11 @@ impl AdvancedAi {
             // and the routine claims. Exact no-op while the gene is off. See
             // `advanced/campus_building_claims_the_queue.rs`.
             self.claim_campus_building(g, pid, &plan);
+            // `campus-claims-the-free-slot`: a free district slot's first
+            // Campus, after the Campus building claim and ahead of the Prophet
+            // race and the routine claims. Exact no-op while the gene is off.
+            // See `advanced/campus_claims_the_free_slot.rs`.
+            self.claim_free_slot_campus(g, pid, &plan);
             // `prophet-builds-its-site`: the Holy Site a Prophet founds on
             // goes first. Exact no-op while the gene is off.
             self.reserve_prophet_site(g, pid, &plan);

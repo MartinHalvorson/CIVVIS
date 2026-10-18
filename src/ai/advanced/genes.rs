@@ -4016,6 +4016,12 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "envoys-open-the-siege-road", field: "envoys_open_the_siege_road", kind: Kind::OptIn, enable: AdvancedAi::enable_envoys_open_the_siege_road, disable: AdvancedAi::disable_envoys_open_the_siege_road },
     // Append before all tail markers to preserve every published genome index.
     Gene { tag: "siege-promotions-open-the-walls", field: "siege_promotions_open_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_promotions_open_the_walls, disable: AdvancedAi::disable_siege_promotions_open_the_walls },
+    // `campus-claims-the-free-slot`: 69% of our Emperor cities at t50 held a
+    // free district slot and no Campus while the routine floor built Archers
+    // and Walls in them; Science per citizen ran 0.8 against the rivals' 1.8,
+    // and games with 2+ Campuses at t60 reached r150 0.62 against 0.30 with
+    // none. See `advanced/campus_claims_the_free_slot.rs`.
+    Gene { tag: "campus-claims-the-free-slot", field: "campus_claims_the_free_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_claims_the_free_slot, disable: AdvancedAi::disable_campus_claims_the_free_slot },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

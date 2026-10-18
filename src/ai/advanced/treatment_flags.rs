@@ -7945,6 +7945,17 @@ impl AdvancedAi {
         self.siege_promotions_open_the_walls = false;
     }
 
+    /// Claim a free district slot for a first Campus. See
+    /// [`Self::campus_claims_the_free_slot`].
+    pub fn enable_campus_claims_the_free_slot(&mut self) {
+        self.campus_claims_the_free_slot = true;
+    }
+
+    /// The twin of `enable_campus_claims_the_free_slot`.
+    pub fn disable_campus_claims_the_free_slot(&mut self) {
+        self.campus_claims_the_free_slot = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
