@@ -321,6 +321,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `front-weighted-floor` | off (unmeasured) | The delegated governor's military floor builds where the unit reaches the campaign's target city soonest. | — \| 2 |
 | `front-weighted-floor-2` | off (unmeasured) | `front-weighted-floor-2`: while the floor is unmet, a city near the campaign's target builds the floor's unit ahead of its economy steps. | — \| 2 |
 | `frontier-walls-before-the-surprise` | off (unmeasured) | Prepare a watched frontier city's first fortifications before war. | 1 \| 1 |
+| `gold-buys-the-idle-trader` | off (unmeasured) | Buy an empty route slot's Trader with the idle bank. | 1 \| 1 |
 | `gold-buys-the-settler` | off (unmeasured) | Opt-in gene `gold-buys-the-settler`; see `advanced/gold_buys_the_settler.rs`. | 1 \| 1 |
 | `golden-dedication-serves-the-conquest` | off (unmeasured) | Opt-in gene `golden-dedication-serves-the-conquest`; see `Self::golden_dedication_serves_the_conquest`. | 1 \| 1 |
 | `granary-before-the-army` | off (unmeasured) | The delegated city governor's housing reserve (Granary, else Aqueduct) ahead of the military floor. | — \| 2 |

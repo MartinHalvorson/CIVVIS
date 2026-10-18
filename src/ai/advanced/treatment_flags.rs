@@ -7945,6 +7945,17 @@ impl AdvancedAi {
         self.siege_promotions_open_the_walls = false;
     }
 
+    /// Buy an empty route slot's Trader with the idle bank. See
+    /// [`Self::gold_buys_the_idle_trader`].
+    pub fn enable_gold_buys_the_idle_trader(&mut self) {
+        self.gold_buys_the_idle_trader = true;
+    }
+
+    /// The twin of `enable_gold_buys_the_idle_trader`.
+    pub fn disable_gold_buys_the_idle_trader(&mut self) {
+        self.gold_buys_the_idle_trader = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

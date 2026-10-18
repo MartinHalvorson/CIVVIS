@@ -4016,6 +4016,11 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "envoys-open-the-siege-road", field: "envoys_open_the_siege_road", kind: Kind::OptIn, enable: AdvancedAi::enable_envoys_open_the_siege_road, disable: AdvancedAi::disable_envoys_open_the_siege_road },
     // Append before all tail markers to preserve every published genome index.
     Gene { tag: "siege-promotions-open-the-walls", field: "siege_promotions_open_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_promotions_open_the_walls, disable: AdvancedAi::disable_siege_promotions_open_the_walls },
+    // `gold-buys-the-idle-trader`: the first route slot stood empty at t30 in
+    // 45 of 51 live Emperor games and at t60 in 24, while the bank held
+    // 121-150 Gold and a Trader sold for about 95. See
+    // `advanced/trader_fills_the_idle_route/purchase.rs`.
+    Gene { tag: "gold-buys-the-idle-trader", field: "gold_buys_the_idle_trader", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_buys_the_idle_trader, disable: AdvancedAi::disable_gold_buys_the_idle_trader },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
