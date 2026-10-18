@@ -34641,6 +34641,8 @@ impl AdvancedAi {
                         self.conquest_reservation(g, pid, cid, spec, counts, threatened);
                     let missing_siege =
                         self.missing_domination_siege(g, pid, cid, plan, counts, spec);
+                    let campaign_frontline_gap =
+                        self.conquest_campaign_frontline_gap(g, pid, cid, plan, *unit);
                     if self.victory_planning
                         && domain_saturated
                         && domain_count >= domain_ceiling
@@ -34649,6 +34651,7 @@ impl AdvancedAi {
                         && early_archer <= 0.0
                         && conquest_body <= 0.0
                         && !missing_siege
+                        && campaign_frontline_gap == 0
                     {
                         return -2_000.0;
                     }
@@ -34712,6 +34715,7 @@ impl AdvancedAi {
                     };
                     // A missing wall-breaking role is one unfilled army slot,
                     // even when field units have filled the head-count target.
+                    let force_gap = force_gap.max(campaign_frontline_gap as f64);
                     let force_gap = if missing_siege {
                         force_gap.max(1.0)
                     } else {
@@ -36721,7 +36725,6 @@ impl AdvancedAi {
         // `contested_land_first`: the ground between us and a neighbour,
         // while the army can hold it. Zero with the gene off.
         value += self.contested_land_credit(g, pid, pos);
-        value += self.conquest_campaign_supply_site_credit(g, pid, pos);
         if self.defensible_sites {
             value += self.defensibility(g, pid, pos);
         }
@@ -37988,12 +37991,7 @@ impl AdvancedAi {
                         score
                     })
                     .unwrap_or(0.0);
-                let supply_credit = if prefilter_limit.is_some() {
-                    self.conquest_campaign_supply_site_credit(g, pid, pos)
-                } else {
-                    0.0
-                };
-                Some((pos, prefilter_score + supply_credit))
+                Some((pos, prefilter_score))
             })
             .collect::<Vec<_>>();
         let mut overflow = Vec::new();

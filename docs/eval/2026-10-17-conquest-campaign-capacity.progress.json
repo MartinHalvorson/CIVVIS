@@ -1,6 +1,6 @@
 {
-  "updated_utc": "2026-10-18T05:49:33.434781+00:00",
-  "status": "Development only:17 policies completed the SAME6 known maps,102 candidate executions;54 separate diagnostic/control executions complete;0 focal/verified Deity Domination wins and0 fresh holdouts.17 is action-null against16, with unchanged observed Iron ownership/mine timing.03 remains selected fallback. Not promotion ready; Native success unestablished.",
+  "updated_utc": "2026-10-18T06:19:00.027785+00:00",
+  "status": "Development only:17 policies completed the SAME6 maps,102 candidate executions/54 separate diagnostic controls/0 fresh.0 verified Deity Domination wins;03 remains fallback.18 registered and locally validated, not committed/frozen/pushed/evaluated at this metadata checkpoint.18 restores03 and tests a bounded2-modern-frontliner ordinary production gap. Native success unestablished; not promotion-ready.",
   "variant_01": {
     "analyzed_utc": "2026-10-17T18:02:22.529676+00:00",
     "variant": "variant-01",
@@ -68918,20 +68918,20 @@
     }
   },
   "checkpoint_17_validation_metadata_guard": {
-    "head": "a0d44593ef06c40e50d00cde795bd193c5314b7c",
-    "observed_utc": "2026-10-18T05:02:47.950863+00:00",
+    "head": "c52a6c59de6f5492000ac92573e48869ca780690",
+    "observed_utc": "2026-10-18T06:24:03.397644+00:00",
     "new_metadata_runs": [
       {
         "conclusion": "success",
-        "databaseId": 39098892363,
-        "headSha": "a0d44593ef06c40e50d00cde795bd193c5314b7c",
+        "databaseId": 39103610568,
+        "headSha": "c52a6c59de6f5492000ac92573e48869ca780690",
         "status": "completed",
         "workflowName": "overwrite-guard"
       },
       {
         "conclusion": "success",
-        "databaseId": 39098892376,
-        "headSha": "a0d44593ef06c40e50d00cde795bd193c5314b7c",
+        "databaseId": 39103610628,
+        "headSha": "c52a6c59de6f5492000ac92573e48869ca780690",
         "status": "completed",
         "workflowName": "collaboration-policy"
       }
@@ -68939,103 +68939,154 @@
     "checks": [
       {
         "__typename": "CheckRun",
-        "completedAt": "2026-10-18T04:11:30Z",
+        "completedAt": "2026-10-18T06:04:26Z",
         "conclusion": "SUCCESS",
-        "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39095395699/job/117580660709",
+        "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39101903354/job/117599726042",
         "name": "cargo-test",
-        "startedAt": "2026-10-18T03:57:01Z",
+        "startedAt": "2026-10-18T05:50:00Z",
         "status": "COMPLETED",
         "workflowName": "cargo-test"
       },
       {
         "__typename": "CheckRun",
-        "completedAt": "2026-10-18T04:01:32Z",
+        "completedAt": "2026-10-18T06:02:27Z",
         "conclusion": "SUCCESS",
-        "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39095395698/job/117580660388",
+        "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39101903350/job/117601006607",
         "name": "collaboration-policy",
-        "startedAt": "2026-10-18T03:57:02Z",
+        "startedAt": "2026-10-18T05:57:52Z",
         "status": "COMPLETED",
         "workflowName": "collaboration-policy"
       },
       {
         "__typename": "CheckRun",
-        "completedAt": "2026-10-18T05:02:15Z",
+        "completedAt": "2026-10-18T06:23:37Z",
         "conclusion": "SUCCESS",
-        "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39098892376/job/117590907025",
+        "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39103610628/job/117604738712",
         "name": "collaboration-policy",
-        "startedAt": "2026-10-18T04:57:47Z",
+        "startedAt": "2026-10-18T06:19:11Z",
         "status": "COMPLETED",
         "workflowName": "collaboration-policy"
       },
       {
         "__typename": "CheckRun",
-        "completedAt": "2026-10-18T03:59:42Z",
+        "completedAt": "2026-10-18T05:52:21Z",
         "conclusion": "SUCCESS",
-        "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39095395785/job/117580660722",
+        "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39101903340/job/117599726086",
         "name": "overwrite-guard",
-        "startedAt": "2026-10-18T03:57:01Z",
+        "startedAt": "2026-10-18T05:50:01Z",
         "status": "COMPLETED",
         "workflowName": "overwrite-guard"
       },
       {
         "__typename": "CheckRun",
-        "completedAt": "2026-10-18T05:00:05Z",
+        "completedAt": "2026-10-18T06:22:03Z",
         "conclusion": "SUCCESS",
-        "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39098892363/job/117590906935",
+        "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39103610568/job/117604738710",
         "name": "overwrite-guard",
-        "startedAt": "2026-10-18T04:57:46Z",
+        "startedAt": "2026-10-18T06:19:11Z",
         "status": "COMPLETED",
         "workflowName": "overwrite-guard"
       },
       {
         "__typename": "CheckRun",
-        "completedAt": "2026-10-18T04:00:30Z",
+        "completedAt": "2026-10-18T05:53:39Z",
         "conclusion": "SUCCESS",
-        "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39095395703/job/117580660558",
+        "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39101903343/job/117599726222",
         "name": "rust-quality",
-        "startedAt": "2026-10-18T03:57:01Z",
+        "startedAt": "2026-10-18T05:50:01Z",
         "status": "COMPLETED",
         "workflowName": "rust-quality"
       },
       {
         "__typename": "CheckRun",
-        "completedAt": "2026-10-18T04:10:04Z",
+        "completedAt": "2026-10-18T06:02:48Z",
         "conclusion": "SUCCESS",
-        "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39095395808/job/117580660916",
+        "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39101903358/job/117599726211",
         "name": "paired-cost",
-        "startedAt": "2026-10-18T03:57:02Z",
+        "startedAt": "2026-10-18T05:50:01Z",
         "status": "COMPLETED",
         "workflowName": "speed"
       },
       {
         "__typename": "CheckRun",
-        "completedAt": "2026-10-18T03:58:10Z",
+        "completedAt": "2026-10-18T05:51:06Z",
         "conclusion": "SUCCESS",
-        "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39095395699/job/117580660533",
+        "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39101903354/job/117599726263",
         "name": "published-build",
-        "startedAt": "2026-10-18T03:57:01Z",
+        "startedAt": "2026-10-18T05:50:01Z",
         "status": "COMPLETED",
         "workflowName": "cargo-test"
       },
       {
         "__typename": "CheckRun",
-        "completedAt": "2026-10-18T03:57:46Z",
+        "completedAt": "2026-10-18T05:50:47Z",
         "conclusion": "SUCCESS",
-        "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39095395699/job/117580660657",
+        "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39101903354/job/117599726218",
         "name": "control-mod",
-        "startedAt": "2026-10-18T03:57:02Z",
+        "startedAt": "2026-10-18T05:50:01Z",
         "status": "COMPLETED",
         "workflowName": "cargo-test"
       },
       {
         "__typename": "CheckRun",
-        "completedAt": "2026-10-18T03:57:01Z",
+        "completedAt": "2026-10-18T05:50:09Z",
         "conclusion": "SUCCESS",
         "detailsUrl": "https://dashboard.gitguardian.com",
         "name": "GitGuardian Security Checks",
-        "startedAt": "2026-10-18T03:56:57Z",
+        "startedAt": "2026-10-18T05:50:05Z",
         "status": "COMPLETED",
         "workflowName": ""
+      }
+    ],
+    "all_source_runs": [
+      {
+        "conclusion": "success",
+        "databaseId": 39103610568,
+        "headSha": "c52a6c59de6f5492000ac92573e48869ca780690",
+        "status": "completed",
+        "workflowName": "overwrite-guard"
+      },
+      {
+        "conclusion": "success",
+        "databaseId": 39103610628,
+        "headSha": "c52a6c59de6f5492000ac92573e48869ca780690",
+        "status": "completed",
+        "workflowName": "collaboration-policy"
+      },
+      {
+        "conclusion": "success",
+        "databaseId": 39101903340,
+        "headSha": "c52a6c59de6f5492000ac92573e48869ca780690",
+        "status": "completed",
+        "workflowName": "overwrite-guard"
+      },
+      {
+        "conclusion": "success",
+        "databaseId": 39101903343,
+        "headSha": "c52a6c59de6f5492000ac92573e48869ca780690",
+        "status": "completed",
+        "workflowName": "rust-quality"
+      },
+      {
+        "conclusion": "success",
+        "databaseId": 39101903350,
+        "headSha": "c52a6c59de6f5492000ac92573e48869ca780690",
+        "status": "completed",
+        "workflowName": "collaboration-policy"
+      },
+      {
+        "conclusion": "success",
+        "databaseId": 39101903358,
+        "headSha": "c52a6c59de6f5492000ac92573e48869ca780690",
+        "status": "completed",
+        "workflowName": "speed"
+      },
+      {
+        "conclusion": "success",
+        "databaseId": 39101903354,
+        "headSha": "c52a6c59de6f5492000ac92573e48869ca780690",
+        "status": "completed",
+        "workflowName": "cargo-test"
       }
     ]
   },
@@ -82032,5 +82083,799 @@
         }
       ]
     }
+  },
+  "source_17_documentation_backup": {
+    "head": "c52a6c59de6f5492000ac92573e48869ca780690",
+    "policy_unchanged_from": "24978bd859a0b6cdb7886bf8374ee4bc596d476c",
+    "all_checks_green": {
+      "headRefOid": "c52a6c59de6f5492000ac92573e48869ca780690",
+      "statusCheckRollup": [
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T06:04:26Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39101903354/job/117599726042",
+          "name": "cargo-test",
+          "startedAt": "2026-10-18T05:50:00Z",
+          "status": "COMPLETED",
+          "workflowName": "cargo-test"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T06:02:27Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39101903350/job/117601006607",
+          "name": "collaboration-policy",
+          "startedAt": "2026-10-18T05:57:52Z",
+          "status": "COMPLETED",
+          "workflowName": "collaboration-policy"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T05:52:21Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39101903340/job/117599726086",
+          "name": "overwrite-guard",
+          "startedAt": "2026-10-18T05:50:01Z",
+          "status": "COMPLETED",
+          "workflowName": "overwrite-guard"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T05:53:39Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39101903343/job/117599726222",
+          "name": "rust-quality",
+          "startedAt": "2026-10-18T05:50:01Z",
+          "status": "COMPLETED",
+          "workflowName": "rust-quality"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T06:02:48Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39101903358/job/117599726211",
+          "name": "paired-cost",
+          "startedAt": "2026-10-18T05:50:01Z",
+          "status": "COMPLETED",
+          "workflowName": "speed"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T05:51:06Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39101903354/job/117599726263",
+          "name": "published-build",
+          "startedAt": "2026-10-18T05:50:01Z",
+          "status": "COMPLETED",
+          "workflowName": "cargo-test"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T05:50:47Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39101903354/job/117599726218",
+          "name": "control-mod",
+          "startedAt": "2026-10-18T05:50:01Z",
+          "status": "COMPLETED",
+          "workflowName": "cargo-test"
+        },
+        {
+          "__typename": "CheckRun",
+          "completedAt": "2026-10-18T05:50:09Z",
+          "conclusion": "SUCCESS",
+          "detailsUrl": "https://dashboard.gitguardian.com",
+          "name": "GitGuardian Security Checks",
+          "startedAt": "2026-10-18T05:50:05Z",
+          "status": "COMPLETED",
+          "workflowName": ""
+        }
+      ],
+      "observed_utc": "2026-10-18T06:04:44.030167+00:00",
+      "all_source_runs": [
+        {
+          "conclusion": "success",
+          "databaseId": 39101903340,
+          "headSha": "c52a6c59de6f5492000ac92573e48869ca780690",
+          "status": "completed",
+          "workflowName": "overwrite-guard"
+        },
+        {
+          "conclusion": "success",
+          "databaseId": 39101903343,
+          "headSha": "c52a6c59de6f5492000ac92573e48869ca780690",
+          "status": "completed",
+          "workflowName": "rust-quality"
+        },
+        {
+          "conclusion": "success",
+          "databaseId": 39101903350,
+          "headSha": "c52a6c59de6f5492000ac92573e48869ca780690",
+          "status": "completed",
+          "workflowName": "collaboration-policy"
+        },
+        {
+          "conclusion": "success",
+          "databaseId": 39101903358,
+          "headSha": "c52a6c59de6f5492000ac92573e48869ca780690",
+          "status": "completed",
+          "workflowName": "speed"
+        },
+        {
+          "conclusion": "success",
+          "databaseId": 39101903354,
+          "headSha": "c52a6c59de6f5492000ac92573e48869ca780690",
+          "status": "completed",
+          "workflowName": "cargo-test"
+        }
+      ]
+    },
+    "initial_stale_graphql_watch_failure": {
+      "external_relative_path": "source-v17-docs-ci-watch.log",
+      "sha256": "8f257d8120e9ca51ff6246babda87c5761c7adc00e96b965dab1f60e6c8e2f32"
+    },
+    "push_reconciliation": {
+      "observed_utc": "2026-10-18T05:55:10.263280+00:00",
+      "graphql": {
+        "headRefName": "agent/mbp-m5-max-128/codex-conquest-1016/conquest-campaign-capacity-20261017T172623Z-ecd1",
+        "headRefOid": "c52a6c59de6f5492000ac92573e48869ca780690",
+        "statusCheckRollup": [
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-10-18T05:54:34Z",
+            "conclusion": "FAILURE",
+            "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39101903350/job/117599725990",
+            "name": "collaboration-policy",
+            "startedAt": "2026-10-18T05:50:01Z",
+            "status": "COMPLETED",
+            "workflowName": "collaboration-policy"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "0001-01-01T00:00:00Z",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39101903354/job/117599726042",
+            "name": "cargo-test",
+            "startedAt": "2026-10-18T05:50:00Z",
+            "status": "IN_PROGRESS",
+            "workflowName": "cargo-test"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "0001-01-01T00:00:00Z",
+            "conclusion": "",
+            "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39101903358/job/117599726211",
+            "name": "paired-cost",
+            "startedAt": "2026-10-18T05:50:01Z",
+            "status": "IN_PROGRESS",
+            "workflowName": "speed"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-10-18T05:52:21Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39101903340/job/117599726086",
+            "name": "overwrite-guard",
+            "startedAt": "2026-10-18T05:50:01Z",
+            "status": "COMPLETED",
+            "workflowName": "overwrite-guard"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-10-18T05:53:39Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39101903343/job/117599726222",
+            "name": "rust-quality",
+            "startedAt": "2026-10-18T05:50:01Z",
+            "status": "COMPLETED",
+            "workflowName": "rust-quality"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-10-18T05:51:06Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39101903354/job/117599726263",
+            "name": "published-build",
+            "startedAt": "2026-10-18T05:50:01Z",
+            "status": "COMPLETED",
+            "workflowName": "cargo-test"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-10-18T05:50:47Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/39101903354/job/117599726218",
+            "name": "control-mod",
+            "startedAt": "2026-10-18T05:50:01Z",
+            "status": "COMPLETED",
+            "workflowName": "cargo-test"
+          },
+          {
+            "__typename": "CheckRun",
+            "completedAt": "2026-10-18T05:50:09Z",
+            "conclusion": "SUCCESS",
+            "detailsUrl": "https://dashboard.gitguardian.com",
+            "name": "GitGuardian Security Checks",
+            "startedAt": "2026-10-18T05:50:05Z",
+            "status": "COMPLETED",
+            "workflowName": ""
+          }
+        ]
+      },
+      "rest_head": "c52a6c59de6f5492000ac92573e48869ca780690",
+      "remote_branch": "c52a6c59de6f5492000ac92573e48869ca780690",
+      "earlier_ci_watch_failure_retained": "source-v17-docs-ci-watch.log",
+      "repush_or_cancellation_attempted": false
+    },
+    "collaboration_api502_retry": {
+      "requested_utc": "2026-10-18T05:57:48.386307+00:00",
+      "run_id": 39101903350,
+      "head": "c52a6c59de6f5492000ac92573e48869ca780690",
+      "failed_attempt": 1,
+      "cause": "GitHub502 reading PR3580 files; retry only failed job; no head/body/push/merge/cancel change"
+    },
+    "failure_log": {
+      "external_relative_path": "source-v17-docs-failure-39101903350.log",
+      "sha256": "221d5b90a9abe5ecab38eb56e68dfcd8460ca2e4b6ec83a7346856e4ec5a2533"
+    },
+    "no_repush_cancellation_or_body_fix_for_transient_failure": true
+  },
+  "variant_18_registration": {
+    "cases": [
+      {
+        "difficulty": "immortal",
+        "seed": 45312861349
+      },
+      {
+        "difficulty": "immortal",
+        "seed": 47651167238
+      },
+      {
+        "difficulty": "immortal",
+        "seed": 46732028391
+      },
+      {
+        "difficulty": "deity",
+        "seed": 49478848256
+      },
+      {
+        "difficulty": "deity",
+        "seed": 43663176127
+      },
+      {
+        "difficulty": "deity",
+        "seed": 49220027834
+      }
+    ],
+    "required_all_six_complete": true,
+    "original_registration_sha256": "2c8cb2eff49e0682a1af251d7ac7afcf2b32061b25b013e8b41e09c1baa4b813",
+    "development_gate": "All six known maps complete and at least one verified focal Deity Domination owning all original capitals before fresh holdouts; then freeze the final selected source and pass strict observer A/A. The diagnostic journal exception never relaxes final-source A/A.",
+    "native_verification": "Unestablished. Controlled unit fixtures, nominal policy-value projections and reduced headless development runs are not Native wins or deployed-binary equivalence.",
+    "registered_utc": "2026-10-18T05:54:08.904676+00:00",
+    "variant": "variant-18",
+    "selected_policy_parent": "12f146fcfbbdeae2e311cffa19d0b9b3dddd8551",
+    "documentation_parent": "c52a6c59de6f5492000ac92573e48869ca780690",
+    "comparison_parent": "variant-03",
+    "candidate_executions_at_registration": 102,
+    "resource_diagnostic_control_executions_at_registration": 54,
+    "fresh_holdout_executions_at_registration": 0,
+    "rejected_previous_policy": "17 is focal-action-null against16 onall6 known maps,0 wins/foreign-major holdings and unchanged observed Iron access. Restoreexact selected03 Rust first; do not retain16 or17 as improvements.",
+    "hypothesis": "An obsolete headcount can satisfy the ordinary land ceiling while the empire owns no medieval-strength frontliners. Recognize a bounded gap of at most2 CURRENT legal land nonranged frontliners with base strength45+ in the ordinary production score, instead of requiring an idle city or increasing the generic army target. Actual modern bodies and other-city head queues count against the2-body budget, including wounded bodies; queued upkeep and positive projected income bound spending.",
+    "prior_evidence": {
+      "source03_build_order": "fedc5595355a39b508729d20b0b61245d40f8148bc424e4bb3ae552b11160d9c",
+      "source03_staging": "db250baeca9849b21eb3b259146be7936c84099c3bb81ba9dade9183bb14723f",
+      "source17_analysis": "455c0289b0de8d47070aa2b6cda98eed67ac07b9580d5f2d2d79769811889493",
+      "qualified03e_analysis": "e2217ce469386ac8d8f46c8cb1561eac0c03a4088b7e1d1221272a67c2118c58",
+      "reading": "All6 selected03 turn100 rosters have0 nonranged melee/anti/light/heavy bodies with canonical base strength45+, wounded or healthy. Source13 idle Pike claims changed3 Immortal maps but0 Deity action streams. Ordinary production has a generic land-headcount veto plus force-gap collapse.03e shows only a few adjacent funded geometries; most late candidates coincide with a threatened prior plan, and geometry is not helper eligibility. A new scarce-material return reservation is NOT selected.",
+      "limitations": "These are known-map descriptive observations, not causal production-helper eligibility or victory evidence. Some maps may have no currently trainable eligible unit or positive-income opening.45 is a preregistered canonical medieval infantry threshold, not effective military power or a claimed tactical matchup guarantee.",
+      "overlap_receipt": "8f82ea0c117e6979ae6e7448dee0e66213a661d69a2062820d7dcb57ea537101"
+    },
+    "bounded_change": [
+      "Only victory-planning Domination, Writing/2+ cities, Expansion or Conquest/nonrush, no appointed war package or threatened city, living legal named reachable major objective and no active major war.",
+      "Pure gap score for CURRENT can_produce-legal military land melee/anti/light/heavy units, no ranged/bombard attack, canonical base strength45+. No unlock, resource/host-permission, production speed, maintenance, movement, bank, force or engine change.",
+      "Need3+ owned living older frontliners each at least15 base strength below this candidate. Modern owned bodies with base strength at least this candidate count even wounded; other-city front head queues at least as strong count. Return max(0,2-owned-queued), never above2. Exclude the asking city queue so continuation cannot self-block. No state/cache or speculative journal.",
+      "Gold must cover the ordinary30 floor plus any current deficit and existing Solvent-or-hold maintenance floor when enabled. Current income minus conservative canonical base upkeep of ALL other-city first queued units minus this candidate upkeep must remain at least+2. No credit to fix insolvency through hypothetical future revenues.",
+      "Inside ordinary production scoring only, allow this bounded missing-role gap through the generic land headcount ceiling just as missing siege can. Raise force_gap to at least the actual1/2 missing modern bodies. Keep all preceding/following real item legality, air resource, hostile/emergency, economy, production-time, candidate-role and controller action checks. No queue preemption, idle-city force claim, generic army-target expansion, reservation or direct Produce action.",
+      "Unchanged6 cases,2 workers, full independent freeze/matched build/locked launch before games. Compare18 against selected03; report actual action contrast, production changes and timing/rosters/income without causal upgrade/debit claims. No fresh game before the unchanged Deity Domination gate and final-source STRICT observer A/A."
+    ],
+    "unit_tests_planned": [
+      "No-op RED must fail eligible pure gap and actual saturated production-value assertions. GREEN covers wounded/current/queued2-body cap, own-queue continuation,3 obsolete units, off-lane/legacy, emergencies/major war, named target/Writing, researched/material legality, conservative pending upkeep and Gold floor, and no old/ranged/siege gap. UNIT fixtures only; no evaluated/Native setup change."
+    ]
+  },
+  "variant_18_registration_sha256": "a13e48cc62006f80e58c2488a17e5a3e4aed9d8fa2b738617c0aaf8f5aee36da",
+  "variant_18_score_scope_clarification": {
+    "recorded_utc": "2026-10-18T06:13:15.516557+00:00",
+    "original_registration_sha256": "a13e48cc62006f80e58c2488a17e5a3e4aed9d8fa2b738617c0aaf8f5aee36da",
+    "candidate_executions_at_clarification": 0,
+    "original_registration_unchanged": true,
+    "scope_clarification_not_policy_parameter_change": "The registered phrase no queue preemption means no NEW dedicated preemption pass, queue mutation or direct Produce action is introduced. production_value already has existing consumers that can select or redirect production; changing its ordinary score may affect those existing consumers, so no invariant of unchanged queues/actions is promised. The helper itself is pure and emits no speculative journal. No formula,2-body candidate-tier cap,45 threshold,eligibility,maintenance/Gold guard,unit tests,case list,force or evaluation gate is changed. This clarification precedes candidate freeze,matched evaluation-binary build and any evaluated18 game; UNIT compile/test work has already begun."
+  },
+  "variant_18_owned_production_hunk_overlap_check": {
+    "observed_utc": "2026-10-18T05:49:54.025973+00:00",
+    "open_prs_discovered": 30,
+    "planned_context_markers": [
+      "let missing_siege =",
+      "&& !missing_siege",
+      "let force_gap = if missing_siege"
+    ],
+    "records": [
+      {
+        "number": 4098,
+        "head": "1c47ce2e44976555837c197a63fb365b5d4d0db9",
+        "changed_files": 8,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -8613,6 +8613,11 @@ pub struct AdvancedAi {",
+              "@@ -9757,6 +9762,10 @@ mod settler_walk_deadline;",
+              "@@ -11143,6 +11152,8 @@ impl AdvancedAi {",
+              "@@ -48723,7 +48734,10 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 4097,
+        "head": "5868d512da7d15f27299d71d503ffd3d5a8a3414",
+        "changed_files": 10,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -6915,6 +6915,10 @@ pub struct AdvancedAi {",
+              "@@ -10871,6 +10875,7 @@ impl AdvancedAi {",
+              "@@ -48734,6 +48739,12 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 4096,
+        "head": "a3e2cdd00e5032557a9c2ad2b052e97fb4ad96c1",
+        "changed_files": 9,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -5075,6 +5075,14 @@ pub struct AdvancedAi {",
+              "@@ -10558,6 +10566,8 @@ impl AdvancedAi {",
+              "@@ -48734,6 +48744,12 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 4095,
+        "head": "15b8ea27f4cce108321090cf8460fa40185b3895",
+        "changed_files": 9,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -5484,6 +5484,15 @@ pub struct AdvancedAi {",
+              "@@ -9634,6 +9643,9 @@ mod band_hunt;",
+              "@@ -10643,6 +10655,8 @@ impl AdvancedAi {",
+              "@@ -32179,9 +32193,12 @@ impl AdvancedAi {",
+              "@@ -49055,6 +49072,11 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 4094,
+        "head": "fb3e162c4891db874b76c51519cbece53db88db6",
+        "changed_files": 9,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -8037,6 +8037,15 @@ pub struct AdvancedAi {",
+              "@@ -11040,6 +11049,7 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 4036,
+        "head": "f6c5d09284fe44ef9d2283343e622713e4567694",
+        "changed_files": 5,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -6147,6 +6147,10 @@ pub struct AdvancedAi {",
+              "@@ -8573,6 +8577,7 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3962,
+        "head": "3f09405ac377f78c3d301d23294c9adc4388d621",
+        "changed_files": 18,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -4962,6 +4962,10 @@ pub struct AdvancedAi {",
+              "@@ -7554,6 +7558,7 @@ mod threatened_reserve;",
+              "@@ -8399,6 +8404,8 @@ impl AdvancedAi {",
+              "@@ -35542,6 +35549,11 @@ impl AdvancedAi {",
+              "@@ -35609,6 +35621,9 @@ impl AdvancedAi {",
+              "@@ -35694,7 +35709,10 @@ impl AdvancedAi {",
+              "@@ -35756,13 +35774,14 @@ impl AdvancedAi {",
+              "@@ -42264,6 +42283,7 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3845,
+        "head": "e17569a4657b0bf2e8bde87fc3f3da6151324c25",
+        "changed_files": 4,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -29,6 +29,7 @@ mod defensive_apostle;",
+              "@@ -6436,6 +6437,8 @@ pub struct AdvancedAi {",
+              "@@ -8590,6 +8593,7 @@ impl AdvancedAi {",
+              "@@ -22800,6 +22804,20 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3800,
+        "head": "391f7cd60e3da4fdf8ba41303f7747eb674eaf3d",
+        "changed_files": 9,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -5517,6 +5517,10 @@ pub struct AdvancedAi {",
+              "@@ -7306,6 +7310,7 @@ pub use air_city_assault::AirCityAssault;",
+              "@@ -8454,6 +8459,8 @@ impl AdvancedAi {",
+              "@@ -14788,7 +14795,9 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3796,
+        "head": "dd98d82dc4401323142cc00eb4d614d5ca7c319f",
+        "changed_files": 9,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -6549,6 +6549,11 @@ pub struct AdvancedAi {",
+              "@@ -7271,8 +7276,8 @@ mod surprise_defense;",
+              "@@ -7394,6 +7399,7 @@ mod siege_train;",
+              "@@ -8531,6 +8537,8 @@ impl AdvancedAi {",
+              "@@ -36945,6 +36953,7 @@ impl AdvancedAi {",
+              "@@ -37136,18 +37145,20 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3791,
+        "head": "841c715b5fba5c1a97a0e7ac18acd0440ee2e1e9",
+        "changed_files": 10,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -5501,6 +5501,11 @@ pub struct AdvancedAi {",
+              "@@ -8426,6 +8431,8 @@ impl AdvancedAi {",
+              "@@ -36930,14 +36937,22 @@ impl AdvancedAi {",
+              "@@ -37136,19 +37151,26 @@ impl AdvancedAi {",
+              "@@ -39726,6 +39748,7 @@ impl AdvancedAi {",
+              "@@ -39803,6 +39826,18 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3580,
+        "head": "17bd1e53ea33ddab70191a3d63354a5ec6398f17",
+        "changed_files": 10,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -5910,6 +5910,8 @@ pub struct AdvancedAi {",
+              "@@ -7158,6 +7160,7 @@ use district_planning::DistrictPlanCache;",
+              "@@ -8299,6 +8302,7 @@ impl AdvancedAi {",
+              "@@ -26823,15 +26827,17 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      }
+    ],
+    "same_marked_hooks_or_owned_modules_overlap": false,
+    "scope": "Pre-proposal audit of a possible bounded modern-frontliner production gap; not a selected policy or registration. File overlap alone is not line overlap; exact planned hook context and all new owned helper/test file paths are checked. Every overlapping PR head is re-read unchanged; complete per-PR file pagination is verified. No source mutation, takeover, PR body edit or push."
+  },
+  "variant_18_parent_restoration": "All4 source16/17 modified Rust paths were restored byte-for-byte to selected03 before18 no-op/unit tests.18 removes16/17 experimental production/siting changes and retains no failed claimed improvement. Domination modernization remains exact03.",
+  "posthoc_campaign_modern_frontline_counts": {
+    "receipt": {
+      "external_relative_path": "campaign-modern-frontline-counts-18.json",
+      "sha256": "50e2629eff5eb7534ff5b6a8c53dc3ee58d929e4618483e6f2cdccdbc54913f1"
+    },
+    "all_six_zero_base45_frontliners_at100": true,
+    "scope": "Descriptive known03 roster counts only; no helper eligibility or causal production-veto claim."
+  },
+  "variant_18_validation": {
+    "red": {
+      "passed": 7,
+      "intended_failed": 5,
+      "receipt": {
+        "external_relative_path": "frontline-v18-red.log",
+        "sha256": "3daf55f6aae30b7187086934975c834083c70e26cbfc48958bcf0f84e5913132"
+      }
+    },
+    "green_suites_passed": {
+      "green": 12,
+      "campaign": 36,
+      "modernization": 22,
+      "faith": 29,
+      "policy": 71,
+      "production": 237,
+      "siege": 492,
+      "solvency": 14
+    },
+    "cargo_check_tests": {
+      "external_relative_path": "frontline-v18-check-tests.log",
+      "sha256": "438f96e2810c0699c518cab5b8deebe39625c5b3a8e10db21faaf93cc1518eb2"
+    },
+    "source_quality": "Exact-source quality runs before freeze/push; not claimed complete at metadata checkpoint",
+    "fixture_scope": "UNIT fixtures only; evaluated/Native game setup unchanged"
+  },
+  "variant_18_game_executions_at_checkpoint": 0,
+  "variant_18_final_overlap_check": {
+    "observed_utc": "2026-10-18T06:24:18.638865+00:00",
+    "open_prs_discovered": 29,
+    "planned_context_markers": [
+      "let missing_siege =",
+      "&& !missing_siege",
+      "let force_gap = if missing_siege",
+      "fn settle_value_visible(",
+      "value += self.contested_land_credit(g, pid, pos);",
+      "Some((pos, prefilter_score))",
+      "settlement_prefilter_score_with_water_science_wonder(g, pid, pos)"
+    ],
+    "records": [
+      {
+        "number": 4098,
+        "head": "1c47ce2e44976555837c197a63fb365b5d4d0db9",
+        "changed_files": 8,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -8613,6 +8613,11 @@ pub struct AdvancedAi {",
+              "@@ -9757,6 +9762,10 @@ mod settler_walk_deadline;",
+              "@@ -11143,6 +11152,8 @@ impl AdvancedAi {",
+              "@@ -48723,7 +48734,10 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 4097,
+        "head": "42aa1bf90f67140d7a73cc72f58710520000f1b3",
+        "changed_files": 11,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -6915,6 +6915,10 @@ pub struct AdvancedAi {",
+              "@@ -10871,6 +10875,7 @@ impl AdvancedAi {",
+              "@@ -48734,6 +48739,12 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 4096,
+        "head": "b3d8208e842801e0cbee2664f029ac918d647a41",
+        "changed_files": 10,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -5075,6 +5075,14 @@ pub struct AdvancedAi {",
+              "@@ -10558,6 +10566,8 @@ impl AdvancedAi {",
+              "@@ -48734,6 +48744,12 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 4095,
+        "head": "a4164d1d09957af338020417061d5b3efc9beffb",
+        "changed_files": 9,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -5484,6 +5484,15 @@ pub struct AdvancedAi {",
+              "@@ -9643,6 +9652,9 @@ mod band_hunt;",
+              "@@ -10652,6 +10664,8 @@ impl AdvancedAi {",
+              "@@ -32189,9 +32203,12 @@ impl AdvancedAi {",
+              "@@ -49065,6 +49082,11 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 4036,
+        "head": "f6c5d09284fe44ef9d2283343e622713e4567694",
+        "changed_files": 5,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -6147,6 +6147,10 @@ pub struct AdvancedAi {",
+              "@@ -8573,6 +8577,7 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3962,
+        "head": "3f09405ac377f78c3d301d23294c9adc4388d621",
+        "changed_files": 18,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -4962,6 +4962,10 @@ pub struct AdvancedAi {",
+              "@@ -7554,6 +7558,7 @@ mod threatened_reserve;",
+              "@@ -8399,6 +8404,8 @@ impl AdvancedAi {",
+              "@@ -35542,6 +35549,11 @@ impl AdvancedAi {",
+              "@@ -35609,6 +35621,9 @@ impl AdvancedAi {",
+              "@@ -35694,7 +35709,10 @@ impl AdvancedAi {",
+              "@@ -35756,13 +35774,14 @@ impl AdvancedAi {",
+              "@@ -42264,6 +42283,7 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3845,
+        "head": "e17569a4657b0bf2e8bde87fc3f3da6151324c25",
+        "changed_files": 4,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -29,6 +29,7 @@ mod defensive_apostle;",
+              "@@ -6436,6 +6437,8 @@ pub struct AdvancedAi {",
+              "@@ -8590,6 +8593,7 @@ impl AdvancedAi {",
+              "@@ -22800,6 +22804,20 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3800,
+        "head": "391f7cd60e3da4fdf8ba41303f7747eb674eaf3d",
+        "changed_files": 9,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -5517,6 +5517,10 @@ pub struct AdvancedAi {",
+              "@@ -7306,6 +7310,7 @@ pub use air_city_assault::AirCityAssault;",
+              "@@ -8454,6 +8459,8 @@ impl AdvancedAi {",
+              "@@ -14788,7 +14795,9 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3796,
+        "head": "dd98d82dc4401323142cc00eb4d614d5ca7c319f",
+        "changed_files": 9,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -6549,6 +6549,11 @@ pub struct AdvancedAi {",
+              "@@ -7271,8 +7276,8 @@ mod surprise_defense;",
+              "@@ -7394,6 +7399,7 @@ mod siege_train;",
+              "@@ -8531,6 +8537,8 @@ impl AdvancedAi {",
+              "@@ -36945,6 +36953,7 @@ impl AdvancedAi {",
+              "@@ -37136,18 +37145,20 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3791,
+        "head": "841c715b5fba5c1a97a0e7ac18acd0440ee2e1e9",
+        "changed_files": 10,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -5501,6 +5501,11 @@ pub struct AdvancedAi {",
+              "@@ -8426,6 +8431,8 @@ impl AdvancedAi {",
+              "@@ -36930,14 +36937,22 @@ impl AdvancedAi {",
+              "@@ -37136,19 +37151,26 @@ impl AdvancedAi {",
+              "@@ -39726,6 +39748,7 @@ impl AdvancedAi {",
+              "@@ -39803,6 +39826,18 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3580,
+        "head": "17bd1e53ea33ddab70191a3d63354a5ec6398f17",
+        "changed_files": 10,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -5910,6 +5910,8 @@ pub struct AdvancedAi {",
+              "@@ -7158,6 +7160,7 @@ use district_planning::DistrictPlanCache;",
+              "@@ -8299,6 +8302,7 @@ impl AdvancedAi {",
+              "@@ -26823,15 +26827,17 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      }
+    ],
+    "same_marked_hooks_or_owned_modules_overlap": false,
+    "scope": "Precommit refresh for registered18 bounded modern-frontliner production hooks AND restoration of17 settlement hooks to03. File overlap alone is not line overlap; exact planned hook context and all new owned helper/test file paths are checked. Every overlapping PR head is re-read unchanged; complete per-PR file pagination is verified. No source mutation, takeover, PR body edit or push."
   }
 }

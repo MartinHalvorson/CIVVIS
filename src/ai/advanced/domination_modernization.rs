@@ -330,7 +330,6 @@ impl AdvancedAi {
     /// City-saving purchases run before this pass; appointed war packages own
     /// their own budget. Neither legal offers nor host prices are relaxed.
     pub(super) fn fund_domination_upgrades(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
-        self.conquest_campaign_prepare_frontline(g, pid, plan);
         if self.war_plan.is_some()
             || !plan.target_player.is_some_and(|target| {
                 g.players.get(target).is_some_and(|p| {
