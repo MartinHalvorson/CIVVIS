@@ -4049,6 +4049,10 @@ pub const GENES: &[Gene] = &[
     // counter to Canada's 54% Culture race was barred by it. See
     // `protective_friendship::FRIENDSHIP_RACE_CEILING`.
     Gene { tag: "friendship-ends-at-the-race", field: "friendship_ends_at_the_race", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_ends_at_the_race, disable: AdvancedAi::disable_friendship_ends_at_the_race },
+    // `friendship-only-with-the-stronger`: 85% of the declared-friend
+    // rival-frames in the first four live games under `befriend-the-strongest`
+    // were with a rival weaker than us. See `protective_friendship.rs`.
+    Gene { tag: "friendship-only-with-the-stronger", field: "friendship_only_with_the_stronger", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_only_with_the_stronger, disable: AdvancedAi::disable_friendship_only_with_the_stronger },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -6324,6 +6324,10 @@ pub struct AdvancedAi {
     /// friendship to a rival racing to win (see
     /// `protective_friendship::FRIENDSHIP_RACE_CEILING`). Off by default.
     friendship_ends_at_the_race: bool,
+    /// `friendship-only-with-the-stronger`: `befriend-the-strongest` offers
+    /// a friendship only to a rival whose military power is at least ours.
+    /// Off by default.
+    friendship_only_with_the_stronger: bool,
     /// Prepare an exposed non-capital city's Masonry and Walls before a
     /// stronger peaceful neighbour declares. Off by default.
     frontier_walls_before_the_surprise: bool,
@@ -10839,6 +10843,7 @@ impl AdvancedAi {
             drain_card_turn: std::cell::Cell::new(None),
             // ---- append: e-f ----------------------------------------
             friendship_ends_at_the_race: false,
+            friendship_only_with_the_stronger: false,
             frontier_walls_before_the_surprise: false,
             frontier_watch_sightings: BTreeMap::new(),
             faith_war_before_the_flip: false,

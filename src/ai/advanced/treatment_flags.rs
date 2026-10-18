@@ -8011,6 +8011,17 @@ impl AdvancedAi {
         self.friendship_ends_at_the_race = false;
     }
 
+    /// Offer a friendship only to a rival at least as strong as us. See
+    /// [`Self::friendship_only_with_the_stronger`].
+    pub fn enable_friendship_only_with_the_stronger(&mut self) {
+        self.friendship_only_with_the_stronger = true;
+    }
+
+    /// The twin of `enable_friendship_only_with_the_stronger`.
+    pub fn disable_friendship_only_with_the_stronger(&mut self) {
+        self.friendship_only_with_the_stronger = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
