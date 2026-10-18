@@ -7956,6 +7956,61 @@ impl AdvancedAi {
         self.siege_budget_counts_the_ram = false;
     }
 
+    /// Claim a free district slot for a first Campus. See
+    /// [`Self::campus_claims_the_free_slot`].
+    pub fn enable_campus_claims_the_free_slot(&mut self) {
+        self.campus_claims_the_free_slot = true;
+    }
+
+    /// The twin of `enable_campus_claims_the_free_slot`.
+    pub fn disable_campus_claims_the_free_slot(&mut self) {
+        self.campus_claims_the_free_slot = false;
+    }
+
+    /// Version 2 of the free-slot Campus claim. See
+    /// [`Self::campus_claims_the_free_slot_2`].
+    pub fn enable_campus_claims_the_free_slot_2(&mut self) {
+        self.campus_claims_the_free_slot_2 = true;
+    }
+
+    /// The twin of `enable_campus_claims_the_free_slot_2`.
+    pub fn disable_campus_claims_the_free_slot_2(&mut self) {
+        self.campus_claims_the_free_slot_2 = false;
+    }
+
+    /// Buy the wall-breaker a held siege waits for. See
+    /// [`Self::breaker_bought_for_the_siege`].
+    pub fn enable_breaker_bought_for_the_siege(&mut self) {
+        self.breaker_bought_for_the_siege = true;
+    }
+
+    /// The twin of `enable_breaker_bought_for_the_siege`.
+    pub fn disable_breaker_bought_for_the_siege(&mut self) {
+        self.breaker_bought_for_the_siege = false;
+    }
+
+    /// Buy an empty route slot's Trader with the idle bank. See
+    /// [`Self::gold_buys_the_idle_trader`].
+    pub fn enable_gold_buys_the_idle_trader(&mut self) {
+        self.gold_buys_the_idle_trader = true;
+    }
+
+    /// The twin of `enable_gold_buys_the_idle_trader`.
+    pub fn disable_gold_buys_the_idle_trader(&mut self) {
+        self.gold_buys_the_idle_trader = false;
+    }
+
+    /// Buy the threatened city's defender while its menu sells one. See
+    /// [`Self::threatened_city_buys_its_defender`].
+    pub fn enable_threatened_city_buys_its_defender(&mut self) {
+        self.threatened_city_buys_its_defender = true;
+    }
+
+    /// The twin of `enable_threatened_city_buys_its_defender`.
+    pub fn disable_threatened_city_buys_its_defender(&mut self) {
+        self.threatened_city_buys_its_defender = false;
+    }
+
     /// Grow the Bomber wing past four while the Aluminum sustains it. See
     /// [`Self::air_wing_grows_with_the_aluminum`].
     pub fn enable_air_wing_grows_with_the_aluminum(&mut self) {

@@ -2529,6 +2529,15 @@
           "campus-before-the-army-3": null
         }
       },
+      "campus-claims-the-free-slot": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "campus-claims-the-free-slot": null,
+          "campus-claims-the-free-slot-2": null
+        }
+      },
       "capital-prey-opens-a-front": {
         "rule_on": [],
         "head": null,
