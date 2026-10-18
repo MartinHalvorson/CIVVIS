@@ -5075,6 +5075,10 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `air-wing-grows-with-the-aluminum`: the air surge's Bomber goal
+    /// reads the wing ceiling at `air_surge::AIR_WING_GROWN_BOMBERS` instead
+    /// of `AIR_SURGE_BOMBERS` while the Aluminum sustains it. Off by default.
+    air_wing_grows_with_the_aluminum: bool,
     /// `army-upgrade-materials`: buy the missing upfront material for one
     /// useful land upgrade while retaining its Gold bill and upkeep floor.
     /// See `army_upgrade_materials`. Off by default.
@@ -10567,6 +10571,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            air_wing_grows_with_the_aluminum: false,
             army_upgrade_materials: false,
             astrology_before_the_second_city: false,
             aluminum_ask_tops_up_gold: false,

@@ -4023,6 +4023,11 @@ pub const GENES: &[Gene] = &[
     // (civvis-20261018T011334Z) held Stage turns 79-84 with a Ram, 12 of 14
     // units staged against Ancient Walls, at "70.2 turns / 25.0 endurance".
     Gene { tag: "siege-budget-counts-the-ram", field: "siege_budget_counts_the_ram", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_budget_counts_the_ram, disable: AdvancedAi::disable_siege_budget_counts_the_ram },
+    // `air-wing-grows-with-the-aluminum`: live Emperor 052256Z banked 25
+    // Aluminum (the cap) on +4 to +8 a turn from turn 150 with a four-Bomber
+    // wing, and that wing took Sydney's 400 walls in six turns; the wing's
+    // ceiling, not the metal, held it at four. See `AIR_WING_GROWN_BOMBERS`.
+    Gene { tag: "air-wing-grows-with-the-aluminum", field: "air_wing_grows_with_the_aluminum", kind: Kind::OptIn, enable: AdvancedAi::enable_air_wing_grows_with_the_aluminum, disable: AdvancedAi::disable_air_wing_grows_with_the_aluminum },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
