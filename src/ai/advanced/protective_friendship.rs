@@ -234,7 +234,9 @@ mod tests {
         ai.enable_befriend_the_strongest();
         ai.propose_protective_friendship(&mut v1, 0);
         assert!(
-            v1.pending_deals.iter().any(|deal| deal.from == 0 && deal.to == 2),
+            v1.pending_deals
+                .iter()
+                .any(|deal| deal.from == 0 && deal.to == 2),
             "without the gene the racer is asked"
         );
 
