@@ -1,0 +1,65 @@
+{
+  "registered_utc": "2026-10-18T00:29:41.094172+00:00",
+  "variant": "variant-14",
+  "selected_policy_parent": "12f146fcfbbdeae2e311cffa19d0b9b3dddd8551",
+  "rejected_previous_policy": "d69e59e6513be2fe324296fce5f5d3b4a0a5f7a4",
+  "hypothesis": "A Gold-only upgrade portfolio leaves a researched melee cohort blocked at12 Iron against20-resource bills. Request legal Retinues alongside the existing Gold discount only while the actual own cohort, stock and treasury make the resource discount useful; continue to execute upgrades solely through authoritative canonical quotes and Game.apply.",
+  "prior_evidence": [
+    "Thirteen policies completed78 candidate executions on the same6 known maps, with0 focal/verified Domination wins or fresh holdouts. Source13 reserves6 actual Pikeman queues on2 Immortal maps; no successful frontline claim on any Deity map and no Deity focal action contrast against03. Reject13 as a strength parent and restore03.",
+    "Posthoc qualified resource audit adds0 executions:03 Deity492 has Iron12 at sampled90/100/110. At100,3 Warriors have25-Gold/20-Iron current quotes and current Gold62.1; nominal half-resource10 would fit stock while25+30 reserve fits treasury. These projections are not legal/native upgrade offers, card-unlock proof, shared-budget affordability or victory evidence.",
+    "At110 the same map has12 stock,Gold188.1 and12 individually cash-coverable nominal-half-resource prospects. No focal Retinues slot/unslot action occurs on any of the6 prior diagnostic runs. Deity492 changes to Monarchy at95; no extra policy slots will be created.",
+    "Existing resource-ready domination_upgrade_need hides materially blocked upgrades from the Gold-card desire. Earlier variant10 changed civic timing only and did not add the missing resource card. This trial does not change research/civics or national declaration requirements."
+  ],
+  "bounded_change": [
+    "Restore03 exactly before14. Existing publicly claimed Advanced/conquest/domination_modernization paths only; no new production, runtime, engine, observation or Native path changes.",
+    "Assigned Domination plus victory planning only, available-or-held Retinues and nonnegative current income. At least2 own non-recon land military immediate researched upgrades with strength gain at least5 must have own stock below their pre-Retinues bill yet sufficient for the projected card-discounted bill; at least1 must have current authoritative-or-modeled Gold quote plus the existing30-Gold reserve funded.",
+    "Use unchanged canonical rules resource_cost, formation body factors1/2/3 and actual other policy discounts only to value the card. Do not rewrite host facts or present this projection as a legal upgrade quote. Skip redundant Retinues when another resource discount already supplies at least50 percent; retain the card while the same cohort still benefits even when its current quote is already discounted.",
+    "Place both useful Gold and resource cards in the normal legal policy portfolio. Protect held complementary upgrade cards during their special replacement pass, alongside existing maintenance/loyalty/culture safeguards. Never create slots or unseat protected Conscription/Levee/Limitanei/Praetorium/culture cards merely to force a discount.",
+    "An eligible material cohort may preserve/request the existing available Gold upgrade card even while resource-ready need is zero. Request either missing useful discount through strategic_policies before the ordinary funding pass. No new civic goal or earlier research.",
+    "Actual upgrades keep existing offer, host-price, per-unit resource, shared treasury/stock, reserve, safety and solvency gates. After a legal policy swap, stale host prices remain authoritative until a fresh observation. No Gold/resources/units granted or removed by the policy helper.",
+    "No force/genome, national war-edge, victory, difficulty/handicap, Native controller/pin/runtime or verification changes. Public metadata waits for source13 terminal checks; source14 can be edited/tested locally without pushing or changing the in-flight remote head."
+  ],
+  "unit_tests_planned": [
+    "A researched material-blocked affordable melee cohort asks for available Retinues without mutating stocks/quotes.",
+    "Already-held Retinues remains wanted while its pre-card stock gap persists; sufficient stock, below-half stock, unknown successor/card and one-unit cohorts do not qualify.",
+    "Current cash plus reserve, deficit income, assigned-victory and victory-planning controls.",
+    "Ranged resource-free/recon/sea/air and non-improving units do not create material-card demand; formation uses canonical2/3 bodies rather than maintenance1.5/2 multipliers.",
+    "A better already-held resource discount makes Retinues redundant.",
+    "Actual Monarchy/hysteresis policy selection co-seats and retains useful Professional Army/Retinues/Conscription without inventing slots.",
+    "Actual funding upgrades only what the shared observed Gold/material bank can afford; stale host resource/Gold quotes are not overwritten or falsely discounted."
+  ],
+  "comparison_parent": "variant-03",
+  "cases": [
+    {
+      "difficulty": "immortal",
+      "seed": 45312861349
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 47651167238
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 46732028391
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49478848256
+    },
+    {
+      "difficulty": "deity",
+      "seed": 43663176127
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49220027834
+    }
+  ],
+  "required_all_six_complete": true,
+  "original_registration_sha256": "2c8cb2eff49e0682a1af251d7ac7afcf2b32061b25b013e8b41e09c1baa4b813",
+  "development_gate": "All six known maps complete and at least one verified focal Deity Domination owning all original capitals before fresh holdouts; then freeze the final selected source and pass strict observer A/A. The diagnostic journal exception never relaxes final-source A/A.",
+  "candidate_executions_at_registration": 78,
+  "resource_diagnostic_control_executions_at_registration": 18,
+  "fresh_holdout_executions_at_registration": 0,
+  "native_verification": "Unestablished. Controlled unit fixtures, nominal policy-value projections and reduced headless development runs are not Native wins or deployed-binary equivalence."
+}

@@ -1,98 +1,62 @@
 use super::*;
 
 #[test]
-fn conquest_campaign_frontline_respects_threats_and_recent_attacks() {
-    let (game, controller, plan, cities) = frontline_campaign();
-    let mut threatened = plan.clone();
-    threatened.threatened_city = Some(cities[0]);
+fn conquest_campaign_material_respects_the_unique_successor_resource_bill() {
+    let (mut game, controller, _, units) = material_campaign();
+    game.players[0].civ = "Rome".to_string();
     assert_eq!(
-        controller.claim_conquest_frontline(&mut game.clone(), 0, &threatened),
-        None
+        game.unit_upgrade_target(0, crate::name!("warrior")),
+        Some(crate::name!("legion"))
     );
-    let mut alarmed = controller.clone();
-    alarmed.base.plan_threatened_city = Some(cities[0]);
     assert_eq!(
-        alarmed.claim_conquest_frontline(&mut game.clone(), 0, &plan),
-        None
+        game.unit_upgrade_resource_price(0, units[0], crate::name!("legion")),
+        Some(10.0)
     );
-    let mut attacked = game;
-    for city in cities {
-        attacked.cities.get_mut(&city).unwrap().last_attacked = attacked.turn;
-    }
     assert_eq!(
-        controller.claim_conquest_frontline(&mut attacked, 0, &plan),
+        controller.conquest_campaign_material_upgrade_policy(&game, 0),
         None
     );
 }
 
-#[test]
-fn conquest_campaign_frontline_budgets_the_military_upkeep_surcharge() {
-    let (mut game, controller, plan, _) = frontline_campaign();
-    game.players[0]
-        .policies
-        .insert(crate::name!("elite_forces"));
-    assert_eq!(game.policy_effect(0, "unit_maintenance_surcharge"), 2.0);
-    game.players[0].gold_per_turn = 13.9;
-    assert_eq!(
-        controller.claim_conquest_frontline(&mut game, 0, &plan),
-        None
-    );
-    game.players[0].gold_per_turn = 14.0;
-    assert!(controller
-        .claim_conquest_frontline(&mut game, 0, &plan)
-        .is_some());
-}
-
-#[test]
-fn conquest_campaign_frontline_keeps_writing_and_other_victory_lanes_first() {
-    let (game, controller, plan, _) = frontline_campaign();
-    let mut unwritten = game.clone();
-    unwritten.players[0].techs.remove(&crate::name!("writing"));
-    assert_eq!(
-        controller.claim_conquest_frontline(&mut unwritten, 0, &plan),
-        None
-    );
-    let science = AdvancedAi::targeting(VictoryTarget::Science);
-    assert_eq!(
-        science.claim_conquest_frontline(&mut game.clone(), 0, &plan),
-        None
-    );
-    let (mut small, _, _, _) = campaign();
-    small.players[0].gold = 200.0;
-    small.players[0].gold_per_turn = 20.0;
-    small.players[0].techs.insert(crate::name!("writing"));
-    small.players[0].techs.insert(crate::name!("metal_casting"));
-    for _ in 0..3 {
-        small.spawn_test_unit("heavy_chariot", 0, (30, 20));
-    }
-    assert_eq!(
-        controller.claim_conquest_frontline(&mut small, 0, &plan),
-        None
-    );
-}
-
-fn frontline_campaign() -> (Game, AdvancedAi, StrategicPlan, Vec<u32>) {
-    let (mut game, controller, _, nearby) = campaign();
+fn material_campaign() -> (Game, AdvancedAi, StrategicPlan, Vec<u32>) {
+    let (mut game, mut controller, _, nearby) = campaign();
+    game.players[0].civ = "GranColombia".to_string();
     game.found_city_for(0, (25, 20), None);
     game.found_city_for(0, (20, 20), None);
     game.current = 0;
-    game.turn = 100;
-    game.players[0].gold = 200.0;
+    game.turn = 125;
+    game.players[0].gold = 100.0;
     game.players[0].gold_per_turn = 20.0;
-    game.players[0].techs.insert(crate::name!("writing"));
-    game.players[0].techs.insert(crate::name!("metal_casting"));
-    for _ in 0..3 {
-        game.spawn_test_unit("heavy_chariot", 0, (30, 20));
-    }
-    let cities = game.player_city_ids(0);
-    for city in &cities {
-        game.cities.get_mut(city).unwrap().queue.clear();
-        game.cities
-            .get_mut(city)
-            .unwrap()
-            .production_progress
-            .clear();
-    }
+    game.players[0].techs.insert(crate::name!("iron_working"));
+    game.players[0]
+        .strategic_resources
+        .insert(crate::name!("iron"), 12.0);
+    game.players[0].civics.extend(
+        [
+            "code_of_laws",
+            "craftsmanship",
+            "foreign_trade",
+            "early_empire",
+            "state_workforce",
+            "political_philosophy",
+            "military_tradition",
+            "games_recreation",
+            "defensive_tactics",
+            "feudalism",
+            "mercenaries",
+            "divine_right",
+        ]
+        .into_iter()
+        .map(Name::new),
+    );
+    game.players[0].government = Some("monarchy".into());
+    game.players[0].policies = ["conscription", "professional_army"]
+        .into_iter()
+        .map(Name::new)
+        .collect();
+    let units: Vec<u32> = (0..3)
+        .map(|_| game.spawn_test_unit("warrior", 0, (30, 20)))
+        .collect();
     let plan = StrategicPlan {
         strategy: GrandStrategy::Conquest,
         target_player: Some(2),
@@ -102,188 +66,269 @@ fn frontline_campaign() -> (Game, AdvancedAi, StrategicPlan, Vec<u32>) {
         assessed_turn: game.turn,
         rush: false,
     };
-    assert!(game.can_produce(
-        0,
-        cities[1],
-        &Item::Unit {
-            unit: crate::name!("pike_and_shot")
-        }
-    ));
-    (game, controller, plan, cities)
-}
-
-#[test]
-fn conquest_campaign_frontline_claims_a_real_resource_free_upgrade() {
-    let (mut game, controller, plan, _) = frontline_campaign();
-    let (city, item) = controller
-        .claim_conquest_frontline(&mut game, 0, &plan)
-        .unwrap();
-    assert!(!game.cities[&city].is_capital);
-    assert_eq!(game.cities[&city].queue.first(), Some(&item));
-    let Item::Unit { unit } = item else {
-        panic!("expected unit")
-    };
-    let spec = &game.rules.units[unit];
-    assert!(spec.strength >= 55.0);
-    assert!(spec.requires_resource.is_none());
-    assert!(!spec.has_ranged_attack());
-}
-
-#[test]
-fn conquest_campaign_frontline_stops_after_two_queued_bodies_across_replans() {
-    let (mut game, controller, plan, _) = frontline_campaign();
-    assert!(controller
-        .claim_conquest_frontline(&mut game, 0, &plan)
-        .is_some());
-    assert!(controller
-        .claim_conquest_frontline(&mut game, 0, &plan)
-        .is_some());
+    controller.policy_deck_hysteresis_2 = true;
+    controller.plan = Some(plan.clone());
+    assert!(game
+        .available_policies(0)
+        .contains(&crate::name!("retinues")));
     assert_eq!(
-        controller.claim_conquest_frontline(&mut game, 0, &plan),
-        None
+        game.unit_upgrade_target(0, crate::name!("warrior")),
+        Some(crate::name!("swordsman"))
+    );
+    assert_eq!(
+        game.unit_upgrade_resource_price(0, units[0], crate::name!("swordsman")),
+        Some(20.0)
+    );
+    (game, controller, plan, units)
+}
+
+#[test]
+fn conquest_campaign_material_requests_an_affordable_resource_discount() {
+    let (game, controller, _, _) = material_campaign();
+    let policies = game.players[0].policies.clone();
+    assert_eq!(
+        controller.conquest_campaign_material_upgrade_policy(&game, 0),
+        Some("retinues")
+    );
+    assert_eq!(game.strategic_stockpile(0, crate::name!("iron")), 12.0);
+    assert_eq!(game.players[0].policies, policies);
+}
+
+#[test]
+fn conquest_campaign_material_retains_the_card_while_its_stock_gap_persists() {
+    let (mut game, controller, _, _) = material_campaign();
+    game.players[0].policies.insert(crate::name!("retinues"));
+    assert_eq!(
+        controller.conquest_campaign_material_upgrade_policy(&game, 0),
+        Some("retinues")
     );
 }
 
 #[test]
-fn conquest_campaign_frontline_counts_already_fielded_modern_bodies() {
-    let (mut game, controller, plan, _) = frontline_campaign();
-    game.spawn_test_unit("pike_and_shot", 0, (30, 20));
-    assert!(controller
-        .claim_conquest_frontline(&mut game, 0, &plan)
-        .is_some());
-    assert_eq!(
-        controller.claim_conquest_frontline(&mut game, 0, &plan),
-        None
-    );
-}
-
-#[test]
-fn conquest_campaign_frontline_leaves_a_sufficient_modern_line_alone() {
-    let (mut game, controller, plan, _) = frontline_campaign();
-    for _ in 0..2 {
-        game.spawn_test_unit("pike_and_shot", 0, (30, 20));
-    }
-    assert_eq!(
-        controller.claim_conquest_frontline(&mut game, 0, &plan),
-        None
-    );
-}
-
-#[test]
-fn conquest_campaign_frontline_requires_three_obsolete_melee_bodies() {
-    let (game, controller, plan, _) = frontline_campaign();
-    for replacement in [None, Some("archer"), Some("scout")] {
-        let mut reduced = game.clone();
-        reduced.remove_unit(reduced.player_unit_ids(0)[0]);
-        if let Some(kind) = replacement {
-            reduced.spawn_test_unit(kind, 0, (30, 20));
-        }
+fn conquest_campaign_material_rejects_sufficient_or_insufficient_stock() {
+    let (game, controller, _, _) = material_campaign();
+    for stock in [0.0, 9.9, 20.0, 100.0] {
+        let mut changed = game.clone();
+        changed.players[0]
+            .strategic_resources
+            .insert(crate::name!("iron"), stock);
         assert_eq!(
-            controller.claim_conquest_frontline(&mut reduced, 0, &plan),
+            controller.conquest_campaign_material_upgrade_policy(&changed, 0),
             None
         );
     }
 }
 
 #[test]
-fn conquest_campaign_frontline_reserves_sustainable_un_discounted_upkeep() {
-    let (game, controller, plan, _) = frontline_campaign();
-    for (gold, income) in [(29.0, 20.0), (200.0, 9.9), (200.0, -1.0)] {
-        let mut poor = game.clone();
-        poor.players[0].gold = gold;
-        poor.players[0].gold_per_turn = income;
-        assert_eq!(
-            controller.claim_conquest_frontline(&mut poor, 0, &plan),
-            None
-        );
-    }
-    let mut funded = game;
-    funded.players[0].gold_per_turn = 10.0;
-    assert!(controller
-        .claim_conquest_frontline(&mut funded, 0, &plan)
-        .is_some());
+fn conquest_campaign_material_requires_current_cash_above_the_existing_reserve() {
+    let (mut game, controller, _, units) = material_campaign();
+    let quote = game
+        .unit_upgrade_price_in_formation(
+            0,
+            game.units[&units[0]].kind,
+            crate::name!("swordsman"),
+            0,
+        )
+        .unwrap()
+        .0;
+    game.players[0].gold = quote + 29.9;
+    assert_eq!(
+        controller.conquest_campaign_material_upgrade_policy(&game, 0),
+        None
+    );
+    game.players[0].gold = quote + 30.0;
+    assert_eq!(
+        controller.conquest_campaign_material_upgrade_policy(&game, 0),
+        Some("retinues")
+    );
 }
 
 #[test]
-fn conquest_campaign_frontline_respects_lane_war_and_plan_controls() {
-    let (game, controller, plan, _) = frontline_campaign();
-    for strategy in [GrandStrategy::Recovery, GrandStrategy::Science] {
-        let mut changed = plan.clone();
-        changed.strategy = strategy;
-        assert_eq!(
-            controller.claim_conquest_frontline(&mut game.clone(), 0, &changed),
-            None
-        );
-    }
-    let mut rush = plan.clone();
-    rush.rush = true;
+fn conquest_campaign_material_requires_researched_targets_available_card_and_a_cohort() {
+    let (game, controller, _, units) = material_campaign();
+    let mut unresearched = game.clone();
+    unresearched.players[0]
+        .techs
+        .remove(&crate::name!("iron_working"));
     assert_eq!(
-        controller.claim_conquest_frontline(&mut game.clone(), 0, &rush),
+        controller.conquest_campaign_material_upgrade_policy(&unresearched, 0),
         None
     );
+    let mut locked = game.clone();
+    locked.players[0]
+        .civics
+        .remove(&crate::name!("mercenaries"));
+    assert_eq!(
+        controller.conquest_campaign_material_upgrade_policy(&locked, 0),
+        None
+    );
+    let mut single = game;
+    for unit in &units[..2] {
+        single.remove_unit(*unit);
+    }
+    assert_eq!(
+        controller.conquest_campaign_material_upgrade_policy(&single, 0),
+        None
+    );
+}
+
+#[test]
+fn conquest_campaign_material_preserves_other_lanes_and_deficit_controls() {
+    let (game, controller, _, _) = material_campaign();
     let mut off = controller.clone();
     off.victory_planning = false;
     assert_eq!(
-        off.claim_conquest_frontline(&mut game.clone(), 0, &plan),
+        off.conquest_campaign_material_upgrade_policy(&game, 0),
         None
     );
     off = controller.clone();
     off.victory_target = None;
     assert_eq!(
-        off.claim_conquest_frontline(&mut game.clone(), 0, &plan),
+        off.conquest_campaign_material_upgrade_policy(&game, 0),
         None
     );
-    let mut war = game;
-    war.at_war.insert((0, 2));
+    let science = AdvancedAi::targeting(VictoryTarget::Science);
     assert_eq!(
-        controller.claim_conquest_frontline(&mut war, 0, &plan),
+        science.conquest_campaign_material_upgrade_policy(&game, 0),
+        None
+    );
+    let mut drained = game;
+    drained.players[0].gold_per_turn = -0.1;
+    assert_eq!(
+        controller.conquest_campaign_material_upgrade_policy(&drained, 0),
         None
     );
 }
 
 #[test]
-fn conquest_campaign_frontline_preserves_queued_and_paused_work() {
-    let (game, controller, plan, cities) = frontline_campaign();
-    for paused in [false, true] {
-        let mut busy = game.clone();
-        for city in &cities {
-            let held = busy.cities.get_mut(city).unwrap();
-            let item = Item::Unit {
-                unit: crate::name!("builder"),
-            };
-            if paused {
-                held.production_progress
-                    .insert("unit:builder".to_string(), 1.0);
-            } else {
-                held.queue = vec![item];
-            }
+fn conquest_campaign_material_counts_canonical_formation_bodies() {
+    let (mut game, controller, _, units) = material_campaign();
+    for unit in units {
+        game.units.get_mut(&unit).unwrap().formation = 1;
+    }
+    game.players[0].gold = 1000.0;
+    game.players[0]
+        .strategic_resources
+        .insert(crate::name!("iron"), 19.9);
+    assert_eq!(
+        controller.conquest_campaign_material_upgrade_policy(&game, 0),
+        None
+    );
+    game.players[0]
+        .strategic_resources
+        .insert(crate::name!("iron"), 20.0);
+    assert_eq!(
+        controller.conquest_campaign_material_upgrade_policy(&game, 0),
+        Some("retinues")
+    );
+}
+
+#[test]
+fn conquest_campaign_material_rejects_a_redundant_card_or_resource_free_cohort() {
+    let (game, controller, _, units) = material_campaign();
+    let mut modern = game.clone();
+    modern.players[0]
+        .policies
+        .insert(crate::name!("force_modernization"));
+    assert_eq!(
+        controller.conquest_campaign_material_upgrade_policy(&modern, 0),
+        None
+    );
+    for kind in ["archer", "scout", "galley"] {
+        let mut other = game.clone();
+        other.players[0]
+            .techs
+            .extend(["machinery", "cartography"].into_iter().map(Name::new));
+        for unit in &units {
+            other.units.get_mut(unit).unwrap().kind = Name::new(kind);
         }
         assert_eq!(
-            controller.claim_conquest_frontline(&mut busy, 0, &plan),
+            controller.conquest_campaign_material_upgrade_policy(&other, 0),
             None
         );
     }
 }
 
 #[test]
-fn conquest_campaign_frontline_requires_tech_and_a_reachable_frontier() {
-    let (game, controller, plan, _) = frontline_campaign();
-    let mut unready = game.clone();
-    unready.players[0]
-        .techs
-        .remove(&crate::name!("metal_casting"));
-    assert_eq!(
-        controller.claim_conquest_frontline(&mut unready, 0, &plan),
-        None
-    );
-    let mut isolated = game;
-    for rival in 1..4 {
-        isolated.players[rival].alive = false;
+fn conquest_campaign_material_policy_deck_keeps_both_discounts_and_maintenance() {
+    let (mut game, controller, _, _) = material_campaign();
+    for _ in 0..3 {
+        controller.strategic_policies(&mut game, 0, GrandStrategy::Conquest);
+        for card in ["conscription", "professional_army", "retinues"] {
+            assert!(
+                game.players[0].policies.contains(&Name::new(card)),
+                "missing {card}"
+            );
+        }
     }
+}
+
+#[test]
+fn conquest_campaign_material_funding_spends_only_the_shared_observed_bank() {
+    let (mut game, controller, plan, units) = material_campaign();
+    controller.fund_domination_upgrades(&mut game, 0, &plan);
     assert_eq!(
-        controller.claim_conquest_frontline(&mut isolated, 0, &plan),
-        None
+        units
+            .iter()
+            .filter(|unit| game.units[unit].kind == "swordsman")
+            .count(),
+        1
     );
+    assert_eq!(game.strategic_stockpile(0, crate::name!("iron")), 2.0);
+    assert!(game.players[0].gold >= 30.0);
+}
+
+#[test]
+fn conquest_campaign_material_waits_for_fresh_authoritative_resource_quotes() {
+    let (mut game, controller, plan, units) = material_campaign();
+    for unit in &units {
+        Arc::make_mut(&mut game.host_unit_facts).insert(
+            *unit,
+            crate::game::HostUnitFacts {
+                upgrade: Some(crate::game::HostUnitUpgrade {
+                    to: Some(crate::name!("swordsman")),
+                    cost: Some(25.0),
+                    resources: Some(crate::game::HostUnitUpgradeResource {
+                        resource: Some(crate::name!("iron")),
+                        cost: 20.0,
+                    }),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            },
+        );
+    }
+    controller.fund_domination_upgrades(&mut game, 0, &plan);
+    assert!(game.players[0].policies.contains(&crate::name!("retinues")));
+    assert!(units.iter().all(|unit| game.units[unit].kind == "warrior"));
+    assert_eq!(game.strategic_stockpile(0, crate::name!("iron")), 12.0);
+    assert!(units.iter().all(|unit| game.unit_upgrade_resource_price(
+        0,
+        *unit,
+        crate::name!("swordsman")
+    ) == Some(20.0)));
+    game.turn += 1;
+    for unit in &units {
+        Arc::make_mut(&mut game.host_unit_facts)
+            .get_mut(unit)
+            .unwrap()
+            .upgrade
+            .as_mut()
+            .unwrap()
+            .resources
+            .as_mut()
+            .unwrap()
+            .cost = 10.0;
+    }
+    controller.fund_domination_upgrades(&mut game, 0, &plan);
+    assert_eq!(
+        units
+            .iter()
+            .filter(|unit| game.units[unit].kind == "swordsman")
+            .count(),
+        1
+    );
+    assert_eq!(game.strategic_stockpile(0, crate::name!("iron")), 2.0);
 }
 
 fn campaign() -> (Game, AdvancedAi, u32, u32) {

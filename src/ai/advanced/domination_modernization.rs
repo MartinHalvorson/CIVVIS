@@ -307,7 +307,16 @@ impl AdvancedAi {
     }
 
     pub(super) fn domination_upgrade_policy(&self, g: &Game, pid: usize) -> Option<&'static str> {
-        let need = self.domination_upgrade_need(g, pid).len();
+        let need = self.domination_upgrade_need(g, pid).len().max(
+            if self
+                .conquest_campaign_material_upgrade_policy(g, pid)
+                .is_some()
+            {
+                2
+            } else {
+                0
+            },
+        );
         let held = g.players[pid]
             .policies
             .iter()
@@ -346,9 +355,13 @@ impl AdvancedAi {
         // newly useful discount now; an already-held card needs no extra pass.
         // A mirrored host quote remains authoritative until the next frame,
         // even when the local policy swap projects a cheaper upgrade.
-        if self
-            .domination_upgrade_policy(g, pid)
-            .is_some_and(|card| !g.players[pid].policies.contains(&Name::new(card)))
+        if [
+            self.domination_upgrade_policy(g, pid),
+            self.conquest_campaign_material_upgrade_policy(g, pid),
+        ]
+        .into_iter()
+        .flatten()
+        .any(|card| !g.players[pid].policies.contains(&Name::new(card)))
         {
             self.strategic_policies(g, pid, self.policy_lane(g, pid, plan));
         }

@@ -20900,6 +20900,11 @@ impl AdvancedAi {
         desired.splice(0..0, culture_defense_cards.iter().copied());
         let unproductive_economic_cards =
             self.domination_productive_policy_fallbacks(g, pid, &mut desired);
+        let material_upgrade_card = self.conquest_campaign_material_upgrade_policy(g, pid);
+        if let Some(card) = material_upgrade_card {
+            desired.retain(|wanted| *wanted != card);
+            desired.insert(0, card);
+        }
         let upgrade_card = self.domination_upgrade_policy(g, pid);
         if let Some(card) = upgrade_card {
             desired.retain(|wanted| *wanted != card);
@@ -21118,12 +21123,20 @@ impl AdvancedAi {
                             )
                             && !culture_defense_cards.contains(&current.as_str());
                     }
-                    if upgrade_card == Some(card) {
+                    if upgrade_card == Some(card) || material_upgrade_card == Some(card) {
                         return g.rules.policies[current].slot == "military"
                             && !matches!(
                                 current.as_str(),
                                 "conscription" | "levee_en_masse" | "limitanei" | "praetorium"
                             )
+                            && !(card == "retinues"
+                                && matches!(
+                                    current.as_str(),
+                                    "professional_army" | "force_modernization"
+                                ))
+                            && !(card != "retinues"
+                                && current.as_str() == "retinues"
+                                && material_upgrade_card.is_some())
                             && !culture_defense_cards.contains(&current.as_str());
                     }
                     // `bankruptcy-exits-the-drain`: a drain gold card takes an
@@ -49112,7 +49125,6 @@ impl AdvancedAi {
             // then its Library, ahead of the Plaza and the shortfall. Exact
             // no-op while the gene is off. See `advanced/capital_campus_claim.rs`.
             self.claim_capital_campus(g, pid, &plan);
-            let _ = self.claim_conquest_frontline(g, pid, &plan);
             self.reserve_government_plaza(g, pid, &plan);
             self.reserve_higher_level_investment(g, pid, &plan);
             self.reserve_idle_entertainment_path_for_widespread_crisis(g, pid, &plan);
