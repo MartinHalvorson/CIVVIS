@@ -8062,6 +8062,10 @@ pub struct AdvancedAi {
     parity_reads_the_front: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `stage-reads-the-muster-breakers`: once a siege's muster has closed,
+    /// its Stage reads breakers out to `MUSTER_FAR` instead of `STAGING_FAR`.
+    /// See `advanced/siege_train/stage_reads_the_muster.rs`. Off by default.
+    stage_reads_the_muster_breakers: bool,
     /// `siege-budget-counts-the-ram`: the siege damage budget prices a
     /// melee member's swing the way the host resolves it when the train
     /// holds a Battering Ram or Siege Tower that works on the city's walls:
@@ -11092,6 +11096,7 @@ impl AdvancedAi {
             parity_reads_the_front: false,
 
             // ---- append: s-s ----------------------------------------
+            stage_reads_the_muster_breakers: false,
             siege_budget_counts_the_ram: false,
             siege_promotions_open_the_walls: false,
             second_front_held_noted: BTreeMap::new(),

@@ -8022,6 +8022,17 @@ impl AdvancedAi {
         self.air_wing_grows_with_the_aluminum = false;
     }
 
+    /// Let a mustered siege count the guns it mustered when it stages. See
+    /// [`Self::stage_reads_the_muster_breakers`].
+    pub fn enable_stage_reads_the_muster_breakers(&mut self) {
+        self.stage_reads_the_muster_breakers = true;
+    }
+
+    /// The twin of `enable_stage_reads_the_muster_breakers`.
+    pub fn disable_stage_reads_the_muster_breakers(&mut self) {
+        self.stage_reads_the_muster_breakers = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
