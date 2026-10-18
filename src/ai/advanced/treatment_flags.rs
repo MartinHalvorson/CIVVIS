@@ -7956,6 +7956,28 @@ impl AdvancedAi {
         self.siege_budget_counts_the_ram = false;
     }
 
+    /// Claim a free district slot for a first Campus. See
+    /// [`Self::campus_claims_the_free_slot`].
+    pub fn enable_campus_claims_the_free_slot(&mut self) {
+        self.campus_claims_the_free_slot = true;
+    }
+
+    /// The twin of `enable_campus_claims_the_free_slot`.
+    pub fn disable_campus_claims_the_free_slot(&mut self) {
+        self.campus_claims_the_free_slot = false;
+    }
+
+    /// Version 2 of the free-slot Campus claim. See
+    /// [`Self::campus_claims_the_free_slot_2`].
+    pub fn enable_campus_claims_the_free_slot_2(&mut self) {
+        self.campus_claims_the_free_slot_2 = true;
+    }
+
+    /// The twin of `enable_campus_claims_the_free_slot_2`.
+    pub fn disable_campus_claims_the_free_slot_2(&mut self) {
+        self.campus_claims_the_free_slot_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

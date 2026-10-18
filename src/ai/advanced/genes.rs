@@ -4023,6 +4023,16 @@ pub const GENES: &[Gene] = &[
     // (civvis-20261018T011334Z) held Stage turns 79-84 with a Ram, 12 of 14
     // units staged against Ancient Walls, at "70.2 turns / 25.0 endurance".
     Gene { tag: "siege-budget-counts-the-ram", field: "siege_budget_counts_the_ram", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_budget_counts_the_ram, disable: AdvancedAi::disable_siege_budget_counts_the_ram },
+    // `campus-claims-the-free-slot`: 69% of our Emperor cities at t50 held a
+    // free district slot and no Campus while the routine floor built Archers
+    // and Walls in them; Science per citizen ran 0.8 against the rivals' 1.8,
+    // and games with 2+ Campuses at t60 reached r150 0.62 against 0.30 with
+    // none. See `advanced/campus_claims_the_free_slot.rs`.
+    Gene { tag: "campus-claims-the-free-slot", field: "campus_claims_the_free_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_claims_the_free_slot, disable: AdvancedAi::disable_campus_claims_the_free_slot },
+    // Version 2 of campus-claims-the-free-slot: from two citizens and in every
+    // eligible city a turn. Version one's live claims began around turn 80; 23
+    // of its t45-65 free-slot samples were held by the three-citizen floor.
+    Gene { tag: "campus-claims-the-free-slot-2", field: "campus_claims_the_free_slot_2", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_claims_the_free_slot_2, disable: AdvancedAi::disable_campus_claims_the_free_slot_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
