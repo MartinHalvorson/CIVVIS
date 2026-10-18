@@ -5075,6 +5075,14 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `breaker-bought-for-the-siege`: a siege held for want of a
+    /// wall-breaker, with none on its way and the army there, buys one in the
+    /// nearest city. See `advanced/siege_train/breaker_purchase.rs`. Off by
+    /// default.
+    breaker_bought_for_the_siege: bool,
+    /// `breaker-bought-for-the-siege`: the turn a breaker was last bought for
+    /// each besieged city, for the cooldown.
+    breaker_bought: BTreeMap<u32, u32>,
     /// `army-upgrade-materials`: buy the missing upfront material for one
     /// useful land upgrade while retaining its Gold bill and upkeep floor.
     /// See `army_upgrade_materials`. Off by default.
@@ -10579,6 +10587,8 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            breaker_bought_for_the_siege: false,
+            breaker_bought: BTreeMap::new(),
             army_upgrade_materials: false,
             astrology_before_the_second_city: false,
             aluminum_ask_tops_up_gold: false,
@@ -48761,6 +48771,12 @@ impl AdvancedAi {
         // `advanced/capital_walls_before_the_surprise.rs`.
         let surprise_defense_purchase = !emergency_city_defense
             && (self.surprise_defense_purchase(g, pid) || self.capital_garrison_purchase(g, pid));
+        // `breaker-bought-for-the-siege`: after the city-saving purchases,
+        // the wall-breaker a held siege is waiting for. See
+        // `advanced/siege_train/breaker_purchase.rs`.
+        if !emergency_city_defense && !surprise_defense_purchase {
+            self.siege_breaker_purchase(g, pid);
+        }
         // Once a city-saving purchase has had its one action, the turn a
         // breakthrough arrives still upgrades appointed predecessors before
         // Great Person patronage, ordinary purchases, diplomacy, or movement.
