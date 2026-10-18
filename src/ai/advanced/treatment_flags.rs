@@ -8011,6 +8011,50 @@ impl AdvancedAi {
         self.threatened_city_buys_its_defender = false;
     }
 
+    /// Grow the Bomber wing past four while the Aluminum sustains it. See
+    /// [`Self::air_wing_grows_with_the_aluminum`].
+    pub fn enable_air_wing_grows_with_the_aluminum(&mut self) {
+        self.air_wing_grows_with_the_aluminum = true;
+    }
+
+    /// The twin of `enable_air_wing_grows_with_the_aluminum`.
+    pub fn disable_air_wing_grows_with_the_aluminum(&mut self) {
+        self.air_wing_grows_with_the_aluminum = false;
+    }
+
+    /// Lead the running wars with the rival the counter names. See
+    /// [`Self::denial_target_leads_the_fronts`].
+    pub fn enable_denial_target_leads_the_fronts(&mut self) {
+        self.denial_target_leads_the_fronts = true;
+    }
+
+    /// The twin of `enable_denial_target_leads_the_fronts`.
+    pub fn disable_denial_target_leads_the_fronts(&mut self) {
+        self.denial_target_leads_the_fronts = false;
+    }
+
+    /// Let a friendship lapse once the friend is racing to win. See
+    /// [`Self::friendship_ends_at_the_race`].
+    pub fn enable_friendship_ends_at_the_race(&mut self) {
+        self.friendship_ends_at_the_race = true;
+    }
+
+    /// The twin of `enable_friendship_ends_at_the_race`.
+    pub fn disable_friendship_ends_at_the_race(&mut self) {
+        self.friendship_ends_at_the_race = false;
+    }
+
+    /// Offer a friendship only to a rival at least as strong as us. See
+    /// [`Self::friendship_only_with_the_stronger`].
+    pub fn enable_friendship_only_with_the_stronger(&mut self) {
+        self.friendship_only_with_the_stronger = true;
+    }
+
+    /// The twin of `enable_friendship_only_with_the_stronger`.
+    pub fn disable_friendship_only_with_the_stronger(&mut self) {
+        self.friendship_only_with_the_stronger = false;
+    }
+
     /// Aim a Domination conquest at a foothold within Bomber range of a rival
     /// capital. See [`Self::foothold_faces_the_capital`].
     pub fn enable_foothold_faces_the_capital(&mut self) {

@@ -5083,6 +5083,10 @@ pub struct AdvancedAi {
     /// `breaker-bought-for-the-siege`: the turn a breaker was last bought for
     /// each besieged city, for the cooldown.
     breaker_bought: BTreeMap<u32, u32>,
+    /// `air-wing-grows-with-the-aluminum`: the air surge's Bomber goal
+    /// reads the wing ceiling at `air_surge::AIR_WING_GROWN_BOMBERS` instead
+    /// of `AIR_SURGE_BOMBERS` while the Aluminum sustains it. Off by default.
+    air_wing_grows_with_the_aluminum: bool,
     /// `army-upgrade-materials`: buy the missing upfront material for one
     /// useful land upgrade while retaining its Gold bill and upkeep floor.
     /// See `army_upgrade_materials`. Off by default.
@@ -5492,6 +5496,9 @@ pub struct AdvancedAi {
     /// costliest. See `advanced/solvency.rs`. Off by default.
     bankruptcy_exits_the_drain: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `denial-target-leads-the-fronts`: see
+    /// `advanced/denial_target_front.rs`. Off by default.
+    denial_target_leads_the_fronts: bool,
     /// `campus-claims-the-free-slot`: a city of three or more citizens with
     /// a free district slot and no Campus puts its first Campus at the head
     /// of its queue over an idle or deferrable head. See
@@ -6320,6 +6327,14 @@ pub struct AdvancedAi {
     /// disband waits that turn for the card's income.
     drain_card_turn: std::cell::Cell<Option<u32>>,
     // ---- append: e-f ------------------------------------------------
+    /// `friendship-ends-at-the-race`: `befriend-the-strongest` offers no
+    /// friendship to a rival racing to win (see
+    /// `protective_friendship::FRIENDSHIP_RACE_CEILING`). Off by default.
+    friendship_ends_at_the_race: bool,
+    /// `friendship-only-with-the-stronger`: `befriend-the-strongest` offers
+    /// a friendship only to a rival whose military power is at least ours.
+    /// Off by default.
+    friendship_only_with_the_stronger: bool,
     /// `foothold-faces-the-capital`: a Domination conquest values a rival
     /// town within Bomber range of a rival capital no city of ours reaches.
     /// See `advanced/foothold_faces_the_capital.rs`. Off by default.
@@ -9380,6 +9395,9 @@ mod medina_quarter;
 
 mod denial_nearest_finish;
 mod denial_needs_a_road;
+/// `denial-target-leads-the-fronts`: the countered rival we are fighting
+/// leads the wartime fronts. See `advanced/denial_target_front.rs`.
+mod denial_target_front;
 mod runaway_expander;
 // `found-against-a-rival-faith`. See `advanced/faith_veto.rs`.
 mod faith_veto;
@@ -10610,6 +10628,7 @@ impl AdvancedAi {
             // ---- append: a-b ----------------------------------------
             breaker_bought_for_the_siege: false,
             breaker_bought: BTreeMap::new(),
+            air_wing_grows_with_the_aluminum: false,
             army_upgrade_materials: false,
             astrology_before_the_second_city: false,
             aluminum_ask_tops_up_gold: false,
@@ -10695,6 +10714,7 @@ impl AdvancedAi {
             aqueduct_claims_the_capped_queue: false,
             bankruptcy_exits_the_drain: false,
             // ---- append: c-d ----------------------------------------
+            denial_target_leads_the_fronts: false,
             campus_claims_the_free_slot: false,
             campus_claims_the_free_slot_2: false,
             city_under_fire_ranks_first: false,
@@ -10851,6 +10871,8 @@ impl AdvancedAi {
             capital_watch_sightings: BTreeMap::new(),
             drain_card_turn: std::cell::Cell::new(None),
             // ---- append: e-f ----------------------------------------
+            friendship_ends_at_the_race: false,
+            friendship_only_with_the_stronger: false,
             foothold_faces_the_capital: false,
             frontier_walls_before_the_surprise: false,
             frontier_watch_sightings: BTreeMap::new(),
@@ -15570,6 +15592,10 @@ impl AdvancedAi {
                     self.diplomatic_contender_to_eliminate(g, pid)
                         .filter(|rival| active_fronts.contains(rival))
                 })
+                // `denial-target-leads-the-fronts`: the countered rival we are
+                // already fighting, ahead of the second front and the running
+                // front. See `advanced/denial_target_front.rs`.
+                .or_else(|| self.denial_target_front(actionable_denial, active_fronts))
                 .or_else(|| {
                     self.one_war_second_front(g, pid)
                         // See `second_front_waits_for_the_front` and
