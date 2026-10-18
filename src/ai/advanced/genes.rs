@@ -4089,6 +4089,11 @@ pub const GENES: &[Gene] = &[
     // Khmer city ever located, held the campaign from 78 to the Culture loss
     // at 144 beside a three-city India at a fifteenth of our power.
     Gene { tag: "faith-war-is-no-front-2", field: "faith_war_is_no_front_2", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_war_is_no_front_2, disable: AdvancedAi::disable_faith_war_is_no_front_2 },
+    // `unwalled-ring-steps-in`: in 12 of 20 live walls-down sieges the city
+    // never fell below 150; melee stood 2-3 tiles out on 56 unit-turns
+    // against 30 on the ring, and the open ring healed the city 20 a turn.
+    // See `advanced/siege_train/unwalled_ring.rs`.
+    Gene { tag: "unwalled-ring-steps-in", field: "unwalled_ring_steps_in", kind: Kind::OptIn, enable: AdvancedAi::enable_unwalled_ring_steps_in, disable: AdvancedAi::disable_unwalled_ring_steps_in },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

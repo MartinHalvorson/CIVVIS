@@ -8677,6 +8677,11 @@ pub struct AdvancedAi {
     /// away. See `advanced/solvency.rs`. Off by default.
     solvent_or_hold: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `unwalled-ring-steps-in`: a fit melee siege member off the ring of a
+    /// city with no standing wall steps onto a free ring tile it reaches,
+    /// sealing the ring the city heals through. See
+    /// `advanced/siege_train/unwalled_ring.rs`. Off by default.
+    unwalled_ring_steps_in: bool,
     /// `threatened-city-buys-its-defender`: see
     /// `advanced/threatened_city_purchase.rs`. Off by default.
     threatened_city_buys_its_defender: bool,
@@ -11246,6 +11251,7 @@ impl AdvancedAi {
             science_suppression_hits_the_pads: false,
             solvent_or_hold: false,
             // ---- append: t-z ----------------------------------------
+            unwalled_ring_steps_in: false,
             threatened_city_buys_its_defender: false,
             threatened_defender_bought: BTreeMap::new(),
             war_target_prices_the_walls: false,

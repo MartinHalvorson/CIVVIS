@@ -4183,6 +4183,10 @@ impl AdvancedAi {
         if let Some(acted) = self.swarm_close(g, pid, uid, city) {
             return acted;
         }
+        // `unwalled-ring-steps-in`: see `siege_train/unwalled_ring.rs`.
+        if let Some(acted) = self.unwalled_ring_step(g, pid, uid, city) {
+            return acted;
+        }
         if let Some(acted) = self.post_step(g, pid, uid, city) {
             return acted;
         }
@@ -6831,3 +6835,9 @@ mod native_route_predicate_tests;
 
 #[cfg(test)]
 mod native_muster_approach_tests;
+
+/// `unwalled-ring-steps-in`: see the module.
+mod unwalled_ring;
+
+#[cfg(test)]
+mod unwalled_ring_tests;
