@@ -1071,6 +1071,24 @@ impl AdvancedAi {
         let posted = self
             .siege_counts_posted_shooters
             .then(|| super::siege_train::posted_shooters(g, pid, cid, force));
+        // `siege-budget-counts-the-ram`: a Ram or Tower the train holds
+        // within `radius` that works on these walls. The host resolves a
+        // melee swing beside a Ram at whole wall damage and one beside a
+        // Tower past the walls into the city (`Game::siege_support_effects`,
+        // `Game::city_take_damage`); `melee_wall_attack_allowed` reads the
+        // support only once it stands beside the city, so a train whose Ram
+        // was still a tile or two out priced its melee at no wall damage and
+        // never invested to bring it in.
+        let (ram_at_hand, tower_at_hand) = if self.siege_budget_counts_the_ram && wall_hp > 0 {
+            super::siege_train::breach_support_at_hand(g, pid, cid, radius)
+        } else {
+            (false, false)
+        };
+        let mut tower_city_dps = 0.0;
+        let mut tower_swingers = false;
+        // The fit melee that swarm the city once a Ram has opened its walls
+        // (`unwalled-city-takes-the-swarm`, `siege_train::swarm_blow`).
+        let mut ram_swarm_dps = 0.0;
         for uid in force {
             let Some(unit) = g
                 .units
@@ -1126,6 +1144,12 @@ impl AdvancedAi {
             // stays the shipped finishing blow.
             let melee_reply = (swarm && !ranged && spec.is_melee_capable())
                 .then(|| expected_damage(g.city_strength(cid), attack));
+            // `siege-budget-counts-the-ram`: a melee member able to swing
+            // beside the train's Ram or Tower.
+            let supported = (ram_at_hand || tower_at_hand)
+                && !ranged
+                && spec.is_melee_capable()
+                && super::siege_train::breach_support_user(g, *uid);
             let swarm_reply = melee_reply.filter(|reply| {
                 self.siege_member_fit(g, *uid)
                     && f64::from(unit.hp) - reply
@@ -1153,12 +1177,26 @@ impl AdvancedAi {
                 0.0
             } else if ranged {
                 0.5
+            } else if supported && ram_at_hand {
+                1.0
             } else if super::siege_train::melee_wall_attack_allowed(g, pid, *uid, cid) {
                 0.15
             } else {
                 0.0
             };
             wall_dps += damage * wall_multiplier;
+            if supported && tower_at_hand && !ram_at_hand {
+                tower_city_dps += damage;
+                tower_swingers = true;
+            }
+            if ram_at_hand
+                && self.unwalled_city_takes_the_swarm
+                && !ranged
+                && spec.is_melee_capable()
+                && self.siege_member_fit(g, *uid)
+            {
+                ram_swarm_dps += damage;
+            }
             let mut incoming = if spared {
                 0.0
             } else {
@@ -1168,6 +1206,10 @@ impl AdvancedAi {
             // takes the city's reply on every swing.
             if let Some(reply) = if spared { melee_reply } else { swarm_reply } {
                 incoming += reply;
+            } else if supported {
+                // `siege-budget-counts-the-ram`: a supported member swings
+                // every turn and takes the city's reply on each swing.
+                incoming += expected_damage(g.city_strength(cid), attack);
             }
             endurance += (unit.hp as f64 - 20.0).max(0.0) / incoming.max(1.0);
             taker |= !ranged && spec.is_melee_capable();
@@ -1213,8 +1255,25 @@ impl AdvancedAi {
         } else {
             city_dps <= heal
         };
+        // `siege-budget-counts-the-ram`: Tower-supported swings reach the
+        // city's health through standing walls every turn; Ram-supported
+        // swings bring the walls down, after which the fit melee swarm the
+        // open city every turn rather than wait to land one finishing blow.
+        let towered = if tower_swingers && tower_city_dps > heal {
+            f64::from(city_hp.max(0)) / (tower_city_dps - heal) + 1.0
+        } else {
+            f64::INFINITY
+        };
+        let rammed = if ram_at_hand && taker && wall_dps > 0.0 && city_dps + ram_swarm_dps > heal {
+            f64::from(wall_hp.max(0)) / wall_dps.max(1.0)
+                + f64::from(city_hp.max(0)) / (city_dps + ram_swarm_dps - heal)
+                + 1.0
+        } else {
+            f64::INFINITY
+        };
+        let supported_turns = towered.min(rammed);
         if !taker || fire_short || (wall_hp > 0 && wall_dps <= 0.0) {
-            return Some((f64::INFINITY, endurance));
+            return Some((supported_turns, endurance));
         }
         let city_turns = if counts_what_fires {
             if city_left > 0.0 {
@@ -1226,7 +1285,7 @@ impl AdvancedAi {
             city_hp.max(0) as f64 / (city_dps - heal)
         };
         let turns = wall_hp.max(0) as f64 / wall_dps.max(1.0) + city_turns;
-        Some((turns + 1.0, endurance))
+        Some(((turns + 1.0).min(supported_turns), endurance))
     }
 
     pub(super) fn conversion_siege_ready(
@@ -1338,5 +1397,7 @@ impl AdvancedAi {
     }
 }
 
+#[cfg(test)]
+mod ram_tests;
 #[cfg(test)]
 mod tests;

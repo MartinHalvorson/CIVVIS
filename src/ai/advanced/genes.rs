@@ -4016,6 +4016,13 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "envoys-open-the-siege-road", field: "envoys_open_the_siege_road", kind: Kind::OptIn, enable: AdvancedAi::enable_envoys_open_the_siege_road, disable: AdvancedAi::disable_envoys_open_the_siege_road },
     // Append before all tail markers to preserve every published genome index.
     Gene { tag: "siege-promotions-open-the-walls", field: "siege_promotions_open_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_promotions_open_the_walls, disable: AdvancedAi::disable_siege_promotions_open_the_walls },
+    // `siege-budget-counts-the-ram`: the damage budget priced a melee wall
+    // swing at 0.15 only once a Ram already stood beside the city, and at 0
+    // before, while the host lets a Ram-supported swing strike the walls
+    // whole and a Tower carry it into the city. Live Emperor Lyon
+    // (civvis-20261018T011334Z) held Stage turns 79-84 with a Ram, 12 of 14
+    // units staged against Ancient Walls, at "70.2 turns / 25.0 endurance".
+    Gene { tag: "siege-budget-counts-the-ram", field: "siege_budget_counts_the_ram", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_budget_counts_the_ram, disable: AdvancedAi::disable_siege_budget_counts_the_ram },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
