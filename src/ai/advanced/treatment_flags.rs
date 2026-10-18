@@ -8055,6 +8055,17 @@ impl AdvancedAi {
         self.friendship_only_with_the_stronger = false;
     }
 
+    /// Aim a Domination conquest at a foothold within Bomber range of a rival
+    /// capital. See [`Self::foothold_faces_the_capital`].
+    pub fn enable_foothold_faces_the_capital(&mut self) {
+        self.foothold_faces_the_capital = true;
+    }
+
+    /// The twin of `enable_foothold_faces_the_capital`.
+    pub fn disable_foothold_faces_the_capital(&mut self) {
+        self.foothold_faces_the_capital = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

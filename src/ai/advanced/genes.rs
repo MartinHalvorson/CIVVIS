@@ -4070,6 +4070,11 @@ pub const GENES: &[Gene] = &[
     // rival-frames in the first four live games under `befriend-the-strongest`
     // were with a rival weaker than us. See `protective_friendship.rs`.
     Gene { tag: "friendship-only-with-the-stronger", field: "friendship_only_with_the_stronger", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_only_with_the_stronger, disable: AdvancedAi::disable_friendship_only_with_the_stronger },
+    // `foothold-faces-the-capital`: 56% of our war turns against a rival
+    // capital's owner after turn 120 had no city of ours within Bomber range
+    // of it; the campaign aimed at that range's town 154 of 408 turns. See
+    // `advanced/foothold_faces_the_capital.rs`.
+    Gene { tag: "foothold-faces-the-capital", field: "foothold_faces_the_capital", kind: Kind::OptIn, enable: AdvancedAi::enable_foothold_faces_the_capital, disable: AdvancedAi::disable_foothold_faces_the_capital },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
