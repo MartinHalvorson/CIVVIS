@@ -4098,6 +4098,11 @@ pub const GENES: &[Gene] = &[
     // and a healthy gun 6-8 tiles out, past the 5-tile staging read. See
     // `advanced/siege_train/stage_reads_the_muster.rs`.
     Gene { tag: "stage-reads-the-muster-breakers", field: "stage_reads_the_muster_breakers", kind: Kind::OptIn, enable: AdvancedAi::enable_stage_reads_the_muster_breakers, disable: AdvancedAi::disable_stage_reads_the_muster_breakers },
+    // `unwalled-ring-steps-in`: in 12 of 20 live walls-down sieges the city
+    // never fell below 150; melee stood 2-3 tiles out on 56 unit-turns
+    // against 30 on the ring, and the open ring healed the city 20 a turn.
+    // See `advanced/siege_train/unwalled_ring.rs`.
+    Gene { tag: "unwalled-ring-steps-in", field: "unwalled_ring_steps_in", kind: Kind::OptIn, enable: AdvancedAi::enable_unwalled_ring_steps_in, disable: AdvancedAi::disable_unwalled_ring_steps_in },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
