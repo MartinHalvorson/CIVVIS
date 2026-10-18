@@ -9762,13 +9762,13 @@ mod settler_walk_deadline;
 /// is built, and a Settler's guard cuts down the raider pinning it. Two
 /// genes; see `advanced/siege_response.rs`.
 mod siege_response;
+/// A Settler past its walk allowance takes a safe site within reach. One
+/// opt-in gene; see `advanced/stalled_settler_site.rs`.
+mod stalled_settler_site;
 /// `threatened-city-buys-its-defender`: the plan's threatened city buys
 /// its land defender while its menu sells one. See
 /// `advanced/threatened_city_purchase.rs`.
 mod threatened_city_purchase;
-/// A Settler past its walk allowance takes a safe site within reach. One
-/// opt-in gene; see `advanced/stalled_settler_site.rs`.
-mod stalled_settler_site;
 
 /// `first-luxury-first`: the Builder opens the empire's FIRST copy of a
 /// luxury ahead of an ordinary tile, priced by the Amenities the empire is
