@@ -9369,10 +9369,10 @@ mod open_city_front;
 mod medina_quarter;
 
 mod denial_nearest_finish;
+mod denial_needs_a_road;
 /// `denial-target-leads-the-fronts`: the countered rival we are fighting
 /// leads the wartime fronts. See `advanced/denial_target_front.rs`.
 mod denial_target_front;
-mod denial_needs_a_road;
 mod runaway_expander;
 // `found-against-a-rival-faith`. See `advanced/faith_veto.rs`.
 mod faith_veto;
