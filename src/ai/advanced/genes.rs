@@ -4098,6 +4098,10 @@ pub const GENES: &[Gene] = &[
     // and a healthy gun 6-8 tiles out, past the 5-tile staging read. See
     // `advanced/siege_train/stage_reads_the_muster.rs`.
     Gene { tag: "stage-reads-the-muster-breakers", field: "stage_reads_the_muster_breakers", kind: Kind::OptIn, enable: AdvancedAi::enable_stage_reads_the_muster_breakers, disable: AdvancedAi::disable_stage_reads_the_muster_breakers },
+    // `friendship-spares-the-prey`: at turn 100 in 11 of the 20 live games
+    // with a rival under 0.4 times our power, that rival was our declared
+    // friend. See `protective_friendship::FRIENDSHIP_PREY_RATIO`.
+    Gene { tag: "friendship-spares-the-prey", field: "friendship_spares_the_prey", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_spares_the_prey, disable: AdvancedAi::disable_friendship_spares_the_prey },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
