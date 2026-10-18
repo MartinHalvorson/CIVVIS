@@ -304,6 +304,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `faith-counter-waits-for-match-point` | off (unmeasured) | Opt-in gene `faith-counter-waits-for-match-point`; see `Self::faith_counter_waits_for_match_point`. | 1 \| 1 |
 | `faith-war-before-the-flip` | off (unmeasured) | Opt-in gene `faith-war-before-the-flip`; see `advanced/faith_war_before_the_flip.rs`. | — \| 2 |
 | `faith-war-before-the-flip-2` | off (unmeasured) | Opt-in gene `faith-war-before-the-flip-2`; see `advanced/faith_war_before_the_flip.rs`. | — \| 2 |
+| `faith-war-is-no-front` | off (unmeasured) | Keep a faith war from choosing the campaign front. | 1 \| 1 |
 | `falling-city-calls-the-takers` | off (unmeasured) | Opt-in gene `falling-city-calls-the-takers`; see `advanced/falling_city_takers.rs`. | 1 \| 1 |
 | `falling-city-outranks-the-heal` | off (unmeasured) | Opt-in gene `falling-city-outranks-the-heal`; see `Self::falling_city_outranks_the_heal`. | 1 \| 1 |
 | `favor-bought-before-congress` | off (unmeasured) | Opt-in gene `favor-bought-before-congress`; see `Self::favor_bought_before_congress`. | 1 \| 1 |

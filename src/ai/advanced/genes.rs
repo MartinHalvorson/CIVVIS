@@ -4061,6 +4061,11 @@ pub const GENES: &[Gene] = &[
     // named it; the campaign stayed on the Aztecs until 165 and Byzantium won
     // on Culture at 176. See `advanced/denial_target_front.rs`.
     Gene { tag: "denial-target-leads-the-fronts", field: "denial_target_leads_the_fronts", kind: Kind::OptIn, enable: AdvancedAi::enable_denial_target_leads_the_fronts, disable: AdvancedAi::disable_denial_target_leads_the_fronts },
+    // `faith-war-is-no-front`: 51 of 106 live pin-era wars were faith wars;
+    // the campaign aimed at their rival on 810 of 1,023 turns and took 1.0
+    // cities per 100, against 6.4 for our conquest wars. See
+    // `advanced/faith_war_is_no_front.rs`.
+    Gene { tag: "faith-war-is-no-front", field: "faith_war_is_no_front", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_war_is_no_front, disable: AdvancedAi::disable_faith_war_is_no_front },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
