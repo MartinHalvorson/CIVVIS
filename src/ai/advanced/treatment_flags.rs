@@ -7954,6 +7954,16 @@ impl AdvancedAi {
     /// The twin of `enable_siege_budget_counts_the_ram`.
     pub fn disable_siege_budget_counts_the_ram(&mut self) {
         self.siege_budget_counts_the_ram = false;
+||||||| 047945067
+    /// Claim a free district slot for a first Campus. See
+    /// [`Self::campus_claims_the_free_slot`].
+    pub fn enable_campus_claims_the_free_slot(&mut self) {
+        self.campus_claims_the_free_slot = true;
+    }
+
+    /// The twin of `enable_campus_claims_the_free_slot`.
+    pub fn disable_campus_claims_the_free_slot(&mut self) {
+        self.campus_claims_the_free_slot = false;
     }
 
     // ---- append: a-b ------------------------------------------------
