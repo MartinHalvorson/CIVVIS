@@ -154,7 +154,11 @@ fn the_quickest_city_claims_its_free_slot_over_a_routine_unit() {
         .copied()
         .filter(|cid| is_campus(&on, &head(&on, *cid)))
         .collect();
-    assert_eq!(claimed, vec![ranked[0]], "the quickest city, one claim a turn");
+    assert_eq!(
+        claimed,
+        vec![ranked[0]],
+        "the quickest city, one claim a turn"
+    );
     let campus = head(&on, ranked[0]).unwrap();
     assert!(ai.free_slot_campus_holds(&on, 0, ranked[0], &plan, &campus));
     assert!(!stock.free_slot_campus_holds(&on, 0, ranked[0], &plan, &campus));
@@ -262,9 +266,12 @@ fn version_two_claims_every_eligible_city_from_two_citizens() {
     let ai = armed();
     let plan = ai.assess(&v1, 0);
     ai.claim_free_slot_campus(&mut v1, 0, &plan);
-    assert!(ranked
-        .iter()
-        .all(|cid| head(&v1, *cid) == Some(unit("knight"))), "v1: two citizens are under its floor");
+    assert!(
+        ranked
+            .iter()
+            .all(|cid| head(&v1, *cid) == Some(unit("knight"))),
+        "v1: two citizens are under its floor"
+    );
 
     let mut ai = AdvancedAi::new();
     ai.enable_campus_claims_the_free_slot_2();

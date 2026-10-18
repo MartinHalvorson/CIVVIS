@@ -206,15 +206,14 @@ impl AdvancedAi {
         };
         let head = g.cities[&cid].queue.first().cloned();
         let name = g.cities[&cid].name.clone();
-        if g
-            .apply(
-                pid,
-                &Action::Produce {
-                    city: cid,
-                    item: campus.clone(),
-                },
-            )
-            .is_err()
+        if g.apply(
+            pid,
+            &Action::Produce {
+                city: cid,
+                item: campus.clone(),
+            },
+        )
+        .is_err()
         {
             return false;
         }
