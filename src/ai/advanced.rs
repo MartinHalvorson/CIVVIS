@@ -8037,6 +8037,15 @@ pub struct AdvancedAi {
     parity_reads_the_front: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `siege-budget-counts-the-ram`: the siege damage budget prices a
+    /// melee member's swing the way the host resolves it when the train
+    /// holds a Battering Ram or Siege Tower that works on the city's walls:
+    /// a Ram makes the swing strike the walls whole (not the 0.15 an
+    /// unsupported wall swing does, nor nothing while the Ram is still a
+    /// tile or two short of the city), and a Tower carries it past the
+    /// walls into the city. See `AdvancedAi::siege_budget_reading`. Off by
+    /// default.
+    siege_budget_counts_the_ram: bool,
     /// Prefer the wall branch for a siege gun on an active walled campaign.
     /// Opt-in gene `siege-promotions-open-the-walls`.
     siege_promotions_open_the_walls: bool,
@@ -11040,6 +11049,7 @@ impl AdvancedAi {
             parity_reads_the_front: false,
 
             // ---- append: s-s ----------------------------------------
+            siege_budget_counts_the_ram: false,
             siege_promotions_open_the_walls: false,
             second_front_held_noted: BTreeMap::new(),
             silent_counter_noted: BTreeMap::new(),
