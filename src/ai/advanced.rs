@@ -18426,7 +18426,6 @@ impl AdvancedAi {
             // is held for its wall-breaker. See `advanced/decisive_window.rs`.
             let wartime_modernization_goal = self
                 .wartime_modernization_tech(g, pid)
-                .or_else(|| self.conquest_campaign_frontline_tech(g, pid, plan))
                 .filter(|tech| !self.modernization_yields_to_the_breaker(g, pid, *tech));
             let production_technology_goal = self.named_production_technology_goal(g, pid, plan);
             let domination_siege_goal = self.domination_siege_research_goal(g, pid, plan);
@@ -49117,6 +49116,9 @@ impl AdvancedAi {
             // then its Library, ahead of the Plaza and the shortfall. Exact
             // no-op while the gene is off. See `advanced/capital_campus_claim.rs`.
             self.claim_capital_campus(g, pid, &plan);
+            if lane_delegating {
+                let _ = self.reserve_delegated_conquest_frontline(g, pid, &plan);
+            }
             self.reserve_government_plaza(g, pid, &plan);
             self.reserve_higher_level_investment(g, pid, &plan);
             self.reserve_idle_entertainment_path_for_widespread_crisis(g, pid, &plan);

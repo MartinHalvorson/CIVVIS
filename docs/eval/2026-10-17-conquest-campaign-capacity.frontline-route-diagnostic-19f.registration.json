@@ -1,0 +1,63 @@
+{
+  "registered_utc": "2026-10-18T08:13:57.749917+00:00",
+  "source_policy_commit": "241f42a805f16ce9b1ca8c03f08dc3f6d7aa5323",
+  "scope": "Passive source19 eligibility/route diagnostic only; no candidate20 or new policy. SAME6 known maps, two workers, each original19 then instrumented19,12 control executions,0 fresh.",
+  "question": "At actual ordinary calls, which unchanged frontend research/production gates return first, and are positive production gaps followed by contemporary production? No counterfactual eligibility or causal strength claim.",
+  "instrumentation": "Only owned Conquest module in a separate extracted source copy. Boolean wrappers return their original argument, preserve OR short-circuit order and invoke no new gameplay/AI policy helper. Unconditional stderr records only already computed gate results, cohort counts, cost/science and returned gap/goal. No journal events, Game clones, controller actions/inputs, force/pins/genome/setup/rival-stock changes.",
+  "soundness": "All6 complete; actions,snapshots,plans,world-states,result exactly byte equal between retained19,new original19 and diagnostic19. Raw journals retained; diagnostic-only already registered same-turn contiguous move-refusal Detail ordering exception is separately reported, never final STRICT A/A. Any other discrepancy rejects diagnostic inference; do not tune/rerun individual seeds.",
+  "required_raw": [
+    "actions.json",
+    "snapshots.json",
+    "plans.json",
+    "world-states.json",
+    "result.json",
+    "why.log"
+  ],
+  "cases": [
+    {
+      "difficulty": "immortal",
+      "seed": 45312861349
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 47651167238
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 46732028391
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49478848256
+    },
+    {
+      "difficulty": "deity",
+      "seed": 43663176127
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49220027834
+    }
+  ],
+  "original_launch_sha256": "df471b77b1c9289e2db9aaf118de7e120e238fd1a90d7ba514ac19412969c2c8",
+  "original_module_sha256": "d5ed40d5fdfc302a97cab3e63537b5707644189dc5feca6f5c56423f20216e3c",
+  "runner_sha256": "45ce0c347e4a89ac13067c10ce8071d252378f21d8b03c652816aa6a09c099dc",
+  "limitations": [
+    "First failed condition only; later short-circuited conditions are not measured.",
+    "Production helper invocation depends on the unchanged callers; absence of logging is not eligibility.",
+    "Positive helper output does not mean the router or producer selected it.",
+    "Known-map mechanism/control evidence is not held-out strength or Native/deployed-binary equivalence."
+  ],
+  "registered_before_build_and_games_utc": "2026-10-18T08:14:00.273391+00:00",
+  "diagnostic_input_sha256": {
+    "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/source-frontline-route-19f/src/ai/advanced/conquest_campaign.rs": "0346ced589aac2133e66a9a54ee1eadb663d8760737a040d1e9e3758df3f4dac",
+    "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/probe-frontline-route-19f/Cargo.toml": "b1eead4f19dff8effd3a38b05ab1975c7f8de88175253d706c7b85de21f6a718",
+    "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/probe-frontline-route-19f/Cargo.lock": "2ee86851ecb421cacf0f888263e072e41a02e674da09c86bb88f00a92f8666c7",
+    "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/probe-frontline-route-19f/source-identity.txt": "19d9255e482196b71e166411fddcb11401103c51b0e35869dd2e90d1a8df1b6c",
+    "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/probe-frontline-route-19f/src/main.rs": "25e32cef6d2dae1ca97439ee993c5f6dc1fb67f74993e678097ddff16f327242",
+    "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/frontline-route-diagnostic-19f/plan.json": "5f2d692350a0edbbcd3beb9655b9afc7f785432d8e3571bd7e92f2d525c161bc",
+    "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/frontline-route-diagnostic-19f/instrumentation.patch.json": "a9f5dd31bf82bf698cfe51bf2ea1b66872ead058c68283191554aa0c930b14ec",
+    "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-foundation/source-baseline/deploy/live-force-on.txt": "d7ac5367dda9dc54093ebc55f59d3630c908c577fe84309bbe5378cecec3de55"
+  },
+  "mechanical_instrumentation_inverse_exact": true
+}

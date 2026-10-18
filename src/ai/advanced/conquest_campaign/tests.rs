@@ -637,320 +637,227 @@ fn conquest_campaign_frontline_gap_never_invents_an_old_or_ranged_force_gap() {
     }
 }
 
-fn frontline_research() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
-    let (mut game, controller, plan, home, second) = frontline_production();
+fn delegated_frontline() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
+    let (mut game, mut controller, mut plan, home, second) = frontline_production();
     game.players[0].civ = "Gran Colombia".into();
-    assert!(game.rules.civs.get("Gran Colombia").is_some());
-    let archers: Vec<_> = game
-        .units
-        .values()
-        .filter(|unit| unit.owner == 0 && unit.kind == "archer")
-        .map(|unit| unit.id)
-        .collect();
-    for unit in archers {
-        game.remove_unit(unit);
-    }
-    game.players[0]
-        .techs
-        .remove(&crate::name!("military_tactics"));
-    for technology in [
-        "pottery",
-        "mining",
-        "archery",
-        "wheel",
-        "bronze_working",
-        "iron_working",
-        "currency",
-        "mathematics",
-    ] {
-        game.players[0].techs.insert(Name::new(technology));
-    }
+    assert!(game.rules.civs.contains_key(&game.players[0].civ));
+    game.turn = 61;
     game.current = 0;
-    game.turn = 60;
-    let science = AdvancedAi::war_science_per_turn(&game, 0);
-    std::sync::Arc::make_mut(&mut game.host_research_quotes)
-        .entry(0)
-        .or_default()
-        .insert(
-            crate::name!("military_tactics"),
-            crate::game::HostResearchQuote {
-                cost: Some(science * 10.0),
-                progress: Some(0.0),
-            },
-        );
+    game.players[0].research = Some("sailing".into());
+    game.players[0].civic = Some("craftsmanship".into());
+    for city in [home, second] {
+        let held = game.cities.get_mut(&city).unwrap();
+        held.pop = 8;
+        held.production = 0.0;
+        held.queue.clear();
+        held.production_progress.clear();
+    }
+    game.cities
+        .get_mut(&plan.target_city.unwrap())
+        .unwrap()
+        .wall_hp = 100;
+    controller.enable_lane_delegates_production_2();
+    controller.base.book_pos = 4;
+    plan.strategy = GrandStrategy::Expansion;
+    plan.assessed_turn = game.turn;
+    controller.plan = Some(plan.clone());
+    assert!(controller.lane_delegates_now(Some(VictoryTarget::Domination), false));
     (game, controller, plan, home, second)
 }
 
 #[test]
-fn conquest_campaign_frontline_tech_selects_bounded_resource_free_unlock_without_actions() {
-    let (game, controller, plan, _, _) = frontline_research();
-    let actions = game.log.len();
-    assert_eq!(controller.wartime_modernization_tech(&game, 0), None);
+fn conquest_campaign_delegated_frontline_places_one_current_legal_order() {
+    let (mut game, controller, plan, _, _) = delegated_frontline();
+    let before = game.log.len();
+    let gold = game.players[0].gold;
+    let (city, item) = controller
+        .reserve_delegated_conquest_frontline(&mut game, 0, &plan)
+        .unwrap();
     assert_eq!(
-        controller
-            .conquest_campaign_frontline_tech(&game, 0, &plan)
-            .as_deref(),
-        Some("military_tactics")
+        item,
+        Item::Unit {
+            unit: crate::name!("pikeman")
+        }
     );
-    assert_eq!(game.log.len(), actions);
-    assert!(game.players[0].research.is_none());
-}
-
-#[test]
-fn conquest_campaign_frontline_tech_reaches_the_actual_research_choice() {
-    let (mut game, controller, plan, _, _) = frontline_research();
-    controller.advanced_research(&mut game, 0, &plan);
-    assert_eq!(
-        game.players[0].research.as_deref(),
-        Some("military_tactics")
+    assert_eq!(game.cities[&city].queue.first(), Some(&item));
+    assert_eq!(game.log.len(), before + 1);
+    assert_eq!(game.players[0].gold, gold);
+    assert!(
+        matches!(&game.log.last().unwrap().1, Action::Produce { city: ordered, item: ordered_item } if *ordered == city && *ordered_item == item)
     );
 }
 
 #[test]
-fn conquest_campaign_frontline_tech_preserves_standing_cohort_priority() {
-    let (mut game, controller, plan, _, _) = frontline_research();
-    for _ in 0..3 {
-        game.spawn_test_unit("archer", 0, (30, 20));
-    }
-    assert_eq!(
-        controller.wartime_modernization_tech(&game, 0).as_deref(),
-        Some("machinery")
-    );
-    controller.advanced_research(&mut game, 0, &plan);
-    assert_eq!(game.players[0].research.as_deref(), Some("engineering"));
+fn conquest_campaign_delegated_frontline_reaches_the_normal_take_turn_route() {
+    let (mut game, mut controller, _, _, _) = delegated_frontline();
+    let before = game.log.len();
+    controller.take_turn(&mut game, 0);
+    assert!(game.log.iter().skip(before).any(|(player, action)| *player == 0 && matches!(action, Action::Produce { item: Item::Unit { unit }, .. } if unit.as_str() == "pikeman")), "plan {:?}; gold {} income {}; queues {:?}; actions {:?}", controller.plan, game.players[0].gold, game.players[0].gold_per_turn, game.player_city_ids(0).iter().map(|city| (*city, game.cities[city].queue.clone())).collect::<Vec<_>>(), game.log.iter().skip(before).collect::<Vec<_>>());
+    assert!(game
+        .player_city_ids(0)
+        .iter()
+        .any(|city| game.cities[city].queue.first()
+            == Some(&Item::Unit {
+                unit: crate::name!("pikeman")
+            })));
 }
 
 #[test]
-fn conquest_campaign_frontline_tech_yields_to_wounded_or_queued_modern_bodies() {
-    let (mut game, controller, plan, home, _) = frontline_research();
-    let modern = game.spawn_test_unit("pikeman", 0, (30, 20));
-    game.units.get_mut(&modern).unwrap().hp = 1;
+fn conquest_campaign_delegated_frontline_survives_the_ordinary_delegated_governor() {
+    let (mut game, mut controller, plan, _, _) = delegated_frontline();
+    let (city, item) = controller
+        .reserve_delegated_conquest_frontline(&mut game, 0, &plan)
+        .unwrap();
+    controller.delegated_cities(&mut game, 0, &plan);
+    assert_eq!(game.cities[&city].queue.first(), Some(&item));
+}
+
+#[test]
+fn conquest_campaign_delegated_frontline_repeated_calls_stop_at_two_queued_bodies() {
+    let (mut game, controller, plan, _, _) = delegated_frontline();
+    game.found_city_for(0, (25, 17), None);
+    assert!(controller
+        .reserve_delegated_conquest_frontline(&mut game, 0, &plan)
+        .is_some());
+    assert!(controller
+        .reserve_delegated_conquest_frontline(&mut game, 0, &plan)
+        .is_some());
     assert_eq!(
-        controller.conquest_campaign_frontline_tech(&game, 0, &plan),
+        controller.reserve_delegated_conquest_frontline(&mut game, 0, &plan),
         None
     );
-    game.remove_unit(modern);
-    game.cities.get_mut(&home).unwrap().queue = vec![Item::Formation {
-        unit: crate::name!("knight"),
+    assert_eq!(
+        game.player_city_ids(0)
+            .iter()
+            .filter(|city| game.cities[city].queue.first()
+                == Some(&Item::Unit {
+                    unit: crate::name!("pikeman")
+                }))
+            .count(),
+        2
+    );
+}
+
+#[test]
+fn conquest_campaign_delegated_frontline_preserves_capital_and_other_committed_queues() {
+    let (mut game, controller, plan, home, second) = delegated_frontline();
+    let library = Item::Building {
+        building: crate::name!("library"),
+    };
+    for city in [home, second] {
+        game.cities.get_mut(&city).unwrap().queue = vec![library.clone()];
+    }
+    let before = game.log.len();
+    assert_eq!(
+        controller.reserve_delegated_conquest_frontline(&mut game, 0, &plan),
+        None
+    );
+    assert_eq!(game.log.len(), before);
+    assert!(game
+        .player_city_ids(0)
+        .iter()
+        .all(|city| game.cities[city].queue.first() == Some(&library)));
+}
+
+#[test]
+fn conquest_campaign_delegated_frontline_respects_wounded_body_and_formation_caps() {
+    let (mut game, controller, plan, _, second) = delegated_frontline();
+    let wounded = game.spawn_test_unit("pikeman", 0, (29, 20));
+    game.units.get_mut(&wounded).unwrap().hp = 25;
+    game.cities.get_mut(&second).unwrap().queue = vec![Item::Formation {
+        unit: crate::name!("pikeman"),
         formation: 1,
     }];
+    let before = game.log.len();
     assert_eq!(
-        controller.conquest_campaign_frontline_tech(&game, 0, &plan),
+        controller.reserve_delegated_conquest_frontline(&mut game, 0, &plan),
         None
     );
+    assert_eq!(game.log.len(), before);
 }
 
 #[test]
-fn conquest_campaign_frontline_tech_yields_to_a_currently_legal_modern_order() {
-    let (mut game, controller, plan, home, _) = frontline_research();
-    game.players[0].techs.insert(crate::name!("stirrups"));
-    game.players[0]
-        .strategic_resources
-        .insert(crate::name!("iron"), 20.0);
-    assert!(game.can_produce(
-        0,
-        home,
-        &Item::Unit {
-            unit: crate::name!("knight")
-        }
-    ));
+fn conquest_campaign_delegated_frontline_is_a_noop_without_delegation_or_domination() {
+    let (mut game, mut controller, plan, _, _) = delegated_frontline();
+    let before = game.log.len();
+    controller.lane_delegates_production_2 = false;
     assert_eq!(
-        controller.conquest_campaign_frontline_tech(&game, 0, &plan),
+        controller.reserve_delegated_conquest_frontline(&mut game, 0, &plan),
         None
     );
+    controller.enable_lane_delegates_production_2();
+    controller.victory_target = Some(VictoryTarget::Science);
+    assert_eq!(
+        controller.reserve_delegated_conquest_frontline(&mut game, 0, &plan),
+        None
+    );
+    assert_eq!(game.log.len(), before);
 }
 
 #[test]
-fn conquest_campaign_frontline_tech_requires_three_obsolete_frontliners() {
-    let (mut game, controller, plan, _, _) = frontline_research();
-    let obsolete = game
-        .units
-        .values()
-        .find(|unit| unit.owner == 0 && unit.kind == "warrior")
-        .unwrap()
-        .id;
-    game.remove_unit(obsolete);
-    assert_eq!(
-        controller.conquest_campaign_frontline_tech(&game, 0, &plan),
-        None
-    );
-}
-
-#[test]
-fn conquest_campaign_frontline_tech_counts_full_missing_prerequisites_and_host_progress() {
-    let (mut game, controller, plan, _, _) = frontline_research();
-    let science = AdvancedAi::war_science_per_turn(&game, 0);
-    game.players[0].techs.remove(&crate::name!("mathematics"));
-    let quotes = std::sync::Arc::make_mut(&mut game.host_research_quotes)
-        .entry(0)
-        .or_default();
-    quotes.insert(
-        crate::name!("mathematics"),
-        crate::game::HostResearchQuote {
-            cost: Some(science * 3.0),
-            progress: Some(0.0),
-        },
-    );
-    assert_eq!(
-        controller.conquest_campaign_frontline_tech(&game, 0, &plan),
-        None
-    );
-    std::sync::Arc::make_mut(&mut game.host_research_quotes)
-        .get_mut(&0)
-        .unwrap()
-        .get_mut(&crate::name!("military_tactics"))
-        .unwrap()
-        .progress = Some(science * 2.0);
-    assert_eq!(
-        controller
-            .conquest_campaign_frontline_tech(&game, 0, &plan)
-            .as_deref(),
-        Some("military_tactics")
-    );
-}
-
-#[test]
-fn conquest_campaign_frontline_tech_rejects_more_than_twelve_current_science_turns() {
-    let (mut game, controller, plan, _, _) = frontline_research();
-    let science = AdvancedAi::war_science_per_turn(&game, 0);
-    std::sync::Arc::make_mut(&mut game.host_research_quotes)
-        .get_mut(&0)
-        .unwrap()
-        .get_mut(&crate::name!("military_tactics"))
-        .unwrap()
-        .cost = Some(science * 13.0);
-    assert_eq!(
-        controller.conquest_campaign_frontline_tech(&game, 0, &plan),
-        None
-    );
-}
-
-#[test]
-fn conquest_campaign_frontline_tech_reserves_two_bodies_and_all_queued_upkeep() {
-    let (mut game, controller, plan, _, second) = frontline_research();
-    game.players[0].gold_per_turn = 5.0;
-    assert_eq!(
-        controller.conquest_campaign_frontline_tech(&game, 0, &plan),
-        None
-    );
-    game.players[0].gold_per_turn = 6.0;
-    assert_eq!(
-        controller
-            .conquest_campaign_frontline_tech(&game, 0, &plan)
-            .as_deref(),
-        Some("military_tactics")
-    );
-    game.cities.get_mut(&second).unwrap().queue = vec![Item::Unit {
-        unit: crate::name!("archer"),
-    }];
-    assert_eq!(
-        controller.conquest_campaign_frontline_tech(&game, 0, &plan),
-        None
-    );
-    game.players[0].gold_per_turn = 7.0;
-    assert_eq!(
-        controller
-            .conquest_campaign_frontline_tech(&game, 0, &plan)
-            .as_deref(),
-        Some("military_tactics")
-    );
-}
-
-#[test]
-fn conquest_campaign_frontline_tech_preserves_treasury_and_finite_income_guards() {
-    let (mut game, controller, plan, _, _) = frontline_research();
-    for gold in [29.0, f64::NAN, f64::INFINITY] {
-        game.players[0].gold = gold;
-        assert_eq!(
-            controller.conquest_campaign_frontline_tech(&game, 0, &plan),
-            None
-        );
-    }
-    game.players[0].gold = 500.0;
-    for income in [-1.0, f64::NAN, f64::INFINITY] {
-        game.players[0].gold_per_turn = income;
-        assert_eq!(
-            controller.conquest_campaign_frontline_tech(&game, 0, &plan),
-            None
-        );
-    }
-}
-
-#[test]
-fn conquest_campaign_frontline_tech_preserves_lane_emergency_and_war_guards() {
-    let (mut game, mut controller, mut plan, home, _) = frontline_research();
+fn conquest_campaign_delegated_frontline_preserves_emergency_and_major_war_guards() {
+    let (mut game, controller, mut plan, home, _) = delegated_frontline();
+    let before = game.log.len();
     plan.threatened_city = Some(home);
     assert_eq!(
-        controller.conquest_campaign_frontline_tech(&game, 0, &plan),
+        controller.reserve_delegated_conquest_frontline(&mut game, 0, &plan),
         None
     );
     plan.threatened_city = None;
-    plan.rush = true;
-    assert_eq!(
-        controller.conquest_campaign_frontline_tech(&game, 0, &plan),
-        None
-    );
-    plan.rush = false;
-    plan.strategy = GrandStrategy::Science;
-    assert_eq!(
-        controller.conquest_campaign_frontline_tech(&game, 0, &plan),
-        None
-    );
-    plan.strategy = GrandStrategy::Conquest;
-    controller.victory_planning = false;
-    assert_eq!(
-        controller.conquest_campaign_frontline_tech(&game, 0, &plan),
-        None
-    );
-    controller.victory_planning = true;
     game.at_war.insert((0, 2));
     assert_eq!(
-        controller.conquest_campaign_frontline_tech(&game, 0, &plan),
+        controller.reserve_delegated_conquest_frontline(&mut game, 0, &plan),
         None
     );
+    assert_eq!(game.log.len(), before);
 }
 
 #[test]
-fn conquest_campaign_frontline_tech_requires_writing_and_named_legal_target() {
-    let (mut game, controller, mut plan, _, _) = frontline_research();
-    game.players[0].techs.remove(&crate::name!("writing"));
+fn conquest_campaign_delegated_frontline_preserves_current_funding_and_unlock_guards() {
+    let (mut game, controller, plan, _, _) = delegated_frontline();
+    let before = game.log.len();
+    game.players[0].gold = 0.0;
     assert_eq!(
-        controller.conquest_campaign_frontline_tech(&game, 0, &plan),
+        controller.reserve_delegated_conquest_frontline(&mut game, 0, &plan),
         None
     );
-    game.players[0].techs.insert(crate::name!("writing"));
-    plan.target_city = None;
+    game.players[0].gold = 500.0;
+    game.players[0].gold_per_turn = 0.0;
     assert_eq!(
-        controller.conquest_campaign_frontline_tech(&game, 0, &plan),
+        controller.reserve_delegated_conquest_frontline(&mut game, 0, &plan),
         None
     );
+    game.players[0].gold_per_turn = 20.0;
+    game.players[0]
+        .techs
+        .remove(&crate::name!("military_tactics"));
+    assert_eq!(
+        controller.reserve_delegated_conquest_frontline(&mut game, 0, &plan),
+        None
+    );
+    assert_eq!(game.log.len(), before);
 }
 
 #[test]
-fn conquest_campaign_frontline_tech_yields_after_unlock_and_rejects_host_material_bill() {
-    let (mut game, controller, plan, home, second) = frontline_research();
+fn conquest_campaign_delegated_frontline_uses_the_current_city_item_eta() {
+    let (mut game, controller, plan, home, second) = delegated_frontline();
     let item = Item::Unit {
         unit: crate::name!("pikeman"),
     };
-    let key = Game::production_block_key(&item);
-    game.replace_host_unit_resource_prices(
-        [
-            (home, [(key.clone(), 1.0)].into()),
-            (second, [(key, 1.0)].into()),
-        ]
-        .into(),
-    );
+    for (city, turns) in [(home, 10.0), (second, 2.0)] {
+        std::sync::Arc::make_mut(&mut game.host_buildable)
+            .entry(city)
+            .or_default()
+            .insert(
+                Game::production_block_key(&item),
+                crate::game::HostMenuEntry {
+                    cost: Some(100.0),
+                    turns: Some(turns),
+                },
+            );
+    }
     assert_eq!(
-        controller.conquest_campaign_frontline_tech(&game, 0, &plan),
-        None
-    );
-    game.replace_host_unit_resource_prices(Default::default());
-    game.players[0]
-        .techs
-        .insert(crate::name!("military_tactics"));
-    assert!(game.can_produce(0, home, &item));
-    assert_eq!(
-        controller.conquest_campaign_frontline_tech(&game, 0, &plan),
-        None
+        controller.reserve_delegated_conquest_frontline(&mut game, 0, &plan),
+        Some((second, item))
     );
 }
