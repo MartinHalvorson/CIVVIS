@@ -4089,6 +4089,15 @@ pub const GENES: &[Gene] = &[
     // Khmer city ever located, held the campaign from 78 to the Culture loss
     // at 144 beside a three-city India at a fifteenth of our power.
     Gene { tag: "faith-war-is-no-front-2", field: "faith_war_is_no_front_2", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_war_is_no_front_2, disable: AdvancedAi::disable_faith_war_is_no_front_2 },
+    // `friendship-spares-the-target`: 46 of 153 live friendship offers on
+    // pins g-m went to the campaign's own target; 125943Z befriended China at
+    // 7 power while aiming at it. See `protective_friendship.rs`.
+    Gene { tag: "friendship-spares-the-target", field: "friendship_spares_the_target", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_spares_the_target, disable: AdvancedAi::disable_friendship_spares_the_target },
+    // `stage-reads-the-muster-breakers`: 140 Stage turns over 57 live
+    // pin-era sieges held "nothing to open the walls" with the muster closed
+    // and a healthy gun 6-8 tiles out, past the 5-tile staging read. See
+    // `advanced/siege_train/stage_reads_the_muster.rs`.
+    Gene { tag: "stage-reads-the-muster-breakers", field: "stage_reads_the_muster_breakers", kind: Kind::OptIn, enable: AdvancedAi::enable_stage_reads_the_muster_breakers, disable: AdvancedAi::disable_stage_reads_the_muster_breakers },
     // `unwalled-ring-steps-in`: in 12 of 20 live walls-down sieges the city
     // never fell below 150; melee stood 2-3 tiles out on 56 unit-turns
     // against 30 on the ring, and the open ring healed the city 20 a turn.

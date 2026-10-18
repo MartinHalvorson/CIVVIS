@@ -326,6 +326,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `founder-spreads-only-its-faith` | off (unmeasured) | Opt-in gene `founder-spreads-only-its-faith`; see `advanced/founder_faith.rs`. | 1 \| 1 |
 | `friendship-ends-at-the-race` | off (unmeasured) | Let a friendship lapse once the friend is racing to win. | 1 \| 1 |
 | `friendship-only-with-the-stronger` | off (unmeasured) | Offer a friendship only to a rival at least as strong as us. | 1 \| 1 |
+| `friendship-spares-the-target` | off (unmeasured) | Offer no friendship to the campaign's target. | 1 \| 1 |
 | `front-finishes-its-capital` | off (unmeasured) | Opt-in gene `front-finishes-its-capital`; see `Self::front_finishes_its_capital`. | 1 \| 1 |
 | `front-finishes-its-siege` | off (unmeasured) | Opt-in gene `front-finishes-its-siege`; see `Self::front_finishes_its_siege`. | 1 \| 1 |
 | `front-needs-a-declarable-rival` | off (unmeasured) | Opt-in gene `front-needs-a-declarable-rival`; see `Self::front_needs_a_declarable_rival`. | 1 \| 1 |
@@ -459,6 +460,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `spreader-steps-out-of-the-apostle` | off (unmeasured) | Opt-in gene `spreader-steps-out-of-the-apostle`; see `advanced/apostle_evasion.rs`. | 1 \| 1 |
 | `stage-march-keeps-to-land` | off (unmeasured) | Opt-in gene `stage-march-keeps-to-land`; see `Self::stage_march_keeps_to_land`. | 1 \| 1 |
 | `stage-musters-out-of-reach` | off (unmeasured) | Opt-in gene `stage-musters-out-of-reach`; see `Self::stage_musters_out_of_reach`. | 1 \| 1 |
+| `stage-reads-the-muster-breakers` | off (unmeasured) | Let a mustered siege count the guns it mustered when it stages. | 1 \| 1 |
 | `staging-column-passes-through` | off (unmeasured) | Opt-in gene `staging-column-passes-through`; see `Self::staging_column_passes_through`. | 1 \| 1 |
 | `staging-gun-reads-the-shared-danger` | off (unmeasured) | Opt-in gene `staging-gun-reads-the-shared-danger`; see `Self::staging_gun_reads_the_shared_danger`. | 1 \| 1 |
 | `staging-gun-remembers-hostiles` | off (unmeasured) | Opt-in gene `staging-gun-remembers-hostiles`; see `Self::staging_gun_remembers_hostiles`. | 1 \| 1 |

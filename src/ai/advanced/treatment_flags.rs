@@ -8099,6 +8099,28 @@ impl AdvancedAi {
         self.faith_war_is_no_front_2 = false;
     }
 
+    /// Offer no friendship to the campaign's target. See
+    /// [`Self::friendship_spares_the_target`].
+    pub fn enable_friendship_spares_the_target(&mut self) {
+        self.friendship_spares_the_target = true;
+    }
+
+    /// The twin of `enable_friendship_spares_the_target`.
+    pub fn disable_friendship_spares_the_target(&mut self) {
+        self.friendship_spares_the_target = false;
+    }
+
+    /// Let a mustered siege count the guns it mustered when it stages. See
+    /// [`Self::stage_reads_the_muster_breakers`].
+    pub fn enable_stage_reads_the_muster_breakers(&mut self) {
+        self.stage_reads_the_muster_breakers = true;
+    }
+
+    /// The twin of `enable_stage_reads_the_muster_breakers`.
+    pub fn disable_stage_reads_the_muster_breakers(&mut self) {
+        self.stage_reads_the_muster_breakers = false;
+    }
+
     /// Step melee onto the open ring of an unwalled city. See
     /// [`Self::unwalled_ring_steps_in`].
     pub fn enable_unwalled_ring_steps_in(&mut self) {

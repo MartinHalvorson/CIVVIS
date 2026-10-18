@@ -6342,6 +6342,9 @@ pub struct AdvancedAi {
     /// a friendship only to a rival whose military power is at least ours.
     /// Off by default.
     friendship_only_with_the_stronger: bool,
+    /// `friendship-spares-the-target`: `befriend-the-strongest` offers no
+    /// friendship to the plan's campaign target. Off by default.
+    friendship_spares_the_target: bool,
     /// `foothold-faces-the-capital`: a Domination conquest values a rival
     /// town within Bomber range of a rival capital no city of ours reaches.
     /// See `advanced/foothold_faces_the_capital.rs`. Off by default.
@@ -8092,6 +8095,10 @@ pub struct AdvancedAi {
     parity_reads_the_front: bool,
 
     // ---- append: s-s ------------------------------------------------
+    /// `stage-reads-the-muster-breakers`: once a siege's muster has closed,
+    /// its Stage reads breakers out to `MUSTER_FAR` instead of `STAGING_FAR`.
+    /// See `advanced/siege_train/stage_reads_the_muster.rs`. Off by default.
+    stage_reads_the_muster_breakers: bool,
     /// `siege-budget-counts-the-ram`: the siege damage budget prices a
     /// melee member's swing the way the host resolves it when the train
     /// holds a Battering Ram or Siege Tower that works on the city's walls:
@@ -10900,6 +10907,7 @@ impl AdvancedAi {
             // ---- append: e-f ----------------------------------------
             friendship_ends_at_the_race: false,
             friendship_only_with_the_stronger: false,
+            friendship_spares_the_target: false,
             foothold_faces_the_capital: false,
             faith_war_is_no_front: false,
             faith_war_is_no_front_2: false,
@@ -11147,6 +11155,7 @@ impl AdvancedAi {
             parity_reads_the_front: false,
 
             // ---- append: s-s ----------------------------------------
+            stage_reads_the_muster_breakers: false,
             siege_budget_counts_the_ram: false,
             siege_promotions_open_the_walls: false,
             second_front_held_noted: BTreeMap::new(),
