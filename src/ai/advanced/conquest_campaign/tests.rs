@@ -1202,3 +1202,286 @@ fn conquest_campaign_capital_science_does_not_take_a_due_capital_settler() {
         None
     );
 }
+
+fn noncapital_science_foundation() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
+    let (mut game, controller, plan, home, second) = capital_science_foundation();
+    capital_science_completed_campus(&mut game, home);
+    game.cities
+        .get_mut(&home)
+        .unwrap()
+        .buildings
+        .push(crate::name!("library"));
+    std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+        second,
+        crate::rules::Yields {
+            production: 30.0,
+            ..crate::rules::Yields::default()
+        },
+    );
+    game.players[0].gold_per_turn = 20.0;
+    assert!(!game.cities[&second].is_capital);
+    assert_eq!(
+        controller.conquest_campaign_capital_science_item(&game, 0, &plan),
+        None
+    );
+    assert!(BasicAi::first_campus_item(&game, 0, second).is_some());
+    (game, controller, plan, home, second)
+}
+
+#[test]
+fn conquest_campaign_noncapital_science_selects_a_current_legal_founded_city_without_actions() {
+    let (game, controller, plan, _, second) = noncapital_science_foundation();
+    let before = game.log.len();
+    let expected = BasicAi::first_campus_item(&game, 0, second).unwrap();
+    assert_eq!(
+        controller.conquest_campaign_noncapital_science_item(&game, 0, &plan),
+        Some((second, expected))
+    );
+    assert_eq!(game.log.len(), before);
+    assert!(game.cities[&second].queue.is_empty());
+}
+
+#[test]
+fn conquest_campaign_noncapital_science_finishes_a_current_legal_library() {
+    let (mut game, controller, plan, _, second) = noncapital_science_foundation();
+    capital_science_completed_campus(&mut game, second);
+    let expected = BasicAi::campus_library_item(&game, 0, second).unwrap();
+    assert_eq!(
+        controller.conquest_campaign_noncapital_science_item(&game, 0, &plan),
+        Some((second, expected))
+    );
+}
+
+#[test]
+fn conquest_campaign_noncapital_science_ranks_current_actual_host_eta() {
+    let (mut game, controller, plan, _, second) = noncapital_science_foundation();
+    let third = game.found_city_for(0, (30, 4), None);
+    game.cities.get_mut(&third).unwrap().pop = 8;
+    std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+        third,
+        crate::rules::Yields {
+            production: 30.0,
+            ..crate::rules::Yields::default()
+        },
+    );
+    for (city, turns) in [(second, 10.0), (third, 2.0)] {
+        let item = BasicAi::first_campus_item(&game, 0, city).unwrap();
+        std::sync::Arc::make_mut(&mut game.host_buildable)
+            .entry(city)
+            .or_default()
+            .insert(
+                Game::production_block_key(&item),
+                crate::game::HostMenuEntry {
+                    cost: Some(100.0),
+                    turns: Some(turns),
+                },
+            );
+    }
+    let expected = BasicAi::first_campus_item(&game, 0, third).unwrap();
+    assert_eq!(
+        controller.conquest_campaign_noncapital_science_item(&game, 0, &plan),
+        Some((third, expected))
+    );
+}
+
+#[test]
+fn conquest_campaign_noncapital_science_fallback_issues_one_ordinary_produce_without_grants() {
+    let (mut game, controller, plan, _, second) = noncapital_science_foundation();
+    game.cities
+        .get_mut(&second)
+        .unwrap()
+        .queue
+        .push(Item::Unit {
+            unit: crate::name!("archer"),
+        });
+    let before = game.log.len();
+    let treasury = game.players[0].gold;
+    let research = game.players[0].research.clone();
+    let units = game.units.len();
+    let (city, item) = controller
+        .reserve_conquest_capital_science(&mut game, 0, &plan)
+        .unwrap();
+    assert_eq!(city, second);
+    assert_eq!(game.cities[&second].queue.first(), Some(&item));
+    assert_eq!(game.log.len(), before + 1);
+    assert!(
+        matches!(&game.log.last().unwrap().1, Action::Produce { city: ordered, item: requested } if *ordered == second && *requested == item)
+    );
+    assert_eq!(game.players[0].gold, treasury);
+    assert_eq!(game.players[0].research, research);
+    assert_eq!(game.units.len(), units);
+}
+
+#[test]
+fn conquest_campaign_noncapital_science_reserves_a_two_gold_margin_for_the_next_science_item() {
+    let (game, controller, plan, _, second) = noncapital_science_foundation();
+    let mut campus = game.clone();
+    campus.players[0].gold_per_turn = campus.rules.districts[crate::name!("campus")]
+        .maintenance
+        .max(0.0)
+        + 1.0;
+    assert!(BasicAi::first_campus_item(&campus, 0, second).is_some());
+    assert_eq!(
+        controller.conquest_campaign_noncapital_science_item(&campus, 0, &plan),
+        None
+    );
+    let mut library = game.clone();
+    capital_science_completed_campus(&mut library, second);
+    library.players[0].gold_per_turn = library.rules.buildings[crate::name!("library")]
+        .maintenance
+        .max(0.0)
+        + 1.0;
+    assert!(BasicAi::campus_library_item(&library, 0, second).is_some());
+    assert_eq!(
+        controller.conquest_campaign_noncapital_science_item(&library, 0, &plan),
+        None
+    );
+}
+
+#[test]
+fn conquest_campaign_noncapital_science_counts_other_first_queued_unit_and_formation_upkeep() {
+    let (game, controller, plan, home, second) = noncapital_science_foundation();
+    for formation in [0, 1, 2] {
+        let mut current = game.clone();
+        let unit = crate::name!("pikeman");
+        let item = if formation == 0 {
+            Item::Unit { unit }
+        } else {
+            Item::Formation { unit, formation }
+        };
+        current.cities.get_mut(&home).unwrap().queue.push(item);
+        let bodies = match formation {
+            1 => 1.5,
+            2 => 2.0,
+            _ => 1.0,
+        };
+        current.players[0].gold_per_turn = current.rules.units[unit].maintenance.max(0.0) * bodies
+            + current
+                .policy_effect(0, "unit_maintenance_surcharge")
+                .max(0.0)
+            + current.rules.districts[crate::name!("campus")]
+                .maintenance
+                .max(0.0)
+            + 1.0;
+        assert!(BasicAi::first_campus_item(&current, 0, second).is_some());
+        assert_eq!(
+            controller.conquest_campaign_noncapital_science_item(&current, 0, &plan),
+            None
+        );
+    }
+}
+
+#[test]
+fn conquest_campaign_noncapital_science_preserves_actual_host_cap_and_finite_quotes() {
+    let (game, controller, plan, _, second) = noncapital_science_foundation();
+    let item = BasicAi::first_campus_item(&game, 0, second).unwrap();
+    for turns in [16.0, f64::NAN] {
+        let mut current = game.clone();
+        std::sync::Arc::make_mut(&mut current.host_buildable)
+            .entry(second)
+            .or_default()
+            .insert(
+                Game::production_block_key(&item),
+                crate::game::HostMenuEntry {
+                    cost: Some(100.0),
+                    turns: Some(turns),
+                },
+            );
+        assert_eq!(BasicAi::first_campus_item(&current, 0, second), None);
+        assert_eq!(
+            controller.conquest_campaign_noncapital_science_item(&current, 0, &plan),
+            None
+        );
+    }
+}
+
+#[test]
+fn conquest_campaign_noncapital_science_never_replaces_protected_current_orders() {
+    let (game, controller, plan, _, second) = noncapital_science_foundation();
+    for item in [
+        Item::Unit {
+            unit: crate::name!("builder"),
+        },
+        Item::Unit {
+            unit: crate::name!("scout"),
+        },
+        Item::Unit {
+            unit: crate::name!("pikeman"),
+        },
+        Item::Unit {
+            unit: crate::name!("catapult"),
+        },
+        Item::Building {
+            building: crate::name!("monument"),
+        },
+        BasicAi::first_campus_item(&game, 0, second).unwrap(),
+    ] {
+        let mut current = game.clone();
+        current.cities.get_mut(&second).unwrap().queue.push(item);
+        assert_eq!(
+            controller.conquest_campaign_noncapital_science_item(&current, 0, &plan),
+            None
+        );
+    }
+    let mut invested = game.clone();
+    invested
+        .cities
+        .get_mut(&second)
+        .unwrap()
+        .queue
+        .push(Item::Unit {
+            unit: crate::name!("archer"),
+        });
+    invested.cities.get_mut(&second).unwrap().production = 1.0;
+    assert!(
+        invested.item_invested_production(
+            second,
+            &Item::Unit {
+                unit: crate::name!("archer")
+            }
+        ) > 0.0
+    );
+    assert_eq!(
+        controller.conquest_campaign_noncapital_science_item(&invested, 0, &plan),
+        None
+    );
+}
+
+#[test]
+fn conquest_campaign_noncapital_science_does_not_claim_a_captured_city() {
+    let (mut game, controller, plan, _, second) = noncapital_science_foundation();
+    game.cities.get_mut(&second).unwrap().original_owner = 1;
+    assert_eq!(
+        controller.conquest_campaign_noncapital_science_item(&game, 0, &plan),
+        None
+    );
+}
+
+#[test]
+fn conquest_campaign_noncapital_science_keeps_war_rush_threat_and_admission_guards() {
+    let (game, mut controller, plan, _, second) = noncapital_science_foundation();
+    let mut war = game.clone();
+    war.at_war.insert((0, 2));
+    war.at_war.insert((2, 0));
+    assert_eq!(
+        controller.conquest_campaign_noncapital_science_item(&war, 0, &plan),
+        None
+    );
+    let mut rush = plan.clone();
+    rush.rush = true;
+    assert_eq!(
+        controller.conquest_campaign_noncapital_science_item(&game, 0, &rush),
+        None
+    );
+    let mut threatened = plan.clone();
+    threatened.threatened_city = Some(second);
+    assert_eq!(
+        controller.conquest_campaign_noncapital_science_item(&game, 0, &threatened),
+        None
+    );
+    controller.capital_campus_before_the_plaza = false;
+    assert_eq!(
+        controller.conquest_campaign_noncapital_science_item(&game, 0, &plan),
+        None
+    );
+}
