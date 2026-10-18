@@ -6342,6 +6342,9 @@ pub struct AdvancedAi {
     /// a friendship only to a rival whose military power is at least ours.
     /// Off by default.
     friendship_only_with_the_stronger: bool,
+    /// `friendship-spares-the-target`: `befriend-the-strongest` offers no
+    /// friendship to the plan's campaign target. Off by default.
+    friendship_spares_the_target: bool,
     /// `foothold-faces-the-capital`: a Domination conquest values a rival
     /// town within Bomber range of a rival capital no city of ours reaches.
     /// See `advanced/foothold_faces_the_capital.rs`. Off by default.
@@ -10885,6 +10888,7 @@ impl AdvancedAi {
             // ---- append: e-f ----------------------------------------
             friendship_ends_at_the_race: false,
             friendship_only_with_the_stronger: false,
+            friendship_spares_the_target: false,
             foothold_faces_the_capital: false,
             frontier_walls_before_the_surprise: false,
             frontier_watch_sightings: BTreeMap::new(),

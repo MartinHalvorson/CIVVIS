@@ -8077,6 +8077,17 @@ impl AdvancedAi {
         self.delegations_reach_every_rival = false;
     }
 
+    /// Offer no friendship to the campaign's target. See
+    /// [`Self::friendship_spares_the_target`].
+    pub fn enable_friendship_spares_the_target(&mut self) {
+        self.friendship_spares_the_target = true;
+    }
+
+    /// The twin of `enable_friendship_spares_the_target`.
+    pub fn disable_friendship_spares_the_target(&mut self) {
+        self.friendship_spares_the_target = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

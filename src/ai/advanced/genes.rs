@@ -4080,6 +4080,10 @@ pub const GENES: &[Gene] = &[
     // step asked only the friendliest rival and sent nothing once it held
     // ours. See `advanced/delegations_reach_every_rival.rs`.
     Gene { tag: "delegations-reach-every-rival", field: "delegations_reach_every_rival", kind: Kind::OptIn, enable: AdvancedAi::enable_delegations_reach_every_rival, disable: AdvancedAi::disable_delegations_reach_every_rival },
+    // `friendship-spares-the-target`: 46 of 153 live friendship offers on
+    // pins g-m went to the campaign's own target; 125943Z befriended China at
+    // 7 power while aiming at it. See `protective_friendship.rs`.
+    Gene { tag: "friendship-spares-the-target", field: "friendship_spares_the_target", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_spares_the_target, disable: AdvancedAi::disable_friendship_spares_the_target },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
