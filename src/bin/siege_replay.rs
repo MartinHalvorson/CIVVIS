@@ -57,6 +57,8 @@ struct Outcome {
     min_walls: i32,
     units_lost: usize,
     turns: u32,
+    /// Cities of ours at the end that were not ours at the start, anywhere.
+    any_captures: usize,
 }
 
 fn military_units(g: &Game, pid: usize) -> usize {
@@ -107,7 +109,14 @@ fn replay(
         min_walls: i32::MAX,
         units_lost: 0,
         turns: 0,
+        any_captures: 0,
     };
+    let ours_at_start: std::collections::BTreeSet<(i32, i32)> = g
+        .cities
+        .values()
+        .filter(|city| city.owner == 0)
+        .map(|city| city.pos)
+        .collect();
     while g.winner.is_none() && g.turn < start + turns {
         let pid = g.current;
         ais[pid].take_turn(&mut g, pid);
@@ -122,17 +131,20 @@ fn replay(
             }
             if city.owner == 0 && out.captured.is_none() {
                 out.captured = Some(g.turn - start);
-                break;
             }
         } else if out.captured.is_none() {
             // Razed or otherwise gone: count it as taken when we were the
             // last to hold the ground.
             out.captured = Some(g.turn - start);
-            break;
         }
     }
     out.turns = g.turn - start;
     out.units_lost = units_at_start.saturating_sub(military_units(&g, 0));
+    out.any_captures = g
+        .cities
+        .values()
+        .filter(|city| city.owner == 0 && !ours_at_start.contains(&city.pos))
+        .count();
     // `--why`: our seat's journal lines that name the target, to read why a
     // siege held where it did.
     if let Some(name) = why {
@@ -230,13 +242,14 @@ fn main() {
         captured += usize::from(out.captured.is_some());
         breached += usize::from(out.walls_down.is_some());
         println!(
-            "{{\"seed\":{seed},\"walls_down\":{},\"captured\":{},\"min_hp\":{},\"min_walls\":{},\"units_lost\":{},\"turns\":{}}}",
+            "{{\"seed\":{seed},\"walls_down\":{},\"captured\":{},\"min_hp\":{},\"min_walls\":{},\"units_lost\":{},\"turns\":{},\"any_captures\":{}}}",
             out.walls_down.map_or("null".into(), |t| t.to_string()),
             out.captured.map_or("null".into(), |t| t.to_string()),
             out.min_hp,
             out.min_walls,
             out.units_lost,
-            out.turns
+            out.turns,
+            out.any_captures
         );
     }
     eprintln!("{seeds} seeds: walls down in {breached}, captured in {captured}");
