@@ -478,7 +478,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `surge-fields-the-bombers` | off (unmeasured) | Opt-in gene `surge-fields-the-bombers`; see `Self::surge_fields_the_bombers`. | 1 \| 1 |
 | `theater-keeps-its-amphitheater` | off (unmeasured) | Opt-in gene `theater-keeps-its-amphitheater`; see `AdvancedAi::theater_keeps_its_amphitheater`. | 1 \| 1 |
 | `theology-fights-only-to-win` | off (unmeasured) | Opt-in gene `theology-fights-only-to-win`; see `advanced/theology_fights.rs`. | 1 \| 1 |
-| `threatened-city-buys-its-defender` | off (unmeasured) | Buy the threatened city's defender while its menu sells one. | 1 \| 1 |
+| `threatened-city-buys-its-defender` | off (unmeasured) | Buy the threatened city's defender while its menu sells one. | — \| 2 |
+| `threatened-city-buys-its-defender-2` | off (unmeasured) | Buy the threatened city a defender of its era, not the cheapest body. | — \| 2 |
 | `tier-gap-priced-once` | off (unmeasured) | Opt-in gene `tier-gap-priced-once`; see `Self::tier_gap_priced_once`. | 1 \| 1 |
 | `tier-gap-reads-the-fielded-line` | off (unmeasured) | Opt-in gene `tier-gap-reads-the-fielded-line`; see `Self::tier_gap_reads_the_fielded_line`. | 1 \| 1 |
 | `tower-assault` | off (unmeasured) | Opt-in gene `tower-assault`; see `Self::tower_assault`. | 1 \| 1 |
