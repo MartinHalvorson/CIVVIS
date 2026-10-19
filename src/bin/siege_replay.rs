@@ -73,11 +73,13 @@ fn replay(
     without: &[String],
     target_pos: (i32, i32),
     turns: u32,
+    why: Option<&str>,
 ) -> Outcome {
     let mut g = base.clone();
     g.rng = civvis::rng::Rng::new(seed);
     let start = g.turn;
     g.max_turns = g.max_turns.max(start + turns + 1);
+    let journal = civvis::reasoning::Journal::recording();
     let mut ais: Vec<Box<dyn Ai>> = Vec::new();
     for pid in 0..g.players.len() {
         if pid == 0 {
@@ -88,6 +90,9 @@ fn replay(
                 if let Some(gene) = civvis::ai::gene(tag) {
                     (gene.disable)(&mut ai);
                 }
+            }
+            if why.is_some() {
+                ai.attach_journal(journal.handle());
             }
             ais.push(Box::new(ai));
         } else {
@@ -128,13 +133,24 @@ fn replay(
     }
     out.turns = g.turn - start;
     out.units_lost = units_at_start.saturating_sub(military_units(&g, 0));
+    // `--why`: our seat's journal lines that name the target, to read why a
+    // siege held where it did.
+    if let Some(name) = why {
+        let needle = name.to_lowercase();
+        for thought in journal.since(0).thoughts {
+            if thought.player == 0 && thought.headline.to_lowercase().contains(&needle) {
+                let detail: String = thought.detail.chars().take(220).collect();
+                eprintln!("  t{} {} | {}", thought.turn, thought.headline, detail);
+            }
+        }
+    }
     out
 }
 
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let Some(run) = text(&args, "--run") else {
-        eprintln!("usage: siege_replay --run <run dir> --turn T --target <city> [--turns N] [--seeds K] [--with-file F] [--with a,b] [--without a,b]");
+        eprintln!("usage: siege_replay --run <run dir> --turn T --target <city> [--turns N] [--seeds K] [--with-file F] [--with a,b] [--without a,b] [--why]");
         std::process::exit(2);
     };
     let turn = number(&args, "--turn", 0) as u32;
@@ -197,10 +213,20 @@ fn main() {
     forced_tags.extend(tags(text(&args, "--with")));
     let forced: Vec<&str> = forced_tags.iter().map(String::as_str).collect();
     let without = tags(text(&args, "--without"));
+    let why = args.iter().any(|arg| arg == "--why");
     let mut captured = 0;
     let mut breached = 0;
     for seed in 0..seeds {
-        let out = replay(&base, 9_100 + seed, &forced, &without, target_pos, turns);
+        let name = (why && seed == 0).then_some(target.as_str());
+        let out = replay(
+            &base,
+            9_100 + seed,
+            &forced,
+            &without,
+            target_pos,
+            turns,
+            name,
+        );
         captured += usize::from(out.captured.is_some());
         breached += usize::from(out.walls_down.is_some());
         println!(
