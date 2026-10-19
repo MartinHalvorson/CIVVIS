@@ -196,7 +196,11 @@ fn founding_on_a_tile_whose_owner_city_is_gone_does_not_panic() {
         })
         .expect("a land tile the city owns");
     g.cities.remove(&cid);
-    assert_eq!(g.map.get(owned).unwrap().owner_city, Some(cid), "the stale owner stays");
+    assert_eq!(
+        g.map.get(owned).unwrap().owner_city,
+        Some(cid),
+        "the stale owner stays"
+    );
     let ours = g.spawn_unit("settler", 0, owned);
     let _ = g.can_found_city(ours);
 }
