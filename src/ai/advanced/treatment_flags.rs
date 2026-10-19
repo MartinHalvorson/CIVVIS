@@ -8176,6 +8176,17 @@ impl AdvancedAi {
         self.threatened_city_buys_its_defender_2 = false;
     }
 
+    /// Keep a city-state war from becoming the Domination front. See
+    /// [`Self::city_state_war_is_no_front`].
+    pub fn enable_city_state_war_is_no_front(&mut self) {
+        self.city_state_war_is_no_front = true;
+    }
+
+    /// The twin of `enable_city_state_war_is_no_front`.
+    pub fn disable_city_state_war_is_no_front(&mut self) {
+        self.city_state_war_is_no_front = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

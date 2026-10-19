@@ -4119,6 +4119,11 @@ pub const GENES: &[Gene] = &[
     // a tenth of our power for 15-30 turns on short home Defend rows and an
     // unstaged ring. See `advanced/prey_declaration.rs`.
     Gene { tag: "prey-is-declared-on", field: "prey_is_declared_on", kind: Kind::OptIn, enable: AdvancedAi::enable_prey_is_declared_on, disable: AdvancedAi::disable_prey_is_declared_on },
+    // `city-state-war-is-no-front`: 29% of live Emperor campaign turns
+    // (t60-200, 120 games) aimed at a city-state, the war shutting every
+    // at-peace branch of the target choice. See
+    // `advanced/city_state_war_is_no_front.rs`.
+    Gene { tag: "city-state-war-is-no-front", field: "city_state_war_is_no_front", kind: Kind::OptIn, enable: AdvancedAi::enable_city_state_war_is_no_front, disable: AdvancedAi::disable_city_state_war_is_no_front },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

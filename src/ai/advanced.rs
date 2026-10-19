@@ -5496,6 +5496,10 @@ pub struct AdvancedAi {
     /// costliest. See `advanced/solvency.rs`. Off by default.
     bankruptcy_exits_the_drain: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `city-state-war-is-no-front`: a Domination seat's war with a
+    /// city-state is no front the campaign target is chosen among. See
+    /// `advanced/city_state_war_is_no_front.rs`. Off by default.
+    city_state_war_is_no_front: bool,
     /// `campus-unlock-before-the-luxury`: the Domination Campus unlock
     /// (Writing) is researched ahead of the Astrology and luxury-connection
     /// goals. See `advanced/domination_research.rs`. Off by default.
@@ -9632,6 +9636,8 @@ mod war_policy;
 /// bill, and pillage with the movement the march does not use. Two opt-in
 /// genes; see `advanced/city_campaign.rs`.
 mod city_campaign;
+/// `city-state-war-is-no-front`: see `advanced/city_state_war_is_no_front.rs`.
+mod city_state_war_is_no_front;
 
 /// Shared fog-safe battlefront observations and city-pressure calculations.
 mod battlefront;
@@ -10767,6 +10773,7 @@ impl AdvancedAi {
             aqueduct_claims_the_capped_queue: false,
             bankruptcy_exits_the_drain: false,
             // ---- append: c-d ----------------------------------------
+            city_state_war_is_no_front: false,
             campus_unlock_before_the_luxury: false,
             denial_target_leads_the_fronts: false,
             delegations_reach_every_rival: false,
@@ -15475,6 +15482,9 @@ impl AdvancedAi {
         // `advanced/faith_war_is_no_front.rs`.
         let wartime_rivals = self.without_faith_war(g, pid, wartime_rivals);
         let wartime_majors = self.without_faith_war(g, pid, wartime_majors);
+        // `city-state-war-is-no-front`: see
+        // `advanced/city_state_war_is_no_front.rs`.
+        let wartime_rivals = self.without_city_state_war(g, wartime_rivals);
         let finishing_front = domination_finish.filter(|(rival, _)| {
             strategy == GrandStrategy::Conquest
                 && rush_victim.is_none()

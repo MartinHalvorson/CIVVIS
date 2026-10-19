@@ -244,6 +244,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `capital-walls-before-the-surprise` | off (unmeasured) | Opt-in gene `capital-walls-before-the-surprise`; see `advanced/capital_walls_before_the_surprise.rs`. | 1 \| 1 |
 | `capture-holds-the-ring` | off (unmeasured) | Opt-in gene `capture-holds-the-ring`; see `Self::capture_holds_the_ring`. | 1 \| 1 |
 | `capture-waits-on-the-march` | off (unmeasured) | Opt-in gene `capture-waits-on-the-march`; see `Self::capture_waits_on_the_march`. | 1 \| 1 |
+| `city-state-war-is-no-front` | off (unmeasured) | Keep a city-state war from becoming the Domination front. | 1 \| 1 |
 | `city-under-fire-ranks-first` | off (unmeasured) | Opt-in gene `city-under-fire-ranks-first`; see `advanced/objective_board.rs`. | 1 \| 1 |
 | `civic-awaits-its-inspiration` | off (unmeasured) | Opt-in gene `civic-awaits-its-inspiration`; see `advanced/civic_inspiration_wait.rs`. | 1 \| 1 |
 | `closed-border-blocker-declares` | off (unmeasured) | A weak third party whose closed borders hold a siege's march three turns is declared on. | 1 \| 1 |
