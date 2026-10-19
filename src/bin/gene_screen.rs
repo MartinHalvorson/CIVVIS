@@ -6711,7 +6711,10 @@ mod tests {
         let header = format!(r#"{{"forced":["{first}"],"treatments":["{second}"]}}"#);
         let played = live_genome_tags(&header).unwrap();
         assert!(apply_live_genome(&mut genes, &played).is_empty());
-        assert!(!genes[0].default_on, "the header's treatments, not its forced list");
+        assert!(
+            !genes[0].default_on,
+            "the header's treatments, not its forced list"
+        );
         assert!(genes[1].default_on);
         assert!(live_genome_tags(r#"{"forced":[]}"#).is_err());
     }
