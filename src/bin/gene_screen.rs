@@ -5989,6 +5989,14 @@ fn main() {
         let on = std::fs::read_to_string(&path)
             .map_err(|error| error.to_string())
             .and_then(|text| live_genome_tags(&text))
+            .and_then(|on| {
+                // An empty file would turn every gene off: refuse it.
+                if on.is_empty() {
+                    Err("names no tags".to_string())
+                } else {
+                    Ok(on)
+                }
+            })
             .unwrap_or_else(|error| {
                 eprintln!("--live-genome {path}: {error}");
                 std::process::exit(2);
