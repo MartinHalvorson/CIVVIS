@@ -4107,6 +4107,10 @@ pub const GENES: &[Gene] = &[
     // with a rival under 0.4 times our power, that rival was our declared
     // friend. See `protective_friendship::FRIENDSHIP_PREY_RATIO`.
     Gene { tag: "friendship-spares-the-prey", field: "friendship_spares_the_prey", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_spares_the_prey, disable: AdvancedAi::disable_friendship_spares_the_prey },
+    // `campus-unlock-before-the-luxury`: Writing at t34.5 behind Astrology,
+    // Sailing and Irrigation; first Campus t50; our Science 8 against the best
+    // rival's 25 at t40. See `advanced/domination_research.rs`.
+    Gene { tag: "campus-unlock-before-the-luxury", field: "campus_unlock_before_the_luxury", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_unlock_before_the_luxury, disable: AdvancedAi::disable_campus_unlock_before_the_luxury },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

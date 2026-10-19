@@ -5496,6 +5496,10 @@ pub struct AdvancedAi {
     /// costliest. See `advanced/solvency.rs`. Off by default.
     bankruptcy_exits_the_drain: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `campus-unlock-before-the-luxury`: the Domination Campus unlock
+    /// (Writing) is researched ahead of the Astrology and luxury-connection
+    /// goals. See `advanced/domination_research.rs`. Off by default.
+    campus_unlock_before_the_luxury: bool,
     /// `denial-target-leads-the-fronts`: see
     /// `advanced/denial_target_front.rs`. Off by default.
     denial_target_leads_the_fronts: bool,
@@ -10750,6 +10754,7 @@ impl AdvancedAi {
             aqueduct_claims_the_capped_queue: false,
             bankruptcy_exits_the_drain: false,
             // ---- append: c-d ----------------------------------------
+            campus_unlock_before_the_luxury: false,
             denial_target_leads_the_fronts: false,
             delegations_reach_every_rival: false,
             delegations_asked: BTreeMap::new(),
@@ -18762,6 +18767,12 @@ impl AdvancedAi {
                 // at the same point, so the Holy Site can start the turn the
                 // second city stands. See
                 // `advanced/astrology_before_the_second_city.rs`.
+                // `campus-unlock-before-the-luxury`: the Campus unlock ahead
+                // of the Astrology and luxury-connection detours. See
+                // `advanced/domination_research.rs`.
+                _ if self.campus_unlock_before_the_luxury && domination_campus_goal.is_some() => {
+                    domination_campus_goal
+                }
                 _ if (self.prophet_race_enterable_for(g, pid, self.victory_target)
                     || self.astrology_before_the_second_city_due(g, pid))
                     && g.players[pid].techs.len() >= PROPHET_RACE_OPENING_TECHS
