@@ -4111,6 +4111,10 @@ pub const GENES: &[Gene] = &[
     // Sailing and Irrigation; first Campus t50; our Science 8 against the best
     // rival's 25 at t40. See `advanced/domination_research.rs`.
     Gene { tag: "campus-unlock-before-the-luxury", field: "campus_unlock_before_the_luxury", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_unlock_before_the_luxury, disable: AdvancedAi::disable_campus_unlock_before_the_luxury },
+    // `prey-is-declared-on`: live Emperor held wars on rivals at a fifth to
+    // a tenth of our power for 15-30 turns on short home Defend rows and an
+    // unstaged ring. See `advanced/prey_declaration.rs`.
+    Gene { tag: "prey-is-declared-on", field: "prey_is_declared_on", kind: Kind::OptIn, enable: AdvancedAi::enable_prey_is_declared_on, disable: AdvancedAi::disable_prey_is_declared_on },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
