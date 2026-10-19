@@ -501,6 +501,46 @@ struct Gene {
     flip: fn(&mut AdvancedAi),
 }
 
+/// The tags a `--live-genome` file turns on: a live run's genome header (a
+/// JSON object whose `treatments` array is the genome the live seat played,
+/// as the first line of a run's `why.log` carries it) or a plain list of tags
+/// separated by commas or whitespace (`~/.civvis-live-force-on`).
+fn live_genome_tags(text: &str) -> Result<BTreeSet<String>, String> {
+    let text = text.trim();
+    if text.starts_with('{') {
+        let line = text.lines().next().unwrap_or(text);
+        let header: serde_json::Value =
+            serde_json::from_str(line).map_err(|error| format!("not a genome header: {error}"))?;
+        let treatments = header
+            .get("treatments")
+            .and_then(|value| value.as_array())
+            .ok_or("the genome header has no `treatments` array")?;
+        return Ok(treatments
+            .iter()
+            .filter_map(|tag| tag.as_str().map(str::to_string))
+            .collect());
+    }
+    Ok(text
+        .split(|c: char| c == ',' || c.is_whitespace())
+        .map(str::trim)
+        .filter(|tag| !tag.is_empty())
+        .map(str::to_string)
+        .collect())
+}
+
+/// `--live-genome`: every gene plays on iff `on` names it, in place of its
+/// ledger default, so an unscreened gene holds the live seat's state. The
+/// tags `on` names that no gene in this build carries.
+fn apply_live_genome(genes: &mut [Gene], on: &BTreeSet<String>) -> Vec<String> {
+    for gene in genes.iter_mut() {
+        gene.default_on = on.contains(gene.tag);
+    }
+    on.iter()
+        .filter(|tag| !genes.iter().any(|gene| gene.tag == tag.as_str()))
+        .cloned()
+        .collect()
+}
+
 /// The deployment default for a tag: the ledger's say, else the universe.
 fn ledger_default(tag: &str, universe_on: bool) -> bool {
     civvis::ai::ledger_default_on(tag).unwrap_or(universe_on)
@@ -5923,7 +5963,8 @@ fn usage() -> ! {
          (--contested pins one rival seat per lane to actually pursue it — {} by default — and turns \
          on native scored competitions, the only recurring native route to the {DIPLOMATIC_VICTORY_POINTS} \
          Diplomatic Victory Points that lane needs)\n       \
-         the fidelity run, NOT a screen: [--deployment-genome] every measured seat plays the genome the ledger ships, no gene is screened, and the file prices nothing — the shape `civ6_trajectory_fidelity.py` compares against the live seat
+         the fidelity run, NOT a screen: [--deployment-genome] every measured seat plays the genome the ledger ships, no gene is screened, and the file prices nothing — the shape `civ6_trajectory_fidelity.py` compares against the live seat\n       \
+         the background: [--live-genome FILE] every unscreened gene plays as FILE says — a live run's genome header (why.log line 1) or a list of tags (on iff named) — instead of at its ledger default
        gene_screen --analyze PATH [PATH ...] [--json OUT] [--interactions] [--denial] [--top N] [--by-civ TAG]\n       \
          gene_screen --list",
         civvis::game::default_difficulty(),
@@ -5938,7 +5979,37 @@ fn main() {
     if present(&args, "--help") || present(&args, "-h") {
         usage();
     }
-    let genes = gene_table();
+    let mut genes = gene_table();
+    // `--live-genome`: price genes against the genome the live seat plays.
+    // The live seat forces some 300 tags beside the ledger's defaults, and a
+    // gene that only matters beside a forced one (a faith war only opens
+    // under `faith-war-before-the-flip-2`) reads as something else against
+    // the deployment genome.
+    if let Some(path) = text(&args, "--live-genome") {
+        let on = std::fs::read_to_string(&path)
+            .map_err(|error| error.to_string())
+            .and_then(|text| live_genome_tags(&text))
+            .and_then(|on| {
+                // An empty file would turn every gene off: refuse it.
+                if on.is_empty() {
+                    Err("names no tags".to_string())
+                } else {
+                    Ok(on)
+                }
+            })
+            .unwrap_or_else(|error| {
+                eprintln!("--live-genome {path}: {error}");
+                std::process::exit(2);
+            });
+        let unknown = apply_live_genome(&mut genes, &on);
+        eprintln!(
+            "live genome: {} of {} genes on from {path}; {} named tag(s) this build does not carry",
+            genes.iter().filter(|gene| gene.default_on).count(),
+            genes.len(),
+            unknown.len()
+        );
+    }
+    let genes = genes;
 
     if present(&args, "--list") {
         println!(
@@ -6634,6 +6705,27 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_live_genome_header_or_tag_list_sets_every_default() {
+        let mut genes = gene_table();
+        let (first, second) = (genes[0].tag, genes[1].tag);
+        let list = live_genome_tags(&format!("{first},\n{second} unknown-tag")).unwrap();
+        let unknown = apply_live_genome(&mut genes, &list);
+        assert_eq!(unknown, vec!["unknown-tag".to_string()]);
+        assert!(genes[0].default_on && genes[1].default_on);
+        assert!(genes[2..].iter().all(|gene| !gene.default_on));
+
+        let header = format!(r#"{{"forced":["{first}"],"treatments":["{second}"]}}"#);
+        let played = live_genome_tags(&header).unwrap();
+        assert!(apply_live_genome(&mut genes, &played).is_empty());
+        assert!(
+            !genes[0].default_on,
+            "the header's treatments, not its forced list"
+        );
+        assert!(genes[1].default_on);
+        assert!(live_genome_tags(r#"{"forced":[]}"#).is_err());
+    }
 
     fn test_header(genes: &[&str]) -> Header {
         Header {
