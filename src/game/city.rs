@@ -40,8 +40,15 @@ impl Game {
                 return false;
             }
         }
-        if let Some(oc) = t.owner_city {
-            if self.cities[&oc].owner != u.owner {
+        // A tile can still name a city that has since been razed or removed
+        // (the live gene screen of 2026-10-19 panicked here, seed 99001+ on
+        // `prey-is-declared-on`'s wars); a city that is gone owns nothing.
+        if let Some(owner) = t
+            .owner_city
+            .and_then(|oc| self.cities.get(&oc))
+            .map(|city| city.owner)
+        {
+            if owner != u.owner {
                 return false;
             }
         }
