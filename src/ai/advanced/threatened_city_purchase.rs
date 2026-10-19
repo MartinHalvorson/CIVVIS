@@ -162,15 +162,7 @@ impl AdvancedAi {
                     && spec.promotion_class != "recon"
                     && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
             })
-            .filter(|(unit, _)| {
-                g.can_produce(
-                    pid,
-                    cid,
-                    &Item::Unit {
-                        unit: (*unit).clone(),
-                    },
-                )
-            })
+            .filter(|(unit, _)| g.can_produce(pid, cid, &Item::Unit { unit: **unit }))
             .map(|(_, spec)| spec.strength.max(spec.ranged_attack_strength()))
             .fold(0.0, f64::max)
     }
