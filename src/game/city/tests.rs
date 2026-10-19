@@ -170,3 +170,33 @@ fn citizen_job_keys_order_exactly_as_their_text_did() {
         }
     }
 }
+
+/// A tile can still name a city that has been removed; the founding check
+/// treats that city as owning nothing instead of panicking on the lookup.
+#[test]
+fn founding_on_a_tile_whose_owner_city_is_gone_does_not_panic() {
+    let mut g = Game::new_full(2, 24, 16, 7_961, 300, 0, false);
+    let settler = g
+        .player_unit_ids(1)
+        .into_iter()
+        .find(|unit| g.units[unit].kind == "settler")
+        .expect("major 1 starts with a settler");
+    let pos = g.units[&settler].pos;
+    let cid = g.found_city_for(1, pos, None);
+    g.remove_unit(settler);
+    let owned = g
+        .map
+        .disk(pos, 1)
+        .into_iter()
+        .find(|tile| {
+            *tile != pos
+                && g.map.get(*tile).is_some_and(|t| {
+                    t.owner_city == Some(cid) && g.rules.is_passable(t) && !g.rules.is_water(t)
+                })
+        })
+        .expect("a land tile the city owns");
+    g.cities.remove(&cid);
+    assert_eq!(g.map.get(owned).unwrap().owner_city, Some(cid), "the stale owner stays");
+    let ours = g.spawn_unit("settler", 0, owned);
+    let _ = g.can_found_city(ours);
+}
