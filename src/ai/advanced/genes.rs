@@ -4051,6 +4051,10 @@ pub const GENES: &[Gene] = &[
     // Emperor runs lost a city by turn 100. See
     // `advanced/threatened_city_purchase.rs`.
     Gene { tag: "threatened-city-buys-its-defender", field: "threatened_city_buys_its_defender", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_city_buys_its_defender, disable: AdvancedAi::disable_threatened_city_buys_its_defender },
+    // `threatened-city-buys-its-defender-2`: v1 bought 121 Warriors and 67
+    // Heavy Chariots in 119 live runs; v2 buys a defender of the city's era
+    // or keeps the Gold. See `advanced/threatened_city_purchase.rs`.
+    Gene { tag: "threatened-city-buys-its-defender-2", field: "threatened_city_buys_its_defender_2", kind: Kind::OptIn, enable: AdvancedAi::enable_threatened_city_buys_its_defender_2, disable: AdvancedAi::disable_threatened_city_buys_its_defender_2 },
     // `air-wing-grows-with-the-aluminum`: live Emperor 052256Z banked 25
     // Aluminum (the cap) on +4 to +8 a turn from turn 150 with a four-Bomber
     // wing, and that wing took Sydney's 400 walls in six turns; the wing's
