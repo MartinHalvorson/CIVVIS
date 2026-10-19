@@ -48,6 +48,11 @@ path = "src/bin/gene_census.rs"
 required-features = ["developer-tools"]
 
 [[bin]]
+name = "siege_replay"
+path = "src/bin/siege_replay.rs"
+required-features = ["developer-tools"]
+
+[[bin]]
 name = "gene_screen"
 path = "src/bin/gene_screen.rs"
 required-features = ["developer-tools"]
