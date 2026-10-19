@@ -8697,6 +8697,12 @@ pub struct AdvancedAi {
     /// away. See `advanced/solvency.rs`. Off by default.
     solvent_or_hold: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `threatened-city-buys-its-defender-2`: the threatened city's purchase
+    /// buys only a defender within
+    /// `threatened_city_purchase::DEFENDER_ERA_SHARE` of the strongest land
+    /// defender the city could train, and keeps the Gold otherwise. Runs the
+    /// purchase on its own; see `advanced/threatened_city_purchase.rs`.
+    threatened_city_buys_its_defender_2: bool,
     /// `unwalled-ring-steps-in`: a fit melee siege member off the ring of a
     /// city with no standing wall steps onto a free ring tile it reaches,
     /// sealing the ring the city heals through. See
@@ -11278,6 +11284,7 @@ impl AdvancedAi {
             science_suppression_hits_the_pads: false,
             solvent_or_hold: false,
             // ---- append: t-z ----------------------------------------
+            threatened_city_buys_its_defender_2: false,
             unwalled_ring_steps_in: false,
             threatened_city_buys_its_defender: false,
             threatened_defender_bought: BTreeMap::new(),

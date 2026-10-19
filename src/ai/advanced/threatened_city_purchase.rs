@@ -28,6 +28,18 @@ pub(super) const THREATENED_PURCHASE_REACH: i32 = 3;
 /// Standard turns between two defenders bought for one city.
 pub(super) const THREATENED_PURCHASE_COOLDOWN: u32 = 4;
 
+/// `threatened-city-buys-its-defender-2`: the least share of the strongest
+/// land defender the city could train that a bought defender must reach.
+/// Version 1 buys the strongest body the reserve reaches. Across 119 live
+/// Emperor runs (2026-10-15..19) it bought 2.6 a game for 296 Gold: 121
+/// Warriors, 67 Heavy Chariots, 54 Archers, 52 Horsemen and 5 Men-at-Arms,
+/// 50 of the Warriors and 58 of the Heavy Chariots after turn 50 -- 20-28
+/// strength bodies that cannot trade with a city's attackers and then sit in
+/// the field army as the melee a siege cannot use. A 160-game live-shaped
+/// screen read v1 at -17.3 pp (z -2.55). Short of the bar the Gold is kept
+/// for the next purchase or the queue.
+pub(super) const DEFENDER_ERA_SHARE: f64 = 0.8;
+
 impl AdvancedAi {
     /// See the module. True when a defender was bought. Exact no-op with the
     /// gene off.
@@ -37,7 +49,7 @@ impl AdvancedAi {
         pid: usize,
         threatened_city: Option<u32>,
     ) -> bool {
-        if !self.threatened_city_buys_its_defender {
+        if !self.threatened_city_buys_its_defender && !self.threatened_city_buys_its_defender_2 {
             return false;
         }
         let Some(cid) = threatened_city else {
@@ -72,6 +84,12 @@ impl AdvancedAi {
             return false;
         }
         let budget = g.players[pid].gold - self.purchase_upkeep_floor(g, pid, 0.0);
+        // `threatened-city-buys-its-defender-2`: a body of its era or none.
+        let era_floor = if self.threatened_city_buys_its_defender_2 {
+            DEFENDER_ERA_SHARE * Self::best_land_defender_power(g, pid, cid)
+        } else {
+            0.0
+        };
         let candidate = g
             .legal_purchase_actions_for_city(pid, cid)
             .0
@@ -102,6 +120,9 @@ impl AdvancedAi {
                     return None;
                 }
                 let power = spec.strength.max(spec.ranged_attack_strength());
+                if power + 1e-9 < era_floor {
+                    return None;
+                }
                 Some((power, price, unit.to_string(), action.clone()))
             })
             // The strongest; the cheaper on a tie; then the name, so the pick
@@ -124,6 +145,26 @@ impl AdvancedAi {
                "{city_name} buys a {} while the threat is still at its door", plain(&unit);
                "threatened-city-buys-its-defender: a hostile land soldier within {THREATENED_PURCHASE_REACH} tiles; {price:.0} of {gold:.0} Gold, before the city's menu stops selling one");
         true
+    }
+}
+
+impl AdvancedAi {
+    /// The strongest land defender `cid` could train now, by the same
+    /// `max(strength, ranged attack)` the purchase ranks on, whatever the
+    /// treasury holds. Zero when it can train none.
+    fn best_land_defender_power(g: &Game, pid: usize, cid: u32) -> f64 {
+        g.rules
+            .units
+            .iter()
+            .filter(|(_, spec)| {
+                spec.class == "military"
+                    && !spec.siege
+                    && spec.promotion_class != "recon"
+                    && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+            })
+            .filter(|(unit, _)| g.can_produce(pid, cid, &Item::Unit { unit: **unit }))
+            .map(|(_, spec)| spec.strength.max(spec.ranged_attack_strength()))
+            .fold(0.0, f64::max)
     }
 }
 

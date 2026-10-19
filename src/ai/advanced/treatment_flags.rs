@@ -8165,6 +8165,17 @@ impl AdvancedAi {
         self.prey_is_declared_on = false;
     }
 
+    /// Buy the threatened city a defender of its era, not the cheapest
+    /// body. See [`Self::threatened_city_buys_its_defender_2`].
+    pub fn enable_threatened_city_buys_its_defender_2(&mut self) {
+        self.threatened_city_buys_its_defender_2 = true;
+    }
+
+    /// The twin of `enable_threatened_city_buys_its_defender_2`.
+    pub fn disable_threatened_city_buys_its_defender_2(&mut self) {
+        self.threatened_city_buys_its_defender_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
