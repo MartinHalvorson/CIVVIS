@@ -7739,6 +7739,11 @@ pub struct AdvancedAi {
     /// (`append_luxury_swap_order` in `civvis_orders`). Off by default.
     luxury_swap_asks_2: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `prey-is-declared-on`: a Domination seat declares on a major rival
+    /// under `prey_declaration::PREY_DECLARE_RATIO` of its military power
+    /// without a home Defend row or a staged ring. See
+    /// `advanced/prey_declaration.rs`. Off by default.
+    prey_is_declared_on: bool,
     /// `prophet-race-takes-divine-spark`: while the seat runs the Prophet
     /// race, the pantheon pick ranks Divine Spark right behind Religious
     /// Settlements (`BasicAi::pantheon_for_the_prophet_race`). See
@@ -9616,6 +9621,8 @@ mod march_moves;
 /// groups and the posture ladder. Opt-in gene `objective-board`; see
 /// `advanced/objective_board.rs`.
 pub mod objective_board;
+/// `prey-is-declared-on`: see `advanced/prey_declaration.rs`.
+mod prey_declaration;
 /// Target feasibility, the declaration and the peace term read off the
 /// board's requirements. Opt-in gene `war-policy-via-board`.
 mod war_policy;
@@ -11109,6 +11116,7 @@ impl AdvancedAi {
             launcher_war_ignores_the_edge: false,
             luxury_swap_asks_2: false,
             // ---- append: p-r ----------------------------------------
+            prey_is_declared_on: false,
             prophet_race_takes_divine_spark: false,
             racer_blocker_declares: false,
             phantom_capture_keeps_the_siege: false,
@@ -25125,6 +25133,8 @@ impl AdvancedAi {
         let opens = close_enough
             && ((ready
                 && (staged
+                    // `prey-is-declared-on`: see `advanced/prey_declaration.rs`.
+                    || self.prey_is_declared_on_now(g, pid, target)
                     || air_ready
                     || religion_counter_ready
                     || culture_counter_ready
