@@ -400,6 +400,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `plaza-in-the-district-list` | off (unmeasured) | `BasicAi::plaza_in_the_district_list`. | 1 \| 1 |
 | `policy-deck-hysteresis` | off (unmeasured) | The policy deck keeps the maintenance relief the host held at the turn's start and the Amenity repair card while it is what keeps a city content. | — \| 2 |
 | `policy-deck-hysteresis-2` | off (unmeasured) | `policy-deck-hysteresis-2`: version 1, and a held relief stays while the income does not cover its discount, and the emergency's relief may evict a lower-ranked wanted military card. | — \| 2 |
+| `prey-is-declared-on` | off (unmeasured) | Declare on prey without the staged ring or a home Defend row. | 1 \| 1 |
 | `prey-reads-a-steady-power` | off (unmeasured) | Opt-in gene `prey-reads-a-steady-power`; see `Self::prey_reads_a_steady_power`. | 1 \| 1 |
 | `prophet-builds-its-site` | off (unmeasured) | Opt-in gene `prophet-builds-its-site`; see `Self::reserve_prophet_site` and `Self::prophet_race_exhausted`. | 1 \| 1 |
 | `prophet-race-earns-its-points` | off (unmeasured) | Opt-in gene `prophet-race-earns-its-points`; see `Self::reserve_race_shrine` and `Self::race_wants_revelation`. | 1 \| 1 |

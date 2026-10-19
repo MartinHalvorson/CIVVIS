@@ -283,6 +283,11 @@ impl AdvancedAi {
             == Some(super::VictoryTarget::Domination)
             && self.domination_counter_target(g, pid, target)
             && g.military_power(pid) >= 2.0 * g.military_power(target).max(1.0);
+        // `prey-is-declared-on`: prey waits on neither a home Defend row nor
+        // a staged ring. See `advanced/prey_declaration.rs`.
+        if self.prey_is_declared_on_now(g, pid, target) {
+            return Some(Ok(()));
+        }
         if let Some(short) = self
             .requisitions()
             .into_iter()

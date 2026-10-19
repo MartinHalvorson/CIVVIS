@@ -8154,6 +8154,17 @@ impl AdvancedAi {
         self.campus_unlock_before_the_luxury = false;
     }
 
+    /// Declare on prey without the staged ring or a home Defend row. See
+    /// [`Self::prey_is_declared_on`].
+    pub fn enable_prey_is_declared_on(&mut self) {
+        self.prey_is_declared_on = true;
+    }
+
+    /// The twin of `enable_prey_is_declared_on`.
+    pub fn disable_prey_is_declared_on(&mut self) {
+        self.prey_is_declared_on = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
