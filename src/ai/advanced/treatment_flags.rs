@@ -8143,6 +8143,17 @@ impl AdvancedAi {
         self.friendship_spares_the_prey = false;
     }
 
+    /// Unlock the Campus ahead of the luxury and Astrology detours. See
+    /// [`Self::campus_unlock_before_the_luxury`].
+    pub fn enable_campus_unlock_before_the_luxury(&mut self) {
+        self.campus_unlock_before_the_luxury = true;
+    }
+
+    /// The twin of `enable_campus_unlock_before_the_luxury`.
+    pub fn disable_campus_unlock_before_the_luxury(&mut self) {
+        self.campus_unlock_before_the_luxury = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

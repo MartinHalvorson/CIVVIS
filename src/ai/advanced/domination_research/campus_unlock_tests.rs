@@ -121,3 +121,34 @@ fn the_campus_goal_is_bounded_to_a_missing_domination_unlock() {
         assert_eq!(ai.domination_campus_unlock_goal(&g, 0), None);
     }
 }
+
+/// `campus-unlock-before-the-luxury`: with a Plantation luxury awaiting
+/// Irrigation, the stock order connects the luxury first; under the gene
+/// Writing goes first.
+#[test]
+fn the_campus_unlock_goes_ahead_of_the_luxury_connection_under_the_gene() {
+    let pick = |gene: bool| {
+        let (mut g, mut ai, plan) = opening();
+        g.players[0].techs.remove(&name!("irrigation"));
+        let city = g.player_city_ids(0)[0];
+        let spot = g
+            .map
+            .disk(g.cities[&city].pos, 2)
+            .into_iter()
+            .find(|pos| {
+                *pos != g.cities[&city].pos
+                    && g.map.get(*pos).is_some_and(|t| t.owner_city == Some(city))
+            })
+            .expect("a tile the capital owns");
+        g.map.tiles.get_mut(&spot).unwrap().resource = Some(name!("coffee"));
+        ai.enable_connect_the_luxury();
+        if gene {
+            ai.enable_campus_unlock_before_the_luxury();
+        }
+        ai.advanced_research(&mut g, 0, &plan);
+        g.players[0].research.clone()
+    };
+    let stock = pick(false);
+    assert_ne!(stock.as_deref(), Some("writing"), "stock: {stock:?}");
+    assert_eq!(pick(true).as_deref(), Some("writing"));
+}

@@ -234,6 +234,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `campus-buildings-first` | off (unmeasured) | Opt-in gene `campus-buildings-first`; see `BasicAi::campus_buildings_first` and `Self::reserve_culture_defense_theater`. | 1 \| 1 |
 | `campus-claims-the-free-slot` | off (unmeasured) | Claim a free district slot for a first Campus. | — \| 2 |
 | `campus-claims-the-free-slot-2` | off (unmeasured) | Version 2 of the free-slot Campus claim. | — \| 2 |
+| `campus-unlock-before-the-luxury` | off (unmeasured) | Unlock the Campus ahead of the luxury and Astrology detours. | 1 \| 1 |
 | `capital-campus-before-the-plaza` | off (unmeasured) | Opt-in gene `capital-campus-before-the-plaza`; see `advanced/capital_campus_claim.rs`. | 1 \| 1 |
 | `capital-defense-holds` | off (unmeasured) | Opt-in gene `capital-defense-holds`; see `Self::capital_defense_contact`. | 1 \| 1 |
 | `capital-prey-opens-a-front` | off (unmeasured) | Opt-in gene `capital-prey-opens-a-front`; see `Self::capital_prey_opens_a_front`. | — \| 2 |

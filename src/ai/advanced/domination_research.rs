@@ -20,6 +20,15 @@ use crate::game::{Game, Item};
 use crate::name::Name;
 
 impl AdvancedAi {
+    /// `campus-unlock-before-the-luxury` moves this goal ahead of the
+    /// Astrology (Prophet race) and luxury-connection arms. Live Emperor,
+    /// 2026-10-18/19 (114 games): the research order ran Mining t7, Animal
+    /// Husbandry t11, Astrology t20, Archery t20, Pottery t27, Sailing t29,
+    /// Masonry t31, Irrigation t34 and Writing t34.5; the first Campus
+    /// finished at a median t50 and the first Library at t62, while our
+    /// Science stood at 8 against the best rival's 25 at t40 and 17 against
+    /// 61 at t60, and we trailed by 10 technologies at t100 and 13 at t140.
+    ///
     /// An expanding conquest economy needs campuses before optional branches
     /// consume its early research. Military commitments and urgent defenses
     /// retain their earlier slots in the research chooser.
