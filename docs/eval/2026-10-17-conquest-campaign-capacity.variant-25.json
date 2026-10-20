@@ -1,0 +1,269 @@
+{
+  "registered_utc": "2026-10-18T14:50:53.675174+00:00",
+  "phase": "Known development only,candidate25;no fresh or promotion authorization",
+  "experimental_parent": "1cd163be10393cf6dbf96299e98b3d8aff1c8a63",
+  "experimental_parent_policy": "f8a3f22bafbf778c271b27bd8d19ebb72c6039eb",
+  "selected_fallback": "12f146fcfbbdeae2e311cffa19d0b9b3dddd8551",
+  "parent_status": "24 all6 action-null20,0wins/verifiedDom/foreign-major holdings.24h12 passive controls qualify6/6 nonjournal raw triple equality;5/6journals exact,diagnostic-only move-refusal order exception,not finalSTRICTAA. Local-barbarian alarms are first veto69/100/47 times on the3Deity maps;0Deity Basic science options are reached. Later guards are unmeasured,not inferred.03 remains fallback.",
+  "proposal": {
+    "proposed_utc": "2026-10-18T14:50:38.809559+00:00",
+    "parent_policy": "f8a3f22bafbf778c271b27bd8d19ebb72c6039eb",
+    "selected_fallback": "12f146fcfbbdeae2e311cffa19d0b9b3dddd8551",
+    "single_policy_change_relative_to24": "Preserve exact24 capital science selector/admission first; when it returns None, permit one currently legal Campus/Library in an own founded noncapital city during quiet delegated Domination staging. Preserve idle/uninvested pre45 field-only queue, actual15-turn host cap, Settler/Prophet/defence/war/finite/economic gates. Additionally reserve next item upkeep plus every other first queued unit/formation/district/building upkeep leaving2 net Gold. Rank actual ETA then stable cityID. No force/runtime/pins/genome/war-bar/score/research changes.",
+    "evidence": [
+      "all-city-science-20-census.json",
+      "variant-24/development-analysis.json",
+      "variant-24-capital-science-mechanism.json",
+      "capital-route-diagnostic-24h/analysis.json"
+    ],
+    "evidence_limit": "Snapshots show delayed aggregate science infrastructure, not private eligibility, feasibility, causal attribution, or future strength.24 failed strength gate;24 is experimental parent,not fallback/promotion evidence.",
+    "new_tests": 10,
+    "expected_parent24_noop_red": {
+      "passed": 6,
+      "intended_positive_failures": 4
+    },
+    "noop_scope": "Exact24 source plus fallthrough call,new None selector and10 new UNIT tests;mechanical inverse restores24. Existing24 tests and capital selector unchanged. Controlled production30/founded cities/completed capital Campus+Library/host menus exist ONLY inside UNIT fixtures,never evaluated or Native setup.",
+    "candidate_execution_plan": "All SAME6 known maps,2 workers,no selection/reordering/early stop.Compare complete25 to BOTH03 and24.Count150 only after all6 complete;90 separate diagnostics,0fresh.Ordinary claims are not completion/strength proof.",
+    "mandatory_gates": "All6 complete plus at least1 engineverified focal Deity Domination owning all original capitals;actualfinalsource/Main revalidation,complete unwrapped/traced observercontrols andSTRICTexactAA before all8 preregistered fresh pairs;at least1fresh DeityDom,no fewer focalwins/no moreReligionlosses,allCIgreen before ship. No fresh or promotion authorization now.",
+    "canonical_source_proposal": {
+      "noop-module": {
+        "file": "variant-25-noop-module-canonical.rs.txt",
+        "sha256": "44f92cb8e6e58b53b184c1b325b296c765e1493045c7795e70bfb87062cbb63d"
+      },
+      "module": {
+        "file": "variant-25-module-canonical.rs.txt",
+        "sha256": "50ccb755e853dfce0ca5ca902eca9f28b1dbd4f48d3cd3b5d2bd4e294b3de947"
+      },
+      "test-file": {
+        "file": "variant-25-test-file-canonical.rs.txt",
+        "sha256": "3b61469bdf4b3ab5ab0242772e9cb0ec4198c2995fe14ce5d3e7936486869567"
+      }
+    },
+    "noop_mechanical_inverse_exact24": true,
+    "existing24_tests_preserved": true
+  },
+  "canonical_source_proposal": {
+    "noop-module": {
+      "file": "variant-25-noop-module-canonical.rs.txt",
+      "sha256": "44f92cb8e6e58b53b184c1b325b296c765e1493045c7795e70bfb87062cbb63d"
+    },
+    "module": {
+      "file": "variant-25-module-canonical.rs.txt",
+      "sha256": "50ccb755e853dfce0ca5ca902eca9f28b1dbd4f48d3cd3b5d2bd4e294b3de947"
+    },
+    "test-file": {
+      "file": "variant-25-test-file-canonical.rs.txt",
+      "sha256": "3b61469bdf4b3ab5ab0242772e9cb0ec4198c2995fe14ce5d3e7936486869567"
+    }
+  },
+  "single_policy_change": "Preserve exact24 capital science selector/admission first; when it returns None, permit one currently legal Campus/Library in an own founded noncapital city during quiet delegated Domination staging. Preserve idle/uninvested pre45 field-only queue, actual15-turn host cap, Settler/Prophet/defence/war/finite/economic gates. Additionally reserve next item upkeep plus every other first queued unit/formation/district/building upkeep leaving2 net Gold. Rank actual ETA then stable cityID. No force/runtime/pins/genome/war-bar/score/research changes.",
+  "tests": {
+    "new": 10,
+    "expected_parent24_noop_red": {
+      "passed": 6,
+      "intended_positive_failures": 4
+    },
+    "scope": "Exact24 source plus fallthrough call,new None selector and10 new UNIT tests;mechanical inverse restores24. Existing24 tests and capital selector unchanged. Controlled production30/founded cities/completed capital Campus+Library/host menus exist ONLY inside UNIT fixtures,never evaluated or Native setup.",
+    "compile_or_fixture_failure_is_not_genuine_red": true
+  },
+  "candidate_execution_plan": "All SAME6 known maps,2 workers,no selection/reordering/early stop.Compare complete25 to BOTH03 and24.Count150 only after all6 complete;90 separate diagnostics,0fresh.Ordinary claims are not completion/strength proof.",
+  "all_original_gates_preserved": "All6 complete plus at least1 engineverified focal Deity Domination owning all original capitals;actualfinalsource/Main revalidation,complete unwrapped/traced observercontrols andSTRICTexactAA before all8 preregistered fresh pairs;at least1fresh DeityDom,no fewer focalwins/no moreReligionlosses,allCIgreen before ship. No fresh or promotion authorization now.",
+  "proposal_overlap_check": {
+    "observed_utc": "2026-10-18T14:50:53.576305+00:00",
+    "open_prs_discovered": 28,
+    "planned_context_markers": [
+      "reserve_conquest_capital_science",
+      "conquest_campaign_noncapital_science_item",
+      "self.claim_capital_campus(g, pid, &plan)",
+      "reserve_delegated_conquest_frontline(g, pid, &plan)"
+    ],
+    "records": [
+      {
+        "number": 4106,
+        "head": "e737814f23f16e93b8ba2583239af9c28cb00662",
+        "changed_files": 7,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -6342,6 +6342,9 @@ pub struct AdvancedAi {",
+              "@@ -10885,6 +10888,7 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 4105,
+        "head": "eaeb40eaa8f46c022d72715e7019bb57bd62a63c",
+        "changed_files": 12,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -6346,6 +6346,14 @@ pub struct AdvancedAi {",
+              "@@ -9393,6 +9401,8 @@ mod launched_racer;",
+              "@@ -10886,6 +10896,8 @@ impl AdvancedAi {",
+              "@@ -15418,6 +15430,11 @@ impl AdvancedAi {",
+              "@@ -24728,7 +24745,13 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 4104,
+        "head": "642dc681a629db52e89bb744c7f76e1867128be1",
+        "changed_files": 10,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -8062,6 +8062,10 @@ pub struct AdvancedAi {",
+              "@@ -11092,6 +11096,7 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 4036,
+        "head": "f6c5d09284fe44ef9d2283343e622713e4567694",
+        "changed_files": 5,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -6147,6 +6147,10 @@ pub struct AdvancedAi {",
+              "@@ -8573,6 +8577,7 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3962,
+        "head": "3f09405ac377f78c3d301d23294c9adc4388d621",
+        "changed_files": 18,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -4962,6 +4962,10 @@ pub struct AdvancedAi {",
+              "@@ -7554,6 +7558,7 @@ mod threatened_reserve;",
+              "@@ -8399,6 +8404,8 @@ impl AdvancedAi {",
+              "@@ -35542,6 +35549,11 @@ impl AdvancedAi {",
+              "@@ -35609,6 +35621,9 @@ impl AdvancedAi {",
+              "@@ -35694,7 +35709,10 @@ impl AdvancedAi {",
+              "@@ -35756,13 +35774,14 @@ impl AdvancedAi {",
+              "@@ -42264,6 +42283,7 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3845,
+        "head": "e17569a4657b0bf2e8bde87fc3f3da6151324c25",
+        "changed_files": 4,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -29,6 +29,7 @@ mod defensive_apostle;",
+              "@@ -6436,6 +6437,8 @@ pub struct AdvancedAi {",
+              "@@ -8590,6 +8593,7 @@ impl AdvancedAi {",
+              "@@ -22800,6 +22804,20 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3800,
+        "head": "391f7cd60e3da4fdf8ba41303f7747eb674eaf3d",
+        "changed_files": 9,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -5517,6 +5517,10 @@ pub struct AdvancedAi {",
+              "@@ -7306,6 +7310,7 @@ pub use air_city_assault::AirCityAssault;",
+              "@@ -8454,6 +8459,8 @@ impl AdvancedAi {",
+              "@@ -14788,7 +14795,9 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3796,
+        "head": "dd98d82dc4401323142cc00eb4d614d5ca7c319f",
+        "changed_files": 9,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -6549,6 +6549,11 @@ pub struct AdvancedAi {",
+              "@@ -7271,8 +7276,8 @@ mod surprise_defense;",
+              "@@ -7394,6 +7399,7 @@ mod siege_train;",
+              "@@ -8531,6 +8537,8 @@ impl AdvancedAi {",
+              "@@ -36945,6 +36953,7 @@ impl AdvancedAi {",
+              "@@ -37136,18 +37145,20 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3791,
+        "head": "841c715b5fba5c1a97a0e7ac18acd0440ee2e1e9",
+        "changed_files": 10,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -5501,6 +5501,11 @@ pub struct AdvancedAi {",
+              "@@ -8426,6 +8431,8 @@ impl AdvancedAi {",
+              "@@ -36930,14 +36937,22 @@ impl AdvancedAi {",
+              "@@ -37136,19 +37151,26 @@ impl AdvancedAi {",
+              "@@ -39726,6 +39748,7 @@ impl AdvancedAi {",
+              "@@ -39803,6 +39826,18 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      },
+      {
+        "number": 3580,
+        "head": "17bd1e53ea33ddab70191a3d63354a5ec6398f17",
+        "changed_files": 10,
+        "findings": [
+          {
+            "path": "src/ai/advanced.rs",
+            "owned_module_or_test_file_overlap": false,
+            "planned_context_marker_matches": [],
+            "hunk_headers": [
+              "@@ -5910,6 +5910,8 @@ pub struct AdvancedAi {",
+              "@@ -7158,6 +7160,7 @@ use district_planning::DistrictPlanCache;",
+              "@@ -8299,6 +8302,7 @@ impl AdvancedAi {",
+              "@@ -26823,15 +26827,17 @@ impl AdvancedAi {"
+            ]
+          }
+        ]
+      }
+    ],
+    "same_marked_hooks_or_owned_modules_overlap": false,
+    "scope": "Proposal25 changed-line audit of the capital-science hook and owned conquest module;20 research/frontline gap/score coefficients remain unchanged. No source mutation. File overlap alone is not line overlap; exact planned hook context and all new owned helper/test file paths are checked. Every overlapping PR head is re-read unchanged; complete per-PR file pagination is verified. No source mutation, takeover, PR body edit or push."
+  },
+  "diagnostic_evidence_sha256": "9e4fa7511f76faff0976139c9a25ecf7202e8f4818abb14c33d96bb543a52bb2"
+}

@@ -1,0 +1,59 @@
+{
+  "registered_utc": "2026-10-18T14:23:18.273566+00:00",
+  "source_policy_commit": "f8a3f22bafbf778c271b27bd8d19ebb72c6039eb",
+  "scope": "Passive frozen source24 capital science first-return diagnostic only; no candidate25 policy selected or executed. SAME6 known maps,two workers,each original24 then instrumented24,12 control executions,0fresh.",
+  "question": "All6 source24 action streams equal20 and no capital science ordinary Produce claim occurs. Which existing short-circuit scope/economy/defence/queue/Settler gate returns first at actual selector calls,or does the existing Basic Campus/Library choice return None? Never compute counterfactual eligibility.",
+  "instrumentation": "Only owned Conquest module in separate extracted copy. Every original OR operand is evaluated once in the original order through an identity Boolean stderr wrapper;AND/OR short-circuit behavior is unchanged. Record only already computed gate values,capital/unit/economy fields and actual Basic Campus/Library Options. No new Game/AI policy helper query,clone,journal,action,input or setup change. Mechanical inverse exact24.",
+  "soundness": "All6 complete;actions,snapshots,plans,world-states,result exactly byte equal across retained24,new original24 and diagnostic24. Raw journals retained;diagnostic-only registered same-turn contiguous move-refusal Detail ordering exception separately reported,never final STRICT AA. Any other discrepancy rejects diagnostic inference;no cherry-picked rerun.",
+  "required_raw": [
+    "actions.json",
+    "snapshots.json",
+    "plans.json",
+    "world-states.json",
+    "result.json",
+    "why.log"
+  ],
+  "cases": [
+    {
+      "difficulty": "immortal",
+      "seed": 45312861349
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 47651167238
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 46732028391
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49478848256
+    },
+    {
+      "difficulty": "deity",
+      "seed": 43663176127
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49220027834
+    }
+  ],
+  "original_launch_sha256": "baf86f085a20ed133b1959504cb9db2b7d67f86ad4eeaa9ce487e631ab377bbe",
+  "original_module_sha256": "136e5f62d88ffab1a77a9d650b8c343acb74e1f0593c7b727e1467148c38804e",
+  "runner_sha256": "5ac8cd18469850ce08a4ae45df57493070006609c92d91fc1f3a57aca1278c85",
+  "limitations": [
+    "First failed condition only;later short-circuited conditions are not measured.",
+    "Selector invocation depends on unchanged callers;absence of logs is not eligibility.All-seat stderr retained;focal0 separated.",
+    "An actual Basic None does not identify its inner private feasibility veto.",
+    "Passive mechanism/control evidence is not strength,Native/deployed equivalence or finalsource STRICT AA."
+  ],
+  "prebuild_preflight_correction": {
+    "recorded_utc": "2026-10-18T14:24:11.200750+00:00",
+    "original_runner_sha256": "f890673bef5d9d95ae4f724a9d74353cd67c684987b51aae3131803b693dbea0",
+    "failure": "Exact Settler guard literal assumed one-line formatting;actual source24 header is multiline. Failed before instrumented source write,registration,build or control game. Only whitespace-matching literal corrected;resume unexecuted instrumentation/registration tail from unchanged extraction.",
+    "original_plan_sha256": "cc7f90e7f28feadb9ca6c02b6076b627a292025e3936a91c180059f8207c5a34",
+    "builds_before_correction": 0,
+    "control_executions_before_correction": 0
+  }
+}

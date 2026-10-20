@@ -1,0 +1,59 @@
+{
+  "registered_utc": "2026-10-17T22:02:38.296638+00:00",
+  "variant": "variant-10",
+  "selected_policy_parent": "12f146fcfbbdeae2e311cffa19d0b9b3dddd8551",
+  "rejected_previous_policy": "d4e5c6ce447cd1fd41d164925cb6dcd827334086",
+  "hypothesis": "Plan Mercenaries for a standing pre-war modernization cohort before its successor technology completes, rather than waiting for at least two researched resource-ready upgrades. Align the existing discount civic path with the existing cohort technology plan, without lowering spending or declaration floors.",
+  "prior_evidence": "Unmodified variant03 journals first selected Political Philosophy at35/36/52 on Deity436/492/494. The Mercenaries path began around74/75/79 after researched upgrades existed; Mercenaries itself was first selected88/85 on436/492 and not selected on494 before its loss. These are known-development observations, not new independent strength evidence.",
+  "bounded_change": "In domination_upgrade_civic_goal, retain all Political Philosophy/Mercenaries/Urbanization guards and the existing actual-upgrade condition. Additionally accept the already-existing conquest_campaign_modernization_tech cohort signal: victory-planning enabled, explicit Domination, two cities, Writing, a legal reachable frontier, at least three standing non-recon land military units sharing an unknown useful successor technology. No civic cost, progress, policy effect, research prerequisite, unit quote or legality change.",
+  "preserved_priorities": [
+    "Existing decisive civic goals remain before modernization",
+    "Tier-one government first",
+    "No change to other victory lanes or disabled victory planning",
+    "No change to emergency purchases, treasury/upkeep/solvency floors or upgrade execution",
+    "No change to global declaration edge, resources, costs, yield, observations, force or Native controls"
+  ],
+  "unit_tests_planned": [
+    "Semantic RED for future three-Archer cohort discount goal",
+    "Actual advanced_research routes to a legal Mercenaries prerequisite before Machinery",
+    "Political Philosophy remains first",
+    "Completed Mercenaries and Urbanization remain closed",
+    "Two bodies insufficient",
+    "Writing/two-city/actionable-frontier requirements preserved",
+    "Other victory lanes and disabled victory planning unchanged",
+    "Researched successor transition continues through the original actual-upgrade condition"
+  ],
+  "comparison_parent": "variant-03",
+  "cases": [
+    {
+      "difficulty": "immortal",
+      "seed": 45312861349
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 47651167238
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 46732028391
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49478848256
+    },
+    {
+      "difficulty": "deity",
+      "seed": 43663176127
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49220027834
+    }
+  ],
+  "required_all_six_complete": true,
+  "development_gate": "Original registration unchanged: all six complete and at least one engine-verified focal Deity Domination win owning every original capital before any fresh execution.",
+  "original_registration_sha256": "2c8cb2eff49e0682a1af251d7ac7afcf2b32061b25b013e8b41e09c1baa4b813",
+  "fresh_holdout_executions_at_registration": 0,
+  "native_verification": "Unestablished; reduced self-play is not Native verification.",
+  "concurrent_resource_diagnostic": "Independent read-only resource controls are still in progress. This hypothesis uses only the existing variant03 journals and code, not unadmitted diagnostic output. Original strict diagnostic journal-byte failure is retained; no relaxed final-source or fresh gate."
+}

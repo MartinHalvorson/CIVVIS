@@ -4,6 +4,62 @@ use std::sync::Arc;
 
 const FAITH: &str = "Orthodoxy";
 
+fn optional_campaign_faith_war() -> (Game, AdvancedAi) {
+    let (game, mut controller, _, _, _) = before_the_flip();
+    controller.enable_faith_war_before_the_flip();
+    controller.declaration_needs_the_edge_2 = true;
+    controller.deny_leaders = true;
+    (game, controller)
+}
+
+#[test]
+fn optional_faith_war_honors_the_configured_campaign_edge() {
+    let (mut game, mut controller) = optional_campaign_faith_war();
+    assert!(!controller.urgent_victory_threat(&game, 1));
+    assert!(!controller.declaration_has_the_edge(&game, 0, 1));
+    assert_eq!(
+        controller
+            .faith_war_gate(&game, 0, 1)
+            .map(|(label, _)| label),
+        Some("campaign-edge")
+    );
+    assert!(!controller.faith_war_before_the_flip_opening(&mut game, 0));
+    assert!(!game.is_at_war(0, 1));
+}
+
+#[test]
+fn optional_faith_war_keeps_an_existing_campaign_edge() {
+    let (mut game, mut controller) = optional_campaign_faith_war();
+    Arc::make_mut(&mut game.observed_military_power).insert(0, 400.0);
+    assert!(controller.declaration_has_the_edge(&game, 0, 1));
+    assert_eq!(controller.faith_war_gate(&game, 0, 1), None);
+    assert!(controller.faith_war_before_the_flip_opening(&mut game, 0));
+    assert!(game.is_at_war(0, 1));
+}
+
+#[test]
+fn optional_faith_war_preserves_the_unconfigured_campaign_policy() {
+    let (mut game, mut controller) = optional_campaign_faith_war();
+    controller.declaration_needs_the_edge_2 = false;
+    assert!(controller.declaration_has_the_edge(&game, 0, 1));
+    assert_eq!(controller.faith_war_gate(&game, 0, 1), None);
+    assert!(controller.faith_war_before_the_flip_opening(&mut game, 0));
+    assert!(game.is_at_war(0, 1));
+}
+
+#[test]
+fn optional_faith_war_preserves_an_urgent_religious_response() {
+    let (mut game, mut controller) = optional_campaign_faith_war();
+    for rival in [1, 2, 3] {
+        Arc::make_mut(&mut game.observed_majority_religion).insert(rival, FAITH.into());
+    }
+    assert!(controller.urgent_victory_threat(&game, 1));
+    assert!(!controller.declaration_has_the_edge(&game, 0, 1));
+    assert_eq!(controller.faith_war_gate(&game, 0, 1), None);
+    assert!(controller.faith_war_before_the_flip_opening(&mut game, 0));
+    assert!(game.is_at_war(0, 1));
+}
+
 /// Seat 1 founded Orthodoxy and holds only its own majority. Of our three
 /// cities one follows the faith, so our majority still holds out, and one of
 /// its Missionaries stands two tiles from that city. We are at peace with

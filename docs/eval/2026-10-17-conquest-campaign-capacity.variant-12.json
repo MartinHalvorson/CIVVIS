@@ -1,0 +1,67 @@
+{
+  "registered_utc": "2026-10-17T23:19:00.081175+00:00",
+  "variant": "variant-12",
+  "selected_policy_parent": "12f146fcfbbdeae2e311cffa19d0b9b3dddd8551",
+  "rejected_previous_policy": "4acdfd2cce2a9fb4248db0c568de0c9a4ec2a019",
+  "hypothesis": "A bankruptcy cleanup pass must use the canonical net per-unit maintenance quote and must not repeat a successful disband batch on the same turn's cached income across observation replans. Preserve genuinely free units and stop re-liquidating the same army before refreshed income is observed.",
+  "prior_evidence": [
+    "Variant11 produced no successful cash-flow claims on all six known maps; all six actions/snapshots/plans/world streams were byte-identical to selected03. No focal or verified Deity Domination wins, no foreign-original-capital boundary holdings; selected03 retained.",
+    "Actual03 successful focal disbands on Deity43663176127 removed swordsman2, archer312 and horseman338 at84, then horseman438 at89. Other missing unit IDs are not assumed to be combat deaths.",
+    "Slot/unslot-derived policy data show Conscription at those boundaries. Policy-adjusted model estimates are1/0/1/1 upkeep versus the cleanup code's raw2/1/2/2. These are explicitly estimates from existing records, not newly exported Native cost quotations.",
+    "The cleanup code accumulates saved income only in a local variable and uses rules maintenance times formation without the canonical host maintenance, discount or surcharge. player::take_turn can plan multiple observation frames; do_disband_unit removes the unit without rewriting the turn's income observation. Unit regressions must establish the causal accounting and repeated-call failures before implementation."
+  ],
+  "bounded_change": [
+    "Restore selected03 source, removing the rejected11 cash-flow production helper and its15 tests.",
+    "Reuse the existing side-effect-free Game::unit_gold_maintenance_cost quote in bankruptcy candidates; expose it crate-wide by changing visibility only, without changing its arithmetic, engine behavior, host observations, costs or yields.",
+    "Keep the existing bankruptcy gene, drained trigger, surplus-sale logic, gold-card wait, garrison/siege/air protections, strength-per-upkeep ranking and maximum-three batch.",
+    "Remember a successful disband batch's turn in controller state; later cleanup calls in that turn do not start another batch on the cached income. A new turn allows a fresh pass. No-op or failed candidate selection must not consume the opportunity.",
+    "This is a correction to the existing generic gene, not a force/genome change. Any existing controller with that gene active can receive the corrected accounting/cap, including adaptive rivals; no victory/difficulty/handicap or verification configuration changes.",
+    "No global declaration threshold, research, civic, production, resource bank, map, Native bridge, controller selection or verification-profile changes.",
+    "New solvency and read-only Game accessor paths must be publicly claimed after current-source checks become terminal and before editing those paths; no overlapping ownership takeover."
+  ],
+  "unit_tests_planned": [
+    "A Conscription-covered Archer with canonical zero maintenance cannot relieve a deficit and must not be disbanded.",
+    "An observed per-unit zero maintenance quote similarly preserves a positive-rules-cost military unit.",
+    "Repeated calls on the same turn do not repeat a successful sufficient batch.",
+    "A deep deficit cannot exceed the existing maximum-three batch across repeated calls.",
+    "The next turn permits cleanup again when a fresh deficit is explicitly observed.",
+    "A no-candidate pass does not consume the opportunity for a later eligible unit.",
+    "A cloned controller preserves the same-turn batch stamp across replanning.",
+    "Gene-off, treasury-covered and newly-slotted-gold-card controls remain no-ops.",
+    "Canonical host maintenance takes formation precedence and then the policy discount; the first batch must use that actual quoted saving rather than raw formation cost."
+  ],
+  "comparison_parent": "variant-03",
+  "cases": [
+    {
+      "difficulty": "immortal",
+      "seed": 45312861349
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 47651167238
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 46732028391
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49478848256
+    },
+    {
+      "difficulty": "deity",
+      "seed": 43663176127
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49220027834
+    }
+  ],
+  "required_all_six_complete": true,
+  "original_registration_sha256": "2c8cb2eff49e0682a1af251d7ac7afcf2b32061b25b013e8b41e09c1baa4b813",
+  "development_gate": "All six registered known maps complete and at least one engine-verified focal Deity Domination win owning all original capitals before any fresh holdout. Then freeze the final selected source and satisfy strict observer A/A; the diagnostic journal exception does not relax that gate.",
+  "candidate_executions_at_registration": 66,
+  "resource_diagnostic_control_executions_at_registration": 18,
+  "fresh_holdout_executions_at_registration": 0,
+  "native_verification": "Unestablished. Controlled unit fixtures and reduced headless development runs do not establish Native wins or deployed-binary equivalence."
+}

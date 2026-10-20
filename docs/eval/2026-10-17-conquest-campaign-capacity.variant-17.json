@@ -1,0 +1,83 @@
+{
+  "registered_utc": "2026-10-18T04:20:13.918382+00:00",
+  "variant": "variant-17",
+  "selected_policy_parent": "03 remains selected fallback. Keep16 only as the immediate experimental production parent, not a promoted strength winner; documentation child a0d44593ef06c40e50d00cde795bd193c5314b7c has no Rust change.",
+  "rejected_previous_policy": "16 completed all6 with0 wins/holds; improves Deity492 late power but Gold161.1->31.1 and income31->29 at120. No strength promotion. Retain it only to isolate the supply-site valuation addition, and compare both16 and03.",
+  "hypothesis": "A bounded12-point ordinary settlement credit for revealed, explored, unclaimed first-ring strategic material needed by3+ standing direct land upgrades may establish material access earlier, before the next tier unlocks. Keep all ordinary settlement legality, exploration, route, defense, city-state exclusion, water/growth, loyalty and arrival checks; no special resource colony exemption or forced founding.",
+  "prior_evidence": {
+    "source16": "cc70bbf2a826388a67ed19d653b124f6ee2bb1ba",
+    "documentation_parent": "a0d44593ef06c40e50d00cde795bd193c5314b7c",
+    "cash_flow_analysis_sha256": "1321631c595810a45b428369ad861c087e0a5e3d53d9d6e1347f675bb54ab204",
+    "cash_flow_registration_sha256": "cfec490995a9a4af2b45ca575eeaac37d638995afbb2587dd67ca81efeb98bf2",
+    "cash_flow_archive": {
+      "verified_utc": "2026-10-18T04:15:11.867613+00:00",
+      "archive": "/Users/martbot-mbp-m5-max-128/civvis-conquest-campaign-capacity-ecd1/docs/eval/2026-10-17-conquest-campaign-capacity.cash-flow-diagnostic-03d.provenance.json.gz",
+      "bytes": 889789,
+      "sha256": "028c7318106a0181fae2485f20b8ce6b715d6fed73c15ebe095a2c2e549b996f",
+      "files": 116,
+      "new_blobs": 33,
+      "base_archive": {
+        "repository_path": "docs/eval/2026-10-17-conquest-campaign-capacity.checkpoint-03.provenance.json.gz",
+        "sha256": "2044cb598cf83dc4d8d73bedafdeb28883f2f11c7ed8c48ee8acf30c28b4f542",
+        "bytes": 26037957
+      },
+      "every_base_referenced_and_new_file_verified_after_decompression": true,
+      "all_raw_failure_and_control_artifacts_retained": true,
+      "executables_bundled": false,
+      "simulations_reexecuted_during_pack": false
+    },
+    "cash_flow_correction": "03d all12 controls complete: all6 nonjournal raw exact, raw journals3/6 exact; diagnostic-only unchanged03b exception qualifies all6, not final strictAA. Deity436 all34 debt boundaries already commit route slots. No distressed map has simultaneous open uncommitted slot plus fully idle noncapital Trader buildability;494 has2 open-slot debt boundaries but no idle such city. Do NOT select a simple idle emergency-Trader claim.",
+    "material_access_audit_sha256": "787745e5ff974479d2c524194f81675fbc6aff6985b7a9794c9580f54184bbf3",
+    "material_access_observation": "Selected03 Deity492 BronzeWorking47, first own Iron67, first positive Iron rate75. At47/50 it holds5 Warriors; at60 also3 Chariots. A Settler stands at50. Other maps reveal/own/rate: Imm45336/58/62, Imm47655/none/none, Imm46752/71/75, Deity49435/none/none,43640/63/68. This does not prove an earlier resource site was explored, safe, legal, loyal or reachable. The proposed credit is a policy hypothesis, not a reconstructed earlier founding permission.",
+    "no_native_or_fresh_qualification": true
+  },
+  "bounded_change": [
+    "Keep16 production intact. Add one pure score helper in owned conquest_campaign.rs and two owned Advanced score terms: dynamic final settle_value_visible outside the static atlas, and matching global prefilter credit OUTSIDE the shared prefilter cache so changing material access cannot retain a cached credit. Do not edit static growth/water/yield forecasts or any hard settlement guard.",
+    "Only settlement-safety + victory-planning Domination, Writing,2+ own cities, no appointed package, no active major war, and an existing nonrush Expansion/Conquest plan with no threatened city and a named living legal major. Legacy/non-Domination lanes return0.",
+    "Only a resource on an explored, unflooded, unsubmerged, unpillaged unclaimed passable natural-wonder-free first-ring tile with no district. resource_visible_to must pass and rules classify it strategic. No hidden resource inference or radius-two acquisition promise.",
+    "Need3+ owned living nonrecon land military units whose actual civilization replacement direct successor has15+ base/ranged strength gain and consumes the same material. Current per-unit canonical/host formation resource bill must be positive. Successor need not yet be researched: this values existing standing future cohorts, never grants upgrade permission.",
+    "No credit if any own city already claims that known resource, current strategic extraction is positive, or stock covers twice the minimum exact formation resource bill. Unique successors and current resource-discount policies retain canonical authority.",
+    "No credit on a blocked center, visible current settlement risk or a current frontier-loyalty refusal. All ordinary ranking candidate/route/founding/city-state/arrival/water/growth gates remain unchanged. Flat12 total credit per site, not12 per deposit/resource; no new force bit, game/Native/runtime/controller configuration, observation, bank, difficulty/handicap, national war threshold, research, production or settler movement action.",
+    "No new score cache or Game state; first inspect the local seven-tile footprint so most sites avoid an army/access scan. Pure scoring emits no speculative decision journal or action. Audit actual later FoundCity/owned-resource timing from unchanged normal observer snapshots without inventing unexported resource rates."
+  ],
+  "unit_tests_planned": [
+    "A current revealed/explored first-ring Iron shortage for3 standing future GranColombia Warriors earns12 before IronWorking; without it a no-op helper fails semantically.",
+    "The actual dynamic settle_value score increases by exactly12 when a third distant cohort unit is added, without altering the static site/forecast; tests preserve log/banks and make no actual founding.",
+    "Unrevealed or uncharted material, only2 units, no material-using cohort, other lane/legacy, existing own source, canonical stock sufficiency including Rome unique bill, second-ring-only deposit, active major war and flooded/pillaged material earn0.",
+    "Broad existing settlement tests must keep route/defense/city-state/loyalty/water/founding safety unchanged. UNIT fixtures only: explicit GranColombia/Online and canonical Warrior->Sword20 Iron quote. No evaluated game or Native setup alteration."
+  ],
+  "comparison_parent": "variant-16",
+  "cases": [
+    {
+      "difficulty": "immortal",
+      "seed": 45312861349
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 47651167238
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 46732028391
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49478848256
+    },
+    {
+      "difficulty": "deity",
+      "seed": 43663176127
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49220027834
+    }
+  ],
+  "required_all_six_complete": true,
+  "original_registration_sha256": "2c8cb2eff49e0682a1af251d7ac7afcf2b32061b25b013e8b41e09c1baa4b813",
+  "development_gate": "All six known maps complete and at least one verified focal Deity Domination owning all original capitals before fresh holdouts; then freeze the final selected source and pass strict observer A/A. The diagnostic journal exception never relaxes final-source A/A.",
+  "candidate_executions_at_registration": 96,
+  "resource_diagnostic_control_executions_at_registration": 42,
+  "fresh_holdout_executions_at_registration": 0,
+  "native_verification": "Unestablished. Controlled unit fixtures, nominal policy-value projections and reduced headless development runs are not Native wins or deployed-binary equivalence."
+}

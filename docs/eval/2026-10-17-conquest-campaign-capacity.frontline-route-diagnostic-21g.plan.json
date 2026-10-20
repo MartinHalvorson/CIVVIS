@@ -1,0 +1,51 @@
+{
+  "registered_utc": "2026-10-18T10:53:42.968295+00:00",
+  "source_policy_commit": "223dc534e4a506e8d6398fbc728925368cbeb99d",
+  "scope": "Passive frozen source21 material/research first-return diagnostic only; no candidate22 or new policy. SAME6 known maps, two workers, each original21 then instrumented21,12 control executions,0 fresh.",
+  "question": "At actual source21 calls, is an ordinary modernization goal present, how many actual own successors are material-starved, and which unchanged material/research guards return first? Record the existing candidate full research bill/science, never compute a counterfactual quote. No causal strength claim.",
+  "instrumentation": "Only owned Conquest module in a separate extracted source copy. Boolean wrappers return their original argument, preserve OR short-circuit order and invoke no new gameplay/AI policy helper. Unconditional stderr records only already computed ordinary goal, actual successor material quotes/stock/income, gate results, cohort counts, cost/science and returned goal. No journal events, Game clones, controller actions/inputs, force/pins/genome/setup/rival-stock changes.",
+  "soundness": "All6 complete; actions,snapshots,plans,world-states,result exactly byte equal between retained21,new original21 and diagnostic21. Raw journals retained; diagnostic-only already registered same-turn contiguous move-refusal Detail ordering exception is separately reported, never final STRICT A/A. Any other discrepancy rejects diagnostic inference; do not tune/rerun individual seeds.",
+  "required_raw": [
+    "actions.json",
+    "snapshots.json",
+    "plans.json",
+    "world-states.json",
+    "result.json",
+    "why.log"
+  ],
+  "cases": [
+    {
+      "difficulty": "immortal",
+      "seed": 45312861349
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 47651167238
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 46732028391
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49478848256
+    },
+    {
+      "difficulty": "deity",
+      "seed": 43663176127
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49220027834
+    }
+  ],
+  "original_launch_sha256": "840a49cf1fb23eeeefb8c3bae7d1fc9e3eb43eb41ba9b8bd8122d3b94bfc11d8",
+  "original_module_sha256": "7c29d6d61b31add619413ac1b1649dee18e1b7e52ee437e12d65674fdd4b49ca",
+  "runner_sha256": "8432f4ec7e06e66eb46c2f208307f304784e7f6e6c9d88314b2a83084ade514c",
+  "limitations": [
+    "First failed condition only; later short-circuited conditions are not measured.",
+    "Research helper invocation depends on unchanged callers; absence of logging is not eligibility. All-seat logs are retained, focal player0 observations are explicitly separated.",
+    "Positive helper output does not mean the router or producer selected it.",
+    "Known-map mechanism/control evidence is not held-out strength or Native/deployed-binary equivalence."
+  ]
+}

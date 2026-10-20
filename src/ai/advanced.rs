@@ -9434,6 +9434,7 @@ mod holdout_faith_war;
 mod launched_racer;
 
 mod city_memory;
+mod conquest_campaign;
 /// `faith-war-before-the-flip`: see `advanced/faith_war_before_the_flip.rs`.
 mod faith_war_before_the_flip;
 /// `faith-war-is-no-front`: see `advanced/faith_war_is_no_front.rs`.
@@ -16113,6 +16114,8 @@ impl AdvancedAi {
                    city.pos);
         }
 
+        let (target_player, target_city) =
+            self.conquest_campaign_objective(g, pid, strategy, target_player, target_city);
         if self.journal().wants(crate::reasoning::Level::Strategy) {
             match target_player.and_then(|id| g.players.get(id)) {
                 Some(rival) => {
@@ -18452,16 +18455,17 @@ impl AdvancedAi {
     /// requesting another generation. Do not require stockpiled resources here:
     /// the missing prerequisite may be the technology that reveals them.
     fn wartime_modernization_tech(&self, g: &Game, pid: usize) -> Option<Name> {
-        if !self.victory_planning
-            || !g.players.iter().any(|other| {
-                other.id != pid
-                    && other.alive
-                    && !other.is_minor
-                    && !other.is_barbarian
-                    && g.is_at_war(pid, other.id)
-            })
-        {
+        if !self.victory_planning {
             return None;
+        }
+        if !g.players.iter().any(|other| {
+            other.id != pid
+                && other.alive
+                && !other.is_minor
+                && !other.is_barbarian
+                && g.is_at_war(pid, other.id)
+        }) {
+            return self.conquest_campaign_modernization_tech(g, pid);
         }
         let mut goals: BTreeMap<Name, (usize, f64)> = BTreeMap::new();
         for unit in g.units.values().filter(|unit| unit.owner == pid) {
@@ -19102,7 +19106,7 @@ impl AdvancedAi {
                                 )
                             } else if wartime_modernization_goal.as_deref() == Some(goal) {
                                 format!(
-                                    "the {step} step toward {}, needed to modernize the standing army at war",
+                                    "the {step} step toward {}, needed to modernize the standing army for its campaign",
                                     plain(goal)
                                 )
                             } else if domination_campus_goal == Some(goal) {
@@ -34822,6 +34826,8 @@ impl AdvancedAi {
                         self.conquest_reservation(g, pid, cid, spec, counts, threatened);
                     let missing_siege =
                         self.missing_domination_siege(g, pid, cid, plan, counts, spec);
+                    let campaign_frontline_gap =
+                        self.conquest_campaign_frontline_gap(g, pid, cid, plan, *unit);
                     if self.victory_planning
                         && domain_saturated
                         && domain_count >= domain_ceiling
@@ -34830,6 +34836,7 @@ impl AdvancedAi {
                         && early_archer <= 0.0
                         && conquest_body <= 0.0
                         && !missing_siege
+                        && campaign_frontline_gap == 0
                     {
                         return -2_000.0;
                     }
@@ -34893,6 +34900,7 @@ impl AdvancedAi {
                     };
                     // A missing wall-breaking role is one unfilled army slot,
                     // even when field units have filled the head-count target.
+                    let force_gap = force_gap.max(campaign_frontline_gap as f64);
                     let force_gap = if missing_siege {
                         force_gap.max(1.0)
                     } else {
@@ -49314,6 +49322,10 @@ impl AdvancedAi {
             // then its Library, ahead of the Plaza and the shortfall. Exact
             // no-op while the gene is off. See `advanced/capital_campus_claim.rs`.
             self.claim_capital_campus(g, pid, &plan);
+            if lane_delegating {
+                let _ = self.reserve_conquest_capital_science(g, pid, &plan);
+                let _ = self.reserve_delegated_conquest_frontline(g, pid, &plan);
+            }
             self.reserve_government_plaza(g, pid, &plan);
             self.reserve_higher_level_investment(g, pid, &plan);
             self.reserve_idle_entertainment_path_for_widespread_crisis(g, pid, &plan);

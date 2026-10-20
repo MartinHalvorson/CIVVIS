@@ -1,0 +1,67 @@
+{
+  "cases": [
+    {
+      "difficulty": "immortal",
+      "seed": 45312861349
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 47651167238
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 46732028391
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49478848256
+    },
+    {
+      "difficulty": "deity",
+      "seed": 43663176127
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49220027834
+    }
+  ],
+  "required_all_six_complete": true,
+  "original_registration_sha256": "2c8cb2eff49e0682a1af251d7ac7afcf2b32061b25b013e8b41e09c1baa4b813",
+  "development_gate": "All six known maps complete and at least one verified focal Deity Domination owning all original capitals before fresh holdouts; then freeze the final selected source and pass strict observer A/A. The diagnostic journal exception never relaxes final-source A/A.",
+  "native_verification": "Unestablished. Controlled unit fixtures, nominal policy-value projections and reduced headless development runs are not Native wins or deployed-binary equivalence.",
+  "registered_utc": "2026-10-18T06:59:21.190545+00:00",
+  "variant": "variant-19",
+  "selected_policy_parent": "12f146fcfbbdeae2e311cffa19d0b9b3dddd8551",
+  "experimental_policy_parent": "9249d0d2724746de71563bc8245387b20b7b7ab7",
+  "documentation_parent": "85f027a8a56ef23170277ebd21563783078cd048",
+  "comparison_parent": "variant-18",
+  "additional_comparison_parent": "variant-03",
+  "candidate_executions_at_registration": 108,
+  "resource_diagnostic_control_executions_at_registration": 54,
+  "fresh_holdout_executions_at_registration": 0,
+  "rejected_previous_policy": "18 is action-null and all6 nonjournal raw observations equal selected03;0 wins/foreign-major holdings. Retain its unchanged ordinary production-gap hook ONLY as an experimental parent to isolate one new research fallback, not as a proven improvement.16/17 remain removed.",
+  "hypothesis": "Current legal production cannot fill a modern-frontliner gap before a trainable body is unlocked and funded. When no immediate standing-cohort modernization technology owns the existing research goal, a quiet solvent Domination campaign with at least3 obsolete frontliners and no owned/queued/currently-trainable base45+ frontliner may research a nearby resource-free contemporary frontliner. This is a bounded unlock hypothesis, not proof that research is the sole bottleneck or that the future unit beats the target.",
+  "prior_evidence": {
+    "variant-18/development-analysis.json": "5859e879a7f648c99f8ab695117bcce819b3ef09bee6fe21d5b2ceaf302f1d0a",
+    "variant-18-frontline-mechanism.json": "fd4dc37615716f05eaf9fd469af7cc418881fe99398819098c5e7e371971711d",
+    "comparison-variant-03-to-variant-18.json": "c50ab8a1538ba5dec075214f2b9a36703ba42170e07c3aac796d62aa2f893c38",
+    "campaign-known-research-material-paths.json": "9b34311e83f21e95f46d28ba4d7696f632a366466c2c656eb28998b76eabdf50",
+    "campaign-own-knight-budget-03.json": "00139e65d58fb6850956f571506fa44b10614214216ec5ae044e6058c7e22743",
+    "campaign-early-capital-local-force-03.json": "195d594811e5b26c3c87fc9f2c3ad8afeff432196d26a475292ea12659c6c0a8",
+    "source-v19-research-proposal-overlap-check.json": "c10d597328a214b66c07912939759ead7f81170f07b1c6a9fd3d65e599f8a94f",
+    "source-v19-research-proposal-changed-lines-overlap-check.json": "f368e19d1da12168b40c6af88521f602028366f2c7c0260ff56688ffb42c000b"
+  },
+  "evidence_limitations": "All evidence uses the SAME6 known maps.18 action-null does not establish a private activation/eligibility count. Late Military Tactics and current resources/own quotes do not establish an earlier legal build, research counterfactual or victory. Unadjusted standard research sums are not used as in-game costs.3800 matched unchanged adjacent hunk context only; changed-line review finds no actual proposed-line or owned-module overlap. Final fresh/STRICT A/A/Native gates are unchanged.",
+  "bounded_change": [
+    "Pure helper and tests in owned conquest module; exactly one ordinary research-goal fallback after the existing wartime_modernization_tech returns None and before its existing breaker veto. Preserve every earlier research priority and ongoing research. No direct SelectResearch/Produce or queue-preemption pass, new state/cache/journal, policy card/resource reservation, or declaration-bar change.",
+    "Victory-planning Domination, Writing/2+ cities, Expansion or Conquest/nonrush, no appointed war package/threatened city, named living ordinary legal major owning current target city in declaration range, and no active major war.",
+    "Yield if any living owned base45+ nonranged land frontliner exists, even wounded; if any owned first queue contains one, including Formation; or if any such frontliner is currently can_produce legal in an owned city. No race against an existing modern-body production opening.",
+    "Future candidate is an ordinary currently applicable player replacement: buildable military land melee/anti/light/heavy, no ranged/bombard attack, base45+, no canonical resource requirement/upfront bill/strategic fuel, no civic/building/district requirement, not currently obsolete, missing technology. Reject positive/nonfinite observed own city material quotes for this candidate. This is not future host production permission; actual production after unlock retains all normal gates.",
+    "At least3 living owned obsolete frontliners each15+ base strength below that candidate. Full missing technology-ancestor research cost uses existing war_remaining_research_cost, including current/host progress, not goal-only cost. Require finite positive total remaining cost no more than12 turns at current finite positive own science; rank eligible goals by summed canonical obsolete-cohort strength gain divided by full remaining cost, deterministic Name tie-break.",
+    "Finite Gold covers ordinary30+current deficit and existing Solvent floor when enabled. Finite current income minus conservative canonical upkeep of ALL own first queued units/formations and TWO future candidate bodies, including nonnegative military policy surcharge, leaves at least+2. No hypothetical future revenue, discount, material or extra science credit.",
+    "Retain18 production hook unchanged; no generic army enlargement, runtime/controller/Game/force/pins/genome/setup/handicap/difficulty/victory/verification change. Complete all6 fixed cases with2 workers from independent clean frozen matched build. Compare BOTH18 and03; report actual research actions, first modern body/pair and production orders without private-helper or causal completion attribution. No fresh games unless unchanged Deity Domination and final-source STRICT observer A/A gates pass."
+  ],
+  "unit_tests_planned": [
+    "Genuine no-op RED on eligible pure fallback before implementation; actual research routing and preservation of existing cohort modernization priority; full prerequisite/host progress cost and12-turn horizon; living/wounded/queued/currently-buildable modern-body vetoes; three obsolete cohort; current treasury, conservative queued/two-body upkeep and finite values; ordinary lane/target/emergency/war guards; current known unlock yield; own positive material quote veto. Controlled UNIT fixtures only; retain failed attempts honestly."
+  ]
+}
