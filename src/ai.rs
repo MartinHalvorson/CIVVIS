@@ -15201,25 +15201,21 @@ impl BasicAi {
             return BTreeSet::new();
         };
         let mut landmass = BTreeSet::new();
-        // The set is the answer, but the flood asked it about every
-        // neighbour of every plot — six ordered-set probes a plot, for every
-        // naval explorer, every turn (1.5% of a ladder game's CPU in the
-        // 2026-09-26 profile). A dense table in tile-vector order (see
-        // `first_visit` in the settle-site sweep) answers the same question
-        // with one index; it is marked exactly when the set is, so the two
-        // never disagree, and a plot the grid cannot index (none in practice
-        // — every neighbour is on the map) still asks the set.
+        // Query-local flags record queued positions, so a dry tile enters
+        // the frontier once. The ordered set remains the returned answer.
+        // An unindexable position retains the old answer-set fallback.
         let mut seen = vec![false; g.map.tiles.len()];
+        if let Some(index) = g.map.tiles.index_of(home) {
+            seen[index] = true;
+        }
         let mut frontier = VecDeque::from([home]);
         while let Some(pos) = frontier.pop_front() {
             if !landmass.insert(pos) {
                 continue;
             }
-            if let Some(index) = g.map.tiles.index_of(pos) {
-                seen[index] = true;
-            }
             for next in g.nbrs(pos) {
-                let visited = match g.map.tiles.index_of(next) {
+                let index = g.map.tiles.index_of(next);
+                let visited = match index {
                     Some(index) => seen[index],
                     None => landmass.contains(&next),
                 };
@@ -15230,6 +15226,9 @@ impl BasicAi {
                     .get(next)
                     .is_some_and(|tile| !g.rules.is_unknown(tile) && !g.rules.is_water(tile))
                 {
+                    if let Some(index) = index {
+                        seen[index] = true;
+                    }
                     frontier.push_back(next);
                 }
             }
@@ -34251,3 +34250,6 @@ mod civilian_pursuit_tests;
 
 #[cfg(test)]
 mod settlement_site_tests;
+
+#[cfg(test)]
+mod native_capital_landmass_tests;
