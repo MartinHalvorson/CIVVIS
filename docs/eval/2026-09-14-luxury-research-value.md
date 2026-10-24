@@ -72,10 +72,14 @@ it does **not** establish an improvement over v1. V2 remains off and the
 original remains deployed. The committed artifact is
 `docs/gene_screens/fires/connect-the-luxury-2.json`.
 
-The preregistered 120-game whole-registry screen started on its disjoint
-seed window using the same original executable. It is still running and
-has not been published as a completed comparison or used to change defaults.
-The observed probe result does not change its seeds or target sample size.
+The preregistered 120-game whole-registry screen used the same original
+executable and stopped at the operator's wrap-up request after 85 complete
+games (510 of 720 seats), before partial outcomes were inspected. The original
+seed window and target remain unchanged. Its exact analysis is explicitly
+partial; see the [closeout](2026-09-14-gene-rewrite-closeout.md) for counts,
+contrasts and provenance. The registry header's blank source stamp is preserved
+and linked by exact binary and registry hashes to the clean family run.
+This incomplete comparison does not change deployment defaults.
 
 `cargo test --profile ci --locked` passed before and after integrating main.
 The integrated tree passed 3,707 tests, with 53 ignored including documentation
