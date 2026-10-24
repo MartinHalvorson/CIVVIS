@@ -3074,14 +3074,33 @@ impl Game {
     /// will reject for an expensive terrain or river entry.
     pub(crate) fn can_pay_melee_entry(&self, uid: u32, target: Pos) -> bool {
         let u = &self.units[&uid];
-        if !self.map.tiles.contains_key(&target) {
+        self.can_pay_melee_entry_from(uid, u.pos, u.moves_left, target)
+    }
+
+    /// The same preflight from a hypothetical stand, without relocating the
+    /// unit (which would reveal ground and could capture an arena flag).
+    pub(crate) fn can_pay_melee_entry_from(
+        &self,
+        uid: u32,
+        from: Pos,
+        moves_left: f64,
+        target: Pos,
+    ) -> bool {
+        if !self.map.tiles.contains_key(&from) || !self.map.tiles.contains_key(&target) {
             return false;
         }
-        if !self.unit_can_cross_cliff(uid, u.pos, target) {
+        if !self.unit_can_cross_cliff(uid, from, target) {
             return false;
         }
-        u.moves_left >= self.unit_max_moves(uid)
-            || u.moves_left >= self.unit_step_cost(uid, u.pos, target)
+        // Keep unit_max_moves' observed-host precedence, but read model
+        // terrain-dependent allowance at the proposed stand.
+        let max_moves = self
+            .host_unit_facts
+            .get(&uid)
+            .and_then(|facts| facts.max_moves)
+            .filter(|moves| *moves > 0.0)
+            .unwrap_or_else(|| self.unit_max_moves_at(uid, from));
+        moves_left >= max_moves || moves_left >= self.unit_step_cost(uid, from, target)
     }
 
     pub(super) fn support_bonus(&self, defender: &Unit) -> f64 {
