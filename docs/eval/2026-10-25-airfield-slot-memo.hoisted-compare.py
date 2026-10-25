@@ -19,13 +19,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, required=True)
     parser.add_argument("--out", type=Path, required=True)
+    parser.add_argument("--dataset", choices=("native", "simulation"), default="simulation")
     args = parser.parse_args()
-    preparation = args.root / "sim-preparation.json"
+    native = args.dataset == "native"
+    preparation = args.root / ("preparation.json" if native else "sim-preparation.json")
     manifest = json.loads(preparation.read_text())
-    binaries = {"parent": args.root / "parent-sim-probe-observed",
-                "candidate": args.root / "candidate-hoisted-sim-probe"}
-    names = {"parent": "parent-sim-probe-observed-build.json",
-             "candidate": "candidate-hoisted-sim-probe-build.json"}
+    binaries = {"parent": args.root / ("parent-planner-probe" if native else "parent-sim-probe-observed"),
+                "candidate": args.root / ("candidate-hoisted-planner-probe" if native else "candidate-hoisted-sim-probe")}
+    names = {"parent": "parent-probe-build.json" if native else "parent-sim-probe-observed-build.json",
+             "candidate": "candidate-hoisted-planner-probe-build.json" if native else "candidate-hoisted-sim-probe-build.json"}
     builds = {arm: json.loads((args.root / names[arm]).read_text()) for arm in binaries}
     parent_fps = list((args.root / "parent-source/target/ci/.fingerprint").glob(
         "civvis-*/lib-civvis.json"))
@@ -42,7 +44,7 @@ def main():
         if sha(binary.read_bytes()) != builds[arm]["binary_sha256"]:
             raise ValueError(f"{arm} binary changed")
     args.out.mkdir(exist_ok=False)
-    result = {"scope": __doc__, "builds": builds, "cases": [], "measurements": [],
+    result = {"scope": __doc__, "dataset": args.dataset, "builds": builds, "cases": [], "measurements": [],
               "started_at": time.time(), "load_start": os.getloadavg(), "status": "qualifying"}
 
     def save():
@@ -83,7 +85,8 @@ def main():
                                         "status": case["status"], "active": False})
                 save()
                 continue
-            if sha(Path(case["input_file"]).read_bytes()) != case["input_sha256"]:
+            input_file = Path(case["directory"]) / "events.jsonl" if native else Path(case["input_file"])
+            if sha(input_file.read_bytes()) != case["input_sha256"]:
                 raise ValueError(f"fixed case {index} input changed")
             readings = {arm: run(arm, index, f"qualification-{index}-{arm}") for arm in binaries}
             if len({r["semantic_sha256"] for r in readings.values()}) != 1:

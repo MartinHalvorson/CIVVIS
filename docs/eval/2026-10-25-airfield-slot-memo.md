@@ -1,4 +1,10 @@
-# Reuse derived city data in the airfield-slot scan
+# Avoid redundant city menus in the airfield-slot scan
+
+The final hoisted candidate passes its own full validation and all fixed-board
+output comparisons. Median planner CPU changes are −7.62% on eight native
+boards and −8.79% on 42 simulation snapshots; the complete controls, individual
+rounds and limits appear in the final results below. Historical registrations
+and failed attempts remain in this document with their original source scope.
 
 ## Profile observation
 
@@ -265,3 +271,76 @@ not retry or overwrite the ten-call failures. The underlying planner work per
 call, observation projection and frozen genome stay the same. Report noise
 alongside all-case and exposure-stratum effects. Cost and functional claims
 for the hoisted source remain pending until its own binaries and checks pass.
+
+
+## Completed hoisted-candidate results
+
+All results here use source `d65449ebdd4da414ce9a5197a1302851fb34cf6a`,
+production-tree SHA-256 `cd0c550636cdc5211454a1e139c354cefc9516974ac919b3b5878d09d37e2623`.
+The frozen library SHA-256 is `06203ba5661b6272f036c9f867cca55588000ca28654c90e2916862f4f94e500`;
+the decider SHA-256 is `6d65f0b2cbce7fcd1738d844646cafa536879f06b0c23e703c27400b9f8ffadc`.
+The candidate and parent match compiler, features, profile, target and rustflags.
+The parent library is built from a605bd591; intervening merged Rust changes
+before this build are three CLI test fixtures, not AI or game behavior.
+
+The original hoisted comparison harness was generalized to select the native
+or simulation dataset before either planner batch ran. Each fresh process
+plans once under the unchanged 120-second limit. Every qualification, three
+same-parent control rounds and five paired comparison rounds completed.
+All complete native replies and planner semantic outputs match: serialized
+resulting board, actions, strategy and reasoning. Native boards are one-shot
+captured queries, not a replay of persistent native planner history. Simulation
+boards use the same observation projection as the shared runtime.
+
+| Measurement | Cases | Median control CPU change | Median candidate CPU change |
+| --- | ---: | ---: | ---: |
+| Native cold decider, including startup and parsing | 8 | −0.28% | −1.22% |
+| Native-board planner only | 8 | −1.02% | −7.62% |
+| Simulation-snapshot planner only | 42 of 48 assigned | +0.11% | −8.79% |
+
+Each number is the median of round-total paired changes; negative means lower
+candidate CPU. The cold query uses user CPU; planner probes use process CPU
+ticks and exclude parsing, observation projection, cloning and controller
+construction. The control and comparison round changes, in execution order:
+
+- Native cold controls: −0.1350%, −0.2811%, −0.9296%; comparisons: −0.9883%,
+  −1.2220%, −1.2935%, −1.7923%, −0.9725%.
+- Native planner controls: +0.1000%, −3.4235%, −1.0206%; comparisons: −9.2163%,
+  −7.6249%, −10.8720%, −3.8601%, −4.9782%.
+- Simulation planner controls: +0.1138%, +3.0582%, −0.8893%; comparisons:
+  −8.7901%, −11.4825%, **+3.9994%**, −13.5164%, −7.4741%.
+
+The positive simulation round and every per-case sample are retained. Five
+of eight native boards and one of 42 simulation boards positively journal the
+reservation. In simulation the predefined inactive stratum (41 boards) has
+control median +0.0473% and comparison median −8.7714%; the single active
+board has control median +6.2133% and comparison median −8.8812%. Its noisy
+one-board stratum does not support an active-case population estimate. Six
+unreached/dead assignments remain missing and were not replaced. These are
+fixed-board fresh-controller costs, not whole-game speed, native frequency,
+Domination strength or a new native victory. The code avoids unnecessary
+menus even when no reservation is active, explaining why inactive boards
+can benefit without changing their decisions.
+
+Local validation on that production tree completes with exit 0 for all five
+stages: `cargo check --profile ci --locked --lib`, library and decider builds,
+`cargo test --profile ci --locked ai::advanced::air_surge` (135 passed), and
+`RUST_TEST_THREADS=1 cargo test --profile ci --locked` (6,256 passed, zero
+failed, 56 ignored across all targets, including four ignored doc tests).
+Changed-file rustfmt and whitespace checks pass. After the successful library
+build, a metadata helper initially expected exactly one Cargo fingerprint but
+found both check and build profiles. It resumed by selecting the fingerprint
+matching the compiled rlib suffix, without repeating successful cargo stages.
+Both helper versions and the failure record remain attached.
+
+Receipts are self-contained archives with a SHA-256 inventory of every member:
+
+- `hoisted-results.tar.xz`: 2,136,116 bytes, SHA-256
+  `8fedae96e7473f8817a8b26f9238aa720d31eb2716e08fd9f2f8eccea1f2a34e`.
+  Contains all three batches, raw samples, complete semantic outputs, captured
+  harness source, input/build identities and source receipts.
+- `hoisted-validation.tar.xz`: 119,064 bytes, SHA-256
+  `455b4a7947f6f2f74428fdc78827d2c20eb14460f3b1c5a5b951782bb4d0f370`.
+  Contains complete raw check/build/test logs, completed stage ledger and the
+  metadata-helper failure and recovery. Every member digest was verified
+  before commit.
