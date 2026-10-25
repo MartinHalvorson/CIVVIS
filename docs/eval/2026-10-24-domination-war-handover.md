@@ -301,3 +301,41 @@ the fixed focal batch supplies none, keep the tag in draft pending separately
 registered native or observer qualification; do not ship it solely because
 the independent screen produces variance. Do not alter the fixed batch to
 manufacture exposure or reinterpret the rejected replay histories.
+
+## Independent qualification using captured reads
+
+The failed recorded-history controls remain rejected. The first unarmed game
+after enabling the existing exact-input recorder is fixed as a separate
+observer case: `civvis-20261025T053159Z`, native source `8810924ee`, frozen
+binary `20fe763757f68a6ccf024ad8d57ab7bf6b35acdadc56842761b802d36f0b531e`.
+Its first meaningful request at turn 1/frame 0 has been read back and every
+referenced archive snapshot reconstructed. This case is chosen by recorder
+activation order, before examining its war eligibility, treatment effects or
+terminal outcome. It is not a new strength holdout or a replacement case in
+the fixed simulator batch.
+
+Qualify the complete chronological request sequence through turn 70. Require
+explicit, unique request identities, complete capture descriptors without read
+errors, the original frozen binary and actual forced/withheld arguments, and
+all native complete replies. Preserve the selected trace, command/cwd and
+binary provenance, captured bytes and read sequences with integrity hashes.
+For a replay that supplies one stable prefix per request, every read within
+that request must refer to the same captured snapshot. A mixed-read request
+is unsupported by that observer and stays an explicit coverage failure;
+do not choose another read or later matching frame to qualify it.
+
+First run two identical original-binary controls against those actual read
+bytes. Require every complete native planning reply and request identity to
+match, together with the original read sequence. Then require the candidate
+with its new flag off to reproduce the complete native history. Do not
+interpret an on-flag comparison unless both untreated qualifications pass.
+Only then compare the same candidate binary off/on and retain all replies,
+journals and new handover reasons, using the strict earliest-changed-reply
+gate. Require a four-city existing major-war state by turn 70 for handover
+coverage; record ineligibility or zero activation without extending the case.
+
+This is read-only decision attribution under frozen native observations.
+It cannot measure counterfactual survival, accepted host actions or wins,
+replace actual generative native activation, relax the draft's shipping limit,
+or alter the independent material-policy trial. Live pins, policy arms and
+game conditions are untouched by this observer qualification.
