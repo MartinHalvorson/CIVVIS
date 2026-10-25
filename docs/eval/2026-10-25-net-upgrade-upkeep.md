@@ -77,3 +77,16 @@ reads the Battlefield map script, not arena flags. The still-incomplete build
 is stopped (130) before interpreting any test result. Only the arena fixture
 changes to `MapScript::Battlefield`. Its complete source/log and reason are
 retained in `fixture-audit.json.gz`; it is not logical RED or a policy result.
+
+## Complete baseline catalog and counter correction
+
+The corrected fixture build reaches every test and produces exactly the four
+registered logical failures. Ten controls pass. The strict controller still
+stops because its manually entered expected pass count was15. The source
+and the built executable's`--list` both contain all14 tests (nine existing and
+five new), with no ignored or omitted case. Retain the original output and
+catalog in`counter-correction.json.gz`; correct the counter by deriving the
+expected total from that exact source/catalog equality, without removing a
+control or relaxing a failure assertion. Re-run the same unchanged CI-profile
+executable over all14 cases before applying the identical reviewed patch.
+The earlier controller's count mismatch is not a different policy result.
