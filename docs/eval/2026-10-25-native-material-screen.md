@@ -111,3 +111,30 @@ as a conflict hotspot although its current measured touch rate is 3%, below
 the 5% floor; one test is skipped. This unrelated failure is preserved and
 is not a claim of full-suite success. No Rust or launcher changes remain in
 this evidence-only final diff. There is no repair-strength result yet.
+
+## Interim retained outcome and native upgrade audit
+
+The first assigned game, `civvis-20261025T123652Z` (on), loses to rival
+Culture at turn 174 with zero combat city captures. Its played genome and
+actual driver match the independently rederived tag-hash arm. All 476 decision
+capture descriptors are complete and have no failed read. Each issued upgrade
+is checked against every actual captured read and the next unique native state;
+all eleven have a unique quoted successor at the same tile with matching XP,
+level, formation and promotions. These include upgrades outside the material
+buyer's scope and do not establish attribution to purchased material.
+
+The companion `.audit.py` retains missing quotes, changed veteran identity,
+multiple possible successors, host blocks and incomplete/ambiguous observations
+as unresolved. Its three tests cover thirteen upgrade-identity cases, the last
+actual native export, and missing/malformed inputs. The unarmed qualification
+game is a separate development check (sixteen confirmed transitions from twenty
+issued orders); it is excluded from trial results.
+
+The first-game archive retains complete event, decision, reasoning and brain
+logs, input-capture byte archives/indices, runtime/genome/arm readbacks, all
+upgrade audit states and the auditor/control source. It is 1,748,756 bytes,
+SHA-256 `25c7dfc8e94753c808535667de1617f02d5a650fd4f50a6adff99330cc4fe29c`;
+all fourteen members are read back against their sources. Descriptor completeness
+alone does not establish whole-history replay equivalence. The second game is
+assigned off and remains in progress. Keep all eight starts and terminal or
+missing outcomes; these interim observations never change the cutoff or arms.
