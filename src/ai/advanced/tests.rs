@@ -52614,3 +52614,5 @@ fn native_campus_finish_invalid_host_quotes_keep_emergency_defense() {
         }
     }
 }
+
+mod recovery_before_amenities;

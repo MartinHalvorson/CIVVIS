@@ -1,0 +1,78 @@
+{
+  "observed_utc": "2026-10-25T21:56:20.414491+00:00",
+  "scope": "Published older branch target-function bodies compared to each own merge base, rather than whole-file ownership or function names in patch context. No target-function change in listed published branches; unpublished intent remains unknown. Recheck before ready.",
+  "rows": [
+    {
+      "pr": 4152,
+      "base": "e0ecf3f3a13b844ae9015c15d0fa6e3e23d825a4",
+      "head": "dfe61d5f84af2c8d9030871230a686409e625096",
+      "target_function_body_changed": false
+    },
+    {
+      "pr": 4118,
+      "base": "8810924eee6e51218e74a2cdf4205e2153ffffe5",
+      "head": "f5ef04d50ae48801280bbb37d09f7fc9259ef75c",
+      "target_function_body_changed": false
+    },
+    {
+      "pr": 4093,
+      "base": "047945067f9f8e259f259a99de0641f64856631a",
+      "head": "94c49723e6feb3e4837c843deca4a135bfda2cd7",
+      "target_function_body_changed": false
+    },
+    {
+      "pr": 4036,
+      "base": "2c6b39292af1cba6661b57d3878cc6401c9d75a4",
+      "head": "f6c5d09284fe44ef9d2283343e622713e4567694",
+      "target_function_body_changed": false
+    },
+    {
+      "pr": 3962,
+      "base": "b3d9af0d107efeefaa7b86952dccb757e82817d7",
+      "head": "3f09405ac377f78c3d301d23294c9adc4388d621",
+      "target_function_body_changed": false
+    },
+    {
+      "pr": 3867,
+      "base": "e7555e064469a365e2c183ac1bd7713996ac4aa0",
+      "head": "153fa3088091b2c8cff9cd66f0a47a74efdf00c1",
+      "target_function_body_changed": false
+    },
+    {
+      "pr": 3846,
+      "base": "10b26acd09efd6b71625cd464046b3cc7ac4c2cc",
+      "head": "8981a552cf985da0aba378a6323c077dc2d714b4",
+      "target_function_body_changed": false
+    },
+    {
+      "pr": 3845,
+      "base": "10b26acd09efd6b71625cd464046b3cc7ac4c2cc",
+      "head": "e17569a4657b0bf2e8bde87fc3f3da6151324c25",
+      "target_function_body_changed": false
+    },
+    {
+      "pr": 3800,
+      "base": "2bd913cad94749b554b9c5e9091bc096b4f2574b",
+      "head": "391f7cd60e3da4fdf8ba41303f7747eb674eaf3d",
+      "target_function_body_changed": false
+    },
+    {
+      "pr": 3796,
+      "base": "a0ca7b2e0dbb01df3286b3115a82356165194c83",
+      "head": "dd98d82dc4401323142cc00eb4d614d5ca7c319f",
+      "target_function_body_changed": false
+    },
+    {
+      "pr": 3791,
+      "base": "a0ca7b2e0dbb01df3286b3115a82356165194c83",
+      "head": "841c715b5fba5c1a97a0e7ac18acd0440ee2e1e9",
+      "target_function_body_changed": false
+    },
+    {
+      "pr": 3580,
+      "base": "ae0c1823efdb1181e62c49be6c5b54057871e278",
+      "head": "17bd1e53ea33ddab70191a3d63354a5ec6398f17",
+      "target_function_body_changed": false
+    }
+  ]
+}
