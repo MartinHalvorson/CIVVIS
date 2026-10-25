@@ -1670,6 +1670,7 @@ struct StepTerms {
 struct MoveTerms {
     /// `promotion_effect(unit, "movement")`.
     promotion_movement: f64,
+    civilization_movement: f64,
     /// A religious unit standing beside a Guru of its own religion. The wonder
     /// effect that pays for it stays at the call site: it is this seven-tile
     /// occupancy scan, not the lookup, that costs anything.
@@ -19057,6 +19058,7 @@ impl Game {
         let spec = &self.rules.units[unit.kind];
         let terms = MoveTerms {
             promotion_movement: self.promotion_effect(unit, "movement"),
+            civilization_movement: self.civ_effect(unit.owner, "unit_movement"),
             guru_adjacent: spec.class == "religious"
                 && self.wdisk(unit.pos, 1).into_iter().any(|position| {
                     self.unit_ids_at(position).iter().any(|other| {
@@ -23782,7 +23784,7 @@ impl Game {
             hp: 100,
             damage_dealt: 0,
             production_cost: spec.cost,
-            moves_left: spec.moves,
+            moves_left: spec.moves + self.civ_effect(owner, "unit_movement"),
             charges,
             xp: 0,
             album_sales: 0,
@@ -24759,6 +24761,7 @@ impl Game {
             spec.moves
         };
         moves += terms.promotion_movement + u.bonus_moves;
+        moves += terms.civilization_movement;
         // The three naval unlocks are added in the order they always were —
         // `embarked` implies this branch, so nesting changes which terms are
         // summed for no unit and their sequence for none either.

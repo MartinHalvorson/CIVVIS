@@ -51,4 +51,23 @@ The fourteen database rows are retained in
 `2026-10-25-gran-colombia-trait.database.json.gz` (709 bytes; SHA-256
 `c191a1327bc3cd3b0a597084fedb33299fc2ddc0d20eb57114bb5eff12b82afe`).
 
-Implementation, validation and exact artifact hashes are pending.
+The unchanged-production run completed at 11:33:01Z on October 25 after a
+24m57s cold build: ten tests failed as intended and the ordinary-civilization
+control passed, with all sealed source inputs unchanged. The raw log SHA-256 is
+`102e4253b9fb8f6b5e559d92d69fc5bc9fe2ef1e669deade17cccb01178c1f74`.
+The test command began at ownership head `fbb14c0ee`; its staged fixtures and
+all 797 compiled source inputs were independently verified byte-for-byte
+against checkpoint `110acfb167675041bef716dc00fad19ed41abd71`.
+
+Only after that result, the data replaces the two unsupported bonuses with
+`unit_movement=1`. The cached movement terms carry that value into modeled
+allowances, and fresh spawns receive it immediately. Positive native maximum
+movement remains authoritative. The effect-key allowlist includes the new key.
+
+An independent Python canonical-JSON/FNV calculation reproduces the existing
+Rust fingerprint `fnv1a64:d5702e477e1be48d` before the edit and predicts
+`fnv1a64:78d6f0e512705d26` after precisely this one civilization entry changes.
+The test pin changes accordingly. Earlier simulation ledgers have a different
+ruleset binding; these corrected rules require their own results.
+
+Corrected tests, registered smoke games and final hosted checks are pending.
