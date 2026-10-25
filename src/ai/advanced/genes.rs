@@ -4124,16 +4124,16 @@ pub const GENES: &[Gene] = &[
     // at-peace branch of the target choice. See
     // `advanced/city_state_war_is_no_front.rs`.
     Gene { tag: "city-state-war-is-no-front", field: "city_state_war_is_no_front", kind: Kind::OptIn, enable: AdvancedAi::enable_city_state_war_is_no_front, disable: AdvancedAi::disable_city_state_war_is_no_front },
+    // `prey-war-is-kept`: live Emperor 10-25, 5 of 29 games made peace
+    // with a rival at a seventh to a third of our power (China 444/63 with
+    // Xi'an at 40 HP). See `advanced/prey_war_is_kept.rs`.
+    Gene { tag: "prey-war-is-kept", field: "prey_war_is_kept", kind: Kind::OptIn, enable: AdvancedAi::enable_prey_war_is_kept, disable: AdvancedAi::disable_prey_war_is_kept },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
-    // `prey-war-is-kept`: live Emperor 10-25, 5 of 29 games made peace
-    // with a rival at a seventh to a third of our power (China 444/63 with
-    // Xi'an at 40 HP). See `advanced/prey_war_is_kept.rs`.
-    Gene { tag: "prey-war-is-kept", field: "prey_war_is_kept", kind: Kind::OptIn, enable: AdvancedAi::enable_prey_war_is_kept, disable: AdvancedAi::disable_prey_war_is_kept },
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
 ];
