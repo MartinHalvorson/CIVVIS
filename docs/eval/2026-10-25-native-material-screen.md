@@ -1,5 +1,17 @@
 # Native material trial: input qualification
 
+## Final fixed-cohort outcome
+
+All eight assigned Emperor Domination attempts are terminal: six on and two
+off, zero wins. The cutoff removed this observer's unchanged screen setting at
+14:06:33 UTC; outcome collection continued through the eighth game's ending.
+There are no replacement starts, continuations or overrun stems. All actual
+drivers, played genomes and independently derived tag-hash arms agree. The
+qualification game remains excluded. The historical sections below retain the
+registration and intermediate observations; this final result supersedes their
+pending statuses.
+
+
 The eight-start trial registered in #4119 was armed at 12:24:41 UTC on
 2026-10-25 after the repaired, unarmed qualification described below. Its
 comparison remains the existing `army-upgrade-materials` buyer plus the new
@@ -166,3 +178,81 @@ The three additional archives retain fourteen verified members apiece:
 Material-sale/buy notes, completed purchases, stock changes and economic costs
 still require the registered final audit. There is no attribution from these
 upgrade counts and no native Domination success or default promotion.
+
+## Completed native outcomes and economic context
+
+| Stem suffix | Arm | Rival ending | Last native state | Combat captures | Verified / issued upgrades | Held major original capitals |
+| --- | --- | --- | ---: | ---: | ---: | --- |
+| `123652Z` | on | CULTURE | 174 | 0 | 11 / 11 | [0] |
+| `124842Z` | off | TECHNOLOGY | 197 | 1 | 36 / 36 | [0] |
+| `130400Z` | on | CULTURE | 139 | 0 | 6 / 6 | [] |
+| `131248Z` | on | CULTURE | 170 | 1 | 8 / 8 | [0] |
+| `132534Z` | on | TECHNOLOGY | 216 | 1 | 27 / 31 | [0] |
+| `134257Z` | on | RELIGIOUS | 139 | 0 | 17 / 17 | [0] |
+| `134959Z` | on | DIPLOMATIC | 221 | 5 | 25 / 25 | [0] |
+| `140632Z` | off | TECHNOLOGY | 211 | 1 | 17 / 17 | [0] |
+
+The fourth victory event is stamped turn 171 while its last native state and
+`turns_played` are 170; both raw records remain available. Across all eight games,
+4,023 decision capture descriptors are complete. There are 147 distinct exact
+native upgrade successors from 151 issued orders. The fifth game's four unresolved
+orders comprise two missing native successor quotes and two same-ID transitions
+that do not establish the upgrade. Receipt counts do not resolve these cases.
+
+No foreign major original capital is observed held. The third game loses its
+own original capital. Kandy in the seventh game is a city-state and is excluded
+from major-capital counts. The collector unions observed major and minor rosters,
+retains unknown owners and incomplete global rosters, and classifies a held
+capital only when its original owner is known. Nine combat captures are ordinary
+city captures; they do not establish major-capital progress.
+
+| Stem suffix | Terminal Gold | Gold/turn | Science/turn | Technologies | Route-reported Gold/turn |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `123652Z` | 312 | 18.0156 | 167.68 | 51 | 0 |
+| `124842Z` | 121 | 27.3867 | 267.422 | 61 | 17.9688 |
+| `130400Z` | 44 | 14 | 51 | 30 | 0 |
+| `131248Z` | 94 | 18.5156 | 87.9844 | 45 | 6 |
+| `132534Z` | 5 | -10.8008 | 166.258 | 58 | 31.9844 |
+| `134257Z` | 331 | 21.6016 | 91.7734 | 35 | 12 |
+| `134959Z` | 187 | 37.75 | 316.477 | 70 | 14.4062 |
+| `140632Z` | 59 | 10.5078 | 111.016 | 51 | 0 |
+
+The economic archive retains every exported economy frame, strategic stock and
+income, milestones at 60/100/150, terminal states, full structured notes, resource
+order proposals, buy refusals, deal events and closed UI terms. Turn 150 is absent
+for both games ending at 139. Route Gold is the sum of exported route yields,
+not a separately verified treasury settlement. Full notes are used because the
+brain log truncates them; repeated proposals are counted separately from distinct
+turns and never called completed purchases.
+
+A concrete first-game sequence links an available ten-Iron stock with a verified
+Heavy Chariot-to-Knight upgrade. Iron is absent through turn 114 with zero native
+Iron income. A turn-114 closed UI deal contains ten Iron and barter terms. Turn
+115 frame 0 has ten Iron and 324 Gold; the next frame has zero Iron, 164 Gold
+and the quoted Knight successor with preserved veteran identity. The quote costs
+160 Gold and ten Iron. Other spending and barter can overlap: native Gold/turn
+rises from 51.1055 to 59.1055 around that deal. A `direction: buy` receipt does
+not establish an outgoing eight-Gold-per-turn payment. This observation does not
+supply a counterfactual upgrade or strength effect.
+
+The trial combines the material buyer and reserve behavior. Six on versus two
+off games on unpaired maps cannot estimate a win-rate change or isolate the
+reserve. Sale-hold notes combine earlier buy protection and reserve checks;
+these markers do not establish reserve-specific activation. No default promotion
+is justified by this cohort. The conquest objective remains unmet.
+
+Final economic-context archive: 1,480,376 bytes, SHA-256
+`327ea556c2d11d8607cd95df31acef457e81f23cc5774ce0a6cd756f8192ba5d`;
+all 26 members were read back. Cohort archives 5–8 retain complete raw inputs,
+decisions, outcomes and audited transitions, fourteen verified members apiece:
+
+- Cohort 05: 3,218,136 bytes, SHA-256 `86ca5d145e580d31a81b8bd42c7af571c36d97ba72920abb26840033c9758183`.
+- Cohort 06: 1,133,792 bytes, SHA-256 `e7ed1dac6ec2285474ea80f662e1b30e4259dc0cdc09bc9f761afd7ab9671957`.
+- Cohort 07: 3,020,304 bytes, SHA-256 `665403ba950d6b3910cf2f73be63175bd79cc8fc1b68254d49b579d4ae960a98`.
+- Cohort 08: 2,432,980 bytes, SHA-256 `976b747b521a0665da2e369ccfc3b3091f7d96dd9786ad1c280bafb24665307f`.
+
+The isolated observer and upgrade-auditor suites pass again (three tests each).
+The economic collector's final report asserts all eight terminal arm readbacks,
+151 issued orders, 147 distinct confirmed successors and complete classification
+of the held original-capital owners. No Rust, launcher, default or lane changes
+are included in this evidence-only final change.
