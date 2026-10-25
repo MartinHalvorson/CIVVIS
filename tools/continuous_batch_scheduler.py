@@ -41,6 +41,7 @@ served by the state directory) to the service log at that cadence.
 from __future__ import annotations
 
 import argparse
+import copy
 import ctypes
 import datetime as dt
 import fcntl
@@ -787,6 +788,37 @@ def known_windows(batch: dict[str, Any]) -> set[tuple[int, int, int, int]]:
     }
 
 
+# The last validated summary per rows file, keyed by the file's identity and
+# size at the moment it was read. ⚠ Measured 2026-10-25 on mbp-m5-max-128:
+# the live segment's progress checkpoint re-parsed the whole ledger every
+# 10 s — 233 MB / 18,861 records at 3,143 games, 3.3 CPU-seconds a parse —
+# so the daemon held roughly a third of a core at normal priority, more than
+# the throttled games themselves, and the cost grew with every game.
+_SUMMARY_CACHE: dict[Path, tuple[tuple[int, int, int, int], dict[str, Any]]] = {}
+
+
+def ledger_signature(rows: Path) -> tuple[int, int, int, int]:
+    stat = rows.stat()
+    return (stat.st_dev, stat.st_ino, stat.st_size, stat.st_mtime_ns)
+
+
+def summarize_once_per_change(rows: Path) -> dict[str, Any]:
+    """``summarize`` again only after the rows file has changed.
+
+    The writer only appends, so an unchanged identity, size and mtime means
+    unchanged bytes. The signature is taken before the read: a write that
+    lands mid-read leaves the cached key older than the file, and the next
+    call reads again. A ledger the reader refuses is never cached.
+    """
+    signature = ledger_signature(rows)
+    cached = _SUMMARY_CACHE.get(rows)
+    if cached is not None and cached[0] == signature:
+        return copy.deepcopy(cached[1])
+    status = summarize(rows)
+    _SUMMARY_CACHE[rows] = (signature, copy.deepcopy(status))
+    return status
+
+
 def refresh_status(state_root: Path, state: dict[str, Any]) -> dict[str, Any]:
     """Read rows through the one validated reader and bind them to state reservations."""
     batch = state["current"]
@@ -795,7 +827,7 @@ def refresh_status(state_root: Path, state: dict[str, Any]) -> dict[str, Any]:
         status = empty_status()
     else:
         try:
-            status = summarize(rows)
+            status = summarize_once_per_change(rows)
         except LedgerError as error:
             raise SchedulerError(f"rows {rows} are not safe to count: {error}") from error
     declared = {

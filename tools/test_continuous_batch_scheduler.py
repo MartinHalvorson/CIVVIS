@@ -415,6 +415,45 @@ class ValidatedRows(unittest.TestCase):
             self.assertEqual(status["records"], 7)
             self.assertEqual(batch["wins"], 1)
 
+    def test_an_unchanged_ledger_is_parsed_once_across_progress_polls(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state = scheduler.new_state(600, 3)
+            batch = state["current"]
+            reservation = scheduler.reserve_segment(state, scheduler.empty_status())
+            row_path = root / batch["rows"]
+            complete_rows(row_path, seed_first=reservation["seed_first"],
+                          target_games=3, complete_games=1)
+            with mock.patch.object(scheduler, "summarize", wraps=scheduler.summarize) as reader:
+                first = scheduler.refresh_status(root, state)
+                first["complete_games"] = 99  # a caller's edit must not reach the cache
+                self.assertEqual(scheduler.refresh_status(root, state)["complete_games"], 1)
+                self.assertEqual(reader.call_count, 1)
+                complete_rows(row_path, seed_first=reservation["seed_first"],
+                              target_games=3, complete_games=2)
+                self.assertEqual(scheduler.refresh_status(root, state)["complete_games"], 2)
+                self.assertEqual(reader.call_count, 2)
+
+    def test_a_ledger_caught_mid_write_is_read_again_next_poll(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state = scheduler.new_state(700, 2)
+            batch = state["current"]
+            reservation = scheduler.reserve_segment(state, scheduler.empty_status())
+            row_path = root / batch["rows"]
+            complete_rows(row_path, seed_first=reservation["seed_first"],
+                          target_games=2, complete_games=1)
+            whole = row_path.read_text(encoding="utf-8")
+            # Half of the second game's six seats: the reader refuses to count it.
+            complete_rows(row_path, seed_first=reservation["seed_first"],
+                          target_games=2, complete_games=2)
+            seats = row_path.read_text(encoding="utf-8").splitlines(keepends=True)[-6:]
+            row_path.write_text(whole + "".join(seats[:3]), encoding="utf-8")
+            with self.assertRaisesRegex(scheduler.SchedulerError, "not safe to count"):
+                scheduler.refresh_status(root, state)
+            row_path.write_text(whole + "".join(seats), encoding="utf-8")
+            self.assertEqual(scheduler.refresh_status(root, state)["complete_games"], 2)
+
     def test_rows_from_an_unreserved_header_fail_closed(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
