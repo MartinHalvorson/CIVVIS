@@ -4246,6 +4246,12 @@ impl AdvancedAi {
     pub fn disable_domination_lane_hands_over(&mut self) {
         self.domination_lane_hands_over = false;
     }
+    pub fn enable_domination_war_hands_over(&mut self) {
+        self.domination_war_hands_over = true;
+    }
+    pub fn disable_domination_war_hands_over(&mut self) {
+        self.domination_war_hands_over = false;
+    }
     /// Until the development half ends, an assigned lane's cities take the
     /// unassigned seat's production dispatch. Opt-in gene
     /// `lane-delegates-production`.
