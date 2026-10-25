@@ -77,3 +77,50 @@ The input archive stores the longest captured prefix for each game plus
 every selected prefix length and hash. All eight reconstructions were
 checked against their original captured bytes before packaging. It also
 retains each native decision descriptor and the parent build fingerprint.
+
+The complete cold-query comparison finishes with identical replies on all
+eight cases. Its five paired totals are +0.20%, +0.75%, -1.66%, -2.76% and
+-0.89% CPU; median -0.89%. Same-binary control totals are -1.17%, +1.18%
+and +1.53%, median +1.18%. This does not resolve a speed improvement.
+
+Before a further timing interpretation, use the same eight boards for an
+additional planner-only diagnostic. Reconstruct each board once outside the
+timing region; create a fresh game clone and controller outside each measured
+call; time `AdvancedAi::plan_observed_turn` with the C process CPU clock and
+wall time. Retain complete resulting serialized games, action logs and
+reasoning, and require exact equality both within and between builds. This
+omits native transport/refusal history and is not the native decider itself.
+Preserve inactive cases and require explicit reservation exposure.
+
+Build the exact parent library separately with the same `ci` profile and
+default features; link the same small probe source against parent and
+candidate libraries with matching rustc flags. Register three same-binary
+rounds and five comparison rounds, alternating order per case/round, with
+five fresh planner calls per process. Keep the earlier inconclusive complete
+query result alongside this narrower diagnostic; neither one alone proves
+a whole-game speedup.
+
+The planner-only comparison completes with identical serialized games,
+action logs, strategic plans and reasoning across all qualifications and
+measured calls. Five cases expose the reservation and three remain inactive.
+The comparison round totals are +0.50%, -0.30%, -3.56%, -6.15% and +1.38%
+process CPU; median -0.30%. Same-binary controls are -4.40%, -0.89% and
++2.01%, median -0.89%. This narrower diagnostic also does not resolve an
+overall speed improvement. Keep the optimization in draft while determining
+whether the originally profiled simulation shape benefits; do not promote a
+selected active-case statistic into a native or whole-game claim.
+
+`measurements.tar.gz` retains both complete result ledgers, canonical replies
+and semantics, qualifications, library/compiler fingerprints and probe build
+receipts. Its SHA256 is
+`138f880a2366ab5f4f77b28a437bbc357c929251de71bf4f11388bfa62ab5d47`.
+The exact parent library was rebuilt at a605bd591 with the matching default
+features and `ci` profile. The two library fingerprints match on compiler,
+features, profile, target and rustflags; both probes use identical source and
+rustc flags. Binary and source hashes are in the archived receipts.
+
+All 134 focused air-surge tests pass. The initial full suite fails two server
+timing tests (5,907 pass, 2 fail, 52 ignored); both failing tests pass when run
+individually with one test thread. The original failures and isolated retries
+are archived in `tests-initial.tar.gz`. The complete suite is rerunning with
+`RUST_TEST_THREADS=1`, retaining its normal assertions and time limits.
