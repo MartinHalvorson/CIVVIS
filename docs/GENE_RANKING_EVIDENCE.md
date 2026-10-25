@@ -403,6 +403,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `policy-deck-hysteresis-2` | off (unmeasured) | `policy-deck-hysteresis-2`: version 1, and a held relief stays while the income does not cover its discount, and the emergency's relief may evict a lower-ranked wanted military card. | — \| 2 |
 | `prey-is-declared-on` | off (unmeasured) | Declare on prey without the staged ring or a home Defend row. | 1 \| 1 |
 | `prey-reads-a-steady-power` | off (unmeasured) | Opt-in gene `prey-reads-a-steady-power`; see `Self::prey_reads_a_steady_power`. | 1 \| 1 |
+| `prey-war-is-kept` | off (unmeasured) | Opt-in gene `prey-war-is-kept`; see `Self::prey_war_is_kept`. | 1 \| 1 |
 | `prophet-builds-its-site` | off (unmeasured) | Opt-in gene `prophet-builds-its-site`; see `Self::reserve_prophet_site` and `Self::prophet_race_exhausted`. | 1 \| 1 |
 | `prophet-race-earns-its-points` | off (unmeasured) | Opt-in gene `prophet-race-earns-its-points`; see `Self::reserve_race_shrine` and `Self::race_wants_revelation`. | 1 \| 1 |
 | `prophet-race-takes-a-district-slot` | off (unmeasured) | Opt-in gene `prophet-race-takes-a-district-slot`; see `Self::prophet_race_takes_a_district_slot`. | — \| 2 |
