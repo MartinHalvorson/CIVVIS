@@ -2805,16 +2805,21 @@ def _game_mode_boxes(path: Path, bounds: tuple[int, int, int, int]
         return None
     try:
         from PIL import Image
+        from civ6_control.game_mode_boxes import checkbox_center
         image = Image.open(path).convert("RGB")
     except Exception:
         return None
     scale = image.size[0] / screen[0]
     k = (bounds[2] * scale) / GAME_MODE_REF_WINDOW_PX
-    radius = max(1, int(round(3 * k)))
     boxes = []
     for dx, dy in GAME_MODE_BOX_OFFSETS:
         cx = label[0] * scale + dx * k
         cy = label[1] * scale + dy * k
+        visible = checkbox_center(image, (cx, cy), k)
+        if visible is None:
+            return None
+        cx, cy, width = visible
+        radius = max(1, min(int(round(3 * k)), width // 4))
         values = [
             sum(image.getpixel((x, y))) / 3.0
             for x in range(int(round(cx - radius)), int(round(cx + radius)) + 1)
