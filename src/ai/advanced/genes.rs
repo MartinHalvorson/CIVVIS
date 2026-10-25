@@ -4144,6 +4144,10 @@ pub const GENES: &[Gene] = &[
     // Missionaries against ~90 combat units bought. See
     // `advanced/war_faith.rs`.
     Gene { tag: "war-faith-buys-the-army", field: "war_faith_buys_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_war_faith_buys_the_army, disable: AdvancedAi::disable_war_faith_buys_the_army },
+    // Version two retains the at-war launch release and stages a physical
+    // Culture air interception; only two fresh selected safe sorties open it.
+    Gene { tag: "elimination-yields-to-a-launch-2", field: "elimination_yields_to_a_launch_2", kind: Kind::OptIn, enable: AdvancedAi::enable_elimination_yields_to_a_launch_2, disable: AdvancedAi::disable_elimination_yields_to_a_launch_2 },
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
