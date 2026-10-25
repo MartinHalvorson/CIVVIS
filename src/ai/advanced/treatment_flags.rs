@@ -8217,6 +8217,17 @@ impl AdvancedAi {
         self.prey_war_is_kept = false;
     }
 
+    /// Opt-in gene `defenders-hold-the-walls`; see
+    /// [`Self::defenders_hold_the_walls`].
+    pub fn enable_defenders_hold_the_walls(&mut self) {
+        self.defenders_hold_the_walls = true;
+    }
+
+    /// The twin of `enable_defenders_hold_the_walls`.
+    pub fn disable_defenders_hold_the_walls(&mut self) {
+        self.defenders_hold_the_walls = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

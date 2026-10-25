@@ -4134,9 +4134,15 @@ pub const GENES: &[Gene] = &[
     // with a rival at a seventh to a third of our power (China 444/63 with
     // Xi'an at 40 HP). See `advanced/prey_war_is_kept.rs`.
     Gene { tag: "prey-war-is-kept", field: "prey_war_is_kept", kind: Kind::OptIn, enable: AdvancedAi::enable_prey_war_is_kept, disable: AdvancedAi::disable_prey_war_is_kept },
+    // `defenders-hold-the-walls`: live Emperor 10-25 (070148Z) lost its
+    // capital to two or three Trebuchets while nine of ours stood within
+    // three tiles, doomed or rotated out by the danger at their stands. See
+    // `advanced/defenders_hold_the_walls.rs`.
+    Gene { tag: "defenders-hold-the-walls", field: "defenders_hold_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_defenders_hold_the_walls, disable: AdvancedAi::disable_defenders_hold_the_walls },
     // Version two retains the at-war launch release and stages a physical
     // Culture air interception; only two fresh selected safe sorties open it.
     Gene { tag: "elimination-yields-to-a-launch-2", field: "elimination_yields_to_a_launch_2", kind: Kind::OptIn, enable: AdvancedAi::enable_elimination_yields_to_a_launch_2, disable: AdvancedAi::disable_elimination_yields_to_a_launch_2 },
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

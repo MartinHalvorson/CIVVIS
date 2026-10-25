@@ -186,6 +186,20 @@ fn an_airfield_holds_no_further_slot() {
 }
 
 #[test]
+fn a_spare_slot_in_the_fastest_city_does_not_hold_a_slower_city() {
+    let (mut g, mut ai, first, second) = fuelled_slot_fixture();
+    ai.enable_surge_fields_the_bombers();
+    g.cities.get_mut(&first).unwrap().pop = 4;
+    assert!(g.city_yields(first).production > g.city_yields(second).production);
+    assert!(g.city_specialty_district_capacity(&g.cities[&first]) > 1);
+    assert_eq!(g.city_specialty_district_capacity(&g.cities[&second]), 1);
+    let second_hub = hub(&g, second);
+    assert!(g.can_produce(0, second, &second_hub));
+    assert!(ai.surge_hold_field_slot(&mut g, 0).is_none());
+    assert!(g.can_produce(0, second, &second_hub));
+}
+
+#[test]
 fn the_airfield_is_ranked_with_the_launch_wing() {
     let (g, mut ai, first, _) = wing_fixture();
     assert_eq!(ai.surge_launch_wing_turns(&g, 0, first), 0.0);

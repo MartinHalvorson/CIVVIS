@@ -1644,8 +1644,8 @@ def merge_pr_or_observe_auto_merge(
 ) -> Optional[str]:
     """Squash-merge a green PR, accepting auto-merge that wins the same race.
 
-    Auto-merge is deliberately armed before the required checks finish.  Once
-    they do, GitHub can land the PR between our successful-check poll and this
+    Auto-merge is armed after the local required checks finish. GitHub can
+    land the PR between our successful-check poll and this
     explicit merge request.  A 405 in that interval is either a successful
     shipment or a brief propagation gap; re-read the PR, then let the caller
     poll again rather than reporting a false failure.
@@ -1822,26 +1822,6 @@ def ship_task(args: argparse.Namespace) -> int:
                     "the PR head changed outside this task's one-writer worktree"
                 )
 
-            if not auto_merge_armed:
-                # Armed auto-merge fires the instant the required checks go
-                # green, instead of only when this poll happens to observe it.
-                # With `strict: false` it fires even when `main` has advanced
-                # past this head — deliberate: waiting for a run that finishes
-                # inside a no-new-merges window is what kept busy PRs from
-                # ever converging.
-                armed = run(
-                    (
-                        "gh", "pr", "merge", str(pr["number"]),
-                        "--repo", REPOSITORY, "--squash", "--auto",
-                        "--delete-branch",
-                    ),
-                    cwd=root,
-                    check=False,
-                )
-                if armed.returncode == 0:
-                    auto_merge_armed = True
-                    print(f"auto-merge armed on PR #{pr['number']}")
-
             fetch_main(root)
             # Auto-merge can fire during the fetch itself. Re-read the PR
             # before trying to update a branch GitHub may just have deleted.
@@ -1942,6 +1922,19 @@ def ship_task(args: argparse.Namespace) -> int:
                 time.sleep(max(0.1, args.poll_seconds))
                 continue
             if state == "success":
+                if not auto_merge_armed:
+                    armed = run(
+                        (
+                            "gh", "pr", "merge", str(pr["number"]),
+                            "--repo", REPOSITORY, "--squash", "--auto",
+                            "--delete-branch",
+                        ),
+                        cwd=root,
+                        check=False,
+                    )
+                    if armed.returncode == 0:
+                        auto_merge_armed = True
+                        print(f"auto-merge armed on PR #{pr['number']}")
                 merged_sha = merge_pr_or_observe_auto_merge(
                     root, number=int(pr["number"]), local_head=local_head
                 )

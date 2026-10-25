@@ -6341,6 +6341,10 @@ pub struct AdvancedAi {
     /// The turn `bankruptcy-exits-the-drain` last slotted a gold card; the
     /// disband waits that turn for the card's income.
     drain_card_turn: std::cell::Cell<Option<u32>>,
+    /// `defenders-hold-the-walls`: a healthy defender of a threatened city
+    /// of ours keeps its blows and its post in the battle plan. See
+    /// `advanced/defenders_hold_the_walls.rs`. Off by default.
+    defenders_hold_the_walls: bool,
     // ---- append: e-f ------------------------------------------------
     /// `friendship-ends-at-the-race`: `befriend-the-strongest` offers no
     /// friendship to a rival racing to win (see
@@ -9589,6 +9593,8 @@ mod fire_plan;
 /// the kill plan and the heal rotation — ahead of the per-unit ladder. One
 /// opt-in gene; see `advanced/battle_planner.rs`.
 mod battle_planner;
+/// `defenders-hold-the-walls`: see `advanced/defenders_hold_the_walls.rs`.
+mod defenders_hold_the_walls;
 mod guns_stay_out_of_reach;
 mod unit_preservation;
 pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
@@ -10950,6 +10956,7 @@ impl AdvancedAi {
             capital_walls_before_the_surprise: false,
             capital_watch_sightings: BTreeMap::new(),
             drain_card_turn: std::cell::Cell::new(None),
+            defenders_hold_the_walls: false,
             // ---- append: e-f ----------------------------------------
             friendship_ends_at_the_race: false,
             friendship_only_with_the_stronger: false,

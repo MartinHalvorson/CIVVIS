@@ -2063,8 +2063,16 @@ impl AdvancedAi {
         let Item::District { district, pos } = item else {
             return false;
         };
-        if self.active_victory_target(g) != Some(VictoryTarget::Domination) {
+        let Some(field) = self.air_surge_field_slot_requirement(g, pid) else {
             return false;
+        };
+        Self::air_surge_field_slot_item(g, pid, cid, *district, *pos, field)
+            && self.air_surge_field_slot_city(g, pid, field) == Some(cid)
+    }
+
+    fn air_surge_field_slot_requirement(&self, g: &Game, pid: usize) -> Option<Name> {
+        if self.active_victory_target(g) != Some(VictoryTarget::Domination) {
+            return None;
         }
         let needs_field = self.air_surge_plan.as_ref().map_or_else(
             || {
@@ -2078,22 +2086,34 @@ impl AdvancedAi {
             },
         );
         if !needs_field {
-            return false;
+            return None;
         }
-        let Some(field) = Self::air_surge_field(g, pid) else {
-            return false;
-        };
-        if g.district_family(*district) == g.district_family(field)
+        Self::air_surge_field(g, pid)
+    }
+
+    fn air_surge_field_slot_item(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        district: Name,
+        pos: Pos,
+        field: Name,
+    ) -> bool {
+        if g.district_family(district) == g.district_family(field)
             // A first Campus supplies the research needed to reach the
             // aircraft; reserving a slot must not delay that prerequisite.
-            || g.district_family(*district) == crate::name!("campus")
+            || g.district_family(district) == crate::name!("campus")
             || !g.rules.districts[district].specialty
             || g.map
-                .get(*pos)
+                .get(pos)
                 .is_some_and(|tile| tile.district_foundation.is_some())
         {
             return false;
         }
+        Self::air_surge_city_needs_field_slot(g, pid, cid)
+    }
+
+    fn air_surge_city_needs_field_slot(g: &Game, pid: usize, cid: u32) -> bool {
         let Some(city) = g.cities.get(&cid).filter(|city| city.owner == pid) else {
             return false;
         };
@@ -2104,14 +2124,14 @@ impl AdvancedAi {
                 .filter_map(|pos| g.map.tiles[pos].district_foundation.as_ref())
                 .filter(|foundation| g.rules.districts[foundation.district].specialty)
                 .count();
-        if used + 1 < g.city_specialty_district_capacity(city) {
-            return false;
-        }
+        used + 1 >= g.city_specialty_district_capacity(city)
+    }
+
+    fn air_surge_field_slot_city(&self, g: &Game, pid: usize, field: Name) -> Option<u32> {
         // district_sites checks terrain and remaining capacity even before
         // Flight is known. Reserve only a city that can actually host a field.
         let threatened = self.threatened_city(g, pid);
-        let best = g
-            .player_city_ids(pid)
+        g.player_city_ids(pid)
             .into_iter()
             .filter(|candidate| Some(*candidate) != threatened)
             .filter(|candidate| !g.district_sites(*candidate, field).is_empty())
@@ -2120,8 +2140,7 @@ impl AdvancedAi {
                     .production
                     .total_cmp(&g.city_yields(*b).production)
                     .then_with(|| b.cmp(a))
-            });
-        best == Some(cid)
+            })
     }
 
     fn air_surge_package_value(
