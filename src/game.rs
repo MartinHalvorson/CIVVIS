@@ -22220,29 +22220,25 @@ impl Game {
                 .map(|city| (city.id, reaches.len() as i64))
                 .collect();
         }
-        // Carry each allocation with its need so ranking only compares integers.
-        // Unique city IDs preserve the existing tie order after every luxury.
-        let mut neediest: Vec<(i64, u32, i64)> = cities
+        let mut allocations: BTreeMap<u32, i64> = cities.iter().map(|city| (city.id, 0)).collect();
+        let mut surplus: BTreeMap<u32, i64> = cities
             .iter()
             .map(|city| {
                 (
-                    self.city_local_amenities(city) - Self::city_amenities_required(city),
                     city.id,
-                    0,
+                    self.city_local_amenities(city) - Self::city_amenities_required(city),
                 )
             })
             .collect();
+        let mut neediest: Vec<u32> = cities.iter().map(|city| city.id).collect();
         for reach in reaches {
-            neediest.sort_unstable_by_key(|(surplus, cid, _)| (*surplus, *cid));
-            for (surplus, _, allocated) in neediest.iter_mut().take(reach) {
-                *allocated += 1;
-                *surplus += 1;
+            neediest.sort_by_key(|cid| (surplus[cid], *cid));
+            for cid in neediest.iter().copied().take(reach) {
+                *allocations.get_mut(&cid).unwrap() += 1;
+                *surplus.get_mut(&cid).unwrap() += 1;
             }
         }
-        neediest
-            .into_iter()
-            .map(|(_, cid, allocated)| (cid, allocated))
-            .collect()
+        allocations
     }
 
     /// Amenities supplied to this city before subtracting its population need
