@@ -33,3 +33,47 @@ cost check whose gene is off does not measure the activated scan. Report a
 changed output as a behavior change rather than a pure optimization. Do not
 infer a game-wide gain from the sampled fraction or from a small hot-loop
 measurement. Functional validation and timing are pending.
+
+## Fixed native-board comparison, registered before timing
+
+Use the first captured decision at each of these fixed cases: native
+`civvis-20261025T055158Z` at turns 122, 130, 140 and 150; native
+`civvis-20261025T060426Z` at turns 118, 130, 145 and 155. Retain missing,
+multi-frontier or inactive cases explicitly, without replacing them after
+seeing timings. Reconstruct the captured bytes and preserve their hashes,
+native descriptors, actual forced/withheld settings and first state. Before
+timing, require an untimed positive reservation journal on both builds.
+
+Run these as fresh, one-shot decider queries over immutable captured inputs.
+This compares parent and candidate decisions on the same boards; it does not
+reproduce the original persistent planner state or prove replay equivalence
+to the native decisions. Do not treat it as a win-rate or whole-game test.
+
+The existing parent `ci` decider from the completed #4119 validation may be
+reused only after verifying its Rust/data/build inputs match parent
+`a605bd591` and its Cargo fingerprint matches the candidate's compiler,
+features, profile, target and rustflags. Freeze its bytes before using it.
+Record the original build source honestly rather than relabelling it as a
+different revision. If those conditions fail, build the actual parent with
+matching settings instead.
+
+Require byte-identical complete replies before interpreting cost. Measure
+three same-binary control rounds and five parent/candidate rounds, alternating
+arm order for each case and round. Record user CPU, wall time and load; retain
+all cases, receipts and divergent replies. Report per-case effects and paired
+totals alongside the controls. This is a fixed-board decider measurement and
+does not estimate a full-game speedup.
+
+The parent qualification activates the reservation on five of the eight
+fixed boards (055158Z turns 122/130 and 060426Z turns 130/145/155).
+The other three stay in the fixed comparison as inactive controls. The
+initial qualification script looked in `why.log`, but the one-shot CLI
+prints reasoning on stderr and the native brain normally writes that to
+`why.log`. Its erroneous eight inactive readbacks and complete source/result
+are retained before the instrument correction. No case or planner behavior
+changed and no speed result was interpreted from that attempt.
+
+The input archive stores the longest captured prefix for each game plus
+every selected prefix length and hash. All eight reconstructions were
+checked against their original captured bytes before packaging. It also
+retains each native decision descriptor and the parent build fingerprint.
