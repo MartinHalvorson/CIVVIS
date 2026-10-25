@@ -12,5 +12,8 @@
   "raw_decisions": 609,
   "incomplete_captures": 0,
   "final_distinct_reads": 1,
-  "final_read_calls": 17
+  "final_read_calls": 17,
+  "helper_source_sha256": "d3d31297ce24df23b6a0b75bbcd89a7ebb94538b16d80f222c8dc631bf93e80b",
+  "normal_and_optimized_controls_pass": true,
+  "integrated_main": "7e018d808fe2f2b63f001b7f916ec611c65e480a"
 }

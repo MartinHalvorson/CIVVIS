@@ -75,4 +75,7 @@ Restore the archive, run the companion tests, then run the verifier with
 and a new `--out`. The default `--tools` points to the repository helpers.
 All raw decision descriptors remain unchanged; relocation uses an in-memory
 copy. No gameplay, deployment ledger, runtime setting or Native driver is
-modified by this evidence task. Final Git/CI integration remains pending.
+modified by this evidence task. Current main 7e018d808fe2f2b63f001b7f916ec611c65e480a is integrated before review.
+The three controls pass normally and under Python optimization; the exact
+reader-helper digest is retained in the reproduction record. The final pushed
+head remains subject to required CI.
