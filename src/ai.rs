@@ -2511,6 +2511,8 @@ pub struct BasicAi {
     /// cannot spend the defender money on a Market in the city being shelled
     /// (run civvis-20260827T113726Z, t162). 0.0 everywhere else.
     pub(crate) reserve_floor: f64,
+    /// Preserve pre-repair defender buying only in the frozen advanced_v1 control.
+    legacy_defender_purchases: bool,
     /// Scale each district family by how much of the empire still lacks it.
     pub(crate) district_coverage: bool,
     /// Version 2 of `district_coverage`: the same coverage term with a
@@ -5808,6 +5810,7 @@ impl BasicAi {
             amenity_districts: false,
             garrison_under_fire: false,
             reserve_floor: 0.0,
+            legacy_defender_purchases: false,
             district_coverage: false,
             district_coverage_2: false,
             slot_kind_tiebreak: false,
@@ -6328,6 +6331,7 @@ impl BasicAi {
             amenity_districts: false,
             garrison_under_fire: false,
             reserve_floor: 0.0,
+            legacy_defender_purchases: false,
             district_coverage: false,
             district_coverage_2: false,
             slot_kind_tiebreak: false,
@@ -11704,12 +11708,23 @@ impl BasicAi {
                         None => spec.has_ranged_attack() || spec.is_melee_capable(),
                     };
                     if spec.class != "military"
+                        || (!self.legacy_defender_purchases && spec.promotion_class == "recon")
                         || spec.domain.as_deref() == Some("sea")
                         || !matches_role
                     {
                         continue;
                     }
-                    let price = spec.cost * 4.0;
+                    // Current controllers budget the actual purchase quote.
+                    // The historical anchor retains its original price and
+                    // predicate order, together with its old recon eligibility.
+                    let price = if self.legacy_defender_purchases {
+                        spec.cost * 4.0
+                    } else {
+                        let Some(price) = g.unit_purchase_cost(pid, *cid, name, "gold") else {
+                            continue;
+                        };
+                        price
+                    };
                     if price > budget + 1e-9
                         || !g.can_produce(pid, *cid, &Item::Unit { unit: *name })
                         || g.purchase_is_blocked(*cid, &Item::Unit { unit: *name })
@@ -20290,6 +20305,9 @@ impl BasicAi {
         false
     }
 }
+
+#[cfg(test)]
+mod military_purchase_tests;
 
 #[cfg(test)]
 mod tests {
