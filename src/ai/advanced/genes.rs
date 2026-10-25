@@ -4124,13 +4124,13 @@ pub const GENES: &[Gene] = &[
     // at-peace branch of the target choice. See
     // `advanced/city_state_war_is_no_front.rs`.
     Gene { tag: "city-state-war-is-no-front", field: "city_state_war_is_no_front", kind: Kind::OptIn, enable: AdvancedAi::enable_city_state_war_is_no_front, disable: AdvancedAi::disable_city_state_war_is_no_front },
-    // ---- append: a-b ------------------------------------------------
-    // ---- append: c-d ------------------------------------------------
     // `defenders-hold-the-walls`: live Emperor 10-25 (070148Z) lost its
     // capital to two or three Trebuchets while nine of ours stood within
     // three tiles, doomed or rotated out by the danger at their stands. See
     // `advanced/defenders_hold_the_walls.rs`.
     Gene { tag: "defenders-hold-the-walls", field: "defenders_hold_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_defenders_hold_the_walls, disable: AdvancedAi::disable_defenders_hold_the_walls },
+    // ---- append: a-b ------------------------------------------------
+    // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------

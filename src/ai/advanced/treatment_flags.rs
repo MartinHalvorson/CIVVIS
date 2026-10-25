@@ -8187,8 +8187,6 @@ impl AdvancedAi {
         self.city_state_war_is_no_front = false;
     }
 
-    // ---- append: a-b ------------------------------------------------
-    // ---- append: c-d ------------------------------------------------
     /// Opt-in gene `defenders-hold-the-walls`; see
     /// [`Self::defenders_hold_the_walls`].
     pub fn enable_defenders_hold_the_walls(&mut self) {
@@ -8200,6 +8198,8 @@ impl AdvancedAi {
         self.defenders_hold_the_walls = false;
     }
 
+    // ---- append: a-b ------------------------------------------------
+    // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
 
