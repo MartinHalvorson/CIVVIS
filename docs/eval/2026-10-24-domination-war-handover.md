@@ -302,6 +302,24 @@ registered native or observer qualification; do not ship it solely because
 the independent screen produces variance. Do not alter the fixed batch to
 manufacture exposure or reinterpret the rejected replay histories.
 
+The registered probe finished at 08:26:53Z on October 25, with both the game
+runner and analyzer exiting zero. All six reserved seeds completed: 36 seat
+records, with 19 seats assigned on and 17 off. The four sealed source hashes
+still match. Four games ended by Culture and two by Score; none ended by
+Domination. Preserve the entire output and analysis in
+`2026-10-24-domination-war-handover.format-probe.json.gz` (88,358 bytes,
+SHA-256 `eb57b14648a124364fabd24d862b25eeed910ece1f1465e559a7554969856b1a`).
+The eight entries include raw seat records, full analysis, frozen supporting
+genome, commands, source seals, timing and exit receipts.
+
+The independent-seat statistic has nonzero width, which qualifies the artifact
+format only. These records do not provide the registered per-decision handover
+journal needed to establish actual activation. The fixed paired focal batch
+remains unchanged, the rejected native control remains rejected, and #4118
+remains draft pending genuine full-game activation evidence. Do not equate the
+19 enabled assignments with 19 activations or interpret the screen's association
+as a causal strength result.
+
 ## Independent qualification using captured reads
 
 The failed recorded-history controls remain rejected. The first unarmed game
