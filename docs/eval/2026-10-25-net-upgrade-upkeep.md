@@ -60,3 +60,20 @@ Installed `Base/Assets/UI/Screens/ReportScreen.lua:306` reads
 gross bill, line 339 subtracts the discount, and line 341 admits only positive
 net upkeep. The native-rule archive retains that exact excerpt and file digest.
 This agrees with the existing engine's unit-maintenance arithmetic.
+
+## Initial fixture compilation failure
+
+The first baseline build emits E0308: the native-current-bill fixture assigns
+a Vec to `policies`, which is a BTreeSet. It is interrupted with exit 130
+after that authoritative compiler diagnostic to avoid spending more CPU on
+the invalid build. The strict controller correctly rejects this as non-RED
+and leaves production unchanged. The complete test source and diagnostic are
+retained in `fixture-error.json.gz`. Only that assignment changes to a set
+collection before rerunning the complete unchanged-production focused suite.
+No failed fixture or compile is counted as a policy regression.
+
+A subsequent pre-run source review finds a second fixture error: `is_arena`
+reads the Battlefield map script, not arena flags. The still-incomplete build
+is stopped (130) before interpreting any test result. Only the arena fixture
+changes to `MapScript::Battlefield`. Its complete source/log and reason are
+retained in `fixture-audit.json.gz`; it is not logical RED or a policy result.

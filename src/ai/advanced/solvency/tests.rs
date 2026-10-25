@@ -400,7 +400,7 @@ fn upgrade_upkeep_uses_the_observed_current_formation_bill_once() {
     let (mut g, _, units) = fixture();
     let uid = units[0];
     g.units.get_mut(&uid).unwrap().formation = 1;
-    g.players[0].policies = vec![crate::name!("levee_en_masse")];
+    g.players[0].policies = [crate::name!("levee_en_masse")].into_iter().collect();
     std::sync::Arc::make_mut(&mut g.host_unit_facts).insert(
         uid,
         crate::game::HostUnitFacts {
@@ -424,7 +424,7 @@ fn upgrade_upkeep_uses_the_observed_current_formation_bill_once() {
 #[test]
 fn upgrade_upkeep_is_zero_in_an_arena() {
     let (mut g, _, units) = fixture();
-    g.arena_flags.insert(0, (4, 4));
+    g.map_script = crate::setup::MapScript::Battlefield;
     assert!(g.is_arena());
     assert_eq!(
         AdvancedAi::upgrade_upkeep_delta(&g, units[0], crate::name!("crossbowman")),
