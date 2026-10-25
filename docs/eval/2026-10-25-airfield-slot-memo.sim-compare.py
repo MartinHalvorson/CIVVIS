@@ -22,8 +22,8 @@ def main():
     args = parser.parse_args()
     preparation = args.root / "sim-preparation.json"
     manifest = json.loads(preparation.read_text())
-    binaries = {arm: args.root / f"{arm}-sim-probe-buffered" for arm in ("parent", "candidate")}
-    builds = {arm: json.loads((args.root / f"{arm}-sim-probe-buffered-build.json").read_text())
+    binaries = {arm: args.root / f"{arm}-sim-probe-observed" for arm in ("parent", "candidate")}
+    builds = {arm: json.loads((args.root / f"{arm}-sim-probe-observed-build.json").read_text())
               for arm in binaries}
     if len({build["source_sha256"] for build in builds.values()}) != 1:
         raise ValueError("probe source differs")

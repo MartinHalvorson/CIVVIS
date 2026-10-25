@@ -25,6 +25,7 @@ fn main() {
             .unwrap();
     assert_eq!(original.current, pid);
     assert_eq!(original.turn as u64, case["turn"].as_u64().unwrap());
+    let original = original.player_decision_view(pid);
     let genome: Value =
         serde_json::from_slice(&std::fs::read(prep["genome_file"].as_str().unwrap()).unwrap())
             .unwrap();

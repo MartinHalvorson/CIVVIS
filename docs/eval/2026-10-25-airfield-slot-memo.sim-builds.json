@@ -78,5 +78,57 @@
     "source_sha256": "e1b65208065a0add16054c586cf1c4785ebdf8a7ced6bfee44e2d4d8ac3b8d7f",
     "library_sha256": "53d6b8aa105e7a89e0d814e2555d742175ff3237e0cc5f4c80b4fff94d1755cb",
     "binary_sha256": "60624dad52cd0d153797713ebf33092c8dd656f153694edbcb1b5fe4030f7643"
+  },
+  "parent-sim-probe-observed-build": {
+    "command": [
+      "rustc",
+      "--edition=2021",
+      "-C",
+      "opt-level=3",
+      "-C",
+      "debug-assertions=yes",
+      "-C",
+      "codegen-units=16",
+      "-L",
+      "dependency=/tmp/civvis-airfield-slot-memo-cc3b/parent-source/target/ci/deps",
+      "--extern",
+      "civvis=/tmp/civvis-airfield-slot-memo-cc3b/parent-source/target/ci/deps/libcivvis-e26cdcfa7a10e4e6.rlib",
+      "--extern",
+      "serde_json=/tmp/civvis-airfield-slot-memo-cc3b/parent-source/target/ci/deps/libserde_json-5d92e8a1d79db490.rlib",
+      "--crate-name",
+      "airfield_sim_probe",
+      "docs/eval/2026-10-25-airfield-slot-memo.sim-probe.rs",
+      "-o",
+      "/tmp/civvis-airfield-slot-memo-cc3b/parent-sim-probe-observed"
+    ],
+    "source_sha256": "e0dd1e844e41b092ca7714566956ec4cdbf37602e64f9f0c59a552b0400400ff",
+    "library_sha256": "e2214c9f89ca356d736b00c928c5cc47538da68773503df33f69b6c8b7af37d0",
+    "binary_sha256": "f6c33c606a2abaebeb01fab99f5d2c74cc1a5e4aab80a58380ecd607c894c79c"
+  },
+  "candidate-sim-probe-observed-build": {
+    "command": [
+      "rustc",
+      "--edition=2021",
+      "-C",
+      "opt-level=3",
+      "-C",
+      "debug-assertions=yes",
+      "-C",
+      "codegen-units=16",
+      "-L",
+      "dependency=/Users/martbot-mbp-m5-max-128/civvis-memoize-airfield-slot-scan-cc3b/target/ci/deps",
+      "--extern",
+      "civvis=/Users/martbot-mbp-m5-max-128/civvis-memoize-airfield-slot-scan-cc3b/target/ci/deps/libcivvis-e26cdcfa7a10e4e6.rlib",
+      "--extern",
+      "serde_json=/Users/martbot-mbp-m5-max-128/civvis-memoize-airfield-slot-scan-cc3b/target/ci/deps/libserde_json-5d92e8a1d79db490.rlib",
+      "--crate-name",
+      "airfield_sim_probe",
+      "docs/eval/2026-10-25-airfield-slot-memo.sim-probe.rs",
+      "-o",
+      "/tmp/civvis-airfield-slot-memo-cc3b/candidate-sim-probe-observed"
+    ],
+    "source_sha256": "e0dd1e844e41b092ca7714566956ec4cdbf37602e64f9f0c59a552b0400400ff",
+    "library_sha256": "53d6b8aa105e7a89e0d814e2555d742175ff3237e0cc5f4c80b4fff94d1755cb",
+    "binary_sha256": "c18e1b27061d0afed67cb40c9298f89adfe6e535fa3ba159d73b2911500feb74"
   }
 }

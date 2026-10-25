@@ -183,3 +183,16 @@ into memory before parsing. No cost comparison was interpreted from this
 attempt. All ten completed original boards match the buffered rerun byte for
 byte; seeds, genome, engine library and all 48 assigned cases are unchanged.
 The corrected generator is still completing the registered milestones.
+
+Before running the registered comparison, correct the simulation probe to
+call `Game::player_decision_view(pid)` outside timing, as the shared simulator
+runtime does (`src/ai/player.rs:127`). `plan_observed_turn` requires a
+disposable observation-limited board; the first two-call case-0 smoke check
+had passed equality on the full authoritative snapshot and is rejected as
+the wrong observation scope. The corrected two-call check passes complete
+semantic equality on the player-visible view. Both checks, the old source,
+build receipts and correction reason are retained in `sim-projection.tar.xz`.
+No cost result was interpreted from the unprojected probe. Generation,
+input snapshots, genome and all 48 assigned cases are unchanged. The measured
+method remains `plan_observed_turn` on a fresh controller; observation
+projection, cloning and construction are excluded from its timing.
