@@ -8271,6 +8271,17 @@ impl AdvancedAi {
         self.the_giant_gets_the_peace_offer = false;
     }
 
+    /// Opt-in gene `the-last-two-capitals-come-first`; see
+    /// [`Self::the_last_two_capitals_come_first`].
+    pub fn enable_the_last_two_capitals_come_first(&mut self) {
+        self.the_last_two_capitals_come_first = true;
+    }
+
+    /// The twin of `enable_the_last_two_capitals_come_first`.
+    pub fn disable_the_last_two_capitals_come_first(&mut self) {
+        self.the_last_two_capitals_come_first = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
