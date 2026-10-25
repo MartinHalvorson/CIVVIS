@@ -80,7 +80,7 @@ fn idle_spy(g: &mut Game, city: u32) -> u32 {
 }
 
 fn candidate(g: &Game, ai: &AdvancedAi, plan: &StrategicPlan, spy: u32) -> Option<Action> {
-    ai.wing_capital_spy_action(
+    selected_action(ai.wing_capital_spy_action(
         g,
         0,
         spy,
@@ -88,7 +88,14 @@ fn candidate(g: &Game, ai: &AdvancedAi, plan: &StrategicPlan, spy: u32) -> Optio
         &g.legal_spy_actions(0, spy),
         None,
         &BTreeSet::new(),
-    )
+    ))
+}
+
+fn selected_action(order: Option<WingSpyOrder>) -> Option<Action> {
+    order.and_then(|order| match order {
+        WingSpyOrder::Act(action) => Some(action),
+        WingSpyOrder::Hold => None,
+    })
 }
 
 #[test]
@@ -198,7 +205,15 @@ fn the_leading_racer_keeps_coverage_before_the_wing_gets_a_spare() {
     let racer_city = g.player_city_ids(2)[0];
     idle_spy(&mut g, racer_city);
     assert_eq!(
-        ai.wing_capital_spy_action(&g, 0, spy, &plan, &legal, Some(2), &BTreeSet::new()),
+        selected_action(ai.wing_capital_spy_action(
+            &g,
+            0,
+            spy,
+            &plan,
+            &legal,
+            Some(2),
+            &BTreeSet::new()
+        )),
         Some(Action::AssignSpy { spy, city: capital })
     );
 }
@@ -214,7 +229,7 @@ fn a_culture_racer_keeps_coverage_before_the_wing_gets_a_spare() {
     let racer_city = g.player_city_ids(2)[0];
     idle_spy(&mut g, racer_city);
     assert_eq!(
-        ai.wing_capital_spy_action(&g, 0, spy, &plan, &legal, None, &targets),
+        selected_action(ai.wing_capital_spy_action(&g, 0, spy, &plan, &legal, None, &targets)),
         Some(Action::AssignSpy { spy, city: capital })
     );
 }
@@ -233,4 +248,40 @@ fn an_offered_disruption_is_not_traded_for_sight() {
     assert!(ai
         .wing_capital_spy_action(&g, 0, spy, &plan, &legal, None, &BTreeSet::new())
         .is_none());
+}
+
+#[test]
+fn the_post_holds_when_no_safe_operation_is_offered() {
+    let (mut g, ai, plan, spy, capital, _, _) = fixture();
+    g.spies.get_mut(&spy).unwrap().city = Some(capital);
+    let legal = [Action::SpyMission {
+        spy,
+        mission: "foment_unrest".to_string(),
+        target: g.cities[&capital].pos,
+    }];
+    assert!(matches!(
+        ai.wing_capital_spy_action(&g, 0, spy, &plan, &legal, None, &BTreeSet::new()),
+        Some(WingSpyOrder::Hold)
+    ));
+}
+
+#[test]
+fn home_counterspy_posts_and_forced_targets_keep_priority() {
+    let (g, ai, plan, spy, _, _, _) = fixture();
+    let home = g.spies[&spy].city.unwrap();
+    let mut forced = ai.clone();
+    forced.forced_target_player = Some(1);
+    assert!(candidate(&g, &forced, &plan, spy).is_none());
+    let mut spaceport = g.clone();
+    spaceport
+        .cities
+        .get_mut(&home)
+        .unwrap()
+        .districts
+        .insert(crate::name!("spaceport"), (4, 8));
+    assert!(candidate(&spaceport, &ai, &plan, spy).is_none());
+    let mut infiltrated = g.clone();
+    let enemy = idle_spy(&mut infiltrated, home);
+    infiltrated.spies.get_mut(&enemy).unwrap().owner = 1;
+    assert!(candidate(&infiltrated, &ai, &plan, spy).is_none());
 }

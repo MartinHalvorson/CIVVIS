@@ -29995,6 +29995,9 @@ impl AdvancedAi {
                 racer_spy_leader,
                 &culture_heist_targets,
             ) {
+                let wing_capital_spotting::WingSpyOrder::Act(action) = action else {
+                    continue;
+                };
                 if g.apply(pid, &action).is_ok() {
                     let travel = matches!(action, Action::AssignSpy { .. });
                     let patience = if travel {
