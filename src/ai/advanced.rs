@@ -10466,6 +10466,7 @@ impl AdvancedAi {
     pub fn legacy() -> AdvancedAi {
         let mut ai = Self::configured(BasicAi::new(), false, None);
         ai.base.barbarian_tactics = false;
+        ai.base.legacy_defender_purchases = true;
         ai.base.legacy_movement = true;
         ai.base.precise_evacuation = false;
         // The adjacent camp clear is default-ON everywhere current, but this
