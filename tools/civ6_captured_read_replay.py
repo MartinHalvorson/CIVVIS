@@ -7,7 +7,9 @@ This never publishes orders, runs a treatment, or estimates native strength.
 from __future__ import annotations
 
 import argparse
+import array
 import errno
+import fcntl
 import hashlib
 import json
 import os
@@ -16,6 +18,7 @@ import selectors
 import select
 import subprocess
 import threading
+import termios
 import time
 
 from civ6_decision_trace import captured_input, exact_fact, validate_input_capture
@@ -30,6 +33,8 @@ class FifoReads:
     """Serve one immutable byte string per open, with a distinct next inode."""
 
     def __init__(self, path, reads, timeout):
+        if not reads or any(not data for data in reads):
+            raise ValueError("FIFO delivery requires nonempty recorded reads")
         self.path = Path(path)
         self.reads = reads
         self.deadline = time.monotonic() + timeout
@@ -56,7 +61,7 @@ class FifoReads:
                 self.read_number = number
                 self.phase = "opening"
                 self.bytes_sent = 0
-                descriptor = None
+                descriptor, observer = None, None
                 try:
                     while descriptor is None:
                         self._check()
@@ -66,6 +71,7 @@ class FifoReads:
                             if error.errno != errno.ENXIO:
                                 raise
                             self.cancelled.wait(0.002)
+                    observer = os.open(self.path, os.O_RDONLY | os.O_NONBLOCK)
                     following = self.path.with_name(f".next-read-{number}")
                     os.mkfifo(following)
                     os.replace(following, self.path)
@@ -81,9 +87,19 @@ class FifoReads:
                                 remaining = remaining[sent:]
                             except BlockingIOError:
                                 continue
+                    self.phase = "draining"
+                    queued = array.array("i", [0])
+                    while True:
+                        self._check()
+                        fcntl.ioctl(observer, termios.FIONREAD, queued, True)
+                        if queued[0] == 0:
+                            break
+                        self.cancelled.wait(0.001)
                     self.served += 1
                     self.phase = "closing"
                 finally:
+                    if observer is not None:
+                        os.close(observer)
                     if descriptor is not None:
                         os.close(descriptor)
         except Exception as error:

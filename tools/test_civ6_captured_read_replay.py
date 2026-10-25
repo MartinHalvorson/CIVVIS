@@ -12,6 +12,23 @@ import civ6_captured_read_replay as replay
 
 @unittest.skipUnless(hasattr(os, "mkfifo"), "ordered input replay requires POSIX FIFOs")
 class FifoTests(unittest.TestCase):
+    def test_writer_stays_connected_until_the_reader_consumes_its_bytes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "events.jsonl"
+            feeder = replay.FifoReads(path, [b"x"], 3)
+            program = "import os,sys,json; f=os.open(sys.argv[1],os.O_RDONLY|os.O_NONBLOCK); os.set_blocking(f,True); print(json.dumps({'ready':True}),flush=True); sys.stdin.readline(); data=os.read(f,1); print(json.dumps({'data':data.decode()}),flush=True); os.close(f)"
+            process = subprocess.Popen([sys.executable, "-c", program, str(path)], stdin=subprocess.PIPE, stdout=subprocess.PIPE, text=True)
+            try:
+                self.assertEqual(replay.request_reply(process, 2), {"ready": True})
+                self.assertFalse(feeder.done.wait(.1), "the writer disconnected before its queued byte was consumed")
+            finally:
+                process.stdin.write("read\n")
+                process.stdin.flush()
+                process.stdin.close()
+                process.wait(timeout=2)
+                process.stdout.close()
+                feeder.close()
+
     def test_each_open_gets_only_its_own_bytes(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "events.jsonl"
@@ -68,11 +85,16 @@ class FifoTests(unittest.TestCase):
             feeder = replay.FifoReads(path, [b"x" * 2000000], 3)
             try:
                 subprocess.run([sys.executable, "-c", "import os,sys; f=os.open(sys.argv[1],os.O_RDONLY); os.read(f,1); os.close(f)", str(path)], timeout=3, check=True)
-                self.assertTrue(feeder.done.wait(2))
-                with self.assertRaisesRegex(RuntimeError, "BrokenPipe"):
+                with self.assertRaises(RuntimeError):
                     feeder.finish()
+                self.assertEqual(feeder.served, 0)
             finally:
                 feeder.close()
+
+    def test_empty_reads_have_no_consumption_acknowledgement(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with self.assertRaisesRegex(ValueError, "nonempty"):
+                replay.FifoReads(Path(directory) / "events.jsonl", [b""], 3)
 
 
 class ReplyTests(unittest.TestCase):

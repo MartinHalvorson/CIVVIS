@@ -119,3 +119,36 @@ diagnostic child while a request is pending, without changing its input or
 deadline. This is failure localization, not a new policy or a repeated search
 for a passing control. Both earlier failures remain rejected; no treatment
 may be interpreted from this diagnostic.
+
+The phase diagnostic happens to complete both 186-request controls with exact
+native payload and ordered-byte matches. The sampler finds no stalled request.
+This does not resolve either earlier failure or qualify policy attribution:
+phase counters do not repair an input protocol. Investigate the writer's
+missing consumption acknowledgement separately. A successful pipe write can
+leave bytes queued while the reader has yet to consume them. Register a
+subprocess test that opens the reader, holds it before reading, and requires
+the writer to remain connected until those bytes are consumed. Run it first
+against the unchanged writer; then require a real protocol fix before further
+native qualification, retaining all three earlier attempts.
+
+The paused-reader test fails against the unchanged writer: the writer finishes
+before its queued byte is consumed. The other 13 tests pass. Fix this concrete
+delivery contract by retaining the writer until a separate observation-only
+read descriptor reports an empty receive queue. Open that descriptor only
+after the actual consumer has connected; never read bytes from it. Close it
+before closing the writer. On macOS the FIFO ioctl routes by descriptor access
+mode, so querying the write descriptor would inspect the wrong socket; see
+[Apple's FIFO implementation](https://github.com/apple-oss-distributions/xnu/blob/main/bsd/miscfs/fifofs/fifo_vnops.c).
+
+Empty recorded reads cannot provide this acknowledgement and are explicitly
+unsupported. The observer descriptor can delay a broken-pipe error after an
+early consumer exit; the outer process/reply check still rejects that exit,
+and the primitive's incomplete-delivery test requires rejection without
+claiming a specific errno. This fix is motivated by the failed delivery
+contract. It does not establish the cause of the earlier native stalls.
+
+After the paused-reader and existing subprocess tests pass, register a new
+corrected-source qualification of the same complete 186-request history,
+with both original-binary controls, unchanged exact payload/read checks,
+turn-70 cutoff and 30-second deadline. Earlier failures and the lucky phase
+diagnostic remain separate. Interpret no policy or strength result.
