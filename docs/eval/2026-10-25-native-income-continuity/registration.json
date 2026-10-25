@@ -1,0 +1,38 @@
+{
+  "assembled_utc": "2026-10-25T23:03:25.364714+00:00",
+  "branch": "agent/mbp-m5-max-128/codex-competitive-1025/native-income-continuity-20261025T230015Z-65b5",
+  "scope": "Evidence only: existing fixed eight income-cohort continuity/growth plus one selected, fully controlled private Market caller witness. No strategy, gene, policy, rules, native configuration or live game input changes.",
+  "selection_limits": "Outcomes and initial T100 results already known before follow-up. Selected Market witness after inspecting every member. No causal, outcome-blind strength trial or generic defense-priority verdict.",
+  "original_control": [
+    307,
+    307
+  ],
+  "diagnostic_control": [
+    307,
+    307
+  ],
+  "ordered_reads_per_control": 5336,
+  "complete_root_trace_events": {
+    "produce": 63,
+    "root_begin": 69
+  },
+  "source_revision": "d183ac33d5f6c37f6310eadd974cf911467fafd3",
+  "source_binary_sha256": "576a56620e02a31d2ab50df54718af9788e6202f1d2b659c537b2371422c1d00",
+  "diagnostic_binary_sha256": "d7b308a60150d1ad1bcd50728c09b1c8d04c9f8bb091e50489fd9fe0a884a3cb",
+  "external_roots": [
+    "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-25/income-district-funnel",
+    "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-25/native-market-continuity"
+  ],
+  "existing_harnesses": [
+    "../2026-10-25-native-income-callers/constant-read-control.py",
+    "../2026-10-25-native-income-callers/diagnostic-replay.py"
+  ],
+  "artifacts": {
+    "complete-market-traces.json.gz": "3c619fb37ea8d44fa7f4bddf62e17eed154876383f27945684e13d355bbc98de",
+    "completion-continuity.py": "a54fd57829108414837a0e9a78966c9a10ce781c8cb88b85160c004d7d191a1c",
+    "income-eight.json.gz": "c9d8eec3e378799ac61b7106de357f2c4750bd46cd95ad134df729ba6cf1849a",
+    "qualified-market.json.gz": "f264168bb331c65eabc43c1173b29a6160465ffb8374642825c470bfe7fb8037",
+    "source-manifest.json.gz": "1382e1fe6e2c59efe2c4227cba662521d1937523b48debcf7621173027a3ba2a",
+    "diagnostic-root.patch.gz": "3c25561ecda155f86786c374718de33956c67273ebca321f635c279641ce93e1"
+  }
+}
