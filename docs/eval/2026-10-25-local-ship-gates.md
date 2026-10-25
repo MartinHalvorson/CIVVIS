@@ -26,3 +26,13 @@ Run the complete collaboration tooling suite and normal repository CI before
 shipping this change. This is orchestration code, so no Rust artifact or game
 mechanic changes and a game soak is not applicable. Keep raw test output,
 source receipts, the observed merge/cost chronology and all failed attempts.
+
+The complete collaboration suite passes on `ad88febe4`: 183 tests in 6.917
+seconds, with both tracked tool files unchanged. The evidence archive
+`2026-10-25-local-ship-gates.validation.json.gz` retains ten entries, including
+the initial fixture error, corrected two-failure RED, the 16-case focused and
+183-case complete passes, source receipts, validator script and actual GitHub
+merge/cost timestamps. It is 8,407 bytes, SHA-256
+`560a107d91531010b2b08af5b8c2d4064b3e50ec84083f17679a695614fbbfc6`;
+all ten decompressed entry digests match. The real cost job completed at
+10:17:18Z, after the 10:11:49Z merge, as recorded by the GitHub API receipt.
