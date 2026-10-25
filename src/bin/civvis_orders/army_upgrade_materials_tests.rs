@@ -322,3 +322,177 @@ fn barter_cannot_hide_an_upgrade_reserve_already_spent_by_planning() {
     );
     assert!(orders.is_empty());
 }
+
+fn reservation_fixture(stock: f64) -> (civvis::mirror::LiveMirror, civvis::ai::AdvancedAi) {
+    use civvis::mirror::{Snapshot, StateCity, StateUnit, TilesChunk};
+
+    let snapshot = Snapshot::from_chunks(&[TilesChunk {
+        turn: 114,
+        width: 16,
+        height: 12,
+        chunk: 1,
+        plots: (0..16)
+            .flat_map(|x| {
+                (0..12).map(move |y| {
+                    serde_json::from_value(serde_json::json!({
+                        "x": x, "y": y, "t": "TERRAIN_GRASS", "vis": true,
+                        "o": if x < 8 { 0 } else { 1 },
+                        "oc": if x < 8 { 7 } else { 70 }
+                    }))
+                    .unwrap()
+                })
+            })
+            .collect(),
+    }]);
+    let mut state = state();
+    state.turn = 114;
+    state.gold = 157;
+    state.gold_per_turn = Some(30.0);
+    state.techs = vec!["TECH_IRON_WORKING".into(), "TECH_STIRRUPS".into()];
+    state.strategic_resources = Some(BTreeMap::from([("RESOURCE_IRON".into(), stock)]));
+    state.strategic_resource_income = Some(BTreeMap::from([("RESOURCE_IRON".into(), 2.0)]));
+    state.cities = vec![StateCity {
+        id: 7,
+        name: "Bogota".into(),
+        x: 4,
+        y: 6,
+        pop: 4,
+        capital: true,
+        ..Default::default()
+    }];
+    state.rivals[0].cities = vec![StateCity {
+        id: 70,
+        name: "Berlin".into(),
+        x: 12,
+        y: 6,
+        pop: 4,
+        capital: true,
+        ..Default::default()
+    }];
+    state.units = [(18, 80.0, 5), (19, 77.0, 6)]
+        .into_iter()
+        .map(|(id, hp, x)| StateUnit {
+            id,
+            kind: "UNIT_HEAVY_CHARIOT".into(),
+            x,
+            y: 6,
+            hp,
+            moves: 2.0,
+            upgrade_to: Some("UNIT_KNIGHT".into()),
+            upgrade_cost: Some(80.0),
+            upgrade_resource: Some("RESOURCE_IRON".into()),
+            upgrade_resource_cost: Some(10.0),
+            upgrade_blocked_reason: Some("Must be in friendly territory.".into()),
+            ..Default::default()
+        })
+        .collect();
+    let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 250, 0);
+    let mut ai = civvis::ai::AdvancedAi::targeting(civvis::ai::VictoryTarget::Domination);
+    ai.enable_army_upgrade_materials();
+    assert_eq!(
+        mirror.game.strategic_stockpile(0, civvis::name!("iron")),
+        stock
+    );
+    assert_eq!(mirror.game.player_unit_ids(0).len(), 2);
+    (mirror, ai)
+}
+
+fn iron_sale(subject: i64) -> Order {
+    Order {
+        kind: "sell",
+        subject: Some(subject),
+        verb: Some("RESOURCE_IRON=10".into()),
+        pos: Some((200, 0)),
+    }
+}
+
+#[test]
+fn reserve_blocks_selling_the_funded_knights_last_iron() {
+    let (mirror, ai) = reservation_fixture(15.0);
+    let wants = ai.army_upgrade_material_wants(&mirror.game, 0);
+    assert!(
+        wants.is_empty(),
+        "the missing-material buyer has no shortfall yet"
+    );
+    let mut orders = vec![iron_sale(1)];
+    let (_, removed) = protect_army_upgrade_material_sales(&ai, &mirror.game, &wants, &mut orders);
+    assert_eq!(removed, 1);
+    assert!(orders.is_empty());
+}
+
+#[test]
+fn reserve_allows_a_sale_that_leaves_the_native_upgrade_bill() {
+    let (mirror, ai) = reservation_fixture(25.0);
+    let wants = ai.army_upgrade_material_wants(&mirror.game, 0);
+    let mut orders = vec![iron_sale(1)];
+    let (_, removed) = protect_army_upgrade_material_sales(&ai, &mirror.game, &wants, &mut orders);
+    assert_eq!(removed, 0);
+    assert_eq!(orders[0].verb.as_deref(), Some("RESOURCE_IRON=10"));
+    assert_eq!(orders[0].pos, Some((200, 0)));
+}
+
+#[test]
+fn reserve_keeps_an_earlier_safe_sale_and_rejects_double_spending() {
+    let (mirror, ai) = reservation_fixture(25.0);
+    let wants = ai.army_upgrade_material_wants(&mirror.game, 0);
+    let mut orders = vec![iron_sale(1), iron_sale(2)];
+    let (_, removed) = protect_army_upgrade_material_sales(&ai, &mirror.game, &wants, &mut orders);
+    assert_eq!(removed, 1);
+    assert_eq!(orders.len(), 1);
+    assert_eq!(orders[0].subject, Some(1));
+}
+
+#[test]
+fn reserve_leaves_the_disabled_policy_unchanged() {
+    let (mirror, mut ai) = reservation_fixture(15.0);
+    ai.disable_army_upgrade_materials();
+    let wants = ai.army_upgrade_material_wants(&mirror.game, 0);
+    let mut orders = vec![iron_sale(1)];
+    let (_, removed) = protect_army_upgrade_material_sales(&ai, &mirror.game, &wants, &mut orders);
+    assert_eq!(removed, 0);
+    assert_eq!(orders.len(), 1);
+}
+
+#[test]
+fn reserve_does_not_hold_material_for_unfunded_or_wounded_upgrades() {
+    for unfunded in [true, false] {
+        let (mut mirror, ai) = reservation_fixture(15.0);
+        if unfunded {
+            mirror.game.players[0].gold = 109.0;
+        } else {
+            for unit in mirror.game.units.values_mut() {
+                unit.hp = 10;
+            }
+        }
+        let wants = ai.army_upgrade_material_wants(&mirror.game, 0);
+        let mut orders = vec![iron_sale(1)];
+        let (_, removed) =
+            protect_army_upgrade_material_sales(&ai, &mirror.game, &wants, &mut orders);
+        assert_eq!(removed, 0);
+        assert_eq!(orders.len(), 1);
+    }
+}
+
+#[test]
+fn reserve_refuses_a_bundle_that_would_consume_the_upgrade_bill() {
+    let (mirror, ai) = reservation_fixture(15.0);
+    let wants = ai.army_upgrade_material_wants(&mirror.game, 0);
+    let mut order = iron_sale(1);
+    order.verb = Some("RESOURCE_IRON=10,RESOURCE_GYPSUM=1".into());
+    let mut orders = vec![order];
+    let (_, removed) = protect_army_upgrade_material_sales(&ai, &mirror.game, &wants, &mut orders);
+    assert_eq!(removed, 1);
+    assert!(orders.is_empty());
+}
+
+#[test]
+fn reserve_leaves_a_resource_purchase_untouched() {
+    let (mirror, ai) = reservation_fixture(15.0);
+    let wants = ai.army_upgrade_material_wants(&mirror.game, 0);
+    let mut order = iron_sale(1);
+    order.kind = "buy";
+    let mut orders = vec![order];
+    let (_, removed) = protect_army_upgrade_material_sales(&ai, &mirror.game, &wants, &mut orders);
+    assert_eq!(removed, 0);
+    assert_eq!(orders[0].kind, "buy");
+}

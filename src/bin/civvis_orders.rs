@@ -3205,6 +3205,18 @@ fn drop_held_resource_sales(
     before - orders.len()
 }
 
+fn protect_army_upgrade_material_sales(
+    ai: &civvis::ai::AdvancedAi,
+    game: &civvis::game::Game,
+    wants: &[civvis::ai::ArmyUpgradeMaterialWant],
+    orders: &mut Vec<Order>,
+) -> (std::collections::BTreeSet<String>, usize) {
+    let mut held = ai.siege_gun_resources_held(game, 0, &[]);
+    held.extend(wants.iter().map(|want| want.resource.clone()));
+    let removed = drop_held_resource_sales(&held, orders);
+    (held, removed)
+}
+
 /// Why no strategic-purchase order was appended this turn, for the note;
 /// `None` when one was. `wants` is `AdvancedAi::siege_gun_resource_wants`,
 /// strongest gun first; `spares` is `AdvancedAi::siege_barter_spares`,
@@ -5417,9 +5429,8 @@ fn decide(
     }
     if ai.army_upgrade_materials_enabled() {
         let wants = ai.army_upgrade_material_wants(&mirror_state.game, 0);
-        let mut held = ai.siege_gun_resources_held(&mirror_state.game, 0, &[]);
-        held.extend(wants.iter().map(|want| want.resource.clone()));
-        let kept = drop_held_resource_sales(&held, &mut orders);
+        let (held, kept) =
+            protect_army_upgrade_material_sales(ai, &mirror_state.game, &wants, &mut orders);
         if kept > 0 {
             note_bits.push(format!("army_material_sale_held={kept}"));
         }
