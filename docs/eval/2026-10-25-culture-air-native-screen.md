@@ -59,3 +59,26 @@ candidate accepts it and reports v2 in its actual genome. These are capability
 controls, not native execution or strength. The 15-member observer validation
 archive is 16,460 bytes, SHA-256 `ff91e860f86ee56a2da6de4e5edccda2eeb5a6f61836641050bc4e49961d4386`; every member
 is read back against its source. Five isolated observer controls still pass.
+
+## Activated after actual delivered-source qualification
+
+At 2026-10-25T17:33:39.805647+00:00, the observer exclusively acquires its
+unchanged v2 lease after qualifying unarmed `civvis-20261025T172407Z`.
+The source is `b4dfb57ea13b5d1bc08918d71769a94c88b690f7`, with actual
+binary SHA-256 `5d36cd9e3a67caf278b0b4812b1e7e33ecc66d50e378f8eb59b602f08a7c3991`.
+Seventeen actual reads share one byte snapshot: 31,195 bytes, SHA-256
+`5f6042bc228d23637d9772ec9f0389dc5267651019ac202ac083346413c9a797`. V1 is present and v2 absent.
+
+The generic disposable probe proves forceability, not profile equivalence.
+A separate empty-mirror probe repeats all 186 actual startup force flags and
+adds v2; its reported treatment set differs from the qualified 496-treatment
+baseline only by v2, with nothing removed. These are capability checks; only
+the future native games can prove execution. The qualification is excluded
+and 1 future stems are assigned at this interim readback.
+
+The 11-member activation archive is 123,340 bytes, SHA-256
+`e2f326be94aab1818b2c9a4eb34c12ac1b8824ea12160f96235fad4d0c4e1928`; every member is verified on readback. The actual lease
+identity and content are checked against the observer state. The loader-byte
+identity remains unverified despite the separately retained installed-byte hash.
+All sixteen future outcomes, failures, continuations and protocol deviations
+remain mandatory; no victory or treatment-effect result exists yet.
