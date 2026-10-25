@@ -1,0 +1,39 @@
+{
+  "status": "Original frozen binary reproduced; diagnostic instrumentation awaiting build and its own qualification. No private caller inference yet.",
+  "source_base": "b4dfb57ea13b5d1bc08918d71769a94c88b690f7",
+  "fixed_run": "civvis-20261025T174828Z",
+  "through_turn": 70,
+  "native_requests": 191,
+  "successful_fresh_controls": 2,
+  "every_full_payload_identical": true,
+  "every_request_identity_identical": true,
+  "every_ordered_read_sequence_identical": true,
+  "original_invocation": "Reconstructed from brain configuration and launcher; argv/cwd were not directly captured. Whole-prefix matching qualifies this reconstruction only for the preserved prefix.",
+  "delivery_refinement": "Immutable regular file only when every recorded read byte string is equal; mixed sequences retain FIFO handoffs. Recapture verifies all bytes and read counts.",
+  "unsuccessful_attempts_retained": [
+    "initial --strategy stock rejected before any read; banner stock means absent flag",
+    "original FIFO control0 matched191/191; replication timed out after8 replies",
+    "120-second FIFO retry timed out after4 replies; process sample blocked in read, not a controller plan difference"
+  ],
+  "instrumentation_rule": "Set a thread-local root Game pointer and request frame. Log only that actual planning Game, turns60..70. Exclude clone/simulation Game addresses. Capture exact Produce caller, before/after model income, legal application result and helper entries/ranks. Demand full191-request original payload/read equivalence before interpreting any log.",
+  "native_strength_rule": "This is a diagnosis of recorded choices, not a counterfactual continuation or win-rate test.",
+  "previous_purchase_fix_native_cohort": {
+    "wins": 0,
+    "losses": 8,
+    "missing": 0,
+    "requested_gold_units": 61,
+    "verified_gold_unit_receipts": 61,
+    "requested_gold_scouts": 0,
+    "verified_gold_scouts": 0,
+    "requested_upgrades": 78,
+    "verified_upgrade_receipts": 75,
+    "exact_gold_menus": 52,
+    "exact_upgrade_quotes": 71,
+    "source_mix": {
+      "91a282bad": 1,
+      "10239aadf": 5,
+      "16836d413": 2
+    },
+    "causal_strength_claim": false
+  }
+}
