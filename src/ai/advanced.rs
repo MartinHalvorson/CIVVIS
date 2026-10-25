@@ -24585,12 +24585,14 @@ impl AdvancedAi {
                     self.journal_faith_war_keeps(g, pid, *other, false);
                     continue;
                 }
-                // `prey-war-is-kept`: no peace with prey unless they
-                // outmatch us, our cities are falling, or the one-war rule
-                // makes it for the victory counter or a settled capital.
-                // `false` with the gene off. See `advanced/prey_war_is_kept.rs`.
-                if !outmatched
-                    && !science_defensive_peace
+                // `prey-war-is-kept`: no peace with prey unless our cities
+                // are falling or the one-war rule makes it for the victory
+                // counter or a settled capital. Prey never outmatches us on
+                // power, and the war board's "no siege is feasible" peace
+                // (which `outmatched` reads under `war-policy-via-board`) is
+                // the stall the gene keeps. `false` with the gene off. See
+                // `advanced/prey_war_is_kept.rs`.
+                if !science_defensive_peace
                     && !matches!(
                         one_war_peace,
                         Some(

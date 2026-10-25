@@ -2,12 +2,12 @@
 //! under [`PREY_DECLARE_RATIO`] of our military power keeps that war and
 //! fights it.
 //!
-//! - **The war is kept.** No white peace is offered to that rival by the
-//!   faith war's exit, a Recovery reading, a stalled or fatigued war, a
-//!   banked-envoy reclaim, a finished interception, or the one-war rule's
-//!   second front or rout. Peace is still offered when they outmatch us, when
-//!   a city of ours is falling, and when the one-war rule makes it for the
-//!   victory counter or a capital already settled.
+//! - **The war is kept.** No peace is offered to that rival by the faith
+//!   war's exit, a Recovery reading, the war board's "no siege is feasible",
+//!   a stalled or fatigued war, a banked-envoy reclaim, a finished
+//!   interception, or the one-war rule's second front or rout. Peace is still
+//!   offered when a city of ours is falling, and when the one-war rule makes
+//!   it for the victory counter or a capital already settled.
 //! - **The war is a front.** A faith war on prey whose city we have located
 //!   is not exempted by `faith-war-is-no-front`: the campaign target is chosen
 //!   among it like any other war.
