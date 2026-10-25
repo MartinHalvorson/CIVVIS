@@ -45,7 +45,10 @@ identical data rows and source-run hashes; the correction changes no observed
 count. Result 02 and the final witness are authoritative. All twenty-four
 actual/requested/seat receipts identify `RULESET_EXPANSION_2`.
 
-Final Git/CI integration is pending. No gameplay, genome or runtime setting is
+Before review, main d0b802528e58fd17b0f2c77047720e5a3a76b869 is integrated.
+The six new and six existing controls pass again. This task changes only
+evaluation documentation and read-only scripts; the final pushed head remains
+subject to required CI. No gameplay, genome or runtime setting is
 changed by this audit.
 
 The final archive preserves 31 byte-verified members, including
