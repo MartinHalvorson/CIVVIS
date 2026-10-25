@@ -1,0 +1,16 @@
+{
+  "scope": "Verification from a restored packet, not another Native game or replay.",
+  "report_bytes_identical": true,
+  "original_and_restored_report_sha256": "984a5fbc81021ef6bd526b28aa7c15be64a9e90056581f13c95a0db91381b9cb",
+  "archive": {
+    "bytes": 8755712,
+    "sha256": "b66838a8867ac47e5c05cd9d9a91ab906dbe9da936e13701e52433e508ebe0f0",
+    "members": 26,
+    "all_member_bytes_verified": true,
+    "all_original_raw_files_stable": true
+  },
+  "raw_decisions": 609,
+  "incomplete_captures": 0,
+  "final_distinct_reads": 1,
+  "final_read_calls": 17
+}
