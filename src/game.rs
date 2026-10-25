@@ -36919,3 +36919,6 @@ mod air_pillage_eligibility_tests;
 
 #[cfg(test)]
 mod native_great_person_recruitment_tests;
+
+#[cfg(test)]
+mod gran_colombia_traits_tests;
