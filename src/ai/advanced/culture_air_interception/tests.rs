@@ -625,3 +625,39 @@ fn version_two_retains_the_existing_at_war_launch_release() {
     ai.disable_elimination_yields_to_a_launch_2();
     assert!(!ai.elimination_yields_to_a_launch(&g, 0, 1));
 }
+
+#[test]
+fn the_observed_adapter_applies_the_selected_interception_actions() {
+    for retain_version_one in [false, true] {
+        let (mut g, mut ai, plan, _, theaters) = fixture();
+        version_two(&mut ai);
+        ai.elimination_yields_to_a_launch = retain_version_one;
+        // Match the native genome's Recovery reading against the existing
+        // weaker war, rather than the stronger rival still at peace.
+        ai.recovery_reads_the_war = true;
+        ai.unit_preservation = true;
+        assert_eq!(ai.assess(&g, 0).strategy, GrandStrategy::Conquest);
+        ai.plan = Some(plan);
+        let journal = crate::reasoning::Journal::recording();
+        ai.attach_journal(journal.handle());
+        let before = g.log.len();
+        ai.plan_observed_turn(&mut g, 0);
+        assert!(
+            g.is_at_war(0, 2),
+            "v1 retained: {retain_version_one}; {:?}",
+            ai.current_plan()
+        );
+        assert_eq!(ai.current_plan().unwrap().target_player, Some(2));
+        for pos in theaters {
+            assert!(g.map.get(pos).unwrap().pillaged);
+            assert!(g.log.since(before).any(
+                |(_, action)| matches!(action, Action::AirPillage { target, .. } if *target == pos)
+            ));
+        }
+        // This adapter filters and replays proposed actions. Assert the real
+        // committed board/log, rather than counters on its disposable proposal.
+        assert!(journal.since(0).thoughts.iter().any(|thought| thought
+            .headline
+            .contains("Opening a Culture air interception")));
+    }
+}

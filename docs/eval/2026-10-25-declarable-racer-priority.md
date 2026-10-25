@@ -1,7 +1,7 @@
 # A declarable racer and a slower elimination war
 
-Current status: the default-off v2 candidate is implemented and all eleven
-focused development tests pass at `1bc9c751ff7933f47a5b50bbeda3c0a19b23a9d3`.
+Current status: the default-off v2 candidate is implemented. All twelve focused
+development tests pass, including the observed-adapter extension described below.
 The full optimized local suite passes 6,279 tests with zero failures and 56
 ignored. All 54 observational queries complete with no new air activation;
 actions, plans and resulting boards match across all three arms on every
@@ -407,3 +407,41 @@ and the compiler failure. All 24 internal game assignments and the six family
 probe seeds are now running on the frozen `1bc9c751f` binary. Shared simulation
 still lacks the host clock; its results remain compatibility/inheritance/cost
 evidence and cannot rescue the absent new-air activation.
+
+## Completed family probe and exact native guard investigation
+
+The six registered family games complete all 36 seats and seeds without failures,
+partial games or replacements. The generated report is copied verbatim to
+`docs/gene_screens/fires/elimination-yields-to-a-launch-2.json`; its two family
+rows satisfy the existing variance ratchet. There are only two v1-on and eight
+v2-on seats, and the new host-clock air path is unavailable in this engine.
+No strength or new-air activation inference follows from that variance.
+`gene_fires.py --max 0`, `genes.py check` and the evaluation-manifest check pass.
+Regeneration without reselection leaves all 279 deployed genes unchanged and
+produces no generated-file diff.
+
+Temporary test-only diagnostics retain all eighteen fixed native inputs at the
+actual staging call and then enumerate the post-declaration forecasts. Every
+original Aztec witness frame passes current treasury, opening, readiness and
+home-safety checks, but declaring makes an owned city threatened. The model
+selects useful forecast sorties at 185/187/194/196/198/200, yet every forecast
+fails the required post-declaration home-safety condition. Turn 202 has no
+selected sortie. This explains the observed no-op without weakening that guard.
+The diagnostics are restored exactly; no diagnostic code enters production.
+
+The family/guard archive is 64,260 bytes, SHA-256
+`fa950d0ffdf416b3868a32b9b82606029d4e1b29e352a9649ce6e50f7c107cf8`;
+all fifteen members are verified. It retains the complete probe, analysis,
+controller, original and instrumented test/module sources and both diagnostic
+logs. The raw diagnostic runtime is not a performance benchmark.
+
+An additional regression exercises the real `plan_observed_turn` adapter with
+unit preservation: its filtered/replayed actions must actually declare and
+pillage both Theaters. It passes with v1 both disabled and retained, matching
+the possible native family combination. The first fixture omitted the native
+`recovery-reads-the-war` context and failed; matching that existing native
+setting repairs the fixture without changing production behavior. Its raw
+failure and repaired validation are retained, with no complete sealed source
+snapshot claimed for the failed fixture. All twelve focused tests pass. Only
+this test file differs from the frozen behavior source used by the running
+24-game comparison; a final optimized suite including it is next.
