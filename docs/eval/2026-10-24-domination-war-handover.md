@@ -356,3 +356,37 @@ is recorded explicitly. The original binary/source provenance is retained.
 Exact per-read replay support or a separately registered generative native
 qualification is needed. This establishes an input-coverage limit and keeps
 the handover in draft; it supplies no strategy, survival or strength result.
+
+## Ordered-read observer registration
+
+The earlier single-prefix cases stay rejected. Independent tool #4125 now
+reproduces all 186 requests through turn 70 of fixed native `060426Z`, with
+two complete original-binary controls and 3,231 actual reads per control.
+Four requests have multiple snapshots. Its earlier failures and successful
+diagnostic are retained; no handover comparison is interpreted on that case.
+
+Register one fresh history before inspecting its eligibility or effect. The
+context collector records a durable baseline of all frozen attempt stems at
+startup, then fixes the first newly observed stem in chronological order.
+Continuations belong to their existing stem. Selection does not inspect arm,
+city count, war, actions or outcome. A failed start, missing live context,
+incomplete capture or failed control is retained without choosing another
+case. The collector reads processes and evidence only; it writes an exclusive
+experiment directory and never changes the native screen or publishes orders.
+
+Retain the original binary's actual live argv and cwd, frozen provenance,
+disk digest and first complete request/capture. Seal every chronological
+request through turn 70, only after a later turn closes the cutoff. Require
+two exact original-binary controls against every native order, decision,
+request identity and ordered read. Then require the flag-off candidate to
+match the entire native history with its actual played options preserved.
+Only after those gates may the same candidate with the handover flag on be
+compared. Retain the earliest changed complete reply, all earlier replies,
+exact read sequence and journal reason. Extra/missing reads or identities
+reject attribution; never supply guessed reads or start at a later frame.
+
+Require actual four-city major-war handover coverage by turn 70; otherwise
+retain no activation without extending the case. This can establish a local
+decision effect under observed inputs. It cannot replace full generative
+activation, relax the shipping gate, alter the fixed simulator/native trials,
+or establish accepted actions, counterfactual survival or victory.
