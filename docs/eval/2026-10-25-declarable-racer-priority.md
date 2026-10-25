@@ -220,3 +220,5 @@ comparison, not a native permission or highest-difficulty victory claim.
 If no natural activation occurs, state that and keep the limitation visible;
 do not choose replacement seeds from outcomes. A standard family fires screen
 is also required before a new registry row can be shipped without a waiver.
+
+The full-game driver is `.compare.rs`, frozen genome `.genome.json` (SHA-256 8317f5479b3d33fe545e8498cf5d53c81c7784cd62ce81e3a01c22cd583d48e7). Rotate arm order cyclically by seed, run at most two games concurrently, and retain a two-hour per-game wall deadline as failure, without replacement. Every game saves the initial/terminal board and each our-seat action/plan/reasoning update. CPU is measured by the subprocess controller, separately from wall time.
