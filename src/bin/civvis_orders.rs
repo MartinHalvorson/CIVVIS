@@ -3214,7 +3214,7 @@ fn protect_army_upgrade_material_sales(
     let mut held = ai.siege_gun_resources_held(game, 0, &[]);
     held.extend(wants.iter().map(|want| want.resource.clone()));
     let removed = drop_held_resource_sales(&held, orders);
-    let mut budgets: BTreeMap<_, _> = ai
+    let mut budgets: std::collections::BTreeMap<_, _> = ai
         .army_upgrade_material_reserves(game, 0)
         .into_iter()
         .map(|(resource, reserve)| {
@@ -3232,7 +3232,7 @@ fn protect_army_upgrade_material_sales(
         if order.kind != "sell" {
             return true;
         }
-        let mut package = BTreeMap::<&str, f64>::new();
+        let mut package = std::collections::BTreeMap::<&str, f64>::new();
         for (resource, amount) in order
             .verb
             .as_deref()

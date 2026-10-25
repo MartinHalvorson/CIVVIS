@@ -74,8 +74,11 @@ pending. These changes have not been deployed into a native game.
 
 The first post-implementation build at `1d0bbcd25` fails because the new
 bridge helper refers to `BTreeMap` without importing it. This is a compile
-failure, not GREEN or a policy result. Preserve that log and correct those
-two references before repeating validation.
+failure, not GREEN or a policy result. The corrected helper qualifies both
+map references through `std::collections`. Its failed binary compilation is
+preserved before correction while the independent, unchanged library target
+finishes code generation. The initial source-seal controller stops on that
+known correction, and a new validation attempt must test the corrected code.
 
 ## Follow-up limit on the native witness
 
