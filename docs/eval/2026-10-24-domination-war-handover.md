@@ -244,3 +244,13 @@ every raw row and the complete analysis, including a zero-width result if
 one occurs. A nonzero screen statistic satisfies the current ratchet's
 format; it does not by itself demonstrate a causal win-rate improvement or
 replace actual activation counts from the focal journals and native games.
+
+The current `gene_screen` design draws each seat independently rather than
+playing paired counterfactual games (`src/bin/gene_screen.rs`). A nonzero
+association can therefore exist without proving a decision changed. Treat
+that artifact as format qualification only. Actual full-game activation
+requires the new handover journal reason under a verified played flag. If
+the fixed focal batch supplies none, keep the tag in draft pending separately
+registered native or observer qualification; do not ship it solely because
+the independent screen produces variance. Do not alter the fixed batch to
+manufacture exposure or reinterpret the rejected replay histories.
