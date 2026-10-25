@@ -4151,6 +4151,10 @@ pub const GENES: &[Gene] = &[
     // at 0.7 times our power or more preceded 11 collapses in 45 games, none
     // in 9 under it. See `faith_war_before_the_flip::FAITH_WAR_EDGE`.
     Gene { tag: "faith-war-needs-the-edge", field: "faith_war_needs_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_war_needs_the_edge, disable: AdvancedAi::disable_faith_war_needs_the_edge },
+    // `the-giant-gets-the-peace-offer`: live Immortal 10-25, 5 of 17 games
+    // collapsed to one city against a rival at 2.5-20 times our power that the
+    // peace gate never offered peace. See `advanced/giant_peace.rs`.
+    Gene { tag: "the-giant-gets-the-peace-offer", field: "the_giant_gets_the_peace_offer", kind: Kind::OptIn, enable: AdvancedAi::enable_the_giant_gets_the_peace_offer, disable: AdvancedAi::disable_the_giant_gets_the_peace_offer },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -8723,6 +8723,10 @@ pub struct AdvancedAi {
     /// march step, not only beside it. Off by default.
     staging_gun_trusts_its_escort_2: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `the-giant-gets-the-peace-offer`: a major at
+    /// `giant_peace::GIANT_PEACE_RATIO` times our power that has taken a city
+    /// of ours is offered peace. See `advanced/giant_peace.rs`. Off by default.
+    the_giant_gets_the_peace_offer: bool,
     /// `war-faith-buys-the-army`: at war with a major, the army's Faith
     /// purchase runs before patronage and the religious spenders, holding
     /// back only the inquisition's reserve. See `advanced/war_faith.rs`. Off
@@ -9657,6 +9661,8 @@ mod march_moves;
 pub mod objective_board;
 /// `prey-is-declared-on`: see `advanced/prey_declaration.rs`.
 mod prey_declaration;
+/// `the-giant-gets-the-peace-offer`: see `advanced/giant_peace.rs`.
+mod giant_peace;
 /// `prey-war-is-kept`: see `advanced/prey_war_is_kept.rs`.
 mod prey_war_is_kept;
 /// `war-faith-buys-the-army`: see `advanced/war_faith.rs`.
@@ -11332,6 +11338,7 @@ impl AdvancedAi {
             solvent_or_hold: false,
             staging_gun_trusts_its_escort_2: false,
             // ---- append: t-z ----------------------------------------
+            the_giant_gets_the_peace_offer: false,
             war_faith_buys_the_army: false,
             threatened_city_buys_its_defender_2: false,
             unwalled_ring_steps_in: false,
@@ -24495,6 +24502,9 @@ impl AdvancedAi {
             } else {
                 my_power < g.military_power(*other) * 0.62
             };
+            // `the-giant-gets-the-peace-offer`: the war we are losing outright
+            // is offered peace too. See `advanced/giant_peace.rs`.
+            let outmatched = outmatched || self.giant_gets_the_peace_offer_from(g, pid, *other);
             // An explicit Science seat has no offensive use for a war it did
             // not appoint. A losing proposal can still be refused by the
             // attacker, so make the direct-peace condition part of the outer

@@ -8250,6 +8250,17 @@ impl AdvancedAi {
         self.faith_war_needs_the_edge = false;
     }
 
+    /// Opt-in gene `the-giant-gets-the-peace-offer`; see
+    /// [`Self::the_giant_gets_the_peace_offer`].
+    pub fn enable_the_giant_gets_the_peace_offer(&mut self) {
+        self.the_giant_gets_the_peace_offer = true;
+    }
+
+    /// The twin of `enable_the_giant_gets_the_peace_offer`.
+    pub fn disable_the_giant_gets_the_peace_offer(&mut self) {
+        self.the_giant_gets_the_peace_offer = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
