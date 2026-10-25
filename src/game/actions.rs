@@ -11790,3 +11790,7 @@ mod air_pillage_refusal_tests;
 #[cfg(test)]
 #[path = "neutral_airstrip_tests.rs"]
 mod neutral_airstrip_tests;
+
+#[cfg(test)]
+#[path = "gran_colombia_promotions_tests.rs"]
+mod gran_colombia_promotions_tests;
