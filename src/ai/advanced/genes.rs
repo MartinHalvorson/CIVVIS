@@ -4130,6 +4130,10 @@ pub const GENES: &[Gene] = &[
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
+    // `prey-war-is-kept`: live Emperor 10-25, 5 of 29 games made peace
+    // with a rival at a seventh to a third of our power (China 444/63 with
+    // Xi'an at 40 HP). See `advanced/prey_war_is_kept.rs`.
+    Gene { tag: "prey-war-is-kept", field: "prey_war_is_kept", kind: Kind::OptIn, enable: AdvancedAi::enable_prey_war_is_kept, disable: AdvancedAi::disable_prey_war_is_kept },
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
 ];

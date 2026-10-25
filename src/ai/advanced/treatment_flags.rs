@@ -8194,6 +8194,16 @@ impl AdvancedAi {
 
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
+    /// Opt-in gene `prey-war-is-kept`; see [`Self::prey_war_is_kept`].
+    pub fn enable_prey_war_is_kept(&mut self) {
+        self.prey_war_is_kept = true;
+    }
+
+    /// The twin of `enable_prey_war_is_kept`.
+    pub fn disable_prey_war_is_kept(&mut self) {
+        self.prey_war_is_kept = false;
+    }
+
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
 }

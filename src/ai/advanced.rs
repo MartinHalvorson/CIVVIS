@@ -8111,6 +8111,10 @@ pub struct AdvancedAi {
     /// `one_war::rival_front_production`.
     parity_reads_the_front: bool,
 
+    /// `prey-war-is-kept`: a Domination seat keeps, and fights, the war
+    /// on a major at or under `prey_declaration::PREY_DECLARE_RATIO` of
+    /// our power. See `advanced/prey_war_is_kept.rs`. Off by default.
+    prey_war_is_kept: bool,
     // ---- append: s-s ------------------------------------------------
     /// `stage-reads-the-muster-breakers`: once a siege's muster has closed,
     /// its Stage reads breakers out to `MUSTER_FAR` instead of `STAGING_FAR`.
@@ -9627,6 +9631,8 @@ mod march_moves;
 pub mod objective_board;
 /// `prey-is-declared-on`: see `advanced/prey_declaration.rs`.
 mod prey_declaration;
+/// `prey-war-is-kept`: see `advanced/prey_war_is_kept.rs`.
+mod prey_war_is_kept;
 /// Target feasibility, the declaration and the peace term read off the
 /// board's requirements. Opt-in gene `war-policy-via-board`.
 mod war_policy;
@@ -11185,6 +11191,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
             parity_reads_the_front: false,
 
+            prey_war_is_kept: false,
             // ---- append: s-s ----------------------------------------
             stage_reads_the_muster_breakers: false,
             siege_budget_counts_the_ram: false,
@@ -24576,6 +24583,25 @@ impl AdvancedAi {
                 // `advanced/faith_war_before_the_flip.rs`.
                 if self.faith_war_keeps_the_war(g, pid, *other) {
                     self.journal_faith_war_keeps(g, pid, *other, false);
+                    continue;
+                }
+                // `prey-war-is-kept`: no peace with prey unless they
+                // outmatch us, our cities are falling, or the one-war rule
+                // makes it for the victory counter or a settled capital.
+                // `false` with the gene off. See `advanced/prey_war_is_kept.rs`.
+                if !outmatched
+                    && !science_defensive_peace
+                    && !matches!(
+                        one_war_peace,
+                        Some(
+                            one_war::OneWarPeace::VictoryThreat
+                                | one_war::OneWarPeace::CapitalSecured
+                                | one_war::OneWarPeace::CapitalElsewhere
+                        )
+                    )
+                    && self.prey_war_is_kept_with(g, pid, *other)
+                {
+                    self.journal_prey_war_is_kept(g, pid, *other);
                     continue;
                 }
                 self.peace_offers.insert(*other);
