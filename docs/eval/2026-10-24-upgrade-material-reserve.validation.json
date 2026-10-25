@@ -25,6 +25,99 @@
       "src/bin/civvis_orders/army_upgrade_materials_tests.rs": "a353df9619025364d3991758b8223a1205c2a54351bcd24864cb1e3b8bec42f2"
     },
     "observed_log": "   Compiling civvis v0.6.0 (/Users/martbot-mbp-m5-max-128/civvis-upgrade-material-reserve-1563)\nerror[E0425]: cannot find type `BTreeMap` in this scope\n    --> src/bin/civvis_orders.rs:3217:22\n     |\n3217 |     let mut budgets: BTreeMap<_, _> = ai\n     |                      ^^^^^^^^ not found in this scope\n     |\nhelp: consider importing this struct\n     |\n  40 + use std::collections::BTreeMap;\n     |\n\nerror[E0433]: cannot find type `BTreeMap` in this scope\n    --> src/bin/civvis_orders.rs:3235:27\n     |\n3235 |         let mut package = BTreeMap::<&str, f64>::new();\n     |                           ^^^^^^^^ use of undeclared type `BTreeMap`\n     |\nhelp: consider importing this struct\n     |\n  40 + use std::collections::BTreeMap;\n     |\n\nerror[E0425]: cannot find type `BTreeMap` in this scope\n    --> src/bin/civvis_orders.rs:3217:22\n     |\n3217 |     let mut budgets: BTreeMap<_, _> = ai\n     |                      ^^^^^^^^ not found in this scope\n     |\n     = note: struct `crate::unit_identity::tests::BTreeMap` exists but is inaccessible\nhelp: consider importing this struct\n     |\n  40 + use std::collections::BTreeMap;\n     |\n\nerror[E0433]: cannot find type `BTreeMap` in this scope\n    --> src/bin/civvis_orders.rs:3235:27\n     |\n3235 |         let mut package = BTreeMap::<&str, f64>::new();\n     |                           ^^^^^^^^ use of undeclared type `BTreeMap`\n     |\n     = note: struct `crate::unit_identity::tests::BTreeMap` exists but is inaccessible\nhelp: consider importing this struct\n     |\n  40 + use std::collections::BTreeMap;\n     |\n\nSome errors have detailed explanations: E0425, E0433.\nFor more information about an error, try `rustc --explain E0425`.\nerror: could not compile `civvis` (bin \"civvis_orders\") due to 2 previous errors\nwarning: build failed, waiting for other jobs to finish...\nerror: could not compile `civvis` (bin \"civvis_orders\" test) due to 2 previous errors\n",
-    "observed_log_sha256": "c136790cf83d9430b5ce9ad035fbdf4dea0fe65545b16193037e2f48e889728b"
+    "observed_log_sha256": "c136790cf83d9430b5ce9ad035fbdf4dea0fe65545b16193037e2f48e889728b",
+    "terminal_exit_code": 101
+  },
+  "corrected_validation": {
+    "source_head": "a8aaacdd57ffc89b88535c58ae2e28e5bbc5dead",
+    "source_sha256": {
+      "src/ai/advanced/army_upgrade_materials.rs": "b56fe7cff7ff6c2703689a82cb160cf3a0ba35770696823effde1e6085233b88",
+      "src/ai/advanced/army_upgrade_materials/tests.rs": "3f9e38e2a8a665a9b4d416f9fde963e38e49d7d0a42c2c72b997d95e0e8ef152",
+      "src/bin/civvis_orders.rs": "895f78f0b44610ca69ac3096135a423f249cc59000a49e6073e0cded7f34664c",
+      "src/bin/civvis_orders/army_upgrade_materials_tests.rs": "a353df9619025364d3991758b8223a1205c2a54351bcd24864cb1e3b8bec42f2"
+    },
+    "focused": {
+      "passed": 23,
+      "failed": 0,
+      "exit_code": 0
+    },
+    "full_suite": {
+      "command": "cargo test --profile ci --locked",
+      "passed": 6255,
+      "failed": 0,
+      "ignored": 56,
+      "exit_code": 0
+    },
+    "rust_quality": {
+      "base": "8810924eee6e51218e74a2cdf4205e2153ffffe5",
+      "head": "a8aaacdd57ffc89b88535c58ae2e28e5bbc5dead",
+      "exit_code": 0,
+      "summary": "rust-quality: checking src/ai/advanced/army_upgrade_materials/tests.rs, src/ai/advanced/army_upgrade_materials.rs, src/bin/civvis_orders/army_upgrade_materials_tests.rs, src/bin/civvis_orders.rs\nrust-quality: the changed lines are formatted and warning-free"
+    },
+    "raw_archive": "2026-10-24-upgrade-material-reserve.runtime-validation.json.gz",
+    "raw_archive_sha256": "103cb98f6a851ea4de44bddbf5e3ba329f00866f52c86edf60c2f8fa54aa3c90",
+    "phases": {
+      "corrected-focused-tests": {
+        "command": [
+          "cargo",
+          "test",
+          "--profile",
+          "ci",
+          "--locked",
+          "army_upgrade_materials",
+          "--",
+          "--nocapture"
+        ],
+        "started_at_utc": "2026-10-25T05:11:49.698645+00:00",
+        "exit_code": 0,
+        "finished_at_utc": "2026-10-25T05:17:08.860165+00:00",
+        "log": "/private/tmp/civvis-upgrade-material-reserve-1563/corrected-focused-tests.log"
+      },
+      "corrected-full-ci-tests": {
+        "command": [
+          "cargo",
+          "test",
+          "--profile",
+          "ci",
+          "--locked"
+        ],
+        "started_at_utc": "2026-10-25T05:17:08.864145+00:00",
+        "exit_code": 0,
+        "finished_at_utc": "2026-10-25T05:19:25.701943+00:00",
+        "log": "/private/tmp/civvis-upgrade-material-reserve-1563/corrected-full-ci-tests.log"
+      },
+      "corrected-rust-quality": {
+        "command": [
+          "python3",
+          "tools/rust_quality.py",
+          "--base",
+          "8810924eee6e51218e74a2cdf4205e2153ffffe5",
+          "--head",
+          "a8aaacdd57ffc89b88535c58ae2e28e5bbc5dead"
+        ],
+        "started_at_utc": "2026-10-25T05:19:25.705357+00:00",
+        "exit_code": 0,
+        "finished_at_utc": "2026-10-25T05:24:57.901637+00:00",
+        "log": "/private/tmp/civvis-upgrade-material-reserve-1563/corrected-rust-quality.log"
+      }
+    }
+  },
+  "github_validation": {
+    "source_head": "a8aaacdd57ffc89b88535c58ae2e28e5bbc5dead",
+    "rust_tests_passed": 6255,
+    "skipped": 52,
+    "doc_examples_ignored": 4,
+    "developer_tool_regressions_passed": 117,
+    "required_checks": "all successful on corrected code head before final evidence-only commit",
+    "cargo_job": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/40164055098/job/121081361387",
+    "quality_job": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/40164055083/job/121081361325",
+    "cost_job": "https://github.com/MartinHalvorson/CIVVIS/actions/runs/40164055084/job/121081361310",
+    "paired_cost": {
+      "pairs": 5,
+      "median_change_pct": 0.16,
+      "noise_floor_pct": 1,
+      "allowed_budget_pct": 8,
+      "interpretation": "Inside noise floor; no speed gain or regression established. This CI measurement does not profile the activated native opt-in."
+    }
   }
 }

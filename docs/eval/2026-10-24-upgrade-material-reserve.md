@@ -69,8 +69,12 @@ sale/barter protection remains in place.
 Two additional package checks cover repeated resource entries and a rejected
 package leaving the budget available to a later safe sale. Two core checks
 cover a ten-unit army retaining one native bill and fractional native costs
-rounding only the missing purchase. GREEN and full-suite validation are
-pending. These changes have not been deployed into a native game.
+rounding only the missing purchase. The corrected focused run passes all
+23 material tests. The required `cargo test --profile ci --locked` passes
+6,255 tests with 56 ignored. Changed-line Rust quality also passes locally.
+The validation receipt preserves all three complete logs, source hashes,
+controller and exit statuses in the runtime-validation archive. These changes
+have not been deployed into a native game.
 
 The first post-implementation build at `1d0bbcd25` fails because the new
 bridge helper refers to `BTreeMap` without importing it. This is a compile
@@ -79,6 +83,14 @@ map references through `std::collections`. Its failed binary compilation is
 preserved before correction while the independent, unchanged library target
 finishes code generation. The initial source-seal controller stops on that
 known correction, and a new validation attempt must test the corrected code.
+
+The corrected source is sealed at `a8aaacdd57ffc89b88535c58ae2e28e5bbc5dead`.
+Its GitHub suite passes 6,255 Rust tests, 117 developer-tool regressions and
+all required checks. Five paired CI cost measurements report +0.16%, inside
+the +/-1% noise floor and +8% budget. This is no speed result and does not
+profile the activated native opt-in. The current main `8810924ee` is already
+incorporated; the before-ready merge reports already up to date. Published
+defaults and the native force bundle are unchanged.
 
 ## Follow-up limit on the native witness
 
