@@ -1,0 +1,488 @@
+{
+  "registered_at_utc": "2026-10-25T06:34:50.612512+00:00",
+  "scope": "post-hoc feasibility census, not an effect estimate or original-history replay",
+  "selection": "last 80 terminal Emperor Domination stems in existing ledger order; keep all continuations and missing files",
+  "candidate": "first state per segment/turn: ready own siege aircraft hp>=80, moves>0, attacks remaining>0; another living major culture clock in [0,20] native turns, at peace and legally declarable; no mission-feasibility or safety claim from this screen",
+  "games": [
+    {
+      "stem": "civvis-20261019T043214Z",
+      "segments": [
+        "civvis-20261019T043214Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T044148Z",
+      "segments": [
+        "civvis-20261019T044148Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T045937Z",
+      "segments": [
+        "civvis-20261019T045937Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T051825Z",
+      "segments": [
+        "civvis-20261019T051825Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T052926Z",
+      "segments": [
+        "civvis-20261019T052926Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T053904Z",
+      "segments": [
+        "civvis-20261019T053904Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T054930Z",
+      "segments": [
+        "civvis-20261019T054930Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T060132Z",
+      "segments": [
+        "civvis-20261019T060132Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T061431Z",
+      "segments": [
+        "civvis-20261019T061431Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T062749Z",
+      "segments": [
+        "civvis-20261019T062749Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T064239Z",
+      "segments": [
+        "civvis-20261019T064239Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T065009Z",
+      "segments": [
+        "civvis-20261019T065009Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T070740Z",
+      "segments": [
+        "civvis-20261019T070740Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T071748Z",
+      "segments": [
+        "civvis-20261019T071748Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T073520Z",
+      "segments": [
+        "civvis-20261019T073520Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T075044Z",
+      "segments": [
+        "civvis-20261019T075044Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T080505Z",
+      "segments": [
+        "civvis-20261019T080505Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T081629Z",
+      "segments": [
+        "civvis-20261019T081629Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T082637Z",
+      "segments": [
+        "civvis-20261019T082637Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T083807Z",
+      "segments": [
+        "civvis-20261019T083807Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T085659Z",
+      "segments": [
+        "civvis-20261019T085659Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T090914Z",
+      "segments": [
+        "civvis-20261019T090914Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T092405Z",
+      "segments": [
+        "civvis-20261019T092405Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T093623Z",
+      "segments": [
+        "civvis-20261019T093623Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T094855Z",
+      "segments": [
+        "civvis-20261019T094855Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T095828Z",
+      "segments": [
+        "civvis-20261019T095828Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T101503Z",
+      "segments": [
+        "civvis-20261019T101503Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T102705Z",
+      "segments": [
+        "civvis-20261019T102705Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T104609Z",
+      "segments": [
+        "civvis-20261019T104609Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T105839Z",
+      "segments": [
+        "civvis-20261019T105839Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T111402Z",
+      "segments": [
+        "civvis-20261019T111402Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T112557Z",
+      "segments": [
+        "civvis-20261019T112557Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T113513Z",
+      "segments": [
+        "civvis-20261019T113513Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T114537Z",
+      "segments": [
+        "civvis-20261019T114537Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T120222Z",
+      "segments": [
+        "civvis-20261019T120222Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T121102Z",
+      "segments": [
+        "civvis-20261019T121102Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T122509Z",
+      "segments": [
+        "civvis-20261019T122509Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T123618Z",
+      "segments": [
+        "civvis-20261019T123618Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T124901Z",
+      "segments": [
+        "civvis-20261019T124901Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T130242Z",
+      "segments": [
+        "civvis-20261019T130242Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T131443Z",
+      "segments": [
+        "civvis-20261019T131443Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T132357Z",
+      "segments": [
+        "civvis-20261019T132357Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T133809Z",
+      "segments": [
+        "civvis-20261019T133809Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T135534Z",
+      "segments": [
+        "civvis-20261019T135534Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T140827Z",
+      "segments": [
+        "civvis-20261019T140827Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T142109Z",
+      "segments": [
+        "civvis-20261019T142109Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T143120Z",
+      "segments": [
+        "civvis-20261019T143120Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T144010Z",
+      "segments": [
+        "civvis-20261019T144010Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T145423Z",
+      "segments": [
+        "civvis-20261019T145423Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T151045Z",
+      "segments": [
+        "civvis-20261019T151045Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T152653Z",
+      "segments": [
+        "civvis-20261019T152653Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T153132Z",
+      "segments": [
+        "civvis-20261019T153132Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T154409Z",
+      "segments": [
+        "civvis-20261019T154409Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261019T155843Z",
+      "segments": [
+        "civvis-20261019T155843Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261025T010105Z",
+      "segments": [
+        "civvis-20261025T010105Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261025T011023Z",
+      "segments": [
+        "civvis-20261025T011023Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261025T012324Z",
+      "segments": [
+        "civvis-20261025T012324Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261025T013135Z",
+      "segments": [
+        "civvis-20261025T013135Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261025T014329Z",
+      "segments": [
+        "civvis-20261025T014329Z-cont1"
+      ]
+    },
+    {
+      "stem": "civvis-20261025T015613Z",
+      "segments": [
+        "civvis-20261025T015613Z-cont1"
+      ]
+    },
+    {
+      "stem": "civvis-20261025T021437Z",
+      "segments": [
+        "civvis-20261025T021437Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261025T022946Z",
+      "segments": [
+        "civvis-20261025T022946Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261025T024120Z",
+      "segments": [
+        "civvis-20261025T024120Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261025T025447Z",
+      "segments": [
+        "civvis-20261025T025447Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261025T030933Z",
+      "segments": [
+        "civvis-20261025T030933Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261025T032555Z",
+      "segments": [
+        "civvis-20261025T032555Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261025T034102Z",
+      "segments": [
+        "civvis-20261025T034102Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261025T035310Z",
+      "segments": [
+        "civvis-20261025T035310Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261025T040737Z",
+      "segments": [
+        "civvis-20261025T040737Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261025T042216Z",
+      "segments": [
+        "civvis-20261025T042216Z-cont1"
+      ]
+    },
+    {
+      "stem": "civvis-20261025T043224Z",
+      "segments": [
+        "civvis-20261025T043224Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261025T044756Z",
+      "segments": [
+        "civvis-20261025T044756Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261025T045908Z",
+      "segments": [
+        "civvis-20261025T045908Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261025T050909Z",
+      "segments": [
+        "civvis-20261025T050909Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261025T051724Z",
+      "segments": [
+        "civvis-20261025T051724Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261025T053159Z",
+      "segments": [
+        "civvis-20261025T053159Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261025T054044Z",
+      "segments": [
+        "civvis-20261025T054044Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261025T055158Z",
+      "segments": [
+        "civvis-20261025T055158Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261025T060426Z",
+      "segments": [
+        "civvis-20261025T060426Z"
+      ]
+    },
+    {
+      "stem": "civvis-20261025T062358Z",
+      "segments": [
+        "civvis-20261025T062358Z"
+      ]
+    }
+  ]
+}
