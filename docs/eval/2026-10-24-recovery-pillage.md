@@ -77,5 +77,55 @@ Focused rustfmt and `git diff --check` also pass.
 
 The unchanged simulator binary SHA-256 is
 `807114f554efb68e0ed1fea1b784dadbf422f843e8b44bbc48affddcce8c8461`.
-Full-suite and game results remain pending. No higher win-rate or native
-Domination-victory claim is made by the regression tests.
+The candidate binary SHA-256 is
+`c8a3dcfa474062db47df3076a6ea4c2566ebf87767ebe432bb26e85a603b5a9c`,
+built from `cdd215b97d2a8a152abf14a5cd7def935c50972a`.
+
+The complete `cargo test --profile ci --locked` run exits zero: 6,244 tests
+pass and 56 are ignored. The focused Rust-quality gate also exits zero:
+`python3 tools/rust_quality.py --base ce31e0668f6ea0ad8a2e3e612d0fc4ae7069edc1 --head cdd215b97d2a8a152abf14a5cd7def935c50972a`.
+Merging the subsequent setup-only `origin/main` update changes none of the
+Rust, rules, deployment, Cargo, or build-script inputs tested here.
+
+## Complete fixed-map game results
+
+All 16 preregistered executions finish. Each row below is one same-seed,
+same-arm build comparison; both builds have the listed outcome.
+
+| Difficulty | Seed | Safest-stand arm | Winner seat | Victory | Turn |
+|---|---:|---|---:|---|---:|
+| Immortal | 58102400 | off | 2 | science | 149 |
+| Immortal | 58102400 | on | 1 | science | 152 |
+| Immortal | 58102401 | off | 1 | science | 153 |
+| Immortal | 58102401 | on | 3 | science | 147 |
+| Deity | 58102500 | off | 3 | science | 132 |
+| Deity | 58102500 | on | 3 | science | 123 |
+| Deity | 58102501 | off | 1 | culture | 122 |
+| Deity | 58102501 | on | 1 | science | 126 |
+
+- Focal wins: baseline `0/8`, candidate `0/8`; focal Domination wins:
+  baseline `0/8`, candidate `0/8`. Neither build observes a foreign city held
+  by the focal seat in any arm.
+- All eight same-arm comparisons have identical complete reported outcomes.
+  Seven complete focal journals are byte-identical; the remaining Deity
+  `58102500/off` journal only exchanges the order of two turn-111 Detail
+  messages about refused moves. The complete journals are retained, not
+  replaced by the assertion that they match.
+- The candidate logs **zero focal recovery pillages** in these games. Thus
+  these probes do not demonstrate activation or stronger play. They are four
+  maps and eight build comparisons, not sixteen independent maps.
+- The paired evaluator's existing `safest-stand` off/on legs differ in actions
+  on all four maps in each build. That is not evidence of a contrast caused
+  by this fix. The recovery implementation changes every active planner in
+  the candidate binary, so a whole-build comparison is not an isolated
+  focal-strength treatment either.
+
+`2026-10-24-recovery-pillage.results.json` records every comparison, source
+revision, binary hash, journal hash, and activation count. The deterministic
+gzip `2026-10-24-recovery-pillage.probes.json.gz` retains every complete raw
+probe row and all complete focal journals, deduplicated by SHA-256.
+
+This ships as a reproduced recovery correctness fix inside the existing
+planner family, not a new gene selection or a claim of higher Domination
+win rate. Highest-difficulty native Domination victories remain unproven;
+the broader optimization goal is not complete.
