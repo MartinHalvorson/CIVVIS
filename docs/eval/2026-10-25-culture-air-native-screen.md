@@ -82,3 +82,33 @@ identity and content are checked against the observer state. The loader-byte
 identity remains unverified despite the separately retained installed-byte hash.
 All sixteen future outcomes, failures, continuations and protocol deviations
 remain mandatory; no victory or treatment-effect result exists yet.
+
+## First four terminal assignments (intermediate)
+
+The fixed observer has assigned five starts at this collection; four are
+terminal. `173647` OFF loses to Science at 193, `174828` ON loses to Culture
+at native event turn 173 (last state 172), `175710` OFF loses to Science at
+203, and `181024` ON loses to Culture at 166. No assignment is replaced.
+The fifth, `182117` ON, is still live in this frozen collection.
+
+All five played treatment sets match after removing only v2: sorted-set JSON
+SHA-256 `07fe8687698693f1b2379f959b3f21d3d5970b8b8cd4f8955b554c906d24f58a`.
+Each runtime receipt reports source b4dfb57 and the qualified binary hash
+above. These facts do not remove the need to retain later context drift.
+
+The two terminal ON games have maximum observed Bomber counts zero and three.
+There are zero and 32 requested `air_pillage` model actions respectively,
+but **neither has a v2 journal line**. The OFF game `175710` has 48 such
+requests. These requests therefore cannot be attributed to v2, and prove
+neither native district damage nor Tourism suppression. The 16-start study
+still has no verified win or demonstrated v2 activation at this readback.
+
+The new collector only reads assignment state and native artifacts; it does
+not acquire or remove the lease, choose arms, replace failures or restart games.
+Live-file collection is not an atomic cross-file snapshot. Its first revision
+measured maximum Bomber count on first states only; the second uses all states
+and separately inventories v2 journal lines. Both reports are retained.
+The six-member `collection-01.tar.xz` archive is 67,648 bytes, SHA-256
+`bb3f37d8132683d5a0391e106b1c1c52210d20971d9dc18d66043d8d75bdf279`,
+with every member verified. Full terminal raw captures and outcomes will be
+archived through the registered cutoff, including continuations and overruns.
