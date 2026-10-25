@@ -1,5 +1,5 @@
 {
-  "status": "Both complete191-request diagnostic controls passed and root traces identical;8/8actual writer matches to native planned actions. Zero commercial helper or strategic-hub-gate log entries. Fixed-history extension through100 registered and awaiting its own qualification.",
+  "status": "Complete t100 diagnosis:2x263 original frozen-binary controls plus2x263 diagnostic controls all fullnativepayload/readsequences identical, both root traces identical. All23 offered-idle-Hub alternatives mapped to exact actual caller; no commercial helper/gate call in106rootframes. Seven industry Produce calls all in negative-income depletedtreasury states, including Workshops with21Gold/-10.8438 at86 and0Gold at90,93,99. This is direct private caller evidence, not a native counterfactual win estimate.",
   "source_base": "b4dfb57ea13b5d1bc08918d71769a94c88b690f7",
   "fixed_run": "civvis-20261025T174828Z",
   "through_turn": 70,
@@ -43,5 +43,18 @@
     "Campus building claim": 1,
     "Delegated domination siege reservation": 1
   },
-  "t70_model_income_matches_native_at_all_eight_writers": true
+  "t70_model_income_matches_native_at_all_eight_writers": true,
+  "t100_actual_writer_counts": {
+    "fn cities(&mut self, g: &mut Game, pid: usize) {": 1,
+    "fn claim_one_free_slot_campus(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) -> bool {": 2,
+    "pub(super) fn claim_backlog_builder(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {": 5,
+    "pub(super) fn claim_campus_building(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {": 6,
+    "pub(super) fn claim_capped_aqueduct(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {": 3,
+    "pub(super) fn claim_deterrence_unit(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {": 1,
+    "pub(super) fn claim_producer_zone(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {": 3,
+    "pub(super) fn reserve_adopted_faith_sanctuary(": 1,
+    "pub(super) fn reserve_delegated_domination_siege(": 1
+  },
+  "t100_model_income_matches_native_at_all23_writers": true,
+  "t100_analysis_sha256": "f68296b694ade1d515d922d2ca9105d8fc33edf15283c55b99af728dbaf5cdb5"
 }
