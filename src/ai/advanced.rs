@@ -8115,6 +8115,10 @@ pub struct AdvancedAi {
     /// `one_war::rival_front_production`.
     parity_reads_the_front: bool,
 
+    /// `prey-war-is-kept`: a Domination seat keeps, and fights, the war
+    /// on a major at or under `prey_declaration::PREY_DECLARE_RATIO` of
+    /// our power. See `advanced/prey_war_is_kept.rs`. Off by default.
+    prey_war_is_kept: bool,
     // ---- append: s-s ------------------------------------------------
     /// `stage-reads-the-muster-breakers`: once a siege's muster has closed,
     /// its Stage reads breakers out to `MUSTER_FAR` instead of `STAGING_FAR`.
@@ -8704,6 +8708,12 @@ pub struct AdvancedAi {
     /// that takes income below zero and no amenity or upkeep card traded
     /// away. See `advanced/solvency.rs`. Off by default.
     solvent_or_hold: bool,
+    /// `staging-gun-trusts-its-escort-2`: version 2 of
+    /// `staging-gun-trusts-its-escort`. The escorted gun's one-reply budget
+    /// also holds when [`siege_train::STAGING_COLUMN_BODIES`] of our land
+    /// soldiers stand within [`siege_train::STAGING_COLUMN_REACH`] of its
+    /// march step, not only beside it. Off by default.
+    staging_gun_trusts_its_escort_2: bool,
     // ---- append: t-z ------------------------------------------------
     /// `threatened-city-buys-its-defender-2`: the threatened city's purchase
     /// buys only a defender within
@@ -9633,6 +9643,8 @@ mod march_moves;
 pub mod objective_board;
 /// `prey-is-declared-on`: see `advanced/prey_declaration.rs`.
 mod prey_declaration;
+/// `prey-war-is-kept`: see `advanced/prey_war_is_kept.rs`.
+mod prey_war_is_kept;
 /// Target feasibility, the declaration and the peace term read off the
 /// board's requirements. Opt-in gene `war-policy-via-board`.
 mod war_policy;
@@ -11192,6 +11204,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
             parity_reads_the_front: false,
 
+            prey_war_is_kept: false,
             // ---- append: s-s ----------------------------------------
             stage_reads_the_muster_breakers: false,
             siege_budget_counts_the_ram: false,
@@ -11297,6 +11310,7 @@ impl AdvancedAi {
             science_denial_refused_pads: BTreeMap::new(),
             science_suppression_hits_the_pads: false,
             solvent_or_hold: false,
+            staging_gun_trusts_its_escort_2: false,
             // ---- append: t-z ----------------------------------------
             threatened_city_buys_its_defender_2: false,
             unwalled_ring_steps_in: false,
@@ -24583,6 +24597,27 @@ impl AdvancedAi {
                 // `advanced/faith_war_before_the_flip.rs`.
                 if self.faith_war_keeps_the_war(g, pid, *other) {
                     self.journal_faith_war_keeps(g, pid, *other, false);
+                    continue;
+                }
+                // `prey-war-is-kept`: no peace with prey unless our cities
+                // are falling or the one-war rule makes it for the victory
+                // counter or a settled capital. Prey never outmatches us on
+                // power, and the war board's "no siege is feasible" peace
+                // (which `outmatched` reads under `war-policy-via-board`) is
+                // the stall the gene keeps. `false` with the gene off. See
+                // `advanced/prey_war_is_kept.rs`.
+                if !science_defensive_peace
+                    && !matches!(
+                        one_war_peace,
+                        Some(
+                            one_war::OneWarPeace::VictoryThreat
+                                | one_war::OneWarPeace::CapitalSecured
+                                | one_war::OneWarPeace::CapitalElsewhere
+                        )
+                    )
+                    && self.prey_war_is_kept_with(g, pid, *other)
+                {
+                    self.journal_prey_war_is_kept(g, pid, *other);
                     continue;
                 }
                 self.peace_offers.insert(*other);

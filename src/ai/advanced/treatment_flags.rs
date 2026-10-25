@@ -8187,6 +8187,27 @@ impl AdvancedAi {
         self.city_state_war_is_no_front = false;
     }
 
+    /// Opt-in gene `staging-gun-trusts-its-escort-2`; see
+    /// [`Self::staging_gun_trusts_its_escort_2`].
+    pub fn enable_staging_gun_trusts_its_escort_2(&mut self) {
+        self.staging_gun_trusts_its_escort_2 = true;
+    }
+
+    /// The twin of `enable_staging_gun_trusts_its_escort_2`.
+    pub fn disable_staging_gun_trusts_its_escort_2(&mut self) {
+        self.staging_gun_trusts_its_escort_2 = false;
+    }
+
+    /// Opt-in gene `prey-war-is-kept`; see [`Self::prey_war_is_kept`].
+    pub fn enable_prey_war_is_kept(&mut self) {
+        self.prey_war_is_kept = true;
+    }
+
+    /// The twin of `enable_prey_war_is_kept`.
+    pub fn disable_prey_war_is_kept(&mut self) {
+        self.prey_war_is_kept = false;
+    }
+
     /// Opt-in gene `defenders-hold-the-walls`; see
     /// [`Self::defenders_hold_the_walls`].
     pub fn enable_defenders_hold_the_walls(&mut self) {
