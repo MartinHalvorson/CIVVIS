@@ -4158,6 +4158,11 @@ pub const GENES: &[Gene] = &[
     // collapsed to one city against a rival at 2.5-20 times our power that the
     // peace gate never offered peace. See `advanced/giant_peace.rs`.
     Gene { tag: "the-giant-gets-the-peace-offer", field: "the_giant_gets_the_peace_offer", kind: Kind::OptIn, enable: AdvancedAi::enable_the_giant_gets_the_peace_offer, disable: AdvancedAi::disable_the_giant_gets_the_peace_offer },
+    // `the-last-two-capitals-come-first`: retained live games to 10-25, 12
+    // reached two or fewer capitals to take (one won); 139 campaign turns
+    // aimed elsewhere at a rival holding one, against 41 at the capital. See
+    // `advanced/last_two_capitals.rs`.
+    Gene { tag: "the-last-two-capitals-come-first", field: "the_last_two_capitals_come_first", kind: Kind::OptIn, enable: AdvancedAi::enable_the_last_two_capitals_come_first, disable: AdvancedAi::disable_the_last_two_capitals_come_first },
     Gene { tag: "capital-watch-arms-the-slinger", field: "capital_watch_arms_the_slinger", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_watch_arms_the_slinger, disable: AdvancedAi::disable_capital_watch_arms_the_slinger },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------

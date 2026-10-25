@@ -8271,6 +8271,17 @@ impl AdvancedAi {
         self.the_giant_gets_the_peace_offer = false;
     }
 
+    /// Opt-in gene `the-last-two-capitals-come-first`; see
+    /// [`Self::the_last_two_capitals_come_first`].
+    pub fn enable_the_last_two_capitals_come_first(&mut self) {
+        self.the_last_two_capitals_come_first = true;
+    }
+
+    /// The twin of `enable_the_last_two_capitals_come_first`.
+    pub fn disable_the_last_two_capitals_come_first(&mut self) {
+        self.the_last_two_capitals_come_first = false;
+    }
+
     /// Opt-in `capital-watch-arms-the-slinger`; see `advanced/capital_watch_slinger.rs`.
     pub fn enable_capital_watch_arms_the_slinger(&mut self) {
         self.capital_watch_arms_the_slinger = true;
