@@ -120,3 +120,125 @@ fn a_healthy_explorer_is_not_rotated_out_of_summed_danger() {
         "a wounded explorer still comes out"
     );
 }
+
+fn recovery_pillage_board() -> (Game, u32, Pos) {
+    let mut game = Game::new_full(2, 24, 16, 71_032, 120, 0, false);
+    for unit_id in game.units.keys().copied().collect::<Vec<_>>() {
+        game.remove_unit(unit_id);
+    }
+    let position = (8, 8);
+    for tile_position in game.wdisk(position, 6) {
+        if let Some(tile) = game.map.tiles.get_mut(&tile_position) {
+            tile.terrain = crate::name!("plains");
+            tile.feature = None;
+            tile.hills = false;
+        }
+    }
+    game.current = 0;
+    game.at_war.insert((0, 1));
+    game.found_city_for(0, (6, 8), None);
+    let enemy_city = game.found_city_for(1, (13, 8), None);
+    let tile = game.map.tiles.get_mut(&position).unwrap();
+    tile.owner_city = Some(enemy_city);
+    tile.improvement = Some(crate::name!("farm"));
+    tile.pillaged = false;
+    let unit_id = game.spawn_test_unit("warrior", 0, position);
+    game.units.get_mut(&unit_id).unwrap().hp = 40;
+    assert!(game.pillageable_at(0, position));
+    assert_eq!(game.unit_heal_rate(unit_id), 5);
+    (game, unit_id, position)
+}
+
+fn rotate_recovery_pillager(game: &mut Game, unit_id: u32) -> AdvancedAi {
+    let mut controller = AdvancedAi::new();
+    controller.enable_battle_planner_2();
+    let mut field = DangerField::new(game, 0);
+    assert!(field.rotation_danger(game.units[&unit_id].pos, unit_id) <= NO_DANGER);
+    controller.rotate_wounded(game, 0, &mut field, &BTreeSet::new(), &BTreeSet::new());
+    controller
+}
+
+#[test]
+fn a_wounded_unit_pillages_a_safe_healing_tile_before_leaving_the_line() {
+    let (mut game, unit_id, position) = recovery_pillage_board();
+    let controller = rotate_recovery_pillager(&mut game, unit_id);
+    assert_eq!(game.units[&unit_id].hp, 90);
+    assert_eq!(game.units[&unit_id].pos, position);
+    assert!(game.map.tiles[&position].pillaged);
+    assert!(controller.battle_planner_claims(unit_id));
+    assert_eq!(game.units[&unit_id].moves_left, 0.0);
+}
+
+#[test]
+fn a_healing_pillage_caps_health_instead_of_wasting_a_recovery_turn() {
+    let (mut game, unit_id, position) = recovery_pillage_board();
+    game.units.get_mut(&unit_id).unwrap().hp = 75;
+    let mut controller = AdvancedAi::new();
+    controller.enable_battle_planner_2();
+    controller.battle_planner_recovering.insert(unit_id);
+    let mut field = DangerField::new(&game, 0);
+    controller.rotate_wounded(&mut game, 0, &mut field, &BTreeSet::new(), &BTreeSet::new());
+    assert_eq!(game.units[&unit_id].hp, 100);
+    assert_eq!(game.units[&unit_id].pos, position);
+    assert!(game.map.tiles[&position].pillaged);
+    assert!(controller.battle_planner_claims(unit_id));
+}
+
+#[test]
+fn recovery_does_not_pillage_a_non_healing_improvement() {
+    let (mut game, unit_id, position) = recovery_pillage_board();
+    game.map.tiles.get_mut(&position).unwrap().improvement = Some(crate::name!("mine"));
+    rotate_recovery_pillager(&mut game, unit_id);
+    assert_eq!(game.units[&unit_id].hp, 40);
+    assert!(!game.map.tiles[&position].pillaged);
+}
+
+#[test]
+fn recovery_does_not_pillage_friendly_peaceful_or_already_pillaged_farms() {
+    for refusal in ["friendly", "peace", "pillaged"] {
+        let (mut game, unit_id, position) = recovery_pillage_board();
+        match refusal {
+            "friendly" => {
+                game.map.tiles.get_mut(&position).unwrap().owner_city =
+                    game.player_city_ids(0).first().copied();
+            }
+            "peace" => game.at_war.clear(),
+            "pillaged" => game.map.tiles.get_mut(&position).unwrap().pillaged = true,
+            _ => unreachable!(),
+        }
+        assert!(!game.pillageable_at(0, position), "{refusal}");
+        rotate_recovery_pillager(&mut game, unit_id);
+        assert_eq!(game.units[&unit_id].hp, 40, "{refusal}");
+        assert_eq!(game.map.tiles[&position].pillaged, refusal == "pillaged");
+    }
+}
+
+#[test]
+fn a_healthy_or_exhausted_unit_does_not_consume_a_recovery_pillage() {
+    for exhausted in [false, true] {
+        let (mut game, unit_id, position) = recovery_pillage_board();
+        let unit = game.units.get_mut(&unit_id).unwrap();
+        if exhausted {
+            unit.moves_left = 0.0;
+        } else {
+            unit.hp = 100;
+        }
+        rotate_recovery_pillager(&mut game, unit_id);
+        assert!(!game.map.tiles[&position].pillaged);
+        assert_eq!(game.units[&unit_id].hp, if exhausted { 40 } else { 100 });
+    }
+}
+
+#[test]
+fn a_healing_pillage_does_not_replace_an_escape_from_hostile_fire() {
+    let (mut game, unit_id, position) = recovery_pillage_board();
+    game.spawn_test_unit("archer", 1, (10, 8));
+    let mut controller = AdvancedAi::new();
+    controller.enable_battle_planner_2();
+    let mut field = DangerField::new(&game, 0);
+    assert!(field.rotation_danger(position, unit_id) > NO_DANGER);
+    controller.rotate_wounded(&mut game, 0, &mut field, &BTreeSet::new(), &BTreeSet::new());
+    assert!(!game.map.tiles[&position].pillaged);
+    assert_eq!(game.units[&unit_id].hp, 40);
+    assert_ne!(game.units[&unit_id].pos, position);
+}
