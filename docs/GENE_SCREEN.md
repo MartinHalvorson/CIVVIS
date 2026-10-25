@@ -1210,12 +1210,10 @@ screen sets it.
 the gene set exactly the way `gene_table()` does — every screenable row of the
 registry, so a new gene reaches the gate without touching the tool — and reads
 each gene's own rows out of
-`docs/gene_screens/**/*.json`. **A gene is proven when some committed row has a
-non-zero paired statistic**, which is a number read out of an artifact rather
-than a sentence somebody wrote. The cheapest artifact that carries it is a
-single-gene probe, because `--genes <tag>` holds everything else at the
-baseline and any divergence between the arms is then that gene and nothing
-else:
+`docs/gene_screens/**/*.json`. Its historical statistical rule accepts a row
+with a non-zero contrast or standard error. A single-gene probe holds all
+unscreened genes at baseline, but its independent draw does not hold the
+world and player seat fixed across arms:
 
 ```bash
 target/ci/gene_screen --games 6 --jobs 6 --genes <tag> \
@@ -1223,6 +1221,28 @@ target/ci/gene_screen --games 6 --jobs 6 --genes <tag> \
 target/ci/gene_screen --analyze target/<tag>.jsonl \
   --json docs/gene_screens/fires/<tag>.json
 ```
+
+The current independent treatment draw requires care: a nonzero contrast can
+come from different seeds or seats even when the candidate changes no action.
+The gate retains acceptance of historical statistical artifacts, but that
+acceptance alone is not a causal activation check. Use matched worlds or
+same-input action comparisons for a new candidate.
+
+For captured Native-adapter proposals, a JSON artifact under `fires/` may use
+`kind: "captured_native_action_pairs_v1"`, a `tag`, an `archive` object with a
+repository-relative `path` and SHA-256, and `members` naming raw result JSON
+records in that archive. Each record contains `complete: true` and `reads`;
+each read contains `complete: true`, its captured input's positive `bytes`
+and SHA-256, and exactly two `arms` named `off` and `on`. The raw arms carry
+the executed `argv`, zero `exit`, observed `genome` and `payload.orders`.
+The gate reads the archive without extracting files, checks its hash, and
+requires the observed treatment/forced sets and arguments to differ only by
+the named gene (disposable mirror directory names may differ). At least one
+actual order list must differ. Failed/incomplete queries, unrelated genome
+changes and journal-only differences cannot satisfy it. These records count
+proposals, not played seats, and carry no win estimate or ledger rating.
+The captured-input digest binds the two recorded queries; this artifact does
+not independently rerun the controller or attest a Native host effect.
 
 Six games is enough, because the question is qualitative. ⚠ Look at the score
 share as well as wins: `coupled-expansion`'s probe read a win Δ of exactly zero

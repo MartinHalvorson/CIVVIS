@@ -8240,6 +8240,17 @@ impl AdvancedAi {
         self.war_faith_buys_the_army = false;
     }
 
+    /// Opt-in gene `faith-war-needs-the-edge`; see
+    /// [`Self::faith_war_needs_the_edge`].
+    pub fn enable_faith_war_needs_the_edge(&mut self) {
+        self.faith_war_needs_the_edge = true;
+    }
+
+    /// The twin of `enable_faith_war_needs_the_edge`.
+    pub fn disable_faith_war_needs_the_edge(&mut self) {
+        self.faith_war_needs_the_edge = false;
+    }
+
     /// Opt-in `wing-capital-spotting`; see `advanced/wing_capital_spotting.rs`.
     pub fn enable_wing_capital_spotting(&mut self) {
         self.wing_capital_spotting = true;

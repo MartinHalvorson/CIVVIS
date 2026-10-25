@@ -379,3 +379,148 @@ fn a_due_settler_comes_before_the_commercial_step() {
         pick(&roomy(false), &game, ranked[0], 1)
     );
 }
+
+/// Keep the same six-city maps while making the rank fixtures' owned free
+/// tiles explicit legal land. Random coastal/resource geometry is irrelevant
+/// to the two eligibility requirements these cases isolate.
+fn native_hub_rank_fixture(tag: &str, seed: u64) -> (Game, Vec<u32>) {
+    let (mut game, mut ranked) = emperor_empire(tag, seed);
+    for cid in &ranked {
+        let city = &game.cities[cid];
+        let center = city.pos;
+        let owned: Vec<_> = city.owned_tiles.to_vec();
+        for pos in owned {
+            if pos == center {
+                continue;
+            }
+            let tile = game.map.tiles.get_mut(&pos).unwrap();
+            if tile.district.is_some() {
+                continue;
+            }
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.hills = false;
+            tile.flooded = false;
+        }
+        assert!(
+            !game
+                .district_sites(*cid, crate::name!("commercial_hub"))
+                .is_empty(),
+            "fixture: each city has a legal spatial Hub site"
+        );
+    }
+    ranked.sort_by(|a, b| {
+        game.city_yields(*b)
+            .production
+            .total_cmp(&game.city_yields(*a).production)
+            .then(a.cmp(b))
+    });
+    (game, ranked)
+}
+
+/// A city outside the step's existing time limit must not reserve a preferred
+/// rank that a city inside the limit can use now.
+#[test]
+fn native_slow_hubs_leave_the_preferred_ranks_to_eligible_cities() {
+    let (mut game, ranked) = native_hub_rank_fixture("COMMERCIALSLOWRANK", 59_020_625);
+    let ai = emperor_governor(true);
+    for (rank, cid) in ranked.iter().enumerate() {
+        Arc::make_mut(&mut game.host_buildable).insert(
+            *cid,
+            [(
+                "district:commercial_hub".to_string(),
+                crate::game::HostMenuEntry {
+                    cost: Some(90.0),
+                    turns: Some(if rank < 3 { 21.0 } else { 20.0 }),
+                },
+            )]
+            .into_iter()
+            .collect(),
+        );
+        let pos = game
+            .district_sites(*cid, crate::name!("commercial_hub"))
+            .into_iter()
+            .next()
+            .expect("fixture: every city has a spatial Hub site");
+        let item = Item::District {
+            district: crate::name!("commercial_hub"),
+            pos,
+        };
+        assert!(
+            game.can_produce(0, *cid, &item),
+            "fixture: all quotes are legally buildable"
+        );
+        assert_eq!(
+            game.host_production_turns(*cid, &item),
+            Some(if rank < 3 { 21.0 } else { 20.0 })
+        );
+    }
+    for cid in &ranked[..3] {
+        assert!(ai.commercial_hub_step(&game, 0, *cid, 6, 1).is_none());
+    }
+    for cid in &ranked[3..] {
+        let item = ai
+            .commercial_hub_step(&game, 0, *cid, 6, 1)
+            .expect("an eligible Hub city must take a rank the slow cities cannot use");
+        assert!(is_hub(&game, &Some(item.clone())));
+        game.apply(0, &Action::Produce { city: *cid, item })
+            .unwrap();
+    }
+    assert_eq!(
+        game.player_city_ids(0)
+            .into_iter()
+            .filter(|cid| matches!(
+                game.cities[cid].queue.first(), Some(Item::District { district, .. })
+                if *district == "commercial_hub"
+            ))
+            .count(),
+        3
+    );
+}
+
+/// Host-refused production can still have ordinary placement geometry. Such
+/// cities must not use the eligible cities' preferred ranks.
+#[test]
+fn native_refused_hubs_leave_the_preferred_ranks_to_eligible_cities() {
+    let (mut game, ranked) = native_hub_rank_fixture("COMMERCIALREFUSEDRANK", 59_020_626);
+    let ai = emperor_governor(true);
+    for cid in &ranked[..3] {
+        Arc::make_mut(&mut game.blocked_production).insert(
+            *cid,
+            ["district:commercial_hub".to_string()]
+                .into_iter()
+                .collect(),
+        );
+        let pos = game
+            .district_sites(*cid, crate::name!("commercial_hub"))
+            .into_iter()
+            .next()
+            .expect("fixture: refused production still has a spatial site");
+        assert!(!game.can_produce(
+            0,
+            *cid,
+            &Item::District {
+                district: crate::name!("commercial_hub"),
+                pos,
+            }
+        ));
+        assert!(ai.commercial_hub_step(&game, 0, *cid, 6, 1).is_none());
+    }
+    for cid in &ranked[3..] {
+        let item = ai
+            .commercial_hub_step(&game, 0, *cid, 6, 1)
+            .expect("an eligible Hub city must take a rank the refused cities cannot use");
+        assert!(is_hub(&game, &Some(item.clone())));
+        assert!(game.can_produce(0, *cid, &item));
+        game.apply(0, &Action::Produce { city: *cid, item })
+            .unwrap();
+    }
+    for cid in &ranked[..3] {
+        assert!(
+            game.cities[cid].queue.is_empty(),
+            "a refused Hub is never reissued"
+        );
+    }
+}
