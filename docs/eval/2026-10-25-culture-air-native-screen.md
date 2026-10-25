@@ -38,7 +38,9 @@ or a win. Retain rival clocks and tourism observations without claiming a causal
 suppression effect from their change.
 
 Report all sixteen outcomes, original major capitals (excluding city-states),
-turns, score, economy and decision CPU/wall separately. The natural maps are
+turns, score, economy and decision CPU/wall separately. If the native runner
+does not expose decision CPU, retain it as unavailable and do not substitute
+wall time for it. The natural maps are
 unpaired and the on/off draw may be imbalanced. This is prospective functional
 and descriptive outcome evidence, not a deployment/default promotion rule or a
 highest-difficulty victory claim. The broader conquest objective remains open.
