@@ -551,6 +551,42 @@ class PublicationRecovery(unittest.TestCase):
             persisted = json.loads((root / "scheduler-state.json").read_text(encoding="utf-8"))
             self.assertEqual(persisted["current"]["publication"]["stage"], "merged")
 
+    def test_claimed_publication_deletes_the_waivers_its_report_proves(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state, batch, _worktree = self.pushed_publication(root)
+            batch["publication"]["stage"] = "claimed"
+            commands = []
+
+            def run(command, **_kwargs):
+                commands.append(command)
+                if command[:3] == ["gh", "pr", "view"]:
+                    return SimpleNamespace(stdout=json.dumps({"state": "OPEN"}))
+                if command[:2] == ["git", "status"]:
+                    return SimpleNamespace(stdout="\n".join((
+                        " M docs/gene_ledger.json",
+                        " M tools/gene_fire_waivers.json",
+                        "?? docs/gene_screens/example.json",
+                    )))
+                return SimpleNamespace(stdout="")
+
+            reached = scheduler.SchedulerError("the guard let the waiver file through")
+            with mock.patch.object(scheduler, "refresh_status", return_value={"complete_games": 1}), \
+                    mock.patch.object(scheduler, "validate_analysis"), \
+                    mock.patch.object(scheduler, "write_reporting_artifact"), \
+                    mock.patch.object(scheduler.subprocess, "run",
+                                      return_value=SimpleNamespace(returncode=0)), \
+                    mock.patch.object(scheduler, "run_checked", side_effect=run), \
+                    mock.patch.object(scheduler, "validate_publication", side_effect=reached):
+                with self.assertRaisesRegex(scheduler.SchedulerError, "let the waiver file through"):
+                    scheduler.publish_batch(
+                        root, root / "scheduler-state.json", state, repo=root,
+                        machine="test-machine", agent="continuous-batch")
+            self.assertIn([sys.executable, "tools/gene_fires.py", "--prune-proven"], commands)
+            prune = commands.index([sys.executable, "tools/gene_fires.py", "--prune-proven"])
+            status = next(i for i, command in enumerate(commands) if command[:2] == ["git", "status"])
+            self.assertLess(prune, status, "the guard must see the pruned file")
+
     def test_claimed_publication_merged_by_an_operator_skips_regeneration(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -738,6 +774,7 @@ class PublicationMetadata(unittest.TestCase):
             agent="continuous-batch", coordinated="none", computer="Test Mac")
         self.assertIn("`docs/GENE_RANKING_EVIDENCE.md`", body)
         self.assertIn("`src/ai/advanced/genes.rs`", body)
+        self.assertIn("`tools/gene_fire_waivers.json`", body)
 
 
 class PublicationTiming(unittest.TestCase):

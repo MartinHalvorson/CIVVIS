@@ -88,6 +88,13 @@ PUBLICATION_GENERATED_FILES = (
     # expected set from the writers' own path constants instead.
     "tools/genome_cost_floor.json",
 )
+# Not written by ``genes.py write`` but by the publication itself, so kept out
+# of the tuple above (which must equal exactly what that writer records):
+# ``tools/gene_fires.py --prune-proven`` deletes the fire waivers the new
+# report proves. ⚠ 2026-10-25: the 0cea report was the first screen with rows
+# for 223 waived genes; every scheduler check passed, and CI's ratchet then
+# failed the publication on "223 waivers have outlived their reason".
+PUBLICATION_PRUNED_FILES = ("tools/gene_fire_waivers.json",)
 STANDARD_PLAYERS = 6
 DEFAULT_GOAL_GAMES = 5_000
 DEFAULT_POLL_SECONDS = 300.0
@@ -1704,7 +1711,8 @@ def publication_body(batch: dict[str, Any], report: str, *, machine: str, agent:
         f"- Agent/session ID: `{agent}`",
         f"- Task: publish validated {batch['complete_games']:,}-completed-game continuous batch `{batch['id']}`",
         "- Claimed paths: `" + report + "`, "
-        + ", ".join(f"`{path}`" for path in PUBLICATION_GENERATED_FILES)
+        + ", ".join(f"`{path}`" for path in (*PUBLICATION_GENERATED_FILES,
+                                              *PUBLICATION_PRUNED_FILES))
         + ", `tools/test_genes.py`",
         f"- Coordinated with: {coordinated or 'none'}",
         "- Related issue/request: operator-directed automatic completed-game rotation",
@@ -1938,7 +1946,8 @@ def publish_batch(state_root: Path, state_pathname: Path, state: dict[str, Any],
             sys.executable, str(repo / "tools" / "civvis_collab.py"), "start",
             "publish-continuous-batch", "--machine", machine, "--agent", agent,
             "--path", report,
-            *(item for path in PUBLICATION_GENERATED_FILES for item in ("--path", path)),
+            *(item for path in (*PUBLICATION_GENERATED_FILES, *PUBLICATION_PRUNED_FILES)
+              for item in ("--path", path)),
             "--path", "tools/test_genes.py",
             "--title", title,
         ]
@@ -1986,7 +1995,7 @@ def publish_batch(state_root: Path, state_pathname: Path, state: dict[str, Any],
     if stage == "claimed":
         target = worktree / report
         target.parent.mkdir(parents=True, exist_ok=True)
-        generated = list(PUBLICATION_GENERATED_FILES)
+        generated = [*PUBLICATION_GENERATED_FILES, *PUBLICATION_PRUNED_FILES]
         # A restart at this stage writes the same bytes again; keeping their
         # mtimes spares cargo a full rebuild of the crate before the tests.
         unchanged = file_snapshots(worktree, [report, *generated])
@@ -2005,6 +2014,8 @@ def publish_batch(state_root: Path, state_pathname: Path, state: dict[str, Any],
                 description="record historical reporting-build exception",
             )
             publication["build_exception"] = reason
+        run_checked([sys.executable, "tools/gene_fires.py", "--prune-proven"], cwd=worktree,
+                    description="delete the fire waivers the report proves")
         restore_unchanged_mtimes(worktree, unchanged)
         changed = set(
             run_checked(["git", "status", "--porcelain"], cwd=worktree,
@@ -2023,7 +2034,7 @@ def publish_batch(state_root: Path, state_pathname: Path, state: dict[str, Any],
     if stage == "prepared":
         computer = computer_name()
         run_checked(
-            ["git", "add", "--", report, *PUBLICATION_GENERATED_FILES],
+            ["git", "add", "--", report, *PUBLICATION_GENERATED_FILES, *PUBLICATION_PRUNED_FILES],
             cwd=worktree,
             description="stage publication",
         )

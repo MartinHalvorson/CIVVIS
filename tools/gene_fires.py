@@ -60,6 +60,7 @@ Usage:
     python3 tools/gene_fires.py                # report
     python3 tools/gene_fires.py --max 0        # CI ratchet
     python3 tools/gene_fires.py --json         # machine-readable
+    python3 tools/gene_fires.py --prune-proven # delete waivers a screen proves
 """
 
 from __future__ import annotations
@@ -174,6 +175,29 @@ def survey() -> dict[str, Any]:
     }
 
 
+def prune_proven_waivers() -> list[str]:
+    """Delete every waiver a committed screen row now proves; return the tags.
+
+    ⚠ A batch publication is where most of them go stale at once: the
+    2026-10-25 report was the first screen with rows for 223 waived genes,
+    and the ratchet failed CI on "223 waivers have outlived their reason"
+    after the scheduler's own checks had passed. Only the proven kind is
+    deleted here; a waiver for a gene that left the tables is a different
+    change's business. The file is rewritten in its own two-space layout.
+    """
+    found = survey()
+    proven = [tag for tag, why in found["stale_waivers"] if why.startswith("now proven by")]
+    if not proven:
+        return []
+    raw = WAIVERS.read_text(encoding="utf-8")
+    data = json.loads(raw)
+    data["waivers"] = {tag: reason for tag, reason in data["waivers"].items()
+                       if tag not in proven}
+    WAIVERS.write_text(json.dumps(data, indent=2, ensure_ascii=False)
+                       + ("\n" if raw.endswith("\n") else ""), encoding="utf-8")
+    return proven
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--max", type=int, default=None,
@@ -181,7 +205,14 @@ def main() -> int:
                              "or any waiver has gone stale (CI runs --max 0)")
     parser.add_argument("--json", action="store_true",
                         help="write the survey as JSON instead of prose")
+    parser.add_argument("--prune-proven", action="store_true",
+                        help="delete the waivers a committed screen row now proves, then exit")
     args = parser.parse_args()
+    if args.prune_proven:
+        pruned = prune_proven_waivers()
+        print(f"deleted {len(pruned)} waiver(s) a committed screen now proves"
+              + (": " + ", ".join(pruned) if pruned else ""))
+        return 0
 
     found = survey()
     if args.json:
