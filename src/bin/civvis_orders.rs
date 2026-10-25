@@ -3205,6 +3205,61 @@ fn drop_held_resource_sales(
     before - orders.len()
 }
 
+fn protect_army_upgrade_material_sales(
+    ai: &civvis::ai::AdvancedAi,
+    game: &civvis::game::Game,
+    wants: &[civvis::ai::ArmyUpgradeMaterialWant],
+    orders: &mut Vec<Order>,
+) -> (std::collections::BTreeSet<String>, usize) {
+    let mut held = ai.siege_gun_resources_held(game, 0, &[]);
+    held.extend(wants.iter().map(|want| want.resource.clone()));
+    let removed = drop_held_resource_sales(&held, orders);
+    let mut budgets: std::collections::BTreeMap<_, _> = ai
+        .army_upgrade_material_reserves(game, 0)
+        .into_iter()
+        .map(|(resource, reserve)| {
+            (
+                format!("RESOURCE_{}", resource.as_str().to_ascii_uppercase()),
+                (game.strategic_stockpile(0, resource), reserve),
+            )
+        })
+        .collect();
+    if budgets.is_empty() {
+        return (held, removed);
+    }
+    let before = orders.len();
+    orders.retain(|order| {
+        if order.kind != "sell" {
+            return true;
+        }
+        let mut package = std::collections::BTreeMap::<&str, f64>::new();
+        for (resource, amount) in order
+            .verb
+            .as_deref()
+            .unwrap_or_default()
+            .split(',')
+            .filter_map(|part| part.split_once('='))
+        {
+            if let (Some(_), Ok(amount)) = (budgets.get(resource), amount.parse::<u32>()) {
+                *package.entry(resource).or_default() += f64::from(amount);
+            }
+        }
+        if package.iter().any(|(resource, amount)| {
+            let (available, reserve) = budgets[*resource];
+            available - *amount + f64::EPSILON < reserve
+        }) {
+            return false;
+        }
+        for (resource, amount) in package {
+            if let Some((available, _)) = budgets.get_mut(resource) {
+                *available -= amount;
+            }
+        }
+        true
+    });
+    (held, removed + before - orders.len())
+}
+
 /// Why no strategic-purchase order was appended this turn, for the note;
 /// `None` when one was. `wants` is `AdvancedAi::siege_gun_resource_wants`,
 /// strongest gun first; `spares` is `AdvancedAi::siege_barter_spares`,
@@ -5417,9 +5472,8 @@ fn decide(
     }
     if ai.army_upgrade_materials_enabled() {
         let wants = ai.army_upgrade_material_wants(&mirror_state.game, 0);
-        let mut held = ai.siege_gun_resources_held(&mirror_state.game, 0, &[]);
-        held.extend(wants.iter().map(|want| want.resource.clone()));
-        let kept = drop_held_resource_sales(&held, &mut orders);
+        let (held, kept) =
+            protect_army_upgrade_material_sales(ai, &mirror_state.game, &wants, &mut orders);
         if kept > 0 {
             note_bits.push(format!("army_material_sale_held={kept}"));
         }
@@ -10827,7 +10881,12 @@ mod tests {
             .map(str::to_string)
             .collect();
         let forced = super::forced_live_treatments(&requested).expect("compiled force bundle");
-        assert!(forced.contains(&"siege-commitment"));
+        // The bundle forces `siege-commitment` only while the ledger holds it
+        // off; either way it ships, and withholding it must remove it.
+        assert!(
+            forced.contains(&"siege-commitment")
+                || civvis::ai::gene_ledger::deployment_treatments().contains(&"siege-commitment")
+        );
         let withheld = vec![
             "counter-in-lane".to_string(),
             "siege-commitment".to_string(),
@@ -13543,7 +13602,16 @@ mod tests {
             .as_array()
             .unwrap()
             .iter()
-            .filter(|order| order["verb"] == "ATTACK" && order["x"] == 5 && order["y"] == 4)
+            // ⚠ A `preview` order carries verb ATTACK too, but it is a
+            // question: `battle-planner-3` asks the host to price a pair and
+            // nothing moves. Counted as strikes, two previews read as the
+            // unsafe [102, 101, 101] whenever the batch rule ships v3.
+            .filter(|order| {
+                order["kind"] != "preview"
+                    && order["verb"] == "ATTACK"
+                    && order["x"] == 5
+                    && order["y"] == 4
+            })
             .map(|order| order["subject"].as_i64().unwrap())
             .collect();
         if strikers.contains(&101) {
@@ -19146,15 +19214,29 @@ mod tests {
         let mut bounded_ai = civvis::ai::AdvancedAi::new();
         bounded_ai.enable_live_bridge();
         bounded_ai.enable_envoys_open_the_siege_road();
-        bounded_ai.disable_envoy_building_dividends();
-        bounded_ai.disable_bank_envoys();
+        // `decide` re-applies the deployed genome every turn, so a disable
+        // here does not survive it; the arm's withholds do. Withhold whichever
+        // of the two savers the current selection lets an arm withhold.
+        let withheld: Vec<String> = ["envoy-building-dividends", "bank-envoys"]
+            .into_iter()
+            .filter(|tag| {
+                civvis::ai::GENES
+                    .iter()
+                    .any(|gene| gene.tag == *tag && withholdable(gene))
+            })
+            .map(str::to_string)
+            .collect();
         let mut ours = std::collections::BTreeMap::new();
         let reply: serde_json::Value = serde_json::from_str(&decide(
             &mut capped,
             &mut bounded_ai,
             &snapshot,
             &capped_state,
-            default_decision_arm(),
+            DecisionArm {
+                war_from_plan: false,
+                forced_on: &[],
+                withheld: &withheld,
+            },
             DecisionMemory {
                 ours: &mut ours,
                 host_peace_retries: &mut HostPeaceRetries::default(),

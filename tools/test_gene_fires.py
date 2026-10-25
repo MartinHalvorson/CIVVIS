@@ -173,6 +173,33 @@ class Waivers(unittest.TestCase):
                          ["a-gene-that-left"])
 
 
+class PruningProvenWaivers(unittest.TestCase):
+    def test_only_waivers_a_screen_proves_are_deleted(self):
+        with TemporaryDirectory() as temporary:
+            waivers = Path(temporary) / "gene_fire_waivers.json"
+            waivers.write_text(json.dumps({"_doc": ["kept"], "waivers": {
+                "proven-gene": "x" * 50, "still-waived": "y" * 50, "retired-gene": "z" * 50,
+            }}, indent=2) + "\n", encoding="utf-8")
+            found = {"stale_waivers": [("proven-gene", "now proven by batch.json"),
+                                       ("retired-gene", "no longer a gene")]}
+            with mock.patch.object(gene_fires, "WAIVERS", waivers), \
+                    mock.patch.object(gene_fires, "survey", return_value=found):
+                self.assertEqual(gene_fires.prune_proven_waivers(), ["proven-gene"])
+            data = json.loads(waivers.read_text(encoding="utf-8"))
+            self.assertEqual(data["_doc"], ["kept"])
+            self.assertEqual(set(data["waivers"]), {"still-waived", "retired-gene"})
+            self.assertTrue(waivers.read_text(encoding="utf-8").endswith("}\n"))
+
+    def test_nothing_proven_leaves_the_file_untouched(self):
+        with TemporaryDirectory() as temporary:
+            waivers = Path(temporary) / "gene_fire_waivers.json"
+            waivers.write_text('{"waivers": {"a": "b"}}', encoding="utf-8")
+            with mock.patch.object(gene_fires, "WAIVERS", waivers), \
+                    mock.patch.object(gene_fires, "survey", return_value={"stale_waivers": []}):
+                self.assertEqual(gene_fires.prune_proven_waivers(), [])
+            self.assertEqual(waivers.read_text(encoding="utf-8"), '{"waivers": {"a": "b"}}')
+
+
 class TheRatchet(unittest.TestCase):
     def test_the_ratchet_is_green_now(self):
         """The guard runs in the change that adds it. See the module docstring."""

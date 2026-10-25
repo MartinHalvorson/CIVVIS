@@ -6341,6 +6341,10 @@ pub struct AdvancedAi {
     /// The turn `bankruptcy-exits-the-drain` last slotted a gold card; the
     /// disband waits that turn for the card's income.
     drain_card_turn: std::cell::Cell<Option<u32>>,
+    /// `defenders-hold-the-walls`: a healthy defender of a threatened city
+    /// of ours keeps its blows and its post in the battle plan. See
+    /// `advanced/defenders_hold_the_walls.rs`. Off by default.
+    defenders_hold_the_walls: bool,
     // ---- append: e-f ------------------------------------------------
     /// `friendship-ends-at-the-race`: `befriend-the-strongest` offers no
     /// friendship to a rival racing to win (see
@@ -8111,6 +8115,10 @@ pub struct AdvancedAi {
     /// `one_war::rival_front_production`.
     parity_reads_the_front: bool,
 
+    /// `prey-war-is-kept`: a Domination seat keeps, and fights, the war
+    /// on a major at or under `prey_declaration::PREY_DECLARE_RATIO` of
+    /// our power. See `advanced/prey_war_is_kept.rs`. Off by default.
+    prey_war_is_kept: bool,
     // ---- append: s-s ------------------------------------------------
     /// `stage-reads-the-muster-breakers`: once a siege's muster has closed,
     /// its Stage reads breakers out to `MUSTER_FAR` instead of `STAGING_FAR`.
@@ -8700,7 +8708,18 @@ pub struct AdvancedAi {
     /// that takes income below zero and no amenity or upkeep card traded
     /// away. See `advanced/solvency.rs`. Off by default.
     solvent_or_hold: bool,
+    /// `staging-gun-trusts-its-escort-2`: version 2 of
+    /// `staging-gun-trusts-its-escort`. The escorted gun's one-reply budget
+    /// also holds when [`siege_train::STAGING_COLUMN_BODIES`] of our land
+    /// soldiers stand within [`siege_train::STAGING_COLUMN_REACH`] of its
+    /// march step, not only beside it. Off by default.
+    staging_gun_trusts_its_escort_2: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `war-faith-buys-the-army`: at war with a major, the army's Faith
+    /// purchase runs before patronage and the religious spenders, holding
+    /// back only the inquisition's reserve. See `advanced/war_faith.rs`. Off
+    /// by default.
+    war_faith_buys_the_army: bool,
     /// `threatened-city-buys-its-defender-2`: the threatened city's purchase
     /// buys only a defender within
     /// `threatened_city_purchase::DEFENDER_ERA_SHARE` of the strongest land
@@ -9575,6 +9594,8 @@ mod fire_plan;
 /// the kill plan and the heal rotation — ahead of the per-unit ladder. One
 /// opt-in gene; see `advanced/battle_planner.rs`.
 mod battle_planner;
+/// `defenders-hold-the-walls`: see `advanced/defenders_hold_the_walls.rs`.
+mod defenders_hold_the_walls;
 mod guns_stay_out_of_reach;
 mod unit_preservation;
 pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
@@ -9627,6 +9648,10 @@ mod march_moves;
 pub mod objective_board;
 /// `prey-is-declared-on`: see `advanced/prey_declaration.rs`.
 mod prey_declaration;
+/// `prey-war-is-kept`: see `advanced/prey_war_is_kept.rs`.
+mod prey_war_is_kept;
+/// `war-faith-buys-the-army`: see `advanced/war_faith.rs`.
+mod war_faith;
 /// Target feasibility, the declaration and the peace term read off the
 /// board's requirements. Opt-in gene `war-policy-via-board`.
 mod war_policy;
@@ -10933,6 +10958,7 @@ impl AdvancedAi {
             capital_walls_before_the_surprise: false,
             capital_watch_sightings: BTreeMap::new(),
             drain_card_turn: std::cell::Cell::new(None),
+            defenders_hold_the_walls: false,
             // ---- append: e-f ----------------------------------------
             friendship_ends_at_the_race: false,
             friendship_only_with_the_stronger: false,
@@ -11185,6 +11211,7 @@ impl AdvancedAi {
             power_the_laboratory_2: false,
             parity_reads_the_front: false,
 
+            prey_war_is_kept: false,
             // ---- append: s-s ----------------------------------------
             stage_reads_the_muster_breakers: false,
             siege_budget_counts_the_ram: false,
@@ -11290,7 +11317,9 @@ impl AdvancedAi {
             science_denial_refused_pads: BTreeMap::new(),
             science_suppression_hits_the_pads: false,
             solvent_or_hold: false,
+            staging_gun_trusts_its_escort_2: false,
             // ---- append: t-z ----------------------------------------
+            war_faith_buys_the_army: false,
             threatened_city_buys_its_defender_2: false,
             unwalled_ring_steps_in: false,
             threatened_city_buys_its_defender: false,
@@ -24578,6 +24607,27 @@ impl AdvancedAi {
                     self.journal_faith_war_keeps(g, pid, *other, false);
                     continue;
                 }
+                // `prey-war-is-kept`: no peace with prey unless our cities
+                // are falling or the one-war rule makes it for the victory
+                // counter or a settled capital. Prey never outmatches us on
+                // power, and the war board's "no siege is feasible" peace
+                // (which `outmatched` reads under `war-policy-via-board`) is
+                // the stall the gene keeps. `false` with the gene off. See
+                // `advanced/prey_war_is_kept.rs`.
+                if !science_defensive_peace
+                    && !matches!(
+                        one_war_peace,
+                        Some(
+                            one_war::OneWarPeace::VictoryThreat
+                                | one_war::OneWarPeace::CapitalSecured
+                                | one_war::OneWarPeace::CapitalElsewhere
+                        )
+                    )
+                    && self.prey_war_is_kept_with(g, pid, *other)
+                {
+                    self.journal_prey_war_is_kept(g, pid, *other);
+                    continue;
+                }
                 self.peace_offers.insert(*other);
                 if policy_peace.is_some() {
                     self.census.war_policy_peace_offers += 1;
@@ -28357,6 +28407,28 @@ impl AdvancedAi {
             + self.inquisition_faith_reserve(g, pid)
             // See `counterweight_bank_held` (`counterweight-finishes-one-shrine`).
             + self.counterweight_bank_held(g, pid);
+        self.military_faith_spending_above(g, pid, plan, reserve)
+    }
+
+    /// `military_faith_spending` against an explicit reserve: the bank it
+    /// leaves untouched. `war-faith-buys-the-army` calls it with a smaller
+    /// one; see `advanced/war_faith.rs`.
+    pub(super) fn military_faith_spending_above(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        reserve: f64,
+    ) -> bool {
+        let bank = g.players[pid].faith;
+        let below_modelled_floor = bank < 600.0;
+        if !matches!(
+            plan.strategy,
+            GrandStrategy::Conquest | GrandStrategy::Recovery
+        ) || (below_modelled_floor && g.host_purchasable.is_empty())
+        {
+            return false;
+        }
         let counts = self.counts(g, pid);
         if bank < reserve {
             return false;
@@ -49007,6 +49079,13 @@ impl AdvancedAi {
         self.advanced_products(g, pid, plan.strategy);
         // See `lane_great_people`: a Great Person is a finite global race,
         // and an Expansion plan reads 0.85 for every class the lane needs.
+        // `war-faith-buys-the-army`: at war, the army's faith purchase comes
+        // before patronage and the religious spenders. See
+        // `advanced/war_faith.rs`.
+        if self.war_faith_buys_the_army_now(g, pid, &plan) {
+            let reserve = self.war_faith_reserve(g, pid);
+            self.military_faith_spending_above(g, pid, &plan, reserve);
+        }
         self.advanced_great_people(g, pid, self.great_person_lane(g, pid, &plan));
         if self.victory_planning && g.victory_conditions.religious {
             let committed = plan.strategy == GrandStrategy::Religion;

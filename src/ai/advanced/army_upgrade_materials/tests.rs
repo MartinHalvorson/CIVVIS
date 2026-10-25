@@ -102,3 +102,44 @@ fn an_unmodeled_host_successor_cannot_be_replaced_by_a_guessed_upgrade() {
         .to = None;
     assert!(ai.army_upgrade_material_wants(&g, 0).is_empty());
 }
+
+#[test]
+fn stocked_material_keeps_one_native_bill_for_a_large_obsolete_army() {
+    let (mut g, ai, first) = fixture();
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("iron"), 25.0);
+    let quote = g.host_unit_facts[&first].clone();
+    for _ in 0..9 {
+        let uid = g.spawn_test_unit("heavy_chariot", 0, (5, 4));
+        Arc::make_mut(&mut g.host_unit_facts).insert(uid, quote.clone());
+    }
+    assert!(ai.army_upgrade_material_wants(&g, 0).is_empty());
+    assert_eq!(
+        ai.army_upgrade_material_reserves(&g, 0),
+        BTreeMap::from([(crate::name!("iron"), 10.0)])
+    );
+}
+
+#[test]
+fn fractional_native_bills_round_only_the_missing_purchase() {
+    let (mut g, ai, uid) = fixture();
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("iron"), 1.5);
+    Arc::make_mut(&mut g.host_unit_facts)
+        .get_mut(&uid)
+        .unwrap()
+        .upgrade
+        .as_mut()
+        .unwrap()
+        .resources
+        .as_mut()
+        .unwrap()
+        .cost = 10.2;
+    assert_eq!(ai.army_upgrade_material_wants(&g, 0)[0].amount, 9);
+    assert_eq!(
+        ai.army_upgrade_material_reserves(&g, 0)[&crate::name!("iron")],
+        10.2
+    );
+}

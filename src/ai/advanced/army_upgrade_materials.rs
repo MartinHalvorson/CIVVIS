@@ -18,6 +18,15 @@ pub struct ArmyUpgradeMaterialWant {
     pub gain: f64,
 }
 
+struct ArmyUpgradeMaterialQuote {
+    resource: Name,
+    bill: f64,
+    target: Name,
+    uid: u32,
+    gold_reserve: f64,
+    gain: f64,
+}
+
 impl AdvancedAi {
     pub fn army_upgrade_materials_enabled(&self) -> bool {
         self.army_upgrade_materials
@@ -31,6 +40,52 @@ impl AdvancedAi {
         g: &Game,
         pid: usize,
     ) -> Vec<ArmyUpgradeMaterialWant> {
+        let mut wants: Vec<_> = self
+            .army_upgrade_material_quotes(g, pid)
+            .into_iter()
+            .filter_map(|quote| {
+                let stock = g.strategic_stockpile(pid, quote.resource);
+                let income = g.strategic_resource_rate(pid, quote.resource.as_str());
+                if stock + income.max(0.0) + f64::EPSILON >= quote.bill
+                    || stock + (quote.bill - stock).ceil() > g.strategic_stockpile_capacity(pid)
+                {
+                    return None;
+                }
+                let amount = (quote.bill - stock).ceil();
+                if amount < 1.0 || amount > f64::from(u32::MAX) {
+                    return None;
+                }
+                Some(ArmyUpgradeMaterialWant {
+                    resource: format!("RESOURCE_{}", quote.resource.as_str().to_ascii_uppercase()),
+                    resource_id: quote.resource.as_str().to_string(),
+                    amount: amount as u32,
+                    unit: quote.target.as_str().to_string(),
+                    uid: quote.uid,
+                    gold_reserve: quote.gold_reserve,
+                    gain: quote.gain,
+                })
+            })
+            .collect();
+        wants.sort_by(|a, b| {
+            b.gain
+                .total_cmp(&a.gain)
+                .then_with(|| a.gold_reserve.total_cmp(&b.gold_reserve))
+                .then_with(|| a.uid.cmp(&b.uid))
+        });
+        wants.truncate(1);
+        wants
+    }
+
+    pub fn army_upgrade_material_reserves(&self, g: &Game, pid: usize) -> BTreeMap<Name, f64> {
+        let mut reserves = BTreeMap::new();
+        for quote in self.army_upgrade_material_quotes(g, pid) {
+            let reserve = reserves.entry(quote.resource).or_insert(0.0_f64);
+            *reserve = reserve.max(quote.bill);
+        }
+        reserves
+    }
+
+    fn army_upgrade_material_quotes(&self, g: &Game, pid: usize) -> Vec<ArmyUpgradeMaterialQuote> {
         let Some(player) = g.players.get(pid) else {
             return Vec::new();
         };
@@ -42,8 +97,7 @@ impl AdvancedAi {
             return Vec::new();
         }
         let floor = 30.0 + (-player.gold_per_turn).max(0.0);
-        let mut wants: Vec<_> = g
-            .player_unit_ids(pid)
+        g.player_unit_ids(pid)
             .into_iter()
             .filter_map(|uid| {
                 let unit = &g.units[&uid];
@@ -83,38 +137,28 @@ impl AdvancedAi {
                 let bill = g.unit_upgrade_resource_price(pid, uid, target)?;
                 let stock = g.strategic_stockpile(pid, resource);
                 let income = g.strategic_resource_rate(pid, resource.as_str());
-                if !gold.is_finite() || gold < 0.0 || player.gold + f64::EPSILON < gold + floor
-                || !bill.is_finite() || bill <= 0.0 || !stock.is_finite() || !income.is_finite()
-                || stock + income.max(0.0) + f64::EPSILON >= bill
-                // Buying an upfront bill must not create a fuel-starved unit.
-                || income + f64::EPSILON < to.resource_maintenance.max(0.0)
-                || stock + (bill - stock).ceil() > g.strategic_stockpile_capacity(pid)
+                if !gold.is_finite()
+                    || gold < 0.0
+                    || player.gold + f64::EPSILON < gold + floor
+                    || !bill.is_finite()
+                    || bill <= 0.0
+                    || !stock.is_finite()
+                    || !income.is_finite()
+                    || income + f64::EPSILON < to.resource_maintenance.max(0.0)
+                    || bill > g.strategic_stockpile_capacity(pid)
                 {
                     return None;
                 }
-                let amount = (bill - stock).ceil();
-                if amount < 1.0 || amount > f64::from(u32::MAX) {
-                    return None;
-                }
-                Some(ArmyUpgradeMaterialWant {
-                    resource: format!("RESOURCE_{}", resource.as_str().to_ascii_uppercase()),
-                    resource_id: resource.as_str().to_string(),
-                    amount: amount as u32,
-                    unit: target.as_str().to_string(),
+                Some(ArmyUpgradeMaterialQuote {
+                    resource,
+                    bill,
+                    target,
                     uid,
                     gold_reserve: gold + floor,
                     gain,
                 })
             })
-            .collect();
-        wants.sort_by(|a, b| {
-            b.gain
-                .total_cmp(&a.gain)
-                .then_with(|| a.gold_reserve.total_cmp(&b.gold_reserve))
-                .then_with(|| a.uid.cmp(&b.uid))
-        });
-        wants.truncate(1);
-        wants
+            .collect()
     }
 }
 

@@ -8187,6 +8187,49 @@ impl AdvancedAi {
         self.city_state_war_is_no_front = false;
     }
 
+    /// Opt-in gene `staging-gun-trusts-its-escort-2`; see
+    /// [`Self::staging_gun_trusts_its_escort_2`].
+    pub fn enable_staging_gun_trusts_its_escort_2(&mut self) {
+        self.staging_gun_trusts_its_escort_2 = true;
+    }
+
+    /// The twin of `enable_staging_gun_trusts_its_escort_2`.
+    pub fn disable_staging_gun_trusts_its_escort_2(&mut self) {
+        self.staging_gun_trusts_its_escort_2 = false;
+    }
+
+    /// Opt-in gene `prey-war-is-kept`; see [`Self::prey_war_is_kept`].
+    pub fn enable_prey_war_is_kept(&mut self) {
+        self.prey_war_is_kept = true;
+    }
+
+    /// The twin of `enable_prey_war_is_kept`.
+    pub fn disable_prey_war_is_kept(&mut self) {
+        self.prey_war_is_kept = false;
+    }
+
+    /// Opt-in gene `defenders-hold-the-walls`; see
+    /// [`Self::defenders_hold_the_walls`].
+    pub fn enable_defenders_hold_the_walls(&mut self) {
+        self.defenders_hold_the_walls = true;
+    }
+
+    /// The twin of `enable_defenders_hold_the_walls`.
+    pub fn disable_defenders_hold_the_walls(&mut self) {
+        self.defenders_hold_the_walls = false;
+    }
+
+    /// Opt-in gene `war-faith-buys-the-army`; see
+    /// [`Self::war_faith_buys_the_army`].
+    pub fn enable_war_faith_buys_the_army(&mut self) {
+        self.war_faith_buys_the_army = true;
+    }
+
+    /// The twin of `enable_war_faith_buys_the_army`.
+    pub fn disable_war_faith_buys_the_army(&mut self) {
+        self.war_faith_buys_the_army = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
