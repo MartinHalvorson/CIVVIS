@@ -130,3 +130,31 @@ Gold unit quotes/orders, veteran upgrades, city captures, economies and native
 terminal outcomes. This observational delivery cohort does not estimate a
 paired causal win-rate gain, and does not take the active screen lease or
 change the host's difficulty, lane, map, force bundle, pin or setup.
+
+## Full hosted failure and compatibility repair
+
+The first full hosted candidate runs6,281 tests:6,280 pass, and the frozen
+`advanced_v1` stream fails with19,250 decisions against its unchanged19,252
+anchor. This correction is for current controllers. Add a private BasicAi
+compatibility bit, false in both ordinary constructors and true only in
+`AdvancedAi::legacy`, restoring the exact pre-repair recon/price/predicate path
+there. Current BasicAi, stock AdvancedAi, targeted/native controllers retain
+the complete quote/recon repair. Do not change the historical expected stream
+or its fingerprint. Re-run all eleven actual-action tests and the existing
+full five-profile anchor, then the complete CI-profile suite. The interrupted
+local duplicate and complete hosted logs remain explicit, not GREEN.
+
+The standalone harness's copied cfg(test) module is unreachable in the actual
+probe but makes rustfmt look for a test file at its new location. Remove that
+unused declaration and format only the owned harness. Before candidate
+execution, run an additional same-map baseline instrumentation control and
+require exact initial/terminal boards, canonical actions, outcomes and focal
+journal equality with the already completed baseline59010625. Both executions
+remain retained; it is a diagnostic repetition, not another map or a replacement.
+
+The compatibility-scoped correction again passes all 11 actual-action tests.
+The existing historical anchor and full CI-profile tests remain required.
+Whole-file rustfmt checks also show pre-existing formatting suggestions in
+unmodified Advanced sections and a child module; those lines are unchanged.
+The owned standalone harness and purchase test file pass exact rustfmt checks.
+The changed-line quality gate remains required before integration.
