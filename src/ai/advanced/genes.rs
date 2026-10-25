@@ -4147,7 +4147,10 @@ pub const GENES: &[Gene] = &[
     // Version two retains the at-war launch release and stages a physical
     // Culture air interception; only two fresh selected safe sorties open it.
     Gene { tag: "elimination-yields-to-a-launch-2", field: "elimination_yields_to_a_launch_2", kind: Kind::OptIn, enable: AdvancedAi::enable_elimination_yields_to_a_launch_2, disable: AdvancedAi::disable_elimination_yields_to_a_launch_2 },
-
+    // `faith-war-needs-the-edge`: live 10-25, a first faith war on a founder
+    // at 0.7 times our power or more preceded 11 collapses in 45 games, none
+    // in 9 under it. See `faith_war_before_the_flip::FAITH_WAR_EDGE`.
+    Gene { tag: "faith-war-needs-the-edge", field: "faith_war_needs_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_war_needs_the_edge, disable: AdvancedAi::disable_faith_war_needs_the_edge },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
