@@ -55,3 +55,21 @@ expected destination is corrected. The incomplete-consumer test also exposes
 an implementation diagnostic bug: cancelling its writer overwrites the useful
 one-of-two read failure. Preserve the pre-cancellation error before cleanup.
 These are development test failures, never a policy RED or native result.
+
+After correction, all 13 adapter tests pass. The existing replay tests pass
+36/36 and the capture/decision tests pass 11/11.
+
+The first original-binary control at tool source `581eaffe5` matches every
+complete native payload and expanded read sequence for 62 requests, through
+turn 23/frame 3. It times out at turn 24/frame 0 under the registered
+30-second request budget. That request records 18 reads of snapshot 63.
+The first control is rejected, and a second control is not run. No treatment
+is evaluated. A FIFO changes filesystem metadata and the mirror's cache path;
+matching the earlier requests does not establish equivalence through turn 70.
+
+The timeout receipt lacks the writer's served-read count. Add that diagnostic
+before a separate full-history diagnostic repetition on the same fixed case,
+with the same original binary, ordered bytes, cutoff, and timeout. Preserve
+the initial failure and both source versions. Do not extend the timeout,
+append guessed reads, or select a later starting frame. This diagnostic is
+not permission to reinterpret the rejected control as a success.

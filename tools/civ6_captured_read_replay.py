@@ -256,6 +256,9 @@ def run_control(context, records, mapping, directory, timeout):
         except Exception as error:
             return {"passed": False, "command": command, "cwd": cwd, "requests": results,
                     "failed_request": key,
+                    "input_delivery": ({"served": feeder.served, "expected": len(feeder.reads),
+                                        "done": feeder.done.is_set(), "error": feeder.error}
+                                       if feeder is not None else None),
                     "error": f"{type(error).__name__}: {error}"}
         finally:
             if feeder is not None:
