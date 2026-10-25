@@ -70,4 +70,43 @@ Rust fingerprint `fnv1a64:d5702e477e1be48d` before the edit and predicts
 The test pin changes accordingly. Earlier simulation ledgers have a different
 ruleset binding; these corrected rules require their own results.
 
-Corrected tests, registered smoke games and final hosted checks are pending.
+The corrected `gran_colombia` filter passes all nineteen matches: eleven new
+trait cases, the six existing promotion controls and two existing AI checks.
+Six mod tests, twenty-five rules tests and five validation tests also pass:
+55 focused checks in total, all on unchanged source `16924fdeb`.
+
+Both registered smoke games complete under the exact sealed source. Seeds
+59010610 and 59010611 both draw at turn 80, with both major players alive,
+no cities or capitals taken, and no newly declared wars. The second game
+records four siege blows and 138 siege damage. These short headless engine
+games establish stability only. Their binary SHA-256 is
+`1dfcec0d8975e19612c80ee2c5badd66ce12c578db5a984e2f95b99c4e279b09`.
+
+Hosted run 40190552881 passes all 6,279 Rust tests, with 52 skipped and four
+documentation examples ignored; the subsequent fidelity, provenance and
+registry gates also pass. Rust quality, collaboration, overwrite and paired
+cost checks pass. The five-pair cost result is within the +8% budget: median
+-1.12%, pooled -0.36%, measured resolution +/-1.70%. This does not establish
+a reliable speed improvement.
+
+The earlier hosted pre-implementation checkpoint remains an explicit failed
+run: 4,459 passes and two intended movement failures before fail-fast, with
+1,818 tests unrun and 52 skipped. It is not a full-suite pass. Preserve that
+entire log alongside the ten-failure local RED rather than replacing it with
+the corrected result.
+
+Main `8b131f110` is merged once at `db683ced7`. Every one of the 797 tracked
+Rust/data/Cargo inputs remains byte-identical to the tested and played
+source. The complete integrated Git tree
+`9d05b6b8d33afa2e358e1ff132fc5df436da228c` exactly matches hosted checked
+merge `123f942113576e8206731d230d5d1d159d0b7660`. The final evidence changes
+only this evaluation note and its validation archive; publication checks on
+that final commit remain required.
+
+`2026-10-25-gran-colombia-trait.validation.json.gz` retains 23 verified entries,
+including complete local and hosted logs, source receipts, the failed-first
+checkpoint proof, independent fingerprint calculation, smoke binary and
+integration readbacks, and the evidence collection helpers (722,745 bytes;
+SHA-256 `a1c19d59b1a8725eacbad4c7b188ff289f28faca3c92e357f44a76d36c1e4b34`).
+All receipt log hashes and every archived entry were checked after writing.
+No native Domination or highest-difficulty strength improvement is established.
