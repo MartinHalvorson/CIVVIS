@@ -14,6 +14,12 @@ fn walls() -> (Game, u32, crate::Pos) {
         game.found_city_for(pid, game.units[&settler].pos, None);
         game.remove_unit(settler);
     }
+    // Dry, open ground, so no unit below stands embarked or on a peak.
+    for tile in game.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.hills = false;
+    }
     game.record_contact(0, 1);
     game.at_war.insert((0, 1));
     let capital = game.cities[&game.player_city_ids(0)[0]].pos;
