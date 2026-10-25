@@ -90,3 +90,17 @@ expected total from that exact source/catalog equality, without removing a
 control or relaxing a failure assertion. Re-run the same unchanged CI-profile
 executable over all14 cases before applying the identical reviewed patch.
 The earlier controller's count mismatch is not a different policy result.
+
+## Corrected validation and integration
+
+The complete `cargo test --profile ci --locked` finishes with exit 0:
+6,275 pass, zero fail, 56 are ignored. Every one of the 14 solvency cases
+passes inside that complete run. Changed-line Rust quality is formatted and
+warning-free. The logs and source digests are retained and read back in the
+GREEN archive. This validates source `43c60e197`.
+
+Latest main is cleanly merged at `809911826`; both edited Rust files are
+byte-identical to the tested source. `cargo check --locked` over the merged
+tree exits 0. The existing shipping workflow independently tests the exact
+merged tree before squash merge. No native screen, selection or setup changed,
+and the zero observed native guard contrasts remain part of this result.
