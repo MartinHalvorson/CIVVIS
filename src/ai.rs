@@ -20292,6 +20292,9 @@ impl BasicAi {
 }
 
 #[cfg(test)]
+mod military_purchase_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::ai::advanced::{AdvancedAi, PEACETIME_UPGRADE_FLOOR};
