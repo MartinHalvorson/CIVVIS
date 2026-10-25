@@ -7789,6 +7789,9 @@ pub struct AdvancedAi {
     /// city it runs Disrupt Rocketry or a safe operation. See
     /// `advanced/racer_keeps_the_spies.rs`.
     racer_keeps_the_spies: bool,
+    /// Keep one spare idle spy at a capital reached by the Bomber wing.
+    /// See `advanced/wing_capital_spotting.rs`.
+    wing_capital_spotting: bool,
     /// `racer-keeps-the-spies`: the unbroken run of turns every city was
     /// refused a Spy below capacity (first turn, last turn) and the turn the
     /// journal last noted it.
@@ -9442,6 +9445,7 @@ mod embassy_capital;
 
 /// `racer-keeps-the-spies`: see `advanced/racer_keeps_the_spies.rs`.
 mod racer_keeps_the_spies;
+mod wing_capital_spotting;
 
 /// Journal only: an urgent racer whose Conquest counter cannot be executed.
 /// See `advanced/silent_counter.rs`.
@@ -11164,6 +11168,7 @@ impl AdvancedAi {
             phantom_contingent_captures: BTreeSet::new(),
             phantom_hold_from: BTreeMap::new(),
             racer_keeps_the_spies: false,
+            wing_capital_spotting: false,
             racer_spies_slot_note: Cell::new((0, 0, 0)),
             purchases_keep_the_upkeep_reserve: false,
             paused_district_finishes: false,
@@ -29975,6 +29980,34 @@ impl AdvancedAi {
                         spy_id,
                         g.turn + g.standard_duration(SPY_TRAVEL_ORDER_PATIENCE),
                     );
+                    continue;
+                }
+            }
+            // A spare spy supplies the wing's sight after the home defender,
+            // exact science-pad and culture-heist postings have their turn.
+            // The helper also preserves coverage of the leading racer.
+            if let Some(action) = self.wing_capital_spy_action(
+                g,
+                pid,
+                spy_id,
+                plan,
+                &legal,
+                racer_spy_leader,
+                &culture_heist_targets,
+            ) {
+                if g.apply(pid, &action).is_ok() {
+                    let travel = matches!(action, Action::AssignSpy { .. });
+                    let patience = if travel {
+                        SPY_TRAVEL_ORDER_PATIENCE
+                    } else {
+                        SPY_MISSION_ORDER_PATIENCE
+                    };
+                    self.spy_orders_until
+                        .insert(spy_id, g.turn + g.standard_duration(patience));
+                    think!(self.journal(), Military, Decision,
+                        "A Spy keeps sight for the Bomber wing";
+                        "wing-capital-spotting: an idle spare {} while the wing reaches the active rival's capital",
+                        if travel { "posts to the capital" } else { "runs a safe mission at the capital" });
                     continue;
                 }
             }
