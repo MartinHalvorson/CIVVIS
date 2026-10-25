@@ -509,7 +509,14 @@ fn the_edge_holds_a_faith_war_on_a_founder_near_our_power() {
     ai.enable_faith_war_before_the_flip_2();
     ai.enable_faith_war_needs_the_edge();
     Arc::make_mut(&mut g.observed_military_power).insert(1, 60.0);
-    assert_eq!(ai.faith_war_gate(&g, 0, 1), None, "60 against 100 is under 0.7");
+    assert_eq!(
+        ai.faith_war_gate(&g, 0, 1),
+        None,
+        "60 against 100 is under 0.7"
+    );
     ai.advanced_diplomacy(&mut g, 0, &plan);
-    assert!(g.is_at_war(0, 1), "the war opens on a founder under the edge");
+    assert!(
+        g.is_at_war(0, 1),
+        "the war opens on a founder under the edge"
+    );
 }
