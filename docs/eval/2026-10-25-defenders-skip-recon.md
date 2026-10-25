@@ -158,3 +158,70 @@ Whole-file rustfmt checks also show pre-existing formatting suggestions in
 unmodified Advanced sections and a child module; those lines are unchanged.
 The owned standalone harness and purchase test file pass exact rustfmt checks.
 The changed-line quality gate remains required before integration.
+
+## Complete validation and frozen comparison result
+
+The exact compatibility-scoped source `b62b3a021` passes the full local
+`cargo test --profile ci --locked`:6,281 passed,56 ignored,zero failed.
+All11 actual-purchase cases pass in that complete run, and the unchanged
+`advanced_v1_plays_the_same_game_it_always_did` anchor passes. All hosted
+checks at that source also pass. Complete local and hosted test/quality logs,
+source hashes and terminal controller receipts remain in `full-green.json.gz`.
+
+Every one of the8 assigned simulator executions exits0 naturally. All4 complete
+initial boards and profiles match across builds. The separate instrumentation
+control matches the original complete board/action/outcome/journal output.
+Full boards, canonical actions, drained journals, build attempts, source/binary
+hashes and the read-only analysis source remain in `simulations.json.gz`.
+There are no replaced maps, missing assigned executions or shortened games.
+
+| Seed | Difficulty | Baseline outcome | Candidate outcome | Bankruptcy turns baseline/candidate |
+|---|---|---|---|---|
+| 59010625 | immortal | Loss, science, t137 | Loss, science, t135 | 3/0 |
+| 59010626 | immortal | Loss, science, t137 | Loss, science, t138 | 0/0 |
+| 59010627 | deity | Loss, science, t137 | Loss, science, t146 | 2/4 |
+| 59010628 | deity | Loss, science, t145 | Loss, science, t141 | 0/0 |
+
+Both builds win0of4 and finish with0 foreign cities held on each map.
+The first changed action belongs to a rival on all4 maps (seats1,3,2,2),
+confirming the registered whole-library limitation. Separate strategic Scout
+purchases remain in both builds. These games establish no competitive win-rate
+improvement and do not establish which helper chose every native Scout.
+The retained correction is supported by its actual-action affordability,
+role, refusal and reserve regressions. Native delivery/outcomes remain required
+for the ongoing competitiveness goal.
+
+## Economic context for the next diagnosis
+
+The post-hoc `income-context.json.gz` retains every completed Immortal run
+segment from161417Z through the fixed18:05Z cutoff:9 attempts,all losses.
+All9 have0 completed Commercial Hubs at their first t100 frame;4 show native
+bankruptcy amenities later,5 do not. Currency is observed by t47–64.
+Across t60–100 there are171 city/turn observations with an idle queue and a
+native Commercial Hub offer quoted within20 turns, before applying the other
+policy gates. They are opportunities to audit, not171 validated counterfactual
+builds. Workshop claims also coexist with deficits, including t90/t93/t99/t106
+in174828Z. No caller attribution or causal effect follows from coexistence.
+
+The archive retains source digests, complete summaries, selected complete
+native frames/quotes, all first-frame metrics, requested Gold purchases and
+relevant claim/recovery journal lines. Empire Production uses native public
+stats; rounded per-city Production quotes remain separate. This context
+motivates a follow-up trace of income-district eligibility and competing queue
+claims, without expanding this PR into a production-policy rewrite.
+
+## Integration validation
+
+Current main `4e9d0ac7f` merges cleanly as `2673ddc9a`, including the separately
+merged upkeep correction. The complete BasicAi and purchase-test files remain
+byte-identical to tested `b62b3a021`; the one-line Advanced legacy guard has the
+same stable patch identity. An initial full-patch comparison mistakenly used
+the preimplementation baseline, which already contained test scaffolding; the
+corrected separate source proof is retained and changes no code.
+
+`cargo check --locked` passes on that merged tree. Local changed-line quality
+also passes for every changed Rust file, including the standalone harness.
+Complete logs, terminal exits and source proof remain in `integration.json.gz`.
+The final pushed merged tree still goes through required GitHub CI and shipping;
+the complete local 6,281-test result applies to the exact premerge source stated
+above, rather than being relabeled as a full local test of later trunk changes.
