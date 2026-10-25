@@ -138,3 +138,31 @@ all fourteen members are read back against their sources. Descriptor completenes
 alone does not establish whole-history replay equivalence. The second game is
 assigned off and remains in progress. Keep all eight starts and terminal or
 missing outcomes; these interim observations never change the cutoff or arms.
+
+## First four terminal attempts retained
+
+The next three terminal games are archived with the same checks and complete
+raw captures. All four dealt arms match their actual drivers, played genomes
+and tag hashes. Every issued upgrade below has a distinct exact native
+successor with preserved veteran identity; these counts include upgrades outside
+the material buyer's scope and are not a treatment-effect estimate.
+
+| Assigned stem | Arm | Rival ending | Turn | Combat captures | Confirmed upgrades |
+| --- | --- | --- | ---: | ---: | ---: |
+| `123652Z` | on | Culture | 174 | 0 | 11 |
+| `124842Z` | off | Science | 197 | 1 | 36 |
+| `130400Z` | on | Culture | 139 | 0 | 6 |
+| `131248Z` | on | Culture | 170 | 1 | 8 |
+
+All four games are Emperor Domination attempts and all lose. Their full 1,836
+decision capture descriptors are complete without failed reads. The remaining
+starts and outcomes remain assigned; this is an interim snapshot, not a cutoff.
+The three additional archives retain fourteen verified members apiece:
+
+- `.cohort-02.tar.xz`: 2,844,400 bytes, SHA-256 `91d8091093a077a92e4c6b1a250116b0c475aae361d18295923bacf9fc3b1f6b`.
+- `.cohort-03.tar.xz`: 905,536 bytes, SHA-256 `88d6f28899e1c1be9dcc826765935ce8c3db36bcbddb97095b3ecc18c7632837`.
+- `.cohort-04.tar.xz`: 1,522,576 bytes, SHA-256 `8ac838aa54cb3a90dcc163bb5cecc9f834b31193dcca45db097fcaa0d6730add`.
+
+Material-sale/buy notes, completed purchases, stock changes and economic costs
+still require the registered final audit. There is no attribution from these
+upgrade counts and no native Domination success or default promotion.
