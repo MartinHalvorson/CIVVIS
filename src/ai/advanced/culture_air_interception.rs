@@ -7,6 +7,9 @@ impl AdvancedAi {
         self.elimination_yields_to_a_launch_2
             && self.active_victory_target(g) == Some(VictoryTarget::Domination)
             && self.forced_target_player.is_none()
+            // Shared simulation has no authoritative host Culture clock. Do
+            // no speculative or whole-city work in that unsupported regime.
+            && g.players.iter().any(|rival| self.culture_air_clock(g, pid, rival.id).is_some())
             && plan.strategy != GrandStrategy::Recovery
             && plan.threatened_city.is_none()
             && self.threatened_city(g, pid).is_none()
@@ -14,17 +17,34 @@ impl AdvancedAi {
 
     fn culture_air_clock(&self, g: &Game, pid: usize, target: usize) -> Option<f64> {
         let rival = g.players.get(target)?;
-        if target == pid
-            || !rival.alive
-            || rival.is_minor
-            || rival.is_barbarian
-            || g.foreign_tourists(target) < denial_nearest_finish::ENGINE_CLOCK_MIN_TOURISTS
-        {
+        if target == pid || !rival.alive || rival.is_minor || rival.is_barbarian {
             return None;
         }
         let clock = g.culture_turns_to_victory(target)?;
-        (clock.is_finite() && (0.0..=f64::from(g.standard_duration(40))).contains(&clock))
+        (clock.is_finite()
+            && (0.0..=f64::from(g.standard_duration(40))).contains(&clock)
+            && g.foreign_tourists(target) >= denial_nearest_finish::ENGINE_CLOCK_MIN_TOURISTS)
             .then_some(clock)
+    }
+
+    /// Keep an existing finishing front, including a selected at-peace last
+    /// capital. The racer itself may be that final capital's owner.
+    fn culture_air_keeps_finishing_front(
+        &self,
+        g: &Game,
+        pid: usize,
+        target: usize,
+        plan: &StrategicPlan,
+    ) -> bool {
+        self.domination_finish_front(g, pid)
+            .or_else(|| {
+                plan.target_city
+                    .filter(|city| Self::capture_completes_domination(g, pid, *city))
+                    .and_then(|city| g.cities.get(&city).map(|city| (city.owner, city.id)))
+            })
+            .or_else(|| self.domination_finish_at_war(g, pid))
+            .or_else(|| self.free_city_finish(g, pid))
+            .is_none_or(|(front, _)| front == target)
     }
 
     fn culture_air_opening_allowed(
@@ -35,6 +55,7 @@ impl AdvancedAi {
         plan: &StrategicPlan,
     ) -> bool {
         self.culture_air_policy_allowed(g, pid, plan)
+            && self.culture_air_keeps_finishing_front(g, pid, target, plan)
             && g.turn >= 35
             && g.turn >= self.peace_until
             && g.player_city_ids(pid).len() >= 2
@@ -183,6 +204,9 @@ impl AdvancedAi {
             return None;
         }
         let target = plan.target_player?;
+        if !self.culture_air_keeps_finishing_front(g, pid, target, plan) {
+            return None;
+        }
         self.culture_air_clock(g, pid, target)?;
         self.culture_air_sortie(g, g, pid, uid, target)
     }
@@ -288,6 +312,68 @@ impl AdvancedAi {
         }
     }
 
+    /// The first plane must not rebase back toward the old front while its
+    /// partner recovers from staging. A hypothetical ready package can only
+    /// authorize waiting here; diplomacy always reads the real readiness.
+    pub(super) fn hold_staged_culture_aircraft(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> BTreeSet<u32> {
+        let mut held = BTreeSet::new();
+        if !self.culture_air_policy_allowed(g, pid, plan) {
+            return held;
+        }
+        let mut ready_next_turn = g.speculative_clone();
+        for uid in g.player_unit_ids(pid) {
+            let plane = &g.units[&uid];
+            if plane.hp < 80
+                || g.air_capacity_at(pid, plane.pos) <= 0
+                || !g.rules.units[plane.kind].siege
+                || g.rules.units[plane.kind].domain.as_deref() != Some("air")
+            {
+                continue;
+            }
+            let forecast = ready_next_turn.units.get_mut(&uid).unwrap();
+            forecast.moves_left = forecast.moves_left.max(1.0);
+            forecast.attacks_left = forecast.attacks_left.max(1);
+        }
+        for target in self.culture_air_racers(g, pid) {
+            if g.is_at_war(pid, target)
+                || self
+                    .culture_air_package(&ready_next_turn, pid, target, plan)
+                    .is_none()
+            {
+                continue;
+            }
+            let Some(opening) = self.culture_air_opening(g, pid, target) else {
+                continue;
+            };
+            let mut war = g.speculative_clone();
+            if war.apply(pid, &opening).is_err() {
+                continue;
+            }
+            for uid in g.player_unit_ids(pid) {
+                if self.culture_air_sortie(&war, g, pid, uid, target).is_some() {
+                    held.insert(uid);
+                    *g.players[pid]
+                        .counters
+                        .entry("elimination-yields-to-a-launch-2:held".to_string())
+                        .or_insert(0) += 1;
+                    think!(self.journal(), Military, Decision,
+                        "Holding a staged bomber for the Culture interception";
+                        "elimination-yields-to-a-launch-2: two healthy planes already have useful firing positions, but the real package still needs fresh readiness; leave this plane unassigned instead of rebasing it back to the old front");
+                    if held.len() == 2 {
+                        break;
+                    }
+                }
+            }
+            return held;
+        }
+        held
+    }
+
     /// Move one plane; future readiness is used only on a disposable forecast.
     pub(super) fn stage_culture_air_interception(
         &mut self,
@@ -296,7 +382,7 @@ impl AdvancedAi {
         plan: &StrategicPlan,
     ) {
         if !self.culture_air_policy_allowed(g, pid, plan)
-            || self.culture_air_stage_turn == Some(g.turn)
+            || self.elimination_air_stage_turn == Some(g.turn)
         {
             return;
         }
@@ -347,7 +433,7 @@ impl AdvancedAi {
                         continue;
                     }
                     if g.apply(pid, &action).is_ok() {
-                        self.culture_air_stage_turn = Some(g.turn);
+                        self.elimination_air_stage_turn = Some(g.turn);
                         *g.players[pid]
                             .counters
                             .entry("elimination-yields-to-a-launch-2:staged".to_string())

@@ -1,4 +1,5 @@
 use super::*;
+use crate::ai::Ai;
 use std::sync::Arc;
 
 fn install_airfield(g: &mut Game, city: u32, pos: Pos) {
@@ -20,11 +21,17 @@ fn fixture() -> (Game, AdvancedAi, StrategicPlan, [u32; 2], [Pos; 2]) {
         g.remove_unit(uid);
     }
     g.barb_camps.clear();
+    g.barb_naval_camps.clear();
     for tile in g.map.tiles.values_mut() {
         tile.terrain = crate::name!("grassland");
         tile.feature = None;
         tile.resource = None;
         tile.hills = false;
+        tile.improvement = None;
+        tile.district = None;
+        tile.owner_city = None;
+        tile.improvement_owner = None;
+        tile.pillaged = false;
     }
     let base = (6, 8);
     let own = g.found_city_for(0, (5, 8), None);
@@ -37,7 +44,7 @@ fn fixture() -> (Game, AdvancedAi, StrategicPlan, [u32; 2], [Pos; 2]) {
         g.found_city_for(2, (15, 8), None),
         g.found_city_for(2, (16, 4), None),
     ];
-    g.found_city_for(3, (29, 20), None);
+    g.found_city_for(3, (22, 20), None);
     let theaters = [(14, 8), (15, 4)];
     for (city, pos) in cities.into_iter().zip(theaters) {
         g.cities
@@ -106,7 +113,7 @@ fn baseline_keeps_the_elimination_war_beside_a_declarable_outgunning_culture_rac
     )));
     assert_eq!(ai.diplomatic_contender_to_eliminate(&g, 0), Some(1));
     assert!(!ai.elimination_yields_to_a_launch(&g, 0, 1));
-    assert!(ai.one_war_holds_declaration(&g, 0, 2));
+    assert_ne!(ai.one_war_second_front(&g, 0), Some(2));
     let opening = ai.preferred_war_opening(&g, 0, 2).unwrap();
     let mut physical = g.speculative_clone();
     physical.apply(0, &opening).unwrap();
@@ -133,8 +140,8 @@ fn two_current_selected_sorties_redirect_the_plan_and_open_the_second_war() {
     version_two(&mut ai);
     ai.enable_declaration_needs_production_parity();
     assert!(
-        ai.one_war_holds_declaration(&g, 0, 2),
-        "fixture: the ordinary second-front gate holds"
+        ai.one_war_second_front(&g, 0) != Some(2),
+        "fixture: the ordinary second-front selector refuses the outgunned rival"
     );
     assert!(ai.culture_air_package(&g, 0, 2, &plan).is_some());
     let before = serde_json::to_vec(&g).unwrap();
@@ -175,13 +182,28 @@ fn the_fresh_package_interrupts_an_otherwise_current_plan() {
     let (mut g, mut ai, plan, _, theaters) = fixture();
     version_two(&mut ai);
     ai.deny_leaders = false;
+    let journal = crate::reasoning::Journal::recording();
+    ai.attach_journal(journal.handle());
     ai.plan = Some(plan);
     assert!(
         !ai.plan_stale(&g, 0),
         "fixture keeps the normal five-turn plan"
     );
     ai.take_turn_inner(&mut g, 0);
-    assert!(g.is_at_war(0, 2));
+    assert!(
+        g.is_at_war(0, 2),
+        "plan {:?}; target {:?}; clock {:?}; package {:?}; thoughts {:?}",
+        ai.current_plan(),
+        ai.active_victory_target(&g),
+        g.culture_turns_to_victory(2),
+        ai.culture_air_package(&g, 0, 2, ai.current_plan().unwrap()),
+        journal
+            .since(0)
+            .thoughts
+            .iter()
+            .map(|t| (&t.headline, &t.detail))
+            .collect::<Vec<_>>()
+    );
     assert_eq!(ai.current_plan().unwrap().target_player, Some(2));
     assert!(
         theaters
@@ -206,6 +228,7 @@ fn physical_and_policy_failures_preserve_the_old_target() {
         "friend",
         "treasury",
         "home",
+        "war-exposes-home",
         "forced",
         "recovery",
         "lane",
@@ -253,6 +276,30 @@ fn physical_and_policy_failures_preserve_the_old_target() {
                 g.players[0].gold_per_turn = -50.0;
             }
             "home" => plan.threatened_city = g.player_city_ids(0).first().copied(),
+            "war-exposes-home" => {
+                let ring: Vec<_> = g
+                    .wring((5, 8), 2)
+                    .into_iter()
+                    .filter(|pos| {
+                        g.map
+                            .get(*pos)
+                            .is_some_and(|tile| tile.owner_city.is_none())
+                    })
+                    .take(6)
+                    .collect();
+                assert_eq!(ring.len(), 6);
+                for pos in ring {
+                    g.spawn_test_unit("modern_armor", 2, pos);
+                }
+                assert!(ai.threatened_city(&g, 0).is_none());
+                let mut war = g.speculative_clone();
+                war.apply(0, &ai.preferred_war_opening(&g, 0, 2).unwrap())
+                    .unwrap();
+                assert!(
+                    ai.threatened_city(&war, 0).is_some(),
+                    "fixture: the new war exposes home"
+                );
+            }
             "forced" => ai.forced_target_player = Some(1),
             "recovery" => plan.strategy = GrandStrategy::Recovery,
             "lane" => ai.retarget(VictoryTarget::Science),
@@ -345,4 +392,179 @@ fn staging_moves_one_plane_per_turn_and_waits_for_real_readiness() {
     assert!(theaters
         .into_iter()
         .all(|pos| g.map.get(pos).unwrap().pillaged));
+}
+
+#[test]
+fn a_changed_board_invalidates_a_previously_ready_opening() {
+    for change in ["friend", "fog", "spent", "pillaged"] {
+        let (mut g, mut ai, mut plan, bombers, theaters) = fixture();
+        version_two(&mut ai);
+        assert!(ai.culture_air_package(&g, 0, 2, &plan).is_some());
+        ai.apply_culture_air_interception_to_strategy(&g, 0, &mut plan);
+        assert_eq!(plan.target_player, Some(2));
+        match change {
+            "friend" => {
+                g.players[0].friends_until.insert(2, g.turn + 20);
+                g.players[2].friends_until.insert(0, g.turn + 20);
+            }
+            "fog" => {
+                Arc::make_mut(&mut g.host_observed).insert(theaters[0]);
+            }
+            "spent" => g.units.get_mut(&bombers[1]).unwrap().attacks_left = 0,
+            "pillaged" => g.map.tiles.get_mut(&theaters[1]).unwrap().pillaged = true,
+            _ => unreachable!(),
+        }
+        ai.advanced_diplomacy(&mut g, 0, &plan);
+        assert!(!g.is_at_war(0, 2), "{change}");
+        assert!(!g.players[0]
+            .counters
+            .contains_key("elimination-yields-to-a-launch-2:opened"));
+    }
+}
+
+fn capture_capital(g: &mut Game, owner: usize) -> u32 {
+    let id = g
+        .cities
+        .values()
+        .find(|city| city.owner == owner && city.is_capital)
+        .unwrap()
+        .id;
+    g.cities.get_mut(&id).unwrap().owner = 0;
+    id
+}
+
+#[test]
+fn a_final_capital_front_is_not_diverted_to_a_different_culture_rival() {
+    let (mut g, mut ai, mut plan, _, _) = fixture();
+    version_two(&mut ai);
+    let captured = capture_capital(&mut g, 2);
+    capture_capital(&mut g, 3);
+    g.cities
+        .get_mut(&captured)
+        .unwrap()
+        .districts
+        .remove(crate::name!("theater_square"));
+    // Its captured capital's Theater returns to the rival's ordinary town,
+    // preserving two useful targets while the last original capital is France's.
+    let town = g.found_city_for(2, (11, 8), None);
+    let target = (14, 8);
+    g.map.tiles.get_mut(&target).unwrap().owner_city = Some(town);
+    g.cities
+        .get_mut(&town)
+        .unwrap()
+        .districts
+        .insert(crate::name!("theater_square"), target);
+    let final_capital = g
+        .cities
+        .values()
+        .find(|city| city.owner == 1 && city.is_capital)
+        .unwrap()
+        .id;
+    plan.target_city = Some(final_capital);
+    ai.enable_domination_finish_holds_the_front();
+    assert!(AdvancedAi::capture_completes_domination(
+        &g,
+        0,
+        final_capital
+    ));
+    assert_eq!(ai.domination_finish_front(&g, 0), Some((1, final_capital)));
+    let mut physical = g.speculative_clone();
+    physical
+        .apply(0, &ai.preferred_war_opening(&g, 0, 2).unwrap())
+        .unwrap();
+    for uid in physical.player_unit_ids(0) {
+        if let Some(action) = ai.culture_air_sortie(&physical, &physical, 0, uid, 2) {
+            physical.apply(0, &action).unwrap();
+        }
+    }
+    assert!(
+        physical.map.get((14, 8)).unwrap().pillaged && physical.map.get((15, 4)).unwrap().pillaged
+    );
+    assert!(ai.culture_air_package(&g, 0, 2, &plan).is_none());
+    ai.apply_culture_air_interception_to_strategy(&g, 0, &mut plan);
+    assert_eq!(plan.target_player, Some(1));
+    assert_eq!(plan.target_city, Some(final_capital));
+    ai.stage_culture_air_interception(&mut g, 0, &plan);
+    assert!(!g.players[0]
+        .counters
+        .contains_key("elimination-yields-to-a-launch-2:staged"));
+    assert!(!ai.open_culture_air_interception(&mut g, 0, &plan));
+}
+
+#[test]
+fn the_culture_racer_can_itself_hold_the_final_capital() {
+    let (mut g, mut ai, mut plan, _, _) = fixture();
+    version_two(&mut ai);
+    capture_capital(&mut g, 1);
+    capture_capital(&mut g, 3);
+    ai.enable_domination_finish_holds_the_front();
+    assert!(ai.culture_air_package(&g, 0, 2, &plan).is_some());
+    ai.apply_culture_air_interception_to_strategy(&g, 0, &mut plan);
+    assert_eq!(plan.target_player, Some(2));
+    ai.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(g.is_at_war(0, 2));
+}
+
+#[test]
+fn serial_staging_keeps_the_first_plane_in_position_until_its_partner_is_ready() {
+    let (mut g, mut ai, plan, old, theaters) = fixture();
+    version_two(&mut ai);
+    ai.deny_leaders = false;
+    let rear = g.found_city_for(0, (0, 0), None);
+    install_airfield(&mut g, rear, (1, 0));
+    for uid in old {
+        g.remove_unit(uid);
+    }
+    let planes = [
+        g.spawn_test_unit("bomber", 0, (1, 0)),
+        g.spawn_test_unit("bomber", 0, (1, 0)),
+    ];
+    // Controlled successive observations keep the targets visible; the test
+    // advances actual readiness instead of resetting it in a forecast.
+    Arc::make_mut(&mut g.host_observed).extend(theaters);
+    let journal = crate::reasoning::Journal::recording();
+    ai.attach_journal(journal.handle());
+    ai.plan = Some(plan);
+    for step in 0..3 {
+        ai.take_turn_inner(&mut g, 0);
+        eprintln!(
+            "step {step} turn {} plan {:?}; lane {:?}; clock {:?}; planes {:?}; counters {:?}",
+            g.turn,
+            ai.current_plan(),
+            ai.active_victory_target(&g),
+            g.culture_turns_to_victory(2),
+            planes.map(|uid| g
+                .units
+                .get(&uid)
+                .map(|u| (u.pos, u.moves_left, u.attacks_left))),
+            g.players[0].counters
+        );
+        if g.is_at_war(0, 2) {
+            break;
+        }
+        assert!(
+            step < 2,
+            "the real serial path never assembled its staged package: {:?}",
+            journal
+                .since(0)
+                .thoughts
+                .iter()
+                .map(|t| (&t.headline, &t.detail))
+                .collect::<Vec<_>>()
+        );
+        next_own_turn(&mut g);
+    }
+    assert!(g.is_at_war(0, 2));
+    assert!(theaters
+        .into_iter()
+        .all(|pos| g.map.get(pos).unwrap().pillaged));
+    assert!(planes.into_iter().all(|uid| g.units.contains_key(&uid)));
+    assert!(
+        g.players[0]
+            .counters
+            .get("elimination-yields-to-a-launch-2:held")
+            .copied()
+            .unwrap_or(0)
+            > 0
+    );
 }

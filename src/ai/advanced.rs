@@ -6415,7 +6415,7 @@ pub struct AdvancedAi {
     /// Version two adds staged, freshly preflighted Culture air interception.
     /// See `advanced/culture_air_interception.rs`. Off by default.
     elimination_yields_to_a_launch_2: bool,
-    culture_air_stage_turn: Option<u32>,
+    elimination_air_stage_turn: Option<u32>,
     /// `first-luxury-first-2`: version 2 of `first-luxury-first`. The first
     /// copy of a luxury earns its premium only while the host-calibrated
     /// empire is actually Amenity-short; a content empire keeps the shipped
@@ -10970,7 +10970,7 @@ impl AdvancedAi {
             embassy_capital_asks: BTreeMap::new(),
             elimination_yields_to_a_launch: false,
             elimination_yields_to_a_launch_2: false,
-            culture_air_stage_turn: None,
+            elimination_air_stage_turn: None,
             first_luxury_first_2: false,
             falling_city_calls_the_takers: false,
             founder_holds_the_holy_city: false,
@@ -47787,7 +47787,21 @@ impl AdvancedAi {
         }
         let evacuated_aircraft = self.evacuate_air_bases(g, pid, plan);
         self.stage_culture_air_interception(g, pid, plan);
+        let held_aircraft = self.hold_staged_culture_aircraft(g, pid, plan);
         self.execute_culture_air_interception(g, pid, plan);
+        // Hide waiting planes from the early coordinated assignments. Restore
+        // their real readiness immediately afterwards: holding is no action,
+        // not an invented engine operation or a permanent readiness change.
+        let held_readiness: Vec<_> = held_aircraft
+            .iter()
+            .filter_map(|uid| {
+                let unit = g.units.get_mut(uid)?;
+                let saved = (*uid, unit.moves_left, unit.attacks_left);
+                unit.moves_left = 0.0;
+                unit.attacks_left = 0;
+                Some(saved)
+            })
+            .collect();
         // A direct kill is a local opportunity, not a new campaign objective.
         // Resolve those exact, positive exchanges before the remaining unit
         // loop runs, then rebuild once if the board changed so the force
@@ -47835,6 +47849,13 @@ impl AdvancedAi {
         self.mark_gun_lethal_tiles(g, pid);
         self.guns_step_out_of_reach(g, pid);
         let mut air_assault_units = self.plan_air_city_assault(g, pid, plan);
+        for (uid, moves, attacks) in held_readiness {
+            if let Some(unit) = g.units.get_mut(&uid) {
+                unit.moves_left = moves;
+                unit.attacks_left = attacks;
+            }
+        }
+        air_assault_units.extend(held_aircraft);
         // `falling-city-calls-the-takers`: a falling city is taken, or its
         // nearest fit bodies close in. Nothing with the gene off. See
         // `advanced/falling_city_takers.rs`.
