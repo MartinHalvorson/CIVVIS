@@ -142,6 +142,37 @@ fixed focal comparison, and additional reachability screen remain pending.
 The default selection is unchanged; these tests establish strategy behavior,
 not native strength.
 
+GitHub's Rust suite also passes all 6,254 tests, with 52 skipped and four
+documentation examples ignored. The 117 developer-tool regressions pass.
+The overall cargo-test job remains red at its subsequent gene-fires gate
+because the new tag has no committed firing artifact. The local full suite
+and registered evaluation batches are still pending.
+
+The hook's CI paired-cost gate passes: five pairs measure -0.50% per
+completed turn, inside the instrument's +/-1% noise floor and +8% budget.
+This establishes neither a speed improvement nor a regression.
+
+### Independent native material-purchase pilot
+
+While validation builds run, a separate four-assignment pilot tests the
+already-merged `army-upgrade-materials` policy from #4042 under its own
+pre-treatment registration. The first assignment, `civvis-20261025T032555Z`,
+is off: the hash-derived arm, live driver flags, and actual brain header agree.
+Its frozen binary is `20fe763757f68a6ccf024ad8d57ab7bf6b35acdadc56842761b802d36f0b531e`
+from `8810924ee`. Native seat and installed Lua readback verify the game
+configuration and trade sessions. That off-arm game finishes with a rival's
+Diplomatic victory at turn 221, two cities taken and one lost. The second
+assignment, `civvis-20261025T034102Z`, is on, with the dealt arm and actual
+played flag both verified; its outcome remains pending. Neither game is a
+handover treatment or control.
+
+The runtime checkpoint archive preserves the registration, observer and
+validation-controller source, first native readbacks, and current partial
+state so this work can be inspected from another machine. The observer stops
+its own screen after four assigned game stems; final outcomes still require
+collection. This pilot does not change the published genome or force bundle,
+and the 24-game handover experiment above remains pending.
+
 ### Additional untreated native observations
 
 Two subsequent unmodified `8810924ee` native Emperor games also lose to

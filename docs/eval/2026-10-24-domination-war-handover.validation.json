@@ -40,5 +40,25 @@
     "source_head": "7dc694c1916d3887b3275f0df7e62a161b738370",
     "exit_code": 0,
     "log": "   Compiling civvis v0.6.0 (/Users/martbot-mbp-m5-max-128/civvis-domination-war-handover-6ecc)\n    Finished `ci` profile [optimized] target(s) in 14m 36s\n     Running unittests src/lib.rs (target/ci/deps/civvis-f3c68e33949d14e4)\n\nrunning 10 tests\ntest ai::advanced::domination_war_handover_tests::domination_war_handover_is_registered_and_off_in_both_controllers ... ok\ntest ai::advanced::domination_war_handover_tests::peace_keeps_the_existing_prewar_power_bar ... ok\ntest ai::advanced::domination_war_handover_tests::a_bounded_raid_does_not_expand_into_a_conquest_campaign ... ok\ntest ai::advanced::domination_war_handover_tests::an_existing_major_war_hands_the_domination_lane_over_before_the_city_target ... ok\ntest ai::advanced::domination_war_handover_tests::a_second_major_war_is_not_hidden_by_an_existing_bounded_raid ... ok\ntest ai::advanced::domination_war_handover_tests::an_outgunned_empire_keeps_recovery_ahead_of_the_new_handover ... ok\ntest ai::advanced::domination_war_handover_tests::a_threatened_city_keeps_recovery_ahead_of_campaign_handover ... ok\ntest ai::advanced::domination_war_handover_tests::assigned_non_domination_lanes_keep_their_existing_strategy ... ok\ntest ai::advanced::domination_war_handover_tests::the_opening_city_band_is_still_required ... ok\ntest ai::advanced::domination_war_handover_tests::a_minor_barbarian_or_defeated_rival_is_not_an_active_major_campaign ... ok\n\ntest result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 5959 filtered out; finished in 0.06s\n\n"
+  },
+  "ci_paired_cost": {
+    "source_head": "7dc694c1916d3887b3275f0df7e62a161b738370",
+    "conclusion": "SUCCESS",
+    "median_change_pct": -0.5,
+    "pairs": 5,
+    "noise_floor_pct": 1.0,
+    "interpretation": "inside noise floor; no speed gain or regression established",
+    "iqr_spread_pp": 0.73,
+    "allowed_budget_pct": 8.0
+  },
+  "ci_rust_suite": {
+    "source_head": "7dc694c1916d3887b3275f0df7e62a161b738370",
+    "command": "cargo nextest run --cargo-profile ci --locked",
+    "passed": 6254,
+    "skipped": 52,
+    "doc_examples_ignored": 4,
+    "developer_tool_regressions_passed": 117,
+    "summary": "cargo-test\tRun Rust tests\t2026-10-25T03:37:24.8337482Z ^[[32;1m     Summary^[[0m [ 169.588s] ^[[1m6254^[[0m tests run: ^[[1m6254^[[0m ^[[32;1mpassed^[[0m, ^[[1m52^[[0m ^[[33;1mskipped^[[0m",
+    "overall_cargo_job": "fails subsequent gene-fires gate for the new tag; Rust tests passed"
   }
 }
