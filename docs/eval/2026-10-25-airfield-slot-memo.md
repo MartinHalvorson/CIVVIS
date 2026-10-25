@@ -32,7 +32,7 @@ binary, input and output digests and interleave the timings. A standard CI
 cost check whose gene is off does not measure the activated scan. Report a
 changed output as a behavior change rather than a pure optimization. Do not
 infer a game-wide gain from the sampled fraction or from a small hot-loop
-measurement. Functional validation and timing are pending.
+measurement. The results below record the subsequent functional and cost checks.
 
 ## Fixed native-board comparison, registered before timing
 
@@ -124,3 +124,62 @@ timing tests (5,907 pass, 2 fail, 52 ignored); both failing tests pass when run
 individually with one test thread. The original failures and isolated retries
 are archived in `tests-initial.tar.gz`. The complete suite is rerunning with
 `RUST_TEST_THREADS=1`, retaining its normal assertions and time limits.
+
+That complete one-thread rerun now passes all six test targets: 6,255 tests
+pass, zero fail and 56 are ignored including four doc examples. The complete
+log is retained in `tests-serial.log.gz`, uncompressed SHA256
+`e1a6e7b62c6113625824764d79d9784942706d2adbf079bb0d81af9e60d3e5cf`.
+
+## Simulation-board follow-up, registered before generation or measurement
+
+Generate two unmodified-parent games from fixed seeds 59002700 and 59002701,
+six majors, 74x46 Continents, nine city states, Online, Emperor majors and
+Deity barbarians, all six victory conditions and a 250-turn clock. These
+seeds come from the beginning of the already selected profiling screen;
+this is post-hoc cost investigation, not independent strength evidence.
+Freeze the existing `fires-live-genome.json` treatment list, set every
+registered treatment explicitly and target all majors at Domination; keep
+ordinary `AdvancedAi::new()` minor/barbarian seats. Record unknown gene tags
+and stop rather than silently substituting them. This omits the handover
+screen's randomized treatment and does not reproduce that experiment.
+
+Save the board immediately before each living major acts at raw turns 50,
+100, 150 and 200. Keep all 48 assigned seed/turn/seat cases, including dead
+seats, early-ended games and missing or inactive reservations; no replacement.
+Stop generation after the last major turn-200 opportunity. Use the public
+headless loop's fog-memory and war-ledger settings. Do not alter any live or
+registered experiment, and run the two generation jobs sequentially.
+
+These fixed simulation snapshots will qualify fresh-planner semantic equality
+and reservation exposure before another cost interpretation. Register the
+measurement execution details before timing them. The earlier two unresolved
+native-board measurements remain part of the evidence, regardless of what
+the larger simulation boards show.
+
+For those simulation snapshots, qualify all available assigned cases with
+fresh controllers under the frozen explicit treatment list. Time only
+`plan_observed_turn`, excluding file reconstruction, controller construction
+and game cloning. Require complete game, new action log, plan and meaningful
+reasoning equality within each process and across builds. Use the same
+source and compiler flags linked to the two existing matching libraries.
+Keep missing cases explicitly. Require positive reservation exposure before
+interpreting cost; a failure aborts interpretation without replacing cases.
+
+Run three same-parent-binary control rounds and five parent/candidate rounds,
+alternating arm order by assigned case index and round. Each process performs
+ten fresh planner calls, records process CPU ticks and wall nanoseconds,
+and checks every resulting semantic output. Report all-case totals and the
+predefined exposure strata (qualification active/inactive), per-case paired
+changes and same-binary controls. A stratum is a cost diagnostic on these
+boards, not an estimate of native frequency or full-game speed. Preserve
+timeouts, divergences, all raw samples and source/input/binary hashes.
+
+The initial generation attempt was stopped during snapshot output: a selected
+one-second sample was entirely inside unbuffered Game-to-file serialization.
+Its source, build receipt, all ten completed boards, partial file, log and
+termination receipt remain in `sim-instrument-initial.tar.xz`. The writer
+now buffers the JSON in memory before writing; the probe also reads its file
+into memory before parsing. No cost comparison was interpreted from this
+attempt. All ten completed original boards match the buffered rerun byte for
+byte; seeds, genome, engine library and all 48 assigned cases are unchanged.
+The corrected generator is still completing the registered milestones.

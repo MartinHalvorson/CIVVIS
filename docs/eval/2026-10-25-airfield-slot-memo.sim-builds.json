@@ -1,0 +1,82 @@
+{
+  "sim-generate-buffered-build": {
+    "command": [
+      "rustc",
+      "--edition=2021",
+      "-C",
+      "opt-level=3",
+      "-C",
+      "debug-assertions=yes",
+      "-C",
+      "codegen-units=16",
+      "-L",
+      "dependency=/tmp/civvis-airfield-slot-memo-cc3b/parent-source/target/ci/deps",
+      "--extern",
+      "civvis=/tmp/civvis-airfield-slot-memo-cc3b/parent-source/target/ci/deps/libcivvis-e26cdcfa7a10e4e6.rlib",
+      "--extern",
+      "serde_json=/tmp/civvis-airfield-slot-memo-cc3b/parent-source/target/ci/deps/libserde_json-5d92e8a1d79db490.rlib",
+      "--crate-name",
+      "airfield_sim_generate",
+      "docs/eval/2026-10-25-airfield-slot-memo.sim-generate.rs",
+      "-o",
+      "/tmp/civvis-airfield-slot-memo-cc3b/sim-generate-buffered"
+    ],
+    "source_sha256": "5b90d066bfa6269e852dac53768f1f09b382a9f58dd11188f0a450ee259d0d16",
+    "binary_sha256": "26d2c81819dc701b7360ff6001a7394ea267a1761e6008a483b4d0ea50ab441b",
+    "library_sha256": "e2214c9f89ca356d736b00c928c5cc47538da68773503df33f69b6c8b7af37d0",
+    "parent_revision": "a605bd591cab1ab6d294691f412e0d5e42e8ded4",
+    "genome_sha256": "8317f5479b3d33fe545e8498cf5d53c81c7784cd62ce81e3a01c22cd583d48e7"
+  },
+  "parent-sim-probe-buffered-build": {
+    "command": [
+      "rustc",
+      "--edition=2021",
+      "-C",
+      "opt-level=3",
+      "-C",
+      "debug-assertions=yes",
+      "-C",
+      "codegen-units=16",
+      "-L",
+      "dependency=/tmp/civvis-airfield-slot-memo-cc3b/parent-source/target/ci/deps",
+      "--extern",
+      "civvis=/tmp/civvis-airfield-slot-memo-cc3b/parent-source/target/ci/deps/libcivvis-e26cdcfa7a10e4e6.rlib",
+      "--extern",
+      "serde_json=/tmp/civvis-airfield-slot-memo-cc3b/parent-source/target/ci/deps/libserde_json-5d92e8a1d79db490.rlib",
+      "--crate-name",
+      "airfield_sim_probe",
+      "docs/eval/2026-10-25-airfield-slot-memo.sim-probe.rs",
+      "-o",
+      "/tmp/civvis-airfield-slot-memo-cc3b/parent-sim-probe-buffered"
+    ],
+    "source_sha256": "e1b65208065a0add16054c586cf1c4785ebdf8a7ced6bfee44e2d4d8ac3b8d7f",
+    "library_sha256": "e2214c9f89ca356d736b00c928c5cc47538da68773503df33f69b6c8b7af37d0",
+    "binary_sha256": "b8bf037b8184ac1f5d3cae7d0135dd722ae573c283805a817c5c2653af0ed7c7"
+  },
+  "candidate-sim-probe-buffered-build": {
+    "command": [
+      "rustc",
+      "--edition=2021",
+      "-C",
+      "opt-level=3",
+      "-C",
+      "debug-assertions=yes",
+      "-C",
+      "codegen-units=16",
+      "-L",
+      "dependency=/Users/martbot-mbp-m5-max-128/civvis-memoize-airfield-slot-scan-cc3b/target/ci/deps",
+      "--extern",
+      "civvis=/Users/martbot-mbp-m5-max-128/civvis-memoize-airfield-slot-scan-cc3b/target/ci/deps/libcivvis-e26cdcfa7a10e4e6.rlib",
+      "--extern",
+      "serde_json=/Users/martbot-mbp-m5-max-128/civvis-memoize-airfield-slot-scan-cc3b/target/ci/deps/libserde_json-5d92e8a1d79db490.rlib",
+      "--crate-name",
+      "airfield_sim_probe",
+      "docs/eval/2026-10-25-airfield-slot-memo.sim-probe.rs",
+      "-o",
+      "/tmp/civvis-airfield-slot-memo-cc3b/candidate-sim-probe-buffered"
+    ],
+    "source_sha256": "e1b65208065a0add16054c586cf1c4785ebdf8a7ced6bfee44e2d4d8ac3b8d7f",
+    "library_sha256": "53d6b8aa105e7a89e0d814e2555d742175ff3237e0cc5f4c80b4fff94d1755cb",
+    "binary_sha256": "60624dad52cd0d153797713ebf33092c8dd656f153694edbcb1b5fe4030f7643"
+  }
+}
