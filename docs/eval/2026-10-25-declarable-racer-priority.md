@@ -153,3 +153,70 @@ account for home defense and the existing ground campaign; releasing the
 diplomatic priority or power threshold in isolation is still insufficient.
 The separate staging archive preserves every result, projection comparison
 and build receipt without replacing the first diagnostic.
+
+
+## Version 2 implementation and evaluation contract, before behavior edits
+
+Implement `elimination-yields-to-a-launch-2` as its own default-off flag and
+registry row. Retain version 1's at-war launch/clock release for either
+version without weakening its predicates. Version 2 adds a physical Culture
+air-interception path in a separate module; no default or native lease changes.
+The earlier native development witness and eighteen baseline diagnostics are
+the pre-edit no-op evidence, not holdout games.
+
+At peace, stage at most one ready, healthy (HP >=80) siege aircraft per turn
+to a currently legal friendly base. Require at least two such aircraft in the
+force, a real engine-backed Culture clock no longer than forty standard turns,
+real tourists, a currently visible, unpillaged Theater, legal declaration and
+a clone-accepted useful pillage surviving at HP >=60 under the explicitly
+assumed future readiness of the moved plane. Do not reset readiness on the
+real board or declare from a staging forecast. Already useful planes keep
+their position. Record the staging action and turn, not just an intention.
+
+A fresh current-board package must contain two distinct ready aircraft whose
+actual selected Theater sorties are useful, legal and survive at HP >=60
+when applied sequentially after a legal declaration on a disposable clone.
+The second selection observes the first result; one district cannot count
+twice after it is pillaged. A single aircraft or a rebase promise cannot
+release the existing front. Recheck before the declaration. The package
+may redirect the current plan after the persistent campaign overlays,
+including between ordinary reassessments. Real tactical selection must put
+the same useful Theater mission before siege-wall or rebase alternatives.
+
+Both staging and opening require committed Domination, no forced rival,
+no Recovery plan, no threatened home city, two owned cities, the normal
+turn-35 and peace-cooldown limits, a legal campaign target and affordable war.
+Keep native visibility conservative (`host_observed` on a mirrored seat,
+player visibility in simulation). A package permits this narrowly specified
+second war without the empire-wide power/production ratios or a ground siege
+bill; it does not waive the preceding safety conditions. No foreign building
+inventory is invented, and modeled pillage remains distinct from native
+suppression. The ground front is kept while staging; when a package is ready
+its urgent rival may own the strategic target. The ordinary path remains
+unchanged with the new flag off or any physical check failing.
+
+Fixtures must use four majors, an existing ordinary-city war against a
+sixteen-DVP contender, an outgunning Culture racer at peace, two planes and
+two useful Theaters. First preserve the off/v1 refusal. Prove the v2 plan
+names the racer after other overlays and actual diplomacy opens its legal
+war; execute the selected real air actions and assert useful pillages. Test
+staging then fresh readiness across turns, one-stage-per-turn, and the
+visibility/readiness/base/declaration recheck. Negative controls include one
+plane, spent/hurt planes, one useful district, no route, fog, strong AA,
+blocked declaration, treasury, home pressure, forced target, Recovery,
+non-Domination and an unbacked/long clock. Do not treat a helper-only boolean
+change as success.
+
+Before full-game observations, assign seeds 59002800 through 59002807, three
+arms (off, v1, v2), six majors, 74x46 Continents, nine city-states, Online,
+Emperor major difficulty, Deity barbarians and a 300-turn horizon. Freeze the
+shared native deployment genome captured for the earlier diagnostics, clear
+this family then vary only our seat's version. Our seat is committed to
+Domination; other majors retain ordinary autonomous victory selection so a
+Culture threat can develop. Run all 24 assignments and retain failures and
+nonactivation. Report wins, original capitals, terminal rival wins, turns,
+score, action activations and CPU separately. This is an internal development
+comparison, not a native permission or highest-difficulty victory claim.
+If no natural activation occurs, state that and keep the limitation visible;
+do not choose replacement seeds from outcomes. A standard family fires screen
+is also required before a new registry row can be shipped without a waiver.
