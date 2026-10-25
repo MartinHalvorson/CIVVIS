@@ -62,5 +62,20 @@ without that feature was rejected before compiling. The baseline build uses
 `cargo build --profile ci --locked --features developer-tools --bin victory_eval`
 before any production-code edit.
 
-Implementation and game results remain pending. No strength, deployment, or
-victory claim is made by the red-test result.
+The implementation adds one current-tile check to `rotate_wounded`, applies
+the existing legal pillage action, and claims the unit and any linked support
+for the rest of the turn. It does not search for a farm or clone the world.
+The existing battle-planner gene family remains the activation boundary; no
+new gene or deployment selection is introduced.
+
+`cargo test --profile ci --locked --lib ai::advanced::battle_planner` passes
+all 85 tests, including all 13 healing tests. The nine added tests cover the
+two reproduced positive cases, non-healing improvements, ownership/peace/
+already-pillaged legality, healthy/exhausted units, hostile fire, a linked
+support formation, an already-planned striker, and arenas without healing.
+Focused rustfmt and `git diff --check` also pass.
+
+The unchanged simulator binary SHA-256 is
+`807114f554efb68e0ed1fea1b784dadbf422f843e8b44bbc48affddcce8c8461`.
+Full-suite and game results remain pending. No higher win-rate or native
+Domination-victory claim is made by the regression tests.

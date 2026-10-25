@@ -242,3 +242,53 @@ fn a_healing_pillage_does_not_replace_an_escape_from_hostile_fire() {
     assert_eq!(game.units[&unit_id].hp, 40);
     assert_ne!(game.units[&unit_id].pos, position);
 }
+
+#[test]
+fn a_healing_pillage_keeps_the_support_formation_claimed() {
+    let (mut game, unit_id, position) = recovery_pillage_board();
+    let support_id = game.spawn_test_unit("battering_ram", 0, position);
+    game.apply(
+        0,
+        &Action::LinkUnits {
+            unit: unit_id,
+            with: support_id,
+        },
+    )
+    .unwrap();
+    let controller = rotate_recovery_pillager(&mut game, unit_id);
+    assert_eq!(game.units[&unit_id].hp, 90);
+    assert_eq!(game.units[&unit_id].linked_to, Some(support_id));
+    assert_eq!(game.units[&support_id].linked_to, Some(unit_id));
+    assert_eq!(game.units[&support_id].pos, position);
+    assert!(controller.battle_planner_claims(unit_id));
+    assert!(controller.battle_planner_claims(support_id));
+}
+
+#[test]
+fn a_striker_keeps_its_turn_instead_of_being_assigned_a_healing_pillage() {
+    let (mut game, unit_id, position) = recovery_pillage_board();
+    let mut controller = AdvancedAi::new();
+    controller.enable_battle_planner_2();
+    let mut field = DangerField::new(&game, 0);
+    controller.rotate_wounded(
+        &mut game,
+        0,
+        &mut field,
+        &BTreeSet::from([unit_id]),
+        &BTreeSet::new(),
+    );
+    assert!(!game.map.tiles[&position].pillaged);
+    assert_eq!(game.units[&unit_id].hp, 40);
+    assert!(!controller.battle_planner_claims(unit_id));
+}
+
+#[test]
+fn a_non_healing_arena_does_not_assign_a_recovery_pillage() {
+    let (mut game, unit_id, position) = recovery_pillage_board();
+    game.map_script = crate::setup::MapScript::Battlefield;
+    game.tactics.heal = false;
+    assert!(game.is_arena());
+    rotate_recovery_pillager(&mut game, unit_id);
+    assert!(!game.map.tiles[&position].pillaged);
+    assert_eq!(game.units[&unit_id].hp, 40);
+}
