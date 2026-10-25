@@ -4154,6 +4154,7 @@ pub const GENES: &[Gene] = &[
 
     // Append the new tag after existing positional rows, before tail markers.
     Gene { tag: "wing-capital-spotting", field: "wing_capital_spotting", kind: Kind::OptIn, enable: AdvancedAi::enable_wing_capital_spotting, disable: AdvancedAi::disable_wing_capital_spotting },
+    Gene { tag: "capital-watch-arms-the-slinger", field: "capital_watch_arms_the_slinger", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_watch_arms_the_slinger, disable: AdvancedAi::disable_capital_watch_arms_the_slinger },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

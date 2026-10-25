@@ -5496,6 +5496,10 @@ pub struct AdvancedAi {
     /// costliest. See `advanced/solvency.rs`. Off by default.
     bankruptcy_exits_the_drain: bool,
     // ---- append: c-d ------------------------------------------------
+    /// Opt-in `capital-watch-arms-the-slinger`; see
+    /// `advanced/capital_watch_slinger.rs`. Off by default.
+    capital_watch_arms_the_slinger: bool,
+    capital_watch_slinger_turn: Option<u32>,
     /// `city-state-war-is-no-front`: a Domination seat's war with a
     /// city-state is no front the campaign target is chosen among. See
     /// `advanced/city_state_war_is_no_front.rs`. Off by default.
@@ -9950,6 +9954,7 @@ mod worked_backlog_claim;
 /// `capital-walls-before-the-surprise`. See
 /// `advanced/capital_walls_before_the_surprise.rs`.
 mod capital_walls_before_the_surprise;
+mod capital_watch_slinger;
 /// Commitments: every multi-turn decision — a settle site, a Builder's tile,
 /// the appointed war's objective — observed at the turn boundary and tracked
 /// to its ending, with what became of it counted. Infrastructure, not a
@@ -10812,6 +10817,8 @@ impl AdvancedAi {
             aqueduct_claims_the_capped_queue: false,
             bankruptcy_exits_the_drain: false,
             // ---- append: c-d ----------------------------------------
+            capital_watch_arms_the_slinger: false,
+            capital_watch_slinger_turn: None,
             city_state_war_is_no_front: false,
             campus_unlock_before_the_luxury: false,
             denial_target_leads_the_fronts: false,
@@ -49093,6 +49100,7 @@ impl AdvancedAi {
         // empty route slot's Trader. See
         // `advanced/trader_fills_the_idle_route/purchase.rs`.
         if !emergency_city_defense && !surprise_defense_purchase {
+            self.capital_watch_slinger_upgrade(g, pid);
             self.idle_trader_purchase(g, pid, &plan);
         }
         // Once a city-saving purchase has had its one action, the turn a
