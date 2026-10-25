@@ -1,4 +1,4 @@
-# Native Culture air-interception follow-up: prepared, unarmed
+# Native Culture air-interception: fixed 16-start trial complete
 
 Register the protocol before its starts in
 [PR #4123 comment 6400300434](https://github.com/MartinHalvorson/CIVVIS/pull/4123#issuecomment-6400300434).
@@ -146,3 +146,72 @@ raw archives; the manifest itself is 987 bytes, SHA-256
 `2ce362ca9e67c0242a639f2cd584524e11f1b346418eda3701e81095419c6134`.
 The last two assignments and final outcome/activation census remain pending.
 
+## Final observed outcomes
+
+All 16 assigned starts are terminal, with six actual ON genomes and ten OFF.
+Every game ran at `DIFFICULTY_IMMORTAL` with the Domination assignment.
+There are **zero verified wins**: four rival Science victories, five rival
+Culture victories, three rival Religion victories and four local-player
+eliminations. The fixed count includes the turn-34 elimination; no game was
+replaced. Victory-event turns below can be one later than the final exported
+state. Original partial collections remain preserved.
+
+| Start UTC suffix | Played arm | Terminal event turn | Result | Maximum observed Bombers | Requested air pillages |
+| --- | --- | ---: | --- | ---: | ---: |
+| 173647 | OFF | 193 | Science loss | 2 | 0 |
+| 174828 | ON | 173 | Culture loss | 0 | 0 |
+| 175710 | OFF | 203 | Science loss | 4 | 48 |
+| 181024 | ON | 167 | Culture loss | 3 | 32 |
+| 182117 | ON | 210 | Culture loss | 2 | 32 |
+| 183539 | OFF | 205 | Science loss | 0 | 0 |
+| 184837 | OFF | 139 | Religion loss | 0 | 0 |
+| 185658 | OFF | 139 | Religion loss | 0 | 0 |
+| 190431 | OFF | 184 | Eliminated | 0 | 0 |
+| 191538 | OFF | 186 | Eliminated | 0 | 0 |
+| 192618 | OFF | 134 | Religion loss | 0 | 0 |
+| 193342 | ON | 34 | Eliminated | 0 | 0 |
+| 193612 | OFF | 209 | Science loss | 3 | 14 |
+| 194935 | OFF | 154 | Culture loss | 2 | 0 |
+| 195822 | ON | 174 | Culture loss | 0 | 0 |
+| 200837 | ON | 183 | Eliminated | 0 | 0 |
+
+No matching v2 decision-journal entry is observed in any assigned attempt.
+The collector finds 126 requested air-pillage model actions, 64 in ON games
+and 62 in OFF games. Those ordinary requests do not establish v2 activation,
+Native execution, district damage or tourism suppression. This trial supplies
+no basis to promote the feature or claim improved strength. CPU cost is not
+exported by this protocol; wall timing is not substituted.
+
+Runtime provenance also limits inference. The games span five actual binary
+revision/hash pairs, retained in the final collection: b4dfb57ea, 4e9d0ac7f,
+91a282bad, 10239aadf and 16836d413. Nine starts share the qualified baseline
+hash `07fe8687698693f1b2379f959b3f21d3d5970b8b8cd4f8955b554c906d24f58a`;
+the next seven use `62ff191dee83d69db7e9972e07a5c55c686b9056d6536416d94dfc86031615ce`,
+which adds `faith-war-needs-the-edge` independently of the studied bit.
+The first profile has 496/497 treatments OFF/ON, the second 497/498.
+There is no isolated treatment-effect estimate across these source/profile
+changes. Installed Lua bytes were recorded during qualification, while their
+loaded identity remains unattested.
+
+A separate read-only roster audit examines every exported local-city roster,
+classifying original founders against observed major/minor rosters. No game
+shows a held foreign major original capital, and nine events record losing
+our own original capital. Bogotá in start 193342 falls at turn 26 before the
+turn-34 elimination. No `city_occupation` event has `ours_now: true`; that is
+an event census, not an asserted deduplicated capture count. The capital
+report is 3,172 bytes, SHA-256
+`019d2fdbbda3e587ac19bd614cf4395c16cedf5796e7d8051c1b10f0c86a119d`.
+Its source script, all source event hashes and complete observations are
+retained. Zero malformed event/decision/runtime rows occur in the final
+collection.
+
+All 16 raw cohort archives are now frozen and verified, totaling 25,795,592
+bytes. The final compressed manifest is 1,104 bytes, SHA-256
+`ab52d1c7e1755f54ebe5be11398db808942ca7549bf7e3ee37f8c9d32d0bf0f0`.
+Each archive has 13 members including actual captured input bytes. The
+10-member final-collection archive retains the earlier interim collections,
+final read-only census, observer cutoff state, driver observations,
+qualification and collector source: 288,960 bytes, SHA-256
+`b5cf477ebf9811c535d51258c912d01fcf0e69ea86fcde6914a494da3c34fb85`.
+Every member was checked. The observer removed its owned lease at the
+registered cutoff and did not assign replacements or restart the trial.
