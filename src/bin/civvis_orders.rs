@@ -10881,7 +10881,12 @@ mod tests {
             .map(str::to_string)
             .collect();
         let forced = super::forced_live_treatments(&requested).expect("compiled force bundle");
-        assert!(forced.contains(&"siege-commitment"));
+        // The bundle forces `siege-commitment` only while the ledger holds it
+        // off; either way it ships, and withholding it must remove it.
+        assert!(
+            forced.contains(&"siege-commitment")
+                || civvis::ai::gene_ledger::deployment_treatments().contains(&"siege-commitment")
+        );
         let withheld = vec![
             "counter-in-lane".to_string(),
             "siege-commitment".to_string(),
@@ -13597,7 +13602,16 @@ mod tests {
             .as_array()
             .unwrap()
             .iter()
-            .filter(|order| order["verb"] == "ATTACK" && order["x"] == 5 && order["y"] == 4)
+            // ⚠ A `preview` order carries verb ATTACK too, but it is a
+            // question: `battle-planner-3` asks the host to price a pair and
+            // nothing moves. Counted as strikes, two previews read as the
+            // unsafe [102, 101, 101] whenever the batch rule ships v3.
+            .filter(|order| {
+                order["kind"] != "preview"
+                    && order["verb"] == "ATTACK"
+                    && order["x"] == 5
+                    && order["y"] == 4
+            })
             .map(|order| order["subject"].as_i64().unwrap())
             .collect();
         if strikers.contains(&101) {
@@ -19200,15 +19214,29 @@ mod tests {
         let mut bounded_ai = civvis::ai::AdvancedAi::new();
         bounded_ai.enable_live_bridge();
         bounded_ai.enable_envoys_open_the_siege_road();
-        bounded_ai.disable_envoy_building_dividends();
-        bounded_ai.disable_bank_envoys();
+        // `decide` re-applies the deployed genome every turn, so a disable
+        // here does not survive it; the arm's withholds do. Withhold whichever
+        // of the two savers the current selection lets an arm withhold.
+        let withheld: Vec<String> = ["envoy-building-dividends", "bank-envoys"]
+            .into_iter()
+            .filter(|tag| {
+                civvis::ai::GENES
+                    .iter()
+                    .any(|gene| gene.tag == *tag && withholdable(gene))
+            })
+            .map(str::to_string)
+            .collect();
         let mut ours = std::collections::BTreeMap::new();
         let reply: serde_json::Value = serde_json::from_str(&decide(
             &mut capped,
             &mut bounded_ai,
             &snapshot,
             &capped_state,
-            default_decision_arm(),
+            DecisionArm {
+                war_from_plan: false,
+                forced_on: &[],
+                withheld: &withheld,
+            },
             DecisionMemory {
                 ours: &mut ours,
                 host_peace_retries: &mut HostPeaceRetries::default(),
