@@ -60,5 +60,37 @@
     "developer_tool_regressions_passed": 117,
     "summary": "cargo-test\tRun Rust tests\t2026-10-25T03:37:24.8337482Z ^[[32;1m     Summary^[[0m [ 169.588s] ^[[1m6254^[[0m tests run: ^[[1m6254^[[0m ^[[32;1mpassed^[[0m, ^[[1m52^[[0m ^[[33;1mskipped^[[0m",
     "overall_cargo_job": "fails subsequent gene-fires gate for the new tag; Rust tests passed"
+  },
+  "local_full_suite": {
+    "command": "cargo test --profile ci --locked",
+    "exit_code": 0,
+    "passed": 6254,
+    "ignored": 56,
+    "raw_log_archive": "2026-10-24-domination-war-handover.fixed-pairs.json.gz"
+  },
+  "fixed_focal_comparison": {
+    "build_head": "51824516886190b30677bb07b34c56036c5a4f8c",
+    "pairs_completed": 8,
+    "executions_completed": 16,
+    "pairs_with_identical_actions": 8,
+    "actual_new_handover_reasons": 0,
+    "focal_wins": 0,
+    "focal_domination_wins": 0,
+    "evaluator_exit_codes": {"immortal": 2, "deity": 2},
+    "classification": "Coverage failure; both evaluators finish all cases and trip the no-contrast guard. Remain draft pending actual full-game activation.",
+    "raw_archive": "2026-10-24-domination-war-handover.fixed-pairs.json.gz",
+    "archive_sha256": "b6e8a198c57202de86be69e560ad9e1b2a99303320c2eacf136dfedef37bc797"
+  },
+  "independent_native_material_pilot": {
+    "cohort_stems_completed": 4,
+    "on_games": 2,
+    "off_games": 2,
+    "native_wins": 0,
+    "source": "8810924eee6e51218e74a2cdf4205e2153ffffe5",
+    "actual_arm_readbacks_verified": 4,
+    "screen_removed_after_four_starts": true,
+    "interpretation": "Unpaired maps; no causal win-rate comparison. This pilot tests neither the handover nor the reserve repair.",
+    "raw_archive": "2026-10-24-domination-war-handover.material-pilot.json.gz",
+    "archive_sha256": "822d22f9b2760eec5ba72d2b0c9251959f69cc4796df525b629d7c8e6d859e04"
   }
 }

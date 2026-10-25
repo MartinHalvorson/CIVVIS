@@ -87,7 +87,6 @@ Original binary SHA-256:
 Recorded 283-policy force-file SHA-256:
 `d7ac5367dda9dc54093ebc55f59d3630c908c577fe84309bbe5378cecec3de55`.
 
-No-op integration tests and subsequent policy evaluation remain pending.
 No new default selection, earlier capture, or win-rate improvement is claimed.
 
 ### Observer qualification amendment 1, before any treatment
@@ -137,16 +136,16 @@ Expansion decision; an already-selected Conquest plan keeps its prior reason.
 
 The implemented hook at `7dc694c1916d3887b3275f0df7e62a161b738370` passes
 all ten focused integration tests. Both positive war cases now select
-Conquest, and all eight controls pass. The full default CI-profile suite,
-fixed focal comparison, and additional reachability screen remain pending.
+Conquest, and all eight controls pass. The local full default CI-profile
+suite also passes: 6,254 tests passed and 56 ignored.
 The default selection is unchanged; these tests establish strategy behavior,
 not native strength.
 
 GitHub's Rust suite also passes all 6,254 tests, with 52 skipped and four
 documentation examples ignored. The 117 developer-tool regressions pass.
 The overall cargo-test job remains red at its subsequent gene-fires gate
-because the new tag has no committed firing artifact. The local full suite
-and registered evaluation batches are still pending.
+because the new tag has no committed firing artifact. The fixed comparison
+and its coverage limit are recorded below.
 
 The hook's CI paired-cost gate passes: five pairs measure -0.50% per
 completed turn, inside the instrument's +/-1% noise floor and +8% budget.
@@ -154,24 +153,72 @@ This establishes neither a speed improvement nor a regression.
 
 ### Independent native material-purchase pilot
 
-While validation builds run, a separate four-assignment pilot tests the
-already-merged `army-upgrade-materials` policy from #4042 under its own
-pre-treatment registration. The first assignment, `civvis-20261025T032555Z`,
-is off: the hash-derived arm, live driver flags, and actual brain header agree.
-Its frozen binary is `20fe763757f68a6ccf024ad8d57ab7bf6b35acdadc56842761b802d36f0b531e`
-from `8810924ee`. Native seat and installed Lua readback verify the game
-configuration and trade sessions. That off-arm game finishes with a rival's
-Diplomatic victory at turn 221, two cities taken and one lost. The second
-assignment, `civvis-20261025T034102Z`, is on, with the dealt arm and actual
-played flag both verified; its outcome remains pending. Neither game is a
-handover treatment or control.
+The separately registered four-assignment `army-upgrade-materials` pilot
+from #4042 is complete. Each hash-derived arm, live driver flag, actual brain
+header, frozen binary, installed Lua trade setting, and native seat readback
+is verified. All four use `8810924ee` and binary
+`20fe763757f68a6ccf024ad8d57ab7bf6b35acdadc56842761b802d36f0b531e`.
 
-The runtime checkpoint archive preserves the registration, observer and
-validation-controller source, first native readbacks, and current partial
-state so this work can be inspected from another machine. The observer stops
-its own screen after four assigned game stems; final outcomes still require
-collection. This pilot does not change the published genome or force bundle,
-and the 24-game handover experiment above remains pending.
+| Native run | Arm | Rival victory | Turn | Score | Cities taken/lost | Kills/losses |
+| --- | --- | --- | ---: | ---: | ---: | ---: |
+| `civvis-20261025T032555Z` | off | Diplomatic | 221 | 786 | 2/1 | 69/51 |
+| `civvis-20261025T034102Z` | on | Science | 198 | 687 | 1/2 | 37/24 |
+| `civvis-20261025T035310Z` | on | Science | 200 | 594 | 1/3 | 27/79 |
+| `civvis-20261025T040737Z` | off | Science | 217 | 362 | 0/7 | 47/45 |
+
+There are no native wins. Two unpaired maps per arm do not establish a
+causal win-rate comparison. Structured notes show zero material-buyer markers
+in the first on game. The second on game has 32 `army_material_buy=1` rows,
+30 no-seller holds, 14 treasury holds, and 18 in-flight-deal holds. These are
+recorded note rows, not counts of completed purchases or successful upgrades.
+
+At turn 114 of that second on game, the planner offers ten of its fifteen
+Iron despite two healthy Heavy Chariots each having a native eighty-Gold,
+ten-Iron Knight quote. The next turn holds seven Iron and requests three
+back. This development witness motivates the separately registered reserve
+repair in #4119. Keeping stock may defer profitable trades, and this witness
+does not establish the repair's effect on conquest or wins.
+
+The material-pilot archive retains all four summaries and readbacks, observer
+source and start receipts, complete structured notes, selected deal/city
+events, and the detailed material trace. The original four-start observer
+removes its own screen without extending the cohort. No handover policy or
+reserve-repair binary is played in this pilot. Published selections stay
+unchanged, and the 24-game handover experiment remains pending.
+
+### Fixed focal simulator comparison
+
+All eight registered pairs complete, for sixteen executions. Every pair has
+identical complete action records and identical terminal outcomes. The new
+handover reason appears zero times in all eight treated focal journals.
+Every game ends in a rival's Science victory; neither arm wins or observes
+a captured foreign major city or capital.
+
+| Difficulty | Seed | Terminal turn | Rival winner | Focal score, both arms |
+| --- | ---: | ---: | ---: | ---: |
+| Immortal | 59002500 | 155 | 2 | 503 |
+| Immortal | 59002501 | 153 | 1 | 359 |
+| Immortal | 59002502 | 140 | 3 | 93 |
+| Immortal | 59002503 | 143 | 1 | 388 |
+| Deity | 59002600 | 129 | 2 | 344 |
+| Deity | 59002601 | 125 | 2 | 367 |
+| Deity | 59002602 | 146 | 2 | 276 |
+| Deity | 59002603 | 144 | 3 | 99 |
+
+Both evaluator processes correctly exit 2 through the no-contrast guard
+after completing their four pairs. The controller stops before its screen
+stage. The fixed-pairs archive preserves every raw row, complete focal
+journal, command, build digest, and full-suite log; no cases are replaced.
+This is a coverage failure, with no measured safety or strength effect.
+
+Continue the already registered six-game screen separately with the same
+binary, frozen genome file, conditions, and seeds. Its startup reports 412
+registered genes from the 447-name native header; 35 names are not carried
+by this screen build. Preserve that limitation and all raw results. This
+instrument measures independent seat associations and qualifies only the
+artifact format. Keep #4118 in draft even if its statistic has nonzero width.
+Actual full-game activation still needs separate prospective qualification;
+the rejected replay controls and original fixed cases remain unchanged.
 
 ### Additional untreated native observations
 
