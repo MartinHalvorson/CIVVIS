@@ -112,3 +112,20 @@ The six-member `collection-01.tar.xz` archive is 67,648 bytes, SHA-256
 `bb3f37d8132683d5a0391e106b1c1c52210d20971d9dc18d66043d8d75bdf279`,
 with every member verified. Full terminal raw captures and outcomes will be
 archived through the registered cutoff, including continuations and overruns.
+
+## Six terminal attempts archived; collection continues
+
+The next two retained assignments also lose: `182117` ON to Culture at 210,
+and `183539` OFF to Science at 205. All six have native victory events; none
+is a win. All three terminal ON games have zero v2 journal lines. This does
+not attribute their losses or their ordinary air actions to v2. Later starts,
+all remaining outcomes and any source/baseline changes remain mandatory.
+
+`cohort-01.tar.xz` through `cohort-06.tar.xz` preserve every terminal run's
+events, actual decisions, summaries, runtime receipts, logs and **all discovered
+capture files**, together with assignment state and driver observations.
+Each has thirteen verified members. All source-file lengths/digests were
+checked again after archiving, and every archive member was read back. Their
+aggregate size is 11,658,052 bytes; exact individual sizes and SHA-256 hashes
+are in `2026-10-25-culture-air-native-screen.first-six-manifest.json.gz`.
+The observer code and owned lease remain unchanged.
