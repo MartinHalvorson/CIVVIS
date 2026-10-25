@@ -339,3 +339,20 @@ It cannot measure counterfactual survival, accepted host actions or wins,
 replace actual generative native activation, relax the draft's shipping limit,
 or alter the independent material-policy trial. Live pins, policy arms and
 game conditions are untouched by this observer qualification.
+
+The captured-read coverage review finds 188 chronological requests through
+turn 70 from one capture process, with complete descriptors and unique
+identities. Eight requests read different snapshots within a single decision.
+For example, turn 24/frame 1 reads snapshot 57 once, then snapshot 58 sixteen
+times. This case therefore fails the preregistered single-prefix observer
+qualification before replay or treatment analysis. No read or later matching
+frame is selected to rescue it, and no candidate comparison is interpreted.
+
+The captured-qualification archive retains every selected native reply,
+per-request descriptor and all supporting archive/index bytes through the
+needed snapshot IDs, with integrity hashes. The live process had already
+exited when its direct argv/cwd collection was attempted; that missing context
+is recorded explicitly. The original binary/source provenance is retained.
+Exact per-read replay support or a separately registered generative native
+qualification is needed. This establishes an input-coverage limit and keeps
+the handover in draft; it supplies no strategy, survival or strength result.
