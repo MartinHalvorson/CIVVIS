@@ -9654,6 +9654,8 @@ mod science_leader;
 /// movement carries it. See `advanced/march_moves.rs`.
 mod march_moves;
 
+/// `the-giant-gets-the-peace-offer`: see `advanced/giant_peace.rs`.
+mod giant_peace;
 /// The Objective Board: a ranked list of what the army is for this turn and
 /// persistent task forces raised against it, in place of proximity force
 /// groups and the posture ladder. Opt-in gene `objective-board`; see
@@ -9661,8 +9663,6 @@ mod march_moves;
 pub mod objective_board;
 /// `prey-is-declared-on`: see `advanced/prey_declaration.rs`.
 mod prey_declaration;
-/// `the-giant-gets-the-peace-offer`: see `advanced/giant_peace.rs`.
-mod giant_peace;
 /// `prey-war-is-kept`: see `advanced/prey_war_is_kept.rs`.
 mod prey_war_is_kept;
 /// `war-faith-buys-the-army`: see `advanced/war_faith.rs`.
