@@ -5906,6 +5906,7 @@ pub struct AdvancedAi {
     /// live seat reached 8 and then 9 cities still reading Expansion, and
     /// declared no war in three Emperor games.
     domination_lane_hands_over: bool,
+    domination_war_hands_over: bool,
     /// `chop-for-expansion`: while a city is building a Settler, a Builder
     /// spends a charge clearing a feature or harvesting a resource for the
     /// Production instead of improving a tile. Off ships the shipped
@@ -10857,6 +10858,7 @@ impl AdvancedAi {
             denial_outranks_expansion: false,
             conversion: victory_conversion::ConversionState::default(),
             domination_lane_hands_over: false,
+            domination_war_hands_over: false,
             chop_for_expansion: false,
             conquest_opening: None,
             conquest_closed: false,
@@ -49758,3 +49760,6 @@ mod native_domination_activation_tests;
 
 #[cfg(test)]
 mod builder_job_safety_tests;
+
+#[cfg(test)]
+mod domination_war_handover_tests;
