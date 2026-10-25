@@ -68,7 +68,8 @@ def body(
 class ShipResumeTests(unittest.TestCase):
     def run_ship(self, *, draft=False, remote_head="local-head", conflict=False,
                  stale=False, gate_state=None, rollups=None, expected_error=None,
-                 rerun_ok=False, timeout_seconds=3600):
+                 rerun_ok=False, timeout_seconds=3600,
+                 server_omits_local_gate=False, gate_name="cargo-test"):
         branch = "agent/render-win-02/codex-47/resume-20260921T230000Z-abcd"
         ready = pr(branch, body() + "\n## What changed\nPreserve ready CI.\n",
                    draft=draft)
@@ -86,9 +87,14 @@ class ShipResumeTests(unittest.TestCase):
                 return str(collab.STALE_BASE_LIMIT if stale else 1)
             return ""
 
+        merged_by_server = [False]
+
         def run_result(argv, **kwargs):
             # The task contains file changes. Every other command is a
             # successful fake; no GitHub calls, pushes or builds may escape.
+            if (server_omits_local_gate and argv[:3] == ("gh", "pr", "merge")
+                    and "--auto" in argv):
+                merged_by_server[0] = True
             code = int(argv[0] == "git" and "--quiet" in argv)
             return subprocess.CompletedProcess(argv, code, stdout="", stderr="")
 
@@ -116,9 +122,12 @@ class ShipResumeTests(unittest.TestCase):
             "merge_pr_or_observe_auto_merge": mock.Mock(return_value="merged-head"),
             "finish_ship": mock.Mock(return_value=0),
         }
+        if server_omits_local_gate:
+            patches["current_pr"] = mock.Mock(
+                side_effect=lambda repo: merged if merged_by_server[0] else ready)
         if gate_state:
             patches["required_check_state"] = mock.Mock(
-                return_value=(gate_state, ["cargo-test"]))
+                return_value=(gate_state, [gate_name]))
         args = collab.build_parser().parse_args(
             ["ship", "--poll-seconds", "20", "--timeout-seconds", str(timeout_seconds)])
         if gate_state == "failed":
@@ -149,6 +158,28 @@ class ShipResumeTests(unittest.TestCase):
         calls["required_check_state"].assert_called_once()
         self.assertFalse(any(c.args[1:2] == ("push",)
                              for c in calls["git"].call_args_list))
+
+    def test_pending_local_gate_cannot_be_bypassed_by_weaker_server_rules(self):
+        calls = self.run_ship(
+            gate_state="pending", gate_name="paired-cost",
+            server_omits_local_gate=True, timeout_seconds=1,
+            expected_error="timed out waiting for required checks")
+        self.assertFalse(any("--auto" in call.args[0]
+                             for call in calls["run"].call_args_list))
+
+    def test_failed_local_gate_cannot_be_bypassed_by_weaker_server_rules(self):
+        calls = self.run_ship(
+            gate_state="failed", gate_name="paired-cost",
+            server_omits_local_gate=True)
+        self.assertFalse(any("--auto" in call.args[0]
+                             for call in calls["run"].call_args_list))
+
+    def test_successful_local_gates_still_allow_auto_merge(self):
+        calls = self.run_ship(
+            gate_state="success", gate_name="paired-cost",
+            server_omits_local_gate=True)
+        self.assertTrue(any("--auto" in call.args[0]
+                            for call in calls["run"].call_args_list))
 
     def test_resumed_failed_required_check_still_blocks_shipping(self):
         calls = self.run_ship(gate_state="failed")
