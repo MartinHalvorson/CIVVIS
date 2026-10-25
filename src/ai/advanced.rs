@@ -6416,6 +6416,10 @@ pub struct AdvancedAi {
     /// short. See `capital_moves_on::elimination_yields_to_a_launch`. Off by
     /// default.
     elimination_yields_to_a_launch: bool,
+    /// Version two adds staged, freshly preflighted Culture air interception.
+    /// See `advanced/culture_air_interception.rs`. Off by default.
+    elimination_yields_to_a_launch_2: bool,
+    elimination_air_stage_turn: Option<u32>,
     /// `first-luxury-first-2`: version 2 of `first-luxury-first`. The first
     /// copy of a luxury earns its premium only while the host-calibrated
     /// empire is actually Amenity-short; a content empire keeps the shipped
@@ -9546,13 +9550,13 @@ pub(crate) mod enemy_of_my_enemy;
 /// the peacetime garrison.
 pub(crate) mod contested_land;
 
-/// An assigned lane's first-half production dispatch. Opt-in gene
-/// `lane-delegates-production`; see `advanced/lane_delegates_production.rs`.
-mod lane_delegates_production;
 /// The Missionary in the field: a last-charge Missionary explores the fog,
 /// and a religious unit steps out of a raider's reach. Two opt-in genes; see
 /// `advanced/missionary_field.rs`.
 mod apostle_evasion;
+/// An assigned lane's first-half production dispatch. Opt-in gene
+/// `lane-delegates-production`; see `advanced/lane_delegates_production.rs`.
+mod lane_delegates_production;
 mod missionary_field;
 /// One war at a time: one campaign front, peace on every other front, and
 /// peace on the front once the tide has run against us for long enough
@@ -9632,6 +9636,7 @@ pub use army_upgrade_materials::ArmyUpgradeMaterialWant;
 /// `capital-taken-moves-on`: a taken capital's army moves on to the next
 /// capital. See `advanced/capital_moves_on.rs`.
 mod capital_moves_on;
+mod culture_air_interception;
 
 /// `science-leader-is-the-target`: at peace, the rival that out-researches
 /// the board is the campaign's rival. See `advanced/science_leader.rs`.
@@ -9672,9 +9677,9 @@ mod battlefront;
 /// Encampment no foreign unit may ever enter, and the soldier who holds the
 /// gate. Five opt-in genes; see `advanced/chokepoints.rs`.
 mod chokepoints;
-mod scout_distance;
 /// `find-the-capital`: see the module.
 mod find_the_capital;
+mod scout_distance;
 
 mod culture_strategy;
 mod victory_conversion;
@@ -10978,6 +10983,8 @@ impl AdvancedAi {
             embassy_finds_the_capital: false,
             embassy_capital_asks: BTreeMap::new(),
             elimination_yields_to_a_launch: false,
+            elimination_yields_to_a_launch_2: false,
+            elimination_air_stage_turn: None,
             first_luxury_first_2: false,
             falling_city_calls_the_takers: false,
             founder_holds_the_holy_city: false,
@@ -14801,15 +14808,15 @@ impl AdvancedAi {
                         .open_city_taker(g, pid, city, minimum_hp, minimum_strength)
                         .is_some())
                     || g.units.values().any(|unit| {
-                    let spec = &g.rules.units[unit.kind];
-                    unit.owner == pid
-                        && unit.hp >= minimum_hp
-                        && spec.class == "military"
-                        && !spec.has_ranged_attack()
-                        && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
-                        && g.unit_strength(unit, false) >= minimum_strength
-                        && g.wdist(unit.pos, city.pos) <= 3
-                })
+                        let spec = &g.rules.units[unit.kind];
+                        unit.owner == pid
+                            && unit.hp >= minimum_hp
+                            && spec.class == "military"
+                            && !spec.has_ranged_attack()
+                            && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                            && g.unit_strength(unit, false) >= minimum_strength
+                            && g.wdist(unit.pos, city.pos) <= 3
+                    })
             })
             .min_by(|left, right| {
                 self.campaign_city_value(g, pid, left, strategy)
@@ -24792,6 +24799,11 @@ impl AdvancedAi {
         // See `second_front_displaced` (`blocker-becomes-the-target`): a
         // second front the plan's running war displaced is declared on here
         // too.
+        // A fresh two-sortie Culture package owns its narrow air opening.
+        // It rechecks home, treasury, readiness and legality before the war.
+        if self.open_culture_air_interception(g, pid, plan) {
+            return;
+        }
         let waiting_second = self.one_war_second_front(g, pid).filter(|rival| {
             !g.is_at_war(pid, *rival)
                 && (self.second_front_waits_for_the_front(g, pid, *rival)
@@ -45201,6 +45213,9 @@ impl AdvancedAi {
         uid: u32,
         plan: &StrategicPlan,
     ) -> Option<Action> {
+        if let Some(action) = self.culture_air_priority_action(g, pid, uid, plan) {
+            return Some(action);
+        }
         let unit = &g.units[&uid];
         let doctrine = BasicAi::unit_doctrine(g, uid);
         let legal = g.legal_doctrine_actions(pid, uid);
@@ -47808,6 +47823,22 @@ impl AdvancedAi {
             self.rebuild_force_groups(g, pid, plan);
         }
         let evacuated_aircraft = self.evacuate_air_bases(g, pid, plan);
+        self.stage_culture_air_interception(g, pid, plan);
+        let held_aircraft = self.hold_staged_culture_aircraft(g, pid, plan);
+        self.execute_culture_air_interception(g, pid, plan);
+        // Hide waiting planes from the early coordinated assignments. Restore
+        // their real readiness immediately afterwards: holding is no action,
+        // not an invented engine operation or a permanent readiness change.
+        let held_readiness: Vec<_> = held_aircraft
+            .iter()
+            .filter_map(|uid| {
+                let unit = g.units.get_mut(uid)?;
+                let saved = (*uid, unit.moves_left, unit.attacks_left);
+                unit.moves_left = 0.0;
+                unit.attacks_left = 0;
+                Some(saved)
+            })
+            .collect();
         // A direct kill is a local opportunity, not a new campaign objective.
         // Resolve those exact, positive exchanges before the remaining unit
         // loop runs, then rebuild once if the board changed so the force
@@ -47855,6 +47886,13 @@ impl AdvancedAi {
         self.mark_gun_lethal_tiles(g, pid);
         self.guns_step_out_of_reach(g, pid);
         let mut air_assault_units = self.plan_air_city_assault(g, pid, plan);
+        for (uid, moves, attacks) in held_readiness {
+            if let Some(unit) = g.units.get_mut(&uid) {
+                unit.moves_left = moves;
+                unit.attacks_left = attacks;
+            }
+        }
+        air_assault_units.extend(held_aircraft);
         // `falling-city-calls-the-takers`: a falling city is taken, or its
         // nearest fit bodies close in. Nothing with the gene off. See
         // `advanced/falling_city_takers.rs`.
@@ -48942,6 +48980,14 @@ impl AdvancedAi {
             self.apply_war_plan_to_strategy(&mut current);
             self.apply_air_surge_to_strategy(g, pid, &mut current);
             self.plan = Some(current);
+        }
+        // Read the current physical package after both persistent overlays,
+        // including turns on which the ordinary assessment stays current.
+        if self.elimination_yields_to_a_launch_2 {
+            if let Some(mut current) = self.plan.take() {
+                self.apply_culture_air_interception_to_strategy(g, pid, &mut current);
+                self.plan = Some(current);
+            }
         }
         let plan = self.plan.clone().unwrap();
         // `air-surge-2`: the wing adopts the land campaign's city while it is
