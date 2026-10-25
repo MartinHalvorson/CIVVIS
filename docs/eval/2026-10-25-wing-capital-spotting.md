@@ -65,3 +65,56 @@ CI Rust suite, relevant existing spy tests, format/quality and repository gates.
 All broad validation, natural firing and whole-game results remain pending.
 The active fixed 16-start `elimination-yields-to-a-launch-2` native study keeps
 its registered treatment and lease. This candidate cannot change that trial.
+
+## Completed captured-input comparisons
+
+The fixed selection contains 136 decision frames and 172 distinct reads,
+representing 2,432 captured controller reads. All 344 off/on native-adapter
+queries succeeded under each game's actual played genome, changing only the
+new spotting bit. Exactly one read changes an order: game
+`civvis-20261025T124842Z`, turn 174/frame 0, snapshot 517/read count 18.
+Spy 9502731 changes from Gain Sources in Taruga (14,15) to travel to Istanbul
+(33,24). Spy 9699340 still disrupts rockets at (32,4), and spy production
+orders remain unchanged. The other 171 reads have identical proposed orders
+and planned actions. The earlier development query at turn 195, which changes
+nothing, is retained too.
+
+The first complete pass omitted explanation logging. A second pass over the
+same entire selection enables it: all proposed orders and planned actions
+match the first pass exactly, all input/genome controls match, and the single
+changed read has the candidate's decision journal entry. These fresh adapter
+queries lack the historical controller's complete persisted memory. They prove
+a proposed policy action, not host permission, completed travel, sight, damage,
+or improved outcomes.
+
+The 1,678-member native-query archive retains both complete passes, raw
+responses, manifests, exact genomes, selection and reconstruction scripts,
+frozen build metadata, the development no-op and initial CI failures.
+It is 1,217,304 bytes, SHA-256
+`9a16b131a148376d43772351e6765c7d8d998a68599f51c0e8b35d52aab08106`;
+all members were verified. Its native binary was compiled from f029965ed and
+has SHA-256
+`de35ca1cf7150ff7e6d798928e036673572a4d3f531e6575f724d29ae908d5ba`.
+
+Registration placement now passes all 14 append-point controls. Initial
+GitHub Rust tests passed 6,298 tests (52 skipped), but the complete gate failed
+on missing firing evidence; the initial policy gate also found registration
+and generated-metadata defects. These failures are retained, not described as
+a green gate. Regeneration keeps the ledger and deployed defaults identical
+and lists spotting as off and unmeasured. Full validation is still pending.
+
+## Whole-game observation status
+
+Both registered eight-game sampled batches completed: 48 default-profile seats
+and eight measured Immortal-proxy seats (32 total seats). All six victory
+conditions remained enabled. The proxy is explicitly assigned Domination;
+its measured seats win three games through Culture or Religion and none by
+Domination. These are model outcomes, not Native verification.
+
+The sampled design draws the spotting bit independently, so an unpaired
+contrast is insufficient proof of activation or benefit. A separate matched
+instrument reuses the unchanged gameplay routine, restores every original
+rival genome and varies only the measured seat's spotting bit. In the first
+fixed seed both initial worlds, complete action traces and terminal worlds
+are byte-identical. The remaining seven fixed pairs are registered and
+running; all results, including no activation, will be retained.
