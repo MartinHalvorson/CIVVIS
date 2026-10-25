@@ -71,3 +71,27 @@ package leaving the budget available to a later safe sale. Two core checks
 cover a ten-unit army retaining one native bill and fractional native costs
 rounding only the missing purchase. GREEN and full-suite validation are
 pending. These changes have not been deployed into a native game.
+
+The first post-implementation build at `1d0bbcd25` fails because the new
+bridge helper refers to `BTreeMap` without importing it. This is a compile
+failure, not GREEN or a policy result. Preserve that log and correct those
+two references before repeating validation.
+
+## Follow-up limit on the native witness
+
+The companion follow-up archive retains fourteen first-frame states from
+turns 113 through 126, all structured notes and the full journal in that
+interval. These observations were selected after the sale was noticed and
+remain development evidence. Iron replenishes to eleven by turn 117; both
+observed units are still Heavy Chariots then, with native eighty-Gold Knight
+quotes blocked by a treasury of only sixty-three Gold. At turn 118 both
+remain Heavy Chariots with friendly-territory refusals despite thirteen Iron.
+
+The existing return-to-upgrade mechanism is already present and logs actions
+in this native game. At turn 114 the second chariot is four tiles from a
+visible enemy Bombard and Field Cannon, while the first is three tiles from
+its own nearest city. The structured plan is Recovery. These facts do not
+reconstruct all planner reservations or prove a safe counterfactual upgrade.
+Preserving the stock alone is not evidence that either upgrade completes or
+that the trade-income cost is worthwhile. A native trial must retain these
+economic and territory constraints in its interpretation.
