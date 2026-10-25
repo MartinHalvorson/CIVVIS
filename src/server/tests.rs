@@ -6664,8 +6664,8 @@ fn browser_orders_controls_interface_setup_and_logs() {
         EMBEDDED_INDEX.contains(
             "`<span class=\"closest-victory-road\">${escapeAttr(closest.victory)}</span>` +"
         ) && EMBEDDED_INDEX
-            .contains("`<span class=\"closest-victory-turns\">-${closest.turns}</span>`"),
-        "the cell reads victory-turns, e.g. science-39"
+            .contains("`<span class=\"closest-victory-turns\">-${closestVictoryTurnsLabel(closest.turns)}</span>`"),
+        "the cell reads victory-turns, e.g. science-39 or science-250+"
     );
     assert_eq!(
         EMBEDDED_INDEX
