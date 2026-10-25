@@ -8719,6 +8719,11 @@ pub struct AdvancedAi {
     /// march step, not only beside it. Off by default.
     staging_gun_trusts_its_escort_2: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `war-faith-buys-the-army`: at war with a major, the army's Faith
+    /// purchase runs before patronage and the religious spenders, holding
+    /// back only the inquisition's reserve. See `advanced/war_faith.rs`. Off
+    /// by default.
+    war_faith_buys_the_army: bool,
     /// `threatened-city-buys-its-defender-2`: the threatened city's purchase
     /// buys only a defender within
     /// `threatened_city_purchase::DEFENDER_ERA_SHARE` of the strongest land
@@ -9650,6 +9655,8 @@ pub mod objective_board;
 mod prey_declaration;
 /// `prey-war-is-kept`: see `advanced/prey_war_is_kept.rs`.
 mod prey_war_is_kept;
+/// `war-faith-buys-the-army`: see `advanced/war_faith.rs`.
+mod war_faith;
 /// Target feasibility, the declaration and the peace term read off the
 /// board's requirements. Opt-in gene `war-policy-via-board`.
 mod war_policy;
@@ -11319,6 +11326,7 @@ impl AdvancedAi {
             solvent_or_hold: false,
             staging_gun_trusts_its_escort_2: false,
             // ---- append: t-z ----------------------------------------
+            war_faith_buys_the_army: false,
             threatened_city_buys_its_defender_2: false,
             unwalled_ring_steps_in: false,
             threatened_city_buys_its_defender: false,
@@ -28411,6 +28419,28 @@ impl AdvancedAi {
             + self.inquisition_faith_reserve(g, pid)
             // See `counterweight_bank_held` (`counterweight-finishes-one-shrine`).
             + self.counterweight_bank_held(g, pid);
+        self.military_faith_spending_above(g, pid, plan, reserve)
+    }
+
+    /// `military_faith_spending` against an explicit reserve: the bank it
+    /// leaves untouched. `war-faith-buys-the-army` calls it with a smaller
+    /// one; see `advanced/war_faith.rs`.
+    pub(super) fn military_faith_spending_above(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        reserve: f64,
+    ) -> bool {
+        let bank = g.players[pid].faith;
+        let below_modelled_floor = bank < 600.0;
+        if !matches!(
+            plan.strategy,
+            GrandStrategy::Conquest | GrandStrategy::Recovery
+        ) || (below_modelled_floor && g.host_purchasable.is_empty())
+        {
+            return false;
+        }
         let counts = self.counts(g, pid);
         if bank < reserve {
             return false;
@@ -49095,6 +49125,13 @@ impl AdvancedAi {
         self.advanced_products(g, pid, plan.strategy);
         // See `lane_great_people`: a Great Person is a finite global race,
         // and an Expansion plan reads 0.85 for every class the lane needs.
+        // `war-faith-buys-the-army`: at war, the army's faith purchase comes
+        // before patronage and the religious spenders. See
+        // `advanced/war_faith.rs`.
+        if self.war_faith_buys_the_army_now(g, pid, &plan) {
+            let reserve = self.war_faith_reserve(g, pid);
+            self.military_faith_spending_above(g, pid, &plan, reserve);
+        }
         self.advanced_great_people(g, pid, self.great_person_lane(g, pid, &plan));
         if self.victory_planning && g.victory_conditions.religious {
             let committed = plan.strategy == GrandStrategy::Religion;

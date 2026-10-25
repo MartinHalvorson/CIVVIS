@@ -8228,6 +8228,17 @@ impl AdvancedAi {
         self.defenders_hold_the_walls = false;
     }
 
+    /// Opt-in gene `war-faith-buys-the-army`; see
+    /// [`Self::war_faith_buys_the_army`].
+    pub fn enable_war_faith_buys_the_army(&mut self) {
+        self.war_faith_buys_the_army = true;
+    }
+
+    /// The twin of `enable_war_faith_buys_the_army`.
+    pub fn disable_war_faith_buys_the_army(&mut self) {
+        self.war_faith_buys_the_army = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
