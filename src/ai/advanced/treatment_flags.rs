@@ -8187,6 +8187,17 @@ impl AdvancedAi {
         self.city_state_war_is_no_front = false;
     }
 
+    /// Opt-in gene `staging-gun-trusts-its-escort-2`; see
+    /// [`Self::staging_gun_trusts_its_escort_2`].
+    pub fn enable_staging_gun_trusts_its_escort_2(&mut self) {
+        self.staging_gun_trusts_its_escort_2 = true;
+    }
+
+    /// The twin of `enable_staging_gun_trusts_its_escort_2`.
+    pub fn disable_staging_gun_trusts_its_escort_2(&mut self) {
+        self.staging_gun_trusts_its_escort_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
