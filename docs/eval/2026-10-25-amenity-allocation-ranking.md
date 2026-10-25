@@ -55,3 +55,44 @@ cold-native-process speed claim from these fixed-board measurements.
 Run the ranked-oracle tests and full `cargo test --profile ci --locked` on
 the completed source. No implementation change or benchmark result exists
 in this registration; the baseline library build is next.
+
+## Completed comparison: candidate rejected
+
+The candidate `759feb6afbca1e8ae2e32163725268c6c2a6f2f5` passes the complete
+optimized local suite: 6,268 passed, zero failed, 56 ignored. Both existing
+independent allocation-oracle and shortcut/mutation-scope tests pass. Parent
+and candidate library/probe receipts preserve source, compiler, CI profile,
+flags, dependencies and binary hashes. The libraries are frozen before any
+comparison call, and the probe source hashes match exactly.
+
+Every reached fixed input qualifies complete board, applied action, strategic
+plan and reasoning equality. All eight native and 42 reached simulation cases
+complete all three control and five comparison rounds; six unreached assigned
+simulation snapshots remain in the result. There are no failed or replaced
+calls. The original reservation annotations do not select this experiment's
+cases or establish exposure to the changed allocation routine.
+
+| Corpus | Same-binary median total CPU change | Candidate median total CPU change |
+| --- | ---: | ---: |
+| Eight native observations | -1.6722% | +0.1919% |
+| 42 simulation observations | -3.2711% | -1.0205% |
+
+Native comparison rounds: +2.8715%, -1.0010%, -0.2945%, +0.1919%, +4.5773%.
+Simulation comparison rounds: -1.0205%, +1.5736%, -0.6776%, -4.1411%, -6.5824%.
+Controls retain native -2.4202%/-1.6722%/-0.5213% and simulation
++0.9624%/-3.2711%/-14.0258%. These results do not establish a benefit beyond
+shared-host variation. No full-game performance or strength claim follows.
+
+Revert the production change in `de000cf14` and retain the negative result.
+The final source has no luxury-allocation change from the frozen behavior
+parent. Do not repeat the same cases until a favorable timing appears.
+
+The results archive is 2,223,720 bytes, SHA-256
+`b6cc08dbf4da028c05d67da03c2802c592036e34a03f780aa6eaca65ed0fcfb3`;
+all 67 members were read back against their sources. It preserves all case and
+round measurements, complete semantic boards, build receipts, parent/candidate
+logs, preparation manifests and the exact controller. Native and simulation
+input bytes remain reconstructible from #4124's retained input archives and
+are checked against the copied manifests before every experiment. Frozen
+binaries/libraries are also retained in local scratch. This final PR records
+a rejected implementation experiment and leaves gameplay behavior unchanged.
