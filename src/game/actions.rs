@@ -7115,6 +7115,7 @@ impl Game {
                 .copied()
                 .unwrap_or(0.0);
         let rock_band = unit.kind == "rock_band";
+        let promotion_keeps_moves = self.civ_effect(pid, "promote_no_finish_moves") > 0.0;
         let distinguished = {
             let unit = self.units.get_mut(&uid).unwrap();
             let extra_first_promotion = unit.extra_first_promotion;
@@ -7134,8 +7135,10 @@ impl Game {
                 }
             }
             unit.hp = (unit.hp + 50).min(100);
-            unit.moves_left = 0.0;
-            unit.attacks_left = 0;
+            if !promotion_keeps_moves {
+                unit.moves_left = 0.0;
+                unit.attacks_left = 0;
+            }
             unit.acted = true;
             unit.fortified = false;
             unit.fortify_turns = 0;
@@ -11790,3 +11793,7 @@ mod air_pillage_refusal_tests;
 #[cfg(test)]
 #[path = "neutral_airstrip_tests.rs"]
 mod neutral_airstrip_tests;
+
+#[cfg(test)]
+#[path = "gran_colombia_promotions_tests.rs"]
+mod gran_colombia_promotions_tests;
