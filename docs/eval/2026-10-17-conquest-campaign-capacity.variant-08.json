@@ -1,0 +1,42 @@
+{
+  "registered_utc": "2026-10-17T20:56:46.717199+00:00",
+  "phase": "variant-08: known-map development only, before freezing or execution",
+  "policy_parent_source": "12f146fcfbbdeae2e311cffa19d0b9b3dddd8551",
+  "rejected_intermediate_source": "bf1e65877f66581e2274198453e6d216f292f618",
+  "rejected_intermediate_development": {
+    "cases": 6,
+    "focal_wins": 0,
+    "verified_deity_domination_wins": 0,
+    "fresh_games": 0,
+    "understaffed_camp_observations_reduced_on_maps": 5,
+    "qualification": "Variant07 fixed its local two-body assignment regression but did not establish strength. Deity 49220027834 had fewer cities, power and science at turns 80 and 100 than variant03; Deity 43663176127 lost cities between turns 80 and 100. Reject the policy, not promote its staffing metric. Its source-specific Rust quality failed an inconsistent digit grouping warning in the new test seed. The entire rejected board patch, including that test literal, is removed before variant08."
+  },
+  "observed_mechanism": {
+    "source": "variant-03/deity-49220027834",
+    "writing_research_selected_turn": 38,
+    "first_capital_campus_started_turn": 52,
+    "turn_60_cities": 3,
+    "turn_60_campuses": 1,
+    "turn_80_campuses": 1,
+    "turn_80_science_per_turn": 23.8,
+    "queue_order": "Existing capital and Basic campus-before-army-2 claims yield to a due Settler; the due-Settler predicate can remain true while other earlier military or wall choices take queues. First Campus claims outside the capital therefore need separate, bounded evaluation rather than assuming the research unlock buys science."
+  },
+  "hypothesis": "With at least three cities and a standing land army covering the existing one-per-city emergency floor, let one locally safe, idle noncapital claim its first legal, bounded-ETA Campus in the explicit Domination lane. Do not require an unfilled global Settler promise to clear first. Leave the capital and all actual queues untouched. Bound the intervention to one noncapital Campus, including any already queued or completed. Use existing Campus genes, legal placement and ETA checks; preserve war, threats, recent damage, barbarian local alarms and economic recovery. This is an experiment, not a claim that extra science wins.",
+  "scope": [
+    "src/ai/advanced.rs: call after the existing capital-campus claim",
+    "src/ai/advanced/conquest_campaign.rs: bounded noncapital campus claim",
+    "src/ai/advanced/conquest_campaign/tests.rs: actual production and preservation regressions"
+  ],
+  "unchanged": [
+    "engine",
+    "Native controller",
+    "host observations",
+    "genes and pins",
+    "283-gene force file",
+    "difficulty and bonuses",
+    "victory conditions",
+    "existing Research and war-opening edge gates",
+    "initial registration and holdout allocation"
+  ],
+  "gate": "Run all six original known development maps with the unchanged matched observer profile. No fresh holdouts unless at least one engine-verified focal Deity Domination win owns every original capital and all six cases complete. Before fresh play, freeze final selected source and run its exact observer A/A. Fresh gate remains eight paired complete maps, at least one Deity Domination win, no fewer focal wins and no more Religion losses."
+}

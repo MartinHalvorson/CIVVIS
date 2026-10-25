@@ -1,0 +1,9 @@
+{
+  "phase": "Known-map development only; registered before variant-03 executions",
+  "parent_candidate_source": "332217af2c4fbf457c1e3f8e50dc1adcf7b4b3fe",
+  "parent_validation": "24 focused tests pass; all source CI checks succeed, including 6,200 nextest passes, 52 skipped tests and four ignored Rust documentation examples.",
+  "parent_development": "All six cases complete. No focal wins, Domination wins or foreign-major holdings observed at round boundaries. Five maps have focal action contrast. The three Deity major declarations are journaled as defensive faith wars at turns 63, 71 and 117, not ordinary conquest launches.",
+  "hypothesis": "An optional faith-pressure war should honor the major-war power edge that the same assigned Domination controller is configured to require, rather than opening at the separate 0.7-times-steady floor and interrupting preparation. Reuse declaration_has_the_edge, including its existing production, peak and steady-power readings; add no new numeric threshold. Preserve urgent victory-threat responses and configurations without the major-war edge enabled. Preserve every existing faith-war legality, rout, defensive, affordability and cooldown guard.",
+  "scope": "Retain variant-02 reachable objectives and prewar modernization. This is a compound development policy, not an isolated causal estimate for modernization or war selection. No runtime/genome/force/difficulty/handicap/victory/verification changes.",
+  "gate": "Run all six originally registered known development cases from a frozen source commit/tree, executable and inputs. Do not execute any of the original eight fresh holdouts unless a complete variant wins an engine-verified Deity Domination game with original-capital ownership. Original fresh registration and seeds remain unchanged. No promotion on safer declarations or compatibility alone."
+}

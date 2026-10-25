@@ -1,0 +1,62 @@
+{
+  "cases": [
+    {
+      "difficulty": "immortal",
+      "seed": 45312861349
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 47651167238
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 46732028391
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49478848256
+    },
+    {
+      "difficulty": "deity",
+      "seed": 43663176127
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49220027834
+    }
+  ],
+  "required_all_six_complete": true,
+  "original_registration_sha256": "2c8cb2eff49e0682a1af251d7ac7afcf2b32061b25b013e8b41e09c1baa4b813",
+  "development_gate": "All six known maps complete and at least one verified focal Deity Domination owning all original capitals before fresh holdouts; then freeze the final selected source and pass strict observer A/A. The diagnostic journal exception never relaxes final-source A/A.",
+  "native_verification": "Unestablished. Controlled unit fixtures, nominal policy-value projections and reduced headless development runs are not Native wins or deployed-binary equivalence.",
+  "registered_utc": "2026-10-18T05:54:08.904676+00:00",
+  "variant": "variant-18",
+  "selected_policy_parent": "12f146fcfbbdeae2e311cffa19d0b9b3dddd8551",
+  "documentation_parent": "c52a6c59de6f5492000ac92573e48869ca780690",
+  "comparison_parent": "variant-03",
+  "candidate_executions_at_registration": 102,
+  "resource_diagnostic_control_executions_at_registration": 54,
+  "fresh_holdout_executions_at_registration": 0,
+  "rejected_previous_policy": "17 is focal-action-null against16 onall6 known maps,0 wins/foreign-major holdings and unchanged observed Iron access. Restoreexact selected03 Rust first; do not retain16 or17 as improvements.",
+  "hypothesis": "An obsolete headcount can satisfy the ordinary land ceiling while the empire owns no medieval-strength frontliners. Recognize a bounded gap of at most2 CURRENT legal land nonranged frontliners with base strength45+ in the ordinary production score, instead of requiring an idle city or increasing the generic army target. Actual modern bodies and other-city head queues count against the2-body budget, including wounded bodies; queued upkeep and positive projected income bound spending.",
+  "prior_evidence": {
+    "source03_build_order": "fedc5595355a39b508729d20b0b61245d40f8148bc424e4bb3ae552b11160d9c",
+    "source03_staging": "db250baeca9849b21eb3b259146be7936c84099c3bb81ba9dade9183bb14723f",
+    "source17_analysis": "455c0289b0de8d47070aa2b6cda98eed67ac07b9580d5f2d2d79769811889493",
+    "qualified03e_analysis": "e2217ce469386ac8d8f46c8cb1561eac0c03a4088b7e1d1221272a67c2118c58",
+    "reading": "All6 selected03 turn100 rosters have0 nonranged melee/anti/light/heavy bodies with canonical base strength45+, wounded or healthy. Source13 idle Pike claims changed3 Immortal maps but0 Deity action streams. Ordinary production has a generic land-headcount veto plus force-gap collapse.03e shows only a few adjacent funded geometries; most late candidates coincide with a threatened prior plan, and geometry is not helper eligibility. A new scarce-material return reservation is NOT selected.",
+    "limitations": "These are known-map descriptive observations, not causal production-helper eligibility or victory evidence. Some maps may have no currently trainable eligible unit or positive-income opening.45 is a preregistered canonical medieval infantry threshold, not effective military power or a claimed tactical matchup guarantee.",
+    "overlap_receipt": "8f82ea0c117e6979ae6e7448dee0e66213a661d69a2062820d7dcb57ea537101"
+  },
+  "bounded_change": [
+    "Only victory-planning Domination, Writing/2+ cities, Expansion or Conquest/nonrush, no appointed war package or threatened city, living legal named reachable major objective and no active major war.",
+    "Pure gap score for CURRENT can_produce-legal military land melee/anti/light/heavy units, no ranged/bombard attack, canonical base strength45+. No unlock, resource/host-permission, production speed, maintenance, movement, bank, force or engine change.",
+    "Need3+ owned living older frontliners each at least15 base strength below this candidate. Modern owned bodies with base strength at least this candidate count even wounded; other-city front head queues at least as strong count. Return max(0,2-owned-queued), never above2. Exclude the asking city queue so continuation cannot self-block. No state/cache or speculative journal.",
+    "Gold must cover the ordinary30 floor plus any current deficit and existing Solvent-or-hold maintenance floor when enabled. Current income minus conservative canonical base upkeep of ALL other-city first queued units minus this candidate upkeep must remain at least+2. No credit to fix insolvency through hypothetical future revenues.",
+    "Inside ordinary production scoring only, allow this bounded missing-role gap through the generic land headcount ceiling just as missing siege can. Raise force_gap to at least the actual1/2 missing modern bodies. Keep all preceding/following real item legality, air resource, hostile/emergency, economy, production-time, candidate-role and controller action checks. No queue preemption, idle-city force claim, generic army-target expansion, reservation or direct Produce action.",
+    "Unchanged6 cases,2 workers, full independent freeze/matched build/locked launch before games. Compare18 against selected03; report actual action contrast, production changes and timing/rosters/income without causal upgrade/debit claims. No fresh game before the unchanged Deity Domination gate and final-source STRICT observer A/A."
+  ],
+  "unit_tests_planned": [
+    "No-op RED must fail eligible pure gap and actual saturated production-value assertions. GREEN covers wounded/current/queued2-body cap, own-queue continuation,3 obsolete units, off-lane/legacy, emergencies/major war, named target/Writing, researched/material legality, conservative pending upkeep and Gold floor, and no old/ranged/siege gap. UNIT fixtures only; no evaluated/Native setup change."
+  ]
+}

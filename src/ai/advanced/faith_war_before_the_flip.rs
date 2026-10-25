@@ -234,6 +234,12 @@ impl AdvancedAi {
                 ),
             ));
         }
+        if !self.urgent_victory_threat(g, rival) && !self.declaration_has_the_edge(g, pid, rival) {
+            return Some((
+                "campaign-edge",
+                "the optional faith war lacks the configured major-war power edge".to_string(),
+            ));
+        }
         if self.threatened_city(g, pid).is_some() {
             return Some(("threatened", "a city of ours is threatened".to_string()));
         }

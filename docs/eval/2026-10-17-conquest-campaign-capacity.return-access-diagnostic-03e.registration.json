@@ -1,0 +1,78 @@
+{
+  "registered_utc": "2026-10-18T05:11:53.203745+00:00",
+  "purpose": "Observe own current upgrade refusals, independently quoted bills and legal adjacent own-territory entry before selecting any reservation/return policy. Prior boundaries show Iron is periodically consumed but do not establish that a healthy, unbound unit could currently return safely or legally upgrade. No policy18 selected. A canonical bill or legal adjacent move is NOT upgrade-return helper eligibility, route safety, a future legal offer or an executed action.",
+  "source_commit": "12f146fcfbbdeae2e311cffa19d0b9b3dddd8551",
+  "source_directory": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/source-variant-03",
+  "source_receipt_sha256": "efd0d0bd6b048082262f339b6802adf215682d8959650e050457a1541dd2e6ca",
+  "original_binary": {
+    "locked_utc": "2026-10-17T19:09:37.571305+00:00",
+    "frozen_source_sha256": "efd0d0bd6b048082262f339b6802adf215682d8959650e050457a1541dd2e6ca",
+    "binary": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/target-variant-03/ci/conquest-city-health-world-probe",
+    "binary_sha256": "73b06e328e8a667562d709920d067d720e2bc8e0146e19c8ae978638185279b0",
+    "commit": "12f146fcfbbdeae2e311cffa19d0b9b3dddd8551"
+  },
+  "force_profile": "Unchanged same 283 live force tags; no gene, observation, seed, difficulty or engine changes",
+  "cases": [
+    {
+      "difficulty": "immortal",
+      "seed": 45312861349
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 47651167238
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 46732028391
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49478848256
+    },
+    {
+      "difficulty": "deity",
+      "seed": 43663176127
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49220027834
+    }
+  ],
+  "observer_source_sha256": {
+    "Cargo.toml": "e699850ac7c0f2d6cfb5fec0089932509557dced8c994414c61161fd1509b61c",
+    "Cargo.lock": "c5b846cc3b43bf67088b4260665267adac3f8c5d5df5b358af9496294400a259",
+    "src/main.rs": "487f2d3cf4a8e2758dea50b127199bcee236ef40d6e39ca15852a40f55c824f6",
+    "source-identity.txt": "30362f806818bb62e718a930e0836c6137707120d0439d0b3ae6eba74d9c2060"
+  },
+  "required_AA": [
+    "actions.json",
+    "snapshots.json",
+    "plans.json",
+    "world-states.json",
+    "why.log",
+    "journal-stats.json"
+  ],
+  "normalization_scope": "Diagnostic-only qualification, not final-source observer A/A. All actions/snapshots/plans/world-states/journal-stats/result must be byte-identical to retained03 and a new original03 replay. why.log must match raw or under ONLY the already documented adjacent SAME-TURN Military/Detail stops-re-asking-move-refusal line-order normalization copied unchanged from03b. No new semantic, actor, turn, or other-line exception.",
+  "read_only_additions": "Retain03d own-state sidecar; add only own position/HP/movement/link/embark facts, current researched-or-host successor, current legal offer/refusal, canonical formation bill and authoritative resource quote, own host upgrade fact, and currently legal single moves into adjacent own passable land. No extra Game clone, route search, AI/controller/helper invocation, action or other-player stock. Never mutate authoritative game/controller/cache intentionally. Qualification must catch any observational action drift.",
+  "diagnostic_executions_registered": 12,
+  "candidate_policy_executions_added": 0,
+  "completed_candidate_executions_at_registration": 96,
+  "pending_candidate": "17 pushed24978bd859a0b6cdb7886bf8374ee4bc596d476c, not completed at this registration. Diagnostic uses unchanged selected03, not17.",
+  "prior_completed_diagnostic_control_executions": 42,
+  "total_registered_diagnostic_control_executions": 54,
+  "fresh_holdout_executions": 0,
+  "native_verification": false,
+  "final_source_strict_AA_qualification": false,
+  "acceptance": "All6 paired original03/new diagnostic runs must qualify before interpreting the sidecar. All actions/snapshots/plans/world/result/journal-stat raw exact vs retained03 AND new originals. Raw journals exact or ONLY the existing unchanged03b adjacent same-turn Military/Detail move-refusal ordering exception. No new normalizer; retain all failures. Never relax final-source STRICT observer A/A or all6/verified Deity Domination/all-original-capitals/fresh gates.",
+  "observer_plan_sha256": "83c9e5259de84f3bf2f0d4870ff499b205640beb18940ae12fc83276cc11e2ff",
+  "diagnostic_binary_sha256": "fd6a83921f4fcaa19b11203e2ebd82841b6c2db55edb3d27ac8bc19ece113a5b",
+  "diagnostic_binary": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/target-return-access-03e/ci/conquest-return-access-diagnostic",
+  "binary_locked_utc": "2026-10-18T05:28:57.645780+00:00",
+  "build_profile": {
+    "ci": {
+      "inherits": "release",
+      "lto": false,
+      "codegen-units": 16
+    }
+  }
+}

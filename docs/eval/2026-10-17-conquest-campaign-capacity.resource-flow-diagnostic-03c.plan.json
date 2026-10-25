@@ -1,0 +1,64 @@
+{
+  "registered_utc": "2026-10-18T02:29:41.238233+00:00",
+  "purpose": "Resolve own resource-stock flow before another policy change. Earlier03 samples show Iron12 and rate2 on Deity492; no cause, capacity12, trading-sale mechanism, or world/view mismatch is established. The existing capacity is50, and qualified world and view stock samples agree. Observe own policies, queues and resource commitments per boundary rather than guessing.",
+  "source_commit": "12f146fcfbbdeae2e311cffa19d0b9b3dddd8551",
+  "source_directory": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/source-variant-03",
+  "source_receipt_sha256": "efd0d0bd6b048082262f339b6802adf215682d8959650e050457a1541dd2e6ca",
+  "original_binary": {
+    "locked_utc": "2026-10-17T19:09:37.571305+00:00",
+    "frozen_source_sha256": "efd0d0bd6b048082262f339b6802adf215682d8959650e050457a1541dd2e6ca",
+    "binary": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-17/conquest-campaign-capacity/target-variant-03/ci/conquest-city-health-world-probe",
+    "binary_sha256": "73b06e328e8a667562d709920d067d720e2bc8e0146e19c8ae978638185279b0",
+    "commit": "12f146fcfbbdeae2e311cffa19d0b9b3dddd8551"
+  },
+  "force_profile": "Unchanged same 283 live force tags; no gene, observation, seed, difficulty or engine changes",
+  "cases": [
+    {
+      "difficulty": "immortal",
+      "seed": 45312861349
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 47651167238
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 46732028391
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49478848256
+    },
+    {
+      "difficulty": "deity",
+      "seed": 43663176127
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49220027834
+    }
+  ],
+  "observer_source_sha256": {
+    "Cargo.toml": "93c270f198e19310b35eb9dfe604b36ca145761d1cb5d5f312a156c668c3020d",
+    "Cargo.lock": "b2eb9ed511c0b2374ab1feb5cd4cb176174be9f342dd426cfd2cbe926ca6eb6d",
+    "src/main.rs": "149f08395cc279cdd2b914aef7434ae53fca55bca8e62a5a86f8d56ffd7c9a5e",
+    "source-identity.txt": "30362f806818bb62e718a930e0836c6137707120d0439d0b3ae6eba74d9c2060"
+  },
+  "required_AA": [
+    "actions.json",
+    "snapshots.json",
+    "plans.json",
+    "world-states.json",
+    "why.log",
+    "journal-stats.json"
+  ],
+  "normalization_scope": "Diagnostic-only qualification, not final-source observer A/A. All actions/snapshots/plans/world-states/journal-stats/result must be byte-identical to retained03 and a new original03 replay. why.log must match raw or under ONLY the already documented adjacent SAME-TURN Military/Detail stops-re-asking-move-refusal line-order normalization copied unchanged from03b. No new semantic, actor, turn, or other-line exception.",
+  "read_only_additions": "Observer callback only; direct own player0 resource stock/rate, policy/civic/tech sets, own unit resource maintenance, and own city queues/paused progress/strategic commitments. No added Game clones, rival stock export, controller input, action, force/genome, runtime, difficulty/handicap, engine-balance or verification change.",
+  "diagnostic_executions_registered": 12,
+  "candidate_policy_executions_added": 0,
+  "completed_candidate_executions_at_registration": 90,
+  "prior_diagnostic_control_executions": 18,
+  "fresh_holdout_executions": 0,
+  "native_verification": false,
+  "acceptance": "All6 paired controls must pass before any flow-derived policy conclusion. Stop on an inadmissible A/A discrepancy; retain failures. Does not relax verified Deity Domination/all-original-capitals or final strict A/A gates."
+}

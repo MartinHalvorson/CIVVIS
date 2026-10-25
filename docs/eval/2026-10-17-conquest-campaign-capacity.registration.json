@@ -1,0 +1,100 @@
+{
+  "registered_utc": "2026-10-17T17:36:24.407069+00:00",
+  "baseline_main": "047945067f9f8e259f259a99de0641f64856631a",
+  "baseline_compiled_dependency": "e2fbee4dfa6e7c659cd44cf089ed9219fd4c5d07",
+  "baseline_compiled_tree": "cb721b4ed4aeae53d8d4dd22d09abcb16b860ec0",
+  "baseline_binary_sha256": "d1924d71ac3b7a1bde12ea5f2ce226e653749d22e53bdbce6e5fc5784729cca8",
+  "objective": "Build campaigns that actually take original capitals and win Domination at the highest difficulty; not merely higher army power, earlier weapons or a passing artifact check. Do not consume fresh holdouts until the development policy wins a Deity Domination game.",
+  "initial_mechanism": "On known Immortal 45312861349 at turn 90, the Conquest plan aims at Ottawa, 27 tiles from the nearest own city, and holds its declaration because no Canadian city is within its 18-tile reach. Military units march 26-34 tiles toward that refused objective while other major cities are known at 4 and 16 tiles. Reconcile ordinary campaign selection with unchanged declaration reach and preserve explicit emergencies, forced targets, ongoing wars and supported far-reaching finishes. Diagnose the entire preparation/field-combat/capture chain before claiming success.",
+  "development_cases": [
+    {
+      "difficulty": "immortal",
+      "seed": 45312861349
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 47651167238
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 46732028391
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49478848256
+    },
+    {
+      "difficulty": "deity",
+      "seed": 43663176127
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49220027834
+    }
+  ],
+  "development_selection": "Previously observed losing maps, selected for a mix of idle peacetime campaigns and unsuccessful active wars. These are training/diagnosis maps, never fresh strength evidence. Iterative source changes may use all six outcomes; each executed candidate must be source/binary/input frozen before its training executions and retained in Git history.",
+  "fresh_seed_method": "One secrets.randbelow draw without replacement from [80000000000,90000000000), before the first policy implementation and before any new outcome. First four Immortal, final four Deity. No replacement or outcome-dependent stopping.",
+  "fresh_pairs": [
+    {
+      "difficulty": "immortal",
+      "seed": 81432869020
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 83976148837
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 80405422115
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 80497529115
+    },
+    {
+      "difficulty": "deity",
+      "seed": 81392525449
+    },
+    {
+      "difficulty": "deity",
+      "seed": 88277941555
+    },
+    {
+      "difficulty": "deity",
+      "seed": 80036555207
+    },
+    {
+      "difficulty": "deity",
+      "seed": 89597430945
+    }
+  ],
+  "profile": {
+    "map": "Pangaea",
+    "width": 60,
+    "height": 38,
+    "speed": "online",
+    "major_players": 4,
+    "city_states": 6,
+    "barbarians": true,
+    "focal": "Gran Colombia, player 0, assigned Domination, sole handicap-exempt seat",
+    "rivals": "Three ordinary adaptive CIVVIS rivals with registered difficulty bonuses",
+    "victories": "all six normal victory conditions",
+    "turn_cap": 250,
+    "forced_inputs": "unchanged 283-item force bundle used for PRs 4091 and 4092",
+    "native": "No manual restart, controller/brain/pin/genome/difficulty/victory/verification changes. Reduced self-play is not a verified Native Deity victory."
+  },
+  "development_gate_before_fresh": {
+    "all_six_registered_development_cases_complete": true,
+    "at_least_one_deity_focal_domination_win": true,
+    "actual_original_capital_ownership_verified": true
+  },
+  "candidate_freeze": "Before each training execution freeze full source/commit/tree, binary, probe, lock, profile and force inputs. Before any fresh execution freeze the chosen final candidate and run complete unwrapped/traced observer controls. Preserve all variants and failures; no first-success-only reporting.",
+  "fresh_gate": {
+    "complete_all_eight_pairs_and_observer_controls": true,
+    "at_least_one_deity_focal_domination_win": true,
+    "focal_wins_not_below_baseline": true,
+    "religious_losses_not_above_baseline": true,
+    "actual_engine_domination_and_original_capital_ownership_verified": true
+  },
+  "failure": "Continue genuine campaign development without promoting unverified policy. Keep the full continuous optimization goal active; no claim that safer declarations, compatibility, tests or archived negative evidence alone satisfy it."
+}

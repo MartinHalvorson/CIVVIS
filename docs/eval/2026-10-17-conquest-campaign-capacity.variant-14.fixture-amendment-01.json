@@ -1,0 +1,16 @@
+{
+  "registered_utc": "2026-10-18T00:50:25.639243+00:00",
+  "variant": "variant-14",
+  "original_registration_sha256": "b6cfbba2cd4af5c8a9c5e855fe6af91755b2951b0127f06f4bcf1d7b6fac5dbc",
+  "amendment": "UNIT fixture correction only before corrected RED/GREEN, freeze or any14 game evaluation. Game::new_full seat0 is Rome (CIV_NAMES fixed order); its Swordsman replacement invalidated hardcoded standard Swordsman/20-Iron assumptions. Set only the dedicated material fixture player0.civ to GranColombia, matching the registered actual focal leader, and assert canonical successor/resource bill before helper assertions.",
+  "initial_red_is_not_a_valid_semantic_red_receipt": "The original4-pass/7-failure run includes a Gold-quote unwrap failure before the helper assertion. It is retained but must not be described as7 intended semantic failures. Initial GREEN also exposes the replacement-price mismatch. Restore03 production plus no-op, rerun corrected fixtures for genuine semantic RED, then reapply the same registered production implementation and validate.",
+  "production_policy_change_in_amendment": false,
+  "native_or_verification_configuration_change": false,
+  "game_executions_before_amendment": 0,
+  "saved_initial_production_patch_sha256": "a6fe99d924d29c39422f04d9e78e226959e21f01b7e7044862e78c1f7fa6806a",
+  "retained_logs": [
+    "material-v14-red.log",
+    "material-v14-green-initial-compile-failed.log",
+    "material-v14-green-initial-fixture-failed.log"
+  ]
+}

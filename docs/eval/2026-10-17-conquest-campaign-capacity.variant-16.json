@@ -1,0 +1,63 @@
+{
+  "registered_utc": "2026-10-18T03:05:11.462317+00:00",
+  "variant": "variant-16",
+  "selected_policy_parent": "Restore exact03 production;03 is the selected fallback, not15. Preserve all rejected source commits and raw results.",
+  "rejected_previous_policy": "15 is an all6 nonjournal raw no-op versus14, which itself failed the strength gate. No promotion; both remain preserved. Earlier06 broad Expansion funding regressed492 turn100 strength; this is not its broad gate change.",
+  "hypothesis": "A narrow preparation pass before discretionary spending can turn up to two healthy, high-gain, currently legal land takers into contemporary frontliners during peaceful Expansion toward an actual reachable named major. It excludes ranged/siege/recon, refuses unaffordable upkeep and never relaxes Gold/resource/legal/war gates. This may bridge the plan-dependent gap without the rejected broad06 spending behavior.",
+  "prior_evidence": {
+    "diagnostic_registration_sha256": "19bd3edda2fd9db55e6b21b00c95a5c2c456ad53903c3e34eade12cba1074279",
+    "diagnostic_analysis_sha256": "1697854c8bc3e5e47fc1fa2fda594f37b3572a07ea4ecdd41395b48c050041e2",
+    "observed_qualification": "All6 own-flow03c controls qualify under diagnostic-only03b journal-order exception; only3 journals raw exact. No strict final-sourceAA, fresh, Native or candidate execution credit.",
+    "stock_alias_correction": "Iron actually grows2/turn with50 capacity; periodic20 charges caused repeated12 at ten-turn samples. No resource cap, missing accumulation, observation mismatch, trade sale or engine-balance bug established.",
+    "decision_boundary": "Deity492 plan84/94/104 Conquest,114 Expansion with threatened city558. Boundary114 Gold185.1/income12/Iron20; discounted Knight80+30 could fit at boundary, not proof of the later current legal offer. Three own unacted healthy chariots on own tiles are suggestive but incomplete legality. Current offers remain authoritative.",
+    "failure_retention": "All15 failed known-map policies,30 diagnostic/control executions and older raw journal-order failures remain retained. No independent-map or Native-equivalence claim."
+  },
+  "bounded_change": [
+    "Restore03 Advanced/conquest/domination_modernization policy and tests. Add one helper in owned conquest_campaign.rs and one call before the existing fund_domination_upgrades gate. No broadened existing general-funder gate or other upgrade loop changes.",
+    "Only Domination/victory-planning, Expansion with no rush or appointed war plan, at least2 own cities and Writing, named living ordinary major and owned target city within unchanged declaration range, existing campaign_target_legal, and no active major war.",
+    "Only actual current legal offers for healthy HP>=75 land melee/anti-cavalry/light-/heavy-cavalry successors with base melee gain>=15. Current canonical/host Gold/material quote, air-wing resource protection and actual apply are mandatory. No future-resource assumptions or price override.",
+    "At most2 upgrades per pass, and stop once2 healthy standing land takers already meet the strongest currently offered successor base melee strength. Count standing formation strength through existing Game unit_strength; do not alter it. New pass reserves30 Gold, negative-income cushion, and existing solvent-or-hold maintenance floor if enabled.",
+    "For every upgrade, preserve projected income>=2 after existing upgrade_upkeep_delta; update local projected income after each success. Sort current offers by HP-weighted melee gain per Gold with stable unit-id tie-break. No discretionary borrowing, synthetic bank, unit disband, queue mutation, civic/card/research changes, national war threshold or engine/runtime/force/genome changes.",
+    "Existing Conquest/active-war general funding, siege-train ordering, generic modernization, appointed packages and all ordinary legality remain unchanged. This intentionally does not claim to reserve Iron against every later ordinary pass."
+  ],
+  "unit_tests_planned": [
+    "Direct preparation and actual funder routing must upgrade a currently legal healthy Chariot to Knight in peaceful Expansion; current quotes and30 Gold reserve are asserted.",
+    "Stop at two current healthy contemporary frontliners even when a third current legal affordable offer remains; existing strong frontliners suppress new preparation.",
+    "Insufficient Gold/material, current move/territory refusal, low health, unsustainable upkeep, missing research, non-Domination, non-Expansion, unnamed/distant target and active major war remain no-ops.",
+    "Controlled UNIT boards only; canonical GranColombia Warrior/Sword and Chariot/Knight identity asserted. No Native or evaluation fixture/runtime change."
+  ],
+  "comparison_parent": "variant-03",
+  "cases": [
+    {
+      "difficulty": "immortal",
+      "seed": 45312861349
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 47651167238
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 46732028391
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49478848256
+    },
+    {
+      "difficulty": "deity",
+      "seed": 43663176127
+    },
+    {
+      "difficulty": "deity",
+      "seed": 49220027834
+    }
+  ],
+  "required_all_six_complete": true,
+  "original_registration_sha256": "2c8cb2eff49e0682a1af251d7ac7afcf2b32061b25b013e8b41e09c1baa4b813",
+  "development_gate": "All six known maps complete and at least one verified focal Deity Domination owning all original capitals before fresh holdouts; then freeze the final selected source and pass strict observer A/A. The diagnostic journal exception never relaxes final-source A/A.",
+  "candidate_executions_at_registration": 90,
+  "resource_diagnostic_control_executions_at_registration": 30,
+  "fresh_holdout_executions_at_registration": 0,
+  "native_verification": "Unestablished. Controlled unit fixtures, nominal policy-value projections and reduced headless development runs are not Native wins or deployed-binary equivalence."
+}
