@@ -181,7 +181,24 @@ fn two_current_selected_sorties_redirect_the_plan_and_open_the_second_war() {
 fn the_fresh_package_interrupts_an_otherwise_current_plan() {
     let (mut g, mut ai, plan, _, theaters) = fixture();
     version_two(&mut ai);
+    // Turn off generic denial only for this cadence test, and retain a real
+    // legal Formal War opening instead of disabling urgency and expecting a
+    // Surprise War. The new opt-in still reads the authoritative clock.
     ai.deny_leaders = false;
+    g.players[0]
+        .civics
+        .insert(crate::name!("diplomatic_service"));
+    let present = g.turn;
+    g.turn -= g.standard_duration(6).max(6);
+    g.apply(0, &Action::Denounce { player: 2 }).unwrap();
+    g.turn = present;
+    assert!(ai
+        .preferred_war_opening(&g, 0, 2)
+        .is_some_and(|action| matches!(
+            action,
+            Action::DeclareWar { .. } | Action::DeclareWarWithCasusBelli { .. }
+        )));
+    assert!(ai.culture_air_package(&g, 0, 2, &plan).is_some());
     let journal = crate::reasoning::Journal::recording();
     ai.attach_journal(journal.handle());
     ai.plan = Some(plan);
@@ -509,7 +526,10 @@ fn the_culture_racer_can_itself_hold_the_final_capital() {
 fn serial_staging_keeps_the_first_plane_in_position_until_its_partner_is_ready() {
     let (mut g, mut ai, plan, old, theaters) = fixture();
     version_two(&mut ai);
-    ai.deny_leaders = false;
+    // The native development genome reads Recovery against the actual war
+    // (the weaker contender), not the stronger rival still at peace.
+    ai.recovery_reads_the_war = true;
+    assert_eq!(ai.assess(&g, 0).strategy, GrandStrategy::Conquest);
     let rear = g.found_city_for(0, (0, 0), None);
     install_airfield(&mut g, rear, (1, 0));
     for uid in old {
