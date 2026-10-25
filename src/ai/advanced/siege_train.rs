@@ -150,6 +150,19 @@ const STAGING_GUN_HP_RESERVE: f64 = 20.0;
 /// "damage ready false"; civvis-20261004T040138Z (game 47) held Quebec
 /// City's at ten.
 pub(super) const STAGING_ESCORT_BODIES: usize = 2;
+/// `staging-gun-trusts-its-escort-2`: the column a gun marches inside also
+/// escorts it. This many of our land soldiers within
+/// [`STAGING_COLUMN_REACH`] of the gun's next step earn the same one-reply
+/// budget as [`STAGING_ESCORT_BODIES`] beside it. The adjacent reading holds
+/// a gun whose escort walks a tile ahead or behind: live Emperor
+/// civvis-20261025T043224Z held six or seven full-health catapults six to
+/// thirteen tiles from Nuri from turn 84 to 120, while the budget read six
+/// guns breaching its 200 walls in 3.0 turns; on 72% of those gun-turns at
+/// most one soldier stood beside the gun, and on 67% two or more stood within
+/// two tiles. The walls rose to 400 and the window closed.
+pub(super) const STAGING_COLUMN_BODIES: usize = 3;
+/// See [`STAGING_COLUMN_BODIES`].
+pub(super) const STAGING_COLUMN_REACH: i32 = 2;
 /// `staging-gun-remembers-hostiles`: a sighting this many turns old or newer
 /// still prices a hostile on the Stage march. Older sightings scatter too
 /// widely to steer a gun by: a Cuirassier seen two turns ago reaches twelve
@@ -3562,25 +3575,38 @@ impl AdvancedAi {
         // `staging-gun-trusts-its-escort`: see `STAGING_ESCORT_BODIES`. The
         // board is a parameter, not a capture, so the step may still move the
         // unit while the limit is in scope.
-        let trusts_escort = self.staging_gun_trusts_its_escort;
+        // `staging-gun-trusts-its-escort-2`: see `STAGING_COLUMN_BODIES`.
+        // Version 2 keeps version 1's adjacent reading and adds the column.
+        let reads_the_column = self.staging_gun_trusts_its_escort_2;
+        let trusts_escort = self.staging_gun_trusts_its_escort || reads_the_column;
         let escorted_limit = |g: &Game, pos: Pos| -> f64 {
+            let soldier = |id: &u32| {
+                *id != uid
+                    && g.units.get(id).is_some_and(|unit| {
+                        let spec = &g.rules.units[unit.kind];
+                        unit.owner == pid
+                            && spec.class == "military"
+                            && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                            && arm_of(g, *id) != Arm::Siege
+                    })
+            };
             let escorts = g
                 .nbrs(pos)
                 .into_iter()
                 .chain(std::iter::once(pos))
                 .flat_map(|n| g.unit_ids_at(n).iter().copied())
-                .filter(|id| {
-                    *id != uid
-                        && g.units.get(id).is_some_and(|unit| {
-                            let spec = &g.rules.units[unit.kind];
-                            unit.owner == pid
-                                && spec.class == "military"
-                                && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
-                                && arm_of(g, *id) != Arm::Siege
-                        })
-                })
+                .filter(|id| soldier(id))
                 .count();
-            if trusts_escort && escorts >= STAGING_ESCORT_BODIES {
+            let column = || {
+                g.wdisk(pos, STAGING_COLUMN_REACH)
+                    .into_iter()
+                    .flat_map(|n| g.unit_ids_at(n).iter().copied())
+                    .filter(|id| soldier(id))
+                    .count()
+            };
+            let escorted = escorts >= STAGING_ESCORT_BODIES
+                || (reads_the_column && column() >= STAGING_COLUMN_BODIES);
+            if trusts_escort && escorted {
                 (f64::from(g.units[&uid].hp) - STAGING_GUN_HP_RESERVE).max(0.0)
             } else {
                 gun_risk_limit

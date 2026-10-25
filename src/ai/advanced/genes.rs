@@ -4131,6 +4131,12 @@ pub const GENES: &[Gene] = &[
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
     // ---- append: s-s ------------------------------------------------
+    // `staging-gun-trusts-its-escort-2`: live Emperor 10-25 (043224Z) held
+    // six or seven healthy catapults six to thirteen tiles from Nuri for
+    // 36 turns; 72% of those gun-turns had at most one soldier beside the
+    // step, 67% had two or more within two tiles. See
+    // `siege_train::STAGING_COLUMN_BODIES`.
+    Gene { tag: "staging-gun-trusts-its-escort-2", field: "staging_gun_trusts_its_escort_2", kind: Kind::OptIn, enable: AdvancedAi::enable_staging_gun_trusts_its_escort_2, disable: AdvancedAi::disable_staging_gun_trusts_its_escort_2 },
     // ---- append: t-z ------------------------------------------------
 ];
 

@@ -643,6 +643,77 @@ fn an_escorted_staging_gun_marches_under_one_raider() {
     }
 }
 
+/// See `STAGING_COLUMN_BODIES`: three soldiers two tiles from the gun's
+/// step, none beside it. Version 1 reads only the adjacent ring and holds the
+/// gun at the edge; version 2 reads the column and marches it (Nuri, live
+/// Emperor civvis-20261025T043224Z).
+#[test]
+fn a_gun_inside_its_column_marches_under_one_raider() {
+    for (version, marches) in [(0, false), (1, false), (2, true)] {
+        let (mut g, cid) = walled_city();
+        let target = g.cities[&cid].pos;
+        for tile in g.map.tiles.values_mut() {
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.hills = false;
+        }
+        g.at_war.insert((0, 1));
+        let start = (target.0 - 8, target.1);
+        let gun = g.spawn_unit("catapult", 0, start);
+        let next = march_step(&g, gun, target, STAGING_FAR).expect("a march step");
+        let lair = g
+            .wdisk(next, 2)
+            .into_iter()
+            .filter(|pos| g.wdist(*pos, next) == 2 && g.wdist(*pos, start) == 3)
+            .min()
+            .expect("a tile in reach of the step, beyond the gun's shot");
+        g.spawn_unit("archer", 1, lair);
+        // The column: two tiles from the step, on the side away from the
+        // raider, none of them beside the step.
+        let mut column: Vec<Pos> = g
+            .wdisk(next, STAGING_COLUMN_REACH)
+            .into_iter()
+            .filter(|pos| g.wdist(*pos, next) == STAGING_COLUMN_REACH && *pos != lair)
+            .collect();
+        column.sort_by_key(|pos| (std::cmp::Reverse(g.wdist(*pos, lair)), *pos));
+        column.truncate(STAGING_COLUMN_BODIES);
+        assert_eq!(column.len(), STAGING_COLUMN_BODIES, "fixture: the column's tiles");
+        for pos in &column {
+            g.spawn_unit("swordsman", 0, *pos);
+        }
+        let beside = g
+            .nbrs(next)
+            .into_iter()
+            .chain(std::iter::once(next))
+            .flat_map(|n| g.unit_ids_at(n).iter().copied())
+            .filter(|id| *id != gun && g.units[id].owner == 0)
+            .count();
+        assert!(beside < STAGING_ESCORT_BODIES, "fixture: no escort beside the step");
+        let mut field = super::super::battle_planner::DangerField::with_reach(&g, 0, true);
+        field.share(&g);
+        let risk = field.danger(next, gun);
+        let three_turns = (100.0 - STAGING_GUN_HP_RESERVE) / STAGING_GUN_REPLY_TURNS;
+        let one_turn = 100.0 - STAGING_GUN_HP_RESERVE;
+        assert!(
+            risk > three_turns && risk <= one_turn,
+            "fixture: one raider's blow ({risk}) is between the two budgets"
+        );
+        let city = CityView::of(&g, cid).unwrap();
+        let plan = plan_against(&g, cid);
+        let mut ai = AdvancedAi::new();
+        ai.enable_siege_train();
+        ai.shared_danger = true;
+        match version {
+            1 => ai.enable_staging_gun_trusts_its_escort(),
+            2 => ai.enable_staging_gun_trusts_its_escort_2(),
+            _ => {}
+        }
+        ai.siege_stage_step(&mut g, 0, gun, &city, &plan);
+        let closer = g.wdist(g.units[&gun].pos, target) < g.wdist(start, target);
+        assert_eq!(closer, marches, "version {version}: the column marches the gun only in v2");
+    }
+}
+
 /// See `siege_route_step`: a gun on land whose dry approach to its post is
 /// walled by its own soldiers does not embark onto the water beside it,
 /// where `disembark_step` would land it again next turn (Ray, game 52). It

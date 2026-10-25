@@ -8195,6 +8195,17 @@ impl AdvancedAi {
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
     // ---- append: s-s ------------------------------------------------
+    /// Opt-in gene `staging-gun-trusts-its-escort-2`; see
+    /// [`Self::staging_gun_trusts_its_escort_2`].
+    pub fn enable_staging_gun_trusts_its_escort_2(&mut self) {
+        self.staging_gun_trusts_its_escort_2 = true;
+    }
+
+    /// The twin of `enable_staging_gun_trusts_its_escort_2`.
+    pub fn disable_staging_gun_trusts_its_escort_2(&mut self) {
+        self.staging_gun_trusts_its_escort_2 = false;
+    }
+
     // ---- append: t-z ------------------------------------------------
 }
 
