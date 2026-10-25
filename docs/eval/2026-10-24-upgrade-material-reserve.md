@@ -114,3 +114,51 @@ occurs at turn 110, before the first material-buy marker at turn 115. The
 five subsequent upgrade transitions are at turns 145, 159, 163, 188 and 196.
 This is descriptive evidence from the original unpaired maps, with no
 attribution to purchased material and no native observation of this repair.
+
+## Prospective native trial after integration
+
+After the corrected implementation passes validation, merges, and its live
+revision is verified, activate a new eight-start native screen of the existing
+`army-upgrade-materials` policy. Activation is pending. The earlier four games
+are development evidence and are excluded from this cohort. This compares
+the combined material buyer and reserve against the policy being off; it
+does not isolate the reserve from the earlier buyer implementation.
+
+Verify `~/.civvis-live-screen-gene` is absent or unclaimed before writing only
+that tag. Preserve any other owner's screen. Keep the current head-tracking
+pin, force bundle, verification settings, victory lane, and ladder progression.
+Do not interrupt a running game. Each attempt keeps its frozen native binary;
+retain all exact source revisions and analyze different revisions and
+difficulties separately if the head or rung advances.
+
+The cohort is the first eight newly assigned game stems after activation,
+including failed starts, abandoned games, missing outcomes, and continuations
+joined to their original stem. The existing BLAKE2b rule deals each arm from
+the stem, gene, difficulty and lane. Do not choose arms, replace failed
+readbacks, extend the cohort to balance it, or stop based on interim outcomes.
+The observer removes only its own screen after the eighth actual start and
+retains any overruns separately. Collect terminal outcomes for those eight
+games after the start cutoff; a finished assignment observer is not a
+finished outcome cohort.
+
+Retain the activation time, original settings, actual driver arguments,
+source revision and binary digest, full played genome, forced/withheld flags,
+hash-derived arm, and installed trade/configuration and native seat readbacks.
+Retain complete event, decision and reasoning logs. Confirm that each actual
+played flag matches its dealt arm, including each continuation. A failed
+configuration or arm readback stays an explicit invalid or missing observation.
+
+Report host-recorded terminal victories and Domination wins, capital and city
+gains/losses, combat losses, cities at turn 60, science and technology at turns
+100 and 150, treasury and trade income, and actual upgrade transitions. Use
+the native quoted successor and preserved veteran state to confirm upgrades;
+keep ambiguous transitions unresolved. Sale-hold notes and buy markers are
+decision observations rather than completed sales, accepted purchases, or
+upgrades. Inspect material-related deal events alongside native stock and
+Gold readbacks and preserve ambiguity when income or other spending overlaps.
+
+Eight unpaired maps are a mechanism and exploratory outcome trial, not a
+powered causal win-rate test. No default promotion or highest-difficulty
+Domination claim follows from unit tests, withheld sales, or a few favorable
+maps. These native outcomes guide the next conquest change; the broader
+highest-difficulty verification objective remains unproven until actually won.
