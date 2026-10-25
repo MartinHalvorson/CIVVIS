@@ -3129,6 +3129,15 @@
           "settler-target-hysteresis-2": null
         }
       },
+      "staging-gun-trusts-its-escort": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "staging-gun-trusts-its-escort": null,
+          "staging-gun-trusts-its-escort-2": null
+        }
+      },
       "swap-rotation": {
         "rule_on": [
           "swap-rotation-2"

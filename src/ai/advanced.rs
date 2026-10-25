@@ -8704,6 +8704,12 @@ pub struct AdvancedAi {
     /// that takes income below zero and no amenity or upkeep card traded
     /// away. See `advanced/solvency.rs`. Off by default.
     solvent_or_hold: bool,
+    /// `staging-gun-trusts-its-escort-2`: version 2 of
+    /// `staging-gun-trusts-its-escort`. The escorted gun's one-reply budget
+    /// also holds when [`siege_train::STAGING_COLUMN_BODIES`] of our land
+    /// soldiers stand within [`siege_train::STAGING_COLUMN_REACH`] of its
+    /// march step, not only beside it. Off by default.
+    staging_gun_trusts_its_escort_2: bool,
     // ---- append: t-z ------------------------------------------------
     /// `threatened-city-buys-its-defender-2`: the threatened city's purchase
     /// buys only a defender within
@@ -11297,6 +11303,7 @@ impl AdvancedAi {
             science_denial_refused_pads: BTreeMap::new(),
             science_suppression_hits_the_pads: false,
             solvent_or_hold: false,
+            staging_gun_trusts_its_escort_2: false,
             // ---- append: t-z ----------------------------------------
             threatened_city_buys_its_defender_2: false,
             unwalled_ring_steps_in: false,

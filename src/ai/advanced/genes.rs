@@ -4124,6 +4124,12 @@ pub const GENES: &[Gene] = &[
     // at-peace branch of the target choice. See
     // `advanced/city_state_war_is_no_front.rs`.
     Gene { tag: "city-state-war-is-no-front", field: "city_state_war_is_no_front", kind: Kind::OptIn, enable: AdvancedAi::enable_city_state_war_is_no_front, disable: AdvancedAi::disable_city_state_war_is_no_front },
+    // `staging-gun-trusts-its-escort-2`: live Emperor 10-25 (043224Z) held
+    // six or seven healthy catapults six to thirteen tiles from Nuri for
+    // 36 turns; 72% of those gun-turns had at most one soldier beside the
+    // step, 67% had two or more within two tiles. See
+    // `siege_train::STAGING_COLUMN_BODIES`.
+    Gene { tag: "staging-gun-trusts-its-escort-2", field: "staging_gun_trusts_its_escort_2", kind: Kind::OptIn, enable: AdvancedAi::enable_staging_gun_trusts_its_escort_2, disable: AdvancedAi::disable_staging_gun_trusts_its_escort_2 },
     // `prey-war-is-kept`: live Emperor 10-25, 5 of 29 games made peace
     // with a rival at a seventh to a third of our power (China 444/63 with
     // Xi'an at 40 HP). See `advanced/prey_war_is_kept.rs`.
