@@ -124,6 +124,18 @@ are development evidence and are excluded from this cohort. This compares
 the combined material buyer and reserve against the policy being off; it
 does not isolate the reserve from the earlier buyer implementation.
 
+Before arming this screen, enable the existing exact-decider-input recorder
+through `CIVVIS_CAPTURE_DECIDER_INPUTS=1` in the supported host policy. Preserve
+the prior policy and request its existing safe boundary reload; never stop a
+game to apply it. Verify a subsequent unarmed game's actual capture flag and
+complete first captured request before activating the screen. That game is
+input qualification and is excluded because it has no dealt screen arm.
+Capture adds evidence I/O and is applied to both trial arms. It does not
+change gameplay settings or turn failed recorded-history controls into passes.
+Keep the captured read sequences and parent-linked byte archives so a future
+replay can test the actual reads instead of guessing their timing. Missing or
+incomplete capture remains explicit rather than removing an assigned game.
+
 Verify `~/.civvis-live-screen-gene` is absent or unclaimed before writing only
 that tag. Preserve any other owner's screen. Keep the current head-tracking
 pin, force bundle, verification settings, victory lane, and ladder progression.
