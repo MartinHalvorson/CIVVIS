@@ -388,7 +388,7 @@ fn native_hub_rank_fixture(tag: &str, seed: u64) -> (Game, Vec<u32>) {
     for cid in &ranked {
         let city = &game.cities[cid];
         let center = city.pos;
-        let owned: Vec<_> = city.owned_tiles.iter().copied().collect();
+        let owned: Vec<_> = city.owned_tiles.to_vec();
         for pos in owned {
             if pos == center {
                 continue;

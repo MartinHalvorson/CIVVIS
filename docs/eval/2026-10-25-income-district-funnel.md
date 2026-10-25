@@ -86,3 +86,20 @@ registered genuineRED comes from the later corrected fixture on unchanged
 production, not from that hosted failure. Full CI-profile strategy tests,
 merged-source checking and changed-line quality remain required before this
 correction can integrate; a local8-case pass is not substituted for them.
+
+## Final merged fixture validation
+
+Main `91a282bad` merges cleanly as `774cd3871`, including the completed
+defender-purchase correction. The producer file remains byte-identical to the
+focused GREEN source; `cargo check --locked` passes on this merged tree.
+Changed-line quality then identifies one test-fixture copy expression: replace
+`iter().copied().collect()` with `to_vec()`. The exact source amendment and
+failed quality output remain in `fixture-copy-amendment.json.gz`.
+
+After that mechanical copy change, all8 focused tests pass again on the
+merged source, with the same6 controls and2 actual-Produce cases. The final
+test file equals the previous qualified source except for that one copy
+expression. Complete final source, logs, controller receipts and merged check
+remain in `final-green.json.gz`. The final committed tree still requires a
+passing changed-line gate and the complete hosted CI-profile strategy suite
+before integration; no broad local result is invented for this small repair.
