@@ -247,3 +247,21 @@ cases before cost interpretation. Retain all controls, missing cases and
 failures. The earlier inconclusive or failed measurements stay attached to
 their original memo-only source/library hashes. Do not attribute their
 functional passes or timing to the unbuilt hoisted candidate.
+
+The phase-logging parent diagnosis on case 43 reproduces the 120-second
+aggregate deadline: calls 0–3 finish planning, serialization and equality
+comparison, then the process is killed while planning call 4. No equality
+failure values are emitted. This locates that diagnosis in repeated planner
+work, rather than an assertion dump or JSON serialization, without assigning
+a cause to the earlier case-20 timeout. The complete trace and build receipt
+are retained separately.
+
+For the hoisted candidate, register one fresh planner call per process on
+every available assigned snapshot, still with a 120-second process limit.
+Keep all 48 assignments, the same three same-parent control rounds and five
+comparison rounds, alternate order by case/round, and require exact complete
+semantics across all processes and builds. This is a new experiment; it does
+not retry or overwrite the ten-call failures. The underlying planner work per
+call, observation projection and frozen genome stay the same. Report noise
+alongside all-case and exposure-stratum effects. Cost and functional claims
+for the hoisted source remain pending until its own binaries and checks pass.
