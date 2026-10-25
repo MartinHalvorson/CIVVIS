@@ -256,3 +256,8 @@ The economic collector's final report asserts all eight terminal arm readbacks,
 151 issued orders, 147 distinct confirmed successors and complete classification
 of the held original-capital owners. No Rust, launcher, default or lane changes
 are included in this evidence-only final change.
+
+Final merged-source `cargo test --profile ci --locked` at
+`cb1cc075ec49ad3d49a7f88fc52737110272fcc7` passes 6,270 tests, zero failures
+and 56 ignores. The complete log and receipt archive is 117,312
+bytes, SHA-256 `545e1c10a5f17d33fc518479614418cb0b649a0444a66b34caefbd115ea44827`; both members are verified on readback.
