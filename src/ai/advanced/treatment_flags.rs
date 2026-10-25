@@ -8189,6 +8189,17 @@ impl AdvancedAi {
 
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
+    /// Opt-in gene `defenders-hold-the-walls`; see
+    /// [`Self::defenders_hold_the_walls`].
+    pub fn enable_defenders_hold_the_walls(&mut self) {
+        self.defenders_hold_the_walls = true;
+    }
+
+    /// The twin of `enable_defenders_hold_the_walls`.
+    pub fn disable_defenders_hold_the_walls(&mut self) {
+        self.defenders_hold_the_walls = false;
+    }
+
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
 
