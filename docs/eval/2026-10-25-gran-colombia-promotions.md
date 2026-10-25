@@ -108,6 +108,23 @@ engine/mod-loader cases, the hosted Rust-quality gate, data-effect checks and
 the same registered local CI-profile combat soak. Do not label the cancelled
 Mac full-suite build as passed.
 
+Registry repair `dd32e038d` passed all 13 focused Mac cases at 08:58:01Z:
+six promotion cases, six existing mod-loader cases and the existing AI
+command-phase control. The data-effect guard also passes with 840 effect keys
+and zero unconsumed keys. Both commands retained all 792 source/data digests
+unchanged. The native identity mapper resolves `CIVILIZATION_GRAN_COLOMBIA`
+through the canonical roster to `Gran Colombia` and applies it to the mirrored
+player, so the new civilization effect uses that existing conversion path.
+
+The next hosted run includes upstream #4122 and gets past the repaired loader
+cases. Its remaining failure is the audited ruleset fingerprint test: the new
+civilization data gives `fnv1a64:d5702e477e1be48d`, while the old test expects
+`fnv1a64:d05291ed7cbbe612`. Retain this run's 5,521 passes, one failure, 740
+unrun cases and 52 skips, and the matching one-test Mac reproducer. Update
+only that existing test's expected fingerprint; the shipped rule and its
+semantic cases above independently establish why the data change is correct.
+No production code in `src/rules.rs` changes.
+
 This task models the promotion component only. The existing civilization's
 combat/XP estimates and its separate movement bonus need a broader fidelity
 audit; this change does not claim complete civilization modeling. Native
@@ -138,3 +155,11 @@ cargo run --profile ci --locked --bin civvis -- soak --games 2 --jobs 1
 Retain both terminal reports and all failures. This is generated combat and
 engine-stability coverage; it is not a matched native policy comparison or
 evidence of improved Deity Domination wins.
+
+The registered soak finished at 09:15:15Z on October 25 with exit zero and
+its entire source seal unchanged at `dd32e038d`. Both reserved games completed:
+seed 59010510 ended at turn 62 with a Rome Domination win; seed 59010511 reached
+turn 80 as a draw. Retain both reports, including the losing/drawn outcomes.
+The run includes no matched treatment control and no separately logged
+promotion activation count; it establishes generated combat stability only.
+Its build took 17m50s and was not restarted for slowness.
