@@ -1,0 +1,60 @@
+{
+  "status": "Complete t100 diagnosis:2x263 original frozen-binary controls plus2x263 diagnostic controls all fullnativepayload/readsequences identical, both root traces identical. All23 offered-idle-Hub alternatives mapped to exact actual caller; no commercial helper/gate call in106rootframes. Seven industry Produce calls all in negative-income depletedtreasury states, including Workshops with21Gold/-10.8438 at86 and0Gold at90,93,99. This is direct private caller evidence, not a native counterfactual win estimate.",
+  "source_base": "b4dfb57ea13b5d1bc08918d71769a94c88b690f7",
+  "fixed_run": "civvis-20261025T174828Z",
+  "through_turn": 70,
+  "native_requests": 191,
+  "successful_fresh_controls": 2,
+  "every_full_payload_identical": true,
+  "every_request_identity_identical": true,
+  "every_ordered_read_sequence_identical": true,
+  "original_invocation": "Reconstructed from brain configuration and launcher; argv/cwd were not directly captured. Whole-prefix matching qualifies this reconstruction only for the preserved prefix.",
+  "delivery_refinement": "Immutable regular file only when every recorded read byte string is equal; mixed sequences retain FIFO handoffs. Recapture verifies all bytes and read counts.",
+  "unsuccessful_attempts_retained": [
+    "initial --strategy stock rejected before any read; banner stock means absent flag",
+    "original FIFO control0 matched191/191; replication timed out after8 replies",
+    "120-second FIFO retry timed out after4 replies; process sample blocked in read, not a controller plan difference"
+  ],
+  "instrumentation_rule": "Set a thread-local root Game pointer and request frame. Log only that actual planning Game, turns60..70. Exclude clone/simulation Game addresses. Capture exact Produce caller, before/after model income, legal application result and helper entries/ranks. Demand full191-request original payload/read equivalence before interpreting any log.",
+  "native_strength_rule": "This is a diagnosis of recorded choices, not a counterfactual continuation or win-rate test.",
+  "previous_purchase_fix_native_cohort": {
+    "wins": 0,
+    "losses": 8,
+    "missing": 0,
+    "requested_gold_units": 61,
+    "verified_gold_unit_receipts": 61,
+    "requested_gold_scouts": 0,
+    "verified_gold_scouts": 0,
+    "requested_upgrades": 78,
+    "verified_upgrade_receipts": 75,
+    "exact_gold_menus": 52,
+    "exact_upgrade_quotes": 71,
+    "source_mix": {
+      "91a282bad": 1,
+      "10239aadf": 5,
+      "16836d413": 2
+    },
+    "causal_strength_claim": false
+  },
+  "t70_actual_writer_counts": {
+    "Campus claim": 2,
+    "Builder backlog claim": 3,
+    "Faith sanctuary Shrine reservation": 1,
+    "Campus building claim": 1,
+    "Delegated domination siege reservation": 1
+  },
+  "t70_model_income_matches_native_at_all_eight_writers": true,
+  "t100_actual_writer_counts": {
+    "fn cities(&mut self, g: &mut Game, pid: usize) {": 1,
+    "fn claim_one_free_slot_campus(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) -> bool {": 2,
+    "pub(super) fn claim_backlog_builder(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {": 5,
+    "pub(super) fn claim_campus_building(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {": 6,
+    "pub(super) fn claim_capped_aqueduct(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {": 3,
+    "pub(super) fn claim_deterrence_unit(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {": 1,
+    "pub(super) fn claim_producer_zone(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {": 3,
+    "pub(super) fn reserve_adopted_faith_sanctuary(": 1,
+    "pub(super) fn reserve_delegated_domination_siege(": 1
+  },
+  "t100_model_income_matches_native_at_all23_writers": true,
+  "t100_analysis_sha256": "f68296b694ade1d515d922d2ca9105d8fc33edf15283c55b99af728dbaf5cdb5"
+}

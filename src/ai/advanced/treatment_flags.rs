@@ -8250,6 +8250,16 @@ impl AdvancedAi {
         self.faith_war_needs_the_edge = false;
     }
 
+    /// Opt-in `wing-capital-spotting`; see `advanced/wing_capital_spotting.rs`.
+    pub fn enable_wing_capital_spotting(&mut self) {
+        self.wing_capital_spotting = true;
+    }
+
+    /// The twin of `enable_wing_capital_spotting`.
+    pub fn disable_wing_capital_spotting(&mut self) {
+        self.wing_capital_spotting = false;
+    }
+
     /// Opt-in gene `the-giant-gets-the-peace-offer`; see
     /// [`Self::the_giant_gets_the_peace_offer`].
     pub fn enable_the_giant_gets_the_peace_offer(&mut self) {
@@ -8265,7 +8275,6 @@ impl AdvancedAi {
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
-
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
     // ---- append: s-s ------------------------------------------------

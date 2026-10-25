@@ -13,6 +13,10 @@ outlive the reason it was written for.
 """
 
 import json
+import copy
+import hashlib
+import io
+import tarfile
 import unittest
 from pathlib import Path
 from tempfile import TemporaryDirectory
@@ -138,11 +142,90 @@ class ProbesAreNotLedgerSources(unittest.TestCase):
         for path in sorted(directory.glob("*.json")):
             with self.subTest(probe=path.name):
                 probe = json.loads(path.read_text(encoding="utf-8"))
+                if probe.get("kind") == "captured_native_action_pairs_v1":
+                    # Captured reads count proposals, not played seats.
+                    self.assertNotIn("seats", probe)
+                    continue
                 # The screen's unit is the seat (#2349); a legacy probe
                 # recorded pairs, two seats each.
                 seats = (probe["seats"] if "seats" in probe
                          else 2 * probe["complete_pairs"])
                 self.assertLess(seats, 400)
+
+
+class CapturedActionPairs(unittest.TestCase):
+    def record(self):
+        off = {"arm": "off", "exit": 0, "argv": ["frozen-decider", "--mirror", "/off"],
+               "genome": {"treatments": ["old"], "forced": ["old"], "lane": "domination"},
+               "payload": {"orders": [{"op": "hold"}]}}
+        on = copy.deepcopy(off)
+        on.update(arm="on", argv=["frozen-decider", "--mirror", "/on", "--with", "new"])
+        on["genome"]["treatments"].append("new")
+        on["genome"]["forced"].append("new")
+        on["payload"]["orders"] = [{"op": "spy_travel"}]
+        return {"complete": True, "reads": [{"complete": True, "bytes": 123,
+                "sha256": "a" * 64, "arms": [off, on]}]}
+
+    def evidence(self, record, artifact_change=None, corrupt=False):
+        with TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            archive = root / "raw.tar.xz"
+            raw = json.dumps(record).encode()
+            with tarfile.open(archive, "w:xz") as tar:
+                info = tarfile.TarInfo("result.json")
+                info.size = len(raw)
+                tar.addfile(info, io.BytesIO(raw))
+            artifact = {"kind": "captured_native_action_pairs_v1", "tag": "new",
+                        "archive": {"path": "raw.tar.xz", "sha256": hashlib.sha256(archive.read_bytes()).hexdigest()},
+                        "members": ["result.json"]}
+            if artifact_change:
+                artifact_change(artifact)
+            screens = root / "screens"
+            screens.mkdir()
+            (screens / "pair.json").write_text(json.dumps(artifact))
+            if corrupt:
+                archive.write_bytes(archive.read_bytes() + b"changed")
+            with mock.patch.object(gene_fires, "ROOT", root), mock.patch.object(gene_fires, "SCREENS", screens):
+                return gene_fires.firing_evidence()
+
+    def test_raw_changed_order_proves_recorded_activation(self):
+        fired, flat = self.evidence(self.record())
+        self.assertIn("new", fired)
+        self.assertEqual(flat, [])
+
+    def test_identical_orders_or_only_journal_changes_do_not_prove_activation(self):
+        record = self.record()
+        record["reads"][0]["arms"][1]["payload"] = copy.deepcopy(record["reads"][0]["arms"][0]["payload"])
+        record["reads"][0]["arms"][1]["journal"] = ["new fired"]
+        self.assertNotIn("new", self.evidence(record)[0])
+
+    def test_bad_controls_fail_closed(self):
+        changes = [
+            lambda r: r.update(complete=False),
+            lambda r: r["reads"][0].update(sha256="missing"),
+            lambda r: r["reads"][0].update(bytes=0),
+            lambda r: r["reads"][0]["arms"][1].update(exit=1),
+            lambda r: r["reads"][0]["arms"][1]["genome"]["treatments"].append("also-new"),
+            lambda r: r["reads"][0]["arms"][1]["genome"].update(lane="science"),
+            lambda r: r["reads"][0]["arms"][1]["argv"].append("--other-option"),
+            lambda r: r["reads"][0]["arms"][1]["argv"].__setitem__(0, "different-binary"),
+        ]
+        for change in changes:
+            with self.subTest(change=change):
+                record = self.record()
+                change(record)
+                with self.assertRaises(SystemExit):
+                    self.evidence(record)
+
+    def test_corrupt_or_escaping_archive_fails_closed(self):
+        with self.assertRaises(SystemExit):
+            self.evidence(self.record(), corrupt=True)
+        with self.assertRaises(SystemExit):
+            self.evidence(self.record(), lambda a: a["archive"].update(path="../raw.tar.xz"))
+
+    def test_missing_member_fails_closed(self):
+        with self.assertRaises(SystemExit):
+            self.evidence(self.record(), lambda a: a.update(members=["missing.json"]))
 
 
 class Waivers(unittest.TestCase):
