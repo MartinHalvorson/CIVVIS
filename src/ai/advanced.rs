@@ -8723,6 +8723,10 @@ pub struct AdvancedAi {
     /// march step, not only beside it. Off by default.
     staging_gun_trusts_its_escort_2: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `the-last-two-capitals-come-first`: with at most two original
+    /// capitals left for Domination, the war target's one is the campaign's
+    /// first objective. See `advanced/last_two_capitals.rs`. Off by default.
+    the_last_two_capitals_come_first: bool,
     /// Keep one spare idle spy at a capital reached by the Bomber wing.
     /// See `advanced/wing_capital_spotting.rs`.
     wing_capital_spotting: bool,
@@ -9465,6 +9469,8 @@ mod phantom_capture;
 /// `holdout-keeps-the-faith-war`: see `advanced/holdout_faith_war.rs`.
 mod holdout_faith_war;
 
+/// `the-last-two-capitals-come-first`: see `advanced/last_two_capitals.rs`.
+mod last_two_capitals;
 /// `launched-racer-yields-the-capital`: see `advanced/launched_racer.rs`.
 mod launched_racer;
 
@@ -11342,6 +11348,7 @@ impl AdvancedAi {
             solvent_or_hold: false,
             staging_gun_trusts_its_escort_2: false,
             // ---- append: t-z ----------------------------------------
+            the_last_two_capitals_come_first: false,
             wing_capital_spotting: false,
             the_giant_gets_the_peace_offer: false,
             war_faith_buys_the_army: false,
@@ -16112,6 +16119,10 @@ impl AdvancedAi {
             .or_else(|| self.launched_racer_finish(g, pid))
             .filter(|(owner, _)| target_player == Some(*owner))
             .map(|(_, capital)| capital)
+            // `the-last-two-capitals-come-first`: with two or fewer capitals
+            // left, the target's own is the objective. `None` with the gene
+            // off. See `advanced/last_two_capitals.rs`.
+            .or_else(|| self.last_two_capitals_objective(g, pid, target_player))
             .filter(|capital| {
                 committed_target_city.is_none_or(|committed| {
                     committed == *capital
@@ -31862,6 +31873,9 @@ impl AdvancedAi {
     /// makes the already-priced regional path reachable before ordinary
     /// strategic production fills every queue, without turning a broad -10%
     /// yield band into a blanket infrastructure pivot.
+    /// A depleted treasury with negative income gives this selected idle
+    /// queue to an available ordinary recovery build first. Without one,
+    /// the Amenity repair still runs.
     fn reserve_idle_entertainment_path_for_widespread_crisis(
         &self,
         g: &mut Game,
@@ -31977,6 +31991,16 @@ impl AdvancedAi {
         let Some((_, _, _, _, city, _, item)) = best else {
             return;
         };
+        let recovery = if g.players[pid].gold_per_turn < -0.5
+            && g.players[pid].gold < 100.0 + 25.0 * city_ids.len() as f64
+        {
+            self.base
+                .economic_recovery_item(g, pid, city, self.counts(g, pid).traders)
+        } else {
+            None
+        };
+        let recovering = recovery.is_some();
+        let item = recovery.unwrap_or(item);
         let city_name = g.cities[&city].name.clone();
         if g.apply(
             pid,
@@ -31988,10 +32012,17 @@ impl AdvancedAi {
         .is_ok()
             && self.journal().wants(crate::reasoning::Level::Decision)
         {
-            think!(self.journal(), Economy, Decision,
-                "{} starts {} for widespread Amenity pressure", city_name, Self::plain_item(&item);
-                "{} of {} cities short, {} total Amenities missing; no Entertainment Complex stage was underway",
-                short_cities, city_ids.len(), total_shortfall);
+            if recovering {
+                think!(self.journal(), Economy, Decision,
+                    "{} starts {} for treasury recovery", city_name, Self::plain_item(&item);
+                    "{:.0} Gold and {:.1} Gold/turn: the available recovery build precedes a new Amenity reservation",
+                    g.players[pid].gold, g.players[pid].gold_per_turn);
+            } else {
+                think!(self.journal(), Economy, Decision,
+                    "{} starts {} for widespread Amenity pressure", city_name, Self::plain_item(&item);
+                    "{} of {} cities short, {} total Amenities missing; no Entertainment Complex stage was underway",
+                    short_cities, city_ids.len(), total_shortfall);
+            }
         }
     }
 
