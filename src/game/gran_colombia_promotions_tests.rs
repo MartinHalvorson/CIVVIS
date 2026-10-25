@@ -58,7 +58,10 @@ fn a_gran_colombia_veteran_can_attack_after_promoting_in_the_same_turn() {
     let (mut game, unit) = fixture("Gran Colombia");
     game.at_war.insert((0, 1));
     game.spawn_test_unit("warrior", 1, (11, 6));
-    let attack = Action::Attack { unit, to: (11, 6) };
+    let attack = Action::Attack {
+        unit,
+        target: (11, 6),
+    };
     assert!(game.legal_actions(0).contains(&attack));
     promote(&mut game, unit).unwrap();
     game.apply(0, &attack).unwrap();
