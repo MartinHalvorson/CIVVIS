@@ -47,10 +47,29 @@ structure and bytes, not host execution or replay equivalence.
 
 The frozen binary is still source `8810924ee`, SHA-256
 `20fe763757f68a6ccf024ad8d57ab7bf6b35acdadc56842761b802d36f0b531e`.
-It predates the stock reserve. The repaired native binary must still be
+It predates the stock reserve. The repaired native binary must be
 verified after #4119 merges before arming the previously registered trial.
 A failed or missing qualification never starts that cohort, and an assigned
 game's later capture failure never removes or replaces it.
+
+## Repaired native deployment and occupied screening slot
+
+PR #4119 merges as `a605bd591cab1ab6d294691f412e0d5e42e8ded4` at
+05:44:18 UTC. Native game `civvis-20261025T055158Z` runs that revision.
+Its actual frozen binary hashes to
+`cf351ea77cdf0b10d5f5d6ecbd322006c8d1f2f96f5b299f20ee7a01ac02df77`,
+matching both runtime and decision receipts. Its first captured request is
+complete and its referenced reads reconstruct. The native-deployment archive
+retains the actual driver, runtime, first decision and genome evidence.
+
+This game belongs to a different owner's `unwalled-ring-steps-in` screen.
+The material policy is absent from its played and forced lists. It is not
+a material-trial assignment or an unarmed repaired qualification. Preserve
+that screen; do not activate this trial over it. The previously prepared
+`2026-10-24-upgrade-material-reserve-native-trial` directory is another
+owner's state and was inspected read-only. No observer from this PR has
+been activated. Native deployment is verified; the separate local
+exhibition server was still serving `c1803a7df` when inspected.
 
 ## Validation
 
