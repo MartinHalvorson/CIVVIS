@@ -843,6 +843,10 @@ struct Shooter {
     /// What we would lose if it died, on the kill scale — the bar a kill has
     /// to clear before this unit is spent for it.
     value: f64,
+    /// `defenders-hold-the-walls`: a healthy defender of a threatened city
+    /// of ours, whose blow is not refused for the danger at its stand. See
+    /// `advanced/defenders_hold_the_walls.rs`.
+    holds_walls: bool,
 }
 
 /// One hostile unit the plan could finish: the strongest military defender
@@ -1081,8 +1085,10 @@ impl BeamState {
                     &dead,
                 );
                 let lethal = incoming >= *hp;
-                next.survives &=
-                    !lethal && (striker.hp >= WOUNDED_STRIKER_HP || incoming <= NO_DANGER);
+                // `defenders-hold-the-walls`: a city's defender may be
+                // answered where it strikes.
+                next.survives &= striker.holds_walls
+                    || (!lethal && (striker.hp >= WOUNDED_STRIKER_HP || incoming <= NO_DANGER));
                 next.reply_cost += if lethal {
                     death_value(striker.cost)
                 } else {
@@ -1192,6 +1198,11 @@ fn doomed_shooters(
 ) -> BTreeSet<u32> {
     let mut doomed = BTreeSet::new();
     for (index, shooter) in shooters.iter().enumerate() {
+        // `defenders-hold-the-walls`: a threatened city's defender is never
+        // doomed by the danger at its stand.
+        if shooter.holds_walls {
+            continue;
+        }
         let mut any = false;
         let mut survivable = false;
         for candidate in candidates.iter().filter(|c| c.shooter == index) {
@@ -1838,6 +1849,7 @@ impl AdvancedAi {
                 hp: unit.hp,
                 cost: spec.cost,
                 value,
+                holds_walls: self.holds_the_walls(g, pid, uid),
             });
             candidates.extend(kept);
         }
@@ -2067,7 +2079,8 @@ impl AdvancedAi {
                 incoming < f64::from(unit.hp)
                     && (g.units[&blow.unit].hp >= WOUNDED_STRIKER_HP || incoming <= NO_DANGER)
             });
-            if !survives {
+            // `defenders-hold-the-walls`: see `holds_the_walls`.
+            if !survives && !self.holds_the_walls(g, pid, blow.unit) {
                 rejected.insert(blow.unit);
             }
         }
@@ -2373,6 +2386,11 @@ impl AdvancedAi {
             if !wounded
                 && (self.active_siege_member(g, pid, uid) || self.staging_siege_member(g, pid, uid))
             {
+                continue;
+            }
+            // `defenders-hold-the-walls`: so does a threatened city's healthy
+            // defender. See `advanced/defenders_hold_the_walls.rs`.
+            if !wounded && self.holds_the_walls(g, pid, uid) {
                 continue;
             }
             // A healthy explorer is not a garrison either. The same summed
@@ -4649,6 +4667,7 @@ mod tests {
                 hp: unit.hp,
                 cost: 40.0,
                 value: 250.0,
+                holds_walls: false,
             }],
             vec![Target {
                 uid: victim,
@@ -4686,6 +4705,10 @@ mod tests {
         let mut chip = candidates.clone();
         chip[0].host = Some((0.0, 0.0));
         assert!(doomed_shooters(&shooters, &targets, &chip, &mut field).contains(&ours));
+        // `defenders-hold-the-walls`: a city's defender is never doomed.
+        let mut holding = shooters.clone();
+        holding[0].holds_walls = true;
+        assert!(doomed_shooters(&holding, &targets, &chip, &mut field).is_empty());
     }
 
     #[test]
