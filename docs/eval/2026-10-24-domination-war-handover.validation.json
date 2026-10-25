@@ -1,0 +1,25 @@
+{
+  "registry_tests": {
+    "command": "python3 -m unittest discover -s tools -p test_genes.py",
+    "exit_code": 0,
+    "summary": [
+      "...................................................................................................",
+      "----------------------------------------------------------------------",
+      "Ran 186 tests in 143.092s",
+      "",
+      "OK"
+    ]
+  },
+  "registry_generated_check": {
+    "command": "python3 tools/genes.py check",
+    "exit_code": 0,
+    "last_line": "genes: ledger, verdict block and ranking are current"
+  },
+  "whole_tree_format": {
+    "command": "cargo fmt --check",
+    "exit_code": 1,
+    "scope": "Existing formatting differences in unchanged spans; no wholesale formatting applied",
+    "output": "Diff in /Users/martbot-mbp-m5-max-128/civvis-domination-war-handover-6ecc/src/ai/advanced/treatment_flags.rs:4675:\n         self.unit_preservation = false;\n     }\n \n-\n     /// The twin of `enable_district_buildings_first`.\n     pub fn disable_district_buildings_first(&mut self) {\n         self.district_buildings_first = false;\nDiff in /Users/martbot-mbp-m5-max-128/civvis-domination-war-handover-6ecc/src/ai/advanced.rs:9528:\n /// the peacetime garrison.\n pub(crate) mod contested_land;\n \n-/// An assigned lane's first-half production dispatch. Opt-in gene\n-/// `lane-delegates-production`; see `advanced/lane_delegates_production.rs`.\n-mod lane_delegates_production;\n /// The Missionary in the field: a last-charge Missionary explores the fog,\n /// and a religious unit steps out of a raider's reach. Two opt-in genes; see\n /// `advanced/missionary_field.rs`.\nDiff in /Users/martbot-mbp-m5-max-128/civvis-domination-war-handover-6ecc/src/ai/advanced.rs:9537:\n mod apostle_evasion;\n+/// An assigned lane's first-half production dispatch. Opt-in gene\n+/// `lane-delegates-production`; see `advanced/lane_delegates_production.rs`.\n+mod lane_delegates_production;\n mod missionary_field;\n /// One war at a time: one campaign front, peace on every other front, and\n /// peace on the front once the tide has run against us for long enough\nDiff in /Users/martbot-mbp-m5-max-128/civvis-domination-war-handover-6ecc/src/ai/advanced.rs:9648:\n /// Encampment no foreign unit may ever enter, and the soldier who holds the\n /// gate. Five opt-in genes; see `advanced/chokepoints.rs`.\n mod chokepoints;\n-mod scout_distance;\n /// `find-the-capital`: see the module.\n mod find_the_capital;\n+mod scout_distance;\n \n mod culture_strategy;\n mod victory_conversion;\nDiff in /Users/martbot-mbp-m5-max-128/civvis-domination-war-handover-6ecc/src/ai/advanced.rs:14774:\n                         .open_city_taker(g, pid, city, minimum_hp, minimum_strength)\n                         .is_some())\n                     || g.units.values().any(|unit| {\n-                    let spec = &g.rules.units[unit.kind];\n-                    unit.owner == pid\n-                        && unit.hp >= minimum_hp\n-                        && spec.class == \"military\"\n-                        && !spec.has_ranged_attack()\n-                        && !matches!(spec.domain.as_deref(), Some(\"sea\" | \"air\"))\n-                        && g.unit_strength(unit, false) >= minimum_strength\n-                        && g.wdist(unit.pos, city.pos) <= 3\n-                })\n+                        let spec = &g.rules.units[unit.kind];\n+                        unit.owner == pid\n+                            && unit.hp >= minimum_hp\n+                            && spec.class == \"military\"\n+                            && !spec.has_ranged_attack()\n+                            && !matches!(spec.domain.as_deref(), Some(\"sea\" | \"air\"))\n+                            && g.unit_strength(unit, false) >= minimum_strength\n+                            && g.wdist(unit.pos, city.pos) <= 3\n+                    })\n             })\n             .min_by(|left, right| {\n                 self.campaign_city_value(g, pid, left, strategy)\nDiff in /Users/martbot-mbp-m5-max-128/civvis-domination-war-handover-6ecc/src/server/tests.rs:6377:\n     assert!(EMBEDDED_INDEX.contains(\n         \"return Math.max(floor, PLAYER_HUD_CHROME_HEIGHT + rows * playerHudRowPitch());\"\n     ));\n-    assert!(EMBEDDED_INDEX\n-        .contains(\"minHeight:PLAYER_HUD_MIN_HEIGHT,\\n            avoidsSidebar:true, fullWidth:true}\"));\n+    assert!(EMBEDDED_INDEX.contains(\n+        \"minHeight:PLAYER_HUD_MIN_HEIGHT,\\n            avoidsSidebar:true, fullWidth:true}\"\n+    ));\n     // The masthead spans the window whatever width a drag or a saved layout\n     // carried (operator 2026-10-15: \"full width of the window. not ~1\\\" from\n     // the edge\"); only its top and bottom edges are handles.\n"
+  },
+  "native_screen_activation": "pending validation and merge"
+}

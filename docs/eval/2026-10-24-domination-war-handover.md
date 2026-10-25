@@ -126,3 +126,55 @@ floor and empire power margin separately, so city danger rather than a global
 army deficit triggers Recovery. Repeat the no-op tests before implementation.
 The original failed run is preserved; no native, simulator, or production
 settings are changed to obtain test coverage.
+
+### Additional untreated native observations
+
+Two subsequent unmodified `8810924ee` native Emperor games also lose to
+Science: `civvis-20261025T021437Z` at turn 229 and
+`civvis-20261025T022946Z` at turn 202. The latter logs Conquest at turn 71,
+then Expansion at turn 73 with six cities and power 269 against the strongest
+rival's 257, while the state records a major war. It again logs Expansion at
+turn 76, power 311 against 327. This supports checking campaign continuity;
+it does not establish that the new treatment would have won either game.
+
+The accompanying native diagnostic retains strategy lines and state
+projections. Carrying the last logged strategy across state turns counts
+44, 4, 21, and 13 four-city major-war turns in Expansion respectively for
+`011023Z`, `013135Z`, `021437Z`, and `022946Z`. These descriptive counts
+do not reconstruct bounded-raid memory or prove exact treatment eligibility.
+
+Modernization is an additional constraint. In the second newer game, the
+turn-100 first frame has 256 gold and ten exported upgrade offers: eight
+report missing Iron or Niter and two require friendly territory. At turn 140,
+all seven offers report missing strategic resources despite 223 gold.
+The diagnostic includes all first-frame offers at fixed 20-turn intervals
+from turn 80 through 200 for both newer games. A larger upgrade treasury
+alone cannot resolve these particular resource or territory blockers.
+
+## Registered subsequent native experiment
+
+After the implementation passes focused and full tests, the fixed simulator
+batch finishes, and the opt-in merges, start a real-game screen through the
+existing `~/.civvis-live-screen-gene` mechanism. Activation is pending. Verify
+the file is unclaimed and empty or absent first; preserve any existing screen
+instead of replacing it. Set only `domination-war-hands-over`. The managed
+supervisor reads it between games and deals each game's on/off arm from its
+run tag. Keep the current head-tracking pin, force bundle, Domination lane,
+map, speed, modes, and ladder progression intact. Do not interrupt a game.
+
+The analysis cohort is the first 24 newly assigned game stems after
+activation, including abandoned attempts and continuations joined to their
+stem. Preserve additional assignments as overrun data. Record the activation
+time, first assigned run, actual source revision and binary digest, screen
+gene and dealt arm, played genome, forced/withheld policies, configuration
+readback, and all available events, decisions, and journals. Check the hash-
+derived arm and actual played flag on both arms. Failed readback or missing
+outcomes remain explicit missing observations rather than disappearing.
+
+Report interim and final counts per difficulty and exact code revision,
+including handover activations, capital/city gains and losses, science and
+army modernization where available, combat losses, terminal outcomes, and
+native Domination wins. Ordinary production games are not an off-arm cohort.
+Do not pool different source revisions or rungs into a causal win-rate claim,
+promote defaults from a small sample, or equate replay decisions with wins.
+The initial simulator seeds remain development cases regardless of outcome.
