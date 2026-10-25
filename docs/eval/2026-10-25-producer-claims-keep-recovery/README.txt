@@ -31,3 +31,11 @@ proves the narrow reservation releases its queue. It does not prove that
 income recovery or a Commercial Hub wins the whole priority chain, and it
 measures no counterfactual native survival or wins. Source patches, compiler
 receipts, failed controls and complete first-change evidence are preserved.
+
+A further unused query of the ordinary recovery helper on the same turn-79
+planning frame returns a Commercial Hub for the capital. Two additional
+comparisons preserve all 212 earlier full replies and reads, and the changed
+turn-79 payload remains identical to the qualified industry-only candidate.
+The two preview rows also match. The existing Amenity reservation takes the
+queue before the ordinary recovery choice is used. This identifies a further
+priority conflict; the industrial correction does not change that reservation.
