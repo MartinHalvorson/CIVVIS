@@ -677,7 +677,11 @@ fn a_gun_inside_its_column_marches_under_one_raider() {
             .collect();
         column.sort_by_key(|pos| (std::cmp::Reverse(g.wdist(*pos, lair)), *pos));
         column.truncate(STAGING_COLUMN_BODIES);
-        assert_eq!(column.len(), STAGING_COLUMN_BODIES, "fixture: the column's tiles");
+        assert_eq!(
+            column.len(),
+            STAGING_COLUMN_BODIES,
+            "fixture: the column's tiles"
+        );
         for pos in &column {
             g.spawn_unit("swordsman", 0, *pos);
         }
@@ -688,7 +692,10 @@ fn a_gun_inside_its_column_marches_under_one_raider() {
             .flat_map(|n| g.unit_ids_at(n).iter().copied())
             .filter(|id| *id != gun && g.units[id].owner == 0)
             .count();
-        assert!(beside < STAGING_ESCORT_BODIES, "fixture: no escort beside the step");
+        assert!(
+            beside < STAGING_ESCORT_BODIES,
+            "fixture: no escort beside the step"
+        );
         let mut field = super::super::battle_planner::DangerField::with_reach(&g, 0, true);
         field.share(&g);
         let risk = field.danger(next, gun);
@@ -710,7 +717,10 @@ fn a_gun_inside_its_column_marches_under_one_raider() {
         }
         ai.siege_stage_step(&mut g, 0, gun, &city, &plan);
         let closer = g.wdist(g.units[&gun].pos, target) < g.wdist(start, target);
-        assert_eq!(closer, marches, "version {version}: the column marches the gun only in v2");
+        assert_eq!(
+            closer, marches,
+            "version {version}: the column marches the gun only in v2"
+        );
     }
 }
 
