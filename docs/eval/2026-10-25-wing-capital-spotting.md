@@ -138,3 +138,29 @@ identical paired games are presented as strength evidence. The firing
 artifact instead references the raw changed Native-adapter proposal and
 depends on PR #4148’s explicit captured-action reader; no waiver or synthetic
 nonzero statistic is introduced.
+
+## Final integration validation
+
+Current main was merged, preserving the landed faith-war registration and
+appending spotting after every prior positional row. All 690 prior registry
+rows retain their order, and the ledger is byte-identical to merged main.
+Generated metadata checks, 14 append-point tests and 24 firing-reader tests
+pass. The raw action-pair artifact passes through the landed reader.
+
+`cargo test --profile ci --locked` on 00e2484de6a5b2cd2a09d678a159679f4c1285d4
+passes **6,312 tests, zero failures, 56 ignored**, including the focused spy
+mechanism controls. GitHub's Rust suite passes too. Its quality job failed on
+one inherited blank line in the changed registration file; that line was
+removed only after local compilation/testing completed. This is the sole
+post-test Rust source change. All five candidate Rust files then pass scoped
+rustfmt checks. The global format check still reports an inherited,
+unrelated `src/server/tests.rs` hunk, which is retained in the raw log and
+does not justify formatting unrelated source in this candidate.
+
+The verified 13-member integration archive contains full test output, failed
+GitHub quality output, scoped/global format results, metadata/control checks,
+frozen mechanism sources and the exact post-test diff. It is 189,604 bytes,
+SHA-256
+`f8ab35d1ff54cc917f55079fb86761e6cade5ee9cba1b3577176c8af1b72150c`.
+Final GitHub integration remains required; the candidate remains default-off
+and carries no verified Native execution or strength improvement.
