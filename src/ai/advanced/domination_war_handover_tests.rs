@@ -68,9 +68,10 @@ fn bounded_raid(controller: &mut AdvancedAi, turn: u32) {
 
 #[test]
 fn domination_war_handover_is_registered_and_off_in_both_controllers() {
-    super::test_support::opt_in_off_in_both_controllers("domination-war-hands-over", |controller| {
-        controller.domination_war_hands_over
-    });
+    super::test_support::opt_in_off_in_both_controllers(
+        "domination-war-hands-over",
+        |controller| controller.domination_war_hands_over,
+    );
 }
 
 #[test]
@@ -133,12 +134,24 @@ fn a_threatened_city_keeps_recovery_ahead_of_campaign_handover() {
     let city_id = game.player_city_ids(0)[0];
     let center = game.cities[&city_id].pos;
     game.cities.get_mut(&city_id).unwrap().hp = 10;
-    let position = game
+    let positions = game
         .wring(center, 1)
         .into_iter()
-        .find(|position| game.unit_ids_at(*position).is_empty())
-        .unwrap();
-    game.spawn_test_unit("swordsman", 1, position);
+        .filter(|position| game.unit_ids_at(*position).is_empty())
+        .take(3)
+        .collect::<Vec<_>>();
+    assert_eq!(positions.len(), 3);
+    for position in positions {
+        assert!(game.player_can_see(0, position));
+        game.spawn_test_unit("swordsman", 1, position);
+    }
+    let reserve = crate::hex::offset_to_axial(22, 20);
+    for position in game.wring(reserve, 2).into_iter().take(4) {
+        assert!(game.wdist(center, position) > 6);
+        game.spawn_test_unit("warrior", 0, position);
+    }
+    assert!(game.military_power(0) * 1.25 >= game.military_power(1));
+    assert!(AdvancedAi::city_pressure(&game, 0, city_id) >= BASTION_PRESSURE);
     let baseline = controller(VictoryTarget::Domination, false).assess(&game, 0);
     assert!(baseline.threatened_city.is_some());
     assert_eq!(baseline.strategy, GrandStrategy::Recovery);

@@ -89,3 +89,40 @@ Recorded 283-policy force-file SHA-256:
 
 No-op integration tests and subsequent policy evaluation remain pending.
 No new default selection, earlier capture, or win-rate improvement is claimed.
+
+### Observer qualification amendment 1, before any treatment
+
+The rejected history remains rejected. Before adding the behavioral hook,
+qualify independent, untouched histories in this fixed chronological order:
+`civvis-20261025T013135Z`, then `civvis-20261025T014329Z`. Do not scan policy
+effects or terminal winners to choose a history.
+
+Each candidate must have the original binary, complete event/decision files,
+no withheld or screen policy, an initial state by turn 5, observations through
+turn 70, and at least one four-city state in an existing major war by that
+turn. Run the same identical-arm full-history/native-reply control and stop
+at the first complete pass. Preserve failed and ineligible cases. This is
+observer qualification on separate histories, not selection of a later
+matching frame in the failed original or a strength holdout.
+
+The first independent history is rejected: 158/185 native complete replies
+match, request identity is valid throughout, and identical replay arms differ
+in zero complete replies. The second history is ineligible under the
+preregistered configuration requirements. No qualifying native observer is
+available from these histories; no treated replay is interpreted.
+
+### Initial no-op tests and fixture amendment
+
+The original no-op scaffold at `60c16a297713c430ed0a854b48cd20ff1b11dd1e`
+finishes its ten focused tests: seven pass, both intended positive cases fail
+on Expansion versus Conquest, and one defensive fixture fails before its
+strategy assertion. The last failure is a fixture error, not policy RED:
+one nearby Swordsman is below the existing local-pressure threshold while
+five friendly Warriors defend the damaged city.
+
+Before adding the hook, amend only that fixture to use three visible nearby
+Swordsmen and four distant friendly Warriors. Assert the local-pressure
+floor and empire power margin separately, so city danger rather than a global
+army deficit triggers Recovery. Repeat the no-op tests before implementation.
+The original failed run is preserved; no native, simulator, or production
+settings are changed to obtain test coverage.
