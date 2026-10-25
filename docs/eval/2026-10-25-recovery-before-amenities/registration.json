@@ -1,0 +1,135 @@
+{
+  "registered_utc": "2026-10-25T21:44:16.842876+00:00",
+  "base": "2c39adb79c4d2dfec207cb0f9419e8bc4e19b103",
+  "scope": "Existing idle Amenity reservation should use an available ordinary recovery build when the ordinary raw treasury condition is met. Preserve funded and break-even Amenity choices, gene-off behavior, active queues, and Amenity repairs where no ordinary recovery item exists. No live configuration or genome/force changes.",
+  "prior_evidence": {
+    "ordinary-recovery-preview-analysis.json": {
+      "sha256": "5ca7a17282d6d8ec12f3516a715449988ff33e001e31afc2584ddd99a3fe0ee8",
+      "data": {
+        "qualified": true,
+        "changed_complete_payload_identical_to_registered_reference": true,
+        "both_preview_rows_identical": true,
+        "row": {
+          "choices": [
+            {
+              "city": 33,
+              "city_name": "Bogot\u00e1",
+              "ordinary_recovery_item": {
+                "district": "commercial_hub",
+                "pos": [
+                  10,
+                  8
+                ]
+              },
+              "queue": []
+            },
+            {
+              "city": 34,
+              "city_name": "Maracaibo",
+              "ordinary_recovery_item": {
+                "district": "commercial_hub",
+                "pos": [
+                  11,
+                  11
+                ]
+              },
+              "queue": [
+                {
+                  "unit": "builder"
+                }
+              ]
+            },
+            {
+              "city": 35,
+              "city_name": "Quito",
+              "ordinary_recovery_item": {
+                "district": "commercial_hub",
+                "pos": [
+                  10,
+                  11
+                ]
+              },
+              "queue": [
+                {
+                  "unit": "man_at_arms"
+                }
+              ]
+            },
+            {
+              "city": 36,
+              "city_name": "Caracas",
+              "ordinary_recovery_item": {
+                "district": "commercial_hub",
+                "pos": [
+                  7,
+                  17
+                ]
+              },
+              "queue": [
+                {
+                  "unit": "builder"
+                }
+              ]
+            },
+            {
+              "city": 37,
+              "city_name": "Cuenca",
+              "ordinary_recovery_item": null,
+              "queue": [
+                {
+                  "building": "library"
+                }
+              ]
+            },
+            {
+              "city": 38,
+              "city_name": "Santa Marta",
+              "ordinary_recovery_item": {
+                "district": "harbor",
+                "pos": [
+                  8,
+                  21
+                ]
+              },
+              "queue": [
+                {
+                  "unit": "catapult"
+                }
+              ]
+            }
+          ],
+          "event": "ordinary_recovery_preview",
+          "frame": 0,
+          "model_gold": 81.0,
+          "model_gold_per_turn": -7.84375,
+          "turn": 79
+        },
+        "comparison_sha256": "878df96e46e28ce447f4575650ea784bf33b973dcdb388fe1e30e76152c21a48",
+        "scope": "Ordinary helper is queried in a private probe but its result is not selected by the controller; identical whole-prefix planning/output controls preserve the actual EntertainmentComplex decision. No native counterfactual outcome."
+      }
+    },
+    "first-change-interpretation.json": {
+      "sha256": "922add361aa91234f0160208113559f27e2c73ddbdf42c6dac17d9014ed4aef2",
+      "data": {
+        "registered_first_difference_qualified": true,
+        "two_comparisons": true,
+        "same_complete_native_payloads_before": 212,
+        "first_difference": [
+          79,
+          0
+        ],
+        "original_city33": "Industrial Zone",
+        "candidate_city33": "Entertainment Complex for widespread Amenity pressure",
+        "candidate_exact_caller": "src/ai/advanced.rs:31929 in historical diagnostic source",
+        "income": -7.84375,
+        "gold": 81.0,
+        "limitation": "The narrow industrial recovery fix releases that reservation but the existing Amenity pass takes the queue next. It does not establish that income recovery or a Commercial Hub wins the full priority chain, and does not estimate native strength.",
+        "binary_preserved": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-25/producer-claims-keep-recovery/historical-backport-binary/civvis_orders"
+      }
+    }
+  },
+  "regression": "On unchanged production, actual reserved queue must equal existing recovery helper result for all three witnessed depleted budgets, after all helper/legality/crisis preconditions. Aggregate cases before assertion. Existing Amenity controls plus funded boundaries/no-recovery Arena/gene-off controls must pass. Derive the full amenit-filter catalog from the compiled executable.",
+  "change_limit": "Only at the already-selected idle Amenity city, replace the new discretionary Amenity item with the existing legal recovery helper item under income<-0.5 and Gold<100+25*cities. No new threshold, gene, default, wider reservation or changed site/city ranking. Journal must describe which reservation actually happened.",
+  "integration_dependency": "PR4151 industrial guard is still in final CI. Do not edit its head. Merge ordinary origin/main once after4151 lands before marking this task ready. The historical witness will explicitly compose its exact guard with this exact correction; it is not a native counterfactual win estimate.",
+  "ownership": "Launcher auto-records shared-file claims. Local published diffs of12 listed older PRs contain no target-function definition in changed hunks; no same-line conflict observed. Recheck actual changed hunks before ready."
+}

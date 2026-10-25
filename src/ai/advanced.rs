@@ -31862,6 +31862,9 @@ impl AdvancedAi {
     /// makes the already-priced regional path reachable before ordinary
     /// strategic production fills every queue, without turning a broad -10%
     /// yield band into a blanket infrastructure pivot.
+    /// A depleted treasury with negative income gives this selected idle
+    /// queue to an available ordinary recovery build first. Without one,
+    /// the Amenity repair still runs.
     fn reserve_idle_entertainment_path_for_widespread_crisis(
         &self,
         g: &mut Game,
@@ -31977,6 +31980,16 @@ impl AdvancedAi {
         let Some((_, _, _, _, city, _, item)) = best else {
             return;
         };
+        let recovery = if g.players[pid].gold_per_turn < -0.5
+            && g.players[pid].gold < 100.0 + 25.0 * city_ids.len() as f64
+        {
+            self.base
+                .economic_recovery_item(g, pid, city, self.counts(g, pid).traders)
+        } else {
+            None
+        };
+        let recovering = recovery.is_some();
+        let item = recovery.unwrap_or(item);
         let city_name = g.cities[&city].name.clone();
         if g.apply(
             pid,
@@ -31988,10 +32001,17 @@ impl AdvancedAi {
         .is_ok()
             && self.journal().wants(crate::reasoning::Level::Decision)
         {
-            think!(self.journal(), Economy, Decision,
-                "{} starts {} for widespread Amenity pressure", city_name, Self::plain_item(&item);
-                "{} of {} cities short, {} total Amenities missing; no Entertainment Complex stage was underway",
-                short_cities, city_ids.len(), total_shortfall);
+            if recovering {
+                think!(self.journal(), Economy, Decision,
+                    "{} starts {} for treasury recovery", city_name, Self::plain_item(&item);
+                    "{:.0} Gold and {:.1} Gold/turn: the available recovery build precedes a new Amenity reservation",
+                    g.players[pid].gold, g.players[pid].gold_per_turn);
+            } else {
+                think!(self.journal(), Economy, Decision,
+                    "{} starts {} for widespread Amenity pressure", city_name, Self::plain_item(&item);
+                    "{} of {} cities short, {} total Amenities missing; no Entertainment Complex stage was underway",
+                    short_cities, city_ids.len(), total_shortfall);
+            }
         }
     }
 
