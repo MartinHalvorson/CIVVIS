@@ -1,0 +1,12 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "wing-capital-spotting",
+  "scope": "Recorded Native-adapter proposal activation only; not host execution or strength. Proof member selected after preserving the entire fixed 136-frame / 172-read comparison with 344 successful queries and one changed order.",
+  "archive": {
+    "path": "docs/eval/2026-10-25-wing-capital-spotting.native-queries.tar.xz",
+    "sha256": "9a16b131a148376d43772351e6765c7d8d998a68599f51c0e8b35d52aab08106"
+  },
+  "members": [
+    "native-queries-02/0034/result.json"
+  ]
+}

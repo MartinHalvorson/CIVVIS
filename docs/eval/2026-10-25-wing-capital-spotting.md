@@ -116,5 +116,25 @@ contrast is insufficient proof of activation or benefit. A separate matched
 instrument reuses the unchanged gameplay routine, restores every original
 rival genome and varies only the measured seat's spotting bit. In the first
 fixed seed both initial worlds, complete action traces and terminal worlds
-are byte-identical. The remaining seven fixed pairs are registered and
-running; all results, including no activation, will be retained.
+are byte-identical. All eight fixed pairs are now complete: every initial world, full action trace
+and terminal world is byte-identical between arms. Each pair differs by exactly
+one starting genome bit in the measured seat. Replaying the originally drawn
+arm reproduces every original sampled game row exactly except wall seconds,
+including the three other-lane wins. No Domination win appears. The journal
+retrieves no spotting entry, but its bounded ring drops 748–9,361 entries per
+arm; this is not an exhaustive journal census. Complete action/world equality
+is the stronger observation. Safe holds or internal branch entry without an
+observable order difference are not excluded.
+
+The 139-member whole-game archive preserves both original sampled batches,
+their analyses, all 16 matched games with full worlds/traces, the unchanged
+base gameplay source, instrument source, build failures and contracts. It is
+5,197,600 bytes, SHA-256
+`f294890dd8cb3a5a7b35a0388a260f8211a6bf222a752847f4f592cac2de7594`.
+Every member was verified. An analysis rerun outside the repository lacked
+live-ladder context; it is retained, and corrected repository-context analyses
+exactly match both originals. Neither sampled outcome statistics nor these
+identical paired games are presented as strength evidence. The firing
+artifact instead references the raw changed Native-adapter proposal and
+depends on PR #4148’s explicit captured-action reader; no waiver or synthetic
+nonzero statistic is introduced.
