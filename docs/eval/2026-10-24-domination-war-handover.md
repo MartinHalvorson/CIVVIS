@@ -390,3 +390,37 @@ retain no activation without extending the case. This can establish a local
 decision effect under observed inputs. It cannot replace full generative
 activation, relax the shipping gate, alter the fixed simulator/native trials,
 or establish accepted actions, counterfactual survival or victory.
+
+The collector registers at `2026-10-25T06:58:57.549931Z` and selects the
+first new frozen stem, `civvis-20261025T070148Z`, at `07:01:49.269901Z`.
+It retains actual context for PID 1823 at `07:02:50.928499Z`, with source
+`99d9248be` and original binary
+`cf351ea77cdf0b10d5f5d6ecbd322006c8d1f2f96f5b299f20ee7a01ac02df77`.
+Input capture is enabled and the handover flag is absent. No eligibility,
+policy effect or terminal outcome is used to select this case.
+
+The original controls use all 169 requests through turn 70. The first matches
+the complete native payload, identity and ordered reads throughout. The second
+matches 75 requests, then times out at turn 36/frame 1. Its writer serves five
+of 17 expected reads and waits to open read number 5 (zero based), with zero
+bytes sent for that read. The tool exits 2 with its source hash unchanged.
+This fixed case therefore fails the original-control gate. Neither the
+candidate-off nor handover-on comparison is run, and no eligibility/effect
+analysis is interpreted. The candidate build is independently verified at
+the unchanged strategy source and binary SHA-256
+`7bc2222aa1b783cc0181852a3baf30747838c5e5be3ea2a3f9ea34c18f97876c`.
+
+Register a separate failure-localization repetition of this same complete
+history, original binary and exact command, again with the 30-second deadline
+and turn-70 cutoff. A read-only sampler may inspect either diagnostic child
+after five seconds without a new complete reply. Retain the stack, actual
+process identity and writer phase; never change bytes, append reads, extend
+the deadline or treat a diagnostic pass as rescuing this rejected policy
+case. No handover flag is enabled in this diagnostic.
+
+The separate stack diagnostic happens to complete both 169-request controls
+without a five-second stall. No stack sample is obtained. That timing-dependent
+success does not rescue the rejected policy case or identify the blocked
+open's cause. Candidate-off and handover-on remain unexecuted. Further work
+must repair or replace the transport before a new policy-observer study;
+do not repeat this case until a favorable control appears.
