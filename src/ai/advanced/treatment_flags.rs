@@ -4669,7 +4669,6 @@ impl AdvancedAi {
         self.unit_preservation = false;
     }
 
-
     /// The twin of `enable_district_buildings_first`.
     pub fn disable_district_buildings_first(&mut self) {
         self.district_buildings_first = false;
@@ -7647,6 +7646,16 @@ impl AdvancedAi {
     /// The twin of `enable_elimination_yields_to_a_launch`.
     pub fn disable_elimination_yields_to_a_launch(&mut self) {
         self.elimination_yields_to_a_launch = false;
+    }
+
+    /// Enable the separately measured staged Culture air-interception version.
+    pub fn enable_elimination_yields_to_a_launch_2(&mut self) {
+        self.elimination_yields_to_a_launch_2 = true;
+    }
+
+    /// Withhold the version-two interception path, retaining independent v1.
+    pub fn disable_elimination_yields_to_a_launch_2(&mut self) {
+        self.elimination_yields_to_a_launch_2 = false;
     }
 
     /// Opt-in gene `builders-route-around-mountains`; see
