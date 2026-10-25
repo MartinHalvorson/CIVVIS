@@ -56,7 +56,7 @@ pub(crate) const CAPITAL_GARRISON_TILES: i32 = 2;
 
 impl AdvancedAi {
     /// The original capital we still hold.
-    fn capital_watch_city(g: &Game, pid: usize) -> Option<u32> {
+    pub(super) fn capital_watch_city(g: &Game, pid: usize) -> Option<u32> {
         g.player_city_ids(pid).into_iter().find(|cid| {
             let city = &g.cities[cid];
             city.is_capital && city.original_owner == pid
@@ -104,9 +104,10 @@ impl AdvancedAi {
 
     /// Record the turn each watched major's soldier was last seen within
     /// [`CAPITAL_WATCH_TILES`] of the original capital. Runs at turn start
-    /// with the hostile memory; a no-op with the gene off.
+    /// with the hostile memory; the wall or Slinger-upgrade policy can ask
+    /// for this observation without enabling the other policy's actions.
     pub(super) fn remember_capital_watch_sightings(&mut self, g: &Game, pid: usize) {
-        if !self.capital_walls_before_the_surprise {
+        if !self.capital_walls_before_the_surprise && !self.capital_watch_arms_the_slinger {
             return;
         }
         let Some(capital) = Self::capital_watch_city(g, pid) else {
@@ -128,6 +129,11 @@ impl AdvancedAi {
         if !self.capital_walls_before_the_surprise {
             return None;
         }
+        self.capital_watched_major_power(g, pid)
+    }
+
+    /// Shared observation, without enabling either policy's spending or research.
+    pub(super) fn capital_watched_major_power(&self, g: &Game, pid: usize) -> Option<(usize, f64)> {
         let window = g.standard_duration(CAPITAL_WATCH_STANDARD);
         let ours = g.military_power(pid).max(1.0);
         self.capital_watch_sightings

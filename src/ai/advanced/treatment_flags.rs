@@ -8282,6 +8282,17 @@ impl AdvancedAi {
         self.the_last_two_capitals_come_first = false;
     }
 
+    /// Opt-in `capital-watch-arms-the-slinger`; see `advanced/capital_watch_slinger.rs`.
+    pub fn enable_capital_watch_arms_the_slinger(&mut self) {
+        self.capital_watch_arms_the_slinger = true;
+    }
+
+    /// The twin of `enable_capital_watch_arms_the_slinger`.
+    pub fn disable_capital_watch_arms_the_slinger(&mut self) {
+        self.capital_watch_arms_the_slinger = false;
+        self.capital_watch_slinger_turn = None;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
