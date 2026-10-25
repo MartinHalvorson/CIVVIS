@@ -196,11 +196,13 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `defenders-hold-the-walls` | off (unmeasured) | Opt-in gene `defenders-hold-the-walls`; see `Self::defenders_hold_the_walls`. | 1 \| 1 |
 | `delegations-reach-every-rival` | off (unmeasured) | Send a diplomatic mission to every rival we have met. | 1 \| 1 |
 | `denial-target-leads-the-fronts` | off (unmeasured) | Lead the running wars with the rival the counter names. | 1 \| 1 |
+| `elimination-yields-to-a-launch-2` | off (unmeasured) | Enable the separately measured staged Culture air-interception version. | 1 \| 2 |
 | `envoys-open-the-siege-road` | off (unmeasured) | Buy affordable city-state passage for a siege already held by its border. | 1 \| 1 |
 | `faith-war-before-the-flip` | off (unmeasured) | Opt-in gene `faith-war-before-the-flip`; see `advanced/faith_war_before_the_flip.rs`. | — \| 2 |
 | `faith-war-before-the-flip-2` | off (unmeasured) | Opt-in gene `faith-war-before-the-flip-2`; see `advanced/faith_war_before_the_flip.rs`. | — \| 2 |
 | `faith-war-is-no-front` | off (unmeasured) | Keep a faith war from choosing the campaign front. | — \| 2 |
 | `faith-war-is-no-front-2` | off (unmeasured) | Version 2 of `faith-war-is-no-front`. | — \| 2 |
+| `faith-war-needs-the-edge` | off (unmeasured) | Opt-in gene `faith-war-needs-the-edge`; see `Self::faith_war_needs_the_edge`. | 1 \| 1 |
 | `foothold-faces-the-capital` | off (unmeasured) | Aim a Domination conquest at a foothold within Bomber range of a rival capital. | 1 \| 1 |
 | `friendship-ends-at-the-race` | off (unmeasured) | Let a friendship lapse once the friend is racing to win. | 1 \| 1 |
 | `friendship-only-with-the-stronger` | off (unmeasured) | Offer a friendship only to a rival at least as strong as us. | 1 \| 1 |

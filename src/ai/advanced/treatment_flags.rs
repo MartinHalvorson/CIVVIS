@@ -4669,7 +4669,6 @@ impl AdvancedAi {
         self.unit_preservation = false;
     }
 
-
     /// The twin of `enable_district_buildings_first`.
     pub fn disable_district_buildings_first(&mut self) {
         self.district_buildings_first = false;
@@ -7649,6 +7648,16 @@ impl AdvancedAi {
         self.elimination_yields_to_a_launch = false;
     }
 
+    /// Enable the separately measured staged Culture air-interception version.
+    pub fn enable_elimination_yields_to_a_launch_2(&mut self) {
+        self.elimination_yields_to_a_launch_2 = true;
+    }
+
+    /// Withhold the version-two interception path, retaining independent v1.
+    pub fn disable_elimination_yields_to_a_launch_2(&mut self) {
+        self.elimination_yields_to_a_launch_2 = false;
+    }
+
     /// Opt-in gene `builders-route-around-mountains`; see
     /// `AdvancedAi::builders_route_around_mountains`.
     pub fn enable_builders_route_around_mountains(&mut self) {
@@ -8228,6 +8237,17 @@ impl AdvancedAi {
     /// The twin of `enable_war_faith_buys_the_army`.
     pub fn disable_war_faith_buys_the_army(&mut self) {
         self.war_faith_buys_the_army = false;
+    }
+
+    /// Opt-in gene `faith-war-needs-the-edge`; see
+    /// [`Self::faith_war_needs_the_edge`].
+    pub fn enable_faith_war_needs_the_edge(&mut self) {
+        self.faith_war_needs_the_edge = true;
+    }
+
+    /// The twin of `enable_faith_war_needs_the_edge`.
+    pub fn disable_faith_war_needs_the_edge(&mut self) {
+        self.faith_war_needs_the_edge = false;
     }
 
     // ---- append: a-b ------------------------------------------------

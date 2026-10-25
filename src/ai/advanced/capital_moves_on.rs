@@ -187,7 +187,7 @@ impl AdvancedAi {
         pid: usize,
         contender: usize,
     ) -> bool {
-        if !self.elimination_yields_to_a_launch {
+        if !self.elimination_yields_to_a_launch && !self.elimination_yields_to_a_launch_2 {
             return false;
         }
         let clock = f64::from(g.standard_duration(LAUNCH_CULTURE_CLOCK_TURNS));
