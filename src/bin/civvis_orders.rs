@@ -3205,6 +3205,61 @@ fn drop_held_resource_sales(
     before - orders.len()
 }
 
+fn protect_army_upgrade_material_sales(
+    ai: &civvis::ai::AdvancedAi,
+    game: &civvis::game::Game,
+    wants: &[civvis::ai::ArmyUpgradeMaterialWant],
+    orders: &mut Vec<Order>,
+) -> (std::collections::BTreeSet<String>, usize) {
+    let mut held = ai.siege_gun_resources_held(game, 0, &[]);
+    held.extend(wants.iter().map(|want| want.resource.clone()));
+    let removed = drop_held_resource_sales(&held, orders);
+    let mut budgets: std::collections::BTreeMap<_, _> = ai
+        .army_upgrade_material_reserves(game, 0)
+        .into_iter()
+        .map(|(resource, reserve)| {
+            (
+                format!("RESOURCE_{}", resource.as_str().to_ascii_uppercase()),
+                (game.strategic_stockpile(0, resource), reserve),
+            )
+        })
+        .collect();
+    if budgets.is_empty() {
+        return (held, removed);
+    }
+    let before = orders.len();
+    orders.retain(|order| {
+        if order.kind != "sell" {
+            return true;
+        }
+        let mut package = std::collections::BTreeMap::<&str, f64>::new();
+        for (resource, amount) in order
+            .verb
+            .as_deref()
+            .unwrap_or_default()
+            .split(',')
+            .filter_map(|part| part.split_once('='))
+        {
+            if let (Some(_), Ok(amount)) = (budgets.get(resource), amount.parse::<u32>()) {
+                *package.entry(resource).or_default() += f64::from(amount);
+            }
+        }
+        if package.iter().any(|(resource, amount)| {
+            let (available, reserve) = budgets[*resource];
+            available - *amount + f64::EPSILON < reserve
+        }) {
+            return false;
+        }
+        for (resource, amount) in package {
+            if let Some((available, _)) = budgets.get_mut(resource) {
+                *available -= amount;
+            }
+        }
+        true
+    });
+    (held, removed + before - orders.len())
+}
+
 /// Why no strategic-purchase order was appended this turn, for the note;
 /// `None` when one was. `wants` is `AdvancedAi::siege_gun_resource_wants`,
 /// strongest gun first; `spares` is `AdvancedAi::siege_barter_spares`,
@@ -5417,9 +5472,8 @@ fn decide(
     }
     if ai.army_upgrade_materials_enabled() {
         let wants = ai.army_upgrade_material_wants(&mirror_state.game, 0);
-        let mut held = ai.siege_gun_resources_held(&mirror_state.game, 0, &[]);
-        held.extend(wants.iter().map(|want| want.resource.clone()));
-        let kept = drop_held_resource_sales(&held, &mut orders);
+        let (held, kept) =
+            protect_army_upgrade_material_sales(ai, &mirror_state.game, &wants, &mut orders);
         if kept > 0 {
             note_bits.push(format!("army_material_sale_held={kept}"));
         }
