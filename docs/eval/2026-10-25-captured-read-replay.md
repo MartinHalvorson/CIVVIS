@@ -73,3 +73,32 @@ with the same original binary, ordered bytes, cutoff, and timeout. Preserve
 the initial failure and both source versions. Do not extend the timeout,
 append guessed reads, or select a later starting frame. This diagnostic is
 not permission to reinterpret the rejected control as a success.
+
+The diagnostic source `1a874f324` also fails, earlier at turn 19/frame 1
+after 49 matching requests. Its writer reports 15 of 17 expected reads served
+before the unchanged deadline. Both native replies and the writer stop before
+the complete request can be checked. The handshake's failure point is not
+stable; its cause remains unresolved. Keep this tool in draft, with both
+failed complete-history attempts retained. Do not infer that increasing the
+budget, repeating until a pass, or supplying extra reads would qualify it.
+
+The unchanged Rust/Cargo source tree equals merged `a605bd591` in both this
+worktree and the reserve worktree. A fresh required
+`cargo test --profile ci --locked` invocation in that existing compiled
+reserve worktree passes 6,255 tests, with 56 ignored. Its complete raw output
+is retained alongside the 60 focused Python test results. This reruns the
+actual identical Rust sources without rebuilding an identical task copy.
+
+The compressed controls archive preserves the selected chronological native
+decisions, the necessary original archive/index prefixes, complete emitted
+replies, recaptured bytes, journals, actual context, both tool sources, and
+validation logs. Each entry carries its byte length and SHA-256. The original
+25 MB native executable remains an external input identified by its frozen
+hash; the archive is not a standalone executable distribution. No native
+screen, game, policy, deployment default, or source binary was modified.
+
+Archive: `2026-10-25-captured-read-replay.controls.json.gz`, 5,497,657 bytes,
+32 entries, SHA-256
+`a6ea80e709833d06476fbba635c0cf0d6744e98731b5eeea6953d8cdb9ca1150`.
+Its fixed case contains all 186 native requests through turn 70. Every archived
+entry's length and digest verifies after decompression.
