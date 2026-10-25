@@ -1,0 +1,18 @@
+{
+  "noop": {
+    "source_head": "6a306a3f5",
+    "command": "cargo test --profile ci --locked --bin civvis_orders army_upgrade_materials_tests::reserve_ -- --nocapture",
+    "exit_code": 101,
+    "passed": 4,
+    "failed": 3,
+    "classification": "All three intended logical removed-sale assertions fail (0 versus 1); controls and fixture assertions pass.",
+    "source_sha256": {
+      "src/ai/advanced/army_upgrade_materials.rs": "a29edfebcff0a1b7c128872067398506a5c07d62c4e0da681f0f5a6caa464582",
+      "src/ai/advanced/army_upgrade_materials/tests.rs": "658a5ea808ead9fe2c6daa9c7a82175a6f898e22e2369a5d7ff3aa08b8e86f6a",
+      "src/bin/civvis_orders.rs": "d29c274c38c9470da6ac4292e40f3eda4b9dcc40c1a7ccadc858f9cd62ffe995",
+      "src/bin/civvis_orders/army_upgrade_materials_tests.rs": "c632a7f342fa70e2d2fce213bbfe8fd1310d728d0762970fcec97204c511c50b"
+    },
+    "log_sha256": "272d568316203c396fff0982f6a428feec84417518fe94f44d942cc4ead3c4c2",
+    "log": "   Compiling proc-macro2 v1.0.107\n   Compiling shlex v2.0.1\n   Compiling unicode-ident v1.0.24\n   Compiling find-msvc-tools v0.1.12\n   Compiling quote v1.0.47\n   Compiling serde_core v1.0.229\n   Compiling zmij v1.0.23\n   Compiling serde v1.0.229\n   Compiling serde_json v1.0.151\n   Compiling libm v0.2.16\n   Compiling civvis v0.6.0 (/Users/martbot-mbp-m5-max-128/civvis-upgrade-material-reserve-1563)\n   Compiling memchr v2.8.3\n   Compiling itoa v1.0.18\n   Compiling cc v1.4.5\n   Compiling libmimalloc-sys v0.1.49\n   Compiling syn v3.0.2\n   Compiling serde_derive v1.0.229\n   Compiling mimalloc v0.1.52\n    Finished `ci` profile [optimized] target(s) in 16m 09s\n     Running unittests src/bin/civvis_orders.rs (target/ci/deps/civvis_orders-6666b22528d01bd0)\n\nrunning 7 tests\n\nthread 'army_upgrade_materials_tests::reserve_blocks_selling_the_funded_knights_last_iron' (41568028) panicked at src/bin/civvis_orders/army_upgrade_materials_tests.rs:419:5:\nassertion `left == right` failed\n  left: 0\n right: 1\nnote: run with `RUST_BACKTRACE=1` environment variable to display a backtrace\n\nthread 'army_upgrade_materials_tests::reserve_keeps_an_earlier_safe_sale_and_rejects_double_spending' (41568030) panicked at src/bin/civvis_orders/army_upgrade_materials_tests.rs:440:5:\nassertion `left == right` failed\n  left: 0\n right: 1\n\nthread 'army_upgrade_materials_tests::reserve_refuses_a_bundle_that_would_consume_the_upgrade_bill' (41568033) panicked at src/bin/civvis_orders/army_upgrade_materials_tests.rs:484:5:\nassertion `left == right` failed\n  left: 0\n right: 1\ntest army_upgrade_materials_tests::reserve_leaves_the_disabled_policy_unchanged ... ok\ntest army_upgrade_materials_tests::reserve_allows_a_sale_that_leaves_the_native_upgrade_bill ... ok\ntest army_upgrade_materials_tests::reserve_blocks_selling_the_funded_knights_last_iron ... FAILED\ntest army_upgrade_materials_tests::reserve_keeps_an_earlier_safe_sale_and_rejects_double_spending ... FAILED\ntest army_upgrade_materials_tests::reserve_refuses_a_bundle_that_would_consume_the_upgrade_bill ... FAILED\ntest army_upgrade_materials_tests::reserve_leaves_a_resource_purchase_untouched ... ok\ntest army_upgrade_materials_tests::reserve_does_not_hold_material_for_unfunded_or_wounded_upgrades ... ok\n\nfailures:\n\nfailures:\n    army_upgrade_materials_tests::reserve_blocks_selling_the_funded_knights_last_iron\n    army_upgrade_materials_tests::reserve_keeps_an_earlier_safe_sale_and_rejects_double_spending\n    army_upgrade_materials_tests::reserve_refuses_a_bundle_that_would_consume_the_upgrade_bill\n\ntest result: FAILED. 4 passed; 3 failed; 0 ignored; 0 measured; 302 filtered out; finished in 0.03s\n\nerror: test failed, to rerun pass `--bin civvis_orders`\n"
+  }
+}

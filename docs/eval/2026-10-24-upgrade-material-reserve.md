@@ -49,3 +49,25 @@ successful upgrades, treasury and trade income, expansion, capital captures,
 and terminal outcomes. Refused sale packages alone do not establish a
 performance improvement, and the observed Iron income may cover a temporary
 shortfall without a purchase.
+
+## Regression result and implementation
+
+The no-op extraction at `6a306a3f5` produces four passes and exactly the
+three registered logical failures. Each unsafe-sale assertion reports zero
+removed packages where one is required; all fixture and control assertions
+pass. The validation receipt retains the complete output and all four source
+hashes before the behavioral change.
+
+The implementation shares eligible native upgrade quotes between the buyer
+and a stock reserve. The buyer retains its original shortfall calculation,
+cash floor, ordering, and one-upgrade limit. The reserve keeps the largest
+single fundable bill for each resource, rather than summing the army. The
+sale handler tracks quantities committed by earlier retained packages and
+rejects whole packages that cross a reserve. Missing-material and siege-gun
+sale/barter protection remains in place.
+
+Two additional package checks cover repeated resource entries and a rejected
+package leaving the budget available to a later safe sale. Two core checks
+cover a ten-unit army retaining one native bill and fractional native costs
+rounding only the missing purchase. GREEN and full-suite validation are
+pending. These changes have not been deployed into a native game.

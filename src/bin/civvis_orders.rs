@@ -3214,7 +3214,50 @@ fn protect_army_upgrade_material_sales(
     let mut held = ai.siege_gun_resources_held(game, 0, &[]);
     held.extend(wants.iter().map(|want| want.resource.clone()));
     let removed = drop_held_resource_sales(&held, orders);
-    (held, removed)
+    let mut budgets: BTreeMap<_, _> = ai
+        .army_upgrade_material_reserves(game, 0)
+        .into_iter()
+        .map(|(resource, reserve)| {
+            (
+                format!("RESOURCE_{}", resource.as_str().to_ascii_uppercase()),
+                (game.strategic_stockpile(0, resource), reserve),
+            )
+        })
+        .collect();
+    if budgets.is_empty() {
+        return (held, removed);
+    }
+    let before = orders.len();
+    orders.retain(|order| {
+        if order.kind != "sell" {
+            return true;
+        }
+        let mut package = BTreeMap::<&str, f64>::new();
+        for (resource, amount) in order
+            .verb
+            .as_deref()
+            .unwrap_or_default()
+            .split(',')
+            .filter_map(|part| part.split_once('='))
+        {
+            if let (Some(_), Ok(amount)) = (budgets.get(resource), amount.parse::<u32>()) {
+                *package.entry(resource).or_default() += f64::from(amount);
+            }
+        }
+        if package.iter().any(|(resource, amount)| {
+            let (available, reserve) = budgets[*resource];
+            available - *amount + f64::EPSILON < reserve
+        }) {
+            return false;
+        }
+        for (resource, amount) in package {
+            if let Some((available, _)) = budgets.get_mut(resource) {
+                *available -= amount;
+            }
+        }
+        true
+    });
+    (held, removed + before - orders.len())
 }
 
 /// Why no strategic-purchase order was appended this turn, for the note;

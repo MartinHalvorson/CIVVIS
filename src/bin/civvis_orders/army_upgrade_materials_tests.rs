@@ -496,3 +496,28 @@ fn reserve_leaves_a_resource_purchase_untouched() {
     assert_eq!(removed, 0);
     assert_eq!(orders[0].kind, "buy");
 }
+
+#[test]
+fn reserve_combines_repeated_materials_in_one_sale() {
+    let (mirror, ai) = reservation_fixture(25.0);
+    let wants = ai.army_upgrade_material_wants(&mirror.game, 0);
+    let mut order = iron_sale(1);
+    order.verb = Some("RESOURCE_IRON=10,RESOURCE_IRON=10".into());
+    let mut orders = vec![order];
+    let (_, removed) = protect_army_upgrade_material_sales(&ai, &mirror.game, &wants, &mut orders);
+    assert_eq!(removed, 1);
+    assert!(orders.is_empty());
+}
+
+#[test]
+fn reserve_rejected_package_does_not_spend_later_sale_budget() {
+    let (mirror, ai) = reservation_fixture(25.0);
+    let wants = ai.army_upgrade_material_wants(&mirror.game, 0);
+    let mut unsafe_sale = iron_sale(1);
+    unsafe_sale.verb = Some("RESOURCE_IRON=20".into());
+    let mut orders = vec![unsafe_sale, iron_sale(2)];
+    let (_, removed) = protect_army_upgrade_material_sales(&ai, &mirror.game, &wants, &mut orders);
+    assert_eq!(removed, 1);
+    assert_eq!(orders.len(), 1);
+    assert_eq!(orders[0].subject, Some(2));
+}
