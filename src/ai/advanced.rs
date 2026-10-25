@@ -15331,10 +15331,22 @@ impl AdvancedAi {
                     // used against the weakest living rival.
                     && my_power > weakest_rival * 1.80 + 20.0)
             {
-                (
-                    GrandStrategy::Expansion,
-                    "the first half is reserved for expansion and defense",
-                )
+                if self.domination_war_hands_over
+                    && target == VictoryTarget::Domination
+                    && cities.len() >= DOMINATION_HANDOVER_CITIES
+                    && !wartime_majors.is_empty()
+                    && !raid_only_war
+                {
+                    (
+                        GrandStrategy::Conquest,
+                        "an ongoing major war keeps the Domination campaign",
+                    )
+                } else {
+                    (
+                        GrandStrategy::Expansion,
+                        "the first half is reserved for expansion and defense",
+                    )
+                }
             } else {
                 (target.strategy(), "following the assigned victory lane")
             }

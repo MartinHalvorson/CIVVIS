@@ -127,6 +127,14 @@ army deficit triggers Recovery. Repeat the no-op tests before implementation.
 The original failed run is preserved; no native, simulator, or production
 settings are changed to obtain test coverage.
 
+The amended no-op run finishes with eight passes and exactly the two intended
+Expansion-versus-Conquest failures. The threatened-city fixture now passes
+with its independent visibility, local-pressure, and empire-power checks.
+The validation receipt preserves both the corrected log and tested source
+hashes. Only after that result, the hook is added inside the existing
+Expansion branch. Its journal reason therefore identifies an actual skipped
+Expansion decision; an already-selected Conquest plan keeps its prior reason.
+
 ### Additional untreated native observations
 
 Two subsequent unmodified `8810924ee` native Emperor games also lose to
@@ -178,3 +186,23 @@ native Domination wins. Ordinary production games are not an off-arm cohort.
 Do not pool different source revisions or rungs into a causal win-rate claim,
 promote defaults from a small sample, or equate replay decisions with wins.
 The initial simulator seeds remain development cases regardless of outcome.
+
+## Additional gene-screen reachability qualification
+
+The new registry entry must satisfy the existing gene-fires gate before it
+can ship. Before implementing or evaluating the hook, register one separate
+six-game reachability probe, seeds `59002700` through `59002705`, using
+`gene_screen --games 6 --target-games 6 --jobs 1 --genes
+domination-war-hands-over --p-on 0.5 --target-mix domination --difficulty
+emperor`. Keep the instrument's six majors, 74x46 Continents, nine minors,
+Online/250, and all victory conditions. Hold unscreened genes at the frozen
+actual `treatments` header of untreated native `civvis-20261025T022946Z`
+through `--live-genome`, rather than selecting new supporting genes.
+
+This additional instrument qualifies registry reachability. It does not
+replace, alter, or extend the preregistered eight-map focal comparison, is
+not a native strength holdout, and does not select published defaults. Keep
+every raw row and the complete analysis, including a zero-width result if
+one occurs. A nonzero screen statistic satisfies the current ratchet's
+format; it does not by itself demonstrate a causal win-rate improvement or
+replace actual activation counts from the focal journals and native games.
