@@ -1,5 +1,9 @@
 # A declarable racer and a slower elimination war
 
+Current status: the default-off v2 candidate is implemented; library and all-test
+type checks pass. Corrected behavioral fixtures, activation and full-game
+comparison remain pending, so this is not a native strength claim.
+
 ## Native development witness
 
 In Emperor Domination game `civvis-20261025T051724Z`, the army's journal
@@ -222,3 +226,60 @@ do not choose replacement seeds from outcomes. A standard family fires screen
 is also required before a new registry row can be shipped without a waiver.
 
 The full-game driver is `.compare.rs`, frozen genome `.genome.json` (SHA-256 8317f5479b3d33fe545e8498cf5d53c81c7784cd62ce81e3a01c22cd583d48e7). Rotate arm order cyclically by seed, run at most two games concurrently, and retain a two-hour per-game wall deadline as failure, without replacement. Every game saves the initial/terminal board and each our-seat action/plan/reasoning update. CPU is measured by the subprocess controller, separately from wall time.
+
+
+Before candidate activation, also register fresh-controller public planner
+queries on every one of the same eighteen frozen native prefixes, in off,
+v1 and v2 arms. Configure the same frozen development genome for all three
+arms, varying only this family. Preserve all complete model boards, applied
+actions, plans, reasoning, warnings and 120-second per-query failures. These
+queries do not restore persistent native planner state or claim to reproduce
+the original native decisions. No future readiness is introduced by this
+instrument; staging must be a real action in its returned board. The v2 arm
+will run only after its own library compiles. The two baseline arms are a
+pre-edit diagnostic, not additional independent native games.
+
+
+The pre-behavior public queries complete all 36 assignments (eighteen boards,
+off/v1). Their resulting boards, actions and strategic plans match in every
+pair; seventeen pairs also match all reasoning. At `032555Z` turn 205 only a
+reasoning entry differs. In the original Aztec witness both arms retain
+France at turns 185, 187, 194, 198, 200 and 202, without a new air rebase;
+at 196 they already name Aztec. The turn-200/202 outputs independently
+reproduce the second-front 1.5x refusal and France's sixteen-DVP elimination
+priority under the fixed development genome. These are fresh observational
+queries, not persistent native decision replays or independent trial games.
+
+The first constructed fixture incorrectly placed two aircraft at a one-slot
+City Center. Its cold test build was stopped before a test result after that
+validity issue was identified; its source, raw compiler log and exact owned
+process termination receipt remain attached. The corrected fixture uses a
+real Aerodrome, asserts its capacity, and uses valid rear/forward bases for
+staging. No pass is claimed for the stopped fixture. A separate attempt to
+construct the same board in an external driver could not access crate-private
+fixture helpers; the source and compile errors are retained, and no game ran.
+The public native-query instrument above uses the supported mirror APIs.
+
+The full-game driver compiles against the frozen baseline library. A clearly
+marked STUB-only controller check retains all 24 assignments, including one
+intentional exit-9 failure and its partial artifact, with per-child CPU usage.
+Those stub records are instrumentation checks, not AI games or fires evidence.
+
+The implementation now adds the independent opt-in flag, shares v1's unchanged
+at-war release predicates, stages at most one plane per turn, preflights two
+fresh selected sorties, overlays the urgent target after persistent campaign
+plans, and opens only that checked package. Real useful sorties run after
+base evacuation but before fire/city-assault assignments can spend the same
+planes. The ordinary air selector uses the same tactical predicate. Current
+library type checking passes; focused/full tests, fires evidence, new-arm
+native queries and all 24 internal games remain pending. The flag remains
+default-off and no native trial or deployment default is changed.
+
+The pre-implementation archive has 1221668 bytes, SHA-256
+`bf821d9e4c06802f9e6c3109b23028f023b041416c90cfb0e17227955608f81e`; all 191 member digests were verified. It contains the complete
+native query outputs/build receipt and the separately labeled stopped,
+rejected and stub instrumentation. Frozen native input prefixes remain in
+the previously committed mission archive, with each case hash rechecked by
+the query runner.
+
+Candidate `cargo check --profile ci --locked --tests` also passes (51.27 seconds). The new registry row still lacks family fires evidence, as expected before its registered runs; this remains an explicit pre-ship requirement.

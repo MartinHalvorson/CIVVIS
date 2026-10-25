@@ -4137,6 +4137,9 @@ pub const GENES: &[Gene] = &[
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
+    // Version two retains the at-war launch release and stages a physical
+    // Culture air interception; only two fresh selected safe sorties open it.
+    Gene { tag: "elimination-yields-to-a-launch-2", field: "elimination_yields_to_a_launch_2", kind: Kind::OptIn, enable: AdvancedAi::enable_elimination_yields_to_a_launch_2, disable: AdvancedAi::disable_elimination_yields_to_a_launch_2 },
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
