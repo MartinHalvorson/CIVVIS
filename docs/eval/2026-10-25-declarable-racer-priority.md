@@ -445,3 +445,65 @@ failure and repaired validation are retained, with no complete sealed source
 snapshot claimed for the failed fixture. All twelve focused tests pass. Only
 this test file differs from the frozen behavior source used by the running
 24-game comparison; a final optimized suite including it is next.
+
+## Final registered comparison and post-hoc native diagnostic
+
+The final optimized local suite at `e6c38083d` passes 6,280 tests, zero failures
+and 56 ignored. The twelve focused tests include real observed-adapter execution
+with v1 retained and disabled. Only the adapter test source differs from the
+frozen `1bc9c751f` production behavior used in the evaluation binaries.
+
+All 24 preregistered internal games complete with no failures, timeouts or
+replacement seeds. Every arm loses all eight games to rival Science. Within each
+seed, initial boards, terminal boards and full our-seat action/plan/reasoning
+traces are byte-identical across off/v1/v2. Major original capitals are filtered
+against major players in the terminal boards; city-state capitals are excluded
+from the analysis even though the raw driver records all original capitals.
+Per-game score, counters, original capitals, process CPU and wall time are retained.
+Shared-host timings are descriptive and do not support a performance claim.
+The shared simulator supplies no host Culture clock, so this is compatibility
+and inherited-behavior evidence rather than a test of the new air path.
+
+The full-games archive uses a SHA-256 content-addressed manifest to preserve all
+153 logical files while storing 105 unique objects. It is 2,313,820 bytes,
+SHA-256 `98e8fd18b18bb26edf09a104dbecabb84050d78defb2773d1c8e2cc9b2ffa059`.
+Every object was verified on readback. It includes all 24 process records, full
+initial/terminal boards and traces, analysis, exact controller/driver, frozen
+genome and the final full-suite log/receipt.
+
+Before querying the completed eight-game material cohort, register a separate
+post-hoc diagnostic in PR comment 6399581766. Inventory each game's first actual
+captured decision input per turn; select healthy siege aircraft plus any finite
+native rival Culture clock from zero to forty native turns. Leave readiness,
+visibility, tourists, war status and safety to the unmodified planner. The full
+inventory retains 1,467 first requests, all exclusions and capture failures.
+All 29 selected cases reconstruct exactly as native-event byte prefixes, and
+all 58 baseline/v2 model queries complete without failures. Per-game played
+genomes are retained; the baseline preserves the actual old-version presence.
+
+Two cases change actual modeled actions and carry new-path reasoning:
+
+- `civvis-20261025T124842Z`, turn 157: both arms declare the ordinary legal war
+  on rival 2. V2 adds a useful Theater air pillage by unit 46 at `[22,18]`.
+- `civvis-20261025T134959Z`, turn 177: already at war with rival 2, V2 redirects
+  the air action to unit 49's Theater at `[24,28]` while preserving the other
+  unit's pillage. The baseline instead uses unit 60 at `[22,15]`.
+
+Both keep the same strategic plan. These are fresh-controller modeled actions
+on real observations, not native execution, tourism suppression or wins. Neither
+shows natural staging, holding or the special two-sortie war-opening override.
+The original eighteen-prefix census remains a no-op, explained by its home
+safety guard. No guard is weakened and no deployment default is promoted.
+
+The native-cohort shadow archive preserves all outputs, build receipts, inventory,
+input hashes/capture IDs, played genomes, registration and exact controller, with
+129 logical files / 66 unique objects. It is 2,356,448 bytes, SHA-256
+`af750f5b8619e53e25dca98e6d9d4a5ba8c6a9300996188c29b6d6b7434f070e`.
+Each input is reconstructed from the matching PR #4120 cohort event archive by
+its recorded byte length and verified SHA-256. Full duplicated prefixes remain
+in local scratch; their source archives are retained remotely in #4120.
+
+This qualifies a default-off experimental implementation with native-observation
+model activation. Prospective native execution and conquest outcomes remain
+unverified. The completed internal losses and negative material cohort are not
+strength evidence for this new air policy.
