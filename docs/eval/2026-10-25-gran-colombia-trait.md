@@ -45,4 +45,10 @@ witnesses, their complete immediate state intervals, orders, all intervening
 failures and 106 independently verified raw blobs (37,880 bytes; SHA-256
 `9a5a053bdb20c7c0d055bedd222e94c18ea4194cd0949dad9be5720e4a4eec93`).
 
+A read-only transaction against the loaded `DebugGameplay.sqlite` independently
+returns the same two trait attachments, three modifiers and three arguments.
+The fourteen database rows are retained in
+`2026-10-25-gran-colombia-trait.database.json.gz` (709 bytes; SHA-256
+`c191a1327bc3cd3b0a597084fedb33299fc2ddc0d20eb57114bb5eff12b82afe`).
+
 Implementation, validation and exact artifact hashes are pending.
