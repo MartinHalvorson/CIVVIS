@@ -12958,6 +12958,8 @@ local function applyOrder(player, pid, row, turn)
 		end
 		return fallback or "no_probe_answered";
 	end
+	-- Delayed movement no-ops use this same exact-parameter failure probe.
+	CivvisBoard.operationRefusalReason = refusalReason;
 
 	-- Keep this helper inside the order handler. A file-scope local consumes one
 	-- of the main chunk's 200 Lua registers; crossing that ceiling makes Civ 6
@@ -15741,6 +15743,7 @@ local function applyOrder(player, pid, row, turn)
 				-- and below, and the same use: the Rust side can feed a NAMED refusal
 				-- back so CIVVIS stops re-deriving the same impossible step.
 				emit("move_refused", {
+					operation_failure = refusalReason(unit, OP["UNITOPERATION_MOVE_TO"], params),
 					turn = turn,
 					unit = subject,
 					-- ⚠ `unit_kind`, NOT `kind`. `emit` sets `payload.kind = <event kind>`
@@ -18472,8 +18475,17 @@ end;
 -- the game's 1,217 no-ops had; the board had read those units `awake` or
 -- `operation` before the order. `activity_name` says which state the accepted
 -- leg left the unit in, an active operation that never steps or something else.
-CivvisBoard.noopEvidence = function(unit, x, y)
+CivvisBoard.noopEvidence = function(unit, x, y, cannotStart)
 	local evidence = {};
+	-- Query only a refused start, with the unit and destination still in hand.
+	-- Keep the classifier separate: a localized reason is not a terrain fact.
+	if cannotStart and type(CivvisBoard.operationRefusalReason) == "function" then
+		local params = {};
+		params[UnitOperationTypes.PARAM_X] = x;
+		params[UnitOperationTypes.PARAM_Y] = y;
+		evidence.operation_failure = CivvisBoard.operationRefusalReason(
+			unit, OP["UNITOPERATION_MOVE_TO"], params);
+	end
 	evidence.core_busy = try(function() return UI.IsGameCoreBusy(); end, nil);
 	evidence.activity = tonumber(try(function() return UnitManager.GetActivityType(unit); end, nil));
 	evidence.activity_name = try(function()
@@ -18584,7 +18596,7 @@ CivvisBoard.moveNoop = function(player, pid, subject, unit, entry, turn, ux, uy,
 		turn = turn, unit = subject, unit_kind = unitTypeName(unit),
 		from = { ux, uy }, want = { wantX, wantY }, moves = moves,
 		ticks = entry.wait, why = why, after_fallback = afterFallback,
-		native = CivvisBoard.noopEvidence(unit, wantX, wantY),
+		native = CivvisBoard.noopEvidence(unit, wantX, wantY, why == "cannot_start"),
 		stall_probe = stalled,
 	});
 	if afterFallback then return false; end
