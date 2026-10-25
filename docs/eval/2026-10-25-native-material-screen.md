@@ -1,6 +1,7 @@
 # Native material trial: input qualification
 
-The eight-start trial registered in #4119 is still unarmed. Its intended
+The eight-start trial registered in #4119 was armed at 12:24:41 UTC on
+2026-10-25 after the repaired, unarmed qualification described below. Its
 comparison remains the existing `army-upgrade-materials` buyer plus the new
 stock reserve against that policy being off. All original inclusion,
 continuation, outcome and interpretation rules remain in force.
@@ -67,9 +68,39 @@ The material policy is absent from its played and forced lists. It is not
 a material-trial assignment or an unarmed repaired qualification. Preserve
 that screen; do not activate this trial over it. The previously prepared
 `2026-10-24-upgrade-material-reserve-native-trial` directory is another
-owner's state and was inspected read-only. No observer from this PR has
-been activated. Native deployment is verified; the separate local
+owner's state and was inspected read-only. At that inspection no observer from this PR had
+been activated. Native deployment was verified; the separate local
 exhibition server was still serving `c1803a7df` when inspected.
+
+## Armed qualification and first assignment
+
+The other owner's screen subsequently completed and released the slot. The
+unchanged bounded observer qualified the unarmed Emperor game
+`civvis-20261025T122036Z`, then exclusively created the
+`army-upgrade-materials` screen setting at 12:24:41 UTC. Its frozen native
+source is `8b131f11070379326ef98b6b6fc95ce0e5cd5e86`, verified to descend
+from the material repair. The actual binary SHA-256 is
+`c39a27153b657e29e3ba46b231b2243bf8e3593bbb543e3ecec2d159df42d2f0`,
+matching its runtime and first-decision receipts. All seventeen first-request
+reads reconstruct to 30,939 bytes, SHA-256
+`bbf2a0e954040543a4ddaee3ea3c8018703999e79209a9001bd8dd36e8ef49a1`.
+
+The qualification game is excluded from the cohort. At the 12:37:55 UTC
+readback, one future start has been assigned: `civvis-20261025T123652Z`.
+Its actual driver carries `--screen-gene army-upgrade-materials` and
+`--screen-arm on`. Played-genome readback and terminal results remain pending.
+The screen chooses each arm from the existing tag hash; eight starts do not
+mean eight treatment games. All failed starts, missing readbacks and
+continuations remain assigned; none can be replaced. The observer is running
+and will remove only its own unchanged screen setting after eight starts.
+
+The activation archive is 15,452 bytes, SHA-256
+`1bd97039f44aa3647e876f27ce61e600147465f8a6708b57556db5d14c1632f6`.
+Every member was read back and compared with its source. It retains the
+qualification, reconstructed input, observer source/log, assignment-state
+snapshot and actual driver/screen-identity readback. This proves activation
+and qualification, not a native strength result. Outcome collection remains
+mandatory after the start cutoff.
 
 ## Validation
 
