@@ -113,7 +113,7 @@ the pin beside the revision the next batch will build.
 
 ```
 civvis-games status     the switch, the services, the entry point, what will build, what is playing, recent wins
-civvis-games on         clear any halt, record intent=running, start the chain through Terminal, reset the pin to head
+civvis-games on         clear any live pause and halt, record intent=running, start the chain through Terminal, reset the pin to head
 civvis-games retire     request Civ VI's native Retire action for exactly one active, already-playing harness; record operator_retired and keep the lane on for its replacement
 civvis-games off        halt AND tear the live chain down, youngest first (TERM only on the Civ VI core)
 civvis-games wins 20    the last twenty live-game wins from the ladder ledger
@@ -129,6 +129,24 @@ current game while continuing the indefinite lane, use `retire`, not `off`: it r
 ambiguous harnesses, asks the installed control mod to invoke Civilization
 VI's native Retire action, waits for its `retired` acknowledgement, and leaves
 a durable request/status/result sidecar in that run.
+
+An explicit `on` also lifts the page's saved live-pause request, including when
+a harness is already running. It does not restart that harness or pretend the
+game has acknowledged the resume: `status` displays both `requested` and `held`
+from the live-pause protocol, along with the reported turn. A request that cannot
+be cleared makes `on` fail before clearing a halt or authorizing recovery.
+Automatic `ensure` never lifts an operator's pause. If the request is clear but
+no new turns arrive, inspect the actual game window and harness log before
+calling the lane healthy; a stale harness can remain after Civ VI returns to
+the main menu.
+
+Game-mode verification locates each visible gold checkbox outline near its
+calibrated setup position before reading or clicking the interior. A small
+window-scale drift must not turn an empty box's bright border into a checkmark.
+An unreadable outline still refuses setup; the in-game mode readback remains
+mandatory. `tools/fixtures/game_modes_scaled.png` preserves the checkbox-only
+crop from the 2026-10-24 recovery: all eight boxes are empty, while the old fixed
+coordinates read all eight as selected.
 
 ## Using the Mac while a game plays
 

@@ -38,6 +38,7 @@ set -u
 OPS=${0:A:h}
 REPO=${CIVVIS_REPO:-${OPS:h:h}}
 GAMELOCK="$REPO/tools/civ6_control/gamelock.py"
+LIVE_PAUSE="$REPO/tools/civ6_control/live_pause.py"
 RUN_ROOT=${CIVVIS_RUNS_ROOT:-$HOME/civvis-civ6-runs/control}
 STOCK_LAUNCHER="$OPS/civvis-ladder-terminal-launcher.sh"
 # The operator wrapper the ladder keeper also honours (civvis_collab.py's
@@ -341,6 +342,12 @@ on)
       say "  version:   pin was absent — wrote head so batches track origin/main"
     fi
   fi
+  if ! python3 "$LIVE_PAUSE" resume >/dev/null 2>&1; then
+    set_intent stopped
+    say "  refusing: could not clear the live pause; intent remains stopped"
+    exit 1
+  fi
+  say "  live pause request cleared; the game reports its resume acknowledgement separately"
   if ! python3 "$GAMELOCK" --resume >/dev/null 2>&1; then
     set_intent stopped
     say "  refusing: could not clear the operator halt; intent remains stopped"
@@ -448,6 +455,7 @@ ensure)
 status)
   say "== civvis game lanes =="
   say "intent:    $(intent_report) at ${INTENTFILE/#$HOME/~} (only exact 'running' authorizes recovery)"
+  say "live pause: $(python3 "$LIVE_PAUSE" status 2>&1)"
   if halt=$(python3 "$GAMELOCK" --halt-status 2>&1); then
     say "switch:    OFF — ${halt}"
   else
