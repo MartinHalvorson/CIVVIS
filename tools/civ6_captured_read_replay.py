@@ -37,6 +37,9 @@ class FifoReads:
         self.done = threading.Event()
         self.error = None
         self.served = 0
+        self.phase = "starting"
+        self.read_number = None
+        self.bytes_sent = 0
         os.mkfifo(self.path)
         self.thread = threading.Thread(target=self._run, daemon=True)
         self.thread.start()
@@ -50,6 +53,9 @@ class FifoReads:
     def _run(self):
         try:
             for number, data in enumerate(self.reads):
+                self.read_number = number
+                self.phase = "opening"
+                self.bytes_sent = 0
                 descriptor = None
                 try:
                     while descriptor is None:
@@ -63,16 +69,20 @@ class FifoReads:
                     following = self.path.with_name(f".next-read-{number}")
                     os.mkfifo(following)
                     os.replace(following, self.path)
+                    self.phase = "writing"
                     remaining = memoryview(data)
                     while remaining:
                         self._check()
                         _, ready, _ = select.select([], [descriptor], [], 0.05)
                         if ready:
                             try:
-                                remaining = remaining[os.write(descriptor, remaining):]
+                                sent = os.write(descriptor, remaining)
+                                self.bytes_sent += sent
+                                remaining = remaining[sent:]
                             except BlockingIOError:
                                 continue
                     self.served += 1
+                    self.phase = "closing"
                 finally:
                     if descriptor is not None:
                         os.close(descriptor)
@@ -257,7 +267,9 @@ def run_control(context, records, mapping, directory, timeout):
             return {"passed": False, "command": command, "cwd": cwd, "requests": results,
                     "failed_request": key,
                     "input_delivery": ({"served": feeder.served, "expected": len(feeder.reads),
-                                        "done": feeder.done.is_set(), "error": feeder.error}
+                                        "done": feeder.done.is_set(), "error": feeder.error,
+                                        "phase": feeder.phase, "read_number": feeder.read_number,
+                                        "bytes_sent": feeder.bytes_sent}
                                        if feeder is not None else None),
                     "error": f"{type(error).__name__}: {error}"}
         finally:

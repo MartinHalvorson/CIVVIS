@@ -102,3 +102,20 @@ Archive: `2026-10-25-captured-read-replay.controls.json.gz`, 5,497,657 bytes,
 `a6ea80e709833d06476fbba635c0cf0d6744e98731b5eeea6953d8cdb9ca1150`.
 Its fixed case contains all 186 native requests through turn 70. Every archived
 entry's length and digest verifies after decompression.
+
+## Read-handshake diagnostic registration
+
+An independent subprocess consumes 1,600 consecutive opens, each with
+1,260,000 bytes, successfully in 43.59 seconds. This tests the primitive only.
+The host's CPU headroom service explicitly exempts `civvis_orders` and
+`--serve`/`--mirror` processes; it is not changed for this investigation.
+
+Before any further native execution, add the writer's current open/write
+stage, read number and sent-byte count to failure receipts. Register one more
+full-history diagnostic on the same fixed original binary and case, again
+starting at the first request, with the same turn-70 cutoff, expected bytes,
+and 30-second deadline. A separate read-only sampler may record this
+diagnostic child while a request is pending, without changing its input or
+deadline. This is failure localization, not a new policy or a repeated search
+for a passing control. Both earlier failures remain rejected; no treatment
+may be interpreted from this diagnostic.
