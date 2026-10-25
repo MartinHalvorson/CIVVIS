@@ -3651,7 +3651,7 @@ mod tests {
         // The installed Gathering Storm audit agrees across all 29 tables.
         assert_eq!(
             Rules::shipped().source_fingerprint(),
-            "fnv1a64:d05291ed7cbbe612"
+            "fnv1a64:d5702e477e1be48d"
         );
     }
 

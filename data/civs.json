@@ -1474,9 +1474,10 @@
     "agenda": "carabobo",
     "effects": {
       "combat_strength": 2,
-      "unit_xp_pct": 25
+      "unit_xp_pct": 25,
+      "promote_no_finish_moves": 1
     },
-    "note": "Ejercito Patriota: +2 combat strength and +25% combat experience",
+    "note": "Ejercito Patriota: +2 combat strength and +25% combat experience; promotions do not finish movement",
     "traits": [
       "aggressive_military",
       "expansionist"

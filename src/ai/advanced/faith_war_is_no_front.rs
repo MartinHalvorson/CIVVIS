@@ -59,6 +59,9 @@ impl AdvancedAi {
             );
         }
         exempt.retain(|rival| g.is_at_war(pid, *rival));
+        // `prey-war-is-kept`: a faith war on prey is a front. See
+        // `advanced/prey_war_is_kept.rs`.
+        exempt.retain(|rival| !self.prey_faith_war_is_a_front(g, pid, *rival));
         exempt.sort_unstable();
         exempt.dedup();
         exempt

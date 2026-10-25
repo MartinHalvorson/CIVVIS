@@ -88,6 +88,13 @@ PUBLICATION_GENERATED_FILES = (
     # expected set from the writers' own path constants instead.
     "tools/genome_cost_floor.json",
 )
+# Not written by ``genes.py write`` but by the publication itself, so kept out
+# of the tuple above (which must equal exactly what that writer records):
+# ``tools/gene_fires.py --prune-proven`` deletes the fire waivers the new
+# report proves. ⚠ 2026-10-25: the 0cea report was the first screen with rows
+# for 223 waived genes; every scheduler check passed, and CI's ratchet then
+# failed the publication on "223 waivers have outlived their reason".
+PUBLICATION_PRUNED_FILES = ("tools/gene_fire_waivers.json",)
 STANDARD_PLAYERS = 6
 DEFAULT_GOAL_GAMES = 5_000
 DEFAULT_POLL_SECONDS = 300.0
@@ -1685,6 +1692,14 @@ def reporting_write_command(report: str) -> list[str]:
     ]
 
 
+def retried_note(batch: dict[str, Any]) -> str:
+    retried = (batch.get("publication") or {}).get("validation_retried") or []
+    if not retried:
+        return ""
+    return (" — passed only on an isolated retry under host load: "
+            + ", ".join(f"`{name}`" for name in retried))
+
+
 def publication_body(batch: dict[str, Any], report: str, *, machine: str, agent: str,
                      coordinated: str, computer: str) -> str:
     source = batch["source"]
@@ -1696,7 +1711,8 @@ def publication_body(batch: dict[str, Any], report: str, *, machine: str, agent:
         f"- Agent/session ID: `{agent}`",
         f"- Task: publish validated {batch['complete_games']:,}-completed-game continuous batch `{batch['id']}`",
         "- Claimed paths: `" + report + "`, "
-        + ", ".join(f"`{path}`" for path in PUBLICATION_GENERATED_FILES)
+        + ", ".join(f"`{path}`" for path in (*PUBLICATION_GENERATED_FILES,
+                                              *PUBLICATION_PRUNED_FILES))
         + ", `tools/test_genes.py`",
         f"- Coordinated with: {coordinated or 'none'}",
         "- Related issue/request: operator-directed automatic completed-game rotation",
@@ -1723,7 +1739,7 @@ def publication_body(batch: dict[str, Any], report: str, *, machine: str, agent:
         "- [x] Frozen analyzer cross-checked the same completed games and seats",
         "- [x] `python3 tools/genes.py check`",
         "- [x] `python3 tools/test_genes.py`",
-        "- [x] `cargo test --profile ci --locked`",
+        "- [x] `cargo test --profile ci --locked`" + retried_note(batch),
         "- [x] `git diff --check origin/main...`",
         "- [x] No game-mechanic source change; the reporting batch mechanically reselects defaults "
         "under the recorded policy, so a soak is not applicable",
@@ -1779,13 +1795,90 @@ def mark_published_if_already_merged(batch: dict[str, Any], publication: dict[st
 
 
 def publication_validation_fingerprint(worktree: Path, report: str) -> str:
-    """Invalidate saved successes whenever source, generated data, or HEAD changes."""
+    """Invalidate saved successes whenever source, generated data, or HEAD changes.
+
+    ⚠ Not ``origin/main``: the checks test HEAD plus the working diff, which a
+    fetch elsewhere never touches, yet every worktree shares that ref. On
+    2026-10-25 a sibling session's fetch landed while this host's hour-long
+    parked ``cargo test`` ran, so the mutation check refused the passing
+    regressions ("publication files changed during validation") and launchd
+    restarted the daemon into the same race. ``ship`` merges a moved main and
+    type-checks it, and CI tests the merged tree.
+    """
     head = git_output(worktree, "rev-parse", "HEAD")
-    base = git_output(worktree, "rev-parse", "origin/main")
     diff = git_output(worktree, "diff", "--binary", "HEAD", "--")
     # A newly created report is untracked and therefore absent from git diff.
     report_hash = sha256(worktree / report)
-    return hashlib.sha256(f"{head}\n{base}\n{diff}\n{report_hash}".encode()).hexdigest()
+    return hashlib.sha256(f"{head}\n{diff}\n{report_hash}".encode()).hexdigest()
+
+
+#: A rust-tests run with more failures than this is broken, not flaky.
+RUST_TEST_RETRY_LIMIT = 3
+FAILED_TEST = re.compile(r"^test (\S+) \.\.\. FAILED$", re.MULTILINE)
+
+
+def run_rust_tests(worktree: Path, *, description: str, env: dict[str, str],
+                   log_path: Path) -> list[str]:
+    """The full suite, then each failing test once more on its own.
+
+    ⚠ This host's publication gate runs parked: the daemon is nice 15 and
+    ``civvis-cpu-headroom`` moves its test binaries to darwin-background while
+    the live Civ VI seat plays. Wall-clock assertions then miss —
+    ``server::tests::an_arriving_page_is_not_held_up_by_another_viewers_paint``
+    (250 ms bound) failed the 2026-10-25 publication with 5,908 passing, then
+    passed 3/3 alone. A failure that passes alone is reported, not fatal; CI
+    still runs the whole suite on the merged tree. ``--no-fail-fast`` because
+    cargo otherwise stops at the first failing target, hiding the rest.
+    Returns the names that needed the retry.
+    """
+    command = ["cargo", "test", "--profile", "ci", "--locked", "--no-fail-fast"]
+    print(f"{utc_now()} {description}: started; log={log_path}", flush=True)
+    result = subprocess.run(command, cwd=worktree, text=True, capture_output=True,
+                            check=False, env={**os.environ, **env})
+    sections = [f"{description}\nexit={result.returncode}\n\nstdout:\n{result.stdout}"
+                f"\nstderr:\n{result.stderr}"]
+    log_path.parent.mkdir(parents=True, exist_ok=True)
+    log_path.write_text(sections[0], encoding="utf-8")
+    if result.returncode == 0:
+        print(f"{utc_now()} {description}: passed", flush=True)
+        return []
+    failed = sorted(set(FAILED_TEST.findall(result.stdout)))
+    detail = f"stdout:\n{result.stdout[-2000:]}\nstderr:\n{result.stderr[-2000:]}"
+    if not failed or len(failed) > RUST_TEST_RETRY_LIMIT:
+        raise SchedulerError(f"{description} failed ({result.returncode}); full log: "
+                             f"{log_path}: {detail}")
+    for name in failed:
+        retry = subprocess.run(
+            [*command, name, "--", "--exact", "--test-threads=1"], cwd=worktree, text=True,
+            capture_output=True, check=False, env={**os.environ, **env})
+        sections.append(f"isolated retry: {name}\nexit={retry.returncode}\n\nstdout:\n"
+                        f"{retry.stdout}\nstderr:\n{retry.stderr}")
+        log_path.write_text("\n\n".join(sections), encoding="utf-8")
+        if retry.returncode != 0 or not re.search(r"test result: ok\. [1-9]", retry.stdout):
+            raise SchedulerError(f"{description} failed ({result.returncode}) and {name} failed "
+                                 f"again on its own; full log: {log_path}: {detail}")
+    print(f"{utc_now()} {description}: passed; passed only on an isolated retry: "
+          + ", ".join(failed), flush=True)
+    return failed
+
+
+def file_snapshots(root: Path, paths: Iterable[str]) -> dict[str, tuple[bytes, int, int]]:
+    """Bytes and (atime, mtime) of each path that exists, keyed by path."""
+    snapshots: dict[str, tuple[bytes, int, int]] = {}
+    for relative in paths:
+        path = root / relative
+        if path.is_file():
+            stat = path.stat()
+            snapshots[relative] = (path.read_bytes(), stat.st_atime_ns, stat.st_mtime_ns)
+    return snapshots
+
+
+def restore_unchanged_mtimes(root: Path, snapshots: dict[str, tuple[bytes, int, int]]) -> None:
+    """Put back the times of every snapshotted file whose bytes did not change."""
+    for relative, (content, atime, mtime) in snapshots.items():
+        path = root / relative
+        if path.is_file() and path.read_bytes() == content:
+            os.utime(path, ns=(atime, mtime))
 
 
 def validate_publication(state_root: Path, state_pathname: Path, state: dict[str, Any],
@@ -1796,15 +1889,20 @@ def validate_publication(state_root: Path, state_pathname: Path, state: dict[str
     checks = (
         ("ranking", [sys.executable, "tools/genes.py", "check"], "verify generated ranking", None),
         ("ranking-tests", [sys.executable, "tools/test_genes.py"], "run generated-ranking regressions", None),
-        ("rust-tests", ["cargo", "test", "--profile", "ci", "--locked"], "test publication source", {"RUST_TEST_THREADS": "1"}),
+        ("rust-tests", None, "test publication source", {"RUST_TEST_THREADS": "1"}),
         ("diff", ["git", "diff", "--check", "HEAD", "--"], "check publication diff", None),
     )
     for name, command, description, env in checks:
         if saved.get(name) == fingerprint:
             print(f"{utc_now()} {description}: reusing unchanged successful validation", flush=True)
             continue
-        run_checked(command, cwd=worktree, description=description, env=env,
-                    log_path=batch_directory(state_root, state["current"]) / "logs" / f"{name}.log")
+        log_path = batch_directory(state_root, state["current"]) / "logs" / f"{name}.log"
+        if command is None:
+            publication["validation_retried"] = run_rust_tests(
+                worktree, description=description, env=env or {}, log_path=log_path)
+        else:
+            run_checked(command, cwd=worktree, description=description, env=env,
+                        log_path=log_path)
         if publication_validation_fingerprint(worktree, report) != fingerprint:
             raise SchedulerError("publication files changed during validation; retry against the new content")
         saved[name] = fingerprint
@@ -1848,7 +1946,8 @@ def publish_batch(state_root: Path, state_pathname: Path, state: dict[str, Any],
             sys.executable, str(repo / "tools" / "civvis_collab.py"), "start",
             "publish-continuous-batch", "--machine", machine, "--agent", agent,
             "--path", report,
-            *(item for path in PUBLICATION_GENERATED_FILES for item in ("--path", path)),
+            *(item for path in (*PUBLICATION_GENERATED_FILES, *PUBLICATION_PRUNED_FILES)
+              for item in ("--path", path)),
             "--path", "tools/test_genes.py",
             "--title", title,
         ]
@@ -1896,8 +1995,11 @@ def publish_batch(state_root: Path, state_pathname: Path, state: dict[str, Any],
     if stage == "claimed":
         target = worktree / report
         target.parent.mkdir(parents=True, exist_ok=True)
+        generated = [*PUBLICATION_GENERATED_FILES, *PUBLICATION_PRUNED_FILES]
+        # A restart at this stage writes the same bytes again; keeping their
+        # mtimes spares cargo a full rebuild of the crate before the tests.
+        unchanged = file_snapshots(worktree, [report, *generated])
         write_reporting_artifact(analysis_path(state_root, batch), target, batch)
-        generated = list(PUBLICATION_GENERATED_FILES)
         write = reporting_write_command(report)
         first = subprocess.run(write, cwd=worktree, text=True, capture_output=True, check=False)
         if first.returncode != 0:
@@ -1912,6 +2014,9 @@ def publish_batch(state_root: Path, state_pathname: Path, state: dict[str, Any],
                 description="record historical reporting-build exception",
             )
             publication["build_exception"] = reason
+        run_checked([sys.executable, "tools/gene_fires.py", "--prune-proven"], cwd=worktree,
+                    description="delete the fire waivers the report proves")
+        restore_unchanged_mtimes(worktree, unchanged)
         changed = set(
             run_checked(["git", "status", "--porcelain"], cwd=worktree,
                         description="inspect publication worktree").stdout.splitlines())
@@ -1929,7 +2034,7 @@ def publish_batch(state_root: Path, state_pathname: Path, state: dict[str, Any],
     if stage == "prepared":
         computer = computer_name()
         run_checked(
-            ["git", "add", "--", report, *PUBLICATION_GENERATED_FILES],
+            ["git", "add", "--", report, *PUBLICATION_GENERATED_FILES, *PUBLICATION_PRUNED_FILES],
             cwd=worktree,
             description="stage publication",
         )

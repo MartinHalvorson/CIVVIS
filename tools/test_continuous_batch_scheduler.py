@@ -551,6 +551,42 @@ class PublicationRecovery(unittest.TestCase):
             persisted = json.loads((root / "scheduler-state.json").read_text(encoding="utf-8"))
             self.assertEqual(persisted["current"]["publication"]["stage"], "merged")
 
+    def test_claimed_publication_deletes_the_waivers_its_report_proves(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            state, batch, _worktree = self.pushed_publication(root)
+            batch["publication"]["stage"] = "claimed"
+            commands = []
+
+            def run(command, **_kwargs):
+                commands.append(command)
+                if command[:3] == ["gh", "pr", "view"]:
+                    return SimpleNamespace(stdout=json.dumps({"state": "OPEN"}))
+                if command[:2] == ["git", "status"]:
+                    return SimpleNamespace(stdout="\n".join((
+                        " M docs/gene_ledger.json",
+                        " M tools/gene_fire_waivers.json",
+                        "?? docs/gene_screens/example.json",
+                    )))
+                return SimpleNamespace(stdout="")
+
+            reached = scheduler.SchedulerError("the guard let the waiver file through")
+            with mock.patch.object(scheduler, "refresh_status", return_value={"complete_games": 1}), \
+                    mock.patch.object(scheduler, "validate_analysis"), \
+                    mock.patch.object(scheduler, "write_reporting_artifact"), \
+                    mock.patch.object(scheduler.subprocess, "run",
+                                      return_value=SimpleNamespace(returncode=0)), \
+                    mock.patch.object(scheduler, "run_checked", side_effect=run), \
+                    mock.patch.object(scheduler, "validate_publication", side_effect=reached):
+                with self.assertRaisesRegex(scheduler.SchedulerError, "let the waiver file through"):
+                    scheduler.publish_batch(
+                        root, root / "scheduler-state.json", state, repo=root,
+                        machine="test-machine", agent="continuous-batch")
+            self.assertIn([sys.executable, "tools/gene_fires.py", "--prune-proven"], commands)
+            prune = commands.index([sys.executable, "tools/gene_fires.py", "--prune-proven"])
+            status = next(i for i, command in enumerate(commands) if command[:2] == ["git", "status"])
+            self.assertLess(prune, status, "the guard must see the pruned file")
+
     def test_claimed_publication_merged_by_an_operator_skips_regeneration(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -738,6 +774,7 @@ class PublicationMetadata(unittest.TestCase):
             agent="continuous-batch", coordinated="none", computer="Test Mac")
         self.assertIn("`docs/GENE_RANKING_EVIDENCE.md`", body)
         self.assertIn("`src/ai/advanced/genes.rs`", body)
+        self.assertIn("`tools/gene_fire_waivers.json`", body)
 
 
 class PublicationTiming(unittest.TestCase):
@@ -1161,14 +1198,104 @@ class AutomationRecovery(unittest.TestCase):
             root = Path(temporary)
             report = root / "report.json"
             report.write_text('{"games":1}')
-            with mock.patch.object(scheduler, "git_output", side_effect=["head", "base", "diff"]):
+            with mock.patch.object(scheduler, "git_output", side_effect=["head", "diff"]):
                 first = scheduler.publication_validation_fingerprint(root, "report.json")
             report.write_text('{"games":2}')
-            with mock.patch.object(scheduler, "git_output", side_effect=["head", "base", "diff"]):
+            with mock.patch.object(scheduler, "git_output", side_effect=["head", "diff"]):
                 second = scheduler.publication_validation_fingerprint(root, "report.json")
-            with mock.patch.object(scheduler, "git_output", side_effect=["head", "base", "changed"]):
+            with mock.patch.object(scheduler, "git_output", side_effect=["head", "changed"]):
                 third = scheduler.publication_validation_fingerprint(root, "report.json")
             self.assertEqual(len({first, second, third}), 3)
+
+    def test_fingerprint_survives_a_fetch_that_moves_origin_main(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "report.json").write_text('{"games":1}')
+            asked: list[tuple[str, ...]] = []
+
+            def git(_repo, *args):
+                asked.append(args)
+                return "value"
+
+            with mock.patch.object(scheduler, "git_output", side_effect=git):
+                scheduler.publication_validation_fingerprint(root, "report.json")
+            self.assertFalse(any("origin/main" in args for args in asked), asked)
+
+    def test_a_failure_that_passes_alone_is_reported_not_fatal(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            log = root / "logs" / "rust-tests.log"
+            full = subprocess.CompletedProcess(
+                [], 101, "test server::tests::slow_page ... FAILED\ntest result: FAILED. 9 passed; 1 failed\n",
+                "error: 1 target failed\n")
+            alone = subprocess.CompletedProcess([], 0, "test result: ok. 1 passed; 0 failed\n", "")
+            with mock.patch.object(scheduler.subprocess, "run", side_effect=[full, alone]) as run:
+                retried = scheduler.run_rust_tests(root, description="tests",
+                                                   env={"RUST_TEST_THREADS": "1"}, log_path=log)
+            self.assertEqual(retried, ["server::tests::slow_page"])
+            first, second = (call.args[0] for call in run.call_args_list)
+            self.assertIn("--no-fail-fast", first)
+            self.assertEqual(second[-4:], ["server::tests::slow_page", "--", "--exact", "--test-threads=1"])
+            self.assertIn("isolated retry: server::tests::slow_page", log.read_text())
+
+    def test_a_failure_that_fails_alone_still_fails_the_gate(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            full = subprocess.CompletedProcess([], 101, "test tests::real_bug ... FAILED\n", "")
+            alone = subprocess.CompletedProcess([], 101, "test tests::real_bug ... FAILED\n", "")
+            filtered_out = subprocess.CompletedProcess([], 0, "test result: ok. 0 passed; 0 failed\n", "")
+            for retry in (alone, filtered_out):
+                with mock.patch.object(scheduler.subprocess, "run", side_effect=[full, retry]):
+                    with self.assertRaisesRegex(scheduler.SchedulerError, "again on its own"):
+                        scheduler.run_rust_tests(root, description="tests", env={},
+                                                 log_path=root / "rust.log")
+
+    def test_a_broken_build_or_many_failures_is_never_retried(self):
+        import subprocess
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            compile_error = subprocess.CompletedProcess([], 101, "", "error[E0425]: cannot find value\n")
+            many = subprocess.CompletedProcess(
+                [], 101, "".join(f"test tests::t{n} ... FAILED\n" for n in range(4)), "")
+            for result in (compile_error, many):
+                with mock.patch.object(scheduler.subprocess, "run", return_value=result) as run:
+                    with self.assertRaisesRegex(scheduler.SchedulerError, "full log"):
+                        scheduler.run_rust_tests(root, description="tests", env={},
+                                                 log_path=root / "rust.log")
+                self.assertEqual(run.call_count, 1)
+
+    def test_rewriting_identical_generated_bytes_keeps_their_mtime(self):
+        import os
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            (root / "same.rs").write_text("pub const A: u8 = 1;\n")
+            (root / "moved.rs").write_text("pub const B: u8 = 1;\n")
+            for name in ("same.rs", "moved.rs"):
+                os.utime(root / name, ns=(1_000_000_000, 1_000_000_000))
+            snapshots = scheduler.file_snapshots(root, ["same.rs", "moved.rs", "absent.rs"])
+            self.assertEqual(set(snapshots), {"same.rs", "moved.rs"})
+            (root / "same.rs").write_text("pub const A: u8 = 1;\n")
+            (root / "moved.rs").write_text("pub const B: u8 = 2;\n")
+            scheduler.restore_unchanged_mtimes(root, snapshots)
+            self.assertEqual((root / "same.rs").stat().st_mtime_ns, 1_000_000_000)
+            self.assertNotEqual((root / "moved.rs").stat().st_mtime_ns, 1_000_000_000)
+
+    def test_publication_body_names_a_test_that_needed_the_retry(self):
+        batch = {
+            "id": "b", "complete_games": 1, "complete_seats": 6, "wins": 1,
+            "source": {"commit": "c", "binary_sha256": "s"},
+            "publication": {"validation_retried": ["server::tests::slow_page"]},
+        }
+        body = scheduler.publication_body(batch, "r.json", machine="m", agent="a",
+                                          coordinated="none", computer="MacBook Pro")
+        self.assertIn("`cargo test --profile ci --locked` — passed only on an isolated retry "
+                      "under host load: `server::tests::slow_page`", body)
+        batch["publication"] = {}
+        body = scheduler.publication_body(batch, "r.json", machine="m", agent="a",
+                                          coordinated="none", computer="MacBook Pro")
+        self.assertIn("- [x] `cargo test --profile ci --locked`\n", body)
 
     def test_failure_keeps_assertion_stdout_and_stderr_and_full_log(self):
         import subprocess
@@ -1195,32 +1322,36 @@ class AutomationRecovery(unittest.TestCase):
 
             def check(command, **kwargs):
                 calls.append(kwargs["description"])
-                if kwargs["description"] == "test publication source":
-                    raise scheduler.SchedulerError("test failure")
 
             with mock.patch.object(scheduler, "publication_validation_fingerprint", return_value="first"), \
-                    mock.patch.object(scheduler, "run_checked", side_effect=check):
+                    mock.patch.object(scheduler, "run_checked", side_effect=check), \
+                    mock.patch.object(scheduler, "run_rust_tests",
+                                      side_effect=scheduler.SchedulerError("test failure")):
                 with self.assertRaises(scheduler.SchedulerError):
                     scheduler.validate_publication(root, path, state, root, "report.json")
             persisted = json.loads(path.read_text())
             self.assertEqual(set(persisted["current"]["publication"]["validation"]),
                              {"ranking", "ranking-tests"})
             with mock.patch.object(scheduler, "publication_validation_fingerprint", return_value="first"), \
-                    mock.patch.object(scheduler, "run_checked") as run:
+                    mock.patch.object(scheduler, "run_checked") as run, \
+                    mock.patch.object(scheduler, "run_rust_tests", return_value=[]) as rust:
                 scheduler.validate_publication(root, path, persisted, root, "report.json")
                 self.assertEqual([call.kwargs["description"] for call in run.call_args_list],
-                                 ["test publication source", "check publication diff"])
+                                 ["check publication diff"])
+                self.assertEqual(rust.call_count, 1)
             with mock.patch.object(scheduler, "publication_validation_fingerprint", return_value="changed"), \
-                    mock.patch.object(scheduler, "run_checked") as run:
+                    mock.patch.object(scheduler, "run_checked") as run, \
+                    mock.patch.object(scheduler, "run_rust_tests", return_value=[]) as rust:
                 scheduler.validate_publication(root, path, persisted, root, "report.json")
-                self.assertEqual(run.call_count, 4)
+                self.assertEqual(run.call_count + rust.call_count, 4)
 
     def test_mutation_during_validation_cannot_be_reused(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
             state = scheduler.new_state(1000, 1)
             with mock.patch.object(scheduler, "publication_validation_fingerprint", side_effect=["before", "after"]), \
-                    mock.patch.object(scheduler, "run_checked"):
+                    mock.patch.object(scheduler, "run_checked"), \
+                    mock.patch.object(scheduler, "run_rust_tests", return_value=[]):
                 with self.assertRaisesRegex(scheduler.SchedulerError, "changed during validation"):
                     scheduler.validate_publication(root, root / "state.json", state, root, "report.json")
             self.assertEqual(state["current"]["publication"]["validation"], {})
