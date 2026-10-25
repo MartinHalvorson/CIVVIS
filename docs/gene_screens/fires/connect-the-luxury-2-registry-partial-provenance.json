@@ -1,0 +1,90 @@
+{
+  "kind": "partial-screen-provenance",
+  "gene": "connect-the-luxury-2",
+  "source_pr": "https://github.com/MartinHalvorson/CIVVIS/pull/3567",
+  "measured_source_commit": "186af78f11fc79fde4cb9680b38d1b5645650112",
+  "analysis_file": "connect-the-luxury-2-registry-partial.json",
+  "analysis_sha256": "fd0f6c4d7f6962d55201c60e4fd8a731ce51046a2c808e686cac31d4e745efa2",
+  "raw_rows_file": "/Users/martbot/civvis-runs/2026-09-14-luxury-research-3567/registry.jsonl",
+  "raw_rows_sha256": "b6b6bccceac135eeee6289b4a654b1083b176f0e0b76ac64022e970d802913a7",
+  "raw_log_sha256": "cab0238740a1858a9a8c533dff1b27eab547bded67558ddd9626c63d6c383968",
+  "original_batch": {
+    "complete_games": 85,
+    "complete_seats": 510,
+    "completion": 0.7083333333333334,
+    "partial": true,
+    "read": "\u26a0\u26a0 PARTIAL SCREEN \u00b7 510 of 720 intended seats (70.8%) \u00b7 seeds 914357000..914357119 reserved \u2014 a truncated run, not a completed one",
+    "seed_window": [
+      914357000,
+      914357119
+    ],
+    "seed_window_played": [
+      914357000,
+      914357084
+    ],
+    "target_games": 120,
+    "target_seats": 720
+  },
+  "stop_reason": "operator requested wrap-up before partial outcomes were inspected",
+  "repair_pr": null,
+  "replay_status": "not started; operator requested wrap-up",
+  "header_build_unmodified": {
+    "commit": "",
+    "commit_source": "unstamped-tree-moved",
+    "dirty": false,
+    "genes_sha256": "c3136e5b7e8cd33544d079d992c4504b56456cd8ad4641f7266235a3fe5989d5",
+    "binary_sha256": "aa32d82219b7a56c161a264e2b993a94c57d282407372e02bad5e7c89f69dd90"
+  },
+  "verified_binary_sha256": "aa32d82219b7a56c161a264e2b993a94c57d282407372e02bad5e7c89f69dd90",
+  "reference_family_raw_sha256": "becabf4dee009048847184c435b2cec183e72ecf4759f237b359d165dbdc7d4c",
+  "reference_family_build": {
+    "commit": "186af78f11fc79fde4cb9680b38d1b5645650112",
+    "commit_source": "build-tree",
+    "dirty": false,
+    "genes_sha256": "c3136e5b7e8cd33544d079d992c4504b56456cd8ad4641f7266235a3fe5989d5",
+    "binary_sha256": "aa32d82219b7a56c161a264e2b993a94c57d282407372e02bad5e7c89f69dd90"
+  },
+  "protocol_audit": {
+    "rows": "/Users/martbot/civvis-runs/2026-09-14-luxury-research-3567/registry.jsonl",
+    "commit": "186af78f11fc79fde4cb9680b38d1b5645650112",
+    "verified_profile": {
+      "players": 6,
+      "width": 74,
+      "height": 46,
+      "turns": 250,
+      "city_states": 9,
+      "speed": "online",
+      "map": "continents",
+      "difficulty": "emperor",
+      "all_seats": true,
+      "player_contract": "observed-player-v1",
+      "native_competitions": true,
+      "target_mix": "civvis,science,culture,religion,diplomatic,domination,score"
+    },
+    "complete_games": 85,
+    "target_games": 120,
+    "complete": false,
+    "family_seats": {
+      "connect-the-luxury-2": 157,
+      "off": 120,
+      "connect-the-luxury": 233
+    },
+    "family_mutually_exclusive": true,
+    "non_screened_baseline_fixed": true,
+    "source_clean": true,
+    "source_verification": "exact binary and registry hash match to clean stamped reference run",
+    "header_build": {
+      "commit": "",
+      "commit_source": "unstamped-tree-moved",
+      "dirty": false,
+      "genes_sha256": "c3136e5b7e8cd33544d079d992c4504b56456cd8ad4641f7266235a3fe5989d5",
+      "binary_sha256": "aa32d82219b7a56c161a264e2b993a94c57d282407372e02bad5e7c89f69dd90"
+    },
+    "reference_rows": "/Users/martbot/civvis-runs/2026-09-14-luxury-research-3567/family.jsonl"
+  },
+  "limitations": [
+    "Incomplete registered sample; exploratory descriptive results only.",
+    "No deployment default changes; no pooling with family probes or failed attempts.",
+    "Registry header has a blank commit and unstamped-tree-moved. Source linkage is an exact binary and registry hash match to the clean stamped family run, not a populated registry commit stamp."
+  ]
+}
