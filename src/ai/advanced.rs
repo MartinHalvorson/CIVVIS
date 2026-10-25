@@ -6988,6 +6988,10 @@ pub struct AdvancedAi {
     /// the production goal. See `advanced/engineering_for_capped_fresh_water.rs`.
     /// Off by default.
     engineering_for_capped_fresh_water: bool,
+    /// `faith-war-needs-the-edge`: the faith war opens only on a founder at
+    /// most `faith_war_before_the_flip::FAITH_WAR_EDGE` of our power. Off by
+    /// default.
+    faith_war_needs_the_edge: bool,
     // ---- append: g-k ------------------------------------------------
     /// `gold-buys-the-idle-trader`: an empty trade route slot's Trader,
     /// bought with the idle bank at peace. See
@@ -11048,6 +11052,7 @@ impl AdvancedAi {
             front_weighted_floor: false,
             front_weighted_floor_2: false,
             engineering_for_capped_fresh_water: false,
+            faith_war_needs_the_edge: false,
             // ---- append: g-k ----------------------------------------
             gold_buys_the_idle_trader: false,
             holdout_keeps_the_faith_war: false,
