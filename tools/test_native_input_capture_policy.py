@@ -10,6 +10,7 @@ import sys
 import tempfile
 from types import SimpleNamespace
 import unittest
+from unittest import mock
 
 TOOLS = Path(__file__).resolve().parent
 sys.path.insert(0, str(TOOLS))
@@ -22,6 +23,68 @@ OPS = TOOLS / "ops"
 
 
 class InputCapturePolicyTests(unittest.TestCase):
+    def test_current_policy_overrides_stale_supervisor_environment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            policy = Path(tmp) / "policy"
+            for value, stale in (("1", "0"), ("0", "1")):
+                policy.write_text(f"# next game\n{KEY} = {value} # requested\n")
+                self.assertEqual(climb.capture_decider_inputs_mode(
+                    None, {KEY: stale}, policy), value == "1")
+            policy.unlink()
+            self.assertFalse(climb.capture_decider_inputs_mode(None, {}, policy))
+            self.assertTrue(climb.capture_decider_inputs_mode(None, {KEY: "1"}, policy))
+
+    def test_explicit_capture_switches_override_policy_and_environment(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            policy = Path(tmp) / "policy"
+            for requested in (True, False):
+                policy.write_text(f"{KEY}={int(not requested)}\n")
+                self.assertEqual(climb.capture_decider_inputs_mode(
+                    requested, {KEY: str(int(not requested))}, policy), requested)
+
+    def test_invalid_or_unreadable_capture_policy_disables_capture_without_execution(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            policy = Path(tmp) / "policy"
+            sentinel = Path(tmp) / "should-not-exist"
+            for value in ("2", "true", "", f"$(touch {sentinel})", "'1'"):
+                warnings = []
+                policy.write_text(f"{KEY}={value}\n")
+                self.assertFalse(climb.capture_decider_inputs_mode(
+                    None, {KEY: "1"}, policy, warnings.append))
+                self.assertEqual(len(warnings), 1)
+                self.assertFalse(sentinel.exists())
+            policy.unlink()
+            policy.mkdir()
+            warnings = []
+            self.assertFalse(climb.capture_decider_inputs_mode(
+                None, {KEY: "1"}, policy, warnings.append))
+            self.assertEqual(len(warnings), 1)
+
+    def test_actual_main_resolves_capture_before_any_attempt(self):
+        class BeforeLaunch(Exception):
+            pass
+
+        for switch, requested in (([], None), (["--capture-decider-inputs"], True),
+                                  (["--no-capture-decider-inputs"], False)):
+            for resolved in (False, True):
+                with self.subTest(switch=switch, resolved=resolved):
+                    seen = []
+
+                    def before_launch(args):
+                        seen.append(args.capture_decider_inputs)
+                        raise BeforeLaunch
+
+                    with mock.patch.object(sys, "argv", ["climb", *switch]), \
+                         mock.patch.object(climb, "operator_victory_lane", side_effect=lambda x: x), \
+                         mock.patch.object(climb, "operator_turn_cap", side_effect=lambda x: x), \
+                         mock.patch.object(climb, "capture_decider_inputs_mode",
+                                           return_value=resolved) as resolve, \
+                         mock.patch.object(climb, "screen_refusal", side_effect=before_launch):
+                        with self.assertRaises(BeforeLaunch):
+                            climb.main()
+                    resolve.assert_called_once_with(requested)
+                    self.assertEqual(seen, [resolved])
+
     @unittest.skipUnless(shutil.which("zsh"), "zsh is unavailable")
     def test_launcher_validates_policy_and_clears_an_inherited_capture_arm(self):
         source = (OPS / "civvis-verified-head-launcher.sh").read_text()

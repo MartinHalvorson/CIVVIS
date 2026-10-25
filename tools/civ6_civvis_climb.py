@@ -2528,14 +2528,47 @@ VICTORY_LANE_FILE = Path(
 )
 
 
-#: The host policy file the verified-head launcher reads. The climb reads one
-#: key from it itself, `CIVVIS_DEAL_SESSIONS`, because the live supervisor
+#: The host policy file the verified-head launcher reads. The climb also reads
+#: per-game settings from it because the live supervisor
 #: that builds this command line runs from a tree the per-game refresh does
 #: not update, while this file is re-read at every game.
 VERIFICATION_POLICY_FILE = Path(
     os.environ.get("CIVVIS_VERIFICATION_POLICY", "")
     or Path.home() / ".civvis-verification-policy"
 )
+
+def capture_decider_inputs_mode(requested: bool | None, environ=None,
+                                path: Path | None = None, warn=None) -> bool:
+    """Resolve capture before launching a game, including its continuations.
+
+    An explicit CLI switch wins. The current host policy then takes precedence
+    over the supervisor's inherited environment, which may still contain an
+    older launcher's default zero. Never source the policy as shell code.
+    Invalid settings disable evidence I/O with a warning, leaving play intact.
+    """
+    if requested is not None:
+        return requested
+    environ = os.environ if environ is None else environ
+    path = VERIFICATION_POLICY_FILE if path is None else path
+    warn = warn or (lambda message: print(message, file=sys.stderr))
+    key = "CIVVIS_CAPTURE_DECIDER_INPUTS"
+    value = environ.get(key, "0")
+    try:
+        text = path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        text = ""
+    except (OSError, UnicodeError) as exc:
+        warn(f"cannot read input capture policy {path}: {exc}; capture disabled")
+        return False
+    for line in text.splitlines():
+        name, separator, setting = line.split("#", 1)[0].partition("=")
+        if name.strip() == key:
+            value = setting.strip() if separator else ""
+    if value not in ("0", "1"):
+        warn(f"{key}={value!r} is not 0 or 1; capture disabled")
+        return False
+    return value == "1"
+
 
 #: `civ6_play.py`'s deal-session flags by mode. `off` forwards nothing, so
 #: the default command line is unchanged.
@@ -2681,8 +2714,13 @@ def main() -> int:
                          "other is its --civvis-with/--civvis-without; a tag with "
                          "no live arm refuses the screen, not the batch "
                          "(docs/LIVE_SCREEN.md)")
-    ap.add_argument("--capture-decider-inputs", action="store_true", default=False,
-                    help="archive the native decider's exact input reads for replay")
+    capture = ap.add_mutually_exclusive_group()
+    capture.add_argument("--capture-decider-inputs", action="store_true", default=None,
+                         help="archive the native decider's exact input reads for replay; "
+                              "otherwise read CIVVIS_CAPTURE_DECIDER_INPUTS per game")
+    capture.add_argument("--no-capture-decider-inputs", dest="capture_decider_inputs",
+                         action="store_false", default=None,
+                         help="disable exact-input capture even when host policy enables it")
     ap.add_argument("--refresh-seconds", type=float, default=None,
                     help="forwarded to civ6_play as --civvis-refresh-seconds; "
                          "defaults to 0 for a pinned batch of more than one "
@@ -2991,6 +3029,7 @@ def main() -> int:
     args.victory = operator_victory_lane(args.victory)
     # Re-read per game as well: the deal channel is a policy-file key.
     args.deal_sessions = deal_sessions_mode(args.deal_sessions)
+    args.capture_decider_inputs = capture_decider_inputs_mode(args.capture_decider_inputs)
     # The same per-batch policy seam controls the actual game score clock. A
     # long Science/Domination game must not be cut off at the normal 250-turn
     # comparison horizon because its Terminal-owned supervisor predates the
