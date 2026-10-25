@@ -129,3 +129,20 @@ checked again after archiving, and every archive member was read back. Their
 aggregate size is 11,658,052 bytes; exact individual sizes and SHA-256 hashes
 are in `2026-10-25-culture-air-native-screen.first-six-manifest.json.gz`.
 The observer code and owned lease remain unchanged.
+# Registered cutoff and further raw preservation
+
+The observer assigned its sixteenth future start, `civvis-20261025T200837Z`,
+and removed its unchanged owned screen lease at 20:08:37.825119 UTC.
+The final assigned game remains eligible for outcome collection after the
+lease ends. No failed or early-ended assignment is replaced.
+
+Raw cohort archives 07–14 now preserve the next eight terminal assignments,
+including the turn-34 defeat. Each has 13 verified members: native events,
+decisions, journals, summaries, runtime provenance and discovered captured
+reads, plus assignment/driver manifests. All source file hashes were checked
+again after compression, and every archived member was checked against its
+manifest. The first-fourteen compressed manifest records 22,294,084 bytes of
+raw archives; the manifest itself is 987 bytes, SHA-256
+`2ce362ca9e67c0242a639f2cd584524e11f1b346418eda3701e81095419c6134`.
+The last two assignments and final outcome/activation census remain pending.
+
