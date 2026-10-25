@@ -18,6 +18,7 @@ legacy = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(legacy)
 FLAT = {'TERRAIN_GRASS', 'TERRAIN_PLAINS', 'TERRAIN_DESERT', 'TERRAIN_TUNDRA', 'TERRAIN_SNOW'}
 CLEAR = {'FEATURE_FOREST', 'FEATURE_JUNGLE', 'FEATURE_MARSH'}
+IMMEDIATE_FEATURES = {None, '', 'FEATURE_VOLCANIC_SOIL'}
 
 
 def terrain_category(plot, pid):
@@ -26,13 +27,13 @@ def terrain_category(plot, pid):
             or any(plot.get(k) for k in ('r', 'd', 'im', 'wo', 'flooded', 'submerged'))):
         return None
     feature = plot.get('f')
-    if feature and feature not in CLEAR:
+    if feature not in IMMEDIATE_FEATURES and feature not in CLEAR:
         return None
     owner = plot.get('o')
     category = 'owned' if owner == pid else 'neutral' if owner == -1 else 'unknown' if owner is None else None
     if category is None:
         return None
-    return category + ('_needs_clearance' if feature else '_immediate')
+    return category + ('_needs_clearance' if feature in CLEAR else '_immediate')
 
 
 def major_capitals(state, majors):

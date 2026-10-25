@@ -45,3 +45,16 @@ terrain, outside-territory permission, Flight, Engineer charges and Armory
 requirements. The terrain census is not a host legality query, a safe-route
 proof, infrastructure completion estimate, performance gain or Native win.
 No policy, runtime setting, genome or ladder control changes in this task.
+
+## Amendment 1: Gathering Storm volcanic soil
+
+After the first aggregation, the installed primary search identifies
+`DLC/Expansion2/Data/Expansion2_Improvements.xml:201`: Airstrips explicitly
+allow `FEATURE_VOLCANIC_SOIL`. Retain the original narrow result and witness.
+Before the second aggregation, extend the immediate-site filter to permit
+this feature without clearance. Keep all twenty-four games, frame selection,
+terrain/ownership/range requirements and every other exclusion unchanged.
+Record the revised source hash and compare both complete reports; do not
+replace games or select favorable frames. This is a documented descriptive
+filter correction after inspecting the primary rules, not a fresh prospective
+experiment or a claim that the first filter covered every legal feature.

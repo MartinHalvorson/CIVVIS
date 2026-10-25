@@ -26,6 +26,7 @@ class CensusControls(unittest.TestCase):
         self.assertEqual(audit.terrain_category(plot, 0), 'unknown_immediate')
 
     def test_clearance_and_all_exclusions_are_not_immediate_sites(self):
+        self.assertEqual(audit.terrain_category(self.plot(f='FEATURE_VOLCANIC_SOIL'), 0), 'neutral_immediate')
         for feature in audit.CLEAR:
             self.assertEqual(audit.terrain_category(self.plot(f=feature), 0), 'neutral_needs_clearance')
         for field, value in [('f', 'FEATURE_FLOODPLAINS'), ('vis', False),
