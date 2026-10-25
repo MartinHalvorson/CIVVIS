@@ -147,3 +147,16 @@ The 14-member integration archive preserves all local logs, the
 original port failure, isolated/full retries, old Native capability rejection
 and source/registry/ledger controls: 131,700 bytes, SHA-256
 `e320d59d95a721192304e1120b62e107395bb687941e357bb86d3dacd601323e`.
+
+A real second append conflict arose when #4154 landed during the first head's
+CI. All required checks on d1ed187af were green after the collaboration retry;
+its initial missing reciprocal declaration and acknowledgement are retained.
+The second integration preserves all 693 current main rows and appends this
+candidate last. The same three policy source files and ledger remain unchanged.
+The integrated type check, fourteen append controls, scoped formatting, firing
+and metadata checks pass again. Final CI gates the replacement head.
+
+The second integration archive retains 13 byte-verified members,
+including the previous successful checks, failed policy log, coordination and
+new local validations: 6,568 bytes, SHA-256
+`5dd94043518baf5456e934d3d9fbc9677a74b4680a2ebf94a5b1369f45c6fc75`. The original integration archive is preserved.
