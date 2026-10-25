@@ -8230,6 +8230,17 @@ impl AdvancedAi {
         self.war_faith_buys_the_army = false;
     }
 
+    /// Opt-in gene `faith-war-needs-the-edge`; see
+    /// [`Self::faith_war_needs_the_edge`].
+    pub fn enable_faith_war_needs_the_edge(&mut self) {
+        self.faith_war_needs_the_edge = true;
+    }
+
+    /// The twin of `enable_faith_war_needs_the_edge`.
+    pub fn disable_faith_war_needs_the_edge(&mut self) {
+        self.faith_war_needs_the_edge = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

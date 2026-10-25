@@ -4144,6 +4144,10 @@ pub const GENES: &[Gene] = &[
     // Missionaries against ~90 combat units bought. See
     // `advanced/war_faith.rs`.
     Gene { tag: "war-faith-buys-the-army", field: "war_faith_buys_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_war_faith_buys_the_army, disable: AdvancedAi::disable_war_faith_buys_the_army },
+    // `faith-war-needs-the-edge`: live 10-25, a first faith war on a founder
+    // at 0.7 times our power or more preceded 11 collapses in 45 games, none
+    // in 9 under it. See `faith_war_before_the_flip::FAITH_WAR_EDGE`.
+    Gene { tag: "faith-war-needs-the-edge", field: "faith_war_needs_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_war_needs_the_edge, disable: AdvancedAi::disable_faith_war_needs_the_edge },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
