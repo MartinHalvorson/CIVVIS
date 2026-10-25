@@ -43,3 +43,9 @@ per-attempt binaries; this code does not change a running game or replace
 the independent war-handover study in #4118. Any native trial of the repair
 needs its own source/flag registration and actual readback. No strength gain
 or default promotion follows from these regression tests.
+
+Holding stock can defer profitable sales. Judge any native trial using
+successful upgrades, treasury and trade income, expansion, capital captures,
+and terminal outcomes. Refused sale packages alone do not establish a
+performance improvement, and the observed Iron income may cover a temporary
+shortfall without a purchase.
