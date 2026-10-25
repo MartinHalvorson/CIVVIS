@@ -103,3 +103,9 @@ expression. Complete final source, logs, controller receipts and merged check
 remain in `final-green.json.gz`. The final committed tree still requires a
 passing changed-line gate and the complete hosted CI-profile strategy suite
 before integration; no broad local result is invented for this small repair.
+
+Final local changed-line quality passes on committed `5cc23dd5b`, including
+the corrected test copy. Complete output, exit status and source fingerprints
+remain in `integration.json.gz`. The final source is now ready for the required
+hosted CI-profile strategy/performance gates and integration. The focused
+8-case result and compile check retain their exact scopes stated above.
