@@ -3881,8 +3881,6 @@ pub const GENES: &[Gene] = &[
     // longer leads moves on unless offered the disruption. See
     // `advanced/racer_keeps_the_spies.rs`.
     Gene { tag: "racer-keeps-the-spies", field: "racer_keeps_the_spies", kind: Kind::OptIn, enable: AdvancedAi::enable_racer_keeps_the_spies, disable: AdvancedAi::disable_racer_keeps_the_spies },
-    // One spare idle spy keeps sight of a capital the existing wing reaches.
-    Gene { tag: "wing-capital-spotting", field: "wing_capital_spotting", kind: Kind::OptIn, enable: AdvancedAi::enable_wing_capital_spotting, disable: AdvancedAi::disable_wing_capital_spotting },
     // `capital-walls-before-the-surprise`: a met major at peace with twice
     // our power and a soldier within eight tiles of the original capital in
     // the last ten turns puts Masonry next and the capital on its Walls; two
@@ -4150,6 +4148,8 @@ pub const GENES: &[Gene] = &[
     // Culture air interception; only two fresh selected safe sorties open it.
     Gene { tag: "elimination-yields-to-a-launch-2", field: "elimination_yields_to_a_launch_2", kind: Kind::OptIn, enable: AdvancedAi::enable_elimination_yields_to_a_launch_2, disable: AdvancedAi::disable_elimination_yields_to_a_launch_2 },
 
+    // Append the new tag after existing positional rows, before tail markers.
+    Gene { tag: "wing-capital-spotting", field: "wing_capital_spotting", kind: Kind::OptIn, enable: AdvancedAi::enable_wing_capital_spotting, disable: AdvancedAi::disable_wing_capital_spotting },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

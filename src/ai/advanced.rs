@@ -7789,9 +7789,6 @@ pub struct AdvancedAi {
     /// city it runs Disrupt Rocketry or a safe operation. See
     /// `advanced/racer_keeps_the_spies.rs`.
     racer_keeps_the_spies: bool,
-    /// Keep one spare idle spy at a capital reached by the Bomber wing.
-    /// See `advanced/wing_capital_spotting.rs`.
-    wing_capital_spotting: bool,
     /// `racer-keeps-the-spies`: the unbroken run of turns every city was
     /// refused a Spy below capacity (first turn, last turn) and the turn the
     /// journal last noted it.
@@ -8722,6 +8719,9 @@ pub struct AdvancedAi {
     /// march step, not only beside it. Off by default.
     staging_gun_trusts_its_escort_2: bool,
     // ---- append: t-z ------------------------------------------------
+    /// Keep one spare idle spy at a capital reached by the Bomber wing.
+    /// See `advanced/wing_capital_spotting.rs`.
+    wing_capital_spotting: bool,
     /// `war-faith-buys-the-army`: at war with a major, the army's Faith
     /// purchase runs before patronage and the religious spenders, holding
     /// back only the inquisition's reserve. See `advanced/war_faith.rs`. Off
@@ -11168,7 +11168,6 @@ impl AdvancedAi {
             phantom_contingent_captures: BTreeSet::new(),
             phantom_hold_from: BTreeMap::new(),
             racer_keeps_the_spies: false,
-            wing_capital_spotting: false,
             racer_spies_slot_note: Cell::new((0, 0, 0)),
             purchases_keep_the_upkeep_reserve: false,
             paused_district_finishes: false,
@@ -11331,6 +11330,7 @@ impl AdvancedAi {
             solvent_or_hold: false,
             staging_gun_trusts_its_escort_2: false,
             // ---- append: t-z ----------------------------------------
+            wing_capital_spotting: false,
             war_faith_buys_the_army: false,
             threatened_city_buys_its_defender_2: false,
             unwalled_ring_steps_in: false,

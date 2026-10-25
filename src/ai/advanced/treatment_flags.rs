@@ -7724,15 +7724,6 @@ impl AdvancedAi {
         self.racer_keeps_the_spies = false;
     }
 
-    /// Opt-in `wing-capital-spotting`; see `advanced/wing_capital_spotting.rs`.
-    pub fn enable_wing_capital_spotting(&mut self) {
-        self.wing_capital_spotting = true;
-    }
-
-    /// The twin of `enable_wing_capital_spotting`.
-    pub fn disable_wing_capital_spotting(&mut self) {
-        self.wing_capital_spotting = false;
-    }
 
     /// Opt-in gene `capital-walls-before-the-surprise`; see
     /// `advanced/capital_walls_before_the_surprise.rs`.
@@ -8249,11 +8240,19 @@ impl AdvancedAi {
         self.war_faith_buys_the_army = false;
     }
 
+    /// Opt-in `wing-capital-spotting`; see `advanced/wing_capital_spotting.rs`.
+    pub fn enable_wing_capital_spotting(&mut self) {
+        self.wing_capital_spotting = true;
+    }
+
+    /// The twin of `enable_wing_capital_spotting`.
+    pub fn disable_wing_capital_spotting(&mut self) {
+        self.wing_capital_spotting = false;
+    }
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
-
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
     // ---- append: s-s ------------------------------------------------
