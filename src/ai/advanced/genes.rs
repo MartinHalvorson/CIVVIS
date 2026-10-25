@@ -4139,6 +4139,11 @@ pub const GENES: &[Gene] = &[
     // three tiles, doomed or rotated out by the danger at their stands. See
     // `advanced/defenders_hold_the_walls.rs`.
     Gene { tag: "defenders-hold-the-walls", field: "defenders_hold_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_defenders_hold_the_walls, disable: AdvancedAi::disable_defenders_hold_the_walls },
+    // `war-faith-buys-the-army`: live Emperor 10-25, faith income 22-38 a
+    // turn at t100-175 and the host selling Knights for 220 Faith, yet 1,010
+    // Missionaries against ~90 combat units bought. See
+    // `advanced/war_faith.rs`.
+    Gene { tag: "war-faith-buys-the-army", field: "war_faith_buys_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_war_faith_buys_the_army, disable: AdvancedAi::disable_war_faith_buys_the_army },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
