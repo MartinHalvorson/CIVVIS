@@ -44,5 +44,12 @@
   ],
   "whole_process_deadline_seconds": 21600,
   "retain": "all six assignments, partial rows, failures and nonactivation; no replacement seeds",
-  "interpretation": "The existing fires ratchet reads row variance; direct new-path staging/opening/sortie activations must be reported separately from fixed native queries and the internal games."
+  "interpretation": "The existing fires ratchet reads row variance; direct new-path staging/opening/sortie activations must be reported separately from fixed native queries and the internal games.",
+  "preplay_corrections": {
+    "at": "2026-10-25T12:11:22.710594+00:00",
+    "policy_source_commit": "1255ee700be3d3be227f2d8fd00bc1bbba85fc61",
+    "genes_sha256": "9c5a422b911364410dc09fdbefc2136234a06ad7618cb5547a8209560d4babc3",
+    "reason": "repair fixture coordinates and append metadata, retain staged planes across complete serial turns, preserve finishing capital targets, and skip unsupported no-host-clock work; no screen or internal comparison game has run",
+    "interpretation": "Shared simulation has no host Culture clock, so new air interception cannot activate there. The family firing row can cover inherited v1 behavior only. Require actual activation from native observational queries and prospective native games; keep all 24 internal assignments as compatibility/inheritance/cost comparisons."
+  }
 }

@@ -285,3 +285,57 @@ the query runner.
 Candidate `cargo check --profile ci --locked --tests` also passes (51.27 seconds). The new registry row still lacks family fires evidence, as expected before its registered runs; this remains an explicit pre-ship requirement.
 
 The standard six-game family firing probe is registered in `.fires-registration.json` before play: seeds 59002900–59002905, both family versions, Emperor, six majors, 74x46 Continents, nine city-states, Online/250 turns, the standard seven-way target mixture and two jobs. Its variance row is a ratchet artifact, not proof that the new interception branch activated or improved wins; direct activation is reported separately. Retain partial runs and use no replacement seeds.
+
+
+## Development repairs and observation-regime check before game trials
+
+The first CI run fails during fixture city creation: axial `(29,20)` is
+outside this 36x24 map. It reaches no policy result. Correct that city to a
+valid position, preserve the failure and stopped redundant local compilation,
+and use an unoptimized development build for quicker runtime feedback. The
+required optimized full validation remains pending. Also correct the cached
+field's append range and place the new registry row after every existing row
+but before the empty append-marker run, preserving existing positional bits.
+A real registry append conflict with main is resolved by keeping main's
+already published defender gene before this new version. Main is integrated
+through `8b131f110`; fourteen append-point checks pass. Regenerating family
+metadata without reselection preserves the complete 279-gene deployment list.
+
+The first executable development pass has four passing and five failing
+fixtures. Two incorrectly assert that the early one-war hold must reject an
+urgent rival; that early helper exempts urgency, while the later second-front
+selector and declaration path apply the independent hold. Retain the real
+baseline assertion on that selector and the final declaration. Strengthen the
+home-exposure fixture to actually create local pressure after declaring, and
+record complete serial reasoning when the real turn fails. The rejected
+single-city/double-Theater construction is repaired to use two distinct rival
+towns, with both physical sorties checked independently of the finishing guard.
+An unsupported synthetic wait action is a compile error, not a game result;
+holding instead leaves planes unassigned and preserves their real readiness.
+Temporary readiness masks are restored after early coordinated assignments,
+then the existing reservation set excludes those planes from later unit work.
+
+A second integration gap is identified by tracing the serial path: after one
+plane stages, the ordinary planner can send the first ready plane back toward
+the old front while the second recovers. A two-plane forecast at their current
+firing positions may authorize waiting only. Opening still requires the real,
+fresh package. The final-capital guard is target-sensitive: it preserves an
+existing finishing rival and permits a Culture racer that itself owns the last
+capital. No future readiness is written onto the real board.
+
+`Game::culture_turns_to_victory` reads only an authoritative host observation
+(`src/game.rs`); ordinary shared simulation provides none. Keep that native
+eligibility requirement. The registered 24 internal games therefore test
+compatibility, inherited v1 behavior and cost; they cannot establish that the
+new air-interception branch fires or improves strength. The six-game family
+row likewise cannot prove new-path activation. Require captured native model
+queries and prospective native games for that evidence. A cheap no-clock guard
+avoids city scans and speculative copies in the unsupported simulation regime.
+The source amendment is recorded before any comparison game runs, retaining
+every original seed and arm assignment.
+
+The development-attempt archive preserves CI failures, partial local builds,
+compile errors and registry checks separately. Early failed development runs
+have raw logs but no complete frozen source snapshot; do not overstate their
+reproducibility. The current source is captured by file hash while its new
+unoptimized build is live, with no source edit between start and capture.

@@ -568,3 +568,40 @@ fn serial_staging_keeps_the_first_plane_in_position_until_its_partner_is_ready()
             > 0
     );
 }
+
+#[test]
+fn no_host_clock_preserves_the_existing_version_in_a_complete_turn() {
+    let (g, ai, plan, _, _) = fixture();
+    let mut off_clock = g.speculative_clone();
+    Arc::make_mut(&mut off_clock.observed_public_empire_stats)
+        .entry(2)
+        .or_default()
+        .culture_turns_to_victory = None;
+    let mut original = ai.clone();
+    let mut candidate = ai;
+    version_two(&mut candidate);
+    original.plan = Some(plan.clone());
+    candidate.plan = Some(plan);
+    let mut left = off_clock.speculative_clone();
+    let mut right = off_clock;
+    original.take_turn_inner(&mut left, 0);
+    candidate.take_turn_inner(&mut right, 0);
+    assert_eq!(
+        serde_json::to_value(&left).unwrap(),
+        serde_json::to_value(&right).unwrap()
+    );
+    assert_eq!(original.current_plan(), candidate.current_plan());
+}
+
+#[test]
+fn version_two_retains_the_existing_at_war_launch_release() {
+    let (mut g, mut ai, _, _, _) = fixture();
+    version_two(&mut ai);
+    g.at_war.insert((0, 2));
+    g.players[2]
+        .science_projects
+        .insert("launch_mars_colony".to_string());
+    assert!(ai.elimination_yields_to_a_launch(&g, 0, 1));
+    ai.disable_elimination_yields_to_a_launch_2();
+    assert!(!ai.elimination_yields_to_a_launch(&g, 0, 1));
+}
