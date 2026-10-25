@@ -8723,6 +8723,9 @@ pub struct AdvancedAi {
     /// march step, not only beside it. Off by default.
     staging_gun_trusts_its_escort_2: bool,
     // ---- append: t-z ------------------------------------------------
+    /// Keep one spare idle spy at a capital reached by the Bomber wing.
+    /// See `advanced/wing_capital_spotting.rs`.
+    wing_capital_spotting: bool,
     /// `war-faith-buys-the-army`: at war with a major, the army's Faith
     /// purchase runs before patronage and the religious spenders, holding
     /// back only the inquisition's reserve. See `advanced/war_faith.rs`. Off
@@ -9446,6 +9449,7 @@ mod embassy_capital;
 
 /// `racer-keeps-the-spies`: see `advanced/racer_keeps_the_spies.rs`.
 mod racer_keeps_the_spies;
+mod wing_capital_spotting;
 
 /// Journal only: an urgent racer whose Conquest counter cannot be executed.
 /// See `advanced/silent_counter.rs`.
@@ -11332,6 +11336,7 @@ impl AdvancedAi {
             solvent_or_hold: false,
             staging_gun_trusts_its_escort_2: false,
             // ---- append: t-z ----------------------------------------
+            wing_capital_spotting: false,
             war_faith_buys_the_army: false,
             threatened_city_buys_its_defender_2: false,
             unwalled_ring_steps_in: false,
@@ -29981,6 +29986,37 @@ impl AdvancedAi {
                         spy_id,
                         g.turn + g.standard_duration(SPY_TRAVEL_ORDER_PATIENCE),
                     );
+                    continue;
+                }
+            }
+            // A spare spy supplies the wing's sight after the home defender,
+            // exact science-pad and culture-heist postings have their turn.
+            // The helper also preserves coverage of the leading racer.
+            if let Some(action) = self.wing_capital_spy_action(
+                g,
+                pid,
+                spy_id,
+                plan,
+                &legal,
+                racer_spy_leader,
+                &culture_heist_targets,
+            ) {
+                let wing_capital_spotting::WingSpyOrder::Act(action) = action else {
+                    continue;
+                };
+                if g.apply(pid, &action).is_ok() {
+                    let travel = matches!(action, Action::AssignSpy { .. });
+                    let patience = if travel {
+                        SPY_TRAVEL_ORDER_PATIENCE
+                    } else {
+                        SPY_MISSION_ORDER_PATIENCE
+                    };
+                    self.spy_orders_until
+                        .insert(spy_id, g.turn + g.standard_duration(patience));
+                    think!(self.journal(), Military, Decision,
+                        "A Spy keeps sight for the Bomber wing";
+                        "wing-capital-spotting: an idle spare {} while the wing reaches the active rival's capital",
+                        if travel { "posts to the capital" } else { "runs a safe mission at the capital" });
                     continue;
                 }
             }
