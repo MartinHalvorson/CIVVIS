@@ -135,6 +135,13 @@ hashes. Only after that result, the hook is added inside the existing
 Expansion branch. Its journal reason therefore identifies an actual skipped
 Expansion decision; an already-selected Conquest plan keeps its prior reason.
 
+The implemented hook at `7dc694c1916d3887b3275f0df7e62a161b738370` passes
+all ten focused integration tests. Both positive war cases now select
+Conquest, and all eight controls pass. The full default CI-profile suite,
+fixed focal comparison, and additional reachability screen remain pending.
+The default selection is unchanged; these tests establish strategy behavior,
+not native strength.
+
 ### Additional untreated native observations
 
 Two subsequent unmodified `8810924ee` native Emperor games also lose to
