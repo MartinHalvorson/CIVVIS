@@ -283,3 +283,5 @@ the previously committed mission archive, with each case hash rechecked by
 the query runner.
 
 Candidate `cargo check --profile ci --locked --tests` also passes (51.27 seconds). The new registry row still lacks family fires evidence, as expected before its registered runs; this remains an explicit pre-ship requirement.
+
+The standard six-game family firing probe is registered in `.fires-registration.json` before play: seeds 59002900–59002905, both family versions, Emperor, six majors, 74x46 Continents, nine city-states, Online/250 turns, the standard seven-way target mixture and two jobs. Its variance row is a ratchet artifact, not proof that the new interception branch activated or improved wins; direct activation is reported separately. Retain partial runs and use no replacement seeds.
