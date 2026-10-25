@@ -115,3 +115,41 @@ permission API. The evidence does not justify a broad military-power bypass
 or a declaration based on rebase geometry alone. Keep the proposed version
 unimplemented until a complete, observable staging/interception path and its
 home-defense conditions are specified and tested.
+
+## Conditional staging forecast, registered before evaluation
+
+Keep the same eighteen frames and every current legal rebase from the first
+diagnostic. For each in-range Theater, require its exported plot to be
+currently native-visible; retain false/unknown observations as refusals.
+On a disposable clone after that rebase, restore only the plane's original
+ready movement/attack counts as an explicit next-turn assumption, apply one
+currently legal declaration, then try the modeled sortie and record damage,
+refusal and pillage. Preserve the original immediate-mission outputs exactly.
+
+This is a conditional forecast, not future readiness or native permission.
+Recheck visibility, declaration permission, defenses, base ownership and
+readiness on any future real turn. The rival city export has no building
+inventory, and plot exports have a district pillage bit but no foreign
+building layers; a modeled district pillage does not prove that one native
+sortie disables the whole Theater or delays victory. Home-defense readiness,
+the natural target resolver and the actual policy's preferred air action are
+also outside this physical forecast. Keep zero, unknown and failed cases;
+do not use this diagnostic alone to enable a new war policy.
+
+All eighteen conditional probes complete, and their original immediate
+outputs match the first diagnostic exactly after removing the new forecast
+field. Seven frames across two games have at least one conditional modeled
+pillage with >=60 HP: the Kongo frame and Aztec at turns 185, 187, 194, 196,
+198 and 200. These are overlapping route/aircraft alternatives, not
+independent trials. Aztec turn 202 has eight forecast attempts and all are
+refused; no immediate sortie is accepted there either. Macedonia's nine
+geometric staging targets fail the current native-visibility requirement.
+
+This identifies an earlier staging opportunity in the development witness,
+subject to the stated future-readiness and observation assumptions. It does
+not prove a native suppression, a safe second war or a win. The next policy
+design must connect staging to a fresh, actually selectable interception and
+account for home defense and the existing ground campaign; releasing the
+diplomatic priority or power threshold in isolation is still insufficient.
+The separate staging archive preserves every result, projection comparison
+and build receipt without replacing the first diagnostic.
