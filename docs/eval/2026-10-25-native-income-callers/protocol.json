@@ -1,5 +1,5 @@
 {
-  "status": "Original frozen binary reproduced; diagnostic instrumentation awaiting build and its own qualification. No private caller inference yet.",
+  "status": "Both complete191-request diagnostic controls passed and root traces identical;8/8actual writer matches to native planned actions. Zero commercial helper or strategic-hub-gate log entries. Fixed-history extension through100 registered and awaiting its own qualification.",
   "source_base": "b4dfb57ea13b5d1bc08918d71769a94c88b690f7",
   "fixed_run": "civvis-20261025T174828Z",
   "through_turn": 70,
@@ -35,5 +35,13 @@
       "16836d413": 2
     },
     "causal_strength_claim": false
-  }
+  },
+  "t70_actual_writer_counts": {
+    "Campus claim": 2,
+    "Builder backlog claim": 3,
+    "Faith sanctuary Shrine reservation": 1,
+    "Campus building claim": 1,
+    "Delegated domination siege reservation": 1
+  },
+  "t70_model_income_matches_native_at_all_eight_writers": true
 }

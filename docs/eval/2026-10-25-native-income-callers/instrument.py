@@ -20,7 +20,9 @@ def main():
     parser.add_argument("--source", required=True, type=Path)
     parser.add_argument("--repository", required=True, type=Path)
     parser.add_argument("--out", required=True, type=Path)
+    parser.add_argument("--trace-through-turn", type=int, default=70)
     args = parser.parse_args()
+    assert args.trace_through_turn >= 60
     args.out.mkdir(exist_ok=False)
     changes = {}
 
@@ -96,6 +98,8 @@ std::thread_local! {
     }
 
     fn apply_without_income_probe(&mut self, pid: usize, action: &Action) -> Result<(), String> {""")
+    text = replace(text, "(60..=70).contains(&self.turn)",
+                   f"(60..={args.trace_through_turn}).contains(&self.turn)")
     write(name, text)
 
     name = "src/bin/civvis_orders.rs"
@@ -157,7 +161,8 @@ std::thread_local! {
     write(name, text)
 
     patch = ""
-    manifest = {"base": BASE, "scope": "private diagnostic assembly only", "files": {}}
+    manifest = {"base": BASE, "scope": "private diagnostic assembly only",
+                "trace_turns": [60, args.trace_through_turn], "files": {}}
     for name, (before, after) in changes.items():
         patch += "".join(difflib.unified_diff(before.splitlines(True), after.splitlines(True),
                                              fromfile="a/" + name, tofile="b/" + name))
