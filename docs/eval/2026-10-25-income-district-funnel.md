@@ -44,3 +44,45 @@ implement this API's typed `AsName` parameter. That compiler output and the
 original test source remain in `compile-error.json.gz`; no logical assertion
 runs and no production patch is qualified. Only those calls change to typed
 `Name` values before the complete unchanged-production suite is rerun.
+
+The next complete attempt has6 passing controls and the intended refusal
+assertion, but the slow-quote case stops at its spatial-site precondition:
+one random coastal city has no free legal Hub site. Its complete source,
+log and catalog remain in `fixture-error.json.gz`, not a complete RED. Keep
+both original seeds and cases, clear irrelevant features/resources/water from
+owned free fixture tiles, assert each site, and recompute the production rank
+before rerunning unchanged production. No game or experimental map is replaced.
+
+## Genuine regression result
+
+After only the fixture API/terrain corrections, all6 original controls pass
+and both new cases reach their intended eligible-city assertion on unchanged
+production code. The exact8 source names match the built catalog. Complete
+RED logs, source and catalog are retained in `red.json.gz`. No fixture error
+is counted as one of these two logical failures.
+
+A separate post-hoc menu-only native sanity scan finds0 top-three slow-quote
+versus lower idle/fast-offer patterns in the fixed9-run t60–100 corpus. Its
+inputs/limitations remain in `menu-sanity.json.gz`. It does not reconstruct
+model spatial sites, refusals, held foundations, plan threats or actual helper
+execution; the generic selector defect is not established as the reason those
+native Hubs were absent. The higher-priority queue funnel still needs a caller
+trace. Correct only the existing eligibility order, without changing priorities
+or claiming a native benefit from the synthetic regressions.
+
+## Focused correction result
+
+The same8 tests now pass, including all6 original controls and the2 actual
+Produce regressions. The selector validates each city's existing legality
+and20-turn limit before that city takes a preferred rank, retaining its chosen
+site with the rank. The wanted Hub count, Production/city tie order, threat
+checks, window and Granary/Settler/Trader/Market priorities remain. There is
+no new weight, strategy, default or host setup. Complete output, exact source,
+controller/catalog provenance and binary digests remain in `green.json.gz`.
+
+The first hosted regression checkpoint still has the retained spatial-fixture
+failure, so its complete failed log is retained as development history. The
+registered genuineRED comes from the later corrected fixture on unchanged
+production, not from that hosted failure. Full CI-profile strategy tests,
+merged-source checking and changed-line quality remain required before this
+correction can integrate; a local8-case pass is not substituted for them.

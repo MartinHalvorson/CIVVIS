@@ -380,11 +380,51 @@ fn a_due_settler_comes_before_the_commercial_step() {
     );
 }
 
+/// Keep the same six-city maps while making the rank fixtures' owned free
+/// tiles explicit legal land. Random coastal/resource geometry is irrelevant
+/// to the two eligibility requirements these cases isolate.
+fn native_hub_rank_fixture(tag: &str, seed: u64) -> (Game, Vec<u32>) {
+    let (mut game, mut ranked) = emperor_empire(tag, seed);
+    for cid in &ranked {
+        let city = &game.cities[cid];
+        let center = city.pos;
+        let owned: Vec<_> = city.owned_tiles.iter().copied().collect();
+        for pos in owned {
+            if pos == center {
+                continue;
+            }
+            let tile = game.map.tiles.get_mut(&pos).unwrap();
+            if tile.district.is_some() {
+                continue;
+            }
+            tile.terrain = crate::name!("grassland");
+            tile.feature = None;
+            tile.resource = None;
+            tile.improvement = None;
+            tile.hills = false;
+            tile.flooded = false;
+        }
+        assert!(
+            !game
+                .district_sites(*cid, crate::name!("commercial_hub"))
+                .is_empty(),
+            "fixture: each city has a legal spatial Hub site"
+        );
+    }
+    ranked.sort_by(|a, b| {
+        game.city_yields(*b)
+            .production
+            .total_cmp(&game.city_yields(*a).production)
+            .then(a.cmp(b))
+    });
+    (game, ranked)
+}
+
 /// A city outside the step's existing time limit must not reserve a preferred
 /// rank that a city inside the limit can use now.
 #[test]
 fn native_slow_hubs_leave_the_preferred_ranks_to_eligible_cities() {
-    let (mut game, ranked) = emperor_empire("COMMERCIALSLOWRANK", 59_020_625);
+    let (mut game, ranked) = native_hub_rank_fixture("COMMERCIALSLOWRANK", 59_020_625);
     let ai = emperor_governor(true);
     for (rank, cid) in ranked.iter().enumerate() {
         Arc::make_mut(&mut game.host_buildable).insert(
@@ -444,7 +484,7 @@ fn native_slow_hubs_leave_the_preferred_ranks_to_eligible_cities() {
 /// cities must not use the eligible cities' preferred ranks.
 #[test]
 fn native_refused_hubs_leave_the_preferred_ranks_to_eligible_cities() {
-    let (mut game, ranked) = emperor_empire("COMMERCIALREFUSEDRANK", 59_020_626);
+    let (mut game, ranked) = native_hub_rank_fixture("COMMERCIALREFUSEDRANK", 59_020_626);
     let ai = emperor_governor(true);
     for cid in &ranked[..3] {
         Arc::make_mut(&mut game.blocked_production).insert(
