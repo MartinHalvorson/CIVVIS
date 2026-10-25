@@ -23,6 +23,7 @@ import shlex
 import subprocess
 import sys
 import time
+import tempfile
 
 GENE = "elimination-yields-to-a-launch-2"
 BASELINE_GENE = "elimination-yields-to-a-launch"
@@ -80,6 +81,26 @@ def drivers():
     return result
 
 
+def verify_forceable(binary):
+    """Probe an empty disposable mirror; never open the real orders channel."""
+    from civ6_ladder import decider_genome
+    with tempfile.TemporaryDirectory(prefix="civvis-empty-air-arm-") as tmp:
+        directory = Path(tmp)
+        command = [str(binary), "--mirror", str(directory), "--with", GENE,
+                   "--victory", "domination", "--turn", "1"]
+        done = subprocess.run(command, capture_output=True, text=True, timeout=30)
+        log = directory / "probe.stderr.log"
+        log.write_text(done.stderr)
+        played = decider_genome(log)
+        if done.returncode != 0 or played is None or GENE not in played.get("treatments", []):
+            raise ValueError("delivered binary cannot seat the candidate on an empty mirror: " +
+                             json.dumps({"command": command, "exit_code": done.returncode,
+                                         "stdout": done.stdout, "stderr": done.stderr}))
+        return {"scope": "empty disposable mirror capability probe, not native execution",
+                "command": command, "exit_code": done.returncode,
+                "stdout": done.stdout, "stderr": done.stderr, "played_genome": played}
+
+
 def qualify(repo, root, tag, repair):
     sys.path.insert(0, str(repo / "tools"))
     from civ6_decision_trace import captured_input
@@ -113,6 +134,7 @@ def qualify(repo, root, tag, repair):
     if (genome is None or BASELINE_GENE not in genome.get("treatments", [])
             or GENE in genome.get("treatments", [])):
         raise ValueError("qualification must retain v1 with v2 absent")
+    forceable = verify_forceable(binary)
     capture = first["input_capture"]
     if not capture["complete"] or not capture["reads"]:
         raise ValueError("qualification needs a complete first request")
@@ -137,7 +159,8 @@ def qualify(repo, root, tag, repair):
         mod_snapshot = {"error": str(error), "loaded_identity_attested": False}
     return {"utc": utc(), "driver": actual[0], "runtime": runtime,
             "first_decision": first, "reconstructed_reads": snapshots,
-            "played_genome": genome, "installed_mod_on_disk": mod_snapshot,
+            "played_genome": genome, "candidate_capability_probe": forceable,
+            "installed_mod_on_disk": mod_snapshot,
             "loaded_events": [r for r in rows(run / "events.jsonl") if r.get("kind") == "loaded"]}
 
 

@@ -77,10 +77,12 @@ class ObserverTests(unittest.TestCase):
                 with mock.patch.dict(sys.modules, {"civ6_decision_trace": trace,
                         "civ6_ladder": ladder, "civ6_control": control}), \
                      mock.patch.object(observer, "drivers", return_value=[driver]), \
+                     mock.patch.object(observer, "verify_forceable", return_value={"fixture": True}) as forceable, \
                      mock.patch.object(observer.subprocess, "run") as ancestry:
                     if accepted:
                         result = observer.qualify(root, root, tag, "feature-merge")
                         self.assertEqual(result["played_genome"]["treatments"], treatments)
+                        forceable.assert_called_once_with(binary)
                         self.assertEqual(result["reconstructed_reads"]["one"]["bytes"], 14)
                         self.assertFalse(result["installed_mod_on_disk"]["loaded_identity_attested"])
                         self.assertEqual(result["installed_mod_on_disk"]["text"], "-- observed bytes\n")

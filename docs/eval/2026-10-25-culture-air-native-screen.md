@@ -51,3 +51,11 @@ retention, foreign/replaced lease preservation, tag parsing, v1/v2 qualification
 contexts with exact captured bytes, and incompatible-resume rejection. The
 qualification fixture explicitly distinguishes observed disk bytes from unknown
 loaded bytes. No real screen has been acquired by this task yet.
+
+Qualification also probes the actual delivered binary on an empty disposable
+mirror with an explicit Domination lane and v2 force flag. It never opens the
+real orders channel. The real old frozen binary rejects the tag; the compiled
+candidate accepts it and reports v2 in its actual genome. These are capability
+controls, not native execution or strength. The 15-member observer validation
+archive is 16,460 bytes, SHA-256 `ff91e860f86ee56a2da6de4e5edccda2eeb5a6f61836641050bc4e49961d4386`; every member
+is read back against its source. Five isolated observer controls still pass.
