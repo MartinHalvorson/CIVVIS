@@ -152,3 +152,37 @@ corrected-source qualification of the same complete 186-request history,
 with both original-binary controls, unchanged exact payload/read checks,
 turn-70 cutoff and 30-second deadline. Earlier failures and the lucky phase
 diagnostic remain separate. Interpret no policy or strength result.
+
+## Corrected qualification
+
+The corrected writer at `0b018690913d1ab9f49204670d9e4f86ff55cc49`
+passes all 15 subprocess/evidence tests. The paused-reader test now holds the
+writer until consumption, while incomplete reads, extra opens, early process
+exit, truncated archives and partial replies still fail. Empty inputs are
+explicitly rejected.
+
+Both corrected original-binary controls pass all 186 chronological native
+requests through turn 70. Each control checks 3,231 logical reads, including
+four requests with multiple different captured snapshots. Every request has
+the exact recorded turn/frame, complete native orders and decision, and
+expanded ordered input bytes. The process exits zero after 147.15 seconds;
+the tool's SHA-256 remains
+`f0cb7f2b84173dca2115514b35e12a55acea7cffe303c3d0ba22f41d6c628e7e`
+throughout the run. The request deadline remains 30 seconds.
+
+This qualifies reproduction of this fixed observed history with this binary
+and recorded command. It neither erases the earlier failures nor establishes
+their exact cause. It does not establish general reliability, another
+platform's native equivalence, any candidate's baseline equivalence, treatment
+activation, host execution, survival or victory. The handover experiment and
+queued material trial retain their independent registrations and gates.
+
+The qualification archive is
+`2026-10-25-captured-read-replay.qualification.json.gz`: 2,939,798 bytes,
+39 named entries sharing 24 content-addressed blobs, SHA-256
+`c7b9df3b8e16c94191a3607af4facf21330d0f3ce966e58624846cac3f571930`.
+Schema 2 maps each entry's digest to its exact base64 bytes; every length and
+digest verifies after decompression. It retains the successful phase
+diagnostic, corrected controls, 13/14 paused-reader failure, 15/15 corrected
+tests, primitive stress, source versions and zero-exit/source-seal receipt.
+The original rejected controls remain in the earlier independent archive.
