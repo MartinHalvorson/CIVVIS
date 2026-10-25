@@ -95,3 +95,19 @@ reconstruct all planner reservations or prove a safe counterfactual upgrade.
 Preserving the stock alone is not evidence that either upgrade completes or
 that the trade-income cost is worthwhile. A native trial must retain these
 economic and territory constraints in its interpretation.
+
+The additional upgrade audit pairs every issued native upgrade in the
+original four-game pilot with its exact input frame and following state.
+It requires the host-quoted successor, a unique new unit at the same tile,
+preserved XP, level, formation and promotions, and complete, unambiguous
+observations. The off/on/on/off games show 13, 32, 15 and 19 such transitions,
+including recon and naval upgrades outside the material buyer's scope. Two
+of these successful transitions carry later `unit_gone` failure receipts;
+the archive preserves the actual before/after states and both receipts
+rather than equating a receipt count with completed upgrades.
+
+In the sale-witness game, its one observed Heavy Chariot-to-Knight upgrade
+occurs at turn 110, before the first material-buy marker at turn 115. The
+five subsequent upgrade transitions are at turns 145, 159, 163, 188 and 196.
+This is descriptive evidence from the original unpaired maps, with no
+attribution to purchased material and no native observation of this repair.
