@@ -1,8 +1,14 @@
 # A declarable racer and a slower elimination war
 
-Current status: the default-off v2 candidate is implemented; library and all-test
-type checks pass. Corrected behavioral fixtures, activation and full-game
-comparison remain pending, so this is not a native strength claim.
+Current status: the default-off v2 candidate is implemented and all eleven
+focused development tests pass at `1bc9c751ff7933f47a5b50bbeda3c0a19b23a9d3`.
+The full optimized local suite passes 6,279 tests with zero failures and 56
+ignored. All 54 observational queries complete with no new air activation;
+actions, plans and resulting boards match across all three arms on every
+prefix. The registered game comparisons are running. This is not a native
+strength claim. The
+sections below retain the successive registrations and failed development
+attempts; later status entries supersede earlier work-status statements.
 
 ## Native development witness
 
@@ -339,3 +345,65 @@ compile errors and registry checks separately. Early failed development runs
 have raw logs but no complete frozen source snapshot; do not overstate their
 reproducibility. The current source is captured by file hash while its new
 unoptimized build is live, with no source edit between start and capture.
+
+## Completed development behavior checks
+
+At `1bc9c751f`, `cargo test --locked --lib
+ai::advanced::culture_air_interception` passes all eleven tests, with no
+failures or ignored tests. The complete-turn serial test stages one plane at
+a time, holds the first in position through real end turns, then opens from
+actual readiness and applies both useful sorties. The current-plan fixture
+uses a real aged denunciation and legal Formal War after disabling generic
+leader denial to isolate reassessment cadence. The serial fixture retains
+the native genome's `recovery-reads-the-war`, so Recovery is assessed against
+the existing weaker war rather than the stronger rival still at peace. Neither
+repair waives a production gate.
+
+Twenty physical/policy negative cases preserve the old target, including
+post-declaration home pressure. Separate complete-turn controls preserve the
+old version exactly when no host Culture clock exists. Final-capital controls
+preserve a different finishing front while allowing the racer itself to own
+the final capital. The inherited at-war Science release remains covered.
+The source seal records 798 build-input file hashes before the full optimized
+local test run. The repaired checkpoint is pushed; the previous paired-cost
+check passes, while the family-fires ratchet remains an explicit open gate.
+
+## Frozen candidate validation and observational nonactivation
+
+The final source `1bc9c751ff7933f47a5b50bbeda3c0a19b23a9d3` passes
+`cargo test --profile ci --locked`: 6,279 passed, zero failed, 56 ignored.
+GitHub's optimized Rust tests and documentation examples also pass at that
+exact head; its remaining failures are the missing new-family fires artifact,
+not a gameplay-test failure. The complete required CI gate is not green.
+
+Freeze the compiled local library and directly link the registered native-query,
+comparison and gene-screen drivers with the same optimization and debug-assertion
+settings. Build receipts retain exact commands, dependencies, binary/library and
+source hashes, compiler identity and registry fingerprint. The whole local suite
+was still running at link time, explicitly recorded in the receipts; its later
+successful result is retained separately. No production source changes between
+compilation and these runs.
+
+All 54 registered fresh-controller queries complete: eighteen frozen prefixes
+by off/v1/v2. Every arm has identical resulting boards, actions and plans on
+every prefix. No new interception reasoning or counters appears. Counter absence
+alone is insufficient because the unit-preservation adapter replays selected
+actions from a disposable board; the exact action/plan/board comparisons establish
+the observed no-op. These are not persistent native replays and do not establish
+that the candidate helps the development witness. Investigate the exact gates
+before any promotion or broader behavioral claim.
+
+A post-hoc before-planning instrument preserves all eighteen reconstructed
+boards and original aircraft readiness for that investigation. Its first compile
+attempt fails on crate-private `air_capacity_at`; the corrected instrument only
+exports public data. This is diagnostic instrumentation, not another evaluation
+assignment or evidence of activation.
+
+The candidate-query archive is 3,145,428 bytes, SHA-256
+`7bee66a23f7e65475bc49b82b1060395f9d35fc9c71e0875ff7b228935f1bc0b`.
+All 149 members are verified against their sources, including every query output,
+full local test log, source/build seals, exact drivers, before-board diagnostics
+and the compiler failure. All 24 internal game assignments and the six family
+probe seeds are now running on the frozen `1bc9c751f` binary. Shared simulation
+still lacks the host clock; its results remain compatibility/inheritance/cost
+evidence and cannot rescue the absent new-air activation.
