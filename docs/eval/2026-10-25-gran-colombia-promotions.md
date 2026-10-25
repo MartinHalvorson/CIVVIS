@@ -125,6 +125,37 @@ only that existing test's expected fingerprint; the shipped rule and its
 semantic cases above independently establish why the data change is correct.
 No production code in `src/rules.rs` changes.
 
+Merge `e251829fd` integrates upstream #4122 (`b71b9fa8c`) after all prior
+sealed commands finish and current-head checks become terminal. The actual
+hosted checkout was `cbdb3a4aa21f6277adcf782917dece89da23987a`; a direct
+comparison against the integrated branch finds exactly one difference across
+all tracked Rust/data/Cargo/build inputs: the expected fingerprint string in
+the existing `src/rules.rs` test module. That file's production prefix is
+byte-identical, SHA-256
+`756993fe33511270da07cb76929c0eaf9787ed9286b3ac66af812f75848568e2`.
+Retain the comparison receipt and complete checked-out CI log alongside the
+failed intermediate runs. The full hosted suite and Rust-quality gate still
+cover the final pushed candidate.
+
+The integrated focused run finished at 09:31:14Z on October 25: all 43 cases
+pass on `e251829fd`, including six promotion cases, six mod-loader cases, the
+existing AI command-phase control and all 30 rules/validation cases. All 792
+tracked source/data inputs remain unchanged. Its log retains the existing
+Mac debug-linker unwind-size warning; no warning-free Mac build is claimed.
+
+`2026-10-25-gran-colombia-promotions.validation.json.gz` preserves 37 entries
+(1,193,918 bytes; SHA-256
+`eae99f50811bc5f84b2853c76744df840b8abde5b0cad28989f5c43de7d139c5`).
+It contains the initial compile error, genuine three-failure behavioral RED,
+passing controls, both intermediate hosted failures, local loader and
+fingerprint reproducers, deliberate cancellation manifests and exit receipts,
+passing six/13/43-case runs, the completed registered soak, data-effect results,
+source comparison, native archive verification and packaging/validation scripts.
+Every archived entry's digest was checked after decompression. The final hosted
+full-suite verdict and deployment readback belong to PR #4129's current-head
+checks and integration record, rather than being inferred from this evidence
+snapshot or the cancelled Mac full build.
+
 This task models the promotion component only. The existing civilization's
 combat/XP estimates and its separate movement bonus need a broader fidelity
 audit; this change does not claim complete civilization modeling. Native
@@ -163,3 +194,7 @@ turn 80 as a draw. Retain both reports, including the losing/drawn outcomes.
 The run includes no matched treatment control and no separately logged
 promotion activation count; it establishes generated combat stability only.
 Its build took 17m50s and was not restarted for slowness.
+This local soak predates upstream #4122; that change adds a separate default-off
+siege gene. The combined-source focused rules/validation cases and final hosted
+checks qualify integration without claiming that the earlier soak exercised
+the newly added opt-in policy.
