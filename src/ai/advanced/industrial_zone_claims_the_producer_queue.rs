@@ -12,6 +12,10 @@
 //! (any siege unit; [`AdvancedAi::queued_wall_breaker`]), and anything
 //! finishing this turn keep their queue; at war with a major a military unit
 //! keeps its queue too. The displaced item keeps its progress.
+//! The ordinary treasury-recovery condition also stops a new industrial
+//! claim and releases its protection: income below -0.5 Gold/turn with less
+//! than 100 + 25 per city in the bank. Industry does not use the emergency
+//! defender exception to that condition.
 //!
 //! **Why (2026-10-11 census, 38 live Immortal and 120 Emperor GC runs).** We
 //! learn Apprenticeship at a median t82 at Immortal (first rival t48), but the
@@ -48,6 +52,12 @@ use super::*;
 const PRODUCER_CLAIM_MIN_CITIES: usize = 3;
 
 impl AdvancedAi {
+    /// The ordinary governor's treasury-recovery condition. An industrial
+    /// reservation must not take the queue while that recovery is due.
+    fn producer_zone_recovery_due(g: &Game, pid: usize, n_cities: usize) -> bool {
+        g.players[pid].gold_per_turn < -0.5 && g.players[pid].gold < 100.0 + 25.0 * n_cities as f64
+    }
+
     /// Whether the queue head `item` is a wall breaker -- a siege unit the
     /// delegated siege reservation, the breaker budget or the siege train
     /// queued for a walled assault (`reserve_delegated_domination_siege`
@@ -82,7 +92,9 @@ impl AdvancedAi {
             return None;
         }
         let n_cities = g.player_city_ids(pid).len();
-        if n_cities < PRODUCER_CLAIM_MIN_CITIES {
+        if n_cities < PRODUCER_CLAIM_MIN_CITIES
+            || Self::producer_zone_recovery_due(g, pid, n_cities)
+        {
             return None;
         }
         // A city within one of its housing with a Granary still to build
@@ -120,7 +132,9 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         item: &Item,
     ) -> bool {
-        if !self.industrial_zone_claims_the_producer_queue {
+        if !self.industrial_zone_claims_the_producer_queue
+            || Self::producer_zone_recovery_due(g, pid, g.player_city_ids(pid).len())
+        {
             return false;
         }
         let Some(city) = g.cities.get(&cid) else {

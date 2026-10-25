@@ -8259,6 +8259,18 @@ impl AdvancedAi {
     pub fn disable_wing_capital_spotting(&mut self) {
         self.wing_capital_spotting = false;
     }
+
+    /// Opt-in gene `the-giant-gets-the-peace-offer`; see
+    /// [`Self::the_giant_gets_the_peace_offer`].
+    pub fn enable_the_giant_gets_the_peace_offer(&mut self) {
+        self.the_giant_gets_the_peace_offer = true;
+    }
+
+    /// The twin of `enable_the_giant_gets_the_peace_offer`.
+    pub fn disable_the_giant_gets_the_peace_offer(&mut self) {
+        self.the_giant_gets_the_peace_offer = false;
+    }
+
     /// Opt-in `capital-watch-arms-the-slinger`; see `advanced/capital_watch_slinger.rs`.
     pub fn enable_capital_watch_arms_the_slinger(&mut self) {
         self.capital_watch_arms_the_slinger = true;

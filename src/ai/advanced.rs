@@ -8730,6 +8730,10 @@ pub struct AdvancedAi {
     /// Keep one spare idle spy at a capital reached by the Bomber wing.
     /// See `advanced/wing_capital_spotting.rs`.
     wing_capital_spotting: bool,
+    /// `the-giant-gets-the-peace-offer`: a major at
+    /// `giant_peace::GIANT_PEACE_RATIO` times our power that has taken a city
+    /// of ours is offered peace. See `advanced/giant_peace.rs`. Off by default.
+    the_giant_gets_the_peace_offer: bool,
     /// `war-faith-buys-the-army`: at war with a major, the army's Faith
     /// purchase runs before patronage and the religious spenders, holding
     /// back only the inquisition's reserve. See `advanced/war_faith.rs`. Off
@@ -9658,6 +9662,8 @@ mod science_leader;
 /// movement carries it. See `advanced/march_moves.rs`.
 mod march_moves;
 
+/// `the-giant-gets-the-peace-offer`: see `advanced/giant_peace.rs`.
+mod giant_peace;
 /// The Objective Board: a ranked list of what the army is for this turn and
 /// persistent task forces raised against it, in place of proximity force
 /// groups and the posture ladder. Opt-in gene `objective-board`; see
@@ -11344,6 +11350,7 @@ impl AdvancedAi {
             staging_gun_trusts_its_escort_2: false,
             // ---- append: t-z ----------------------------------------
             wing_capital_spotting: false,
+            the_giant_gets_the_peace_offer: false,
             war_faith_buys_the_army: false,
             threatened_city_buys_its_defender_2: false,
             unwalled_ring_steps_in: false,
@@ -24507,6 +24514,9 @@ impl AdvancedAi {
             } else {
                 my_power < g.military_power(*other) * 0.62
             };
+            // `the-giant-gets-the-peace-offer`: the war we are losing outright
+            // is offered peace too. See `advanced/giant_peace.rs`.
+            let outmatched = outmatched || self.giant_gets_the_peace_offer_from(g, pid, *other);
             // An explicit Science seat has no offensive use for a war it did
             // not appoint. A losing proposal can still be refused by the
             // attacker, so make the direct-peace condition part of the outer
@@ -31859,6 +31869,9 @@ impl AdvancedAi {
     /// makes the already-priced regional path reachable before ordinary
     /// strategic production fills every queue, without turning a broad -10%
     /// yield band into a blanket infrastructure pivot.
+    /// A depleted treasury with negative income gives this selected idle
+    /// queue to an available ordinary recovery build first. Without one,
+    /// the Amenity repair still runs.
     fn reserve_idle_entertainment_path_for_widespread_crisis(
         &self,
         g: &mut Game,
@@ -31974,6 +31987,16 @@ impl AdvancedAi {
         let Some((_, _, _, _, city, _, item)) = best else {
             return;
         };
+        let recovery = if g.players[pid].gold_per_turn < -0.5
+            && g.players[pid].gold < 100.0 + 25.0 * city_ids.len() as f64
+        {
+            self.base
+                .economic_recovery_item(g, pid, city, self.counts(g, pid).traders)
+        } else {
+            None
+        };
+        let recovering = recovery.is_some();
+        let item = recovery.unwrap_or(item);
         let city_name = g.cities[&city].name.clone();
         if g.apply(
             pid,
@@ -31985,10 +32008,17 @@ impl AdvancedAi {
         .is_ok()
             && self.journal().wants(crate::reasoning::Level::Decision)
         {
-            think!(self.journal(), Economy, Decision,
-                "{} starts {} for widespread Amenity pressure", city_name, Self::plain_item(&item);
-                "{} of {} cities short, {} total Amenities missing; no Entertainment Complex stage was underway",
-                short_cities, city_ids.len(), total_shortfall);
+            if recovering {
+                think!(self.journal(), Economy, Decision,
+                    "{} starts {} for treasury recovery", city_name, Self::plain_item(&item);
+                    "{:.0} Gold and {:.1} Gold/turn: the available recovery build precedes a new Amenity reservation",
+                    g.players[pid].gold, g.players[pid].gold_per_turn);
+            } else {
+                think!(self.journal(), Economy, Decision,
+                    "{} starts {} for widespread Amenity pressure", city_name, Self::plain_item(&item);
+                    "{} of {} cities short, {} total Amenities missing; no Entertainment Complex stage was underway",
+                    short_cities, city_ids.len(), total_shortfall);
+            }
         }
     }
 

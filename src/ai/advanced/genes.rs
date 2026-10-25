@@ -4154,6 +4154,10 @@ pub const GENES: &[Gene] = &[
 
     // Append the new tag after existing positional rows, before tail markers.
     Gene { tag: "wing-capital-spotting", field: "wing_capital_spotting", kind: Kind::OptIn, enable: AdvancedAi::enable_wing_capital_spotting, disable: AdvancedAi::disable_wing_capital_spotting },
+    // `the-giant-gets-the-peace-offer`: live Immortal 10-25, 5 of 17 games
+    // collapsed to one city against a rival at 2.5-20 times our power that the
+    // peace gate never offered peace. See `advanced/giant_peace.rs`.
+    Gene { tag: "the-giant-gets-the-peace-offer", field: "the_giant_gets_the_peace_offer", kind: Kind::OptIn, enable: AdvancedAi::enable_the_giant_gets_the_peace_offer, disable: AdvancedAi::disable_the_giant_gets_the_peace_offer },
     Gene { tag: "capital-watch-arms-the-slinger", field: "capital_watch_arms_the_slinger", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_watch_arms_the_slinger, disable: AdvancedAi::disable_capital_watch_arms_the_slinger },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------

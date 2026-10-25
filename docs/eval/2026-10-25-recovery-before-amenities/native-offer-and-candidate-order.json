@@ -1,0 +1,71 @@
+{
+  "scope": "Candidate order is not executed in the real game; exact original captured native quote independently lists the selected plot and seven-turn build. This verifies the native offer and transport coordinates, not a counterfactual completion or win.",
+  "run": "civvis-20261025T174828Z",
+  "turn": 79,
+  "frame": 0,
+  "native_city": 65536,
+  "original_native_quote": {
+    "c": 87,
+    "n": 8,
+    "p": 7,
+    "pr": 0,
+    "s": [
+      {
+        "x": 15,
+        "y": 9
+      },
+      {
+        "x": 14,
+        "y": 8
+      },
+      {
+        "x": 14,
+        "y": 9
+      },
+      {
+        "x": 16,
+        "y": 10
+      },
+      {
+        "x": 16,
+        "y": 9
+      },
+      {
+        "x": 17,
+        "y": 8
+      },
+      {
+        "x": 14,
+        "y": 10
+      },
+      {
+        "x": 15,
+        "y": 10
+      }
+    ],
+    "t": "DISTRICT_COMMERCIAL_HUB"
+  },
+  "candidate_order": {
+    "kind": "produce",
+    "subject": 65536,
+    "verb": "DISTRICT_COMMERCIAL_HUB",
+    "x": 14,
+    "y": 8
+  },
+  "native_quote_contains_selected_plot": true,
+  "original_native_receipt": [
+    {
+      "checked_on": 80,
+      "ctx": "agent",
+      "kind": "order_verified",
+      "order_kind": "produce",
+      "run": "civvis-20261025T174828Z",
+      "subject": 65536,
+      "t": 1792950697,
+      "turn": 79,
+      "utc": "2026-10-25T17:51:37.558Z",
+      "verb": "DISTRICT_INDUSTRIAL_ZONE"
+    }
+  ],
+  "comparison_sha256": "ee3725d5e469dfcd82a34836976f1e08f838d5fab763d9c9ded84cead7efcb58"
+}
