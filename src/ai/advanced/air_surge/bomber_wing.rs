@@ -91,6 +91,9 @@ impl AdvancedAi {
         if !self.surge_wing_fuelled(g, pid) {
             return refusals;
         }
+        // Every district candidate reads the same board and ranks the same
+        // city yields. End the memo before the caller changes production.
+        let _memo = g.query_memo();
         for cid in g.player_city_ids(pid) {
             let founded: BTreeSet<Name> = g.cities[&cid]
                 .owned_tiles
