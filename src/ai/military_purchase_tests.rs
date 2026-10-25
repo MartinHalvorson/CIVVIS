@@ -12,7 +12,8 @@ fn fixture() -> (Game, BasicAi, u32) {
         tile.hills = false;
     }
     let city = g.found_city_for(0, (4, 4), None);
-    g.found_city_for(1, (18, 12), None);
+    assert!(g.map.get((14, 12)).is_some());
+    g.found_city_for(1, (14, 12), None);
     g.current = 0;
     g.turn = 89;
     g.players[0]
@@ -170,4 +171,15 @@ fn a_separate_exploration_purchase_can_still_buy_a_scout() {
     assert!(ai.buy_gold_unit(&mut g, 0, &[city], "scout", 110.0));
     assert_eq!(bought(&g), vec![(city, crate::name!("scout"))]);
     assert_eq!(g.players[0].gold, 940.0);
+}
+
+#[test]
+fn actual_wartime_spending_buys_the_requested_field_role() {
+    let (mut g, mut ai, city) = fixture();
+    g.at_war.insert((0, 1));
+    assert!(g.is_at_war(0, 1));
+    ai.reserve_floor = 110.0;
+    assert!(ai.spend_gold(&mut g, 0, &[city], 1, 1, 1, 0, 1, 0));
+    assert_eq!(bought(&g), vec![(city, crate::name!("archer"))]);
+    assert_eq!(g.players[0].gold, 125.0);
 }

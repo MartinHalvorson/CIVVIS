@@ -64,3 +64,69 @@ post-hoc diagnostic. It retains all24 purchase decisions with full native
 Buy actions,26 production/purchase receipts,21 distinct Scout deaths, the
 first native state for each purchase turn, the terminal summary and original
 file digests. It does not turn a receipt into proof of tactical usefulness.
+
+## Frozen comparison harness
+
+Before any game is run, fix the independent comparison source at the committed
+baseline `6ddd88904`, retained in the private detached build tree
+`civvis-defenders-control-3c67`. Its library is compiled with the ordinary CI
+profile, without changing the development worktree. The registered harness
+copies the existing fixed-profile Domination evaluator; it captures complete
+initial/terminal boards, canonical actions and the drained focal journal.
+It runs exactly one full game per invocation with safest-stand held ON in
+both builds. There is no off/on safest-stand leg, extra adaptive treatment,
+replacement map or shortened clock. The buyer correction affects adaptive
+rivals too, so any two-build contrast is not isolated focal-seat strength.
+
+The four immutable assignments remain Immortal59010625/26 and
+Deity59010627/28. Both profiles retain250 natural turns,4 majors,60×38
+Pangaea,6 minors,Online,all victories and the existing focal handicap exemption.
+The correction does not acquire a native strength claim from these games.
+
+The first harness preparation ran from the control directory and therefore
+wrote only its new diagnostic files there. Before any game, those exact files
+move to the owned feature tree, the registration's candidate path is corrected,
+and the control's documentation returns byte-for-byte to its committed text.
+No AI, rules, Cargo or evaluator source in the control is changed. The retained
+preparation receipt makes the correction explicit; the control build continues.
+
+## First baseline fixture failure
+
+The first baseline completes compilation, then all10 cases stop during city
+setup: axial(18,12) lies outside a24-wide map. The original source, diagnostics
+and source digests remain in the fixture-error archive. No policy assertion
+is reached, so this is not RED. Only the rival coordinate changes to(14,12),
+with explicit map membership, before rerunning all ten cases on unchanged
+purchase code. The strict controller rejects the invalid attempt and changes
+no production code.
+
+A separate post-hoc all-day census includes83 completed-summary run segments
+at its fixed start cutoff,39 with a requested Gold Scout purchase and112 such
+requests in total. Continuations are separate segments, not independent games,
+and requests are not executions. Its complete included-path list and outcomes
+are retained; the original Immortal native execution witness remains separate.
+
+## Valid regression result and implementation
+
+After only the fixture coordinate is corrected, the complete unchanged-code
+suite reports4 passes and exactly the6 registered logical failures. Every
+failure reaches a purchase, chosen unit/city, treasury floor or legal fallback
+assertion. All four controls pass, including separate legitimate Scout buying.
+The complete genuine RED output and source hashes are retained in`red.json.gz`.
+
+The implementation now excludes recon from the defender shortlist and obtains
+each candidate's Gold price from`unit_purchase_cost`, using the same query as
+actual purchase execution. Existing build eligibility, purchase refusals,
+role preference and deterministic strength/price/city ties remain. A real
+wartime`spend_gold` integration test is added after the valid direct regressions.
+The corrected11-case suite and complete CI-profile suite remain required;
+results are not inferred from the fact that a runner was launched.
+
+After integration, passively retain the first8 newly launched native attempt
+stems starting with confirmed delivery of the merged correction. Failed starts,
+continuations, source changes and missing outcomes remain visible; no attempt
+is replaced and no game is interrupted. Read back actual compiled source,
+Gold unit quotes/orders, veteran upgrades, city captures, economies and native
+terminal outcomes. This observational delivery cohort does not estimate a
+paired causal win-rate gain, and does not take the active screen lease or
+change the host's difficulty, lane, map, force bundle, pin or setup.

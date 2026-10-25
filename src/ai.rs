@@ -11704,16 +11704,23 @@ impl BasicAi {
                         None => spec.has_ranged_attack() || spec.is_melee_capable(),
                     };
                     if spec.class != "military"
+                        || spec.promotion_class == "recon"
                         || spec.domain.as_deref() == Some("sea")
                         || !matches_role
                     {
                         continue;
                     }
-                    let price = spec.cost * 4.0;
-                    if price > budget + 1e-9
-                        || !g.can_produce(pid, *cid, &Item::Unit { unit: *name })
+                    if !g.can_produce(pid, *cid, &Item::Unit { unit: *name })
                         || g.purchase_is_blocked(*cid, &Item::Unit { unit: *name })
                     {
+                        continue;
+                    }
+                    // A defender's budget is its actual purchase bill, including
+                    // speed, discounts and the native city's current offer.
+                    let Some(price) = g.unit_purchase_cost(pid, *cid, name, "gold") else {
+                        continue;
+                    };
+                    if price > budget + 1e-9 {
                         continue;
                     }
                     let power = spec.strength.max(spec.ranged_attack_strength());
