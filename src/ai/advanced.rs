@@ -49096,9 +49096,9 @@ impl AdvancedAi {
         if !emergency_city_defense && !surprise_defense_purchase {
             self.siege_breaker_purchase(g, pid);
         }
-        // `gold-buys-the-idle-trader`: after the city-saving purchases, an
-        // empty route slot's Trader. See
-        // `advanced/trader_fills_the_idle_route/purchase.rs`.
+        // A watched prewar capital can arm one healthy Slinger before the
+        // peaceful portfolio spends. Then `gold-buys-the-idle-trader` fills
+        // an empty route slot. Both preserve the city-saving purchase lane.
         if !emergency_city_defense && !surprise_defense_purchase {
             self.capital_watch_slinger_upgrade(g, pid);
             self.idle_trader_purchase(g, pid, &plan);

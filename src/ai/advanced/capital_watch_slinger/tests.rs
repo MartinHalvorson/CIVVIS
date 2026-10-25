@@ -162,7 +162,7 @@ fn stock_and_the_existing_wall_flag_do_not_enable_the_new_purchase() {
 
 #[test]
 fn other_lanes_war_and_absent_or_expired_warning_keep_the_treasury() {
-    for case in 0..6 {
+    for case in 0..8 {
         let (mut g, mut ai, uid) = fixture();
         match case {
             0 => {
@@ -182,6 +182,32 @@ fn other_lanes_war_and_absent_or_expired_warning_keep_the_treasury() {
             4 => {
                 ai.forced_target_player = Some(1);
             }
+            6 => {
+                ai.plan = Some(StrategicPlan {
+                    strategy: GrandStrategy::Recovery,
+                    ..expansion(&g)
+                });
+            }
+            7 => {
+                ai.war_plan = Some(WarPlan {
+                    target_player: 1,
+                    objective_city: g.player_city_ids(1)[0],
+                    breakthrough_tech: crate::name!("archery"),
+                    assault_unit: crate::name!("archer"),
+                    predecessor: Some(crate::name!("slinger")),
+                    breach_unit: None,
+                    estimated_research_turns: 1,
+                    estimated_production_turns: 1,
+                    estimated_upgrade_gold: 30.0,
+                    estimated_march_turns: 1,
+                    phase: WarPhase::Research,
+                    appointed_turn: g.turn,
+                    tech_turn: None,
+                    declared_turn: None,
+                    last_reviewed_turn: g.turn,
+                    recovery_assessments: 0,
+                });
+            }
             _ => {}
         }
         ai.observe_turn_start_hostiles(&g, 0);
@@ -196,7 +222,7 @@ fn other_lanes_war_and_absent_or_expired_warning_keep_the_treasury() {
 
 #[test]
 fn wounded_bodies_refused_commands_and_insolvent_bills_do_not_spend() {
-    for case in 0..8 {
+    for case in 0..9 {
         let (mut g, mut ai, uid) = fixture();
         match case {
             0 => {
@@ -226,8 +252,19 @@ fn wounded_bodies_refused_commands_and_insolvent_bills_do_not_spend() {
             6 => {
                 g.units.get_mut(&uid).unwrap().acted = true;
             }
-            _ => {
+            7 => {
+                Arc::make_mut(&mut g.host_unit_facts).remove(&uid);
                 g.players[0].techs.remove(&crate::name!("archery"));
+            }
+            _ => {
+                g.players[0].techs.insert(crate::name!("machinery"));
+                Arc::make_mut(&mut g.host_unit_facts)
+                    .get_mut(&uid)
+                    .unwrap()
+                    .upgrade
+                    .as_mut()
+                    .unwrap()
+                    .to = Some(crate::name!("crossbowman"));
             }
         }
         let gold = g.players[0].gold;
