@@ -196,3 +196,54 @@ No cost result was interpreted from the unprojected probe. Generation,
 input snapshots, genome and all 48 assigned cases are unchanged. The measured
 method remains `plan_observed_turn` on a fresh controller; observation
 projection, cloning and construction are excluded from its timing.
+
+The first observed-view comparison stops during parent qualification at case
+20 (59002700, turn 200, seat 2): ten calls exceed the registered 120-second
+process deadline. No comparison rounds ran. Preserve that failed attempt and
+all prior qualification semantics. A one-call diagnosis on the exact board
+finishes in 1.64 seconds; a profiled repetition of the exact ten-call command
+finishes in 11.23 seconds and passes within-process semantic equality. These
+diagnostics do not identify the earlier timeout's cause or support a speed
+claim. Register one complete retry with unchanged cases, binaries, ten calls,
+three control rounds, five comparison rounds and the same 120-second limit;
+use a new output directory and retain the failed attempt separately.
+
+That retry qualifies all 42 available snapshots with matching complete
+semantics, retains six missing assignments, then stops at the same 120-second
+deadline during the second same-binary round on case 43 (59002701, turn 200,
+seat 1). Eighty-one paired control records complete; no candidate-comparison
+round runs. `sim-retry-failure.tar.xz` preserves the complete ledger, all
+qualification semantics, partial control and failure. No simulation speed
+result is inferred. A separate phase-logging diagnostic is being compiled
+against the frozen parent to locate the stall without printing huge values
+through an equality-assertion panic.
+
+## Hoisted reservation candidate, registered before source edits
+
+Keep every memo-only result and its frozen binaries. The running simulation
+batch has one positively journaled reservation among 42 available snapshots
+(six of the 48 assigned cases are unreached/dead seats). Fresh controllers
+omit the persistent appointment history of the original profile, so this is
+limited hotspot coverage; no whole-game gain follows.
+
+The source also enumerates every city's production menu when the invariant
+reservation requirement is false, and repeatedly ranks the same cities when
+it is true. Extract the existing requirement, city ranking and item-local
+checks without changing their predicates. On the immutable refusal scan,
+resolve the requirement and selected city once, then enumerate only that
+city's menu. There is at most one reserved city under the existing rule;
+retain its item order and foundation exclusions, with no fallback city.
+Skip ranking when no city is down to its last slot; if the ranked city has
+spare capacity, keep the slower cities unreserved. A regression fixture
+checks that the slower city's Commercial Hub remains available in that case.
+Preserve the disabled/unfuelled return and end the query memo before the
+caller mutates production. The ordinary single-item scorer must use those
+same predicates and preserve its early cheap rejection of non-districts.
+
+This is a new candidate, not the binary measured in the earlier batches.
+Compile it separately, rerun focused/full Rust validation and require complete
+reply and planner-state equality on the same fixed native and simulation
+cases before cost interpretation. Retain all controls, missing cases and
+failures. The earlier inconclusive or failed measurements stay attached to
+their original memo-only source/library hashes. Do not attribute their
+functional passes or timing to the unbuilt hoisted candidate.

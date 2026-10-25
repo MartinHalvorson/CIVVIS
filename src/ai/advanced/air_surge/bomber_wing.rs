@@ -91,30 +91,43 @@ impl AdvancedAi {
         if !self.surge_wing_fuelled(g, pid) {
             return refusals;
         }
-        // Every district candidate reads the same board and ranks the same
-        // city yields. End the memo before the caller changes production.
+        // Resolve the immutable reservation once before building a menu.
+        // End the memo before the caller changes production.
         let _memo = g.query_memo();
-        for cid in g.player_city_ids(pid) {
-            let founded: BTreeSet<Name> = g.cities[&cid]
-                .owned_tiles
-                .iter()
-                .filter_map(|pos| g.map.tiles[pos].district_foundation.as_ref())
-                .map(|foundation| foundation.district)
-                .collect();
-            let items: Vec<Item> = g
-                .producible_items(pid, cid)
-                .into_iter()
-                .filter(|item| {
-                    matches!(item, Item::District { district, .. } if !founded.contains(district))
-                })
-                .filter(|item| self.air_surge_reserves_field_slot(g, pid, cid, item))
-                .collect();
-            if !items.is_empty() {
-                // The reservation names one city, the most productive that
-                // can host the field.
-                refusals.insert(cid, items);
-                break;
-            }
+        let Some(field) = self.air_surge_field_slot_requirement(g, pid) else {
+            return refusals;
+        };
+        if !g
+            .player_city_ids(pid)
+            .into_iter()
+            .any(|cid| Self::air_surge_city_needs_field_slot(g, pid, cid))
+        {
+            return refusals;
+        }
+        let Some(cid) = self.air_surge_field_slot_city(g, pid, field) else {
+            return refusals;
+        };
+        if !Self::air_surge_city_needs_field_slot(g, pid, cid) {
+            return refusals;
+        }
+        let founded: BTreeSet<Name> = g.cities[&cid]
+            .owned_tiles
+            .iter()
+            .filter_map(|pos| g.map.tiles[pos].district_foundation.as_ref())
+            .map(|foundation| foundation.district)
+            .collect();
+        let items: Vec<Item> = g
+            .producible_items(pid, cid)
+            .into_iter()
+            .filter(|item| match item {
+                Item::District { district, pos } if !founded.contains(district) => {
+                    Self::air_surge_field_slot_item(g, pid, cid, *district, *pos, field)
+                }
+                _ => false,
+            })
+            .collect();
+        if !items.is_empty() {
+            refusals.insert(cid, items);
         }
         refusals
     }
