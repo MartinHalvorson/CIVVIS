@@ -1,0 +1,378 @@
+{
+  "baseline_binary_sha256": "807114f554efb68e0ed1fea1b784dadbf422f843e8b44bbc48affddcce8c8461",
+  "baseline_source": "2ce92f788d797ae11ec5851709fe3a112b202e4b",
+  "candidate_binary_sha256": "c8a3dcfa474062db47df3076a6ea4c2566ebf87767ebe432bb26e85a603b5a9c",
+  "candidate_source": "cdd215b97d2a8a152abf14a5cd7def935c50972a",
+  "comparisons": [
+    {
+      "arm": "off",
+      "baseline": {
+        "applied_actions": 32519,
+        "focal_domination_won": false,
+        "focal_won": false,
+        "foreign_cities_held_at_end": 0,
+        "foreign_cities_observed_held": 0,
+        "turn": 149,
+        "victory": "science",
+        "winner": 2
+      },
+      "candidate": {
+        "applied_actions": 32519,
+        "focal_domination_won": false,
+        "focal_won": false,
+        "foreign_cities_held_at_end": 0,
+        "foreign_cities_observed_held": 0,
+        "turn": 149,
+        "victory": "science",
+        "winner": 2
+      },
+      "candidate_recovery_pillages": 0,
+      "difficulty": "immortal",
+      "focal_journal_identical": true,
+      "reported_outcome_identical": true,
+      "seed": 58102400
+    },
+    {
+      "arm": "on",
+      "baseline": {
+        "applied_actions": 35230,
+        "focal_domination_won": false,
+        "focal_won": false,
+        "foreign_cities_held_at_end": 0,
+        "foreign_cities_observed_held": 0,
+        "turn": 152,
+        "victory": "science",
+        "winner": 1
+      },
+      "candidate": {
+        "applied_actions": 35230,
+        "focal_domination_won": false,
+        "focal_won": false,
+        "foreign_cities_held_at_end": 0,
+        "foreign_cities_observed_held": 0,
+        "turn": 152,
+        "victory": "science",
+        "winner": 1
+      },
+      "candidate_recovery_pillages": 0,
+      "difficulty": "immortal",
+      "focal_journal_identical": true,
+      "reported_outcome_identical": true,
+      "seed": 58102400
+    },
+    {
+      "arm": "off",
+      "baseline": {
+        "applied_actions": 35170,
+        "focal_domination_won": false,
+        "focal_won": false,
+        "foreign_cities_held_at_end": 0,
+        "foreign_cities_observed_held": 0,
+        "turn": 153,
+        "victory": "science",
+        "winner": 1
+      },
+      "candidate": {
+        "applied_actions": 35170,
+        "focal_domination_won": false,
+        "focal_won": false,
+        "foreign_cities_held_at_end": 0,
+        "foreign_cities_observed_held": 0,
+        "turn": 153,
+        "victory": "science",
+        "winner": 1
+      },
+      "candidate_recovery_pillages": 0,
+      "difficulty": "immortal",
+      "focal_journal_identical": true,
+      "reported_outcome_identical": true,
+      "seed": 58102401
+    },
+    {
+      "arm": "on",
+      "baseline": {
+        "applied_actions": 33856,
+        "focal_domination_won": false,
+        "focal_won": false,
+        "foreign_cities_held_at_end": 0,
+        "foreign_cities_observed_held": 0,
+        "turn": 147,
+        "victory": "science",
+        "winner": 3
+      },
+      "candidate": {
+        "applied_actions": 33856,
+        "focal_domination_won": false,
+        "focal_won": false,
+        "foreign_cities_held_at_end": 0,
+        "foreign_cities_observed_held": 0,
+        "turn": 147,
+        "victory": "science",
+        "winner": 3
+      },
+      "candidate_recovery_pillages": 0,
+      "difficulty": "immortal",
+      "focal_journal_identical": true,
+      "reported_outcome_identical": true,
+      "seed": 58102401
+    },
+    {
+      "arm": "off",
+      "baseline": {
+        "applied_actions": 33418,
+        "focal_domination_won": false,
+        "focal_won": false,
+        "foreign_cities_held_at_end": 0,
+        "foreign_cities_observed_held": 0,
+        "turn": 132,
+        "victory": "science",
+        "winner": 3
+      },
+      "candidate": {
+        "applied_actions": 33418,
+        "focal_domination_won": false,
+        "focal_won": false,
+        "foreign_cities_held_at_end": 0,
+        "foreign_cities_observed_held": 0,
+        "turn": 132,
+        "victory": "science",
+        "winner": 3
+      },
+      "candidate_recovery_pillages": 0,
+      "difficulty": "deity",
+      "focal_journal_identical": false,
+      "reported_outcome_identical": true,
+      "seed": 58102500
+    },
+    {
+      "arm": "on",
+      "baseline": {
+        "applied_actions": 30353,
+        "focal_domination_won": false,
+        "focal_won": false,
+        "foreign_cities_held_at_end": 0,
+        "foreign_cities_observed_held": 0,
+        "turn": 123,
+        "victory": "science",
+        "winner": 3
+      },
+      "candidate": {
+        "applied_actions": 30353,
+        "focal_domination_won": false,
+        "focal_won": false,
+        "foreign_cities_held_at_end": 0,
+        "foreign_cities_observed_held": 0,
+        "turn": 123,
+        "victory": "science",
+        "winner": 3
+      },
+      "candidate_recovery_pillages": 0,
+      "difficulty": "deity",
+      "focal_journal_identical": true,
+      "reported_outcome_identical": true,
+      "seed": 58102500
+    },
+    {
+      "arm": "off",
+      "baseline": {
+        "applied_actions": 30533,
+        "focal_domination_won": false,
+        "focal_won": false,
+        "foreign_cities_held_at_end": 0,
+        "foreign_cities_observed_held": 0,
+        "turn": 122,
+        "victory": "culture",
+        "winner": 1
+      },
+      "candidate": {
+        "applied_actions": 30533,
+        "focal_domination_won": false,
+        "focal_won": false,
+        "foreign_cities_held_at_end": 0,
+        "foreign_cities_observed_held": 0,
+        "turn": 122,
+        "victory": "culture",
+        "winner": 1
+      },
+      "candidate_recovery_pillages": 0,
+      "difficulty": "deity",
+      "focal_journal_identical": true,
+      "reported_outcome_identical": true,
+      "seed": 58102501
+    },
+    {
+      "arm": "on",
+      "baseline": {
+        "applied_actions": 32777,
+        "focal_domination_won": false,
+        "focal_won": false,
+        "foreign_cities_held_at_end": 0,
+        "foreign_cities_observed_held": 0,
+        "turn": 126,
+        "victory": "science",
+        "winner": 1
+      },
+      "candidate": {
+        "applied_actions": 32777,
+        "focal_domination_won": false,
+        "focal_won": false,
+        "foreign_cities_held_at_end": 0,
+        "foreign_cities_observed_held": 0,
+        "turn": 126,
+        "victory": "science",
+        "winner": 1
+      },
+      "candidate_recovery_pillages": 0,
+      "difficulty": "deity",
+      "focal_journal_identical": true,
+      "reported_outcome_identical": true,
+      "seed": 58102501
+    }
+  ],
+  "complete_executions": 16,
+  "distinct_maps": 4,
+  "fresh_holdout": false,
+  "journal_note": "Seven same-arm focal journals are byte-identical; Deity 58102500/off only reorders two turn-111 Detail messages about refused movement. All eight have identical line multisets.",
+  "journals": [
+    {
+      "arm": "off",
+      "difficulty": "immortal",
+      "recovery_pillages": 0,
+      "seed": 58102400,
+      "sha256": "e0d9626fec886b89c004df280452f9d18c567f5b24575f24b2c131b4e1fcd2f4",
+      "variant": "baseline"
+    },
+    {
+      "arm": "on",
+      "difficulty": "immortal",
+      "recovery_pillages": 0,
+      "seed": 58102400,
+      "sha256": "41811ad932d432fd832278e545575c0b0b8748eaecc4d896627183b31a038f28",
+      "variant": "baseline"
+    },
+    {
+      "arm": "off",
+      "difficulty": "immortal",
+      "recovery_pillages": 0,
+      "seed": 58102401,
+      "sha256": "b10ab1f976a9d524c1ae9fb370894a4b33811b89a34a25e18661bc7aca77e843",
+      "variant": "baseline"
+    },
+    {
+      "arm": "on",
+      "difficulty": "immortal",
+      "recovery_pillages": 0,
+      "seed": 58102401,
+      "sha256": "9fdd401dc67c4d3b53b39229f343cdb4c4a6c730f2589aba9834822a4658bfd9",
+      "variant": "baseline"
+    },
+    {
+      "arm": "off",
+      "difficulty": "deity",
+      "recovery_pillages": 0,
+      "seed": 58102500,
+      "sha256": "9667314efc258b4751f7510bbb3d5ae77d52a21ded39ed7d2ed38ff37aab38b6",
+      "variant": "baseline"
+    },
+    {
+      "arm": "on",
+      "difficulty": "deity",
+      "recovery_pillages": 0,
+      "seed": 58102500,
+      "sha256": "8e2ca53a3a64cc36c04909ea8cf6c99daa4dfaeb40fbb29cd0abd1fbca310fdd",
+      "variant": "baseline"
+    },
+    {
+      "arm": "off",
+      "difficulty": "deity",
+      "recovery_pillages": 0,
+      "seed": 58102501,
+      "sha256": "8ef3087ed62a564225f60f706b3a0e0be2c799b5ca69a2c8dfc2cd49540dbaa4",
+      "variant": "baseline"
+    },
+    {
+      "arm": "on",
+      "difficulty": "deity",
+      "recovery_pillages": 0,
+      "seed": 58102501,
+      "sha256": "14f8297a1fef646125e887d0c226ea9a05b6fa240ce8c9e152b0a3653ab4e483",
+      "variant": "baseline"
+    },
+    {
+      "arm": "off",
+      "difficulty": "immortal",
+      "recovery_pillages": 0,
+      "seed": 58102400,
+      "sha256": "e0d9626fec886b89c004df280452f9d18c567f5b24575f24b2c131b4e1fcd2f4",
+      "variant": "candidate"
+    },
+    {
+      "arm": "on",
+      "difficulty": "immortal",
+      "recovery_pillages": 0,
+      "seed": 58102400,
+      "sha256": "41811ad932d432fd832278e545575c0b0b8748eaecc4d896627183b31a038f28",
+      "variant": "candidate"
+    },
+    {
+      "arm": "off",
+      "difficulty": "immortal",
+      "recovery_pillages": 0,
+      "seed": 58102401,
+      "sha256": "b10ab1f976a9d524c1ae9fb370894a4b33811b89a34a25e18661bc7aca77e843",
+      "variant": "candidate"
+    },
+    {
+      "arm": "on",
+      "difficulty": "immortal",
+      "recovery_pillages": 0,
+      "seed": 58102401,
+      "sha256": "9fdd401dc67c4d3b53b39229f343cdb4c4a6c730f2589aba9834822a4658bfd9",
+      "variant": "candidate"
+    },
+    {
+      "arm": "off",
+      "difficulty": "deity",
+      "recovery_pillages": 0,
+      "seed": 58102500,
+      "sha256": "beb60332fd1e000efb02792f9ca0e4a1b9b3c74c971a82eb894e229e7ea808a7",
+      "variant": "candidate"
+    },
+    {
+      "arm": "on",
+      "difficulty": "deity",
+      "recovery_pillages": 0,
+      "seed": 58102500,
+      "sha256": "8e2ca53a3a64cc36c04909ea8cf6c99daa4dfaeb40fbb29cd0abd1fbca310fdd",
+      "variant": "candidate"
+    },
+    {
+      "arm": "off",
+      "difficulty": "deity",
+      "recovery_pillages": 0,
+      "seed": 58102501,
+      "sha256": "8ef3087ed62a564225f60f706b3a0e0be2c799b5ca69a2c8dfc2cd49540dbaa4",
+      "variant": "candidate"
+    },
+    {
+      "arm": "on",
+      "difficulty": "deity",
+      "recovery_pillages": 0,
+      "seed": 58102501,
+      "sha256": "14f8297a1fef646125e887d0c226ea9a05b6fa240ce8c9e152b0a3653ab4e483",
+      "variant": "candidate"
+    }
+  ],
+  "kind": "whole-build development compatibility probe; not focal-strength attribution",
+  "native_verification": false,
+  "registration_source": "b0b3d5523",
+  "same_arm_build_comparisons": 8,
+  "schema": 1,
+  "validation": {
+    "battle_planner_passed": 85,
+    "full_suite_ignored": 56,
+    "full_suite_passed": 6244,
+    "healing_passed": 13,
+    "rust_quality": "passed"
+  }
+}

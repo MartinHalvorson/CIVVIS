@@ -2421,6 +2421,29 @@ impl AdvancedAi {
             if !(wounded || exposed) {
                 continue;
             }
+            let healing_pillage = wounded
+                && here <= NO_DANGER
+                && g.pillageable_at(pid, unit.pos)
+                && g.map
+                    .get(unit.pos)
+                    .and_then(|tile| tile.improvement.as_ref())
+                    .and_then(|improvement| g.rules.improvements.get(improvement))
+                    .is_some_and(|improvement| {
+                        improvement.plunder_type.as_deref() == Some("heal")
+                            && improvement.plunder_amount > 0.0
+                    });
+            if healing_pillage && g.apply(pid, &Action::Pillage { unit: uid }).is_ok() {
+                self.base.fortify_or_stop(g, pid, uid);
+                self.claim_recovery_formation(g, uid);
+                self.battle_planner_recovering.insert(uid);
+                if let Some(now) = g.units.get(&uid) {
+                    think!(self.journal(), Military, Decision,
+                        "Battle plan: the {} at {:?} pillages to recover", now.kind, now.pos;
+                        "{} hp becomes {} hp on a legal healing improvement with no predicted incoming damage",
+                        unit.hp, now.hp);
+                }
+                continue;
+            }
             let mut tiles = vec![unit.pos];
             tiles.extend(g.reachable(uid));
             let mut safe: Vec<(i32, i32, Pos)> = tiles
