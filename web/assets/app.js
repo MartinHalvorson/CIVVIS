@@ -2253,6 +2253,11 @@ function playerClosestVictory(player) {
   return victory && turns !== null && Number.isFinite(count) ? {victory, turns:count} : null;
 }
 
+function closestVictoryTurnsLabel(turns) {
+  const cap = Number(turnCapLabel());
+  return Number.isFinite(cap) && Number(turns) >= cap ? `${cap}+` : String(turns);
+}
+
 // The plan palette already gives every road its colour; a score win is the
 // one road no plan is named for, and keeps the plain cell colour.
 const CLOSEST_VICTORY_PLAN_CLASS = {
@@ -2266,11 +2271,13 @@ function closestVictoryTitle(player) {
     victory && turns !== null && Number.isFinite(Number(turns)));
   if (!etas.length) return "No victory the planner can put a clock on yet";
   const [[victory, turns], ...rest] = etas;
-  const turnsText = count => `${count} turn${Number(count) === 1 ? "" : "s"}`;
+  const turnsLabel = closestVictoryTurnsLabel(turns);
+  const turnsText = count => `${closestVictoryTurnsLabel(count)} turn${Number(count) === 1 ? "" : "s"}`;
   const head = `Closest victory: ${titleCase(victory)} in about ${turnsText(turns)}` +
-    (Number.isFinite(Number(state?.turn)) ? ` (turn ${Number(state.turn) + Number(turns)})` : "");
+    (!turnsLabel.endsWith("+") && Number.isFinite(Number(state?.turn))
+      ? ` (turn ${Number(state.turn) + Number(turns)})` : "");
   const others = rest.length
-    ? ` · then ${rest.map(([other, count]) => `${titleCase(other)} ${count}`).join(", ")}`
+    ? ` · then ${rest.map(([other, count]) => `${titleCase(other)} ${closestVictoryTurnsLabel(count)}`).join(", ")}`
     : "";
   return `${head}${others} · the victory planner's estimate at today's pace`;
 }
@@ -24649,7 +24656,7 @@ function drawPlayerHud() {
               `<span class="ai-plan${tone ? ` ${tone}` : ""}">` +
               (closest
                 ? `<span class="closest-victory-road">${escapeAttr(closest.victory)}</span>` +
-                  `<span class="closest-victory-turns">-${closest.turns}</span>`
+                  `<span class="closest-victory-turns">-${closestVictoryTurnsLabel(closest.turns)}</span>`
                 : "—") +
               `</span></span></button>`;
           }
