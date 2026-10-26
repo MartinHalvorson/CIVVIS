@@ -1,4 +1,11 @@
-# Prospective Native Slinger-preparation trial
+# Completed Native Slinger-preparation trial
+
+The registered sixteen-start trial is complete: eight ON, eight OFF, twelve
+observed defeats and four operator retirements without a host outcome. No win
+is observed. Both candidate-specific upgrade proposals have exact Native
+Archer successors. This establishes execution, not an incremental strength
+benefit; keep the policy default-off. The observer closed at
+**2026-10-26T03:21:04.971302+00:00**, removed only its own lease and was not rearmed.
 
 The registered default-off candidate from PR #4152 is merged as
 5813ced47ea532298a4453c3c9d2ef602932b6cf and verified live. Its separate
@@ -283,3 +290,98 @@ Checkpoint 08 retains 11 byte-verified members, 560,504 bytes,
 SHA-256 `5a6e79a991a5311dd413bf86cd9cae9e5197c58d6b9aa74a758f6b11c23c219f`. It preserves the full upgrade audit, individually
 read collection/observer files and hash-verified references to the already
 archived actual adapter. Earlier packets and all failures remain retained.
+
+
+## Final registered cohort
+
+All sixteen assigned stems and all seventeen attempts are retained. Start 11
+exited at turn 42 and continued from turn 41; its continuation supplies the
+Culture defeat. Retirements at starts 12, 13, 15 and 16 remain unresolved host
+endpoints. They are not replaced, called wins or converted into awarded
+losses. There are no observer overruns in the closed state. The difficulty
+and assigned lane remain Immortal and Domination throughout.
+
+| Start | Played arm | Final recorded endpoint | Turn |
+| --- | --- | --- | --- |
+| 1 | ON | Culture defeat | 155 |
+| 2 | ON | Culture defeat | 165 |
+| 3 | ON | Diplomatic defeat | 191 |
+| 4 | OFF | Religious defeat | 174 |
+| 5 | OFF | Elimination | 151 |
+| 6 | OFF | Science defeat | 203 |
+| 7 | ON | Diplomatic defeat | 218 |
+| 8 | ON | Culture defeat | 159 |
+| 9 | OFF | Diplomatic defeat | 239 |
+| 10 | ON | Science defeat | 218 |
+| 11 | OFF | Culture defeat | 198 |
+| 12 | ON | Operator retirement; no host outcome | 88 |
+| 13 | OFF | Operator retirement; no host outcome | 197 |
+| 14 | OFF | Science defeat | 197 |
+| 15 | ON | Operator retirement; no host outcome | 156 |
+| 16 | OFF | Operator retirement; no host outcome | 193 |
+
+Outcome turns use the host award/defeat event when present; retirement turns
+use the final observed Native turn. The local terminal summary can end one
+turn before a victory callback, so its `last_turn` is not substituted for the
+host award's turn. Arms were dealt from the registered tag/gene/difficulty/
+lane key and read back from actual played genomes, with no balancing or
+replacement of unfavorable attempts.
+
+Across all attempts, 210 general upgrade requests have 205 unique exact Native
+successors. Five remain unresolved: three missing Native quotes, one same-ID
+transition and one without an exact successor. Only two upgrades are joined
+to this candidate. The additional start-15 turn-19/frame-0 decision upgrades
+Slinger 262146 to Archer 458756 at (40,12), preserving HP 100, XP 0, level 1,
+no promotions and formation 0. All eighteen actual calls share one distinct
+captured input, 1,033,156 bytes, SHA-256
+`24e93842540432f68174e8e6d4f82dd49697888a00c388fbd0a2a290b02002fc`.
+It ends at the unique audited pre-state; the next unique Native state at
+turn 19/frame 1 contains the exact successor. A later verification receipt
+is supporting evidence. The new joined capsule is 12,107 bytes, SHA-256
+`cf4ed70fee6d789562a48a33691803eb2a19e7271dd7f43a3bf3fca361f4c9d8`.
+The game later retires without a host outcome. Neither execution proves that
+an OFF historical controller would have omitted the upgrade or lost earlier.
+
+The existing original-capital census now covers all seventeen attempts and
+all local-city state rosters. Exactly one attempt holds a foreign major
+original capital: OFF start 9 first holds Buda at turn 148, then Tenochtitlan
+at 219, and retains both in its final turn-239 roster. It still loses to an
+Aztec Diplomatic victory. Its seventeen general city captures are not
+seventeen original capitals. Seven home-original-capital loss markers occur
+across the cohort; a marker is not proof of permanent loss. No original
+capital founder is unclassified in these observed rosters.
+
+The previously documented profile/source change at start 9 remains material:
+Launcher becomes forced on and the source includes the independent aqueduct
+Recovery change. Binary hashes and provenance remain retained, including
+different binaries with the same reported revision. The eight/eight nominal
+split, mixed sources and four unresolved host endpoints do not establish a
+controlled strength estimate. Loaded historical Lua identity remains
+unattested. There is no default promotion and no rearm of this trial.
+
+All four collector controls, five isolated observer lifecycle controls and
+three conservative-upgrade auditor tests (thirteen identity cases) pass again.
+The new joining helper verifies the actual decision, every captured read,
+exact binary bytes and gzip readback. The capital wrapper reuses the existing
+founder-classification census; it retains continuations, missing endpoints
+and current-roster replacement semantics. Raw stdout/stderr and source hashes
+for the final controls are retained in the verification capsule.
+
+Raw cohort 14: 16 byte-verified non-image members, 1,571,500 bytes,
+SHA-256 `60921451232870a7c6211037f73be4a867186a429f17d21da79c8459a33b4f17`.
+
+Raw cohort 15: 18 byte-verified non-image members, 933,840 bytes,
+SHA-256 `483900bdeb1e5e9cddf7a631faa431a6876ebacc31ae8030c0e71804dd0634ec`.
+
+Raw cohort 16: 18 byte-verified non-image members, 1,665,312 bytes,
+SHA-256 `4d1180a442c7ba1fbb73795166c9e72003ae4236db7d596966c9b123a03788f6`.
+
+Final checkpoint 09: 29 byte-verified members, 6,481,436 bytes,
+SHA-256 `96f87fab6aec25a62f4348756abfb4ca1e85afa60b25fe6b6d32566017f25350`. It preserves the closed-state receipt, all final
+audits and newly completed raw cohorts, original-capital results, the joined
+execution and verified references to already archived actual adapters. Live
+files were individually read with manifests; no atomic cross-file snapshot
+is claimed. All earlier packets, negative controls and failures remain retained.
+
+Final control capsule: 723 bytes, SHA-256
+`38c9b774a337f59b1a4762f0d2bfbfc73da219563b4e3a2d8980f9eb6ddcf03b`.
