@@ -8293,6 +8293,17 @@ impl AdvancedAi {
         self.capital_watch_slinger_turn = None;
     }
 
+    /// Opt-in gene `launcher-war-skips-the-reserve`; see
+    /// [`Self::launcher_war_skips_the_reserve`].
+    pub fn enable_launcher_war_skips_the_reserve(&mut self) {
+        self.launcher_war_skips_the_reserve = true;
+    }
+
+    /// The twin of `enable_launcher_war_skips_the_reserve`.
+    pub fn disable_launcher_war_skips_the_reserve(&mut self) {
+        self.launcher_war_skips_the_reserve = false;
+    }
+
     /// Measure the default-off forward airfield preparation project.
     pub fn enable_forward_airfield_project(&mut self) {
         self.forward_airfield_project = true;
