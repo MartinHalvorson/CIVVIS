@@ -38,3 +38,11 @@ inspect actual sanctuary eligibility and completed safe recruitment sources,
 including cities whose production queues are held. The counts alone do not
 justify dropping religious defense, a Prophet race or conversion prevention.
 No gameplay change or native strength improvement is proposed by this draft.
+
+All ten distinct captured input states behind the nine faith orders are
+retained, including both changing reads at60/0. Both agree: Popayán has a Shrine,
+queues a Campus, and offers a70-Faith Missionary against202 Faith in the bank.
+This establishes the native offer, not the controller's counterfaith safety.
+The third-file admission probe records actual threat, eligible cities, queue
+holds, safe faiths and source/price facts on the root Game. Its original
+264-payload/4587-read controls are still pending; no gate is inferred yet.

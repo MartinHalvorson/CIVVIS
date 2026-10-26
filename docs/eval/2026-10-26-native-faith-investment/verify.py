@@ -49,3 +49,16 @@ assert analysis['caller_counts'] == {'reserve_prophet_site': 1, 'reserve_race_sh
 for case in analysis['cases']:
     assert case['successful_root_produces'][-1]['item'] == case['final_model_actions'][-1]['item']
 print('Both diagnostic264 controls, complete417-event traces and all9 faith callers verified.')
+context = json.loads(gzip.decompress((HERE / 'native-faith-context.json.gz').read_bytes()))
+assert len(context['cases']) == 9
+assert sum(len(c['observations']) for c in context['cases']) == 10
+assert all(o['state'] is not None for c in context['cases'] for o in c['observations'])
+case = next(c for c in context['cases'] if (c['turn'], c['frame']) == (60, 0))
+assert len(case['observations']) == 2
+for observation in case['observations']:
+    state = observation['state']
+    assert state['faith'] == 202 and state['gold'] == 157
+    city = next(c for c in state['cities'] if c['id'] == 131073)
+    assert city['producing'] == 'DISTRICT_CAMPUS' and 'BUILDING_SHRINE' in city['buildings']
+    assert {'f': 70, 't': 'UNIT_MISSIONARY'} in city['purchasable']
+print('All10 distinct captured native contexts retained; counterfaith safety inference remains separate.')
