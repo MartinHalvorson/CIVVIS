@@ -5490,6 +5490,10 @@ pub struct AdvancedAi {
     /// the routine claims, the deterrent and the governor's rescoring. See
     /// `advanced/aqueduct_claims_the_capped_queue.rs`. Off by default.
     aqueduct_claims_the_capped_queue: bool,
+    /// Recovery replacements accepted by the capped-city reservation. City
+    /// positions survive native model-id remapping; current queues, owners
+    /// and recovery conditions validate each recorded choice.
+    capped_aqueduct_recovery_reservations: RefCell<BTreeMap<Pos, (usize, Item)>>,
     /// `bankruptcy-exits-the-drain`: while the treasury holds less than one
     /// turn of a negative income, gold cards first, an extra surplus sale, and
     /// the cheapest units disbanded before the host's bankruptcy takes the
@@ -10822,6 +10826,7 @@ impl AdvancedAi {
             amphibious_train: None,
             amphibious_refused: None,
             aqueduct_claims_the_capped_queue: false,
+            capped_aqueduct_recovery_reservations: RefCell::new(BTreeMap::new()),
             bankruptcy_exits_the_drain: false,
             // ---- append: c-d ----------------------------------------
             city_state_war_is_no_front: false,

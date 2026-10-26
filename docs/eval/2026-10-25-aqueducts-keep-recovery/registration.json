@@ -1,0 +1,32 @@
+{
+  "assembled_utc": "2026-10-26T00:41:21.906143+00:00",
+  "scope": "Exact current AQ module, private accepted-reservation map and initializer, focused tests and declared historical evidence only. No new gene/default, native force/settings/lane/lease/leader/target changes.",
+  "source_hashes": {
+    "src/ai/advanced.rs": "70f94b7c984ea553f687db82bfe47b2d30f3720bc181d45fc1d5db526bb2b50d",
+    "src/ai/advanced/aqueduct_claims_the_capped_queue.rs": "bf1e35487bf3e495088c958f527d18baae7f2ecbdfea21b697b29eaf10764320",
+    "src/ai/advanced/aqueduct_claims_the_capped_queue/tests.rs": "0cb42501dea05c539905fe39944142cf218f61bd83e4d791e9f2a0136f0f2995"
+  },
+  "historical_source": "b4dfb57ea13b5d1bc08918d71769a94c88b690f7",
+  "first_change_expected": [
+    71,
+    0
+  ],
+  "earlier_complete_payloads_and_ordered_reads": 191,
+  "candidate_binary_sha256": "711aa325ace65191fcb499bebd77c25934b7c8188e35d7933793414c3961e4c1",
+  "qualified_native_quote": "Both distinct captured inputs at71/0 agree105Gold,-0.746094gpt,Hub11turns,selectednative18,11legal. Every ordered read remains matched.",
+  "limitations": [
+    "Original argv/cwd reconstructed and qualified by complete original controls, not directly observed.",
+    "Historical backport uses exact current AQ module plus identical private map field/empty initializer, but all other priorities and mechanics remain historicalb4.",
+    "Candidate Hub is transported in replay and independently offered by native quotes; no counterfactual native execution/completion/win measured.",
+    "Native cohorts span source changes and overlaps;0/8industrial outcomes do not isolate a treatment effect."
+  ],
+  "external_root": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-25/aqueducts-keep-recovery",
+  "artifact_sha256": {
+    "first-change.py": "e5a32940629b349a1376d1c94ac935b6d4803f335f541319d51b565a5d50ff5d",
+    "industrial-first-eight-context.json.gz": "e236b9535f2ce164e7216d4eaaa33d856355f82b022a2121e397ba4f3a3af5e6",
+    "qualified-first-change.json.gz": "99fcbf5e262be5a075e37e5a48585e475186dc87cb0a6d3de35a3b8f1e42bbd6",
+    "qualified-helper-control.json.gz": "9d784911a0f7a3af54114ccc39536d842f9a3041309956ac5cccad19048f0575",
+    "regression-history.json.gz": "55c2c3fbbd9fd4a36b3f059a1398bcd71f7d2a6e7376f83013e301fc6f65b91f",
+    "rejected-first-change.json.gz": "64df712c5ae5d38253b3d9f6e66c57b11f74c417da86408c31bc62ba5562fbc3"
+  }
+}

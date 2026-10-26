@@ -33,6 +33,11 @@
 //! Trader and the backlog Builder keep their order; the deterrent and the
 //! governor's rescoring then leave the claimed Aqueduct alone
 //! ([`AdvancedAi::capped_aqueduct_holds`]). Off, nothing runs.
+//!
+//! A depleted treasury with negative income uses an available ordinary
+//! recovery build at the already-selected city first. Without a recovery
+//! option the housing reservation and its hold remain; funded and break-even
+//! cities keep their existing order.
 
 use super::*;
 
@@ -47,17 +52,16 @@ pub(crate) const CAPPED_AQUEDUCT_MAX_STANDARD: u32 = 36;
 pub(crate) const CAPPED_AQUEDUCT_MIN_POP: i32 = 3;
 
 impl AdvancedAi {
-    /// The Aqueduct `cid` would claim, how long it takes, and how far over
-    /// its housing the city stands: an unthreatened city within one of its
-    /// housing, with its Granary built or unbuildable and no Aqueduct, whose
-    /// legal Aqueduct finishes in time. `None` with the gene off.
-    pub(super) fn capped_aqueduct_item(
+    /// Housing-side admission without repeating district-site selection.
+    /// A recovery district may consume the former Aqueduct site, so an
+    /// accepted recovery reservation cannot reconstruct that site afterward.
+    fn capped_aqueduct_city_need(
         &self,
         g: &Game,
         pid: usize,
         cid: u32,
         plan: &StrategicPlan,
-    ) -> Option<(Item, f64, f64)> {
+    ) -> Option<f64> {
         if !self.aqueduct_claims_the_capped_queue {
             return None;
         }
@@ -77,6 +81,21 @@ impl AdvancedAi {
         {
             return None;
         }
+        Some(over)
+    }
+
+    /// The Aqueduct `cid` would claim, how long it takes, and how far over
+    /// its housing the city stands: an unthreatened city within one of its
+    /// housing, with its Granary built or unbuildable and no Aqueduct, whose
+    /// legal Aqueduct finishes in time. `None` with the gene off.
+    pub(super) fn capped_aqueduct_item(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+    ) -> Option<(Item, f64, f64)> {
+        let over = self.capped_aqueduct_city_need(g, pid, cid, plan)?;
         let aqueduct = BasicAi::civ_district(g, pid, "aqueduct");
         let pos = g
             .district_sites(cid, aqueduct)
@@ -106,9 +125,27 @@ impl AdvancedAi {
             .then_some((item, turns, over))
     }
 
-    /// Whether `item` at the head of `cid` is the Aqueduct this gene claims
-    /// and the city still wants it: the deterrent and the delegated
-    /// governor's rescoring leave it alone. Always false with the gene off.
+    fn capped_aqueduct_recovery_due(g: &Game, pid: usize) -> bool {
+        g.players[pid].gold_per_turn < -0.5
+            && g.players[pid].gold < 100.0 + 25.0 * g.player_city_ids(pid).len() as f64
+    }
+
+    /// The ordinary recovery choice for an already-eligible capped city,
+    /// only while the governor's depleted-deficit condition holds. No legal
+    /// recovery choice leaves its housing investment available.
+    fn capped_aqueduct_recovery_item(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        if Self::capped_aqueduct_recovery_due(g, pid) {
+            self.base
+                .economic_recovery_item(g, pid, cid, self.counts(g, pid).traders)
+        } else {
+            None
+        }
+    }
+
+    /// Whether `item` is the Aqueduct this eligible city still wants, or a
+    /// recovery replacement actually accepted by this reservation. The replacement keeps the
+    /// same reservation against later routine claims and rescoring.
+    /// Always false with the gene off.
     pub(super) fn capped_aqueduct_holds(
         &self,
         g: &Game,
@@ -117,11 +154,32 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         item: &Item,
     ) -> bool {
-        matches!(item, Item::District { district, .. }
-            if g.district_family(*district) == crate::name!("aqueduct"))
-            && self
-                .capped_aqueduct_item(g, pid, cid, plan)
-                .is_some_and(|(aqueduct, _, _)| aqueduct == *item)
+        if !self.aqueduct_claims_the_capped_queue {
+            return false;
+        }
+        let is_aqueduct = matches!(item, Item::District { district, .. }
+            if g.district_family(*district) == crate::name!("aqueduct"));
+        if !is_aqueduct {
+            if !Self::capped_aqueduct_recovery_due(g, pid) {
+                return false;
+            }
+            let Some(city) = g.cities.get(&cid) else {
+                return false;
+            };
+            let recorded = self
+                .capped_aqueduct_recovery_reservations
+                .borrow()
+                .get(&city.pos)
+                .is_some_and(|(owner, reserved)| *owner == pid && reserved == item);
+            return recorded
+                && city.queue.first() == Some(item)
+                && self.capped_aqueduct_city_need(g, pid, cid, plan).is_some()
+                && self.capped_aqueduct_recovery_item(g, pid, cid).as_ref() == Some(item)
+                && g.can_produce(pid, cid, item);
+        }
+        self.capped_aqueduct_item(g, pid, cid, plan)
+            .is_some_and(|(aqueduct, _, _)| aqueduct == *item)
+            && self.capped_aqueduct_recovery_item(g, pid, cid).is_none()
     }
 
     /// Whether the queue head `item` may wait for the Aqueduct: a routine
@@ -180,13 +238,39 @@ impl AdvancedAi {
         }
     }
 
+    fn prune_capped_aqueduct_recovery_reservations(&self, g: &Game, pid: usize) {
+        let mut reservations = self.capped_aqueduct_recovery_reservations.borrow_mut();
+        if reservations.is_empty() {
+            return;
+        }
+        if !Self::capped_aqueduct_recovery_due(g, pid) {
+            reservations.clear();
+            return;
+        }
+        let cities: BTreeMap<_, _> = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|cid| (g.cities[&cid].pos, cid))
+            .collect();
+        reservations.retain(|pos, (owner, item)| {
+            *owner == pid
+                && cities
+                    .get(pos)
+                    .is_some_and(|cid| g.cities[cid].queue.first() == Some(item))
+        });
+    }
+
     /// See the module: the most capped city with a legal, timely Aqueduct
     /// puts it at the head of its queue, idle or over a deferrable item. One
     /// claim a turn. Exact no-op with the gene off.
     pub(super) fn claim_capped_aqueduct(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         if !self.aqueduct_claims_the_capped_queue {
+            self.capped_aqueduct_recovery_reservations
+                .borrow_mut()
+                .clear();
             return;
         }
+        self.prune_capped_aqueduct_recovery_reservations(g, pid);
         let at_major_war = g.players.iter().any(|other| {
             other.id != pid
                 && other.alive
@@ -246,21 +330,34 @@ impl AdvancedAi {
             let city = &g.cities[&cid];
             (city.name.clone(), city.pop, g.city_housing(city))
         };
-        if g.apply(
-            pid,
-            &Action::Produce {
-                city: cid,
-                item: aqueduct,
-            },
-        )
-        .is_ok()
-        {
-            think!(self.journal(), Cities, Decision,
-                   "{name} claims its Aqueduct at its housing";
-                   "aqueduct-claims-the-capped-queue: population {pop} against housing \
-                    {housing:.0} with its Granary built, {turns:.1} turns, ahead of {}",
-                   head.map_or_else(|| "an idle queue".to_string(), |item| format!(
-                       "{} (it keeps its progress)", Self::plain_item(&item))));
+        let recovery = self.capped_aqueduct_recovery_item(g, pid, cid);
+        let recovery_name = recovery.as_ref().map(Self::plain_item);
+        let accepted_recovery = recovery.clone();
+        let item = recovery.unwrap_or(aqueduct);
+        if g.apply(pid, &Action::Produce { city: cid, item }).is_ok() {
+            let city_pos = g.cities[&cid].pos;
+            if let Some(recovery) = accepted_recovery {
+                self.capped_aqueduct_recovery_reservations
+                    .borrow_mut()
+                    .insert(city_pos, (pid, recovery));
+            } else {
+                self.capped_aqueduct_recovery_reservations
+                    .borrow_mut()
+                    .remove(&city_pos);
+            }
+            if let Some(recovery_name) = recovery_name {
+                think!(self.journal(), Economy, Decision,
+                       "{name} starts {recovery_name} for treasury recovery";
+                       "{:.0} Gold at {:.1}/turn: its available recovery build precedes the Aqueduct",
+                       g.players[pid].gold, g.players[pid].gold_per_turn);
+            } else {
+                think!(self.journal(), Cities, Decision,
+                       "{name} claims its Aqueduct at its housing";
+                       "aqueduct-claims-the-capped-queue: population {pop} against housing \
+                        {housing:.0} with its Granary built, {turns:.1} turns, ahead of {}",
+                       head.map_or_else(|| "an idle queue".to_string(), |item| format!(
+                           "{} (it keeps its progress)", Self::plain_item(&item))));
+            }
         }
     }
 }
