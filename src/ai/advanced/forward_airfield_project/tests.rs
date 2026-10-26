@@ -111,6 +111,16 @@ fn renumber_cities(g: &Game) -> Game {
             .map(|(id, menu)| (id + 1000, menu.clone()))
             .collect(),
     );
+    // Deserialization rebuilds the private city-position index, as a real
+    // fresh board does. Host-only offer facts are deliberately not saved.
+    let host_buildable = Arc::clone(&next.host_buildable);
+    let host_observed = Arc::clone(&next.host_observed);
+    let mut next: Game = serde_json::from_slice(&serde_json::to_vec(&next).unwrap()).unwrap();
+    next.host_buildable = host_buildable;
+    next.host_observed = host_observed;
+    for city in next.cities.values() {
+        assert_eq!(next.city_at(city.pos), Some(city.id));
+    }
     next
 }
 
