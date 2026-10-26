@@ -63,3 +63,22 @@ Current income must cover a conservative six Gold/turn for the complete
 Encampment/Barracks-or-Stable/Armory/Engineer chain, while cash preserves the
 existing 1.5-turn upkeep reserve including that allowance. The travel bound is
 a known-land planning bound, not an asserted future Native travel time.
+
+The pre-query selector is now fixed over the authoritative terrain census:
+213 unique actual decisions, 247 distinct captured reads, all twenty-four
+games. The 254 blocked capital-turns share 165 actual frames; those are read
+once each, with all affected capitals retained, plus first/final decisions
+from every game. The exact manifest and source hashes are archived with the
+comparison. Repeated fresh OFF queries must reproduce each other. Compare OFF
+with historical output separately and retain mismatches: a stateless current
+controller is not the old process's persistent history.
+
+Before implementing the longer chain, also describe every actual offered
+Aerodrome placement in all 254 fixed blocked capital-turns. An owned district
+can differ from an Airstrip's terrain/feature permissions; use the offered
+placement list and each ready Bomber's actual range, not an empty-land proxy.
+Keep no-offer, missing-site-list and out-of-range cases. The six already-fixed
+earliest witnesses have now been inspected exploratorily and have zero
+in-range offered Aerodrome sites. This is not the full census result.
+Register this alternative check before its complete aggregation. No treated
+query has run, and no whole-game outcome will choose the validation seeds.
