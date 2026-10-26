@@ -34,6 +34,9 @@ def main():
     parser.add_argument('--selection', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
     args = parser.parse_args()
+    for probe in [args.baseline,args.candidate]:
+        if not probe.is_file() or not os.access(probe,os.X_OK):
+            raise PermissionError('probe is not executable: '+str(probe))
     args.out.mkdir(parents=True, exist_ok=False)
     data = json.loads(args.selection.read_text())
     binaries = {'baseline': args.baseline, 'candidate': args.candidate}
