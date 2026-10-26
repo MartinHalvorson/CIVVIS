@@ -88,3 +88,33 @@ checkpoint preserves the exact partial census, controls and upgrade audit:
 `323a38458b09bdccc7a461c6d331ba9aadf8b69cbb1e0eb35c0d8cfffa050d21`. Live files are non-atomic; later
 collections use new outputs and do not overwrite this one. The remaining
 assigned/future starts continue under the original cutoff.
+
+## Interim collection 02
+
+The next retained collection has four assigned starts: three ON terminal
+attempts and one OFF attempt still running at its file-read times. The ON
+endings are Culture losses at turns 155 and 165, followed by a Diplomatic loss
+at turn 191. None has an observed candidate journal line. General upgrade
+requests are 10, 11 and 20 respectively; all forty-one have unique exact Native
+successors under the unchanged conservative auditor. These are not attributed
+to the candidate. No strength or promotion verdict follows from this partial
+cohort or the initially uneven arms.
+
+All three use the actual delivered `45eb06d` adapter; the first complete
+decisions and terminal receipts agree on binary SHA-256
+`7d652a2c73c050660e1994848ee8e6afad6baca8316a0ae9bdc49d5089027e23`.
+That revision is a documentation descendant of the qualified feature revision;
+the played baseline excluding this candidate is unchanged in this collection.
+The actual adapter and provenance are retained in checkpoint 03. Historical
+loaded Lua identity remains unattested.
+
+Raw cohort 02 retains all 15 non-image files in 1,480,048 bytes,
+SHA-256 `77b08abd782d93ce11b0c3966f74d5afec5332fd7456be84fd0939a1ee049513`.
+
+Raw cohort 03 retains all 15 non-image files in 1,597,780 bytes,
+SHA-256 `e646fd8b8fafb72871071be3c9a8fbcd4a2974c922f5bc26380e3b3a5333e642`.
+
+Checkpoint 03 retains 15 byte-verified members, 5,932,088 bytes,
+SHA-256 `33d77fca04897025935a51efa2833bebe54166934e3d685d10adc5191c8fb323`, including the dated non-atomic collection,
+observer state/log, both new upgrade audits and the actual delivered adapter.
+The remaining starts continue under the original sixteen-start cutoff.
