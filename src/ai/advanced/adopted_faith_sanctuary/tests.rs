@@ -55,6 +55,142 @@ fn fixture_with_players(players: usize) -> (Game, AdvancedAi, StrategicPlan, u32
     (g, ai, plan, home[0])
 }
 
+fn held_counterfaith_source(district: &str) -> (Game, AdvancedAi, StrategicPlan, u32, u32, Item) {
+    let (mut g, mut ai, plan, source) = fixture_with_players(4);
+    let replacement = g
+        .player_city_ids(0)
+        .into_iter()
+        .find(|cid| *cid != source)
+        .unwrap();
+    let city = g.cities.get_mut(&replacement).unwrap();
+    city.pressure.clear();
+    city.pressure.insert("Orthodoxy".into(), 1000.0);
+    ai.enable_sanctuary_yields_a_held_queue();
+    ai.disable_one_sanctuary();
+    g.players[0].techs.insert(crate::name!("writing"));
+    g.players[0].techs.insert(crate::name!("apprenticeship"));
+    crate::game::install_test_district(&mut g, source, "holy_site");
+    g.cities
+        .get_mut(&source)
+        .unwrap()
+        .buildings
+        .push(crate::name!("shrine"));
+    let held = g
+        .district_sites(source, Name::new(district))
+        .into_iter()
+        .map(|pos| Item::District {
+            district: Name::new(district),
+            pos,
+        })
+        .find(|item| g.can_produce(0, source, item))
+        .expect("the source has a legal second district");
+    g.apply(
+        0,
+        &Action::Produce {
+            city: source,
+            item: held.clone(),
+        },
+    )
+    .unwrap();
+    g.cities.get_mut(&source).unwrap().production = 12.0;
+    assert!(ai.sanctuary_queue_held(&g, 0, source));
+    assert_eq!(g.city_religion(&g.cities[&source]), Some("Orthodoxy"));
+    assert!(ai.counterfaith_is_safe(&g, 0, "Orthodoxy"));
+    assert_eq!(
+        ai.adopted_faith_construction_threat(&g, 0).as_deref(),
+        Some("Buddhism")
+    );
+    let quote = g
+        .unit_purchase_cost(0, source, "missionary", "faith")
+        .expect("the completed source can recruit despite its production queue");
+    assert!(quote <= g.players[0].faith);
+    let mut purchase = g.clone();
+    purchase
+        .apply(
+            0,
+            &Action::Buy {
+                city: source,
+                unit: crate::name!("missionary"),
+                formation: 0,
+                currency: "faith".into(),
+            },
+        )
+        .expect("a religious purchase does not displace the held district");
+    assert_eq!(purchase.cities[&source].queue.first(), Some(&held));
+    eprintln!("held-source preconditions: {district}, source={source}, quote={quote}");
+    (g, ai, plan, source, replacement, held)
+}
+
+#[test]
+fn held_campus_does_not_hide_a_completed_counterfaith_source() {
+    let (mut g, ai, plan, source, replacement, held) = held_counterfaith_source("campus");
+    assert!(ai.adopted_faith_sanctuary_choice(&g, 0, None).is_none());
+    ai.reserve_adopted_faith_sanctuary(&mut g, 0, &plan);
+    assert_eq!(g.cities[&source].queue.first(), Some(&held));
+    assert!(g.cities[&replacement].queue.is_empty());
+}
+
+#[test]
+fn held_industry_does_not_hide_a_completed_counterfaith_source() {
+    let (mut g, ai, plan, source, replacement, held) = held_counterfaith_source("industrial_zone");
+    assert!(ai.adopted_faith_sanctuary_choice(&g, 0, None).is_none());
+    ai.reserve_adopted_faith_sanctuary(&mut g, 0, &plan);
+    assert_eq!(g.cities[&source].queue.first(), Some(&held));
+    assert!(g.cities[&replacement].queue.is_empty());
+}
+
+#[test]
+fn unfinished_unsafe_and_threatened_sources_still_allow_sanctuary() {
+    for mode in ["unfinished", "unsafe", "threatened"] {
+        let (mut g, ai, _, source, _, held) = held_counterfaith_source("campus");
+        let mut threatened = None;
+        match mode {
+            "unfinished" => g
+                .cities
+                .get_mut(&source)
+                .unwrap()
+                .buildings
+                .retain(|building| building != "shrine"),
+            "unsafe" => {
+                let city = g.cities.get_mut(&source).unwrap();
+                city.pressure.clear();
+                city.pressure.insert("Buddhism".into(), 1000.0);
+            }
+            _ => threatened = Some(source),
+        }
+        assert!(
+            ai.adopted_faith_sanctuary_choice(&g, 0, threatened)
+                .is_some(),
+            "{mode} still needs an available source"
+        );
+        assert_eq!(g.cities[&source].queue.first(), Some(&held));
+    }
+}
+
+#[test]
+fn unprotected_completed_source_keeps_the_existing_stop() {
+    let (g, mut ai, _, source, _, held) = held_counterfaith_source("campus");
+    ai.disable_sanctuary_yields_a_held_queue();
+    assert!(ai.adopted_faith_sanctuary_choice(&g, 0, None).is_none());
+    assert_eq!(g.cities[&source].queue.first(), Some(&held));
+}
+
+#[test]
+fn founder_keeps_its_second_source_despite_a_held_first_source() {
+    let (mut g, mut ai, _, source, replacement, held) = held_counterfaith_source("campus");
+    g.players[0].religion = Some("Catholicism".into());
+    for cid in [source, replacement] {
+        let city = g.cities.get_mut(&cid).unwrap();
+        city.pressure.clear();
+        city.pressure.insert("Catholicism".into(), 1000.0);
+    }
+    ai.enable_founder_keeps_two_sources();
+    assert_eq!(AdvancedAi::own_faith_sources(&g, 0), 1);
+    assert!(ai.founder_wants_a_second_source(&g, 0));
+    assert!(ai.adopted_faith_sanctuary_choice(&g, 0, None).is_some());
+    assert_eq!(g.cities[&source].queue.first(), Some(&held));
+}
+
 #[test]
 fn minority_counterfaith_in_first_city_is_not_the_invasion() {
     let (g, ai, _, _) = fixture();

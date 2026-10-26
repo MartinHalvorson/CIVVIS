@@ -1,0 +1,8 @@
+{
+  "source_sha256": "d191112c6c924a80f14c8894fe87b6ed55859867717446cbf1df1d3365960137",
+  "initial_red_green_tests_sha256": "0208b3cd1e982f1599290d90dada39002a438f5553d9426a8a7129fdd990c066",
+  "formatted_tests_sha256": "774fe79125446890208c8fe1c6d8599cf21bfda5d75ddce41ec8bbab4c9b951f",
+  "regressions_sha256": "f0ea00536a2c4341f2b43c1d6c429a7cf5151d1cd70ee4f47e39219eb97e4693",
+  "native_diagnosis": "PR4163 merged0a5e6ae0ce0524bbb0e1be52bea0312c98d835f0, exact45ebrun001624; six264payload/read controls plus417/554 fulltracepairs.",
+  "status": "Source passes41 focused checks on originalREDtestbytes; final formattedtest rerun, changed-line quality and strict historicalfirstchange pending. No native strengthgain claimed."
+}
