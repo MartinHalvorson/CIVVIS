@@ -64,6 +64,11 @@ def main():
             # Keep exact source identities and every response without duplicating them.
             for arm in binaries:
                 (root/arm/'events.jsonl').unlink()
+        except subprocess.TimeoutExpired as error:
+            for name, raw in [('stdout',error.stdout),('stderr',error.stderr)]:
+                if raw is not None:
+                    (root/('timeout.'+name)).write_bytes(raw)
+            result['error'] = 'TimeoutExpired: '+str(error)
         except Exception as error:
             result['error'] = type(error).__name__+': '+str(error)
         (root/'result.json').write_text(json.dumps(result,indent=2)+'\n')
