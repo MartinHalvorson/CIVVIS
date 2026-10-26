@@ -4,8 +4,29 @@
   "formatted_tests_sha256": "774fe79125446890208c8fe1c6d8599cf21bfda5d75ddce41ec8bbab4c9b951f",
   "regressions_sha256": "f0ea00536a2c4341f2b43c1d6c429a7cf5151d1cd70ee4f47e39219eb97e4693",
   "native_diagnosis": "PR4163 merged0a5e6ae0ce0524bbb0e1be52bea0312c98d835f0, exact45ebrun001624; six264payload/read controls plus417/554 fulltracepairs.",
-  "status": "V2 passes46 focused tests:29 on identical fallback-RED bytes plus4firstconvert/6founder/7Shrine. Final assertion-only line wrap token-identical; final exact-byte rerun,quality and strict153-prefix/60 comparison pending.",
+  "status": "Final46family tests, exact29tests/quality/mergedcheck pass; two final strict153-prior/60withdrawal comparisons qualified. Passive first8 observer prepared. Final hostedhead still must pass before merge; no Nativegain claimed.",
   "fallback_red_green_tests_sha256": "64a8a38adfdd1325216a602c9d81ea0c902905eb148683e8972b0e083b337015",
   "final_tests_sha256": "1e6a00616d0a3292be46b1b81d452b6b6ffbeadff059567cfb32f1820f3fe59f",
-  "fallback_preservation_sha256": "c26920a1a1fd7cc171c1a8b2699f8ec3ff76739cdbf33a4ee47abb165564d3f2"
+  "fallback_preservation_sha256": "c26920a1a1fd7cc171c1a8b2699f8ec3ff76739cdbf33a4ee47abb165564d3f2",
+  "artifact_sha256": {
+    "regressions.json.gz": "f0ea00536a2c4341f2b43c1d6c429a7cf5151d1cd70ee4f47e39219eb97e4693",
+    "fallback-preservation.json.gz": "c26920a1a1fd7cc171c1a8b2699f8ec3ff76739cdbf33a4ee47abb165564d3f2",
+    "qualified-first-change.json.gz": "9f774e1889dc44bcde95110663c97ada0fb3e94c56f968262ce7645e7c966eff",
+    "first-change.py": "f7b0a60451a5b2196084b4b467e95220229962a64a3e8f3ef4617ea25282aefa",
+    "native-observer.py": "55ecd7ee5a6b96b6a70fea6a12869f93515fb1a6b015b42d6af7a4f0b868979a",
+    "validation.json": "c2a521d48c468c7c97f83bb045f0bfa434afb96e4b98a6b4974782550a50a211"
+  },
+  "original_control_archive_sha256": "c2e21c40e732cda0456a8636b9c506bba7198c5b1848da1139272a352b386b80",
+  "historical_candidate_binary_sha256": "2d47bfe618c4e232899436c94b5c734bf37c5713fd074a95bf1ab9c995ed103e",
+  "first_change": {
+    "request": [
+      60,
+      0
+    ],
+    "identical_complete_prior_requests": 153,
+    "changed_payloads_identical": true,
+    "remaining_holy_site_orders_any_kind": 0,
+    "existing_source_city_production_purchase_orders_identical": true
+  },
+  "native_protocol": "First8attempt stems fromexactdeliveredmodule+ancestor+frozenbinary/executingdecisionreadback. Actualsettings/targetreadback; allvictories enabled. Keepfailures/stopped/continuations/missingoutcomes/sourceandconfigurationchanges/overlaps. No gameplay or forcing changes; no causalwinrate claim."
 }

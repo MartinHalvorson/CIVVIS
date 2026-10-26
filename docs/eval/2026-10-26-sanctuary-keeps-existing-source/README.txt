@@ -1,52 +1,54 @@
-Count an existing safe source despite its held production queue
+Count a safe Shrine source despite its protected production queue
 
 The qualified native audit in PR4163 identifies a completed safe Shrine source
-hidden by its held Campus at60/0 and held Industrial Zone at73/81. Its Missionary
-offers remain legal and affordable in every captured input. The96 source is
-threatened and83 takes an earlier Shrine path; those are retained separately.
+hidden by its held Campus at60/0 and held Industrial Zone at73/81. Popayán's
+70-Faith Missionary offer remains legal and affordable in every captured input.
+The96 source is threatened and83 takes an earlier Shrine path; those cases
+remain distinct. See the sibling native-faith-investment packet for both full
+264-request original controls, root/admission controls and native input states.
 
-The repair counts current safe, unthreatened source cities before filtering
-which production queues may be taken. Only the completed-source check uses
-that complete list. Reservation candidates keep the existing queue guards;
-founder second sources, unfinished/unsafe/converted and threatened cases keep
-their existing treatment. No new gene, default or native setup change.
+The repair counts safe, unthreatened source cities before restricting which
+queues the sanctuary may take. Reservation candidates keep the existing queue
+guards. The completed-source stop keeps its original eligible list, including
+an unconverted fallback Shrine waiting for faith, and additionally checks safe
+sources behind held queues. Founder second sources, unfinished/unsafe/converted
+and threatened cases retain their behavior. No new gene/default/setup change.
 
 Unchanged production passes23 original tests and3 new controls, failing exactly
-the two intended held-Campus/Industry regressions. Both cases first establish
-a safe completed Shrine, a legal affordable Missionary price and a successful
-cloned model purchase preserving the held district. The standard-speed model
-price is200; actual Online native offers are70. Those are distinct evidence.
-The source repair passes all28 identical tests plus6 founder and7 Shrine tests.
-The complete logs, hashes and source/tests are retained in regressions.json.gz.
+the two intended held-Campus/Industry cases. Each establishes a completed safe
+Shrine, legal affordable Missionary price and successful cloned purchase that
+preserves the district queue. The standard-speed fixture price is200; actual
+Online native offers are70. These are distinct evidence.
 
-The formatter then collapsed the new fixture signature and removed its optional
-trailing parameter comma. The first strict whitespace-only proof rejected this;
-its exact diff is retained, and the change is now classified accurately.
-Only that new block changes; all23 existing tests stay intact. Final formatted
-test rerun, changed-line quality and historical first-change comparison remain
-pending at this checkpoint.
+V1 passes those28 identical tests plus6 founder and7 Shrine controls and the
+first historical comparison. Review then finds a missing preservation case:
+the existing stop after the no-religion fallback. Its new genuine regression
+passes28 and fails exactly the waiting-Shrine case before V2 restores that stop.
+V2 passes all29 identical tests plus4 first-convert,6 founder and7 Shrine tests.
+Formatting changes, initial rejected strict formatting proofs and exact diffs
+are retained. The final assertion wrap changes whitespace only. All29 final
+exact-byte tests, changed-line format/clippy and merged cargo check pass.
 
-The registered comparison requires every153 earlier entire native replies and
-ordered reads to match, then at60/0 removes the redundant Holy Site from final
-model and transported orders, preserving existing-source city orders. Two fresh
-complete changed payloads must agree and every read must match, including that
-request. The exact candidate module alone is backported to original45eb with
-the previously qualified two root-log files; other current mechanics/priorities
-are not backported. A fixed-history answer is not native execution or a win.
+Both fresh final comparisons match every153 earlier complete native payload
+and ordered read, then withdraw the redundant Holy Site at60/0. No immediate,
+deferred or other-kind Holy Site action/order remains; Cali's existing Builder
+receives no production override. Existing-source city production and purchase
+orders remain identical. Both complete changed payloads and complete diagnostic
+traces agree. Every read byte/count matches, including the changed request.
+Run verify.py to independently recheck the full archived evidence.
 
-Fallback preservation
+Historical scope is the exact final sanctuary module backported to original
+45eb with two previously qualified root-log files. All830 compile inputs are
+verified; current Aqueduct/launcher or other priorities are not backported.
+Large sealed input streams and pinned binaries remain external with exact
+hashes; complete native and candidate payloads/read receipts are retained here
+or in the pinned sibling packet. Fixed recorded future states cannot measure
+native completion, prevented defeat or stronger play.
 
-The first repair passed28 tests, quality and its strict153-prefix/60-withdrawal
-comparison, but review identified a missing preservation case: the original
-fallback can wait at an unconverted completed Shrine for a safe faith. A new
-genuine regression passes all28 existing cases and fails exactly that waiting-
-source assertion on v1. The corrected source keeps the original eligible-list
-stop, then also checks the safe source list that includes protected queues.
-No original fallback stop is removed.
-
-All29 identical fallback-RED tests pass on v2, together with4 first-convert,
-6 founder and7 Shrine tests. Its new test already matches rustfmt. Complete
-logs, source, both test stages and the initial positive replay are retained in
-fallback-preservation.json.gz. A fresh comparison on the exact final v2 source
-is running with the same153-prior/60-withdrawal requirements. Final-head
-changed-line quality and required CI still apply. No native gain is claimed.
+The prepared native-observer.py starts exactly once after confirmed merge and
+retains the first8 attempt stems from exact delivered source/frozen-binary and
+executing-decision readback. Preserve failures, stopped/continued segments,
+missing outcomes, source/configuration changes and cohort overlaps. Verify
+actual Immortal/GranColombia/Tiny/Pangaea/Online/all-victories/Domination settings.
+No game input, force, lane, lease, pin or setup change. Source delivery and this
+observational cohort are not a paired causal win-rate trial.
