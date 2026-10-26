@@ -6,6 +6,20 @@ This command does not arm a trial or execute any Native action.
 """
 import argparse,hashlib,importlib.util,json,pathlib,subprocess,sys
 
+def validate_genomes(actual, off, on, repeated, gene):
+    """Preserve every existing list position; only one candidate may be added."""
+    if off != actual or repeated != actual:
+        raise ValueError('OFF or OFF-repeat genome differs from the actual played genome')
+    normalized=json.loads(json.dumps(on))
+    for field in ['treatments','forced']:
+        base=actual.get(field); enabled=on.get(field)
+        if not isinstance(base,list) or not isinstance(enabled,list) or gene in base or enabled.count(gene)!=1:
+            raise ValueError('candidate addition is not unique in '+field)
+        normalized[field]=[tag for tag in enabled if tag!=gene]
+    if normalized != actual:
+        changed=sorted(key for key in set(normalized)|set(actual) if normalized.get(key)!=actual.get(key))
+        raise ValueError('ON changed fields beyond the candidate: '+', '.join(changed))
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--repo',type=pathlib.Path,required=True)
@@ -53,10 +67,7 @@ def main():
             (a.out/'profile-controls.json').write_text(json.dumps(report,indent=2)+'\n')
             assert done.returncode==0 and played is not None,value
         off,on,repeat=row['arms']
-        expected=json.loads(json.dumps(q['played_genome']))
-        assert off['genome']==repeat['genome']==expected
-        for field in ['treatments','forced']:expected[field]=sorted(set(expected[field])|{observer.GENE})
-        assert on['genome']==expected,(on['genome'],expected)
+        validate_genomes(q['played_genome'],off['genome'],on['genome'],repeat['genome'],observer.GENE)
         assert all(v['payload']['orders']==first['orders'] for v in row['arms'])
         row['complete']=True
     assert report['reads']

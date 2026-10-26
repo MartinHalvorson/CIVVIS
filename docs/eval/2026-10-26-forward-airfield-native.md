@@ -2,7 +2,8 @@
 
 This prospective experiment registers forty-eight future original attempt
 stems for the default-off `forward-airfield-project` candidate in PR #4162.
-The feature is awaiting its final required checks; no trial lease is armed.
+The feature merged as 0b66913516fce803117c153c7125ba6c2144c613; live spectator
+verification is pending, and no trial lease is armed.
 The cutoff is fixed before assignment, and every failed start, continuation,
 retirement and source/profile drift will be retained without replacement.
 
@@ -41,3 +42,21 @@ policy. See the companion protocol and helpers. The completed Slinger trial
 is never rearmed.
 
 The sealed preregistration packet has 23 byte-verified members, 30936 bytes and SHA-256 `d185bf74bda5834f75345a0d698bd7c13c792d69e6cfd7de0533d3e64f3bdb37`. It retains the original preparation, subsequent collector clarification and all isolated control logs.
+
+## Delivery qualification checkpoint: preserve registry order
+
+The first actual delivered unarmed run, `civvis-20261026T062432Z`, uses the
+merged 0b66913516fce803117c153c7125ba6c2144c613 adapter. Its first disposable
+OFF/ON/OFF-repeat requests all succeed. OFF and its repeat exactly reproduce
+the actual whole genome and opening orders. Removing only one candidate entry
+from ON's treatment and forced lists preserves every existing list position
+and reproduces the actual genome; all three opening orders are identical.
+
+The first qualification helper nevertheless stops before reporting completion:
+it incorrectly sorts its expected ON lists, whereas the adapter emits registry
+order. The full failed output, raw responses, input and original registered
+helper remain retained. No lease is armed. The corrected helper preserves
+existing order and rejects extra flags, duplicate candidate entries, changed
+metadata and changed OFF/repeat genomes. Five focused controls pass. This is
+a harness correction; no policy bounds, actual Native orders or outcomes change.
+A fresh actual qualification run remains required before activation.

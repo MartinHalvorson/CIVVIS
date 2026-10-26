@@ -60,3 +60,11 @@ retirement rule can stop games before Flight. This cutoff is fixed before any
 new trial assignment or candidate outcome. Keep every start and do not extend,
 rebalance or replace it in response to outcomes. The earlier sixteen-start
 preparation and its controls remain retained as draft history.
+
+Qualification compares the full reported genomes in their existing registry
+order. ON must add exactly one candidate entry to treatments and forced;
+removing those entries must reproduce OFF byte-for-byte as parsed values,
+including every remaining list position and metadata field. OFF and its
+repeat must each equal the actual played genome. Sorting expected lists is
+not a valid identity comparison. Retain failed qualifications and use fresh
+output directories for retries.
