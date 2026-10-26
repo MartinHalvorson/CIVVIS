@@ -244,3 +244,39 @@ fn a_bomber_out_of_range_rebases_toward_the_pad() {
         "rebased in range of the pad"
     );
 }
+
+#[test]
+fn launcher_war_skips_the_reserve_is_opt_in() {
+    opt_in_off_in_both_controllers("launcher-war-skips-the-reserve", |ai| {
+        ai.launcher_war_skips_the_reserve
+    });
+}
+
+/// 231506Z's shape: the racer past its Moon, at peace, our treasury under the
+/// reserve at negative income.
+#[test]
+fn a_broke_treasury_lets_go_of_the_launcher_war_only_under_the_gene() {
+    let (mut g, mut ai, _, _) = fixture();
+    g.at_war.clear();
+    for at in [(14, 10), (14, 12), (14, 14), (15, 11)] {
+        g.spawn_test_unit("cavalry", 0, at);
+    }
+    for at in [(30, 10), (30, 12), (30, 14), (31, 11), (31, 13)] {
+        g.spawn_test_unit("cavalry", 1, at);
+    }
+    ai.enable_launcher_war_ignores_the_edge();
+    ai.enable_war_needs_a_treasury();
+    g.players[0].gold = 10.0;
+    g.players[0].gold_per_turn = -8.0;
+    assert!(!ai.war_is_affordable(&g, 0), "fixture: the reserve holds");
+    assert!(ai.launcher_war_opens(&g, 0, 1));
+    assert!(!ai.launcher_war_waives_the_reserve(&g, 0, 1), "off");
+    ai.enable_launcher_war_skips_the_reserve();
+    assert!(ai.launcher_war_waives_the_reserve(&g, 0, 1));
+    g.players[1].science_projects.remove("launch_mars_colony");
+    g.players[1].science_projects.remove("launch_moon_landing");
+    assert!(
+        !ai.launcher_war_waives_the_reserve(&g, 0, 1),
+        "short of the Moon: the reserve holds"
+    );
+}

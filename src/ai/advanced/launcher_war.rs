@@ -352,6 +352,33 @@ impl AdvancedAi {
                 >= LAUNCHER_WAR_EDGE * self.steady_rival_power(g, rival).max(1.0)
     }
 
+    /// `launcher-war-skips-the-reserve`: whether the treasury reserve
+    /// (`war_is_affordable`) lets go of the war on `rival` that
+    /// [`Self::launcher_war_opens`] names, with its journal line. The reserve
+    /// keeps an elective war from draining a broke treasury; a racer past its
+    /// Moon with a pad standing ends the game at its launch whatever our Gold.
+    /// Live Immortal civvis-20261025T231506Z held "the treasury reserve: 186
+    /// gold of 550 needed, at -8.3 a turn" on Macedon from turn 178, declared at
+    /// 184, landed two pad raids before the launch at about 192, and lost on
+    /// Science at 212. Across the retained games of October 22-25 the reserve
+    /// held the war on a racer past its Moon on 34 turns in 11 games. `false`
+    /// with the gene off.
+    pub(crate) fn launcher_war_waives_the_reserve(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+    ) -> bool {
+        if !self.launcher_war_skips_the_reserve || !self.launcher_war_opens(g, pid, rival) {
+            return false;
+        }
+        think!(self.journal(), Military, Detail,
+               "Waiving the treasury reserve for the war on {}'s space race", g.players[rival].civ;
+               "launcher-war-skips-the-reserve: {} space projects landed and a pad standing; {:.0} Gold at {:+.1} a turn",
+               Self::science_denial_stages(g, rival), g.players[pid].gold, g.players[pid].gold_per_turn);
+        true
+    }
+
     /// `launcher-war-ignores-the-edge`: the surprise war on `target`, with
     /// its journal line.
     pub(crate) fn launcher_war_opening(

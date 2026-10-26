@@ -7264,6 +7264,10 @@ pub struct AdvancedAi {
     /// `advanced/industrial_zone_claims_the_factory.rs`. Off by default.
     industrial_zone_claims_the_factory: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `launcher-war-skips-the-reserve`: the treasury reserve does not hold
+    /// the war `launcher_war_opens` names. See `advanced/launcher_war.rs`.
+    /// Off by default.
+    launcher_war_skips_the_reserve: bool,
     /// `medina-quarter-houses-the-districts`: while two or more of our
     /// cities are housing-limited with three specialty districts, Medina
     /// Quarter (+2 Housing there) joins the portfolio ahead of the plan's
@@ -11125,6 +11129,7 @@ impl AdvancedAi {
             industrial_zone_claims_the_producer_queue: false,
             industrial_zone_claims_the_factory: false,
             // ---- append: l-o ----------------------------------------
+            launcher_war_skips_the_reserve: false,
             medina_quarter_houses_the_districts: false,
             neighborhood_houses_the_capped_city: false,
             merchant_confederation_earns_its_slot: false,
@@ -24923,7 +24928,13 @@ impl AdvancedAi {
         // policy card, after the declaration. The hold used to be silent: live
         // Emperor civvis-20261014T155202Z held the war on India, its
         // Expedition launched, on 7 of turns 217-224 with no line at all.
-        if !launched_finish && !self.war_is_affordable(g, pid) {
+        // `launcher-war-skips-the-reserve`: the war `launcher_war_opens`
+        // names is not held for Gold. `false` with the gene off. See
+        // `advanced/launcher_war.rs`.
+        if !launched_finish
+            && !self.war_is_affordable(g, pid)
+            && !self.launcher_war_waives_the_reserve(g, pid, target)
+        {
             self.journal_treasury_holds_the_war(g, pid, target);
             return;
         }
