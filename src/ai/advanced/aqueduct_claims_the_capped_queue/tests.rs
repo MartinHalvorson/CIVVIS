@@ -299,3 +299,248 @@ fn a_reserved_trebuchet_keeps_its_queue() {
         "the reserved Trebuchet is never displaced"
     );
 }
+
+fn capped_city_with_recovery() -> (Game, u32, Item) {
+    let (mut game, city, aqueduct) =
+        capped_city(1, LATE).expect("fixture: a capped city with a legal Aqueduct");
+    game.players[0].techs.insert(crate::name!("currency"));
+    queue(&mut game, city, unit("warrior"));
+    let ai = armed();
+    let recovery = ai
+        .base
+        .economic_recovery_item(&game, 0, city, ai.counts(&game, 0).traders)
+        .expect("fixture: an ordinary recovery build is available");
+    assert_ne!(recovery, aqueduct);
+    assert!(game.can_produce(0, city, &recovery));
+    assert!(game.can_produce(0, city, &aqueduct));
+    (game, city, aqueduct)
+}
+
+#[test]
+fn a_depleted_capped_city_uses_its_available_recovery_build() {
+    let (base, city, _) = capped_city_with_recovery();
+    let ai = armed();
+    let mut outcomes = Vec::new();
+    for (gold, income) in [(33.0, -0.546875), (11.0, -10.8438), (0.0, -11.8438)] {
+        let mut game = base.clone();
+        game.players[0].gold = gold;
+        game.players[0].gold_per_turn = income;
+        let plan = ai.assess(&game, 0);
+        assert!(ai.capped_aqueduct_item(&game, 0, city, &plan).is_some());
+        let recovery = ai
+            .base
+            .economic_recovery_item(&game, 0, city, ai.counts(&game, 0).traders)
+            .expect("fixture: this budget still has a recovery choice");
+        assert!(game.can_produce(0, city, &recovery));
+        eprintln!("qualified capped recovery budget {gold}/{income}: {recovery:?}");
+        ai.claim_capped_aqueduct(&mut game, 0, &plan);
+        outcomes.push((head(&game, city), Some(recovery)));
+    }
+    assert!(
+        outcomes.iter().all(|(actual, expected)| actual == expected),
+        "all three depleted budgets use the available recovery choice: {outcomes:?}"
+    );
+}
+
+#[test]
+fn funded_and_boundary_capped_cities_keep_their_housing_build() {
+    let (base, city, aqueduct) = capped_city_with_recovery();
+    let reserve = 100.0 + 25.0 * base.player_city_ids(0).len() as f64;
+    let ai = armed();
+    for (gold, income) in [
+        (reserve, -11.8438),
+        (250.0, -11.8438),
+        (0.0, -0.5),
+        (0.0, 0.0),
+    ] {
+        let mut game = base.clone();
+        game.players[0].gold = gold;
+        game.players[0].gold_per_turn = income;
+        let plan = ai.assess(&game, 0);
+        assert!(ai
+            .base
+            .economic_recovery_item(&game, 0, city, ai.counts(&game, 0).traders)
+            .is_some());
+        ai.claim_capped_aqueduct(&mut game, 0, &plan);
+        assert_eq!(head(&game, city), Some(aqueduct.clone()), "{gold}/{income}");
+        assert!(ai.capped_aqueduct_holds(&game, 0, city, &plan, &aqueduct));
+    }
+}
+
+#[test]
+fn a_depleted_capped_city_keeps_housing_without_a_recovery_option() {
+    let (mut game, city, aqueduct) =
+        capped_city(1, LATE).expect("fixture: a capped city with a legal Aqueduct");
+    let ai = armed();
+    game.players[0].gold = 0.0;
+    game.players[0].gold_per_turn = -11.8438;
+    queue(&mut game, city, unit("warrior"));
+    assert!(ai
+        .base
+        .economic_recovery_item(&game, 0, city, ai.counts(&game, 0).traders)
+        .is_none());
+    let plan = ai.assess(&game, 0);
+    assert!(ai.capped_aqueduct_item(&game, 0, city, &plan).is_some());
+    ai.claim_capped_aqueduct(&mut game, 0, &plan);
+    assert_eq!(head(&game, city), Some(aqueduct.clone()));
+    assert!(ai.capped_aqueduct_holds(&game, 0, city, &plan, &aqueduct));
+}
+
+#[test]
+fn a_depleted_aqueduct_hold_yields_to_an_available_recovery_build() {
+    let (mut game, city, aqueduct) = capped_city_with_recovery();
+    let ai = armed();
+    game.players[0].gold = 0.0;
+    game.players[0].gold_per_turn = -11.8438;
+    queue(&mut game, city, aqueduct.clone());
+    let plan = ai.assess(&game, 0);
+    assert!(ai.capped_aqueduct_item(&game, 0, city, &plan).is_some());
+    assert!(ai
+        .base
+        .economic_recovery_item(&game, 0, city, ai.counts(&game, 0).traders)
+        .is_some());
+    assert!(!ai.capped_aqueduct_holds(&game, 0, city, &plan, &aqueduct));
+}
+
+#[test]
+fn an_inactive_capped_reservation_leaves_the_recovery_queue_alone() {
+    let (mut game, city, aqueduct) = capped_city_with_recovery();
+    let ai = AdvancedAi::new();
+    game.players[0].gold = 0.0;
+    game.players[0].gold_per_turn = -11.8438;
+    assert!(ai
+        .base
+        .economic_recovery_item(&game, 0, city, ai.counts(&game, 0).traders)
+        .is_some());
+    let plan = ai.assess(&game, 0);
+    ai.claim_capped_aqueduct(&mut game, 0, &plan);
+    assert_eq!(head(&game, city), Some(unit("warrior")));
+    assert!(!ai.capped_aqueduct_holds(&game, 0, city, &plan, &aqueduct));
+}
+
+fn capped_city_with_due_library_and_recovery() -> (Game, u32, Item) {
+    let (mut game, city, aqueduct) = capped_city_with_recovery();
+    let mut ai = armed();
+    ai.enable_campus_building_claims_the_queue();
+    game.players[0].techs.insert(crate::name!("writing"));
+    game.cities.get_mut(&city).unwrap().pop = 7;
+    std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
+        city,
+        crate::rules::Yields {
+            production: 12.0,
+            ..Default::default()
+        },
+    );
+    let old_recovery = ai
+        .base
+        .economic_recovery_item(&game, 0, city, ai.counts(&game, 0).traders)
+        .expect("fixture: a recovery build before installing the Campus");
+    let Item::District {
+        pos: aqueduct_pos, ..
+    } = aqueduct
+    else {
+        panic!("fixture: Aqueduct district");
+    };
+    let Item::District {
+        pos: recovery_pos, ..
+    } = old_recovery
+    else {
+        panic!("fixture: Commercial Hub recovery");
+    };
+    let campus = crate::name!("campus");
+    let campus_pos = game
+        .district_sites(city, campus)
+        .into_iter()
+        .filter(|pos| *pos != aqueduct_pos && *pos != recovery_pos)
+        .find(|pos| {
+            game.can_produce(
+                0,
+                city,
+                &Item::District {
+                    district: campus,
+                    pos: *pos,
+                },
+            )
+        })
+        .expect("fixture: a separate legal Campus site");
+    game.map.tiles.get_mut(&campus_pos).unwrap().district = Some(campus);
+    game.cities
+        .get_mut(&city)
+        .unwrap()
+        .districts
+        .insert(campus, campus_pos);
+    game.players[0].gold = 105.0;
+    game.players[0].gold_per_turn = -0.746094;
+    let plan = ai.assess(&game, 0);
+    assert!(ai.capped_aqueduct_item(&game, 0, city, &plan).is_some());
+    let recovery = ai
+        .base
+        .economic_recovery_item(&game, 0, city, ai.counts(&game, 0).traders)
+        .expect("fixture: recovery remains legal with the standing Campus");
+    assert!(matches!(&recovery, Item::District { district, .. } if *district == "commercial_hub"));
+    assert_eq!(
+        BasicAi::campus_building_item(&game, 0, city),
+        Some(building("library"))
+    );
+    (game, city, recovery)
+}
+
+#[test]
+fn the_campus_claim_keeps_a_capped_citys_recovery_reservation() {
+    let (mut game, city, recovery) = capped_city_with_due_library_and_recovery();
+    let mut ai = armed();
+    ai.enable_campus_building_claims_the_queue();
+    let plan = ai.assess(&game, 0);
+    eprintln!("qualified capped recovery handoff 105/-0.746094: {recovery:?}; Library legal");
+    ai.claim_capped_aqueduct(&mut game, 0, &plan);
+    assert_eq!(head(&game, city), Some(recovery.clone()));
+    ai.claim_campus_building(&mut game, 0, &plan);
+    assert_eq!(
+        head(&game, city),
+        Some(recovery),
+        "the recovery replacement keeps the capped-city reservation"
+    );
+}
+
+#[test]
+fn an_unrecorded_recovery_queue_does_not_inherit_the_capped_reservation() {
+    let (mut game, city, recovery) = capped_city_with_due_library_and_recovery();
+    let mut ai = armed();
+    ai.enable_campus_building_claims_the_queue();
+    let plan = ai.assess(&game, 0);
+    assert!(game
+        .apply(
+            0,
+            &Action::Produce {
+                city,
+                item: recovery.clone()
+            }
+        )
+        .is_ok());
+    assert!(!ai.capped_aqueduct_holds(&game, 0, city, &plan, &recovery));
+    ai.claim_campus_building(&mut game, 0, &plan);
+    assert_eq!(head(&game, city), Some(building("library")));
+}
+
+#[test]
+fn a_capped_recovery_reservation_releases_when_its_budget_recovers() {
+    let (base, city, recovery) = capped_city_with_due_library_and_recovery();
+    let reserve = 100.0 + 25.0 * base.player_city_ids(0).len() as f64;
+    for (gold, income) in [(reserve, -0.746094), (105.0, -0.5)] {
+        let mut game = base.clone();
+        let mut ai = armed();
+        ai.enable_campus_building_claims_the_queue();
+        let plan = ai.assess(&game, 0);
+        ai.claim_capped_aqueduct(&mut game, 0, &plan);
+        assert_eq!(head(&game, city), Some(recovery.clone()));
+        game.players[0].gold = gold;
+        game.players[0].gold_per_turn = income;
+        assert!(!ai.capped_aqueduct_holds(&game, 0, city, &plan, &recovery));
+        ai.claim_campus_building(&mut game, 0, &plan);
+        assert_eq!(
+            head(&game, city),
+            Some(building("library")),
+            "{gold}/{income}"
+        );
+    }
+}

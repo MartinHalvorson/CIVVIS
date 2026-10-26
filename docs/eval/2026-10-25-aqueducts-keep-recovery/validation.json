@@ -1,0 +1,154 @@
+{
+  "recorded_utc": "2026-10-26T01:07:15.749227+00:00",
+  "quality_log": "rust-quality: checking src/ai/advanced/aqueduct_claims_the_capped_queue/tests.rs, src/ai/advanced/aqueduct_claims_the_capped_queue.rs, src/ai/advanced.rs\nrust-quality: the changed lines are formatted and warning-free\n",
+  "check_log": "    Checking civvis v0.6.0 (/Users/martbot-mbp-m5-max-128/civvis-aqueducts-keep-recovery-68bc)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 11.93s\n",
+  "focused_regressions": "14 passed, 0 failed on module/tests identical to these integrated bytes; exact RED/GREEN test/hash/logs in regression-history archive. Full hosted suite remains authoritative for final integration.",
+  "archive_verifier": "Complete payload, ordered-read, regression, quote and cohort verifier exits0 after merge; no comparison expectation weakened.",
+  "scope": "Only private reservation state, AQ module, focused tests and evidence; no gene/default/native setup changes. Native passive observer prepared, not launched.",
+  "prior_integration": {
+    "controller_pid": 79438,
+    "started_utc": "2026-10-26T00:47:28.026035+00:00",
+    "head": "d3190b6b6a4d6f15cbd0336a852196e606a3f729",
+    "base": "45eb06d2bea6bde2462e092aac6d0ed778a2c367",
+    "steps": [
+      {
+        "step": "quality",
+        "exit_code": 0
+      },
+      {
+        "step": "check",
+        "exit_code": 0
+      }
+    ],
+    "current_step": "check",
+    "child_pid": 87654,
+    "exit_code": 0,
+    "finished_utc": "2026-10-26T00:50:51.203575+00:00"
+  },
+  "prior_validated_source_sha256": {
+    "src/ai/advanced.rs": "8d8eda3e96821a9823f3c2b21e6d10e1701fc9e62b6f1999df69c683c0637385",
+    "src/ai/advanced/aqueduct_claims_the_capped_queue.rs": "bf1e35487bf3e495088c958f527d18baae7f2ecbdfea21b697b29eaf10764320",
+    "src/ai/advanced/aqueduct_claims_the_capped_queue/tests.rs": "0cb42501dea05c539905fe39944142cf218f61bd83e4d791e9f2a0136f0f2995"
+  },
+  "integration": {
+    "controller_pid": 19089,
+    "started_utc": "2026-10-26T01:01:41.214211+00:00",
+    "head": "5098702750275d901346c944af94a5f132bd2e65",
+    "base": "45eb06d2bea6bde2462e092aac6d0ed778a2c367",
+    "source_sha256": {
+      "src/ai/advanced.rs": "a94ba7d355488bf59538805b0fcfdbabe069458762913f05bd03f3bda5790cd9",
+      "src/ai/advanced/aqueduct_claims_the_capped_queue.rs": "34e7e9bb35080f9acf3d52a2fbfa6eaece077a622ebeaf01e6d1fbcf11e32a87",
+      "src/ai/advanced/aqueduct_claims_the_capped_queue/tests.rs": "0cb42501dea05c539905fe39944142cf218f61bd83e4d791e9f2a0136f0f2995"
+    },
+    "steps": [
+      {
+        "step": "green",
+        "command": [
+          "cargo",
+          "test",
+          "--lib",
+          "--locked",
+          "aqueduct_claims_the_capped_queue::tests",
+          "--",
+          "--nocapture"
+        ],
+        "cwd": "/Users/martbot-mbp-m5-max-128/civvis-aqueducts-keep-recovery-68bc",
+        "exit_code": 0,
+        "finished_utc": "2026-10-26T01:02:04.825586+00:00"
+      },
+      {
+        "step": "quality",
+        "command": [
+          "python3",
+          "tools/rust_quality.py",
+          "--base",
+          "45eb06d2bea6bde2462e092aac6d0ed778a2c367",
+          "--head",
+          "5098702750275d901346c944af94a5f132bd2e65"
+        ],
+        "cwd": "/Users/martbot-mbp-m5-max-128/civvis-aqueducts-keep-recovery-68bc",
+        "exit_code": 0,
+        "finished_utc": "2026-10-26T01:02:41.930047+00:00"
+      },
+      {
+        "step": "check",
+        "command": [
+          "cargo",
+          "check",
+          "--locked"
+        ],
+        "cwd": "/Users/martbot-mbp-m5-max-128/civvis-aqueducts-keep-recovery-68bc",
+        "exit_code": 0,
+        "finished_utc": "2026-10-26T01:02:53.937235+00:00"
+      },
+      {
+        "step": "historical-build",
+        "command": [
+          "cargo",
+          "build",
+          "--locked",
+          "--bin",
+          "civvis_orders"
+        ],
+        "cwd": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-25/aqueducts-keep-recovery/historical-source",
+        "exit_code": 0,
+        "finished_utc": "2026-10-26T01:03:54.517593+00:00"
+      },
+      {
+        "step": "comparison",
+        "command": [
+          "python3",
+          "-u",
+          "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-25/aqueducts-keep-recovery/first-change.py",
+          "--harness",
+          "/Users/martbot-mbp-m5-max-128/civvis-main-managed/docs/eval/2026-10-25-native-income-callers/constant-read-control.py",
+          "--context",
+          "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-25/native-income-caller-replay/reconstructed-context-v2.json",
+          "--qualification",
+          "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-25/native-income-caller-replay/original-control-t100/qualification.json",
+          "--decisions",
+          "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261025T174828Z/decisions.jsonl",
+          "--binary",
+          "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-25/aqueducts-keep-recovery/historical-candidate-v4-binary/civvis_orders",
+          "--registration",
+          "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-25/aqueducts-keep-recovery/first-change-v4-registration.json",
+          "--out",
+          "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-25/aqueducts-keep-recovery/first-change-v4"
+        ],
+        "cwd": "/Users/martbot-mbp-m5-max-128/civvis-aqueducts-keep-recovery-68bc",
+        "exit_code": 0,
+        "finished_utc": "2026-10-26T01:05:17.809550+00:00"
+      }
+    ],
+    "current_step": "comparison",
+    "command": [
+      "python3",
+      "-u",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-25/aqueducts-keep-recovery/first-change.py",
+      "--harness",
+      "/Users/martbot-mbp-m5-max-128/civvis-main-managed/docs/eval/2026-10-25-native-income-callers/constant-read-control.py",
+      "--context",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-25/native-income-caller-replay/reconstructed-context-v2.json",
+      "--qualification",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-25/native-income-caller-replay/original-control-t100/qualification.json",
+      "--decisions",
+      "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261025T174828Z/decisions.jsonl",
+      "--binary",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-25/aqueducts-keep-recovery/historical-candidate-v4-binary/civvis_orders",
+      "--registration",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-25/aqueducts-keep-recovery/first-change-v4-registration.json",
+      "--out",
+      "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-25/aqueducts-keep-recovery/first-change-v4"
+    ],
+    "child_pid": 25649,
+    "binary_sha256": "6abbe8635df7176fe024ec2d5fef1605f1acb6b483aa41ca46c02c85f542b8e3",
+    "exit_code": 0,
+    "finished_utc": "2026-10-26T01:05:17.811716+00:00"
+  },
+  "validated_source_sha256": {
+    "src/ai/advanced.rs": "a94ba7d355488bf59538805b0fcfdbabe069458762913f05bd03f3bda5790cd9",
+    "src/ai/advanced/aqueduct_claims_the_capped_queue.rs": "34e7e9bb35080f9acf3d52a2fbfa6eaece077a622ebeaf01e6d1fbcf11e32a87",
+    "src/ai/advanced/aqueduct_claims_the_capped_queue/tests.rs": "0cb42501dea05c539905fe39944142cf218f61bd83e4d791e9f2a0136f0f2995"
+  },
+  "append_point_controls": "All14 targeted repository controls passed after the private state identifier rename. Original hosted2-failure and first shorter-name line-wrap rejection retained in final-state-name.json.gz."
+}
