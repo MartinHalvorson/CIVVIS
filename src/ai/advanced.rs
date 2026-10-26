@@ -8734,6 +8734,9 @@ pub struct AdvancedAi {
     /// Keep one spare idle spy at a capital reached by the Bomber wing.
     /// See `advanced/wing_capital_spotting.rs`.
     wing_capital_spotting: bool,
+    /// One default-off preparation chain for a blocked Bomber wing.
+    forward_airfield_project: bool,
+    forward_airfield_project_state: Option<forward_airfield_project::FieldProject>,
     /// `the-giant-gets-the-peace-offer`: a major at
     /// `giant_peace::GIANT_PEACE_RATIO` times our power that has taken a city
     /// of ours is offered peace. See `advanced/giant_peace.rs`. Off by default.
@@ -9974,6 +9977,7 @@ mod capital_watch_slinger;
 pub mod commitments;
 mod competitive_economy;
 mod envoys_open_the_siege_road;
+mod forward_airfield_project;
 mod frontier_walls_before_the_surprise;
 /// The alliance an Emperor handicap cannot deny us: the stock alliance desk
 /// asks for a Research Alliance, ranked by science, and feeds its level with
@@ -11357,6 +11361,8 @@ impl AdvancedAi {
             // ---- append: t-z ----------------------------------------
             the_last_two_capitals_come_first: false,
             wing_capital_spotting: false,
+            forward_airfield_project: false,
+            forward_airfield_project_state: None,
             the_giant_gets_the_peace_offer: false,
             war_faith_buys_the_army: false,
             threatened_city_buys_its_defender_2: false,
@@ -32553,7 +32559,8 @@ impl AdvancedAi {
                     || self.producer_zone_claim_holds(g, pid, cid, plan, item)
                     // `industrial-zone-claims-the-factory`: the claimed Factory
                     // or Coal Power Plant finishes.
-                    || self.factory_claim_holds(g, pid, cid, plan, item))
+                    || self.factory_claim_holds(g, pid, cid, plan, item)
+                    || self.forward_airfield_project_holds(g, pid, cid, plan, item))
                     && Self::production_commitment_is_legal(g, pid, cid, item)
             });
             // `commercial-hub-in-the-strategic-queue`: a queued Commercial Hub
@@ -47607,7 +47614,9 @@ impl AdvancedAi {
             let acted = match kind.as_str() {
                 "settler" => self.advanced_settler_step(g, pid, uid),
                 "builder" => self.advanced_builder_step(g, pid, uid, plan.strategy),
-                "military_engineer" => self.base.military_engineer_step(g, pid, uid),
+                "military_engineer" => self
+                    .forward_airfield_engineer_step(g, pid, uid, plan)
+                    .unwrap_or_else(|| self.base.military_engineer_step(g, pid, uid)),
                 "naturalist" => self.base.naturalist_step(g, pid, uid),
                 "archaeologist" => self.base.archaeologist_step(g, pid, uid),
                 "trader" => self.advanced_trader_step(g, pid, uid, plan.strategy),
@@ -49537,6 +49546,7 @@ impl AdvancedAi {
             // claims only one idle, safe queue after all higher-priority
             // strategic reservations, before generic production buries the
             // reconnaissance gap under another building or wonder.
+            self.claim_forward_airfield_project(g, pid, &plan);
             self.reserve_idle_naval_recon(g, pid, &plan);
             // And the land eye, which the settler veto reads: the loyalty
             // forecast's unexplored-ground clause held four settlers idle for
