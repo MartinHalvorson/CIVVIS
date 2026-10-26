@@ -23,6 +23,13 @@ No missing placement is counted as a proved out-of-range plot.
 The implementation now passes compiler checking with seventeen regression
 cases. It includes a legal queued-base guard, all offered support stages,
 finite-attempt preservation, eliminated-founder classification and ordinary
-Engineer movement/building refusals. The behavior tests and the fixed
-changed-proposal/whole-game comparisons remain pending. No default or runtime
+Engineer movement/building refusals. All seventeen behavior tests pass on the frozen candidate after the genuine
+four-case inactive RED. The fixed changed-proposal and whole-game comparisons
+remain pending. No default or runtime
 setting is changed.
+
+The append guard caught the private flag and state under the wrong alphabetical
+marker (four reported locations across declarations and initialization). Both
+are now filed under e–f; prior positional gene rows retain their order. The
+initial failing guard output remains retained; all fourteen guards pass after
+filing the entries correctly.

@@ -6996,6 +6996,9 @@ pub struct AdvancedAi {
     /// most `faith_war_before_the_flip::FAITH_WAR_EDGE` of our power. Off by
     /// default.
     faith_war_needs_the_edge: bool,
+    /// One default-off preparation chain for a blocked Bomber wing.
+    forward_airfield_project: bool,
+    forward_airfield_project_state: Option<forward_airfield_project::FieldProject>,
     // ---- append: g-k ------------------------------------------------
     /// `gold-buys-the-idle-trader`: an empty trade route slot's Trader,
     /// bought with the idle bank at peace. See
@@ -8734,9 +8737,6 @@ pub struct AdvancedAi {
     /// Keep one spare idle spy at a capital reached by the Bomber wing.
     /// See `advanced/wing_capital_spotting.rs`.
     wing_capital_spotting: bool,
-    /// One default-off preparation chain for a blocked Bomber wing.
-    forward_airfield_project: bool,
-    forward_airfield_project_state: Option<forward_airfield_project::FieldProject>,
     /// `the-giant-gets-the-peace-offer`: a major at
     /// `giant_peace::GIANT_PEACE_RATIO` times our power that has taken a city
     /// of ours is offered peace. See `advanced/giant_peace.rs`. Off by default.
@@ -11080,6 +11080,8 @@ impl AdvancedAi {
             front_weighted_floor_2: false,
             engineering_for_capped_fresh_water: false,
             faith_war_needs_the_edge: false,
+            forward_airfield_project: false,
+            forward_airfield_project_state: None,
             // ---- append: g-k ----------------------------------------
             gold_buys_the_idle_trader: false,
             holdout_keeps_the_faith_war: false,
@@ -11361,8 +11363,6 @@ impl AdvancedAi {
             // ---- append: t-z ----------------------------------------
             the_last_two_capitals_come_first: false,
             wing_capital_spotting: false,
-            forward_airfield_project: false,
-            forward_airfield_project_state: None,
             the_giant_gets_the_peace_offer: false,
             war_faith_buys_the_army: false,
             threatened_city_buys_its_defender_2: false,
@@ -49542,11 +49542,13 @@ impl AdvancedAi {
             self.reserve_government_plaza(g, pid, &plan);
             self.reserve_higher_level_investment(g, pid, &plan);
             self.reserve_idle_entertainment_path_for_widespread_crisis(g, pid, &plan);
+            // One bounded forward-field project takes an idle queue only
+            // after the emergency, victory and economy reservations above.
+            self.claim_forward_airfield_project(g, pid, &plan);
             // A fighting Galley cannot also be the empire's sole eye. This
             // claims only one idle, safe queue after all higher-priority
             // strategic reservations, before generic production buries the
             // reconnaissance gap under another building or wonder.
-            self.claim_forward_airfield_project(g, pid, &plan);
             self.reserve_idle_naval_recon(g, pid, &plan);
             // And the land eye, which the settler veto reads: the loyalty
             // forecast's unexplored-ground clause held four settlers idle for
