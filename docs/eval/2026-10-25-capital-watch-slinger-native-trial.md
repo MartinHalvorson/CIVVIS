@@ -202,3 +202,58 @@ SHA-256 `c14cbf5bfd94351028e6677af6547832f8137db61264ac24b32d973962ebf54c`.
 The query/control packet retains 26 verified members in 64,180
 bytes, SHA-256 `64ff95208785baeb56868dc0e267ad44a34680b6024950404f5759708f93f133`, including failed controls and
 all exact input copies. The cohort continues under its original cutoff.
+
+
+## Interim collection 07: twelve retained stems
+
+This dated collection retains twelve assigned stems (seven ON, five OFF),
+including start 11's exited attempt and its continuation. Eleven stems have
+host losses; start 12 ended at turn 88 with `operator_retired` and no host
+victory outcome. It remains unresolved rather than being replaced or called
+a completed loss. Start 9 is an OFF Diplomatic loss at turn 239; start 10 an
+ON Science loss at 218; start 11's OFF continuation a Culture loss at 198.
+No win is observed. The original sixteen-start observer continues unchanged.
+
+Across these attempts there are 156 general upgrade requests: 155 unique
+exact Native successors and one unresolved request in retired start 12.
+The five newly archived attempts contribute 26, 10, 0, 9 and 4 requests;
+start 12 has three exact successors and one with no exact successor.
+None of starts 9–12 has an observed candidate journal entry. Only the
+previously joined start-8 execution is attributed to this candidate.
+
+The candidate-excluded genome changes at start 9: the newly shipped
+`launcher-war-skips-the-reserve` is now forced on. Its normalized hash is
+`28efbe1248684c36c816edf208332ca4c8081a617323e48c148b1491a55b2b07`, versus
+`ad3cd7df0a41615dd6ef59383b8f95133a6e539f80b907455a27cfb7f827edc0` in starts 1–8.
+Start 9 reports source `cd06a0a3912f3b40e011c2eb1119a8700f3d22f9`; starts
+10–12 report documentation descendant `0a5e6ae0ce0524bbb0e1be52bea0312c98d835f0`.
+Those receipts identify actual adapter SHA-256
+`ce132b317cf1acaba786372445a14e0eb23cd9de9787b9a2bc8bae50f00d5c85`.
+The source also includes the independently shipped aqueduct Recovery change.
+These source/profile groups are retained separately; this mixed cohort does
+not provide a controlled estimate of Slinger policy strength. Historical
+loaded Lua remains unattested.
+
+The continuation-aware packer preserves the exited base attempt and its
+continuation in separate raw archives under the same assigned stem. Every
+archive retains all non-image files and verifies every member after writing.
+
+Raw cohort 09: 15 members, 3,607,108 bytes,
+SHA-256 `6d2f51f7b799d2dc90b54113352999f529e39e96bd148aa02d55915c1dbb72f4`.
+
+Raw cohort 10: 15 members, 1,603,696 bytes,
+SHA-256 `cf75e34786cd7d112b54152c6da2e7f1095e6c408b3cbbe4bd4a61e8e5964637`.
+
+Raw cohort 11: 17 members, 839,848 bytes,
+SHA-256 `8830a65e0cafe1e8b217c9851b9046d55df8ad7494552bc65aafcabd526ce8b6`.
+
+Raw cohort 11-cont1: 16 members, 1,341,364 bytes,
+SHA-256 `3a379b7b1281e30051caa925bcb6dd34d8b9b69c84a1dfd4e9a2ebbf71721d6f`.
+
+Raw cohort 12: 18 members, 586,836 bytes,
+SHA-256 `5ad29b052db39454ee911a5100f37286a91074a4466f559f520af5be37ec0c8f`.
+
+Checkpoint 07: 23 members, 6,549,468 bytes,
+SHA-256 `05ba9b085fa2a192c5321ac9e76f4e7bd2b3662122cfac91fbb086babb0a2a50`. It includes the actual adapter and provenance,
+all five upgrade audits, collection and individually read observer files.
+This live checkpoint is non-atomic. Earlier packets and negative results remain retained.
