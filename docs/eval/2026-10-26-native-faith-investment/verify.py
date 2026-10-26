@@ -89,6 +89,8 @@ assert [(c['turn'], c['frame']) for c in confirmed] == [(60, 0), (73, 0), (81, 0
 for case in confirmed:
     e = case['admission']
     source = case['safe_completed_sources'][0]
+    original = next(q for q in native if (q['decision']['turn'], q['decision']['frame']) == (case['turn'], case['frame']))
+    assert original['decision']['city_ids']['131073'] == source['city']
     assert source['city'] not in e['eligible'] and not source['free_for_production']
     assert not e['one_sanctuary'] and source['missionary_faith_quote'] == 70
     native_case = next(c for c in context['cases'] if (c['turn'], c['frame']) == (case['turn'], case['frame']))
