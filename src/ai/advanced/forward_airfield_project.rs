@@ -529,7 +529,9 @@ impl AdvancedAi {
             };
             let built = g.apply(pid, &action).is_ok();
             if built {
-                self.forward_airfield_project_state = None;
+                // Keep the original receipt: a fresh Native board may still
+                // reject this modeled build. An observed base releases the
+                // reservation through forward_field_wing without a new clock.
                 think!(self.journal(), Military, Decision, "The Engineer lays the forward field";
                     "forward-airfield-project: ordinary legal Airstrip action at {:?}; slots, rebases and later attacks retain their own permissions", current);
             }
