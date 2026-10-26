@@ -125,7 +125,7 @@ def allocation_bounds(city, pid, turn, plots, width):
             continue
         target = yield_quote(p.get('yl'))
         if target is None:
-            result['unknowns'].append({'plot': pos, 'reason': 'missing_native_yield_quote'})
+            result['unknowns'].append({'plot': list(pos), 'reason': 'missing_native_yield_quote'})
             continue
         result['eligible_unworked'] += 1
         for old in workers:

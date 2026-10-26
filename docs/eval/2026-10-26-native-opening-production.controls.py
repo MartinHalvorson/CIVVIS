@@ -1,5 +1,6 @@
 """Semantic controls for the retrospective census's conservative data boundaries."""
 import importlib.util
+import json
 import pathlib
 import unittest
 
@@ -77,6 +78,28 @@ class Controls(unittest.TestCase):
         self.assertEqual(len(alternatives), 3)
         self.assertEqual(census.select_primary(attempts, 50)[0][2], 'continued')
         self.assertIsNone(census.select_primary(attempts, 30)[0])
+
+    def test_unknown_annotations_survive_exact_artifact_readback(self):
+        plots, width = census.explicit_plots([self.plot(yl=None)], 20)
+        row = census.allocation_bounds(self.city(), 0, 20, plots, width)
+        self.assertEqual(json.loads(json.dumps(row)), row)
+
+    def test_summary_withholds_conflicting_allocation_views(self):
+        path = pathlib.Path(__file__).with_name('2026-10-26-native-opening-production.summarize.py')
+        spec = importlib.util.spec_from_file_location('summary', path)
+        summary = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(summary)
+        variants = [{'cities': [{}], 'decomposition': {'known': False}, 'descriptor': {},
+                     'sha256': str(i), 'explicit_current_plot_count': i,
+                     'allocation_bounds': [{'eligible_unworked': i, 'pareto': [1] * i,
+                         'food_floor_tradeoffs': [], 'maximum_one_worker_pareto_production_delta': 99 * i}]}
+                    for i in (0, 1)]
+        result = summary.summarize({'selection': {'primary_turns': [40]},
+            'cases': [{'stem': 'fixed', 'turn': 40, 'complete': True, 'state_variants_equal': True,
+                       'standing': {'known': False}, 'variants': variants}], 'retirement_probes': []})
+        self.assertEqual(result['turns'][0]['allocation_city_samples'], 0)
+        self.assertEqual(result['turns'][0]['ambiguous_allocation_city_samples'], 1)
+        self.assertEqual(len(result['ambiguous_allocation_cases']), 1)
 
 
 if __name__ == '__main__':
