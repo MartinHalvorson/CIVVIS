@@ -1,0 +1,63 @@
+{
+  "assigned": 48,
+  "attempts": 48,
+  "candidate_on": 26,
+  "candidate_off": 22,
+  "operator_unknown": 43,
+  "host_outcome_attempts": 5,
+  "wins": 0,
+  "seat_fields": {
+    "difficulty": {
+      "DIFFICULTY_IMMORTAL": 48
+    },
+    "civ": {
+      "CIVILIZATION_GRAN_COLOMBIA": 48
+    },
+    "leader": {
+      "LEADER_SIMON_BOLIVAR": 48
+    },
+    "speed": {
+      "GAMESPEED_ONLINE": 48
+    },
+    "map": {
+      "Pangaea.lua": 48
+    },
+    "size": {
+      "MAPSIZE_TINY": 48
+    },
+    "players": {
+      "4": 48
+    },
+    "local_player": {
+      "0": 48
+    }
+  },
+  "new_raw_attempts": [
+    "civvis-20261026T090324Z",
+    "civvis-20261026T091241Z",
+    "civvis-20261026T091623Z",
+    "civvis-20261026T091923Z",
+    "civvis-20261026T092206Z",
+    "civvis-20261026T092519Z",
+    "civvis-20261026T092814Z",
+    "civvis-20261026T093321Z",
+    "civvis-20261026T093623Z",
+    "civvis-20261026T093909Z",
+    "civvis-20261026T095758Z",
+    "civvis-20261026T100057Z",
+    "civvis-20261026T100525Z",
+    "civvis-20261026T100802Z",
+    "civvis-20261026T102016Z",
+    "civvis-20261026T102304Z",
+    "civvis-20261026T102605Z",
+    "civvis-20261026T102925Z"
+  ],
+  "updated_old_raw_attempts": [],
+  "binary_counts": {
+    "85d5a904f8df01055d13775e5285fe41737a7a02d96abe61dfe3105ab0f53a09": 31,
+    "c8ccb291a976b42ae843a9dd7de25d7a96d07564a2a87dee194e7890a95fe8ab": 17
+  },
+  "capitals_complete": true,
+  "unknown_founders": 0,
+  "home_capital_loss_markers": 2
+}
