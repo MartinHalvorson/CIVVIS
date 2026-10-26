@@ -15306,13 +15306,15 @@ impl BasicAi {
         } else {
             8
         };
-        let mut frontier: Vec<(Pos, i32)> = g
+        // The first visit fixes the distance used by the step cutoff.
+        // Process every city together so that distance is the shortest route.
+        let mut frontier: VecDeque<(Pos, i32)> = g
             .player_city_ids(pid)
             .into_iter()
             .map(|city| (g.cities[&city].pos, 0))
             .collect();
         let mut seen: HashSet<Pos> = frontier.iter().map(|(position, _)| *position).collect();
-        while let Some((position, steps)) = frontier.pop() {
+        while let Some((position, steps)) = frontier.pop_front() {
             if self.valid_settle_site(g, pid, position) {
                 return true;
             }
@@ -15335,7 +15337,7 @@ impl BasicAi {
                     continue;
                 }
                 seen.insert(next);
-                frontier.push((next, steps + 1));
+                frontier.push_back((next, steps + 1));
             }
         }
         false
