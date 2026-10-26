@@ -8315,6 +8315,17 @@ impl AdvancedAi {
         self.nuclear_goal_needs_a_launcher = false;
     }
 
+    /// Measure the default-off forward airfield preparation project.
+    pub fn enable_forward_airfield_project(&mut self) {
+        self.forward_airfield_project = true;
+    }
+
+    /// Withhold the project and release its private reservation.
+    pub fn disable_forward_airfield_project(&mut self) {
+        self.forward_airfield_project = false;
+        self.forward_airfield_project_state = None;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

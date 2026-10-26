@@ -4174,6 +4174,7 @@ pub const GENES: &[Gene] = &[
     // Production on nuclear projects. Arm it on the live seat only. See
     // `advanced/nuclear_launcher.rs`.
     Gene { tag: "nuclear-goal-needs-a-launcher", field: "nuclear_goal_needs_a_launcher", kind: Kind::OptIn, enable: AdvancedAi::enable_nuclear_goal_needs_a_launcher, disable: AdvancedAi::disable_nuclear_goal_needs_a_launcher },
+    Gene { tag: "forward-airfield-project", field: "forward_airfield_project", kind: Kind::OptIn, enable: AdvancedAi::enable_forward_airfield_project, disable: AdvancedAi::disable_forward_airfield_project },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
