@@ -388,8 +388,10 @@ impl AdvancedAi {
         // See `founder_wants_a_second_source`: under the gene a founder stops
         // at two sources, not at the first.
         let second_source = founded.is_some() && self.founder_wants_a_second_source(g, pid);
+        // Keep the original stop for an unconverted fallback sanctuary too:
+        // its completed Shrine waits for a safe faith rather than another site.
         if !second_source
-            && source_cities.iter().any(|cid| {
+            && eligible.iter().chain(source_cities.iter()).any(|cid| {
                 g.cities[cid]
                     .buildings
                     .iter()

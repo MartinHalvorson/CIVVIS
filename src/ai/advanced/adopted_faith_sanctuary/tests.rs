@@ -192,6 +192,34 @@ fn founder_keeps_its_second_source_despite_a_held_first_source() {
 }
 
 #[test]
+fn waiting_unconverted_shrine_keeps_the_existing_source_stop() {
+    let (mut g, mut ai, _, source, replacement, _) = held_counterfaith_source("campus");
+    for cid in [source, replacement] {
+        let city = g.cities.get_mut(&cid).unwrap();
+        city.pressure.clear();
+        city.atheist_pressure = 1000.0;
+    }
+    g.cities.get_mut(&source).unwrap().queue.clear();
+    g.cities.get_mut(&source).unwrap().production = 0.0;
+    let converted = g.found_city_for(3, (22, 19), None);
+    let city = g.cities.get_mut(&converted).unwrap();
+    city.pop = 4;
+    city.atheist_pressure = 0.0;
+    city.pressure.clear();
+    city.pressure.insert("Buddhism".into(), 1000.0);
+    ai.enable_counterweight_from_the_first_convert();
+    assert!(g.civ_follows_religion(3, "Buddhism"));
+    assert!(ai.first_convert_sanctuary_fallback(&g, 0));
+    assert_eq!(g.city_religion(&g.cities[&source]), None);
+    assert!(!ai.sanctuary_queue_held(&g, 0, source));
+    assert!(g.cities[&source].buildings.contains(&crate::name!("shrine")));
+    assert!(g.producible_items(0, replacement).iter().any(|item| {
+        matches!(item, Item::District { district, .. } if district == "holy_site")
+    }));
+    assert!(ai.adopted_faith_sanctuary_choice(&g, 0, None).is_none());
+}
+
+#[test]
 fn minority_counterfaith_in_first_city_is_not_the_invasion() {
     let (g, ai, _, _) = fixture();
     assert_eq!(

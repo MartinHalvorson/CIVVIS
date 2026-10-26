@@ -33,3 +33,20 @@ complete changed payloads must agree and every read must match, including that
 request. The exact candidate module alone is backported to original45eb with
 the previously qualified two root-log files; other current mechanics/priorities
 are not backported. A fixed-history answer is not native execution or a win.
+
+Fallback preservation
+
+The first repair passed28 tests, quality and its strict153-prefix/60-withdrawal
+comparison, but review identified a missing preservation case: the original
+fallback can wait at an unconverted completed Shrine for a safe faith. A new
+genuine regression passes all28 existing cases and fails exactly that waiting-
+source assertion on v1. The corrected source keeps the original eligible-list
+stop, then also checks the safe source list that includes protected queues.
+No original fallback stop is removed.
+
+All29 identical fallback-RED tests pass on v2, together with4 first-convert,
+6 founder and7 Shrine tests. Its new test already matches rustfmt. Complete
+logs, source, both test stages and the initial positive replay are retained in
+fallback-preservation.json.gz. A fresh comparison on the exact final v2 source
+is running with the same153-prior/60-withdrawal requirements. Final-head
+changed-line quality and required CI still apply. No native gain is claimed.
