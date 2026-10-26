@@ -257,3 +257,29 @@ Checkpoint 07: 23 members, 6,549,468 bytes,
 SHA-256 `05ba9b085fa2a192c5321ac9e76f4e7bd2b3662122cfac91fbb086babb0a2a50`. It includes the actual adapter and provenance,
 all five upgrade audits, collection and individually read observer files.
 This live checkpoint is non-atomic. Earlier packets and negative results remain retained.
+
+
+## Interim collection 08: retain the second retirement
+
+The next dated collection retains fourteen assigned stems. Start 13 (024315Z)
+is OFF and stops at turn 197 with `operator_retired`, without a host outcome.
+It is the second such unresolved stem; neither retirement is replaced or
+counted as an awarded loss. Start 14 remains incomplete in this snapshot.
+The original observer still owns the same sixteen-start cutoff.
+
+Start 13 has 21 general upgrade requests: nineteen exact Native successors,
+one same-ID transition unresolved and one missing Native quote. It has no
+observed candidate journal entry. Across the first thirteen stems there are
+177 general requests, 174 exact successors and three unresolved requests.
+These general upgrades are not attributed to the candidate. The single
+previously joined start-8 execution remains the observed activation witness.
+The source/profile group remains the Launcher-enabled baseline described
+above. No strength or promotion verdict follows.
+
+Raw cohort 13 retains all 19 non-image files, 2,259,328 bytes,
+SHA-256 `b66f2ecc4354e23b82549448580e9b2a265c811934cfe0638089f35b818bb03f`.
+
+Checkpoint 08 retains 11 byte-verified members, 560,504 bytes,
+SHA-256 `5a6e79a991a5311dd413bf86cd9cae9e5197c58d6b9aa74a758f6b11c23c219f`. It preserves the full upgrade audit, individually
+read collection/observer files and hash-verified references to the already
+archived actual adapter. Earlier packets and all failures remain retained.
