@@ -1,8 +1,11 @@
 {
-  "source_sha256": "d191112c6c924a80f14c8894fe87b6ed55859867717446cbf1df1d3365960137",
+  "source_sha256": "988297418fafb98e0b662c832abad90756c0bba4682bdb88344c6b87ca584b9f",
   "initial_red_green_tests_sha256": "0208b3cd1e982f1599290d90dada39002a438f5553d9426a8a7129fdd990c066",
   "formatted_tests_sha256": "774fe79125446890208c8fe1c6d8599cf21bfda5d75ddce41ec8bbab4c9b951f",
   "regressions_sha256": "f0ea00536a2c4341f2b43c1d6c429a7cf5151d1cd70ee4f47e39219eb97e4693",
   "native_diagnosis": "PR4163 merged0a5e6ae0ce0524bbb0e1be52bea0312c98d835f0, exact45ebrun001624; six264payload/read controls plus417/554 fulltracepairs.",
-  "status": "Source passes41 focused checks on originalREDtestbytes; final formattedtest rerun, changed-line quality and strict historicalfirstchange pending. No native strengthgain claimed."
+  "status": "V2 passes46 focused tests:29 on identical fallback-RED bytes plus4firstconvert/6founder/7Shrine. Final assertion-only line wrap token-identical; final exact-byte rerun,quality and strict153-prefix/60 comparison pending.",
+  "fallback_red_green_tests_sha256": "64a8a38adfdd1325216a602c9d81ea0c902905eb148683e8972b0e083b337015",
+  "final_tests_sha256": "1e6a00616d0a3292be46b1b81d452b6b6ffbeadff059567cfb32f1820f3fe59f",
+  "fallback_preservation_sha256": "c26920a1a1fd7cc171c1a8b2699f8ec3ff76739cdbf33a4ee47abb165564d3f2"
 }

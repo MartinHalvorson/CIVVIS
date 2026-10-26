@@ -212,7 +212,9 @@ fn waiting_unconverted_shrine_keeps_the_existing_source_stop() {
     assert!(ai.first_convert_sanctuary_fallback(&g, 0));
     assert_eq!(g.city_religion(&g.cities[&source]), None);
     assert!(!ai.sanctuary_queue_held(&g, 0, source));
-    assert!(g.cities[&source].buildings.contains(&crate::name!("shrine")));
+    assert!(g.cities[&source]
+        .buildings
+        .contains(&crate::name!("shrine")));
     assert!(g.producible_items(0, replacement).iter().any(|item| {
         matches!(item, Item::District { district, .. } if district == "holy_site")
     }));
