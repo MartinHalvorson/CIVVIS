@@ -118,3 +118,23 @@ Checkpoint 03 retains 15 byte-verified members, 5,932,088 bytes,
 SHA-256 `33d77fca04897025935a51efa2833bebe54166934e3d685d10adc5191c8fb323`, including the dated non-atomic collection,
 observer state/log, both new upgrade audits and the actual delivered adapter.
 The remaining starts continue under the original sixteen-start cutoff.
+
+## Interim collection 03
+
+Six starts are assigned in this dated non-atomic collection: three ON, then
+three OFF. The first five have terminal outcomes. The two newly completed OFF
+attempts are a Religious loss at turn 174 and elimination at turn 151. Their
+eighteen and six general upgrade requests all have unique exact successors.
+Across the five terminal attempts that is 65 verified general upgrades, with
+zero observed candidate journal entries. The sixth OFF game remains incomplete
+in this snapshot. No endpoint, arm or failed start has been replaced.
+
+Raw cohort 04: 15 byte-verified non-image members, 1,500,816 bytes,
+SHA-256 `2d796345433c7e44639053831f82abc5118b99e8c1bc33af16ff8d649685b48f`.
+
+Raw cohort 05: 15 byte-verified non-image members, 818,348 bytes,
+SHA-256 `6d89f89d1bbbfc50b4ae1d4f21bc3ac42029eb5038f8c20daa7d084469defea3`.
+
+Checkpoint 04: 11 byte-verified members, 541,812 bytes,
+SHA-256 `1b4cf47e471b661e63bd73377611e72af4d0760e8af6c70bd852eaf1e2fc0762`. Earlier snapshots and every audit
+remain retained; the original observer and exclusive cutoff are unchanged.
