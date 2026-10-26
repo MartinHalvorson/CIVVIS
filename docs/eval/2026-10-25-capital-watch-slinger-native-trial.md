@@ -138,3 +138,33 @@ SHA-256 `6d89f89d1bbbfc50b4ae1d4f21bc3ac42029eb5038f8c20daa7d084469defea3`.
 Checkpoint 04: 11 byte-verified members, 541,812 bytes,
 SHA-256 `1b4cf47e471b661e63bd73377611e72af4d0760e8af6c70bd852eaf1e2fc0762`. Earlier snapshots and every audit
 remain retained; the original observer and exclusive cutoff are unchanged.
+
+## Interim collection 05
+
+The next retained collection has eight assigned starts: seven terminal losses
+and an eighth still running at file-read time. Start 6 is OFF and loses to
+Science at turn 203; start 7 is ON and loses to Diplomacy at turn 218. Their
+14 and 22 general upgrade requests all have unique exact successors, giving
+101 verified general upgrades across seven terminal attempts. Those seven
+have no observed candidate journal entry. The still-running eighth ON attempt
+(013313Z) has one candidate-specific journal line at turn 24 and an issued
+upgrade request for unit 262146 at frame 1. Its Native successor is not yet
+verified in this checkpoint. Earlier collections and unfavorable outcomes
+remain intact.
+
+Start 7 uses actual delivered source `2aad0236c1796b51be94e4c5308ecc0abf0eed84`,
+a documentation successor to `45eb06d`. The candidate-excluded played profile
+hash remains unchanged in the collected starts. Checkpoint 05 retains both
+actual adapter identities/provenance, the exact collection, audits and observer
+state/log. Loaded historical Lua identity remains unattested.
+
+Raw cohort 06: 16 byte-verified non-image files, 2,118,832 bytes,
+SHA-256 `044a1a60464500cf2cf55c003e3f81f9d9dd37773ecdac3ba2ce418baba44b24`.
+
+Raw cohort 07: 15 byte-verified non-image files, 2,414,232 bytes,
+SHA-256 `0b22ca8d17efcb521c7632ba4004b0d9a95582568741cf7a792086a044ddcad6`.
+
+Checkpoint 05: 14 byte-verified members, 6,198,416 bytes,
+SHA-256 `d5e0164b61235324d6c46bb94429ec90e5f7419aba9471c5a13f9c47ee00034f`. The packet preserves individual file-read
+times and is not an atomic cross-file snapshot. The sixteen-start cutoff and
+lease identity remain unchanged; no default promotion or strength verdict.
