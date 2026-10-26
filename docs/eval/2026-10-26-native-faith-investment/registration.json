@@ -14,7 +14,9 @@
     "original-control-qualified.json": "9d11f2272c2cdb7f4785eca72e2b64aedfefaeb2919f1735c1d199334ca1108c",
     "assemble-source.py": "259cb4d89f7ca75600445277330c759b53a36a377a4bfac93eeaf51feff0ca69",
     "source-manifest.json.gz": "7532ab650e390620935cd9839e22f04d3a14cc9c4eabd1515668b342f695f228",
-    "instrument-root.py": "cd6f449c93eb132ebeef16c80541ff5ab52ca8634c160e5417a803e70436c357"
+    "instrument-root.py": "cd6f449c93eb132ebeef16c80541ff5ab52ca8634c160e5417a803e70436c357",
+    "qualified-callers.json.gz": "2c049ca2a16fa8108b31c71b0cd55370e1ef7b343e15e2ac43bb60744cfe62c8",
+    "analyze-callers.py": "1f4f274a691c17896f85df4870bc63966c25ce5ce634145f6edf1ce24a3f0a15"
   },
   "retention_note": "Complete original264 payload/read receipts are archived. Large sealed input streams remain external with exact hashes in qualification, not included in this compact packet. Diagnostic qualification and caller inference remain pending."
 }

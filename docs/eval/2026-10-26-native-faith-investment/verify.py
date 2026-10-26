@@ -28,4 +28,24 @@ assert scope['all_other_blobs_exact'] and scope['all_source_blobs'] == 830
 assert set(scope['only_changed_files']) == {'src/game/actions.rs', 'src/bin/civvis_orders.rs'}
 assert scope['trace_turns'] == [1, 100]
 print('Both264 complete native payload controls and4587 ordered-read receipts verified.')
-print('Exact830-input assembly and two-file diagnostic scope retained; caller results pending.')
+diagnostic = json.loads(gzip.decompress((HERE / 'qualified-callers.json.gz').read_bytes()))
+assert diagnostic['process']['exit_code'] == 0 and diagnostic['process']['full_traces_identical']
+traces = []
+for number, control in enumerate(diagnostic['qualification']['controls']):
+    assert control['passed'] and len(control['requests']) == 264
+    assert sum(q['recorded_reads'] for q in control['requests']) == 4587
+    assert all(q['native_payload_matches'] and q['read_sequence_matches']
+               and not q['identity_errors'] for q in control['requests'])
+    files = diagnostic['controls'][str(number)]
+    replies = [json.loads(line) for line in files['replies.jsonl'].splitlines()]
+    assert len(replies) == 264
+    assert all(exact_fact(control_payload(a), control_payload(b)) for a, b in zip(native, replies))
+    traces.append([line for line in files['stderr.log'].splitlines() if line.startswith('[income-probe] ')])
+assert len(traces[0]) == 417 and traces[0] == traces[1]
+analysis = diagnostic['caller_analysis']
+assert analysis['requests'] == analysis['root_frames'] == 264 and analysis['root_produce_calls'] == 153
+assert analysis['caller_counts'] == {'reserve_prophet_site': 1, 'reserve_race_shrine': 1,
+                                     'reserve_adopted_faith_sanctuary': 7}
+for case in analysis['cases']:
+    assert case['successful_root_produces'][-1]['item'] == case['final_model_actions'][-1]['item']
+print('Both diagnostic264 controls, complete417-event traces and all9 faith callers verified.')

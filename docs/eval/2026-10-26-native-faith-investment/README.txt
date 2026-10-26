@@ -25,8 +25,16 @@ track_caller logs their file/line, queue, result and budget. It runs from1 to100
 and adds no selection/helper call. No production source, native settings,
 leases, force profile, installed mod or ongoing game is changed.
 
-The diagnostic build and its two full controls are pending at this checkpoint.
-Every entire native payload, ordered read and complete diagnostic trace must
-match before interpreting any private caller. Holy Site counts alone do not
+Both diagnostic controls now reproduce all264 complete native payloads and
+4587 ordered reads. Their entire417-event traces match:264 root frames and153
+Produce calls. All nine transported faith orders match the last successful
+root Produce and final model action. The callers are reserve_prophet_site at23,
+reserve_race_shrine at33, and reserve_adopted_faith_sanctuary at53,60,71,73,81,83
+and96/frame1. qualified-callers.json.gz retains complete traces and payloads.
+
+The existing default-off one-sanctuary option has an unfavorable recorded
+action-pair score; a blanket cap is not proposed. A deeper diagnostic will
+inspect actual sanctuary eligibility and completed safe recruitment sources,
+including cities whose production queues are held. The counts alone do not
 justify dropping religious defense, a Prophet race or conversion prevention.
 No gameplay change or native strength improvement is proposed by this draft.
