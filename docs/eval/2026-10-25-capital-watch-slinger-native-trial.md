@@ -1,0 +1,387 @@
+# Completed Native Slinger-preparation trial
+
+The registered sixteen-start trial is complete: eight ON, eight OFF, twelve
+observed defeats and four operator retirements without a host outcome. No win
+is observed. Both candidate-specific upgrade proposals have exact Native
+Archer successors. This establishes execution, not an incremental strength
+benefit; keep the policy default-off. The observer closed at
+**2026-10-26T03:21:04.971302+00:00**, removed only its own lease and was not rearmed.
+
+The registered default-off candidate from PR #4152 is merged as
+5813ced47ea532298a4453c3c9d2ef602932b6cf and verified live. Its separate
+sixteen-start observer **armed at 2026-10-26T00:02:36.680289+00:00**. This is a new
+trial; neither the older material nor Culture-air trial is rearmed.
+
+The initial state snapshot retains 1 assigned start(s),
+0 overrun(s), and no cutoff yet. This is a dated checkpoint,
+not a statement that the cohort is complete. The frozen observer remains
+running outside the worktree. At sixteen starts it removes only the unchanged
+lease it created, preserves any replacement, and never stops a game. Failed
+starts and continuations stay in the cohort without replacement.
+
+## Actual delivery and controls
+
+The qualifying unarmed run is **civvis-20261025T235225Z**, using the actual delivered
+5813ced adapter. Its runtime and first-decision binary digests agree; the frozen
+bytes match the receipt and the source descends from the merged feature. The
+first complete request at turn 1/frame 0 has one distinct captured prefix,
+**32,598 bytes**, SHA-256
+`a5e51126a5af478f2e73e27823944e1711af9c90d150d578e3333e0058bbfdc0`. All seventeen calls are retained.
+
+The actual profile has **499 treatments and 189 forced flags**. The existing
+capital-wall watch is on and this candidate is absent. The new giant-peace and
+last-two-capitals policies are already in this baseline. The earlier sampled
+model profile had 497 treatments, so those model results are not described as
+an exact reproduction of this future Native baseline.
+
+Disposable queries of this exact first input/profile use the actual frozen
+adapter. OFF's entire observed genome and proposed orders exactly reproduce
+the actual first decision. ON changes only the new treatment/forced bit;
+turn-one orders remain identical, as expected. This establishes the delivery/
+profile controls, not Native activation or execution. The earlier real Native
+binary rejects the flag on an empty mirror; that negative is retained with
+PR #4152's integration evidence. Installed Lua bytes are recorded while loaded
+historical identity remains explicitly unattested.
+
+Five isolated observer lifecycle controls pass, including exact sixteen-start
+cutoff, continuations, overruns, source/gene resume rejection and preservation
+of changed/foreign leases. Actual driver arguments, qualification, source hashes,
+complete probe responses, input bytes and the real adapter are preserved.
+
+## Prospective collection
+
+The existing ladder deals each future game from its original tag, this gene,
+actual difficulty and victory lane. The current lane is Domination at Immortal;
+record any actual rung, baseline-profile or source drift. Do not choose arms
+for balance or replace a failed attempt. Keep terminal outcome, played genome,
+new-policy journal entry, issued upgrade request and verified Native successor
+as separate observations. A model-applied action or accepted command is not an
+executed upgrade. Repeated requests for one unit are not multiple upgrades.
+
+The primary endpoint is the actual assigned seat's Native terminal win/loss
+and victory type. Preserve every unresolved attempt. Original-capital loss
+markers do not imply permanent loss, and a pre-victory city roster does not
+replace an explicit host outcome. No default promotion or strength claim is
+made from this ongoing small trial.
+
+The initial archive contains **21 byte-verified members** and
+**5,526,196 bytes**, SHA-256
+`cfe13a62244fc0c2bd51b9901b0a1e69f15458107b4d7230e9a3c58c1952bedf`. Files were read separately while the
+observer ran; the manifest records individual read times and hashes, so the
+checkpoint is not claimed to be an atomic cross-file snapshot. The companion
+main protocol and frozen source are inside the archive. No outcome result is
+inferred from this initial assignment snapshot.
+
+## Interim collection 01
+
+At 2026-10-26T00:18:17.999199+00:00,
+two starts were assigned, both played ON. The first (000859Z) has a terminal
+Culture loss at turn 155; no candidate-specific journal entry is observed.
+Its ten issued upgrade orders all have unique exact Native successors under
+the existing conservative identity auditor. Those are general upgrades and
+are not attributed to this candidate. The second (001624Z) is incomplete in
+this snapshot, with one upgrade request and no observed candidate entry.
+No strength estimate follows from one completed game or two ON assignments.
+
+The read-only collector passes four controls for ON versus activation,
+requested versus executed upgrades, later-frame maxima, malformed live data
+and a wrong trial/cohort. The existing auditor's three tests cover thirteen
+identity cases and pass again. Raw first-cohort events, decisions, immutable
+capture bytes/indexes and all non-image run files are retained: 15
+byte-verified members, 987,760 bytes, SHA-256
+`fd293173b756ff6ca12df02206112bcc2d9ec65fbe7d2f20de14f9a8122187de`. The accompanying 11-member
+checkpoint preserves the exact partial census, controls and upgrade audit:
+196,032 bytes, SHA-256
+`323a38458b09bdccc7a461c6d331ba9aadf8b69cbb1e0eb35c0d8cfffa050d21`. Live files are non-atomic; later
+collections use new outputs and do not overwrite this one. The remaining
+assigned/future starts continue under the original cutoff.
+
+## Interim collection 02
+
+The next retained collection has four assigned starts: three ON terminal
+attempts and one OFF attempt still running at its file-read times. The ON
+endings are Culture losses at turns 155 and 165, followed by a Diplomatic loss
+at turn 191. None has an observed candidate journal line. General upgrade
+requests are 10, 11 and 20 respectively; all forty-one have unique exact Native
+successors under the unchanged conservative auditor. These are not attributed
+to the candidate. No strength or promotion verdict follows from this partial
+cohort or the initially uneven arms.
+
+All three use the actual delivered `45eb06d` adapter; the first complete
+decisions and terminal receipts agree on binary SHA-256
+`7d652a2c73c050660e1994848ee8e6afad6baca8316a0ae9bdc49d5089027e23`.
+That revision is a documentation descendant of the qualified feature revision;
+the played baseline excluding this candidate is unchanged in this collection.
+The actual adapter and provenance are retained in checkpoint 03. Historical
+loaded Lua identity remains unattested.
+
+Raw cohort 02 retains all 15 non-image files in 1,480,048 bytes,
+SHA-256 `77b08abd782d93ce11b0c3966f74d5afec5332fd7456be84fd0939a1ee049513`.
+
+Raw cohort 03 retains all 15 non-image files in 1,597,780 bytes,
+SHA-256 `e646fd8b8fafb72871071be3c9a8fbcd4a2974c922f5bc26380e3b3a5333e642`.
+
+Checkpoint 03 retains 15 byte-verified members, 5,932,088 bytes,
+SHA-256 `33d77fca04897025935a51efa2833bebe54166934e3d685d10adc5191c8fb323`, including the dated non-atomic collection,
+observer state/log, both new upgrade audits and the actual delivered adapter.
+The remaining starts continue under the original sixteen-start cutoff.
+
+## Interim collection 03
+
+Six starts are assigned in this dated non-atomic collection: three ON, then
+three OFF. The first five have terminal outcomes. The two newly completed OFF
+attempts are a Religious loss at turn 174 and elimination at turn 151. Their
+eighteen and six general upgrade requests all have unique exact successors.
+Across the five terminal attempts that is 65 verified general upgrades, with
+zero observed candidate journal entries. The sixth OFF game remains incomplete
+in this snapshot. No endpoint, arm or failed start has been replaced.
+
+Raw cohort 04: 15 byte-verified non-image members, 1,500,816 bytes,
+SHA-256 `2d796345433c7e44639053831f82abc5118b99e8c1bc33af16ff8d649685b48f`.
+
+Raw cohort 05: 15 byte-verified non-image members, 818,348 bytes,
+SHA-256 `6d89f89d1bbbfc50b4ae1d4f21bc3ac42029eb5038f8c20daa7d084469defea3`.
+
+Checkpoint 04: 11 byte-verified members, 541,812 bytes,
+SHA-256 `1b4cf47e471b661e63bd73377611e72af4d0760e8af6c70bd852eaf1e2fc0762`. Earlier snapshots and every audit
+remain retained; the original observer and exclusive cutoff are unchanged.
+
+## Interim collection 05
+
+The next retained collection has eight assigned starts: seven terminal losses
+and an eighth still running at file-read time. Start 6 is OFF and loses to
+Science at turn 203; start 7 is ON and loses to Diplomacy at turn 218. Their
+14 and 22 general upgrade requests all have unique exact successors, giving
+101 verified general upgrades across seven terminal attempts. Those seven
+have no observed candidate journal entry. The still-running eighth ON attempt
+(013313Z) has one candidate-specific journal line at turn 24 and an issued
+upgrade request for unit 262146 at frame 1. Its Native successor is not yet
+verified in this checkpoint. Earlier collections and unfavorable outcomes
+remain intact.
+
+Start 7 uses actual delivered source `2aad0236c1796b51be94e4c5308ecc0abf0eed84`,
+a documentation successor to `45eb06d`. The candidate-excluded played profile
+hash remains unchanged in the collected starts. Checkpoint 05 retains both
+actual adapter identities/provenance, the exact collection, audits and observer
+state/log. Loaded historical Lua identity remains unattested.
+
+Raw cohort 06: 16 byte-verified non-image files, 2,118,832 bytes,
+SHA-256 `044a1a60464500cf2cf55c003e3f81f9d9dd37773ecdac3ba2ce418baba44b24`.
+
+Raw cohort 07: 15 byte-verified non-image files, 2,414,232 bytes,
+SHA-256 `0b22ca8d17efcb521c7632ba4004b0d9a95582568741cf7a792086a044ddcad6`.
+
+Checkpoint 05: 14 byte-verified members, 6,198,416 bytes,
+SHA-256 `d5e0164b61235324d6c46bb94429ec90e5f7419aba9471c5a13f9c47ee00034f`. The packet preserves individual file-read
+times and is not an atomic cross-file snapshot. The sixteen-start cutoff and
+lease identity remain unchanged; no default promotion or strength verdict.
+
+## First observed candidate execution: start 8
+
+The ON attempt 013313Z terminates in a Culture loss at turn 159. Its six
+general upgrades all have unique exact Native successors, bringing the first
+eight attempts to 107 verified general upgrades. One is now joined to the
+candidate-specific turn-24 journal and the unique actual turn-24/frame-1
+decision: Slinger 262146 becomes Archer 589830 at (43,19), preserving XP 3,
+level 1, no promotions and formation 0. The 30-Gold native offer is unblocked.
+The one distinct actual input (1,638,241 bytes, SHA-256
+`6db5a11680db3532c3d88833ca76b45115e55931d11c6aa4f5c4ca4a04511ebf`)
+accounts for all seventeen calls, ends in the unique actual state, and the
+next unique state contains the exact successor. A later host verification
+receipt is retained as supporting evidence. This establishes execution of
+that candidate branch, not an incremental win or survival effect.
+
+Fresh disposable queries of the actual adapter/input produce identical
+OFF/ON orders, and repeated ON orders reproduce. Both differ from historical
+ON orders; these queries do not reconstruct the persistent controller or
+supply an OFF counterfactual for its executed upgrade. Full played-genome
+readback matches in the corrected probes. The initial OFF command used an
+unsupported explicit `--without` for this default-off opt-in and exits 2;
+that failed control is retained. The corrected OFF omits only its enabling
+bit, and readback confirms the exact candidate-excluded genome.
+
+Raw cohort 08: 16 byte-verified non-image members, 1,327,108 bytes,
+SHA-256 `ad349f2c16874271bc5885d267b1763076d7a5e13642aee769449916b67bc41b`.
+
+Checkpoint 06: 12 byte-verified members, 5,463,260 bytes,
+SHA-256 `c14cbf5bfd94351028e6677af6547832f8137db61264ac24b32d973962ebf54c`.
+
+The query/control packet retains 26 verified members in 64,180
+bytes, SHA-256 `64ff95208785baeb56868dc0e267ad44a34680b6024950404f5759708f93f133`, including failed controls and
+all exact input copies. The cohort continues under its original cutoff.
+
+
+## Interim collection 07: twelve retained stems
+
+This dated collection retains twelve assigned stems (seven ON, five OFF),
+including start 11's exited attempt and its continuation. Eleven stems have
+host losses; start 12 ended at turn 88 with `operator_retired` and no host
+victory outcome. It remains unresolved rather than being replaced or called
+a completed loss. Start 9 is an OFF Diplomatic loss at turn 239; start 10 an
+ON Science loss at 218; start 11's OFF continuation a Culture loss at 198.
+No win is observed. The original sixteen-start observer continues unchanged.
+
+Across these attempts there are 156 general upgrade requests: 155 unique
+exact Native successors and one unresolved request in retired start 12.
+The five newly archived attempts contribute 26, 10, 0, 9 and 4 requests;
+start 12 has three exact successors and one with no exact successor.
+None of starts 9–12 has an observed candidate journal entry. Only the
+previously joined start-8 execution is attributed to this candidate.
+
+The candidate-excluded genome changes at start 9: the newly shipped
+`launcher-war-skips-the-reserve` is now forced on. Its normalized hash is
+`28efbe1248684c36c816edf208332ca4c8081a617323e48c148b1491a55b2b07`, versus
+`ad3cd7df0a41615dd6ef59383b8f95133a6e539f80b907455a27cfb7f827edc0` in starts 1–8.
+Start 9 reports source `cd06a0a3912f3b40e011c2eb1119a8700f3d22f9`; starts
+10–12 report documentation descendant `0a5e6ae0ce0524bbb0e1be52bea0312c98d835f0`.
+Those receipts identify actual adapter SHA-256
+`ce132b317cf1acaba786372445a14e0eb23cd9de9787b9a2bc8bae50f00d5c85`.
+The source also includes the independently shipped aqueduct Recovery change.
+These source/profile groups are retained separately; this mixed cohort does
+not provide a controlled estimate of Slinger policy strength. Historical
+loaded Lua remains unattested.
+
+The continuation-aware packer preserves the exited base attempt and its
+continuation in separate raw archives under the same assigned stem. Every
+archive retains all non-image files and verifies every member after writing.
+
+Raw cohort 09: 15 members, 3,607,108 bytes,
+SHA-256 `6d2f51f7b799d2dc90b54113352999f529e39e96bd148aa02d55915c1dbb72f4`.
+
+Raw cohort 10: 15 members, 1,603,696 bytes,
+SHA-256 `cf75e34786cd7d112b54152c6da2e7f1095e6c408b3cbbe4bd4a61e8e5964637`.
+
+Raw cohort 11: 17 members, 839,848 bytes,
+SHA-256 `8830a65e0cafe1e8b217c9851b9046d55df8ad7494552bc65aafcabd526ce8b6`.
+
+Raw cohort 11-cont1: 16 members, 1,341,364 bytes,
+SHA-256 `3a379b7b1281e30051caa925bcb6dd34d8b9b69c84a1dfd4e9a2ebbf71721d6f`.
+
+Raw cohort 12: 18 members, 586,836 bytes,
+SHA-256 `5ad29b052db39454ee911a5100f37286a91074a4466f559f520af5be37ec0c8f`.
+
+Checkpoint 07: 23 members, 6,549,468 bytes,
+SHA-256 `05ba9b085fa2a192c5321ac9e76f4e7bd2b3662122cfac91fbb086babb0a2a50`. It includes the actual adapter and provenance,
+all five upgrade audits, collection and individually read observer files.
+This live checkpoint is non-atomic. Earlier packets and negative results remain retained.
+
+
+## Interim collection 08: retain the second retirement
+
+The next dated collection retains fourteen assigned stems. Start 13 (024315Z)
+is OFF and stops at turn 197 with `operator_retired`, without a host outcome.
+It is the second such unresolved stem; neither retirement is replaced or
+counted as an awarded loss. Start 14 remains incomplete in this snapshot.
+The original observer still owns the same sixteen-start cutoff.
+
+Start 13 has 21 general upgrade requests: nineteen exact Native successors,
+one same-ID transition unresolved and one missing Native quote. It has no
+observed candidate journal entry. Across the first thirteen stems there are
+177 general requests, 174 exact successors and three unresolved requests.
+These general upgrades are not attributed to the candidate. The single
+previously joined start-8 execution remains the observed activation witness.
+The source/profile group remains the Launcher-enabled baseline described
+above. No strength or promotion verdict follows.
+
+Raw cohort 13 retains all 19 non-image files, 2,259,328 bytes,
+SHA-256 `b66f2ecc4354e23b82549448580e9b2a265c811934cfe0638089f35b818bb03f`.
+
+Checkpoint 08 retains 11 byte-verified members, 560,504 bytes,
+SHA-256 `5a6e79a991a5311dd413bf86cd9cae9e5197c58d6b9aa74a758f6b11c23c219f`. It preserves the full upgrade audit, individually
+read collection/observer files and hash-verified references to the already
+archived actual adapter. Earlier packets and all failures remain retained.
+
+
+## Final registered cohort
+
+All sixteen assigned stems and all seventeen attempts are retained. Start 11
+exited at turn 42 and continued from turn 41; its continuation supplies the
+Culture defeat. Retirements at starts 12, 13, 15 and 16 remain unresolved host
+endpoints. They are not replaced, called wins or converted into awarded
+losses. There are no observer overruns in the closed state. The difficulty
+and assigned lane remain Immortal and Domination throughout.
+
+| Start | Played arm | Final recorded endpoint | Turn |
+| --- | --- | --- | --- |
+| 1 | ON | Culture defeat | 155 |
+| 2 | ON | Culture defeat | 165 |
+| 3 | ON | Diplomatic defeat | 191 |
+| 4 | OFF | Religious defeat | 174 |
+| 5 | OFF | Elimination | 151 |
+| 6 | OFF | Science defeat | 203 |
+| 7 | ON | Diplomatic defeat | 218 |
+| 8 | ON | Culture defeat | 159 |
+| 9 | OFF | Diplomatic defeat | 239 |
+| 10 | ON | Science defeat | 218 |
+| 11 | OFF | Culture defeat | 198 |
+| 12 | ON | Operator retirement; no host outcome | 88 |
+| 13 | OFF | Operator retirement; no host outcome | 197 |
+| 14 | OFF | Science defeat | 197 |
+| 15 | ON | Operator retirement; no host outcome | 156 |
+| 16 | OFF | Operator retirement; no host outcome | 193 |
+
+Outcome turns use the host award/defeat event when present; retirement turns
+use the final observed Native turn. The local terminal summary can end one
+turn before a victory callback, so its `last_turn` is not substituted for the
+host award's turn. Arms were dealt from the registered tag/gene/difficulty/
+lane key and read back from actual played genomes, with no balancing or
+replacement of unfavorable attempts.
+
+Across all attempts, 210 general upgrade requests have 205 unique exact Native
+successors. Five remain unresolved: three missing Native quotes, one same-ID
+transition and one without an exact successor. Only two upgrades are joined
+to this candidate. The additional start-15 turn-19/frame-0 decision upgrades
+Slinger 262146 to Archer 458756 at (40,12), preserving HP 100, XP 0, level 1,
+no promotions and formation 0. All eighteen actual calls share one distinct
+captured input, 1,033,156 bytes, SHA-256
+`24e93842540432f68174e8e6d4f82dd49697888a00c388fbd0a2a290b02002fc`.
+It ends at the unique audited pre-state; the next unique Native state at
+turn 19/frame 1 contains the exact successor. A later verification receipt
+is supporting evidence. The new joined capsule is 12,107 bytes, SHA-256
+`cf4ed70fee6d789562a48a33691803eb2a19e7271dd7f43a3bf3fca361f4c9d8`.
+The game later retires without a host outcome. Neither execution proves that
+an OFF historical controller would have omitted the upgrade or lost earlier.
+
+The existing original-capital census now covers all seventeen attempts and
+all local-city state rosters. Exactly one attempt holds a foreign major
+original capital: OFF start 9 first holds Buda at turn 148, then Tenochtitlan
+at 219, and retains both in its final turn-239 roster. It still loses to an
+Aztec Diplomatic victory. Its seventeen general city captures are not
+seventeen original capitals. Seven home-original-capital loss markers occur
+across the cohort; a marker is not proof of permanent loss. No original
+capital founder is unclassified in these observed rosters.
+
+The previously documented profile/source change at start 9 remains material:
+Launcher becomes forced on and the source includes the independent aqueduct
+Recovery change. Binary hashes and provenance remain retained, including
+different binaries with the same reported revision. The eight/eight nominal
+split, mixed sources and four unresolved host endpoints do not establish a
+controlled strength estimate. Loaded historical Lua identity remains
+unattested. There is no default promotion and no rearm of this trial.
+
+All four collector controls, five isolated observer lifecycle controls and
+three conservative-upgrade auditor tests (thirteen identity cases) pass again.
+The new joining helper verifies the actual decision, every captured read,
+exact binary bytes and gzip readback. The capital wrapper reuses the existing
+founder-classification census; it retains continuations, missing endpoints
+and current-roster replacement semantics. Raw stdout/stderr and source hashes
+for the final controls are retained in the verification capsule.
+
+Raw cohort 14: 16 byte-verified non-image members, 1,571,500 bytes,
+SHA-256 `60921451232870a7c6211037f73be4a867186a429f17d21da79c8459a33b4f17`.
+
+Raw cohort 15: 18 byte-verified non-image members, 933,840 bytes,
+SHA-256 `483900bdeb1e5e9cddf7a631faa431a6876ebacc31ae8030c0e71804dd0634ec`.
+
+Raw cohort 16: 18 byte-verified non-image members, 1,665,312 bytes,
+SHA-256 `4d1180a442c7ba1fbb73795166c9e72003ae4236db7d596966c9b123a03788f6`.
+
+Final checkpoint 09: 29 byte-verified members, 6,481,436 bytes,
+SHA-256 `96f87fab6aec25a62f4348756abfb4ca1e85afa60b25fe6b6d32566017f25350`. It preserves the closed-state receipt, all final
+audits and newly completed raw cohorts, original-capital results, the joined
+execution and verified references to already archived actual adapters. Live
+files were individually read with manifests; no atomic cross-file snapshot
+is claimed. All earlier packets, negative controls and failures remain retained.
+
+Final control capsule: 723 bytes, SHA-256
+`38c9b774a337f59b1a4762f0d2bfbfc73da219563b4e3a2d8980f9eb6ddcf03b`.
