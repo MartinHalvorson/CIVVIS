@@ -241,6 +241,29 @@ fn an_engineer_builds_the_ordinary_legal_neutral_field_and_opens_its_slots() {
 }
 
 #[test]
+fn a_proposed_airstrip_cannot_restart_its_deadline_when_the_host_keeps_the_old_board() {
+    let (mut prediction, mut ai, plan, producer, capital, field) = fixture();
+    let engineer = prediction.spawn_test_unit("military_engineer", 0, field);
+    install_project(&mut ai, &prediction, producer, capital, field);
+    // The bridge's simulated success is a proposal. The next authoritative
+    // board can still report the old plot and unspent Engineer charges.
+    let mut host = prediction.clone();
+    assert_eq!(
+        ai.forward_airfield_engineer_step(&mut prediction, 0, engineer, &plan),
+        Some(true)
+    );
+    assert!(host.map.tiles[&field].improvement.is_none());
+    host.turn += host.standard_duration(PROJECT_STANDARD_TURNS) + 1;
+    ai.claim_forward_airfield_project(&mut host, 0, &plan);
+    assert_eq!(
+        ai.forward_airfield_engineer_step(&mut host, 0, engineer, &plan),
+        None,
+        "an unconfirmed build cannot create a fresh attempt after the original deadline"
+    );
+    assert_eq!(host.units[&engineer].charges, 2);
+}
+
+#[test]
 fn an_engineer_takes_a_legal_known_land_step_toward_its_project() {
     let (mut g, mut ai, plan, producer, capital, field) = fixture();
     let engineer = g.spawn_test_unit("military_engineer", 0, (10, 10));

@@ -125,3 +125,17 @@ separately. Repeat all eight fixed model worlds as a source-equivalence
 control, restoring every original seat genome and preserving all outcomes;
 no new thresholds, seeds or favorable replacement. Full local and hosted
 checks remain required before any live deployment or future Native observer.
+
+
+Before live deployment, add an unchanged-policy regression for completion
+handoff. A simulated legal Airstrip action is only a proposal in the Native
+bridge; the next authoritative board can retain the old plot and charges.
+That unconfirmed action must not erase the original attempt receipt and
+restart its deadline. Run the regression before changing policy, retain the
+actual failure, then keep the receipt after a proposed build. An observed
+active base already releases the project through the existing wing guard.
+No threshold, route, seed or arm changes. Repeat all fixed Native inputs and
+worlds for the corrected source and retain any source-equivalence differences.
+The earlier position-source full run has 6,014 passes, one timed viewer
+failure and 52 ignores; that same viewer test passes isolated. It is not
+reported as a full-suite pass. The final source still needs a complete pass.
