@@ -9,16 +9,20 @@
 //! completes Domination. With two left, neither one completes it, so the
 //! campaign keeps aiming at border towns while the clock runs.
 //!
-//! **Why (retained live games to 2026-10-25, Emperor and Immortal).**
-//! - 12 games reached two or fewer capitals still to take; one won
-//!   (civvis-20261025T145013Z).
-//! - Over the campaign turns from that point, 41 aimed at a remaining
-//!   capital, and 139 aimed at another city of a rival that held one.
-//! - The median game had about 30 turns left.
+//! **Why (retained live games to 2026-10-26, Emperor and Immortal).**
+//! - Counting only majors' original capitals, 9 games reached two or fewer
+//!   capitals still to take; one won (civvis-20261025T145013Z).
+//! - In the pre-arm games, 41 campaign turns from that point aimed at a
+//!   remaining capital, and 139 aimed at another city of a rival that held
+//!   one. That census also counted city-state capitals, so the tally is
+//!   rough; the pattern is not.
 //! - Immortal civvis-20261025T213230Z held Bogotá and Kyoto at turn 212 with
 //!   Amsterdam and Sparta left. At war with Greece, the campaign aimed at
 //!   Ephesus from 216 to 224; Sparta became the objective at 239, after
 //!   Amsterdam fell. The Netherlands won on Science at 241.
+//! - Armed, civvis-20261026T014409Z held two from turn 149. It aimed at the
+//!   target's remaining capital on 52 of 53 such campaign turns, and took
+//!   Tenochtitlan at 220.
 //!
 //! Off, nothing changes.
 

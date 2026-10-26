@@ -9661,6 +9661,17 @@ local function exportState(player, pid, turn, frame, eventKind)
 		-- `voteWorldCongress`.
 		dvp = try(function() return player:GetStats():GetDiplomaticVictoryPoints(); end, nil),
 		favor = try(function() return player:GetFavor(); end, nil),
+		-- The shipped Expansion2 TopPanel reads both accessors. A balance alone
+		-- cannot distinguish recurring losses from Congress spending or deals.
+		-- Keep each answer independent and unknown where its API is absent.
+		favor_per_turn = try(function() return player:GetFavorPerTurn(); end, nil),
+		favor_sources = try(function()
+			local text = player:GetFavorPerTurnToolTip();
+			if text == nil then return nil; end
+			text = tostring(text):gsub("%[ICON_[%w_]+%]", "");
+			text = text:gsub("%[NEWLINE%]", "\n"):gsub("[ \t]+", " ");
+			return (text:gsub("^%s+", ""):gsub("%s+$", "")):sub(1, 1600);
+		end, nil),
 		-- The World Congress standing as of the last session, recorded where
 		-- the review is read. Every alive major appears, including ones this
 		-- seat has not met -- the congress seats them all and shows the seat

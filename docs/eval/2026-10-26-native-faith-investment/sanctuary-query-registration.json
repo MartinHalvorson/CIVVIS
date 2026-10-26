@@ -1,0 +1,13 @@
+{
+  "registered_utc": "2026-10-26T01:23:45.559313+00:00",
+  "hypothesis": "Existing safe completed Shrine sources may be excluded from the source-existence check because their production queues are held. No such case is established until exact root admission query controls and native source/faith quotes are checked.",
+  "scope": "Exact prior qualified2-file root source plus one observational sanctuary query file. All830 blobs verified; no production action/helper selection override, no new gene or force change. One-sanctuary cap is existing default-off with unfavorable recorded action-pair score; do not enable blindly.",
+  "expected_requests": 264,
+  "expected_ordered_reads_each": 4587,
+  "required": "Both complete payload/read controls must reproduce original history and both full query traces must match before interpreting a gate. Retain failures without replacing controls.",
+  "modified_files": {
+    "src/game/actions.rs": "baa8b8bbe203b1d600a75d479fafebb74e224fe684897c6ec950257c929aceea",
+    "src/bin/civvis_orders.rs": "a416c214eba314fdee4b779beb28e2b674a655e9107d880b564bddc858fec110",
+    "src/ai/advanced/adopted_faith_sanctuary.rs": "4acc8b58f54562a4b053fd82f869f08378cf019acd13844ec99b24f9e4f2a851"
+  }
+}
