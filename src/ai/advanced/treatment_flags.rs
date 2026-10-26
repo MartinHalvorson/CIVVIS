@@ -8308,11 +8308,13 @@ impl AdvancedAi {
     /// [`Self::nuclear_goal_needs_a_launcher`].
     pub fn enable_nuclear_goal_needs_a_launcher(&mut self) {
         self.nuclear_goal_needs_a_launcher = true;
+        self.base.nuclear_goal_needs_a_launcher = true;
     }
 
     /// The twin of `enable_nuclear_goal_needs_a_launcher`.
     pub fn disable_nuclear_goal_needs_a_launcher(&mut self) {
         self.nuclear_goal_needs_a_launcher = false;
+        self.base.nuclear_goal_needs_a_launcher = false;
     }
 
     /// Measure the default-off forward airfield preparation project.

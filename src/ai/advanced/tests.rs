@@ -7672,6 +7672,27 @@ fn nuclear_doctrine_hits_a_rival_spaceport_before_a_harder_city() {
     );
 }
 
+/// `nuclear-goal-needs-a-launcher`: the base picker's project fallbacks leave
+/// the nuclear projects alone too. Live Immortal civvis-20261026T162405Z put
+/// three cities on the Manhattan Project through `pick_item` at turn 200.
+#[test]
+fn the_base_picker_bars_the_nuclear_projects_under_the_gene() {
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    assert!(!ai.base.nuclear_project_barred("manhattan_project"), "off");
+    ai.enable_nuclear_goal_needs_a_launcher();
+    for project in [
+        "manhattan_project",
+        "operation_ivy",
+        "build_nuclear_device",
+        "build_thermonuclear_device",
+    ] {
+        assert!(ai.base.nuclear_project_barred(project), "{project}");
+    }
+    assert!(!ai.base.nuclear_project_barred("launch_moon_landing"));
+    ai.disable_nuclear_goal_needs_a_launcher();
+    assert!(!ai.base.nuclear_project_barred("manhattan_project"));
+}
+
 /// `nuclear-goal-needs-a-launcher`: on a seat that cannot launch a device the
 /// goal is gone, and with it the value of every nuclear project.
 #[test]
