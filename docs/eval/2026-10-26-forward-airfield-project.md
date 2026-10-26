@@ -186,10 +186,13 @@ six worlds reproduce their earlier traces. Russia previously won Religion at
 bit. Eight fixed worlds do not estimate a Native win rate or policy benefit.
 The journal truncation limitation above remains applicable.
 
-The final full CI-profile suite is running with one test thread to avoid the
-observed parallel server timing failure. Its completed result and publication
-checks will be recorded separately. The final focused twenty-case suite, all
-fourteen append controls, generated-index checks and the raw firing gate pass.
+The final full CI-profile suite passes with one test thread: 6,369 passed, zero
+failed and 56 existing ignores (52 unit tests, four documentation examples).
+The library contributes 6,023 passes; the remaining binaries contribute 346.
+The previously failing timed viewer test passes within this full run. The final
+focused twenty-case suite, all fourteen append controls, generated-index checks
+and the raw firing gate also pass. Publication requires the final head’s hosted
+checks to complete independently.
 
 ## Additional sealed evidence
 
@@ -208,3 +211,4 @@ results. The archive suffixes below share prefix
 | `.native-handoff.tar.xz` | 1711 | 6457028 | `d58de254f27f9e0241a411c158165c2012b2582d2edafd3ed29773a2e40ab5fb` |
 | `.handoff-implementation.tar.xz` | 21 | 645788 | `27e1ec5ed6f5ca30bb9c731805c5f67d1a7bd65a71a58b67fd3402bd8919d9d4` |
 | `.handoff-model.tar.xz` | 161 | 12210104 | `b079d810450f43b0e9ce0768ab2e0624d692dce0fe7b347a9ef48253736f7acc` |
+| `.handoff-verification.tar.xz` | 9 | 156644 | `ac37d4886025a410dcc0f66ec888f8b3e4337e5b2f7d22f2aabfbf3bcab92c8e` |
