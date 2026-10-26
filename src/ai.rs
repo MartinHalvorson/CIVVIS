@@ -13115,6 +13115,9 @@ impl BasicAi {
         melee: usize,
         ranged: usize,
     ) -> Option<Item> {
+        // Every menu candidate reads the same immutable board. Share its city
+        // queries until the choice returns, before the caller applies a build.
+        let _memo = g.query_memo();
         // Repairs restore yields and unlock every building/project in the
         // damaged district, so they outrank adding new infrastructure. Basic
         // and city-state governors previously ignored `Item::Repair`
