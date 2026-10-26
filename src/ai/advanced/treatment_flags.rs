@@ -8326,6 +8326,17 @@ impl AdvancedAi {
         self.forward_airfield_project_state = None;
     }
 
+    /// Opt-in gene `aluminum-tile-spends-the-war-chest`; see
+    /// [`Self::aluminum_tile_spends_the_war_chest`].
+    pub fn enable_aluminum_tile_spends_the_war_chest(&mut self) {
+        self.aluminum_tile_spends_the_war_chest = true;
+    }
+
+    /// The twin of `enable_aluminum_tile_spends_the_war_chest`.
+    pub fn disable_aluminum_tile_spends_the_war_chest(&mut self) {
+        self.aluminum_tile_spends_the_war_chest = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
