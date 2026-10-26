@@ -105,13 +105,23 @@ def main():
         for arm in ['baseline','candidate']:
             run('qualification',0,index,arm,arm,1)
     qualified = all(r['complete'] for r in results)
+    def pair(phase,round_number,index):
+        labels = ['baseline','candidate'] if (round_number+index)%2==0 else ['candidate','baseline']
+        for label in labels:
+            run(phase,round_number,index,label,'baseline' if phase=='control' else label,data['repetitions'])
     if qualified:
-        for phase, rounds in [('control',data['control_rounds']),('comparison',data['comparison_rounds'])]:
-            for round_number in range(rounds):
+        if data.get('interleave_phases'):
+            assert data['control_rounds']==data['comparison_rounds']
+            for round_number in range(data['control_rounds']):
                 for index in available:
-                    labels = ['baseline','candidate'] if (round_number+index)%2==0 else ['candidate','baseline']
-                    for label in labels:
-                        run(phase,round_number,index,label,'baseline' if phase=='control' else label,data['repetitions'])
+                    phases = ['control','comparison'] if (round_number+index)%2==0 else ['comparison','control']
+                    for phase in phases:
+                        pair(phase,round_number,index)
+        else:
+            for phase, rounds in [('control',data['control_rounds']),('comparison',data['comparison_rounds'])]:
+                for round_number in range(rounds):
+                    for index in available:
+                        pair(phase,round_number,index)
     final = dict(registered_cases=len(data['cases']),available=len(available),
                  unavailable=[i for i in range(len(data['cases'])) if i not in available],
                  qualified=qualified,complete=all(r['complete'] for r in results),
