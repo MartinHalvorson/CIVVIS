@@ -40,7 +40,7 @@ One turn-40 case, `civvis-20261026T032104Z`, has identical Native state but diff
 | 40 | 54 | 51 | 21 | 1 | 5 |
 | 50 | 63 | 63 | 3 | 0 | 2 |
 
-The sole unambiguous Pareto quote is **+1 raw Production in Quito at turn 40** of `civvis-20261026T014409Z`, preserving the other five quoted yields. Twelve city-turn samples have at least one one-worker tradeoff that leaves the raw Food surplus at least two; those exchanges may spend Food or other yields. Thirty raw candidate pairs are independently checked against their actual worked and unworked quotes. Multiple pairs are alternatives, not additive yields.
+The sole unambiguous Pareto quote is **+1 raw Production in Quito at turn 40** of `civvis-20261026T014409Z`, preserving the other five quoted yields. Twelve city-turn samples have at least one one-worker tradeoff that leaves the raw Food surplus at least two; those exchanges may spend Food or other yields. Thirty category-specific raw quote checks cover twenty-nine distinct tile pairs, each checked against its actual worked and unworked quotes. Multiple pairs are alternatives, not additive yields.
 
 These are local terrain-yield bounds. They are not Native allocation permissions, actual citizen moves, city-multiplier forecasts or free yields. Existing locks and allocator behavior can prevent an exchange. Sparse fresh quote coverage prevents a broad Production-focus recommendation. No focus order or policy is introduced.
 
