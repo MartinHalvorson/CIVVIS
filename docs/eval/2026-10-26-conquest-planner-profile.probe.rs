@@ -36,7 +36,11 @@ fn main() {
         .map(|v| v.as_str().unwrap())
         .collect();
     for tag in &enabled {
-        assert!(GENES.iter().any(|g| g.tag == *tag), "unknown enabled treatment: {}", tag);
+        assert!(
+            GENES.iter().any(|g| g.tag == *tag),
+            "unknown enabled treatment: {}",
+            tag
+        );
     }
     let mut reference = None;
     let mut samples = Vec::new();
