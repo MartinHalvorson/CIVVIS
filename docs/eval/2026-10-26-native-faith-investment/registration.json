@@ -22,7 +22,9 @@
     "sanctuary-query-manifest.json": "d29e6bfe5a157be829a9f824052fbe9c4a6dca109978cee251e228ba29066112",
     "sanctuary-query.patch.gz": "7316ccde7d78cc9a2767c3e83dd086bf2c0b91eaea55a8c2e107a3b897d5fefd",
     "native-faith-context.py": "979defad53e3851dcba484a9b970330888c15d0380f82906c8a2cd9074d633c4",
-    "instrument-sanctuary.py": "8aa4257cba4849a165878c4625442c9c556cb6e91e6b85c1323813e6b85e595a"
+    "instrument-sanctuary.py": "8aa4257cba4849a165878c4625442c9c556cb6e91e6b85c1323813e6b85e595a",
+    "qualified-admission.json.gz": "101b1dbdd78669839d93407cdfd5563e2be0c964395e0179b85df4df8b5e39e4",
+    "analyze-admission.py": "efe6e34b62ed733087dedef92ab208b7e857624dde77a36db2d02d66f5b5647c"
   },
-  "retention_note": "Complete original264 payload/read receipts are archived. Large sealed input streams remain external with exact hashes in qualification, not included in this compact packet. Diagnostic qualification and caller inference remain pending."
+  "retention_note": "All original, root-only and admission-probe complete264 payloads,4587-read receipts and complete417/554 traces are archived. Ten distinct actual captured native contexts cover all9 faithorders. Large input streams remain external sealedhashes. Earliest held-safe-source boundary60/0; no treatment or strength claim."
 }

@@ -62,3 +62,41 @@ for observation in case['observations']:
     assert city['producing'] == 'DISTRICT_CAMPUS' and 'BUILDING_SHRINE' in city['buildings']
     assert {'f': 70, 't': 'UNIT_MISSIONARY'} in city['purchasable']
 print('All10 distinct captured native contexts retained; counterfaith safety inference remains separate.')
+admission = json.loads(gzip.decompress((HERE / 'qualified-admission.json.gz').read_bytes()))
+assert admission['analysis']['process']['exit_code'] == 0
+query_traces = []
+for number, control in enumerate(admission['qualification']['controls']):
+    assert control['passed'] and len(control['requests']) == 264
+    assert sum(q['recorded_reads'] for q in control['requests']) == 4587
+    assert all(q['native_payload_matches'] and q['read_sequence_matches']
+               and not q['identity_errors'] for q in control['requests'])
+    files = admission['controls'][str(number)]
+    replies = [json.loads(line) for line in files['replies.jsonl'].splitlines()]
+    assert len(replies) == 264
+    assert all(exact_fact(control_payload(a), control_payload(b)) for a, b in zip(native, replies))
+    query_traces.append([line for line in files['stderr.log'].splitlines() if line.startswith('[income-probe] ')])
+assert len(query_traces[0]) == 554 and query_traces[0] == query_traces[1]
+events = [json.loads(line[len('[income-probe] '):]) for line in query_traces[0]]
+held = [e for e in events if e['event'] == 'sanctuary_admission' and any(
+    c['safe_for_this_threat'] and c['has_shrine'] and c['queue_held']
+    and c['city'] != e['threatened_city'] for c in e['owned'])]
+assert (held[0]['turn'], held[0]['frame']) == (60, 0)
+cases = admission['analysis']['cases']
+assert len(cases) == 7
+confirmed = [c for c in cases if c['admission'] is not None and any(
+    s['queue_held'] and s['city'] != c['admission']['threatened_city'] for s in c['safe_completed_sources'])]
+assert [(c['turn'], c['frame']) for c in confirmed] == [(60, 0), (73, 0), (81, 0)]
+for case in confirmed:
+    e = case['admission']
+    source = case['safe_completed_sources'][0]
+    assert source['city'] not in e['eligible'] and not source['free_for_production']
+    assert not e['one_sanctuary'] and source['missionary_faith_quote'] == 70
+    native_case = next(c for c in context['cases'] if (c['turn'], c['frame']) == (case['turn'], case['frame']))
+    for observation in native_case['observations']:
+        state = observation['state']
+        city = next(c for c in state['cities'] if c['id'] == 131073)
+        assert {'f': 70, 't': 'UNIT_MISSIONARY'} in city['purchasable'] and state['faith'] >= 70
+late = next(c for c in cases if c['turn'] == 96)
+assert late['safe_completed_sources'][0]['city'] == late['admission']['threatened_city']
+assert next(c for c in cases if c['turn'] == 83)['admission'] is None
+print('Both264 admission controls and full554 traces verify held-source failures60/73/81; threatened96 and unresolved83 retained.')

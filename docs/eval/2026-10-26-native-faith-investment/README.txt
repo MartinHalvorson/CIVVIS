@@ -32,10 +32,10 @@ root Produce and final model action. The callers are reserve_prophet_site at23,
 reserve_race_shrine at33, and reserve_adopted_faith_sanctuary at53,60,71,73,81,83
 and96/frame1. qualified-callers.json.gz retains complete traces and payloads.
 
-The existing default-off one-sanctuary option has an unfavorable recorded
-action-pair score; a blanket cap is not proposed. A deeper diagnostic will
-inspect actual sanctuary eligibility and completed safe recruitment sources,
-including cities whose production queues are held. The counts alone do not
+The existing default-off one-sanctuary option has a latest batch value of-29
+wins per10,000 total seats (BATCH_COLUMNS), with the older two columns missing.
+This is a reporting statistic, not a native paired treatment result or an
+action-pair score. A blanket cap is not proposed. The counts alone do not
 justify dropping religious defense, a Prophet race or conversion prevention.
 No gameplay change or native strength improvement is proposed by this draft.
 
@@ -44,5 +44,30 @@ retained, including both changing reads at60/0. Both agree: Popayán has a Shrin
 queues a Campus, and offers a70-Faith Missionary against202 Faith in the bank.
 This establishes the native offer, not the controller's counterfaith safety.
 The third-file admission probe records actual threat, eligible cities, queue
-holds, safe faiths and source/price facts on the root Game. Its original
-264-payload/4587-read controls are still pending; no gate is inferred yet.
+holds, safe faiths and source/price facts on the root Game. Both controls now
+match all264 full native payloads and4587 ordered reads; both entire554-event
+traces match. The additional immutable eligibility/price queries therefore
+qualify for this captured history. Its scope is three diagnostic source files.
+
+At60/0 the actual root recognizes Popayán34, Protestantism, a finished Shrine
+and70-Faith Missionary quote as a safe source against Buddhism. It is not the
+threatened city. Its held Campus queue makes free_for_production=false, so34
+is absent from eligible. The same eligible list is used for the completed-source
+check, which overlooks that Shrine and reserves a new Holy Site in Cali38.
+This is the first such root admission in the entire prefix. At73 and81 the
+same source is safe on Sikhism, but its held Industrial Zone again hides it.
+Native inputs independently offer that source's70-Faith Missionary, with408
+and535 Faith respectively. No actual purchase or averted loss is claimed.
+
+The96 source is the threatened city, so it does not establish the queue-filter
+failure and should retain that protection. The83 Shrine takes an early-return
+path with no admission event; its eligibility remains unresolved by this probe.
+All seven sanctuary orders and every other trace event remain retained.
+
+The proposed follow-up is a narrow source-existence fix: a protected production
+queue does not remove a safe, unthreatened, completed Shrine as a recruitment
+source. It must keep threatened, converted/unsafe, unfinished and founder-second-
+source cases distinct, with genuine regressions before source editing. The
+registered next boundary is60/0 after every earlier full reply/read matches;
+the redundant Holy Site must stop while existing source/queue protections stay.
+This diagnostic PR changes no production policy, default, force or game setup.
