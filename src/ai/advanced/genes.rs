@@ -4164,6 +4164,11 @@ pub const GENES: &[Gene] = &[
     // `advanced/last_two_capitals.rs`.
     Gene { tag: "the-last-two-capitals-come-first", field: "the_last_two_capitals_come_first", kind: Kind::OptIn, enable: AdvancedAi::enable_the_last_two_capitals_come_first, disable: AdvancedAi::disable_the_last_two_capitals_come_first },
     Gene { tag: "capital-watch-arms-the-slinger", field: "capital_watch_arms_the_slinger", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_watch_arms_the_slinger, disable: AdvancedAi::disable_capital_watch_arms_the_slinger },
+    // `launcher-war-skips-the-reserve`: retained live games October 22-25,
+    // the treasury reserve held the war on a racer past its Moon on 34 turns
+    // in 11 games; 231506Z declared on Macedon six turns late and lost on
+    // Science. See `advanced/launcher_war.rs`.
+    Gene { tag: "launcher-war-skips-the-reserve", field: "launcher_war_skips_the_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_launcher_war_skips_the_reserve, disable: AdvancedAi::disable_launcher_war_skips_the_reserve },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
