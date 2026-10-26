@@ -86,3 +86,13 @@ Run verify.py to independently compare the complete archived payloads, first
 changed native orders, full read receipts, regression counts and fixed native
 outcomes. The sibling native-income-callers directory supplies the unchanged
 constant-read control. first-change.py retains the exact strict witness code.
+
+Native delivery protocol
+-----------------------
+The prepared native-observer.py runs once after confirmed merge, with an
+explicit new output directory. It verifies the exact delivered AQ module,
+private map declaration/initializer, frozen binary/provenance and first
+executing decision. It retains the first eight attempt stems from that
+delivery, including stopped segments, missing outcomes, source changes and
+overlaps. Actual settings and terminal evidence are retained for readback.
+This is passive observation, not an independent paired strength trial.
