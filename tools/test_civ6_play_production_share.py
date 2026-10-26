@@ -70,6 +70,16 @@ class ProductionShareReadingTest(unittest.TestCase):
         heartbeat = dict(turn_record(80, production), ctx="heartbeat")
         self.assertIsNone(civ6_play.production_share_reading(heartbeat, THIRD))
 
+    def test_a_later_first_turn_reads_nothing_before_it(self):
+        production = {"0": 1, "1": 100, "2": 100, "3": 100}
+        for turn in (50, 79):
+            self.assertIsNone(civ6_play.production_share_reading(
+                turn_record(turn, production), 0.25, 80), turn)
+        for turn in (80, 120):
+            reading = civ6_play.production_share_reading(turn_record(turn, production), 0.25, 80)
+            self.assertTrue(reading["below"], turn)
+            self.assertEqual(reading["line"], 0.25)
+
     def test_a_record_without_our_standing_or_a_rival_is_unreadable(self):
         for event in (turn_record(80, None),
                       turn_record(80, {"1": 100, "2": 50}),
@@ -120,7 +130,9 @@ class ProductionShareRunTest(unittest.TestCase):
     def test_the_live_loop_retires_on_the_third_turn(self):
         source = Path(civ6_play.__file__).read_text(encoding="utf-8")
         branch = source.split("if production_share > 0:\n            reading = "
-                              "production_share_reading(event, production_share)", 1)
+                              "production_share_reading(event, production_share,\n"
+                              "                                               "
+                              "production_share_from)", 1)
         self.assertEqual(len(branch), 2, "the live loop reads the share every turn")
         body = branch[1][:2500]
         self.assertIn("run = production_share_run(state, reading)", body)
@@ -160,6 +172,26 @@ class ProductionSharePolicyTest(unittest.TestCase):
     def test_a_missing_file_is_off(self):
         self.assertEqual(civ6_play.production_share_policy(Path("/nonexistent/policy")), 0.0)
 
+    def test_the_first_turn_from_the_policy(self):
+        key = civ6_play.PRODUCTION_SHARE_FROM_POLICY_KEY
+        self.assertEqual(key, "CIVVIS_RESTART_BELOW_LEADER_PRODUCTION_FROM_TURN")
+        for text, turn in ((f"{key}=80\n", 80),
+                           (f"{key} = 100  # later\n", 100),
+                           (f"{key}=60\n{key}=80\n", 80)):
+            self.assertEqual(civ6_play.production_share_from_turn_policy(self.policy(text)),
+                             turn, text)
+
+    def test_an_absent_or_invalid_first_turn_is_turn_50(self):
+        key = civ6_play.PRODUCTION_SHARE_FROM_POLICY_KEY
+        for text in ("CIVVIS_RESTART_BELOW_LEADER_PRODUCTION=1/4\n", f"{key}=\n",
+                     f"{key}=0\n", f"{key}=-5\n", f"{key}=eighty\n", f"{key}=80.5\n",
+                     f"#{key}=80\n"):
+            with mock.patch("builtins.print"):
+                self.assertEqual(civ6_play.production_share_from_turn_policy(self.policy(text)),
+                                 civ6_play.PRODUCTION_SHARE_TURN, text)
+        self.assertEqual(civ6_play.production_share_from_turn_policy(
+            Path("/nonexistent/policy")), civ6_play.PRODUCTION_SHARE_TURN)
+
     def test_the_flag_defaults_to_the_policy(self):
         source = Path(civ6_play.__file__).read_text(encoding="utf-8")
         self.assertIn('"--restart-below-leader-production", default=None', source)
@@ -167,6 +199,13 @@ class ProductionSharePolicyTest(unittest.TestCase):
         self.assertIn('args.restart_below_leader_production = production_share', source)
         self.assertIn('production_share = getattr(args, "restart_below_leader_production", None) or 0.0',
                       source)
+        self.assertIn('"--restart-below-leader-production-from-turn", type=int, default=None',
+                      source)
+        self.assertIn("production_share_from_turn_policy()\n", source)
+        self.assertIn("args.restart_below_leader_production_from_turn = production_share_from",
+                      source)
+        self.assertIn('getattr(args, "restart_below_leader_production_from_turn", None)\n'
+                      "                             or PRODUCTION_SHARE_TURN)", source)
 
 
 if __name__ == "__main__":
