@@ -168,3 +168,37 @@ Checkpoint 05: 14 byte-verified members, 6,198,416 bytes,
 SHA-256 `d5e0164b61235324d6c46bb94429ec90e5f7419aba9471c5a13f9c47ee00034f`. The packet preserves individual file-read
 times and is not an atomic cross-file snapshot. The sixteen-start cutoff and
 lease identity remain unchanged; no default promotion or strength verdict.
+
+## First observed candidate execution: start 8
+
+The ON attempt 013313Z terminates in a Culture loss at turn 159. Its six
+general upgrades all have unique exact Native successors, bringing the first
+eight attempts to 107 verified general upgrades. One is now joined to the
+candidate-specific turn-24 journal and the unique actual turn-24/frame-1
+decision: Slinger 262146 becomes Archer 589830 at (43,19), preserving XP 3,
+level 1, no promotions and formation 0. The 30-Gold native offer is unblocked.
+The one distinct actual input (1,638,241 bytes, SHA-256
+`6db5a11680db3532c3d88833ca76b45115e55931d11c6aa4f5c4ca4a04511ebf`)
+accounts for all seventeen calls, ends in the unique actual state, and the
+next unique state contains the exact successor. A later host verification
+receipt is retained as supporting evidence. This establishes execution of
+that candidate branch, not an incremental win or survival effect.
+
+Fresh disposable queries of the actual adapter/input produce identical
+OFF/ON orders, and repeated ON orders reproduce. Both differ from historical
+ON orders; these queries do not reconstruct the persistent controller or
+supply an OFF counterfactual for its executed upgrade. Full played-genome
+readback matches in the corrected probes. The initial OFF command used an
+unsupported explicit `--without` for this default-off opt-in and exits 2;
+that failed control is retained. The corrected OFF omits only its enabling
+bit, and readback confirms the exact candidate-excluded genome.
+
+Raw cohort 08: 16 byte-verified non-image members, 1,327,108 bytes,
+SHA-256 `ad349f2c16874271bc5885d267b1763076d7a5e13642aee769449916b67bc41b`.
+
+Checkpoint 06: 12 byte-verified members, 5,463,260 bytes,
+SHA-256 `c14cbf5bfd94351028e6677af6547832f8137db61264ac24b32d973962ebf54c`.
+
+The query/control packet retains 26 verified members in 64,180
+bytes, SHA-256 `64ff95208785baeb56868dc0e267ad44a34680b6024950404f5759708f93f133`, including failed controls and
+all exact input copies. The cohort continues under its original cutoff.
