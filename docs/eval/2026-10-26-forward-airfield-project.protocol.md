@@ -82,3 +82,25 @@ earliest witnesses have now been inspected exploratorily and have zero
 in-range offered Aerodrome sites. This is not the full census result.
 Register this alternative check before its complete aggregation. No treated
 query has run, and no whole-game outcome will choose the validation seeds.
+
+
+At the next registration, the completed one-shot pass retains all 213 cases /
+247 reads, all exact-genome and OFF-repeat controls, and zero changed orders.
+Six registered diagnostic witnesses are being inspected without policy edits.
+Source inspection identifies a material harness difference: the one-shot path
+creates a fresh opening book; `--serve --fresh-board` explicitly skips the
+opening when its first state is past turn one and adopts current host queues.
+The feature hook belongs after the opening. The one-shot null does not prove
+that a persistent production controller could never activate the policy.
+
+Before any corrected-path proposal is measured, retain the same complete
+213-case / 247-read selection, all twenty-four games and both unchanged source
+binaries. Run fresh `--serve --fresh-board --explain` OFF, ON and OFF-repeat
+processes with one request at the captured turn, then EOF. Preserve all raw
+responses, stderr, commands, full played-genome readback and failures. Require
+all three successful responses, exact noncandidate genomes and identical
+repeated OFF orders. Compare with historical orders separately. These are
+production-path cold starts, still not replay of historical persistent state.
+Use six previously fixed stage witnesses for stderr-only gate diagnostics;
+accept observations only where the entire response and genome equal the
+uninstrumented arm. No production threshold or outcome seed changes.
