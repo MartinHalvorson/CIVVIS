@@ -265,9 +265,7 @@ impl AdvancedAi {
     /// claim a turn. Exact no-op with the gene off.
     pub(super) fn claim_capped_aqueduct(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         if !self.aqueduct_claims_the_capped_queue {
-            self.aqueduct_recovery_reservations
-                .borrow_mut()
-                .clear();
+            self.aqueduct_recovery_reservations.borrow_mut().clear();
             return;
         }
         self.prune_capped_aqueduct_recovery_reservations(g, pid);
