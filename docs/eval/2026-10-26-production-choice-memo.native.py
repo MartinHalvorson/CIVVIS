@@ -13,11 +13,12 @@ def main():
     parser.add_argument('--baseline', type=Path, required=True)
     parser.add_argument('--candidate', type=Path, required=True)
     parser.add_argument('--out', type=Path, required=True)
+    parser.add_argument('--selection', type=Path, default=Path(__file__).with_name('2026-10-26-production-choice-memo.native-selection.json'))
     args = parser.parse_args()
     args.out.mkdir(parents=True,exist_ok=False)
     sys.path.insert(0,str(args.repo/'tools'))
     from civ6_ladder import decider_genome
-    p = Path(__file__).with_name('2026-10-26-production-choice-memo.native-selection.json')
+    p = args.selection
     selection = json.loads(p.read_text())
     binaries = {'baseline':args.baseline,'candidate':args.candidate,'baseline-repeat':args.baseline}
     registration = dict(selection_sha256=hashlib.sha256(p.read_bytes()).hexdigest(),
