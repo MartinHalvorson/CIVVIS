@@ -16146,26 +16146,30 @@ impl AdvancedAi {
         // damaged one still finishes) and every swap. Game 135 stayed
         // "committed" to Ratumacos, Divodurum and Córdoba from turn 193 to 211
         // beside Madrid, the last capital it needed.
-        let finishing_capital = self
+        let finish_or_racer = self
             .domination_finish_front(g, pid)
             // `launched-racer-yields-the-capital`: the launched racer's
             // finishing capital is the objective at peace too. `None` with
             // the gene off. See `advanced/launched_racer.rs`.
             .or_else(|| self.launched_racer_finish(g, pid))
             .filter(|(owner, _)| target_player == Some(*owner))
-            .map(|(_, capital)| capital)
-            // `the-last-two-capitals-come-first`: with two or fewer capitals
-            // left, the target's own is the objective. `None` with the gene
-            // off. See `advanced/last_two_capitals.rs`.
-            .or_else(|| self.last_two_capitals_objective(g, pid, target_player))
-            .filter(|capital| {
-                committed_target_city.is_none_or(|committed| {
-                    committed == *capital
-                        || g.cities
-                            .get(&committed)
-                            .is_none_or(|city| city.hp >= CITY_MAX_HP)
-                })
-            });
+            .map(|(_, capital)| capital);
+        // `the-last-two-capitals-come-first`: with two or fewer capitals
+        // left, the target's own is the objective. `None` with the gene off.
+        // See `advanced/last_two_capitals.rs`.
+        let last_two_capital = if finish_or_racer.is_none() {
+            self.last_two_capitals_objective(g, pid, target_player)
+        } else {
+            None
+        };
+        let finishing_capital = finish_or_racer.or(last_two_capital).filter(|capital| {
+            committed_target_city.is_none_or(|committed| {
+                committed == *capital
+                    || g.cities
+                        .get(&committed)
+                        .is_none_or(|city| city.hp >= CITY_MAX_HP)
+            })
+        });
         let target_city = finishing_capital
             .or(capture_opportunity_city)
             .or(stale_walled_city)
@@ -16176,10 +16180,18 @@ impl AdvancedAi {
             finishing_capital.filter(|capital| committed_target_city != Some(*capital))
         {
             let city = &g.cities[&capital];
-            think!(self.journal(), Strategy, Strategy,
-                   "Campaign holds on {}", city.name;
-                   "its capture completes Domination; no committed siege, swap or second front outranks it";
-                   city.pos);
+            if last_two_capital == Some(capital) {
+                think!(self.journal(), Strategy, Strategy,
+                       "Campaign holds on {}", city.name;
+                       "the-last-two-capitals-come-first: one of the last {} capitals Domination needs; no committed siege, swap or second front outranks it",
+                       last_two_capitals::LAST_CAPITALS;
+                       city.pos);
+            } else {
+                think!(self.journal(), Strategy, Strategy,
+                       "Campaign holds on {}", city.name;
+                       "its capture completes Domination; no committed siege, swap or second front outranks it";
+                       city.pos);
+            }
         }
         if let Some(committed_city) = committed_target_city.filter(|city| {
             finishing_capital.is_none()
