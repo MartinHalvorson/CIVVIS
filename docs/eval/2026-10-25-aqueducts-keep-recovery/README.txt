@@ -96,3 +96,20 @@ executing decision. It retains the first eight attempt stems from that
 delivery, including stopped segments, missing outcomes, source changes and
 overlaps. Actual settings and terminal evidence are retained for readback.
 This is passive observation, not an independent paired strength trial.
+
+Final integration correction
+----------------------------
+Hosted append-point controls rejected the original private field name because
+it started with C while filed in the A-B section beside the Aqueduct flag.
+The field is now aqueduct_recovery_reservations. Its exact identifier-only
+rename proof is retained, followed by one whitespace-only disabled-path line
+wrap after the shorter name triggered the formatter. No priority changed.
+All fourteen strategy tests, fourteen append-point controls, changed-line
+format/clippy and merged cargo check passed again. Two fresh strict historical
+comparisons on this exact final module and state again match all191 previous
+complete replies/ordered reads and transport the same legal71/0 Hub. The full
+changed payloads also equal the earlier qualified version.
+final-state-name.json.gz retains the hosted failure, intermediate formatting
+rejection, exact rename/format proofs, final build/test/quality/check logs and
+both complete final comparisons. registration.json and validation.json identify
+the final integrated source. Earlier qualified and rejected versions remain.

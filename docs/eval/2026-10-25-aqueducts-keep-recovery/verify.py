@@ -3,6 +3,7 @@ from pathlib import Path
 import gzip
 import hashlib
 import json
+import re
 import sys
 
 HERE = Path(__file__).resolve().parent
@@ -61,38 +62,55 @@ failed_reply = json.loads(failed['comparisons']['comparison-0']['replies.jsonl']
 assert any(o.get('kind') == 'produce' and o.get('subject') == 131073
            and o.get('verb') == 'BUILDING_LIBRARY' for o in failed_reply['orders'])
 
-qualified = packed('qualified-first-change.json.gz')
-report = qualified['comparison']
-assert report['qualified'] and report['first_changed_request'] == [71, 0]
-assert report['identical_complete_requests_before_change'] == 191
-assert len(report['comparisons']) == 2
-changed = []
-for key, files in qualified['comparisons'].items():
-    replies = [json.loads(line) for line in files['replies.jsonl'].splitlines()]
-    assert len(replies) == 192
-    for original, reply in zip(native[:191], replies[:191]):
-        assert exact_fact(control_payload(original), control_payload(reply)), key
-    reply = replies[-1]
-    assert (reply['decision']['turn'], reply['decision']['frame']) == (71, 0)
-    actions = [a for a in reply['decision']['native_actions']
-               if a.get('type') == 'produce' and a.get('city') == 34]
-    assert actions[-1]['item'] == {'district': 'commercial_hub', 'pos': [13, 11]}
-    orders = [o for o in reply['orders'] if o.get('kind') == 'produce'
-              and o.get('subject') == 131073]
-    assert orders == [qualified['registration']['expected_native_order']]
-    changed.append(control_payload(reply))
-assert exact_fact(changed[0], changed[1])
-for comparison in report['comparisons']:
-    rows = comparison['requests']
-    assert len(rows) == 192 and rows[-1]['request'] == [71, 0]
-    assert all(row['read_sequence_matches'] and not row['identity_errors'] for row in rows)
-    assert all(row['native_payload_matches'] for row in rows[:-1])
-    assert not rows[-1]['native_payload_matches']
+for archive_name in ['qualified-first-change.json.gz', 'final-state-name.json.gz']:
+    qualified = packed(archive_name)
+    report = qualified['comparison']
+    assert report['qualified'] and report['first_changed_request'] == [71, 0]
+    assert report['identical_complete_requests_before_change'] == 191
+    assert len(report['comparisons']) == 2
+    changed = []
+    for key, files in qualified['comparisons'].items():
+        replies = [json.loads(line) for line in files['replies.jsonl'].splitlines()]
+        assert len(replies) == 192
+        for original, reply in zip(native[:191], replies[:191]):
+            assert exact_fact(control_payload(original), control_payload(reply)), key
+        reply = replies[-1]
+        assert (reply['decision']['turn'], reply['decision']['frame']) == (71, 0)
+        actions = [a for a in reply['decision']['native_actions']
+                   if a.get('type') == 'produce' and a.get('city') == 34]
+        assert actions[-1]['item'] == {'district': 'commercial_hub', 'pos': [13, 11]}
+        orders = [o for o in reply['orders'] if o.get('kind') == 'produce'
+                  and o.get('subject') == 131073]
+        assert orders == [qualified['registration']['expected_native_order']]
+        changed.append(control_payload(reply))
+    assert exact_fact(changed[0], changed[1])
+    for comparison in report['comparisons']:
+        rows = comparison['requests']
+        assert len(rows) == 192 and rows[-1]['request'] == [71, 0]
+        assert all(row['read_sequence_matches'] and not row['identity_errors'] for row in rows)
+        assert all(row['native_payload_matches'] for row in rows[:-1])
+        assert not rows[-1]['native_payload_matches']
+
+final = packed('final-state-name.json.gz')
+assert final['process']['exit_code'] == 0 and len(final['process']['steps']) == 5
+assert all(step['exit_code'] == 0 for step in final['process']['steps'])
+assert '14 passed; 0 failed' in final['final_logs']['green']
+assert final['process']['source_sha256']['src/ai/advanced/aqueduct_claims_the_capped_queue/tests.rs'] == green['test_sha256']
+assert hashlib.sha256(final['exact_backported_module'].encode()).hexdigest() == final['registration']['module_sha256']
+assert final['registration']['module_sha256'] == registration['source_hashes']['src/ai/advanced/aqueduct_claims_the_capped_queue.rs']
+assert final['neutral_historical_parent_reverse_hash_matches_v2']
+renamed = re.sub(r'\bcapped_aqueduct_recovery_reservations\b', 'aqueduct_recovery_reservations', history['final_module'])
+assert ''.join(renamed.split()) == ''.join(final['exact_backported_module'].split())
+prior = packed('qualified-first-change.json.gz')
+for key in ['comparison-0', 'comparison-1']:
+    old = json.loads(prior['comparisons'][key]['replies.jsonl'].splitlines()[-1])
+    new = json.loads(final['comparisons'][key]['replies.jsonl'].splitlines()[-1])
+    assert exact_fact(control_payload(old), control_payload(new))
 
 context = packed('industrial-first-eight-context.json.gz')['analysis']
 assert context['wins'] == 0 and context['losses'] == 8
 assert context['missing_or_unclassified'] == 0
 assert context['all_recorded_hashes_match_frozen_binary']
 assert sum(context['source_revisions'].values()) == 8
-print('Verified both complete263 controls, both191-prefix/71-Hub comparisons,')
+print('Verified both complete263 controls, original and final191-prefix/71-Hub comparisons,')
 print('all ordered-read receipts, rejected Library case,14-case GREEN and fixed8 native outcomes.')

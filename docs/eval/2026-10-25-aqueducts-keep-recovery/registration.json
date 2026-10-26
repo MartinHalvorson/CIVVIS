@@ -2,8 +2,8 @@
   "assembled_utc": "2026-10-26T00:41:21.906143+00:00",
   "scope": "Exact current AQ module, private accepted-reservation map and initializer, focused tests and declared historical evidence only. No new gene/default, native force/settings/lane/lease/leader/target changes.",
   "source_hashes": {
-    "src/ai/advanced.rs": "70f94b7c984ea553f687db82bfe47b2d30f3720bc181d45fc1d5db526bb2b50d",
-    "src/ai/advanced/aqueduct_claims_the_capped_queue.rs": "bf1e35487bf3e495088c958f527d18baae7f2ecbdfea21b697b29eaf10764320",
+    "src/ai/advanced.rs": "a94ba7d355488bf59538805b0fcfdbabe069458762913f05bd03f3bda5790cd9",
+    "src/ai/advanced/aqueduct_claims_the_capped_queue.rs": "34e7e9bb35080f9acf3d52a2fbfa6eaece077a622ebeaf01e6d1fbcf11e32a87",
     "src/ai/advanced/aqueduct_claims_the_capped_queue/tests.rs": "0cb42501dea05c539905fe39944142cf218f61bd83e4d791e9f2a0136f0f2995"
   },
   "historical_source": "b4dfb57ea13b5d1bc08918d71769a94c88b690f7",
@@ -12,7 +12,7 @@
     0
   ],
   "earlier_complete_payloads_and_ordered_reads": 191,
-  "candidate_binary_sha256": "711aa325ace65191fcb499bebd77c25934b7c8188e35d7933793414c3961e4c1",
+  "candidate_binary_sha256": "6abbe8635df7176fe024ec2d5fef1605f1acb6b483aa41ca46c02c85f542b8e3",
   "qualified_native_quote": "Both distinct captured inputs at71/0 agree105Gold,-0.746094gpt,Hub11turns,selectednative18,11legal. Every ordered read remains matched.",
   "limitations": [
     "Original argv/cwd reconstructed and qualified by complete original controls, not directly observed.",
@@ -28,9 +28,10 @@
     "qualified-helper-control.json.gz": "9d784911a0f7a3af54114ccc39536d842f9a3041309956ac5cccad19048f0575",
     "regression-history.json.gz": "55c2c3fbbd9fd4a36b3f059a1398bcd71f7d2a6e7376f83013e301fc6f65b91f",
     "rejected-first-change.json.gz": "64df712c5ae5d38253b3d9f6e66c57b11f74c417da86408c31bc62ba5562fbc3",
-    "native-observer.py": "7ba9fe535d8a6bd2a8768825d56fd28397f7eec762084c66d7e77a70c38dd959",
-    "validation.json": "44ce5a30de2257bf96946129c3eb191a5ab2f8591fada2bccf15b15ad8bbe991"
+    "native-observer.py": "b2c7c361effb19db5e1fd1fdd73a46527bf0ba195c42ea3a9650076e59e50ffe",
+    "validation.json": "b3b1220332c5095f6c353a3683754bbb6291d17b183f3cec0b11c7980b679e76",
+    "final-state-name.json.gz": "94d7b3ca11387183881258d816dce64985eb8e07fab3b6660ea1b7ab1a83b0a1"
   },
   "native_protocol": "Run once after confirmed merge. First eight attempt stems starting at first exact delivered AQ module+private map state, frozen binary/provenance and executing decision. Retain source changes, failures, continuations, missing outcomes and overlaps. Read back actual Immortal/GranColombia/Tiny/Pangaea/Online/all victories/assigned Domination. No gameplay/config/lane/lease changes; observational, not causal win-rate evidence.",
-  "source_hashes_note": "source_hashes identify pre-integration source checkpoint. validation.json identifies actual integrated Rust source; AQ module and test bytes are identical."
+  "source_hashes_note": "Exact integrated final v4 source after private identifier rename and one whitespace-only line wrap; all14, quality, cargo check and final strict comparisons requalified. Prior versions and failures remain archived."
 }
