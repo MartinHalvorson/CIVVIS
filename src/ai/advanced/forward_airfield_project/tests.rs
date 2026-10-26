@@ -91,6 +91,54 @@ fn install_project(ai: &mut AdvancedAi, g: &Game, producer: u32, capital: u32, f
     });
 }
 
+fn renumber_cities(g: &Game) -> Game {
+    let mut next = g.clone();
+    next.cities = g
+        .cities
+        .values()
+        .cloned()
+        .map(|mut city| {
+            city.id += 1000;
+            (city.id, city)
+        })
+        .collect();
+    for tile in next.map.tiles.values_mut() {
+        tile.owner_city = tile.owner_city.map(|id| id + 1000);
+    }
+    next.host_buildable = Arc::new(
+        g.host_buildable
+            .iter()
+            .map(|(id, menu)| (id + 1000, menu.clone()))
+            .collect(),
+    );
+    next
+}
+
+#[test]
+fn a_held_stage_follows_its_city_when_a_fresh_board_renumbers_both_cities() {
+    let (mut g, mut ai, plan, producer, _, _) = fixture();
+    ai.claim_forward_airfield_project(&mut g, 0, &plan);
+    let item = g.cities[&producer].queue[0].clone();
+    assert!(ai.forward_airfield_project_holds(&g, 0, producer, &plan, &item));
+    let next = renumber_cities(&g);
+    let mut next_plan = plan;
+    next_plan.target_city = next_plan.target_city.map(|id| id + 1000);
+    assert!(ai.forward_airfield_project_holds(&next, 0, producer + 1000, &next_plan, &item));
+}
+
+#[test]
+fn a_fresh_board_cannot_restart_an_expired_field_project_by_renumbering_its_capital() {
+    let (g, mut ai, mut plan, producer, capital, field) = fixture();
+    install_project(&mut ai, &g, producer, capital, field);
+    let started = g.turn;
+    let mut next = renumber_cities(&g);
+    next.turn += next.standard_duration(PROJECT_STANDARD_TURNS) + 1;
+    plan.target_city = Some(capital + 1000);
+    ai.claim_forward_airfield_project(&mut next, 0, &plan);
+    assert!(next.cities[&(producer + 1000)].queue.is_empty());
+    assert_eq!(ai.forward_airfield_project_state.as_ref().unwrap().started, started);
+}
+
 #[test]
 fn one_idle_producer_starts_a_legal_encampment_and_keeps_it_through_both_governors() {
     let (mut g, mut ai, plan, producer, _, _) = fixture();

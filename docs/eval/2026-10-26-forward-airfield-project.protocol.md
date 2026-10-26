@@ -104,3 +104,14 @@ production-path cold starts, still not replay of historical persistent state.
 Use six previously fixed stage witnesses for stderr-only gate diagnostics;
 accept observations only where the entire response and genome equal the
 uninstrumented arm. No production threshold or outcome seed changes.
+
+
+Before live deployment, cover project persistence through city renumbering.
+The production bridge rebuilds city IDs while keeping coordinates stable;
+the first prototype stores IDs and has no city-memory remap. Add two tests
+against unchanged policy: a held offered stage follows the same producer and
+capital after a rebuild, and an expired project cannot restart its finite
+budget merely because those IDs move. Retain the genuine failing results,
+then key this new reservation by stable city positions. No stage, route,
+budget or safety threshold changes. Frozen-source proposal/model evidence
+remains labeled with its original source; new source needs its own checks.
