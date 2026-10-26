@@ -4641,11 +4641,8 @@ fn release_foreign_production(
         let Some(cid) = cid_of.get(&city.id).copied() else {
             continue;
         };
-        if let Some(built) = planned_game.cities.get_mut(&cid) {
-            if !built.queue.is_empty() {
-                built.queue.clear();
-                released += 1;
-            }
+        if planned_game.pause_city_production(cid) {
+            released += 1;
         }
     }
     released
@@ -12929,6 +12926,168 @@ mod tests {
         );
         // And the preview never touched the caller's board.
         assert_ne!(planned.current, 0);
+    }
+
+    fn released_queue_progress_board(producing: Option<&str>) -> (Snapshot, StateSnapshot) {
+        let (snapshot, mut state) = production_board();
+        state.cities[0].producing = producing.map(str::to_string);
+        state.cities[0].production = 6.0;
+        state.cities[0].production_cost = 55.0;
+        state.cities[0].production_progress = 17.0;
+        state.cities[0].production_turns = 7.0;
+        (snapshot, state)
+    }
+
+    #[test]
+    fn released_queue_progress_stays_with_the_original_settler() {
+        use civvis::game::Item;
+        let (snapshot, state) = released_queue_progress_board(Some("UNIT_SETTLER"));
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
+        let cid = mirror.cid_of[&7];
+        let mut planned = mirror.game.clone();
+        let ours = std::collections::BTreeMap::from([(7, "UNIT_BUILDER".to_string())]);
+        assert_eq!(
+            release_foreign_production(&mut planned, &mirror.cid_of, &state, &ours),
+            1
+        );
+        assert!(planned.cities[&cid].queue.is_empty());
+        assert_eq!(
+            planned.cities[&cid].production, 0.0,
+            "the Settler's 17 paid production is not free overflow for another item"
+        );
+        assert_eq!(
+            planned.cities[&cid].production_progress.get("unit:settler"),
+            Some(&17.0)
+        );
+        planned
+            .apply(
+                0,
+                &Action::Produce {
+                    city: cid,
+                    item: Item::Unit {
+                        unit: "scout".into(),
+                    },
+                },
+            )
+            .expect("a legal unrelated replacement");
+        assert_eq!(planned.cities[&cid].production, 0.0);
+        planned
+            .apply(
+                0,
+                &Action::Produce {
+                    city: cid,
+                    item: Item::Unit {
+                        unit: "settler".into(),
+                    },
+                },
+            )
+            .expect("resume the original Settler");
+        assert_eq!(planned.cities[&cid].production, 17.0);
+        assert_eq!(mirror.game.cities[&cid].production, 17.0);
+        assert_eq!(
+            mirror.game.cities[&cid].queue[0],
+            Item::Unit {
+                unit: "settler".into()
+            }
+        );
+    }
+
+    #[test]
+    fn released_queue_progress_keeps_other_paused_work_separate() {
+        use civvis::game::Item;
+        let (snapshot, state) = released_queue_progress_board(Some("UNIT_SETTLER"));
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
+        let cid = mirror.cid_of[&7];
+        let mut planned = mirror.game.clone();
+        planned
+            .cities
+            .get_mut(&cid)
+            .unwrap()
+            .production_progress
+            .insert("building:monument".to_string(), 11.0);
+        planned
+            .cities
+            .get_mut(&cid)
+            .unwrap()
+            .queue
+            .push(Item::Unit {
+                unit: "warrior".into(),
+            });
+        assert_eq!(
+            release_foreign_production(
+                &mut planned,
+                &mirror.cid_of,
+                &state,
+                &std::collections::BTreeMap::new()
+            ),
+            1
+        );
+        assert_eq!(
+            planned.cities[&cid].production_progress.get("unit:settler"),
+            Some(&17.0),
+            "releasing the head keeps its own paid work"
+        );
+        assert!(planned.cities[&cid].queue.is_empty());
+        assert!(!planned.cities[&cid]
+            .production_progress
+            .contains_key("unit:warrior"));
+        planned
+            .apply(
+                0,
+                &Action::Produce {
+                    city: cid,
+                    item: Item::Building {
+                        building: "monument".into(),
+                    },
+                },
+            )
+            .expect("resume a separately paid Monument");
+        assert_eq!(planned.cities[&cid].production, 11.0);
+    }
+
+    #[test]
+    fn released_queue_progress_leaves_owned_work_active() {
+        let (snapshot, state) = released_queue_progress_board(Some("UNIT_SETTLER"));
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
+        let cid = mirror.cid_of[&7];
+        let mut planned = mirror.game.clone();
+        let ours = std::collections::BTreeMap::from([(7, "UNIT_SETTLER".to_string())]);
+        assert_eq!(
+            release_foreign_production(&mut planned, &mirror.cid_of, &state, &ours),
+            0
+        );
+        assert_eq!(planned.cities[&cid].production, 17.0);
+        assert_eq!(planned.cities[&cid].queue, mirror.game.cities[&cid].queue);
+    }
+
+    #[test]
+    fn released_queue_progress_leaves_real_idle_overflow_available() {
+        use civvis::game::Item;
+        let (snapshot, state) = released_queue_progress_board(None);
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
+        let cid = mirror.cid_of[&7];
+        let mut planned = mirror.game.clone();
+        assert_eq!(
+            release_foreign_production(
+                &mut planned,
+                &mirror.cid_of,
+                &state,
+                &std::collections::BTreeMap::new()
+            ),
+            0
+        );
+        planned
+            .apply(
+                0,
+                &Action::Produce {
+                    city: cid,
+                    item: Item::Unit {
+                        unit: "scout".into(),
+                    },
+                },
+            )
+            .expect("a legal item may use actual unassigned overflow");
+        assert_eq!(planned.cities[&cid].production, 17.0);
     }
 
     #[test]
