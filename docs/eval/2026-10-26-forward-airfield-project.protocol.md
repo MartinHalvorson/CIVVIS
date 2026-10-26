@@ -55,3 +55,11 @@ default by itself.
 A future Native screen requires actual delivered-source/binary/profile controls
 and its own registered finite observer. The currently running Slinger trial
 keeps its exclusive lease; never overlap, replace or rearm its cutoff.
+
+Before proposal measurement, initial finite hypotheses are: at most sixteen
+standard turns for any offered stage, forty standard turns for the preparation
+reservation, and at most twelve known land edges from producer to field.
+Current income must cover a conservative six Gold/turn for the complete
+Encampment/Barracks-or-Stable/Armory/Engineer chain, while cash preserves the
+existing 1.5-turn upkeep reserve including that allowance. The travel bound is
+a known-land planning bound, not an asserted future Native travel time.
