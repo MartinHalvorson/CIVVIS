@@ -6345,6 +6345,29 @@ impl Game {
             }
     }
 
+    /// Pause a city's queue while keeping its paid work on the current item.
+    /// A replacement may resume its own saved work, but cannot spend this
+    /// item's progress as overflow. An already empty queue keeps its overflow.
+    pub fn pause_city_production(&mut self, cid: u32) -> bool {
+        let Some(item) = self
+            .cities
+            .get(&cid)
+            .and_then(|city| city.queue.first())
+            .cloned()
+        else {
+            return false;
+        };
+        let paid = self.item_invested_production(cid, &item);
+        let key = Self::item_progress_key(&item);
+        let city = self.cities.get_mut(&cid).unwrap();
+        if paid > 0.0 {
+            city.production_progress.insert(key, paid);
+        }
+        city.production = 0.0;
+        city.queue.clear();
+        true
+    }
+
     /// Production still required after active progress, item-specific paused
     /// progress, and unassigned overflow are applied. Search agents use this
     /// instead of treating a nearly complete build like a fresh one.
