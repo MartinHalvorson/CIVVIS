@@ -1,0 +1,74 @@
+Base/Assets/Gameplay/Data/Improvements.xml:21: 		<Row Type="IMPROVEMENT_AIRSTRIP" Kind="KIND_IMPROVEMENT"/>
+Base/Assets/Gameplay/Data/Improvements.xml:50: 		<Row ImprovementType="IMPROVEMENT_AIRSTRIP" Name="LOC_IMPROVEMENT_AIRSTRIP_NAME" Description="LOC_IMPROVEMENT_AIRSTRIP_DESCRIPTION" Icon="ICON_IMPROVEMENT_AIRSTRIP" PlunderType="NO_PLUNDER" Buildable="true" PrereqTech="TECH_FLIGHT" CanBuildOutsideTerritory="true" AirSlots="3" Appeal="-1"/>
+Base/Assets/Gameplay/Data/Improvements.xml:214: 		<Row ImprovementType="IMPROVEMENT_AIRSTRIP" TerrainType="TERRAIN_DESERT"/>
+Base/Assets/Gameplay/Data/Improvements.xml:215: 		<Row ImprovementType="IMPROVEMENT_AIRSTRIP" TerrainType="TERRAIN_TUNDRA"/>
+Base/Assets/Gameplay/Data/Improvements.xml:216: 		<Row ImprovementType="IMPROVEMENT_AIRSTRIP" TerrainType="TERRAIN_PLAINS"/>
+Base/Assets/Gameplay/Data/Improvements.xml:217: 		<Row ImprovementType="IMPROVEMENT_AIRSTRIP" TerrainType="TERRAIN_GRASS"/>
+Base/Assets/Gameplay/Data/Improvements.xml:218: 		<Row ImprovementType="IMPROVEMENT_AIRSTRIP" TerrainType="TERRAIN_SNOW"/>
+Base/Assets/Gameplay/Data/Improvements.xml:294: 		<Row ImprovementType="IMPROVEMENT_FORT" UnitType="UNIT_MILITARY_ENGINEER"/>
+Base/Assets/Gameplay/Data/Improvements.xml:295: 		<Row ImprovementType="IMPROVEMENT_AIRSTRIP" UnitType="UNIT_MILITARY_ENGINEER"/>
+Base/Assets/Gameplay/Data/Improvements.xml:296: 		<Row ImprovementType="IMPROVEMENT_MISSILE_SILO" UnitType="UNIT_MILITARY_ENGINEER"/>
+Base/Assets/Gameplay/Data/Routes.xml:20: 		<Row RouteType="ROUTE_ANCIENT_ROAD" UnitType="UNIT_MILITARY_ENGINEER"/>
+Base/Assets/Gameplay/Data/Routes.xml:21: 		<Row RouteType="ROUTE_MEDIEVAL_ROAD" UnitType="UNIT_MILITARY_ENGINEER"/>
+Base/Assets/Gameplay/Data/Routes.xml:22: 		<Row RouteType="ROUTE_INDUSTRIAL_ROAD" UnitType="UNIT_MILITARY_ENGINEER"/>
+Base/Assets/Gameplay/Data/Routes.xml:23: 		<Row RouteType="ROUTE_MODERN_ROAD" UnitType="UNIT_MILITARY_ENGINEER"/>
+Base/Assets/Gameplay/Data/Units.xml:72: 		<Row Type="UNIT_MILITARY_ENGINEER" Kind="KIND_UNIT"/>
+Base/Assets/Gameplay/Data/Units.xml:314: 		<Row UnitType="UNIT_MILITARY_ENGINEER" AiType="UNITTYPE_SIEGE_SUPPORT"/>
+Base/Assets/Gameplay/Data/Units.xml:315: 		<Row UnitType="UNIT_MILITARY_ENGINEER" AiType="UNITAI_BUILD"/>
+Base/Assets/Gameplay/Data/Units.xml:316: 		<Row UnitType="UNIT_MILITARY_ENGINEER" AiType="UNITTYPE_CIVILIAN"/>
+Base/Assets/Gameplay/Data/Units.xml:584: 		<Row Type="UNIT_MILITARY_ENGINEER" Tag="CLASS_SUPPORT"/>
+Base/Assets/Gameplay/Data/Units.xml:800: 		<Row UnitType="UNIT_MILITARY_ENGINEER" Cost="170" Maintenance="2" BaseMoves="2" BaseSightRange="2" ZoneOfControl="false" Domain="DOMAIN_LAND" FormationClass="FORMATION_CLASS_SUPPORT" PromotionClass="PROMOTION_CLASS_SUPPORT" AdvisorType="ADVISOR_CONQUEST" Name="LOC_UNIT_MILITARY_ENGINEER_NAME" Description="LOC_UNIT_MILITARY_ENGINEER_DESCRIPTION" PurchaseYield="YIELD_GOLD" BuildCharges="2" PrereqTech="TECH_MILITARY_ENGINEERING"/>
+Base/Assets/Gameplay/Data/Units.xml:932: 		<Row Unit="UNIT_MILITARY_ENGINEER" PrereqBuilding="BUILDING_ARMORY"/>
+DLC/AlexanderScenario/Data/AlexanderScenario_RemoveData.xml:653: 		<Delete Type="IMPROVEMENT_AIRSTRIP"/>
+DLC/AlexanderScenario/Data/AlexanderScenario_RemoveData.xml:973: 		<Delete Type="UNIT_MILITARY_ENGINEER"/>
+DLC/AustraliaScenario/Data/AustraliaScenario_Civics.xml:72: 		<Row CivicType="CIVIC_AERIAL_SERVICES" Boost="50" TriggerDescription="LOC_BOOST_TRIGGER_SCENARIO_AERIAL_SERVICES" TriggerLongDescription="LOC_BOOST_TRIGGER_LONGDESC_SCENARIO_AERIAL_SERVICES" BoostClass="BOOST_TRIGGER_HAVE_X_IMPROVEMENTS" ImprovementType="IMPROVEMENT_AIRSTRIP" RequiresResource="false" NumItems="1"/>
+DLC/AustraliaScenario/Data/AustraliaScenario_GameplayData.xml:605: 			<Where ImprovementType="IMPROVEMENT_AIRSTRIP"/>
+DLC/AustraliaScenario/Data/AustraliaScenario_GameplayData.xml:624: 		<Row ImprovementType="IMPROVEMENT_AIRSTRIP" UnitType="UNIT_PROSPECTOR"/>
+DLC/AustraliaScenario/Data/AustraliaScenario_GameplayData.xml:632: 		<Row ImprovementType="IMPROVEMENT_AIRSTRIP" YieldType="YIELD_GOLD" YieldChange="2"/>
+DLC/AustraliaScenario/Data/AustraliaScenario_RemoveData.xml:987: 		<Delete Type="UNIT_MILITARY_ENGINEER"/>
+DLC/BlackDeathScenario/Data/BlackDeathScenario_RemoveData.xml:706: 		<Delete Type="IMPROVEMENT_AIRSTRIP"/>
+DLC/BlackDeathScenario/Data/BlackDeathScenario_RemoveData.xml:1021: 		<Delete Type="UNIT_MILITARY_ENGINEER"/>
+DLC/Expansion2/Data/Expansion2_AI.xml:89: 		<Row DefnId="4" NodeId="3" TreeName="Build Railroad" DefaultData="UNIT_MILITARY_ENGINEER"/>
+DLC/Expansion2/Data/Expansion2_Buildings.xml:461: 		<Row BuildingType="BUILDING_FLOOD_BARRIER" UnitType="UNIT_MILITARY_ENGINEER" PercentProductionPerCharge="20"/>
+DLC/Expansion2/Data/Expansion2_Civilizations.xml:380: 			<Value>UNIT_MILITARY_ENGINEER</Value>
+DLC/Expansion2/Data/Expansion2_Civilizations.xml:627: 			<Value>UNIT_MILITARY_ENGINEER</Value>
+DLC/Expansion2/Data/Expansion2_Districts.xml:96: 		<Row DistrictType="DISTRICT_CANAL" UnitType="UNIT_MILITARY_ENGINEER" PercentProductionPerCharge="20"/>
+DLC/Expansion2/Data/Expansion2_Districts.xml:97: 		<Row DistrictType="DISTRICT_DAM" UnitType="UNIT_MILITARY_ENGINEER" PercentProductionPerCharge="20"/>
+DLC/Expansion2/Data/Expansion2_Districts.xml:98: 		<Row DistrictType="DISTRICT_AQUEDUCT" UnitType="UNIT_MILITARY_ENGINEER" PercentProductionPerCharge="20"/>
+DLC/Expansion2/Data/Expansion2_Districts.xml:99: 		<Row DistrictType="DISTRICT_BATH" UnitType="UNIT_MILITARY_ENGINEER" PercentProductionPerCharge="20"/>
+DLC/Expansion2/Data/Expansion2_Icons_UnitPortraits.xml:126:     <Row Name="ICON_UNIT_MILITARY_ENGINEER_PORTRAIT_ERA_FUTURE"   OtherName="ICON_UNIT_MILITARY_ENGINEER_PORTRAIT_ERA_INFORMATION" />
+DLC/Expansion2/Data/Expansion2_Icons_UnitPortraits.xml:140:     <Row Name="ICON_ETHNICITY_AFRICAN_UNIT_MILITARY_ENGINEER_PORTRAIT_ERA_FUTURE"   OtherName="ICON_ETHNICITY_AFRICAN_UNIT_MILITARY_ENGINEER_PORTRAIT_ERA_INFORMATION" />
+DLC/Expansion2/Data/Expansion2_Icons_UnitPortraits.xml:154:     <Row Name="ICON_ETHNICITY_SOUTHAM_UNIT_MILITARY_ENGINEER_PORTRAIT_ERA_FUTURE"   OtherName="ICON_ETHNICITY_SOUTHAM_UNIT_MILITARY_ENGINEER_PORTRAIT_ERA_INFORMATION" />
+DLC/Expansion2/Data/Expansion2_Icons_UnitPortraits.xml:168:     <Row Name="ICON_ETHNICITY_ASIAN_UNIT_MILITARY_ENGINEER_PORTRAIT_ERA_FUTURE"   OtherName="ICON_ETHNICITY_ASIAN_UNIT_MILITARY_ENGINEER_PORTRAIT_ERA_INFORMATION" />
+DLC/Expansion2/Data/Expansion2_Icons_UnitPortraits.xml:182:     <Row Name="ICON_ETHNICITY_MEDIT_UNIT_MILITARY_ENGINEER_PORTRAIT_ERA_FUTURE"   OtherName="ICON_ETHNICITY_MEDIT_UNIT_MILITARY_ENGINEER_PORTRAIT_ERA_INFORMATION" />
+DLC/Expansion2/Data/Expansion2_Improvements.xml:201: 		<Row ImprovementType="IMPROVEMENT_AIRSTRIP" FeatureType="FEATURE_VOLCANIC_SOIL"/>
+DLC/Expansion2/Data/Expansion2_Improvements.xml:241: 		<Row ImprovementType="IMPROVEMENT_MOUNTAIN_TUNNEL" UnitType="UNIT_MILITARY_ENGINEER"/>
+DLC/Expansion2/Data/Expansion2_Leaders.xml:211: 		<Row ListType="VictoriaUnits" Item="UNIT_MILITARY_ENGINEER" Value="1"/>
+DLC/Expansion2/Data/Expansion2_Routes.xml:22: 		<Row RouteType="ROUTE_RAILROAD" UnitType="UNIT_MILITARY_ENGINEER"/>
+DLC/Expansion2/Data/Expansion2_Units.xml:58: 			<Where UnitType="UNIT_MILITARY_ENGINEER"/>
+DLC/Expansion2/Data/Expansion2_Units.xml:60: 				<Description>LOC_UNIT_MILITARY_ENGINEER_ALT_DESCRIPTION</Description>
+DLC/Expansion2/Data/Expansion2_Units.xml:266: 			<Where UnitType="UNIT_MILITARY_ENGINEER"/>
+DLC/Expansion2/Data/Expansion2_Units.xml:403: 		<Row UnitType="UNIT_MILITARY_ENGINEER" CanEarnExperience="false" CanFormMilitaryFormation="false"/>
+DLC/Indonesia_KhmerScenario/Data/Indonesia_KhmerScenario_RemoveData.xml:668: 		<Delete Type="IMPROVEMENT_AIRSTRIP"/>
+DLC/Indonesia_KhmerScenario/Data/Indonesia_KhmerScenario_RemoveData.xml:1008: 		<Delete Type="UNIT_MILITARY_ENGINEER"/>
+DLC/NubiaScenario/Data/NubiaScenario_RemoveData.xml:688: 		<Delete Type="IMPROVEMENT_AIRSTRIP"/>
+DLC/NubiaScenario/Data/NubiaScenario_RemoveData.xml:1048: 		<Delete Type="UNIT_MILITARY_ENGINEER"/>
+DLC/PiratesScenario/Data/PiratesScenario_RemoveData.xml:321: 		<Delete Type="UNIT_MILITARY_ENGINEER"/>
+DLC/PolandScenario/Data/PolandScenario_Leaders.xml:186: 			<Value>UNIT_MILITARY_ENGINEER</Value>
+DLC/Poland_Jadwiga/Data/Poland_Jadwiga_GameplayData.xml:145: 		<Row ListType="JadwigaUnitBuilds" Item="UNIT_MILITARY_ENGINEER" Value="1"/>
+DLC/Portugal/Data/Portugal_Improvements_MODE.xml:85: 		<Row ImprovementType="IMPROVEMENT_MODERN_TOWER_DEFENSE" UnitType="UNIT_MILITARY_ENGINEER"/>
+DLC/Portugal/Data/Portugal_Improvements_MODE.xml:87: 		<Row ImprovementType="IMPROVEMENT_MODERN_TRAP_DEFENSE" UnitType="UNIT_MILITARY_ENGINEER"/>
+DLC/VikingsScenario/Data/VikingsScenario_RemoveData.xml:626: 		<Delete Type="IMPROVEMENT_AIRSTRIP"/>
+DLC/VikingsScenario/Data/VikingsScenario_RemoveData.xml:918: 		<Delete Type="UNIT_MILITARY_ENGINEER"/>
+DLC/WarMachineScenario/Data/WarMachineScenario_GameplayData.xml:12: 		<Row Type="UNIT_MILITARY_ENGINEER" Kind="KIND_UNIT"/>
+DLC/WarMachineScenario/Data/WarMachineScenario_GameplayData.xml:66: 		<Row Type="UNIT_MILITARY_ENGINEER" Tag="CLASS_LANDCIVILIAN"/>
+DLC/WarMachineScenario/Data/WarMachineScenario_GameplayData.xml:160: 		<Row UnitType="UNIT_MILITARY_ENGINEER" Cost="80" BaseMoves="2" BaseSightRange="2" ZoneOfControl="false" Domain="DOMAIN_LAND" FormationClass="FORMATION_CLASS_SUPPORT" PromotionClass="PROMOTION_CLASS_SUPPORT" AdvisorType="ADVISOR_CONQUEST" Name="LOC_UNIT_MILITARY_ENGINEER_NAME" Description="LOC_UNIT_MILITARY_ENGINEER_WARMACHINE_DESCRIPTION" CanCapture="False" PurchaseYield="YIELD_GOLD" BuildCharges="2"/>
+DLC/WarMachineScenario/Data/WarMachineScenario_GameplayData.xml:192: 		<Row UnitType="UNIT_MILITARY_ENGINEER" AiType="UNITTYPE_SIEGE_SUPPORT"/>
+DLC/WarMachineScenario/Data/WarMachineScenario_GameplayData.xml:193: 		<Row UnitType="UNIT_MILITARY_ENGINEER" AiType="UNITAI_BUILD"/>
+DLC/WarMachineScenario/Data/WarMachineScenario_GameplayData.xml:194: 		<Row UnitType="UNIT_MILITARY_ENGINEER" AiType="UNITTYPE_CIVILIAN"/>
+DLC/WarMachineScenario/Data/WarMachineScenario_GameplayData.xml:204: 		<Row Unit="UNIT_MILITARY_ENGINEER" PrereqBuilding="BUILDING_ARMORY"/>
+DLC/WarMachineScenario/Data/WarMachineScenario_GameplayData.xml:253: 			<Where ImprovementType="IMPROVEMENT_AIRSTRIP"/>
+DLC/WarMachineScenario/Data/WarMachineScenario_GameplayData.xml:298: 		<Row ImprovementType="IMPROVEMENT_FORT" UnitType="UNIT_MILITARY_ENGINEER"/>
+DLC/WarMachineScenario/Data/WarMachineScenario_GameplayData.xml:299: 		<Row ImprovementType="IMPROVEMENT_AIRSTRIP" UnitType="UNIT_MILITARY_ENGINEER"/>
+DLC/WarMachineScenario/Data/WarMachineScenario_GameplayData.xml:355: 		<Row RouteType="ROUTE_RAILROAD" UnitType="UNIT_MILITARY_ENGINEER"/>
+DLC/WarMachineScenario/Data/WarMachineScenario_GameplayData.xml:626: 			<Value>UNIT_MILITARY_ENGINEER</Value>

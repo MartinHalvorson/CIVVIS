@@ -4163,6 +4163,7 @@ pub const GENES: &[Gene] = &[
     // aimed elsewhere at a rival holding one, against 41 at the capital. See
     // `advanced/last_two_capitals.rs`.
     Gene { tag: "the-last-two-capitals-come-first", field: "the_last_two_capitals_come_first", kind: Kind::OptIn, enable: AdvancedAi::enable_the_last_two_capitals_come_first, disable: AdvancedAi::disable_the_last_two_capitals_come_first },
+    Gene { tag: "capital-watch-arms-the-slinger", field: "capital_watch_arms_the_slinger", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_watch_arms_the_slinger, disable: AdvancedAi::disable_capital_watch_arms_the_slinger },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
