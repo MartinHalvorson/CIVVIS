@@ -8304,6 +8304,17 @@ impl AdvancedAi {
         self.launcher_war_skips_the_reserve = false;
     }
 
+    /// Opt-in gene `nuclear-goal-needs-a-launcher`; see
+    /// [`Self::nuclear_goal_needs_a_launcher`].
+    pub fn enable_nuclear_goal_needs_a_launcher(&mut self) {
+        self.nuclear_goal_needs_a_launcher = true;
+    }
+
+    /// The twin of `enable_nuclear_goal_needs_a_launcher`.
+    pub fn disable_nuclear_goal_needs_a_launcher(&mut self) {
+        self.nuclear_goal_needs_a_launcher = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

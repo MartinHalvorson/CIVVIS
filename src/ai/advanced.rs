@@ -7268,6 +7268,10 @@ pub struct AdvancedAi {
     /// `advanced/industrial_zone_claims_the_factory.rs`. Off by default.
     industrial_zone_claims_the_factory: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `nuclear-goal-needs-a-launcher`: no nuclear war goal on a seat that
+    /// cannot launch a device. See `advanced/nuclear_launcher.rs`. Off by
+    /// default.
+    nuclear_goal_needs_a_launcher: bool,
     /// `launcher-war-skips-the-reserve`: the treasury reserve does not hold
     /// the war `launcher_war_opens` names. See `advanced/launcher_war.rs`.
     /// Off by default.
@@ -9849,6 +9853,8 @@ mod industrial_zone_claims_the_factory;
 mod industrial_zone_claims_the_producer_queue;
 mod launcher_war;
 mod neighborhood_houses_the_capped_city;
+/// `nuclear-goal-needs-a-launcher`: see `advanced/nuclear_launcher.rs`.
+mod nuclear_launcher;
 mod peacetime_republic;
 mod science_denial_every_pad;
 mod science_denial_trains_spies;
@@ -11134,6 +11140,7 @@ impl AdvancedAi {
             industrial_zone_claims_the_producer_queue: false,
             industrial_zone_claims_the_factory: false,
             // ---- append: l-o ----------------------------------------
+            nuclear_goal_needs_a_launcher: false,
             launcher_war_skips_the_reserve: false,
             medina_quarter_houses_the_districts: false,
             neighborhood_houses_the_capped_city: false,
@@ -29015,6 +29022,10 @@ impl AdvancedAi {
         strategy: GrandStrategy,
         target_player: Option<usize>,
     ) -> Option<NuclearWarGoal> {
+        // `nuclear-goal-needs-a-launcher`: see `advanced/nuclear_launcher.rs`.
+        if self.nuclear_goal_has_no_launcher() {
+            return None;
+        }
         if !self.victory_planning
             || g.world_era < 4
             || !matches!(strategy, GrandStrategy::Conquest | GrandStrategy::Recovery)
