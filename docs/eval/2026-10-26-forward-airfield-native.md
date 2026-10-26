@@ -104,3 +104,26 @@ naming typo and corrected lifecycle controls. The activation archive retains
 both failed and completed qualification attempts, source revisions, actual
 binary, frozen helpers/protocol, lease identity and activation-control binding.
 The default, ledger, runtime baseline and experiment bounds remain unchanged.
+
+## Dated collection 03: twelve assigned starts
+
+This snapshot retains twelve starts, eight ON and four OFF. Eleven have stopped: ten operator retirements without a host outcome and one observed Culture defeat. The twelfth is ongoing. No win is observed. Every played genome matches the actual 501-treatment / 191-forced baseline after removing only this candidate. All stopped attempts use the same exact merged adapter bytes. No source/profile drift is observed in this snapshot.
+
+The maximum observed Bomber count is one. No candidate journal entry or emitted support-stage request is observed. The bounded journal remains incomplete evidence of absence; no Native field construction, capture or strength effect is inferred.
+
+| Start | Arm | State at the dated read | Native host outcome |
+| --- | --- | --- | --- |
+| `civvis-20261026T063754Z` | ON | Stopped at 52; abandoned | Unknown |
+| `civvis-20261026T064120Z` | OFF | Stopped at 52; abandoned | Unknown |
+| `civvis-20261026T064412Z` | OFF | Stopped at 52; abandoned | Unknown |
+| `civvis-20261026T064717Z` | ON | Stopped at 144; abandoned | Unknown |
+| `civvis-20261026T065743Z` | ON | Stopped at 67; abandoned | Unknown |
+| `civvis-20261026T070132Z` | OFF | Stopped at 100; abandoned | Unknown |
+| `civvis-20261026T070741Z` | ON | Stopped at 178; stopped | VICTORY_CULTURE at 178 (lost) |
+| `civvis-20261026T072124Z` | ON | Stopped at 52; abandoned | Unknown |
+| `civvis-20261026T072453Z` | ON | Stopped at 58; abandoned | Unknown |
+| `civvis-20261026T072759Z` | ON | Stopped at 52; abandoned | Unknown |
+| `civvis-20261026T073108Z` | ON | Stopped at 52; abandoned | Unknown |
+| `civvis-20261026T073406Z` | OFF | Ongoing | Unknown |
+
+The next raw cohort archive seals all ten newly stopped attempts; the first ON run was already retained in cohort 01. It contains 155 byte-verified members, 5792624 bytes, SHA-256 `312351257e5ccbae477dcfd680045717ca382125406605c4e4fcf37c7bed65ac`. All non-image records and capture indexes are retained, without duplicating screenshots or the already sealed common adapter. The collector output and actual binary identities are included. Per-file read times remain non-atomic.
