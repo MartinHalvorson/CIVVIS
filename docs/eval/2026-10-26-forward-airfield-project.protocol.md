@@ -139,3 +139,23 @@ worlds for the corrected source and retain any source-equivalence differences.
 The earlier position-source full run has 6,014 passes, one timed viewer
 failure and 52 ignores; that same viewer test passes isolated. It is not
 reported as a full-suite pass. The final source still needs a complete pass.
+
+
+A real GitHub merge conflict now requires integration of main fec6c6a5e.
+Keep its published Nuclear launcher row before the unpublished forward-field
+row; preserve every prior registry index and record the exact parent. Main
+also carries independent Sanctuary and Native Favor changes. The corrected
+handoff source therefore has a changed baseline. Repeat all 213 cases /
+247 reads and all eight fixed worlds, retaining unchanged cases and failures.
+Do not attribute differences from older-source worlds to the airfield bit.
+
+Restore historical supplied model genomes by tag into the integrated registry;
+request newly published tags OFF and vary only the measured seat's airfield
+bit. Record the effective current tag order. Fixed rival constructors remain
+identical across arms. Report old-source reproduction as an observation, not
+a filter for favorable worlds. All Native paired genomes must still differ
+only at the candidate bit, with complete repeated-OFF controls. A treatment
+set mismatch is retained and investigated, not silently normalized away.
+The integrated policy keeps the original receipt after modeled construction;
+a confirmed active base already releases the hold through the existing guard.
+No investment, safety, route or time threshold is changed.
