@@ -205,6 +205,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `faith-war-is-no-front-2` | off (unmeasured) | Version 2 of `faith-war-is-no-front`. | — \| 2 |
 | `faith-war-needs-the-edge` | off (unmeasured) | Opt-in gene `faith-war-needs-the-edge`; see `Self::faith_war_needs_the_edge`. | 1 \| 1 |
 | `foothold-faces-the-capital` | off (unmeasured) | Aim a Domination conquest at a foothold within Bomber range of a rival capital. | 1 \| 1 |
+| `forward-airfield-project` | off (unmeasured) | Measure the default-off forward airfield preparation project. | 1 \| 1 |
 | `friendship-ends-at-the-race` | off (unmeasured) | Let a friendship lapse once the friend is racing to win. | 1 \| 1 |
 | `friendship-only-with-the-stronger` | off (unmeasured) | Offer a friendship only to a rival at least as strong as us. | 1 \| 1 |
 | `friendship-spares-the-prey` | off (unmeasured) | Offer no friendship to a rival weak enough to be prey. | 1 \| 1 |
