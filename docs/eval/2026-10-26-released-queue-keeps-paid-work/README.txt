@@ -83,11 +83,31 @@ pass. A rejected formatter-wrapper compile run is retained before the genuine
 assertion RED. Only the new test block was formatted; whole-file Rust syntax
 was checked before the genuine retry.
 
-The registered historical comparison remains pending at this checkpoint.
-Only this correction is backported to the exact original source plus the
-qualified root logging. Two candidate runs must preserve every original reply
-and ordered read before their first changed reply, which cannot precede the
-first positive-work release at 18/0 (43 earlier requests). They stop at that
-change; they do not simulate a changed native future. If all observed replies
-remain identical, that result will be retained without a native action-benefit
-claim. No native competitive gain has been established.
+Committed-source Rust quality passes with the changed lines formatted and
+warning-free. Main was merged once before review; its only changes were the
+upstream Python production-share accounting code and tests. All 16 of those
+tests pass. The two corrected Rust files retain the exact bytes validated by
+the focused tests, all 315 orders-binary tests, check and quality.
+
+The registered historical comparison is complete. The corrected historical
+executable preserves all 266 original replies and all 4,621 ordered reads in
+each of two runs. The complete candidate root traces match each other. There
+is no changed request through turn 100: this corrects production accounting,
+but this captured opening establishes no native action benefit. The full
+unchanged comparison, both observed traces and final replies are retained in
+first-change.json.gz. The original 830-file historical inputs, qualified root
+logging and only this two-file correction were used; no current-main strategy
+or configuration changes entered that build.
+
+The Scout estimate in the turn-18/19 journal changes from 0.0 to 2.5 modeled
+turns; the native quote was three whole turns. Thus the accounting/price
+correction is observed, while the transported choices in this opening remain
+the same. No improved completion or game result is inferred from that estimate.
+
+Run: python3 docs/eval/2026-10-26-released-queue-keeps-paid-work/verify.py
+
+No changed native future, completion or strength estimate is claimed. Normal
+source delivery and a passive first-eight-segment observation are registered;
+failed starts, continuations, missing outcomes, retirements and source/profile
+drift remain included. No verification setting, leader, rung, force profile,
+lease, pin or game input is changed by this task.
