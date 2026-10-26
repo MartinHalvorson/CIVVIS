@@ -1,0 +1,33 @@
+{
+  "recorded_utc": "2026-10-26T00:52:23.631746+00:00",
+  "integration": {
+    "controller_pid": 79438,
+    "started_utc": "2026-10-26T00:47:28.026035+00:00",
+    "head": "d3190b6b6a4d6f15cbd0336a852196e606a3f729",
+    "base": "45eb06d2bea6bde2462e092aac6d0ed778a2c367",
+    "steps": [
+      {
+        "step": "quality",
+        "exit_code": 0
+      },
+      {
+        "step": "check",
+        "exit_code": 0
+      }
+    ],
+    "current_step": "check",
+    "child_pid": 87654,
+    "exit_code": 0,
+    "finished_utc": "2026-10-26T00:50:51.203575+00:00"
+  },
+  "quality_log": "rust-quality: checking src/ai/advanced/aqueduct_claims_the_capped_queue/tests.rs, src/ai/advanced/aqueduct_claims_the_capped_queue.rs, src/ai/advanced.rs\nrust-quality: the changed lines are formatted and warning-free\n",
+  "check_log": "    Checking civvis v0.6.0 (/Users/martbot-mbp-m5-max-128/civvis-aqueducts-keep-recovery-68bc)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 21.10s\n",
+  "validated_source_sha256": {
+    "src/ai/advanced.rs": "8d8eda3e96821a9823f3c2b21e6d10e1701fc9e62b6f1999df69c683c0637385",
+    "src/ai/advanced/aqueduct_claims_the_capped_queue.rs": "bf1e35487bf3e495088c958f527d18baae7f2ecbdfea21b697b29eaf10764320",
+    "src/ai/advanced/aqueduct_claims_the_capped_queue/tests.rs": "0cb42501dea05c539905fe39944142cf218f61bd83e4d791e9f2a0136f0f2995"
+  },
+  "focused_regressions": "14 passed, 0 failed on module/tests identical to these integrated bytes; exact RED/GREEN test/hash/logs in regression-history archive. Full hosted suite remains authoritative for final integration.",
+  "archive_verifier": "Complete payload, ordered-read, regression, quote and cohort verifier exits0 after merge; no comparison expectation weakened.",
+  "scope": "Only private reservation state, AQ module, focused tests and evidence; no gene/default/native setup changes. Native passive observer prepared, not launched."
+}
