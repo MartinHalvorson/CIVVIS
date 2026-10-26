@@ -541,3 +541,33 @@ fn an_aluminum_tile_is_not_bought_before_radio() {
     assert!(!ai.aluminum_tile_purchase(&mut g, 0, 100.0), "unrevealed");
     assert!(g.map.tiles[&deposit].owner_city.is_none());
 }
+
+/// `aluminum-tile-spends-the-war-chest`: 070741Z's shape, a reserve far over
+/// the tile's price. Off, it holds the buy; on, the tile keeps only the
+/// upkeep floor and is bought.
+#[test]
+fn the_aluminum_tile_spends_the_war_chest_only_under_the_gene() {
+    let (mut g, city, deposit) = aluminum_case();
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: 0,
+        rush: false,
+    };
+    let mut ai = AdvancedAi::new();
+    ai.enable_aluminum_buys_the_tile();
+    assert_eq!(ai.aluminum_tile_reserve(&g, 0, &plan, 495.0), 495.0, "off");
+    assert!(
+        !ai.aluminum_tile_purchase(&mut g, 0, 495.0),
+        "the reserve holds"
+    );
+    ai.enable_aluminum_tile_spends_the_war_chest();
+    let reserve = ai.aluminum_tile_reserve(&g, 0, &plan, 495.0);
+    assert!(reserve < 495.0, "{reserve}");
+    assert!(reserve >= 1.5 * g.unit_gold_maintenance(0) - 1e-9);
+    assert!(ai.aluminum_tile_purchase(&mut g, 0, reserve));
+    assert_eq!(g.map.tiles[&deposit].owner_city, Some(city));
+}

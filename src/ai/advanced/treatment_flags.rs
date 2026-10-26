@@ -8315,6 +8315,28 @@ impl AdvancedAi {
         self.nuclear_goal_needs_a_launcher = false;
     }
 
+    /// Measure the default-off forward airfield preparation project.
+    pub fn enable_forward_airfield_project(&mut self) {
+        self.forward_airfield_project = true;
+    }
+
+    /// Withhold the project and release its private reservation.
+    pub fn disable_forward_airfield_project(&mut self) {
+        self.forward_airfield_project = false;
+        self.forward_airfield_project_state = None;
+    }
+
+    /// Opt-in gene `aluminum-tile-spends-the-war-chest`; see
+    /// [`Self::aluminum_tile_spends_the_war_chest`].
+    pub fn enable_aluminum_tile_spends_the_war_chest(&mut self) {
+        self.aluminum_tile_spends_the_war_chest = true;
+    }
+
+    /// The twin of `enable_aluminum_tile_spends_the_war_chest`.
+    pub fn disable_aluminum_tile_spends_the_war_chest(&mut self) {
+        self.aluminum_tile_spends_the_war_chest = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

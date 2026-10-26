@@ -5075,6 +5075,10 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `aluminum-tile-spends-the-war-chest`: the Aluminum tile buy keeps the
+    /// upkeep floor, not the purchase pass's whole reserve. See
+    /// `AdvancedAi::aluminum_tile_reserve`. Off by default.
+    aluminum_tile_spends_the_war_chest: bool,
     /// `breaker-bought-for-the-siege`: a siege held for want of a
     /// wall-breaker, with none on its way and the army there, buys one in the
     /// nearest city. See `advanced/siege_train/breaker_purchase.rs`. Off by
@@ -7000,6 +7004,9 @@ pub struct AdvancedAi {
     /// most `faith_war_before_the_flip::FAITH_WAR_EDGE` of our power. Off by
     /// default.
     faith_war_needs_the_edge: bool,
+    /// One default-off preparation chain for a blocked Bomber wing.
+    forward_airfield_project: bool,
+    forward_airfield_project_state: Option<forward_airfield_project::FieldProject>,
     // ---- append: g-k ------------------------------------------------
     /// `gold-buys-the-idle-trader`: an empty trade route slot's Trader,
     /// bought with the idle bank at peace. See
@@ -9988,6 +9995,7 @@ mod capital_watch_slinger;
 pub mod commitments;
 mod competitive_economy;
 mod envoys_open_the_siege_road;
+mod forward_airfield_project;
 mod frontier_walls_before_the_surprise;
 /// The alliance an Emperor handicap cannot deny us: the stock alliance desk
 /// asks for a Research Alliance, ranked by science, and feeds its level with
@@ -10755,6 +10763,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            aluminum_tile_spends_the_war_chest: false,
             breaker_bought_for_the_siege: false,
             breaker_bought: BTreeMap::new(),
             air_wing_grows_with_the_aluminum: false,
@@ -11091,6 +11100,8 @@ impl AdvancedAi {
             front_weighted_floor_2: false,
             engineering_for_capped_fresh_water: false,
             faith_war_needs_the_edge: false,
+            forward_airfield_project: false,
+            forward_airfield_project_state: None,
             // ---- append: g-k ----------------------------------------
             gold_buys_the_idle_trader: false,
             holdout_keeps_the_faith_war: false,
@@ -26643,7 +26654,10 @@ impl AdvancedAi {
         };
         // `aluminum-buys-the-tile`: the Aluminum the air wing waits on, bought
         // as a tile out of the same reserve. See `gun_resource.rs`.
-        let bought_aluminum = self.aluminum_tile_purchase(g, pid, reserve);
+        // `aluminum-tile-spends-the-war-chest`: out of the upkeep floor
+        // instead. `reserve` with the gene off.
+        let aluminum_reserve = self.aluminum_tile_reserve(g, pid, plan, reserve);
+        let bought_aluminum = self.aluminum_tile_purchase(g, pid, aluminum_reserve);
         let mut purchased = bought_out_an_outpost || bought_a_first_asset || bought_aluminum;
         let mut purchased_units = 0;
         for _ in 0..purchase_limit {
@@ -32580,7 +32594,8 @@ impl AdvancedAi {
                     || self.producer_zone_claim_holds(g, pid, cid, plan, item)
                     // `industrial-zone-claims-the-factory`: the claimed Factory
                     // or Coal Power Plant finishes.
-                    || self.factory_claim_holds(g, pid, cid, plan, item))
+                    || self.factory_claim_holds(g, pid, cid, plan, item)
+                    || self.forward_airfield_project_holds(g, pid, cid, plan, item))
                     && Self::production_commitment_is_legal(g, pid, cid, item)
             });
             // `commercial-hub-in-the-strategic-queue`: a queued Commercial Hub
@@ -47634,7 +47649,9 @@ impl AdvancedAi {
             let acted = match kind.as_str() {
                 "settler" => self.advanced_settler_step(g, pid, uid),
                 "builder" => self.advanced_builder_step(g, pid, uid, plan.strategy),
-                "military_engineer" => self.base.military_engineer_step(g, pid, uid),
+                "military_engineer" => self
+                    .forward_airfield_engineer_step(g, pid, uid, plan)
+                    .unwrap_or_else(|| self.base.military_engineer_step(g, pid, uid)),
                 "naturalist" => self.base.naturalist_step(g, pid, uid),
                 "archaeologist" => self.base.archaeologist_step(g, pid, uid),
                 "trader" => self.advanced_trader_step(g, pid, uid, plan.strategy),
@@ -49560,6 +49577,9 @@ impl AdvancedAi {
             self.reserve_government_plaza(g, pid, &plan);
             self.reserve_higher_level_investment(g, pid, &plan);
             self.reserve_idle_entertainment_path_for_widespread_crisis(g, pid, &plan);
+            // One bounded forward-field project takes an idle queue only
+            // after the emergency, victory and economy reservations above.
+            self.claim_forward_airfield_project(g, pid, &plan);
             // A fighting Galley cannot also be the empire's sole eye. This
             // claims only one idle, safe queue after all higher-priority
             // strategic reservations, before generic production buries the
