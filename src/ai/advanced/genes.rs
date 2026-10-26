@@ -4175,6 +4175,11 @@ pub const GENES: &[Gene] = &[
     // `advanced/nuclear_launcher.rs`.
     Gene { tag: "nuclear-goal-needs-a-launcher", field: "nuclear_goal_needs_a_launcher", kind: Kind::OptIn, enable: AdvancedAi::enable_nuclear_goal_needs_a_launcher, disable: AdvancedAi::disable_nuclear_goal_needs_a_launcher },
     Gene { tag: "forward-airfield-project", field: "forward_airfield_project", kind: Kind::OptIn, enable: AdvancedAi::enable_forward_airfield_project, disable: AdvancedAi::disable_forward_airfield_project },
+    // `aluminum-tile-spends-the-war-chest`: live Immortal 070741Z held a
+    // 135-Gold Aluminum tile against a 1,669 reserve from Advanced Flight
+    // (t124) to t169 and never flew a Bomber. The tile now keeps only the
+    // upkeep floor. See `AdvancedAi::aluminum_tile_reserve`.
+    Gene { tag: "aluminum-tile-spends-the-war-chest", field: "aluminum_tile_spends_the_war_chest", kind: Kind::OptIn, enable: AdvancedAi::enable_aluminum_tile_spends_the_war_chest, disable: AdvancedAi::disable_aluminum_tile_spends_the_war_chest },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

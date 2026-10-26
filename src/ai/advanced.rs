@@ -5075,6 +5075,10 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `aluminum-tile-spends-the-war-chest`: the Aluminum tile buy keeps the
+    /// upkeep floor, not the purchase pass's whole reserve. See
+    /// `AdvancedAi::aluminum_tile_reserve`. Off by default.
+    aluminum_tile_spends_the_war_chest: bool,
     /// `breaker-bought-for-the-siege`: a siege held for want of a
     /// wall-breaker, with none on its way and the army there, buys one in the
     /// nearest city. See `advanced/siege_train/breaker_purchase.rs`. Off by
@@ -10759,6 +10763,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            aluminum_tile_spends_the_war_chest: false,
             breaker_bought_for_the_siege: false,
             breaker_bought: BTreeMap::new(),
             air_wing_grows_with_the_aluminum: false,
@@ -26649,7 +26654,10 @@ impl AdvancedAi {
         };
         // `aluminum-buys-the-tile`: the Aluminum the air wing waits on, bought
         // as a tile out of the same reserve. See `gun_resource.rs`.
-        let bought_aluminum = self.aluminum_tile_purchase(g, pid, reserve);
+        // `aluminum-tile-spends-the-war-chest`: out of the upkeep floor
+        // instead. `reserve` with the gene off.
+        let aluminum_reserve = self.aluminum_tile_reserve(g, pid, plan, reserve);
+        let bought_aluminum = self.aluminum_tile_purchase(g, pid, aluminum_reserve);
         let mut purchased = bought_out_an_outpost || bought_a_first_asset || bought_aluminum;
         let mut purchased_units = 0;
         for _ in 0..purchase_limit {
