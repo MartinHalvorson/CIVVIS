@@ -20,4 +20,9 @@ with two ready Bombers. Four continuation quotes (one Bogotá build observed
 on two turns against two capitals) omit placement lists and remain unresolved.
 No missing placement is counted as a proved out-of-range plot.
 
-The implementation and changed-proposal/whole-game validation remain pending.
+The implementation now passes compiler checking with seventeen regression
+cases. It includes a legal queued-base guard, all offered support stages,
+finite-attempt preservation, eliminated-founder classification and ordinary
+Engineer movement/building refusals. The behavior tests and the fixed
+changed-proposal/whole-game comparisons remain pending. No default or runtime
+setting is changed.

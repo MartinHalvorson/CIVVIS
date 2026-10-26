@@ -2,7 +2,11 @@ use super::*;
 use crate::game::HostMenuEntry;
 
 fn fixture() -> (Game, AdvancedAi, StrategicPlan, u32, u32, Pos) {
-    let mut g = Game::new_full(2, 44, 26, 59012600, 300, 0, false);
+    fixture_players(2)
+}
+
+fn fixture_players(players: usize) -> (Game, AdvancedAi, StrategicPlan, u32, u32, Pos) {
+    let mut g = Game::new_full(players, 44, 26, 59012600, 300, 0, false);
     for uid in g.units.keys().copied().collect::<Vec<_>>() {
         g.remove_unit(uid);
     }
@@ -23,6 +27,9 @@ fn fixture() -> (Game, AdvancedAi, StrategicPlan, u32, u32, Pos) {
     let home = g.found_city_for(0, (6, 10), None);
     let producer = g.found_city_for(0, (10, 10), None);
     let capital = g.found_city_for(1, (24, 10), None);
+    if players > 2 {
+        g.found_city_for(2, (34, 18), None);
+    }
     // Encampments cannot be adjacent to their city centre. Give the
     // producer an observed second ring, rather than inventing an offer.
     for pos in g.wdisk((10, 10), 2) {
@@ -284,4 +291,147 @@ fn a_changed_target_and_an_expired_project_release_the_hold() {
     plan.target_player = Some(1);
     g.turn += g.standard_duration(40) + 1;
     assert!(!ai.forward_airfield_project_holds(&g, 0, producer, &plan, &item));
+}
+
+#[test]
+fn a_queued_forward_aerodrome_precedes_a_second_infrastructure_chain() {
+    let (mut g, mut ai, plan, producer, _, field) = fixture();
+    let other = g.found_city_for(0, (13, 12), None);
+    g.cities.get_mut(&other).unwrap().pop = 12;
+    g.map.tiles.get_mut(&field).unwrap().owner_city = Some(other);
+    g.cities.get_mut(&other).unwrap().owned_tiles.push(field);
+    offer(&mut g, other, "district:aerodrome", 2.0);
+    let queued = Item::District {
+        district: crate::name!("aerodrome"),
+        pos: field,
+    };
+    assert!(
+        g.can_produce(0, other, &queued),
+        "the promised base is a legal build"
+    );
+    g.apply(
+        0,
+        &Action::Produce {
+            city: other,
+            item: queued,
+        },
+    )
+    .unwrap();
+    ai.claim_forward_airfield_project(&mut g, 0, &plan);
+    assert!(g.cities[&producer].queue.is_empty());
+    assert!(ai.forward_airfield_project_state.is_none());
+}
+
+#[test]
+fn an_active_owned_field_already_in_range_prevents_a_duplicate_project() {
+    let (mut g, mut ai, plan, producer, _, field) = fixture();
+    let tile = g.map.tiles.get_mut(&field).unwrap();
+    tile.improvement = Some(crate::name!("airstrip"));
+    tile.improvement_owner = Some(0);
+    assert_eq!(g.air_capacity_at(0, field), 3);
+    ai.claim_forward_airfield_project(&mut g, 0, &plan);
+    assert!(g.cities[&producer].queue.is_empty());
+}
+
+#[test]
+fn an_expired_attempt_cannot_reset_its_budget_on_repeated_frames() {
+    let (mut g, mut ai, plan, producer, capital, field) = fixture();
+    install_project(&mut ai, &g, producer, capital, field);
+    let started = g.turn;
+    g.turn += g.standard_duration(40) + 1;
+    for _ in 0..3 {
+        ai.claim_forward_airfield_project(&mut g, 0, &plan);
+    }
+    assert!(g.cities[&producer].queue.is_empty());
+    assert_eq!(
+        ai.forward_airfield_project_state.as_ref().unwrap().started,
+        started
+    );
+}
+
+#[test]
+fn each_offered_prerequisite_is_selected_before_an_unavailable_engineer() {
+    for stage in ["barracks", "armory"] {
+        let (mut g, mut ai, plan, producer, capital, field) = fixture();
+        g.cities
+            .get_mut(&producer)
+            .unwrap()
+            .districts
+            .insert(crate::name!("encampment"), (11, 10));
+        let tile = g.map.tiles.get_mut(&(11, 10)).unwrap();
+        tile.district = Some(crate::name!("encampment"));
+        tile.owner_city = Some(producer);
+        if stage == "armory" {
+            g.cities
+                .get_mut(&producer)
+                .unwrap()
+                .buildings
+                .push(crate::name!("barracks"));
+        }
+        offer(&mut g, producer, &format!("building:{stage}"), 2.0);
+        install_project(&mut ai, &g, producer, capital, field);
+        let expected = Item::Building {
+            building: Name::new(stage),
+        };
+        assert!(
+            g.can_produce(0, producer, &expected),
+            "real prerequisite offer: {stage}"
+        );
+        ai.claim_forward_airfield_project(&mut g, 0, &plan);
+        assert_eq!(g.cities[&producer].queue.first(), Some(&expected));
+    }
+}
+
+#[test]
+fn a_captured_original_major_capital_keeps_its_founders_class_after_elimination() {
+    let (mut g, mut ai, mut plan, producer, capital, _) = fixture_players(3);
+    g.cities.get_mut(&capital).unwrap().owner = 2;
+    g.players[1].alive = false;
+    g.at_war.insert((0, 2));
+    g.record_contact(0, 2);
+    plan.target_player = Some(2);
+    assert_eq!(ai.forward_field_capital(&g, 0, &plan), Some(capital));
+    ai.claim_forward_airfield_project(&mut g, 0, &plan);
+    assert!(
+        matches!(g.cities[&producer].queue.first(), Some(Item::District { district, .. }) if district == "encampment")
+    );
+}
+
+#[test]
+fn the_host_improvement_refusal_keeps_the_engineers_charge() {
+    let (mut g, mut ai, plan, producer, capital, field) = fixture();
+    let engineer = g.spawn_test_unit("military_engineer", 0, field);
+    install_project(&mut ai, &g, producer, capital, field);
+    Arc::make_mut(&mut g.blocked_improvements)
+        .entry(field)
+        .or_default()
+        .insert(crate::name!("airstrip"));
+    assert_eq!(
+        ai.forward_airfield_engineer_step(&mut g, 0, engineer, &plan),
+        None
+    );
+    assert_eq!(g.units[&engineer].charges, 2);
+    assert!(g.map.tiles[&field].improvement.is_none());
+}
+
+#[test]
+fn a_linked_engineer_and_an_unsafe_engineer_keep_the_ordinary_handler() {
+    for unsafe_position in [false, true] {
+        let (mut g, mut ai, plan, producer, capital, field) = fixture();
+        let engineer = g.spawn_test_unit("military_engineer", 0, field);
+        install_project(&mut ai, &g, producer, capital, field);
+        if unsafe_position {
+            g.spawn_test_unit("modern_armor", 1, (15, 10));
+        } else {
+            let guard = g.spawn_test_unit("infantry", 0, field);
+            g.units.get_mut(&engineer).unwrap().linked_to = Some(guard);
+            g.units.get_mut(&guard).unwrap().linked_to = Some(engineer);
+        }
+        assert_eq!(
+            ai.forward_airfield_engineer_step(&mut g, 0, engineer, &plan),
+            None
+        );
+        assert_eq!(g.units[&engineer].charges, 2);
+        assert!(g.map.tiles[&field].improvement.is_none());
+    }
 }
