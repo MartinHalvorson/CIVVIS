@@ -1,0 +1,40 @@
+{
+  "recorded_utc": "2026-10-26T02:53:32.548559+00:00",
+  "process": {
+    "controller_pid": 88553,
+    "started_utc": "2026-10-26T02:46:39.500182+00:00",
+    "head": "39b73137e2dbaf625b51a6f9575747d9c80ef31e",
+    "base": "0a5e6ae0ce0524bbb0e1be52bea0312c98d835f0",
+    "source_sha256": "988297418fafb98e0b662c832abad90756c0bba4682bdb88344c6b87ca584b9f",
+    "tests_sha256": "1e6a00616d0a3292be46b1b81d452b6b6ffbeadff059567cfb32f1820f3fe59f",
+    "steps": [
+      {
+        "step": "tests",
+        "exit_code": 0
+      },
+      {
+        "step": "quality",
+        "exit_code": 0
+      },
+      {
+        "step": "check",
+        "exit_code": 0
+      }
+    ],
+    "current_step": "check",
+    "command": [
+      "cargo",
+      "check",
+      "--locked"
+    ],
+    "child_pid": 93455,
+    "exit_code": 0,
+    "finished_utc": "2026-10-26T02:49:59.535361+00:00"
+  },
+  "logs": {
+    "tests": "   Compiling civvis v0.6.0 (/Users/martbot-mbp-m5-max-128/civvis-sanctuary-keeps-existing-source-6e90)\nwarning: linker stderr: ld: __eh_frame section too large (max 16MB) to encode dwarf unwind offsets in compact unwind table, performance of exception handling might be affected\n  |\n  = note: `#[warn(linker_messages)]` on by default\n\nwarning: `civvis` (lib test) generated 1 warning\n    Finished `test` profile [unoptimized + debuginfo] target(s) in 49.56s\n     Running unittests src/lib.rs (/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-25/native-income-caller-replay/diagnostic-source/target/debug/deps/civvis-5506358212860c30)\n\nrunning 29 tests\ntest ai::advanced::adopted_faith_sanctuary::tests::a_living_founders_faith_needs_two_holdouts_under_the_gene ... ok\ntest ai::advanced::adopted_faith_sanctuary::tests::adopted_spread_cannot_help_a_faith_that_holds_every_other_major ... ok\ntest ai::advanced::adopted_faith_sanctuary::tests::a_faith_at_match_point_is_the_threat_from_its_first_convert ... ok\ntest ai::advanced::adopted_faith_sanctuary::tests::counterfaith_cannot_finish_another_founders_victory ... ok\ntest ai::advanced::adopted_faith_sanctuary::tests::completed_holy_site_gets_shrine_then_existing_defense_buys_counterfaith ... ok\ntest ai::advanced::adopted_faith_sanctuary::tests::a_second_holdout_keeps_the_counterfaith_safe ... ok\nheld-source preconditions: campus, source=9, quote=200\ntest ai::advanced::adopted_faith_sanctuary::tests::converted_or_threatened_supplier_is_not_reserved ... ok\ntest ai::advanced::adopted_faith_sanctuary::tests::a_faith_without_a_living_founder_is_always_safe ... ok\ntest ai::advanced::adopted_faith_sanctuary::tests::adopted_missionaries_stop_when_their_counterfaith_becomes_the_threat ... ok\ntest ai::advanced::adopted_faith_sanctuary::tests::founder_keeps_its_second_source_despite_a_held_first_source ... ok\ntest ai::advanced::adopted_faith_sanctuary::tests::founder_other_lane_and_disabled_victory_stand_aside ... ok\ntest ai::advanced::adopted_faith_sanctuary::tests::founder_supplier_preserves_lane_and_local_defense_guards ... ok\ntest ai::advanced::adopted_faith_sanctuary::tests::founder_supplier_keeps_shrine_through_review_and_recruits_own_defender ... ok\nheld-source preconditions: industrial_zone, source=9, quote=200\nheld-source preconditions: campus, source=9, quote=200\ntest ai::advanced::adopted_faith_sanctuary::tests::held_industry_does_not_hide_a_completed_counterfaith_source ... ok\ntest ai::advanced::adopted_faith_sanctuary::tests::construction_warning_requires_a_foreign_conversion_and_home_arrival ... ok\ntest ai::advanced::adopted_faith_sanctuary::tests::founder_supplier_requires_live_pressure_and_a_surviving_own_majority ... ok\ntest ai::advanced::adopted_faith_sanctuary::tests::one_converted_foreign_civilization_below_half_is_not_a_construction_alarm ... ok\nheld-source preconditions: campus, source=9, quote=200\ntest ai::advanced::adopted_faith_sanctuary::tests::held_campus_does_not_hide_a_completed_counterfaith_source ... ok\ntest ai::advanced::adopted_faith_sanctuary::tests::legal_holy_site_reservation_survives_production_review ... ok\nheld-source preconditions: campus, source=9, quote=200\ntest ai::advanced::adopted_faith_sanctuary::tests::repeated_reservation_does_not_start_a_second_supplier ... ok\ntest ai::advanced::adopted_faith_sanctuary::tests::minority_counterfaith_in_first_city_is_not_the_invasion ... ok\nheld-source preconditions: campus, source=9, quote=200\ntest ai::advanced::adopted_faith_sanctuary::tests::waiting_unconverted_shrine_keeps_the_existing_source_stop ... ok\ntest ai::advanced::adopted_faith_sanctuary::tests::unprotected_completed_source_keeps_the_existing_stop ... ok\ntest ai::advanced::adopted_faith_sanctuary::tests::global_conversion_lead_reserves_supplier_before_home_majority ... ok\nheld-source preconditions: campus, source=9, quote=200\ntest ai::advanced::adopted_faith_sanctuary::tests::adopted_spread_restraint_preserves_founder_other_lane_and_disabled_victory ... ok\ntest ai::advanced::adopted_faith_sanctuary::tests::one_sanctuary_does_not_chase_the_counterfaith_into_a_second_city ... ok\ntest ai::advanced::adopted_faith_sanctuary::tests::a_held_queue_keeps_its_city_under_the_gene ... ok\nheld-source preconditions: campus, source=9, quote=200\ntest ai::advanced::adopted_faith_sanctuary::tests::unfinished_unsafe_and_threatened_sources_still_allow_sanctuary ... ok\ntest ai::advanced::adopted_faith_sanctuary::tests::defensive_infrastructure_precedes_faith_savings_but_purchase_waits ... ok\n\ntest result: ok. 29 passed; 0 failed; 0 ignored; 0 measured; 6025 filtered out; finished in 0.50s\n\n",
+    "quality": "rust-quality: checking src/ai/advanced/adopted_faith_sanctuary/tests.rs, src/ai/advanced/adopted_faith_sanctuary.rs\nrust-quality: the changed lines are formatted and warning-free\n",
+    "check": "    Checking civvis v0.6.0 (/Users/martbot-mbp-m5-max-128/civvis-sanctuary-keeps-existing-source-6e90)\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1m 19s\n"
+  },
+  "notes": "Final source988 and test1e6; main0a integrated, code unchanged by later documentation. Earlier V1 quality/fullhostedCI retained, not substituted for this source. Mac __eh_frame linker notice in test logs retained."
+}
