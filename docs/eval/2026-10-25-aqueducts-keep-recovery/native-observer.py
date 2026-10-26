@@ -39,7 +39,7 @@ def inspect_source(run):
         module='src/ai/advanced/aqueduct_claims_the_capped_queue.rs'
         actual_function=subprocess.check_output(['git','show',rev+':'+module],cwd=REPO)
         expected_function=subprocess.check_output(['git','show',args.merged_commit+':'+module],cwd=REPO)
-        state_markers=[b'    capped_aqueduct_recovery_reservations: RefCell<BTreeMap<Pos, (usize, Item)>>,',b'            capped_aqueduct_recovery_reservations: RefCell::new(BTreeMap::new()),']
+        state_markers=[b'    aqueduct_recovery_reservations: RefCell<BTreeMap<Pos, (usize, Item)>>,',b'            aqueduct_recovery_reservations: RefCell::new(BTreeMap::new()),']
         state_matches=all(line in code.splitlines() and line in expected.splitlines() for line in state_markers)
         decision_path=ROOT/'control'/run/'decisions.jsonl'
         first=None

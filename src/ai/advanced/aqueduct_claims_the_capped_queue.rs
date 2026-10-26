@@ -167,7 +167,7 @@ impl AdvancedAi {
                 return false;
             };
             let recorded = self
-                .capped_aqueduct_recovery_reservations
+                .aqueduct_recovery_reservations
                 .borrow()
                 .get(&city.pos)
                 .is_some_and(|(owner, reserved)| *owner == pid && reserved == item);
@@ -239,7 +239,7 @@ impl AdvancedAi {
     }
 
     fn prune_capped_aqueduct_recovery_reservations(&self, g: &Game, pid: usize) {
-        let mut reservations = self.capped_aqueduct_recovery_reservations.borrow_mut();
+        let mut reservations = self.aqueduct_recovery_reservations.borrow_mut();
         if reservations.is_empty() {
             return;
         }
@@ -265,7 +265,7 @@ impl AdvancedAi {
     /// claim a turn. Exact no-op with the gene off.
     pub(super) fn claim_capped_aqueduct(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         if !self.aqueduct_claims_the_capped_queue {
-            self.capped_aqueduct_recovery_reservations
+            self.aqueduct_recovery_reservations
                 .borrow_mut()
                 .clear();
             return;
@@ -337,11 +337,11 @@ impl AdvancedAi {
         if g.apply(pid, &Action::Produce { city: cid, item }).is_ok() {
             let city_pos = g.cities[&cid].pos;
             if let Some(recovery) = accepted_recovery {
-                self.capped_aqueduct_recovery_reservations
+                self.aqueduct_recovery_reservations
                     .borrow_mut()
                     .insert(city_pos, (pid, recovery));
             } else {
-                self.capped_aqueduct_recovery_reservations
+                self.aqueduct_recovery_reservations
                     .borrow_mut()
                     .remove(&city_pos);
             }
