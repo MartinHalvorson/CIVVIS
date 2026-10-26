@@ -115,3 +115,13 @@ budget merely because those IDs move. Retain the genuine failing results,
 then key this new reservation by stable city positions. No stage, route,
 budget or safety threshold changes. Frozen-source proposal/model evidence
 remains labeled with its original source; new source needs its own checks.
+
+
+After the two intended persistence failures on the corrected fixture, apply
+the stable-position correction. Repeat the same complete 213-case / 247-read
+production-path comparison with the new frozen binary, retaining failures and
+OFF-repeat controls. Compare proposal orders with the frozen ID-based source
+separately. Repeat all eight fixed model worlds as a source-equivalence
+control, restoring every original seat genome and preserving all outcomes;
+no new thresholds, seeds or favorable replacement. Full local and hosted
+checks remain required before any live deployment or future Native observer.

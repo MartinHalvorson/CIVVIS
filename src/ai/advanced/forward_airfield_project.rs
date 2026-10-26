@@ -14,8 +14,9 @@ const PROJECT_UPKEEP: f64 = 6.0;
 
 #[derive(Clone)]
 pub(super) struct FieldProject {
-    pub city: u32,
-    pub capital: u32,
+    // City coordinates survive the production bridge rebuilding its IDs.
+    pub city: Pos,
+    pub capital: Pos,
     pub field: Pos,
     pub started: u32,
 }
@@ -219,7 +220,7 @@ impl AdvancedAi {
         danger
     }
 
-    fn forward_field_site(g: &Game, pid: usize, field: Pos, capital: u32, wing: &[u32]) -> bool {
+    fn forward_field_site(g: &Game, pid: usize, field: Pos, capital: Pos, wing: &[u32]) -> bool {
         let Some(tile) = g.map.get(field) else {
             return false;
         };
@@ -234,7 +235,7 @@ impl AdvancedAi {
             && g.city_at(field).is_none()
             && wing
                 .iter()
-                .filter(|uid| g.wdist(field, g.cities[&capital].pos) <= g.unit_attack_range(**uid))
+                .filter(|uid| g.wdist(field, capital) <= g.unit_attack_range(**uid))
                 .take(2)
                 .count()
                 == 2
@@ -250,13 +251,18 @@ impl AdvancedAi {
         project: &FieldProject,
         wing: &[u32],
     ) -> bool {
-        self.forward_field_capital(g, pid, plan) == Some(project.capital)
+        self.forward_field_capital(g, pid, plan)
+            .map(|cid| g.cities[&cid].pos)
+            == Some(project.capital)
             && g.turn.saturating_sub(project.started) <= g.standard_duration(PROJECT_STANDARD_TURNS)
-            && g.cities.get(&project.city).is_some_and(|city| {
-                city.owner == pid
-                    && plan.threatened_city != Some(city.id)
-                    && (city.last_attacked == 0 || g.turn.saturating_sub(city.last_attacked) > 4)
-            })
+            && g.city_at(project.city)
+                .and_then(|cid| g.cities.get(&cid))
+                .is_some_and(|city| {
+                    city.owner == pid
+                        && plan.threatened_city != Some(city.id)
+                        && (city.last_attacked == 0
+                            || g.turn.saturating_sub(city.last_attacked) > 4)
+                })
             && Self::forward_field_site(g, pid, project.field, project.capital, wing)
     }
 
@@ -300,7 +306,7 @@ impl AdvancedAi {
         wing: &[u32],
         danger: &BTreeSet<Pos>,
     ) -> Option<FieldProject> {
-        let capital = self.forward_field_capital(g, pid, plan)?;
+        let capital = g.cities[&self.forward_field_capital(g, pid, plan)?].pos;
         let engineers: Vec<_> = g
             .units
             .values()
@@ -375,7 +381,7 @@ impl AdvancedAi {
             }
         }
         best.map(|(_, _, _, city, field)| FieldProject {
-            city,
+            city: g.cities[&city].pos,
             capital,
             field,
             started: g.turn,
@@ -397,7 +403,9 @@ impl AdvancedAi {
             .forward_airfield_project_state
             .as_ref()
             .is_some_and(|project| {
-                self.forward_field_capital(g, pid, plan) != Some(project.capital)
+                self.forward_field_capital(g, pid, plan)
+                    .map(|cid| g.cities[&cid].pos)
+                    != Some(project.capital)
             })
         {
             self.forward_airfield_project_state = None;
@@ -417,31 +425,34 @@ impl AdvancedAi {
                 project
             }
         };
+        let Some(city) = g.city_at(project.city) else {
+            return;
+        };
         if !self.forward_field_project_valid(g, pid, plan, &project, &wing)
             || danger.contains(&project.field)
-            || !g.cities[&project.city].queue.is_empty()
+            || !g.cities[&city].queue.is_empty()
             || g.units
                 .values()
                 .any(|unit| unit.owner == pid && unit.kind == "military_engineer")
         {
             return;
         }
-        let Some((_, turns, item)) = self.forward_field_stage(g, pid, project.city) else {
+        let Some((_, turns, item)) = self.forward_field_stage(g, pid, city) else {
             return;
         };
-        let name = g.cities[&project.city].name.clone();
+        let name = g.cities[&city].name.clone();
         drop(_memo);
         if g.apply(
             pid,
             &Action::Produce {
-                city: project.city,
+                city,
                 item: item.clone(),
             },
         )
         .is_ok()
         {
             think!(self.journal(), Cities, Decision, "{name} prepares a forward airfield";
-                "forward-airfield-project: offered {} at {turns:.1} turns; one producer for capital {}, field {:?}; future stages and arrival are not yet observed",
+                "forward-airfield-project: offered {} at {turns:.1} turns; one producer for capital {:?}, field {:?}; future stages and arrival are not yet observed",
                 Self::plain_item(&item), project.capital, project.field);
         }
     }
@@ -460,7 +471,7 @@ impl AdvancedAi {
         let Some(project) = self
             .forward_airfield_project_state
             .as_ref()
-            .filter(|p| p.city == cid)
+            .filter(|p| g.cities.get(&cid).is_some_and(|city| p.city == city.pos))
         else {
             return false;
         };

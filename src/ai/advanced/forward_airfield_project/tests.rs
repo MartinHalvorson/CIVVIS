@@ -84,8 +84,8 @@ fn offer(g: &mut Game, city: u32, key: &str, turns: f64) {
 
 fn install_project(ai: &mut AdvancedAi, g: &Game, producer: u32, capital: u32, field: Pos) {
     ai.forward_airfield_project_state = Some(FieldProject {
-        city: producer,
-        capital,
+        city: g.cities[&producer].pos,
+        capital: g.cities[&capital].pos,
         field,
         started: g.turn,
     });
@@ -146,7 +146,10 @@ fn a_fresh_board_cannot_restart_an_expired_field_project_by_renumbering_its_capi
     plan.target_city = Some(capital + 1000);
     ai.claim_forward_airfield_project(&mut next, 0, &plan);
     assert!(next.cities[&(producer + 1000)].queue.is_empty());
-    assert_eq!(ai.forward_airfield_project_state.as_ref().unwrap().started, started);
+    assert_eq!(
+        ai.forward_airfield_project_state.as_ref().unwrap().started,
+        started
+    );
 }
 
 #[test]
