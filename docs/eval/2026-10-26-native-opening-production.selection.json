@@ -46,5 +46,12 @@
     "pareto_preserve_all_other_five_yields": true,
     "upper_bounds_only_not_native_allocation_permission": true
   },
-  "unknowns": "Retain missing/ambiguous/incomplete/nonfinite/negative sentinel readings; never replace missing with zero or a neighboring turn. Rival city/population decomposition only when the actual all-major leader has met-rival public stats at the same state."
+  "unknowns": "Retain missing/ambiguous/incomplete/nonfinite/negative sentinel readings; never replace missing with zero or a neighboring turn. Rival city/population decomposition only when the actual all-major leader has met-rival public stats at the same state.",
+  "production_sources": {
+    "retirement": "Build-queue yield per major, with city-yield fallback, from Native turn event.",
+    "city_queue": "city.production is build-queue yield.",
+    "city_yield": "city.yields.production and public_stats.production use City:GetYield.",
+    "decomposition": "Same-state public city-yield Production ratio only, not the retirement build-queue ratio.",
+    "global_completeness": "Require readable local and all reported majors; expected map size turn.majors + 1 when available."
+  }
 }

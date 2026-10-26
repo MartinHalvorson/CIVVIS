@@ -73,3 +73,14 @@ plot-field merging, freshness/ownership refusal and the one-worker food/yield
 tradeoffs. Retain code, fixtures, failures, successful outputs and source hashes.
 Publish the complete census and all unknown counts. No policy or ledger promotion
 follows merely from an upper bound.
+
+Source clarification before measurement: city `production` and the all-major
+turn map use GetBuildQueue():GetProductionYield (the turn map can fall back to
+City:GetYield). `city.yields.production` and public_stats.production use
+City:GetYield directly. Keep queue Production and city-yield Production separate.
+Factor only the same-state public city-yield ratio; do not present that product
+as a decomposition of a different build-queue or post-action turn reading.
+`turn.majors` counts alive OTHER majors; a complete reported map therefore needs
+that number plus the local player. If a reported participant is unreadable or
+missing, global standing remains unknown with the readable subset retained.
+The retirement replay still preserves the existing helper's exact behavior.
