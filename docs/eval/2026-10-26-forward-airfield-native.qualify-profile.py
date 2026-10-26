@@ -73,6 +73,6 @@ def main():
     assert report['reads']
     report['complete']=True
     (a.out/'profile-controls.json').write_text(json.dumps(report,indent=2)+'\n')
-    print(json.dumps({'complete':True,'distinct_reads':len(report['reads']),'calls':len(capture['reads']),'binary_sha256':q['runtime']['binary_sha256']}))
+    print(json.dumps({'complete':True,'distinct_reads':len(report['reads']),'calls':sum(read.get('count',1) for read in capture['reads']),'read_descriptors':len(capture['reads']),'binary_sha256':q['runtime']['binary_sha256']}))
 
 if __name__=='__main__':main()

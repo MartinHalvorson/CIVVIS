@@ -1,62 +1,106 @@
-# Registered Native forward-airfield trial: not armed
+# Ongoing Native forward-airfield trial
 
-This prospective experiment registers forty-eight future original attempt
-stems for the default-off `forward-airfield-project` candidate in PR #4162.
-The feature merged as 0b66913516fce803117c153c7125ba6c2144c613; live spectator
-verification is pending, and no trial lease is armed.
-The cutoff is fixed before assignment, and every failed start, continuation,
-retirement and source/profile drift will be retained without replacement.
+The registered forty-eight-start observer armed at
+**2026-10-26T06:35:42.958390+00:00**. It is a new trial of the default-off
+`forward-airfield-project`; the completed Slinger trial stays closed.
+Feature PR #4162 merged as `0b66913516fce803117c153c7125ba6c2144c613` and is
+verified in both the actual Native adapter and the live spectator. The initial
+dated collection retains two assigned starts: one ON operator retirement
+without a host outcome, then one OFF still running. No field execution or
+incremental strength benefit is established. This is an ongoing checkpoint,
+not a completed cohort or a win-rate estimate.
 
-The compiled policy is frozen at 77360d8d40a1f604ef829c51fb7769d243af3521.
-Its final reporting head is af25a140af16b1a77101a8cfe09377b102105b84.
-Activation requires the actual feature squash-merge SHA, verified delivery,
-a unique unarmed driver with complete input capture, exact binary receipt and
-source ancestry, and first-input OFF/ON/OFF-repeat controls using that actual
-adapter and driver flags. The merged feature SHA and qualification records
-will be added before arming. The current installed Lua bytes can be hashed;
-loaded historical identity remains unattested.
+## Actual delivery and first-input controls
 
-Five isolated observer lifecycle tests and six read-only collector controls
-pass. The collector keeps support-stage requests, observed incomplete or
-complete Encampments, support buildings, exact offered-stage quotes, Engineer
-states, and explicit Airstrip plot records distinct. It joins Engineer orders
-only to a unique matching Native state frame. It does not verify construction
-attribution. A stopped-game flag stays separate from explicit host outcomes;
-rival defeat notices are excluded from this seat’s outcomes. The qualification helper has only been syntax-checked; its actual
-delivery and first-input controls are still pending.
+The activation qualification run is **civvis-20261026T063420Z**. Its actual frozen
+adapter is 25,741,888 bytes,
+SHA-256 `85d5a904f8df01055d13775e5285fe41737a7a02d96abe61dfe3105ab0f53a09`. Runtime receipt, first-decision
+binary identity and copied bytes agree; its source is the merged feature.
+The complete first request has **17 calls sharing one distinct input prefix**,
+30,725 bytes, SHA-256 `1964b6d19b95b35ae7eba68ec0c413549c84297318b4b0eeaef0087154d0361c`.
+
+Disposable production-path OFF, ON and OFF-repeat queries all succeed using
+that actual adapter and the actual driver flags. OFF and its repeat reproduce
+the complete actual played genome and opening orders. ON adds exactly one
+candidate entry to treatment and forced lists; removing it preserves every
+existing position and all other genome fields. Opening orders are identical
+in all three arms, as expected before Flight. The observer independently
+requalifies the same actual run; its binary, first decision and genome match
+these controls exactly. This proves delivery/profile controls, not activation
+or Native construction. The installed Lua bytes are retained while loaded
+historical identity remains unattested.
+
+The actual baseline has **501 treatments and 191 forced flags**. It includes
+`nuclear-goal-needs-a-launcher` and `launcher-war-skips-the-reserve`, and excludes
+the Slinger, Wing-spotting and Culture-air-v2 candidates. Both initially observed
+played arms reproduce that complete baseline after removing only this candidate.
+This is not the older historical-query/model profile. Preserve later source,
+profile, actual difficulty/lane and retirement-rule drift without substituting
+new starts. The shared one-third Production retirement rule remains unchanged.
+
+## Qualification failures remain retained
+
+The first delivered unarmed run, `civvis-20261026T062432Z`, yields three
+successful disposable responses, exact OFF reproduction and only the candidate
+addition ON. The original helper nevertheless stops because it sorts expected
+lists while the adapter emits registry order. That failure and every input,
+response and original frozen helper remain retained. The corrected comparison
+preserves existing order and rejects duplicate entries, extra flags, changed
+metadata and changed OFF/repeat genomes. Five focused controls pass.
+
+The corrected helper then qualifies `civvis-20261026T063103Z`, but its driver
+naturally advances before lease creation. The launch guard rejects that stale
+qualification without writing a lease. The next current unarmed run is
+qualified and armed in one sequence. No game outcome is used to choose a run.
+The helper's first stdout summary also mislabeled the number of read descriptors
+as calls. Retained annotations derive the correct seventeen calls from the
+actual descriptor count; the source now prints both counts correctly. None of
+these harness corrections changes a policy bound, order or Native outcome.
+
+## Fixed prospective collection
 
 The initial sixteen-start preparation was widened to forty-eight before
-registration or assignment because the independently enabled one-third
-Production retirement rule can stop games before Flight. That draft and its
-logs remain retained. A test-name typo during this preparatory change caused
-one syntax failure; the corrected five-test lifecycle suite passes. No Native
-lease was created by any isolated fixture.
+registration or assignment because the independently enabled Production
+retirement rule can stop games before Flight. The cutoff is fixed before any
+candidate outcome. Five isolated observer lifecycle controls pass, including
+continuations, overruns and preserving foreign/replaced leases. The observer
+removes only its unchanged owned lease after forty-eight original starts.
+Never stop/restart the shared driver or rearm a completed observer.
 
-The primary endpoint is an observed Native host outcome and victory type.
-Operator retirements without an outcome remain unknown. Played arm, bounded
-journal entry, actual emitted order, Native production/foundation/completion,
-Engineer arrival, Airstrip, Bomber operations, capital possession and Conquest
-award require separate evidence. The candidate remains default-off; this
-experiment does not change bounds, runtime baseline, ledger or retirement
-policy. See the companion protocol and helpers. The completed Slinger trial
-is never rearmed.
+Six collector controls keep support-stage requests, Native support
+infrastructure, Engineer states, explicit Airstrip plots and local host
+outcomes distinct. Engineer requests require a unique matching Native state
+frame. Rival defeat notices do not become our outcomes; stopped games with no
+host outcome remain unknown. A later exact join is still required to attribute
+construction to a candidate request. Host quote `p` is offered-stage turns;
+`n` is placement count. Neither implies a whole-chain ETA.
 
-The sealed preregistration packet has 23 byte-verified members, 30936 bytes and SHA-256 `d185bf74bda5834f75345a0d698bd7c13c792d69e6cfd7de0533d3e64f3bdb37`. It retains the original preparation, subsequent collector clarification and all isolated control logs.
+The initial collection retains the following snapshot. Reads are independent
+and non-atomic; the sealed manifests record per-file read times and hashes.
 
-## Delivery qualification checkpoint: preserve registry order
+| Assigned start | Played arm | Observed state in collection 01 | Field evidence |
+| --- | --- | --- | --- |
+| `civvis-20261026T063754Z` | ON | `abandoned` at 52, `outcome=null`, no local host outcome | No observed Bomber, candidate journal or emitted support-stage order |
+| `civvis-20261026T064120Z` | OFF | Ongoing at the dated read | No observed Bomber or emitted support-stage order |
 
-The first actual delivered unarmed run, `civvis-20261026T062432Z`, uses the
-merged 0b66913516fce803117c153c7125ba6c2144c613 adapter. Its first disposable
-OFF/ON/OFF-repeat requests all succeed. OFF and its repeat exactly reproduce
-the actual whole genome and opening orders. Removing only one candidate entry
-from ON's treatment and forced lists preserves every existing list position
-and reproduces the actual genome; all three opening orders are identical.
+The first ON start's complete non-image raw records are sealed, including
+captures/indexes, SQLite files when present, events, decisions, journal, runtime
+and summary. Its binary matches the exact adapter retained in the activation
+capsule. No screenshots are duplicated. The bounded journal can drop entries;
+absence is not used to prove that a branch never ran. No Native Airstrip,
+capital capture, Conquest award or candidate benefit is inferred from requests.
 
-The first qualification helper nevertheless stops before reporting completion:
-it incorrectly sorts its expected ON lists, whereas the adapter emits registry
-order. The full failed output, raw responses, input and original registered
-helper remain retained. No lease is armed. The corrected helper preserves
-existing order and rejects extra flags, duplicate candidate entries, changed
-metadata and changed OFF/repeat genomes. Five focused controls pass. This is
-a harness correction; no policy bounds, actual Native orders or outcomes change.
-A fresh actual qualification run remains required before activation.
+## Sealed evidence
+
+| Artifact suffix | Members | Bytes | SHA-256 |
+| --- | ---: | ---: | --- |
+| `.preregistration.tar.xz` | 23 | 30936 | `d185bf74bda5834f75345a0d698bd7c13c792d69e6cfd7de0533d3e64f3bdb37` |
+| `.activation-01.tar.xz` | 67 | 5461924 | `c8e590bba427508badb3794e5785f3519d3aa5a699b35adf23eb63586949d867` |
+| `.cohort-01.tar.xz` | 19 | 218292 | `ce57324be1b06421a600b965713834f86e2396a12a830ef21284816b6f7d5fcf` |
+
+Every archive is read back and every member checked against its sealed bytes
+and SHA-256. The preparation archive retains the original draft, isolated
+naming typo and corrected lifecycle controls. The activation archive retains
+both failed and completed qualification attempts, source revisions, actual
+binary, frozen helpers/protocol, lease identity and activation-control binding.
+The default, ledger, runtime baseline and experiment bounds remain unchanged.
