@@ -64,3 +64,27 @@ observer ran; the manifest records individual read times and hashes, so the
 checkpoint is not claimed to be an atomic cross-file snapshot. The companion
 main protocol and frozen source are inside the archive. No outcome result is
 inferred from this initial assignment snapshot.
+
+## Interim collection 01
+
+At 2026-10-26T00:18:17.999199+00:00,
+two starts were assigned, both played ON. The first (000859Z) has a terminal
+Culture loss at turn 155; no candidate-specific journal entry is observed.
+Its ten issued upgrade orders all have unique exact Native successors under
+the existing conservative identity auditor. Those are general upgrades and
+are not attributed to this candidate. The second (001624Z) is incomplete in
+this snapshot, with one upgrade request and no observed candidate entry.
+No strength estimate follows from one completed game or two ON assignments.
+
+The read-only collector passes four controls for ON versus activation,
+requested versus executed upgrades, later-frame maxima, malformed live data
+and a wrong trial/cohort. The existing auditor's three tests cover thirteen
+identity cases and pass again. Raw first-cohort events, decisions, immutable
+capture bytes/indexes and all non-image run files are retained: 15
+byte-verified members, 987,760 bytes, SHA-256
+`fd293173b756ff6ca12df02206112bcc2d9ec65fbe7d2f20de14f9a8122187de`. The accompanying 11-member
+checkpoint preserves the exact partial census, controls and upgrade audit:
+196,032 bytes, SHA-256
+`323a38458b09bdccc7a461c6d331ba9aadf8b69cbb1e0eb35c0d8cfffa050d21`. Live files are non-atomic; later
+collections use new outputs and do not overwrite this one. The remaining
+assigned/future starts continue under the original cutoff.
