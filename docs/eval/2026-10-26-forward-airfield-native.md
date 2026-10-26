@@ -127,3 +127,47 @@ The maximum observed Bomber count is one. No candidate journal entry or emitted 
 | `civvis-20261026T073406Z` | OFF | Ongoing | Unknown |
 
 The next raw cohort archive seals all ten newly stopped attempts; the first ON run was already retained in cohort 01. It contains 155 byte-verified members, 5792624 bytes, SHA-256 `312351257e5ccbae477dcfd680045717ca382125406605c4e4fcf37c7bed65ac`. All non-image records and capture indexes are retained, without duplicating screenshots or the already sealed common adapter. The collector output and actual binary identities are included. Per-file read times remain non-atomic.
+
+## Dated collection 06: thirty-one assigned starts
+
+This read retains thirty-one starts: seventeen ON, thirteen OFF and one ongoing attempt whose played profile is not yet readable. Thirty have stopped: twenty-seven operator retirements without a host outcome, two Culture defeats and one Religion defeat. No win is observed. All thirty readable whole played genomes match the qualified baseline after removing only the candidate entries from treatments and forced lists, preserving list order and every other field. Actual binary bytes remain the frozen `85d5a904…` adapter; later runtime source labels include documentation-only merges and remain retained separately.
+
+The ON game **civvis-20261026T083924Z** has three observed Bombers and two candidate journal entries. At turn 138/frame 0, Beijing (40,30), Native city 655369, requests an Encampment at (38,32); the host records the corresponding verified produce order and observes that district complete at turn 140/frame 0. At turn 140/frame 0, the same city requests Barracks; the host verifies that produce order and observes the building at turn 141/frame 0. The reproducible witness checks the unique pre-order states, exact requests, candidate journal lines and first completed post-states. These are two observed support-stage constructions, not just proposed orders.
+
+At turn 141 the journal selects recovery and a separate science-denial Spy order. No Engineer order or explicit Native Airstrip observation occurs in this game. It retires at turn 159 under the unchanged Production-share rule, with no host outcome. This supplies activation and two completed stages, not a completed forward field, capital-taking benefit or a Conquest win.
+
+| Start suffix | Arm | State at the dated read | Native host outcome |
+| --- | --- | --- | --- |
+| `063754Z` | ON | Stopped at 52; abandoned | Unknown |
+| `064120Z` | OFF | Stopped at 52; abandoned | Unknown |
+| `064412Z` | OFF | Stopped at 52; abandoned | Unknown |
+| `064717Z` | ON | Stopped at 144; abandoned | Unknown |
+| `065743Z` | ON | Stopped at 67; abandoned | Unknown |
+| `070132Z` | OFF | Stopped at 100; abandoned | Unknown |
+| `070741Z` | ON | Stopped at 178; stopped | VICTORY_CULTURE at 178 (lost) |
+| `072124Z` | ON | Stopped at 52; abandoned | Unknown |
+| `072453Z` | ON | Stopped at 58; abandoned | Unknown |
+| `072759Z` | ON | Stopped at 52; abandoned | Unknown |
+| `073108Z` | ON | Stopped at 52; abandoned | Unknown |
+| `073406Z` | OFF | Stopped at 52; abandoned | Unknown |
+| `073723Z` | OFF | Stopped at 114; abandoned | Unknown |
+| `074245Z` | ON | Stopped at 158; stopped | VICTORY_CULTURE at 158 (lost) |
+| `075231Z` | OFF | Stopped at 52; abandoned | Unknown |
+| `075550Z` | ON | Stopped at 52; abandoned | Unknown |
+| `075922Z` | ON | Stopped at 116; stopped | VICTORY_RELIGIOUS at 116 (lost) |
+| `080540Z` | ON | Stopped at 98; abandoned | Unknown |
+| `081107Z` | ON | Stopped at 52; abandoned | Unknown |
+| `081402Z` | ON | Stopped at 52; abandoned | Unknown |
+| `081657Z` | OFF | Stopped at 132; abandoned | Unknown |
+| `082443Z` | ON | Stopped at 52; abandoned | Unknown |
+| `082745Z` | ON | Stopped at 52; abandoned | Unknown |
+| `083023Z` | OFF | Stopped at 52; abandoned | Unknown |
+| `083304Z` | OFF | Stopped at 52; abandoned | Unknown |
+| `083636Z` | OFF | Stopped at 52; abandoned | Unknown |
+| `083924Z` | ON | Stopped at 159; abandoned | Unknown |
+| `085100Z` | OFF | Stopped at 119; abandoned | Unknown |
+| `085723Z` | OFF | Stopped at 54; abandoned | Unknown |
+| `090019Z` | OFF | Stopped at 52; abandoned | Unknown |
+| `090324Z` | Unknown | Ongoing | Unknown |
+
+Cohort archive 03 seals **all nineteen newly stopped attempts** after the first eleven, including every non-image raw event, decision, journal, summary, capture/index and available SQLite companion. It contains **294 byte-verified members, 10,117,916 bytes**, SHA-256 `4dcbd7f3ec4ed206c16af3060a7e2a8ca8d95ce812a3bdb1bb3c43ebd87dc862`. It also retains this collection, per-attempt actual binary checks, complete played-profile comparisons and the two-stage witness source/output/log. The common actual adapter was already sealed in the activation capsule. No screenshot duplication, favorable selection, new trial assignment or baseline change. The observer remains active until its original forty-eight-start cutoff.
