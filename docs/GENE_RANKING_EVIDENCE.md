@@ -198,6 +198,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `defenders-hold-the-walls` | off (unmeasured) | Opt-in gene `defenders-hold-the-walls`; see `Self::defenders_hold_the_walls`. | 1 \| 1 |
 | `delegations-reach-every-rival` | off (unmeasured) | Send a diplomatic mission to every rival we have met. | 1 \| 1 |
 | `denial-target-leads-the-fronts` | off (unmeasured) | Lead the running wars with the rival the counter names. | 1 \| 1 |
+| `disrupt-before-the-sources` | off (unmeasured) | Let a Spy in the space racer's city disrupt before it trains on Gain Sources. | 1 \| 1 |
 | `elimination-yields-to-a-launch-2` | off (unmeasured) | Enable the separately measured staged Culture air-interception version. | 1 \| 2 |
 | `envoys-open-the-siege-road` | off (unmeasured) | Buy affordable city-state passage for a siege already held by its border. | 1 \| 1 |
 | `faith-war-before-the-flip` | off (unmeasured) | Opt-in gene `faith-war-before-the-flip`; see `advanced/faith_war_before_the_flip.rs`. | — \| 2 |

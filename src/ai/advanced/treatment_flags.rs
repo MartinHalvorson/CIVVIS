@@ -8373,6 +8373,17 @@ impl AdvancedAi {
         self.siege_force_short.clear();
     }
 
+    /// Let a Spy in the space racer's city disrupt before it trains on Gain
+    /// Sources. See [`Self::disrupt_before_the_sources`].
+    pub fn enable_disrupt_before_the_sources(&mut self) {
+        self.disrupt_before_the_sources = true;
+    }
+
+    /// The twin of `enable_disrupt_before_the_sources`.
+    pub fn disable_disrupt_before_the_sources(&mut self) {
+        self.disrupt_before_the_sources = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

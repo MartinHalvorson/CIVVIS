@@ -5504,6 +5504,10 @@ pub struct AdvancedAi {
     /// costliest. See `advanced/solvency.rs`. Off by default.
     bankruptcy_exits_the_drain: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `disrupt-before-the-sources`: a Spy in a space racer's city runs an
+    /// offered Disrupt Rocketry before the Gain Sources training step. See
+    /// `advanced/disrupt_before_the_sources.rs`. Off by default.
+    disrupt_before_the_sources: bool,
     /// Opt-in `capital-watch-arms-the-slinger`; see
     /// `advanced/capital_watch_slinger.rs`. Off by default.
     capital_watch_arms_the_slinger: bool,
@@ -9528,6 +9532,9 @@ mod open_city_front;
 /// `medina-quarter-houses-the-districts`: see `advanced/medina_quarter.rs`.
 mod medina_quarter;
 
+/// `disrupt-before-the-sources`: see `advanced/disrupt_before_the_sources.rs`.
+mod disrupt_before_the_sources;
+
 mod denial_nearest_finish;
 mod denial_needs_a_road;
 /// `denial-target-leads-the-fronts`: the countered rival we are fighting
@@ -10875,6 +10882,7 @@ impl AdvancedAi {
             aqueduct_recovery_reservations: RefCell::new(BTreeMap::new()),
             bankruptcy_exits_the_drain: false,
             // ---- append: c-d ----------------------------------------
+            disrupt_before_the_sources: false,
             capital_watch_arms_the_slinger: false,
             capital_watch_slinger_turn: None,
             city_state_war_is_no_front: false,
@@ -30168,7 +30176,20 @@ impl AdvancedAi {
                 .and_then(|city| g.cities.get(&city))
                 .is_some_and(|city| city.owner != pid);
             if offensive {
-                if g.spies[&spy_id].level < 2 {
+                // `disrupt-before-the-sources`: in a racer's city an offered
+                // Disrupt Rocketry comes before the training step.
+                let training_yields = g.spies[&spy_id].level < 2
+                    && self.training_yields_to_the_disrupt(
+                        g,
+                        spy_id,
+                        &legal,
+                        &racer_spy_racers,
+                        &every_pad_threats,
+                    );
+                if training_yields {
+                    self.journal_training_yields(g, spy_id);
+                }
+                if g.spies[&spy_id].level < 2 && !training_yields {
                     if let Some(action) = legal.iter().find(|action| {
                         matches!(action, Action::SpyMission { mission, .. } if mission == "gain_sources")
                     }) {
