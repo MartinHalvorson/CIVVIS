@@ -21,19 +21,30 @@
 //! ran it 0 times while China won at 200.
 //!
 //! Under the gene, in a city of a rival `racer-keeps-the-spies` names a
-//! racer, or of a `science-denial-every-pad` threat, a Spy offered Disrupt
-//! Rocketry (by the board or the host) skips the training step; the existing
-//! disruption paths then take it.
+//! racer, or of a `science-denial-every-pad` threat, that has landed at least
+//! [`DISRUPT_FROM_STAGES`] space project, a Spy offered Disrupt Rocketry (by
+//! the board or the host) skips the training step; the existing disruption
+//! paths then take it. Before the first launch the training step keeps its
+//! Spies: the ungated rule lost Spies to capture for nothing in a sim probe.
 //!
 //! Off: unchanged.
 
 use super::*;
 
+/// Space projects the city's owner must have landed before a green Spy
+/// skips its training for the disruption. Before the first launch, Gain
+/// Sources levels the Spy; a 12-game Immortal sim probe of the ungated rule
+/// (green Spies disrupting from the first offer, capture risk and all) read
+/// win -17.5 pp and share -3.6 pp against the training step.
+pub(crate) const DISRUPT_FROM_STAGES: usize = 1;
+
 impl AdvancedAi {
     /// `disrupt-before-the-sources`: whether `spy`'s Gain Sources training
     /// step yields to Disrupt Rocketry: the gene is on, the Spy stands in a
-    /// city of one of `racers` or `threats`, and the disruption is offered
-    /// there (`racer_spy_disrupt_offered`). Always `false` with the gene off.
+    /// city of one of `racers` or `threats` that has landed
+    /// [`DISRUPT_FROM_STAGES`] space projects or more, and the disruption is
+    /// offered there (`racer_spy_disrupt_offered`). Always `false` with the
+    /// gene off.
     pub(super) fn training_yields_to_the_disrupt(
         &self,
         g: &Game,
@@ -55,6 +66,7 @@ impl AdvancedAi {
             return false;
         };
         (racers.contains(&owner) || threats.contains(&owner))
+            && Self::science_denial_stages(g, owner) >= DISRUPT_FROM_STAGES
             && Self::racer_spy_disrupt_offered(g, spy, legal)
     }
 
@@ -96,7 +108,8 @@ mod tests {
     }
 
     /// Two majors at peace and in contact; seat 1, the space racer, holds
-    /// Rocketry and a Spaceport seat 0 has seen. A green Spy of seat 0 stands
+    /// Rocketry, has launched its Earth Satellite and stands a Spaceport seat
+    /// 0 has seen. A green Spy of seat 0 stands
     /// in its capital with its sources not yet gained, so the board offers it
     /// both Gain Sources and Disrupt Rocketry.
     fn racer_with_a_pad() -> (Game, u32, u32) {
@@ -121,6 +134,9 @@ mod tests {
         let centre = g.cities[&capital].pos;
         g.players[0].explored.insert(centre);
         g.players[1].techs.insert(crate::name!("rocketry"));
+        g.players[1]
+            .science_projects
+            .insert("launch_earth_satellite".to_string());
         let pad = g
             .wdisk(centre, 1)
             .into_iter()
@@ -237,5 +253,9 @@ mod tests {
         ));
         // Nothing offered: the training step keeps the Spy.
         assert!(!ai.training_yields_to_the_disrupt(&g, spy, &[], &racers, &BTreeSet::new()));
+        // Before the racer's first launch the training step keeps the Spy.
+        let mut early = g.clone();
+        early.players[1].science_projects.clear();
+        assert!(!ai.training_yields_to_the_disrupt(&early, spy, &legal, &racers, &BTreeSet::new()));
     }
 }
