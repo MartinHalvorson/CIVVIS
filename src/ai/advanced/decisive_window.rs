@@ -724,15 +724,15 @@ impl AdvancedAi {
     /// 300 and 400 at a median t104 and t110.
     pub(crate) fn window_yields_to_the_bombers(&self, g: &Game, pid: usize, goal: Name) -> bool {
         use super::air_surge::AIR_SURGE_GOAL_TECH;
-        self.siege_tier_yields_to_the_bombers
+        let version_2 = self.siege_tier_yields_to_the_bombers_2;
+        (self.siege_tier_yields_to_the_bombers || version_2)
             && goal.as_str() != AIR_SURGE_GOAL_TECH
             && !g
                 .rules
                 .tech_ancestors
                 .get(AIR_SURGE_GOAL_TECH)
                 .is_some_and(|ancestors| ancestors.contains(goal.as_str()))
-            && (!self.siege_tier_yields_to_the_bombers_2
-                || Self::air_surge_missing_techs(g, pid) <= BOMBER_YIELD_TECHS)
+            && (!version_2 || Self::air_surge_missing_techs(g, pid) <= BOMBER_YIELD_TECHS)
             && self.air_surge_research_goal(g, pid).is_some()
     }
 

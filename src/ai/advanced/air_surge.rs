@@ -1722,9 +1722,11 @@ impl AdvancedAi {
                 // `siege-tier-yields-to-the-bombers`: Ballistics sits behind
                 // Gunpowder and Metal Casting, off the Advanced Flight path,
                 // so waiting for it made the Bombard tier the surge's entry
-                // fee. See `window_yields_to_the_bombers`.
+                // fee. See `window_yields_to_the_bombers`. Version 2 keeps
+                // this half of version 1.
                 || (!techs.contains(&crate::name!("ballistics"))
-                    && !self.siege_tier_yields_to_the_bombers)
+                    && !self.siege_tier_yields_to_the_bombers
+                    && !self.siege_tier_yields_to_the_bombers_2)
                 || techs.contains(&crate::name!("industrialization"))
                 || techs.contains(&Name::new(AIR_SURGE_GOAL_TECH))
                 || g.player_city_ids(pid).len() < 2

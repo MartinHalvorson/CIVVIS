@@ -8746,9 +8746,10 @@ pub struct AdvancedAi {
     /// march step, not only beside it. Off by default.
     staging_gun_trusts_its_escort_2: bool,
     /// `siege-tier-yields-to-the-bombers-2`: version 2 of
-    /// `siege-tier-yields-to-the-bombers`. The decisive window yields its
-    /// research goal to the air surge only while the Bomber is within
-    /// `decisive_window::BOMBER_YIELD_TECHS` technologies. Off by default.
+    /// `siege-tier-yields-to-the-bombers`, which it includes. The decisive
+    /// window yields its research goal to the air surge only while the
+    /// Bomber is within `decisive_window::BOMBER_YIELD_TECHS` technologies.
+    /// Off by default.
     siege_tier_yields_to_the_bombers_2: bool,
     // ---- append: t-z ------------------------------------------------
     /// `the-last-two-capitals-come-first`: with at most two original

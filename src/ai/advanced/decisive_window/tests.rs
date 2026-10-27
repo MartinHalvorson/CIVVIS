@@ -197,6 +197,19 @@ fn the_window_yields_an_off_path_goal_to_the_bombers_under_the_gene() {
     // A goal on the Advanced Flight path never yields.
     assert!(!ai.window_yields_to_the_bombers(&g, 0, name!("industrialization")));
     assert!(!ai.window_yields_to_the_bombers(&g, 0, name!("advanced_flight")));
+    // Version 2 alone keeps the Ballistics waiver, but with Industrialization
+    // still unknown the Bomber is too far for the window to yield.
+    ai.disable_siege_tier_yields_to_the_bombers();
+    ai.enable_siege_tier_yields_to_the_bombers_2();
+    assert_eq!(ai.air_surge_research_goal(&g, 0), Some("industrialization"));
+    assert!(AdvancedAi::air_surge_missing_techs(&g, 0) > BOMBER_YIELD_TECHS);
+    assert!(!ai.window_yields_to_the_bombers(&g, 0, goal));
+    assert_eq!(
+        ai.decisive_window_research_goal(&g, 0, Some(&window)),
+        Some(goal)
+    );
+    ai.disable_siege_tier_yields_to_the_bombers_2();
+    ai.enable_siege_tier_yields_to_the_bombers();
     g.players[0].research = None;
     ai.advanced_research(&mut g, 0, &plan);
     let picked = g.players[0].research.clone().expect("a research pick");
@@ -232,12 +245,14 @@ fn the_window_keeps_its_goal_while_the_bomber_is_far_under_version_2() {
     );
     assert_eq!(ai.air_surge_research_goal(&g, 0), Some(AIR_SURGE_GOAL_TECH));
 
-    // Four technologies out, both versions yield.
+    // Four technologies out, both versions yield. A family holds one version
+    // on at a time, so version 2 stands alone.
     assert!(ai.window_yields_to_the_bombers(&g, 0, goal));
+    ai.disable_siege_tier_yields_to_the_bombers();
     ai.enable_siege_tier_yields_to_the_bombers_2();
     assert!(ai.window_yields_to_the_bombers(&g, 0, goal));
 
-    // A fifth: version 1 still yields, version 2 keeps the window's goal.
+    // A fifth: version 2 keeps the window's goal, version 1 still yields.
     g.players[0].techs.remove(&name!("industrialization"));
     assert_eq!(
         AdvancedAi::air_surge_missing_techs(&g, 0),
@@ -245,6 +260,7 @@ fn the_window_keeps_its_goal_while_the_bomber_is_far_under_version_2() {
     );
     assert!(!ai.window_yields_to_the_bombers(&g, 0, goal));
     ai.disable_siege_tier_yields_to_the_bombers_2();
+    ai.enable_siege_tier_yields_to_the_bombers();
     assert!(ai.window_yields_to_the_bombers(&g, 0, goal));
 }
 
