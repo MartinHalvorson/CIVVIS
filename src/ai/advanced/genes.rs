@@ -4180,6 +4180,12 @@ pub const GENES: &[Gene] = &[
     // (t124) to t169 and never flew a Bomber. The tile now keeps only the
     // upkeep floor. See `AdvancedAi::aluminum_tile_reserve`.
     Gene { tag: "aluminum-tile-spends-the-war-chest", field: "aluminum_tile_spends_the_war_chest", kind: Kind::OptIn, enable: AdvancedAi::enable_aluminum_tile_spends_the_war_chest, disable: AdvancedAi::disable_aluminum_tile_spends_the_war_chest },
+    // `friendship-spares-the-converter`: retained live Immortal games to
+    // 10-27, 4 of 14 Religious losses held the faith war on the founder
+    // converting us as "not a legal target": `befriend-the-strongest` had
+    // befriended it at turns 42-54, before its faith reached us. See
+    // `advanced/protective_friendship.rs`.
+    Gene { tag: "friendship-spares-the-converter", field: "friendship_spares_the_converter", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_spares_the_converter, disable: AdvancedAi::disable_friendship_spares_the_converter },
     // `siege-tier-yields-to-the-bombers-2`: over 261 Immortal control dirs
     // the window yielded in 26 games, at a median 7 techs from the Bomber
     // (12 in 031756Z t82, where it gave up Gunpowder; Metal Casting came at

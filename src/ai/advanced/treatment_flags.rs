@@ -8339,6 +8339,17 @@ impl AdvancedAi {
         self.aluminum_tile_spends_the_war_chest = false;
     }
 
+    /// Offer no friendship to the founder whose faith we must fight. See
+    /// [`Self::friendship_spares_the_converter`].
+    pub fn enable_friendship_spares_the_converter(&mut self) {
+        self.friendship_spares_the_converter = true;
+    }
+
+    /// The twin of `enable_friendship_spares_the_converter`.
+    pub fn disable_friendship_spares_the_converter(&mut self) {
+        self.friendship_spares_the_converter = false;
+    }
+
     /// Opt-in gene `siege-tier-yields-to-the-bombers-2`; see
     /// [`Self::siege_tier_yields_to_the_bombers_2`].
     pub fn enable_siege_tier_yields_to_the_bombers_2(&mut self) {
