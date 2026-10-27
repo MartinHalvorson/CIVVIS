@@ -4186,6 +4186,12 @@ pub const GENES: &[Gene] = &[
     // befriended it at turns 42-54, before its faith reached us. See
     // `advanced/protective_friendship.rs`.
     Gene { tag: "friendship-spares-the-converter", field: "friendship_spares_the_converter", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_spares_the_converter, disable: AdvancedAi::disable_friendship_spares_the_converter },
+    // `siege-tier-yields-to-the-bombers-2`: over 261 Immortal control dirs
+    // the window yielded in 26 games, at a median 7 techs from the Bomber
+    // (12 in 031756Z t82, where it gave up Gunpowder; Metal Casting came at
+    // t118, after rival walls reached 400). The yield now waits until the
+    // Bomber is near. See `AdvancedAi::window_yields_to_the_bombers`.
+    Gene { tag: "siege-tier-yields-to-the-bombers-2", field: "siege_tier_yields_to_the_bombers_2", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_tier_yields_to_the_bombers_2, disable: AdvancedAi::disable_siege_tier_yields_to_the_bombers_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

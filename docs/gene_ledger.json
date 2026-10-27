@@ -5091,6 +5091,15 @@
           "settler-target-hysteresis-2": null
         }
       },
+      "siege-tier-yields-to-the-bombers": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "siege-tier-yields-to-the-bombers": null,
+          "siege-tier-yields-to-the-bombers-2": null
+        }
+      },
       "staging-gun-trusts-its-escort": {
         "rule_on": [
           "staging-gun-trusts-its-escort"
