@@ -8745,6 +8745,11 @@ pub struct AdvancedAi {
     /// soldiers stand within [`siege_train::STAGING_COLUMN_REACH`] of its
     /// march step, not only beside it. Off by default.
     staging_gun_trusts_its_escort_2: bool,
+    /// `siege-tier-yields-to-the-bombers-2`: version 2 of
+    /// `siege-tier-yields-to-the-bombers`. The decisive window yields its
+    /// research goal to the air surge only while the Bomber is within
+    /// `decisive_window::BOMBER_YIELD_TECHS` technologies. Off by default.
+    siege_tier_yields_to_the_bombers_2: bool,
     // ---- append: t-z ------------------------------------------------
     /// `the-last-two-capitals-come-first`: with at most two original
     /// capitals left for Domination, the war target's one is the campaign's
@@ -11382,6 +11387,7 @@ impl AdvancedAi {
             science_suppression_hits_the_pads: false,
             solvent_or_hold: false,
             staging_gun_trusts_its_escort_2: false,
+            siege_tier_yields_to_the_bombers_2: false,
             // ---- append: t-z ----------------------------------------
             the_last_two_capitals_come_first: false,
             wing_capital_spotting: false,

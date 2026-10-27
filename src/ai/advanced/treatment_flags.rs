@@ -8339,6 +8339,17 @@ impl AdvancedAi {
         self.aluminum_tile_spends_the_war_chest = false;
     }
 
+    /// Opt-in gene `siege-tier-yields-to-the-bombers-2`; see
+    /// [`Self::siege_tier_yields_to_the_bombers_2`].
+    pub fn enable_siege_tier_yields_to_the_bombers_2(&mut self) {
+        self.siege_tier_yields_to_the_bombers_2 = true;
+    }
+
+    /// The twin of `enable_siege_tier_yields_to_the_bombers_2`.
+    pub fn disable_siege_tier_yields_to_the_bombers_2(&mut self) {
+        self.siege_tier_yields_to_the_bombers_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

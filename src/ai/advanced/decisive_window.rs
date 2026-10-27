@@ -102,6 +102,12 @@ pub(super) const UNIQUE_COST_SHARE: f64 = 0.75;
 pub(super) const BREACH_GUNS: f64 = 2.0;
 /// Turns those guns are given to empty the wall pool.
 pub(super) const BREACH_TURNS: f64 = 6.0;
+/// `siege-tier-yields-to-the-bombers-2`: the most technologies, Advanced
+/// Flight and its unknown ancestors counted, the Bomber may still lie away
+/// for the window to yield its research to the air surge. At Immortal the
+/// seat clears about one technology every four turns in that era, so this is
+/// a Bomber some sixteen turns out.
+pub(crate) const BOMBER_YIELD_TECHS: usize = 4;
 const WALL_TIER_HP: i32 = 100;
 const ANTI_CAVALRY_BONUS: f64 = 10.0;
 const MELEE_VS_SPEAR_BONUS: f64 = 5.0;
@@ -706,6 +712,16 @@ impl AdvancedAi {
     /// Bombard tier's Gunpowder and Metal Casting. Advanced Flight landed at a
     /// median turn 147, and the games that reached it by turn 139 took 0.79
     /// major cities between turns 130 and 190 against 0.08 for those past 169.
+    ///
+    /// `siege-tier-yields-to-the-bombers-2`: the yield also waits until the
+    /// Bomber is within [`BOMBER_YIELD_TECHS`]. Over 261 Immortal control
+    /// dirs the window yielded in 26 games at a median 7 technologies from
+    /// the Bomber, giving up Refining 19 times, Gunpowder 17 and Steel 10.
+    /// In 031756Z it gave up Gunpowder at t82, 12 away, after reading that
+    /// the Musketman beat the Ottoman defender and the Bombard opened its
+    /// tier-3 walls in 15 turns. Gunpowder came at t117, Metal Casting at
+    /// t118 and Flight at t126, while rival walls in games reaching t150 hit
+    /// 300 and 400 at a median t104 and t110.
     pub(crate) fn window_yields_to_the_bombers(&self, g: &Game, pid: usize, goal: Name) -> bool {
         use super::air_surge::AIR_SURGE_GOAL_TECH;
         self.siege_tier_yields_to_the_bombers
@@ -715,6 +731,8 @@ impl AdvancedAi {
                 .tech_ancestors
                 .get(AIR_SURGE_GOAL_TECH)
                 .is_some_and(|ancestors| ancestors.contains(goal.as_str()))
+            && (!self.siege_tier_yields_to_the_bombers_2
+                || Self::air_surge_missing_techs(g, pid) <= BOMBER_YIELD_TECHS)
             && self.air_surge_research_goal(g, pid).is_some()
     }
 
