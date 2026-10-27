@@ -8350,6 +8350,17 @@ impl AdvancedAi {
         self.friendship_spares_the_converter = false;
     }
 
+    /// Opt-in gene `siege-tier-yields-to-the-bombers-2`; see
+    /// [`Self::siege_tier_yields_to_the_bombers_2`].
+    pub fn enable_siege_tier_yields_to_the_bombers_2(&mut self) {
+        self.siege_tier_yields_to_the_bombers_2 = true;
+    }
+
+    /// The twin of `enable_siege_tier_yields_to_the_bombers_2`.
+    pub fn disable_siege_tier_yields_to_the_bombers_2(&mut self) {
+        self.siege_tier_yields_to_the_bombers_2 = false;
+    }
+
     /// Let a siege short of its bill take the repeatable-project queues. See
     /// [`Self::siege_shortfall_claims_the_projects`].
     pub fn enable_siege_shortfall_claims_the_projects(&mut self) {
