@@ -4191,7 +4191,6 @@ pub const GENES: &[Gene] = &[
     // 0.09 of their bill while Theater and Campus projects took 4.8% of
     // wartime Production. See `advanced/siege_shortfall_projects.rs`.
     Gene { tag: "siege-shortfall-claims-the-projects", field: "siege_shortfall_claims_the_projects", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_shortfall_claims_the_projects, disable: AdvancedAi::disable_siege_shortfall_claims_the_projects },
-||||||| 3c141a908
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
