@@ -9869,9 +9869,6 @@ mod launcher_war;
 mod neighborhood_houses_the_capped_city;
 /// `nuclear-goal-needs-a-launcher`: see `advanced/nuclear_launcher.rs`.
 mod nuclear_launcher;
-/// `siege-shortfall-claims-the-projects`: see
-/// `advanced/siege_shortfall_projects.rs`.
-mod siege_shortfall_projects;
 mod peacetime_republic;
 mod science_denial_every_pad;
 mod science_denial_trains_spies;
@@ -9886,6 +9883,9 @@ mod science_victory_drive;
 mod settler_admission_journal;
 mod settler_departure;
 mod settler_path_clear;
+/// `siege-shortfall-claims-the-projects`: see
+/// `advanced/siege_shortfall_projects.rs`.
+mod siege_shortfall_projects;
 /// `siege-tier-before-the-beeline`: the next siege tier ahead of the air
 /// surge's beeline behind Medieval walls. See
 /// `advanced/siege_tier_before_the_beeline.rs`.

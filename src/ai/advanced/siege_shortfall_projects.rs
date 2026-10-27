@@ -133,7 +133,10 @@ mod tests {
         ai.note_siege_shortfall(theirs, game.turn, true);
         let mut off = game.clone();
         ai.redirect_repeatable_projects_for_force_gap(&mut off, 0, &plan);
-        assert!(queues_a_project(&off, ours), "off, the project keeps its queue");
+        assert!(
+            queues_a_project(&off, ours),
+            "off, the project keeps its queue"
+        );
 
         ai.enable_siege_shortfall_claims_the_projects();
         ai.note_siege_shortfall(theirs, game.turn, true);
