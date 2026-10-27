@@ -8339,6 +8339,15 @@ impl AdvancedAi {
         self.aluminum_tile_spends_the_war_chest = false;
     }
 
+    /// Offer no friendship to the founder whose faith we must fight. See
+    /// [`Self::friendship_spares_the_converter`].
+    pub fn enable_friendship_spares_the_converter(&mut self) {
+        self.friendship_spares_the_converter = true;
+    }
+
+    /// The twin of `enable_friendship_spares_the_converter`.
+    pub fn disable_friendship_spares_the_converter(&mut self) {
+        self.friendship_spares_the_converter = false;
     /// Let a siege short of its bill take the repeatable-project queues. See
     /// [`Self::siege_shortfall_claims_the_projects`].
     pub fn enable_siege_shortfall_claims_the_projects(&mut self) {
@@ -8349,6 +8358,7 @@ impl AdvancedAi {
     pub fn disable_siege_shortfall_claims_the_projects(&mut self) {
         self.siege_shortfall_claims_the_projects = false;
         self.siege_force_short.clear();
+||||||| 3c141a908
     }
 
     // ---- append: a-b ------------------------------------------------

@@ -4180,11 +4180,18 @@ pub const GENES: &[Gene] = &[
     // (t124) to t169 and never flew a Bomber. The tile now keeps only the
     // upkeep floor. See `AdvancedAi::aluminum_tile_reserve`.
     Gene { tag: "aluminum-tile-spends-the-war-chest", field: "aluminum_tile_spends_the_war_chest", kind: Kind::OptIn, enable: AdvancedAi::enable_aluminum_tile_spends_the_war_chest, disable: AdvancedAi::disable_aluminum_tile_spends_the_war_chest },
+    // `friendship-spares-the-converter`: retained live Immortal games to
+    // 10-27, 4 of 14 Religious losses held the faith war on the founder
+    // converting us as "not a legal target": `befriend-the-strongest` had
+    // befriended it at turns 42-54, before its faith reached us. See
+    // `advanced/protective_friendship.rs`.
+    Gene { tag: "friendship-spares-the-converter", field: "friendship_spares_the_converter", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_spares_the_converter, disable: AdvancedAi::disable_friendship_spares_the_converter },
     // `siege-shortfall-claims-the-projects`: retained live Immortal games to
     // 10-27, capital sieges sat in Stage on 89% of 1,248 turns at a median
     // 0.09 of their bill while Theater and Campus projects took 4.8% of
     // wartime Production. See `advanced/siege_shortfall_projects.rs`.
     Gene { tag: "siege-shortfall-claims-the-projects", field: "siege_shortfall_claims_the_projects", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_shortfall_claims_the_projects, disable: AdvancedAi::disable_siege_shortfall_claims_the_projects },
+||||||| 3c141a908
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
