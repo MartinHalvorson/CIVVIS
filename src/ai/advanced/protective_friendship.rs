@@ -68,7 +68,63 @@ pub(super) const FRIENDSHIP_RACE_CEILING: i32 = 45;
 /// win 090059Z kept India at 0.87 a friend while it took America.
 pub(super) const FRIENDSHIP_PREY_RATIO: f64 = 0.5;
 
+// `friendship-spares-the-converter`: no friendship is offered (or renewed) to
+// a rival whose founded faith leads the religion race (the most cities
+// following it, ours included) or already holds a city of ours. A friendship
+// makes the founder an illegal target (`campaign_target_legal`), and every
+// religious defence is a war on it: `faith-war-before-the-flip-2`, the
+// religious interception and the faith counter. Retained live Immortal games
+// to 2026-10-27: 4 of the 14 Religious losses held the faith war on the
+// founder converting us as "not a legal target" (040516Z Ethiopia, 184843Z
+// Phoenicia, 194829Z Georgia, 033128Z Netherlands). Each friendship was
+// offered at turns 42-54, when the founder's faith led the race but no
+// spreader stood at our cities and none or one of our cities followed it, so
+// `friendship-ends-at-the-race` could not see it: the religion race reads
+// 50% only once our own majority has turned.
+
 impl AdvancedAi {
+    /// `friendship-spares-the-converter`: whether befriending `rival` would
+    /// shield the faith we must fight: Religious Victory is on, `rival`
+    /// founded a faith other than ours, and that faith holds a city of ours
+    /// or is followed by at least as many cities as any other founded faith
+    /// (`Game::cities_following_religion`, the host's World Rankings count).
+    pub(super) fn friendship_would_shield_the_converter(
+        &self,
+        g: &Game,
+        pid: usize,
+        rival: usize,
+    ) -> bool {
+        if !g.victory_conditions.religious {
+            return false;
+        }
+        let Some(faith) = g.players.get(rival).and_then(|p| p.religion.as_deref()) else {
+            return false;
+        };
+        if g.players[pid].religion.as_deref() == Some(faith) {
+            return false;
+        }
+        if g
+            .player_city_ids(pid)
+            .iter()
+            .filter_map(|cid| g.cities.get(cid))
+            .any(|city| g.city_religion(city) == Some(faith))
+        {
+            return true;
+        }
+        let following = g.cities_following_religion(rival);
+        following > 0
+            && g.players
+                .iter()
+                .filter(|other| {
+                    other.id != rival
+                        && other.alive
+                        && !other.is_minor
+                        && !other.is_barbarian
+                        && other.religion.is_some()
+                })
+                .all(|other| g.cities_following_religion(other.id) <= following)
+    }
+
     /// `friendship-ends-at-the-race`: whether `rival`'s best race reads
     /// [`FRIENDSHIP_RACE_CEILING`] or more, or the counter reads it urgent.
     fn friend_is_racing(&self, g: &Game, rival: usize) -> bool {
@@ -131,6 +187,10 @@ impl AdvancedAi {
                             == Some(other.id))
                     && !(self.friendship_only_with_the_stronger
                         && g.military_power(other.id) < g.military_power(pid))
+                    // `friendship-spares-the-converter`: the founder whose
+                    // faith we must fight is not made an illegal target.
+                    && !(self.friendship_spares_the_converter
+                        && self.friendship_would_shield_the_converter(g, pid, other.id))
                     && !g.pending_deals.iter().any(|deal| {
                         (deal.from == pid && deal.to == other.id)
                             || (deal.from == other.id && deal.to == pid)
@@ -386,6 +446,77 @@ mod tests {
             !game.pending_deals.iter().any(|deal| deal.to == 1),
             "the prey is left to the conquest"
         );
+    }
+
+    /// Found `faith` for `founder` and have the capitals of `followers`
+    /// follow it.
+    fn found_faith(game: &mut Game, founder: usize, faith: &str, followers: &[usize]) {
+        game.players[founder].religion = Some(faith.to_string());
+        for &pid in followers {
+            let capital = game.player_city_ids(pid)[0];
+            game.cities
+                .get_mut(&capital)
+                .expect("the capital stands")
+                .pressure
+                .insert(faith.to_string(), 100.0);
+        }
+    }
+
+    /// The first rival seat 0 offers a friendship to this turn, if any.
+    fn first_offer(ai: &AdvancedAi, game: &Game) -> Option<usize> {
+        let mut game = game.clone();
+        ai.propose_protective_friendship(&mut game, 0);
+        game.pending_deals
+            .iter()
+            .find(|deal| deal.from == 0 && deal.friendship)
+            .map(|deal| deal.to)
+    }
+
+    /// `friendship-spares-the-converter`: the strongest rival founded the
+    /// faith most cities follow, so it is passed over for the next, whose
+    /// faith nobody follows yet.
+    #[test]
+    fn the_founder_whose_faith_leads_the_race_is_not_befriended() {
+        let mut game = three_majors();
+        found_faith(&mut game, 2, "Christianity", &[2]);
+        found_faith(&mut game, 1, "Islam", &[]);
+        let mut ai = AdvancedAi::new();
+        ai.enable_befriend_the_strongest();
+        assert_eq!(first_offer(&ai, &game), Some(2), "off, the strongest is asked");
+
+        ai.enable_friendship_spares_the_converter();
+        assert_eq!(
+            first_offer(&ai, &game),
+            Some(1),
+            "the race leader is passed over for a founder nobody follows"
+        );
+
+        // Without a Religious Victory there is no faith to fight.
+        game.victory_conditions.religious = false;
+        assert_eq!(first_offer(&ai, &game), Some(2));
+    }
+
+    /// `friendship-spares-the-converter`: a trailing faith that already holds
+    /// a city of ours is passed over too, so with the leader also passed over
+    /// nobody is asked.
+    #[test]
+    fn a_founder_whose_faith_holds_our_city_is_not_befriended() {
+        let mut game = three_majors();
+        found_faith(&mut game, 2, "Christianity", &[1, 2]);
+        found_faith(&mut game, 1, "Islam", &[0]);
+        assert!(
+            game.cities_following_religion(1) < game.cities_following_religion(2),
+            "fixture: Islam trails"
+        );
+        let mut ai = AdvancedAi::new();
+        ai.enable_befriend_the_strongest();
+        ai.enable_friendship_spares_the_converter();
+        assert_eq!(first_offer(&ai, &game), None);
+
+        // Our own founded faith is no faith to fight.
+        game.players[0].religion = Some("Islam".to_string());
+        game.players[1].religion = None;
+        assert_eq!(first_offer(&ai, &game), Some(1));
     }
 
     #[test]
