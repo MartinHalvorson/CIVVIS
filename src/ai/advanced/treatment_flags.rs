@@ -8361,6 +8361,18 @@ impl AdvancedAi {
         self.siege_tier_yields_to_the_bombers_2 = false;
     }
 
+    /// Let a siege short of its bill take the repeatable-project queues. See
+    /// [`Self::siege_shortfall_claims_the_projects`].
+    pub fn enable_siege_shortfall_claims_the_projects(&mut self) {
+        self.siege_shortfall_claims_the_projects = true;
+    }
+
+    /// The twin of `enable_siege_shortfall_claims_the_projects`.
+    pub fn disable_siege_shortfall_claims_the_projects(&mut self) {
+        self.siege_shortfall_claims_the_projects = false;
+        self.siege_force_short.clear();
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

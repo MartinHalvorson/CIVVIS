@@ -4192,6 +4192,11 @@ pub const GENES: &[Gene] = &[
     // t118, after rival walls reached 400). The yield now waits until the
     // Bomber is near. See `AdvancedAi::window_yields_to_the_bombers`.
     Gene { tag: "siege-tier-yields-to-the-bombers-2", field: "siege_tier_yields_to_the_bombers_2", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_tier_yields_to_the_bombers_2, disable: AdvancedAi::disable_siege_tier_yields_to_the_bombers_2 },
+    // `siege-shortfall-claims-the-projects`: retained live Immortal games to
+    // 10-27, capital sieges sat in Stage on 89% of 1,248 turns at a median
+    // 0.09 of their bill while Theater and Campus projects took 4.8% of
+    // wartime Production. See `advanced/siege_shortfall_projects.rs`.
+    Gene { tag: "siege-shortfall-claims-the-projects", field: "siege_shortfall_claims_the_projects", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_shortfall_claims_the_projects, disable: AdvancedAi::disable_siege_shortfall_claims_the_projects },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

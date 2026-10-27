@@ -3082,6 +3082,9 @@ impl AdvancedAi {
                 && g.military_power(city.owner)
                     <= MUSTER_WEAK_TARGET_SHARE * g.military_power(pid).max(1.0);
             let ready = dying || walls_answered || committed || weak_target || restored;
+            // `siege-shortfall-claims-the-projects`: a held train whose whole
+            // force is short of the bill asks the cities for soldiers.
+            self.note_siege_shortfall(cid, turn, !ready && strength < bill);
             if !ready {
                 self.stage_muster_closed.remove(&cid);
             }

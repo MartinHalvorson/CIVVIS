@@ -8363,6 +8363,13 @@ pub struct AdvancedAi {
     /// `stage-musters-out-of-reach`: per besieged city, the turn its train
     /// last closed from the muster line. See `siege_train::MUSTER_COMMIT_TURNS`.
     stage_muster_closed: BTreeMap<u32, u32>,
+    /// `siege-shortfall-claims-the-projects`: a short siege's repeatable
+    /// projects yield to land units. See
+    /// `advanced/siege_shortfall_projects.rs`. Off by default.
+    siege_shortfall_claims_the_projects: bool,
+    /// `siege-shortfall-claims-the-projects`: per besieged city, the turn its
+    /// Stage train last held with the force short of its bill.
+    siege_force_short: BTreeMap<u32, u32>,
     /// `stranded-settler-leaves-the-corridor`: a stranded early Settler drops
     /// its home corridor. See `settler_never_idles::settler_stranded`.
     stranded_settler_leaves_the_corridor: bool,
@@ -9888,6 +9895,9 @@ mod science_victory_drive;
 mod settler_admission_journal;
 mod settler_departure;
 mod settler_path_clear;
+/// `siege-shortfall-claims-the-projects`: see
+/// `advanced/siege_shortfall_projects.rs`.
+mod siege_shortfall_projects;
 /// `siege-tier-before-the-beeline`: the next siege tier ahead of the air
 /// surge's beeline behind Medieval walls. See
 /// `advanced/siege_tier_before_the_beeline.rs`.
@@ -11324,6 +11334,8 @@ impl AdvancedAi {
             stage_musters_out_of_reach: false,
             stage_muster_ready: BTreeMap::new(),
             stage_muster_closed: BTreeMap::new(),
+            siege_shortfall_claims_the_projects: false,
+            siege_force_short: BTreeMap::new(),
             stranded_settler_leaves_the_corridor: false,
             siege_members_use_their_moves: false,
             science_ladder_reads_the_clock: false,
@@ -30907,15 +30919,24 @@ impl AdvancedAi {
             return;
         }
         let peacetime_target = self.peacetime_deterrence_force_gap(g, pid, plan);
+        // `siege-shortfall-claims-the-projects`: a siege train short of its
+        // bill opens the gap on any plan, at a higher land count.
+        let siege_short = self.siege_force_is_short(g, pid);
         if !matches!(
             plan.strategy,
             GrandStrategy::Conquest | GrandStrategy::Recovery
         ) && peacetime_target.is_none()
+            && !siege_short
         {
             return;
         }
         let city_ids = g.player_city_ids(pid);
-        let desired_land = peacetime_target.unwrap_or(2 * city_ids.len());
+        let per_city = if siege_short {
+            siege_shortfall_projects::SIEGE_SHORTFALL_LAND_PER_CITY
+        } else {
+            2
+        };
+        let desired_land = peacetime_target.unwrap_or(per_city * city_ids.len());
         for cid in city_ids {
             let counts = self.counts(g, pid);
             let land = counts
