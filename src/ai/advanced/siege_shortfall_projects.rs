@@ -102,7 +102,7 @@ mod tests {
             .projects
             .iter()
             .find(|(_, spec)| spec.repeatable && !spec.ongoing_yields.is_empty())
-            .map(|(name, _)| name.clone())
+            .map(|(name, _)| *name)
             .expect("the rules carry a repeatable yield project");
         game.cities.get_mut(&ours).unwrap().queue = vec![Item::Project { project }];
         game.turn = 90;
