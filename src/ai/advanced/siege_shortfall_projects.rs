@@ -19,8 +19,9 @@
 //!
 //! Under the gene the siege train notes the turn a Stage train holds with the
 //! whole force's strength under its bill (`siege_train`, the
-//! `stage-musters-out-of-reach` readiness); for the next turn the force-gap
-//! redirect runs on any plan while that city's owner is at war with us, and
+//! `stage-musters-out-of-reach` readiness); for the next turn, on a
+//! Domination seat, the force-gap redirect runs on any plan while that city's
+//! owner is at war with us, and
 //! asks [`SIEGE_SHORTFALL_LAND_PER_CITY`] land units a city. Only repeatable
 //! projects are redirected, so buildings, districts, wonders and one-off
 //! projects keep their queues, and the project's progress stays banked.
@@ -51,11 +52,12 @@ impl AdvancedAi {
         }
     }
 
-    /// Whether a siege train held short of its bill within the last
-    /// [`SIEGE_SHORTFALL_FRESH_TURNS`] on a city whose owner we are still at
-    /// war with. Always `false` with the gene off.
+    /// Whether, on a Domination seat, a siege train held short of its bill
+    /// within the last [`SIEGE_SHORTFALL_FRESH_TURNS`] on a city whose owner
+    /// we are still at war with. Always `false` with the gene off.
     pub(super) fn siege_force_is_short(&self, g: &Game, pid: usize) -> bool {
         self.siege_shortfall_claims_the_projects
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
             && self.siege_force_short.iter().any(|(cid, turn)| {
                 g.turn.saturating_sub(*turn) <= SIEGE_SHORTFALL_FRESH_TURNS
                     && g.cities
@@ -68,7 +70,7 @@ impl AdvancedAi {
 #[cfg(test)]
 mod tests {
     use super::super::test_support::opt_in_off_in_both_controllers;
-    use super::super::{AdvancedAi, GrandStrategy, StrategicPlan};
+    use super::super::{AdvancedAi, GrandStrategy, StrategicPlan, VictoryTarget};
     use crate::game::{Game, Item};
 
     #[test]
@@ -127,6 +129,7 @@ mod tests {
     fn a_short_siege_turns_the_project_queue_to_a_land_unit() {
         let (mut game, ours, theirs) = at_war_with_a_project();
         let mut ai = AdvancedAi::new();
+        ai.victory_target = Some(VictoryTarget::Domination);
         let plan = science_plan(game.turn);
 
         // Off, a Science plan never reaches the force-gap redirect.
@@ -141,6 +144,12 @@ mod tests {
         ai.enable_siege_shortfall_claims_the_projects();
         ai.note_siege_shortfall(theirs, game.turn, true);
         assert!(ai.siege_force_is_short(&game, 0));
+
+        // A seat on another victory lane is left to its own plan.
+        ai.victory_target = Some(VictoryTarget::Science);
+        assert!(!ai.siege_force_is_short(&game, 0));
+        ai.victory_target = Some(VictoryTarget::Domination);
+
         ai.redirect_repeatable_projects_for_force_gap(&mut game, 0, &plan);
         assert!(
             !queues_a_project(&game, ours),
@@ -153,6 +162,7 @@ mod tests {
     fn the_shortfall_lapses_with_the_reading_and_the_war() {
         let (mut game, _, theirs) = at_war_with_a_project();
         let mut ai = AdvancedAi::new();
+        ai.victory_target = Some(VictoryTarget::Domination);
         ai.enable_siege_shortfall_claims_the_projects();
         ai.note_siege_shortfall(theirs, game.turn, true);
         assert!(ai.siege_force_is_short(&game, 0));
