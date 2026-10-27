@@ -103,8 +103,7 @@ impl AdvancedAi {
         if g.players[pid].religion.as_deref() == Some(faith) {
             return false;
         }
-        if g
-            .player_city_ids(pid)
+        if g.player_city_ids(pid)
             .iter()
             .filter_map(|cid| g.cities.get(cid))
             .any(|city| g.city_religion(city) == Some(faith))
@@ -482,7 +481,11 @@ mod tests {
         found_faith(&mut game, 1, "Islam", &[]);
         let mut ai = AdvancedAi::new();
         ai.enable_befriend_the_strongest();
-        assert_eq!(first_offer(&ai, &game), Some(2), "off, the strongest is asked");
+        assert_eq!(
+            first_offer(&ai, &game),
+            Some(2),
+            "off, the strongest is asked"
+        );
 
         ai.enable_friendship_spares_the_converter();
         assert_eq!(
