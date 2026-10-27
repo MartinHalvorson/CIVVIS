@@ -4197,6 +4197,11 @@ pub const GENES: &[Gene] = &[
     // 0.09 of their bill while Theater and Campus projects took 4.8% of
     // wartime Production. See `advanced/siege_shortfall_projects.rs`.
     Gene { tag: "siege-shortfall-claims-the-projects", field: "siege_shortfall_claims_the_projects", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_shortfall_claims_the_projects, disable: AdvancedAi::disable_siege_shortfall_claims_the_projects },
+    // `disrupt-before-the-sources`: retained live Immortal games to 10-27,
+    // with Disrupt Rocketry offered, a green Spy ran Gain Sources 71 times
+    // against 91 disruptions; 061046Z held a Spy in Beijing 168-196 with it
+    // offered and never ran it. See `advanced/disrupt_before_the_sources.rs`.
+    Gene { tag: "disrupt-before-the-sources", field: "disrupt_before_the_sources", kind: Kind::OptIn, enable: AdvancedAi::enable_disrupt_before_the_sources, disable: AdvancedAi::disable_disrupt_before_the_sources },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
