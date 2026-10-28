@@ -132,6 +132,7 @@ fn a_closing_march_holds_until_its_patience_runs_out() {
         rival: 1,
         since: game.turn - (PREY_MARCH_PATIENCE - 1),
         best: (median + 1, game.turn - 1),
+        best_gun: i32::MAX,
         seen: game.turn - 1,
     });
     assert_eq!(
@@ -158,6 +159,7 @@ fn a_new_rival_or_a_lapsed_hold_starts_a_fresh_clock() {
         rival: 2,
         since: game.turn - PREY_MARCH_PATIENCE,
         best: (median, game.turn - PREY_MARCH_PATIENCE),
+        best_gun: i32::MAX,
         seen: game.turn - 1,
     };
     ai.prey_march_hold = Some(old);
@@ -304,4 +306,185 @@ fn the_declaration_step_holds_a_prey_war_for_the_march_and_opens_it_near() {
         g.is_at_war(0, 1),
         "an army within the bar declares as before"
     );
+}
+
+fn march_2_ai() -> AdvancedAi {
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.enable_prey_is_declared_on();
+    ai.enable_prey_waits_for_the_march_2();
+    ai
+}
+
+/// The prey board with the army moved to stand `distance` tiles from the
+/// rival's capital, and that capital as the objective.
+fn army_at_distance(distance: i32) -> (Game, crate::Pos) {
+    let mut game = prey_board();
+    let objective = game.cities[&game.player_city_ids(1)[0]].pos;
+    let stand = game
+        .map
+        .tiles
+        .iter()
+        .filter(|(pos, tile)| {
+            game.rules.is_passable(tile)
+                && !game.rules.is_water(tile)
+                && game.wdist(**pos, objective) == distance
+        })
+        .map(|(pos, _)| *pos)
+        .min()
+        .expect("a land tile at that distance");
+    for uid in game.player_unit_ids(0) {
+        if game.units[&uid].kind == "swordsman" {
+            game.units.get_mut(&uid).unwrap().pos = stand;
+        }
+    }
+    (game, objective)
+}
+
+#[test]
+fn version_two_holds_an_army_version_one_would_pass() {
+    use super::PreyMarch;
+    let (game, objective) = army_at_distance(8);
+    let mut v1 = march_ai();
+    assert_eq!(
+        v1.prey_march_reading(&game, 0, 1, objective),
+        Some(PreyMarch::Within(8))
+    );
+    let mut v2 = march_2_ai();
+    assert_eq!(
+        v2.prey_march_reading(&game, 0, 1, objective),
+        Some(PreyMarch::Hold(8, 0)),
+        "8 tiles is over version two's bar of 6"
+    );
+    assert_eq!(v2.prey_march_bar(), super::PREY_MARCH_TILES_2);
+    assert_eq!(v2.prey_march_tag(), "prey-waits-for-the-march-2");
+}
+
+#[test]
+fn version_two_asks_a_gun_only_once_one_is_buildable() {
+    use super::PreyMarch;
+    let (mut game, objective) = army_at_distance(5);
+    let mut v2 = march_2_ai();
+    assert_eq!(
+        v2.prey_march_reading(&game, 0, 1, objective),
+        Some(PreyMarch::Within(5)),
+        "no siege gun is buildable yet, so the gun leg is not asked"
+    );
+    game.players[0].techs.insert(crate::name!("engineering"));
+    assert_eq!(
+        v2.prey_march_reading(&game, 0, 1, objective),
+        Some(PreyMarch::HoldForGun(i32::MAX, 0)),
+        "a buildable gun that is not fielded holds the war"
+    );
+    let far_gun = game
+        .map
+        .tiles
+        .iter()
+        .filter(|(pos, tile)| {
+            game.rules.is_passable(tile)
+                && !game.rules.is_water(tile)
+                && game.wdist(**pos, objective) == super::PREY_MARCH_GUN_TILES + 3
+        })
+        .map(|(pos, _)| *pos)
+        .min()
+        .unwrap();
+    let gun = game.spawn_test_unit("catapult", 0, far_gun);
+    assert!(matches!(
+        v2.prey_march_reading(&game, 0, 1, objective),
+        Some(PreyMarch::HoldForGun(d, _)) if d == super::PREY_MARCH_GUN_TILES + 3
+    ));
+    let near_gun = game
+        .map
+        .tiles
+        .iter()
+        .filter(|(pos, tile)| {
+            game.rules.is_passable(tile)
+                && !game.rules.is_water(tile)
+                && game.wdist(**pos, objective) == 3
+        })
+        .map(|(pos, _)| *pos)
+        .min()
+        .unwrap();
+    game.units.get_mut(&gun).unwrap().pos = near_gun;
+    let reading = v2.prey_march_reading(&game, 0, 1, objective);
+    assert!(
+        matches!(reading, Some(PreyMarch::Within(_))),
+        "a gun within the bar opens the war: {reading:?}"
+    );
+    assert_eq!(v2.prey_march_hold, None);
+}
+
+#[test]
+fn a_closing_gun_is_progress_for_the_stall_release() {
+    use super::PreyMarch;
+    let (mut game, objective) = army_at_distance(5);
+    game.players[0].techs.insert(crate::name!("engineering"));
+    let at = |game: &Game, d: i32| {
+        game.map
+            .tiles
+            .iter()
+            .filter(|(pos, tile)| {
+                game.rules.is_passable(tile)
+                    && !game.rules.is_water(tile)
+                    && game.wdist(**pos, objective) == d
+            })
+            .map(|(pos, _)| *pos)
+            .min()
+            .unwrap()
+    };
+    let gun = game.spawn_test_unit("catapult", 0, at(&game, 14));
+    let mut v2 = march_2_ai();
+    game.turn = 60;
+    // The army stands still within the bar; the gun gains a tile a turn.
+    for (step, d) in [14, 13, 12, 11, 10].into_iter().enumerate() {
+        game.turn = 60 + step as u32;
+        let pos = at(&game, d);
+        game.units.get_mut(&gun).unwrap().pos = pos;
+        let reading = v2.prey_march_reading(&game, 0, 1, objective);
+        assert!(
+            matches!(reading, Some(PreyMarch::HoldForGun(g, _)) if g == d),
+            "turn {}: {reading:?}",
+            game.turn
+        );
+    }
+    // Then it stops: the stall clock runs from its last gain.
+    for wait in 1..super::PREY_MARCH_STALL {
+        game.turn = 64 + wait;
+        assert!(matches!(
+            v2.prey_march_reading(&game, 0, 1, objective),
+            Some(PreyMarch::HoldForGun(..))
+        ));
+    }
+    game.turn = 64 + super::PREY_MARCH_STALL;
+    assert!(matches!(
+        v2.prey_march_reading(&game, 0, 1, objective),
+        Some(PreyMarch::Stalled(_))
+    ));
+}
+
+#[test]
+fn version_two_keeps_version_one_in_the_declaration_step() {
+    let far = |_| (4, 9);
+    let (mut g, plan) = declaration_board(far);
+    let mut on = march_2_ai();
+    on.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(!g.is_at_war(0, 1), "version two holds the far army too");
+    assert!(on.prey_march_hold.is_some_and(|hold| hold.rival == 1));
+
+    let near = |objective: crate::Pos| (objective.0 - 4, objective.1);
+    let (mut g, plan) = declaration_board(near);
+    let mut on = march_2_ai();
+    on.advanced_diplomacy(&mut g, 0, &plan);
+    assert!(
+        g.is_at_war(0, 1),
+        "an army within 6 tiles with no gun buildable declares"
+    );
+}
+
+#[test]
+fn the_march_gene_family_ships_off_and_is_registered() {
+    let ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    assert!(!ai.prey_waits_for_the_march_2);
+    assert!(super::super::genes::GENES
+        .iter()
+        .any(|gene| gene.tag == "prey-waits-for-the-march-2" && gene.opt_in()));
 }

@@ -224,7 +224,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `nuclear-goal-needs-a-launcher` | off (unmeasured) | Opt-in gene `nuclear-goal-needs-a-launcher`; see `Self::nuclear_goal_needs_a_launcher`. | 1 \| 1 |
 | `open-city-draws-the-front` | off (unmeasured) | Opt-in gene `open-city-draws-the-front`; see `advanced/open_city_front.rs`. | 1 \| 1 |
 | `prey-is-declared-on` | off (unmeasured) | Declare on prey without the staged ring or a home Defend row. | 1 \| 1 |
-| `prey-waits-for-the-march` | off (unmeasured) | Opt-in gene `prey-waits-for-the-march`; see `Self::prey_waits_for_the_march`. | 1 \| 1 |
+| `prey-waits-for-the-march` | off (unmeasured) | Opt-in gene `prey-waits-for-the-march`; see `Self::prey_waits_for_the_march`. | — \| 2 |
+| `prey-waits-for-the-march-2` | off (unmeasured) | Opt-in gene `prey-waits-for-the-march-2`; see `Self::prey_waits_for_the_march_2`. | — \| 2 |
 | `prey-war-is-kept` | off (unmeasured) | Opt-in gene `prey-war-is-kept`; see `Self::prey_war_is_kept`. | 1 \| 1 |
 | `prophet-race-takes-divine-spark` | off (unmeasured) | Opt-in gene `prophet-race-takes-divine-spark`; see `advanced/astrology_before_the_second_city.rs`. | 1 \| 1 |
 | `racer-blocker-declares` | off (unmeasured) | Opt-in gene `racer-blocker-declares`; see `advanced/silent_counter.rs`. | 1 \| 1 |

@@ -4219,6 +4219,11 @@ pub const GENES: &[Gene] = &[
     // objective; those took no city in 20 wars. See
     // `advanced/prey_declaration.rs`.
     Gene { tag: "prey-waits-for-the-march", field: "prey_waits_for_the_march", kind: Kind::OptIn, enable: AdvancedAi::enable_prey_waits_for_the_march, disable: AdvancedAi::disable_prey_waits_for_the_march },
+    // `prey-waits-for-the-march-2`: version one with a median bar of 6 and a
+    // siege gun within 6 of the objective; live war orders on majors took a
+    // city within 20 turns 4/43 at a median ≤6 against 2/46 at 7-10, and 1/66
+    // with no gun fielded. See `advanced/prey_declaration.rs`.
+    Gene { tag: "prey-waits-for-the-march-2", field: "prey_waits_for_the_march_2", kind: Kind::OptIn, enable: AdvancedAi::enable_prey_waits_for_the_march_2, disable: AdvancedAi::disable_prey_waits_for_the_march_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
