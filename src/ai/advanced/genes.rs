@@ -4214,6 +4214,11 @@ pub const GENES: &[Gene] = &[
     // taken 31/44 at war ages 8-11, yet 35 of 428 war turns at ages 10-30
     // carried an offer. See `advanced/unchosen_war_peace.rs`.
     Gene { tag: "unchosen-war-takes-the-first-peace", field: "unchosen_war_takes_the_first_peace", kind: Kind::OptIn, enable: AdvancedAi::enable_unchosen_war_takes_the_first_peace, disable: AdvancedAi::disable_unchosen_war_takes_the_first_peace },
+    // `prey-waits-for-the-march`: live Immortal 10-27/28, the prey waiver
+    // opened wars with the field army's median 12-25 tiles from the
+    // objective; those took no city in 20 wars. See
+    // `advanced/prey_declaration.rs`.
+    Gene { tag: "prey-waits-for-the-march", field: "prey_waits_for_the_march", kind: Kind::OptIn, enable: AdvancedAi::enable_prey_waits_for_the_march, disable: AdvancedAi::disable_prey_waits_for_the_march },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

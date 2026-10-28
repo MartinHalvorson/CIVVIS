@@ -8406,6 +8406,17 @@ impl AdvancedAi {
         self.unchosen_war_takes_the_first_peace = false;
     }
 
+    /// Opt-in gene `prey-waits-for-the-march`; see
+    /// [`Self::prey_waits_for_the_march`].
+    pub fn enable_prey_waits_for_the_march(&mut self) {
+        self.prey_waits_for_the_march = true;
+    }
+
+    /// The twin of `enable_prey_waits_for_the_march`.
+    pub fn disable_prey_waits_for_the_march(&mut self) {
+        self.prey_waits_for_the_march = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
