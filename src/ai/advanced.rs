@@ -49680,6 +49680,11 @@ impl AdvancedAi {
             {
                 self.culture_spending(g, pid);
             }
+            // `forward-airfield-project`: a project already in flight takes
+            // its producer's idle queue for the next stage before the routine
+            // claims below refill it. Exact no-op while the gene is off or no
+            // project is in flight. See `claim_forward_airfield_stage_in_flight`.
+            self.claim_forward_airfield_stage_in_flight(g, pid, &plan);
             // `early-settler-floor`: a Settler for the opening's band floor
             // goes first, ahead of the Prophet race and the routine claims
             // below. Exact no-op while the gene is off. See
