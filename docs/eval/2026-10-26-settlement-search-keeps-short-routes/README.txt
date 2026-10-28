@@ -1,63 +1,85 @@
-Find nearby settlement sites by their shortest route
+Find nearby settlement sites by shortest route in observed Native games
 
-Historical case: civvis-20261026T021028Z, Immortal / Gran Colombia / four players /
-Tiny Pangaea / Online / Domination assignment, all victory types enabled.
-The recorded result was a Science loss on turn218. This is a retrospective case.
+The bounded settlement-site depth-first search can mark a tile visited along a
+long route before reaching it along a shorter route. That can make a paid
+Settler queue appear useless even when the mirrored Native map contains a
+nearby modeled site. The final candidate uses a breadth-first queue only for
+MIRRORED_SEAT games with nonempty Game.host_observed. Empty-observation
+headless/reference games retain the original LIFO traversal and frozen AI
+behavior. The terrain, ownership, water, and walking-distance predicates are
+unchanged.
 
-The original bounded depth-first search marks each tile visited on its first
-route. An eight-step first visit can prevent exploring a shorter route through
-that tile. The correction uses one breadth-first queue seeded by every city,
-retaining the same validity, terrain, water and distance predicates.
+Retrospective case
 
-Two private logging-only controls reproduce all266 complete planning payloads
-and4621 ordered captured reads through turn100. Both entire root traces match.
-On17/3, after city two is founded, the original helper reports no practical site;
-the separate diagnostic BFS finds modeled tile(6,16) four steps from an own city.
-The original queue revalidation then replaces the capital's paid Settler with a
-Builder despite width2 and no walking Settler. Native events confirm that the
-opening lock rejects that Builder, then Monument and Scout, before accepting a
-Warrior on20 with immediate_threat=false. The diagnostic never changes a choice.
-A modeled usable site is not an observed native founding or a proven completion.
+civvis-20261026T021028Z was an Immortal, four-player Tiny Pangaea game with
+Online speed, a Domination assignment, and all victory types enabled. It ended
+in a Science loss on turn 218. This is one retrospective case, not a win-rate
+estimate.
 
-The false negative appears in537 repeated calls across92 recorded requests;
-these are repeated observations within one game, not independent experiments.
-The first diagnostic attempt passed266 requests once, then timed out at53/0
-while delivering5of18 reads in its second control. It is retained. The same
-binary passed two fresh complete controls after changing only the harness reply
-timeout from120 to600 seconds; no comparison predicate was relaxed.
+Two original-binary controls reproduced all 266 complete planning payloads
+and 4,621 ordered captured reads through turn 100; both complete root traces
+match. At turn 17, frame 3, after founding the second city, the old helper
+reports no practical site while a separate diagnostic BFS finds modeled tile
+(6,16) four steps away. The capital's queue then replaces a paid Settler with
+a Builder while width is two and there is no walking Settler. This false
+negative occurs in 537 repeated calls across 92 requests, not 537 independent
+experiments.
 
-Original argv/cwd were reconstructed from the archived header and launcher.
-The actual historical process argv/cwd were not observed. Two original native
-binary controls qualify the reconstruction before these diagnostic controls.
+Two historical candidate replays agree on all 42 complete replies and 747
+ordered captured reads before the same first changed reply at 17/3. Their
+complete changed replies and root traces also match. The only change is removal
+of the capital Builder produce order and its modeled action. The original
+Native opening lock rejected that Builder, then Monument and Scout, before
+accepting a Warrior on turn 20. Actual Native Settler completion, founding, or
+competitive benefit is unproven. A modeled usable site does not establish a
+Native-legal plot or founding.
 
-Files
-  diagnostic.json.gz: source scope, instrumentation, all diagnostic controls,
-    the timeout rejection, exact root trace, native queue events and registration.
-  validation.json.gz: original assertion RED, same-test GREEN and source quality
-    (required before final delivery; currently pending).
-  first-change.json.gz: two registered complete-payload/read-prefix comparisons,
-    including both complete observed reply streams and root traces.
-  verify.py: verify the evidence, with --baseline-only during preparation.
+Compatibility and validation
 
-The shared native events, original controls and captured-input restorer are in
-../2026-10-26-released-queue-keeps-paid-work/ at published revision b3d9803.
-Their exact hashes are in diagnostic.json.gz. There is no duplicate native game.
-No strategy flag, setup, target, lane or running game was changed for this case.
-Two historical candidate comparisons preserve all42 earlier complete replies
-and all747 ordered native reads through the first changed reply,17/3. Both
-complete changed replies and root traces match. The only difference is removal
-of the capital Builder produce order and its matching modeled action. The real
-game originally rejected that Builder; actual native Settler completion and a
-competitive benefit remain unproven. The comparison stops at this first change.
+The first published checkpoint c398d7d applied breadth-first traversal to all
+controllers. Hosted cargo-test failed the frozen advanced_v1 ledger: 19,305
+decisions instead of 19,252. That global version is retained as rejected
+history and was not merged. The current source gates shortest-route traversal
+on the existing mirrored-seat and host-observation state; it adds no gene,
+flag, force, profile, or re-pin.
 
-The candidate build succeeded. Its first comparison wrapper failed to import
-frozen helper modules before any request; that rejection is retained. Supplying
-the same frozen modules on PYTHONPATH allowed the same binary and unchanged
-comparison predicates to run. No rebuild or changed historical game was used.
+RED-v5 ran the exact original DFS source and registered fixtures: three
+intended Native assertion failures and four controls passed, including the
+headless route-order control. The gated source passed all seven focused tests,
+the frozen advanced_v1 ledger test, 255 Settler tests (four existing ignores),
+48 settlement tests, and cargo check. Changed-line source quality and full
+hosted CI remain required before integration. See validation.json.gz for the
+terminal receipts after those gates finish.
 
-The original production code fails the three intended corrected-fixture tests
-while three controls pass. An earlier fixture used an out-of-map coordinate and
-panicked before assertions; that run is rejected and retained. The exact
-corrected test bytes are being checked against the production correction.
-Native-metrics-registration.json fixes early economy readbacks for the future
-first-eight cohort; production-share stops remain missing game outcomes.
+Historical reconstruction caveat: the original process argv/cwd were not
+observed. Two original controls qualify the reconstruction. The first
+logging-only diagnostic passed once but timed out delivering 5 of 18 reads in
+its second control at 53/0; that run is retained as rejected. The same binary
+then passed two complete controls after changing only the reply timeout from
+120 to 600 seconds. The first candidate wrapper failed to import frozen helper
+modules before a request; the unchanged comparator and binary passed when
+those modules were supplied on PYTHONPATH. An earlier fixture panicked on an
+out-of-map coordinate before reaching its assertions. These rejected runs and
+logs remain preserved; no predicates were relaxed.
+
+Evidence
+
+  diagnostic.json.gz: exact source scope, logging instrumentation, both
+    complete qualified diagnostic replies, root traces, and retained timeout.
+  first-change.json.gz: earlier global-candidate comparison, now rejected by
+    the frozen headless ledger guard.
+  gated-first-change.json.gz: host-gated historical candidate comparison.
+  validation.json.gz: RED/GREEN, frozen-ledger and related tests, source
+    quality, hosted CI, and integration receipts.
+  verify.py: validates the retained evidence and final validation packet.
+  native-observer.py: prepared read-only first-eight delivery/outcome observer.
+  native-metrics-registration.json: fixed descriptive economy readbacks.
+
+The eight earlier queue-correction Native attempts stopped at the configured
+production-share threshold in turns 52–54 and have no win/loss outcomes. The
+future observer starts only after this change is merged and delivered to the
+frozen Native binary. Its cohort keeps stops, retirements, missing outcomes,
+source changes, and profile changes without replacement. Results are
+observational and may overlap earlier cohorts; no causal or win-rate claim is
+made. No game setup, strategy, lane, or live-game input was changed for this
+case.

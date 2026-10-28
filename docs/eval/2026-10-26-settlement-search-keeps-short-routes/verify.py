@@ -55,14 +55,57 @@ assert d['original_diagnostic_replay_script'].count(line)==1
 assert d['original_diagnostic_replay_script'].replace(line,line.replace('120','600'),1)==d['retry_diagnostic_replay_script']
 assert hashlib.sha256(d['original_diagnostic_replay_script'].encode()).hexdigest()==d['retry_registration']['original_script_sha256']
 assert hashlib.sha256(d['retry_diagnostic_replay_script'].encode()).hexdigest()==d['retry_registration']['retry_script_sha256']
+c=load(ROOT/'first-change.json.gz')
+comparison=c['comparison']
+assert comparison['qualified'] and comparison['first_changed_request']==[17,3]
+assert comparison['identical_complete_requests_before_change']==42
+assert len(comparison['comparisons'])==len(c['both_observed_replies'])==2
+for run,observed in zip(comparison['comparisons'],c['both_observed_replies']):
+ assert len(run['requests'])==len(observed)==43
+ assert sum(x['recorded_reads'] for x in run['requests'])==747
+ for index,(check,actual) in enumerate(zip(run['requests'],observed)):
+  assert not check['identity_errors'] and check['read_sequence_matches']
+  assert check['expected_read_sha256']==check['actual_read_sha256']
+  assert check['recorded_reads']==check['replayed_reads']==len(check['expected_read_sha256'])
+  assert check['native_payload_matches'] is (index<42)
+  assert exact_fact(payload(actual),payload(native[index])) is (index<42)
+ assert exact_fact(payload(observed[-1]),comparison['complete_changed_payload'])
+assert exact_fact(c['both_observed_root_traces'][0],c['both_observed_root_traces'][1])
+assert exact_fact(c['both_observed_root_traces'][0],comparison['complete_identical_root_trace'])
+assert exact_fact(comparison['original_changed_payload'],payload(native[42]))
+original=json.loads(json.dumps(comparison['original_changed_payload']))
+original['orders']=[x for x in original['orders'] if not(x['kind']=='produce' and x['subject']==65536 and x['verb']=='UNIT_BUILDER')]
+original['decision']['native_actions']=[x for x in original['decision']['native_actions'] if x!={'city':33,'item':{'unit':'builder'},'type':'produce'}]
+assert exact_fact(original,comparison['complete_changed_payload'])
+assert hashlib.sha256(c['first_change_script'].encode()).hexdigest()==c['registration']['first_change_script_sha256']
+assert c['build_and_import_rejection']['build_exit_code']==0 and 'ModuleNotFoundError' in c['import_rejection_log']
+assert c['retry_process']['exit_code']==0 and c['retry_process']['binary_sha256']==comparison['candidate_binary_sha256']
+assert len(c['source_manifest']['files'])==830
+assert set(c['source_scope']['files'])=={'src/game/actions.rs','src/bin/civvis_orders.rs','src/ai.rs'}
+gated=load(ROOT/'gated-first-change.json.gz')
+assert gated['qualified'] and gated['first_changed_request']==[17,3]
+assert gated['identical_complete_requests_before_change']==42
+assert len(gated['comparisons'])==2
+for run in gated['comparisons']:
+ assert len(run['requests'])==43 and run['failed_request']==[17,3]
+ assert sum(x['recorded_reads'] for x in run['requests'])==747
+ for index,check in enumerate(run['requests']):
+  assert not check['identity_errors'] and check['read_sequence_matches']
+  assert check['expected_read_sha256']==check['actual_read_sha256']
+  assert check['recorded_reads']==check['replayed_reads']==len(check['expected_read_sha256'])
+  assert check['native_payload_matches'] is (index<42)
+assert gated['native_action_benefit']=='Changed historical request only; native result unproven.'
+assert hashlib.sha256(gated['registration']['candidate_function'].encode()).hexdigest()==gated['registration']['candidate_function_sha256']
+assert gated['candidate_binary_sha256']=='12eaabee7b3236187d8f7c3ee3cc30f4ed2954736fb6bf272b308cc1885b9240'
 if not args.baseline_only:
- v=load(ROOT/'validation.json.gz');c=load(ROOT/'first-change.json.gz')
+ v=load(ROOT/'validation.json.gz')
  assert v['red']['qualified_assertion_red'] and v['red']['cargo_exit_code']==101
  assert v['green']['exit_code']==0 and v['quality']['exit_code']==0
  assert v['red_registration']['test_sha256']==v['green']['test_sha256']
+ assert sha(Path(__file__).resolve().parents[3]/'src/ai/settlement_site_tests.rs')==v['green']['test_sha256']
  assert c['comparison']['qualified'] and len(c['comparison']['comparisons'])==2
  for run in c['comparison']['comparisons']:
   assert all(not x['identity_errors'] and x['read_sequence_matches'] and x['expected_read_sha256']==x['actual_read_sha256'] for x in run['requests'])
   assert all(x['native_payload_matches'] for x in run['requests'][:-1])
  print('Original regression RED, same-test GREEN, source quality and historical first-change evidence verified.')
-else:print('Exact original/diagnostic controls, captured-read hashes, retained timeout and actual first false-negative cause verified. Final source validation/comparison still required.')
+else:print('Exact original/diagnostic controls, captured-read hashes, retained timeout and actual first false-negative cause verified. Final integration and hosted gates still required.')

@@ -47,6 +47,7 @@ fn one_usable_site(site: Pos) -> (Game, BasicAi, u32) {
         game.map.tiles.get_mut(&position).unwrap().owner_city = Some(capital);
     }
     game.map.tiles.get_mut(&site).unwrap().owner_city = None;
+    game.host_observed = std::sync::Arc::new(game.map.tiles.keys().copied().collect());
     let mut ai = BasicAi::new();
     ai.w.min_city_dist = 4.0;
     let usable: Vec<_> = game
@@ -126,4 +127,15 @@ fn a_paid_settler_keeps_its_queue_when_a_short_route_still_exists() {
     ai.cities(&mut game, 0);
     assert_eq!(game.cities[&capital].queue, vec![settler]);
     assert_eq!(game.cities[&capital].production, 17.0);
+}
+
+#[test]
+fn frozen_headless_search_keeps_its_existing_route_order() {
+    let (mut game, ai, _) = one_usable_site((9, 3));
+    game.host_observed = std::sync::Arc::new(Default::default());
+    assert!(ai.valid_settle_site(&game, 0, (9, 3)));
+    assert!(
+        !ai.has_practical_settle_site(&game, 0),
+        "headless reference controllers keep their recorded route traversal"
+    );
 }

@@ -15306,15 +15306,20 @@ impl BasicAi {
         } else {
             8
         };
-        // The first visit fixes the distance used by the step cutoff.
-        // Process every city together so that distance is the shortest route.
+        // The observed native seat needs shortest routes for its walking budget.
+        // Headless reference games keep their recorded depth-first traversal.
+        let shortest_routes = pid == crate::game::MIRRORED_SEAT && !g.host_observed.is_empty();
         let mut frontier: VecDeque<(Pos, i32)> = g
             .player_city_ids(pid)
             .into_iter()
             .map(|city| (g.cities[&city].pos, 0))
             .collect();
         let mut seen: HashSet<Pos> = frontier.iter().map(|(position, _)| *position).collect();
-        while let Some((position, steps)) = frontier.pop_front() {
+        while let Some((position, steps)) = if shortest_routes {
+            frontier.pop_front()
+        } else {
+            frontier.pop_back()
+        } {
             if self.valid_settle_site(g, pid, position) {
                 return true;
             }
