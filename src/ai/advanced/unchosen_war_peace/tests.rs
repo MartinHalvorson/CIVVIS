@@ -77,7 +77,11 @@ fn a_war_this_seat_declared_is_not_offered() {
     g.at_war.insert((0, 1));
     ai.note_frame_declarations(&g, 0, start);
     g.turn += 1;
-    watch(&mut ai, &mut g, UNCHOSEN_WAR_PEACE_AGE + UNCHOSEN_WAR_OURS_TURNS);
+    watch(
+        &mut ai,
+        &mut g,
+        UNCHOSEN_WAR_PEACE_AGE + UNCHOSEN_WAR_OURS_TURNS,
+    );
     assert_eq!(ai.unchosen_war_peace_since(&g, 0, 1, &plan), None);
 }
 
@@ -114,6 +118,26 @@ fn the_offer_stands_down_once_the_empire_is_built_or_the_war_ends() {
         None,
         "a war that ended starts its count again"
     );
+}
+
+#[test]
+fn a_war_our_roster_can_win_is_kept() {
+    let (mut g, plan) = two_majors();
+    let mut ai = armed();
+    ai.observe_unchosen_wars(&g, 0);
+    g.turn += 1;
+    g.at_war.insert((0, 1));
+    watch(&mut ai, &mut g, UNCHOSEN_WAR_PEACE_AGE);
+    assert!(ai.unchosen_war_peace_since(&g, 0, 1, &plan).is_some());
+    let home = g.cities[&g.player_city_ids(0)[0]].pos;
+    for _ in 0..24 {
+        g.spawn_test_unit("swordsman", 0, home);
+    }
+    assert!(
+        ai.war_policy_siege_against(&g, 0, 1).0,
+        "fixture: the roster meets the bill"
+    );
+    assert_eq!(ai.unchosen_war_peace_since(&g, 0, 1, &plan), None);
 }
 
 #[test]

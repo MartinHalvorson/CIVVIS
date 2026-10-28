@@ -1,7 +1,7 @@
 //! `unchosen-war-takes-the-first-peace`: a war a major declared on us, while
-//! we still hold fewer cities than the plan wants and no siege of ours is
-//! under way against it, is offered white peace on every turn from the first
-//! turn the host will sign one.
+//! we still hold fewer cities than the plan wants and no siege of ours
+//! against it is feasible or under way, is offered white peace on every turn
+//! from the first turn the host will sign one.
 //!
 //! **The finding (live Immortal 2026-10-26 19:10Z to 10-28 05:25Z, 142 games
 //! reaching turn 82, 26-35 wars a major declared on us by turn 60).**
@@ -22,8 +22,8 @@
 //!   campaign ("Campaign aimed at X | already at war; no city objective yet"),
 //!   so the gate's second-front and Recovery clauses skip it and the fatigue
 //!   clause waits 24 turns. Those wars lasted a median 25 turns among those
-//!   ended by turn 85, and 9 of 28 had not ended by then. They took a city in
-//!   2 of 26 games.
+//!   ended by turn 85, and 9 of 28 had not ended by then. We held 0.09
+//!   foreign cities a game at turn 85.
 //!
 //! **Who declared.** The live mirror does not replay `Game::wars`
 //! (`host_war_losses.rs`), and the ledger the simulator reconciles names the
@@ -34,6 +34,15 @@
 //! [`UNCHOSEN_WAR_OURS_TURNS`] (read from the frame's own action log by
 //! [`AdvancedAi::note_frame_declarations`]). A war already running when the
 //! record began is never counted.
+//!
+//! **A war we can win is kept.** "Feasible" is the war board's own reading
+//! (`war_policy_siege_against`): the whole roster meets the bill of a Siege
+//! row against them, or of their nearest city. Live, the aggressor stood at
+//! or above our power at war age 8 in 19 of 26 of these wars and we took no
+//! city from any of them; the 7 weaker aggressors gave up one city in wars
+//! lasting a median 67 turns. A 12-game simulator probe without this term,
+//! where the rivals are this AI and their wars are more even, read
+//! −20.7 ± 13.0 pp wins (0 of 14 seats on) and −0.6 ± 1.3 pp score share.
 //!
 //! **The offer.** It joins the peace gate's reasons, so every veto after it
 //! still holds (the launcher, the faith-war holdout, `faith-war-before-the-flip`,
@@ -84,17 +93,16 @@ impl AdvancedAi {
         if !self.unchosen_war_takes_the_first_peace {
             return;
         }
-        let declared: Vec<usize> = g
-            .log
-            .since(start)
-            .filter(|(seat, _)| *seat == pid)
-            .filter_map(|(_, action)| match action {
-                Action::DeclareWar { player } | Action::DeclareWarWithCasusBelli { player, .. } => {
-                    Some(*player)
-                }
-                _ => None,
-            })
-            .collect();
+        let declared: Vec<usize> =
+            g.log
+                .since(start)
+                .filter(|(seat, _)| *seat == pid)
+                .filter_map(|(_, action)| match action {
+                    Action::DeclareWar { player }
+                    | Action::DeclareWarWithCasusBelli { player, .. } => Some(*player),
+                    _ => None,
+                })
+                .collect();
         for player in declared {
             self.unchosen_war_declared.insert(player, g.turn);
             self.unchosen_war_since.remove(&player);
@@ -117,6 +125,7 @@ impl AdvancedAi {
         (g.turn.saturating_sub(since) >= UNCHOSEN_WAR_PEACE_AGE
             && g.peace_available_at(pid, rival).is_none()
             && g.player_city_ids(pid).len() < plan.desired_cities
+            && !self.war_policy_siege_against(g, pid, rival).0
             && !self.domination_siege_is_progressing(g, pid, rival, plan)
             && !self.domination_siege_train_mobilizing(g, pid, rival, plan))
         .then_some(since)

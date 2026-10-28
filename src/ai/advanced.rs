@@ -8770,8 +8770,8 @@ pub struct AdvancedAi {
     siege_tier_yields_to_the_bombers_2: bool,
     // ---- append: t-z ------------------------------------------------
     /// `unchosen-war-takes-the-first-peace`: a war a major declared on us,
-    /// while we hold fewer cities than the plan wants and no siege of ours is
-    /// under way, is offered white peace from
+    /// while we hold fewer cities than the plan wants and no siege of ours
+    /// against it is feasible or under way, is offered white peace from
     /// `unchosen_war_peace::UNCHOSEN_WAR_PEACE_AGE` turns. See
     /// `advanced/unchosen_war_peace.rs`. Off by default.
     unchosen_war_takes_the_first_peace: bool,
@@ -24821,7 +24821,7 @@ impl AdvancedAi {
                             .unwrap_or_else(|| "outmatched".to_string())
                     } else if let Some(since) = unchosen_peace {
                         format!(
-                            "unchosen-war-takes-the-first-peace: they declared at turn {since}, no siege of ours is under way and we hold {} of the {} cities we want",
+                            "unchosen-war-takes-the-first-peace: they declared at turn {since}, no siege of ours against them is feasible and we hold {} of the {} cities we want",
                             g.player_city_ids(pid).len(),
                             plan.desired_cities
                         )
