@@ -4208,6 +4208,12 @@ pub const GENES: &[Gene] = &[
     // the same rival within it (233902Z held Pewen Mapu's unbreachable walls
     // t150-193 beside Ina Pire Mapu). See `advanced/siege_under_the_wing.rs`.
     Gene { tag: "siege-moves-under-the-wing", field: "siege_moves_under_the_wing", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_moves_under_the_wing, disable: AdvancedAi::disable_siege_moves_under_the_wing },
+    // `unchosen-war-takes-the-first-peace`: live Immortal 10-26/28, a major's
+    // declaration on us by turn 60 cut our Production share from 0.38 to 0.25
+    // in ten turns (77% retired by turn 95, 37% with no war); white peace was
+    // taken 31/44 at war ages 8-11, yet 35 of 428 war turns at ages 10-30
+    // carried an offer. See `advanced/unchosen_war_peace.rs`.
+    Gene { tag: "unchosen-war-takes-the-first-peace", field: "unchosen_war_takes_the_first_peace", kind: Kind::OptIn, enable: AdvancedAi::enable_unchosen_war_takes_the_first_peace, disable: AdvancedAi::disable_unchosen_war_takes_the_first_peace },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

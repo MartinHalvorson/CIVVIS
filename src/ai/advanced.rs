@@ -8774,6 +8774,21 @@ pub struct AdvancedAi {
     /// `advanced/siege_under_the_wing.rs`. Off by default.
     siege_moves_under_the_wing: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `unchosen-war-takes-the-first-peace`: a war a major declared on us,
+    /// while we hold fewer cities than the plan wants and no siege of ours
+    /// against it is feasible or under way, is offered white peace from
+    /// `unchosen_war_peace::UNCHOSEN_WAR_PEACE_AGE` turns. See
+    /// `advanced/unchosen_war_peace.rs`. Off by default.
+    unchosen_war_takes_the_first_peace: bool,
+    /// `unchosen-war-takes-the-first-peace`: whether each major was at war
+    /// with us when a frame last looked.
+    unchosen_war_seen: BTreeMap<usize, bool>,
+    /// `unchosen-war-takes-the-first-peace`: the turn each major we saw at
+    /// peace was first seen at war with us, for wars we did not declare.
+    unchosen_war_since: BTreeMap<usize, u32>,
+    /// `unchosen-war-takes-the-first-peace`: the turn this seat's own frame
+    /// last declared war on each major.
+    unchosen_war_declared: BTreeMap<usize, u32>,
     /// `the-last-two-capitals-come-first`: with at most two original
     /// capitals left for Domination, the war target's one is the campaign's
     /// first objective. See `advanced/last_two_capitals.rs`. Off by default.
@@ -9539,6 +9554,9 @@ mod medina_quarter;
 
 /// `disrupt-before-the-sources`: see `advanced/disrupt_before_the_sources.rs`.
 mod disrupt_before_the_sources;
+
+/// `unchosen-war-takes-the-first-peace`: see `advanced/unchosen_war_peace.rs`.
+mod unchosen_war_peace;
 
 mod denial_nearest_finish;
 mod denial_needs_a_road;
@@ -11425,6 +11443,10 @@ impl AdvancedAi {
             siege_tier_yields_to_the_bombers_2: false,
             siege_moves_under_the_wing: false,
             // ---- append: t-z ----------------------------------------
+            unchosen_war_takes_the_first_peace: false,
+            unchosen_war_seen: BTreeMap::new(),
+            unchosen_war_since: BTreeMap::new(),
+            unchosen_war_declared: BTreeMap::new(),
             the_last_two_capitals_come_first: false,
             wing_capital_spotting: false,
             the_giant_gets_the_peace_offer: false,
@@ -24641,6 +24663,10 @@ impl AdvancedAi {
                 && plan.threatened_city.is_some()
                 && my_power < g.military_power(*other) * 0.85
                 && g.peace_available_at(pid, *other).is_none();
+            // `unchosen-war-takes-the-first-peace`: the turn this rival
+            // declared a war the expansion cannot afford, once the host will
+            // sign. `None` with the gene off. See `advanced/unchosen_war_peace.rs`.
+            let unchosen_peace = self.unchosen_war_peace_since(g, pid, *other, plan);
             if g.is_at_war(pid, *other)
                 && !g.emergency_war_pair(pid, *other)
                 && !g.players[*other].is_minor
@@ -24729,7 +24755,8 @@ impl AdvancedAi {
                             )))
                     || (interception_handoff && !air_front)
                     || faith_war_exit
-                    || science_defensive_peace)
+                    || science_defensive_peace
+                    || unchosen_peace.is_some())
             {
                 // `no-peace-with-a-launcher`: no peace with a rival past its
                 // Mars base while a pad of its stands, unless our cities are
@@ -24789,8 +24816,10 @@ impl AdvancedAi {
                     self.peace_routed.insert(*other);
                 }
                 // `peace-asks-a-city`: a white offer made from strength asks
-                // the rival to cede a town. See `PEACE_CITY_ASK_RATIO`.
-                if self.peace_asks_city_from_strength(g, pid, *other) {
+                // the rival to cede a town. See `PEACE_CITY_ASK_RATIO`. Not
+                // on `unchosen-war-takes-the-first-peace`'s offer, which
+                // exists to end the war.
+                if unchosen_peace.is_none() && self.peace_asks_city_from_strength(g, pid, *other) {
                     self.peace_asks_city.insert(*other);
                 }
                 if let Some(peace) = one_war_peace {
@@ -24818,6 +24847,12 @@ impl AdvancedAi {
                         policy_peace
                             .clone()
                             .unwrap_or_else(|| "outmatched".to_string())
+                    } else if let Some(since) = unchosen_peace {
+                        format!(
+                            "unchosen-war-takes-the-first-peace: they declared at turn {since}, no siege of ours against them is feasible and we hold {} of the {} cities we want",
+                            g.player_city_ids(pid).len(),
+                            plan.desired_cities
+                        )
                     } else if plan.strategy == GrandStrategy::Recovery {
                         "this is not the war the recovery plan is fighting".to_string()
                     } else if self.religion_sues_peace && plan.strategy == GrandStrategy::Religion {
@@ -49010,6 +49045,11 @@ impl AdvancedAi {
         // Stamp the context once, for every layer. Nothing below repeats the
         // turn number or the acting civilization.
         self.journal().begin_turn(g.turn, pid);
+        // `unchosen-war-takes-the-first-peace`: who began each war, read from
+        // the board as the frame opens and from the frame's own declarations
+        // as it closes. See `advanced/unchosen_war_peace.rs`.
+        self.observe_unchosen_wars(g, pid);
+        let frame_log_start = g.log.len();
         let pool = self.work_pool.clone();
         if self.unit_preservation && !g.players[pid].is_minor && !g.players[pid].is_barbarian {
             // These are observed-rule settings, not speculative combat outcomes.
@@ -49038,6 +49078,7 @@ impl AdvancedAi {
         } else {
             g.with_deferred_visibility_pool(pool.as_deref(), |g| self.take_turn_inner(g, pid));
         }
+        self.note_frame_declarations(g, pid, frame_log_start);
     }
 
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {

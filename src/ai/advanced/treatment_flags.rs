@@ -8395,6 +8395,17 @@ impl AdvancedAi {
         self.siege_moves_under_the_wing = false;
     }
 
+    /// Opt-in gene `unchosen-war-takes-the-first-peace`: see
+    /// [`Self::unchosen_war_takes_the_first_peace`].
+    pub fn enable_unchosen_war_takes_the_first_peace(&mut self) {
+        self.unchosen_war_takes_the_first_peace = true;
+    }
+
+    /// The twin of `enable_unchosen_war_takes_the_first_peace`.
+    pub fn disable_unchosen_war_takes_the_first_peace(&mut self) {
+        self.unchosen_war_takes_the_first_peace = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
