@@ -4202,6 +4202,12 @@ pub const GENES: &[Gene] = &[
     // against 91 disruptions; 061046Z held a Spy in Beijing 168-196 with it
     // offered and never ran it. See `advanced/disrupt_before_the_sources.rs`.
     Gene { tag: "disrupt-before-the-sources", field: "disrupt_before_the_sources", kind: Kind::OptIn, enable: AdvancedAi::enable_disrupt_before_the_sources, disable: AdvancedAi::disable_disrupt_before_the_sources },
+    // `unchosen-war-takes-the-first-peace`: live Immortal 10-26/28, a major's
+    // declaration on us by turn 60 cut our Production share from 0.38 to 0.25
+    // in ten turns (77% retired by turn 95, 37% with no war); white peace was
+    // taken 31/44 at war ages 8-11, yet 35 of 428 war turns at ages 10-30
+    // carried an offer. See `advanced/unchosen_war_peace.rs`.
+    Gene { tag: "unchosen-war-takes-the-first-peace", field: "unchosen_war_takes_the_first_peace", kind: Kind::OptIn, enable: AdvancedAi::enable_unchosen_war_takes_the_first_peace, disable: AdvancedAi::disable_unchosen_war_takes_the_first_peace },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
