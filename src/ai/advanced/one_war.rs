@@ -2477,15 +2477,27 @@ impl AdvancedAi {
         {
             return false;
         }
+        self.field_army_median_distance(g, pid, objective)
+            .is_some_and(|median| median <= OVERWHELMING_MARCH_TILES)
+    }
+
+    /// The field army's (`campaign_field_army`) median distance to
+    /// `objective`; `None` with no field army. The reading the overwhelming
+    /// waiver and `prey-waits-for-the-march` hold to
+    /// [`OVERWHELMING_MARCH_TILES`].
+    pub(crate) fn field_army_median_distance(
+        &self,
+        g: &Game,
+        pid: usize,
+        objective: Pos,
+    ) -> Option<i32> {
         let mut distances: Vec<i32> = self
             .campaign_field_army(g, pid)
             .iter()
             .map(|uid| g.wdist(g.units[uid].pos, objective))
             .collect();
         distances.sort_unstable();
-        distances
-            .get(distances.len() / 2)
-            .is_some_and(|median| *median <= OVERWHELMING_MARCH_TILES)
+        distances.get(distances.len() / 2).copied()
     }
 
     pub(crate) fn steady_rival_power(&self, g: &Game, rival: usize) -> f64 {
