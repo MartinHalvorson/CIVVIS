@@ -107,3 +107,27 @@ fn three_left_peace_or_a_far_capital_name_nothing() {
         Some(capital)
     );
 }
+
+/// A living major whose capital we have never seen keeps the count unknown:
+/// a four-major game holding one foreign capital is not "two left" because the
+/// mirror lacks the third.
+#[test]
+fn an_unseen_capital_keeps_the_count_unknown() {
+    let (mut g, capital, _, _) = two_left();
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.enable_the_last_two_capitals_come_first();
+    assert_eq!(
+        ai.last_two_capitals_objective(&g, 0, Some(1)),
+        Some(capital)
+    );
+    let far = g
+        .cities
+        .values()
+        .find(|city| city.is_capital && city.original_owner == 2)
+        .map(|city| city.id)
+        .expect("seat 2's capital");
+    g.cities.remove(&far);
+    assert!(g.players[2].alive);
+    assert_eq!(AdvancedAi::domination_capitals_needed(&g, 0), None);
+    assert_eq!(ai.last_two_capitals_objective(&g, 0, Some(1)), None);
+}

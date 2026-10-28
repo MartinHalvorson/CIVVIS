@@ -4174,6 +4174,56 @@ pub const GENES: &[Gene] = &[
     // Production on nuclear projects. Arm it on the live seat only. See
     // `advanced/nuclear_launcher.rs`.
     Gene { tag: "nuclear-goal-needs-a-launcher", field: "nuclear_goal_needs_a_launcher", kind: Kind::OptIn, enable: AdvancedAi::enable_nuclear_goal_needs_a_launcher, disable: AdvancedAi::disable_nuclear_goal_needs_a_launcher },
+    Gene { tag: "forward-airfield-project", field: "forward_airfield_project", kind: Kind::OptIn, enable: AdvancedAi::enable_forward_airfield_project, disable: AdvancedAi::disable_forward_airfield_project },
+    // `aluminum-tile-spends-the-war-chest`: live Immortal 070741Z held a
+    // 135-Gold Aluminum tile against a 1,669 reserve from Advanced Flight
+    // (t124) to t169 and never flew a Bomber. The tile now keeps only the
+    // upkeep floor. See `AdvancedAi::aluminum_tile_reserve`.
+    Gene { tag: "aluminum-tile-spends-the-war-chest", field: "aluminum_tile_spends_the_war_chest", kind: Kind::OptIn, enable: AdvancedAi::enable_aluminum_tile_spends_the_war_chest, disable: AdvancedAi::disable_aluminum_tile_spends_the_war_chest },
+    // `friendship-spares-the-converter`: retained live Immortal games to
+    // 10-27, 4 of 14 Religious losses held the faith war on the founder
+    // converting us as "not a legal target": `befriend-the-strongest` had
+    // befriended it at turns 42-54, before its faith reached us. See
+    // `advanced/protective_friendship.rs`.
+    Gene { tag: "friendship-spares-the-converter", field: "friendship_spares_the_converter", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_spares_the_converter, disable: AdvancedAi::disable_friendship_spares_the_converter },
+    // `siege-tier-yields-to-the-bombers-2`: over 261 Immortal control dirs
+    // the window yielded in 26 games, at a median 7 techs from the Bomber
+    // (12 in 031756Z t82, where it gave up Gunpowder; Metal Casting came at
+    // t118, after rival walls reached 400). The yield now waits until the
+    // Bomber is near. See `AdvancedAi::window_yields_to_the_bombers`.
+    Gene { tag: "siege-tier-yields-to-the-bombers-2", field: "siege_tier_yields_to_the_bombers_2", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_tier_yields_to_the_bombers_2, disable: AdvancedAi::disable_siege_tier_yields_to_the_bombers_2 },
+    // `siege-shortfall-claims-the-projects`: retained live Immortal games to
+    // 10-27, capital sieges sat in Stage on 89% of 1,248 turns at a median
+    // 0.09 of their bill while Theater and Campus projects took 4.8% of
+    // wartime Production. See `advanced/siege_shortfall_projects.rs`.
+    Gene { tag: "siege-shortfall-claims-the-projects", field: "siege_shortfall_claims_the_projects", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_shortfall_claims_the_projects, disable: AdvancedAi::disable_siege_shortfall_claims_the_projects },
+    // `disrupt-before-the-sources`: retained live Immortal games to 10-27,
+    // with Disrupt Rocketry offered, a green Spy ran Gain Sources 71 times
+    // against 91 disruptions; 061046Z held a Spy in Beijing 168-196 with it
+    // offered and never ran it. See `advanced/disrupt_before_the_sources.rs`.
+    Gene { tag: "disrupt-before-the-sources", field: "disrupt_before_the_sources", kind: Kind::OptIn, enable: AdvancedAi::enable_disrupt_before_the_sources, disable: AdvancedAi::disable_disrupt_before_the_sources },
+    // `siege-moves-under-the-wing`: post-reboot live Immortal games to 10-28
+    // that reached turn 160 with Bombers spent 385 of 668 siege-turns on an
+    // objective beyond the wing's reach, 120 of them with another city of
+    // the same rival within it (233902Z held Pewen Mapu's unbreachable walls
+    // t150-193 beside Ina Pire Mapu). See `advanced/siege_under_the_wing.rs`.
+    Gene { tag: "siege-moves-under-the-wing", field: "siege_moves_under_the_wing", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_moves_under_the_wing, disable: AdvancedAi::disable_siege_moves_under_the_wing },
+    // `unchosen-war-takes-the-first-peace`: live Immortal 10-26/28, a major's
+    // declaration on us by turn 60 cut our Production share from 0.38 to 0.25
+    // in ten turns (77% retired by turn 95, 37% with no war); white peace was
+    // taken 31/44 at war ages 8-11, yet 35 of 428 war turns at ages 10-30
+    // carried an offer. See `advanced/unchosen_war_peace.rs`.
+    Gene { tag: "unchosen-war-takes-the-first-peace", field: "unchosen_war_takes_the_first_peace", kind: Kind::OptIn, enable: AdvancedAi::enable_unchosen_war_takes_the_first_peace, disable: AdvancedAi::disable_unchosen_war_takes_the_first_peace },
+    // `prey-waits-for-the-march`: live Immortal 10-27/28, the prey waiver
+    // opened wars with the field army's median 12-25 tiles from the
+    // objective; those took no city in 20 wars. See
+    // `advanced/prey_declaration.rs`.
+    Gene { tag: "prey-waits-for-the-march", field: "prey_waits_for_the_march", kind: Kind::OptIn, enable: AdvancedAi::enable_prey_waits_for_the_march, disable: AdvancedAi::disable_prey_waits_for_the_march },
+    // `prey-waits-for-the-march-2`: version one with a median bar of 6 and a
+    // siege gun within 6 of the objective; live war orders on majors took a
+    // city within 20 turns 4/43 at a median ≤6 against 2/46 at 7-10, and 1/66
+    // with no gun fielded. See `advanced/prey_declaration.rs`.
+    Gene { tag: "prey-waits-for-the-march-2", field: "prey_waits_for_the_march_2", kind: Kind::OptIn, enable: AdvancedAi::enable_prey_waits_for_the_march_2, disable: AdvancedAi::disable_prey_waits_for_the_march_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

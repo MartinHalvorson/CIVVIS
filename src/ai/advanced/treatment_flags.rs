@@ -8308,11 +8308,124 @@ impl AdvancedAi {
     /// [`Self::nuclear_goal_needs_a_launcher`].
     pub fn enable_nuclear_goal_needs_a_launcher(&mut self) {
         self.nuclear_goal_needs_a_launcher = true;
+        self.base.nuclear_goal_needs_a_launcher = true;
     }
 
     /// The twin of `enable_nuclear_goal_needs_a_launcher`.
     pub fn disable_nuclear_goal_needs_a_launcher(&mut self) {
         self.nuclear_goal_needs_a_launcher = false;
+        self.base.nuclear_goal_needs_a_launcher = false;
+    }
+
+    /// Measure the default-off forward airfield preparation project.
+    pub fn enable_forward_airfield_project(&mut self) {
+        self.forward_airfield_project = true;
+    }
+
+    /// Withhold the project and release its private reservation.
+    pub fn disable_forward_airfield_project(&mut self) {
+        self.forward_airfield_project = false;
+        self.forward_airfield_project_state = None;
+    }
+
+    /// Opt-in gene `aluminum-tile-spends-the-war-chest`; see
+    /// [`Self::aluminum_tile_spends_the_war_chest`].
+    pub fn enable_aluminum_tile_spends_the_war_chest(&mut self) {
+        self.aluminum_tile_spends_the_war_chest = true;
+    }
+
+    /// The twin of `enable_aluminum_tile_spends_the_war_chest`.
+    pub fn disable_aluminum_tile_spends_the_war_chest(&mut self) {
+        self.aluminum_tile_spends_the_war_chest = false;
+    }
+
+    /// Offer no friendship to the founder whose faith we must fight. See
+    /// [`Self::friendship_spares_the_converter`].
+    pub fn enable_friendship_spares_the_converter(&mut self) {
+        self.friendship_spares_the_converter = true;
+    }
+
+    /// The twin of `enable_friendship_spares_the_converter`.
+    pub fn disable_friendship_spares_the_converter(&mut self) {
+        self.friendship_spares_the_converter = false;
+    }
+
+    /// Opt-in gene `siege-tier-yields-to-the-bombers-2`; see
+    /// [`Self::siege_tier_yields_to_the_bombers_2`].
+    pub fn enable_siege_tier_yields_to_the_bombers_2(&mut self) {
+        self.siege_tier_yields_to_the_bombers_2 = true;
+    }
+
+    /// The twin of `enable_siege_tier_yields_to_the_bombers_2`.
+    pub fn disable_siege_tier_yields_to_the_bombers_2(&mut self) {
+        self.siege_tier_yields_to_the_bombers_2 = false;
+    }
+
+    /// Let a siege short of its bill take the repeatable-project queues. See
+    /// [`Self::siege_shortfall_claims_the_projects`].
+    pub fn enable_siege_shortfall_claims_the_projects(&mut self) {
+        self.siege_shortfall_claims_the_projects = true;
+    }
+
+    /// The twin of `enable_siege_shortfall_claims_the_projects`.
+    pub fn disable_siege_shortfall_claims_the_projects(&mut self) {
+        self.siege_shortfall_claims_the_projects = false;
+        self.siege_force_short.clear();
+    }
+
+    /// Let a Spy in the space racer's city disrupt before it trains on Gain
+    /// Sources. See [`Self::disrupt_before_the_sources`].
+    pub fn enable_disrupt_before_the_sources(&mut self) {
+        self.disrupt_before_the_sources = true;
+    }
+
+    /// The twin of `enable_disrupt_before_the_sources`.
+    pub fn disable_disrupt_before_the_sources(&mut self) {
+        self.disrupt_before_the_sources = false;
+    }
+
+    /// Opt-in gene `siege-moves-under-the-wing`; see
+    /// [`Self::siege_moves_under_the_wing`].
+    pub fn enable_siege_moves_under_the_wing(&mut self) {
+        self.siege_moves_under_the_wing = true;
+    }
+
+    /// The twin of `enable_siege_moves_under_the_wing`.
+    pub fn disable_siege_moves_under_the_wing(&mut self) {
+        self.siege_moves_under_the_wing = false;
+    }
+
+    /// Opt-in gene `unchosen-war-takes-the-first-peace`: see
+    /// [`Self::unchosen_war_takes_the_first_peace`].
+    pub fn enable_unchosen_war_takes_the_first_peace(&mut self) {
+        self.unchosen_war_takes_the_first_peace = true;
+    }
+
+    /// The twin of `enable_unchosen_war_takes_the_first_peace`.
+    pub fn disable_unchosen_war_takes_the_first_peace(&mut self) {
+        self.unchosen_war_takes_the_first_peace = false;
+    }
+
+    /// Opt-in gene `prey-waits-for-the-march`; see
+    /// [`Self::prey_waits_for_the_march`].
+    pub fn enable_prey_waits_for_the_march(&mut self) {
+        self.prey_waits_for_the_march = true;
+    }
+
+    /// The twin of `enable_prey_waits_for_the_march`.
+    pub fn disable_prey_waits_for_the_march(&mut self) {
+        self.prey_waits_for_the_march = false;
+    }
+
+    /// Opt-in gene `prey-waits-for-the-march-2`; see
+    /// [`Self::prey_waits_for_the_march_2`].
+    pub fn enable_prey_waits_for_the_march_2(&mut self) {
+        self.prey_waits_for_the_march_2 = true;
+    }
+
+    /// The twin of `enable_prey_waits_for_the_march_2`.
+    pub fn disable_prey_waits_for_the_march_2(&mut self) {
+        self.prey_waits_for_the_march_2 = false;
     }
 
     // ---- append: a-b ------------------------------------------------

@@ -5075,6 +5075,10 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `aluminum-tile-spends-the-war-chest`: the Aluminum tile buy keeps the
+    /// upkeep floor, not the purchase pass's whole reserve. See
+    /// `AdvancedAi::aluminum_tile_reserve`. Off by default.
+    aluminum_tile_spends_the_war_chest: bool,
     /// `breaker-bought-for-the-siege`: a siege held for want of a
     /// wall-breaker, with none on its way and the army there, buys one in the
     /// nearest city. See `advanced/siege_train/breaker_purchase.rs`. Off by
@@ -5500,6 +5504,10 @@ pub struct AdvancedAi {
     /// costliest. See `advanced/solvency.rs`. Off by default.
     bankruptcy_exits_the_drain: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `disrupt-before-the-sources`: a Spy in a space racer's city runs an
+    /// offered Disrupt Rocketry before the Gain Sources training step. See
+    /// `advanced/disrupt_before_the_sources.rs`. Off by default.
+    disrupt_before_the_sources: bool,
     /// Opt-in `capital-watch-arms-the-slinger`; see
     /// `advanced/capital_watch_slinger.rs`. Off by default.
     capital_watch_arms_the_slinger: bool,
@@ -6369,6 +6377,12 @@ pub struct AdvancedAi {
     /// friendship to a rival under `protective_friendship::FRIENDSHIP_PREY_RATIO`
     /// of our military power. Off by default.
     friendship_spares_the_prey: bool,
+    /// `friendship-spares-the-converter`: `befriend-the-strongest` offers no
+    /// friendship to a founding rival whose faith leads the religion race or
+    /// holds a city of ours (see
+    /// `protective_friendship::friendship_would_shield_the_converter`). Off by
+    /// default.
+    friendship_spares_the_converter: bool,
     /// `foothold-faces-the-capital`: a Domination conquest values a rival
     /// town within Bomber range of a rival capital no city of ours reaches.
     /// See `advanced/foothold_faces_the_capital.rs`. Off by default.
@@ -7000,6 +7014,9 @@ pub struct AdvancedAi {
     /// most `faith_war_before_the_flip::FAITH_WAR_EDGE` of our power. Off by
     /// default.
     faith_war_needs_the_edge: bool,
+    /// One default-off preparation chain for a blocked Bomber wing.
+    forward_airfield_project: bool,
+    forward_airfield_project_state: Option<forward_airfield_project::FieldProject>,
     // ---- append: g-k ------------------------------------------------
     /// `gold-buys-the-idle-trader`: an empty trade route slot's Trader,
     /// bought with the idle bank at peace. See
@@ -8143,6 +8160,19 @@ pub struct AdvancedAi {
     /// on a major at or under `prey_declaration::PREY_DECLARE_RATIO` of
     /// our power. See `advanced/prey_war_is_kept.rs`. Off by default.
     prey_war_is_kept: bool,
+    /// `prey-waits-for-the-march`: the prey waiver declares only once the
+    /// field army's median stands within `one_war::OVERWHELMING_MARCH_TILES`
+    /// of the objective, or its hold is released. See
+    /// `advanced/prey_declaration.rs`. Off by default.
+    prey_waits_for_the_march: bool,
+    /// `prey-waits-for-the-march`: the running hold. See
+    /// `prey_declaration::PreyMarchHold`.
+    prey_march_hold: Option<prey_declaration::PreyMarchHold>,
+    /// `prey-waits-for-the-march-2`: version one with a median bar of
+    /// `prey_declaration::PREY_MARCH_TILES_2` and a siege gun within
+    /// `prey_declaration::PREY_MARCH_GUN_TILES`. See
+    /// `advanced/prey_declaration.rs`. Off by default.
+    prey_waits_for_the_march_2: bool,
     // ---- append: s-s ------------------------------------------------
     /// `stage-reads-the-muster-breakers`: once a siege's muster has closed,
     /// its Stage reads breakers out to `MUSTER_FAR` instead of `STAGING_FAR`.
@@ -8350,6 +8380,13 @@ pub struct AdvancedAi {
     /// `stage-musters-out-of-reach`: per besieged city, the turn its train
     /// last closed from the muster line. See `siege_train::MUSTER_COMMIT_TURNS`.
     stage_muster_closed: BTreeMap<u32, u32>,
+    /// `siege-shortfall-claims-the-projects`: a short siege's repeatable
+    /// projects yield to land units. See
+    /// `advanced/siege_shortfall_projects.rs`. Off by default.
+    siege_shortfall_claims_the_projects: bool,
+    /// `siege-shortfall-claims-the-projects`: per besieged city, the turn its
+    /// Stage train last held with the force short of its bill.
+    siege_force_short: BTreeMap<u32, u32>,
     /// `stranded-settler-leaves-the-corridor`: a stranded early Settler drops
     /// its home corridor. See `settler_never_idles::settler_stranded`.
     stranded_settler_leaves_the_corridor: bool,
@@ -8738,7 +8775,33 @@ pub struct AdvancedAi {
     /// soldiers stand within [`siege_train::STAGING_COLUMN_REACH`] of its
     /// march step, not only beside it. Off by default.
     staging_gun_trusts_its_escort_2: bool,
+    /// `siege-tier-yields-to-the-bombers-2`: version 2 of
+    /// `siege-tier-yields-to-the-bombers`, which it includes. The decisive
+    /// window yields its research goal to the air surge only while the
+    /// Bomber is within `decisive_window::BOMBER_YIELD_TECHS` technologies.
+    /// Off by default.
+    siege_tier_yields_to_the_bombers_2: bool,
+    /// `siege-moves-under-the-wing`: a Domination siege on full walls our
+    /// land guns cannot breach, beyond the Bomber wing's reach, moves to a
+    /// city of the same rival the wing can hit. See
+    /// `advanced/siege_under_the_wing.rs`. Off by default.
+    siege_moves_under_the_wing: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `unchosen-war-takes-the-first-peace`: a war a major declared on us,
+    /// while we hold fewer cities than the plan wants and no siege of ours
+    /// against it is feasible or under way, is offered white peace from
+    /// `unchosen_war_peace::UNCHOSEN_WAR_PEACE_AGE` turns. See
+    /// `advanced/unchosen_war_peace.rs`. Off by default.
+    unchosen_war_takes_the_first_peace: bool,
+    /// `unchosen-war-takes-the-first-peace`: whether each major was at war
+    /// with us when a frame last looked.
+    unchosen_war_seen: BTreeMap<usize, bool>,
+    /// `unchosen-war-takes-the-first-peace`: the turn each major we saw at
+    /// peace was first seen at war with us, for wars we did not declare.
+    unchosen_war_since: BTreeMap<usize, u32>,
+    /// `unchosen-war-takes-the-first-peace`: the turn this seat's own frame
+    /// last declared war on each major.
+    unchosen_war_declared: BTreeMap<usize, u32>,
     /// `the-last-two-capitals-come-first`: with at most two original
     /// capitals left for Domination, the war target's one is the campaign's
     /// first objective. See `advanced/last_two_capitals.rs`. Off by default.
@@ -9502,6 +9565,12 @@ mod open_city_front;
 /// `medina-quarter-houses-the-districts`: see `advanced/medina_quarter.rs`.
 mod medina_quarter;
 
+/// `disrupt-before-the-sources`: see `advanced/disrupt_before_the_sources.rs`.
+mod disrupt_before_the_sources;
+
+/// `unchosen-war-takes-the-first-peace`: see `advanced/unchosen_war_peace.rs`.
+mod unchosen_war_peace;
+
 mod denial_nearest_finish;
 mod denial_needs_a_road;
 /// `denial-target-leads-the-fronts`: the countered rival we are fighting
@@ -9869,10 +9938,15 @@ mod science_victory_drive;
 mod settler_admission_journal;
 mod settler_departure;
 mod settler_path_clear;
+/// `siege-shortfall-claims-the-projects`: see
+/// `advanced/siege_shortfall_projects.rs`.
+mod siege_shortfall_projects;
 /// `siege-tier-before-the-beeline`: the next siege tier ahead of the air
 /// surge's beeline behind Medieval walls. See
 /// `advanced/siege_tier_before_the_beeline.rs`.
 mod siege_tier_before_the_beeline;
+/// `siege-moves-under-the-wing`: see `advanced/siege_under_the_wing.rs`.
+mod siege_under_the_wing;
 mod trader_fills_the_idle_route;
 pub use science_victory_drive::ScienceDrive;
 
@@ -9988,6 +10062,7 @@ mod capital_watch_slinger;
 pub mod commitments;
 mod competitive_economy;
 mod envoys_open_the_siege_road;
+mod forward_airfield_project;
 mod frontier_walls_before_the_surprise;
 /// The alliance an Emperor handicap cannot deny us: the stock alliance desk
 /// asks for a Research Alliance, ranked by science, and feeds its level with
@@ -10755,6 +10830,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            aluminum_tile_spends_the_war_chest: false,
             breaker_bought_for_the_siege: false,
             breaker_bought: BTreeMap::new(),
             air_wing_grows_with_the_aluminum: false,
@@ -10844,6 +10920,7 @@ impl AdvancedAi {
             aqueduct_recovery_reservations: RefCell::new(BTreeMap::new()),
             bankruptcy_exits_the_drain: false,
             // ---- append: c-d ----------------------------------------
+            disrupt_before_the_sources: false,
             capital_watch_arms_the_slinger: false,
             capital_watch_slinger_turn: None,
             city_state_war_is_no_front: false,
@@ -11012,6 +11089,7 @@ impl AdvancedAi {
             friendship_only_with_the_stronger: false,
             friendship_spares_the_target: false,
             friendship_spares_the_prey: false,
+            friendship_spares_the_converter: false,
             foothold_faces_the_capital: false,
             faith_war_is_no_front: false,
             faith_war_is_no_front_2: false,
@@ -11091,6 +11169,8 @@ impl AdvancedAi {
             front_weighted_floor_2: false,
             engineering_for_capped_fresh_water: false,
             faith_war_needs_the_edge: false,
+            forward_airfield_project: false,
+            forward_airfield_project_state: None,
             // ---- append: g-k ----------------------------------------
             gold_buys_the_idle_trader: false,
             holdout_keeps_the_faith_war: false,
@@ -11265,6 +11345,9 @@ impl AdvancedAi {
             parity_reads_the_front: false,
 
             prey_war_is_kept: false,
+            prey_waits_for_the_march: false,
+            prey_march_hold: None,
+            prey_waits_for_the_march_2: false,
             // ---- append: s-s ----------------------------------------
             stage_reads_the_muster_breakers: false,
             siege_budget_counts_the_ram: false,
@@ -11300,6 +11383,8 @@ impl AdvancedAi {
             stage_musters_out_of_reach: false,
             stage_muster_ready: BTreeMap::new(),
             stage_muster_closed: BTreeMap::new(),
+            siege_shortfall_claims_the_projects: false,
+            siege_force_short: BTreeMap::new(),
             stranded_settler_leaves_the_corridor: false,
             siege_members_use_their_moves: false,
             science_ladder_reads_the_clock: false,
@@ -11371,7 +11456,13 @@ impl AdvancedAi {
             science_suppression_hits_the_pads: false,
             solvent_or_hold: false,
             staging_gun_trusts_its_escort_2: false,
+            siege_tier_yields_to_the_bombers_2: false,
+            siege_moves_under_the_wing: false,
             // ---- append: t-z ----------------------------------------
+            unchosen_war_takes_the_first_peace: false,
+            unchosen_war_seen: BTreeMap::new(),
+            unchosen_war_since: BTreeMap::new(),
+            unchosen_war_declared: BTreeMap::new(),
             the_last_two_capitals_come_first: false,
             wing_capital_spotting: false,
             the_giant_gets_the_peace_offer: false,
@@ -16106,6 +16197,17 @@ impl AdvancedAi {
         let stale_walled_city = committed_target_city
             .filter(|_| capture_opportunity_city.is_none())
             .and_then(|prior_id| self.stale_domination_objective_city(g, pid, prior_id, strategy));
+        // `siege-moves-under-the-wing`: a walled objective our land guns
+        // cannot breach, beyond the Bombers' reach, yields to a city of the
+        // same rival the wing can hit. `None` with the gene off. See
+        // `advanced/siege_under_the_wing.rs`.
+        let wing_city = committed_target_city
+            .or(ranked_target_city)
+            .filter(|_| capture_opportunity_city.is_none() && stale_walled_city.is_none())
+            .and_then(|prior_id| {
+                self.siege_under_the_wing_city(g, pid, prior_id, strategy)
+                    .map(|city| (prior_id, city))
+            });
         // `capture-go-or-stand-down`: a city the ledger stood down is not
         // ranked again until the stand-down expires; the next-best city of the
         // same rival takes its place. A home emergency is never stood down.
@@ -16135,29 +16237,34 @@ impl AdvancedAi {
         // damaged one still finishes) and every swap. Game 135 stayed
         // "committed" to Ratumacos, Divodurum and Córdoba from turn 193 to 211
         // beside Madrid, the last capital it needed.
-        let finishing_capital = self
+        let finish_or_racer = self
             .domination_finish_front(g, pid)
             // `launched-racer-yields-the-capital`: the launched racer's
             // finishing capital is the objective at peace too. `None` with
             // the gene off. See `advanced/launched_racer.rs`.
             .or_else(|| self.launched_racer_finish(g, pid))
             .filter(|(owner, _)| target_player == Some(*owner))
-            .map(|(_, capital)| capital)
-            // `the-last-two-capitals-come-first`: with two or fewer capitals
-            // left, the target's own is the objective. `None` with the gene
-            // off. See `advanced/last_two_capitals.rs`.
-            .or_else(|| self.last_two_capitals_objective(g, pid, target_player))
-            .filter(|capital| {
-                committed_target_city.is_none_or(|committed| {
-                    committed == *capital
-                        || g.cities
-                            .get(&committed)
-                            .is_none_or(|city| city.hp >= CITY_MAX_HP)
-                })
-            });
+            .map(|(_, capital)| capital);
+        // `the-last-two-capitals-come-first`: with two or fewer capitals
+        // left, the target's own is the objective. `None` with the gene off.
+        // See `advanced/last_two_capitals.rs`.
+        let last_two_capital = if finish_or_racer.is_none() {
+            self.last_two_capitals_objective(g, pid, target_player)
+        } else {
+            None
+        };
+        let finishing_capital = finish_or_racer.or(last_two_capital).filter(|capital| {
+            committed_target_city.is_none_or(|committed| {
+                committed == *capital
+                    || g.cities
+                        .get(&committed)
+                        .is_none_or(|city| city.hp >= CITY_MAX_HP)
+            })
+        });
         let target_city = finishing_capital
             .or(capture_opportunity_city)
             .or(stale_walled_city)
+            .or(wing_city.map(|(_, city)| city))
             .or(committed_target_city)
             .or(ranked_target_city);
 
@@ -16165,10 +16272,18 @@ impl AdvancedAi {
             finishing_capital.filter(|capital| committed_target_city != Some(*capital))
         {
             let city = &g.cities[&capital];
-            think!(self.journal(), Strategy, Strategy,
-                   "Campaign holds on {}", city.name;
-                   "its capture completes Domination; no committed siege, swap or second front outranks it";
-                   city.pos);
+            if last_two_capital == Some(capital) {
+                think!(self.journal(), Strategy, Strategy,
+                       "Campaign holds on {}", city.name;
+                       "the-last-two-capitals-come-first: one of the last {} capitals Domination needs; no committed siege, swap or second front outranks it",
+                       last_two_capitals::LAST_CAPITALS;
+                       city.pos);
+            } else {
+                think!(self.journal(), Strategy, Strategy,
+                       "Campaign holds on {}", city.name;
+                       "its capture completes Domination; no committed siege, swap or second front outranks it";
+                       city.pos);
+            }
         }
         if let Some(committed_city) = committed_target_city.filter(|city| {
             finishing_capital.is_none()
@@ -16199,6 +16314,14 @@ impl AdvancedAi {
             think!(self.journal(), Strategy, Strategy,
                    "Campaign abandons a distant untouched city for {}", city.name;
                    "a land force is within a short march of this cheaper objective, while none reached the old siege";
+                   city.pos);
+        }
+        if let Some((prior, under)) = wing_city.filter(|_| finishing_capital.is_none()) {
+            let (prior, city) = (&g.cities[&prior], &g.cities[&under]);
+            think!(self.journal(), Strategy, Strategy,
+                   "Campaign moves under the wing to {}", city.name;
+                   "siege-moves-under-the-wing: {}'s {} walls are beyond our land guns and out of the Bombers' reach; {} is within it",
+                   prior.name, prior.wall_hp, city.name;
                    city.pos);
         }
 
@@ -24556,6 +24679,10 @@ impl AdvancedAi {
                 && plan.threatened_city.is_some()
                 && my_power < g.military_power(*other) * 0.85
                 && g.peace_available_at(pid, *other).is_none();
+            // `unchosen-war-takes-the-first-peace`: the turn this rival
+            // declared a war the expansion cannot afford, once the host will
+            // sign. `None` with the gene off. See `advanced/unchosen_war_peace.rs`.
+            let unchosen_peace = self.unchosen_war_peace_since(g, pid, *other, plan);
             if g.is_at_war(pid, *other)
                 && !g.emergency_war_pair(pid, *other)
                 && !g.players[*other].is_minor
@@ -24644,7 +24771,8 @@ impl AdvancedAi {
                             )))
                     || (interception_handoff && !air_front)
                     || faith_war_exit
-                    || science_defensive_peace)
+                    || science_defensive_peace
+                    || unchosen_peace.is_some())
             {
                 // `no-peace-with-a-launcher`: no peace with a rival past its
                 // Mars base while a pad of its stands, unless our cities are
@@ -24704,8 +24832,10 @@ impl AdvancedAi {
                     self.peace_routed.insert(*other);
                 }
                 // `peace-asks-a-city`: a white offer made from strength asks
-                // the rival to cede a town. See `PEACE_CITY_ASK_RATIO`.
-                if self.peace_asks_city_from_strength(g, pid, *other) {
+                // the rival to cede a town. See `PEACE_CITY_ASK_RATIO`. Not
+                // on `unchosen-war-takes-the-first-peace`'s offer, which
+                // exists to end the war.
+                if unchosen_peace.is_none() && self.peace_asks_city_from_strength(g, pid, *other) {
                     self.peace_asks_city.insert(*other);
                 }
                 if let Some(peace) = one_war_peace {
@@ -24733,6 +24863,12 @@ impl AdvancedAi {
                         policy_peace
                             .clone()
                             .unwrap_or_else(|| "outmatched".to_string())
+                    } else if let Some(since) = unchosen_peace {
+                        format!(
+                            "unchosen-war-takes-the-first-peace: they declared at turn {since}, no siege of ours against them is feasible and we hold {} of the {} cities we want",
+                            g.player_city_ids(pid).len(),
+                            plan.desired_cities
+                        )
                     } else if plan.strategy == GrandStrategy::Recovery {
                         "this is not the war the recovery plan is fighting".to_string()
                     } else if self.religion_sues_peace && plan.strategy == GrandStrategy::Religion {
@@ -25318,6 +25454,68 @@ impl AdvancedAi {
                     action = surprise;
                 }
                 let denounce_first = matches!(action, Action::Denounce { .. });
+                // `prey-waits-for-the-march`: a war the prey waiver alone
+                // opens waits for the field army's march; a denouncement's
+                // five turns run meanwhile. See `advanced/prey_declaration.rs`.
+                let prey_alone = !launcher_ready
+                    && !(staged
+                        || air_ready
+                        || religion_counter_ready
+                        || culture_counter_ready
+                        || overwhelming_ready
+                        || road_opening_ready
+                        || moving_on_ready);
+                if (self.prey_waits_for_the_march || self.prey_waits_for_the_march_2)
+                    && prey_alone
+                    && !denounce_first
+                {
+                    if let Some((city, pos)) = objective {
+                        let name = g
+                            .cities
+                            .get(&city)
+                            .map_or_else(String::new, |c| c.name.clone());
+                        let tag = self.prey_march_tag();
+                        let bar = self.prey_march_bar();
+                        match self.prey_march_reading(g, pid, target, pos) {
+                            Some(prey_declaration::PreyMarch::Hold(median, held)) => {
+                                think!(self.journal(), Military, Strategy,
+                                       "Holding the prey war on {} for the march", g.players[target].civ;
+                                       "{tag}: the field army's median stands {median} tiles from {name}, over the {bar} the waiver asks; held {held} of {} turns",
+                                       prey_declaration::PREY_MARCH_PATIENCE;
+                                       pos);
+                                return;
+                            }
+                            Some(prey_declaration::PreyMarch::HoldForGun(gun, held)) => {
+                                let stands = if gun == i32::MAX {
+                                    "no siege gun of ours is fielded".to_string()
+                                } else {
+                                    format!("our nearest siege gun stands {gun} tiles out")
+                                };
+                                think!(self.journal(), Military, Strategy,
+                                       "Holding the prey war on {} for a siege gun", g.players[target].civ;
+                                       "{tag}: the field army stands within {bar} tiles of {name}, but {stands}, over the {}; held {held} of {} turns",
+                                       prey_declaration::PREY_MARCH_GUN_TILES, prey_declaration::PREY_MARCH_PATIENCE;
+                                       pos);
+                                return;
+                            }
+                            Some(prey_declaration::PreyMarch::Patience(median)) => {
+                                think!(self.journal(), Military, Detail,
+                                       "The prey war on {} stops waiting for the march", g.players[target].civ;
+                                       "{tag}: {} turns held, and the field army's median stands {median} tiles from {name}",
+                                       prey_declaration::PREY_MARCH_PATIENCE;
+                                       pos);
+                            }
+                            Some(prey_declaration::PreyMarch::Stalled(median)) => {
+                                think!(self.journal(), Military, Detail,
+                                       "The prey war on {} stops waiting for the march", g.players[target].civ;
+                                       "{tag}: neither the field army's median ({median} tiles from {name}) nor our nearest siege gun came closer in {} turns",
+                                       prey_declaration::PREY_MARCH_STALL;
+                                       pos);
+                            }
+                            Some(prey_declaration::PreyMarch::Within(_)) | None => {}
+                        }
+                    }
+                }
                 if denounce_first && self.journal().wants(crate::reasoning::Level::Strategy) {
                     // The opening is a denouncement; the war is the Formal War
                     // it licenses five turns on. Say so: the line used to read
@@ -26643,7 +26841,10 @@ impl AdvancedAi {
         };
         // `aluminum-buys-the-tile`: the Aluminum the air wing waits on, bought
         // as a tile out of the same reserve. See `gun_resource.rs`.
-        let bought_aluminum = self.aluminum_tile_purchase(g, pid, reserve);
+        // `aluminum-tile-spends-the-war-chest`: out of the upkeep floor
+        // instead. `reserve` with the gene off.
+        let aluminum_reserve = self.aluminum_tile_reserve(g, pid, plan, reserve);
+        let bought_aluminum = self.aluminum_tile_purchase(g, pid, aluminum_reserve);
         let mut purchased = bought_out_an_outpost || bought_a_first_asset || bought_aluminum;
         let mut purchased_units = 0;
         for _ in 0..purchase_limit {
@@ -30116,7 +30317,20 @@ impl AdvancedAi {
                 .and_then(|city| g.cities.get(&city))
                 .is_some_and(|city| city.owner != pid);
             if offensive {
-                if g.spies[&spy_id].level < 2 {
+                // `disrupt-before-the-sources`: in a racer's city an offered
+                // Disrupt Rocketry comes before the training step.
+                let training_yields = g.spies[&spy_id].level < 2
+                    && self.training_yields_to_the_disrupt(
+                        g,
+                        spy_id,
+                        &legal,
+                        &racer_spy_racers,
+                        &every_pad_threats,
+                    );
+                if training_yields {
+                    self.journal_training_yields(g, spy_id);
+                }
+                if g.spies[&spy_id].level < 2 && !training_yields {
                     if let Some(action) = legal.iter().find(|action| {
                         matches!(action, Action::SpyMission { mission, .. } if mission == "gain_sources")
                     }) {
@@ -30867,15 +31081,24 @@ impl AdvancedAi {
             return;
         }
         let peacetime_target = self.peacetime_deterrence_force_gap(g, pid, plan);
+        // `siege-shortfall-claims-the-projects`: a siege train short of its
+        // bill opens the gap on any plan, at a higher land count.
+        let siege_short = self.siege_force_is_short(g, pid);
         if !matches!(
             plan.strategy,
             GrandStrategy::Conquest | GrandStrategy::Recovery
         ) && peacetime_target.is_none()
+            && !siege_short
         {
             return;
         }
         let city_ids = g.player_city_ids(pid);
-        let desired_land = peacetime_target.unwrap_or(2 * city_ids.len());
+        let per_city = if siege_short {
+            siege_shortfall_projects::SIEGE_SHORTFALL_LAND_PER_CITY
+        } else {
+            2
+        };
+        let desired_land = peacetime_target.unwrap_or(per_city * city_ids.len());
         for cid in city_ids {
             let counts = self.counts(g, pid);
             let land = counts
@@ -32580,7 +32803,8 @@ impl AdvancedAi {
                     || self.producer_zone_claim_holds(g, pid, cid, plan, item)
                     // `industrial-zone-claims-the-factory`: the claimed Factory
                     // or Coal Power Plant finishes.
-                    || self.factory_claim_holds(g, pid, cid, plan, item))
+                    || self.factory_claim_holds(g, pid, cid, plan, item)
+                    || self.forward_airfield_project_holds(g, pid, cid, plan, item))
                     && Self::production_commitment_is_legal(g, pid, cid, item)
             });
             // `commercial-hub-in-the-strategic-queue`: a queued Commercial Hub
@@ -47634,7 +47858,9 @@ impl AdvancedAi {
             let acted = match kind.as_str() {
                 "settler" => self.advanced_settler_step(g, pid, uid),
                 "builder" => self.advanced_builder_step(g, pid, uid, plan.strategy),
-                "military_engineer" => self.base.military_engineer_step(g, pid, uid),
+                "military_engineer" => self
+                    .forward_airfield_engineer_step(g, pid, uid, plan)
+                    .unwrap_or_else(|| self.base.military_engineer_step(g, pid, uid)),
                 "naturalist" => self.base.naturalist_step(g, pid, uid),
                 "archaeologist" => self.base.archaeologist_step(g, pid, uid),
                 "trader" => self.advanced_trader_step(g, pid, uid, plan.strategy),
@@ -48897,6 +49123,11 @@ impl AdvancedAi {
         // Stamp the context once, for every layer. Nothing below repeats the
         // turn number or the acting civilization.
         self.journal().begin_turn(g.turn, pid);
+        // `unchosen-war-takes-the-first-peace`: who began each war, read from
+        // the board as the frame opens and from the frame's own declarations
+        // as it closes. See `advanced/unchosen_war_peace.rs`.
+        self.observe_unchosen_wars(g, pid);
+        let frame_log_start = g.log.len();
         let pool = self.work_pool.clone();
         if self.unit_preservation && !g.players[pid].is_minor && !g.players[pid].is_barbarian {
             // These are observed-rule settings, not speculative combat outcomes.
@@ -48925,6 +49156,7 @@ impl AdvancedAi {
         } else {
             g.with_deferred_visibility_pool(pool.as_deref(), |g| self.take_turn_inner(g, pid));
         }
+        self.note_frame_declarations(g, pid, frame_log_start);
     }
 
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
@@ -49560,6 +49792,9 @@ impl AdvancedAi {
             self.reserve_government_plaza(g, pid, &plan);
             self.reserve_higher_level_investment(g, pid, &plan);
             self.reserve_idle_entertainment_path_for_widespread_crisis(g, pid, &plan);
+            // One bounded forward-field project takes an idle queue only
+            // after the emergency, victory and economy reservations above.
+            self.claim_forward_airfield_project(g, pid, &plan);
             // A fighting Galley cannot also be the empire's sole eye. This
             // claims only one idle, safe queue after all higher-priority
             // strategic reservations, before generic production buries the

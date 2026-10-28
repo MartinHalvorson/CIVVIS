@@ -3078,6 +3078,15 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `campus-buildings-first`.
     pub(crate) campus_buildings_first: bool,
+    /// No Manhattan Project, Operation Ivy or device from the base picker's
+    /// project fallbacks. The live bridge cannot launch a device, so on the
+    /// live seat they are dead Production; live Immortal
+    /// civvis-20261026T162405Z put three cities on the Manhattan Project at
+    /// turn 200 through `pick_item` while the advanced scorer priced it at
+    /// -10,000.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `nuclear-goal-needs-a-launcher`.
+    pub(crate) nuclear_goal_needs_a_launcher: bool,
     /// A Theater Square ahead of the Harbor and every other district while
     /// the empire's Culture trails the strongest rival's, until half the
     /// cities hold one. Culture buys the civics a government and its policy
@@ -5856,6 +5865,7 @@ impl BasicAi {
             district_buildings_first: false,
             capital_library_first: false,
             campus_buildings_first: false,
+            nuclear_goal_needs_a_launcher: false,
             culture_defense_theater: false,
             lent_military_floor_base: None,
             exclude_space_race: false,
@@ -6377,6 +6387,7 @@ impl BasicAi {
             district_buildings_first: false,
             capital_library_first: false,
             campus_buildings_first: false,
+            nuclear_goal_needs_a_launcher: false,
             culture_defense_theater: false,
             lent_military_floor_base: None,
             exclude_space_race: false,
@@ -12295,6 +12306,7 @@ impl BasicAi {
                         "lagrange_laser_station" | "terrestrial_laser_station"
                     )
             })
+            .filter(|(project, _)| !self.nuclear_project_barred(project.as_str()))
             .filter_map(|(project, spec)| {
                 let item = Item::Project { project: *project };
                 if !g.can_produce(pid, cid, &item) {
@@ -13096,6 +13108,19 @@ impl BasicAi {
         changed
     }
 
+    /// `nuclear-goal-needs-a-launcher`: whether `project` is a nuclear
+    /// project the base picker leaves alone. Always false with the gene off.
+    pub(crate) fn nuclear_project_barred(&self, project: &str) -> bool {
+        self.nuclear_goal_needs_a_launcher
+            && matches!(
+                project,
+                "manhattan_project"
+                    | "operation_ivy"
+                    | "build_nuclear_device"
+                    | "build_thermonuclear_device"
+            )
+    }
+
     // The counters deliberately remain explicit: the city loop updates them
     // after every selected item, and the diagnostic binary probes this same
     // decision surface. A transient aggregate would only obscure which live
@@ -13702,6 +13727,7 @@ impl BasicAi {
                                     | "terrestrial_laser_station"
                             ))
                 })
+                .filter(|(project, _)| !self.nuclear_project_barred(project.as_str()))
                 .map(|(project, _)| Item::Project { project: *project })
                 .filter(|item| g.can_produce(pid, cid, item))
                 .collect();
@@ -14250,6 +14276,7 @@ impl BasicAi {
                             "lagrange_laser_station" | "terrestrial_laser_station"
                         )
                 })
+                .filter(|(project, _)| !self.nuclear_project_barred(project.as_str()))
                 .map(|(project, _)| Item::Project { project: *project })
                 .filter(|item| g.can_produce(pid, cid, item))
                 .collect();

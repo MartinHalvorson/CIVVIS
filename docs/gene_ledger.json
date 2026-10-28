@@ -5006,6 +5006,15 @@
           "power-the-laboratory-2": null
         }
       },
+      "prey-waits-for-the-march": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "prey-waits-for-the-march": null,
+          "prey-waits-for-the-march-2": null
+        }
+      },
       "prophet-race-takes-a-district-slot": {
         "rule_on": [],
         "head": null,
@@ -5089,6 +5098,15 @@
         "versions": {
           "settler-target-hysteresis": 0.011271,
           "settler-target-hysteresis-2": null
+        }
+      },
+      "siege-tier-yields-to-the-bombers": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "siege-tier-yields-to-the-bombers": null,
+          "siege-tier-yields-to-the-bombers-2": null
         }
       },
       "staging-gun-trusts-its-escort": {

@@ -1,0 +1,14 @@
+{
+  "scope": "Post-selected CPU exploration of the two highest single baseline readings. Not an independent speed, strength or Native test. Original four fixed samples and every baseline retained.",
+  "selection_sha256": "0e9c36df2813c6acdb973b08c75d1cc1cfc5c0d8a4513fe64149172749ab46f8",
+  "baseline_results_sha256": "eac8bacc5aa8c84e62f49ab1f921a79e7e2335f39b5583898d95f36d59753d69",
+  "indices": [
+    43,
+    20
+  ],
+  "repetitions": 20,
+  "sample_seconds": 1,
+  "sample_interval_ms": 1,
+  "per_process_timeout_seconds": 300,
+  "probe_sha256": "09d9616bfe8c1cfb4bb051be4149db29d054e38d5d64d6bb38cbd6d1e3f26dd8"
+}

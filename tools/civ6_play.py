@@ -556,9 +556,15 @@ def production_rank_reading(event: dict, max_rank: int) -> dict | None:
 # three turns under a third of the leader from turn 50 on. Before turn 50 the
 # line is noise: at turn 30 it would have retired 95% of Immortal games,
 # 231506Z among them (one turn under, at 41).
+#
+# Operator 2026-10-26, later: "lets change the autorestart to 4x prod of the
+# leader, not 3x" and "applied only after turn 80 too" -- the first turn is
+# CIVVIS_RESTART_BELOW_LEADER_PRODUCTION_FROM_TURN in the same policy file
+# (unset or invalid = :data:`PRODUCTION_SHARE_TURN`).
 PRODUCTION_SHARE_TURN = 50
 PRODUCTION_SHARE_TURNS = 3
 PRODUCTION_SHARE_POLICY_KEY = "CIVVIS_RESTART_BELOW_LEADER_PRODUCTION"
+PRODUCTION_SHARE_FROM_POLICY_KEY = "CIVVIS_RESTART_BELOW_LEADER_PRODUCTION_FROM_TURN"
 
 
 def parse_production_share(value: str | None) -> float:
@@ -588,11 +594,34 @@ def production_share_policy(path: Path | None = None) -> float:
     return parse_production_share(read_policy_value(PRODUCTION_SHARE_POLICY_KEY, path))
 
 
-def production_share_reading(event: dict, share: float) -> dict | None:
+def parse_production_share_from_turn(value: str | None) -> int:
+    """The first turn the share rule reads, from `80`; default :data:`PRODUCTION_SHARE_TURN`."""
+    if value is None or value == "":
+        return PRODUCTION_SHARE_TURN
+    try:
+        turn = int(value)
+    except ValueError:
+        turn = 0
+    if turn < 1:
+        print(f"[policy] ignoring {PRODUCTION_SHARE_FROM_POLICY_KEY}={value!r}: "
+              f"not a turn number; the rule reads from turn {PRODUCTION_SHARE_TURN}",
+              flush=True)
+        return PRODUCTION_SHARE_TURN
+    return turn
+
+
+def production_share_from_turn_policy(path: Path | None = None) -> int:
+    """The policy's first turn for the share rule; :data:`PRODUCTION_SHARE_TURN` when unset."""
+    return parse_production_share_from_turn(
+        read_policy_value(PRODUCTION_SHARE_FROM_POLICY_KEY, path))
+
+
+def production_share_reading(event: dict, share: float,
+                             from_turn: int = PRODUCTION_SHARE_TURN) -> dict | None:
     """Our Production as a share of the leader's, or None when this is no reading.
 
     Returns a dict with `rule: "production_share"` for every READABLE agent
-    turn record at or after :data:`PRODUCTION_SHARE_TURN` (`below` says whether
+    turn record at or after `from_turn` (`below` says whether
     our share is under `share`); `{"unreadable": True, ...}` for a qualifying
     record without our standing or any rival's; None for anything else,
     including a share of 0. The run of turns below is the caller's: see the
@@ -605,7 +634,7 @@ def production_share_reading(event: dict, share: float) -> dict | None:
         return None
     turn = event.get("turn")
     if (not isinstance(turn, int) or isinstance(turn, bool)
-            or turn < PRODUCTION_SHARE_TURN):
+            or turn < from_turn):
         return None
     production = event.get("major_production")
     us = event.get("local_player")
@@ -4524,10 +4553,15 @@ def play(args: argparse.Namespace) -> int:
     production_share = (production_share_policy() if production_share is None
                         else parse_production_share(str(production_share)))
     args.restart_below_leader_production = production_share
+    production_share_from = getattr(args, "restart_below_leader_production_from_turn", None)
+    production_share_from = (production_share_from_turn_policy()
+                             if production_share_from is None
+                             else parse_production_share_from_turn(str(production_share_from)))
+    args.restart_below_leader_production_from_turn = production_share_from
     if production_share > 0:
         print(f"[policy] a game whose Production stays under {production_share:.0%} "
               f"of the leader's for {PRODUCTION_SHARE_TURNS} turns from turn "
-              f"{PRODUCTION_SHARE_TURN} is retired (operator 2026-10-26)", flush=True)
+              f"{production_share_from} is retired (operator 2026-10-26)", flush=True)
     # A saved game can be alive and waiting for its SQLite decision worker even
     # when the interactive capture path is temporarily unavailable (for example
     # while the operator is recording).  Attaching that worker must never run
@@ -5184,6 +5218,8 @@ def write_attached_summary(args: argparse.Namespace, config: dict, state: dict,
 def _play(args: argparse.Namespace) -> int:
     production_rank_limit = getattr(args, "restart_below_production_rank", None) or 0
     production_share = getattr(args, "restart_below_leader_production", None) or 0.0
+    production_share_from = (getattr(args, "restart_below_leader_production_from_turn", None)
+                             or PRODUCTION_SHARE_TURN)
     run_dir = RUN_ROOT / args.tag
     run_dir.mkdir(parents=True, exist_ok=True)
     # Bound the corpus before adding to it. See `prune_old_run_screenshots`.
@@ -5845,10 +5881,12 @@ def _play(args: argparse.Namespace) -> int:
                           "the next game starts (operator 2026-10-08)", flush=True)
                     return abandon_with_retire(reading)
         # ★ OPERATOR 2026-10-26: "lets auto restart if our prod is < 1/3 of
-        # the leader" -- every turn from turn 50, retired after three turns
-        # running below the line. See `production_share_reading`.
+        # the leader" -- every turn from turn 50 (or the policy's
+        # _FROM_TURN), retired after three turns running below the line. See
+        # `production_share_reading`.
         if production_share > 0:
-            reading = production_share_reading(event, production_share)
+            reading = production_share_reading(event, production_share,
+                                               production_share_from)
             if reading is not None and reading.get("unreadable"):
                 if not state.get("production_share_unreadable"):
                     state["production_share_unreadable"] = reading["turn"]
@@ -6691,6 +6729,11 @@ def main(argv: list[str] | None = None) -> int:
                          f"{PRODUCTION_SHARE_TURNS} turns running from turn "
                          f"{PRODUCTION_SHARE_TURN}; unset reads "
                          f"{PRODUCTION_SHARE_POLICY_KEY} from the host's "
+                         "verification policy file (operator 2026-10-26)")
+    ap.add_argument("--restart-below-leader-production-from-turn", type=int, default=None,
+                    help="the first turn --restart-below-leader-production reads "
+                         f"(default {PRODUCTION_SHARE_TURN}); unset reads "
+                         f"{PRODUCTION_SHARE_FROM_POLICY_KEY} from the host's "
                          "verification policy file (operator 2026-10-26)")
     ap.add_argument("--city-target", type=int, default=6)
     ap.add_argument("--leader", default=ROMAN_LEADER,

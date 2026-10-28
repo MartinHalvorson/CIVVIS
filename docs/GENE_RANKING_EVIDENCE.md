@@ -185,6 +185,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | Gene | Default | Description | Best version \| Total versions |
 |---|---|---|---:|
 | `air-wing-grows-with-the-aluminum` | off (unmeasured) | Grow the Bomber wing past four while the Aluminum sustains it. | 1 \| 1 |
+| `aluminum-tile-spends-the-war-chest` | off (unmeasured) | Opt-in gene `aluminum-tile-spends-the-war-chest`; see `Self::aluminum_tile_spends_the_war_chest`. | 1 \| 1 |
 | `astrology-before-the-second-city` | off (unmeasured) | Opt-in gene `astrology-before-the-second-city`; see `advanced/astrology_before_the_second_city.rs`. | 1 \| 1 |
 | `bankruptcy-exits-the-drain` | off (unmeasured) | Opt-in gene `bankruptcy-exits-the-drain`; see `advanced/solvency.rs`. | 1 \| 1 |
 | `breaker-bought-for-the-siege` | off (unmeasured) | Buy the wall-breaker a held siege waits for. | 1 \| 1 |
@@ -197,6 +198,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `defenders-hold-the-walls` | off (unmeasured) | Opt-in gene `defenders-hold-the-walls`; see `Self::defenders_hold_the_walls`. | 1 \| 1 |
 | `delegations-reach-every-rival` | off (unmeasured) | Send a diplomatic mission to every rival we have met. | 1 \| 1 |
 | `denial-target-leads-the-fronts` | off (unmeasured) | Lead the running wars with the rival the counter names. | 1 \| 1 |
+| `disrupt-before-the-sources` | off (unmeasured) | Let a Spy in the space racer's city disrupt before it trains on Gain Sources. | 1 \| 1 |
 | `elimination-yields-to-a-launch-2` | off (unmeasured) | Enable the separately measured staged Culture air-interception version. | 1 \| 2 |
 | `envoys-open-the-siege-road` | off (unmeasured) | Buy affordable city-state passage for a siege already held by its border. | 1 \| 1 |
 | `faith-war-before-the-flip` | off (unmeasured) | Opt-in gene `faith-war-before-the-flip`; see `advanced/faith_war_before_the_flip.rs`. | — \| 2 |
@@ -205,8 +207,10 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `faith-war-is-no-front-2` | off (unmeasured) | Version 2 of `faith-war-is-no-front`. | — \| 2 |
 | `faith-war-needs-the-edge` | off (unmeasured) | Opt-in gene `faith-war-needs-the-edge`; see `Self::faith_war_needs_the_edge`. | 1 \| 1 |
 | `foothold-faces-the-capital` | off (unmeasured) | Aim a Domination conquest at a foothold within Bomber range of a rival capital. | 1 \| 1 |
+| `forward-airfield-project` | off (unmeasured) | Measure the default-off forward airfield preparation project. | 1 \| 1 |
 | `friendship-ends-at-the-race` | off (unmeasured) | Let a friendship lapse once the friend is racing to win. | 1 \| 1 |
 | `friendship-only-with-the-stronger` | off (unmeasured) | Offer a friendship only to a rival at least as strong as us. | 1 \| 1 |
+| `friendship-spares-the-converter` | off (unmeasured) | Offer no friendship to the founder whose faith we must fight. | 1 \| 1 |
 | `friendship-spares-the-prey` | off (unmeasured) | Offer no friendship to a rival weak enough to be prey. | 1 \| 1 |
 | `friendship-spares-the-target` | off (unmeasured) | Offer no friendship to the campaign's target. | 1 \| 1 |
 | `frontier-walls-before-the-surprise` | off (unmeasured) | Prepare a watched frontier city's first fortifications before war. | 1 \| 1 |
@@ -220,11 +224,16 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `nuclear-goal-needs-a-launcher` | off (unmeasured) | Opt-in gene `nuclear-goal-needs-a-launcher`; see `Self::nuclear_goal_needs_a_launcher`. | 1 \| 1 |
 | `open-city-draws-the-front` | off (unmeasured) | Opt-in gene `open-city-draws-the-front`; see `advanced/open_city_front.rs`. | 1 \| 1 |
 | `prey-is-declared-on` | off (unmeasured) | Declare on prey without the staged ring or a home Defend row. | 1 \| 1 |
+| `prey-waits-for-the-march` | off (unmeasured) | Opt-in gene `prey-waits-for-the-march`; see `Self::prey_waits_for_the_march`. | — \| 2 |
+| `prey-waits-for-the-march-2` | off (unmeasured) | Opt-in gene `prey-waits-for-the-march-2`; see `Self::prey_waits_for_the_march_2`. | — \| 2 |
 | `prey-war-is-kept` | off (unmeasured) | Opt-in gene `prey-war-is-kept`; see `Self::prey_war_is_kept`. | 1 \| 1 |
 | `prophet-race-takes-divine-spark` | off (unmeasured) | Opt-in gene `prophet-race-takes-divine-spark`; see `advanced/astrology_before_the_second_city.rs`. | 1 \| 1 |
 | `racer-blocker-declares` | off (unmeasured) | Opt-in gene `racer-blocker-declares`; see `advanced/silent_counter.rs`. | 1 \| 1 |
 | `siege-budget-counts-the-ram` | off (unmeasured) | Price a train-held Ram or Tower in the siege damage budget. | 1 \| 1 |
+| `siege-moves-under-the-wing` | off (unmeasured) | Opt-in gene `siege-moves-under-the-wing`; see `Self::siege_moves_under_the_wing`. | 1 \| 1 |
 | `siege-promotions-open-the-walls` | off (unmeasured) | Prefer the wall branch for siege guns in a walled major-war campaign. | 1 \| 1 |
+| `siege-shortfall-claims-the-projects` | off (unmeasured) | Let a siege short of its bill take the repeatable-project queues. | 1 \| 1 |
+| `siege-tier-yields-to-the-bombers-2` | off (unmeasured) | Opt-in gene `siege-tier-yields-to-the-bombers-2`; see `Self::siege_tier_yields_to_the_bombers_2`. | 1 \| 2 |
 | `solvent-or-hold` | off (unmeasured) | Opt-in gene `solvent-or-hold`; see `advanced/solvency.rs`. | 1 \| 1 |
 | `stage-reads-the-muster-breakers` | off (unmeasured) | Let a mustered siege count the guns it mustered when it stages. | 1 \| 1 |
 | `staging-gun-trusts-its-escort-2` | off (unmeasured) | Opt-in gene `staging-gun-trusts-its-escort-2`; see `Self::staging_gun_trusts_its_escort_2`. | 1 \| 2 |
@@ -232,6 +241,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `the-last-two-capitals-come-first` | off (unmeasured) | Opt-in gene `the-last-two-capitals-come-first`; see `Self::the_last_two_capitals_come_first`. | 1 \| 1 |
 | `threatened-city-buys-its-defender` | off (unmeasured) | Buy the threatened city's defender while its menu sells one. | — \| 2 |
 | `threatened-city-buys-its-defender-2` | off (unmeasured) | Buy the threatened city a defender of its era, not the cheapest body. | — \| 2 |
+| `unchosen-war-takes-the-first-peace` | off (unmeasured) | Opt-in gene `unchosen-war-takes-the-first-peace`: see `Self::unchosen_war_takes_the_first_peace`. | 1 \| 1 |
 | `unwalled-ring-steps-in` | off (unmeasured) | Step melee onto the open ring of an unwalled city. | 1 \| 1 |
 | `war-faith-buys-the-army` | off (unmeasured) | Opt-in gene `war-faith-buys-the-army`; see `Self::war_faith_buys_the_army`. | 1 \| 1 |
 | `wing-capital-spotting` | off (unmeasured) | Opt-in `wing-capital-spotting`; see `advanced/wing_capital_spotting.rs`. | 1 \| 1 |

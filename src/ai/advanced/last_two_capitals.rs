@@ -24,6 +24,15 @@
 //!   target's remaining capital on 52 of 53 such campaign turns, and took
 //!   Tenochtitlan at 220.
 //!
+//! **Every capital must be known.** The first version dropped a living
+//! major's capital that the mirror had never seen, so a four-major game
+//! holding only Bogotá read as two left. Over the armed games of 2026-10-25/26,
+//! 88 of 129 "Campaign holds on" turns came with three or more capitals still
+//! to take, from turn 23 on. For example, 142148Z held on Tbilisi from turn 90,
+//! and 132440Z on Majapahit at 36, each holding only Bogotá. Those turns aimed
+//! early campaigns at walled capitals instead of frontier towns. An unseen
+//! capital now makes the count unknown, and the rule stands down.
+//!
 //! Off, nothing changes.
 
 use super::*;
@@ -57,18 +66,26 @@ impl AdvancedAi {
         if majors.len() < 2 {
             return None;
         }
-        Some(
-            majors
-                .into_iter()
-                .filter_map(|major| {
-                    g.cities
-                        .values()
-                        .find(|city| city.is_capital && city.original_owner == major)
-                })
-                .filter(|capital| capital.owner != pid)
-                .map(|capital| capital.id)
-                .collect(),
-        )
+        let mut needed = Vec::new();
+        for major in majors {
+            match g
+                .cities
+                .values()
+                .find(|city| city.is_capital && city.original_owner == major)
+            {
+                Some(capital) => {
+                    if capital.owner != pid {
+                        needed.push(capital.id);
+                    }
+                }
+                // A living major whose original capital we have never seen
+                // still holds a capital to take, so the count is unknown.
+                // `capture_completes_domination` reads it the same way.
+                None if g.players[major].alive => return None,
+                None => {}
+            }
+        }
+        Some(needed)
     }
 
     /// The remaining capital `target` holds that the campaign aims at first:

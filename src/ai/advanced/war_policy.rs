@@ -324,7 +324,12 @@ impl AdvancedAi {
     /// Whether any Siege row against `other` is feasible for the whole
     /// roster: the board's Siege rows against them when it has any, else
     /// their nearest city. `(feasible, the need read, the roster)`.
-    fn war_policy_siege_against(&self, g: &Game, pid: usize, other: usize) -> (bool, f64, f64) {
+    pub(super) fn war_policy_siege_against(
+        &self,
+        g: &Game,
+        pid: usize,
+        other: usize,
+    ) -> (bool, f64, f64) {
         let roster = self.war_policy_roster_strength(g, pid);
         let rows: Vec<f64> = if self.objective_board {
             self.objective_board()
