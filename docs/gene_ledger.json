@@ -5006,6 +5006,15 @@
           "power-the-laboratory-2": null
         }
       },
+      "prey-waits-for-the-march": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "prey-waits-for-the-march": null,
+          "prey-waits-for-the-march-2": null
+        }
+      },
       "prophet-race-takes-a-district-slot": {
         "rule_on": [],
         "head": null,

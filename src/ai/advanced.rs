@@ -8168,6 +8168,11 @@ pub struct AdvancedAi {
     /// `prey-waits-for-the-march`: the running hold. See
     /// `prey_declaration::PreyMarchHold`.
     prey_march_hold: Option<prey_declaration::PreyMarchHold>,
+    /// `prey-waits-for-the-march-2`: version one with a median bar of
+    /// `prey_declaration::PREY_MARCH_TILES_2` and a siege gun within
+    /// `prey_declaration::PREY_MARCH_GUN_TILES`. See
+    /// `advanced/prey_declaration.rs`. Off by default.
+    prey_waits_for_the_march_2: bool,
     // ---- append: s-s ------------------------------------------------
     /// `stage-reads-the-muster-breakers`: once a siege's muster has closed,
     /// its Stage reads breakers out to `MUSTER_FAR` instead of `STAGING_FAR`.
@@ -11342,6 +11347,7 @@ impl AdvancedAi {
             prey_war_is_kept: false,
             prey_waits_for_the_march: false,
             prey_march_hold: None,
+            prey_waits_for_the_march_2: false,
             // ---- append: s-s ----------------------------------------
             stage_reads_the_muster_breakers: false,
             siege_budget_counts_the_ram: false,
@@ -25459,32 +25465,50 @@ impl AdvancedAi {
                         || overwhelming_ready
                         || road_opening_ready
                         || moving_on_ready);
-                if self.prey_waits_for_the_march && prey_alone && !denounce_first {
+                if (self.prey_waits_for_the_march || self.prey_waits_for_the_march_2)
+                    && prey_alone
+                    && !denounce_first
+                {
                     if let Some((city, pos)) = objective {
                         let name = g
                             .cities
                             .get(&city)
                             .map_or_else(String::new, |c| c.name.clone());
+                        let tag = self.prey_march_tag();
+                        let bar = self.prey_march_bar();
                         match self.prey_march_reading(g, pid, target, pos) {
                             Some(prey_declaration::PreyMarch::Hold(median, held)) => {
                                 think!(self.journal(), Military, Strategy,
                                        "Holding the prey war on {} for the march", g.players[target].civ;
-                                       "prey-waits-for-the-march: the field army's median stands {median} tiles from {name}, over the {} the waiver asks; held {held} of {} turns",
-                                       one_war::OVERWHELMING_MARCH_TILES, prey_declaration::PREY_MARCH_PATIENCE;
+                                       "{tag}: the field army's median stands {median} tiles from {name}, over the {bar} the waiver asks; held {held} of {} turns",
+                                       prey_declaration::PREY_MARCH_PATIENCE;
+                                       pos);
+                                return;
+                            }
+                            Some(prey_declaration::PreyMarch::HoldForGun(gun, held)) => {
+                                let stands = if gun == i32::MAX {
+                                    "no siege gun of ours is fielded".to_string()
+                                } else {
+                                    format!("our nearest siege gun stands {gun} tiles out")
+                                };
+                                think!(self.journal(), Military, Strategy,
+                                       "Holding the prey war on {} for a siege gun", g.players[target].civ;
+                                       "{tag}: the field army stands within {bar} tiles of {name}, but {stands}, over the {}; held {held} of {} turns",
+                                       prey_declaration::PREY_MARCH_GUN_TILES, prey_declaration::PREY_MARCH_PATIENCE;
                                        pos);
                                 return;
                             }
                             Some(prey_declaration::PreyMarch::Patience(median)) => {
                                 think!(self.journal(), Military, Detail,
                                        "The prey war on {} stops waiting for the march", g.players[target].civ;
-                                       "prey-waits-for-the-march: {} turns held, and the field army's median still stands {median} tiles from {name}",
+                                       "{tag}: {} turns held, and the field army's median stands {median} tiles from {name}",
                                        prey_declaration::PREY_MARCH_PATIENCE;
                                        pos);
                             }
                             Some(prey_declaration::PreyMarch::Stalled(median)) => {
                                 think!(self.journal(), Military, Detail,
                                        "The prey war on {} stops waiting for the march", g.players[target].civ;
-                                       "prey-waits-for-the-march: the field army's median came no closer than {median} tiles from {name} in {} turns",
+                                       "{tag}: neither the field army's median ({median} tiles from {name}) nor our nearest siege gun came closer in {} turns",
                                        prey_declaration::PREY_MARCH_STALL;
                                        pos);
                             }

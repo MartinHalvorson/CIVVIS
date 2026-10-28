@@ -8417,6 +8417,17 @@ impl AdvancedAi {
         self.prey_waits_for_the_march = false;
     }
 
+    /// Opt-in gene `prey-waits-for-the-march-2`; see
+    /// [`Self::prey_waits_for_the_march_2`].
+    pub fn enable_prey_waits_for_the_march_2(&mut self) {
+        self.prey_waits_for_the_march_2 = true;
+    }
+
+    /// The twin of `enable_prey_waits_for_the_march_2`.
+    pub fn disable_prey_waits_for_the_march_2(&mut self) {
+        self.prey_waits_for_the_march_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
