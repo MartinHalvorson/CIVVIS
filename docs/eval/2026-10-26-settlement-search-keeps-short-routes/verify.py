@@ -102,10 +102,22 @@ if not args.baseline_only:
  assert v['red']['qualified_assertion_red'] and v['red']['cargo_exit_code']==101
  assert v['green']['exit_code']==0 and v['quality']['exit_code']==0
  assert v['red_registration']['test_sha256']==v['green']['test_sha256']
- assert sha(Path(__file__).resolve().parents[3]/'src/ai/settlement_site_tests.rs')==v['green']['test_sha256']
+ assert v['source_checkpoint']['base']=='c06690a2751a39c84781b4344b10ccd1a5489495'
+ assert v['source_checkpoint']['head']=='852963e4214f9b05032809543a7fb32d8da4cc92'
+ current=Path(__file__).resolve().parents[3]
+ assert sha(current/'src/ai.rs')==v['source_checkpoint']['source_hashes']['src/ai.rs']
+ assert sha(current/'src/ai/settlement_site_tests.rs')==v['green']['test_sha256']
+ assert v['green']['steps'][0]['summaries'][0].startswith('test result: ok. 7 passed;')
+ assert v['green']['steps'][1]['summaries'][0].startswith('test result: ok. 1 passed;')
+ assert v['green']['steps'][2]['summaries'][0].startswith('test result: ok. 255 passed;')
+ assert v['green']['steps'][3]['summaries'][0].startswith('test result: ok. 48 passed;')
+ assert v['quality']['head']==v['source_checkpoint']['head'] and v['quality']['base']==v['source_checkpoint']['base']
+ assert v['native_candidate']['qualified'] and v['native_candidate']['first_changed_request']==[17,3]
+ assert v['legacy_global_rejection']['expected_anchor_decisions']==19252
+ assert v['legacy_global_rejection']['observed_anchor_decisions']==19305
  assert c['comparison']['qualified'] and len(c['comparison']['comparisons'])==2
  for run in c['comparison']['comparisons']:
   assert all(not x['identity_errors'] and x['read_sequence_matches'] and x['expected_read_sha256']==x['actual_read_sha256'] for x in run['requests'])
   assert all(x['native_payload_matches'] for x in run['requests'][:-1])
- print('Original regression RED, same-test GREEN, source quality and historical first-change evidence verified.')
+ print('Historical first-change evidence, genuine RED, latest-main GREEN, frozen anchor and changed-line quality verified. Hosted checks and merge remain PR gates.')
 else:print('Exact original/diagnostic controls, captured-read hashes, retained timeout and actual first false-negative cause verified. Final integration and hosted gates still required.')
