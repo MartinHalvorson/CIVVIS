@@ -8384,6 +8384,17 @@ impl AdvancedAi {
         self.disrupt_before_the_sources = false;
     }
 
+    /// Opt-in gene `siege-moves-under-the-wing`; see
+    /// [`Self::siege_moves_under_the_wing`].
+    pub fn enable_siege_moves_under_the_wing(&mut self) {
+        self.siege_moves_under_the_wing = true;
+    }
+
+    /// The twin of `enable_siege_moves_under_the_wing`.
+    pub fn disable_siege_moves_under_the_wing(&mut self) {
+        self.siege_moves_under_the_wing = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

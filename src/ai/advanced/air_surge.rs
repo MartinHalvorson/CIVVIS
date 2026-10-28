@@ -401,7 +401,7 @@ impl AdvancedAi {
         missing
     }
 
-    fn air_surge_is_bomber(g: &Game, unit: Name) -> bool {
+    pub(super) fn air_surge_is_bomber(g: &Game, unit: Name) -> bool {
         let spec = &g.rules.units[unit];
         spec.domain.as_deref() == Some("air") && spec.promotion_class == "air_bomber"
     }
@@ -535,7 +535,7 @@ impl AdvancedAi {
     /// Plan with the trainable generation until a launch wing exists. Once
     /// aircraft stand, at least two must have range from one of our bases;
     /// one Jet Bomber cannot lend its range to an older partner.
-    fn air_surge_in_range(g: &Game, pid: usize, objective: Pos) -> bool {
+    pub(super) fn air_surge_in_range(g: &Game, pid: usize, objective: Pos) -> bool {
         let bases = Self::air_surge_bases(g, pid);
         let reaches = |kind: Name| {
             bases
