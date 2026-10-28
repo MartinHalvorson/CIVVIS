@@ -4202,6 +4202,12 @@ pub const GENES: &[Gene] = &[
     // against 91 disruptions; 061046Z held a Spy in Beijing 168-196 with it
     // offered and never ran it. See `advanced/disrupt_before_the_sources.rs`.
     Gene { tag: "disrupt-before-the-sources", field: "disrupt_before_the_sources", kind: Kind::OptIn, enable: AdvancedAi::enable_disrupt_before_the_sources, disable: AdvancedAi::disable_disrupt_before_the_sources },
+    // `siege-moves-under-the-wing`: post-reboot live Immortal games to 10-28
+    // that reached turn 160 with Bombers spent 385 of 668 siege-turns on an
+    // objective beyond the wing's reach, 120 of them with another city of
+    // the same rival within it (233902Z held Pewen Mapu's unbreachable walls
+    // t150-193 beside Ina Pire Mapu). See `advanced/siege_under_the_wing.rs`.
+    Gene { tag: "siege-moves-under-the-wing", field: "siege_moves_under_the_wing", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_moves_under_the_wing, disable: AdvancedAi::disable_siege_moves_under_the_wing },
     // `unchosen-war-takes-the-first-peace`: live Immortal 10-26/28, a major's
     // declaration on us by turn 60 cut our Production share from 0.38 to 0.25
     // in ten turns (77% retired by turn 95, 37% with no war); white peace was

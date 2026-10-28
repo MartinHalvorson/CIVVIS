@@ -8768,6 +8768,11 @@ pub struct AdvancedAi {
     /// Bomber is within `decisive_window::BOMBER_YIELD_TECHS` technologies.
     /// Off by default.
     siege_tier_yields_to_the_bombers_2: bool,
+    /// `siege-moves-under-the-wing`: a Domination siege on full walls our
+    /// land guns cannot breach, beyond the Bomber wing's reach, moves to a
+    /// city of the same rival the wing can hit. See
+    /// `advanced/siege_under_the_wing.rs`. Off by default.
+    siege_moves_under_the_wing: bool,
     // ---- append: t-z ------------------------------------------------
     /// `unchosen-war-takes-the-first-peace`: a war a major declared on us,
     /// while we hold fewer cities than the plan wants and no siege of ours
@@ -9927,6 +9932,8 @@ mod siege_shortfall_projects;
 /// surge's beeline behind Medieval walls. See
 /// `advanced/siege_tier_before_the_beeline.rs`.
 mod siege_tier_before_the_beeline;
+/// `siege-moves-under-the-wing`: see `advanced/siege_under_the_wing.rs`.
+mod siege_under_the_wing;
 mod trader_fills_the_idle_route;
 pub use science_victory_drive::ScienceDrive;
 
@@ -11434,6 +11441,7 @@ impl AdvancedAi {
             solvent_or_hold: false,
             staging_gun_trusts_its_escort_2: false,
             siege_tier_yields_to_the_bombers_2: false,
+            siege_moves_under_the_wing: false,
             // ---- append: t-z ----------------------------------------
             unchosen_war_takes_the_first_peace: false,
             unchosen_war_seen: BTreeMap::new(),
@@ -16173,6 +16181,17 @@ impl AdvancedAi {
         let stale_walled_city = committed_target_city
             .filter(|_| capture_opportunity_city.is_none())
             .and_then(|prior_id| self.stale_domination_objective_city(g, pid, prior_id, strategy));
+        // `siege-moves-under-the-wing`: a walled objective our land guns
+        // cannot breach, beyond the Bombers' reach, yields to a city of the
+        // same rival the wing can hit. `None` with the gene off. See
+        // `advanced/siege_under_the_wing.rs`.
+        let wing_city = committed_target_city
+            .or(ranked_target_city)
+            .filter(|_| capture_opportunity_city.is_none() && stale_walled_city.is_none())
+            .and_then(|prior_id| {
+                self.siege_under_the_wing_city(g, pid, prior_id, strategy)
+                    .map(|city| (prior_id, city))
+            });
         // `capture-go-or-stand-down`: a city the ledger stood down is not
         // ranked again until the stand-down expires; the next-best city of the
         // same rival takes its place. A home emergency is never stood down.
@@ -16229,6 +16248,7 @@ impl AdvancedAi {
         let target_city = finishing_capital
             .or(capture_opportunity_city)
             .or(stale_walled_city)
+            .or(wing_city.map(|(_, city)| city))
             .or(committed_target_city)
             .or(ranked_target_city);
 
@@ -16278,6 +16298,14 @@ impl AdvancedAi {
             think!(self.journal(), Strategy, Strategy,
                    "Campaign abandons a distant untouched city for {}", city.name;
                    "a land force is within a short march of this cheaper objective, while none reached the old siege";
+                   city.pos);
+        }
+        if let Some((prior, under)) = wing_city.filter(|_| finishing_capital.is_none()) {
+            let (prior, city) = (&g.cities[&prior], &g.cities[&under]);
+            think!(self.journal(), Strategy, Strategy,
+                   "Campaign moves under the wing to {}", city.name;
+                   "siege-moves-under-the-wing: {}'s {} walls are beyond our land guns and out of the Bombers' reach; {} is within it",
+                   prior.name, prior.wall_hp, city.name;
                    city.pos);
         }
 
