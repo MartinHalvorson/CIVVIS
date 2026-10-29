@@ -34825,7 +34825,7 @@ impl AdvancedAi {
             || plan.threatened_city == Some(cid)
             || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4);
         // `upkeep-waits-for-the-income`: see `advanced/upkeep_waits_for_the_income.rs`.
-        if self.upkeep_waits_for(g, pid, cid, item, threatened)
+        if self.upkeep_waits_for(g, pid, cid, item, threatened, plan)
             && !Self::upkeep_item_mostly_paid(g, pid, cid, item)
         {
             return -10_000.0;
