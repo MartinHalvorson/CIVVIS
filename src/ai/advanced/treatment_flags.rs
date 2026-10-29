@@ -8428,6 +8428,17 @@ impl AdvancedAi {
         self.prey_waits_for_the_march_2 = false;
     }
 
+    /// Opt-in gene `upkeep-waits-for-the-income`; see
+    /// [`Self::upkeep_waits_for_the_income`].
+    pub fn enable_upkeep_waits_for_the_income(&mut self) {
+        self.upkeep_waits_for_the_income = true;
+    }
+
+    /// The twin of `enable_upkeep_waits_for_the_income`.
+    pub fn disable_upkeep_waits_for_the_income(&mut self) {
+        self.upkeep_waits_for_the_income = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
