@@ -52,11 +52,14 @@ the frozen advanced_v1 ledger test, 255 Settler tests (four existing ignores),
 The first hosted run on source head a754f33 passed cargo-test, published-build,
 control-mod, collaboration-policy, rust-quality, and paired-cost. The paired
 cost measured five candidate/base pairs at -2.23% CPU time per completed turn,
-within the +8% budget. The required overwrite guard was canceled twice during
-its 15-minute full-history checkout timeout before its script ran. Its job
-timeout is raised to 45 minutes in the follow-up workflow change; hosted
-validation of that change is pending. See validation.json.gz for run IDs and
-terminal receipts.
+within the +8% budget. Its repeat on follow-up head 51d5460 measured -0.20%,
+inside the +/-1% noise floor, also within budget; neither run supports a
+performance improvement claim. The required overwrite guard was canceled
+twice during its 15-minute full-history checkout timeout before its script
+ran. Its job timeout was raised to 45 minutes and the guard then passed. The
+first collaboration-policy run on 51d5460 correctly flagged the newly changed
+workflow path as unclaimed; the PR claim was updated and the hosted rerun
+passed. See validation.json.gz for run IDs and terminal receipts.
 
 Historical reconstruction caveat: the original process argv/cwd were not
 observed. Two original controls qualify the reconstruction. The first
