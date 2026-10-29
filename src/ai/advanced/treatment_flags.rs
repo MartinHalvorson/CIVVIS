@@ -8450,6 +8450,17 @@ impl AdvancedAi {
         self.food_focus_grows_the_small_city = false;
     }
 
+    /// Opt-in gene `capital-monument-after-the-second-city`; see
+    /// [`Self::capital_monument_after_the_second_city`].
+    pub fn enable_capital_monument_after_the_second_city(&mut self) {
+        self.capital_monument_after_the_second_city = true;
+    }
+
+    /// The twin of `enable_capital_monument_after_the_second_city`.
+    pub fn disable_capital_monument_after_the_second_city(&mut self) {
+        self.capital_monument_after_the_second_city = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -5504,6 +5504,10 @@ pub struct AdvancedAi {
     /// costliest. See `advanced/solvency.rs`. Off by default.
     bankruptcy_exits_the_drain: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `capital-monument-after-the-second-city`: once the second city
+    /// stands, the capital claims its Monument. See
+    /// `advanced/capital_monument.rs`. Off by default.
+    capital_monument_after_the_second_city: bool,
     /// `disrupt-before-the-sources`: a Spy in a space racer's city runs an
     /// offered Disrupt Rocketry before the Gain Sources training step. See
     /// `advanced/disrupt_before_the_sources.rs`. Off by default.
@@ -9607,6 +9611,9 @@ mod strategic_deposit_prey;
 /// `food-focus-grows-the-small-city`: see `advanced/food_focus_grows_the_small_city.rs`.
 mod food_focus_grows_the_small_city;
 
+/// `capital-monument-after-the-second-city`: see `advanced/capital_monument.rs`.
+mod capital_monument;
+
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 
 mod civilian_coordination;
@@ -10935,6 +10942,7 @@ impl AdvancedAi {
             aqueduct_recovery_reservations: RefCell::new(BTreeMap::new()),
             bankruptcy_exits_the_drain: false,
             // ---- append: c-d ----------------------------------------
+            capital_monument_after_the_second_city: false,
             disrupt_before_the_sources: false,
             capital_watch_arms_the_slinger: false,
             capital_watch_slinger_turn: None,
@@ -32796,6 +32804,11 @@ impl AdvancedAi {
             let bound_granary_commitment = committed
                 .as_ref()
                 .is_some_and(|(_, item)| self.bound_granary_holds(g, pid, cid, plan, item));
+            // `capital-monument-after-the-second-city`: the claimed Monument
+            // finishes while the capital still wants it.
+            let capital_monument_commitment = committed
+                .as_ref()
+                .is_some_and(|(_, item)| self.capital_monument_holds(g, pid, cid, plan, item));
             // `trader-fills-the-idle-route`: the claimed Trader finishes while
             // its slot still stands empty.
             let idle_route_trader_commitment = committed
@@ -32857,6 +32870,7 @@ impl AdvancedAi {
                     || deterrence_commitment
                     || capital_walls_commitment
                     || bound_granary_commitment
+                    || capital_monument_commitment
                     || idle_route_trader_commitment
                     || backlog_builder_commitment
                     || capped_aqueduct_commitment
@@ -32877,6 +32891,7 @@ impl AdvancedAi {
                     || deterrence_commitment
                     || capital_walls_commitment
                     || bound_granary_commitment
+                    || capital_monument_commitment
                     || idle_route_trader_commitment
                     || backlog_builder_commitment
                     || capped_aqueduct_commitment
@@ -49725,6 +49740,11 @@ impl AdvancedAi {
             // below. Exact no-op while the gene is off. See
             // `advanced/early_settler_floor.rs`.
             self.claim_early_settler_floor(g, pid, &plan);
+            // `capital-monument-after-the-second-city`: the capital's Monument,
+            // once the second city stands, after the floor's Settler and ahead
+            // of the routine claims. Exact no-op while the gene is off. See
+            // `advanced/capital_monument.rs`.
+            self.claim_capital_monument(g, pid, &plan);
             // `granary-claims-the-bound-queue`: a housing-bound city's Granary
             // ahead of the deterrent and the routine claims below; a due
             // Settler and the faith defence above keep their order. See
