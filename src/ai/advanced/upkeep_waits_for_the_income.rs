@@ -198,7 +198,13 @@ impl AdvancedAi {
         item: &Item,
         plan: &StrategicPlan,
     ) -> bool {
-        self.upkeep_waits_for(g, pid, cid, item, Self::upkeep_city_threatened(g, cid, plan))
+        self.upkeep_waits_for(
+            g,
+            pid,
+            cid,
+            item,
+            Self::upkeep_city_threatened(g, cid, plan),
+        )
     }
 
     /// Journal the preemption the governor is about to make.
@@ -209,7 +215,11 @@ impl AdvancedAi {
         let player = &g.players[pid];
         let added = Self::item_added_upkeep(g, item);
         let committed = Self::committed_queue_upkeep(g, pid, Some(cid));
-        let name = g.cities.get(&cid).map(|city| city.name.clone()).unwrap_or_default();
+        let name = g
+            .cities
+            .get(&cid)
+            .map(|city| city.name.clone())
+            .unwrap_or_default();
         think!(self.journal(), Economy, Decision,
             "{} sets aside {} until the income carries it", name, Self::plain_item(item);
             "upkeep-waits-for-the-income: {added:.0} Gold a turn of upkeep on {:.1} income with \
