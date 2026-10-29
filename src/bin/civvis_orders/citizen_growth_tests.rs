@@ -193,3 +193,34 @@ fn the_widened_request_favors_a_slow_small_city() {
     // The stalled city is still served with the gene on.
     assert_eq!(orders_widened(&snapshot, &state, true).len(), 1);
 }
+
+/// `food-focus-grows-the-small-city` v2: the settler pump keeps its
+/// Production. A slow small city training a Settler gets no widened request,
+/// and a growing focused city releases when a Settler starts; a stalled one
+/// (zero surplus) keeps #4003's focus.
+#[test]
+fn the_widened_request_spares_the_settler_pump() {
+    let (snapshot, state) = observation();
+    let mut pump = state.clone();
+    pump.cities[0].food_surplus = 2.0;
+    pump.cities[0].pop = 3;
+    pump.cities[0].producing = Some("UNIT_SETTLER".into());
+    assert!(orders_widened(&snapshot, &pump, true).is_empty());
+    pump.cities[0].producing = Some("UNIT_WARRIOR".into());
+    assert_eq!(orders_widened(&snapshot, &pump, true).len(), 1);
+
+    let mut focused = state.clone();
+    focused.cities[0].food_favored = Some(true);
+    focused.cities[0].food_focus_managed = Some(true);
+    focused.cities[0].food_surplus = 3.0;
+    focused.cities[0].producing = Some("UNIT_SETTLER".into());
+    let proposed = orders_widened(&snapshot, &focused, true);
+    assert_eq!(proposed.len(), 1);
+    assert_eq!(proposed[0].verb.as_deref(), Some("RELEASE_FOOD"));
+    assert!(orders(&snapshot, &focused).is_empty(), "off: no release");
+    focused.cities[0].food_surplus = 0.0;
+    assert!(
+        orders_widened(&snapshot, &focused, true).is_empty(),
+        "a stalled city keeps its focus"
+    );
+}
