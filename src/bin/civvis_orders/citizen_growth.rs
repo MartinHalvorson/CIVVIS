@@ -8,6 +8,12 @@ use civvis::{hex, mirror};
 
 use super::{IssuedOrder, Verdict};
 
+/// `food-focus-grows-the-small-city`: the largest city the widened request
+/// reaches, and the largest Food surplus a turn at which it is made. See
+/// `src/ai/advanced/food_focus_grows_the_small_city.rs`.
+pub(super) const WIDE_MAX_POP: i32 = 5;
+pub(super) const WIDE_MAX_SURPLUS: f64 = 2.0;
+
 pub(super) struct Choice {
     pub city: i64,
     pub verb: &'static str,
@@ -43,7 +49,15 @@ fn richer_unworked_food(snapshot: &mirror::Snapshot, city: &mirror::StateCity) -
     })
 }
 
-pub(super) fn choices(snapshot: &mirror::Snapshot, state: &mirror::StateSnapshot) -> Vec<Choice> {
+/// The focus requests for this frame. `widened` (the gene
+/// `food-focus-grows-the-small-city`) also favours Food in a city of up to
+/// [`WIDE_MAX_POP`] growing at no more than [`WIDE_MAX_SURPLUS`] a turn, not
+/// only in one stalled at zero.
+pub(super) fn choices(
+    snapshot: &mirror::Snapshot,
+    state: &mirror::StateSnapshot,
+    widened: bool,
+) -> Vec<Choice> {
     let mut choices = Vec::new();
     for city in &state.cities {
         let (Some(favored), Some(disfavored), Some(managed)) = (
@@ -67,12 +81,13 @@ pub(super) fn choices(snapshot: &mirror::Snapshot, state: &mirror::StateSnapshot
             } else if !favored
                 && !disfavored
                 && state.turn <= 100
-                && (1..=4).contains(&city.pop)
+                && (1..=if widened { WIDE_MAX_POP } else { 4 }).contains(&city.pop)
                 && city.damage == 0.0
                 && city.wall_damage == 0.0
                 && headroom >= 2.0
                 && city.food_surplus.is_finite()
-                && city.food_surplus.abs() <= 1e-6
+                && (city.food_surplus.abs() <= 1e-6
+                    || (widened && (0.0..=WIDE_MAX_SURPLUS).contains(&city.food_surplus)))
                 && city.overall_growth_mult.is_finite()
                 && city.overall_growth_mult > 0.0
                 && snapshot.turn == state.turn

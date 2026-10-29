@@ -4234,6 +4234,15 @@ pub const GENES: &[Gene] = &[
     // queue back. A threatened city's land defender never waits. See
     // `advanced/upkeep_waits_for_the_income.rs`.
     Gene { tag: "upkeep-waits-for-the-income", field: "upkeep_waits_for_the_income", kind: Kind::OptIn, enable: AdvancedAi::enable_upkeep_waits_for_the_income, disable: AdvancedAi::disable_upkeep_waits_for_the_income },
+    // `food-focus-grows-the-small-city` (native seat only): live Immortal
+    // 10-28/29, our small cities with housing room grew at a median +2 Food
+    // from t10 to t80 (60-69% at +2 or less); rival capitals reached 10
+    // citizens at t60 against our 6. The native growth recovery favoured Food
+    // only at zero surplus (4-9% of those cities; +0.2 -> +1.7 Food for 7.5 ->
+    // 6.3 Production where it did). This widens its request to a city of up
+    // to five growing at two or less. See
+    // `advanced/food_focus_grows_the_small_city.rs`.
+    Gene { tag: "food-focus-grows-the-small-city", field: "food_focus_grows_the_small_city", kind: Kind::OptIn, enable: AdvancedAi::enable_food_focus_grows_the_small_city, disable: AdvancedAi::disable_food_focus_grows_the_small_city },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

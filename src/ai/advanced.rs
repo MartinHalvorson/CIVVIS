@@ -6362,6 +6362,10 @@ pub struct AdvancedAi {
     /// `advanced/defenders_hold_the_walls.rs`. Off by default.
     defenders_hold_the_walls: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `food-focus-grows-the-small-city`: `civvis_orders` also asks the host
+    /// to favour Food in a small city growing at two a turn or less. See
+    /// `advanced/food_focus_grows_the_small_city.rs`. Off by default.
+    food_focus_grows_the_small_city: bool,
     /// `friendship-ends-at-the-race`: `befriend-the-strongest` offers no
     /// friendship to a rival racing to win (see
     /// `protective_friendship::FRIENDSHIP_RACE_CEILING`). Off by default.
@@ -9599,6 +9603,10 @@ mod foothold_faces_the_capital;
 mod formation_refusals;
 mod siege_resource_purchase;
 mod strategic_deposit_prey;
+
+/// `food-focus-grows-the-small-city`: see `advanced/food_focus_grows_the_small_city.rs`.
+mod food_focus_grows_the_small_city;
+
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 
 mod civilian_coordination;
@@ -11092,6 +11100,7 @@ impl AdvancedAi {
             drain_card_turn: std::cell::Cell::new(None),
             defenders_hold_the_walls: false,
             // ---- append: e-f ----------------------------------------
+            food_focus_grows_the_small_city: false,
             friendship_ends_at_the_race: false,
             friendship_only_with_the_stronger: false,
             friendship_spares_the_target: false,
