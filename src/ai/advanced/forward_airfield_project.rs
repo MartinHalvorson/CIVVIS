@@ -388,6 +388,36 @@ impl AdvancedAi {
         })
     }
 
+    /// The next stage of a project already in flight, ahead of the routine
+    /// production claims. `claim_forward_airfield_project` runs after them,
+    /// and its stage needs an idle queue, so a developed empire refilled the
+    /// producer's freed queue first. Live Immortal civvis-20261028T154121Z
+    /// built the Encampment at Angostura from turn 170 to 176, then filled
+    /// that queue with a Modern AT, a Builder, two Rocket Artillery, a
+    /// Market, a Bank and a Stock Exchange through turn 218, and never
+    /// offered the Military Engineer. Choosing a new project stays after the
+    /// reservations; this only advances the one already chosen, while its
+    /// capital is still the objective (otherwise the claim would reset it and
+    /// choose a new one here).
+    pub(super) fn claim_forward_airfield_stage_in_flight(
+        &mut self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) {
+        let in_flight = self
+            .forward_airfield_project_state
+            .as_ref()
+            .is_some_and(|project| {
+                self.forward_field_capital(g, pid, plan)
+                    .map(|cid| g.cities[&cid].pos)
+                    == Some(project.capital)
+            });
+        if in_flight {
+            self.claim_forward_airfield_project(g, pid, plan);
+        }
+    }
+
     pub(super) fn claim_forward_airfield_project(
         &mut self,
         g: &mut Game,
