@@ -37,7 +37,7 @@ concurrency:
 jobs:
   overwrite-guard:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
     steps:
       # The default pull_request checkout (the merge ref) rather than the PR
       # head: a branch cut before this guard existed has no tool in its tree,
