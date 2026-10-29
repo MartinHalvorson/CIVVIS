@@ -4224,6 +4224,16 @@ pub const GENES: &[Gene] = &[
     // city within 20 turns 4/43 at a median ≤6 against 2/46 at 7-10, and 1/66
     // with no gun fielded. See `advanced/prey_declaration.rs`.
     Gene { tag: "prey-waits-for-the-march-2", field: "prey_waits_for_the_march_2", kind: Kind::OptIn, enable: AdvancedAi::enable_prey_waits_for_the_march_2, disable: AdvancedAi::disable_prey_waits_for_the_march_2 },
+    // `upkeep-waits-for-the-income`: live Immortal 10-27/10-29, 11 of the 30
+    // games past turn 160 went bankrupt (the host's 10-amenity charge put
+    // every city at -40% and disbanded the costliest units); income went +25
+    // to -37 in nine turns of 162814Z as queued modern units came due. A
+    // Domination seat prices out an upkeep item when income, less every other
+    // queue head's upkeep, less its own, goes below zero and the bank cannot
+    // carry that deficit 15 turns; a queued one under half paid gives the
+    // queue back. A threatened city's land defender never waits. See
+    // `advanced/upkeep_waits_for_the_income.rs`.
+    Gene { tag: "upkeep-waits-for-the-income", field: "upkeep_waits_for_the_income", kind: Kind::OptIn, enable: AdvancedAi::enable_upkeep_waits_for_the_income, disable: AdvancedAi::disable_upkeep_waits_for_the_income },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

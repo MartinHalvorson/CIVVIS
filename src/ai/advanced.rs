@@ -8787,6 +8787,10 @@ pub struct AdvancedAi {
     /// `advanced/siege_under_the_wing.rs`. Off by default.
     siege_moves_under_the_wing: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `upkeep-waits-for-the-income`: a Domination seat starts no recurring
+    /// upkeep its income cannot carry. See
+    /// `advanced/upkeep_waits_for_the_income.rs`. Off by default.
+    upkeep_waits_for_the_income: bool,
     /// `unchosen-war-takes-the-first-peace`: a war a major declared on us,
     /// while we hold fewer cities than the plan wants and no siege of ours
     /// against it is feasible or under way, is offered white peace from
@@ -9570,6 +9574,9 @@ mod disrupt_before_the_sources;
 
 /// `unchosen-war-takes-the-first-peace`: see `advanced/unchosen_war_peace.rs`.
 mod unchosen_war_peace;
+
+/// `upkeep-waits-for-the-income`: see `advanced/upkeep_waits_for_the_income.rs`.
+mod upkeep_waits_for_the_income;
 
 mod denial_nearest_finish;
 mod denial_needs_a_road;
@@ -11459,6 +11466,7 @@ impl AdvancedAi {
             siege_tier_yields_to_the_bombers_2: false,
             siege_moves_under_the_wing: false,
             // ---- append: t-z ----------------------------------------
+            upkeep_waits_for_the_income: false,
             unchosen_war_takes_the_first_peace: false,
             unchosen_war_seen: BTreeMap::new(),
             unchosen_war_since: BTreeMap::new(),
@@ -32536,6 +32544,8 @@ impl AdvancedAi {
         let city_ids = g.player_city_ids(pid);
         let n_cities = city_ids.len();
         let economic_recovery = self.live_war_economy_requires_recovery(g, pid, &counts);
+        // `upkeep-waits-for-the-income`: see `advanced/upkeep_waits_for_the_income.rs`.
+        self.note_upkeep_wait_state(g, pid);
         let sanctuary = self.adopted_faith_sanctuary_choice(g, pid, plan.threatened_city);
         let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
         let science_specialized = self.phase_specialization_active(g) && science_targeted;
@@ -32693,6 +32703,16 @@ impl AdvancedAi {
                 && committed
                     .as_ref()
                     .is_some_and(|(_, item)| self.science_recovery_preempts(g, item));
+            // `upkeep-waits-for-the-income`: a queued upkeep item the income
+            // cannot carry, under half paid, gives the queue back.
+            let upkeep_preemption = committed
+                .as_ref()
+                .filter(|(_, item)| self.upkeep_wait_preempts(g, pid, cid, item, plan))
+                .map(|(_, item)| item.clone());
+            if let Some(item) = upkeep_preemption.as_ref() {
+                self.note_upkeep_wait_preemption(g, pid, cid, item);
+            }
+            let recovery_preemption = recovery_preemption || upkeep_preemption.is_some();
             // Banked production preserves hammers, but switching still delays
             // the payoff and can lose a wonder race. Finish a legal, useful
             // investment before routine rescoring can claim this city. Siege
@@ -34795,6 +34815,12 @@ impl AdvancedAi {
         let threatened = barbarian_threat
             || plan.threatened_city == Some(cid)
             || (city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4);
+        // `upkeep-waits-for-the-income`: see `advanced/upkeep_waits_for_the_income.rs`.
+        if self.upkeep_waits_for(g, pid, cid, item, threatened)
+            && !Self::upkeep_item_mostly_paid(g, pid, cid, item)
+        {
+            return -10_000.0;
+        }
         let barbarian_trade_safe = !barbarian_tactics
             || if self.base.solvency_first_trade_slot {
                 self.base.safe_trade_origin_for_controller(g, pid, cid)
