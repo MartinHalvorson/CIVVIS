@@ -8439,6 +8439,17 @@ impl AdvancedAi {
         self.upkeep_waits_for_the_income = false;
     }
 
+    /// Opt-in gene `food-focus-grows-the-small-city`; see
+    /// [`Self::food_focus_grows_the_small_city`].
+    pub fn enable_food_focus_grows_the_small_city(&mut self) {
+        self.food_focus_grows_the_small_city = true;
+    }
+
+    /// The twin of `enable_food_focus_grows_the_small_city`.
+    pub fn disable_food_focus_grows_the_small_city(&mut self) {
+        self.food_focus_grows_the_small_city = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -28,8 +28,12 @@ fn observation() -> (Snapshot, StateSnapshot) {
 }
 
 fn orders(snapshot: &Snapshot, state: &StateSnapshot) -> Vec<Order> {
+    orders_widened(snapshot, state, false)
+}
+
+fn orders_widened(snapshot: &Snapshot, state: &StateSnapshot, widened: bool) -> Vec<Order> {
     let mut proposed = Vec::new();
-    super::super::append_citizen_growth_orders(snapshot, state, &mut proposed);
+    super::super::append_citizen_growth_orders(snapshot, state, widened, &mut proposed);
     proposed
 }
 
@@ -160,4 +164,32 @@ fn requests_are_not_verified_until_the_native_preference_changes() {
     assert!(matches!(verify(&order, &after), Verdict::Verified));
     after.cities[0].food_favored = None;
     assert!(matches!(verify(&order, &after), Verdict::Unverifiable));
+}
+
+/// `food-focus-grows-the-small-city`: a city growing at +2 a turn is not
+/// stalled, so only the widened request favours its Food. Above +2, at six
+/// citizens, or below zero, neither does.
+#[test]
+fn the_widened_request_favors_a_slow_small_city() {
+    let (snapshot, state) = observation();
+    let mut slow = state.clone();
+    slow.cities[0].food_surplus = 2.0;
+    slow.cities[0].pop = 5;
+    slow.cities[0].housing = Some(9.0);
+    assert!(orders(&snapshot, &slow).is_empty(), "off: +2 is no stall");
+    let proposed = orders_widened(&snapshot, &slow, true);
+    assert_eq!(proposed.len(), 1);
+    assert_eq!(proposed[0].verb.as_deref(), Some("FAVOR_FOOD"));
+    for (surplus, pop) in [(2.5, 5), (2.0, 6), (-1.0, 3)] {
+        let mut other = state.clone();
+        other.cities[0].food_surplus = surplus;
+        other.cities[0].pop = pop;
+        other.cities[0].housing = Some(9.0);
+        assert!(
+            orders_widened(&snapshot, &other, true).is_empty(),
+            "surplus {surplus}, pop {pop}"
+        );
+    }
+    // The stalled city is still served with the gene on.
+    assert_eq!(orders_widened(&snapshot, &state, true).len(), 1);
 }

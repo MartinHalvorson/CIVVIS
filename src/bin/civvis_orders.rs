@@ -513,9 +513,10 @@ struct Order {
 fn append_citizen_growth_orders(
     snapshot: &mirror::Snapshot,
     state: &mirror::StateSnapshot,
+    widened: bool,
     orders: &mut Vec<Order>,
 ) -> usize {
-    let choices = citizen_growth::choices(snapshot, state);
+    let choices = citizen_growth::choices(snapshot, state, widened);
     let count = choices.len();
     orders.extend(choices.into_iter().map(|choice| Order {
         kind: "city_focus",
@@ -5068,7 +5069,13 @@ fn decide(
     let mut skipped: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
     let mut skipped_examples: Vec<String> = Vec::new();
     let mut note_bits: Vec<String> = Vec::new();
-    let citizen_growth_orders = append_citizen_growth_orders(snapshot, state, &mut orders);
+    // `food-focus-grows-the-small-city`: see `citizen_growth::choices`.
+    let citizen_growth_orders = append_citizen_growth_orders(
+        snapshot,
+        state,
+        ai.food_focus_grows_the_small_city(),
+        &mut orders,
+    );
     if citizen_growth_orders > 0 {
         note_bits.push(format!("citizen_growth_orders={citizen_growth_orders}"));
     }
