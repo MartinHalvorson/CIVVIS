@@ -6,11 +6,15 @@ use super::*;
 /// the capital and the Monument item.
 fn capital(second: bool) -> Option<(Game, u32, Item)> {
     let mut game = Game::new_full(1, 32, 20, 936_431, 200, 0, false);
+    // Rome's Trajan's Column founds every city with a Monument.
+    game.players[0].civ = "Gran Colombia".to_string();
     let settler = game
         .player_unit_ids(0)
         .into_iter()
-        .find(|uid| game.units[uid].kind == "settler")?;
-    game.apply(0, &Action::FoundCity { unit: settler }).ok()?;
+        .find(|uid| game.units[uid].kind == "settler")
+        .expect("fixture: a settler");
+    game.apply(0, &Action::FoundCity { unit: settler })
+        .expect("fixture: the capital founds");
     for uid in game.player_unit_ids(0) {
         game.remove_unit(uid);
     }
@@ -27,8 +31,9 @@ fn capital(second: bool) -> Option<(Game, u32, Item)> {
             .map(|(pos, _)| *pos)
             .collect();
         sites.sort();
-        let site = *sites.first()?;
+        let site = *sites.first().expect("fixture: a second site");
         game.place_city(0, site, None);
+        assert_eq!(game.player_city_ids(0).len(), 2, "fixture: two cities");
     }
     game.turn = 30;
     let monument = Item::Building {
@@ -38,9 +43,10 @@ fn capital(second: bool) -> Option<(Game, u32, Item)> {
     city.queue.clear();
     city.production_progress
         .insert(Game::item_progress_key(&monument), 50.0);
-    if !game.can_produce(0, ours, &monument) {
-        return None;
-    }
+    assert!(
+        game.can_produce(0, ours, &monument),
+        "fixture: the capital can build its Monument"
+    );
     Some((game, ours, monument))
 }
 
