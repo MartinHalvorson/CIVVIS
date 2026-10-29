@@ -157,3 +157,30 @@ fn the_governor_sets_aside_only_a_queued_item_under_half_paid() {
     threatened.threatened_city = Some(ours[0]);
     assert!(!on().upkeep_wait_preempts(&g, 0, ours[0], &tank, &threatened));
 }
+
+#[test]
+fn the_shut_gate_is_journalled_once_a_pass() {
+    let (mut g, _, _) = fixture();
+    let shut = |ai: &AdvancedAi| {
+        ai.journal()
+            .since(0)
+            .thoughts
+            .iter()
+            .filter(|thought| thought.detail.contains("upkeep-waits-for-the-income"))
+            .count()
+    };
+    let mut ai = on();
+    ai.base.journal = crate::reasoning::Journal::recording();
+    // Income 3 carries a 1-Gold item: the gate is open, nothing is written.
+    ai.note_upkeep_wait_state(&g, 0);
+    assert_eq!(shut(&ai), 0);
+    // Income 0 with 10 Gold banked does not: a 1-Gold deficit needs 15.
+    g.players[0].gold_per_turn = 0.0;
+    ai.note_upkeep_wait_state(&g, 0);
+    assert_eq!(shut(&ai), 1);
+    // Off, silent.
+    let mut off = AdvancedAi::targeting(VictoryTarget::Domination);
+    off.base.journal = crate::reasoning::Journal::recording();
+    off.note_upkeep_wait_state(&g, 0);
+    assert_eq!(shut(&off), 0);
+}

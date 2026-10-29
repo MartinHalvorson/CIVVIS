@@ -32544,6 +32544,8 @@ impl AdvancedAi {
         let city_ids = g.player_city_ids(pid);
         let n_cities = city_ids.len();
         let economic_recovery = self.live_war_economy_requires_recovery(g, pid, &counts);
+        // `upkeep-waits-for-the-income`: see `advanced/upkeep_waits_for_the_income.rs`.
+        self.note_upkeep_wait_state(g, pid);
         let sanctuary = self.adopted_faith_sanctuary_choice(g, pid, plan.threatened_city);
         let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
         let science_specialized = self.phase_specialization_active(g) && science_targeted;

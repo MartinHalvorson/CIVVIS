@@ -207,6 +207,31 @@ impl AdvancedAi {
         )
     }
 
+    /// Journal, once a governor pass, that the gate is shut: a 1-Gold item
+    /// would already wait. `production_value` prices items out silently, so
+    /// this line is what shows the gene acting on a turn with no queued item
+    /// to set aside.
+    pub(super) fn note_upkeep_wait_state(&self, g: &Game, pid: usize) {
+        if !self.upkeep_waits_for_the_income
+            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || !self.journal().wants(crate::reasoning::Level::Decision)
+        {
+            return;
+        }
+        let player = &g.players[pid];
+        let committed = Self::committed_queue_upkeep(g, pid, None);
+        let deficit = 1.0 - (player.gold_per_turn - committed);
+        if deficit <= 0.0 || player.gold >= UPKEEP_RUNWAY_TURNS * deficit {
+            return;
+        }
+        think!(self.journal(), Economy, Decision,
+            "New upkeep waits for the income";
+            "upkeep-waits-for-the-income: {:.1} income against {committed:.0} committed in \
+             queues and {:.0} Gold banked; an item adding upkeep starts only within what \
+             that carries for {:.0} turns",
+            player.gold_per_turn, player.gold, UPKEEP_RUNWAY_TURNS);
+    }
+
     /// Journal the preemption the governor is about to make.
     pub(super) fn note_upkeep_wait_preemption(&self, g: &Game, pid: usize, cid: u32, item: &Item) {
         if !self.journal().wants(crate::reasoning::Level::Decision) {
