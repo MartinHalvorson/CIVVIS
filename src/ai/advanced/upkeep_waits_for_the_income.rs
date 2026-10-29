@@ -38,8 +38,13 @@
 //!   under half paid ([`UPKEEP_PREEMPT_PAID_SHARE`]), so routine rescoring
 //!   (or Recovery, when it is on) takes the queue. An item paid past half
 //!   is never priced out: it finishes.
-//! - A land combat unit in a threatened city is never held: the defence of a
-//!   city under attack comes first, as in Science's preemption.
+//! - A land combat unit in a threatened city, or on a Recovery plan, is never
+//!   held: the defence of a city under attack comes first, as in Science's
+//!   preemption.
+//! - Nothing waits before [`UPKEEP_FROM_STANDARD_TURN`] (live t120). Version
+//!   one gated from turn 1, and at the early game's 0-1 Gold income a 1-Gold
+//!   Spearman tripped it during a war: live 052705Z set aside 18 Spearman and
+//!   Archer queues at t45-50 on a Recovery seat and retired at t104.
 //!
 //! Off, or for any other victory target, nothing changes.
 
@@ -50,6 +55,14 @@ use super::*;
 /// target mobilises ×1.76 within twenty), so a bank that outlasts it may
 /// still pay for the army that wins it.
 pub(crate) const UPKEEP_RUNWAY_TURNS: f64 = 15.0;
+
+/// The gate acts only from this standard turn (live Online turn 120). Live
+/// bankruptcy came at turns 155-195 (two games at 100); before this turn the
+/// empire's Gold numbers are so small that a 1-Gold Spearman trips the gate.
+/// Live 052705Z (v1, 10-29): at war with Arabia from t40, a Recovery seat
+/// at 0-1 income and 7-19 Gold set aside 18 Spearman and Archer queues in five
+/// cities at t45-50 and retired at t104 with 3 cities.
+pub(crate) const UPKEEP_FROM_STANDARD_TURN: u32 = 240;
 
 /// A queued upkeep item paid at least this share of its cost finishes: its
 /// hammers are nearly spent and the unit is nearly in the field.
@@ -133,8 +146,9 @@ impl AdvancedAi {
     /// added upkeep, on top of every other city's committed queue head, takes
     /// income below zero, and the treasury holds less than
     /// [`UPKEEP_RUNWAY_TURNS`] of the resulting deficit. A land defender in a
-    /// `threatened` city never waits. False with the gene off or for a seat
-    /// not aiming at Domination.
+    /// `threatened` city, or on a Recovery plan, never waits. False with the
+    /// gene off, for a seat not aiming at Domination, and before
+    /// [`UPKEEP_FROM_STANDARD_TURN`].
     pub(super) fn upkeep_waits_for(
         &self,
         g: &Game,
@@ -142,20 +156,30 @@ impl AdvancedAi {
         cid: u32,
         item: &Item,
         threatened: bool,
+        plan: &StrategicPlan,
     ) -> bool {
-        if !self.upkeep_waits_for_the_income
-            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
-        {
+        if !self.upkeep_gate_open_season(g) {
             return false;
         }
         let added = Self::item_added_upkeep(g, item);
-        if added <= 0.0 || (threatened && Self::upkeep_item_is_land_defender(g, item)) {
+        if added <= 0.0
+            || ((threatened || plan.strategy == GrandStrategy::Recovery)
+                && Self::upkeep_item_is_land_defender(g, item))
+        {
             return false;
         }
         let player = &g.players[pid];
         let projected =
             player.gold_per_turn - Self::committed_queue_upkeep(g, pid, Some(cid)) - added;
         projected < 0.0 && player.gold < UPKEEP_RUNWAY_TURNS * -projected
+    }
+
+    /// Whether the gate is on for this seat and turn: the gene, a Domination
+    /// seat, and [`UPKEEP_FROM_STANDARD_TURN`] reached.
+    fn upkeep_gate_open_season(&self, g: &Game) -> bool {
+        self.upkeep_waits_for_the_income
+            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            && g.turn >= g.standard_duration(UPKEEP_FROM_STANDARD_TURN)
     }
 
     /// The threat reading [`Self::upkeep_waits_for`] takes for a city's own
@@ -204,6 +228,7 @@ impl AdvancedAi {
             cid,
             item,
             Self::upkeep_city_threatened(g, cid, plan),
+            plan,
         )
     }
 
@@ -212,8 +237,7 @@ impl AdvancedAi {
     /// this line is what shows the gene acting on a turn with no queued item
     /// to set aside.
     pub(super) fn note_upkeep_wait_state(&self, g: &Game, pid: usize) {
-        if !self.upkeep_waits_for_the_income
-            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+        if !self.upkeep_gate_open_season(g)
             || !self.journal().wants(crate::reasoning::Level::Decision)
         {
             return;

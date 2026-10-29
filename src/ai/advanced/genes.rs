@@ -4231,7 +4231,9 @@ pub const GENES: &[Gene] = &[
     // Domination seat prices out an upkeep item when income, less every other
     // queue head's upkeep, less its own, goes below zero and the bank cannot
     // carry that deficit 15 turns; a queued one under half paid gives the
-    // queue back. A threatened city's land defender never waits. See
+    // queue back. A threatened city's land defender never waits, nor does a
+    // Recovery plan's, and nothing waits before standard turn 240 (live t120):
+    // v1 set aside 18 Spearmen/Archers at t45-50 of 052705Z's early war. See
     // `advanced/upkeep_waits_for_the_income.rs`.
     Gene { tag: "upkeep-waits-for-the-income", field: "upkeep_waits_for_the_income", kind: Kind::OptIn, enable: AdvancedAi::enable_upkeep_waits_for_the_income, disable: AdvancedAi::disable_upkeep_waits_for_the_income },
     // `food-focus-grows-the-small-city` (native seat only): live Immortal
