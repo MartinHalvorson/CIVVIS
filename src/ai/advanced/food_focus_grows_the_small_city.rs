@@ -28,6 +28,16 @@
 //! tile is observed. The simulator issues no city-focus orders, so the gene
 //! acts only on the native seat.
 //!
+//! **Version two (in place): the settler pump keeps its Production.** Live,
+//! v1 (armed 10-29 05:38Z, pulled 06:42Z) put the capital on the focus for
+//! 19-50 of its first 60 turns in 5 of 8 seated games, 6-32 of them while it
+//! trained a Settler. 055600Z's capital held it 40 of 60 turns and founded
+//! the second city at t36; the seated games stood at 4 cities at t60 against
+//! 5 and retired by t95 in 5 of 7 against 27-44%. The widened request no
+//! longer goes to a city training a Settler, and it releases a growing
+//! city's focus when a Settler starts. A stalled city (zero surplus) keeps
+//! #4003's focus.
+//!
 //! Off, `civvis_orders` asks exactly what it did before.
 
 use super::*;

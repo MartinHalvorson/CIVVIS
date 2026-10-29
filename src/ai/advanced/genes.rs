@@ -4242,7 +4242,8 @@ pub const GENES: &[Gene] = &[
     // citizens at t60 against our 6. The native growth recovery favoured Food
     // only at zero surplus (4-9% of those cities; +0.2 -> +1.7 Food for 7.5 ->
     // 6.3 Production where it did). This widens its request to a city of up
-    // to five growing at two or less. See
+    // to five growing at two or less, never to a city training a Settler (v1
+    // put the capital's settler pump on Food: 4 cities at t60 against 5). See
     // `advanced/food_focus_grows_the_small_city.rs`.
     Gene { tag: "food-focus-grows-the-small-city", field: "food_focus_grows_the_small_city", kind: Kind::OptIn, enable: AdvancedAi::enable_food_focus_grows_the_small_city, disable: AdvancedAi::disable_food_focus_grows_the_small_city },
     // ---- append: a-b ------------------------------------------------
