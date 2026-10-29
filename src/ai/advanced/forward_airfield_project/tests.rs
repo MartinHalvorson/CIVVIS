@@ -519,3 +519,59 @@ fn a_linked_engineer_and_an_unsafe_engineer_keep_the_ordinary_handler() {
         assert!(g.map.tiles[&field].improvement.is_none());
     }
 }
+
+/// The in-flight claim never starts a project; once one is in flight it
+/// queues the next stage in the producer's idle queue.
+#[test]
+fn the_in_flight_claim_only_advances_a_chosen_project() {
+    let (mut g, mut ai, plan, producer, capital, field) = fixture();
+    ai.claim_forward_airfield_stage_in_flight(&mut g, 0, &plan);
+    assert!(
+        ai.forward_airfield_project_state.is_none(),
+        "no project chosen"
+    );
+    assert!(g.cities[&producer].queue.is_empty());
+
+    install_project(&mut ai, &g, producer, capital, field);
+    ai.claim_forward_airfield_stage_in_flight(&mut g, 0, &plan);
+    assert!(
+        matches!(
+            g.cities[&producer].queue.first(),
+            Some(Item::District { district, .. }) if district == "encampment"
+        ),
+        "{:?}",
+        g.cities[&producer].queue
+    );
+
+    // A project whose capital is no longer the objective waits for the late
+    // claim, which resets it; nothing new is chosen early.
+    let (mut g, mut ai, plan, producer, _, field) = fixture();
+    ai.forward_airfield_project_state = Some(FieldProject {
+        city: g.cities[&producer].pos,
+        capital: (40, 20),
+        field,
+        started: g.turn,
+    });
+    ai.claim_forward_airfield_stage_in_flight(&mut g, 0, &plan);
+    assert!(g.cities[&producer].queue.is_empty(), "stale capital");
+    assert_eq!(
+        ai.forward_airfield_project_state
+            .as_ref()
+            .map(|p| p.capital),
+        Some((40, 20)),
+        "left for the late claim to reset"
+    );
+
+    // Off, nothing moves even with a project held.
+    let (mut g, mut ai, plan, producer, capital, field) = fixture();
+    install_project(&mut ai, &g, producer, capital, field);
+    ai.disable_forward_airfield_project();
+    ai.forward_airfield_project_state = Some(FieldProject {
+        city: g.cities[&producer].pos,
+        capital: g.cities[&capital].pos,
+        field,
+        started: g.turn,
+    });
+    ai.claim_forward_airfield_stage_in_flight(&mut g, 0, &plan);
+    assert!(g.cities[&producer].queue.is_empty(), "off");
+}
