@@ -4264,6 +4264,13 @@ pub const GENES: &[Gene] = &[
     // it is unlocked, and the free-slot Campus claim yields them. See
     // `advanced/culture_theater_first.rs`.
     Gene { tag: "culture-seat-theater-first", field: "culture_seat_theater_first", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_theater_first, disable: AdvancedAi::disable_culture_seat_theater_first },
+    // `culture-seat-monuments`: the first live Emperor Culture seat
+    // (civvis-20261030T090715Z) held one Monument in six cities at t60 and
+    // made 12 Culture a turn against Egypt's 56. A Culture seat's
+    // unthreatened cities claim their Monument once the second city stands,
+    // ahead of a deferrable head, while no major is at war with us. See
+    // `advanced/culture_monuments.rs`.
+    Gene { tag: "culture-seat-monuments", field: "culture_seat_monuments", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_monuments, disable: AdvancedAi::disable_culture_seat_monuments },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
