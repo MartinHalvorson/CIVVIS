@@ -4264,6 +4264,13 @@ pub const GENES: &[Gene] = &[
     // it is unlocked, and the free-slot Campus claim yields them. See
     // `advanced/culture_theater_first.rs`.
     Gene { tag: "culture-seat-theater-first", field: "culture_seat_theater_first", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_theater_first, disable: AdvancedAi::disable_culture_seat_theater_first },
+    // The Statue of Liberty is four of the twenty Diplomatic Victory Points;
+    // live King civvis-20261030T074500Z lost to Culture at t207 standing on
+    // 18, and the first live Diplomatic win (081846Z t208) needed one point
+    // between sessions. Under lane delegation nothing prices those wonders:
+    // a Diplomatic seat now keeps one in production in its strongest city.
+    // See `advanced/diplo_wonder_claim.rs`.
+    Gene { tag: "diplo-seat-wonder-claim", field: "diplo_seat_wonder_claim", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_seat_wonder_claim, disable: AdvancedAi::disable_diplo_seat_wonder_claim },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
