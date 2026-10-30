@@ -8472,6 +8472,16 @@ impl AdvancedAi {
         self.culture_seat_theater_first = false;
     }
 
+    /// `science-drive-answers-the-launch`.
+    pub fn enable_science_drive_answers_the_launch(&mut self) {
+        self.science_drive_answers_the_launch = true;
+    }
+
+    /// The twin of `enable_science_drive_answers_the_launch`.
+    pub fn disable_science_drive_answers_the_launch(&mut self) {
+        self.science_drive_answers_the_launch = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -4264,6 +4264,14 @@ pub const GENES: &[Gene] = &[
     // it is unlocked, and the free-slot Campus claim yields them. See
     // `advanced/culture_theater_first.rs`.
     Gene { tag: "culture-seat-theater-first", field: "culture_seat_theater_first", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_theater_first, disable: AdvancedAi::disable_culture_seat_theater_first },
+    // Every live King rival-Technology loss of 2026-10-30 had us leading the
+    // field in science: civvis-20261030T053333Z (Culture seat, 475 a turn
+    // against Mapuche's 428, lost t236), 060008Z (Culture, 456 against the
+    // Aztecs' 441, t209) and 070824Z-cont1 (Diplomatic, 452 against India's
+    // 303, t231) -- and `science-victory-drive` never opens on a seat
+    // assigned another lane. With this on it opens there once a rival has
+    // landed a space project and we lead, and races Science beside the lane.
+    Gene { tag: "science-drive-answers-the-launch", field: "science_drive_answers_the_launch", kind: Kind::OptIn, enable: AdvancedAi::enable_science_drive_answers_the_launch, disable: AdvancedAi::disable_science_drive_answers_the_launch },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
