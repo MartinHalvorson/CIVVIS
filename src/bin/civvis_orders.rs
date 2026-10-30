@@ -16980,19 +16980,33 @@ mod tests {
             ("economic", "ALLIANCE_ECONOMIC"),
         ] {
             for open_borders in [false, true] {
-                let order = translate(&deal(open_borders, Some(kind), 0.0, 0.0, false), &mirror, &state)
-                    .expect("an alliance bundle crosses");
+                let order = translate(
+                    &deal(open_borders, Some(kind), 0.0, 0.0, false),
+                    &mirror,
+                    &state,
+                )
+                .expect("an alliance bundle crosses");
                 assert_eq!(order.kind, "alliance");
                 assert_eq!(order.subject, Some(4));
                 assert_eq!(order.verb.as_deref(), Some(host));
             }
         }
         assert!(
-            translate(&deal(false, Some("imperial"), 0.0, 0.0, false), &mirror, &state).is_none(),
+            translate(
+                &deal(false, Some("imperial"), 0.0, 0.0, false),
+                &mirror,
+                &state
+            )
+            .is_none(),
             "an alliance kind the host has no type for is skipped"
         );
         assert!(
-            translate(&deal(false, Some("research"), 30.0, 0.0, false), &mirror, &state).is_none(),
+            translate(
+                &deal(false, Some("research"), 30.0, 0.0, false),
+                &mirror,
+                &state
+            )
+            .is_none(),
             "an alliance with gold bundled stays skipped"
         );
 
@@ -21412,7 +21426,10 @@ mod order_postcondition_tests {
         after.rivals = vec![rival("DIPLO_STATE_FRIENDLY", None)];
         assert_eq!(check(&alliance, &before, &after, &[]), failed("not_allied"));
         after.rivals = Vec::new();
-        assert_eq!(check(&alliance, &before, &after, &[]), failed("player_unseen"));
+        assert_eq!(
+            check(&alliance, &before, &after, &[]),
+            failed("player_unseen")
+        );
     }
 
     /// Alliance orders cross only on a seat assigned the Diplomatic lane.
