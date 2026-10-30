@@ -8492,6 +8492,16 @@ impl AdvancedAi {
         self.science_drive_answers_the_launch = false;
     }
 
+    /// `inquisition-defends-the-diplomat`.
+    pub fn enable_inquisition_defends_the_diplomat(&mut self) {
+        self.inquisition_defends_the_diplomat = true;
+    }
+
+    /// The twin of `enable_inquisition_defends_the_diplomat`.
+    pub fn disable_inquisition_defends_the_diplomat(&mut self) {
+        self.inquisition_defends_the_diplomat = false;
+    }
+
     /// Opt-in gene `culture-seat-monuments`; see
     /// [`Self::culture_seat_monuments`].
     pub fn enable_culture_seat_monuments(&mut self) {
@@ -8511,6 +8521,17 @@ impl AdvancedAi {
     /// The twin of `enable_diplo_match_point_beelines_the_points`.
     pub fn disable_diplo_match_point_beelines_the_points(&mut self) {
         self.diplo_match_point_beelines = false;
+    }
+
+    /// Turn on `culture-keeps-every-border-open`. See
+    /// [`Self::culture_keeps_every_border_open`].
+    pub fn enable_culture_keeps_every_border_open(&mut self) {
+        self.culture_keeps_every_border_open = true;
+    }
+
+    /// The twin of `enable_culture_keeps_every_border_open`.
+    pub fn disable_culture_keeps_every_border_open(&mut self) {
+        self.culture_keeps_every_border_open = false;
     }
 
     /// Opt-in gene `diplo-seat-statue-harbor`; see
