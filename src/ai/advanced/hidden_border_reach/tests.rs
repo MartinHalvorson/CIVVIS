@@ -91,7 +91,7 @@ fn the_hidden_border_veto_yields_to_our_pressure() {
         frontier(true)
             .settle_site_frontier_loyalty_verdict(&small, 0, site_small)
             .is_some_and(|why| why.contains("border whose city may be hidden")),
-        "our pressure 10: the veto stands"
+        "our pressure 10: the veto stands (the bar is 20)"
     );
 }
 
@@ -130,4 +130,20 @@ fn the_stranded_search_yields_to_our_pressure_too() {
     assert!(frontier(true)
         .exhaustion_site_unpriceable(&game, 0, site)
         .is_none());
+}
+
+/// The bar sits at 20: a four-citizen capital five tiles off (pressure 20)
+/// lifts the veto, a three-citizen one (15) does not.
+#[test]
+fn the_bar_admits_a_four_citizen_neighbour_five_tiles_off() {
+    for (pop, yields) in [(4, true), (3, false)] {
+        let (mut game, home) = capital(pop);
+        let site = site_beside_an_unseen_border(&mut game, home, 5);
+        assert_eq!(
+            frontier(true).hidden_border_yields(&game, 0, site),
+            yields,
+            "pressure {}",
+            pop * 5
+        );
+    }
 }
