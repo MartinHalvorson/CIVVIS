@@ -219,12 +219,20 @@ local function fixture(opts)
 			}
 		end,
 		GetTreasury = function() return { GetGoldBalance = function() return 400 end } end,
+		GetCulture = function() return {
+			GetTouristsTo = function() return 0 end,
+			GetStaycationers = function() return (opts.domestic or {})[7] or 0 end,
+		} end,
 	}
 	Players = setmetatable({ [7] = player }, {
-		__index = function() return {
+		__index = function(_, id) return {
 			IsMajor = function() return true end,
 			GetDiplomaticAI = function() return {
 				GetDiplomaticStateIndex = function() return opts.stateIndex or 0 end,
+			} end,
+			GetCulture = function() return {
+				GetTouristsTo = function() return (opts.tourists or {})[id] or 0 end,
+				GetStaycationers = function() return (opts.domestic or {})[id] or 0 end,
 			} end,
 		} end,
 	})
@@ -309,6 +317,20 @@ local _, coldPlayer = fixture({ stateIndex = 2 })
 check("an unfriendly rival is not asked", select(2, alliance(coldPlayer, 4)), "alliance_friendship_not_friendly")
 local _, closedPlayer = fixture({ stateIndex = 1, invalid = { DIPLOACTION_ALLIANCE_RESEARCH = true } })
 check("an alliance the host does not offer is not asked", select(2, alliance(closedPlayer, 5)), "alliance_not_offered")
+-- A culture racer at half the bar is neither befriended nor allied: the
+-- counter's war on its tourism sources must stay open.
+PlayerManager = { GetAliveMajorIDs = function() return { 7, 3, 4, 5 } end }
+TURN = 220
+local _, racerPlayer = fixture({ stateIndex = 1, tourists = { [3] = 60 }, domestic = { [7] = 100, [4] = 40 } })
+check("an allied culture racer is not asked", select(2, alliance(racerPlayer, 3)), "alliance_culture_racer")
+local _, racerFriend = fixture({ stateIndex = 0, tourists = { [3] = 60 }, domestic = { [7] = 100 } })
+check("nor befriended", select(2, alliance(racerFriend, 3)), "alliance_culture_racer")
+check("the share is the racer's tourists over the highest other domestic",
+	CivvisAllianceCultureRacer(3, {}), true)
+local _, calm = fixture({ stateIndex = 1, tourists = { [3] = 30 }, domestic = { [7] = 100 } })
+check("below half the bar the alliance is asked", select(2, alliance(calm, 3)), "alliance_asked")
+check("the share is configurable", CivvisAllianceCultureRacer(3, { AllianceCultureRacerShare = 0.25 }), true)
+
 CivvisControlConfig.VictoryLane = "domination"
 local _, offPlayer = fixture({ stateIndex = 1 })
 check("another lane asks nothing", select(2, alliance(offPlayer, 6)), "alliance_off_lane")
