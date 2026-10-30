@@ -944,12 +944,14 @@ try {
   }
 } catch (error) {}
 // The dedicated display beside Civilization VI is the regular map plus the
-// player HUD only. Apply this after saved preferences so reloads and new games
-// cannot restore extra overlays or hide the player HUD.
+// player HUD and the victory tracker (operator, 2026-10-30: the ladder plays
+// Culture and Diplomatic seats, and the race toward them belongs on screen).
+// Apply this after saved preferences so reloads and new games cannot restore
+// extra overlays or hide either one.
 const DEDICATED_DISPLAY = new URLSearchParams(location.search).get("display") === "dedicated";
 if (DEDICATED_DISPLAY) {
   OVERLAY_VISIBILITY.players = true;
-  OVERLAY_VISIBILITY.victory = false;
+  OVERLAY_VISIBILITY.victory = true;
   OVERLAY_VISIBILITY.minimap = false;
   OVERLAY_VISIBILITY.controls = false;
   OVERLAY_VISIBILITY.lenses = false;
