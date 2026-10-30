@@ -4256,6 +4256,16 @@ pub const GENES: &[Gene] = &[
     // peace with the majors claims its Monument once. See
     // `advanced/capital_monument.rs`.
     Gene { tag: "capital-monument-after-the-second-city", field: "capital_monument_after_the_second_city", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_monument_after_the_second_city, disable: AdvancedAi::disable_capital_monument_after_the_second_city },
+    // The religious veto's stake ratio missed the turns that decided two
+    // live King Religious losses: civvis-20261030T070308Z stood at 3 of 6
+    // cities converted with Kongo held (stake 0.67, under the 0.75 spend
+    // bar) one flip before the t102 loss, while its Missionaries held still
+    // outside the rival Apostles' reach. From our own civilization within
+    // two flips of the faith's majority (one of ours already converted)
+    // while the faith holds another civilization, the veto engages and
+    // spends, and our religious units stop evading. See
+    // `advanced/religious_defence.rs`.
+    Gene { tag: "veto-counts-the-flips", field: "veto_counts_the_flips", kind: Kind::OptIn, enable: AdvancedAi::enable_veto_counts_the_flips, disable: AdvancedAi::disable_veto_counts_the_flips },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

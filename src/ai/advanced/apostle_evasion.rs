@@ -70,6 +70,18 @@ impl AdvancedAi {
         if !self.spreader_steps_out_of_the_apostle {
             return Vec::new();
         }
+        // `veto-counts-the-flips`: at match point a held spreader is worth
+        // nothing. Live King civvis-20261030T070308Z's Missionaries held
+        // "outside a rival Apostle's reach" from t95 to the t102 loss while
+        // the Apostles camped beside the cities they were bought to hold.
+        // See `religious_defence::VETO_MATCH_POINT_FLIPS`.
+        if self.veto_counts_the_flips
+            && self
+                .religious_veto_stakes(g, pid)
+                .is_some_and(|stakes| stakes.match_point)
+        {
+            return Vec::new();
+        }
         let Some(unit) = g.units.get(&uid) else {
             return Vec::new();
         };

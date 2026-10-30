@@ -282,3 +282,73 @@ fn a_source_guard_cleanses_before_adjacent_theological_combat() {
     assert_eq!(g.units[&inquisitor].charges, 2);
     assert!(g.cities[&source].pressure["Foreign Faith"] < 500.0);
 }
+
+/// `veto-counts-the-flips`: our own cities are the clock. Four of ours, one
+/// converted, the faith holding one of the two other civilizations: the
+/// stake ratio reads 0.5 (engaged, not spending), while the faith needs only
+/// two more of our cities for its majority, so the gene's match point
+/// spends.
+#[test]
+fn veto_counts_the_flips_reads_match_point_from_our_own_cities() {
+    let mut game = Game::new_full(4, 48, 24, 7_627, 300, 0, false);
+    for pid in 0..4 {
+        for uid in game.player_unit_ids(pid) {
+            game.remove_unit(uid);
+        }
+    }
+    for tile in game.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.resource = None;
+    }
+    let ours: Vec<u32> = [(4, 10), (10, 10), (16, 10), (22, 10)]
+        .into_iter()
+        .map(|pos| game.found_city_for(0, pos, None))
+        .collect();
+    for cid in &ours {
+        game.cities.get_mut(cid).unwrap().pressure.clear();
+    }
+    game.victory_conditions.religious = true;
+    game.players[1].religion = Some("Runaway Faith".to_string());
+    Arc::make_mut(&mut game.observed_majority_religion).insert(2, "Runaway Faith".to_string());
+    let convert = |game: &mut Game, cid: u32| {
+        game.cities
+            .get_mut(&cid)
+            .unwrap()
+            .pressure
+            .insert("Runaway Faith".to_string(), 800.0);
+    };
+    let mut v1 = AdvancedAi::new();
+    v1.enable_religious_veto_defence();
+    let mut flips = v1.clone();
+    flips.enable_veto_counts_the_flips();
+
+    // None of ours converted: no match point, whatever the others hold.
+    let stakes = flips.religious_veto_stakes(&game, 0).unwrap();
+    assert_eq!((stakes.our_converted, stakes.our_flips_needed), (0, 3));
+    assert!(!stakes.match_point);
+
+    // One of four: the faith needs two more (strict majority is three).
+    convert(&mut game, ours[0]);
+    let off = v1.religious_veto_stakes(&game, 0).unwrap();
+    assert_eq!(off.stake, 0.5);
+    assert!(!off.match_point, "off, the reading is v1's");
+    assert!(!AdvancedAi::religious_veto_spends(Some(&off)));
+    assert_eq!(AdvancedAi::religious_veto_extra_spreaders(Some(&off)), 0);
+    let on = flips.religious_veto_engaged(&game, 0).unwrap();
+    assert_eq!(on.our_flips_needed, 2);
+    assert!(on.match_point);
+    assert!(AdvancedAi::religious_veto_spends(Some(&on)));
+    assert_eq!(AdvancedAi::religious_veto_extra_spreaders(Some(&on)), 1);
+    assert_eq!(AdvancedAi::religious_veto_extra_inquisitors(Some(&on)), 1);
+
+    // A faith that holds no other civilization is no match point.
+    Arc::make_mut(&mut game.observed_majority_religion).insert(2, "Other Faith".to_string());
+    assert!(!flips.religious_veto_stakes(&game, 0).unwrap().match_point);
+    Arc::make_mut(&mut game.observed_majority_religion).insert(2, "Runaway Faith".to_string());
+
+    // The gene reads v1's stakes: with v1 off there is nothing to read.
+    let mut alone = AdvancedAi::new();
+    alone.enable_veto_counts_the_flips();
+    assert!(alone.religious_veto_stakes(&game, 0).is_none());
+}

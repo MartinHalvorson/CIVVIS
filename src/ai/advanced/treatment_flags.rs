@@ -8461,6 +8461,16 @@ impl AdvancedAi {
         self.capital_monument_after_the_second_city = false;
     }
 
+    /// `veto-counts-the-flips`.
+    pub fn enable_veto_counts_the_flips(&mut self) {
+        self.veto_counts_the_flips = true;
+    }
+
+    /// The twin of `enable_veto_counts_the_flips`.
+    pub fn disable_veto_counts_the_flips(&mut self) {
+        self.veto_counts_the_flips = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

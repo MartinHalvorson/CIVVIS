@@ -145,3 +145,65 @@ fn the_probe_preview_matches_the_shipped_one_in_place() {
         alone.theological_exchange_preview(rival, beside),
     );
 }
+
+/// `veto-counts-the-flips`: at religious match point our spreaders stop
+/// evading the rival Apostle. Two cities of ours, one already in the
+/// rival's faith: one flip from its majority among them.
+#[test]
+fn match_point_lifts_the_evasion() {
+    let Some((mut game, mine, _rival, _)) = chased() else {
+        panic!("fixture: a land tile at the edge of the Apostle's reach");
+    };
+    let mut sites: Vec<Pos> = Vec::new();
+    let mut land: Vec<Pos> = game
+        .map
+        .tiles
+        .iter()
+        .filter(|(_, tile)| game.rules.is_passable(tile) && !game.rules.is_water(tile))
+        .map(|(pos, _)| *pos)
+        .collect();
+    land.sort();
+    for pos in land {
+        let clear_of_units = game
+            .units
+            .values()
+            .all(|unit| game.wdist(unit.pos, pos) >= 4);
+        if clear_of_units && sites.iter().all(|site| game.wdist(*site, pos) >= 4) {
+            sites.push(pos);
+        }
+        if sites.len() == 2 {
+            break;
+        }
+    }
+    assert_eq!(sites.len(), 2, "fixture: two city sites clear of the units");
+    let cities: Vec<u32> = sites
+        .into_iter()
+        .map(|pos| game.found_city_for(0, pos, None))
+        .collect();
+    for cid in &cities {
+        game.cities.get_mut(cid).unwrap().pressure.clear();
+    }
+    game.cities
+        .get_mut(&cities[0])
+        .unwrap()
+        .pressure
+        .insert("orthodoxy".to_string(), 800.0);
+    game.victory_conditions.religious = true;
+    game.players[0].religion = Some("buddhism".to_string());
+    game.players[1].religion = Some("orthodoxy".to_string());
+
+    let mut ai = armed();
+    ai.enable_religious_veto_defence();
+    assert_eq!(
+        ai.theological_threats(&game, 0, mine).len(),
+        1,
+        "without the gene the Apostle is still evaded"
+    );
+    ai.enable_veto_counts_the_flips();
+    let stakes = ai.religious_veto_stakes(&game, 0).unwrap();
+    assert!(stakes.match_point, "{stakes:?}");
+    assert!(
+        ai.theological_threats(&game, 0, mine).is_empty(),
+        "at match point the spreader goes where the city needs it"
+    );
+}

@@ -85,6 +85,23 @@ pub(super) const RELIGIOUS_VETO_SPEND_STAKE: f64 = 0.75;
 /// victory two.
 pub(super) const RELIGIOUS_VETO_EXTRA_SPREADERS: f64 = 2.0;
 
+/// `veto-counts-the-flips`: match point is our own cities this many flips or
+/// fewer from the threat faith's strict majority among them.
+///
+/// The stake ratio reads a rival civilization the faith does not hold as 0,
+/// however close it is, and our own half as no more than halfway there.
+/// Live King civvis-20261030T070308Z (diplomatic seat): Portugal's
+/// Catholicism held Kongo, the Zulu wavered (Catholic to t96, Zoroastrian
+/// t97, none from t100), and our Buddhist cities went 6/6 at t92, 4/6 at
+/// t98, 3/6 at t101 -- stake 0.44, 0.56, 0.67, never the 0.75 the spending
+/// levers wait for -- and the Zulu's flip at t102 ended the game on the
+/// faith's fourth of our six. Two flips of ours from that majority, with the
+/// faith already holding another civilization, is the match point the
+/// spending levers exist for. The rival civilizations' city religions do
+/// not cross the export, so our own civilization -- the one veto we can
+/// see whole and defend -- is the clock.
+pub(super) const VETO_MATCH_POINT_FLIPS: usize = 2;
+
 /// A rival faith worth a `RemoveHeresy` charge holds at least this share of
 /// the city's strongest pressure. `RemoveHeresy` quarters every foreign
 /// faith, so below this a charge buys a rounding error.
@@ -114,6 +131,11 @@ pub(super) struct ReligiousStakes {
     pub(super) our_converted: usize,
     /// The share of the rival's victory already done, in `[0, 1]`.
     pub(super) stake: f64,
+    /// `veto-counts-the-flips`: our cities the faith still needs for its
+    /// strict majority among them, and whether that is match point (always
+    /// false with the gene off). See [`VETO_MATCH_POINT_FLIPS`].
+    pub(super) our_flips_needed: usize,
+    pub(super) match_point: bool,
 }
 
 impl AdvancedAi {
@@ -167,9 +189,19 @@ impl AdvancedAi {
             if stake <= 0.0 {
                 continue;
             }
+            // The engine's test is `following * 2 > cities`.
+            let our_flips_needed = (our_cities.len() / 2 + 1).saturating_sub(our_converted);
+            let match_point = self.veto_counts_the_flips
+                && our_converted >= 1
+                && our_flips_needed <= VETO_MATCH_POINT_FLIPS
+                && (dominated >= 1 || others.is_empty());
+            // With the gene, a faith at match point is the threat ahead of a
+            // higher stake that is not.
             let better = best.as_ref().is_none_or(|current| {
-                stake > current.stake
-                    || (stake == current.stake && religion < current.religion.as_str())
+                (match_point && !current.match_point)
+                    || (match_point == current.match_point
+                        && (stake > current.stake
+                            || (stake == current.stake && religion < current.religion.as_str())))
             });
             if better {
                 best = Some(ReligiousStakes {
@@ -180,6 +212,8 @@ impl AdvancedAi {
                     our_cities: our_cities.len(),
                     our_converted,
                     stake,
+                    our_flips_needed,
+                    match_point,
                 });
             }
         }
@@ -190,12 +224,13 @@ impl AdvancedAi {
     /// levers read this and nothing below it.
     pub(super) fn religious_veto_engaged(&self, g: &Game, pid: usize) -> Option<ReligiousStakes> {
         self.religious_veto_stakes(g, pid)
-            .filter(|stakes| stakes.stake >= RELIGIOUS_VETO_STAKE_FLOOR)
+            .filter(|stakes| stakes.stake >= RELIGIOUS_VETO_STAKE_FLOOR || stakes.match_point)
     }
 
     /// Whether the stake is high enough to spend Faith on.
     pub(super) fn religious_veto_spends(stakes: Option<&ReligiousStakes>) -> bool {
-        stakes.is_some_and(|stakes| stakes.stake >= RELIGIOUS_VETO_SPEND_STAKE)
+        stakes
+            .is_some_and(|stakes| stakes.stake >= RELIGIOUS_VETO_SPEND_STAKE || stakes.match_point)
     }
 
     /// The defensive spreaders the stake buys on top of the shipped cap:
@@ -204,7 +239,15 @@ impl AdvancedAi {
         if !Self::religious_veto_spends(stakes) {
             return 0;
         }
-        let stake = stakes.map_or(0.0, |stakes| stakes.stake);
+        // At `veto-counts-the-flips` match point the spending stake is the
+        // floor of the spending band at least: one extra spreader.
+        let stake = stakes.map_or(0.0, |stakes| {
+            if stakes.match_point {
+                stakes.stake.max(RELIGIOUS_VETO_SPEND_STAKE)
+            } else {
+                stakes.stake
+            }
+        });
         ((stake - RELIGIOUS_VETO_STAKE_FLOOR) / (1.0 - RELIGIOUS_VETO_STAKE_FLOOR)
             * RELIGIOUS_VETO_EXTRA_SPREADERS)
             .ceil()

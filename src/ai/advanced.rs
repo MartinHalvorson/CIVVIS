@@ -9138,6 +9138,14 @@ pub struct AdvancedAi {
     /// credit lost −0.553 pp at scale (#2464). Opt-in gene
     /// `wonder-adjacent-sites-2`; see `advanced/wonder_sites.rs`.
     wonder_adjacent_sites_2: bool,
+    /// `veto-counts-the-flips`: the religious veto reads our own cities as
+    /// the flips a rival faith still needs. With our civilization within
+    /// `VETO_MATCH_POINT_FLIPS` of that faith's strict majority (one of ours
+    /// converted already) while the faith holds another civilization, the
+    /// veto defence engages and spends, and our religious units stop
+    /// evading its Apostles. See `advanced/religious_defence.rs`. Off by
+    /// default.
+    veto_counts_the_flips: bool,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -11541,6 +11549,7 @@ impl AdvancedAi {
             wonder_adjacent_sites_2: false,
             wounded_out_of_reach: false,
             wounded_out_of_reach_2: false,
+            veto_counts_the_flips: false,
         }
     }
 
