@@ -8566,6 +8566,16 @@ impl AdvancedAi {
         self.hidden_border_yields_to_our_pressure = false;
     }
 
+    /// `diplomat-saves-for-the-apostle`.
+    pub fn enable_diplomat_saves_for_the_apostle(&mut self) {
+        self.diplomat_saves_for_the_apostle = true;
+    }
+
+    /// The twin of `enable_diplomat_saves_for_the_apostle`.
+    pub fn disable_diplomat_saves_for_the_apostle(&mut self) {
+        self.diplomat_saves_for_the_apostle = false;
+    }
+
     /// Turn on `culture-routes-reach-every-rival`. See
     /// [`Self::culture_routes_reach_every_rival`].
     pub fn enable_culture_routes_reach_every_rival(&mut self) {
