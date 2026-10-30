@@ -6376,6 +6376,10 @@ pub struct AdvancedAi {
     /// of ours keeps its blows and its post in the battle plan. See
     /// `advanced/defenders_hold_the_walls.rs`. Off by default.
     defenders_hold_the_walls: bool,
+    /// `diplo-seat-wonder-claim`: a seat assigned the Diplomatic lane keeps
+    /// one Diplomatic Victory Point wonder in production in its strongest
+    /// city. See `advanced/diplo_wonder_claim.rs`. Off by default.
+    diplo_seat_wonder_claim: bool,
     // ---- append: e-f ------------------------------------------------
     /// `food-focus-grows-the-small-city`: `civvis_orders` also asks the host
     /// to favour Food in a small city growing at two a turn or less. See
@@ -9632,6 +9636,8 @@ mod capital_monument;
 
 /// `culture-seat-theater-first`: see `advanced/culture_theater_first.rs`.
 mod culture_theater_first;
+/// `diplo-seat-wonder-claim`; see `advanced/diplo_wonder_claim.rs`.
+mod diplo_wonder_claim;
 
 /// `culture-seat-monuments`: see `advanced/culture_monuments.rs`.
 mod culture_monuments;
@@ -11135,6 +11141,7 @@ impl AdvancedAi {
             capital_watch_sightings: BTreeMap::new(),
             drain_card_turn: std::cell::Cell::new(None),
             defenders_hold_the_walls: false,
+            diplo_seat_wonder_claim: false,
             // ---- append: e-f ----------------------------------------
             food_focus_grows_the_small_city: false,
             friendship_ends_at_the_race: false,
@@ -32864,6 +32871,11 @@ impl AdvancedAi {
             let culture_theater_commitment = committed
                 .as_ref()
                 .is_some_and(|(_, item)| self.culture_theater_holds(g, pid, cid, plan, item));
+            // `diplo-seat-wonder-claim`: the claimed Diplomatic-point wonder
+            // finishes while the Diplomatic seat still wants it.
+            let diplo_wonder_commitment = committed
+                .as_ref()
+                .is_some_and(|(_, item)| self.diplo_wonder_holds(g, pid, cid, plan, item));
             // `culture-seat-monuments`: the claimed Monument finishes.
             let culture_monument_commitment = committed
                 .as_ref()
@@ -32935,6 +32947,7 @@ impl AdvancedAi {
                     || bound_granary_commitment
                     || capital_monument_commitment
                     || culture_theater_commitment
+                    || diplo_wonder_commitment
                     || culture_monument_commitment
                     || statue_harbor_commitment
                     || idle_route_trader_commitment
@@ -32959,6 +32972,7 @@ impl AdvancedAi {
                     || bound_granary_commitment
                     || capital_monument_commitment
                     || culture_theater_commitment
+                    || diplo_wonder_commitment
                     || culture_monument_commitment
                     || statue_harbor_commitment
                     || idle_route_trader_commitment
@@ -49890,6 +49904,11 @@ impl AdvancedAi {
             // Diplomacy seat. Exact no-op while the gene is off. See
             // `advanced/diplo_statue_harbor.rs`.
             self.claim_statue_harbor(g, pid, &plan);
+            // `diplo-seat-wonder-claim`: one Diplomatic-point wonder in the
+            // strongest city of a Diplomatic seat, after the Culture claims
+            // and ahead of the Prophet race and the routine claims. Exact
+            // no-op while the gene is off. See `advanced/diplo_wonder_claim.rs`.
+            self.claim_diplo_wonder(g, pid, &plan);
             // `prophet-builds-its-site`: the Holy Site a Prophet founds on
             // goes first. Exact no-op while the gene is off.
             self.reserve_prophet_site(g, pid, &plan);
