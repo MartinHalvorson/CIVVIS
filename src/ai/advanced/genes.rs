@@ -4394,6 +4394,14 @@ pub const GENES: &[Gene] = &[
     // next city until it finds the pad. Needs `racer-keeps-the-spies`. See
     // `advanced/racer_keeps_the_spies.rs`.
     Gene { tag: "racer-spies-search-for-the-pad", field: "racer_spies_search_for_the_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_racer_spies_search_for_the_pad, disable: AdvancedAi::disable_racer_spies_search_for_the_pad },
+    // `immortal-skips-the-prophet-race`: live Immortal Culture seats lost
+    // the Prophet race by t58-60 with 36-93 points, the capital (6-9
+    // Production) having spent t34-t55 on the race's Holy Site and Shrine
+    // (civvis-20261030T220042Z, 134907Z), and 16 of 27 retired under the
+    // production rule. At Immortal and Deity a seat not aiming at Religion
+    // stays out of the race unless a Prophet is pending. See
+    // `advanced/immortal_prophet_race.rs`.
+    Gene { tag: "immortal-skips-the-prophet-race", field: "immortal_skips_the_prophet_race", kind: Kind::OptIn, enable: AdvancedAi::enable_immortal_skips_the_prophet_race, disable: AdvancedAi::disable_immortal_skips_the_prophet_race },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -8653,6 +8653,17 @@ impl AdvancedAi {
         self.racer_spies_search_for_the_pad = false;
     }
 
+    /// Opt-in gene `immortal-skips-the-prophet-race`; see
+    /// [`Self::immortal_skips_the_prophet_race`].
+    pub fn enable_immortal_skips_the_prophet_race(&mut self) {
+        self.immortal_skips_the_prophet_race = true;
+    }
+
+    /// The twin of `enable_immortal_skips_the_prophet_race`.
+    pub fn disable_immortal_skips_the_prophet_race(&mut self) {
+        self.immortal_skips_the_prophet_race = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

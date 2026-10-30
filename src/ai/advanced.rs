@@ -7075,6 +7075,10 @@ pub struct AdvancedAi {
     /// `advanced/counterweight_diplomat.rs`.
     faith_war_defends_the_diplomat: bool,
     // ---- append: g-k ------------------------------------------------
+    /// `immortal-skips-the-prophet-race`: at Immortal and Deity a seat not
+    /// aiming at Religion stays out of the Prophet race. See
+    /// `advanced/immortal_prophet_race.rs`. Off by default.
+    immortal_skips_the_prophet_race: bool,
     /// `hidden-border-yields-to-our-pressure`: the unseen-border settle veto
     /// yields where our own cities press the site. See
     /// `advanced/hidden_border_reach.rs`. Off by default.
@@ -9718,6 +9722,9 @@ mod culture_recovery_bank;
 mod culture_routes;
 /// `hidden-border-yields-to-our-pressure`: see `advanced/hidden_border_reach.rs`.
 mod hidden_border_reach;
+
+/// `immortal-skips-the-prophet-race`: see `advanced/immortal_prophet_race.rs`.
+mod immortal_prophet_race;
 /// `trade-quotes-pay-the-lump`: see `advanced/trade_quotes_lump.rs`.
 mod trade_quotes_lump;
 
@@ -11315,6 +11322,7 @@ impl AdvancedAi {
             forward_airfield_project_state: None,
             faith_war_defends_the_diplomat: false,
             // ---- append: g-k ----------------------------------------
+            immortal_skips_the_prophet_race: false,
             hidden_border_yields_to_our_pressure: false,
             gold_buys_the_idle_trader: false,
             holdout_keeps_the_faith_war: false,
@@ -20249,6 +20257,12 @@ impl AdvancedAi {
         }
         if player.prophet_pending {
             return true;
+        }
+        // `immortal-skips-the-prophet-race`: at Immortal and Deity a seat not
+        // aiming at Religion sits the race out. See
+        // `advanced/immortal_prophet_race.rs`.
+        if self.high_tier_skips_the_prophet_race(g) {
+            return false;
         }
         // `prophet-builds-its-site`: the host says no Prophet is left.
         if self.prophet_race_exhausted(g, pid) {
