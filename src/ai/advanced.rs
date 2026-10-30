@@ -7053,6 +7053,10 @@ pub struct AdvancedAi {
     /// One default-off preparation chain for a blocked Bomber wing.
     forward_airfield_project: bool,
     forward_airfield_project_state: Option<forward_airfield_project::FieldProject>,
+    /// `faith-war-defends-the-diplomat`: `faith-war-before-the-flip` opens
+    /// on the Diplomacy lane too. See `faith_war_lane` in
+    /// `advanced/counterweight_diplomat.rs`.
+    faith_war_defends_the_diplomat: bool,
     // ---- append: g-k ------------------------------------------------
     /// `hidden-border-yields-to-our-pressure`: the unseen-border settle veto
     /// yields where our own cities press the site. See
@@ -11266,6 +11270,7 @@ impl AdvancedAi {
             faith_war_needs_the_edge: false,
             forward_airfield_project: false,
             forward_airfield_project_state: None,
+            faith_war_defends_the_diplomat: false,
             // ---- append: g-k ----------------------------------------
             hidden_border_yields_to_our_pressure: false,
             gold_buys_the_idle_trader: false,

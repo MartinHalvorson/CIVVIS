@@ -4342,6 +4342,13 @@ pub const GENES: &[Gene] = &[
     // Diplomacy lane it answers too, and a founder with no city of its faith
     // defends as faithless. See `advanced/counterweight_diplomat.rs`.
     Gene { tag: "counterweight-defends-the-diplomat", field: "counterweight_defends_the_diplomat", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_defends_the_diplomat, disable: AdvancedAi::disable_counterweight_defends_the_diplomat },
+    // A Diplomatic seat with no counterweight source has no religious defence
+    // but a war: native diplomatic religious losses 52011/17/18 had every city
+    // on the threat by turns 86-95 with 297-352 Faith banked, and live 171157Z
+    // lost at 168 on 16 DVP. `faith-war-before-the-flip` (spreaders 0.26 a
+    // turn at war against 1.47 at peace) opens on the Diplomacy lane too. See
+    // `faith_war_lane` in `advanced/counterweight_diplomat.rs`.
+    Gene { tag: "faith-war-defends-the-diplomat", field: "faith_war_defends_the_diplomat", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_war_defends_the_diplomat, disable: AdvancedAi::disable_faith_war_defends_the_diplomat },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

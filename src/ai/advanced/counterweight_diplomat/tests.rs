@@ -154,3 +154,31 @@ fn a_seat_that_never_founded_is_faithless_either_way() {
         assert!(ai.counterweight_faithless(&g, 0));
     }
 }
+
+#[test]
+fn faith_war_defends_the_diplomat_is_opt_in() {
+    opt_in_off_in_both_controllers("faith-war-defends-the-diplomat", |ai| {
+        ai.faith_war_defends_the_diplomat
+    });
+}
+
+/// `faith-war-defends-the-diplomat` opens the faith war on the Diplomacy lane
+/// only; the Domination lane keeps it either way.
+#[test]
+fn the_faith_war_opens_on_the_diplomacy_lane_only() {
+    for (lane, stock) in [
+        (VictoryTarget::Diplomacy, false),
+        (VictoryTarget::Culture, false),
+        (VictoryTarget::Domination, true),
+    ] {
+        let (g, mut ai, _) = g200_turn_103(lane);
+        assert_eq!(ai.faith_war_lane(&g), stock, "{lane:?} stock");
+        ai.enable_faith_war_defends_the_diplomat();
+        assert_eq!(
+            ai.faith_war_lane(&g),
+            stock || lane == VictoryTarget::Diplomacy,
+            "{lane:?} under the gene"
+        );
+        assert!(!ai.counterweight_lane(&g) || lane == VictoryTarget::Domination, "the counterweight gene is separate");
+    }
+}

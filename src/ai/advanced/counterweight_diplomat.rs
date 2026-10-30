@@ -40,6 +40,21 @@ impl AdvancedAi {
         }
     }
 
+    /// Whether `faith-war-before-the-flip` answers this seat's lane: the
+    /// Domination lane, and the Diplomacy lane under
+    /// `faith-war-defends-the-diplomat`. A faithless seat with no
+    /// counterweight source (live 171157Z: the one Holy Site and Shrine
+    /// followed the threat; native 52011/17/18: every city on the threat by
+    /// turns 86-95) has no other defence; at war the founder's spreaders
+    /// reached our cities at 0.26 a turn against 1.47 at peace.
+    pub(super) fn faith_war_lane(&self, g: &Game) -> bool {
+        match self.active_victory_target(g) {
+            Some(VictoryTarget::Domination) => true,
+            Some(VictoryTarget::Diplomacy) => self.faith_war_defends_the_diplomat,
+            _ => false,
+        }
+    }
+
     /// Whether the seat defends as one with no faith of its own: it never
     /// founded, or (under the gene, on the Diplomacy lane) its faith holds
     /// none of its cities.

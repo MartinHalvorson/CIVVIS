@@ -336,7 +336,8 @@ impl AdvancedAi {
     pub(super) fn faith_war_before_the_flip_opening(&mut self, g: &mut Game, pid: usize) -> bool {
         if !self.faith_war_active()
             || !g.victory_conditions.religious
-            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            // `faith-war-defends-the-diplomat` opens the Diplomacy lane.
+            || !self.faith_war_lane(g)
             || self.faith_war_before_the_flip_war.is_some()
         {
             return false;

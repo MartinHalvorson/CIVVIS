@@ -8577,6 +8577,17 @@ impl AdvancedAi {
         self.counterweight_defends_the_diplomat = false;
     }
 
+    /// Opt-in gene `faith-war-defends-the-diplomat`; see
+    /// [`Self::faith_war_defends_the_diplomat`].
+    pub fn enable_faith_war_defends_the_diplomat(&mut self) {
+        self.faith_war_defends_the_diplomat = true;
+    }
+
+    /// The twin of `enable_faith_war_defends_the_diplomat`.
+    pub fn disable_faith_war_defends_the_diplomat(&mut self) {
+        self.faith_war_defends_the_diplomat = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
