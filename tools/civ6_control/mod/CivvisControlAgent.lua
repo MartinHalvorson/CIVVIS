@@ -17662,6 +17662,87 @@ CivvisComandante.support = function(player, unit, id, turn, controllerRows)
 	return false;
 end
 
+-- ★★★★ A PROPHET STILL TO FOUND WALKS TO OUR HOLY SITE.
+--
+-- The `religion` order founds only where the host's
+-- `CanStartOperation(FOUND_RELIGION)` holds: a Holy Site (or a civilization's
+-- replacement for it). The Prophet appears in the city centre, and nothing
+-- walked it: `orderGreatPerson` defers every Prophet (its Activate opens the
+-- religion chooser), and the mirror drops Great People. Run
+-- civvis-20261030T062126Z earned John the Baptist at t66 with Athens' Holy Site
+-- two tiles from the centre; the order came back `cannot_found_religion_here`
+-- every turn until Spain's religious victory at t85, with no religion of ours
+-- founded. 060008Z waited 3+ turns on a Holy Site next to the centre.
+-- A walk is an actuation formality: the decision to found was already taken
+-- upstream. "moving" when a MOVE_TO toward our nearest reachable complete
+-- Holy Site was accepted; nil when the Prophet can found where it stands, has
+-- nowhere to go, or the host refused the walk.
+CivvisProphetWalk = {};
+CivvisProphetWalk.toHolySite = function(player, unit, id, turn, individual, class)
+	local found = OP["UNITOPERATION_FOUND_RELIGION"];
+	if found == nil then return nil; end
+	if try(function()
+		return UnitManager.CanStartOperation(unit, found, nil, false,
+			OperationResultsTypes.NO_TARGETS);
+	end, false) == true then
+		return nil;
+	end
+	local holy = {};
+	holy["DISTRICT_HOLY_SITE"] = true;
+	pcall(function()
+		for row in GameInfo.DistrictReplaces() do
+			if row.ReplacesDistrictType == "DISTRICT_HOLY_SITE" then
+				holy[row.CivUniqueDistrictType] = true;
+			end
+		end
+	end);
+	local ux = try(function() return unit:GetX(); end, nil);
+	local uy = try(function() return unit:GetY(); end, nil);
+	if ux == nil or uy == nil then return nil; end
+	local pathFinder = try(function() return UnitManager.GetMoveToPathEx; end, nil);
+	local best = nil;
+	eachCity(player, function(city)
+		for _, district in city:GetDistricts():Members() do
+			local row = try(function() return GameInfo.Districts[district:GetType()]; end, nil);
+			local dx = try(function() return district:GetX(); end, nil);
+			local dy = try(function() return district:GetY(); end, nil);
+			if row ~= nil and holy[row.DistrictType] and dx ~= nil and dy ~= nil
+					and try(function() return district:IsComplete(); end, false) == true
+					and try(function() return district:IsPillaged(); end, true) == false then
+				-- The host pathfinder, as `activationReachable` reads it: a
+				-- route must exist and end on the Holy Site itself.
+				local reachable = true;
+				if type(pathFinder) == "function" then
+					local destination = try(function() return Map.GetPlotIndex(dx, dy); end, nil);
+					local path = destination ~= nil
+						and try(function() return pathFinder(unit, destination); end, nil) or nil;
+					local n = 0;
+					if path ~= nil and type(path.plots) == "table" then
+						for _ in pairs(path.plots) do n = n + 1; end
+					end
+					reachable = n > 1 and path.plots[n] == destination;
+				end
+				local d = try(function() return Map.GetPlotDistance(ux, uy, dx, dy); end, 9999);
+				if reachable and (best == nil or d < best.d) then
+					best = { x = dx, y = dy, d = d };
+				end
+			end
+		end
+	end);
+	if best == nil then return nil; end
+	local params = {};
+	params[UnitOperationTypes.PARAM_X] = best.x;
+	params[UnitOperationTypes.PARAM_Y] = best.y;
+	if not operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then return nil; end
+	local pend = gpPending[id];
+	if pend == nil or pend.x ~= best.x or pend.y ~= best.y then
+		emit("gp", { turn = turn, unit = id, individual = individual, class = class,
+			action = "moving_to_found", x = best.x, y = best.y, dist = best.d });
+	end
+	gpPending[id] = { x = best.x, y = best.y };
+	return "moving";
+end;
+
 -- Drive one Great Person toward being used. Returns "activated" | "moving" |
 -- "retired" | "idle", or nil when the unit is not a Great Person this code
 -- should touch.
@@ -17704,6 +17785,10 @@ local function orderGreatPerson(player, unit, id, turn, supportAllowed, controll
 			emit("gp", { turn = turn, unit = id, individual = individual,
 				class = class, action = "retired_founded_prophet" });
 			return "retired";
+		end
+		if (religionCreated == nil or religionCreated < 0) and charges ~= 0
+				and CivvisProphetWalk.toHolySite(player, unit, id, turn, individual, class) then
+			return "moving";
 		end
 		if CivvisK.gpIdleReported[id] == nil then
 			CivvisK.gpIdleReported[id] = turn;
