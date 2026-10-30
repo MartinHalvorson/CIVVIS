@@ -19,8 +19,8 @@
 //! **What the gene does.** For an assigned Diplomatic seat that has not lost
 //! its lane, with no Diplomatic-point wonder already at the head of any of
 //! its queues: the unthreatened city that can finish one in
-//! [`DIPLO_WONDER_MAX_TURNS`] (the most points first, then the most
-//! Production, then the quickest) claims it -- an idle queue, or one over a
+//! [`DIPLO_WONDER_MAX_TURNS`] (the most points first, then the soonest
+//! finish, then the most Production; [`diplo_wonder_ranks_before`]) claims it -- an idle queue, or one over a
 //! head [`AdvancedAi::culture_theater_may_defer`] lets wait and that no other
 //! claim holds. The strategic governor's rescoring leaves the claimed wonder
 //! alone ([`AdvancedAi::diplo_wonder_holds`]).
@@ -36,6 +36,22 @@ pub(super) const DIPLO_WONDER_MAX_TURNS: f64 = 30.0;
 
 /// The fewest cities a seat holds before it claims one.
 pub(super) const DIPLO_WONDER_MIN_CITIES: usize = 3;
+
+/// Whether a candidate `(points, turns, production, city)` claims ahead of
+/// `other`: the most points, then the soonest finish, then the most
+/// Production, then the lowest city id. The finish comes before the
+/// Production because the point lands when the wonder does: live Immortal
+/// civvis-20261030T190332Z claimed the Statue of Liberty in Argos at t141 (27
+/// Production, 25 turns) and it landed about t175 as the seat lost to
+/// Technology on 18 points.
+pub(super) fn diplo_wonder_ranks_before(
+    candidate: (f64, f64, f64, u32),
+    other: (f64, f64, f64, u32),
+) -> bool {
+    let (points, turns, production, city) = candidate;
+    let (o_points, o_turns, o_production, o_city) = other;
+    (-points, turns, -production, city) < (-o_points, o_turns, -o_production, o_city)
+}
 
 fn diplomatic_points(g: &Game, item: &Item) -> f64 {
     match item {
@@ -174,8 +190,10 @@ impl AdvancedAi {
             if best
                 .as_ref()
                 .is_none_or(|(old_points, old_production, old_turns, old_city, _)| {
-                    (-points, -production, turns, cid)
-                        < (-*old_points, -*old_production, *old_turns, *old_city)
+                    diplo_wonder_ranks_before(
+                        (points, turns, production, cid),
+                        (*old_points, *old_turns, *old_production, *old_city),
+                    )
                 })
             {
                 best = Some((points, production, turns, cid, item));
