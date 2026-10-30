@@ -17355,6 +17355,57 @@ CivvisHeritageDenial = function(rtype, targets, candidates, pid, favor, costs, l
 	return idx, want, (want > 1) and (tonumber(costs[want - 1]) or 0) or 0, leader;
 end
 
+-- ★★ HERITAGE ORGANIZATION ON A CULTURE SEAT: THE TYPE THAT WIDENS OUR LEAD.
+--
+-- `CivvisHeritageDenial` serves the seats whose own tourism is worth nothing.
+-- A Culture seat's own tourism IS the race, and both options act on every
+-- civilization alike, so what matters is the difference: option A on a type
+-- adds what each of us draws from it, option B removes it. Against the
+-- strongest culture rival (the highest `c.culture`), for every type on the
+-- ballot, `ours - theirs` by `CivvisHeritageTourismByType`: A on the type
+-- where that is most positive, else B on the type where it is most negative.
+-- Votes as the denial casts them (the last session's A total plus one, four
+-- by default, `HeritageDenialMaxVotes` at most, as Favor allows). Off with
+-- `HeritageDenial = false` or `HeritageCultureSeat = false`.
+--
+-- Returns `option, selection, votes, favor, spent`: the values passed in,
+-- unchanged, when it does not apply, so the ballot needs no new local (the
+-- chunk is at the register cap).
+CivvisHeritageCultureSeat = function(rtype, targets, candidates, pid, favor, costs, lastA,
+		config, option, selection, votes, spent, tourismOf)
+	config = type(config) == "table" and config or {};
+	if config.HeritageDenial == false or config.HeritageCultureSeat == false
+		or rtype ~= "WC_RES_HERITAGE_ORG" or config.VictoryLane ~= "culture"
+		or type(costs) ~= "table" then
+		return option, selection, votes, favor, spent;
+	end
+	local leader, best = nil, -1;
+	for _, c in ipairs(type(candidates) == "table" and candidates or {}) do
+		local culture = tonumber(c.culture) or 0;
+		if tonumber(c.id) ~= nil and tonumber(c.id) ~= tonumber(pid) and culture > best then
+			leader, best = tonumber(c.id), culture;
+		end
+	end
+	if leader == nil then return option, selection, votes, favor, spent; end
+	local of = tourismOf or CivvisHeritageTourismByType;
+	local ours, theirs = of(pid) or {}, of(leader) or {};
+	local idx, edge = nil, 0;
+	for i, t in pairs(type(targets) == "table" and targets or {}) do
+		local d = (tonumber(ours[tostring(t)]) or 0) - (tonumber(theirs[tostring(t)]) or 0);
+		if type(i) == "number" and math.abs(d) > math.abs(edge) then idx, edge = i, d; end
+	end
+	if idx == nil then return option, selection, votes, favor, spent; end
+	local last = type(lastA) == "table" and tonumber(lastA[rtype]) or nil;
+	local want = (last or 3) + 1;
+	local cap = math.min(tonumber(config.HeritageDenialMaxVotes) or 8, tonumber(costs.MaxVotes) or 1);
+	if want > cap then want = cap; end
+	while want > 1 and (tonumber(costs[want - 1]) or (tonumber(favor) or 0) + 1) > (tonumber(favor) or 0) do
+		want = want - 1;
+	end
+	local price = (want > 1) and (tonumber(costs[want - 1]) or 0) or 0;
+	return (edge > 0) and 1 or 2, idx, want, (tonumber(favor) or 0) - price, (tonumber(spent) or 0) + price;
+end
+
 -- The Favor the cheap participation votes of this session will take, held
 -- back from the claim. `entries` lists the session's resolution types, as
 -- names or as the ballot's `{ rtype = name }` entries.
@@ -23452,6 +23503,11 @@ local function tick()
 							option, selection, votes = 2, hIdx, hVotes;
 							favor = favor - hPrice;
 							spent = spent + hPrice;
+						else
+							-- See `CivvisHeritageCultureSeat`.
+							option, selection, votes, favor, spent = CivvisHeritageCultureSeat(
+								rtype, targets, candidates, pid, favor, costs,
+								envoyTally.wc_last_a, cfg, option, selection, votes, spent);
 						end
 					elseif BAN_FIRST[rtype] then
 						option = 2;
