@@ -4310,6 +4310,15 @@ pub const GENES: &[Gene] = &[
     // Culture seat buys every allowed grant each turn, the bar holder first,
     // never into the solvency reserve. See `advanced/culture_open_borders.rs`.
     Gene { tag: "culture-keeps-every-border-open", field: "culture_keeps_every_border_open", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_keeps_every_border_open, disable: AdvancedAi::disable_culture_keeps_every_border_open },
+    // The defensive Inquisition waits to spread our faith first while it
+    // holds under half our cities -- right for an unconverted empire, wrong
+    // for one a rival faith is taking: live Emperor civvis-20261030T120109Z
+    // (Diplomatic) founded Buddhism, held one Temple city of four against
+    // Catholicism's two from t64 to t80, never launched, lost its Holy City
+    // by t88 and the game to Religion at t114 with 1,169 Faith banked. With
+    // this on, a rival-held city of ours ends the wait. See
+    // `advanced/defensive_apostle.rs`.
+    Gene { tag: "inquisition-answers-a-rival-majority", field: "inquisition_answers_a_rival_majority", kind: Kind::OptIn, enable: AdvancedAi::enable_inquisition_answers_a_rival_majority, disable: AdvancedAi::disable_inquisition_answers_a_rival_majority },
     // `hidden-border-yields-to-our-pressure`: live Immortal
     // civvis-20261030T123145Z held a Settler out from t50 past t80, at peace,
     // after sixteen "rival border whose city may be hidden" refusals, and
