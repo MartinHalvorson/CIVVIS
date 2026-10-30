@@ -7049,6 +7049,10 @@ pub struct AdvancedAi {
     forward_airfield_project: bool,
     forward_airfield_project_state: Option<forward_airfield_project::FieldProject>,
     // ---- append: g-k ------------------------------------------------
+    /// `hidden-border-yields-to-our-pressure`: the unseen-border settle veto
+    /// yields where our own cities press the site. See
+    /// `advanced/hidden_border_reach.rs`. Off by default.
+    hidden_border_yields_to_our_pressure: bool,
     /// `gold-buys-the-idle-trader`: an empty trade route slot's Trader,
     /// bought with the idle bank at peace. See
     /// `advanced/trader_fills_the_idle_route/purchase.rs`. Off by default.
@@ -9666,6 +9670,9 @@ mod culture_open_borders;
 /// `diplo-seat-statue-harbor`: see `advanced/diplo_statue_harbor.rs`.
 mod diplo_statue_harbor;
 
+/// `hidden-border-yields-to-our-pressure`: see `advanced/hidden_border_reach.rs`.
+mod hidden_border_reach;
+
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 
 mod civilian_coordination;
@@ -11254,6 +11261,7 @@ impl AdvancedAi {
             forward_airfield_project: false,
             forward_airfield_project_state: None,
             // ---- append: g-k ----------------------------------------
+            hidden_border_yields_to_our_pressure: false,
             gold_buys_the_idle_trader: false,
             holdout_keeps_the_faith_war: false,
             holdout_keeps_the_faith_war_2: false,
@@ -40261,7 +40269,13 @@ impl AdvancedAi {
         // border whose nearest visible city sits on its fifth ownership ring
         // may instead belong to a nearer city we have not seen. It will press
         // the new city from turn one. See `UNRESOLVED_MAJOR_BORDER_RADIUS`.
-        if self.frontier_loyalty && Self::beside_unresolved_major_border(g, site) {
+        // `hidden-border-yields-to-our-pressure`: a site our own cities
+        // already press is not a frontier colony. See
+        // `advanced/hidden_border_reach.rs`.
+        if self.frontier_loyalty
+            && Self::beside_unresolved_major_border(g, site)
+            && !self.hidden_border_yields(g, pid, site)
+        {
             return Some(
                 "it lies within five tiles of a rival border whose city may be hidden \
                  — the forecast cannot price that Loyalty pressure"
@@ -40755,8 +40769,10 @@ impl AdvancedAi {
                 // line now asserts an applied action, never an intention.
                 // ⚠ Priced BEFORE the apply, for the reason in the city branch.
                 let worth = self.settle_value(g, pid, current);
+                let yielded = self.hidden_border_yield_before_founding(g, pid, current);
                 let founded = g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
                 if founded {
+                    self.note_hidden_border_founding(current, yielded);
                     think!(self.journal(), Expansion, Decision, "Founding the capital at {current:?}";
                            "the site is worth {:.1}", worth; current);
                 } else {
@@ -41171,8 +41187,10 @@ impl AdvancedAi {
             // well — founding here makes this city our nearest, and the gap
             // it closed is gone.
             let contested = self.contested_land_front(g, pid, current);
+            let yielded = self.hidden_border_yield_before_founding(g, pid, current);
             let founded = g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
             if founded {
+                self.note_hidden_border_founding(current, yielded);
                 if let Some((front, credit)) = contested {
                     *g.players[pid]
                         .counters
@@ -41519,8 +41537,10 @@ impl AdvancedAi {
         self.settler_stalls.remove(&uid);
         self.settler_closest.remove(&uid);
         // ⚠ Journal AFTER the engine answers; see the capital branch.
+        let yielded = self.hidden_border_yield_before_founding(g, pid, here);
         let founded = g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
         if founded {
+            self.note_hidden_border_founding(here, yielded);
             think!(self.journal(), Expansion, Decision,
                    "Founding where the settler stands at {here:?}";
                    "it stalled {SETTLER_STALL_LIMIT} turns short of a better site \

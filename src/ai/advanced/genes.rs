@@ -4327,6 +4327,13 @@ pub const GENES: &[Gene] = &[
     // claims its first Harbor while the Statue is open. See
     // `advanced/diplo_statue_harbor.rs`.
     Gene { tag: "diplo-seat-statue-harbor", field: "diplo_seat_statue_harbor", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_seat_statue_harbor, disable: AdvancedAi::disable_diplo_seat_statue_harbor },
+    // `hidden-border-yields-to-our-pressure`: live Immortal
+    // civvis-20261030T123145Z held a Settler out from t50 past t80, at peace,
+    // after sixteen "rival border whose city may be hidden" refusals, and
+    // retired at t88 on four cities. The unresolved-border veto yields where
+    // our own cities press the site (population times closeness, 30 or more).
+    // See `advanced/hidden_border_reach.rs`.
+    Gene { tag: "hidden-border-yields-to-our-pressure", field: "hidden_border_yields_to_our_pressure", kind: Kind::OptIn, enable: AdvancedAi::enable_hidden_border_yields_to_our_pressure, disable: AdvancedAi::disable_hidden_border_yields_to_our_pressure },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

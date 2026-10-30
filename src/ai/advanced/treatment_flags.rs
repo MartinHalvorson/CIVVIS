@@ -8555,6 +8555,17 @@ impl AdvancedAi {
         self.diplo_seat_statue_harbor = false;
     }
 
+    /// Opt-in gene `hidden-border-yields-to-our-pressure`; see
+    /// [`Self::hidden_border_yields_to_our_pressure`].
+    pub fn enable_hidden_border_yields_to_our_pressure(&mut self) {
+        self.hidden_border_yields_to_our_pressure = true;
+    }
+
+    /// The twin of `enable_hidden_border_yields_to_our_pressure`.
+    pub fn disable_hidden_border_yields_to_our_pressure(&mut self) {
+        self.hidden_border_yields_to_our_pressure = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
