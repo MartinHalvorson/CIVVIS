@@ -8653,6 +8653,17 @@ impl AdvancedAi {
         self.racer_spies_search_for_the_pad = false;
     }
 
+    /// Opt-in gene `settler-founds-under-raiders`; see
+    /// [`Self::settler_founds_under_raiders`].
+    pub fn enable_settler_founds_under_raiders(&mut self) {
+        self.settler_founds_under_raiders = true;
+    }
+
+    /// The twin of `enable_settler_founds_under_raiders`.
+    pub fn disable_settler_founds_under_raiders(&mut self) {
+        self.settler_founds_under_raiders = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

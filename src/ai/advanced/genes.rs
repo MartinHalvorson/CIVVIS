@@ -4394,6 +4394,13 @@ pub const GENES: &[Gene] = &[
     // next city until it finds the pad. Needs `racer-keeps-the-spies`. See
     // `advanced/racer_keeps_the_spies.rs`.
     Gene { tag: "racer-spies-search-for-the-pad", field: "racer_spies_search_for_the_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_racer_spies_search_for_the_pad, disable: AdvancedAi::disable_racer_spies_search_for_the_pad },
+    // Live Immortal 10-30, 21 seats: a Settler lived a median 8 turns (51% at
+    // 8+, tails to 58) before founding, and 571 of ~630 "Settler HELD" lines
+    // were the safe-step guard against barbarian raiders. The stall-expiry
+    // fallback then refused on the same tile risk, though a barbarian never
+    // takes a city. With raiders the only visible threat it founds in place.
+    // See `advanced/settler_raiders.rs`.
+    Gene { tag: "settler-founds-under-raiders", field: "settler_founds_under_raiders", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_founds_under_raiders, disable: AdvancedAi::disable_settler_founds_under_raiders },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

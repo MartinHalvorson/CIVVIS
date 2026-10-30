@@ -8254,6 +8254,10 @@ pub struct AdvancedAi {
     /// `racer-spies-search-for-the-pad`: the leader's cities a Spy of ours
     /// stood in without the offer, and the turn it last did.
     racer_spy_searched: BTreeMap<u32, u32>,
+    /// `settler-founds-under-raiders`: a stalled Settler whose only visible
+    /// threats are barbarians founds where it stands despite the tile risk.
+    /// See `advanced/settler_raiders.rs`.
+    settler_founds_under_raiders: bool,
     // ---- append: s-s ------------------------------------------------
     /// `stage-reads-the-muster-breakers`: once a siege's muster has closed,
     /// its Stage reads breakers out to `MUSTER_FAR` instead of `STAGING_FAR`.
@@ -10135,6 +10139,8 @@ pub(super) mod rapid_city_expansion;
 /// asks wider questions instead of holding, and a watchdog bounds every
 /// other hold. One opt-in gene; see `advanced/settler_never_idles.rs`.
 mod settler_never_idles;
+/// `settler-founds-under-raiders`: see `advanced/settler_raiders.rs`.
+mod settler_raiders;
 /// Route around a host-refused step before discarding its city destination.
 mod settler_route_recovery;
 mod settler_shelter;
@@ -11497,6 +11503,7 @@ impl AdvancedAi {
             racer_spies_search_for_the_pad: false,
             racer_spy_found_pads: BTreeSet::new(),
             racer_spy_searched: BTreeMap::new(),
+            settler_founds_under_raiders: false,
             // ---- append: s-s ----------------------------------------
             stage_reads_the_muster_breakers: false,
             siege_budget_counts_the_ram: false,
@@ -41590,7 +41597,15 @@ impl AdvancedAi {
             && self.settlement_tile_risk(g, pid, Some(uid), here, &visible)
                 > SETTLER_STEP_RISK_LIMIT
         {
-            return false;
+            // `settler-founds-under-raiders`: a barbarian never takes a city,
+            // so with raiders the only threat the city is the safer piece.
+            if !self.settler_threat_is_raiders_only(g, pid, here, &visible) {
+                return false;
+            }
+            think!(self.journal(), Expansion, Detail,
+                   "Settler founds among raiders at {here:?}";
+                   "settler-founds-under-raiders: every hostile in reach is a barbarian, \
+                    which captures a Settler but never a city"; here);
         }
         // A stalled route may reach a tile that the ordinary target loop had
         // already rejected. Keep the fallback behind the same Loyalty
