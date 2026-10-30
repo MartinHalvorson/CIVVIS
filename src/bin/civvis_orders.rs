@@ -3620,6 +3620,21 @@ fn plan_races_diplomacy(plan: Option<(&str, Option<&str>)>) -> bool {
     plan.is_some_and(|(_, victory)| victory == Some("diplomatic"))
 }
 
+/// Drop the planner's alliance orders unless the seat is assigned the
+/// Diplomatic lane ([`plan_races_diplomacy`]): an alliance forbids a war on
+/// the ally, and the domination campaign planner does not price that. The
+/// agent's `CivvisAllianceStep` refuses them off the lane too; holding them
+/// here keeps eight to fifteen refusals a game out of the order ledger.
+/// Returns how many were dropped.
+fn drop_off_lane_alliances(plan: Option<(&str, Option<&str>)>, orders: &mut Vec<Order>) -> usize {
+    if plan_races_diplomacy(plan) {
+        return 0;
+    }
+    let before = orders.len();
+    orders.retain(|order| order.kind != "alliance");
+    before - orders.len()
+}
+
 /// Drop the planner's own favor sales when the plan means to cast that favor,
 /// or once a rival's DVP makes the bank votes ([`favor_banked_for_votes`]).
 /// `Game::quick_deals` quotes a ten-favor block to any partner two DVP richer,
@@ -5298,6 +5313,10 @@ fn decide(
     let plan_facts = plan
         .as_ref()
         .map(|report| (report.strategy, report.victory_target));
+    let held_alliances = drop_off_lane_alliances(plan_facts, &mut orders);
+    if held_alliances > 0 {
+        note_bits.push(format!("alliance_hold:off_lane={held_alliances}"));
+    }
     let held_favor_sales = hold_planner_favor_sales(plan_facts, state, &mut orders);
     if held_favor_sales > 0 {
         note_bits.push(format!(
@@ -8656,6 +8675,26 @@ fn verify_order_with_context(
             Some(None) => Verdict::Unverifiable,
             None => failed("player_unseen".to_string()),
         },
+        // The planner's alliance: the agent asks the declared friendship first
+        // and the alliance once it stands (`CivvisAllianceStep`), so either
+        // landing proves the order -- the host's diplomatic state reads ALLIED,
+        // or a friendship declared this turn crossed. `not_allied` covers a
+        // refusal as well as a session that never opened.
+        "alliance" => {
+            let rival = order
+                .subject
+                .and_then(|p| after.rivals.iter().find(|r| r.player as i64 == p));
+            match rival {
+                None => failed("player_unseen".to_string()),
+                Some(r) if r.diplomatic_state.as_deref() == Some("DIPLO_STATE_ALLIED") => {
+                    Verdict::Verified
+                }
+                Some(r) if r.friendship_turn.is_some_and(|since| since >= turn as i64) => {
+                    Verdict::Verified
+                }
+                Some(_) => failed("not_allied".to_string()),
+            }
+        }
         "governor_appoint" | "governor_assign" => {
             let governors =
                 |state: &civvis::mirror::StateSnapshot| state.governors.clone().unwrap_or_default();
@@ -21344,6 +21383,74 @@ mod order_postcondition_tests {
             check(&denounce, &before, &after, &[]),
             failed("player_unseen")
         );
+    }
+
+    /// The planner's alliance is proven by either step landing: ALLIED on the
+    /// next frame, or the declared friendship it asked first.
+    #[test]
+    fn an_alliance_is_verified_by_the_alliance_or_the_friendship_it_asked() {
+        let rival = |state: &str, since: Option<i64>| StateRival {
+            player: 2,
+            diplomatic_state: Some(state.to_string()),
+            friendship_turn: since,
+            ..StateRival::default()
+        };
+        let mut before = frame(120);
+        before.rivals = vec![rival("DIPLO_STATE_DECLARED_FRIEND", Some(100))];
+        let alliance = order("alliance", Some(2), Some("ALLIANCE_RESEARCH"), None);
+        let mut after = frame(121);
+        after.rivals = vec![rival("DIPLO_STATE_ALLIED", Some(100))];
+        assert_eq!(check(&alliance, &before, &after, &[]), Verdict::Verified);
+        after.rivals = vec![rival("DIPLO_STATE_DECLARED_FRIEND", Some(120))];
+        assert_eq!(
+            check(&alliance, &before, &after, &[]),
+            Verdict::Verified,
+            "the friendship step landed"
+        );
+        after.rivals = vec![rival("DIPLO_STATE_DECLARED_FRIEND", Some(100))];
+        assert_eq!(check(&alliance, &before, &after, &[]), failed("not_allied"));
+        after.rivals = vec![rival("DIPLO_STATE_FRIENDLY", None)];
+        assert_eq!(check(&alliance, &before, &after, &[]), failed("not_allied"));
+        after.rivals = Vec::new();
+        assert_eq!(check(&alliance, &before, &after, &[]), failed("player_unseen"));
+    }
+
+    /// Alliance orders cross only on a seat assigned the Diplomatic lane.
+    #[test]
+    fn alliance_orders_cross_only_on_the_diplomatic_lane() {
+        let batch = || {
+            vec![
+                Order {
+                    kind: "alliance",
+                    subject: Some(2),
+                    verb: Some("ALLIANCE_RESEARCH".to_string()),
+                    pos: None,
+                },
+                Order {
+                    kind: "sell",
+                    subject: Some(2),
+                    verb: Some("RESOURCE_DYES=1".to_string()),
+                    pos: Some((56, 0)),
+                },
+            ]
+        };
+        let mut kept = batch();
+        assert_eq!(
+            drop_off_lane_alliances(Some(("expansion", Some("diplomatic"))), &mut kept),
+            0
+        );
+        assert_eq!(kept.len(), 2);
+        for plan in [
+            None,
+            Some(("diplomacy", None)),
+            Some(("conquest", Some("domination"))),
+            Some(("culture", Some("culture"))),
+        ] {
+            let mut orders = batch();
+            assert_eq!(drop_off_lane_alliances(plan, &mut orders), 1, "{plan:?}");
+            assert_eq!(orders.len(), 1);
+            assert_eq!(orders[0].kind, "sell");
+        }
     }
 
     /// A friendship is verified by the host's own `GetDeclaredFriendshipTurn`
