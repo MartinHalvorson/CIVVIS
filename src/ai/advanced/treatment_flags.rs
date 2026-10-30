@@ -8653,6 +8653,19 @@ impl AdvancedAi {
         self.racer_spies_search_for_the_pad = false;
     }
 
+    /// Opt-in gene `opening-builder-after-the-first-settler`; see
+    /// `BasicAi::opening_builder_after_the_first_settler`.
+    pub fn enable_opening_builder_after_the_first_settler(&mut self) {
+        self.opening_builder_after_the_first_settler = true;
+        self.base.enable_opening_builder_after_the_first_settler();
+    }
+
+    /// The twin of `enable_opening_builder_after_the_first_settler`.
+    pub fn disable_opening_builder_after_the_first_settler(&mut self) {
+        self.opening_builder_after_the_first_settler = false;
+        self.base.disable_opening_builder_after_the_first_settler();
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -4394,6 +4394,13 @@ pub const GENES: &[Gene] = &[
     // next city until it finds the pad. Needs `racer-keeps-the-spies`. See
     // `advanced/racer_keeps_the_spies.rs`.
     Gene { tag: "racer-spies-search-for-the-pad", field: "racer_spies_search_for_the_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_racer_spies_search_for_the_pad, disable: AdvancedAi::disable_racer_spies_search_for_the_pad },
+    // Live Immortal seats 2026-10-30 (54 games): the first Builder came at a
+    // median turn 26 (scout, Settler, slinger, Settler first), 5% of owned land
+    // stood improved at turn 40 against the rivals' 26%, and their population
+    // ran 1.6x ours from turn 20. Once the capital's first Settler is out and
+    // the empire has never held a Builder, the capital trains one before its
+    // next Settler. See `BasicAi::opening_builder_after_the_first_settler`.
+    Gene { tag: "opening-builder-after-the-first-settler", field: "opening_builder_after_the_first_settler", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_builder_after_the_first_settler, disable: AdvancedAi::disable_opening_builder_after_the_first_settler },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
