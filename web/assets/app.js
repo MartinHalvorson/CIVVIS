@@ -3355,8 +3355,15 @@ try {
 // Like its overlays, the dedicated display's tracker position is fixed: a
 // drag saved in its Chrome profile (on 2026-10-30, the narrow window's
 // full-width band) would otherwise hold the tracker off the right-hand panel
-// the stylesheet stands it in, for every game after.
-if (DEDICATED_DISPLAY) delete HUD_LAYOUT.victory;
+// the stylesheet stands it in, for every game after. Its width is the
+// viewer's, though — the operator narrowed the panel by its edge — so a rail
+// width carries into the stylesheet; anything wider than a rail is a band.
+if (DEDICATED_DISPLAY && HUD_LAYOUT.victory) {
+  const width = Math.round(Number(HUD_LAYOUT.victory.width));
+  if (width > 0 && width <= window.innerWidth * .45)
+    document.body.style.setProperty("--dedicated-victory-width", `${width}px`);
+  delete HUD_LAYOUT.victory;
+}
 
 // Keep the authored frame proportion while sizing the *frame diagonal* against
 // the screen rather than against a particular monitor. The shared panel
@@ -23833,6 +23840,11 @@ function victoryDescription(victory, metric) {
 }
 
 const DEFAULT_VICTORY_LEADERS = 3;
+// The dedicated display beside Civilization VI (operator, 2026-10-30: "rank the
+// victory tracker victory types in order of closest to victory ... top 2 only")
+// lists exactly two leaders on every path, the viewed civilization included
+// only when it is one of them, and stands the paths nearest a win first.
+const DEDICATED_VICTORY_LEADERS = 2;
 
 // Measure the space the rendered track actually has instead of coupling this
 // behavior to a hard-coded widget height. This keeps custom layouts, keyboard
@@ -23879,13 +23891,15 @@ function victoryLeaderCapacity(victoryHud) {
 function syncVictoryLeaderCapacity(victoryHud = document.getElementById("victoryhud")) {
   const tracks = [...(victoryHud?.querySelectorAll(".victory-track") || [])];
   if (!tracks.length) return;
-  const capacity = victoryLeaderCapacity(victoryHud);
+  const capacity = DEDICATED_DISPLAY ? DEDICATED_VICTORY_LEADERS : victoryLeaderCapacity(victoryHud);
   for (const track of tracks) {
     for (const [index, entry] of [...track.querySelectorAll(".victory-entry")].entries())
       // A player looking through their own fog should never disappear merely
       // because three rivals lead a path. Keep that one row in addition to
-      // the capacity the panel can otherwise show.
-      entry.hidden = index >= capacity && entry.dataset.victoryFocus !== "true";
+      // the capacity the panel can otherwise show — except on the dedicated
+      // display, whose two rows per path are the whole point of the space.
+      entry.hidden = index >= capacity &&
+        (DEDICATED_DISPLAY || entry.dataset.victoryFocus !== "true");
   }
 }
 
@@ -24132,9 +24146,17 @@ function playerHudOverview() {
   const focusPlayer = Number.isInteger(focusId)
     ? contenders.find(player => player.id === focusId)
     : null;
-  let defaultVictoryRows = Math.min(DEFAULT_VICTORY_LEADERS, contenders.length);
+  let defaultVictoryRows = Math.min(
+    DEDICATED_DISPLAY ? DEDICATED_VICTORY_LEADERS : DEFAULT_VICTORY_LEADERS, contenders.length);
   const enabledVictoryTracks = VICTORY_TRACKS
     .filter(track => state.victory_conditions?.[track.id] !== false);
+  if (DEDICATED_DISPLAY) {
+    // Closest to a win is the path's leading meter — the same progress its
+    // top row draws. The sort is stable, so ties keep the usual order.
+    const leading = new Map(enabledVictoryTracks.map(track => [track.id,
+      Math.max(0, ...contenders.map(player => +victoryMetric(player, track.id).progress || 0))]));
+    enabledVictoryTracks.sort((a, b) => leading.get(b.id) - leading.get(a.id));
+  }
   const victoryTracks = enabledVictoryTracks.map(track => {
     const researchField = track.id === "science" ? "techs"
       : track.id === "culture" ? "civics" : null;
@@ -24150,7 +24172,7 @@ function playerHudOverview() {
     const focusRank = focusPlayer
       ? ranked.findIndex(player => player.id === focusPlayer.id)
       : -1;
-    defaultVictoryRows = Math.max(defaultVictoryRows,
+    if (!DEDICATED_DISPLAY) defaultVictoryRows = Math.max(defaultVictoryRows,
       Math.min(DEFAULT_VICTORY_LEADERS, ranked.length) + (focusRank >= DEFAULT_VICTORY_LEADERS ? 1 : 0));
     return `<section class="victory-track" style="--track:${track.color}" aria-label="${track.label} victory leaders">` +
       `<div class="victory-heading"><b>${track.label}</b></div>` +
