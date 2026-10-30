@@ -4302,10 +4302,6 @@ pub const GENES: &[Gene] = &[
     // the plan read Recovery. From 16 points the seat researches and adopts
     // both first. See `advanced/diplo_match_point_research.rs`.
     Gene { tag: "diplo-match-point-beelines-the-points", field: "diplo_match_point_beelines", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_match_point_beelines_the_points, disable: AdvancedAi::disable_diplo_match_point_beelines_the_points },
-    // ---- append: a-b ------------------------------------------------
-    // ---- append: c-d ------------------------------------------------
-    // ---- append: e-f ------------------------------------------------
-    // ---- append: g-k ------------------------------------------------
     // `hidden-border-yields-to-our-pressure`: live Immortal
     // civvis-20261030T123145Z held a Settler out from t50 past t80, at peace,
     // after sixteen "rival border whose city may be hidden" refusals, and
@@ -4313,6 +4309,10 @@ pub const GENES: &[Gene] = &[
     // our own cities press the site (population times closeness, 30 or more).
     // See `advanced/hidden_border_reach.rs`.
     Gene { tag: "hidden-border-yields-to-our-pressure", field: "hidden_border_yields_to_our_pressure", kind: Kind::OptIn, enable: AdvancedAi::enable_hidden_border_yields_to_our_pressure, disable: AdvancedAi::disable_hidden_border_yields_to_our_pressure },
+    // ---- append: a-b ------------------------------------------------
+    // ---- append: c-d ------------------------------------------------
+    // ---- append: e-f ------------------------------------------------
+    // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
     // ---- append: s-s ------------------------------------------------
