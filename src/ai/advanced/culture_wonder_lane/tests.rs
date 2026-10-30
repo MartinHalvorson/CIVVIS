@@ -3,9 +3,10 @@ use crate::rules::Yields;
 use crate::setup::GameSpeed;
 use std::sync::Arc;
 
-/// Three developed cities of six citizens with the ancient and classical
-/// wonder techs and civics in hand, production 40 / 30 / 20, idle queues.
-fn wonder_ready_empire() -> (Game, Vec<u32>) {
+/// `count` developed cities of six citizens with the ancient and classical
+/// wonder techs and civics in hand, production 40 down to 15, three
+/// buildings each, idle queues.
+fn wonder_ready_empire(count: usize) -> (Game, Vec<u32>) {
     let mut game = Game::new_full(
         1,
         44,
@@ -22,7 +23,7 @@ fn wonder_ready_empire() -> (Game, Vec<u32>) {
         .find(|unit| game.units[unit].kind == "settler")
         .unwrap();
     game.apply(0, &Action::FoundCity { unit: settler }).unwrap();
-    while game.player_city_ids(0).len() < 3 {
+    while game.player_city_ids(0).len() < count {
         let pos = game
             .map
             .tiles
@@ -44,7 +45,7 @@ fn wonder_ready_empire() -> (Game, Vec<u32>) {
             })
             .map(|tile| tile.pos)
             .min()
-            .expect("room for three cities");
+            .expect("room for the cities");
         game.found_city_for(0, pos, None);
     }
     for unit in game.player_unit_ids(0) {
@@ -69,7 +70,7 @@ fn wonder_ready_empire() -> (Game, Vec<u32>) {
         let city = game.cities.get_mut(cid).unwrap();
         city.pop = 6;
         city.queue.clear();
-        for building in ["monument", "granary"] {
+        for building in ["monument", "granary", "shrine"] {
             if !city.buildings.iter().any(|built| *built == building) {
                 city.buildings.push(Name::new(building));
             }
@@ -77,7 +78,7 @@ fn wonder_ready_empire() -> (Game, Vec<u32>) {
         Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
             *cid,
             Yields {
-                production: 40.0 - 10.0 * rank as f64,
+                production: 40.0 - 5.0 * rank as f64,
                 ..Default::default()
             },
         );
@@ -109,11 +110,12 @@ fn claim(ai: &AdvancedAi, game: &mut Game) {
     ai.claim_lane_wonders(game, 0, &plan);
 }
 
-/// Three cities open one lane: the strongest takes a wonder, the others keep
-/// their queues, and the claim holds. Off, or for a Domination seat, nothing.
+/// Six cities open two lanes: the two strongest take a wonder each, the
+/// others keep their queues, and the claim holds. Off, for a Domination
+/// seat, or short of six cities, nothing.
 #[test]
-fn the_strongest_culture_city_takes_one_wonder_lane() {
-    let (game, ranked) = wonder_ready_empire();
+fn the_strongest_culture_cities_take_the_wonder_lanes() {
+    let (game, ranked) = wonder_ready_empire(6);
     let ai = seat(VictoryTarget::Culture, true);
     assert!(
         ai.lane_wonder_item(&game, 0, ranked[0], VictoryTarget::Culture)
@@ -121,6 +123,15 @@ fn the_strongest_culture_city_takes_one_wonder_lane() {
         "fixture: the strongest city can finish a wonder in time"
     );
 
+    let (five, five_ranked) = wonder_ready_empire(5);
+    let mut short = five.clone();
+    claim(&ai, &mut short);
+    for cid in &five_ranked {
+        assert!(
+            !is_wonder(short.cities[cid].queue.first()),
+            "five cities: no lane"
+        );
+    }
     for (other, why) in [
         (seat(VictoryTarget::Culture, false), "off"),
         (seat(VictoryTarget::Domination, true), "a Domination seat"),
@@ -128,41 +139,43 @@ fn the_strongest_culture_city_takes_one_wonder_lane() {
         let mut kept = game.clone();
         claim(&other, &mut kept);
         for cid in &ranked {
-            assert!(kept.cities[cid].queue.is_empty(), "{why}: no claim");
+            assert!(
+                !is_wonder(kept.cities[cid].queue.first()),
+                "{why}: no claim"
+            );
         }
     }
 
     let mut on = game.clone();
     claim(&ai, &mut on);
-    let head = on.cities[&ranked[0]].queue.first().cloned();
-    assert!(
-        is_wonder(head.as_ref()),
-        "the strongest city takes the lane"
-    );
-    for cid in &ranked[1..] {
+    let plan = ai.assess(&on, 0);
+    for cid in &ranked[..2] {
+        let head = on.cities[cid].queue.first().cloned();
+        assert!(is_wonder(head.as_ref()), "the two strongest take the lanes");
+        assert!(ai.lane_wonder_holds(&on, 0, *cid, &plan, head.as_ref().unwrap()));
+        assert!(!seat(VictoryTarget::Culture, false).lane_wonder_holds(
+            &on,
+            0,
+            *cid,
+            &plan,
+            head.as_ref().unwrap()
+        ));
+    }
+    for cid in &ranked[2..] {
         assert!(
             !is_wonder(on.cities[cid].queue.first()),
-            "one lane for three cities"
+            "two lanes for six cities"
         );
     }
-    let plan = ai.assess(&on, 0);
-    assert!(ai.lane_wonder_holds(&on, 0, ranked[0], &plan, head.as_ref().unwrap()));
-    assert!(!seat(VictoryTarget::Culture, false).lane_wonder_holds(
-        &on,
-        0,
-        ranked[0],
-        &plan,
-        head.as_ref().unwrap()
-    ));
 
-    // A second pass finds the lane in flight and opens no other.
+    // A second pass finds both lanes in flight and opens no other.
     let before = on.clone();
     claim(&ai, &mut on);
     for cid in &ranked {
         assert_eq!(
             on.cities[cid].queue.first(),
             before.cities[cid].queue.first(),
-            "the lane is full"
+            "the lanes are full"
         );
     }
 }
@@ -171,7 +184,7 @@ fn the_strongest_culture_city_takes_one_wonder_lane() {
 /// with Great Work slots outranks one with none at the same tourism.
 #[test]
 fn great_work_slots_raise_a_wonders_culture_value() {
-    let (game, _) = wonder_ready_empire();
+    let (game, _) = wonder_ready_empire(1);
     let ai = seat(VictoryTarget::Culture, true);
     let value = |name: &str| {
         ai.wonder_lane_value(

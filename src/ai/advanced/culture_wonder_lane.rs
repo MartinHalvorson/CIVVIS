@@ -21,10 +21,11 @@
 //!   Works. On the native screen the delegated governor's Culture wins carry
 //!   11-21 wonders and its losses 0-2.
 //!
-//! **What the gene does.** For a Culture seat, a lane city (ranked by
-//! production, unthreatened, two buildings or more, no wonder already
-//! queued) claims the best wonder it can finish in time: great-work slots,
-//! tourism and culture first, then the cheapest. An idle queue, or one over a
+//! **What the gene does.** Once a Culture seat holds
+//! `CULTURE_WONDER_MIN_CITIES` cities, a lane city (ranked by production,
+//! unthreatened, three buildings or more, no wonder already queued) claims
+//! the best wonder it can finish in time: great-work slots, tourism and
+//! culture first, then the cheapest. An idle queue, or one over a
 //! deferrable head that keeps its progress; the heads the Theater claim and
 //! the other claims hold keep their place. The delegated governor's
 //! rescoring leaves the claimed wonder alone ([`AdvancedAi::lane_wonder_holds`]).
@@ -36,7 +37,18 @@ use super::*;
 /// Build turns past which a lane city does not start a wonder: a King rival
 /// finishes the cheap ones first, and a wonder lost to a rival is a lane
 /// spent for a refund.
-pub(super) const CULTURE_WONDER_MAX_TURNS: f64 = 20.0;
+pub(super) const CULTURE_WONDER_MAX_TURNS: f64 = 15.0;
+
+/// Cities the empire holds before any lane opens. Version one opened the
+/// lane at the first city with two buildings: on its 24-game King culture
+/// probe the seats with it won 0 of 29 against 23% without (z -1.92), science
+/// -7 techs, because the capital's twenty-turn wonder sat ahead of the
+/// Settlers. Both live King culture wins stood at six cities by t60.
+pub(super) const CULTURE_WONDER_MIN_CITIES: usize = 6;
+
+/// Buildings a lane city holds before it starts a wonder: the live wonder
+/// race's development guard.
+pub(super) const CULTURE_WONDER_MIN_BUILDINGS: usize = 3;
 
 /// Cities per concurrent wonder lane; the first lane opens at the first city.
 pub(super) const CULTURE_WONDER_CITIES_PER_LANE: usize = 4;
@@ -166,6 +178,9 @@ impl AdvancedAi {
                 && g.is_at_war(pid, other.id)
         });
         let ours = g.player_city_ids(pid);
+        if ours.len() < CULTURE_WONDER_MIN_CITIES {
+            return;
+        }
         let lanes = ours.len().div_ceil(CULTURE_WONDER_CITIES_PER_LANE);
         let mut in_flight = ours
             .iter()
@@ -178,7 +193,7 @@ impl AdvancedAi {
                 let city = &g.cities[cid];
                 plan.threatened_city != Some(*cid)
                     && !(city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
-                    && city.buildings.len() >= 2
+                    && city.buildings.len() >= CULTURE_WONDER_MIN_BUILDINGS
                     && !matches!(city.queue.first(), Some(Item::Wonder { .. }))
             })
             .map(|cid| (g.city_yields(cid).production, cid))
