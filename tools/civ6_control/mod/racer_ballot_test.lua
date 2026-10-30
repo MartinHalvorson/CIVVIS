@@ -174,6 +174,27 @@ check("gang keeps the deny", mode, "deny")
 check("gang votes B", requests[1].option, 2)
 check("gang names the leader", requests[1].selection, 3)
 
+-- The gang falls on the leader of all the majors. A rival on the threshold
+-- BEHIND us is no denial target: we claim (17 > 16)...
+spent, mode = run(300, 16, 17, 5)
+check("leading a ganged rival races", mode, "race")
+check("leading a ganged rival claims A", requests[1].option, 1)
+check("leading a ganged rival names us", requests[1].selection, 0)
+check("leading a ganged rival claims sized", requests[1].votes, 10)
+-- ...brace from our own match point...
+spent, mode = run(300, 16, 18, 5)
+check("leading a ganged rival at 18 braces", mode, "brace")
+-- ...and, short of a claim, take the gang's free vote on ourselves.
+spent, mode = run(50, 16, 17, 5)
+check("a small bank leading the gang braces", mode, "brace")
+check("the brace votes B", requests[1].option, 2)
+check("the brace names us", requests[1].selection, 0)
+check("the brace is free", requests[1].votes, 1)
+-- A tie is not a lead: the denial stands.
+spent, mode = run(300, 17, 17, 5)
+check("a tied ganged rival keeps the deny", mode, "deny")
+check("the tie denial names the rival", requests[1].selection, 3)
+
 -- Our own match point: the rivals gang on us, so B on ourselves with the
 -- free vote takes the participation point; the bank buys the others.
 spent, mode = run(300, 8, 18, 9)

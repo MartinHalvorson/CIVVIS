@@ -22905,16 +22905,25 @@ local function tick()
 						end
 						-- See `CivvisDiploRacer`: a diplomatic seat claims for
 						-- itself with what the participation votes leave.
-						if CivvisDiploRacer(cfg) and not ganged and ourIdx ~= nil then
-							local mine = tonumber(try(function()
-								return Players[pid]:GetStats():GetDiplomaticVictoryPoints();
-							end, 0)) or 0;
+						-- The gang falls on the Diplomatic leader of ALL the
+						-- majors ("PlayerOrDiploLeader"): only a rival AHEAD of us
+						-- on the gang threshold keeps the denial. When we lead,
+						-- the gang is ours to brace for or to outrun.
+						local mine = CivvisDiploRacer(cfg) and tonumber(try(function()
+							return Players[pid]:GetStats():GetDiplomaticVictoryPoints();
+						end, 0)) or 0;
+						if CivvisDiploRacer(cfg) and ourIdx ~= nil
+								and (not ganged or mine > (tonumber(leaderPoints) or 0)) then
 							local k = CivvisRacerClaimVotes(favor - (envoyTally.racer_reserve or 0),
 								mine, envoyTally.wc_rival_block, costs, maxVotes, cfg);
 							if CivvisRacerBraces(mine, cfg) then
 								option, selection, n, mode = 2, ourIdx, 1, "brace";
 							elseif k ~= nil then
 								option, selection, n, mode = 1, ourIdx, k, "race";
+							elseif ganged then
+								-- We lead past the gang threshold and cannot outrun
+								-- it: the free vote with the gang, on us.
+								option, selection, n, mode = 2, ourIdx, 1, "brace";
 							elseif mode == "probe" then
 								n, mode = 1, "free";
 							end
