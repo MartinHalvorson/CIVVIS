@@ -216,6 +216,11 @@ check("brace at 18", CivvisRacerBraces(18, {}), true)
 check("warned at 15 braces", CivvisRacerBraces(15, {}, 6), true)
 check("unwarned at 15 does not", CivvisRacerBraces(15, {}, 0), false)
 check("warned below 14 does not", CivvisRacerBraces(13, {}, 6), false)
+check("warned by a B that passed does not", CivvisRacerBraces(15, {}, 6, 1), false)
+check("warned by a B that failed still braces", CivvisRacerBraces(15, {}, 6, 0), true)
+check("our own 18 braces whatever passed", CivvisRacerBraces(18, {}, 6, 1), true)
+check("the switch restores the old warning",
+    CivvisRacerBraces(15, { DiploRacerBraceAfterPassedB = true }, 6, 1), true)
 -- Live King 074500Z t181: 15 points, Georgia's 6 B on us at t162 -- the
 -- brace, not a 9-vote claim into a 26-vote gang.
 tally.wc_b_on_us = 6
@@ -227,7 +232,19 @@ check("warned brace is free", requests[1].votes, 1)
 tally.wc_b_on_us = 0
 spent, mode = run(324, 8, 15, 5)
 check("unwarned at 15 still claims", mode, "race")
+-- Emperor 113137Z t218: warned by a B that CARRIED on us (14 votes at
+-- t198) -- the rivals relaxed to 4 B votes, so the claim, not the brace.
+tally.wc_b_on_us = 14
+tally.wc_b_passed_on_us = 1
+spent, mode = run(324, 8, 15, 5)
+check("a passed B's warning lapses: claim", mode, "race")
+check("the lapsed warning claims A on us", requests[1].option, 1)
+check("the lapsed warning names us", requests[1].selection, 0)
+tally.wc_b_passed_on_us = 0
+spent, mode = run(324, 8, 15, 5)
+check("a failed B's warning still braces", mode, "brace")
 tally.wc_b_on_us = nil
+tally.wc_b_passed_on_us = nil
 -- With the brace moved past the win, match point claims all in.
 config.DiploRacerGangSelf = 21
 spent, mode = run(300, 8, 18, 9)
