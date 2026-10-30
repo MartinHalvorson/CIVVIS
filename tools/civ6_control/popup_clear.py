@@ -223,14 +223,16 @@ def frontmost():
 
 
 def window_box():
-    """Civilization VI's window in SCREEN POINTS, as (x, y, w, h)."""
-    out, err = osa(f'tell application "System Events" to tell process "{GAME_PROCESS}" '
-                   'to get {position, size} of window 1')
-    try:
-        nums = [int(float(n)) for n in out.replace(",", " ").split()]
-        return tuple(nums[:4])
-    except Exception:
-        return None
+    """Civilization VI's window in SCREEN POINTS, as (x, y, w, h), or None.
+
+    The largest window big enough to be the game, as the harness reads it
+    (`macos_window.game_window`), never ``window 1``: a ScreenCaptureKit
+    capture that names the Civ window makes macOS 26 add a 66x20 "Window" to
+    Civ's window list, listed first (2026-10-04), and this loop would then
+    classify a 66x20 crop as the game screen and press keys on it.
+    """
+    from civ6_control import macos_window  # it imports this module back
+    return macos_window.game_window(GAME_PROCESS)
 
 
 def native_recording_command(command):
