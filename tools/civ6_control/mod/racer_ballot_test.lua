@@ -131,17 +131,24 @@ check("lane gate no config", CivvisDiploRacer(nil), false)
 local v, p = CivvisRacerResolutionVotes("WC_RES_BORDER_CONTROL", 100, costs, {})
 check("border control buys 2", v, 2); check("border control costs 4", p, 4)
 v, p = CivvisRacerResolutionVotes("WC_RES_TRADE_TREATY", 200, costs, {})
-check("trade treaty buys 8 at the cap", v, 8); check("trade treaty costs 112", p, 112)
+check("trade treaty is over the default cap of 60", v, 1); check("trade treaty costs nothing at the default", p, 0)
+v, p = CivvisRacerResolutionVotes("WC_RES_TRADE_TREATY", 200, costs, { DiploRacerResolutionCap = 112 })
+check("trade treaty buys 8 at a 112 cap", v, 8); check("trade treaty costs 112", p, 112)
 v, p = CivvisRacerResolutionVotes("WC_RES_LUXURY", 1000, costs, {})
 check("luxury over the cap keeps the free vote", v, 1); check("luxury costs nothing", p, 0)
 v, p = CivvisRacerResolutionVotes("WC_RES_TRADE_TREATY", 100, costs, {})
 check("a bank short of the price keeps the free vote", v, 1)
 check("reserve funds only the cheap votes",
-    CivvisRacerReserve({ "WC_RES_DIPLOVICTORY", "WC_RES_BORDER_CONTROL", { rtype = "WC_RES_TRADE_TREATY" },
+    CivvisRacerReserve({ "WC_RES_BORDER_CONTROL", { rtype = "WC_RES_TRADE_TREATY" },
         "WC_RES_PUBLIC_RELATIONS" }, costs, {}), 8)
+check("a session with the claim on it reserves nothing",
+    CivvisRacerReserve({ "WC_RES_DIPLOVICTORY", "WC_RES_BORDER_CONTROL",
+        "WC_RES_PUBLIC_RELATIONS" }, costs, {}), 0)
 check("claim least from block 5", CivvisRacerClaimVotes(120, 6, 5, costs, 20, {}), 8)
 check("claim tops up a quarter", CivvisRacerClaimVotes(300, 6, 5, costs, 20, {}), 10)
-check("claim short of least", CivvisRacerClaimVotes(100, 6, 5, costs, 20, {}), nil)
+check("short of least but over the block, all in", CivvisRacerClaimVotes(100, 6, 5, costs, 20, {}), 7)
+check("live t181: 10 votes beat a block of 9", CivvisRacerClaimVotes(190, 10, 9, costs, 20, {}), 10)
+check("no more than the block, no claim", CivvisRacerClaimVotes(30, 6, 5, costs, 20, {}), nil)
 check("claim first block 8", CivvisRacerClaimVotes(1000, 6, nil, costs, 20, {}), 13)
 check("claim all in at match point", CivvisRacerClaimVotes(300, 18, 9, costs, 20, {}), 12)
 
@@ -206,6 +213,21 @@ check("brace still buys border control", requests[2].votes, 2)
 check("brace spend", spent, 8)
 check("brace below 18", CivvisRacerBraces(17, {}), false)
 check("brace at 18", CivvisRacerBraces(18, {}), true)
+check("warned at 15 braces", CivvisRacerBraces(15, {}, 6), true)
+check("unwarned at 15 does not", CivvisRacerBraces(15, {}, 0), false)
+check("warned below 14 does not", CivvisRacerBraces(13, {}, 6), false)
+-- Live King 074500Z t181: 15 points, Georgia's 6 B on us at t162 -- the
+-- brace, not a 9-vote claim into a 26-vote gang.
+tally.wc_b_on_us = 6
+spent, mode = run(324, 8, 15, 5)
+check("warned at 15: brace", mode, "brace")
+check("warned brace votes B on us", requests[1].option, 2)
+check("warned brace names us", requests[1].selection, 0)
+check("warned brace is free", requests[1].votes, 1)
+tally.wc_b_on_us = 0
+spent, mode = run(324, 8, 15, 5)
+check("unwarned at 15 still claims", mode, "race")
+tally.wc_b_on_us = nil
 -- With the brace moved past the win, match point claims all in.
 config.DiploRacerGangSelf = 21
 spent, mode = run(300, 8, 18, 9)
@@ -213,13 +235,19 @@ check("match point race", mode, "race")
 check("match point all in", requests[1].votes, 12)
 config.DiploRacerGangSelf = nil
 
--- An expensive resolution is bought from what the claim leaves.
+-- An expensive resolution is bought from what the claim leaves, under a
+-- raised cap; at the default 60 it keeps the free vote.
 session = { "WC_RES_DIPLOVICTORY", "WC_RES_TRADE_TREATY" }
 spent, mode = run(400, 8, 6, 5)
 check("trade session races", mode, "race")
 check("trade claim keeps no reserve for a dear vote", requests[1].votes, 10)
-check("trade treaty bought from the rest", requests[2].votes, 8)
-check("trade session spend", spent, 180 + 112)
+check("trade treaty keeps the free vote at the default cap", requests[2].votes, 1)
+check("trade session spend at the default cap", spent, 180)
+config.DiploRacerResolutionCap = 112
+spent, mode = run(400, 8, 6, 5)
+check("trade treaty bought from the rest under a 112 cap", requests[2].votes, 8)
+check("trade session spend under a 112 cap", spent, 180 + 112)
+config.DiploRacerResolutionCap = nil
 session = { "WC_RES_DIPLOVICTORY", "WC_RES_BORDER_CONTROL", "WC_RES_PUBLIC_RELATIONS" }
 
 -- Off: the old ballot (a probe below the floor, the ban on Public Relations).

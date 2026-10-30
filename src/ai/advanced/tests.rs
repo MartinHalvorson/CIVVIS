@@ -16140,6 +16140,19 @@ fn a_diplomatic_seat_burns_no_coal_or_oil() {
     let mut lost = AdvancedAi::targeting(VictoryTarget::Diplomacy);
     lost.lane_lost = true;
     assert!(!lost.diplomatic_lane_refuses_fossil_power("coal_power_plant"));
+
+    // The turn hands the refusal to the baseline governor that fills a
+    // delegating lane's routine queues (`BasicAi::exclude_fossil_power`).
+    let mut game = game;
+    let mut seat = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    seat.take_turn(&mut game, 0);
+    assert!(
+        seat.base.exclude_fossil_power,
+        "a diplomatic seat's governor refuses them"
+    );
+    let mut other = AdvancedAi::targeting(VictoryTarget::Culture);
+    other.take_turn(&mut game, 0);
+    assert!(!other.base.exclude_fossil_power, "another lane's does not");
 }
 
 /// The debt was previously checked only on an untargeted controller, even

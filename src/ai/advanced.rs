@@ -5504,6 +5504,13 @@ pub struct AdvancedAi {
     /// costliest. See `advanced/solvency.rs`. Off by default.
     bankruptcy_exits_the_drain: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `culture-seat-monuments`: a Culture seat's cities build their Monument
+    /// early. See `advanced/culture_monuments.rs`. Off by default.
+    culture_seat_monuments: bool,
+    /// `culture-seat-theater-first`: a Culture seat's cities claim their
+    /// first Theater Square ahead of the Campus. See
+    /// `advanced/culture_theater_first.rs`. Off by default.
+    culture_seat_theater_first: bool,
     /// `culture-keeps-every-border-open`: once its tourism reaches the floor,
     /// a Culture seat buys every rival's Open Borders grant each turn. See
     /// `advanced/culture_open_borders.rs`. Off by default.
@@ -6369,6 +6376,14 @@ pub struct AdvancedAi {
     /// of ours keeps its blows and its post in the battle plan. See
     /// `advanced/defenders_hold_the_walls.rs`. Off by default.
     defenders_hold_the_walls: bool,
+    /// `diplo-match-point-beelines-the-points`: a Diplomatic seat near its
+    /// victory researches Seasteads and adopts Global Warming Mitigation first.
+    /// See `advanced/diplo_match_point_research.rs`. Off by default.
+    diplo_match_point_beelines: bool,
+    /// `diplo-seat-wonder-claim`: a seat assigned the Diplomatic lane keeps
+    /// one Diplomatic Victory Point wonder in production in its strongest
+    /// city. See `advanced/diplo_wonder_claim.rs`. Off by default.
+    diplo_seat_wonder_claim: bool,
     // ---- append: e-f ------------------------------------------------
     /// `food-focus-grows-the-small-city`: `civvis_orders` also asks the host
     /// to favour Food in a small city growing at two a turn or less. See
@@ -7296,6 +7311,10 @@ pub struct AdvancedAi {
     /// at the head of its queue over a deferrable head. See
     /// `advanced/industrial_zone_claims_the_factory.rs`. Off by default.
     industrial_zone_claims_the_factory: bool,
+    /// `inquisition-defends-the-diplomat`: a Diplomatic seat prepares and
+    /// funds the defensive Inquisition as a Domination seat does. See
+    /// `advanced/defensive_apostle.rs`. Off by default.
+    inquisition_defends_the_diplomat: bool,
     // ---- append: l-o ------------------------------------------------
     /// `nuclear-goal-needs-a-launcher`: no nuclear war goal on a seat that
     /// cannot launch a device. See `advanced/nuclear_launcher.rs`. Off by
@@ -8798,6 +8817,11 @@ pub struct AdvancedAi {
     /// city of the same rival the wing can hit. See
     /// `advanced/siege_under_the_wing.rs`. Off by default.
     siege_moves_under_the_wing: bool,
+    /// `science-drive-answers-the-launch`: a seat assigned another lane lets
+    /// `science-victory-drive` open once a rival has landed a space project
+    /// and we lead the field, and races Science beside its lane while it
+    /// drives. See `advanced/science_victory_drive.rs`. Off by default.
+    science_drive_answers_the_launch: bool,
     // ---- append: t-z ------------------------------------------------
     /// `upkeep-waits-for-the-income`: a Domination seat starts no recurring
     /// upkeep its income cannot carry. See
@@ -9618,6 +9642,16 @@ mod food_focus_grows_the_small_city;
 /// `capital-monument-after-the-second-city`: see `advanced/capital_monument.rs`.
 mod capital_monument;
 
+/// `culture-seat-theater-first`: see `advanced/culture_theater_first.rs`.
+mod culture_theater_first;
+/// `diplo-match-point-beelines-the-points`; see
+/// `advanced/diplo_match_point_research.rs`.
+mod diplo_match_point_research;
+/// `diplo-seat-wonder-claim`; see `advanced/diplo_wonder_claim.rs`.
+mod diplo_wonder_claim;
+
+/// `culture-seat-monuments`: see `advanced/culture_monuments.rs`.
+mod culture_monuments;
 /// `culture-keeps-every-border-open`: see `advanced/culture_open_borders.rs`.
 mod culture_open_borders;
 
@@ -10949,6 +10983,8 @@ impl AdvancedAi {
             aqueduct_recovery_reservations: RefCell::new(BTreeMap::new()),
             bankruptcy_exits_the_drain: false,
             // ---- append: c-d ----------------------------------------
+            culture_seat_monuments: false,
+            culture_seat_theater_first: false,
             culture_keeps_every_border_open: false,
             capital_monument_after_the_second_city: false,
             disrupt_before_the_sources: false,
@@ -11115,6 +11151,8 @@ impl AdvancedAi {
             capital_watch_sightings: BTreeMap::new(),
             drain_card_turn: std::cell::Cell::new(None),
             defenders_hold_the_walls: false,
+            diplo_match_point_beelines: false,
+            diplo_seat_wonder_claim: false,
             // ---- append: e-f ----------------------------------------
             food_focus_grows_the_small_city: false,
             friendship_ends_at_the_race: false,
@@ -11251,6 +11289,7 @@ impl AdvancedAi {
             gold_buys_the_settler: false,
             industrial_zone_claims_the_producer_queue: false,
             industrial_zone_claims_the_factory: false,
+            inquisition_defends_the_diplomat: false,
             // ---- append: l-o ----------------------------------------
             nuclear_goal_needs_a_launcher: false,
             launcher_war_skips_the_reserve: false,
@@ -11490,6 +11529,7 @@ impl AdvancedAi {
             staging_gun_trusts_its_escort_2: false,
             siege_tier_yields_to_the_bombers_2: false,
             siege_moves_under_the_wing: false,
+            science_drive_answers_the_launch: false,
             // ---- append: t-z ----------------------------------------
             upkeep_waits_for_the_income: false,
             unchosen_war_takes_the_first_peace: false,
@@ -19104,6 +19144,11 @@ impl AdvancedAi {
                 _ if science_commitment && science_lane_active => {
                     Self::science_victory_tech_goal(g, pid, GrandStrategy::Science)
                 }
+                // `diplo-match-point-beelines-the-points`: the last points in the
+                // tree, whatever the plan reads. Exact no-op while the gene is off.
+                _ if self.diplo_match_point_tech(g, pid).is_some() => {
+                    self.diplo_match_point_tech(g, pid)
+                }
                 GrandStrategy::Culture if self.phase_specialization_active(g) => {
                     ["printing", "radio", "computers"]
                         .into_iter()
@@ -19488,6 +19533,11 @@ impl AdvancedAi {
                 // all, and never arrived. Released, `civic_value`'s argmax
                 // takes the slot back.
                 _ if self.lane_lost => None,
+                // `diplo-match-point-beelines-the-points`: the civic's point,
+                // whatever the plan reads. Exact no-op while the gene is off.
+                _ if self.diplo_match_point_civic(g, pid).is_some() => {
+                    self.diplo_match_point_civic(g, pid)
+                }
                 GrandStrategy::Culture => self.culture_civic_goal(g, pid),
                 GrandStrategy::Science
                     if !g.players[pid].civics.contains(&crate::name!("space_race")) =>
@@ -32852,6 +32902,20 @@ impl AdvancedAi {
             let capital_monument_commitment = committed
                 .as_ref()
                 .is_some_and(|(_, item)| self.capital_monument_holds(g, pid, cid, plan, item));
+            // `culture-seat-theater-first`: the claimed Theater Square finishes
+            // while the Culture seat still wants it.
+            let culture_theater_commitment = committed
+                .as_ref()
+                .is_some_and(|(_, item)| self.culture_theater_holds(g, pid, cid, plan, item));
+            // `diplo-seat-wonder-claim`: the claimed Diplomatic-point wonder
+            // finishes while the Diplomatic seat still wants it.
+            let diplo_wonder_commitment = committed
+                .as_ref()
+                .is_some_and(|(_, item)| self.diplo_wonder_holds(g, pid, cid, plan, item));
+            // `culture-seat-monuments`: the claimed Monument finishes.
+            let culture_monument_commitment = committed
+                .as_ref()
+                .is_some_and(|(_, item)| self.culture_monument_holds(g, pid, cid, plan, item));
             // `trader-fills-the-idle-route`: the claimed Trader finishes while
             // its slot still stands empty.
             let idle_route_trader_commitment = committed
@@ -32914,6 +32978,9 @@ impl AdvancedAi {
                     || capital_walls_commitment
                     || bound_granary_commitment
                     || capital_monument_commitment
+                    || culture_theater_commitment
+                    || diplo_wonder_commitment
+                    || culture_monument_commitment
                     || idle_route_trader_commitment
                     || backlog_builder_commitment
                     || capped_aqueduct_commitment
@@ -32935,6 +33002,9 @@ impl AdvancedAi {
                     || capital_walls_commitment
                     || bound_granary_commitment
                     || capital_monument_commitment
+                    || culture_theater_commitment
+                    || diplo_wonder_commitment
+                    || culture_monument_commitment
                     || idle_route_trader_commitment
                     || backlog_builder_commitment
                     || capped_aqueduct_commitment
@@ -49310,6 +49380,11 @@ impl AdvancedAi {
         // reservation as well — but never against a seat whose own lane is
         // Religion, and never for Kongo, whose Taxis ability makes the faith
         // economy unconditional.
+        // See `diplomatic_lane_refuses_fossil_power`: the baseline governor,
+        // which fills a delegating lane's routine queues, refuses the plants
+        // too.
+        self.base.exclude_fossil_power =
+            self.diplomatic_lane_refuses_fossil_power("coal_power_plant");
         self.base.skip_prophet_race = (skip_prophet_race || religion_race_closed)
             && !g.has_ability(pid, "taxis")
             && active_victory_target != Some(VictoryTarget::Religion);
@@ -49846,6 +49921,20 @@ impl AdvancedAi {
             // race and the routine claims. Exact no-op while the gene is off.
             // See `advanced/campus_claims_the_free_slot.rs`.
             self.claim_free_slot_campus(g, pid, &plan);
+            // `culture-seat-theater-first`: a Culture seat's first Theater
+            // Squares, after the Campus claims (which yield those cities) and
+            // ahead of the Prophet race and the routine claims. Exact no-op
+            // while the gene is off. See `advanced/culture_theater_first.rs`.
+            self.claim_culture_theaters(g, pid, &plan);
+            // `culture-seat-monuments`: a Culture seat's Monuments, after the
+            // Theater claim (whose heads they leave alone). Exact no-op while
+            // the gene is off. See `advanced/culture_monuments.rs`.
+            self.claim_culture_monuments(g, pid, &plan);
+            // `diplo-seat-wonder-claim`: one Diplomatic-point wonder in the
+            // strongest city of a Diplomatic seat, after the Culture claims
+            // and ahead of the Prophet race and the routine claims. Exact
+            // no-op while the gene is off. See `advanced/diplo_wonder_claim.rs`.
+            self.claim_diplo_wonder(g, pid, &plan);
             // `prophet-builds-its-site`: the Holy Site a Prophet founds on
             // goes first. Exact no-op while the gene is off.
             self.reserve_prophet_site(g, pid, &plan);

@@ -8461,6 +8461,68 @@ impl AdvancedAi {
         self.capital_monument_after_the_second_city = false;
     }
 
+    /// Opt-in gene `culture-seat-theater-first`; see
+    /// [`Self::culture_seat_theater_first`].
+    pub fn enable_culture_seat_theater_first(&mut self) {
+        self.culture_seat_theater_first = true;
+    }
+
+    /// The twin of `enable_culture_seat_theater_first`.
+    pub fn disable_culture_seat_theater_first(&mut self) {
+        self.culture_seat_theater_first = false;
+    }
+
+    /// `diplo-seat-wonder-claim`.
+    pub fn enable_diplo_seat_wonder_claim(&mut self) {
+        self.diplo_seat_wonder_claim = true;
+    }
+
+    /// The twin of `enable_diplo_seat_wonder_claim`.
+    pub fn disable_diplo_seat_wonder_claim(&mut self) {
+        self.diplo_seat_wonder_claim = false;
+    }
+
+    /// `science-drive-answers-the-launch`.
+    pub fn enable_science_drive_answers_the_launch(&mut self) {
+        self.science_drive_answers_the_launch = true;
+    }
+
+    /// The twin of `enable_science_drive_answers_the_launch`.
+    pub fn disable_science_drive_answers_the_launch(&mut self) {
+        self.science_drive_answers_the_launch = false;
+    }
+
+    /// `inquisition-defends-the-diplomat`.
+    pub fn enable_inquisition_defends_the_diplomat(&mut self) {
+        self.inquisition_defends_the_diplomat = true;
+    }
+
+    /// The twin of `enable_inquisition_defends_the_diplomat`.
+    pub fn disable_inquisition_defends_the_diplomat(&mut self) {
+        self.inquisition_defends_the_diplomat = false;
+    }
+
+    /// Opt-in gene `culture-seat-monuments`; see
+    /// [`Self::culture_seat_monuments`].
+    pub fn enable_culture_seat_monuments(&mut self) {
+        self.culture_seat_monuments = true;
+    }
+
+    /// The twin of `enable_culture_seat_monuments`.
+    pub fn disable_culture_seat_monuments(&mut self) {
+        self.culture_seat_monuments = false;
+    }
+
+    /// `diplo-match-point-beelines-the-points`.
+    pub fn enable_diplo_match_point_beelines_the_points(&mut self) {
+        self.diplo_match_point_beelines = true;
+    }
+
+    /// The twin of `enable_diplo_match_point_beelines_the_points`.
+    pub fn disable_diplo_match_point_beelines_the_points(&mut self) {
+        self.diplo_match_point_beelines = false;
+    }
+
     /// Turn on `culture-keeps-every-border-open`. See
     /// [`Self::culture_keeps_every_border_open`].
     pub fn enable_culture_keeps_every_border_open(&mut self) {

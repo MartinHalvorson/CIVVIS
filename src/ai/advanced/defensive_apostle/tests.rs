@@ -111,6 +111,37 @@ fn other_lanes_nonfounders_and_disabled_religion_keep_existing_spending() {
     assert!(!ai.defensive_inquisition_ready(&g, 0));
 }
 
+/// `inquisition-defends-the-diplomat`: a Diplomatic seat prepares the
+/// Inquisition with the gene; every other lane but Domination never does.
+#[test]
+fn inquisition_defends_the_diplomat_opens_the_diplomatic_lane() {
+    let (g, ai, _) = fixture();
+    assert!(
+        ai.defensive_inquisition_ready(&g, 0),
+        "Domination, as before"
+    );
+    let mut diplomat = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    assert!(!diplomat.defensive_inquisition_ready(&g, 0), "off");
+    diplomat.enable_inquisition_defends_the_diplomat();
+    assert!(diplomat.defensive_inquisition_ready(&g, 0), "on");
+    for lane in [
+        VictoryTarget::Culture,
+        VictoryTarget::Science,
+        VictoryTarget::Religion,
+        VictoryTarget::Score,
+    ] {
+        let mut seat = AdvancedAi::targeting(lane);
+        seat.enable_inquisition_defends_the_diplomat();
+        assert!(!seat.defensive_inquisition_ready(&g, 0), "{lane:?}: never");
+    }
+    let mut untargeted = AdvancedAi::new();
+    untargeted.enable_inquisition_defends_the_diplomat();
+    assert!(
+        !untargeted.defensive_inquisition_ready(&g, 0),
+        "no target: never"
+    );
+}
+
 #[test]
 fn initial_spread_precedes_reserve_in_a_mostly_unconverted_empire() {
     let (mut g, ai, home) = fixture();
