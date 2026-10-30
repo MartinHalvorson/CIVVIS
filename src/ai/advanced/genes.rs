@@ -4246,6 +4246,16 @@ pub const GENES: &[Gene] = &[
     // put the capital's settler pump on Food: 4 cities at t60 against 5). See
     // `advanced/food_focus_grows_the_small_city.rs`.
     Gene { tag: "food-focus-grows-the-small-city", field: "food_focus_grows_the_small_city", kind: Kind::OptIn, enable: AdvancedAi::enable_food_focus_grows_the_small_city, disable: AdvancedAi::disable_food_focus_grows_the_small_city },
+    // `capital-monument-after-the-second-city`: live Immortal 10-28/29, our
+    // culture ran 3.9 / 6.6 / 10.7 against the rivals' 16 / 35 / 54 at t30 /
+    // t45 / t60 and Political Philosophy came at t43; the capital had no
+    // Monument by t85 in more than half the games (monument-first waits for
+    // three cities behind every earlier claim). Fast expanders whose capital
+    // built one within 8 turns of the third city reached Political Philosophy
+    // at t34 against t42. From the second city on, an unthreatened capital at
+    // peace with the majors claims its Monument once. See
+    // `advanced/capital_monument.rs`.
+    Gene { tag: "capital-monument-after-the-second-city", field: "capital_monument_after_the_second_city", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_monument_after_the_second_city, disable: AdvancedAi::disable_capital_monument_after_the_second_city },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
