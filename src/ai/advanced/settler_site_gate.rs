@@ -151,7 +151,7 @@ impl AdvancedAi {
             sites = self.settle_sites(g, pid, from, g.map.width + g.map.height);
         }
         sites.retain(|(site, _)| {
-            self.exhaustion_site_unpriceable(g, *site).is_none()
+            self.exhaustion_site_unpriceable(g, pid, *site).is_none()
                 && !Self::inside_rival_sphere(g, pid, *site)
         });
         let claimed: Vec<Pos> = self
