@@ -199,6 +199,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `counterweight-builds-its-source` | off (unmeasured) | Opt-in gene `counterweight-builds-its-source`; see `Self::counterweight_builds_its_source`. | 1 \| 1 |
 | `counterweight-defends-the-diplomat` | off (unmeasured) | Opt-in gene `counterweight-defends-the-diplomat`; see `Self::counterweight_defends_the_diplomat`. | 1 \| 1 |
 | `culture-keeps-every-border-open` | off (unmeasured) | Turn on `culture-keeps-every-border-open`. | 1 \| 1 |
+| `culture-recovery-spends-the-bank` | off (unmeasured) | Opt-in gene `culture-recovery-spends-the-bank`; see `Self::culture_recovery_spends_the_bank`. | 1 \| 1 |
 | `culture-routes-reach-every-rival` | off (unmeasured) | Turn on `culture-routes-reach-every-rival`. | 1 \| 1 |
 | `culture-seat-monuments` | off (unmeasured) | Opt-in gene `culture-seat-monuments`; see `Self::culture_seat_monuments`. | 1 \| 1 |
 | `culture-seat-theater-first` | off (unmeasured) | Opt-in gene `culture-seat-theater-first`; see `Self::culture_seat_theater_first`. | 1 \| 1 |
