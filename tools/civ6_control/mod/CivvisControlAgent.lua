@@ -22767,20 +22767,22 @@ function CivvisBoard.operatorHold(turn)
 	if type(now) ~= "number" or type(hold.polledAt) ~= "number"
 			or now < hold.polledAt or now - hold.polledAt >= hold.pollSeconds then
 		hold.polledAt = now;
-		-- The watch pace rides the same query (`CivvisBoard.paceHold`).
-		local asked, pace = false, 0;
+		-- The watch pace and the mirror's painted turn ride the same query
+		-- (`CivvisBoard.paceHold`, `CivvisBoard.mirrorHold`).
+		local asked, pace, shown = false, 0, nil;
 		if attachOrders() then
 			pcall(function()
 				local rows = DB.Query(string.format(
 					"SELECT kind, x FROM civvis.orders WHERE run = '%s' " ..
-					"AND kind IN ('pause', 'pace')", sqlSafe(cfg.RunTag)));
+					"AND kind IN ('pause', 'pace', 'mirror')", sqlSafe(cfg.RunTag)));
 				for _, row in ipairs(rows) do
 					if row.kind == "pause" then asked = true;
-					elseif row.kind == "pace" then pace = math.max(0, tonumber(row.x) or 0); end
+					elseif row.kind == "pace" then pace = math.max(0, tonumber(row.x) or 0);
+					elseif row.kind == "mirror" then shown = tonumber(row.x); end
 				end
 			end);
 		end
-		hold.asked, hold.paceMs = asked, pace;
+		hold.asked, hold.paceMs, hold.mirrorTurn = asked, pace, shown;
 	end
 	local heldFor = (type(now) == "number" and type(hold.since) == "number")
 		and math.floor(now - hold.since + 0.5) or nil;
@@ -22963,6 +22965,55 @@ function CivvisBoard.paceHold(turn)
 		                    wait_ms = math.floor(left * 1000 + 0.5) });
 	end
 	hold.pacing = true;
+	return true;
+end
+
+-- ★ THE MIRROR KEEPS UP. Operator 2026-10-30: "make sure the firaxis and
+-- civvis games aren't more than 1 turn apart. civvis should be driving
+-- firaxis so they should be roughly on the same turn (+-1) at all times".
+-- The CIVVIS page is rebuilt from this game's exports (`tools/follow.py`), so
+-- it can only trail; nothing used to stop Civilization VI running ahead of
+-- it. `civ6_play.py` writes the turn the page has PAINTED as the `mirror` row
+-- (`hold.mirrorTurn`, read with the pause), and our turn does not END until
+-- the page shows it: Civilization VI then reaches turn N+1 only with turn N
+-- on the page. The moves are not held back -- this waits only once the turn
+-- is settled, so the mirror catches up while they play.
+--
+-- No row (no page, a stale report, a mirror the harness has given up on) is no
+-- wait. A wait is capped at `capSeconds` a turn: a page that cannot paint must
+-- not stall the lane, so the turn ends anyway and says so.
+CivvisBoard.mirror = { capSeconds = 10 };
+function CivvisBoard.mirrorHold(turn)
+	local hold, mirror = CivvisBoard.hold, CivvisBoard.mirror;
+	local shown = hold.mirrorTurn;
+	hold.mirrorWaiting = false;
+	if type(shown) ~= "number" or shown >= turn then
+		if mirror.turn == turn and mirror.since ~= nil and not mirror.done then
+			mirror.done = true;
+			local now = CivvisClock.now();
+			emit("mirror_caught_up", { turn = turn, shown = shown,
+				waited_ms = type(now) == "number" and now >= mirror.since
+					and math.floor((now - mirror.since) * 1000 + 0.5) or nil });
+		end
+		return false;
+	end
+	if try(function() return UI.HasSentTurnComplete(); end, false) == true then
+		return false;
+	end
+	local now = CivvisClock.now();
+	if type(now) ~= "number" then return false; end
+	if mirror.turn ~= turn then
+		mirror.turn, mirror.since, mirror.done = turn, now, false;
+		emit("mirror_wait", { turn = turn, shown = shown });
+	end
+	if mirror.done then return false; end
+	if now < mirror.since or now - mirror.since >= mirror.capSeconds then
+		mirror.done = true;
+		emit("mirror_wait_capped", { turn = turn, shown = shown,
+			waited_ms = math.floor((now - mirror.since) * 1000 + 0.5) });
+		return false;
+	end
+	hold.mirrorWaiting = true;
 	return true;
 end
 
@@ -23745,6 +23796,9 @@ local function tick()
 			return;
 		end
 
+		-- The turn is played; it ends once the CIVVIS page shows it.
+		if CivvisBoard.mirrorHold(turn) then return; end
+
 		-- Answer whatever the game says it is waiting on, then end the turn
 		-- anyway.
 		--
@@ -24524,6 +24578,14 @@ CivvisQueue.onPeekPulse = function()
 	-- Orders the brain wrote for a held turn stay landed until it resumes; the
 	-- UI pulse above owns the held game's ticks.
 	if CivvisBoard.hold.held then return; end
+	-- A played turn waiting for the CIVVIS page: tick quietly until it paints.
+	-- One peek per wait: the tick sets it again while the page still trails,
+	-- so a turn that ended some other way cannot leave this ticking.
+	if CivvisBoard.hold.mirrorWaiting then
+		CivvisBoard.hold.mirrorWaiting = false;
+		tick();
+		return;
+	end
 	if not CivvisQueue.ordersLanded() then return; end
 	-- A turn held to the watch pace: tick quietly until its wait is up.
 	if CivvisBoard.hold.pacing then tick(); return; end
