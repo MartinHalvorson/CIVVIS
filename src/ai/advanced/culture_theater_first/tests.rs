@@ -4,7 +4,7 @@ use crate::setup::GameSpeed;
 use std::sync::Arc;
 
 /// Three cities of four citizens with Drama and Poetry and Writing in hand,
-/// production 30, no district but the centre: every city has a free slot and
+/// production 10, no district but the centre: every city has a free slot and
 /// can build its first Theater Square and its first Campus.
 fn theater_less_empire() -> (Game, Vec<u32>) {
     let mut game = Game::new_full(
@@ -16,6 +16,9 @@ fn theater_less_empire() -> (Game, Vec<u32>) {
         0,
         false,
     );
+    // A plain Theater Square: Greece's Acropolis needs hills the fixture
+    // does not promise, and Rome founds with a Monument.
+    game.players[0].civ = "Gran Colombia".to_string();
     let settler = game
         .player_unit_ids(0)
         .into_iter()
@@ -52,7 +55,17 @@ fn theater_less_empire() -> (Game, Vec<u32>) {
     }
     game.game_speed = GameSpeed::Online;
     game.turn = 70;
-    game.players[0].techs.insert(Name::new("writing"));
+    // Forest, jungle and marsh sites need their removal technologies.
+    for tech in [
+        "writing",
+        "mining",
+        "bronze_working",
+        "irrigation",
+        "pottery",
+        "animal_husbandry",
+    ] {
+        game.players[0].techs.insert(Name::new(tech));
+    }
     game.players[0].civics.insert(Name::new("drama_poetry"));
     let cities = game.player_city_ids(0);
     for cid in &cities {
@@ -60,7 +73,8 @@ fn theater_less_empire() -> (Game, Vec<u32>) {
         Arc::make_mut(&mut game.observed_city_yield_adjustments).insert(
             *cid,
             Yields {
-                production: 30.0,
+                // Low enough that a routine Warrior does not finish this turn.
+                production: 10.0,
                 ..Default::default()
             },
         );
