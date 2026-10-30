@@ -17098,6 +17098,121 @@ CivvisCongressRedirect = function(blocks, candidates, pid, budget, maxVotes, con
 	return best, bestVotes, "redirect";
 end
 
+-- ★★★ A DIPLOMATIC SEAT RACES AT CONGRESS INSTEAD OF DENYING.
+--
+-- Every ballot above was written for a seat that is NOT racing Diplomacy: it
+-- banks Favor, casts B at the leader, and lets the other resolutions fall
+-- where they may. On a seat assigned the Diplomatic lane (`VictoryLane`,
+-- from the launcher) that leaves its own points on the table. Over 586
+-- recorded sessions (117 control runs to 2026-10-30) our vote matched the
+-- winning option AND target on 30% of the non-Diplomatic resolutions (282
+-- of 928) -- each match is a Congress Participation point -- and 40% of the
+-- Diplomatic Victory ones. Public Relations is the plainest case: the ballot
+-- casts option B on us (BAN_FIRST) while option A won 37 of 55.
+--
+-- Bought votes win most of them cheaply. Holding the rivals' recorded votes
+-- fixed, A on ourselves takes Border Control at a median 2 votes (4 Favor on
+-- the Online table) and Public Relations at 1-2, and the ballot's own choice
+-- takes Urban Development, Military Advisory and Espionage at 2-3; the votes
+-- below (`CivvisRacerResolutionVotes`) are the 75th percentile per type.
+-- Buying them whenever the price is at most 60 Favor wins 64% of the
+-- resolutions instead of 29%, for 6 Favor a resolution on average: about
+-- +0.7 points a session, about 5 points per 100 Favor. The +2 claim is the
+-- dearer point: A on us needs a median 8-9 votes (112-144 Favor) from turn
+-- 80 to 200, and `least` below (the last session's largest rival A block
+-- plus a quarter, at least 2, plus one) won 66-75% of those sessions at 0.9
+-- points per 100 Favor; a quarter more again wins 82%. So the racer funds
+-- the cheap participation votes first (`CivvisRacerReserve`, prices up to
+-- `DiploRacerCheapCap` 40), then claims, then buys the dearer resolutions
+-- (up to `DiploRacerResolutionCap` 112) from what is left. A rival on the
+-- gang threshold (`DiploVictoryGangCertain`) still gets the denial: the
+-- rivals' B carries it, and our B with theirs is the participation point.
+-- Off with `DiploRacer = false`. Bare globals: the main chunk sits near the
+-- 200-register ceiling, and racer_ballot_test.lua reads them.
+CivvisDiploRacer = function(config)
+	return type(config) == "table" and config.VictoryLane == "diplomatic"
+		and config.DiploRacer ~= false;
+end
+
+CivvisRacerResolutionVotes = function(rtype, favor, costs, config, cap)
+	config = type(config) == "table" and config or {};
+	if type(costs) ~= "table" then return 1, 0; end
+	local need = ({
+		WC_RES_MERCENARY_COMPANIES = 2, WC_RES_WORLD_RELIGION = 2,
+		WC_RES_BORDER_CONTROL = 2, WC_RES_PUBLIC_RELATIONS = 2,
+		WC_RES_SOVEREIGNTY = 3, WC_RES_URBAN_DEVELOPMENT = 3,
+		WC_RES_MILITARY_ADVISORY = 3, WC_RES_ESPIONAGE_PACT = 3,
+		WC_RES_ARMS_CONTROL = 3, WC_RES_HERITAGE_ORG = 4,
+		WC_RES_GLOBAL_ENERGY_TREATY = 4, WC_RES_DEFORESTATION_TREATY = 4,
+		WC_RES_TRADE_TREATY = 8, WC_RES_PATRONAGE = 10,
+		WC_RES_MIGRATION_TREATY = 11, WC_RES_PUBLIC_WORKS = 13,
+		WC_RES_WORLD_IDEOLOGY = 15, WC_RES_LUXURY = 16,
+	})[tostring(rtype)] or 4;
+	need = need + (tonumber(config.DiploRacerExtraVotes) or 0);
+	local maxVotes = tonumber(costs.MaxVotes) or 1;
+	if need > maxVotes then need = maxVotes; end
+	local price = tonumber(costs[need - 1]);
+	cap = tonumber(cap) or tonumber(config.DiploRacerResolutionCap) or 112;
+	if need < 2 or price == nil or price > cap or price > (tonumber(favor) or 0) then
+		return 1, 0;
+	end
+	return need, price;
+end
+
+-- The Favor the cheap participation votes of this session will take, held
+-- back from the claim. `entries` lists the session's resolution types, as
+-- names or as the ballot's `{ rtype = name }` entries.
+CivvisRacerReserve = function(entries, costs, config)
+	config = type(config) == "table" and config or {};
+	local total = 0;
+	for _, entry in ipairs(type(entries) == "table" and entries or {}) do
+		local rtype = type(entry) == "table" and entry.rtype or entry;
+		if rtype ~= "WC_RES_DIPLOVICTORY" then
+			local _, price = CivvisRacerResolutionVotes(rtype, 1e9, costs, config,
+				tonumber(config.DiploRacerCheapCap) or 40);
+			total = total + price;
+		end
+	end
+	return total;
+end
+
+-- How many A votes on ourselves the claim casts, or nil when the bank cannot
+-- reach `least` (the ballot then falls back to the redirect and denial
+-- above). With no recorded rival block, `DiploRacerFirstBlock` (8: the
+-- first-session default that won 75% in the replay against 66% at 5). From
+-- match point (`DiploVictoryMatchPoint`, 18) the claim is the win: all in --
+-- reached only when `DiploRacerGangSelf` stands above it (`CivvisRacerBraces`).
+CivvisRacerClaimVotes = function(favor, ourPoints, rivalBlock, costs, maxVotes, config)
+	config = type(config) == "table" and config or {};
+	local block = tonumber(rivalBlock) or tonumber(config.DiploRacerFirstBlock) or 8;
+	if block < 1 then block = 1; end
+	local least = block + math.max(2, math.ceil(block / 4)) + 1;
+	local budget = CivvisCongressVoteBudget(favor, costs, maxVotes);
+	if (tonumber(ourPoints) or 0) >= (tonumber(config.DiploVictoryMatchPoint) or 18) then
+		if budget > 1 then return budget; end
+		return nil;
+	end
+	if budget < least then return nil; end
+	return math.min(least + math.ceil(block / 4), budget);
+end
+
+-- ★★ AND FROM OUR OWN MATCH POINT THE RIVALS GANG ON US: VOTE WITH THEM.
+-- Across October 2-5 the rivals cast B on a Diplomatic leader at 16 points
+-- in 57% of sessions and at 18 in all five. A claim cast into that gang
+-- loses the +2 and the participation point: -2 a session, so a racer at 18
+-- stalls there. B on ourselves matches the winning option and target -- B
+-- and the gang's own target, us -- for +1: -1 a session, and with the two
+-- participation votes bought beside it (~+1.3) the session gains instead of
+-- losing, so a point from anywhere between sessions wins. At 16-17 the gang
+-- is a coin flip and a winning claim is +3 (expected about -0.2 for the
+-- claim against -0.6 for the brace), so the brace waits for
+-- `DiploRacerGangSelf` (18). The free vote only: the Favor goes to the
+-- participation votes.
+CivvisRacerBraces = function(ourPoints, config)
+	config = type(config) == "table" and config or {};
+	return (tonumber(ourPoints) or 0) >= (tonumber(config.DiploRacerGangSelf) or 18);
+end
+
 -- A ballot is verified against all three native selection fields, not just
 -- its size. WorldCongressPopup.lua:1915-1919 reads PlayerID, OptionChosen,
 -- and Votes; :1935-1940 reads ResolutionTarget for that same voter.
@@ -22744,6 +22859,10 @@ local function tick()
 				if da ~= db then return da > db; end
 				return a.rtype < b.rtype;
 			end);
+			-- See `CivvisDiploRacer`: the cheap participation votes are funded
+			-- before the claim.
+			envoyTally.racer_reserve = CivvisDiploRacer(cfg)
+				and CivvisRacerReserve(list, costs, cfg) or nil;
 			local cast, spent = 0, 0;
 			-- How the Diplomatic Victory ballot was cast, for `wc_vote`:
 			-- "claim" (A for us with the bank), "deny" (B against the leader
@@ -22911,6 +23030,22 @@ local function tick()
 								- (tonumber(cfg.DiploVictoryOutvoteReserve) or 60)), costs, maxVotes);
 							if allIn > n then n = allIn; end
 						end
+						-- See `CivvisDiploRacer`: a diplomatic seat claims for
+						-- itself with what the participation votes leave.
+						if CivvisDiploRacer(cfg) and not ganged and ourIdx ~= nil then
+							local mine = tonumber(try(function()
+								return Players[pid]:GetStats():GetDiplomaticVictoryPoints();
+							end, 0)) or 0;
+							local k = CivvisRacerClaimVotes(favor - (envoyTally.racer_reserve or 0),
+								mine, envoyTally.wc_rival_block, costs, maxVotes, cfg);
+							if CivvisRacerBraces(mine, cfg) then
+								option, selection, n, mode = 2, ourIdx, 1, "brace";
+							elseif k ~= nil then
+								option, selection, n, mode = 1, ourIdx, k, "race";
+							elseif mode == "probe" then
+								n, mode = 1, "free";
+							end
+						end
 						votes = n;
 						local cost = (n > 1 and costs[n - 1]) or 0;
 						favor = favor - cost;
@@ -22952,7 +23087,9 @@ local function tick()
 							for idx, t in pairs(targets) do
 								if tonumber(t) == pid then selection = idx; end
 							end
-							if BAN_FIRST[rtype] then option = 2; end
+							-- A racer takes Public Relations' option A on itself:
+							-- it won 37 of 55 recorded sessions, B on us 2.
+							if BAN_FIRST[rtype] and not CivvisDiploRacer(cfg) then option = 2; end
 						end
 					elseif BAN_FIRST[rtype] then
 						option = 2;
@@ -22961,8 +23098,10 @@ local function tick()
 					-- the denial floor, the option its own vote is predicted
 					-- not to take, with three votes when Favor allows. On a
 					-- player-target resolution option B names the leader.
-					local deny = CivvisParticipationDenialOption(rtype, leader, pid,
-						leaderPoints, envoyTally.wc_last_option, cfg);
+					-- A racer's own participation point is worth more than the
+					-- leader's predicted one: it buys the outcome instead.
+					local deny = (not CivvisDiploRacer(cfg)) and CivvisParticipationDenialOption(rtype,
+						leader, pid, leaderPoints, envoyTally.wc_last_option, cfg) or nil;
 					if deny ~= nil then
 						option = deny;
 						if r.TargetType == "PlayerType" then
@@ -22981,6 +23120,14 @@ local function tick()
 						-- See `CivvisCultureEmbargoVotes`.
 						local want, price = CivvisCultureEmbargoVotes(rtype, threat, candidates,
 							favor, costs, leaderPoints, envoyTally.wc_last_a, cfg);
+						if want > 1 then
+							votes = want;
+							favor = favor - price;
+							spent = spent + price;
+						end
+					elseif rtype ~= "WC_RES_DIPLOVICTORY" and CivvisDiploRacer(cfg) then
+						-- See `CivvisRacerResolutionVotes`.
+						local want, price = CivvisRacerResolutionVotes(rtype, favor, costs, cfg);
 						if want > 1 then
 							votes = want;
 							favor = favor - price;
