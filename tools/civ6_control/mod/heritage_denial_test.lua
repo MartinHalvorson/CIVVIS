@@ -216,13 +216,25 @@ check("on the leader's relics", requests[1].selection, 2)
 check("with last A plus one", requests[1].votes, 4)
 check("and pays for them", spent, costs[3])
 
--- A Culture seat keeps today's ballot: A on the first target, free.
+-- A Culture seat votes the type that widens its lead
+-- (`CivvisHeritageCultureSeat`): we hold no Great Works and the leader holds
+-- relics, so B on Relic, with the denial's vote count.
 config.VictoryLane = "culture"
+requests = {}
+_, spent = vote(0)
+check("culture seat votes B on the leader's lead", requests[1].option, 2)
+check("culture seat names the relics", requests[1].selection, 2)
+check("culture seat votes last A plus one", requests[1].votes, 4)
+
+-- With its kill switch a Culture seat keeps today's ballot: A on the first
+-- target, free.
+config.HeritageCultureSeat = false
 requests = {}
 _, spent = vote(0)
 check("culture seat votes A", requests[1].option, 1)
 check("culture seat first target", requests[1].selection, 0)
 check("culture seat free vote", requests[1].votes, 1)
+config.HeritageCultureSeat = nil
 
 if failures > 0 then
     print(failures .. " FAILURES")
