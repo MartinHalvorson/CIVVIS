@@ -86,7 +86,8 @@ pub(super) const RELIGIOUS_VETO_SPEND_STAKE: f64 = 0.75;
 pub(super) const RELIGIOUS_VETO_EXTRA_SPREADERS: f64 = 2.0;
 
 /// `veto-counts-the-flips`: match point is our own cities this many flips or
-/// fewer from the threat faith's strict majority among them.
+/// fewer from the threat faith's strict majority among them, at a stake of
+/// at least [`RELIGIOUS_VETO_STAKE_FLOOR`].
 ///
 /// The stake ratio reads a rival civilization the faith does not hold as 0,
 /// however close it is, and our own half as no more than halfway there.
@@ -99,7 +100,8 @@ pub(super) const RELIGIOUS_VETO_EXTRA_SPREADERS: f64 = 2.0;
 /// faith already holding another civilization, is the match point the
 /// spending levers exist for. The rival civilizations' city religions do
 /// not cross the export, so our own civilization -- the one veto we can
-/// see whole and defend -- is the clock.
+/// see whole and defend -- is the clock. The floor keeps that game's t98
+/// (two flips, stake 0.56) and drops a small empire's routine early reading.
 pub(super) const VETO_MATCH_POINT_FLIPS: usize = 2;
 
 /// A rival faith worth a `RemoveHeresy` charge holds at least this share of
@@ -191,10 +193,17 @@ impl AdvancedAi {
             }
             // The engine's test is `following * 2 > cities`.
             let our_flips_needed = (our_cities.len() / 2 + 1).saturating_sub(our_converted);
+            // From the engagement floor only. Without it a six-civ game read
+            // match point for a faith holding one of the four other
+            // civilizations and one of our three cities (stake 0.33): two
+            // flips is most of a small empire. The first fires probe without
+            // the floor (6 Emperor games, seeds 40310-40315) read 0 wins in
+            // 13 seats against 6 in 23, share -2.8 pp (z -2.2).
             let match_point = self.veto_counts_the_flips
                 && our_converted >= 1
                 && our_flips_needed <= VETO_MATCH_POINT_FLIPS
-                && (dominated >= 1 || others.is_empty());
+                && (dominated >= 1 || others.is_empty())
+                && stake >= RELIGIOUS_VETO_STAKE_FLOOR;
             // With the gene, a faith at match point is the threat ahead of a
             // higher stake that is not.
             let better = best.as_ref().is_none_or(|current| {

@@ -351,4 +351,17 @@ fn veto_counts_the_flips_reads_match_point_from_our_own_cities() {
     let mut alone = AdvancedAi::new();
     alone.enable_veto_counts_the_flips();
     assert!(alone.religious_veto_stakes(&game, 0).is_none());
+
+    // Below the engagement floor no match point, two flips or not: a fifth
+    // city of ours puts the one converted at 0.4 of the way (stake 0.47).
+    let fifth = game.found_city_for(0, (28, 10), None);
+    game.cities.get_mut(&fifth).unwrap().pressure.clear();
+    let low = flips.religious_veto_stakes(&game, 0).unwrap();
+    assert_eq!(low.our_flips_needed, 2);
+    assert!(low.stake < RELIGIOUS_VETO_STAKE_FLOOR, "{}", low.stake);
+    assert!(!low.match_point);
+    assert!(flips.religious_veto_engaged(&game, 0).is_none());
+    // A second flip lifts it over the floor: match point again.
+    convert(&mut game, ours[1]);
+    assert!(flips.religious_veto_engaged(&game, 0).unwrap().match_point);
 }
