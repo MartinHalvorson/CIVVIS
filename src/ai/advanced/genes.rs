@@ -4279,6 +4279,13 @@ pub const GENES: &[Gene] = &[
     // assigned another lane. With this on it opens there once a rival has
     // landed a space project and we lead, and races Science beside the lane.
     Gene { tag: "science-drive-answers-the-launch", field: "science_drive_answers_the_launch", kind: Kind::OptIn, enable: AdvancedAi::enable_science_drive_answers_the_launch, disable: AdvancedAi::disable_science_drive_answers_the_launch },
+    // `culture-seat-monuments`: the first live Emperor Culture seat
+    // (civvis-20261030T090715Z) held one Monument in six cities at t60 and
+    // made 12 Culture a turn against Egypt's 56. A Culture seat's
+    // unthreatened cities claim their Monument once the second city stands,
+    // ahead of a deferrable head, while no major is at war with us. See
+    // `advanced/culture_monuments.rs`.
+    Gene { tag: "culture-seat-monuments", field: "culture_seat_monuments", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_monuments, disable: AdvancedAi::disable_culture_seat_monuments },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
