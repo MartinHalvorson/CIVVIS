@@ -17,8 +17,9 @@
 //! **What the gene does.** For a Diplomacy seat that has not seen the Statue
 //! built or ruled out by the host, when no city of ours with at least
 //! [`STATUE_HARBOR_PRODUCTION_SHARE`] of the best candidate's Production holds
-//! or queues a Harbor, the unthreatened city with the most Production that can
-//! build its first Harbor in time ([`BasicAi::first_harbor_item`]) claims it:
+//! or queues a Harbor that leaves the Statue a site, the unthreatened city with
+//! the most Production that can build its first Harbor in time on such a site
+//! ([`AdvancedAi::statue_room`]) claims it:
 //! an idle queue, or one over a deferrable head that keeps its progress (the
 //! Theater claim's rule), with the other claims' heads kept. The delegated
 //! governor's rescoring leaves it alone ([`AdvancedAi::statue_harbor_holds`]).
@@ -30,6 +31,10 @@ use super::*;
 /// A Harbor in a city with at least this share of the best candidate's
 /// Production already serves the Statue.
 pub(super) const STATUE_HARBOR_PRODUCTION_SHARE: f64 = 0.75;
+
+/// Build turns past which a city does not start the Statue's Harbor: the
+/// first-district horizon (`FIRST_CAMPUS_MAX_TURNS`).
+pub(super) const STATUE_HARBOR_MAX_TURNS: f64 = 15.0;
 
 impl AdvancedAi {
     /// Whether the Statue of Liberty is still open to this seat: no city on
@@ -44,12 +49,69 @@ impl AdvancedAi {
                 .any(|city| city.wonders.contains_key(&statue))
     }
 
-    fn has_harbor(g: &Game, city: &crate::game::City) -> bool {
-        g.city_has_district_family(city, crate::name!("harbor"))
-            || city.queue.iter().any(|item| {
-                matches!(item, Item::District { district, .. }
-                    if g.district_family(*district) == "harbor")
+    /// Whether a Harbor at `harbor` leaves the Statue of Liberty a site: a free
+    /// coast tile of `city`'s, within three tiles of the centre, beside land
+    /// and beside the Harbor (`wonder_sites`' rule for a water, coast wonder
+    /// with `adjacent_district: harbor`). Live Immortal
+    /// civvis-20261030T173341Z held Harbors in Corinth (24 Production) and
+    /// Ephesus (39) whose coast offered the Statue nothing, and the only offer
+    /// was Megara's, at 10 Production and 62 turns.
+    pub(super) fn statue_room(g: &Game, city: &crate::game::City, harbor: Pos) -> bool {
+        g.nbrs(harbor).into_iter().any(|pos| {
+            pos != city.pos
+                && city.owned_tiles.contains(&pos)
+                && g.wdist(pos, city.pos) <= 3
+                && g.map.tiles.get(&pos).is_some_and(|tile| {
+                    tile.terrain == "coast"
+                        && !tile.flooded
+                        && tile.district.is_none()
+                        && tile.district_foundation.is_none()
+                        && tile.wonder.is_none()
+                        && tile.resource.as_ref().is_none_or(|resource| {
+                            matches!(
+                                g.rules.resources[resource].class.as_str(),
+                                "bonus" | "artifact"
+                            )
+                        })
+                })
+                && g.nbrs(pos)
+                    .into_iter()
+                    .any(|next| g.map.get(next).is_some_and(|tile| !g.rules.is_water(tile)))
+        })
+    }
+
+    /// Whether `city` holds or queues a Harbor that leaves the Statue a site.
+    fn has_statue_harbor(g: &Game, city: &crate::game::City) -> bool {
+        city.districts.iter().any(|(district, pos)| {
+            g.district_family(*district) == "harbor" && Self::statue_room(g, city, *pos)
+        }) || city.queue.iter().any(|item| {
+            matches!(item, Item::District { district, pos }
+                    if g.district_family(*district) == "harbor"
+                        && Self::statue_room(g, city, *pos))
+        })
+    }
+
+    /// `cid`'s first Harbor on a site that leaves the Statue room, buildable
+    /// within `STATUE_HARBOR_MAX_TURNS`, with its build turns.
+    fn statue_harbor_site(g: &Game, pid: usize, cid: u32) -> Option<(Item, f64)> {
+        let city = g.cities.get(&cid)?;
+        if g.city_has_district_family(city, crate::name!("harbor")) {
+            return None;
+        }
+        let district = BasicAi::civ_district(g, pid, "harbor");
+        let production = g.city_yields(cid).production.max(0.5);
+        g.district_sites(cid, district)
+            .into_iter()
+            .filter(|pos| Self::statue_room(g, city, *pos))
+            .map(|pos| Item::District { district, pos })
+            .find(|item| g.can_produce(pid, cid, item))
+            .map(|item| {
+                let turns = g
+                    .host_production_turns(cid, &item)
+                    .unwrap_or_else(|| g.item_cost_for(pid, &item) / production);
+                (item, turns)
             })
+            .filter(|(_, turns)| *turns <= STATUE_HARBOR_MAX_TURNS)
     }
 
     /// The city that should build the Statue's Harbor and the Harbor item,
@@ -78,22 +140,21 @@ impl AdvancedAi {
                     && !(city.last_attacked > 0 && g.turn.saturating_sub(city.last_attacked) <= 4)
             })
             .filter_map(|cid| {
-                BasicAi::first_harbor_item(g, pid, cid)
-                    .map(|item| (g.city_yields(cid).production, cid, item))
+                Self::statue_harbor_site(g, pid, cid)
+                    .map(|(item, turns)| (g.city_yields(cid).production, cid, item, turns))
             })
-            .max_by(|a, b| a.0.total_cmp(&b.0).then(b.1.cmp(&a.1)))?;
+            .max_by(|a, b| a.0.total_cmp(&b.0).then(b.1.cmp(&a.1)))
+            .map(|(production, cid, item, turns)| (production, cid, (item, turns)))?;
         let served = ours.iter().any(|other| {
             let city = &g.cities[other];
-            Self::has_harbor(g, city)
+            Self::has_statue_harbor(g, city)
                 && g.city_yields(*other).production
                     >= STATUE_HARBOR_PRODUCTION_SHARE * best_production
         });
         if served {
             return None;
         }
-        let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
-            g.item_cost_for(pid, &item) / g.city_yields(cid).production.max(0.5)
-        });
+        let (item, turns) = item;
         Some((cid, item, turns))
     }
 

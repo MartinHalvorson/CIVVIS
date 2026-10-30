@@ -8587,6 +8587,17 @@ impl AdvancedAi {
         self.culture_routes_reach_every_rival = false;
     }
 
+    /// Turn on `trade-quotes-pay-the-lump`. See
+    /// [`Self::trade_quotes_pay_the_lump`].
+    pub fn enable_trade_quotes_pay_the_lump(&mut self) {
+        self.trade_quotes_pay_the_lump = true;
+    }
+
+    /// The twin of `enable_trade_quotes_pay_the_lump`.
+    pub fn disable_trade_quotes_pay_the_lump(&mut self) {
+        self.trade_quotes_pay_the_lump = false;
+    }
+
     /// Opt-in gene `counterweight-defends-the-diplomat`; see
     /// [`Self::counterweight_defends_the_diplomat`].
     pub fn enable_counterweight_defends_the_diplomat(&mut self) {
