@@ -165,6 +165,16 @@ impl AdvancedAi {
         let (item, reach) = if let Some(factory) = BasicAi::civ_building(g, pid, cid, "factory") {
             (factory, Self::factory_new_reach(g, pid, cid))
         } else {
+            // See `diplomatic_lane_refuses_fossil_power`: this claim builds
+            // the plant outside both the strategic scorer and the delegated
+            // governor, so it asks too. Live King civvis-20261030T080237Z
+            // (a Diplomatic seat on f29a6d2, both vetoes live) claimed five
+            // Coal Power Plants here from t99 to t135 and paid the -20
+            // Carbon Emissions Penalty cap from t144, its bank at 0 through
+            // the t162 Congress.
+            if self.diplomatic_lane_refuses_fossil_power("coal_power_plant") {
+                return None;
+            }
             let coal = g.strategic_resource_rate(pid, "coal") > 0.0
                 || g.strategic_stockpile(pid, crate::name!("coal")) >= FACTORY_CLAIM_COAL_STOCK;
             if !coal {
