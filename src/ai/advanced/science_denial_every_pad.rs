@@ -84,7 +84,9 @@ impl AdvancedAi {
     pub(crate) fn denial_spy_racers(&self, g: &Game, pid: usize) -> BTreeSet<usize> {
         let mut racers = self.decisive_space_racers(g, pid);
         if !self.space_denial_spies_from_rocketry || !g.victory_conditions.science {
-            return racers;
+            // `launched-racer-draws-every-spy`: a launched racer takes the
+            // whole network. Unchanged with the gene off.
+            return self.launched_racers_only(g, racers);
         }
         racers.extend(
             g.players
@@ -101,7 +103,7 @@ impl AdvancedAi {
                 })
                 .map(|rival| rival.id),
         );
-        racers
+        self.launched_racers_only(g, racers)
     }
 
     /// The decisive space racers, whichever gene asks: met, living,

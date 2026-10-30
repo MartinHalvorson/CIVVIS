@@ -8566,6 +8566,17 @@ impl AdvancedAi {
         self.hidden_border_yields_to_our_pressure = false;
     }
 
+    /// Opt-in gene `launched-racer-draws-every-spy`; see
+    /// [`Self::launched_racer_draws_every_spy`].
+    pub fn enable_launched_racer_draws_every_spy(&mut self) {
+        self.launched_racer_draws_every_spy = true;
+    }
+
+    /// The twin of `enable_launched_racer_draws_every_spy`.
+    pub fn disable_launched_racer_draws_every_spy(&mut self) {
+        self.launched_racer_draws_every_spy = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

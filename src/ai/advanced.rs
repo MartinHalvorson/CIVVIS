@@ -7830,6 +7830,11 @@ pub struct AdvancedAi {
     /// whose board holds none of the spare we put up, that spare first
     /// (`append_luxury_swap_order` in `civvis_orders`). Off by default.
     luxury_swap_asks_2: bool,
+    /// `launched-racer-draws-every-spy`: once a rival has launched its
+    /// Exoplanet Expedition, the denial spy network (training, every-pad
+    /// postings, the racer the Spies keep to) answers only the launched
+    /// racers. See `advanced/launched_racer_draws_every_spy.rs`.
+    launched_racer_draws_every_spy: bool,
     // ---- append: p-r ------------------------------------------------
     /// `prey-is-declared-on`: a Domination seat declares on a major rival
     /// under `prey_declaration::PREY_DECLARE_RATIO` of its military power
@@ -9604,6 +9609,8 @@ mod holdout_faith_war;
 mod last_two_capitals;
 /// `launched-racer-yields-the-capital`: see `advanced/launched_racer.rs`.
 mod launched_racer;
+/// `launched-racer-draws-every-spy`: see `advanced/launched_racer_draws_every_spy.rs`.
+mod launched_racer_draws_every_spy;
 
 mod city_memory;
 /// `faith-war-before-the-flip`: see `advanced/faith_war_before_the_flip.rs`.
@@ -11373,6 +11380,7 @@ impl AdvancedAi {
             no_peace_with_a_launcher: false,
             launcher_war_ignores_the_edge: false,
             luxury_swap_asks_2: false,
+            launched_racer_draws_every_spy: false,
             // ---- append: p-r ----------------------------------------
             prey_is_declared_on: false,
             prophet_race_takes_divine_spark: false,

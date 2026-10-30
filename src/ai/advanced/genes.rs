@@ -4334,6 +4334,14 @@ pub const GENES: &[Gene] = &[
     // our own cities press the site (population times closeness, 30 or more).
     // See `advanced/hidden_border_reach.rs`.
     Gene { tag: "hidden-border-yields-to-our-pressure", field: "hidden_border_yields_to_our_pressure", kind: Kind::OptIn, enable: AdvancedAi::enable_hidden_border_yields_to_our_pressure, disable: AdvancedAi::disable_hidden_border_yields_to_our_pressure },
+    // Live Immortal 10-30: after a rival's Exoplanet launch its laser stations
+    // (repeatable Spaceport projects, +1 a turn each) took it from +1 to +3..+9
+    // and the win came 4-12 turns later in 5 of 6 science losses, with 0-2 of
+    // our Disrupts after the launch and our spies split over every Rocketry
+    // holder. The one game with 6 post-launch Disrupts on the launcher's pads
+    // held it at +1 for 24 turns. The spy network answers only launched racers.
+    // See `advanced/launched_racer_draws_every_spy.rs`.
+    Gene { tag: "launched-racer-draws-every-spy", field: "launched_racer_draws_every_spy", kind: Kind::OptIn, enable: AdvancedAi::enable_launched_racer_draws_every_spy, disable: AdvancedAi::disable_launched_racer_draws_every_spy },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
