@@ -9700,10 +9700,10 @@ mod culture_open_borders;
 /// `diplo-seat-statue-harbor`: see `advanced/diplo_statue_harbor.rs`.
 mod diplo_statue_harbor;
 
-/// `culture-routes-reach-every-rival`: see `advanced/culture_routes.rs`.
-mod culture_routes;
 /// `culture-recovery-spends-the-bank`: see `advanced/culture_recovery_bank.rs`.
 mod culture_recovery_bank;
+/// `culture-routes-reach-every-rival`: see `advanced/culture_routes.rs`.
+mod culture_routes;
 /// `hidden-border-yields-to-our-pressure`: see `advanced/hidden_border_reach.rs`.
 mod hidden_border_reach;
 /// `trade-quotes-pay-the-lump`: see `advanced/trade_quotes_lump.rs`.
