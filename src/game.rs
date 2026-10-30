@@ -6638,6 +6638,16 @@ pub struct Game {
     /// there.
     #[serde(default)]
     pub observed_wall_tier_rules: bool,
+    /// `trade-quotes-pay-the-lump`: the seat whose own quick-deal quotes are
+    /// paid as one rounded-up Gold lump whenever the payer's treasury covers
+    /// it, instead of the floored lump plus a per-turn sliver that
+    /// `quoted_payment` checks against `empire_gold_per_turn`. That proxy (4
+    /// Gold a city less unit and building upkeep, floored at zero) reads zero
+    /// from about turn 100 for a built-up empire whose real income is 30-200,
+    /// so every fractional quote it is party to vanishes. Set by the seat each
+    /// turn; `None` changes nothing.
+    #[serde(default)]
+    pub lump_quote_viewer: Option<usize>,
     /// `builders-route-around-mountains`: a Builder never enters a mountain,
     /// whatever the Ski Resort unlock. The host's move pathing put none of
     /// ours on a mountain in 984 Builder-turns after Professional Sports over
@@ -7657,6 +7667,7 @@ impl From<GameSer> for Game {
             observed_city_ranged_strength: Arc::new(s.observed_city_ranged_strength),
             observed_city_max_wall_hp: Arc::new(s.observed_city_max_wall_hp),
             observed_wall_tier_rules: false,
+            lump_quote_viewer: None,
             observed_builders_avoid_mountains: false,
             heist_reads_the_host_menu: false,
             // Not carried in a save: host refusals are rebuilt from the run's event
@@ -8397,6 +8408,7 @@ impl Game {
             observed_city_ranged_strength: Arc::new(BTreeMap::new()),
             observed_city_max_wall_hp: Arc::new(BTreeMap::new()),
             observed_wall_tier_rules: false,
+            lump_quote_viewer: None,
             observed_builders_avoid_mountains: false,
             heist_reads_the_host_menu: false,
             blocked_city_sites: Arc::new(BTreeSet::new()),

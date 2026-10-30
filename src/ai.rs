@@ -15761,12 +15761,6 @@ impl BasicAi {
         Self::first_district_item(g, pid, cid, "theater_square")
     }
 
-    /// The first Harbor (or its replacement) on its best site; see
-    /// `first_district_item`. `diplo-seat-statue-harbor`.
-    pub(crate) fn first_harbor_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
-        Self::first_district_item(g, pid, cid, "harbor")
-    }
-
     /// This city's first district of `family` (its civilization's
     /// replacement where it has one) on the site with the highest total
     /// yield, when the city would finish it within `FIRST_CAMPUS_MAX_TURNS`.

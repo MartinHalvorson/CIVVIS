@@ -90,12 +90,12 @@ fn coastal_empire() -> (Game, Vec<u32>) {
         });
         if ranked
             .iter()
-            .any(|cid| BasicAi::first_harbor_item(&game, 0, *cid).is_some())
+            .any(|cid| AdvancedAi::statue_harbor_site(&game, 0, *cid).is_some())
         {
             return (game, ranked);
         }
     }
-    panic!("fixture: no seed offers a Harbor site");
+    panic!("fixture: no seed offers a Harbor site with room for the Statue");
 }
 
 fn seat(target: VictoryTarget, gene: bool) -> AdvancedAi {
@@ -123,7 +123,7 @@ fn the_strongest_coastal_city_claims_the_statues_harbor() {
     let (game, ranked) = coastal_empire();
     let harbor_city = *ranked
         .iter()
-        .find(|cid| BasicAi::first_harbor_item(&game, 0, **cid).is_some())
+        .find(|cid| AdvancedAi::statue_harbor_site(&game, 0, **cid).is_some())
         .unwrap();
 
     for (ai, why) in [
@@ -166,4 +166,34 @@ fn a_built_statue_claims_nothing() {
     let ai = seat(VictoryTarget::Diplomacy, true);
     let plan = ai.assess(&game, 0);
     assert!(ai.statue_harbor_item(&game, 0, &plan).is_none());
+}
+
+/// A Harbor whose coast neighbours are all taken leaves the Statue no site:
+/// the claim looks for one that does.
+#[test]
+fn a_harbor_site_without_room_for_the_statue_is_passed_over() {
+    let (mut game, ranked) = coastal_empire();
+    let cid = *ranked
+        .iter()
+        .find(|cid| AdvancedAi::statue_harbor_site(&game, 0, **cid).is_some())
+        .unwrap();
+    let (item, _) = AdvancedAi::statue_harbor_site(&game, 0, cid).unwrap();
+    let Item::District { pos, .. } = item else {
+        unreachable!()
+    };
+    assert!(AdvancedAi::statue_room(&game, &game.cities[&cid], pos));
+    let blocker = game
+        .cities
+        .values()
+        .next()
+        .and_then(|city| city.districts.iter().next().map(|(name, _)| *name))
+        .unwrap_or(crate::name!("city_center"));
+    for next in game.nbrs(pos) {
+        if let Some(tile) = game.map.tiles.get_mut(&next) {
+            if tile.terrain == "coast" {
+                tile.district = Some(blocker);
+            }
+        }
+    }
+    assert!(!AdvancedAi::statue_room(&game, &game.cities[&cid], pos));
 }
