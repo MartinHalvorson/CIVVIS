@@ -174,10 +174,23 @@ check("gang keeps the deny", mode, "deny")
 check("gang votes B", requests[1].option, 2)
 check("gang names the leader", requests[1].selection, 3)
 
--- Our own match point: everything above the participation votes.
+-- Our own match point: the rivals gang on us, so B on ourselves with the
+-- free vote takes the participation point; the bank buys the others.
+spent, mode = run(300, 8, 18, 9)
+check("match point braces", mode, "brace")
+check("brace votes B", requests[1].option, 2)
+check("brace names us", requests[1].selection, 0)
+check("brace is the free vote", requests[1].votes, 1)
+check("brace still buys border control", requests[2].votes, 2)
+check("brace spend", spent, 8)
+check("brace below 18", CivvisRacerBraces(17, {}), false)
+check("brace at 18", CivvisRacerBraces(18, {}), true)
+-- With the brace moved past the win, match point claims all in.
+config.DiploRacerGangSelf = 21
 spent, mode = run(300, 8, 18, 9)
 check("match point race", mode, "race")
 check("match point all in", requests[1].votes, 12)
+config.DiploRacerGangSelf = nil
 
 -- An expensive resolution is bought from what the claim leaves.
 session = { "WC_RES_DIPLOVICTORY", "WC_RES_TRADE_TREATY" }

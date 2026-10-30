@@ -17053,7 +17053,8 @@ end
 -- reach `least` (the ballot then falls back to the redirect and denial
 -- above). With no recorded rival block, `DiploRacerFirstBlock` (8: the
 -- first-session default that won 75% in the replay against 66% at 5). From
--- match point (`DiploVictoryMatchPoint`, 18) the claim is the win: all in.
+-- match point (`DiploVictoryMatchPoint`, 18) the claim is the win: all in --
+-- reached only when `DiploRacerGangSelf` stands above it (`CivvisRacerBraces`).
 CivvisRacerClaimVotes = function(favor, ourPoints, rivalBlock, costs, maxVotes, config)
 	config = type(config) == "table" and config or {};
 	local block = tonumber(rivalBlock) or tonumber(config.DiploRacerFirstBlock) or 8;
@@ -17066,6 +17067,23 @@ CivvisRacerClaimVotes = function(favor, ourPoints, rivalBlock, costs, maxVotes, 
 	end
 	if budget < least then return nil; end
 	return math.min(least + math.ceil(block / 4), budget);
+end
+
+-- ★★ AND FROM OUR OWN MATCH POINT THE RIVALS GANG ON US: VOTE WITH THEM.
+-- Across October 2-5 the rivals cast B on a Diplomatic leader at 16 points
+-- in 57% of sessions and at 18 in all five. A claim cast into that gang
+-- loses the +2 and the participation point: -2 a session, so a racer at 18
+-- stalls there. B on ourselves matches the winning option and target -- B
+-- and the gang's own target, us -- for +1: -1 a session, and with the two
+-- participation votes bought beside it (~+1.3) the session gains instead of
+-- losing, so a point from anywhere between sessions wins. At 16-17 the gang
+-- is a coin flip and a winning claim is +3 (expected about -0.2 for the
+-- claim against -0.6 for the brace), so the brace waits for
+-- `DiploRacerGangSelf` (18). The free vote only: the Favor goes to the
+-- participation votes.
+CivvisRacerBraces = function(ourPoints, config)
+	config = type(config) == "table" and config or {};
+	return (tonumber(ourPoints) or 0) >= (tonumber(config.DiploRacerGangSelf) or 18);
 end
 
 -- A ballot is verified against all three native selection fields, not just
@@ -22888,12 +22906,14 @@ local function tick()
 						-- See `CivvisDiploRacer`: a diplomatic seat claims for
 						-- itself with what the participation votes leave.
 						if CivvisDiploRacer(cfg) and not ganged and ourIdx ~= nil then
+							local mine = tonumber(try(function()
+								return Players[pid]:GetStats():GetDiplomaticVictoryPoints();
+							end, 0)) or 0;
 							local k = CivvisRacerClaimVotes(favor - (envoyTally.racer_reserve or 0),
-								try(function()
-									return Players[pid]:GetStats():GetDiplomaticVictoryPoints();
-								end, 0),
-								envoyTally.wc_rival_block, costs, maxVotes, cfg);
-							if k ~= nil then
+								mine, envoyTally.wc_rival_block, costs, maxVotes, cfg);
+							if CivvisRacerBraces(mine, cfg) then
+								option, selection, n, mode = 2, ourIdx, 1, "brace";
+							elseif k ~= nil then
 								option, selection, n, mode = 1, ourIdx, k, "race";
 							elseif mode == "probe" then
 								n, mode = 1, "free";
