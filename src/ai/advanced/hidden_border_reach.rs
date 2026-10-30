@@ -50,6 +50,34 @@ impl AdvancedAi {
             .sum()
     }
 
+    /// Our pressure at `site` when this gene is what let a Settler found there:
+    /// the site lies beside an unresolved major border and the veto yielded.
+    /// Read BEFORE the founding (the new city changes the sum). `None`
+    /// otherwise, and always with the gene off.
+    pub(super) fn hidden_border_yield_before_founding(
+        &self,
+        g: &Game,
+        pid: usize,
+        site: Pos,
+    ) -> Option<i64> {
+        (self.frontier_loyalty
+            && Self::beside_unresolved_major_border(g, site)
+            && self.hidden_border_yields(g, pid, site))
+        .then(|| Self::own_loyalty_pressure(g, pid, site))
+    }
+
+    /// Journals a founding this gene allowed, so the live guard can key a
+    /// Loyalty loss to the exact site.
+    pub(super) fn note_hidden_border_founding(&self, site: Pos, yielded: Option<i64>) {
+        if let Some(pressure) = yielded {
+            think!(self.journal(), Expansion, Decision,
+                   "Hidden-border veto yields at {site:?}";
+                   "hidden-border-yields-to-our-pressure: our Loyalty pressure {pressure} against \
+                    a bar of {HIDDEN_BORDER_OWN_PRESSURE}, beside a rival border whose city may be \
+                    hidden"; site);
+        }
+    }
+
     /// Whether the unresolved-border veto yields at `site`: the gene is on and
     /// our own pressure there reaches `HIDDEN_BORDER_OWN_PRESSURE`.
     pub(super) fn hidden_border_yields(&self, g: &Game, pid: usize, site: Pos) -> bool {

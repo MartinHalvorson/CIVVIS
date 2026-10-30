@@ -94,3 +94,26 @@ fn the_hidden_border_veto_yields_to_our_pressure() {
         "our pressure 10: the veto stands"
     );
 }
+
+/// The founding telemetry reads our pressure only where this gene lifted the
+/// veto: Some at the yielded site, None with the gene off or away from an
+/// unseen border.
+#[test]
+fn the_founding_note_marks_only_a_site_the_gene_allowed() {
+    let (mut game, home) = capital(6);
+    let site = site_beside_an_unseen_border(&mut game, home, 5);
+    assert_eq!(
+        frontier(true).hidden_border_yield_before_founding(&game, 0, site),
+        Some(30)
+    );
+    assert_eq!(
+        frontier(false).hidden_border_yield_before_founding(&game, 0, site),
+        None
+    );
+    game.unseen_major_borders.clear();
+    assert_eq!(
+        frontier(true).hidden_border_yield_before_founding(&game, 0, site),
+        None,
+        "no unseen border: the old veto would have passed it anyway"
+    );
+}

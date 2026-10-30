@@ -40750,8 +40750,10 @@ impl AdvancedAi {
                 // line now asserts an applied action, never an intention.
                 // ⚠ Priced BEFORE the apply, for the reason in the city branch.
                 let worth = self.settle_value(g, pid, current);
+                let yielded = self.hidden_border_yield_before_founding(g, pid, current);
                 let founded = g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
                 if founded {
+                    self.note_hidden_border_founding(current, yielded);
                     think!(self.journal(), Expansion, Decision, "Founding the capital at {current:?}";
                            "the site is worth {:.1}", worth; current);
                 } else {
@@ -41166,8 +41168,10 @@ impl AdvancedAi {
             // well — founding here makes this city our nearest, and the gap
             // it closed is gone.
             let contested = self.contested_land_front(g, pid, current);
+            let yielded = self.hidden_border_yield_before_founding(g, pid, current);
             let founded = g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
             if founded {
+                self.note_hidden_border_founding(current, yielded);
                 if let Some((front, credit)) = contested {
                     *g.players[pid]
                         .counters
@@ -41514,8 +41518,10 @@ impl AdvancedAi {
         self.settler_stalls.remove(&uid);
         self.settler_closest.remove(&uid);
         // ⚠ Journal AFTER the engine answers; see the capital branch.
+        let yielded = self.hidden_border_yield_before_founding(g, pid, here);
         let founded = g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
         if founded {
+            self.note_hidden_border_founding(here, yielded);
             think!(self.journal(), Expansion, Decision,
                    "Founding where the settler stands at {here:?}";
                    "it stalled {SETTLER_STALL_LIMIT} turns short of a better site \
