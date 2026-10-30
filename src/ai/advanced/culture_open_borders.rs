@@ -5,20 +5,30 @@
 //! Tourism pressure is banked against each rival with the multiplier in force
 //! on the turn it is generated (`Game::add_passive_tourism`), and a rival's
 //! Open Borders grant to us is +25% of everything we generate against it
-//! (`Game::international_tourism_multiplier`). The Culture objective's own
-//! purchase runs one Open Borders buy every sixth turn, and a grant lasts the
-//! standard deal length — so with three rivals the seat held a grant from
-//! 0–2 of them at most turn-25 marks of a native Immortal culture census
-//! (4p pangaea, three handicapped rival chairs, 16 games): the multiplier is
-//! missing on most of the pressure that decides the race.
+//! (`Game::international_tourism_multiplier`). A native Immortal culture
+//! census (4p pangaea, three handicapped rival chairs, 16 games) found the
+//! seat holding a grant from 0–2 of three rivals at most turn-25 marks.
+//!
+//! ★ THE PURCHASE COULD NOT HAPPEN AT ALL. A seat plans on its own player
+//! view, and the view copies a met rival's public border enforcement
+//! (`Player::borders_enforced`) but not its civics (`player_view.rs`). Every
+//! Open Borders rule in the engine — the quick-deal quote, the war-eve quote
+//! and both trade validations — asks `tree_effect(partner, "open_borders")`,
+//! which reads those civics, so in the view no rival ever quotes passage: a
+//! traced Immortal game logged zero Open Borders quotes in 250 turns with 400
+//! Gold banked and 44 tourism a turn. The Culture objective's six-turn buy was
+//! dead the same way; the grants the census saw came from elsewhere.
 //!
 //! With the gene on, each turn the seat's tourism is at least
-//! [`OPEN_BORDERS_TOURISM_FLOOR`], every met rival's Open Borders sale that the
-//! ordinary Culture filters allow is bought, the largest domestic-tourist
-//! count first — visitors drawn from the bar holder also lower the bar. A
-//! purchase never spends into the solvency reserve. Below the floor the grant
-//! is a few points of pressure for tens of Gold and the old six-turn cadence
-//! is left alone. Off, nothing changes.
+//! [`OPEN_BORDERS_TOURISM_FLOOR`], every met rival whose borders the view
+//! shows enforced is read as holding Early Empire — the civic that is this
+//! ruleset's only source of enforcement (`data/tree_effects.json`) — for the
+//! length of the purchase, and every Open Borders sale the ordinary Culture
+//! filters allow is bought, the largest domestic-tourist count first: visitors
+//! drawn from the bar holder also lower the bar. The view is restored before
+//! anything else reads it, and the authoritative game revalidates every
+//! harvested trade against the real civics. A purchase never spends into the
+//! solvency reserve. Below the floor nothing changes; off, nothing changes.
 use super::AdvancedAi;
 use crate::game::{Game, QuickDeal};
 use std::collections::BTreeSet;
@@ -47,6 +57,7 @@ impl AdvancedAi {
         {
             return 0;
         }
+        let revealed = Self::reveal_enforcing_civics(g, pid);
         let mut closed = 0;
         let mut tried = BTreeSet::new();
         loop {
@@ -79,7 +90,36 @@ impl AdvancedAi {
                 closed += 1;
             }
         }
+        for rival in revealed {
+            g.players[rival]
+                .civics
+                .remove(&crate::name!("early_empire"));
+        }
         closed
+    }
+
+    /// Every met major whose borders the view shows enforced but whose civics
+    /// it hides gains Early Empire in the view. Returns the rivals changed, so
+    /// the caller can take it back. On an authoritative board the civic is
+    /// already there and nothing changes.
+    fn reveal_enforcing_civics(g: &mut Game, pid: usize) -> Vec<usize> {
+        let early_empire = crate::name!("early_empire");
+        let revealed: Vec<usize> = (0..g.players.len())
+            .filter(|&rival| {
+                let player = &g.players[rival];
+                rival != pid
+                    && player.alive
+                    && !player.is_minor
+                    && !player.is_barbarian
+                    && g.has_met(pid, rival)
+                    && g.enforces_borders(rival)
+                    && !player.civics.contains(&early_empire)
+            })
+            .collect();
+        for &rival in &revealed {
+            g.players[rival].civics.insert(early_empire);
+        }
+        revealed
     }
 
     /// The quote's lump never spends into the reserve a falling treasury

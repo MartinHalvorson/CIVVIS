@@ -79,3 +79,41 @@ fn a_falling_treasury_keeps_its_reserve() {
     assert_eq!(closed, 0);
     assert_eq!(game.players[0].gold, gold);
 }
+
+/// A seat's planning view shows a met rival's border enforcement but not its
+/// civics, so the engine's Open Borders rules saw no Early Empire there and
+/// never quoted passage. The gene reads enforcement as the civic for the
+/// purchase and hands the view back unchanged.
+#[test]
+fn a_view_that_hides_rival_civics_still_buys_passage_and_is_restored() {
+    let mut game = four_traders(60.0);
+    for rival in 1..4 {
+        game.players[rival]
+            .civics
+            .remove(&crate::name!("early_empire"));
+        game.players[rival].borders_enforced = Some(true);
+    }
+    assert!(
+        !game
+            .quick_deals(0)
+            .iter()
+            .any(|deal| deal.item == "open_borders"),
+        "the view's rules quote no passage"
+    );
+
+    let closed = culture_seat(true).keep_every_border_open(
+        &mut game,
+        0,
+        None,
+        &BTreeSet::new(),
+        &BTreeSet::new(),
+    );
+
+    assert_eq!(closed, 3);
+    for rival in 1..4 {
+        assert!(game.has_open_borders(0, rival), "rival {rival}");
+        assert!(!game.players[rival]
+            .civics
+            .contains(&crate::name!("early_empire")));
+    }
+}
