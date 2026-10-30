@@ -85,3 +85,26 @@ fn a_wonder_without_points_is_not_claimed() {
         assert!(!matches!(&item, Item::Wonder { wonder, .. } if *wonder == "pyramids"));
     }
 }
+
+/// The soonest finish ranks ahead of the most Production: a city with the
+/// wonder half built finishes first even with less Production.
+#[test]
+fn the_soonest_finish_claims_ahead_of_the_strongest_city() {
+    // (points, turns, production, city)
+    let strong_fresh = (4.0, 25.0, 50.0, 7);
+    let weaker_sooner = (4.0, 14.0, 30.0, 9);
+    assert!(diplo_wonder_ranks_before(weaker_sooner, strong_fresh));
+    assert!(!diplo_wonder_ranks_before(strong_fresh, weaker_sooner));
+    // Points still come first: a two-point wonder sooner loses to four later.
+    let mahabodhi_sooner = (2.0, 5.0, 60.0, 3);
+    assert!(diplo_wonder_ranks_before(strong_fresh, mahabodhi_sooner));
+    // Equal finish: the stronger city, then the lower id.
+    assert!(diplo_wonder_ranks_before(
+        (4.0, 14.0, 40.0, 9),
+        (4.0, 14.0, 30.0, 2)
+    ));
+    assert!(diplo_wonder_ranks_before(
+        (4.0, 14.0, 30.0, 2),
+        (4.0, 14.0, 30.0, 9)
+    ));
+}
