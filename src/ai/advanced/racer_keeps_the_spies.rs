@@ -63,6 +63,30 @@
 //! Under the gene the Spy claim also says when every city is refused a Spy
 //! below our capacity: those slots are held by captured agents the board
 //! cannot see.
+//!
+//! **`racer-spies-search-for-the-pad`.** Rule 2 posts a Spy to the leader's
+//! city nearest a Spaceport we have seen, else its capital, and once a Spy
+//! stands in any of the leader's cities nothing moves it again. When the pad
+//! is in a city we have not seen, the Spy runs Listening Posts in a city with
+//! no pad for the rest of the race. Across the 13 live losses to a Science
+//! Victory of 2026-10-30, the first Disrupt Rocketry came 30 turns after the
+//! racer's first project in civvis-20261030T153459Z (Culture lane: four Spies
+//! in four Aztec cities from t176, the pad at Tepexpan, found at t217 by a
+//! Spy trained at t209), 24 in 162440Z (a Spy in Australia's Bendigo from
+//! t175 while Australia landed two projects; it was never disrupted) and 13
+//! in 084235Z (Scythia's Solocha from t166, the pad at Pazyryk, found at
+//! t179 by a new Spy).
+//!
+//! Under the gene, once the leader has landed a space project (it owns a
+//! pad), a Spy standing in one of the leader's cities where Disrupt Rocketry
+//! is not offered, with no pad seen there and none found there before,
+//! moves on: to the leader's city with a pad seen or found, else to its
+//! nearest city no Spy of ours holds and none has searched in the last
+//! [`RACER_SPY_SEARCH_MEMORY_TURNS`]. A Listening Post or Gain Sources it is
+//! running there does not hold it. A city where Disrupt Rocketry was offered
+//! to a Spy of ours is a found pad: a Spy there stays while it is pillaged,
+//! and the posts rank it with the pads we have seen. With every city of the
+//! leader searched, the Spy stays where it is until the memory lapses.
 
 use super::*;
 
@@ -94,6 +118,22 @@ const RACER_SPY_SLOT_NOTE_TURNS: u32 = 10;
 /// also leaves the export for a turn or two while it keeps its slot.
 const RACER_SPY_SLOT_PERSIST_TURNS: u32 = 3;
 
+/// `racer-spies-search-for-the-pad`: standard turns a racer's city searched
+/// without finding a pad is passed over by the search. A pad the racer
+/// builds there later is found when the memory lapses.
+pub(crate) const RACER_SPY_SEARCH_MEMORY_TURNS: u32 = 10;
+
+/// `racer-spies-search-for-the-pad`: what the search reads, borrowed from
+/// the seat. `None` with the gene off.
+#[derive(Clone, Copy)]
+pub(crate) struct RacerSpySearch<'a> {
+    /// The racers' cities where Disrupt Rocketry was offered to a Spy of ours.
+    pub(crate) found: &'a BTreeSet<u32>,
+    /// The leader's cities a Spy of ours stood in without the offer, and the
+    /// turn it last did.
+    pub(crate) searched: &'a BTreeMap<u32, u32>,
+}
+
 impl AdvancedAi {
     /// The space racers the Spies answer. Empty with the gene off.
     pub(crate) fn racer_spy_racers(&self, g: &Game, pid: usize) -> BTreeSet<usize> {
@@ -101,6 +141,16 @@ impl AdvancedAi {
             return BTreeSet::new();
         }
         self.denial_spy_racers(g, pid)
+    }
+
+    /// `racer-spies-search-for-the-pad`: what the search reads; `None` with
+    /// the gene off.
+    pub(crate) fn racer_spy_search(&self) -> Option<RacerSpySearch<'_>> {
+        self.racer_spies_search_for_the_pad
+            .then_some(RacerSpySearch {
+                found: &self.racer_spy_found_pads,
+                searched: &self.racer_spy_searched,
+            })
     }
 
     /// A seat's Production a turn: its cities as the board rebuilds them
@@ -194,6 +244,13 @@ impl AdvancedAi {
     /// ranked by a seen standing Spaceport within three tiles, then the
     /// capital, then nearness to the capital. Only cities the host lets us
     /// post to (`legal`) count.
+    ///
+    /// With `search` (`racer-spies-search-for-the-pad`), a found pad ranks as
+    /// a seen one, and a Spy searching the leader's city (see
+    /// [`Self::racer_spy_searching`]) moves to a pad seen or found, else to
+    /// the nearest of the leader's cities not searched lately; none left, it
+    /// stays.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn racer_spy_post(
         g: &Game,
         spy: u32,
@@ -202,20 +259,23 @@ impl AdvancedAi {
         racers: &BTreeSet<usize>,
         culture_racers: &BTreeSet<usize>,
         legal: &[Action],
+        search: Option<RacerSpySearch<'_>>,
     ) -> Option<u32> {
         let leader = leader?;
         let pid = g.spies.get(&spy)?.owner;
         let here = current_city
             .and_then(|city| g.cities.get(&city))
             .map(|city| city.owner);
-        if here == Some(leader)
+        let searching = search.is_some_and(|search| {
+            Self::racer_spy_searching(g, spy, current_city, Some(leader), search, legal)
+        });
+        if (here == Some(leader) && !searching)
             || here.is_some_and(|owner| culture_racers.contains(&owner))
             || (here.is_some_and(|owner| racers.contains(&owner))
                 && Self::racer_spy_disrupt_offered(g, spy, legal))
         {
             return None;
         }
-        let explored = &g.players[pid].explored;
         let cities = g.player_city_ids(leader);
         let capital = cities
             .iter()
@@ -231,31 +291,147 @@ impl AdvancedAi {
             })
         };
         let seen_pad = |cid: u32| {
-            let centre = g.cities[&cid].pos;
-            g.cities[&cid].districts.iter().any(|(district, pad)| {
-                g.district_family(*district) == "spaceport"
-                    && explored.contains(pad)
-                    && g.wdist(centre, *pad) <= 3
-                    && g.map.get(*pad).is_some_and(|tile| !tile.pillaged)
-            })
+            Self::racer_spy_seen_pad(g, pid, cid)
+                || search.is_some_and(|search| search.found.contains(&cid))
         };
+        let from = current_city
+            .and_then(|city| g.cities.get(&city))
+            .map(|city| city.pos);
+        let fresh =
+            |cid: u32| search.is_none_or(|search| !Self::racer_spy_searched_lately(g, search, cid));
         cities
             .into_iter()
             .filter(|cid| {
                 !held(*cid)
+                    && Some(*cid) != current_city
+                    && (!searching || seen_pad(*cid) || fresh(*cid))
                     && legal.iter().any(
                         |action| matches!(action, Action::AssignSpy { city, .. } if city == cid),
                     )
             })
             .min_by_key(|cid| {
                 let city = &g.cities[cid];
+                // A search goes to the nearest city left to search; a post
+                // from outside goes to the capital and the cities nearest it.
+                let (capital_first, distance) = if searching {
+                    (false, from.map_or(0, |from| g.wdist(from, city.pos)))
+                } else {
+                    (
+                        city.is_capital,
+                        capital.map_or(0, |capital| g.wdist(capital, city.pos)),
+                    )
+                };
                 (
                     std::cmp::Reverse(seen_pad(*cid)),
-                    std::cmp::Reverse(city.is_capital),
-                    capital.map_or(0, |capital| g.wdist(capital, city.pos)),
+                    std::cmp::Reverse(capital_first),
+                    distance,
                     *cid,
                 )
             })
+    }
+
+    /// Whether seat `pid` has seen a standing Spaceport within three tiles of
+    /// `cid`.
+    fn racer_spy_seen_pad(g: &Game, pid: usize, cid: u32) -> bool {
+        let Some(city) = g.cities.get(&cid) else {
+            return false;
+        };
+        let explored = &g.players[pid].explored;
+        city.districts.iter().any(|(district, pad)| {
+            g.district_family(*district) == "spaceport"
+                && explored.contains(pad)
+                && g.wdist(city.pos, *pad) <= 3
+                && g.map.get(*pad).is_some_and(|tile| !tile.pillaged)
+        })
+    }
+
+    /// `racer-spies-search-for-the-pad`: whether a Spy of ours searched `cid`
+    /// within the last [`RACER_SPY_SEARCH_MEMORY_TURNS`].
+    fn racer_spy_searched_lately(g: &Game, search: RacerSpySearch<'_>, cid: u32) -> bool {
+        search
+            .searched
+            .get(&cid)
+            .is_some_and(|turn| g.turn < turn + g.standard_duration(RACER_SPY_SEARCH_MEMORY_TURNS))
+    }
+
+    /// `racer-spies-search-for-the-pad`: whether `spy`, standing at `city`,
+    /// is searching for the leader's pad: the city is the leader's, the
+    /// leader has landed a space project, Disrupt Rocketry is not offered
+    /// there, and no pad is seen or was found there.
+    pub(crate) fn racer_spy_searching(
+        g: &Game,
+        spy: u32,
+        city: Option<u32>,
+        leader: Option<usize>,
+        search: RacerSpySearch<'_>,
+        legal: &[Action],
+    ) -> bool {
+        let (Some(leader), Some(city)) = (leader, city) else {
+            return false;
+        };
+        let Some(pid) = g.spies.get(&spy).map(|agent| agent.owner) else {
+            return false;
+        };
+        g.cities.get(&city).is_some_and(|here| here.owner == leader)
+            && Self::science_denial_stages(g, leader) >= 1
+            && !search.found.contains(&city)
+            && !Self::racer_spy_seen_pad(g, pid, city)
+            && !Self::racer_spy_disrupt_offered(g, spy, legal)
+    }
+
+    /// `racer-spies-search-for-the-pad`: whether the leader has a city other
+    /// than `city` that no Spy of ours holds and none searched lately.
+    fn racer_spy_search_left(
+        g: &Game,
+        spy: u32,
+        city: u32,
+        leader: usize,
+        search: RacerSpySearch<'_>,
+    ) -> bool {
+        let Some(pid) = g.spies.get(&spy).map(|agent| agent.owner) else {
+            return false;
+        };
+        g.player_city_ids(leader).into_iter().any(|cid| {
+            cid != city
+                && !g.spies.values().any(|other| {
+                    other.owner == pid
+                        && other.id != spy
+                        && other.captured_by.is_none()
+                        && other.city == Some(cid)
+                })
+                && (search.found.contains(&cid) || !Self::racer_spy_searched_lately(g, search, cid))
+        })
+    }
+
+    /// `racer-spies-search-for-the-pad`: what `spy` learned where it stands
+    /// this turn: a racer's city that offers Disrupt Rocketry is a found pad,
+    /// and a leader's city that does not, once the leader has landed a
+    /// project, is searched.
+    pub(crate) fn racer_spy_note_the_search(
+        &mut self,
+        g: &Game,
+        spy: u32,
+        leader: Option<usize>,
+        racers: &BTreeSet<usize>,
+        legal: &[Action],
+    ) {
+        if !self.racer_spies_search_for_the_pad {
+            return;
+        }
+        let Some(city) = g.spies.get(&spy).and_then(|agent| agent.city) else {
+            return;
+        };
+        let Some(owner) = g.cities.get(&city).map(|here| here.owner) else {
+            return;
+        };
+        if !racers.contains(&owner) {
+            return;
+        }
+        if Self::racer_spy_disrupt_offered(g, spy, legal) {
+            self.racer_spy_found_pads.insert(city);
+        } else if Some(owner) == leader && Self::science_denial_stages(g, owner) >= 1 {
+            self.racer_spy_searched.insert(city, g.turn);
+        }
     }
 
     /// Whether Disrupt Rocketry is offered to `spy` where it stands, by the
@@ -274,12 +450,15 @@ impl AdvancedAi {
     /// anyway: it stands in a racer's city that is not the leader's and is
     /// running only a Listening Post or Gain Sources there (a Disrupt
     /// Rocketry, a journey or any other operation runs to its end). Never
-    /// with the gene off (`leader` is `None`).
+    /// with the gene off (`leader` is `None`). With `search`
+    /// (`racer-spies-search-for-the-pad`), the same in the leader's own city
+    /// while the Spy is searching it and a city is left to search.
     pub(crate) fn racer_spy_moves_on(
         g: &Game,
         spy: u32,
         leader: Option<usize>,
         racers: &BTreeSet<usize>,
+        search: Option<RacerSpySearch<'_>>,
     ) -> bool {
         let Some(leader) = leader else {
             return false;
@@ -291,7 +470,18 @@ impl AdvancedAi {
             .city
             .and_then(|city| g.cities.get(&city))
             .map(|city| city.owner);
-        if owner == Some(leader) || !owner.is_some_and(|owner| racers.contains(&owner)) {
+        // `racer-spies-search-for-the-pad`: in the leader's city, only a
+        // search with a city left to search moves it on.
+        let searching = owner == Some(leader)
+            && agent.city.is_some_and(|city| {
+                search.is_some_and(|search| {
+                    Self::racer_spy_searching(g, spy, Some(city), Some(leader), search, &[])
+                        && Self::racer_spy_search_left(g, spy, city, leader, search)
+                })
+            });
+        if (owner == Some(leader) && !searching)
+            || !owner.is_some_and(|owner| racers.contains(&owner))
+        {
             return false;
         }
         let running = g

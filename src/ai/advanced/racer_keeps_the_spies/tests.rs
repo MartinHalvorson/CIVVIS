@@ -274,23 +274,41 @@ fn a_spy_in_the_leaders_or_a_culture_racers_city_is_not_posted() {
             Some(1),
             &racers,
             &BTreeSet::from([2]),
-            &legal
+            &legal,
+            None
         ),
         None,
         "a culture racer's city keeps its Spy"
     );
-    assert!(
-        AdvancedAi::racer_spy_post(&g, spy, Some(rival), Some(1), &racers, &none, &legal).is_some()
-    );
+    assert!(AdvancedAi::racer_spy_post(
+        &g,
+        spy,
+        Some(rival),
+        Some(1),
+        &racers,
+        &none,
+        &legal,
+        None
+    )
+    .is_some());
     assert_eq!(
-        AdvancedAi::racer_spy_post(&g, spy, Some(rival), None, &racers, &none, &legal),
+        AdvancedAi::racer_spy_post(&g, spy, Some(rival), None, &racers, &none, &legal, None),
         None,
         "no racer, no post"
     );
     let inside = idle_spy(&mut g, capital);
     let legal = g.legal_spy_actions(0, inside);
     assert_eq!(
-        AdvancedAi::racer_spy_post(&g, inside, Some(capital), Some(1), &racers, &none, &legal),
+        AdvancedAi::racer_spy_post(
+            &g,
+            inside,
+            Some(capital),
+            Some(1),
+            &racers,
+            &none,
+            &legal,
+            None
+        ),
         None,
         "the leader's city keeps its Spy"
     );
@@ -487,7 +505,7 @@ fn a_listening_post_at_a_former_leader_does_not_hold_the_spy() {
     let (city, capital, _) = run("disrupt_rocketry");
     assert_eq!(city, Some(capital), "a running disruption finishes");
     assert!(
-        !AdvancedAi::racer_spy_moves_on(&board().0, 1, None, &BTreeSet::from([1])),
+        !AdvancedAi::racer_spy_moves_on(&board().0, 1, None, &BTreeSet::from([1]), None),
         "never with the gene off"
     );
 }
@@ -560,4 +578,178 @@ fn greece_leads(g: &mut Game) {
     land(g, 2, 2);
     set_production(g, 1, 362.0);
     set_production(g, 2, 428.0);
+}
+
+/// The searching seat: `racer-keeps-the-spies` with the search on top.
+fn searches() -> AdvancedAi {
+    let mut ai = keeps();
+    ai.enable_racer_spies_search_for_the_pad();
+    ai
+}
+
+/// The racer's pad in its second city, out of seat 0's sight.
+fn hidden_pad(g: &mut Game, cid: u32) {
+    let pad = give_pad(g, cid);
+    g.players[0].explored.remove(&pad);
+}
+
+#[test]
+fn racer_spies_search_for_the_pad_is_opt_in() {
+    opt_in_off_in_both_controllers("racer-spies-search-for-the-pad", |ai| {
+        ai.racer_spies_search_for_the_pad
+    });
+}
+
+#[test]
+fn a_spy_in_a_padless_leader_city_searches_once_a_project_lands() {
+    let run = |ai: AdvancedAi, landed: usize| {
+        let (mut g, capital, second, _) = board();
+        hidden_pad(&mut g, second);
+        land(&mut g, 1, landed);
+        let spy = idle_spy(&mut g, capital);
+        let mut ai = ai;
+        ai.advanced_spies(&mut g, 0, &conquest_on(1));
+        (g.spies[&spy].city, capital, second, ai)
+    };
+    let (city, capital, _, _) = run(keeps(), 1);
+    assert_eq!(city, Some(capital), "stock: the Spy waits in the capital");
+    let (city, capital, _, _) = run(searches(), 0);
+    assert_eq!(
+        city,
+        Some(capital),
+        "no project landed: no pad to search for yet"
+    );
+    let (city, capital, second, ai) = run(searches(), 1);
+    assert_eq!(city, Some(second), "the search moves on to the pad's city");
+    assert!(
+        ai.racer_spy_searched.contains_key(&capital),
+        "the capital is recorded as searched"
+    );
+}
+
+#[test]
+fn a_found_pad_is_kept_and_ranks_as_seen() {
+    let (mut g, _, second, _) = board();
+    hidden_pad(&mut g, second);
+    land(&mut g, 1, 1);
+    let spy = idle_spy(&mut g, second);
+    let mut ai = searches();
+    ai.advanced_spies(&mut g, 0, &conquest_on(1));
+    assert_eq!(g.spies[&spy].city, Some(second));
+    assert_eq!(mission(&g, spy).as_deref(), Some("disrupt_rocketry"));
+    assert!(
+        ai.racer_spy_found_pads.contains(&second),
+        "the pad is found"
+    );
+    // Pillaged by the disruption, the found pad still holds its Spy.
+    let pad = *g.cities[&second]
+        .districts
+        .get(crate::name!("spaceport"))
+        .expect("the fixture pad");
+    g.map.tiles.get_mut(&pad).unwrap().pillaged = true;
+    let legal = g.legal_spy_actions(0, spy);
+    let racers = BTreeSet::from([1]);
+    let none = BTreeSet::new();
+    assert_eq!(
+        AdvancedAi::racer_spy_post(
+            &g,
+            spy,
+            Some(second),
+            Some(1),
+            &racers,
+            &none,
+            &legal,
+            ai.racer_spy_search()
+        ),
+        None,
+        "a found pad keeps its Spy while it is pillaged"
+    );
+    // A Spy from outside goes to the found pad ahead of the capital.
+    let (mut g, _, second, rival) = board();
+    hidden_pad(&mut g, second);
+    land(&mut g, 1, 1);
+    let outside = idle_spy(&mut g, rival);
+    let legal = g.legal_spy_actions(0, outside);
+    assert_ne!(
+        AdvancedAi::racer_spy_post(
+            &g,
+            outside,
+            Some(rival),
+            Some(1),
+            &racers,
+            &none,
+            &legal,
+            None
+        ),
+        Some(second),
+        "stock: the capital first"
+    );
+    assert_eq!(
+        AdvancedAi::racer_spy_post(
+            &g,
+            outside,
+            Some(rival),
+            Some(1),
+            &racers,
+            &none,
+            &legal,
+            ai.racer_spy_search()
+        ),
+        Some(second),
+        "the found pad first"
+    );
+}
+
+#[test]
+fn the_search_does_not_return_to_a_city_it_searched_lately() {
+    // No pad in either city: the Spy searched the second city last turn and
+    // stands in the capital, which has none either.
+    let (mut g, capital, second, _) = board();
+    land(&mut g, 1, 1);
+    let spy = idle_spy(&mut g, capital);
+    let mut ai = searches();
+    ai.racer_spy_searched.insert(second, g.turn - 1);
+    ai.advanced_spies(&mut g, 0, &conquest_on(1));
+    assert_eq!(
+        g.spies[&spy].city,
+        Some(capital),
+        "nothing left to search: it stays"
+    );
+    // The memory lapses.
+    let (mut g, capital, second, _) = board();
+    land(&mut g, 1, 1);
+    let spy = idle_spy(&mut g, capital);
+    let mut ai = searches();
+    ai.racer_spy_searched.insert(
+        second,
+        g.turn - g.standard_duration(RACER_SPY_SEARCH_MEMORY_TURNS),
+    );
+    ai.advanced_spies(&mut g, 0, &conquest_on(1));
+    assert_eq!(g.spies[&spy].city, Some(second), "the memory lapsed");
+}
+
+#[test]
+fn a_listening_post_in_a_padless_leader_city_gives_way_to_the_search() {
+    let run = |ai: AdvancedAi| {
+        let (mut g, capital, second, _) = board();
+        hidden_pad(&mut g, second);
+        land(&mut g, 1, 1);
+        let spy = idle_spy(&mut g, capital);
+        Arc::make_mut(&mut g.host_unit_facts).insert(
+            spy,
+            HostUnitFacts {
+                spy_operation: Some("listening_post".to_string()),
+                ..Default::default()
+            },
+        );
+        let mut ai = ai;
+        ai.enable_spy_mission_patience();
+        ai.spy_orders_until.insert(spy, g.turn + 5);
+        ai.advanced_spies(&mut g, 0, &conquest_on(1));
+        (g.spies[&spy].city, capital, second)
+    };
+    let (city, capital, _) = run(keeps());
+    assert_eq!(city, Some(capital), "stock: the Listening Post holds it");
+    let (city, _, second) = run(searches());
+    assert_eq!(city, Some(second), "the search moves it on");
 }

@@ -4386,6 +4386,14 @@ pub const GENES: &[Gene] = &[
     // Culture seat in Recovery spends once the bank holds twice the cheapest.
     // See `advanced/culture_recovery_bank.rs`.
     Gene { tag: "culture-recovery-spends-the-bank", field: "culture_recovery_spends_the_bank", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_recovery_spends_the_bank, disable: AdvancedAi::disable_culture_recovery_spends_the_bank },
+    // 13 live Science-Victory losses 2026-10-30: the first Disrupt Rocketry
+    // came 30 turns after the racer's first project (153459Z, Culture), 24
+    // (162440Z) and 13 (084235Z), each with a Spy waiting in a leader city
+    // with no pad, its Spaceport unseen. Once the leader has landed a project,
+    // a Spy where Disrupt Rocketry is not offered moves on to the leader's
+    // next city until it finds the pad. Needs `racer-keeps-the-spies`. See
+    // `advanced/racer_keeps_the_spies.rs`.
+    Gene { tag: "racer-spies-search-for-the-pad", field: "racer_spies_search_for_the_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_racer_spies_search_for_the_pad, disable: AdvancedAi::disable_racer_spies_search_for_the_pad },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
