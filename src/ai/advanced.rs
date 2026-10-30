@@ -5504,6 +5504,10 @@ pub struct AdvancedAi {
     /// costliest. See `advanced/solvency.rs`. Off by default.
     bankruptcy_exits_the_drain: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `diplo-seat-statue-harbor`: a Diplomacy seat's strongest coastal city
+    /// builds the Harbor the Statue of Liberty needs. See
+    /// `advanced/diplo_statue_harbor.rs`. Off by default.
+    diplo_seat_statue_harbor: bool,
     /// `culture-seat-monuments`: a Culture seat's cities build their Monument
     /// early. See `advanced/culture_monuments.rs`. Off by default.
     culture_seat_monuments: bool,
@@ -9663,6 +9667,9 @@ mod culture_monuments;
 /// `culture-keeps-every-border-open`: see `advanced/culture_open_borders.rs`.
 mod culture_open_borders;
 
+/// `diplo-seat-statue-harbor`: see `advanced/diplo_statue_harbor.rs`.
+mod diplo_statue_harbor;
+
 /// `hidden-border-yields-to-our-pressure`: see `advanced/hidden_border_reach.rs`.
 mod hidden_border_reach;
 
@@ -10994,6 +11001,7 @@ impl AdvancedAi {
             aqueduct_recovery_reservations: RefCell::new(BTreeMap::new()),
             bankruptcy_exits_the_drain: false,
             // ---- append: c-d ----------------------------------------
+            diplo_seat_statue_harbor: false,
             culture_seat_monuments: false,
             culture_seat_theater_first: false,
             culture_keeps_every_border_open: false,
@@ -32929,6 +32937,10 @@ impl AdvancedAi {
             let culture_monument_commitment = committed
                 .as_ref()
                 .is_some_and(|(_, item)| self.culture_monument_holds(g, pid, cid, plan, item));
+            // `diplo-seat-statue-harbor`: the Statue's Harbor finishes.
+            let statue_harbor_commitment = committed
+                .as_ref()
+                .is_some_and(|(_, item)| self.statue_harbor_holds(g, pid, cid, plan, item));
             // `trader-fills-the-idle-route`: the claimed Trader finishes while
             // its slot still stands empty.
             let idle_route_trader_commitment = committed
@@ -32994,6 +33006,7 @@ impl AdvancedAi {
                     || culture_theater_commitment
                     || diplo_wonder_commitment
                     || culture_monument_commitment
+                    || statue_harbor_commitment
                     || idle_route_trader_commitment
                     || backlog_builder_commitment
                     || capped_aqueduct_commitment
@@ -33018,6 +33031,7 @@ impl AdvancedAi {
                     || culture_theater_commitment
                     || diplo_wonder_commitment
                     || culture_monument_commitment
+                    || statue_harbor_commitment
                     || idle_route_trader_commitment
                     || backlog_builder_commitment
                     || capped_aqueduct_commitment
@@ -49955,6 +49969,10 @@ impl AdvancedAi {
             // Theater claim (whose heads they leave alone). Exact no-op while
             // the gene is off. See `advanced/culture_monuments.rs`.
             self.claim_culture_monuments(g, pid, &plan);
+            // `diplo-seat-statue-harbor`: the Statue of Liberty's Harbor on a
+            // Diplomacy seat. Exact no-op while the gene is off. See
+            // `advanced/diplo_statue_harbor.rs`.
+            self.claim_statue_harbor(g, pid, &plan);
             // `diplo-seat-wonder-claim`: one Diplomatic-point wonder in the
             // strongest city of a Diplomatic seat, after the Culture claims
             // and ahead of the Prophet race and the routine claims. Exact
