@@ -88,7 +88,11 @@ fn counterweight_defends_the_diplomat_is_opt_in() {
 fn the_gene_opens_the_diplomacy_lane_only() {
     let (g, mut ai, _) = g200_turn_103(VictoryTarget::Diplomacy);
     assert!(!ai.counterweight_lane(&g));
-    assert_eq!(ai.counterweight_cap(&g, 0, "Buddhism", 2), 2, "off: shipped");
+    assert_eq!(
+        ai.counterweight_cap(&g, 0, "Buddhism", 2),
+        2,
+        "off: shipped"
+    );
     ai.enable_counterweight_defends_the_diplomat();
     assert!(ai.counterweight_lane(&g));
     assert_eq!(ai.counterweight_cap(&g, 0, "Buddhism", 2), 3);
@@ -149,7 +153,11 @@ fn a_culture_founder_stays_a_founder() {
 /// A seat that never founded is faithless whatever the gene and lane.
 #[test]
 fn a_seat_that_never_founded_is_faithless_either_way() {
-    for lane in [VictoryTarget::Culture, VictoryTarget::Diplomacy, VictoryTarget::Domination] {
+    for lane in [
+        VictoryTarget::Culture,
+        VictoryTarget::Diplomacy,
+        VictoryTarget::Domination,
+    ] {
         let (g, ai, _) = g200_turn_103(lane);
         assert!(ai.counterweight_faithless(&g, 0));
     }
@@ -179,7 +187,10 @@ fn the_faith_war_opens_on_the_diplomacy_lane_only() {
             stock || lane == VictoryTarget::Diplomacy,
             "{lane:?} under the gene"
         );
-        assert!(!ai.counterweight_lane(&g) || lane == VictoryTarget::Domination, "the counterweight gene is separate");
+        assert!(
+            !ai.counterweight_lane(&g) || lane == VictoryTarget::Domination,
+            "the counterweight gene is separate"
+        );
     }
 }
 
@@ -197,9 +208,9 @@ fn quito_claims_a_holy_site(lane: VictoryTarget) -> Option<bool> {
     let (mut g, mut ai, quito) = g200_turn_103(lane);
     ai.enable_counterweight_finishes_one_shrine();
     let family = crate::name!("holy_site");
-    let pos = g.cities[&quito].districts.get(&family).copied();
+    let pos = g.cities[&quito].districts.get(family).copied();
     if let Some(pos) = pos {
-        g.cities.get_mut(&quito).unwrap().districts.remove(&family);
+        g.cities.get_mut(&quito).unwrap().districts.remove(family);
         g.map.tiles.get_mut(&pos).unwrap().district = None;
     }
     g.cities.get_mut(&quito).unwrap().buildings.clear();
@@ -216,8 +227,14 @@ fn quito_claims_a_holy_site(lane: VictoryTarget) -> Option<bool> {
 
 #[test]
 fn a_counterfaith_city_with_no_holy_site_claims_one() {
-    assert_eq!(quito_claims_a_holy_site(VictoryTarget::Diplomacy), Some(true));
-    assert_eq!(quito_claims_a_holy_site(VictoryTarget::Domination), Some(true));
+    assert_eq!(
+        quito_claims_a_holy_site(VictoryTarget::Diplomacy),
+        Some(true)
+    );
+    assert_eq!(
+        quito_claims_a_holy_site(VictoryTarget::Domination),
+        Some(true)
+    );
     assert_eq!(
         quito_claims_a_holy_site(VictoryTarget::Culture),
         Some(false),
