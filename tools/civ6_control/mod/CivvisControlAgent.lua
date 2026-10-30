@@ -17256,6 +17256,73 @@ CivvisHeritageTourismByType = function(player)
 	return out;
 end
 
+-- ★★ WORLD RELIGION: NEVER EMPOWER THE FAITH THAT IS BEATING US.
+--
+-- WC_RES_WORLD_RELIGION targets a religion (Expansion2_Congress.xml:91,
+-- TargetKind="RELIGION"): effect 1 WC_RES_RELIGIOUS_UNITS_STRENGTH -- the
+-- target's religious units fight theological combat stronger -- and effect 2
+-- ANYONE_CONDEMNS_FOR_FAVOR (Expansion2_Congress.xml:142-143). Like Heritage
+-- it never reached a counter, so the ballot voted A on the first target.
+-- Live Emperor civvis-20261030T105026Z (Diplomatic): at t137 the racer's two
+-- votes made A Catholicism the winner (5-0; without them Catholicism,
+-- Sikhism and Buddhism stood one vote each) while Catholicism held all six
+-- of our cities, and Catholicism won on Religion at t143.
+--
+-- Option A stays (it passes nearly every session, so the participation
+-- point stays reachable); the target becomes our own founded religion when
+-- it is on the ballot, else the religion holding the fewest majority cities
+-- among the majors -- a counterweight, never the leader. Returns the target
+-- index or nil. `counts` (religion Name -> majority cities) and `own` (our
+-- religion's Name) are injectable for the offline test. Off with
+-- `WorldReligionGuard = false`. Bare globals: the chunk is at the register cap.
+CivvisReligionMajorityCounts = function()
+	local counts = {};
+	for _, id in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {}) or {}) do
+		local p = Players[id];
+		local cities = p and try(function() return p:GetCities(); end);
+		if cities ~= nil then
+			for _, city in cities:Members() do
+				local rid = tonumber(try(function()
+					return city:GetReligion():GetMajorityReligion();
+				end, -1)) or -1;
+				local row = rid >= 0 and GameInfo.Religions[rid] or nil;
+				if row ~= nil and row.Name ~= nil then
+					counts[row.Name] = (counts[row.Name] or 0) + 1;
+				end
+			end
+		end
+	end
+	return counts;
+end
+
+CivvisWorldReligionTarget = function(rtype, targets, pid, config, counts, own)
+	config = type(config) == "table" and config or {};
+	if config.WorldReligionGuard == false or rtype ~= "WC_RES_WORLD_RELIGION"
+		or type(targets) ~= "table" then
+		return nil;
+	end
+	if own == nil then
+		local created = tonumber(try(function()
+			return Players[pid]:GetReligion():GetReligionTypeCreated();
+		end, -1)) or -1;
+		local row = created >= 0 and GameInfo.Religions[created] or nil;
+		own = row and row.Name or false;
+	end
+	counts = counts or CivvisReligionMajorityCounts();
+	local mine, low, lowCount = nil, nil, nil;
+	for i, t in pairs(targets) do
+		if type(i) == "number" then
+			local name = tostring(t);
+			if own and name == own then mine = i; end
+			local n = tonumber(counts[name]) or 0;
+			if lowCount == nil or n < lowCount or (n == lowCount and i < low) then
+				low, lowCount = i, n;
+			end
+		end
+	end
+	return mine or low;
+end
+
 CivvisHeritageDenial = function(rtype, targets, candidates, pid, favor, costs, lastA, config, tourismOf)
 	config = type(config) == "table" and config or {};
 	if config.HeritageDenial == false or rtype ~= "WC_RES_HERITAGE_ORG"
@@ -23374,6 +23441,9 @@ local function tick()
 							-- it won 37 of 55 recorded sessions, B on us 2.
 							if BAN_FIRST[rtype] and not CivvisDiploRacer(cfg) then option = 2; end
 						end
+					elseif rtype == "WC_RES_WORLD_RELIGION" then
+						-- See `CivvisWorldReligionTarget`: A, never on the leader.
+						selection = CivvisWorldReligionTarget(rtype, targets, pid, cfg) or selection;
 					elseif rtype == "WC_RES_HERITAGE_ORG" then
 						-- See `CivvisHeritageDenial`.
 						local hIdx, hVotes, hPrice = CivvisHeritageDenial(rtype, targets,
