@@ -159,6 +159,51 @@ fn initial_spread_precedes_reserve_in_a_mostly_unconverted_empire() {
     assert!(ai.defensive_inquisition_ready(&g, 0));
 }
 
+/// `inquisition-answers-a-rival-majority`: a minority faith at home waits to
+/// spread while the other cities are irreligious, but not once a rival faith
+/// holds one of them.
+#[test]
+fn a_rival_held_city_ends_the_spread_first_wait() {
+    let (mut g, ai, home) = fixture();
+    g.found_city_for(0, (4, 12), None);
+    for cid in g.player_city_ids(0) {
+        if cid != home {
+            let city = g.cities.get_mut(&cid).unwrap();
+            city.pressure.clear();
+            city.atheist_pressure = 0.0;
+            city.pressure.insert("Catholicism".into(), 1000.0);
+        }
+    }
+    assert!(
+        !ai.defensive_inquisition_ready(&g, 0),
+        "off: the wait holds"
+    );
+    let mut answering = ai.clone();
+    answering.enable_inquisition_answers_a_rival_majority();
+    assert!(
+        answering.defensive_inquisition_ready(&g, 0),
+        "on: a rival holds our cities"
+    );
+
+    // Irreligious, not rival-held: the wait stands with the gene too.
+    for cid in g.player_city_ids(0) {
+        if cid != home {
+            let city = g.cities.get_mut(&cid).unwrap();
+            city.pressure.clear();
+            city.atheist_pressure = 1000.0;
+        }
+    }
+    assert!(
+        !answering.defensive_inquisition_ready(&g, 0),
+        "unconverted: spread first"
+    );
+
+    // Another lane still never reads it.
+    let mut culture = AdvancedAi::targeting(VictoryTarget::Culture);
+    culture.enable_inquisition_answers_a_rival_majority();
+    assert!(!culture.defensive_inquisition_ready(&g, 0));
+}
+
 #[test]
 fn existing_apostle_prevents_duplicate_purchase_and_banks_for_its_inquisitor() {
     let (mut g, mut ai, _) = fixture();

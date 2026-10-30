@@ -223,6 +223,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `frontier-walls-before-the-surprise` | off (unmeasured) | Prepare a watched frontier city's first fortifications before war. | 1 \| 1 |
 | `gold-buys-the-idle-trader` | off (unmeasured) | Buy an empty route slot's Trader with the idle bank. | 1 \| 1 |
 | `holdout-keeps-the-faith-war-2` | off (unmeasured) | Opt-in gene `holdout-keeps-the-faith-war-2`; see `advanced/holdout_faith_war.rs`. | 1 \| 2 |
+| `inquisition-answers-a-rival-majority` | off (unmeasured) | `inquisition-answers-a-rival-majority`. | 1 \| 1 |
 | `inquisition-defends-the-diplomat` | off (unmeasured) | `inquisition-defends-the-diplomat`. | 1 \| 1 |
 | `launcher-war-skips-the-reserve` | off (unmeasured) | Opt-in gene `launcher-war-skips-the-reserve`; see `Self::launcher_war_skips_the_reserve`. | 1 \| 1 |
 | `medina-quarter-houses-the-districts` | off (unmeasured) | Opt-in gene `medina-quarter-houses-the-districts`; see `advanced/medina_quarter.rs`. | 1 \| 1 |

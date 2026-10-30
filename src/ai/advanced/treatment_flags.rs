@@ -8534,6 +8534,16 @@ impl AdvancedAi {
         self.culture_keeps_every_border_open = false;
     }
 
+    /// `inquisition-answers-a-rival-majority`.
+    pub fn enable_inquisition_answers_a_rival_majority(&mut self) {
+        self.inquisition_answers_a_rival_majority = true;
+    }
+
+    /// The twin of `enable_inquisition_answers_a_rival_majority`.
+    pub fn disable_inquisition_answers_a_rival_majority(&mut self) {
+        self.inquisition_answers_a_rival_majority = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

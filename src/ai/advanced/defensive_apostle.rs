@@ -53,7 +53,15 @@ impl AdvancedAi {
                 && unit.religion.as_deref() == Some(faith)
                 && unit.charges > 0
         });
-        if established * 2 < cities.len() && !first_spreader {
+        // `inquisition-answers-a-rival-majority`: the wait is for an empire
+        // our faith has not reached yet; a city of ours already held by a
+        // rival faith is the conversion the Inquisition exists to answer.
+        let rival_held = self.inquisition_answers_a_rival_majority
+            && cities.iter().any(|cid| {
+                g.city_religion(&g.cities[cid])
+                    .is_some_and(|religion| religion != faith)
+            });
+        if established * 2 < cities.len() && !first_spreader && !rival_held {
             return false;
         }
         cities.iter().any(|cid| {
