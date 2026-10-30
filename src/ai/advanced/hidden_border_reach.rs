@@ -29,9 +29,16 @@ use super::*;
 
 /// Our own Loyalty pressure on a site, summed `population × (10 − distance)`
 /// over our cities within nine tiles, at which the unresolved-border veto
-/// yields: one city of six citizens five tiles away, or a capital of ten
-/// seven tiles away.
-pub(super) const HIDDEN_BORDER_OWN_PRESSURE: i64 = 30;
+/// yields: one city of four citizens five tiles away, or of five six tiles
+/// away.
+///
+/// Version one's bar of 30 tripped two to five times a game against 21-28
+/// refusals in the four veto-heavy Immortal seats of 2026-10-30 (223051Z,
+/// 212224Z, 201608Z, 220042Z): the refused sites read a median of 12-24,
+/// with our nearest city a median five to six tiles off. The sites it did
+/// admit, at 32-37, held their Loyalty rising six to twenty a turn, and no
+/// city was lost to Loyalty. Twenty admits roughly half the refused sites.
+pub(super) const HIDDEN_BORDER_OWN_PRESSURE: i64 = 20;
 
 impl AdvancedAi {
     /// Our own cities' Loyalty pressure on `site`; see the module.
