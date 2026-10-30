@@ -33,7 +33,7 @@ use super::*;
 pub(super) const STATUE_HARBOR_PRODUCTION_SHARE: f64 = 0.75;
 
 /// Build turns past which a city does not start the Statue's Harbor: the
-/// first-district horizon `BasicAi::first_harbor_item` uses.
+/// first-district horizon (`FIRST_CAMPUS_MAX_TURNS`).
 pub(super) const STATUE_HARBOR_MAX_TURNS: f64 = 15.0;
 
 impl AdvancedAi {
