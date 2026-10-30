@@ -414,6 +414,21 @@ fn civ6_build_pos(item: &civvis::game::Item) -> Option<(i32, i32)> {
     }
 }
 
+/// The host's alliance type for a planner alliance kind (`propose_strategic_alliance`
+/// picks one of these five), the `DB.MakeHash` value the shipped screen sets on the
+/// ALLIANCE agreement item (DiplomacyActionView_Expansion1.lua:149-217). `None` for
+/// anything else, so an unknown kind is skipped rather than asked blind.
+fn civ6_alliance_type(kind: &str) -> Option<&'static str> {
+    match kind {
+        "research" => Some("ALLIANCE_RESEARCH"),
+        "cultural" => Some("ALLIANCE_CULTURAL"),
+        "religious" => Some("ALLIANCE_RELIGIOUS"),
+        "military" => Some("ALLIANCE_MILITARY"),
+        "economic" => Some("ALLIANCE_ECONOMIC"),
+        _ => None,
+    }
+}
+
 /// ⚠ THE TWO RULESETS DISAGREE ON ARTICLES, AND IT COSTS A WHOLE TECHNOLOGY.
 ///
 /// `mirror::civvis_node_name` documents the inbound half: Civ 6's `TECH_THE_WHEEL` is
@@ -3637,7 +3652,7 @@ fn drop_deals_beside_war_or_peace(orders: &mut Vec<Order>) -> usize {
     }
     let before = orders.len();
     orders.retain(|order| {
-        !(matches!(order.kind, "sell" | "buy")
+        !(matches!(order.kind, "sell" | "buy" | "alliance")
             && order
                 .subject
                 .is_some_and(|subject| contested.contains(&subject)))
@@ -4045,7 +4060,7 @@ fn append_aid_gift_order(
         order.subject == Some(target)
             && matches!(
                 order.kind,
-                "war" | "peace" | "delegation" | "denounce" | "friendship"
+                "war" | "peace" | "delegation" | "denounce" | "friendship" | "alliance"
             )
     }) {
         return Some("aid_gift_hold:diplomacy_conflict");
@@ -6756,6 +6771,36 @@ fn translate(
             verb: Some("MAKE_PEACE".to_string()),
             pos: None,
         }),
+        // ★★ THE PLANNER'S ALLIANCE, WHICH HAD NO ARM. `propose_strategic_alliance`
+        // proposes `ProposeDeal { friendship: true, alliance: Some(kind), .. }`
+        // 8 to 15 times a game on the live seat ("Proposing a Research Alliance
+        // to Poland", why.log of civvis-20261030T043401Z at t132 and t142), and
+        // every one fell into the skip tally: the friendship arm below requires
+        // `alliance: None`, and the host has no bundled friendship-and-alliance
+        // deal (DIPLOACTION_ALLIANCE needs a declared friendship and Civil
+        // Service on both sides, Base/Assets/Gameplay/Data/DiplomaticActions.xml:69).
+        // The agent's `alliance` arm asks the friendship while there is none and
+        // the alliance once there is, as the shipped screen builds it
+        // (DLC/Expansion1/UI/Replacements/DiplomacyActionView_Expansion1.lua:
+        // 141-217: an AGREEMENTS item, subtype ALLIANCE, value type
+        // ALLIANCE_<KIND>, in a MAKE_DEAL session). An alliance pays its level in
+        // Favor every turn (`WORLD_CONGRESS_ALLIANCE_FAVOR_PER_TURN`).
+        Action::ProposeDeal {
+            player,
+            give_gold,
+            request_gold,
+            peace: false,
+            alliance: Some(kind),
+            ..
+        } if *give_gold <= 0.0 && *request_gold <= 0.0 => {
+            let verb = civ6_alliance_type(kind)?;
+            Some(Order {
+                kind: "alliance",
+                subject: host_player_target(mirror_state, state, *player),
+                verb: Some(verb.to_string()),
+                pos: None,
+            })
+        }
         // A friendship and nothing else — no gold, passage or alliance
         // bundled — is the host's DIPLOACTION_DECLARE_FRIENDSHIP, asked as a
         // session like a denouncement: DiplomacyActionView.lua:472-473 answers
@@ -16824,8 +16869,10 @@ mod tests {
     }
 
     /// A friendship and nothing else crosses as the host's `DECLARE_FRIEND`
-    /// session (DiplomacyActionView.lua:472-473); a deal that bundles
-    /// anything else with it has no host counterpart and stays skipped.
+    /// session (DiplomacyActionView.lua:472-473); the planner's alliance
+    /// bundle crosses as the agent's `alliance` arm (friendship first, then
+    /// the ALLIANCE agreement); a deal that bundles passage or gold has no
+    /// host counterpart and stays skipped.
     #[test]
     fn a_friendship_only_deal_crosses_as_a_declare_friend_session() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
@@ -16869,12 +16916,34 @@ mod tests {
         assert_eq!(order.verb.as_deref(), Some("DECLARE_FRIEND"));
         assert_eq!(order.pos, None);
 
+        // The planner's alliance bundle (`propose_strategic_alliance` sets
+        // friendship and, under `no_free_passage` off, passage with it).
+        for (kind, host) in [
+            ("research", "ALLIANCE_RESEARCH"),
+            ("cultural", "ALLIANCE_CULTURAL"),
+            ("religious", "ALLIANCE_RELIGIOUS"),
+            ("military", "ALLIANCE_MILITARY"),
+            ("economic", "ALLIANCE_ECONOMIC"),
+        ] {
+            for open_borders in [false, true] {
+                let order = translate(&deal(open_borders, Some(kind), 0.0, 0.0, false), &mirror, &state)
+                    .expect("an alliance bundle crosses");
+                assert_eq!(order.kind, "alliance");
+                assert_eq!(order.subject, Some(4));
+                assert_eq!(order.verb.as_deref(), Some(host));
+            }
+        }
+        assert!(
+            translate(&deal(false, Some("imperial"), 0.0, 0.0, false), &mirror, &state).is_none(),
+            "an alliance kind the host has no type for is skipped"
+        );
+        assert!(
+            translate(&deal(false, Some("research"), 30.0, 0.0, false), &mirror, &state).is_none(),
+            "an alliance with gold bundled stays skipped"
+        );
+
         for (label, bundled) in [
             ("passage", deal(true, None, 0.0, 0.0, false)),
-            (
-                "an alliance",
-                deal(false, Some("military"), 0.0, 0.0, false),
-            ),
             ("gold given", deal(false, None, 30.0, 0.0, false)),
             ("gold asked", deal(false, None, 0.0, 30.0, false)),
         ] {

@@ -11763,6 +11763,85 @@ CivvisTrade.abandon = function(subject, why)
 	return true;
 end;
 
+-- ★★ THE PLANNER'S ALLIANCE, ASKED IN THE ORDER THE HOST ALLOWS IT.
+--
+-- CIVVIS's `propose_strategic_alliance` proposes friendship and an alliance
+-- as one deal (8-15 times a game on the live seat) and the bridge used to
+-- drop every one. The host takes them in two steps: a declared friendship
+-- (DIPLOACTION_DECLARE_FRIENDSHIP, the `DECLARE_FRIEND` session), and once
+-- it stands the alliance, an AGREEMENTS item of subtype ALLIANCE whose value
+-- type is the alliance (`ALLIANCE_RESEARCH` ...), sent PROPOSED in a
+-- MAKE_DEAL session (DLC/Expansion1/UI/Replacements/
+-- DiplomacyActionView_Expansion1.lua:141-217; the action rows are
+-- DIPLOACTION_ALLIANCE_<KIND>, Expansion1_Alliances.xml, Civil Service on
+-- both sides). An alliance pays its level in Favor every turn
+-- (WORLD_CONGRESS_ALLIANCE_FAVOR_PER_TURN 1), and live friendships lapsed
+-- after thirty turns and were never renewed (civvis-20261030T043401Z:
+-- declared t45 and t51, merely FRIENDLY by t90, never allied).
+--
+-- Returns "friendship", "alliance", or nil and why not. Only a seat
+-- assigned the Diplomatic lane asks (`VictoryLane`; off with `DiploAllies =
+-- false`): an alliance forbids a war on the ally, which a domination seat's
+-- campaign planner does not price. Bare global for alliance_ask_test.lua.
+CivvisAllianceStep = function(player, pid, subject, verb, turn, config)
+	config = type(config) == "table" and config or {};
+	if config.VictoryLane ~= "diplomatic" or config.DiploAllies == false then
+		return nil, "alliance_off_lane";
+	end
+	if verb ~= "ALLIANCE_RESEARCH" and verb ~= "ALLIANCE_CULTURAL" and verb ~= "ALLIANCE_RELIGIOUS"
+			and verb ~= "ALLIANCE_MILITARY" and verb ~= "ALLIANCE_ECONOMIC" then
+		return nil, "alliance_unknown_type";
+	end
+	if subject == nil or subject < 0 then return nil, "alliance_target_unmapped"; end
+	if DealAgreementTypes == nil or DealAgreementTypes.ALLIANCE == nil then
+		return nil, "alliance_unsupported";
+	end
+	if not try(function() return Players[subject]:IsMajor(); end, false) then
+		return nil, "alliance_not_major";
+	end
+	local diplomacy = try(function() return player:GetDiplomacy(); end);
+	if diplomacy == nil then return nil, "no_diplomacy"; end
+	if try(function() return diplomacy:IsAtWarWith(subject); end, false) then
+		return nil, "alliance_at_war";
+	end
+	if (tonumber(try(function() return diplomacy:GetAllianceType(subject); end, -1)) or -1) ~= -1 then
+		return nil, "alliance_already_allied";
+	end
+	CivvisK.allianceAsked = CivvisK.allianceAsked or {};
+	local asked = CivvisK.allianceAsked[subject];
+	if asked ~= nil and (turn - asked) < (tonumber(config.AllianceRetryTurns) or 5) then
+		return nil, "alliance_cooldown";
+	end
+	if CivvisTrade.sessions[subject] ~= nil or CivvisTrade.pending[subject] ~= nil
+			or try(function() return DealManager.HasPendingDeal(pid, subject); end, false) then
+		return nil, "alliance_session_busy";
+	end
+	local state = try(function()
+		local row = GameInfo.DiplomaticStates[
+			Players[subject]:GetDiplomaticAI():GetDiplomaticStateIndex(pid)];
+		return row ~= nil and row.StateType or nil;
+	end);
+	if state == "DIPLO_STATE_DECLARED_FRIEND" then
+		if try(function()
+			return diplomacy:IsDiplomaticActionValid("DIPLOACTION_" .. verb, subject, true);
+		end) == false then
+			return nil, "alliance_not_offered";
+		end
+		CivvisK.allianceAsked[subject] = turn;
+		return "alliance", "alliance";
+	end
+	if state ~= nil and state ~= "DIPLO_STATE_FRIENDLY" then
+		return nil, "alliance_friendship_not_friendly";
+	end
+	if try(function()
+		return diplomacy:IsDiplomaticActionValid("DIPLOACTION_DECLARE_FRIENDSHIP", subject, true);
+	end) == false then
+		return nil, "alliance_friendship_not_offered";
+	end
+	CivvisK.allianceAsked[subject] = turn;
+	return "friendship", "friendship";
+end;
+
 -- Every diplomacy statement that touches the local seat. Ours opens the
 -- question; the rival's carries the verdict. Bare global for the offline
 -- regression (`deal_session_test.lua`).
@@ -11888,6 +11967,21 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 			CivvisTrade.close(pid, other, "deal_equality_unreadable");
 			return;
 		end
+	elseif session.kind == "alliance" then
+		-- See `CivvisAllianceStep`. The rival's ACCEPTED is its verdict, and
+		-- it is sent back ACCEPTED only when both working deals are equal,
+		-- the shipped `DiplomacyDealView.OnProposeOrAcceptDeal` guard the
+		-- peace branch above keeps; anything else is walked away from. The
+		-- host's alliance type on the next frame is the only proof it landed.
+		local accepted = dealAction == DealProposalAction.ACCEPTED;
+		local dealEqual = accepted and try(function()
+			return DealManager.AreWorkingDealsEqual(pid, other);
+		end, nil) or nil;
+		local submitted = dealEqual == true and pcall(function()
+			DealManager.SendWorkingDeal(DealProposalAction.ACCEPTED, pid, other);
+		end) or false;
+		emit("alliance_response", { turn = turn, target = other, accepted = accepted,
+			deal_equal = dealEqual, submitted = submitted, deal_action = tostring(dealAction) });
 	else
 		CivvisOnIncomingDeal(other, pid, dealAction);
 	end
@@ -13671,6 +13765,39 @@ local function applyOrder(player, pid, row, turn)
 		end);
 		if ok then peaceAsked[key] = turn; end
 		return ok, ok and "friendship_asked" or "throw";
+	end
+
+	-- See `CivvisAllianceStep`: the planner's alliance, on a Diplomatic seat.
+	if kind == "alliance" then
+		local step, why = CivvisAllianceStep(player, pid, subject, verb, turn, cfg);
+		if step == "friendship" then
+			local ok = pcall(function()
+				DiplomacyManager.RequestSession(pid, subject, "DECLARE_FRIEND");
+			end);
+			if ok then peaceAsked["DECLARE_FRIEND" .. subject] = turn; end
+			emit("alliance_request", { turn = turn, target = subject, alliance = verb,
+				step = "friendship", submitted = ok });
+			return ok, ok and "alliance_friendship_asked" or "throw";
+		end
+		if step ~= "alliance" then return false, why; end
+		local ran, ok, reason = pcall(function()
+			DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject);
+			local deal = DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, subject);
+			if deal == nil then return false, "no_working_deal"; end
+			local item = deal:AddItemOfType(DealItemTypes.AGREEMENTS, pid);
+			if item == nil then return false, "alliance_item_refused"; end
+			item:SetSubType(DealAgreementTypes.ALLIANCE);
+			item:SetValueType(DB.MakeHash(verb));
+			item:SetLocked(true);
+			deal:Validate();
+			if not deal:IsValid() then return false, "invalid_deal"; end
+			CivvisTrade.ask(pid, subject, "PROPOSED", "alliance", turn);
+			return true, "alliance_asked";
+		end);
+		if not ran then ok, reason = false, "throw"; end
+		emit("alliance_request", { turn = turn, target = subject, alliance = verb,
+			step = "alliance", submitted = ok and true or false, reason = reason });
+		return ok, reason;
 	end
 
 	-- ★★★★★ AID REQUEST FINISHER. Firaxis exposes two score routes for Aid
