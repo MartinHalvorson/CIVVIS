@@ -8534,6 +8534,38 @@ impl AdvancedAi {
         self.culture_keeps_every_border_open = false;
     }
 
+    /// `inquisition-answers-a-rival-majority`.
+    pub fn enable_inquisition_answers_a_rival_majority(&mut self) {
+        self.inquisition_answers_a_rival_majority = true;
+    }
+
+    /// The twin of `enable_inquisition_answers_a_rival_majority`.
+    pub fn disable_inquisition_answers_a_rival_majority(&mut self) {
+        self.inquisition_answers_a_rival_majority = false;
+    }
+
+    /// Opt-in gene `diplo-seat-statue-harbor`; see
+    /// [`Self::diplo_seat_statue_harbor`].
+    pub fn enable_diplo_seat_statue_harbor(&mut self) {
+        self.diplo_seat_statue_harbor = true;
+    }
+
+    /// The twin of `enable_diplo_seat_statue_harbor`.
+    pub fn disable_diplo_seat_statue_harbor(&mut self) {
+        self.diplo_seat_statue_harbor = false;
+    }
+
+    /// Opt-in gene `hidden-border-yields-to-our-pressure`; see
+    /// [`Self::hidden_border_yields_to_our_pressure`].
+    pub fn enable_hidden_border_yields_to_our_pressure(&mut self) {
+        self.hidden_border_yields_to_our_pressure = true;
+    }
+
+    /// The twin of `enable_hidden_border_yields_to_our_pressure`.
+    pub fn disable_hidden_border_yields_to_our_pressure(&mut self) {
+        self.hidden_border_yields_to_our_pressure = false;
+    }
+
     /// Turn on `culture-routes-reach-every-rival`. See
     /// [`Self::culture_routes_reach_every_rival`].
     pub fn enable_culture_routes_reach_every_rival(&mut self) {

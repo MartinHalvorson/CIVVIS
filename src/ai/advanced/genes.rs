@@ -4310,6 +4310,30 @@ pub const GENES: &[Gene] = &[
     // Culture seat buys every allowed grant each turn, the bar holder first,
     // never into the solvency reserve. See `advanced/culture_open_borders.rs`.
     Gene { tag: "culture-keeps-every-border-open", field: "culture_keeps_every_border_open", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_keeps_every_border_open, disable: AdvancedAi::disable_culture_keeps_every_border_open },
+    // The defensive Inquisition waits to spread our faith first while it
+    // holds under half our cities -- right for an unconverted empire, wrong
+    // for one a rival faith is taking: live Emperor civvis-20261030T120109Z
+    // (Diplomatic) founded Buddhism, held one Temple city of four against
+    // Catholicism's two from t64 to t80, never launched, lost its Holy City
+    // by t88 and the game to Religion at t114 with 1,169 Faith banked. With
+    // this on, a rival-held city of ours ends the wait. See
+    // `advanced/defensive_apostle.rs`.
+    Gene { tag: "inquisition-answers-a-rival-majority", field: "inquisition_answers_a_rival_majority", kind: Kind::OptIn, enable: AdvancedAi::enable_inquisition_answers_a_rival_majority, disable: AdvancedAi::disable_inquisition_answers_a_rival_majority },
+    // `diplo-seat-statue-harbor`: the Statue of Liberty (+4 Diplomatic
+    // Victory Points) needs a Harbor beside its coast tile; in live Emperor
+    // civvis-20261030T101932Z it never once reached our buildable list (our
+    // only Harbor, in a 15-19 Production city, from t160), and 111154Z sat at
+    // 18 points for thirty turns. A Diplomacy seat's strongest coastal city
+    // claims its first Harbor while the Statue is open. See
+    // `advanced/diplo_statue_harbor.rs`.
+    Gene { tag: "diplo-seat-statue-harbor", field: "diplo_seat_statue_harbor", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_seat_statue_harbor, disable: AdvancedAi::disable_diplo_seat_statue_harbor },
+    // `hidden-border-yields-to-our-pressure`: live Immortal
+    // civvis-20261030T123145Z held a Settler out from t50 past t80, at peace,
+    // after sixteen "rival border whose city may be hidden" refusals, and
+    // retired at t88 on four cities. The unresolved-border veto yields where
+    // our own cities press the site (population times closeness, 30 or more).
+    // See `advanced/hidden_border_reach.rs`.
+    Gene { tag: "hidden-border-yields-to-our-pressure", field: "hidden_border_yields_to_our_pressure", kind: Kind::OptIn, enable: AdvancedAi::enable_hidden_border_yields_to_our_pressure, disable: AdvancedAi::disable_hidden_border_yields_to_our_pressure },
     // `culture-routes-reach-every-rival`: an international route of ours is
     // +25% on the tourism pressure banked against its owner, and a native
     // Immortal culture census found routes to about half the rivals at turns
