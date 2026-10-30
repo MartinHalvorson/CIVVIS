@@ -8566,6 +8566,17 @@ impl AdvancedAi {
         self.hidden_border_yields_to_our_pressure = false;
     }
 
+    /// Turn on `culture-routes-reach-every-rival`. See
+    /// [`Self::culture_routes_reach_every_rival`].
+    pub fn enable_culture_routes_reach_every_rival(&mut self) {
+        self.culture_routes_reach_every_rival = true;
+    }
+
+    /// The twin of `enable_culture_routes_reach_every_rival`.
+    pub fn disable_culture_routes_reach_every_rival(&mut self) {
+        self.culture_routes_reach_every_rival = false;
+    }
+
     /// Turn on `trade-quotes-pay-the-lump`. See
     /// [`Self::trade_quotes_pay_the_lump`].
     pub fn enable_trade_quotes_pay_the_lump(&mut self) {

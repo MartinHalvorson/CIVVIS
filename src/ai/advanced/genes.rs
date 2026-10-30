@@ -4334,6 +4334,13 @@ pub const GENES: &[Gene] = &[
     // our own cities press the site (population times closeness, 30 or more).
     // See `advanced/hidden_border_reach.rs`.
     Gene { tag: "hidden-border-yields-to-our-pressure", field: "hidden_border_yields_to_our_pressure", kind: Kind::OptIn, enable: AdvancedAi::enable_hidden_border_yields_to_our_pressure, disable: AdvancedAi::disable_hidden_border_yields_to_our_pressure },
+    // `culture-routes-reach-every-rival`: an international route of ours is
+    // +25% on the tourism pressure banked against its owner, and a native
+    // Immortal culture census found routes to about half the rivals at turns
+    // 100-125 of the tourism ramp. While a Culture seat's tourism is at least
+    // 15, a Trader in one of our cities that can reach a rival without our
+    // route goes there, the bar holder first. See `advanced/culture_routes.rs`.
+    Gene { tag: "culture-routes-reach-every-rival", field: "culture_routes_reach_every_rival", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_routes_reach_every_rival, disable: AdvancedAi::disable_culture_routes_reach_every_rival },
     // `trade-quotes-pay-the-lump`: `quoted_payment` pays a quote's fraction
     // as 0.1 Gold a turn, checked against `empire_gold_per_turn` (4 Gold a
     // city less upkeep, floor zero). A native Immortal culture census read that
