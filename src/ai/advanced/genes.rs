@@ -4334,6 +4334,21 @@ pub const GENES: &[Gene] = &[
     // our own cities press the site (population times closeness, 30 or more).
     // See `advanced/hidden_border_reach.rs`.
     Gene { tag: "hidden-border-yields-to-our-pressure", field: "hidden_border_yields_to_our_pressure", kind: Kind::OptIn, enable: AdvancedAi::enable_hidden_border_yields_to_our_pressure, disable: AdvancedAi::disable_hidden_border_yields_to_our_pressure },
+    // The founder's Inquisition reserve holds only while the Apostle is five
+    // turns of Faith away; live Immortal civvis-20261030T171157Z (Diplomatic,
+    // 16 DVP to the rivals' 3-6) earned +11-13 a turn, sat 124-184 short of
+    // the Apostle each review, bought five Missionaries t60-94 while its Holy
+    // City held Catholicism with Temple, Shrine and Holy Site, and lost to
+    // Religion at t168. A Diplomatic founder whose Holy City still follows its
+    // faith now saves over fifteen turns. See `advanced/founder_defence.rs`.
+    Gene { tag: "diplomat-saves-for-the-apostle", field: "diplomat_saves_for_the_apostle", kind: Kind::OptIn, enable: AdvancedAi::enable_diplomat_saves_for_the_apostle, disable: AdvancedAi::disable_diplomat_saves_for_the_apostle },
+    // `culture-routes-reach-every-rival`: an international route of ours is
+    // +25% on the tourism pressure banked against its owner, and a native
+    // Immortal culture census found routes to about half the rivals at turns
+    // 100-125 of the tourism ramp. While a Culture seat's tourism is at least
+    // 15, a Trader in one of our cities that can reach a rival without our
+    // route goes there, the bar holder first. See `advanced/culture_routes.rs`.
+    Gene { tag: "culture-routes-reach-every-rival", field: "culture_routes_reach_every_rival", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_routes_reach_every_rival, disable: AdvancedAi::disable_culture_routes_reach_every_rival },
     // Live Immortal 10-30 civvis-20261030T171157Z (diplomatic): 16 DVP at t160
     // against 3-6, lost to Islam's Religious Victory at 168. Our Catholicism
     // held none of our cities from 100, Islam 8 of 10 from 145, 300-780 Faith

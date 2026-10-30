@@ -5508,6 +5508,10 @@ pub struct AdvancedAi {
     /// builds the Harbor the Statue of Liberty needs. See
     /// `advanced/diplo_statue_harbor.rs`. Off by default.
     diplo_seat_statue_harbor: bool,
+    /// `culture-routes-reach-every-rival`: a Culture seat's Trader opens a
+    /// route to a rival without one of ours before any other route. See
+    /// `advanced/culture_routes.rs`. Off by default.
+    culture_routes_reach_every_rival: bool,
     /// `culture-seat-monuments`: a Culture seat's cities build their Monument
     /// early. See `advanced/culture_monuments.rs`. Off by default.
     culture_seat_monuments: bool,
@@ -6388,6 +6392,11 @@ pub struct AdvancedAi {
     /// one Diplomatic Victory Point wonder in production in its strongest
     /// city. See `advanced/diplo_wonder_claim.rs`. Off by default.
     diplo_seat_wonder_claim: bool,
+    /// `diplomat-saves-for-the-apostle`: a Diplomatic founder whose Holy City
+    /// still follows its faith saves for the Inquisition's next unit over
+    /// `DIPLOMAT_SAVE_TURNS` (15) turns of Faith, not five. See
+    /// `advanced/founder_defence.rs`. Off by default.
+    diplomat_saves_for_the_apostle: bool,
     /// `counterweight-defends-the-diplomat`: on the Diplomacy lane the
     /// counterweight family answers as on the Domination lane, and a founder
     /// whose faith holds none of our cities defends as a faithless seat. See
@@ -9685,6 +9694,8 @@ mod diplo_statue_harbor;
 
 /// `hidden-border-yields-to-our-pressure`: see `advanced/hidden_border_reach.rs`.
 mod hidden_border_reach;
+/// `culture-routes-reach-every-rival`: see `advanced/culture_routes.rs`.
+mod culture_routes;
 
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 
@@ -11015,6 +11026,7 @@ impl AdvancedAi {
             bankruptcy_exits_the_drain: false,
             // ---- append: c-d ----------------------------------------
             diplo_seat_statue_harbor: false,
+            culture_routes_reach_every_rival: false,
             culture_seat_monuments: false,
             culture_seat_theater_first: false,
             culture_keeps_every_border_open: false,
@@ -11185,6 +11197,7 @@ impl AdvancedAi {
             defenders_hold_the_walls: false,
             diplo_match_point_beelines: false,
             diplo_seat_wonder_claim: false,
+            diplomat_saves_for_the_apostle: false,
             counterweight_defends_the_diplomat: false,
             counterweight_builds_its_source: false,
             // ---- append: e-f ----------------------------------------
@@ -42645,7 +42658,13 @@ impl AdvancedAi {
             }
         }
         if let Some(origin) = g.city_at(current).filter(|cid| g.cities[cid].owner == pid) {
-            if let Some((_, city)) = self.best_trade_route_destination(g, pid, origin, strategy) {
+            // `culture-routes-reach-every-rival`: a rival without a route of
+            // ours first. `None` while the gene is off. See
+            // `advanced/culture_routes.rs`.
+            if let Some((_, city)) = self
+                .culture_route_claim(g, pid, origin, strategy)
+                .or_else(|| self.best_trade_route_destination(g, pid, origin, strategy))
+            {
                 return g
                     .apply(pid, &Action::TradeRoute { unit: uid, city })
                     .is_ok();
@@ -42682,7 +42701,10 @@ impl AdvancedAi {
         let Some(origin) = g.city_at(current).filter(|cid| g.cities[cid].owner == pid) else {
             return false;
         };
-        let Some((_, city)) = self.best_trade_route_destination(g, pid, origin, strategy) else {
+        let Some((_, city)) = self
+            .culture_route_claim(g, pid, origin, strategy)
+            .or_else(|| self.best_trade_route_destination(g, pid, origin, strategy))
+        else {
             return false;
         };
         g.apply(pid, &Action::TradeRoute { unit: uid, city })

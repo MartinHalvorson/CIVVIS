@@ -8566,6 +8566,25 @@ impl AdvancedAi {
         self.hidden_border_yields_to_our_pressure = false;
     }
 
+    /// `diplomat-saves-for-the-apostle`.
+    pub fn enable_diplomat_saves_for_the_apostle(&mut self) {
+        self.diplomat_saves_for_the_apostle = true;
+    }
+
+    /// The twin of `enable_diplomat_saves_for_the_apostle`.
+    pub fn disable_diplomat_saves_for_the_apostle(&mut self) {
+        self.diplomat_saves_for_the_apostle = false;
+    }
+
+    /// Turn on `culture-routes-reach-every-rival`. See
+    /// [`Self::culture_routes_reach_every_rival`].
+    pub fn enable_culture_routes_reach_every_rival(&mut self) {
+        self.culture_routes_reach_every_rival = true;
+    }
+
+    /// The twin of `enable_culture_routes_reach_every_rival`.
+    pub fn disable_culture_routes_reach_every_rival(&mut self) {
+        self.culture_routes_reach_every_rival = false;
     /// Opt-in gene `counterweight-defends-the-diplomat`; see
     /// [`Self::counterweight_defends_the_diplomat`].
     pub fn enable_counterweight_defends_the_diplomat(&mut self) {
