@@ -22,7 +22,8 @@
 //!   11-21 wonders and its losses 0-2.
 //!
 //! **What the gene does.** Once a Culture seat holds
-//! `CULTURE_WONDER_MIN_CITIES` cities, a lane city (ranked by production,
+//! `CULTURE_WONDER_MIN_CITIES` cities and a rival has finished
+//! `CULTURE_WONDER_GAP` more wonders than it, a lane city (ranked by production,
 //! unthreatened, three buildings or more, no wonder already queued) claims
 //! the best wonder it can finish in time: great-work slots, tourism and
 //! culture first, then the cheapest. An idle queue, or one over a
@@ -49,6 +50,15 @@ pub(super) const CULTURE_WONDER_MIN_CITIES: usize = 6;
 /// Buildings a lane city holds before it starts a wonder: the live wonder
 /// race's development guard.
 pub(super) const CULTURE_WONDER_MIN_BUILDINGS: usize = 3;
+
+/// How far behind the wonder leader the seat must stand before a lane opens.
+/// Version two (six cities, three buildings) still lost on the native probe:
+/// 0 of 14 seats won against 23.5% (share -1.61 pp, z -3.31). Native seats
+/// already finish about seven wonders each through the baseline governor, so
+/// extra wonders there displace compounding builds. The live seat's gap is
+/// different in kind: one wonder against Gaul's twelve and Persia's eleven
+/// (civvis-20261030T055006Z). The lane runs only where that gap exists.
+pub(super) const CULTURE_WONDER_GAP: usize = 3;
 
 /// Cities per concurrent wonder lane; the first lane opens at the first city.
 pub(super) const CULTURE_WONDER_CITIES_PER_LANE: usize = 4;
@@ -131,6 +141,33 @@ impl AdvancedAi {
             .map(|(item, turns, _, _)| (item, turns))
     }
 
+    /// Finished wonders of `player`: the host's public standing where the live
+    /// board reports one, otherwise the wonders on its cities.
+    fn empire_wonder_count(g: &Game, player: usize) -> usize {
+        g.observed_public_empire_stats
+            .get(&player)
+            .and_then(|stats| stats.wonder_count)
+            .unwrap_or_else(|| {
+                g.cities
+                    .values()
+                    .filter(|city| city.owner == player)
+                    .map(|city| city.wonders.len())
+                    .sum()
+            })
+    }
+
+    /// Whether a living major has finished `CULTURE_WONDER_GAP` or more wonders
+    /// than this seat.
+    pub(super) fn wonder_gap_open(g: &Game, pid: usize) -> bool {
+        let own = Self::empire_wonder_count(g, pid);
+        g.players
+            .iter()
+            .filter(|rival| {
+                rival.id != pid && rival.alive && !rival.is_minor && !rival.is_barbarian
+            })
+            .any(|rival| Self::empire_wonder_count(g, rival.id) >= own + CULTURE_WONDER_GAP)
+    }
+
     /// Whether `item` at the head of `cid` is a wonder this gene's lane keeps:
     /// the delegated governor's rescoring leaves it alone. Always false with
     /// the gene off.
@@ -178,7 +215,7 @@ impl AdvancedAi {
                 && g.is_at_war(pid, other.id)
         });
         let ours = g.player_city_ids(pid);
-        if ours.len() < CULTURE_WONDER_MIN_CITIES {
+        if ours.len() < CULTURE_WONDER_MIN_CITIES || !Self::wonder_gap_open(g, pid) {
             return;
         }
         let lanes = ours.len().div_ceil(CULTURE_WONDER_CITIES_PER_LANE);

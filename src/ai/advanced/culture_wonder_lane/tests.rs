@@ -8,7 +8,7 @@ use std::sync::Arc;
 /// buildings each, idle queues.
 fn wonder_ready_empire(count: usize) -> (Game, Vec<u32>) {
     let mut game = Game::new_full(
-        1,
+        2,
         44,
         26,
         crate::rng::fixture_seed("CULTUREWONDER", 1),
@@ -48,9 +48,12 @@ fn wonder_ready_empire(count: usize) -> (Game, Vec<u32>) {
             .expect("room for the cities");
         game.found_city_for(0, pos, None);
     }
-    for unit in game.player_unit_ids(0) {
-        game.remove_unit(unit);
+    for player in 0..2 {
+        for unit in game.player_unit_ids(player) {
+            game.remove_unit(unit);
+        }
     }
+    rival_wonders(&mut game, 5);
     game.game_speed = GameSpeed::Online;
     game.turn = 80;
     let techs: Vec<Name> = game.rules.techs.keys().copied().collect();
@@ -93,6 +96,17 @@ fn wonder_ready_empire(count: usize) -> (Game, Vec<u32>) {
     (game, ranked)
 }
 
+/// The host's public standing for the rival: `count` finished wonders.
+fn rival_wonders(game: &mut Game, count: usize) {
+    Arc::make_mut(&mut game.observed_public_empire_stats).insert(
+        1,
+        crate::game::ObservedPublicEmpireStats {
+            wonder_count: Some(count),
+            ..Default::default()
+        },
+    );
+}
+
 fn seat(target: VictoryTarget, gene: bool) -> AdvancedAi {
     let mut ai = AdvancedAi::targeting(target);
     if gene {
@@ -112,7 +126,7 @@ fn claim(ai: &AdvancedAi, game: &mut Game) {
 
 /// Six cities open two lanes: the two strongest take a wonder each, the
 /// others keep their queues, and the claim holds. Off, for a Domination
-/// seat, or short of six cities, nothing.
+/// seat, short of six cities, or with no rival three wonders ahead, nothing.
 #[test]
 fn the_strongest_culture_cities_take_the_wonder_lanes() {
     let (game, ranked) = wonder_ready_empire(6);
@@ -122,6 +136,17 @@ fn the_strongest_culture_cities_take_the_wonder_lanes() {
             .is_some(),
         "fixture: the strongest city can finish a wonder in time"
     );
+
+    // A rival two wonders ahead is no gap.
+    let mut level = game.clone();
+    rival_wonders(&mut level, 2);
+    claim(&ai, &mut level);
+    for cid in &ranked {
+        assert!(
+            !is_wonder(level.cities[cid].queue.first()),
+            "no wonder gap: no lane"
+        );
+    }
 
     let (five, five_ranked) = wonder_ready_empire(5);
     let mut short = five.clone();
