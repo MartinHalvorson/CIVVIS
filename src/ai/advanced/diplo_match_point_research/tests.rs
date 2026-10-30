@@ -85,3 +85,76 @@ fn a_recovery_plan_still_researches_the_points_at_match_point() {
     seat.advanced_research(&mut below, 0, &recovery);
     assert!(below.players[0].research.is_some());
 }
+
+/// The civic point comes before the government ladder: live Immortal
+/// civvis-20261030T190332Z stood on 18 of 20 from t172 with its civic slot on
+/// `government_ladder_goal`'s Corporate Libertarianism, and lost to
+/// Technology at t175.
+#[test]
+fn the_civic_point_comes_before_the_government_ladder() {
+    use crate::ai::advanced::tests::wonder_plan;
+    let mut g = Game::new_full(1, 20, 14, 764, 300, 0, false);
+    // Inside the ladder's window (half the clock while not behind on slots).
+    g.turn = g.max_turns * 2 / 5;
+    let techs: Vec<Name> = g
+        .rules
+        .techs
+        .iter()
+        .filter(|(_, spec)| spec.era < 8)
+        .map(|(tech, _)| Name::new(tech))
+        .collect();
+    g.players[0].techs.extend(techs);
+    // Every tier-three government stays unadopted, so the ladder has a rung
+    // to name; the civic point's prerequisites are cleared, so this seed's
+    // Future layout cannot make the ladder's rung a step toward it.
+    let tier_three = [
+        "corporate_libertarianism",
+        "digital_democracy",
+        "synthetic_technocracy",
+    ];
+    {
+        let rules = std::sync::Arc::make_mut(&mut g.rules);
+        rules
+            .civics
+            .get_mut("global_warming_mitigation")
+            .expect("the civic point exists")
+            .requires
+            .clear();
+        if let Some(ancestors) = rules.civic_ancestors.get_mut("global_warming_mitigation") {
+            ancestors.clear();
+        }
+    }
+    let civics: Vec<Name> = g
+        .rules
+        .civics
+        .iter()
+        .filter(|(civic, spec)| spec.era < 8 && !tier_three.contains(&civic.as_str()))
+        .map(|(civic, _)| Name::new(civic))
+        .collect();
+    g.players[0].civics.extend(civics);
+    g.players[0].dvp = DIPLO_MATCH_POINT_DVP + 2;
+    let plan = wonder_plan(GrandStrategy::Expansion, g.turn);
+
+    let mut seat = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    seat.enable_government_ladder_2();
+    assert!(
+        seat.government_ladder_goal(&g, 0, GrandStrategy::Expansion)
+            .is_some(),
+        "fixture: the ladder names a tier-three government"
+    );
+    let mut off = g.clone();
+    seat.advanced_research(&mut off, 0, &plan);
+    assert_ne!(
+        off.players[0].civic.as_deref(),
+        Some("global_warming_mitigation"),
+        "off: the ladder takes the slot"
+    );
+    seat.enable_diplo_match_point_beelines_the_points();
+    let mut on = g.clone();
+    seat.advanced_research(&mut on, 0, &plan);
+    assert_eq!(
+        on.players[0].civic.as_deref(),
+        Some("global_warming_mitigation"),
+        "on: the point first"
+    );
+}
