@@ -4264,6 +4264,13 @@ pub const GENES: &[Gene] = &[
     // it is unlocked, and the free-slot Campus claim yields them. See
     // `advanced/culture_theater_first.rs`.
     Gene { tag: "culture-seat-theater-first", field: "culture_seat_theater_first", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_theater_first, disable: AdvancedAi::disable_culture_seat_theater_first },
+    // The Statue of Liberty is four of the twenty Diplomatic Victory Points;
+    // live King civvis-20261030T074500Z lost to Culture at t207 standing on
+    // 18, and the first live Diplomatic win (081846Z t208) needed one point
+    // between sessions. Under lane delegation nothing prices those wonders:
+    // a Diplomatic seat now keeps one in production in its strongest city.
+    // See `advanced/diplo_wonder_claim.rs`.
+    Gene { tag: "diplo-seat-wonder-claim", field: "diplo_seat_wonder_claim", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_seat_wonder_claim, disable: AdvancedAi::disable_diplo_seat_wonder_claim },
     // Every live King rival-Technology loss of 2026-10-30 had us leading the
     // field in science: civvis-20261030T053333Z (Culture seat, 475 a turn
     // against Mapuche's 428, lost t236), 060008Z (Culture, 456 against the
@@ -4281,6 +4288,13 @@ pub const GENES: &[Gene] = &[
     // prepare it too (paired: Diplomatic 3 -> 4 wins of 20; Culture measured
     // 9 -> 7 and left out). See `advanced/defensive_apostle.rs`.
     Gene { tag: "inquisition-defends-the-diplomat", field: "inquisition_defends_the_diplomat", kind: Kind::OptIn, enable: AdvancedAi::enable_inquisition_defends_the_diplomat, disable: AdvancedAi::disable_inquisition_defends_the_diplomat },
+    // `culture-seat-monuments`: the first live Emperor Culture seat
+    // (civvis-20261030T090715Z) held one Monument in six cities at t60 and
+    // made 12 Culture a turn against Egypt's 56. A Culture seat's
+    // unthreatened cities claim their Monument once the second city stands,
+    // ahead of a deferrable head, while no major is at war with us. See
+    // `advanced/culture_monuments.rs`.
+    Gene { tag: "culture-seat-monuments", field: "culture_seat_monuments", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_monuments, disable: AdvancedAi::disable_culture_seat_monuments },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

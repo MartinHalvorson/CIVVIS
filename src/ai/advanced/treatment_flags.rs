@@ -8472,6 +8472,16 @@ impl AdvancedAi {
         self.culture_seat_theater_first = false;
     }
 
+    /// `diplo-seat-wonder-claim`.
+    pub fn enable_diplo_seat_wonder_claim(&mut self) {
+        self.diplo_seat_wonder_claim = true;
+    }
+
+    /// The twin of `enable_diplo_seat_wonder_claim`.
+    pub fn disable_diplo_seat_wonder_claim(&mut self) {
+        self.diplo_seat_wonder_claim = false;
+    }
+
     /// `science-drive-answers-the-launch`.
     pub fn enable_science_drive_answers_the_launch(&mut self) {
         self.science_drive_answers_the_launch = true;
@@ -8490,6 +8500,17 @@ impl AdvancedAi {
     /// The twin of `enable_inquisition_defends_the_diplomat`.
     pub fn disable_inquisition_defends_the_diplomat(&mut self) {
         self.inquisition_defends_the_diplomat = false;
+    }
+
+    /// Opt-in gene `culture-seat-monuments`; see
+    /// [`Self::culture_seat_monuments`].
+    pub fn enable_culture_seat_monuments(&mut self) {
+        self.culture_seat_monuments = true;
+    }
+
+    /// The twin of `enable_culture_seat_monuments`.
+    pub fn disable_culture_seat_monuments(&mut self) {
+        self.culture_seat_monuments = false;
     }
 
     // ---- append: a-b ------------------------------------------------
