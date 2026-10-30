@@ -19523,6 +19523,15 @@ impl AdvancedAi {
                 }
                 _ if great_person_goal.is_some() => great_person_goal.as_deref(),
                 _ if first_government => Some("political_philosophy"),
+                // `diplo-match-point-beelines-the-points`: the civic's point,
+                // whatever the plan reads -- ahead of the war civics and the
+                // government ladder. Live Immortal civvis-20261030T190332Z
+                // stood on 18 of 20 from t172, its civic slot on
+                // `government_ladder_goal`'s Corporate Libertarianism, and lost
+                // to Technology at t175. Exact no-op while the gene is off.
+                _ if self.diplo_match_point_civic(g, pid).is_some() => {
+                    self.diplo_match_point_civic(g, pid)
+                }
                 // Put an already-built museum to work before buying more
                 // government capacity. Recovery keeps the normal ladder.
                 GrandStrategy::Culture
@@ -19567,11 +19576,6 @@ impl AdvancedAi {
                 // all, and never arrived. Released, `civic_value`'s argmax
                 // takes the slot back.
                 _ if self.lane_lost => None,
-                // `diplo-match-point-beelines-the-points`: the civic's point,
-                // whatever the plan reads. Exact no-op while the gene is off.
-                _ if self.diplo_match_point_civic(g, pid).is_some() => {
-                    self.diplo_match_point_civic(g, pid)
-                }
                 GrandStrategy::Culture => self.culture_civic_goal(g, pid),
                 GrandStrategy::Science
                     if !g.players[pid].civics.contains(&crate::name!("space_race")) =>
