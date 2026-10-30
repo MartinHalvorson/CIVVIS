@@ -7307,6 +7307,10 @@ pub struct AdvancedAi {
     /// at the head of its queue over a deferrable head. See
     /// `advanced/industrial_zone_claims_the_factory.rs`. Off by default.
     industrial_zone_claims_the_factory: bool,
+    /// `inquisition-defends-the-diplomat`: a Diplomatic seat prepares and
+    /// funds the defensive Inquisition as a Domination seat does. See
+    /// `advanced/defensive_apostle.rs`. Off by default.
+    inquisition_defends_the_diplomat: bool,
     // ---- append: l-o ------------------------------------------------
     /// `nuclear-goal-needs-a-launcher`: no nuclear war goal on a seat that
     /// cannot launch a device. See `advanced/nuclear_launcher.rs`. Off by
@@ -11278,6 +11282,7 @@ impl AdvancedAi {
             gold_buys_the_settler: false,
             industrial_zone_claims_the_producer_queue: false,
             industrial_zone_claims_the_factory: false,
+            inquisition_defends_the_diplomat: false,
             // ---- append: l-o ----------------------------------------
             nuclear_goal_needs_a_launcher: false,
             launcher_war_skips_the_reserve: false,

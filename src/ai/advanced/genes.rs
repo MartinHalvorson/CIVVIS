@@ -4279,6 +4279,15 @@ pub const GENES: &[Gene] = &[
     // assigned another lane. With this on it opens there once a rival has
     // landed a space project and we lead, and races Science beside the lane.
     Gene { tag: "science-drive-answers-the-launch", field: "science_drive_answers_the_launch", kind: Kind::OptIn, enable: AdvancedAi::enable_science_drive_answers_the_launch, disable: AdvancedAi::disable_science_drive_answers_the_launch },
+    // The defensive Inquisition (save for the Apostle, launch, Inquisitors
+    // first) was gated to Domination seats when it was written for that lane
+    // (#3656). On the Pericles ladder no seat is Domination: live Emperor
+    // civvis-20261030T103149Z (Diplomatic) held 8 of 9 cities for Buddhism at
+    // t90, bought eleven Missionaries and a Guru at +17-29 Faith, never an
+    // Apostle, and lost to Judaism on Religion at t127. Diplomatic seats now
+    // prepare it too (paired: Diplomatic 3 -> 4 wins of 20; Culture measured
+    // 9 -> 7 and left out). See `advanced/defensive_apostle.rs`.
+    Gene { tag: "inquisition-defends-the-diplomat", field: "inquisition_defends_the_diplomat", kind: Kind::OptIn, enable: AdvancedAi::enable_inquisition_defends_the_diplomat, disable: AdvancedAi::disable_inquisition_defends_the_diplomat },
     // `culture-seat-monuments`: the first live Emperor Culture seat
     // (civvis-20261030T090715Z) held one Monument in six cities at t60 and
     // made 12 Culture a turn against Egypt's 56. A Culture seat's

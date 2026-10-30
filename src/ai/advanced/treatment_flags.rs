@@ -8492,6 +8492,16 @@ impl AdvancedAi {
         self.science_drive_answers_the_launch = false;
     }
 
+    /// `inquisition-defends-the-diplomat`.
+    pub fn enable_inquisition_defends_the_diplomat(&mut self) {
+        self.inquisition_defends_the_diplomat = true;
+    }
+
+    /// The twin of `enable_inquisition_defends_the_diplomat`.
+    pub fn disable_inquisition_defends_the_diplomat(&mut self) {
+        self.inquisition_defends_the_diplomat = false;
+    }
+
     /// Opt-in gene `culture-seat-monuments`; see
     /// [`Self::culture_seat_monuments`].
     pub fn enable_culture_seat_monuments(&mut self) {
