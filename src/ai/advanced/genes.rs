@@ -4279,6 +4279,14 @@ pub const GENES: &[Gene] = &[
     // ahead of a deferrable head, while no major is at war with us. See
     // `advanced/culture_monuments.rs`.
     Gene { tag: "culture-seat-monuments", field: "culture_seat_monuments", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_monuments, disable: AdvancedAi::disable_culture_seat_monuments },
+    // `diplo-seat-statue-harbor`: the Statue of Liberty (+4 Diplomatic
+    // Victory Points) needs a Harbor beside its coast tile; in live Emperor
+    // civvis-20261030T101932Z it never once reached our buildable list (our
+    // only Harbor, in a 15-19 Production city, from t160), and 111154Z sat at
+    // 18 points for thirty turns. A Diplomacy seat's strongest coastal city
+    // claims its first Harbor while the Statue is open. See
+    // `advanced/diplo_statue_harbor.rs`.
+    Gene { tag: "diplo-seat-statue-harbor", field: "diplo_seat_statue_harbor", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_seat_statue_harbor, disable: AdvancedAi::disable_diplo_seat_statue_harbor },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
