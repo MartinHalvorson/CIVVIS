@@ -6372,6 +6372,10 @@ pub struct AdvancedAi {
     /// of ours keeps its blows and its post in the battle plan. See
     /// `advanced/defenders_hold_the_walls.rs`. Off by default.
     defenders_hold_the_walls: bool,
+    /// `diplo-match-point-beelines-the-points`: a Diplomatic seat near its
+    /// victory researches Seasteads and adopts Global Warming Mitigation first.
+    /// See `advanced/diplo_match_point_research.rs`. Off by default.
+    diplo_match_point_beelines: bool,
     // ---- append: e-f ------------------------------------------------
     /// `food-focus-grows-the-small-city`: `civvis_orders` also asks the host
     /// to favour Food in a small city growing at two a turn or less. See
@@ -9628,6 +9632,9 @@ mod capital_monument;
 
 /// `culture-seat-theater-first`: see `advanced/culture_theater_first.rs`.
 mod culture_theater_first;
+/// `diplo-match-point-beelines-the-points`; see
+/// `advanced/diplo_match_point_research.rs`.
+mod diplo_match_point_research;
 
 /// `culture-seat-monuments`: see `advanced/culture_monuments.rs`.
 mod culture_monuments;
@@ -11127,6 +11134,7 @@ impl AdvancedAi {
             capital_watch_sightings: BTreeMap::new(),
             drain_card_turn: std::cell::Cell::new(None),
             defenders_hold_the_walls: false,
+            diplo_match_point_beelines: false,
             // ---- append: e-f ----------------------------------------
             food_focus_grows_the_small_city: false,
             friendship_ends_at_the_race: false,
@@ -19117,6 +19125,11 @@ impl AdvancedAi {
                 _ if science_commitment && science_lane_active => {
                     Self::science_victory_tech_goal(g, pid, GrandStrategy::Science)
                 }
+                // `diplo-match-point-beelines-the-points`: the last points in the
+                // tree, whatever the plan reads. Exact no-op while the gene is off.
+                _ if self.diplo_match_point_tech(g, pid).is_some() => {
+                    self.diplo_match_point_tech(g, pid)
+                }
                 GrandStrategy::Culture if self.phase_specialization_active(g) => {
                     ["printing", "radio", "computers"]
                         .into_iter()
@@ -19501,6 +19514,11 @@ impl AdvancedAi {
                 // all, and never arrived. Released, `civic_value`'s argmax
                 // takes the slot back.
                 _ if self.lane_lost => None,
+                // `diplo-match-point-beelines-the-points`: the civic's point,
+                // whatever the plan reads. Exact no-op while the gene is off.
+                _ if self.diplo_match_point_civic(g, pid).is_some() => {
+                    self.diplo_match_point_civic(g, pid)
+                }
                 GrandStrategy::Culture => self.culture_civic_goal(g, pid),
                 GrandStrategy::Science
                     if !g.players[pid].civics.contains(&crate::name!("space_race")) =>
