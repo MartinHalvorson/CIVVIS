@@ -8653,6 +8653,16 @@ impl AdvancedAi {
         self.racer_spies_search_for_the_pad = false;
     }
 
+    /// Opt-in gene `culture-seat-allies`; see [`Self::culture_seat_allies`].
+    pub fn enable_culture_seat_allies(&mut self) {
+        self.culture_seat_allies = true;
+    }
+
+    /// The twin of `enable_culture_seat_allies`.
+    pub fn disable_culture_seat_allies(&mut self) {
+        self.culture_seat_allies = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

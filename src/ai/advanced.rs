@@ -6410,6 +6410,11 @@ pub struct AdvancedAi {
     /// still buys Rock Bands and Naturalists once the Faith bank holds twice
     /// the cheapest on sale. See `advanced/culture_recovery_bank.rs`.
     culture_recovery_spends_the_bank: bool,
+    /// `culture-seat-allies`: a seat aiming at Culture allies a safe
+    /// neighbour, never the science racer or the rival that sets our culture
+    /// bar, and the live binary passes its alliances to the host. See
+    /// `advanced/culture_seat_allies.rs`. Off by default.
+    culture_seat_allies: bool,
     // ---- append: e-f ------------------------------------------------
     /// `food-focus-grows-the-small-city`: `civvis_orders` also asks the host
     /// to favour Food in a small city growing at two a turn or less. See
@@ -9714,6 +9719,8 @@ mod diplo_statue_harbor;
 
 /// `culture-recovery-spends-the-bank`: see `advanced/culture_recovery_bank.rs`.
 mod culture_recovery_bank;
+/// `culture-seat-allies`: see `advanced/culture_seat_allies.rs`.
+mod culture_seat_allies;
 /// `culture-routes-reach-every-rival`: see `advanced/culture_routes.rs`.
 mod culture_routes;
 /// `hidden-border-yields-to-our-pressure`: see `advanced/hidden_border_reach.rs`.
@@ -11225,6 +11232,7 @@ impl AdvancedAi {
             counterweight_defends_the_diplomat: false,
             counterweight_builds_its_source: false,
             culture_recovery_spends_the_bank: false,
+            culture_seat_allies: false,
             // ---- append: e-f ----------------------------------------
             food_focus_grows_the_small_city: false,
             friendship_ends_at_the_race: false,
@@ -22497,7 +22505,11 @@ impl AdvancedAi {
         // other kind is proposed while it is not yet legal on our tree. Off,
         // `Stock`. See `advanced/research_alliance.rs`.
         let research_lane = self.research_alliance_lane(g, pid);
-        if research_lane == research_alliance::ResearchAllianceLane::Wait {
+        // `culture-seat-allies`: a Culture seat does not wait for Scientific
+        // Theory; it asks for the stock kind meanwhile.
+        if research_lane == research_alliance::ResearchAllianceLane::Wait
+            && !self.culture_seat_allies_on()
+        {
             return;
         }
         let research_first = research_lane == research_alliance::ResearchAllianceLane::Research;
@@ -22586,6 +22598,9 @@ impl AdvancedAi {
                     // `research-alliance-first`: a culture threat, or a
                     // partner inside the cool-down on our last ask. Never off.
                     && !self.research_alliance_barred(g, pid, other.id)
+                    // `culture-seat-allies`: nor the science racer, nor the
+                    // rival that sets our culture bar. Never off.
+                    && !self.culture_seat_ally_barred(g, pid, other.id)
             })
             .max_by(|left, right| {
                 let score = |other: usize| {
@@ -22644,7 +22659,9 @@ impl AdvancedAi {
                             .then_some(plan.target_player)
                             .flatten(),
                     );
-                    friendship + connected + complement + across + science
+                    // `culture-seat-allies`: the nearest partner first. Zero off.
+                    let near = self.culture_seat_ally_nearness(g, pid, other);
+                    friendship + connected + complement + across + science + near
                         - g.players[pid]
                             .grievances
                             .get(&other)

@@ -4394,6 +4394,13 @@ pub const GENES: &[Gene] = &[
     // next city until it finds the pad. Needs `racer-keeps-the-spies`. See
     // `advanced/racer_keeps_the_spies.rs`.
     Gene { tag: "racer-spies-search-for-the-pad", field: "racer_spies_search_for_the_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_racer_spies_search_for_the_pad, disable: AdvancedAi::disable_racer_spies_search_for_the_pad },
+    // Ten live Lv 7 Culture seats 2026-10-30 held no alliance at t80, t120 or
+    // t160: the live binary and the agent passed alliances only for the
+    // Diplomatic lane, and early wars were the culture seats' worst losses.
+    // A Culture seat allies its nearest safe rival, never the science racer
+    // or the rival that sets our culture bar. See
+    // `advanced/culture_seat_allies.rs`.
+    Gene { tag: "culture-seat-allies", field: "culture_seat_allies", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_allies, disable: AdvancedAi::disable_culture_seat_allies },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

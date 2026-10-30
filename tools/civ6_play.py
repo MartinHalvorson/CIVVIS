@@ -1202,6 +1202,12 @@ def build_config(args: argparse.Namespace) -> dict:
         # instead of only denying a rival's (`CivvisDiploRacer`). Absent when
         # the built-ins decide.
         "VictoryLane": args.civvis_victory if args.civvis_decides else None,
+        # `culture-seat-allies` (src/ai/advanced/culture_seat_allies.rs): a
+        # Culture seat's alliance orders reach the host. The live binary keeps
+        # them only while the tag is armed; the agent's `CivvisAllianceStep`
+        # takes them only with this on.
+        "CultureAllies": bool(args.civvis_decides
+                              and "culture-seat-allies" in (getattr(args, "civvis_with", []) or [])),
         # Hand a builder to Civ 6's own automation when CIVVIS's improvement is
         # refused outright. A policy, counted as IMPROVE_AUTOMATED.
         "AutomateStuckBuilders": args.automate_stuck_builders,
