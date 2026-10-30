@@ -8802,6 +8802,11 @@ pub struct AdvancedAi {
     /// city of the same rival the wing can hit. See
     /// `advanced/siege_under_the_wing.rs`. Off by default.
     siege_moves_under_the_wing: bool,
+    /// `science-drive-answers-the-launch`: a seat assigned another lane lets
+    /// `science-victory-drive` open once a rival has landed a space project
+    /// and we lead the field, and races Science beside its lane while it
+    /// drives. See `advanced/science_victory_drive.rs`. Off by default.
+    science_drive_answers_the_launch: bool,
     // ---- append: t-z ------------------------------------------------
     /// `upkeep-waits-for-the-income`: a Domination seat starts no recurring
     /// upkeep its income cannot carry. See
@@ -11497,6 +11502,7 @@ impl AdvancedAi {
             staging_gun_trusts_its_escort_2: false,
             siege_tier_yields_to_the_bombers_2: false,
             siege_moves_under_the_wing: false,
+            science_drive_answers_the_launch: false,
             // ---- append: t-z ----------------------------------------
             upkeep_waits_for_the_income: false,
             unchosen_war_takes_the_first_peace: false,

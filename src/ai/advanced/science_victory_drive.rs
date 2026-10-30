@@ -211,6 +211,9 @@ pub struct ScienceDrive {
     /// Driving because Science is assigned or committed, not because of the
     /// reading.
     pub assigned: bool,
+    /// `science-drive-answers-the-launch`: a seat assigned another lane,
+    /// driving because a rival's space race is under way and it leads.
+    pub answering: bool,
 }
 
 /// The seat's science against the field's best: science a turn and techs
@@ -269,6 +272,11 @@ impl AdvancedAi {
     pub(super) fn raced_target(&self) -> Option<VictoryTarget> {
         if self.victory_portfolio && self.portfolio_specializing() == Some(true) {
             return self.portfolio_target();
+        }
+        // `science-drive-answers-the-launch`: while the answer drives, the
+        // space race's keys read Science beside the assigned lane.
+        if self.science_drive.is_some_and(|drive| drive.answering) {
+            return Some(VictoryTarget::Science);
         }
         self.victory_target.or_else(|| {
             self.science_drive_active()
@@ -378,8 +386,16 @@ impl AdvancedAi {
             self.science_drive = None;
             return;
         }
+        // `science-drive-answers-the-launch`: another lane's seat may drive
+        // once a rival has landed a space project.
+        let answering = self.science_drive_answers_the_launch
+            && self
+                .victory_target
+                .is_some_and(|target| target != VictoryTarget::Science)
+            && Self::rival_landed_a_space_project(g, pid);
         let assigned = match self.victory_target {
             Some(VictoryTarget::Science) => true,
+            Some(_) if answering => false,
             Some(_) => {
                 self.science_drive = None;
                 return;
@@ -395,6 +411,7 @@ impl AdvancedAi {
             Some(drive) => g.turn.saturating_sub(drive.reviewed) >= review,
             None => {
                 assigned
+                    || answering
                     || portfolio_science
                     || launch_committed
                     || (g.turn >= start && (g.turn - start).is_multiple_of(review))
@@ -411,6 +428,7 @@ impl AdvancedAi {
             || match self.science_drive {
                 Some(_) if self.science_victory_drive_2 => standing.holds_v2(),
                 Some(_) => standing.holds(),
+                None if answering => standing.leads(),
                 None if self.science_victory_drive_2 => g.turn >= start && standing.leads_v2(),
                 None => g.turn >= start && standing.leads(),
             };
@@ -437,6 +455,8 @@ impl AdvancedAi {
                     launch city {}",
                    if assigned {
                        "the assigned lane"
+                   } else if answering {
+                       "a rival's space race, answered beside the assigned lane"
                    } else if adaptive_science_plan {
                        "the public Science focus"
                    } else {
@@ -452,7 +472,29 @@ impl AdvancedAi {
             standing,
             launch_city,
             assigned,
+            answering,
         });
+    }
+
+    /// `science-drive-answers-the-launch`: whether a met, living rival major
+    /// has landed a space project (the same four `science-threat-denial`
+    /// counts as the physical race).
+    pub(super) fn rival_landed_a_space_project(g: &Game, pid: usize) -> bool {
+        g.players.iter().any(|rival| {
+            rival.id != pid
+                && rival.alive
+                && !rival.is_minor
+                && !rival.is_barbarian
+                && g.has_met(pid, rival.id)
+                && [
+                    "launch_earth_satellite",
+                    "launch_moon_landing",
+                    "launch_mars_colony",
+                    "exoplanet_expedition",
+                ]
+                .iter()
+                .any(|project| rival.science_projects.contains(*project))
+        })
     }
 
     /// The city the race runs from: the Spaceport city (the best producer
@@ -1217,6 +1259,72 @@ mod tests {
             other.science_drive().is_none(),
             "a seat assigned another lane never drives"
         );
+    }
+
+    /// `science-drive-answers-the-launch`: a seat assigned another lane
+    /// drives once a met rival has landed a space project and we lead, races
+    /// Science beside its lane while it does, and not before the landing.
+    #[test]
+    fn another_lane_answers_a_rival_launch_when_it_leads() {
+        let (mut g, _, _) = board();
+        give_techs(&mut g, 0, 40);
+        give_techs(&mut g, 1, 30);
+        g.players[0].met.insert(1);
+        g.players[1].met.insert(0);
+        g.turn = 150;
+        for lane in [VictoryTarget::Diplomacy, VictoryTarget::Culture] {
+            let mut seat = AdvancedAi::targeting(lane);
+            seat.enable_science_victory_drive();
+            seat.enable_science_drive_answers_the_launch();
+            seat.maintain_science_drive(&g, 0);
+            assert!(
+                seat.science_drive().is_none(),
+                "{lane:?}: no rival launch yet"
+            );
+            assert_eq!(seat.raced_target(), Some(lane));
+
+            let mut landed = g.clone();
+            landed.players[1]
+                .science_projects
+                .insert("launch_earth_satellite".to_string());
+            seat.maintain_science_drive(&landed, 0);
+            let drive = seat.science_drive().expect("the launch is answered");
+            assert!(drive.answering && !drive.assigned, "{lane:?}");
+            assert_eq!(seat.raced_target(), Some(VictoryTarget::Science));
+            assert!(seat.science_drive_opens(GrandStrategy::Diplomacy));
+            assert_eq!(seat.victory_target(), Some(lane), "the lane itself is kept");
+
+            // Off, the assigned lane never drives, launch or not.
+            let mut off = AdvancedAi::targeting(lane);
+            off.enable_science_victory_drive();
+            off.maintain_science_drive(&landed, 0);
+            assert!(off.science_drive().is_none(), "{lane:?}: off");
+
+            // Behind the field, the launch is not answered.
+            let mut behind = landed.clone();
+            give_techs(&mut behind, 1, 60);
+            let mut trailing = AdvancedAi::targeting(lane);
+            trailing.enable_science_victory_drive();
+            trailing.enable_science_drive_answers_the_launch();
+            trailing.maintain_science_drive(&behind, 0);
+            assert!(
+                behind.players[1].techs.len() > behind.players[0].techs.len(),
+                "fixture: the rival leads on techs"
+            );
+            assert!(
+                !AdvancedAi::science_standing(&behind, 0).leads(),
+                "fixture: we do not lead"
+            );
+            assert!(trailing.science_drive().is_none(), "{lane:?}: behind");
+        }
+        // An unmet rival's landing is not read.
+        let mut unmet = g.clone();
+        unmet.players[0].met.clear();
+        unmet.players[1].met.clear();
+        unmet.players[1]
+            .science_projects
+            .insert("launch_earth_satellite".to_string());
+        assert!(!AdvancedAi::rival_landed_a_space_project(&unmet, 0));
     }
 
     #[test]

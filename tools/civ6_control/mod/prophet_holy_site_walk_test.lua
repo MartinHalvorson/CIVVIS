@@ -266,6 +266,34 @@ check("the walk names the Holy Site's row", host.ops[1] ~= nil and host.ops[1].y
 check("the walk is reported as a founding walk",
 	(lastEvent("gp") or ""):find('"action":"moving_to_found"', 1, true) ~= nil, true)
 
+-- The live host reads an unfounded Prophet's action charges as 0
+-- (civvis-20261030T090715Z): the walk must not depend on them.
+reset(25)
+host.charges = 0
+host.paths["25:" .. site] = { plots = { origin, plotIndex(2, 1), site }, turns = { 0, 1, 1 } }
+applyOrders(player, PID, 7, {})
+check("a zero-charge unfounded Prophet still walks", host.ops[1] ~= nil and host.ops[1].x, 3)
+
+-- A Holy Site whose pillage state cannot be read is not refused for it.
+reset(26)
+host.cities[1] = city({ district(1, 1, 1, true), {
+	GetType = function() return 2 end,
+	GetX = function() return 3 end,
+	GetY = function() return 1 end,
+	IsComplete = function() return true end,
+	IsPillaged = function() error("no accessor") end,
+} })
+host.paths["26:" .. site] = { plots = { origin, plotIndex(2, 1), site }, turns = { 0, 1, 1 } }
+applyOrders(player, PID, 7, {})
+check("an unreadable pillage state does not block the walk", host.ops[1] ~= nil and host.ops[1].x, 3)
+
+-- With no route the refusal is reported, by name.
+reset(27)
+host.paths["27:" .. site] = { plots = { origin }, turns = { 0 } }
+applyOrders(player, PID, 7, {})
+check("an unwalked Prophet names its reason",
+	table.concat(LOG, "\n"):find('"reason":"no_reachable_holy_site"', 1, true) ~= nil, true)
+
 -- On the Holy Site the host takes FOUND_RELIGION: the Prophet stays for the
 -- `religion` order.
 reset(21)
