@@ -193,7 +193,7 @@ fn great_work_slots_raise_a_wonders_culture_value() {
         .iter()
         .find(|(_, spec)| {
             spec.great_work_slots.is_empty()
-                && spec.effects.get("tourism").is_none()
+                && !spec.effects.contains_key("tourism")
                 && spec.yields.culture <= 0.0
                 && spec.great_person_points.is_empty()
         })
