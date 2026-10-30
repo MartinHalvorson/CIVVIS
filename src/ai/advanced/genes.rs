@@ -4319,6 +4319,14 @@ pub const GENES: &[Gene] = &[
     // this on, a rival-held city of ours ends the wait. See
     // `advanced/defensive_apostle.rs`.
     Gene { tag: "inquisition-answers-a-rival-majority", field: "inquisition_answers_a_rival_majority", kind: Kind::OptIn, enable: AdvancedAi::enable_inquisition_answers_a_rival_majority, disable: AdvancedAi::disable_inquisition_answers_a_rival_majority },
+    // `trade-quotes-pay-the-lump`: `quoted_payment` pays a quote's fraction
+    // as 0.1 Gold a turn, checked against `empire_gold_per_turn` (4 Gold a
+    // city less upkeep, floor zero). A native Immortal culture census read that
+    // proxy as zero from turn 100 in every game while real income was 30-200,
+    // and the seat's luxury, strategic and Great Work quotes fell from 1-5 to
+    // none. This seat's quotes pay a rounded-up lump the payer can cover. See
+    // `advanced/trade_quotes_lump.rs`.
+    Gene { tag: "trade-quotes-pay-the-lump", field: "trade_quotes_pay_the_lump", kind: Kind::OptIn, enable: AdvancedAi::enable_trade_quotes_pay_the_lump, disable: AdvancedAi::disable_trade_quotes_pay_the_lump },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

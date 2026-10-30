@@ -8544,6 +8544,17 @@ impl AdvancedAi {
         self.inquisition_answers_a_rival_majority = false;
     }
 
+    /// Turn on `trade-quotes-pay-the-lump`. See
+    /// [`Self::trade_quotes_pay_the_lump`].
+    pub fn enable_trade_quotes_pay_the_lump(&mut self) {
+        self.trade_quotes_pay_the_lump = true;
+    }
+
+    /// The twin of `enable_trade_quotes_pay_the_lump`.
+    pub fn disable_trade_quotes_pay_the_lump(&mut self) {
+        self.trade_quotes_pay_the_lump = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

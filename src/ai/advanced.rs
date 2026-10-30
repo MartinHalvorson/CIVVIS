@@ -8827,6 +8827,10 @@ pub struct AdvancedAi {
     /// drives. See `advanced/science_victory_drive.rs`. Off by default.
     science_drive_answers_the_launch: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
+    /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
+    /// See `advanced/trade_quotes_lump.rs`. Off by default.
+    trade_quotes_pay_the_lump: bool,
     /// `upkeep-waits-for-the-income`: a Domination seat starts no recurring
     /// upkeep its income cannot carry. See
     /// `advanced/upkeep_waits_for_the_income.rs`. Off by default.
@@ -9658,6 +9662,9 @@ mod diplo_wonder_claim;
 mod culture_monuments;
 /// `culture-keeps-every-border-open`: see `advanced/culture_open_borders.rs`.
 mod culture_open_borders;
+
+/// `trade-quotes-pay-the-lump`: see `advanced/trade_quotes_lump.rs`.
+mod trade_quotes_lump;
 
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 
@@ -11536,6 +11543,7 @@ impl AdvancedAi {
             siege_moves_under_the_wing: false,
             science_drive_answers_the_launch: false,
             // ---- append: t-z ----------------------------------------
+            trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,
             unchosen_war_takes_the_first_peace: false,
             unchosen_war_seen: BTreeMap::new(),
@@ -49340,6 +49348,8 @@ impl AdvancedAi {
         // `builders-route-around-mountains`: see
         // `Game::observed_builders_avoid_mountains`.
         g.observed_builders_avoid_mountains = self.builders_route_around_mountains;
+        // `trade-quotes-pay-the-lump`: see `Game::lump_quote_viewer`.
+        g.lump_quote_viewer = self.trade_quotes_pay_the_lump.then_some(pid);
         // See `defeated_majors` (`defeated-majors-leave-the-board`): before
         // any living-majors reading of this turn.
         self.retire_defeated_majors(g, pid);
