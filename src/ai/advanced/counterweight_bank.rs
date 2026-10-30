@@ -49,9 +49,10 @@ impl AdvancedAi {
     fn counterweight_bank_applies(&self, g: &Game, pid: usize) -> bool {
         // `counterweight-from-the-first-convert` carries the bank with it.
         (self.counterweight_spends_the_bank || self.counterweight_from_the_first_convert)
-            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            // `counterweight-defends-the-diplomat` opens the Diplomacy lane.
+            && self.counterweight_lane(g)
             && g.victory_conditions.religious
-            && g.players[pid].religion.is_none()
+            && self.counterweight_faithless(g, pid)
     }
 
     /// The counterweight Missionaries `religious_defense` keeps against

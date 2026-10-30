@@ -8598,6 +8598,39 @@ impl AdvancedAi {
         self.trade_quotes_pay_the_lump = false;
     }
 
+    /// Opt-in gene `counterweight-defends-the-diplomat`; see
+    /// [`Self::counterweight_defends_the_diplomat`].
+    pub fn enable_counterweight_defends_the_diplomat(&mut self) {
+        self.counterweight_defends_the_diplomat = true;
+    }
+
+    /// The twin of `enable_counterweight_defends_the_diplomat`.
+    pub fn disable_counterweight_defends_the_diplomat(&mut self) {
+        self.counterweight_defends_the_diplomat = false;
+    }
+
+    /// Opt-in gene `faith-war-defends-the-diplomat`; see
+    /// [`Self::faith_war_defends_the_diplomat`].
+    pub fn enable_faith_war_defends_the_diplomat(&mut self) {
+        self.faith_war_defends_the_diplomat = true;
+    }
+
+    /// The twin of `enable_faith_war_defends_the_diplomat`.
+    pub fn disable_faith_war_defends_the_diplomat(&mut self) {
+        self.faith_war_defends_the_diplomat = false;
+    }
+
+    /// Opt-in gene `counterweight-builds-its-source`; see
+    /// [`Self::counterweight_builds_its_source`].
+    pub fn enable_counterweight_builds_its_source(&mut self) {
+        self.counterweight_builds_its_source = true;
+    }
+
+    /// The twin of `enable_counterweight_builds_its_source`.
+    pub fn disable_counterweight_builds_its_source(&mut self) {
+        self.counterweight_builds_its_source = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

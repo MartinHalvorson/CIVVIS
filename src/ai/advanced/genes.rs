@@ -4357,6 +4357,28 @@ pub const GENES: &[Gene] = &[
     // none. This seat's quotes pay a rounded-up lump the payer can cover. See
     // `advanced/trade_quotes_lump.rs`.
     Gene { tag: "trade-quotes-pay-the-lump", field: "trade_quotes_pay_the_lump", kind: Kind::OptIn, enable: AdvancedAi::enable_trade_quotes_pay_the_lump, disable: AdvancedAi::disable_trade_quotes_pay_the_lump },
+    // Live Immortal 10-30 civvis-20261030T171157Z (diplomatic): 16 DVP at t160
+    // against 3-6, lost to Islam's Religious Victory at 168. Our Catholicism
+    // held none of our cities from 100, Islam 8 of 10 from 145, 300-780 Faith
+    // banked with no religious unit: the counterweight family answers only
+    // the Domination lane and only a seat that never founded. On the
+    // Diplomacy lane it answers too, and a founder with no city of its faith
+    // defends as faithless. See `advanced/counterweight_diplomat.rs`.
+    Gene { tag: "counterweight-defends-the-diplomat", field: "counterweight_defends_the_diplomat", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_defends_the_diplomat, disable: AdvancedAi::disable_counterweight_defends_the_diplomat },
+    // A Diplomatic seat with no counterweight source has no religious defence
+    // but a war: native diplomatic religious losses 52011/17/18 had every city
+    // on the threat by turns 86-95 with 297-352 Faith banked, and live 171157Z
+    // lost at 168 on 16 DVP. `faith-war-before-the-flip` (spreaders 0.26 a
+    // turn at war against 1.47 at peace) opens on the Diplomacy lane too. See
+    // `faith_war_lane` in `advanced/counterweight_diplomat.rs`.
+    Gene { tag: "faith-war-defends-the-diplomat", field: "faith_war_defends_the_diplomat", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_war_defends_the_diplomat, disable: AdvancedAi::disable_faith_war_defends_the_diplomat },
+    // 13 live religious losses 2026-10-30: a counterfaith city of ours stood in
+    // 7, one with a Holy Site in 1, so no counterweight Missionary could be
+    // bought (171157Z: Buddhist Argos and Rhodes t70-168, no Holy Site, 337-718
+    // Faith banked, 16 DVP at t160). A faithless seat a rival faith presses
+    // claims a Holy Site in its biggest safe-counterfaith city. See
+    // `counterweight_builds_its_source` in `advanced/counterweight_diplomat.rs`.
+    Gene { tag: "counterweight-builds-its-source", field: "counterweight_builds_its_source", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_builds_its_source, disable: AdvancedAi::disable_counterweight_builds_its_source },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

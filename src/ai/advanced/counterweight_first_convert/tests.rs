@@ -1,4 +1,5 @@
 use super::*;
+use crate::ai::advanced::VictoryTarget;
 use crate::game::install_test_district;
 use std::sync::Arc;
 
