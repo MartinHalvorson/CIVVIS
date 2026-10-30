@@ -4067,9 +4067,16 @@
   body.display-dedicated #maparea #victoryhud {
     top: calc(var(--player-hud-top, var(--panel-edge)) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));
     bottom: var(--panel-edge); left: auto; right: var(--panel-edge);
-    /* Wide enough for its own heading beside the fold and close controls. */
-    width: max(var(--victory-hud-width), 224px); height: auto;
+    /* Wide enough for its own heading beside the fold and close controls,
+       unless the viewer dragged it narrower (app.js carries that width). */
+    width: var(--dedicated-victory-width, max(var(--victory-hud-width), 224px)); height: auto;
     grid-template-rows: minmax(0, 1fr);
+  }
+  /* A narrowed panel ends its heading in an ellipsis rather than clipping
+     both of its ends around the centre. */
+  body.display-dedicated #maparea #victoryhud > .victory-region .hud-section-heading { justify-content: flex-start; }
+  body.display-dedicated #maparea #victoryhud > .victory-region .hud-section-heading > span {
+    min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
   }
   /* With the stats gone, the tracker's bar is the first one, so it is the
      one that leaves the close control's corner clear. */
