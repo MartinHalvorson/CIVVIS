@@ -100,7 +100,7 @@ impl AdvancedAi {
     }
 
     /// Whether the queue head `item` may wait for the Theater Square.
-    fn culture_theater_may_defer(
+    pub(super) fn culture_theater_may_defer(
         g: &Game,
         pid: usize,
         cid: u32,
