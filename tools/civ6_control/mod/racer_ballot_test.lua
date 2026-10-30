@@ -213,6 +213,21 @@ check("brace still buys border control", requests[2].votes, 2)
 check("brace spend", spent, 8)
 check("brace below 18", CivvisRacerBraces(17, {}), false)
 check("brace at 18", CivvisRacerBraces(18, {}), true)
+check("warned at 15 braces", CivvisRacerBraces(15, {}, 6), true)
+check("unwarned at 15 does not", CivvisRacerBraces(15, {}, 0), false)
+check("warned below 14 does not", CivvisRacerBraces(13, {}, 6), false)
+-- Live King 074500Z t181: 15 points, Georgia's 6 B on us at t162 -- the
+-- brace, not a 9-vote claim into a 26-vote gang.
+tally.wc_b_on_us = 6
+spent, mode = run(324, 8, 15, 5)
+check("warned at 15: brace", mode, "brace")
+check("warned brace votes B on us", requests[1].option, 2)
+check("warned brace names us", requests[1].selection, 0)
+check("warned brace is free", requests[1].votes, 1)
+tally.wc_b_on_us = 0
+spent, mode = run(324, 8, 15, 5)
+check("unwarned at 15 still claims", mode, "race")
+tally.wc_b_on_us = nil
 -- With the brace moved past the win, match point claims all in.
 config.DiploRacerGangSelf = 21
 spent, mode = run(300, 8, 18, 9)
