@@ -8631,6 +8631,17 @@ impl AdvancedAi {
         self.counterweight_builds_its_source = false;
     }
 
+    /// Opt-in gene `culture-recovery-spends-the-bank`; see
+    /// [`Self::culture_recovery_spends_the_bank`].
+    pub fn enable_culture_recovery_spends_the_bank(&mut self) {
+        self.culture_recovery_spends_the_bank = true;
+    }
+
+    /// The twin of `enable_culture_recovery_spends_the_bank`.
+    pub fn disable_culture_recovery_spends_the_bank(&mut self) {
+        self.culture_recovery_spends_the_bank = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

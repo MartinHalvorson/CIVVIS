@@ -6406,6 +6406,10 @@ pub struct AdvancedAi {
     /// presses claims a Holy Site in a city on a safe counterfaith. See
     /// `advanced/counterweight_diplomat.rs`.
     counterweight_builds_its_source: bool,
+    /// `culture-recovery-spends-the-bank`: a named Culture seat in Recovery
+    /// still buys Rock Bands and Naturalists once the Faith bank holds twice
+    /// the cheapest on sale. See `advanced/culture_recovery_bank.rs`.
+    culture_recovery_spends_the_bank: bool,
     // ---- append: e-f ------------------------------------------------
     /// `food-focus-grows-the-small-city`: `civvis_orders` also asks the host
     /// to favour Food in a small city growing at two a turn or less. See
@@ -9698,6 +9702,8 @@ mod diplo_statue_harbor;
 
 /// `culture-routes-reach-every-rival`: see `advanced/culture_routes.rs`.
 mod culture_routes;
+/// `culture-recovery-spends-the-bank`: see `advanced/culture_recovery_bank.rs`.
+mod culture_recovery_bank;
 /// `hidden-border-yields-to-our-pressure`: see `advanced/hidden_border_reach.rs`.
 mod hidden_border_reach;
 /// `trade-quotes-pay-the-lump`: see `advanced/trade_quotes_lump.rs`.
@@ -11206,6 +11212,7 @@ impl AdvancedAi {
             diplomat_saves_for_the_apostle: false,
             counterweight_defends_the_diplomat: false,
             counterweight_builds_its_source: false,
+            culture_recovery_spends_the_bank: false,
             // ---- append: e-f ----------------------------------------
             food_focus_grows_the_small_city: false,
             friendship_ends_at_the_race: false,

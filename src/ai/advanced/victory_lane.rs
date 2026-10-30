@@ -319,8 +319,12 @@ impl AdvancedAi {
         // Recovery keeps its reserve unless complete host menus confirm that
         // the named Culture seat cannot spend Faith on any other unit.
         let named_culture = self.active_victory_target(g) == Some(VictoryTarget::Culture);
+        // `culture-recovery-spends-the-bank`: …or the bank holds twice the
+        // cheapest Band or Naturalist on sale.
         (plan.strategy != GrandStrategy::Recovery
-            || named_culture && Self::recovery_faith_has_only_culture_units(g, pid))
+            || named_culture
+                && (Self::recovery_faith_has_only_culture_units(g, pid)
+                    || self.culture_recovery_bank_overflows(g, pid)))
             && (named_culture
                 || culture_focus && self.lane_culture_spending
                 || self.adaptive_culture_lane_spends(g, pid, plan, culture_focus))
