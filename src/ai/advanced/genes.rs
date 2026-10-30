@@ -4349,6 +4349,14 @@ pub const GENES: &[Gene] = &[
     // 15, a Trader in one of our cities that can reach a rival without our
     // route goes there, the bar holder first. See `advanced/culture_routes.rs`.
     Gene { tag: "culture-routes-reach-every-rival", field: "culture_routes_reach_every_rival", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_routes_reach_every_rival, disable: AdvancedAi::disable_culture_routes_reach_every_rival },
+    // `trade-quotes-pay-the-lump`: `quoted_payment` pays a quote's fraction
+    // as 0.1 Gold a turn, checked against `empire_gold_per_turn` (4 Gold a
+    // city less upkeep, floor zero). A native Immortal culture census read that
+    // proxy as zero from turn 100 in every game while real income was 30-200,
+    // and the seat's luxury, strategic and Great Work quotes fell from 1-5 to
+    // none. This seat's quotes pay a rounded-up lump the payer can cover. See
+    // `advanced/trade_quotes_lump.rs`.
+    Gene { tag: "trade-quotes-pay-the-lump", field: "trade_quotes_pay_the_lump", kind: Kind::OptIn, enable: AdvancedAi::enable_trade_quotes_pay_the_lump, disable: AdvancedAi::disable_trade_quotes_pay_the_lump },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
