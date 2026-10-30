@@ -8482,6 +8482,17 @@ impl AdvancedAi {
         self.science_drive_answers_the_launch = false;
     }
 
+    /// Opt-in gene `culture-seat-monuments`; see
+    /// [`Self::culture_seat_monuments`].
+    pub fn enable_culture_seat_monuments(&mut self) {
+        self.culture_seat_monuments = true;
+    }
+
+    /// The twin of `enable_culture_seat_monuments`.
+    pub fn disable_culture_seat_monuments(&mut self) {
+        self.culture_seat_monuments = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
