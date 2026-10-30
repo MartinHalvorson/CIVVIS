@@ -5504,6 +5504,10 @@ pub struct AdvancedAi {
     /// costliest. See `advanced/solvency.rs`. Off by default.
     bankruptcy_exits_the_drain: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `diplo-seat-statue-harbor`: a Diplomacy seat's strongest coastal city
+    /// builds the Harbor the Statue of Liberty needs. See
+    /// `advanced/diplo_statue_harbor.rs`. Off by default.
+    diplo_seat_statue_harbor: bool,
     /// `culture-seat-monuments`: a Culture seat's cities build their Monument
     /// early. See `advanced/culture_monuments.rs`. Off by default.
     culture_seat_monuments: bool,
@@ -7045,6 +7049,10 @@ pub struct AdvancedAi {
     forward_airfield_project: bool,
     forward_airfield_project_state: Option<forward_airfield_project::FieldProject>,
     // ---- append: g-k ------------------------------------------------
+    /// `hidden-border-yields-to-our-pressure`: the unseen-border settle veto
+    /// yields where our own cities press the site. See
+    /// `advanced/hidden_border_reach.rs`. Off by default.
+    hidden_border_yields_to_our_pressure: bool,
     /// `gold-buys-the-idle-trader`: an empty trade route slot's Trader,
     /// bought with the idle bank at peace. See
     /// `advanced/trader_fills_the_idle_route/purchase.rs`. Off by default.
@@ -9663,6 +9671,11 @@ mod culture_monuments;
 /// `culture-keeps-every-border-open`: see `advanced/culture_open_borders.rs`.
 mod culture_open_borders;
 
+/// `diplo-seat-statue-harbor`: see `advanced/diplo_statue_harbor.rs`.
+mod diplo_statue_harbor;
+
+/// `hidden-border-yields-to-our-pressure`: see `advanced/hidden_border_reach.rs`.
+mod hidden_border_reach;
 /// `trade-quotes-pay-the-lump`: see `advanced/trade_quotes_lump.rs`.
 mod trade_quotes_lump;
 
@@ -10994,6 +11007,7 @@ impl AdvancedAi {
             aqueduct_recovery_reservations: RefCell::new(BTreeMap::new()),
             bankruptcy_exits_the_drain: false,
             // ---- append: c-d ----------------------------------------
+            diplo_seat_statue_harbor: false,
             culture_seat_monuments: false,
             culture_seat_theater_first: false,
             culture_keeps_every_border_open: false,
@@ -11253,6 +11267,7 @@ impl AdvancedAi {
             forward_airfield_project: false,
             forward_airfield_project_state: None,
             // ---- append: g-k ----------------------------------------
+            hidden_border_yields_to_our_pressure: false,
             gold_buys_the_idle_trader: false,
             holdout_keeps_the_faith_war: false,
             holdout_keeps_the_faith_war_2: false,
@@ -32929,6 +32944,10 @@ impl AdvancedAi {
             let culture_monument_commitment = committed
                 .as_ref()
                 .is_some_and(|(_, item)| self.culture_monument_holds(g, pid, cid, plan, item));
+            // `diplo-seat-statue-harbor`: the Statue's Harbor finishes.
+            let statue_harbor_commitment = committed
+                .as_ref()
+                .is_some_and(|(_, item)| self.statue_harbor_holds(g, pid, cid, plan, item));
             // `trader-fills-the-idle-route`: the claimed Trader finishes while
             // its slot still stands empty.
             let idle_route_trader_commitment = committed
@@ -32994,6 +33013,7 @@ impl AdvancedAi {
                     || culture_theater_commitment
                     || diplo_wonder_commitment
                     || culture_monument_commitment
+                    || statue_harbor_commitment
                     || idle_route_trader_commitment
                     || backlog_builder_commitment
                     || capped_aqueduct_commitment
@@ -33018,6 +33038,7 @@ impl AdvancedAi {
                     || culture_theater_commitment
                     || diplo_wonder_commitment
                     || culture_monument_commitment
+                    || statue_harbor_commitment
                     || idle_route_trader_commitment
                     || backlog_builder_commitment
                     || capped_aqueduct_commitment
@@ -40255,7 +40276,13 @@ impl AdvancedAi {
         // border whose nearest visible city sits on its fifth ownership ring
         // may instead belong to a nearer city we have not seen. It will press
         // the new city from turn one. See `UNRESOLVED_MAJOR_BORDER_RADIUS`.
-        if self.frontier_loyalty && Self::beside_unresolved_major_border(g, site) {
+        // `hidden-border-yields-to-our-pressure`: a site our own cities
+        // already press is not a frontier colony. See
+        // `advanced/hidden_border_reach.rs`.
+        if self.frontier_loyalty
+            && Self::beside_unresolved_major_border(g, site)
+            && !self.hidden_border_yields(g, pid, site)
+        {
             return Some(
                 "it lies within five tiles of a rival border whose city may be hidden \
                  — the forecast cannot price that Loyalty pressure"
@@ -40749,8 +40776,10 @@ impl AdvancedAi {
                 // line now asserts an applied action, never an intention.
                 // ⚠ Priced BEFORE the apply, for the reason in the city branch.
                 let worth = self.settle_value(g, pid, current);
+                let yielded = self.hidden_border_yield_before_founding(g, pid, current);
                 let founded = g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
                 if founded {
+                    self.note_hidden_border_founding(current, yielded);
                     think!(self.journal(), Expansion, Decision, "Founding the capital at {current:?}";
                            "the site is worth {:.1}", worth; current);
                 } else {
@@ -41165,8 +41194,10 @@ impl AdvancedAi {
             // well — founding here makes this city our nearest, and the gap
             // it closed is gone.
             let contested = self.contested_land_front(g, pid, current);
+            let yielded = self.hidden_border_yield_before_founding(g, pid, current);
             let founded = g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
             if founded {
+                self.note_hidden_border_founding(current, yielded);
                 if let Some((front, credit)) = contested {
                     *g.players[pid]
                         .counters
@@ -41513,8 +41544,10 @@ impl AdvancedAi {
         self.settler_stalls.remove(&uid);
         self.settler_closest.remove(&uid);
         // ⚠ Journal AFTER the engine answers; see the capital branch.
+        let yielded = self.hidden_border_yield_before_founding(g, pid, here);
         let founded = g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
         if founded {
+            self.note_hidden_border_founding(here, yielded);
             think!(self.journal(), Expansion, Decision,
                    "Founding where the settler stands at {here:?}";
                    "it stalled {SETTLER_STALL_LIMIT} turns short of a better site \
@@ -49945,6 +49978,10 @@ impl AdvancedAi {
             // Theater claim (whose heads they leave alone). Exact no-op while
             // the gene is off. See `advanced/culture_monuments.rs`.
             self.claim_culture_monuments(g, pid, &plan);
+            // `diplo-seat-statue-harbor`: the Statue of Liberty's Harbor on a
+            // Diplomacy seat. Exact no-op while the gene is off. See
+            // `advanced/diplo_statue_harbor.rs`.
+            self.claim_statue_harbor(g, pid, &plan);
             // `diplo-seat-wonder-claim`: one Diplomatic-point wonder in the
             // strongest city of a Diplomatic seat, after the Culture claims
             // and ahead of the Prophet race and the routine claims. Exact

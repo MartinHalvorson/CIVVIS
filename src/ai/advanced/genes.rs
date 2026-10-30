@@ -4319,6 +4319,21 @@ pub const GENES: &[Gene] = &[
     // this on, a rival-held city of ours ends the wait. See
     // `advanced/defensive_apostle.rs`.
     Gene { tag: "inquisition-answers-a-rival-majority", field: "inquisition_answers_a_rival_majority", kind: Kind::OptIn, enable: AdvancedAi::enable_inquisition_answers_a_rival_majority, disable: AdvancedAi::disable_inquisition_answers_a_rival_majority },
+    // `diplo-seat-statue-harbor`: the Statue of Liberty (+4 Diplomatic
+    // Victory Points) needs a Harbor beside its coast tile; in live Emperor
+    // civvis-20261030T101932Z it never once reached our buildable list (our
+    // only Harbor, in a 15-19 Production city, from t160), and 111154Z sat at
+    // 18 points for thirty turns. A Diplomacy seat's strongest coastal city
+    // claims its first Harbor while the Statue is open. See
+    // `advanced/diplo_statue_harbor.rs`.
+    Gene { tag: "diplo-seat-statue-harbor", field: "diplo_seat_statue_harbor", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_seat_statue_harbor, disable: AdvancedAi::disable_diplo_seat_statue_harbor },
+    // `hidden-border-yields-to-our-pressure`: live Immortal
+    // civvis-20261030T123145Z held a Settler out from t50 past t80, at peace,
+    // after sixteen "rival border whose city may be hidden" refusals, and
+    // retired at t88 on four cities. The unresolved-border veto yields where
+    // our own cities press the site (population times closeness, 30 or more).
+    // See `advanced/hidden_border_reach.rs`.
+    Gene { tag: "hidden-border-yields-to-our-pressure", field: "hidden_border_yields_to_our_pressure", kind: Kind::OptIn, enable: AdvancedAi::enable_hidden_border_yields_to_our_pressure, disable: AdvancedAi::disable_hidden_border_yields_to_our_pressure },
     // `trade-quotes-pay-the-lump`: `quoted_payment` pays a quote's fraction
     // as 0.1 Gold a turn, checked against `empire_gold_per_turn` (4 Gold a
     // city less upkeep, floor zero). A native Immortal culture census read that
