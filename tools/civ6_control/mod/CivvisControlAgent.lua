@@ -24745,6 +24745,21 @@ end;
 
 function Initialize()
 	emit("loaded", { version = 2, play = cfg.Play ~= false });
+	-- RECORD-ONLY. `deal_response` records the rival's verdict as the
+	-- engine's DealProposalAction NUMBER, and no Lua source names the values.
+	-- Over 30 live runs the asked answers split action 1 (closable when under
+	-- the ceiling) / action 2 (172, never closable, most with a gold ask under
+	-- the ceiling) / action 3 (3), and the closer accepts only ACCEPTED and
+	-- ADJUSTED. Name every member once per load so the ledger can decode it.
+	emit("deal_action_names", {
+		names = try(function()
+			local names = {};
+			for name, value in pairs(DealProposalAction) do
+				names[tostring(value)] = name;
+			end
+			return names;
+		end, {}),
+	});
 	-- RECORD-ONLY. Combat visualization is a serial event the game core waits
 	-- on (G93: +0.69 s of AI phase per visible combat, even with QuickCombat).
 	-- The engine's console has `timescale <value>`, and Firaxis's own
