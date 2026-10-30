@@ -25,12 +25,16 @@
 //! ruleset's only source of enforcement (`data/tree_effects.json`) — for the
 //! length of the purchase, and every Open Borders sale the ordinary Culture
 //! filters allow is bought, the largest domestic-tourist count first: visitors
-//! drawn from the bar holder also lower the bar. The view is restored before
+//! drawn from the bar holder also lower the bar. Each grant is priced as one
+//! lump of Gold at the midpoint of both sides' valuations rather than taken
+//! from `Game::quick_deals`, whose quote pays a fraction per turn that a
+//! built-up empire's liquidity proxy refuses (see
+//! [`AdvancedAi::lump_open_borders_quote`]). The view is restored before
 //! anything else reads it, and the authoritative game revalidates every
 //! harvested trade against the real civics. A purchase never spends into the
 //! solvency reserve. Below the floor nothing changes; off, nothing changes.
 use super::AdvancedAi;
-use crate::game::{Game, QuickDeal};
+use crate::game::{DealItems, Game, QuickDeal};
 use std::collections::BTreeSet;
 
 /// Tourism per turn from which a grant pays for itself: a grant lasts the
@@ -61,17 +65,9 @@ impl AdvancedAi {
         let mut closed = 0;
         let mut tried = BTreeSet::new();
         loop {
-            let best = g
-                .quick_deals(pid)
-                .into_iter()
-                .filter(|deal| Some(deal.partner) != excluded_partner)
-                .filter(|deal| !tried.contains(&deal.partner))
-                .filter(|deal| {
-                    deal.item == "open_borders"
-                        && deal.direction == "buy"
-                        && deal.my_value >= 2.0
-                        && deal.partner_value >= 2.0
-                })
+            let best = (0..g.players.len())
+                .filter(|partner| Some(*partner) != excluded_partner && !tried.contains(partner))
+                .filter_map(|partner| Self::lump_open_borders_quote(g, pid, partner))
                 .filter(|deal| {
                     self.culture_deal_allowed(deal, culture_threats)
                         && self.science_denial_deal_allowed(deal, science_threats)
@@ -122,9 +118,54 @@ impl AdvancedAi {
         revealed
     }
 
-    /// The quote's lump never spends into the reserve a falling treasury
-    /// keeps; its per-turn remainder is already refused by the engine's quote
-    /// whenever the payer's income cannot carry it (`Game::quoted_payment`).
+    /// A partner's Open Borders grant priced as one lump of Gold at the
+    /// midpoint of the two sides' own valuations (`Game::trade_utilities`),
+    /// each side keeping at least two. `Game::quick_deals` quotes the same
+    /// midpoint but pays its fraction as 0.1 Gold a turn, and that remainder is
+    /// checked against `empire_gold_per_turn` — a liquidity proxy of 4 Gold a
+    /// city less every building's upkeep, which a built-up culture empire
+    /// drives to zero while its real income is 100+ a turn. Every renewal
+    /// after the first grant expired was refused that way in a traced game,
+    /// although the same grant for a 25 Gold lump validated every turn.
+    fn lump_open_borders_quote(g: &Game, pid: usize, partner: usize) -> Option<QuickDeal> {
+        let other = &g.players[partner];
+        if partner == pid
+            || !other.alive
+            || other.is_minor
+            || other.is_barbarian
+            || !g.has_met(pid, partner)
+            || g.is_at_war(pid, partner)
+            || g.has_open_borders(pid, partner)
+        {
+            return None;
+        }
+        let request = DealItems {
+            open_borders: true,
+            ..DealItems::default()
+        };
+        let (worth, negative_cost) =
+            g.trade_utilities(pid, partner, &DealItems::default(), &request);
+        let cost = -negative_cost;
+        let price = ((worth + cost) / 2.0).ceil();
+        if !price.is_finite() || worth - price < 2.0 || price - cost < 2.0 {
+            return None;
+        }
+        Some(QuickDeal {
+            partner,
+            category: "agreement".to_string(),
+            item: "open_borders".to_string(),
+            direction: "buy".to_string(),
+            offer: DealItems {
+                gold: price,
+                ..DealItems::default()
+            },
+            request,
+            my_value: worth - price,
+            partner_value: price - cost,
+        })
+    }
+
+    /// The lump never spends into the reserve a falling treasury keeps.
     fn open_borders_affordable(g: &Game, pid: usize, deal: &QuickDeal) -> bool {
         let player = &g.players[pid];
         let reserve = if player.gold_per_turn < 0.0 {

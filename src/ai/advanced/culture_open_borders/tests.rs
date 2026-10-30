@@ -40,6 +40,12 @@ fn every_rival_grants_passage_in_one_turn() {
         );
         assert_eq!(game.international_tourism_multiplier(0, rival, false), 1.25);
     }
+    // Paid as a lump: no per-turn remainder for the liquidity proxy to refuse.
+    assert!(game
+        .active_trade_deals
+        .iter()
+        .filter(|deal| deal.from == 0)
+        .all(|deal| deal.offer.gold_per_turn == 0.0));
 }
 
 #[test]
