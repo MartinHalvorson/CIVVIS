@@ -4349,6 +4349,13 @@ pub const GENES: &[Gene] = &[
     // turn at war against 1.47 at peace) opens on the Diplomacy lane too. See
     // `faith_war_lane` in `advanced/counterweight_diplomat.rs`.
     Gene { tag: "faith-war-defends-the-diplomat", field: "faith_war_defends_the_diplomat", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_war_defends_the_diplomat, disable: AdvancedAi::disable_faith_war_defends_the_diplomat },
+    // 13 live religious losses 2026-10-30: a counterfaith city of ours stood in
+    // 7, one with a Holy Site in 1, so no counterweight Missionary could be
+    // bought (171157Z: Buddhist Argos and Rhodes t70-168, no Holy Site, 337-718
+    // Faith banked, 16 DVP at t160). A faithless seat a rival faith presses
+    // claims a Holy Site in its biggest safe-counterfaith city. See
+    // `counterweight_builds_its_source` in `advanced/counterweight_diplomat.rs`.
+    Gene { tag: "counterweight-builds-its-source", field: "counterweight_builds_its_source", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_builds_its_source, disable: AdvancedAi::disable_counterweight_builds_its_source },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

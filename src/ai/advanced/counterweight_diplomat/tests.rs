@@ -182,3 +182,58 @@ fn the_faith_war_opens_on_the_diplomacy_lane_only() {
         assert!(!ai.counterweight_lane(&g) || lane == VictoryTarget::Domination, "the counterweight gene is separate");
     }
 }
+
+#[test]
+fn counterweight_builds_its_source_is_opt_in() {
+    opt_in_off_in_both_controllers("counterweight-builds-its-source", |ai| {
+        ai.counterweight_builds_its_source
+    });
+}
+
+/// Quito follows the safe Confucian counterfaith but has no Holy Site, so no
+/// counterweight Missionary can be bought anywhere. Under the gene it claims
+/// one: queued first, or bought outright when the treasury covers it.
+fn quito_claims_a_holy_site(lane: VictoryTarget) -> Option<bool> {
+    let (mut g, mut ai, quito) = g200_turn_103(lane);
+    ai.enable_counterweight_finishes_one_shrine();
+    let family = crate::name!("holy_site");
+    let pos = g.cities[&quito].districts.get(&family).copied();
+    if let Some(pos) = pos {
+        g.cities.get_mut(&quito).unwrap().districts.remove(&family);
+        g.map.tiles.get_mut(&pos).unwrap().district = None;
+    }
+    g.cities.get_mut(&quito).unwrap().buildings.clear();
+    assert!(!g.city_has_district_family(&g.cities[&quito], family));
+    ai.rival_faith_presses_us(&g, 0)?;
+    ai.enable_counterweight_builds_its_source();
+    g.players[0].gold = 0.0;
+    ai.counterweight_builds_its_source(&mut g, 0);
+    Some(matches!(
+        g.cities[&quito].queue.first(),
+        Some(Item::District { district, .. }) if g.district_family(*district) == "holy_site"
+    ))
+}
+
+#[test]
+fn a_counterfaith_city_with_no_holy_site_claims_one() {
+    assert_eq!(quito_claims_a_holy_site(VictoryTarget::Diplomacy), Some(true));
+    assert_eq!(quito_claims_a_holy_site(VictoryTarget::Domination), Some(true));
+    assert_eq!(
+        quito_claims_a_holy_site(VictoryTarget::Culture),
+        Some(false),
+        "the Culture lane keeps its queue"
+    );
+}
+
+/// With the source standing (Quito's Holy Site) nothing is claimed.
+#[test]
+fn a_standing_source_claims_nothing() {
+    let (mut g, mut ai, quito) = g200_turn_103(VictoryTarget::Diplomacy);
+    ai.enable_counterweight_finishes_one_shrine();
+    ai.enable_counterweight_builds_its_source();
+    let before = g.cities[&quito].queue.clone();
+    let gold = g.players[0].gold;
+    ai.counterweight_builds_its_source(&mut g, 0);
+    assert_eq!(g.cities[&quito].queue, before);
+    assert_eq!(g.players[0].gold, gold);
+}

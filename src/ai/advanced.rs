@@ -6393,6 +6393,10 @@ pub struct AdvancedAi {
     /// whose faith holds none of our cities defends as a faithless seat. See
     /// `advanced/counterweight_diplomat.rs`.
     counterweight_defends_the_diplomat: bool,
+    /// `counterweight-builds-its-source`: a faithless seat a rival faith
+    /// presses claims a Holy Site in a city on a safe counterfaith. See
+    /// `advanced/counterweight_diplomat.rs`.
+    counterweight_builds_its_source: bool,
     // ---- append: e-f ------------------------------------------------
     /// `food-focus-grows-the-small-city`: `civvis_orders` also asks the host
     /// to favour Food in a small city growing at two a turn or less. See
@@ -11182,6 +11186,7 @@ impl AdvancedAi {
             diplo_match_point_beelines: false,
             diplo_seat_wonder_claim: false,
             counterweight_defends_the_diplomat: false,
+            counterweight_builds_its_source: false,
             // ---- append: e-f ----------------------------------------
             food_focus_grows_the_small_city: false,
             friendship_ends_at_the_race: false,
@@ -49857,6 +49862,9 @@ impl AdvancedAi {
                 // actually slipping rather than the one that founded. Also an
                 // exact no-op while its own flag is off.
                 self.holy_site_where_the_threat_is(g, pid);
+                // …and, with no faith of our own, the Holy Site a counterweight
+                // Missionary is bought in. See `counterweight_builds_its_source`.
+                self.counterweight_builds_its_source(g, pid);
             }
             if self.victory_planning
                 && g.victory_conditions.religious

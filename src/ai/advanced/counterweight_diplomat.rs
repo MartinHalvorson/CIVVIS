@@ -27,7 +27,8 @@
 //!
 //! Off, and on every other lane: unchanged.
 use super::{AdvancedAi, VictoryTarget};
-use crate::game::Game;
+use crate::game::{Action, Game, Item};
+use crate::think;
 
 impl AdvancedAi {
     /// Whether the counterweight family answers this seat's lane: the
@@ -68,6 +69,101 @@ impl AdvancedAi {
                 .player_city_ids(pid)
                 .iter()
                 .any(|cid| g.city_religion(&g.cities[cid]) == Some(own))
+    }
+
+    /// `counterweight-builds-its-source`: a faithless Domination or
+    /// Diplomacy seat that a rival faith presses (`rival_faith_presses_us`:
+    /// at its lane's early-warning bar or match point) and that holds a city
+    /// on a safe counterfaith but no Holy Site in any such city claims one
+    /// there, the biggest city first: bought with Gold when the treasury
+    /// covers it, otherwise put at the front of that city's queue.
+    ///
+    /// A counterweight Missionary is bought only in a city that follows the
+    /// counterfaith and holds a Holy Site (`unit_purchase_cost`), and
+    /// `counterweight-finishes-one-shrine` only finishes a Shrine where the
+    /// district stands. Across the 13 live religious losses of 2026-10-30 a
+    /// counterfaith city of ours stood in 7, and one with a Holy Site in 1.
+    /// Live Immortal 171157Z (diplomatic, 16 DVP at turn 160): Buddhism held
+    /// Argos and Rhodes from turn 70 to the loss at 168, neither with a Holy
+    /// Site, while 337-718 Faith sat in the bank and Islam took 8 of 10.
+    pub(super) fn counterweight_builds_its_source(&mut self, g: &mut Game, pid: usize) {
+        if !self.counterweight_builds_its_source
+            || !matches!(
+                self.active_victory_target(g),
+                Some(VictoryTarget::Domination) | Some(VictoryTarget::Diplomacy)
+            )
+            || !g.victory_conditions.religious
+            || !self.counterweight_faithless(g, pid)
+        {
+            return;
+        }
+        let Some(threat) = self.rival_faith_presses_us(g, pid) else {
+            return;
+        };
+        let family = crate::name!("holy_site");
+        let mut source_stands = false;
+        let mut candidates: Vec<(i32, u32, String)> = Vec::new();
+        for cid in g.player_city_ids(pid) {
+            let city = &g.cities[&cid];
+            let Some(faith) = g.city_religion(city) else {
+                continue;
+            };
+            if faith == threat || !self.counterfaith_is_safe(g, pid, faith) {
+                continue;
+            }
+            if g.city_has_district_family(city, family) {
+                source_stands = true;
+            } else {
+                candidates.push((city.pop, cid, faith.to_string()));
+            }
+        }
+        if source_stands {
+            return;
+        }
+        candidates.sort_by_key(|(pop, cid, _)| (std::cmp::Reverse(*pop), *cid));
+        for (_, cid, faith) in candidates {
+            let district = crate::ai::BasicAi::civ_district(g, pid, "holy_site");
+            let Some(item) = g
+                .district_sites(cid, district)
+                .into_iter()
+                .max_by(|left, right| {
+                    g.district_yields(district, *left)
+                        .total()
+                        .partial_cmp(&g.district_yields(district, *right).total())
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                        .then(left.cmp(right))
+                })
+                .map(|pos| Item::District { district, pos })
+                .filter(|item| g.can_produce(pid, cid, item))
+            else {
+                continue;
+            };
+            let name = g.cities[&cid].name.clone();
+            if let Item::District { district, pos } = item {
+                if g.apply(
+                    pid,
+                    &Action::BuyDistrict {
+                        city: cid,
+                        district,
+                        pos,
+                        currency: "gold".to_string(),
+                    },
+                )
+                .is_ok()
+                {
+                    think!(self.journal(), Faith, Decision,
+                        "{} buys a Holy Site for the counterweight", name;
+                        "counterweight-builds-its-source: {} presses us and no city of ours on {} holds a Holy Site, so no counterweight Missionary can be bought", threat, faith);
+                    return;
+                }
+            }
+            if g.apply(pid, &Action::Produce { city: cid, item }).is_ok() {
+                think!(self.journal(), Faith, Decision,
+                    "{} puts a Holy Site first for the counterweight", name;
+                    "counterweight-builds-its-source: {} presses us and no city of ours on {} holds a Holy Site, so no counterweight Missionary can be bought", threat, faith);
+                return;
+            }
+        }
     }
 }
 

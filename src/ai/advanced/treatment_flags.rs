@@ -8588,6 +8588,17 @@ impl AdvancedAi {
         self.faith_war_defends_the_diplomat = false;
     }
 
+    /// Opt-in gene `counterweight-builds-its-source`; see
+    /// [`Self::counterweight_builds_its_source`].
+    pub fn enable_counterweight_builds_its_source(&mut self) {
+        self.counterweight_builds_its_source = true;
+    }
+
+    /// The twin of `enable_counterweight_builds_its_source`.
+    pub fn disable_counterweight_builds_its_source(&mut self) {
+        self.counterweight_builds_its_source = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
