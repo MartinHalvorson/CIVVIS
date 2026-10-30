@@ -8585,6 +8585,8 @@ impl AdvancedAi {
     /// The twin of `enable_culture_routes_reach_every_rival`.
     pub fn disable_culture_routes_reach_every_rival(&mut self) {
         self.culture_routes_reach_every_rival = false;
+    }
+
     /// Opt-in gene `counterweight-defends-the-diplomat`; see
     /// [`Self::counterweight_defends_the_diplomat`].
     pub fn enable_counterweight_defends_the_diplomat(&mut self) {
