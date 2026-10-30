@@ -8523,6 +8523,17 @@ impl AdvancedAi {
         self.diplo_match_point_beelines = false;
     }
 
+    /// Turn on `culture-keeps-every-border-open`. See
+    /// [`Self::culture_keeps_every_border_open`].
+    pub fn enable_culture_keeps_every_border_open(&mut self) {
+        self.culture_keeps_every_border_open = true;
+    }
+
+    /// The twin of `enable_culture_keeps_every_border_open`.
+    pub fn disable_culture_keeps_every_border_open(&mut self) {
+        self.culture_keeps_every_border_open = false;
+    }
+
     /// Opt-in gene `hidden-border-yields-to-our-pressure`; see
     /// [`Self::hidden_border_yields_to_our_pressure`].
     pub fn enable_hidden_border_yields_to_our_pressure(&mut self) {
