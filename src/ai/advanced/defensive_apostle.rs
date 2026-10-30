@@ -4,10 +4,20 @@ impl AdvancedAi {
     /// Build the founder's defensive capability while its Temple still follows
     /// our faith. Waiting for a flipped city leaves only a few turns to save
     /// for an Apostle, launch the Inquisition, and buy its first defender.
+    ///
+    /// Domination seats only, as written (#3656). With
+    /// `inquisition-defends-every-lane`, Culture, Diplomatic and Science seats
+    /// too: a Religion seat's Faith belongs to its own race, and a seat with
+    /// no target keeps the old reading.
     pub(super) fn defensive_inquisition_ready(&self, g: &Game, pid: usize) -> bool {
-        if self.active_victory_target(g) != Some(VictoryTarget::Domination)
-            || !g.victory_conditions.religious
-        {
+        let lane = match self.active_victory_target(g) {
+            Some(VictoryTarget::Domination) => true,
+            Some(VictoryTarget::Culture | VictoryTarget::Diplomacy | VictoryTarget::Science) => {
+                self.inquisition_defends_every_lane
+            }
+            _ => false,
+        };
+        if !lane || !g.victory_conditions.religious {
             return false;
         }
         let Some(faith) = g.players[pid].religion.as_deref() else {

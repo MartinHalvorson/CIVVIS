@@ -8482,6 +8482,16 @@ impl AdvancedAi {
         self.science_drive_answers_the_launch = false;
     }
 
+    /// `inquisition-defends-every-lane`.
+    pub fn enable_inquisition_defends_every_lane(&mut self) {
+        self.inquisition_defends_every_lane = true;
+    }
+
+    /// The twin of `enable_inquisition_defends_every_lane`.
+    pub fn disable_inquisition_defends_every_lane(&mut self) {
+        self.inquisition_defends_every_lane = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

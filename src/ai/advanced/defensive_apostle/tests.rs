@@ -111,6 +111,39 @@ fn other_lanes_nonfounders_and_disabled_religion_keep_existing_spending() {
     assert!(!ai.defensive_inquisition_ready(&g, 0));
 }
 
+/// `inquisition-defends-every-lane`: a Culture, Diplomatic or Science seat
+/// prepares the Inquisition with the gene; a Religion seat and a seat with
+/// no target never do.
+#[test]
+fn inquisition_defends_every_lane_opens_the_peaceful_lanes() {
+    let (g, ai, _) = fixture();
+    assert!(
+        ai.defensive_inquisition_ready(&g, 0),
+        "Domination, as before"
+    );
+    for lane in [
+        VictoryTarget::Culture,
+        VictoryTarget::Diplomacy,
+        VictoryTarget::Science,
+    ] {
+        let mut seat = AdvancedAi::targeting(lane);
+        assert!(!seat.defensive_inquisition_ready(&g, 0), "{lane:?}: off");
+        seat.enable_inquisition_defends_every_lane();
+        assert!(seat.defensive_inquisition_ready(&g, 0), "{lane:?}: on");
+    }
+    for lane in [VictoryTarget::Religion, VictoryTarget::Score] {
+        let mut seat = AdvancedAi::targeting(lane);
+        seat.enable_inquisition_defends_every_lane();
+        assert!(!seat.defensive_inquisition_ready(&g, 0), "{lane:?}: never");
+    }
+    let mut untargeted = AdvancedAi::new();
+    untargeted.enable_inquisition_defends_every_lane();
+    assert!(
+        !untargeted.defensive_inquisition_ready(&g, 0),
+        "no target: never"
+    );
+}
+
 #[test]
 fn initial_spread_precedes_reserve_in_a_mostly_unconverted_empire() {
     let (mut g, ai, home) = fixture();
