@@ -4302,6 +4302,13 @@ pub const GENES: &[Gene] = &[
     // the plan read Recovery. From 16 points the seat researches and adopts
     // both first. See `advanced/diplo_match_point_research.rs`.
     Gene { tag: "diplo-match-point-beelines-the-points", field: "diplo_match_point_beelines", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_match_point_beelines_the_points, disable: AdvancedAi::disable_diplo_match_point_beelines_the_points },
+    // `culture-routes-reach-every-rival`: an international route of ours is
+    // +25% on the tourism pressure banked against its owner, and a native
+    // Immortal culture census found routes to about half the rivals at turns
+    // 100-125 of the tourism ramp. While a Culture seat's tourism is at least
+    // 15, a Trader in one of our cities that can reach a rival without our
+    // route goes there, the bar holder first. See `advanced/culture_routes.rs`.
+    Gene { tag: "culture-routes-reach-every-rival", field: "culture_routes_reach_every_rival", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_routes_reach_every_rival, disable: AdvancedAi::disable_culture_routes_reach_every_rival },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
