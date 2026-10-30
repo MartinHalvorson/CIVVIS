@@ -8526,6 +8526,7 @@ impl AdvancedAi {
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
+    // ---- append: g-k ------------------------------------------------
     /// Opt-in gene `hidden-border-yields-to-our-pressure`; see
     /// [`Self::hidden_border_yields_to_our_pressure`].
     pub fn enable_hidden_border_yields_to_our_pressure(&mut self) {
@@ -8537,7 +8538,6 @@ impl AdvancedAi {
         self.hidden_border_yields_to_our_pressure = false;
     }
 
-    // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
     // ---- append: s-s ------------------------------------------------
