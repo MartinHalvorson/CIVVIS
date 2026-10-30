@@ -4286,6 +4286,13 @@ pub const GENES: &[Gene] = &[
     // ahead of a deferrable head, while no major is at war with us. See
     // `advanced/culture_monuments.rs`.
     Gene { tag: "culture-seat-monuments", field: "culture_seat_monuments", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_monuments, disable: AdvancedAi::disable_culture_seat_monuments },
+    // Seasteads and Global Warming Mitigation are a Diplomatic Victory Point
+    // each, and near the bar Congress stops paying: live Emperor
+    // civvis-20261030T111154Z stood on 18 of 20 from t180 to its Culture loss
+    // at t213, every rival voting B on it at t200; Seasteads never landed once
+    // the plan read Recovery. From 16 points the seat researches and adopts
+    // both first. See `advanced/diplo_match_point_research.rs`.
+    Gene { tag: "diplo-match-point-beelines-the-points", field: "diplo_match_point_beelines", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_match_point_beelines_the_points, disable: AdvancedAi::disable_diplo_match_point_beelines_the_points },
     // `diplo-seat-statue-harbor`: the Statue of Liberty (+4 Diplomatic
     // Victory Points) needs a Harbor beside its coast tile; in live Emperor
     // civvis-20261030T101932Z it never once reached our buildable list (our

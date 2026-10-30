@@ -8503,6 +8503,16 @@ impl AdvancedAi {
         self.culture_seat_monuments = false;
     }
 
+    /// `diplo-match-point-beelines-the-points`.
+    pub fn enable_diplo_match_point_beelines_the_points(&mut self) {
+        self.diplo_match_point_beelines = true;
+    }
+
+    /// The twin of `enable_diplo_match_point_beelines_the_points`.
+    pub fn disable_diplo_match_point_beelines_the_points(&mut self) {
+        self.diplo_match_point_beelines = false;
+    }
+
     /// Opt-in gene `diplo-seat-statue-harbor`; see
     /// [`Self::diplo_seat_statue_harbor`].
     pub fn enable_diplo_seat_statue_harbor(&mut self) {
