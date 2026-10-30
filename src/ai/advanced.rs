@@ -6388,6 +6388,11 @@ pub struct AdvancedAi {
     /// one Diplomatic Victory Point wonder in production in its strongest
     /// city. See `advanced/diplo_wonder_claim.rs`. Off by default.
     diplo_seat_wonder_claim: bool,
+    /// `diplomat-saves-for-the-apostle`: a Diplomatic founder whose Holy City
+    /// still follows its faith saves for the Inquisition's next unit over
+    /// `DIPLOMAT_SAVE_TURNS` (15) turns of Faith, not five. See
+    /// `advanced/founder_defence.rs`. Off by default.
+    diplomat_saves_for_the_apostle: bool,
     // ---- append: e-f ------------------------------------------------
     /// `food-focus-grows-the-small-city`: `civvis_orders` also asks the host
     /// to favour Food in a small city growing at two a turn or less. See
@@ -11172,6 +11177,7 @@ impl AdvancedAi {
             defenders_hold_the_walls: false,
             diplo_match_point_beelines: false,
             diplo_seat_wonder_claim: false,
+            diplomat_saves_for_the_apostle: false,
             // ---- append: e-f ----------------------------------------
             food_focus_grows_the_small_city: false,
             friendship_ends_at_the_race: false,

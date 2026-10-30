@@ -8566,6 +8566,16 @@ impl AdvancedAi {
         self.hidden_border_yields_to_our_pressure = false;
     }
 
+    /// `diplomat-saves-for-the-apostle`.
+    pub fn enable_diplomat_saves_for_the_apostle(&mut self) {
+        self.diplomat_saves_for_the_apostle = true;
+    }
+
+    /// The twin of `enable_diplomat_saves_for_the_apostle`.
+    pub fn disable_diplomat_saves_for_the_apostle(&mut self) {
+        self.diplomat_saves_for_the_apostle = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
