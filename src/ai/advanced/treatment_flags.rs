@@ -8461,6 +8461,17 @@ impl AdvancedAi {
         self.capital_monument_after_the_second_city = false;
     }
 
+    /// Turn on `culture-keeps-every-border-open`. See
+    /// [`Self::culture_keeps_every_border_open`].
+    pub fn enable_culture_keeps_every_border_open(&mut self) {
+        self.culture_keeps_every_border_open = true;
+    }
+
+    /// The twin of `enable_culture_keeps_every_border_open`.
+    pub fn disable_culture_keeps_every_border_open(&mut self) {
+        self.culture_keeps_every_border_open = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

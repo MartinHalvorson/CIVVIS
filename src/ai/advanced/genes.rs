@@ -4256,6 +4256,14 @@ pub const GENES: &[Gene] = &[
     // peace with the majors claims its Monument once. See
     // `advanced/capital_monument.rs`.
     Gene { tag: "capital-monument-after-the-second-city", field: "capital_monument_after_the_second_city", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_monument_after_the_second_city, disable: AdvancedAi::disable_capital_monument_after_the_second_city },
+    // `culture-keeps-every-border-open`: tourism pressure is banked with the
+    // multiplier in force when it is generated, and a rival's Open Borders
+    // grant is +25% against it. The Culture objective bought one grant every
+    // sixth turn and held 0-2 of three rivals at most turn-25 marks of a
+    // native Immortal culture census. Once our tourism reaches 15 a turn, a
+    // Culture seat buys every allowed grant each turn, the bar holder first,
+    // never into the solvency reserve. See `advanced/culture_open_borders.rs`.
+    Gene { tag: "culture-keeps-every-border-open", field: "culture_keeps_every_border_open", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_keeps_every_border_open, disable: AdvancedAi::disable_culture_keeps_every_border_open },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

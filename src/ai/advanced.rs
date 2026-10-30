@@ -5504,6 +5504,10 @@ pub struct AdvancedAi {
     /// costliest. See `advanced/solvency.rs`. Off by default.
     bankruptcy_exits_the_drain: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `culture-keeps-every-border-open`: once its tourism reaches the floor,
+    /// a Culture seat buys every rival's Open Borders grant each turn. See
+    /// `advanced/culture_open_borders.rs`. Off by default.
+    culture_keeps_every_border_open: bool,
     /// `capital-monument-after-the-second-city`: once the second city
     /// stands, the capital claims its Monument. See
     /// `advanced/capital_monument.rs`. Off by default.
@@ -9614,6 +9618,9 @@ mod food_focus_grows_the_small_city;
 /// `capital-monument-after-the-second-city`: see `advanced/capital_monument.rs`.
 mod capital_monument;
 
+/// `culture-keeps-every-border-open`: see `advanced/culture_open_borders.rs`.
+mod culture_open_borders;
+
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 
 mod civilian_coordination;
@@ -10942,6 +10949,7 @@ impl AdvancedAi {
             aqueduct_recovery_reservations: RefCell::new(BTreeMap::new()),
             bankruptcy_exits_the_drain: false,
             // ---- append: c-d ----------------------------------------
+            culture_keeps_every_border_open: false,
             capital_monument_after_the_second_city: false,
             disrupt_before_the_sources: false,
             capital_watch_arms_the_slinger: false,
@@ -22207,6 +22215,20 @@ impl AdvancedAi {
         // sales that pay a rival's space race. Empty when the gene is off.
         // See `advanced/science_threat_denial.rs`.
         let science_threats = self.science_threat_seats(g, pid);
+        // `culture-keeps-every-border-open`: every rival's passage, every
+        // turn, once our tourism is worth multiplying. Exact no-op while the
+        // gene is off. See `advanced/culture_open_borders.rs`.
+        if objective == GrandStrategy::Culture
+            && self.keep_every_border_open(
+                g,
+                pid,
+                excluded_partner,
+                &culture_threats,
+                &science_threats,
+            ) > 0
+        {
+            return;
+        }
         if objective == GrandStrategy::Culture && g.turn % 6 == pid as u32 % 6 {
             let best = g
                 .quick_deals(pid)
