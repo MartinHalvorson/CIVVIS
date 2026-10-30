@@ -11927,6 +11927,27 @@ impl AdvancedAi {
             && plan.strategy == GrandStrategy::Expansion
     }
 
+    /// ★★ A SEAT ASSIGNED THE DIPLOMATIC LANE BURNS NO COAL OR OIL.
+    ///
+    /// Its Favor is the currency of the win -- the agent's racer ballot
+    /// (`CivvisDiploRacer`) spends it on Congress Participation points at 4-24
+    /// Favor a resolution and on the +2 claim -- and the host's Carbon
+    /// Emissions Penalty takes it at up to 20 a turn (`FAVOR_CO2_MINIMUM`).
+    /// Measured over the eight live games of 2026-10 whose state rows carry
+    /// `favor_sources` and that ran past turn 150: the penalty took 2,641
+    /// Favor, as much as every suzerainty paid (2,663) and about 40% of all
+    /// Favor earned; the worst game lost 1,124. Live Prince
+    /// civvis-20261030T043401Z built four Coal Power Plants, emitted two
+    /// thirds of the world's CO2 (1,685 of 2,527 at t180) and paid -13 Favor a
+    /// turn at t160 against +7 from everything else. The Nuclear Power Plant
+    /// emits nothing and stays open. The assigned lane only, and only while it
+    /// is not lost (`lane_lost`).
+    fn diplomatic_lane_refuses_fossil_power(&self, building: &str) -> bool {
+        self.victory_target == Some(VictoryTarget::Diplomacy)
+            && !self.lane_lost
+            && matches!(building, "coal_power_plant" | "oil_power_plant")
+    }
+
     fn active_victory_target(&self, g: &Game) -> Option<VictoryTarget> {
         self.victory_target
             .filter(|target| g.victory_conditions.is_enabled(target.as_str()))
@@ -35468,6 +35489,9 @@ impl AdvancedAi {
             }
             Item::Building { building } => {
                 let spec = &g.rules.buildings[building];
+                if self.diplomatic_lane_refuses_fossil_power(building.as_str()) {
+                    return -10_000.0;
+                }
                 let great_work_vetoed = if self.great_work_veto_by_district {
                     spec.district
                         .map(|district| g.district_family(district))
@@ -36655,7 +36679,11 @@ impl AdvancedAi {
                                 "convert_reactor_to_oil" => "oil",
                                 _ => "uranium",
                             };
-                            if !self.reactor_marginal {
+                            if target != "uranium"
+                                && self.diplomatic_lane_refuses_fossil_power("coal_power_plant")
+                            {
+                                -10_000.0
+                            } else if !self.reactor_marginal {
                                 Self::stock_power_plant_value(g, pid, target)
                             } else if let Some(current) = Self::current_power_plant(city) {
                                 let target_utility = Self::power_plant_utility(g, pid, target);
