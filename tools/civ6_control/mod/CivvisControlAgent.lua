@@ -17439,6 +17439,29 @@ end
 -- first-session default that won 75% in the replay against 66% at 5). From
 -- match point (`DiploVictoryMatchPoint`, 18) the claim is the win: all in --
 -- reached only when `DiploRacerGangSelf` stands above it (`CivvisRacerBraces`).
+-- ★ AGAINST A CONTENDER, SIZE THE CLAIM FOR ITS BIGGER BLOCK.
+-- The claim is sized from the last session's largest rival A block. A rival
+-- that can take the +2 instead of us does not cast the same block twice:
+-- Immortal civvis-20261030T173341Z's Georgia cast 8, 9, 5 then 12; at t174,
+-- both on 15, our 10 votes (sized from the 5) lost the +2 to its 12, Georgia
+-- went to 17, we denied it back at t194 (17 to 15) and it won on Science at
+-- t199 -- with about 351 Favor in hand at t174, 13 votes (sized from the 9)
+-- would have taken the +2. Of the day's ~30 claims that was the one lost to
+-- sizing rather than to the bank. So when the best rival stands within
+-- `DiploRacerContenderMargin` (2) points of us or ahead, the claim sizes from
+-- the larger of the last two sessions' blocks; otherwise from the last. Off
+-- with `DiploRacerContenderPeak = false`. Bare global: the chunk is at the
+-- register cap.
+CivvisRacerClaimBlock = function(last, prev, ourPoints, leaderPoints, config)
+	config = type(config) == "table" and config or {};
+	last, prev = tonumber(last), tonumber(prev);
+	if config.DiploRacerContenderPeak == false or prev == nil then return last; end
+	local margin = tonumber(config.DiploRacerContenderMargin) or 2;
+	if (tonumber(leaderPoints) or 0) < (tonumber(ourPoints) or 0) - margin then return last; end
+	if last == nil or prev > last then return prev; end
+	return last;
+end
+
 CivvisRacerClaimVotes = function(favor, ourPoints, rivalBlock, costs, maxVotes, config)
 	config = type(config) == "table" and config or {};
 	local block = tonumber(rivalBlock) or tonumber(config.DiploRacerFirstBlock) or 8;
@@ -21729,6 +21752,12 @@ local function beginTurn(player, pid, turn)
 		local key = table.concat(signature, "|");
 		if envoyTally.wc_review_signature == key then return; end
 		envoyTally.wc_review_signature = key;
+		-- See `CivvisRacerClaimBlock`: the largest rival A block of the session
+		-- before, shifted once per new review (re-reads return above).
+		if rivalBlock ~= nil then
+			envoyTally.wc_rival_block_prev = envoyTally.wc_rival_block_new;
+			envoyTally.wc_rival_block_new = rivalBlock;
+		end
 		local dvp = {};
 		for _, other in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {})) do
 			local id = tonumber(other);
@@ -23448,7 +23477,9 @@ local function tick()
 						if CivvisDiploRacer(cfg) and ourIdx ~= nil
 								and (not ganged or mine > (tonumber(leaderPoints) or 0)) then
 							local k = CivvisRacerClaimVotes(favor - (envoyTally.racer_reserve or 0),
-								mine, envoyTally.wc_rival_block, costs, maxVotes, cfg);
+								mine, CivvisRacerClaimBlock(envoyTally.wc_rival_block,
+									envoyTally.wc_rival_block_prev, mine, leaderPoints, cfg),
+								costs, maxVotes, cfg);
 							if CivvisRacerBraces(mine, cfg, envoyTally.wc_b_on_us, envoyTally.wc_b_passed_on_us) then
 								option, selection, n, mode = 2, ourIdx, 1, "brace";
 							elseif k ~= nil then
