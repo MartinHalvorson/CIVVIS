@@ -17124,7 +17124,7 @@ end
 -- points per 100 Favor; a quarter more again wins 82%. So the racer funds
 -- the cheap participation votes first (`CivvisRacerReserve`, prices up to
 -- `DiploRacerCheapCap` 40), then claims, then buys the dearer resolutions
--- (up to `DiploRacerResolutionCap` 112) from what is left. A rival on the
+-- (up to `DiploRacerResolutionCap` 60) from what is left. A rival on the
 -- gang threshold (`DiploVictoryGangCertain`) still gets the denial: the
 -- rivals' B carries it, and our B with theirs is the participation point.
 -- Off with `DiploRacer = false`. Bare globals: the main chunk sits near the
@@ -17152,7 +17152,7 @@ CivvisRacerResolutionVotes = function(rtype, favor, costs, config, cap)
 	local maxVotes = tonumber(costs.MaxVotes) or 1;
 	if need > maxVotes then need = maxVotes; end
 	local price = tonumber(costs[need - 1]);
-	cap = tonumber(cap) or tonumber(config.DiploRacerResolutionCap) or 112;
+	cap = tonumber(cap) or tonumber(config.DiploRacerResolutionCap) or 60;
 	if need < 2 or price == nil or price > cap or price > (tonumber(favor) or 0) then
 		return 1, 0;
 	end
@@ -17164,6 +17164,16 @@ end
 -- names or as the ballot's `{ rtype = name }` entries.
 CivvisRacerReserve = function(entries, costs, config)
 	config = type(config) == "table" and config or {};
+	-- ★★ A SESSION WITH THE CLAIM ON IT FUNDS THE CLAIM FIRST. The claim is
+	-- won or lost by one vote and swings five points (our +3 against the
+	-- rival's +2); a participation vote is one. Live King
+	-- civvis-20261030T070824Z-cont1 t181: the reserve held 24 Favor for a
+	-- Deforestation vote, the claim cast 9, Portugal's own A block was 9 and
+	-- the tie went to Portugal (10 -> 12); 10 votes were in the bank.
+	for _, entry in ipairs(type(entries) == "table" and entries or {}) do
+		local rtype = type(entry) == "table" and entry.rtype or entry;
+		if rtype == "WC_RES_DIPLOVICTORY" then return 0; end
+	end
 	local total = 0;
 	for _, entry in ipairs(type(entries) == "table" and entries or {}) do
 		local rtype = type(entry) == "table" and entry.rtype or entry;
@@ -17192,7 +17202,14 @@ CivvisRacerClaimVotes = function(favor, ourPoints, rivalBlock, costs, maxVotes, 
 		if budget > 1 then return budget; end
 		return nil;
 	end
-	if budget < least then return nil; end
+	-- Short of `least`, a bank that still out-votes the last block claims
+	-- with all of it: the fallback is a redirect or a free vote, and the
+	-- live redirect of civvis-20261030T070824Z-cont1 t201 (7 votes, budget
+	-- under `least`) let Portugal take +2 on its way from 12 to 19.
+	if budget < least then
+		if budget > block then return budget; end
+		return nil;
+	end
 	return math.min(least + math.ceil(block / 4), budget);
 end
 
