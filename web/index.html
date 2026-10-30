@@ -4057,6 +4057,34 @@
   #maparea.player-hud-compact #playerhud .diplomacy-card,
   #maparea.player-hud-compact #playerhud .ribbon-stat-heading { padding-inline: 2px; }
   #maparea.player-hud-compact .hud-head-stat { font-size: var(--type-micro); }
+  /* The dedicated display beside Civilization VI keeps one arrangement at
+     every width (operator, 2026-10-30: "player hud can cover full top width.
+     victory hud below that and all the way to the bottom"): the standings
+     span the top, and the victory tracker alone is the right-hand panel from
+     under them to the bottom edge, its paths stacked and scrolling. The
+     narrow window's stacked band does not apply here; the live controls
+     settle left of the panel. */
+  body.display-dedicated #maparea #victoryhud {
+    top: calc(var(--player-hud-top, var(--panel-edge)) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));
+    bottom: var(--panel-edge); left: auto; right: var(--panel-edge);
+    /* Wide enough for its own heading beside the fold and close controls. */
+    width: max(var(--victory-hud-width), 224px); height: auto;
+    grid-template-rows: minmax(0, 1fr);
+  }
+  /* With the stats gone, the tracker's bar is the first one, so it is the
+     one that leaves the close control's corner clear. */
+  body.display-dedicated #maparea #victoryhud > .victory-region .hud-region-bar { margin-right: 27px; }
+  body.display-dedicated #maparea #victoryhud > .sim-stats-region,
+  body.display-dedicated #maparea #victoryhud > .sim-stats-seam { display: none; }
+  body.display-dedicated #maparea #victoryhud > .victory-region { grid-row: 1; }
+  body.display-dedicated #maparea #victoryhud .hud-rail { overflow-x: hidden; overflow-y: auto; }
+  body.display-dedicated #maparea #victoryhud .victory-ribbon {
+    min-height: max(100%, var(--victory-min-height, 396px)); width: auto;
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: repeat(var(--victory-rows, 6), minmax(64px, 1fr));
+  }
+  body.display-dedicated #maparea #victoryhud .victory-track { border-left: 0; border-top: 1px solid #ffffff0b; }
+  body.display-dedicated #maparea #victoryhud .victory-track:first-child { border-top-color: transparent; }
   #maparea.player-hud-narrow #playerhud {
     --hud-watch-column: 68px; --hud-ident-min: 21px; --hud-stat-min: 30px; --hud-stat-gap: 2px;
   }

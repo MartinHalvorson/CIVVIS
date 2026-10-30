@@ -955,6 +955,8 @@ if (DEDICATED_DISPLAY) {
   OVERLAY_VISIBILITY.minimap = false;
   OVERLAY_VISIBILITY.controls = false;
   OVERLAY_VISIBILITY.lenses = false;
+  // The stylesheet stands the tracker as the right-hand panel here.
+  document.body.classList.add("display-dedicated");
 }
 function applyOverlayVisibility() {
   for (const name of OVERLAY_NAMES) {
@@ -3350,6 +3352,11 @@ try {
   const saved = JSON.parse(localStorage.getItem(HUD_LAYOUT_STORAGE_KEY) || "{}");
   if (saved && typeof saved === "object") HUD_LAYOUT = saved;
 } catch (_) { HUD_LAYOUT = {}; }
+// Like its overlays, the dedicated display's tracker position is fixed: a
+// drag saved in its Chrome profile (on 2026-10-30, the narrow window's
+// full-width band) would otherwise hold the tracker off the right-hand panel
+// the stylesheet stands it in, for every game after.
+if (DEDICATED_DISPLAY) delete HUD_LAYOUT.victory;
 
 // Keep the authored frame proportion while sizing the *frame diagonal* against
 // the screen rather than against a particular monitor. The shared panel
