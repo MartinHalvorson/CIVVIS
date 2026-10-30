@@ -4334,6 +4334,14 @@ pub const GENES: &[Gene] = &[
     // our own cities press the site (population times closeness, 30 or more).
     // See `advanced/hidden_border_reach.rs`.
     Gene { tag: "hidden-border-yields-to-our-pressure", field: "hidden_border_yields_to_our_pressure", kind: Kind::OptIn, enable: AdvancedAi::enable_hidden_border_yields_to_our_pressure, disable: AdvancedAi::disable_hidden_border_yields_to_our_pressure },
+    // Live Immortal 10-30 civvis-20261030T171157Z (diplomatic): 16 DVP at t160
+    // against 3-6, lost to Islam's Religious Victory at 168. Our Catholicism
+    // held none of our cities from 100, Islam 8 of 10 from 145, 300-780 Faith
+    // banked with no religious unit: the counterweight family answers only
+    // the Domination lane and only a seat that never founded. On the
+    // Diplomacy lane it answers too, and a founder with no city of its faith
+    // defends as faithless. See `advanced/counterweight_diplomat.rs`.
+    Gene { tag: "counterweight-defends-the-diplomat", field: "counterweight_defends_the_diplomat", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_defends_the_diplomat, disable: AdvancedAi::disable_counterweight_defends_the_diplomat },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

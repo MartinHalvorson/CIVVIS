@@ -8566,6 +8566,17 @@ impl AdvancedAi {
         self.hidden_border_yields_to_our_pressure = false;
     }
 
+    /// Opt-in gene `counterweight-defends-the-diplomat`; see
+    /// [`Self::counterweight_defends_the_diplomat`].
+    pub fn enable_counterweight_defends_the_diplomat(&mut self) {
+        self.counterweight_defends_the_diplomat = true;
+    }
+
+    /// The twin of `enable_counterweight_defends_the_diplomat`.
+    pub fn disable_counterweight_defends_the_diplomat(&mut self) {
+        self.counterweight_defends_the_diplomat = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -1,4 +1,5 @@
 use super::*;
+use crate::ai::advanced::VictoryTarget;
 use std::sync::Arc;
 
 /// Live Emperor G211317Z near turn 95, reduced to five cities: Russia's

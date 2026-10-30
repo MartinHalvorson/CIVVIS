@@ -6388,6 +6388,11 @@ pub struct AdvancedAi {
     /// one Diplomatic Victory Point wonder in production in its strongest
     /// city. See `advanced/diplo_wonder_claim.rs`. Off by default.
     diplo_seat_wonder_claim: bool,
+    /// `counterweight-defends-the-diplomat`: on the Diplomacy lane the
+    /// counterweight family answers as on the Domination lane, and a founder
+    /// whose faith holds none of our cities defends as a faithless seat. See
+    /// `advanced/counterweight_diplomat.rs`.
+    counterweight_defends_the_diplomat: bool,
     // ---- append: e-f ------------------------------------------------
     /// `food-focus-grows-the-small-city`: `civvis_orders` also asks the host
     /// to favour Food in a small city growing at two a turn or less. See
@@ -11172,6 +11177,7 @@ impl AdvancedAi {
             defenders_hold_the_walls: false,
             diplo_match_point_beelines: false,
             diplo_seat_wonder_claim: false,
+            counterweight_defends_the_diplomat: false,
             // ---- append: e-f ----------------------------------------
             food_focus_grows_the_small_city: false,
             friendship_ends_at_the_race: false,
@@ -27839,7 +27845,10 @@ impl AdvancedAi {
     /// buys Missionaries of an adopted non-threat majority faith, which the
     /// engine now assigns from the purchase city (stock rule).
     fn religious_defense(&mut self, g: &mut Game, pid: usize, threat: &str) {
-        if g.players[pid].religion.is_some() {
+        // See `counterweight_faithless` (`counterweight-defends-the-diplomat`):
+        // a Diplomatic founder whose faith holds none of our cities defends
+        // with the counterweight.
+        if !self.counterweight_faithless(g, pid) {
             self.religious_spending(g, pid, false);
             return;
         }
@@ -27856,8 +27865,7 @@ impl AdvancedAi {
                 continue;
             };
             if majority == threat
-                || (self.active_victory_target(g) == Some(VictoryTarget::Domination)
-                    && !self.counterfaith_is_safe(g, pid, majority))
+                || (self.counterweight_lane(g) && !self.counterfaith_is_safe(g, pid, majority))
             {
                 continue;
             }
@@ -49847,7 +49855,7 @@ impl AdvancedAi {
             }
             if self.victory_planning
                 && g.victory_conditions.religious
-                && g.players[pid].religion.is_none()
+                && self.counterweight_faithless(g, pid)
                 && (plan.strategy != GrandStrategy::Religion
                     || active_victory_target == Some(VictoryTarget::Domination))
             {
@@ -50387,6 +50395,8 @@ mod founder_faith;
 mod founder_defence;
 
 mod counterweight_bank;
+/// `counterweight-defends-the-diplomat`: see `advanced/counterweight_diplomat.rs`.
+mod counterweight_diplomat;
 
 /// `defeated-majors-leave-the-board`: an eliminated major stops counting as
 /// living. See `advanced/defeated_majors.rs`.

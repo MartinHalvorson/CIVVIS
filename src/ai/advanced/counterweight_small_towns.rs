@@ -38,7 +38,7 @@
 //! (`counterfaith_recruitment_targets`) are untouched; so is everything
 //! with no rival faith in our cities. Off: unchanged.
 
-use super::{AdvancedAi, VictoryTarget};
+use super::AdvancedAi;
 use crate::game::{City, Game};
 
 /// What flipping, or keeping, one city out of the threat faith is worth on
@@ -59,7 +59,8 @@ impl AdvancedAi {
     /// while no such faith holds a city of ours.
     pub(super) fn small_town_threat(&self, g: &Game, pid: usize, faith: &str) -> Option<String> {
         if !self.counterweight_flips_the_small_towns
-            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            // `counterweight-defends-the-diplomat` opens the Diplomacy lane.
+            || !self.counterweight_lane(g)
             || !g.victory_conditions.religious
         {
             return None;
