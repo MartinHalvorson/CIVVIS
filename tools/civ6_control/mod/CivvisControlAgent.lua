@@ -17183,6 +17183,9 @@ CivvisRacerResolutionVotes = function(rtype, favor, costs, config, cap)
 		WC_RES_MIGRATION_TREATY = 11, WC_RES_PUBLIC_WORKS = 13,
 		WC_RES_WORLD_IDEOLOGY = 15, WC_RES_LUXURY = 16,
 	})[tostring(rtype)] or 4;
+	-- See `CivvisHeritageDenial`: a racer's tourism is worth nothing, so it
+	-- buys no Heritage votes on its own; the denial buys them on B.
+	if rtype == "WC_RES_HERITAGE_ORG" and config.HeritageDenial ~= false then return 1, 0; end
 	need = need + (tonumber(config.DiploRacerExtraVotes) or 0);
 	local maxVotes = tonumber(costs.MaxVotes) or 1;
 	if need > maxVotes then need = maxVotes; end
@@ -17192,6 +17195,215 @@ CivvisRacerResolutionVotes = function(rtype, favor, costs, config, cap)
 		return 1, 0;
 	end
 	return need, price;
+end
+
+-- ★★ HERITAGE ORGANIZATION: NO TOURISM FROM THE CULTURE LEADER'S GREAT WORKS.
+--
+-- WC_RES_HERITAGE_ORG targets a great-work object type (Expansion2_Congress.xml:
+-- effect 1 ADD_TOURISM_FROM_GREAT_WORK_OBJECT, effect 2
+-- NO_TOURISM_FROM_GREAT_WORK_OBJECT, both for every civilization). It is not a
+-- player-target resolution, so the culture counters above never see it, and
+-- the ballot voted option A on the first target. Live Emperor
+-- civvis-20261030T101932Z (Diplomatic): at t139 the racer bought 4 votes for
+-- A on Sculpture -- 7 to 0, our 4 the ones that chose Sculpture over Writing --
+-- and Rome's culture race went 14% at t139, 31% at t150, 84% at t160, its
+-- tourism 149 -> 286 in eleven turns, and its Culture victory came at t177,
+-- two turns before the session that would have put us past 15 points.
+-- Heritage came up in 10 of the day's 20 live games.
+--
+-- A seat whose lane is not Culture earns nothing from tourism, so option B on
+-- the type the culture leader draws the most tourism from costs it nothing:
+-- the rival with the highest culture race (`c.culture`, visiting tourists
+-- over the bar) at `HeritageDenialFloor` (10) or more, its works summed by
+-- `GameInfo.GreatWorks[...].Tourism` per object type, the biggest type on
+-- the ballot. Votes: the last session's Heritage A total plus one (four when
+-- none is recorded), at most `HeritageDenialMaxVotes` (8), as Favor allows.
+-- Rivals' Heritage A ran 3-4 votes over the day, so B usually carries and
+-- the participation point is kept. Returns the target index, votes, price
+-- and the leader; nil when it does not apply. Off with
+-- `HeritageDenial = false`. Bare globals: the chunk is at the register cap.
+CivvisHeritageTourismByType = function(player)
+	local out = {};
+	local p = Players[tonumber(player) or -1];
+	local cities = p and try(function() return p:GetCities(); end);
+	if cities == nil then return out; end
+	for _, city in cities:Members() do
+		local blds = try(function() return city:GetBuildings(); end);
+		local seen = {};
+		for row in GameInfo.Building_GreatWorks() do
+			local info = GameInfo.Buildings[row.BuildingType];
+			if blds ~= nil and info ~= nil and not seen[info.Index]
+				and try(function() return blds:HasBuilding(info.Index); end, false) then
+				seen[info.Index] = true;
+				local slots = tonumber(try(function()
+					return blds:GetNumGreatWorkSlots(info.Index);
+				end, 0)) or 0;
+				for slot = 0, slots - 1 do
+					local idx = tonumber(try(function()
+						return blds:GetGreatWorkInSlot(info.Index, slot);
+					end, -1)) or -1;
+					local work = idx >= 0 and GameInfo.GreatWorks[try(function()
+						return blds:GetGreatWorkTypeFromIndex(idx);
+					end, -1)] or nil;
+					local object = work and GameInfo.GreatWorkObjectTypes[work.GreatWorkObjectType];
+					if object ~= nil then
+						out[object.Name] = (out[object.Name] or 0) + (tonumber(work.Tourism) or 0);
+					end
+				end
+			end
+		end
+	end
+	return out;
+end
+
+-- ★★ WORLD RELIGION: NEVER EMPOWER THE FAITH THAT IS BEATING US.
+--
+-- WC_RES_WORLD_RELIGION targets a religion (Expansion2_Congress.xml:91,
+-- TargetKind="RELIGION"): effect 1 WC_RES_RELIGIOUS_UNITS_STRENGTH -- the
+-- target's religious units fight theological combat stronger -- and effect 2
+-- ANYONE_CONDEMNS_FOR_FAVOR (Expansion2_Congress.xml:142-143). Like Heritage
+-- it never reached a counter, so the ballot voted A on the first target.
+-- Live Emperor civvis-20261030T105026Z (Diplomatic): at t137 the racer's two
+-- votes made A Catholicism the winner (5-0; without them Catholicism,
+-- Sikhism and Buddhism stood one vote each) while Catholicism held all six
+-- of our cities, and Catholicism won on Religion at t143.
+--
+-- Option A stays (it passes nearly every session, so the participation
+-- point stays reachable); the target becomes our own founded religion when
+-- it is on the ballot, else the religion holding the fewest majority cities
+-- among the majors -- a counterweight, never the leader. Returns the target
+-- index or nil. `counts` (religion Name -> majority cities) and `own` (our
+-- religion's Name) are injectable for the offline test. Off with
+-- `WorldReligionGuard = false`. Bare globals: the chunk is at the register cap.
+CivvisReligionMajorityCounts = function()
+	local counts = {};
+	for _, id in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {}) or {}) do
+		local p = Players[id];
+		local cities = p and try(function() return p:GetCities(); end);
+		if cities ~= nil then
+			for _, city in cities:Members() do
+				local rid = tonumber(try(function()
+					return city:GetReligion():GetMajorityReligion();
+				end, -1)) or -1;
+				local row = rid >= 0 and GameInfo.Religions[rid] or nil;
+				if row ~= nil and row.Name ~= nil then
+					counts[row.Name] = (counts[row.Name] or 0) + 1;
+				end
+			end
+		end
+	end
+	return counts;
+end
+
+CivvisWorldReligionTarget = function(rtype, targets, pid, config, counts, own)
+	config = type(config) == "table" and config or {};
+	if config.WorldReligionGuard == false or rtype ~= "WC_RES_WORLD_RELIGION"
+		or type(targets) ~= "table" then
+		return nil;
+	end
+	if own == nil then
+		local created = tonumber(try(function()
+			return Players[pid]:GetReligion():GetReligionTypeCreated();
+		end, -1)) or -1;
+		local row = created >= 0 and GameInfo.Religions[created] or nil;
+		own = row and row.Name or false;
+	end
+	counts = counts or CivvisReligionMajorityCounts();
+	local mine, low, lowCount = nil, nil, nil;
+	for i, t in pairs(targets) do
+		if type(i) == "number" then
+			local name = tostring(t);
+			if own and name == own then mine = i; end
+			local n = tonumber(counts[name]) or 0;
+			if lowCount == nil or n < lowCount or (n == lowCount and i < low) then
+				low, lowCount = i, n;
+			end
+		end
+	end
+	return mine or low;
+end
+
+CivvisHeritageDenial = function(rtype, targets, candidates, pid, favor, costs, lastA, config, tourismOf)
+	config = type(config) == "table" and config or {};
+	if config.HeritageDenial == false or rtype ~= "WC_RES_HERITAGE_ORG"
+		or config.VictoryLane == nil or config.VictoryLane == "culture"
+		or type(costs) ~= "table" then
+		return nil;
+	end
+	local leader, best = nil, -1;
+	for _, c in ipairs(type(candidates) == "table" and candidates or {}) do
+		local culture = tonumber(c.culture) or 0;
+		if tonumber(c.id) ~= nil and tonumber(c.id) ~= tonumber(pid) and culture > best then
+			leader, best = tonumber(c.id), culture;
+		end
+	end
+	if leader == nil or best < (tonumber(config.HeritageDenialFloor) or 10) then return nil; end
+	local tourism = (tourismOf or CivvisHeritageTourismByType)(leader) or {};
+	local idx, top = nil, 0;
+	for i, t in pairs(type(targets) == "table" and targets or {}) do
+		local v = tonumber(tourism[tostring(t)]) or 0;
+		if type(i) == "number" and v > top then idx, top = i, v; end
+	end
+	if idx == nil then return nil; end
+	local last = type(lastA) == "table" and tonumber(lastA[rtype]) or nil;
+	local want = (last or 3) + 1;
+	local cap = math.min(tonumber(config.HeritageDenialMaxVotes) or 8, tonumber(costs.MaxVotes) or 1);
+	if want > cap then want = cap; end
+	while want > 1 and (tonumber(costs[want - 1]) or (tonumber(favor) or 0) + 1) > (tonumber(favor) or 0) do
+		want = want - 1;
+	end
+	return idx, want, (want > 1) and (tonumber(costs[want - 1]) or 0) or 0, leader;
+end
+
+-- ★★ HERITAGE ORGANIZATION ON A CULTURE SEAT: THE TYPE THAT WIDENS OUR LEAD.
+--
+-- `CivvisHeritageDenial` serves the seats whose own tourism is worth nothing.
+-- A Culture seat's own tourism IS the race, and both options act on every
+-- civilization alike, so what matters is the difference: option A on a type
+-- adds what each of us draws from it, option B removes it. Against the
+-- strongest culture rival (the highest `c.culture`), for every type on the
+-- ballot, `ours - theirs` by `CivvisHeritageTourismByType`: A on the type
+-- where that is most positive, else B on the type where it is most negative.
+-- Votes as the denial casts them (the last session's A total plus one, four
+-- by default, `HeritageDenialMaxVotes` at most, as Favor allows). Off with
+-- `HeritageDenial = false` or `HeritageCultureSeat = false`.
+--
+-- Returns `option, selection, votes, favor, spent`: the values passed in,
+-- unchanged, when it does not apply, so the ballot needs no new local (the
+-- chunk is at the register cap).
+CivvisHeritageCultureSeat = function(rtype, targets, candidates, pid, favor, costs, lastA,
+		config, option, selection, votes, spent, tourismOf)
+	config = type(config) == "table" and config or {};
+	if config.HeritageDenial == false or config.HeritageCultureSeat == false
+		or rtype ~= "WC_RES_HERITAGE_ORG" or config.VictoryLane ~= "culture"
+		or type(costs) ~= "table" then
+		return option, selection, votes, favor, spent;
+	end
+	local leader, best = nil, -1;
+	for _, c in ipairs(type(candidates) == "table" and candidates or {}) do
+		local culture = tonumber(c.culture) or 0;
+		if tonumber(c.id) ~= nil and tonumber(c.id) ~= tonumber(pid) and culture > best then
+			leader, best = tonumber(c.id), culture;
+		end
+	end
+	if leader == nil then return option, selection, votes, favor, spent; end
+	local of = tourismOf or CivvisHeritageTourismByType;
+	local ours, theirs = of(pid) or {}, of(leader) or {};
+	local idx, edge = nil, 0;
+	for i, t in pairs(type(targets) == "table" and targets or {}) do
+		local d = (tonumber(ours[tostring(t)]) or 0) - (tonumber(theirs[tostring(t)]) or 0);
+		if type(i) == "number" and math.abs(d) > math.abs(edge) then idx, edge = i, d; end
+	end
+	if idx == nil then return option, selection, votes, favor, spent; end
+	local last = type(lastA) == "table" and tonumber(lastA[rtype]) or nil;
+	local want = (last or 3) + 1;
+	local cap = math.min(tonumber(config.HeritageDenialMaxVotes) or 8, tonumber(costs.MaxVotes) or 1);
+	if want > cap then want = cap; end
+	while want > 1 and (tonumber(costs[want - 1]) or (tonumber(favor) or 0) + 1) > (tonumber(favor) or 0) do
+		want = want - 1;
+	end
+	local price = (want > 1) and (tonumber(costs[want - 1]) or 0) or 0;
+	return (edge > 0) and 1 or 2, idx, want, (tonumber(favor) or 0) - price, (tonumber(spent) or 0) + price;
 end
 
 -- The Favor the cheap participation votes of this session will take, held
@@ -17742,7 +17954,16 @@ end
 -- upstream. "moving" when a MOVE_TO toward our nearest reachable complete
 -- Holy Site was accepted; nil when the Prophet can found where it stands, has
 -- nowhere to go, or the host refused the walk.
-CivvisProphetWalk = {};
+CivvisProphetWalk = { reported = {} };
+-- Why a Prophet still to found was not walked, once per unit per ten turns:
+-- the walk's own refusals, so a live idle Prophet names its reason.
+CivvisProphetWalk.report = function(id, turn, individual, class, reason)
+	local before = CivvisProphetWalk.reported[id];
+	if before ~= nil and (turn - before) < 10 then return; end
+	CivvisProphetWalk.reported[id] = turn;
+	emit("gp", { turn = turn, unit = id, individual = individual, class = class,
+		action = "prophet_walk_refused", reason = reason });
+end;
 CivvisProphetWalk.toHolySite = function(player, unit, id, turn, individual, class)
 	local found = OP["UNITOPERATION_FOUND_RELIGION"];
 	if found == nil then return nil; end
@@ -17773,7 +17994,7 @@ CivvisProphetWalk.toHolySite = function(player, unit, id, turn, individual, clas
 			local dy = try(function() return district:GetY(); end, nil);
 			if row ~= nil and holy[row.DistrictType] and dx ~= nil and dy ~= nil
 					and try(function() return district:IsComplete(); end, false) == true
-					and try(function() return district:IsPillaged(); end, true) == false then
+					and try(function() return district:IsPillaged(); end, false) ~= true then
 				-- The host pathfinder, as `activationReachable` reads it: a
 				-- route must exist and end on the Holy Site itself.
 				local reachable = true;
@@ -17794,11 +18015,17 @@ CivvisProphetWalk.toHolySite = function(player, unit, id, turn, individual, clas
 			end
 		end
 	end);
-	if best == nil then return nil; end
+	if best == nil then
+		CivvisProphetWalk.report(id, turn, individual, class, "no_reachable_holy_site");
+		return nil;
+	end
 	local params = {};
 	params[UnitOperationTypes.PARAM_X] = best.x;
 	params[UnitOperationTypes.PARAM_Y] = best.y;
-	if not operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then return nil; end
+	if not operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
+		CivvisProphetWalk.report(id, turn, individual, class, "move_refused");
+		return nil;
+	end
 	local pend = gpPending[id];
 	if pend == nil or pend.x ~= best.x or pend.y ~= best.y then
 		emit("gp", { turn = turn, unit = id, individual = individual, class = class,
@@ -17851,7 +18078,11 @@ local function orderGreatPerson(player, unit, id, turn, supportAllowed, controll
 				class = class, action = "retired_founded_prophet" });
 			return "retired";
 		end
-		if (religionCreated == nil or religionCreated < 0) and charges ~= 0
+		-- ⚠ No charge test: an unfounded Prophet reads 0 action charges on the
+		-- live host (civvis-20261030T090715Z: Zoroaster stood in Corinth's
+		-- centre beside its finished Holy Site, `cannot_found_religion_here`
+		-- for two turns, and no walk was ever sent).
+		if (religionCreated == nil or religionCreated < 0)
 				and CivvisProphetWalk.toHolySite(player, unit, id, turn, individual, class) then
 			return "moving";
 		end
@@ -23261,6 +23492,23 @@ local function tick()
 							-- it won 37 of 55 recorded sessions, B on us 2.
 							if BAN_FIRST[rtype] and not CivvisDiploRacer(cfg) then option = 2; end
 						end
+					elseif rtype == "WC_RES_WORLD_RELIGION" then
+						-- See `CivvisWorldReligionTarget`: A, never on the leader.
+						selection = CivvisWorldReligionTarget(rtype, targets, pid, cfg) or selection;
+					elseif rtype == "WC_RES_HERITAGE_ORG" then
+						-- See `CivvisHeritageDenial`.
+						local hIdx, hVotes, hPrice = CivvisHeritageDenial(rtype, targets,
+							candidates, pid, favor, costs, envoyTally.wc_last_a, cfg);
+						if hIdx ~= nil then
+							option, selection, votes = 2, hIdx, hVotes;
+							favor = favor - hPrice;
+							spent = spent + hPrice;
+						else
+							-- See `CivvisHeritageCultureSeat`.
+							option, selection, votes, favor, spent = CivvisHeritageCultureSeat(
+								rtype, targets, candidates, pid, favor, costs,
+								envoyTally.wc_last_a, cfg, option, selection, votes, spent);
+						end
 					elseif BAN_FIRST[rtype] then
 						option = 2;
 					end
@@ -23272,7 +23520,7 @@ local function tick()
 					-- leader's predicted one: it buys the outcome instead.
 					local deny = (not CivvisDiploRacer(cfg)) and CivvisParticipationDenialOption(rtype,
 						leader, pid, leaderPoints, envoyTally.wc_last_option, cfg) or nil;
-					if deny ~= nil then
+					if deny ~= nil and votes == 1 then
 						option = deny;
 						if r.TargetType == "PlayerType" then
 							for idx, t in pairs(targets) do

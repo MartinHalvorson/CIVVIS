@@ -4274,6 +4274,44 @@ pub const GENES: &[Gene] = &[
     // it is unlocked, and the free-slot Campus claim yields them. See
     // `advanced/culture_theater_first.rs`.
     Gene { tag: "culture-seat-theater-first", field: "culture_seat_theater_first", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_theater_first, disable: AdvancedAi::disable_culture_seat_theater_first },
+    // The Statue of Liberty is four of the twenty Diplomatic Victory Points;
+    // live King civvis-20261030T074500Z lost to Culture at t207 standing on
+    // 18, and the first live Diplomatic win (081846Z t208) needed one point
+    // between sessions. Under lane delegation nothing prices those wonders:
+    // a Diplomatic seat now keeps one in production in its strongest city.
+    // See `advanced/diplo_wonder_claim.rs`.
+    Gene { tag: "diplo-seat-wonder-claim", field: "diplo_seat_wonder_claim", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_seat_wonder_claim, disable: AdvancedAi::disable_diplo_seat_wonder_claim },
+    // Every live King rival-Technology loss of 2026-10-30 had us leading the
+    // field in science: civvis-20261030T053333Z (Culture seat, 475 a turn
+    // against Mapuche's 428, lost t236), 060008Z (Culture, 456 against the
+    // Aztecs' 441, t209) and 070824Z-cont1 (Diplomatic, 452 against India's
+    // 303, t231) -- and `science-victory-drive` never opens on a seat
+    // assigned another lane. With this on it opens there once a rival has
+    // landed a space project and we lead, and races Science beside the lane.
+    Gene { tag: "science-drive-answers-the-launch", field: "science_drive_answers_the_launch", kind: Kind::OptIn, enable: AdvancedAi::enable_science_drive_answers_the_launch, disable: AdvancedAi::disable_science_drive_answers_the_launch },
+    // The defensive Inquisition (save for the Apostle, launch, Inquisitors
+    // first) was gated to Domination seats when it was written for that lane
+    // (#3656). On the Pericles ladder no seat is Domination: live Emperor
+    // civvis-20261030T103149Z (Diplomatic) held 8 of 9 cities for Buddhism at
+    // t90, bought eleven Missionaries and a Guru at +17-29 Faith, never an
+    // Apostle, and lost to Judaism on Religion at t127. Diplomatic seats now
+    // prepare it too (paired: Diplomatic 3 -> 4 wins of 20; Culture measured
+    // 9 -> 7 and left out). See `advanced/defensive_apostle.rs`.
+    Gene { tag: "inquisition-defends-the-diplomat", field: "inquisition_defends_the_diplomat", kind: Kind::OptIn, enable: AdvancedAi::enable_inquisition_defends_the_diplomat, disable: AdvancedAi::disable_inquisition_defends_the_diplomat },
+    // `culture-seat-monuments`: the first live Emperor Culture seat
+    // (civvis-20261030T090715Z) held one Monument in six cities at t60 and
+    // made 12 Culture a turn against Egypt's 56. A Culture seat's
+    // unthreatened cities claim their Monument once the second city stands,
+    // ahead of a deferrable head, while no major is at war with us. See
+    // `advanced/culture_monuments.rs`.
+    Gene { tag: "culture-seat-monuments", field: "culture_seat_monuments", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_monuments, disable: AdvancedAi::disable_culture_seat_monuments },
+    // Seasteads and Global Warming Mitigation are a Diplomatic Victory Point
+    // each, and near the bar Congress stops paying: live Emperor
+    // civvis-20261030T111154Z stood on 18 of 20 from t180 to its Culture loss
+    // at t213, every rival voting B on it at t200; Seasteads never landed once
+    // the plan read Recovery. From 16 points the seat researches and adopts
+    // both first. See `advanced/diplo_match_point_research.rs`.
+    Gene { tag: "diplo-match-point-beelines-the-points", field: "diplo_match_point_beelines", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_match_point_beelines_the_points, disable: AdvancedAi::disable_diplo_match_point_beelines_the_points },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
