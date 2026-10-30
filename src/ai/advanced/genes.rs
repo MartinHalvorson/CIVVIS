@@ -4342,6 +4342,13 @@ pub const GENES: &[Gene] = &[
     // Religion at t168. A Diplomatic founder whose Holy City still follows its
     // faith now saves over fifteen turns. See `advanced/founder_defence.rs`.
     Gene { tag: "diplomat-saves-for-the-apostle", field: "diplomat_saves_for_the_apostle", kind: Kind::OptIn, enable: AdvancedAi::enable_diplomat_saves_for_the_apostle, disable: AdvancedAi::disable_diplomat_saves_for_the_apostle },
+    // `culture-routes-reach-every-rival`: an international route of ours is
+    // +25% on the tourism pressure banked against its owner, and a native
+    // Immortal culture census found routes to about half the rivals at turns
+    // 100-125 of the tourism ramp. While a Culture seat's tourism is at least
+    // 15, a Trader in one of our cities that can reach a rival without our
+    // route goes there, the bar holder first. See `advanced/culture_routes.rs`.
+    Gene { tag: "culture-routes-reach-every-rival", field: "culture_routes_reach_every_rival", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_routes_reach_every_rival, disable: AdvancedAi::disable_culture_routes_reach_every_rival },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

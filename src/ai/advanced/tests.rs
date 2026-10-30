@@ -48079,7 +48079,7 @@ fn settler_site_gate_is_off_by_default_and_reads_the_live_board() {
         .settle_sites(&game, 0, capital, 11)
         .into_iter()
         .filter(|(site, _)| {
-            ai.exhaustion_site_unpriceable(&game, *site).is_none()
+            ai.exhaustion_site_unpriceable(&game, 0, *site).is_none()
                 && !AdvancedAi::inside_rival_sphere(&game, 0, *site)
         })
         .collect();

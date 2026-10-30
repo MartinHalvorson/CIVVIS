@@ -151,6 +151,16 @@ check("live t181: 10 votes beat a block of 9", CivvisRacerClaimVotes(190, 10, 9,
 check("no more than the block, no claim", CivvisRacerClaimVotes(30, 6, 5, costs, 20, {}), nil)
 check("claim first block 8", CivvisRacerClaimVotes(1000, 6, nil, costs, 20, {}), 13)
 check("claim all in at match point", CivvisRacerClaimVotes(300, 18, 9, costs, 20, {}), 12)
+-- `CivvisRacerClaimBlock`: against a contender, the larger of the last two
+-- sessions' blocks; otherwise the last.
+check("contender: the bigger block of two sessions", CivvisRacerClaimBlock(5, 9, 15, 15, {}), 9)
+check("contender ahead: still the bigger", CivvisRacerClaimBlock(5, 9, 15, 17, {}), 9)
+check("within two behind is a contender", CivvisRacerClaimBlock(5, 9, 15, 13, {}), 9)
+check("three behind is not", CivvisRacerClaimBlock(5, 9, 15, 12, {}), 5)
+check("a smaller block before keeps the last", CivvisRacerClaimBlock(9, 5, 15, 15, {}), 9)
+check("no block before keeps the last", CivvisRacerClaimBlock(5, nil, 15, 15, {}), 5)
+check("no last block takes the one before", CivvisRacerClaimBlock(nil, 9, 15, 15, {}), 9)
+check("the switch keeps the last", CivvisRacerClaimBlock(5, 9, 15, 15, { DiploRacerContenderPeak = false }), 5)
 
 -- A session at t143: rival leader on 8, its largest A block last time 5,
 -- 300 Favor. Reserve 8 for Border Control and Public Relations; the claim
@@ -174,6 +184,18 @@ check("small bank mode", mode, "free")
 check("small bank free vote", requests[1].votes, 1)
 check("small bank still buys border control", requests[2].votes, 2)
 check("small bank spend", spent, 8)
+
+-- Immortal 173341Z t174: both on 15, the rival's last block 5 but 9 the
+-- session before, about 351 Favor: 13 votes (from the 9), not 10.
+session = { "WC_RES_DIPLOVICTORY" }
+tally.wc_rival_block_prev = 9
+spent, mode = run(351, 15, 15, 5)
+check("contender claim races", mode, "race")
+check("contender claim sized from the bigger block", requests[1].votes, 13)
+tally.wc_rival_block_prev = nil
+spent, mode = run(351, 15, 15, 5)
+check("without the block before, sized from the last", requests[1].votes, 10)
+session = { "WC_RES_DIPLOVICTORY", "WC_RES_BORDER_CONTROL", "WC_RES_PUBLIC_RELATIONS" }
 
 -- A rival on the gang threshold keeps the denial: B on the leader.
 spent, mode = run(300, 16, 6, 5)
