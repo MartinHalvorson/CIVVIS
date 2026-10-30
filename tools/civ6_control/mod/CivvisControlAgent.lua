@@ -17742,7 +17742,16 @@ end
 -- upstream. "moving" when a MOVE_TO toward our nearest reachable complete
 -- Holy Site was accepted; nil when the Prophet can found where it stands, has
 -- nowhere to go, or the host refused the walk.
-CivvisProphetWalk = {};
+CivvisProphetWalk = { reported = {} };
+-- Why a Prophet still to found was not walked, once per unit per ten turns:
+-- the walk's own refusals, so a live idle Prophet names its reason.
+CivvisProphetWalk.report = function(id, turn, individual, class, reason)
+	local before = CivvisProphetWalk.reported[id];
+	if before ~= nil and (turn - before) < 10 then return; end
+	CivvisProphetWalk.reported[id] = turn;
+	emit("gp", { turn = turn, unit = id, individual = individual, class = class,
+		action = "prophet_walk_refused", reason = reason });
+end;
 CivvisProphetWalk.toHolySite = function(player, unit, id, turn, individual, class)
 	local found = OP["UNITOPERATION_FOUND_RELIGION"];
 	if found == nil then return nil; end
@@ -17773,7 +17782,7 @@ CivvisProphetWalk.toHolySite = function(player, unit, id, turn, individual, clas
 			local dy = try(function() return district:GetY(); end, nil);
 			if row ~= nil and holy[row.DistrictType] and dx ~= nil and dy ~= nil
 					and try(function() return district:IsComplete(); end, false) == true
-					and try(function() return district:IsPillaged(); end, true) == false then
+					and try(function() return district:IsPillaged(); end, false) ~= true then
 				-- The host pathfinder, as `activationReachable` reads it: a
 				-- route must exist and end on the Holy Site itself.
 				local reachable = true;
@@ -17794,11 +17803,17 @@ CivvisProphetWalk.toHolySite = function(player, unit, id, turn, individual, clas
 			end
 		end
 	end);
-	if best == nil then return nil; end
+	if best == nil then
+		CivvisProphetWalk.report(id, turn, individual, class, "no_reachable_holy_site");
+		return nil;
+	end
 	local params = {};
 	params[UnitOperationTypes.PARAM_X] = best.x;
 	params[UnitOperationTypes.PARAM_Y] = best.y;
-	if not operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then return nil; end
+	if not operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
+		CivvisProphetWalk.report(id, turn, individual, class, "move_refused");
+		return nil;
+	end
 	local pend = gpPending[id];
 	if pend == nil or pend.x ~= best.x or pend.y ~= best.y then
 		emit("gp", { turn = turn, unit = id, individual = individual, class = class,
@@ -17851,7 +17866,11 @@ local function orderGreatPerson(player, unit, id, turn, supportAllowed, controll
 				class = class, action = "retired_founded_prophet" });
 			return "retired";
 		end
-		if (religionCreated == nil or religionCreated < 0) and charges ~= 0
+		-- ⚠ No charge test: an unfounded Prophet reads 0 action charges on the
+		-- live host (civvis-20261030T090715Z: Zoroaster stood in Corinth's
+		-- centre beside its finished Holy Site, `cannot_found_religion_here`
+		-- for two turns, and no walk was ever sent).
+		if (religionCreated == nil or religionCreated < 0)
 				and CivvisProphetWalk.toHolySite(player, unit, id, turn, individual, class) then
 			return "moving";
 		end
