@@ -4264,6 +4264,14 @@ pub const GENES: &[Gene] = &[
     // it is unlocked, and the free-slot Campus claim yields them. See
     // `advanced/culture_theater_first.rs`.
     Gene { tag: "culture-seat-theater-first", field: "culture_seat_theater_first", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_theater_first, disable: AdvancedAi::disable_culture_seat_theater_first },
+    // `culture-seat-wonder-lane`: live King Pericles 055006Z finished one
+    // wonder against Gaul's twelve and Persia's eleven and lost the Culture
+    // race at t180: lane delegation hands the queues to the baseline governor,
+    // whose wonder is its last fallback, and the scorer pays a Culture plan's
+    // wonder only +320. A Culture seat's strongest cities (one lane per four)
+    // claim the most culture-rich wonder they can finish in 20 turns. See
+    // `advanced/culture_wonder_lane.rs`.
+    Gene { tag: "culture-seat-wonder-lane", field: "culture_seat_wonder_lane", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_wonder_lane, disable: AdvancedAi::disable_culture_seat_wonder_lane },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

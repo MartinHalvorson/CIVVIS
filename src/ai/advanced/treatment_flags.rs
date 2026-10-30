@@ -8472,6 +8472,17 @@ impl AdvancedAi {
         self.culture_seat_theater_first = false;
     }
 
+    /// Opt-in gene `culture-seat-wonder-lane`; see
+    /// [`Self::culture_seat_wonder_lane`].
+    pub fn enable_culture_seat_wonder_lane(&mut self) {
+        self.culture_seat_wonder_lane = true;
+    }
+
+    /// The twin of `enable_culture_seat_wonder_lane`.
+    pub fn disable_culture_seat_wonder_lane(&mut self) {
+        self.culture_seat_wonder_lane = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -5504,6 +5504,10 @@ pub struct AdvancedAi {
     /// costliest. See `advanced/solvency.rs`. Off by default.
     bankruptcy_exits_the_drain: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `culture-seat-wonder-lane`: a Culture seat's strongest cities keep a
+    /// wonder in production. See `advanced/culture_wonder_lane.rs`. Off by
+    /// default.
+    culture_seat_wonder_lane: bool,
     /// `culture-seat-theater-first`: a Culture seat's cities claim their
     /// first Theater Square ahead of the Campus. See
     /// `advanced/culture_theater_first.rs`. Off by default.
@@ -9621,6 +9625,9 @@ mod capital_monument;
 /// `culture-seat-theater-first`: see `advanced/culture_theater_first.rs`.
 mod culture_theater_first;
 
+/// `culture-seat-wonder-lane`: see `advanced/culture_wonder_lane.rs`.
+mod culture_wonder_lane;
+
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 
 mod civilian_coordination;
@@ -10949,6 +10956,7 @@ impl AdvancedAi {
             aqueduct_recovery_reservations: RefCell::new(BTreeMap::new()),
             bankruptcy_exits_the_drain: false,
             // ---- append: c-d ----------------------------------------
+            culture_seat_wonder_lane: false,
             culture_seat_theater_first: false,
             capital_monument_after_the_second_city: false,
             disrupt_before_the_sources: false,
@@ -32843,6 +32851,10 @@ impl AdvancedAi {
             let culture_theater_commitment = committed
                 .as_ref()
                 .is_some_and(|(_, item)| self.culture_theater_holds(g, pid, cid, plan, item));
+            // `culture-seat-wonder-lane`: the lane's claimed wonder finishes.
+            let lane_wonder_commitment = committed
+                .as_ref()
+                .is_some_and(|(_, item)| self.lane_wonder_holds(g, pid, cid, plan, item));
             // `trader-fills-the-idle-route`: the claimed Trader finishes while
             // its slot still stands empty.
             let idle_route_trader_commitment = committed
@@ -32906,6 +32918,7 @@ impl AdvancedAi {
                     || bound_granary_commitment
                     || capital_monument_commitment
                     || culture_theater_commitment
+                    || lane_wonder_commitment
                     || idle_route_trader_commitment
                     || backlog_builder_commitment
                     || capped_aqueduct_commitment
@@ -32928,6 +32941,7 @@ impl AdvancedAi {
                     || bound_granary_commitment
                     || capital_monument_commitment
                     || culture_theater_commitment
+                    || lane_wonder_commitment
                     || idle_route_trader_commitment
                     || backlog_builder_commitment
                     || capped_aqueduct_commitment
@@ -49844,6 +49858,10 @@ impl AdvancedAi {
             // ahead of the Prophet race and the routine claims. Exact no-op
             // while the gene is off. See `advanced/culture_theater_first.rs`.
             self.claim_culture_theaters(g, pid, &plan);
+            // `culture-seat-wonder-lane`: the lane cities' wonders, after the
+            // Theater claim (whose heads they leave alone). Exact no-op while
+            // the gene is off. See `advanced/culture_wonder_lane.rs`.
+            self.claim_lane_wonders(g, pid, &plan);
             // `prophet-builds-its-site`: the Holy Site a Prophet founds on
             // goes first. Exact no-op while the gene is off.
             self.reserve_prophet_site(g, pid, &plan);
