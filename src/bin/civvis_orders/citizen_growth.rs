@@ -52,7 +52,8 @@ fn richer_unworked_food(snapshot: &mirror::Snapshot, city: &mirror::StateCity) -
 /// The focus requests for this frame. `widened` (the gene
 /// `food-focus-grows-the-small-city`) also favours Food in a city of up to
 /// [`WIDE_MAX_POP`] growing at no more than [`WIDE_MAX_SURPLUS`] a turn, not
-/// only in one stalled at zero.
+/// only in one stalled at zero, unless it is training a Settler; and it
+/// releases a growing city's focus when a Settler starts.
 pub(super) fn choices(
     snapshot: &mirror::Snapshot,
     state: &mirror::StateSnapshot,
@@ -75,28 +76,41 @@ pub(super) fn choices(
             continue;
         };
         let threatened = city.damage > 0.0 || city.wall_damage > 0.0;
-        let verb =
-            if managed && (headroom < 2.0 || city.pop >= 6 || state.turn >= 130 || threatened) {
-                Some("RELEASE_FOOD")
-            } else if !favored
-                && !disfavored
-                && state.turn <= 100
-                && (1..=if widened { WIDE_MAX_POP } else { 4 }).contains(&city.pop)
-                && city.damage == 0.0
-                && city.wall_damage == 0.0
-                && headroom >= 2.0
-                && city.food_surplus.is_finite()
-                && (city.food_surplus.abs() <= 1e-6
-                    || (widened && (0.0..=WIDE_MAX_SURPLUS).contains(&city.food_surplus)))
-                && city.overall_growth_mult.is_finite()
-                && city.overall_growth_mult > 0.0
-                && snapshot.turn == state.turn
-                && richer_unworked_food(snapshot, city)
-            {
-                Some("FAVOR_FOOD")
-            } else {
-                None
-            };
+        // `food-focus-grows-the-small-city`: a city training a Settler is the
+        // settler pump, and the focus costs it about a sixth of its
+        // Production. Live #4190 v1: the capital held the focus 19-50 of its
+        // first 60 turns in 5 of 8 seated games, 6-32 of them on a Settler,
+        // and the empire stood at 4 cities at t60 against 5.
+        let settler_pump = city.producing.as_deref() == Some("UNIT_SETTLER");
+        let verb = if managed
+            && (headroom < 2.0
+                || city.pop >= 6
+                || state.turn >= 130
+                || threatened
+                || (widened && settler_pump && city.food_surplus > 1e-6))
+        {
+            Some("RELEASE_FOOD")
+        } else if !favored
+            && !disfavored
+            && state.turn <= 100
+            && (1..=if widened { WIDE_MAX_POP } else { 4 }).contains(&city.pop)
+            && city.damage == 0.0
+            && city.wall_damage == 0.0
+            && headroom >= 2.0
+            && city.food_surplus.is_finite()
+            && (city.food_surplus.abs() <= 1e-6
+                || (widened
+                    && !settler_pump
+                    && (0.0..=WIDE_MAX_SURPLUS).contains(&city.food_surplus)))
+            && city.overall_growth_mult.is_finite()
+            && city.overall_growth_mult > 0.0
+            && snapshot.turn == state.turn
+            && richer_unworked_food(snapshot, city)
+        {
+            Some("FAVOR_FOOD")
+        } else {
+            None
+        };
         if let Some(verb) = verb {
             choices.push(Choice {
                 city: city.id,
