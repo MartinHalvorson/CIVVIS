@@ -17482,10 +17482,21 @@ end
 -- B at t202 (12 -> 19), all three at t222. So from `DiploRacerBraceWarned`
 -- (14) a recorded rival B on us at the last session (`wc_b_on_us`) braces
 -- too.
-CivvisRacerBraces = function(ourPoints, config, warned)
+CivvisRacerBraces = function(ourPoints, config, warned, passed)
 	config = type(config) == "table" and config or {};
 	local points = tonumber(ourPoints) or 0;
 	if points >= (tonumber(config.DiploRacerGangSelf) or 18) then return true; end
+	-- A B that CARRIED on us is no warning: the rivals relax after a gang
+	-- that landed and press after one that failed. Of today's warned
+	-- sessions, the two after a failed B met 26 and 19 B votes (King
+	-- 074500Z t182, Emperor 111154Z t200: brace right) and the two after a
+	-- B that passed met 3 and 4 (074500Z t202, where our 10-vote claim won;
+	-- Emperor 113137Z t218, where a claim over the 8-vote A block would
+	-- have taken the +2 the rival took). Off with
+	-- `DiploRacerBraceAfterPassedB = true`.
+	if (tonumber(passed) or 0) > 0 and config.DiploRacerBraceAfterPassedB ~= true then
+		return false;
+	end
 	return (tonumber(warned) or 0) > 0
 		and points >= (tonumber(config.DiploRacerBraceWarned) or 14);
 end
@@ -21658,6 +21669,9 @@ local function beginTurn(player, pid, turn)
 						end
 					end
 					envoyTally.wc_b_on_us = bOnUs;
+					-- See `CivvisRacerBraces`: whether that B carried, on us.
+					envoyTally.wc_b_passed_on_us = (won == 2
+						and tonumber(r.ChosenThing) == pid) and 1 or 0;
 				end
 				envoyTally.wc_last_a = envoyTally.wc_last_a or {};
 				envoyTally.wc_last_a[rtype] = a;
@@ -23435,7 +23449,7 @@ local function tick()
 								and (not ganged or mine > (tonumber(leaderPoints) or 0)) then
 							local k = CivvisRacerClaimVotes(favor - (envoyTally.racer_reserve or 0),
 								mine, envoyTally.wc_rival_block, costs, maxVotes, cfg);
-							if CivvisRacerBraces(mine, cfg, envoyTally.wc_b_on_us) then
+							if CivvisRacerBraces(mine, cfg, envoyTally.wc_b_on_us, envoyTally.wc_b_passed_on_us) then
 								option, selection, n, mode = 2, ourIdx, 1, "brace";
 							elseif k ~= nil then
 								option, selection, n, mode = 1, ourIdx, k, "race";
