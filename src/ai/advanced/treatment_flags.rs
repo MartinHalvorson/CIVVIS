@@ -8461,6 +8461,17 @@ impl AdvancedAi {
         self.capital_monument_after_the_second_city = false;
     }
 
+    /// Opt-in gene `culture-seat-theater-first`; see
+    /// [`Self::culture_seat_theater_first`].
+    pub fn enable_culture_seat_theater_first(&mut self) {
+        self.culture_seat_theater_first = true;
+    }
+
+    /// The twin of `enable_culture_seat_theater_first`.
+    pub fn disable_culture_seat_theater_first(&mut self) {
+        self.culture_seat_theater_first = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
