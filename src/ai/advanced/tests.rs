@@ -16101,6 +16101,47 @@ fn a_district_keyed_great_work_veto_exempts_the_government_plaza() {
     assert!(!AdvancedAi::legacy().great_work_veto_by_district);
 }
 
+/// `diplomatic_lane_refuses_fossil_power`: the assigned Diplomatic lane never
+/// prices a Coal or Oil Power Plant (or a reactor conversion to either); the
+/// Nuclear plant, every other lane and a lost lane are untouched.
+#[test]
+fn a_diplomatic_seat_burns_no_coal_or_oil() {
+    let (game, capital, _home) = empire_with_a_capital(71_116);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let counts = EmpireCounts::default();
+    let building = |name: &str| Item::Building {
+        building: crate::name::Name::new(name),
+    };
+    let mut diplomatic = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    diplomatic.refresh_research_weight(&game);
+    let science = AdvancedAi::targeting(VictoryTarget::Science);
+
+    for fossil in ["coal_power_plant", "oil_power_plant"] {
+        assert!(diplomatic.diplomatic_lane_refuses_fossil_power(fossil));
+        assert!(!science.diplomatic_lane_refuses_fossil_power(fossil));
+        assert!(!AdvancedAi::new().diplomatic_lane_refuses_fossil_power(fossil));
+        assert_eq!(
+            diplomatic.production_value(&game, 0, capital, &building(fossil), &plan, &counts),
+            -10_000.0,
+            "{fossil} is refused on the diplomatic seat"
+        );
+    }
+    assert!(!diplomatic.diplomatic_lane_refuses_fossil_power("nuclear_power_plant"));
+    assert!(!diplomatic.diplomatic_lane_refuses_fossil_power("factory"));
+
+    let mut lost = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    lost.lane_lost = true;
+    assert!(!lost.diplomatic_lane_refuses_fossil_power("coal_power_plant"));
+}
+
 /// The debt was previously checked only on an untargeted controller, even
 /// though the hard veto means it can act in targeted deployment only in the
 /// Culture lane. Keep the target equal, enabling just the debt, so the second

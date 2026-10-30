@@ -1197,6 +1197,11 @@ def build_config(args: argparse.Namespace) -> dict:
         # fire once the game's Game Core thread parks, because the polls it
         # counts are driven by that thread. See the mod for the measurement.
         "CivvisDecides": args.civvis_decides,
+        # The victory lane CIVVIS is assigned (`--civvis-victory`), so the
+        # agent's World Congress ballot can race for its own Diplomatic Victory
+        # instead of only denying a rival's (`CivvisDiploRacer`). Absent when
+        # the built-ins decide.
+        "VictoryLane": args.civvis_victory if args.civvis_decides else None,
         # Hand a builder to Civ 6's own automation when CIVVIS's improvement is
         # refused outright. A policy, counted as IMPROVE_AUTOMATED.
         "AutomateStuckBuilders": args.automate_stuck_builders,
