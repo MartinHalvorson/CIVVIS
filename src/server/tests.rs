@@ -6443,14 +6443,15 @@ fn browser_orders_controls_interface_setup_and_logs() {
         ":where(body.overlay-players-hidden, #maparea:has(> #playerhud.standings-collapsed)) #victoryhud {\n    top: var(--panel-edge);"
     ));
     // "Under the masthead" is its actual bottom in every layout. A masthead
-    // the viewer moved publishes its top beside its height, and all three
-    // tracker placements (wide rail, narrow band, compact band) read it; a
-    // reset hands both back to the stylesheet together.
+    // the viewer moved publishes its top beside its height, and all four
+    // tracker placements (wide rail, narrow band, compact band, and the
+    // dedicated display's right-hand rail) read it; a reset hands both back
+    // to the stylesheet together.
     assert_eq!(
         EMBEDDED_INDEX
             .matches("top: calc(var(--player-hud-top, var(--panel-edge)) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));")
             .count(),
-        3
+        4
     );
     assert!(!EMBEDDED_INDEX.contains(
         "top: calc(var(--panel-edge) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));"
