@@ -8631,6 +8631,17 @@ impl AdvancedAi {
         self.counterweight_builds_its_source = false;
     }
 
+    /// Opt-in gene `racer-spies-search-for-the-pad`; see
+    /// [`Self::racer_spies_search_for_the_pad`].
+    pub fn enable_racer_spies_search_for_the_pad(&mut self) {
+        self.racer_spies_search_for_the_pad = true;
+    }
+
+    /// The twin of `enable_racer_spies_search_for_the_pad`.
+    pub fn disable_racer_spies_search_for_the_pad(&mut self) {
+        self.racer_spies_search_for_the_pad = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

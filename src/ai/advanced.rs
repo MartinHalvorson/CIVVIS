@@ -8238,6 +8238,18 @@ pub struct AdvancedAi {
     /// `prey_declaration::PREY_MARCH_GUN_TILES`. See
     /// `advanced/prey_declaration.rs`. Off by default.
     prey_waits_for_the_march_2: bool,
+    /// `racer-spies-search-for-the-pad`: once the leading space racer has
+    /// landed a project, a Spy in one of its cities where Disrupt Rocketry is
+    /// not offered moves on to its next city until it finds the pad. Needs
+    /// `racer-keeps-the-spies`. See `advanced/racer_keeps_the_spies.rs`.
+    /// Off by default.
+    racer_spies_search_for_the_pad: bool,
+    /// `racer-spies-search-for-the-pad`: the racers' cities where Disrupt
+    /// Rocketry was offered to a Spy of ours.
+    racer_spy_found_pads: BTreeSet<u32>,
+    /// `racer-spies-search-for-the-pad`: the leader's cities a Spy of ours
+    /// stood in without the offer, and the turn it last did.
+    racer_spy_searched: BTreeMap<u32, u32>,
     // ---- append: s-s ------------------------------------------------
     /// `stage-reads-the-muster-breakers`: once a siege's muster has closed,
     /// its Stage reads breakers out to `MUSTER_FAR` instead of `STAGING_FAR`.
@@ -11475,6 +11487,9 @@ impl AdvancedAi {
             prey_waits_for_the_march: false,
             prey_march_hold: None,
             prey_waits_for_the_march_2: false,
+            racer_spies_search_for_the_pad: false,
+            racer_spy_found_pads: BTreeSet::new(),
+            racer_spy_searched: BTreeMap::new(),
             // ---- append: s-s ----------------------------------------
             stage_reads_the_muster_breakers: false,
             siege_budget_counts_the_ram: false,
@@ -30248,7 +30263,13 @@ impl AdvancedAi {
             // or Gain Sources. Never taken with the gene off.
             if self.spy_mission_patience
                 && self.spy_orders_until.contains_key(&spy_id)
-                && !Self::racer_spy_moves_on(g, spy_id, racer_spy_leader, &racer_spy_racers)
+                && !Self::racer_spy_moves_on(
+                    g,
+                    spy_id,
+                    racer_spy_leader,
+                    &racer_spy_racers,
+                    self.racer_spy_search(),
+                )
             {
                 continue;
             }
@@ -30256,6 +30277,9 @@ impl AdvancedAi {
             if legal.is_empty() {
                 continue;
             }
+            // `racer-spies-search-for-the-pad`: a pad found or a city
+            // searched where this Spy stands. Never with the gene off.
+            self.racer_spy_note_the_search(g, spy_id, racer_spy_leader, &racer_spy_racers, &legal);
             let promotion_priority: &[&str] = match plan.strategy {
                 GrandStrategy::Science => &[
                     "technologist",
@@ -30462,6 +30486,9 @@ impl AdvancedAi {
             // where Disrupt Rocketry is offered) goes to the leader, before
             // any pad of it is seen. Never taken with the gene off
             // (`racer_spy_leader` is `None`).
+            let racer_spy_searching = self.racer_spy_search().is_some_and(|search| {
+                Self::racer_spy_searching(g, spy_id, current_city, racer_spy_leader, search, &legal)
+            });
             if let Some(post) = Self::racer_spy_post(
                 g,
                 spy_id,
@@ -30470,6 +30497,7 @@ impl AdvancedAi {
                 &racer_spy_racers,
                 &culture_heist_targets,
                 &legal,
+                self.racer_spy_search(),
             ) {
                 if let Some(action) = legal.iter().find(
                     |action| matches!(action, Action::AssignSpy { city, .. } if *city == post),
@@ -30481,11 +30509,28 @@ impl AdvancedAi {
                             .or_insert(0) += 1;
                         let city_name = g.cities[&post].name.clone();
                         let racer = g.players[g.cities[&post].owner].civ.to_string();
-                        think!(self.journal(), Military, Decision,
-                               "A Spy goes to {racer}'s {city_name}";
-                               "racer-keeps-the-spies: {racer} leads the space race; the Spy \
-                                waits there for Disrupt Rocketry instead of risking its slot \
-                                elsewhere");
+                        if racer_spy_searching {
+                            *g.players[pid]
+                                .counters
+                                .entry("racer_spy_searches".to_string())
+                                .or_insert(0) += 1;
+                            let here = current_city
+                                .and_then(|city| g.cities.get(&city))
+                                .map_or_else(String::new, |city| city.name.clone());
+                            let landed = racer_spy_leader
+                                .map_or(0, |leader| Self::science_denial_stages(g, leader));
+                            think!(self.journal(), Military, Decision,
+                                   "A Spy searches {racer}'s {city_name} for the Spaceport";
+                                   "racer-spies-search-for-the-pad: {racer} has landed \
+                                    {landed} space project(s) and Disrupt Rocketry is not \
+                                    offered in {here}, so the pad is elsewhere");
+                        } else {
+                            think!(self.journal(), Military, Decision,
+                                   "A Spy goes to {racer}'s {city_name}";
+                                   "racer-keeps-the-spies: {racer} leads the space race; the Spy \
+                                    waits there for Disrupt Rocketry instead of risking its slot \
+                                    elsewhere");
+                        }
                     }
                     self.spy_orders_until.insert(
                         spy_id,

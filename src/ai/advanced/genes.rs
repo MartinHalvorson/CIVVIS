@@ -4379,6 +4379,14 @@ pub const GENES: &[Gene] = &[
     // claims a Holy Site in its biggest safe-counterfaith city. See
     // `counterweight_builds_its_source` in `advanced/counterweight_diplomat.rs`.
     Gene { tag: "counterweight-builds-its-source", field: "counterweight_builds_its_source", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_builds_its_source, disable: AdvancedAi::disable_counterweight_builds_its_source },
+    // 13 live Science-Victory losses 2026-10-30: the first Disrupt Rocketry
+    // came 30 turns after the racer's first project (153459Z, Culture), 24
+    // (162440Z) and 13 (084235Z), each with a Spy waiting in a leader city
+    // with no pad, its Spaceport unseen. Once the leader has landed a project,
+    // a Spy where Disrupt Rocketry is not offered moves on to the leader's
+    // next city until it finds the pad. Needs `racer-keeps-the-spies`. See
+    // `advanced/racer_keeps_the_spies.rs`.
+    Gene { tag: "racer-spies-search-for-the-pad", field: "racer_spies_search_for_the_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_racer_spies_search_for_the_pad, disable: AdvancedAi::disable_racer_spies_search_for_the_pad },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
