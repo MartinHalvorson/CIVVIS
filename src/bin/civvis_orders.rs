@@ -3593,6 +3593,18 @@ fn plan_keeps_favor(plan: Option<(&str, Option<&str>)>) -> bool {
     plan.is_none()
 }
 
+/// Whether the seat is ASSIGNED the Diplomatic lane: its bank is the
+/// agent's racer ballot (`CivvisDiploRacer` in the agent), so none of it
+/// sells. The note on [`plan_keeps_favor`] predates purchased votes
+/// registering; the ballot casts them now, and a racer's Favor buys its own
+/// Congress Participation points at 4-24 Favor a resolution. Live Prince
+/// civvis-20261030T043401Z (a Culture seat) banked 570 Favor idle for three
+/// sessions; a diplomatic seat that sold that bank before any rival reached
+/// [`FAVOR_HOLD_DVP`] would have sold its first claims.
+fn plan_races_diplomacy(plan: Option<(&str, Option<&str>)>) -> bool {
+    plan.is_some_and(|(_, victory)| victory == Some("diplomatic"))
+}
+
 /// Drop the planner's own favor sales when the plan means to cast that favor,
 /// or once a rival's DVP makes the bank votes ([`favor_banked_for_votes`]).
 /// `Game::quick_deals` quotes a ten-favor block to any partner two DVP richer,
@@ -3603,7 +3615,7 @@ fn hold_planner_favor_sales(
     state: &civvis::mirror::StateSnapshot,
     orders: &mut Vec<Order>,
 ) -> usize {
-    if !plan_keeps_favor(plan) && !favor_banked_for_votes(state) {
+    if !plan_keeps_favor(plan) && !favor_banked_for_votes(state) && !plan_races_diplomacy(plan) {
         return 0;
     }
     let before = orders.len();
@@ -3657,6 +3669,9 @@ fn append_favor_sale_order(
     // stood here is gone with it — it could never be reached past this line.
     if plan.is_none() {
         return Some("favor_hold:no_plan");
+    }
+    if plan_races_diplomacy(plan) {
+        return Some("favor_hold:diplomatic_lane");
     }
     if favor_banked_for_votes(state) {
         return Some("favor_hold:contender");
@@ -17437,23 +17452,36 @@ mod tests {
         // ... at the engine's own book per point (2.0 here), not a flat Gold.
         assert_eq!(orders[0].pos, Some((300, 0)));
 
-        // A Diplomacy plan sells its surplus too: the favor it was holding
-        // buys only EXTRA votes, and those never register. Run
-        // civvis-20260819T054901Z banked 566 points to t222 and cast none of
-        // them, losing to the rival diplomatic victory it was saving for.
-        for diplomatic in [
-            Some(("diplomacy", None)),
-            Some(("expansion", Some("diplomatic"))),
-        ] {
-            let mut sold = Vec::new();
-            assert_eq!(
-                append_favor_sale_order(diplomatic, &state, &mut sold, 2.0),
-                None,
-                "the diplomatic lane no longer banks what it cannot cast"
-            );
-            assert_eq!(sold.len(), 1, "and the surplus reaches a buyer");
-            assert_eq!(sold[0].verb.as_deref(), Some("FAVOR=150"));
-        }
+        // A Diplomacy STRATEGY on a seat assigned some other lane sells its
+        // surplus: the agent's ballot for that seat banks for denial only.
+        // Run civvis-20260819T054901Z banked 566 points to t222 and cast none
+        // of them, losing to the rival diplomatic victory it was saving for.
+        let mut sold = Vec::new();
+        assert_eq!(
+            append_favor_sale_order(Some(("diplomacy", None)), &state, &mut sold, 2.0),
+            None
+        );
+        assert_eq!(sold.len(), 1, "and the surplus reaches a buyer");
+        assert_eq!(sold[0].verb.as_deref(), Some("FAVOR=150"));
+
+        // A seat ASSIGNED the Diplomatic lane holds every point: its ballot
+        // (`CivvisDiploRacer`) buys its own participation points and claims
+        // with them, and purchased votes register now.
+        let racer = Some(("expansion", Some("diplomatic")));
+        let mut kept = Vec::new();
+        assert_eq!(
+            append_favor_sale_order(racer, &state, &mut kept, 2.0),
+            Some("favor_hold:diplomatic_lane")
+        );
+        assert!(kept.is_empty());
+        let mut racer_quote = vec![Order {
+            kind: "sell",
+            subject: Some(2),
+            verb: Some("FAVOR=10".to_string()),
+            pos: Some((10, 0)),
+        }];
+        assert_eq!(hold_planner_favor_sales(racer, &state, &mut racer_quote), 1);
+        assert!(racer_quote.is_empty());
 
         // No plan report still holds: an unknown intent is not licence to sell.
         let mut held = Vec::new();
