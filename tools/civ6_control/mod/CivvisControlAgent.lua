@@ -11783,6 +11783,29 @@ end;
 -- assigned the Diplomatic lane asks (`VictoryLane`; off with `DiploAllies =
 -- false`): an alliance forbids a war on the ally, which a domination seat's
 -- campaign planner does not price. Bare global for alliance_ask_test.lua.
+-- Whether `subject` is a culture racer at `AllianceCultureRacerShare` of
+-- the bar it must pass (see `CivvisAllianceStep`). Bare global for
+-- alliance_ask_test.lua.
+CivvisAllianceCultureRacer = function(subject, config)
+	config = type(config) == "table" and config or {};
+	local tourists = tonumber(try(function()
+		return Players[subject]:GetCulture():GetTouristsTo();
+	end, 0)) or 0;
+	if tourists <= 0 then return false; end
+	local bar = 0;
+	for _, other in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {}) or {}) do
+		local id = tonumber(other);
+		if id ~= nil and id ~= subject then
+			local domestic = tonumber(try(function()
+				return Players[id]:GetCulture():GetStaycationers();
+			end, 0)) or 0;
+			if domestic > bar then bar = domestic; end
+		end
+	end
+	if bar <= 0 then return false; end
+	return tourists / bar >= (tonumber(config.AllianceCultureRacerShare) or 0.5);
+end;
+
 CivvisAllianceStep = function(player, pid, subject, verb, turn, config)
 	config = type(config) == "table" and config or {};
 	if config.VictoryLane ~= "diplomatic" or config.DiploAllies == false then
@@ -11811,6 +11834,18 @@ CivvisAllianceStep = function(player, pid, subject, verb, turn, config)
 	local asked = CivvisK.allianceAsked[subject];
 	if asked ~= nil and (turn - asked) < (tonumber(config.AllianceRetryTurns) or 5) then
 		return nil, "alliance_cooldown";
+	end
+	-- ★★ NOT WITH A CULTURE RACER. A declared friendship or an alliance
+	-- forbids a war on its partner for thirty turns, and the war on the
+	-- tourism sources (`counter-culture-by-conquest`, armed 2026-10-30) is
+	-- the counter to a culture victory: two of the first four live King
+	-- diplomatic seats lost to one (civvis-20261030T073511Z t174,
+	-- 074500Z t207). A rival whose visiting tourists stand at
+	-- `AllianceCultureRacerShare` (0.5) of the highest domestic count any
+	-- other major holds is not asked -- the same reading the ballot's
+	-- culture counter takes (`GetTouristsTo` over `GetStaycationers`).
+	if CivvisAllianceCultureRacer(subject, config) then
+		return nil, "alliance_culture_racer";
 	end
 	if CivvisTrade.sessions[subject] ~= nil or CivvisTrade.pending[subject] ~= nil
 			or try(function() return DealManager.HasPendingDeal(pid, subject); end, false) then
@@ -17124,7 +17159,7 @@ end
 -- points per 100 Favor; a quarter more again wins 82%. So the racer funds
 -- the cheap participation votes first (`CivvisRacerReserve`, prices up to
 -- `DiploRacerCheapCap` 40), then claims, then buys the dearer resolutions
--- (up to `DiploRacerResolutionCap` 112) from what is left. A rival on the
+-- (up to `DiploRacerResolutionCap` 60) from what is left. A rival on the
 -- gang threshold (`DiploVictoryGangCertain`) still gets the denial: the
 -- rivals' B carries it, and our B with theirs is the participation point.
 -- Off with `DiploRacer = false`. Bare globals: the main chunk sits near the
@@ -17152,7 +17187,7 @@ CivvisRacerResolutionVotes = function(rtype, favor, costs, config, cap)
 	local maxVotes = tonumber(costs.MaxVotes) or 1;
 	if need > maxVotes then need = maxVotes; end
 	local price = tonumber(costs[need - 1]);
-	cap = tonumber(cap) or tonumber(config.DiploRacerResolutionCap) or 112;
+	cap = tonumber(cap) or tonumber(config.DiploRacerResolutionCap) or 60;
 	if need < 2 or price == nil or price > cap or price > (tonumber(favor) or 0) then
 		return 1, 0;
 	end
@@ -17164,6 +17199,16 @@ end
 -- names or as the ballot's `{ rtype = name }` entries.
 CivvisRacerReserve = function(entries, costs, config)
 	config = type(config) == "table" and config or {};
+	-- ★★ A SESSION WITH THE CLAIM ON IT FUNDS THE CLAIM FIRST. The claim is
+	-- won or lost by one vote and swings five points (our +3 against the
+	-- rival's +2); a participation vote is one. Live King
+	-- civvis-20261030T070824Z-cont1 t181: the reserve held 24 Favor for a
+	-- Deforestation vote, the claim cast 9, Portugal's own A block was 9 and
+	-- the tie went to Portugal (10 -> 12); 10 votes were in the bank.
+	for _, entry in ipairs(type(entries) == "table" and entries or {}) do
+		local rtype = type(entry) == "table" and entry.rtype or entry;
+		if rtype == "WC_RES_DIPLOVICTORY" then return 0; end
+	end
 	local total = 0;
 	for _, entry in ipairs(type(entries) == "table" and entries or {}) do
 		local rtype = type(entry) == "table" and entry.rtype or entry;
@@ -17192,7 +17237,14 @@ CivvisRacerClaimVotes = function(favor, ourPoints, rivalBlock, costs, maxVotes, 
 		if budget > 1 then return budget; end
 		return nil;
 	end
-	if budget < least then return nil; end
+	-- Short of `least`, a bank that still out-votes the last block claims
+	-- with all of it: the fallback is a redirect or a free vote, and the
+	-- live redirect of civvis-20261030T070824Z-cont1 t201 (7 votes, budget
+	-- under `least`) let Portugal take +2 on its way from 12 to 19.
+	if budget < least then
+		if budget > block then return budget; end
+		return nil;
+	end
 	return math.min(least + math.ceil(block / 4), budget);
 end
 
@@ -17208,9 +17260,22 @@ end
 -- claim against -0.6 for the brace), so the brace waits for
 -- `DiploRacerGangSelf` (18). The free vote only: the Favor goes to the
 -- participation votes.
-CivvisRacerBraces = function(ourPoints, config)
+--
+-- ★★ AND A RIVAL'S B ON US AT THE LAST SESSION IS THE WARNING. The gang
+-- ramps: one rival turns on the leader, and at the next session they all
+-- do. Live King civvis-20261030T074500Z: at t162 (us 12 -> 15) Georgia cast
+-- 6 B votes on us; at t181 all three cast B on us, 26 votes against our 9
+-- A, and we fell 15 -> 14 having spent 168 Favor -- the brace (B on us,
+-- free) would have held 15. 070824Z-cont1 the same on Portugal: two rivals'
+-- B at t202 (12 -> 19), all three at t222. So from `DiploRacerBraceWarned`
+-- (14) a recorded rival B on us at the last session (`wc_b_on_us`) braces
+-- too.
+CivvisRacerBraces = function(ourPoints, config, warned)
 	config = type(config) == "table" and config or {};
-	return (tonumber(ourPoints) or 0) >= (tonumber(config.DiploRacerGangSelf) or 18);
+	local points = tonumber(ourPoints) or 0;
+	if points >= (tonumber(config.DiploRacerGangSelf) or 18) then return true; end
+	return (tonumber(warned) or 0) > 0
+		and points >= (tonumber(config.DiploRacerBraceWarned) or 14);
 end
 
 -- A ballot is verified against all three native selection fields, not just
@@ -21351,7 +21416,18 @@ local function beginTurn(player, pid, turn)
 					end
 				end
 				local won = a > b and 1 or (b > a and 2 or 0);
-				if rtype == "WC_RES_DIPLOVICTORY" then dvpWon = won; end
+				if rtype == "WC_RES_DIPLOVICTORY" then
+					dvpWon = won;
+					-- See `CivvisRacerBraces`: the rivals' B votes on us.
+					local bOnUs = 0;
+					for _, voter in ipairs(voters) do
+						if voter.option == 2 and voter.player ~= pid
+							and tonumber(voter.target) == pid then
+							bOnUs = bOnUs + (tonumber(voter.votes) or 0);
+						end
+					end
+					envoyTally.wc_b_on_us = bOnUs;
+				end
 				envoyTally.wc_last_a = envoyTally.wc_last_a or {};
 				envoyTally.wc_last_a[rtype] = a;
 				resolutions[#resolutions + 1] = {
@@ -23128,7 +23204,7 @@ local function tick()
 								and (not ganged or mine > (tonumber(leaderPoints) or 0)) then
 							local k = CivvisRacerClaimVotes(favor - (envoyTally.racer_reserve or 0),
 								mine, envoyTally.wc_rival_block, costs, maxVotes, cfg);
-							if CivvisRacerBraces(mine, cfg) then
+							if CivvisRacerBraces(mine, cfg, envoyTally.wc_b_on_us) then
 								option, selection, n, mode = 2, ourIdx, 1, "brace";
 							elseif k ~= nil then
 								option, selection, n, mode = 1, ourIdx, k, "race";

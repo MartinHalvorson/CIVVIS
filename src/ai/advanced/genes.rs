@@ -4266,6 +4266,14 @@ pub const GENES: &[Gene] = &[
     // spends, and our religious units stop evading. See
     // `advanced/religious_defence.rs`.
     Gene { tag: "veto-counts-the-flips", field: "veto_counts_the_flips", kind: Kind::OptIn, enable: AdvancedAi::enable_veto_counts_the_flips, disable: AdvancedAi::disable_veto_counts_the_flips },
+    // `culture-seat-theater-first`: live Prince Pericles 10-30, Drama and
+    // Poetry at t62-63 but the first Acropolis only at t110-121 while the
+    // ungated Campus claims took every first slot (10 Campuses, 3 Acropoleis
+    // and 0 Great Works at t138); one Culture seat lost to France at t228. A
+    // Culture seat's unthreatened cities claim their first Theater Square once
+    // it is unlocked, and the free-slot Campus claim yields them. See
+    // `advanced/culture_theater_first.rs`.
+    Gene { tag: "culture-seat-theater-first", field: "culture_seat_theater_first", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_theater_first, disable: AdvancedAi::disable_culture_seat_theater_first },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

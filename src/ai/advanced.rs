@@ -5504,6 +5504,10 @@ pub struct AdvancedAi {
     /// costliest. See `advanced/solvency.rs`. Off by default.
     bankruptcy_exits_the_drain: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `culture-seat-theater-first`: a Culture seat's cities claim their
+    /// first Theater Square ahead of the Campus. See
+    /// `advanced/culture_theater_first.rs`. Off by default.
+    culture_seat_theater_first: bool,
     /// `capital-monument-after-the-second-city`: once the second city
     /// stands, the capital claims its Monument. See
     /// `advanced/capital_monument.rs`. Off by default.
@@ -9622,6 +9626,9 @@ mod food_focus_grows_the_small_city;
 /// `capital-monument-after-the-second-city`: see `advanced/capital_monument.rs`.
 mod capital_monument;
 
+/// `culture-seat-theater-first`: see `advanced/culture_theater_first.rs`.
+mod culture_theater_first;
+
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 
 mod civilian_coordination;
@@ -10950,6 +10957,7 @@ impl AdvancedAi {
             aqueduct_recovery_reservations: RefCell::new(BTreeMap::new()),
             bankruptcy_exits_the_drain: false,
             // ---- append: c-d ----------------------------------------
+            culture_seat_theater_first: false,
             capital_monument_after_the_second_city: false,
             disrupt_before_the_sources: false,
             capital_watch_arms_the_slinger: false,
@@ -32839,6 +32847,11 @@ impl AdvancedAi {
             let capital_monument_commitment = committed
                 .as_ref()
                 .is_some_and(|(_, item)| self.capital_monument_holds(g, pid, cid, plan, item));
+            // `culture-seat-theater-first`: the claimed Theater Square finishes
+            // while the Culture seat still wants it.
+            let culture_theater_commitment = committed
+                .as_ref()
+                .is_some_and(|(_, item)| self.culture_theater_holds(g, pid, cid, plan, item));
             // `trader-fills-the-idle-route`: the claimed Trader finishes while
             // its slot still stands empty.
             let idle_route_trader_commitment = committed
@@ -32901,6 +32914,7 @@ impl AdvancedAi {
                     || capital_walls_commitment
                     || bound_granary_commitment
                     || capital_monument_commitment
+                    || culture_theater_commitment
                     || idle_route_trader_commitment
                     || backlog_builder_commitment
                     || capped_aqueduct_commitment
@@ -32922,6 +32936,7 @@ impl AdvancedAi {
                     || capital_walls_commitment
                     || bound_granary_commitment
                     || capital_monument_commitment
+                    || culture_theater_commitment
                     || idle_route_trader_commitment
                     || backlog_builder_commitment
                     || capped_aqueduct_commitment
@@ -49838,6 +49853,11 @@ impl AdvancedAi {
             // race and the routine claims. Exact no-op while the gene is off.
             // See `advanced/campus_claims_the_free_slot.rs`.
             self.claim_free_slot_campus(g, pid, &plan);
+            // `culture-seat-theater-first`: a Culture seat's first Theater
+            // Squares, after the Campus claims (which yield those cities) and
+            // ahead of the Prophet race and the routine claims. Exact no-op
+            // while the gene is off. See `advanced/culture_theater_first.rs`.
+            self.claim_culture_theaters(g, pid, &plan);
             // `prophet-builds-its-site`: the Holy Site a Prophet founds on
             // goes first. Exact no-op while the gene is off.
             self.reserve_prophet_site(g, pid, &plan);
