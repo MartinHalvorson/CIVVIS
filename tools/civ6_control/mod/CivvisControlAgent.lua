@@ -11783,6 +11783,29 @@ end;
 -- assigned the Diplomatic lane asks (`VictoryLane`; off with `DiploAllies =
 -- false`): an alliance forbids a war on the ally, which a domination seat's
 -- campaign planner does not price. Bare global for alliance_ask_test.lua.
+-- Whether `subject` is a culture racer at `AllianceCultureRacerShare` of
+-- the bar it must pass (see `CivvisAllianceStep`). Bare global for
+-- alliance_ask_test.lua.
+CivvisAllianceCultureRacer = function(subject, config)
+	config = type(config) == "table" and config or {};
+	local tourists = tonumber(try(function()
+		return Players[subject]:GetCulture():GetTouristsTo();
+	end, 0)) or 0;
+	if tourists <= 0 then return false; end
+	local bar = 0;
+	for _, other in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {}) or {}) do
+		local id = tonumber(other);
+		if id ~= nil and id ~= subject then
+			local domestic = tonumber(try(function()
+				return Players[id]:GetCulture():GetStaycationers();
+			end, 0)) or 0;
+			if domestic > bar then bar = domestic; end
+		end
+	end
+	if bar <= 0 then return false; end
+	return tourists / bar >= (tonumber(config.AllianceCultureRacerShare) or 0.5);
+end;
+
 CivvisAllianceStep = function(player, pid, subject, verb, turn, config)
 	config = type(config) == "table" and config or {};
 	if config.VictoryLane ~= "diplomatic" or config.DiploAllies == false then
@@ -11811,6 +11834,18 @@ CivvisAllianceStep = function(player, pid, subject, verb, turn, config)
 	local asked = CivvisK.allianceAsked[subject];
 	if asked ~= nil and (turn - asked) < (tonumber(config.AllianceRetryTurns) or 5) then
 		return nil, "alliance_cooldown";
+	end
+	-- ★★ NOT WITH A CULTURE RACER. A declared friendship or an alliance
+	-- forbids a war on its partner for thirty turns, and the war on the
+	-- tourism sources (`counter-culture-by-conquest`, armed 2026-10-30) is
+	-- the counter to a culture victory: two of the first four live King
+	-- diplomatic seats lost to one (civvis-20261030T073511Z t174,
+	-- 074500Z t207). A rival whose visiting tourists stand at
+	-- `AllianceCultureRacerShare` (0.5) of the highest domestic count any
+	-- other major holds is not asked -- the same reading the ballot's
+	-- culture counter takes (`GetTouristsTo` over `GetStaycationers`).
+	if CivvisAllianceCultureRacer(subject, config) then
+		return nil, "alliance_culture_racer";
 	end
 	if CivvisTrade.sessions[subject] ~= nil or CivvisTrade.pending[subject] ~= nil
 			or try(function() return DealManager.HasPendingDeal(pid, subject); end, false) then
