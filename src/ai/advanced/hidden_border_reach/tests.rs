@@ -117,3 +117,17 @@ fn the_founding_note_marks_only_a_site_the_gene_allowed() {
         "no unseen border: the old veto would have passed it anyway"
     );
 }
+
+/// The stranded Settler's exhaustion search reads the same yield: the site is
+/// set aside with the gene off and kept with it on.
+#[test]
+fn the_stranded_search_yields_to_our_pressure_too() {
+    let (mut game, home) = capital(6);
+    let site = site_beside_an_unseen_border(&mut game, home, 5);
+    assert!(frontier(false)
+        .exhaustion_site_unpriceable(&game, 0, site)
+        .is_some());
+    assert!(frontier(true)
+        .exhaustion_site_unpriceable(&game, 0, site)
+        .is_none());
+}
