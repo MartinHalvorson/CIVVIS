@@ -7315,6 +7315,10 @@ pub struct AdvancedAi {
     /// funds the defensive Inquisition as a Domination seat does. See
     /// `advanced/defensive_apostle.rs`. Off by default.
     inquisition_defends_the_diplomat: bool,
+    /// `inquisition-answers-a-rival-majority`: the defensive Inquisition's
+    /// "spread our faith first" wait does not hold once a rival faith holds a
+    /// city of ours. See `advanced/defensive_apostle.rs`. Off by default.
+    inquisition_answers_a_rival_majority: bool,
     // ---- append: l-o ------------------------------------------------
     /// `nuclear-goal-needs-a-launcher`: no nuclear war goal on a seat that
     /// cannot launch a device. See `advanced/nuclear_launcher.rs`. Off by
@@ -11290,6 +11294,7 @@ impl AdvancedAi {
             industrial_zone_claims_the_producer_queue: false,
             industrial_zone_claims_the_factory: false,
             inquisition_defends_the_diplomat: false,
+            inquisition_answers_a_rival_majority: false,
             // ---- append: l-o ----------------------------------------
             nuclear_goal_needs_a_launcher: false,
             launcher_war_skips_the_reserve: false,
