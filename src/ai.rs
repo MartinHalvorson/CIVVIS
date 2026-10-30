@@ -15755,6 +15755,12 @@ impl BasicAi {
         Self::first_district_item(g, pid, cid, "campus")
     }
 
+    /// The first Theater Square (or its replacement, Greece's Acropolis) on
+    /// its best site; see `first_district_item`. `culture-seat-theater-first`.
+    pub(crate) fn first_theater_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        Self::first_district_item(g, pid, cid, "theater_square")
+    }
+
     /// This city's first district of `family` (its civilization's
     /// replacement where it has one) on the site with the highest total
     /// yield, when the city would finish it within `FIRST_CAMPUS_MAX_TURNS`.
