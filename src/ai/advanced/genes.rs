@@ -4379,6 +4379,13 @@ pub const GENES: &[Gene] = &[
     // claims a Holy Site in its biggest safe-counterfaith city. See
     // `counterweight_builds_its_source` in `advanced/counterweight_diplomat.rs`.
     Gene { tag: "counterweight-builds-its-source", field: "counterweight_builds_its_source", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_builds_its_source, disable: AdvancedAi::disable_counterweight_builds_its_source },
+    // Live Immortal culture seats 2026-10-30: 38-134 "recovery plan" lines a
+    // game, and Recovery's Faith reserve holds whenever any non-culture unit is
+    // on a menu. 132518Z: a Band (550) or Naturalist (350) for sale with twice
+    // its price banked on 22 turns, 4,384 Faith at t210, none bought. A named
+    // Culture seat in Recovery spends once the bank holds twice the cheapest.
+    // See `advanced/culture_recovery_bank.rs`.
+    Gene { tag: "culture-recovery-spends-the-bank", field: "culture_recovery_spends_the_bank", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_recovery_spends_the_bank, disable: AdvancedAi::disable_culture_recovery_spends_the_bank },
     // 13 live Science-Victory losses 2026-10-30: the first Disrupt Rocketry
     // came 30 turns after the racer's first project (153459Z, Culture), 24
     // (162440Z) and 13 (084235Z), each with a Spy waiting in a leader city
