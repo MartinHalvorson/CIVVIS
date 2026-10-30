@@ -4302,6 +4302,14 @@ pub const GENES: &[Gene] = &[
     // the plan read Recovery. From 16 points the seat researches and adopts
     // both first. See `advanced/diplo_match_point_research.rs`.
     Gene { tag: "diplo-match-point-beelines-the-points", field: "diplo_match_point_beelines", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_match_point_beelines_the_points, disable: AdvancedAi::disable_diplo_match_point_beelines_the_points },
+    // `culture-keeps-every-border-open`: tourism pressure is banked with the
+    // multiplier in force when it is generated, and a rival's Open Borders
+    // grant is +25% against it. The Culture objective bought one grant every
+    // sixth turn and held 0-2 of three rivals at most turn-25 marks of a
+    // native Immortal culture census. Once our tourism reaches 15 a turn, a
+    // Culture seat buys every allowed grant each turn, the bar holder first,
+    // never into the solvency reserve. See `advanced/culture_open_borders.rs`.
+    Gene { tag: "culture-keeps-every-border-open", field: "culture_keeps_every_border_open", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_keeps_every_border_open, disable: AdvancedAi::disable_culture_keeps_every_border_open },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
