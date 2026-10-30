@@ -8482,14 +8482,14 @@ impl AdvancedAi {
         self.science_drive_answers_the_launch = false;
     }
 
-    /// `inquisition-defends-every-lane`.
-    pub fn enable_inquisition_defends_every_lane(&mut self) {
-        self.inquisition_defends_every_lane = true;
+    /// `inquisition-defends-the-diplomat`.
+    pub fn enable_inquisition_defends_the_diplomat(&mut self) {
+        self.inquisition_defends_the_diplomat = true;
     }
 
-    /// The twin of `enable_inquisition_defends_every_lane`.
-    pub fn disable_inquisition_defends_every_lane(&mut self) {
-        self.inquisition_defends_every_lane = false;
+    /// The twin of `enable_inquisition_defends_the_diplomat`.
+    pub fn disable_inquisition_defends_the_diplomat(&mut self) {
+        self.inquisition_defends_the_diplomat = false;
     }
 
     // ---- append: a-b ------------------------------------------------

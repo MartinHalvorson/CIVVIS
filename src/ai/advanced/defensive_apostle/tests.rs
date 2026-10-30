@@ -111,33 +111,31 @@ fn other_lanes_nonfounders_and_disabled_religion_keep_existing_spending() {
     assert!(!ai.defensive_inquisition_ready(&g, 0));
 }
 
-/// `inquisition-defends-every-lane`: a Culture, Diplomatic or Science seat
-/// prepares the Inquisition with the gene; a Religion seat and a seat with
-/// no target never do.
+/// `inquisition-defends-the-diplomat`: a Diplomatic seat prepares the
+/// Inquisition with the gene; every other lane but Domination never does.
 #[test]
-fn inquisition_defends_every_lane_opens_the_peaceful_lanes() {
+fn inquisition_defends_the_diplomat_opens_the_diplomatic_lane() {
     let (g, ai, _) = fixture();
     assert!(
         ai.defensive_inquisition_ready(&g, 0),
         "Domination, as before"
     );
+    let mut diplomat = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    assert!(!diplomat.defensive_inquisition_ready(&g, 0), "off");
+    diplomat.enable_inquisition_defends_the_diplomat();
+    assert!(diplomat.defensive_inquisition_ready(&g, 0), "on");
     for lane in [
         VictoryTarget::Culture,
-        VictoryTarget::Diplomacy,
         VictoryTarget::Science,
+        VictoryTarget::Religion,
+        VictoryTarget::Score,
     ] {
         let mut seat = AdvancedAi::targeting(lane);
-        assert!(!seat.defensive_inquisition_ready(&g, 0), "{lane:?}: off");
-        seat.enable_inquisition_defends_every_lane();
-        assert!(seat.defensive_inquisition_ready(&g, 0), "{lane:?}: on");
-    }
-    for lane in [VictoryTarget::Religion, VictoryTarget::Score] {
-        let mut seat = AdvancedAi::targeting(lane);
-        seat.enable_inquisition_defends_every_lane();
+        seat.enable_inquisition_defends_the_diplomat();
         assert!(!seat.defensive_inquisition_ready(&g, 0), "{lane:?}: never");
     }
     let mut untargeted = AdvancedAi::new();
-    untargeted.enable_inquisition_defends_every_lane();
+    untargeted.enable_inquisition_defends_the_diplomat();
     assert!(
         !untargeted.defensive_inquisition_ready(&g, 0),
         "no target: never"

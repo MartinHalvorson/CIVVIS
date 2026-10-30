@@ -6,15 +6,15 @@ impl AdvancedAi {
     /// for an Apostle, launch the Inquisition, and buy its first defender.
     ///
     /// Domination seats only, as written (#3656). With
-    /// `inquisition-defends-every-lane`, Culture, Diplomatic and Science seats
-    /// too: a Religion seat's Faith belongs to its own race, and a seat with
-    /// no target keeps the old reading.
+    /// `inquisition-defends-the-diplomat`, Diplomatic seats too. Measured on
+    /// paired live-genome seeds (Emperor, 4 players): Diplomatic seats 3 -> 4
+    /// wins of 20, none lost; Culture seats 9 -> 7, both lost to rival
+    /// Diplomatic victories -- so Culture, like Science, Religion and a seat
+    /// with no target, keeps the old reading.
     pub(super) fn defensive_inquisition_ready(&self, g: &Game, pid: usize) -> bool {
         let lane = match self.active_victory_target(g) {
             Some(VictoryTarget::Domination) => true,
-            Some(VictoryTarget::Culture | VictoryTarget::Diplomacy | VictoryTarget::Science) => {
-                self.inquisition_defends_every_lane
-            }
+            Some(VictoryTarget::Diplomacy) => self.inquisition_defends_the_diplomat,
             _ => false,
         };
         if !lane || !g.victory_conditions.religious {
