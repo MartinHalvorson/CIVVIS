@@ -8544,6 +8544,17 @@ impl AdvancedAi {
         self.inquisition_answers_a_rival_majority = false;
     }
 
+    /// Opt-in gene `diplo-seat-statue-harbor`; see
+    /// [`Self::diplo_seat_statue_harbor`].
+    pub fn enable_diplo_seat_statue_harbor(&mut self) {
+        self.diplo_seat_statue_harbor = true;
+    }
+
+    /// The twin of `enable_diplo_seat_statue_harbor`.
+    pub fn disable_diplo_seat_statue_harbor(&mut self) {
+        self.diplo_seat_statue_harbor = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
