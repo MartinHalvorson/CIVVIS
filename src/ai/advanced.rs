@@ -49288,6 +49288,11 @@ impl AdvancedAi {
         // reservation as well — but never against a seat whose own lane is
         // Religion, and never for Kongo, whose Taxis ability makes the faith
         // economy unconditional.
+        // See `diplomatic_lane_refuses_fossil_power`: the baseline governor,
+        // which fills a delegating lane's routine queues, refuses the plants
+        // too.
+        self.base.exclude_fossil_power =
+            self.diplomatic_lane_refuses_fossil_power("coal_power_plant");
         self.base.skip_prophet_race = (skip_prophet_race || religion_race_closed)
             && !g.has_ability(pid, "taxis")
             && active_victory_target != Some(VictoryTarget::Religion);

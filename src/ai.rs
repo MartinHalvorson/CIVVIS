@@ -3120,6 +3120,14 @@ pub struct BasicAi {
     /// build a Spaceport or launch project. The King Gran Colombia game won
     /// by Science at turn 229 while its public plan remained Conquest.
     pub(crate) exclude_space_race: bool,
+    /// Set every turn by an AdvancedAi seat assigned the Diplomatic lane
+    /// (`diplomatic_lane_refuses_fossil_power`): the baseline governor builds
+    /// no Coal or Oil Power Plant. Under the live `lane-delegates-production-2`
+    /// this governor fills an assigned lane's routine queues for the whole
+    /// game, so the strategic scorer's veto alone never reached the
+    /// `industrial-hub` chain (coal first) or the cheapest-building fallback.
+    /// See `fossil_power_excluded`.
+    pub(crate) exclude_fossil_power: bool,
     /// Set by a targeted Science controller while its expansion plan still
     /// has a city deficit.  The flag applies to every route through the
     /// activation-item chooser for this turn, so an ordinary city-production
@@ -5869,6 +5877,7 @@ impl BasicAi {
             culture_defense_theater: false,
             lent_military_floor_base: None,
             exclude_space_race: false,
+            exclude_fossil_power: false,
             defer_low_impact_science_activation_paths: false,
             pantheon_reads_the_board: false,
             apostle_promotion_by_role: false,
@@ -6391,6 +6400,7 @@ impl BasicAi {
             culture_defense_theater: false,
             lent_military_floor_base: None,
             exclude_space_race: false,
+            exclude_fossil_power: false,
             defer_low_impact_science_activation_paths: false,
             pantheon_reads_the_board: false,
             apostle_promotion_by_role: false,
@@ -13442,7 +13452,9 @@ impl BasicAi {
             && !emergency_defense
             && !self.settler_due(g, pid, cid, n_cities, settlers)
         {
-            if let Some(item) = Self::industrial_hub_item(g, pid, cid) {
+            if let Some(item) = Self::industrial_hub_item(g, pid, cid)
+                .filter(|item| !self.fossil_power_excluded(item))
+            {
                 think!(self.journal, Cities, Detail,
                        "The industrial hub takes the build";
                        "{} in {}", crate::reasoning::plain(&format!("{item:?}")),
@@ -14168,7 +14180,9 @@ impl BasicAi {
             .buildings
             .iter()
             .filter(|(b, s)| {
-                !s.wonder && g.can_produce(pid, cid, &Item::Building { building: **b })
+                !s.wonder
+                    && !self.fossil_power_excluded(&Item::Building { building: **b })
+                    && g.can_produce(pid, cid, &Item::Building { building: **b })
             })
             .map(|(b, s)| (s.cost as i64, *b))
             .collect();
@@ -16161,6 +16175,14 @@ impl BasicAi {
                 })
         });
         (!reached && within(&factory)).then_some(factory)
+    }
+
+    /// Whether `exclude_fossil_power` refuses this item: a Coal or Oil Power
+    /// Plant while the flag stands. The Nuclear plant emits nothing.
+    pub(crate) fn fossil_power_excluded(&self, item: &Item) -> bool {
+        self.exclude_fossil_power
+            && matches!(item, Item::Building { building }
+                if matches!(building.as_str(), "coal_power_plant" | "oil_power_plant"))
     }
 
     /// The fewest own cities an `industrial_hub` zone must reach.
@@ -26310,6 +26332,38 @@ mod tests {
             Some(Item::Building {
                 building: crate::name!("coal_power_plant")
             })
+        );
+
+        // `exclude_fossil_power` (a Diplomatic seat): the governor that
+        // fills the delegated queues takes neither fossil plant, from the hub
+        // chain or from the cheapest-building fallback.
+        let coal = Item::Building {
+            building: crate::name!("coal_power_plant"),
+        };
+        let oil = Item::Building {
+            building: crate::name!("oil_power_plant"),
+        };
+        let nuclear = Item::Building {
+            building: crate::name!("nuclear_power_plant"),
+        };
+        let mut stock = BasicAi::new();
+        stock.industrial_hub = true;
+        assert!(!stock.fossil_power_excluded(&coal), "off by default");
+        let mut diplomatic = stock.clone();
+        diplomatic.exclude_fossil_power = true;
+        assert!(diplomatic.fossil_power_excluded(&coal));
+        assert!(diplomatic.fossil_power_excluded(&oil));
+        assert!(!diplomatic.fossil_power_excluded(&nuclear));
+        let pick = |ai: &BasicAi| ai.pick_item(&game, 0, capital, 3, 1, 3, 1, 0, 3, 2, 1);
+        assert_eq!(
+            pick(&stock),
+            Some(coal.clone()),
+            "the hub's stock pick is the coal plant"
+        );
+        let refused = pick(&diplomatic);
+        assert!(
+            refused != Some(coal.clone()) && refused != Some(oil.clone()),
+            "the diplomatic governor picks something else: {refused:?}"
         );
     }
 
