@@ -276,14 +276,15 @@ class TheDedicatedDisplayShowsTheHud(unittest.TestCase):
     one stray click that hid the players overlay hid it for every game after —
     on 2026-09-10 the display beside a live Emperor game showed a bare map."""
 
-    def test_dedicated_mode_shows_only_the_player_hud(self):
+    def test_dedicated_mode_shows_the_player_hud_and_victory_tracker(self):
         source = (REPO / "web" / "assets" / "app.js").read_text(encoding="utf-8")
         gate = source.index('get("display") === "dedicated"')
         # After the saved overlays are read, so the forced values win.
         self.assertGreater(gate, source.index("OVERLAY_STORAGE_KEY) ||"))
         block = source[gate:gate + 400]
         self.assertIn("OVERLAY_VISIBILITY.players = true", block)
-        for name in ("victory", "minimap", "controls", "lenses"):
+        self.assertIn("OVERLAY_VISIBILITY.victory = true", block)
+        for name in ("minimap", "controls", "lenses"):
             self.assertIn(f"OVERLAY_VISIBILITY.{name} = false", block)
 
     def test_the_keeper_opens_the_page_in_dedicated_mode(self):
