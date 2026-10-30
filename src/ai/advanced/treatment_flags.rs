@@ -8472,6 +8472,16 @@ impl AdvancedAi {
         self.culture_seat_theater_first = false;
     }
 
+    /// `diplo-seat-wonder-claim`.
+    pub fn enable_diplo_seat_wonder_claim(&mut self) {
+        self.diplo_seat_wonder_claim = true;
+    }
+
+    /// The twin of `enable_diplo_seat_wonder_claim`.
+    pub fn disable_diplo_seat_wonder_claim(&mut self) {
+        self.diplo_seat_wonder_claim = false;
+    }
+
     /// `science-drive-answers-the-launch`.
     pub fn enable_science_drive_answers_the_launch(&mut self) {
         self.science_drive_answers_the_launch = true;
