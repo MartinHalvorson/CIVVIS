@@ -287,6 +287,30 @@ class TheDedicatedDisplayShowsTheHud(unittest.TestCase):
         for name in ("minimap", "controls", "lenses"):
             self.assertIn(f"OVERLAY_VISIBILITY.{name} = false", block)
 
+    def test_the_tracker_is_the_right_hand_panel_to_the_bottom(self):
+        # Operator, 2026-10-30: the standings span the top; the tracker stands
+        # under them on the right, all the way to the bottom, at every width.
+        source = (REPO / "web" / "assets" / "app.js").read_text(encoding="utf-8")
+        gate = source.index('get("display") === "dedicated"')
+        self.assertIn('document.body.classList.add("display-dedicated")',
+                      source[gate:source.index("\n}\n", gate)])
+        html = INDEX.read_text(encoding="utf-8")
+        start = html.index("body.display-dedicated #maparea #victoryhud {")
+        rule = html[start:html.index("}", start)]
+        self.assertIn("right: var(--panel-edge)", rule)
+        self.assertIn("bottom: var(--panel-edge)", rule)
+        self.assertIn("left: auto", rule)
+        # Two ids and a class plus `body`: outranks the compact band's
+        # `#maparea.player-hud-compact #victoryhud` and its ribbon columns.
+        self.assertIn("body.display-dedicated #maparea #victoryhud .victory-ribbon {", html)
+
+    def test_a_saved_tracker_position_cannot_move_the_panel(self):
+        source = (REPO / "web" / "assets" / "app.js").read_text(encoding="utf-8")
+        loaded = source.index("localStorage.getItem(HUD_LAYOUT_STORAGE_KEY)")
+        dropped = source.index("if (DEDICATED_DISPLAY) delete HUD_LAYOUT.victory;")
+        self.assertGreater(dropped, loaded)
+        self.assertLess(dropped, source.index("HUD_LAYOUT[name] = serializeHudWidget"))
+
     def test_the_keeper_opens_the_page_in_dedicated_mode(self):
         keeper = (Path(__file__).resolve().parent / "ops" / "civvis-display-keeper.mjs").read_text(encoding="utf-8")
         self.assertIn("?display=dedicated", keeper)
