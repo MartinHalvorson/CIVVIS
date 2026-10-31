@@ -5517,6 +5517,11 @@ pub struct AdvancedAi {
     /// the whole turns of walking) instead of `value - 0.7 × wdist`. See
     /// `advanced/builder_travel_turns.rs`. Off by default.
     builder_prices_travel_in_turns: bool,
+    /// `anvil-garrisons-its-melee`: the Anvil around a threatened city with
+    /// no standing walls posts its strongest melee soldier inside the city,
+    /// not a Shooter, and that garrison makes no blow. See
+    /// `advanced/anvil_garrisons_its_melee.rs`. Off by default.
+    anvil_garrisons_its_melee: bool,
     // ---- append: c-d ------------------------------------------------
     /// `domination-targets-land-first`: a Domination seat ranks rivals it can
     /// reach by land ahead of overseas ones in its frontier and capital picks
@@ -10132,6 +10137,9 @@ mod wonder_sites;
 /// `amphibious-siege-train`: a water-locked siege objective's guns and
 /// escorts cross as one group. See `advanced/amphibious_siege_train.rs`.
 mod amphibious_siege_train;
+/// `anvil-garrisons-its-melee`: an unwalled city's Anvil garrisons its
+/// strongest melee soldier. See `advanced/anvil_garrisons_its_melee.rs`.
+mod anvil_garrisons_its_melee;
 mod aqueduct_claims_the_capped_queue;
 /// `astrology-before-the-second-city`: the Prophet race's Astrology before
 /// the second city stands. See `advanced/astrology_before_the_second_city.rs`.
@@ -11183,6 +11191,7 @@ impl AdvancedAi {
             aqueduct_recovery_reservations: RefCell::new(BTreeMap::new()),
             bankruptcy_exits_the_drain: false,
             builder_prices_travel_in_turns: false,
+            anvil_garrisons_its_melee: false,
             // ---- append: c-d ----------------------------------------
             domination_targets_land_first: false,
             defence_holds_under_fire: false,
