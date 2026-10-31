@@ -145,6 +145,44 @@ def set_operator_pace(path: Path, run_tag: str, ms: int) -> bool:
         return False
 
 
+#: Sequence and frame for the out-of-band mirror row, beside the pace's.
+MIRROR_SEQ = 99_004
+MIRROR_FRAME = 994
+
+
+def set_mirror_turn(path: Path, run_tag: str, turn: int | None) -> bool:
+    """Tell the game which turn the CIVVIS page has painted.
+
+    One `mirror` row per run, the painted turn in `x`; the control mod does
+    not end a played turn until that turn is on the page, so Civilization VI
+    never runs more than one turn ahead of it.  ``None`` deletes the row: no
+    page to wait for, and no wait.
+
+    Returns whether the database now says what was asked, exactly as
+    `set_operator_pause` does.
+    """
+    try:
+        import sqlite3
+
+        uri = Path(path).absolute().as_uri() + "?mode=rw"
+        # Short: the caller is the loop that relays boards to the brain, and
+        # a busy channel is simply asked again on its next pass.
+        with sqlite3.connect(uri, uri=True, timeout=0.5) as db:
+            if turn is None:
+                db.execute("DELETE FROM orders WHERE run = ? AND kind = 'mirror'",
+                           (run_tag,))
+            else:
+                db.execute(
+                    "INSERT OR REPLACE INTO orders"
+                    " (run, turn, seq, kind, subject, verb, x, y, frame)"
+                    " VALUES (?, 0, ?, 'mirror', NULL, 'follow', ?, NULL, ?)",
+                    (run_tag, MIRROR_SEQ, int(turn), MIRROR_FRAME),
+                )
+        return True
+    except Exception:
+        return False
+
+
 def set_operator_pause(path: Path, run_tag: str, turn: int | None, paused: bool) -> bool:
     """Hold (or release) the live game at the opening of our next turn.
 

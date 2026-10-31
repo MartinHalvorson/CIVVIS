@@ -7354,6 +7354,11 @@ pub struct AdvancedAi {
     /// city of ours. See `advanced/defensive_apostle.rs`. Off by default.
     inquisition_answers_a_rival_majority: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `launcher-war-serves-every-lane`: off Domination, the space racer
+    /// the launcher war would open on is the denial counter, with war,
+    /// before every other clock. See `advanced/launcher_war_every_lane.rs`.
+    /// Off by default.
+    launcher_war_serves_every_lane: bool,
     /// `nuclear-goal-needs-a-launcher`: no nuclear war goal on a seat that
     /// cannot launch a device. See `advanced/nuclear_launcher.rs`. Off by
     /// default.
@@ -10054,6 +10059,8 @@ mod industrial_zone_claims_the_factory;
 /// `advanced/industrial_zone_claims_the_producer_queue.rs`.
 mod industrial_zone_claims_the_producer_queue;
 mod launcher_war;
+/// `launcher-war-serves-every-lane`: see `advanced/launcher_war_every_lane.rs`.
+mod launcher_war_every_lane;
 mod neighborhood_houses_the_capped_city;
 /// `nuclear-goal-needs-a-launcher`: see `advanced/nuclear_launcher.rs`.
 mod nuclear_launcher;
@@ -11370,6 +11377,7 @@ impl AdvancedAi {
             inquisition_defends_the_diplomat: false,
             inquisition_answers_a_rival_majority: false,
             // ---- append: l-o ----------------------------------------
+            launcher_war_serves_every_lane: false,
             nuclear_goal_needs_a_launcher: false,
             launcher_war_skips_the_reserve: false,
             medina_quarter_houses_the_districts: false,

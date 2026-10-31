@@ -4394,6 +4394,15 @@ pub const GENES: &[Gene] = &[
     // next city until it finds the pad. Needs `racer-keeps-the-spies`. See
     // `advanced/racer_keeps_the_spies.rs`.
     Gene { tag: "racer-spies-search-for-the-pad", field: "racer_spies_search_for_the_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_racer_spies_search_for_the_pad, disable: AdvancedAi::disable_racer_spies_search_for_the_pad },
+    // Live Lv 7 Immortal 2026-10-30: nine Culture/Diplomatic seats lost to a
+    // Science Victory with no war on the racer between its Moon and its
+    // launch, five of them at 0.8x its power or better for most of that window
+    // (224544Z 35/36 turns). `counter-in-lane` answers a Science threat in
+    // lane off Domination, and the launcher war opens only from a Conquest
+    // plan. Off Domination, the racer `launcher_war_opens` names becomes the
+    // Conquest counter. Needs `launcher-war-ignores-the-edge`. See
+    // `advanced/launcher_war_every_lane.rs`.
+    Gene { tag: "launcher-war-serves-every-lane", field: "launcher_war_serves_every_lane", kind: Kind::OptIn, enable: AdvancedAi::enable_launcher_war_serves_every_lane, disable: AdvancedAi::disable_launcher_war_serves_every_lane },
     // Live Immortal seats 2026-10-30 (54 games): the first Builder came at a
     // median turn 26 (scout, Settler, slinger, Settler first), 5% of owned land
     // stood improved at turn 40 against the rivals' 26%, and their population

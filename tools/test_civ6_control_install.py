@@ -1381,7 +1381,9 @@ class ProtectedInstallTest(unittest.TestCase):
         gate = arm.index("if (tonumber(leaderPoints) or 0) >= floor then")
         spend = arm.index("n = budget;")
         free = arm.index("local n = 1;")
-        selection = arm.index("if tonumber(t) == leader then selection = idx; end")
+        # The leader selection goes through `CivvisCongressDenialTarget`, which
+        # never falls back to a target on us when the leader is not offered.
+        selection = arm.index("option, selection = CivvisCongressDenialTarget(targets, leader,")
         probe = arm.index('elseif cfg.CongressVoteProbe ~= false and budget > 1 then')
         self.assertLess(selection, gate)
         self.assertLess(free, gate)

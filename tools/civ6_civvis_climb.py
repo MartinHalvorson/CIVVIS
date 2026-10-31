@@ -37,6 +37,7 @@ import collections
 import json
 import math
 import os
+import random
 import re
 import shutil
 import signal
@@ -81,6 +82,7 @@ import computer_control as desktop_control  # noqa: E402
 # to declare its own, and the copies drifted (see `DEFAULT_CIVVIS_VICTORY`).
 from civ6_play import DEFAULT_CIVVIS_VICTORY as DEFAULT_VICTORY  # noqa: E402
 from civ6_play import ROMAN_LEADER, VICTORY_LANES, resolve_live_leader  # noqa: E402
+from civ6_play import LADDER as DIFFICULTIES, RANDOM_LEADER  # noqa: E402
 from civ6_play import OPTIONS as SETUP_OPTIONS  # noqa: E402
 
 # The map scripts `civ6_play` can drive the Create Game panel to. Taken from
@@ -2655,6 +2657,95 @@ def operator_turn_cap(requested: int, path: Path | None = None,
     return cap
 
 
+#: The seat each game is played from, re-read per game from the verification
+#: policy file (like `CIVVIS_DEAL_SESSIONS`), so the Terminal-owned supervisor,
+#: which reads `CIVVIS_LEADER`/`CIVVIS_MAP`/`CIVVIS_MAP_SIZE` once at its own
+#: start, never has to be restarted to change them. Operator 2026-10-31:
+#: "starting with the next game, lets go with a random leader. always 6p
+#: continents map. play on lv 7 70% of the time and lv 8 30% of the time."
+#:
+#: * `CIVVIS_SEAT_LEADER`: a `LEADER_*` id, or `random` for Civ VI's own Random
+#:   Leader row (see `civ6_play.RANDOM_LEADER`).
+#: * `CIVVIS_SEAT_DIFFICULTY_MIX`: `DIFFICULTY_X:weight,...`, rolled once per
+#:   game; a single difficulty with no weight pins it.
+#: * `CIVVIS_SEAT_MAP` / `CIVVIS_SEAT_MAP_SIZE`: the map script and size (the
+#:   size IS the player count: Small is six).
+#:
+#: Absent keys leave the command line alone. A malformed value is ignored with
+#: a warning, never fatal, as with VICTORY_LANE_FILE: a typo must not stop an
+#: unattended ladder.
+SEAT_KEYS = ("CIVVIS_SEAT_LEADER", "CIVVIS_SEAT_DIFFICULTY_MIX",
+             "CIVVIS_SEAT_MAP", "CIVVIS_SEAT_MAP_SIZE")
+MAP_SIZES = ("MAPSIZE_DUEL", "MAPSIZE_TINY", "MAPSIZE_SMALL", "MAPSIZE_STANDARD",
+             "MAPSIZE_LARGE", "MAPSIZE_HUGE")
+
+
+def _difficulty_mix(raw: str) -> "list[tuple[str, float]] | None":
+    """[(difficulty, weight), ...] from `DIFFICULTY_X:70,DIFFICULTY_Y:30`, else None."""
+    mix = []
+    for part in raw.split(","):
+        name, _, weight = part.strip().partition(":")
+        name = name.strip()
+        try:
+            value = float(weight) if weight.strip() else 1.0
+        except ValueError:
+            return None
+        if name not in DIFFICULTIES or value < 0:
+            return None
+        mix.append((name, value))
+    return mix if mix and sum(w for _, w in mix) > 0 else None
+
+
+def operator_seat(args, path: Path | None = None, warn=None, rng=None) -> dict:
+    """Apply the policy file's per-game seat keys to `args`; returns what was set."""
+    path = VERIFICATION_POLICY_FILE if path is None else path
+    warn = warn or (lambda message: print(message, file=sys.stderr))
+    rng = rng or random.Random()
+    try:
+        text = path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return {}
+    values = {}
+    for line in text.splitlines():
+        key, sep, value = line.split("#", 1)[0].strip().partition("=")
+        if sep and key.strip() in SEAT_KEYS:
+            values[key.strip()] = value.strip().strip("\"'")
+    applied = {}
+    leader = values.get("CIVVIS_SEAT_LEADER")
+    if leader:
+        if leader.lower() == RANDOM_LEADER or re.fullmatch(r"LEADER_[A-Z0-9_]+", leader):
+            applied["leader"] = args.leader = (RANDOM_LEADER if leader.lower() == RANDOM_LEADER
+                                               else leader)
+        else:
+            warn(f"CIVVIS_SEAT_LEADER={leader!r} is neither LEADER_* nor "
+                 f"{RANDOM_LEADER!r}; keeping {args.leader}")
+    raw_mix = values.get("CIVVIS_SEAT_DIFFICULTY_MIX")
+    if raw_mix:
+        mix = _difficulty_mix(raw_mix)
+        if mix is None:
+            warn(f"CIVVIS_SEAT_DIFFICULTY_MIX={raw_mix!r} is not DIFFICULTY_X:weight,...; "
+                 f"keeping {args.difficulty}")
+        else:
+            names, weights = zip(*mix)
+            applied["difficulty"] = args.difficulty = rng.choices(names, weights=weights)[0]
+    game_map = values.get("CIVVIS_SEAT_MAP")
+    if game_map:
+        if game_map in MAP_SCRIPTS:
+            applied["map"] = args.map = game_map
+        else:
+            warn(f"CIVVIS_SEAT_MAP={game_map!r} is not a known map script; keeping {args.map}")
+    size = values.get("CIVVIS_SEAT_MAP_SIZE")
+    if size:
+        if size in MAP_SIZES:
+            applied["map_size"] = args.map_size = size
+        else:
+            warn(f"CIVVIS_SEAT_MAP_SIZE={size!r} is not one of {'|'.join(MAP_SIZES)}; "
+                 f"keeping {args.map_size}")
+    if applied:
+        warn(f"seat policy {path}: {applied}")
+    return applied
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--attempts", type=int, default=10)
@@ -2985,6 +3076,9 @@ def main() -> int:
             ap.error("saved-game diagnostics require --refresh-seconds 0")
         args.refresh_seconds = 0.0
         args.diagnostic_label = args.diagnostic_label.strip()
+    # The seat (leader, difficulty mix, map, size) is re-read per game from the
+    # policy file, ahead of the leader default. See SEAT_KEYS.
+    operator_seat(args)
     args.leader = resolve_live_leader(args.leader)
     # Re-read per game, so the lane can be changed without restarting a
     # supervisor that has held its environment for days. See VICTORY_LANE_FILE.

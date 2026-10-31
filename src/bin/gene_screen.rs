@@ -69,8 +69,9 @@
 //!               [--players N] [--turns N] [--width N] [--height N]
 //!               [--city-states N] [--speed ID] [--map ID] [--victories a,b]
 //!               [--victory-mask rotate:N] [--difficulty RUNG]
-//!               [--difficulty-rotate king:1,emperor:2,immortal:1] [--rivals firaxis-mix]
-//!               [--handicap all|rivals] [--rival-chairs N] [--stock-civs]
+//!               [--difficulty-rotate king:1,emperor:2,immortal:1]
+//!               [--rivals firaxis-mix|firaxis-faithful]
+//!               [--handicap all|rivals] [--rival-chairs N] [--stock-civs] [--trace]
 //!   gene_screen --analyze PATH [PATH ...] [--json OUT] [--interactions]
 //!               [--denial] [--top N] [--by-civ TAG]
 //!   gene_screen --list
@@ -591,13 +592,24 @@ fn is_zero_u8(value: &u8) -> bool {
 /// rotates per game from the seed:
 ///
 /// - `legacy` — [`AdvancedAi::legacy`], the frozen anchor;
-/// - `firaxis-mix` — the deployment genome, [`AdvancedAi::new`], retargeted
-///   at one victory lane drawn in the shares the live Civilization VI ladder
-///   actually loses to: diplomatic 32 : culture 27 : religious 8 : science 4 :
+/// - `firaxis-mix` — the STOCK agent, [`AdvancedAi::new`], retargeted at one
+///   victory lane drawn in the shares the live Civilization VI ladder lost to
+///   in August: diplomatic 32 : culture 27 : religious 8 : science 4 :
 ///   domination 1 ([`FIRAXIS_MIX_LANES`], the Hall of Fame census in
 ///   `docs/eval/2026-08-18-we-screen-against-a-religion-game-and-lose-a-diplomacy-game.md`);
 /// - `random` — a genome with every screened gene on at one half, drawn like
-///   any seat's.
+///   any seat's (under `--deployment-genome`, where nothing is screened, that
+///   is exactly the deployment genome).
+///
+/// ⚠ **`AdvancedAi::new()` is NOT the deployment genome**, whatever this
+/// comment said when the mix was written. Since #3749 (2026-09-24) the
+/// deployment genome is the universe plus the ledger
+/// (`AdvancedAi::enable_engine_repairs`); the stock constructor carries only
+/// the six `Production` genes and `Weights::default().city_target` of 4. At
+/// Immortal behind `--handicap rivals` it holds 3–4 cities to turn 150 and
+/// builds 0.2 wonders by turn 80, against a live Immortal rival's 6 cities and
+/// 3.7 wonders at turn 80 and 9.3 cities at 150. `--rivals firaxis-faithful`
+/// ([`FAITHFUL_KIND`]) seats the deployment genome in every chair instead.
 ///
 /// The rival seat is NOT measured: its row is written with `kind: "rival"`
 /// so every estimator — which reads `kind == "game"` — skips it, and every
@@ -648,16 +660,16 @@ fn rival_settings(
     if handicap_rivals && !rivals {
         return Err(
             "--handicap rivals exempts the measured seats and hands the rung to the rival \
-             chairs, so it needs --rivals firaxis-mix"
+             chairs, so it needs --rivals firaxis-mix|firaxis-faithful"
                 .to_string(),
         );
     }
     let chairs = match rival_chairs {
         None => 1,
         Some(_) if !rivals => {
-            return Err(
-                "--rival-chairs seats rival chairs, so it needs --rivals firaxis-mix".to_string(),
-            )
+            return Err("--rival-chairs seats rival chairs, so it needs --rivals \
+                 firaxis-mix|firaxis-faithful"
+                .to_string())
         }
         Some(0) => return Err("--rival-chairs seats at least one chair".to_string()),
         Some(chairs) if chairs as usize >= players => {
@@ -681,9 +693,110 @@ const FIRAXIS_MIX_LANES: [(VictoryTarget, u64); 5] = [
     (VictoryTarget::Domination, 1),
 ];
 
+/// ⭐ `--rivals firaxis-faithful` (2026-10-31): the one kind every rival chair
+/// of such a batch plays — the deployment genome, handicapped like any rival,
+/// on a lane drawn per chair from [`LIVE_IMMORTAL_LANES`]. No rotation through
+/// [`RIVAL_KINDS`]: the stock agent and the frozen anchor are what made the
+/// mix's win column unreadable against the live Immortal field.
+///
+/// Why: on the 49-game Immortal culture screen of 2026-10-30 the measured seat
+/// won 12/17 games against the stock `firaxis-mix` chair (every one of them on
+/// the diplomatic lane), 4/16 against `legacy` and 0/16 against `random`,
+/// which under `--deployment-genome` is this genome; the live Lv 7 seat won 0
+/// of ~20 culture seats. See `docs/GENE_SCREEN.md`, "firaxis-faithful".
+const FAITHFUL_KIND: &str = "firaxis-faithful";
+
+/// ⭐ THE LANES A `firaxis-faithful` CHAIR PURSUES, weighted by what beat the
+/// live Lv 7 seat: the 53 Immortal Pericles seats of 2026-10-30 (12:26Z on)
+/// finished 19 games to a rival — technology 9, culture 6, religious 4,
+/// diplomatic 0 (`summary.json` `outcome.victory_type` under
+/// `~/civvis-civ6-runs/control/`). `None` is an untargeted chair: no
+/// `retarget`, so the deployment genome picks its own lane as a `random`
+/// rival does. A named constant so it can be re-fit as the six-player Small
+/// corpus accumulates.
+const LIVE_IMMORTAL_LANES: [(Option<VictoryTarget>, u64); 4] = [
+    (Some(VictoryTarget::Science), 9),
+    (Some(VictoryTarget::Culture), 6),
+    (Some(VictoryTarget::Religion), 4),
+    (None, 2),
+];
+
+/// Salt for [`faithful_lane`]'s hash, so it shares no stream with
+/// [`draw_genome`]'s.
+const FAITHFUL_LANE_SALT: u64 = 0xFA17_4F01_1A4E_5EED;
+
+/// The lane `firaxis-faithful` chair `offset` of the game on `seed` pursues:
+/// one draw from [`LIVE_IMMORTAL_LANES`] in their weights, hashed from the
+/// seed AND the chair. Unlike [`firaxis_mix_target`], whose 72-slot sequence
+/// indexed by `seed / 3` hands 96 consecutive seeds the diplomatic lane,
+/// neighbouring seeds and the chairs of one game draw independently, so a
+/// short batch already plays the census's mix. `None` is an untargeted chair.
+fn faithful_lane(seed: u64, offset: usize) -> Option<VictoryTarget> {
+    let total: u64 = LIVE_IMMORTAL_LANES.iter().map(|(_, weight)| weight).sum();
+    let mut rng = Rng::new(
+        seed.wrapping_mul(0x9E37_79B9_7F4A_7C15)
+            .wrapping_add(offset as u64)
+            .wrapping_add(FAITHFUL_LANE_SALT),
+    );
+    let mut slot = rng.next_u64() % total;
+    for &(target, weight) in &LIVE_IMMORTAL_LANES {
+        if slot < weight {
+            return target;
+        }
+        slot -= weight;
+    }
+    LIVE_IMMORTAL_LANES[0].0
+}
+
+/// What a `firaxis-faithful` chair's row says it pursued.
+fn faithful_lane_name(seed: u64, offset: usize) -> &'static str {
+    faithful_lane(seed, offset).map_or("own-choice", VictoryTarget::as_str)
+}
+
+/// The genome every `firaxis-faithful` chair plays: each gene at its ledger
+/// default, read from the registry ([`ledger_default`]) rather than from
+/// `Gene::default_on`, which `--live-genome` rewrites. It is what a
+/// `--deployment-genome` measured seat plays, and no arm's draw reaches it.
+fn faithful_genome(genes: &[Gene]) -> Vec<bool> {
+    genes
+        .iter()
+        .map(|gene| ledger_default(gene.tag, gene.after_setup_on))
+        .collect()
+}
+
+/// A `firaxis-faithful` chair: the deployment genome on its own lane. It
+/// takes no genome argument on purpose — nothing a measured arm drew, and no
+/// `--live-genome` file, can reach the opposition.
+fn faithful_rival_seat(genes: &[Gene], seed: u64, offset: usize) -> AdvancedAi {
+    let mut ai = seat_with_genome(genes, &faithful_genome(genes));
+    if let Some(target) = faithful_lane(seed, offset) {
+        ai.retarget(target);
+    }
+    ai
+}
+
 /// The kind of rival the game on `seed` seats: the three kinds in turn.
 fn rival_kind(seed: u64) -> &'static str {
     RIVAL_KINDS[(seed % RIVAL_KINDS.len() as u64) as usize]
+}
+
+/// The header's `rivals` value for a batch with rival chairs.
+fn batch_rival_mix(faithful: bool) -> &'static str {
+    if faithful {
+        FAITHFUL_KIND
+    } else {
+        "firaxis-mix"
+    }
+}
+
+/// The kind of rival the game on `seed` seats under the batch's `--rivals`:
+/// always [`FAITHFUL_KIND`] for `firaxis-faithful`, else [`rival_kind`].
+fn batch_rival_kind(faithful: bool, seed: u64) -> &'static str {
+    if faithful {
+        FAITHFUL_KIND
+    } else {
+        rival_kind(seed)
+    }
 }
 
 /// The major (by index among the majors) that plays the rival in `game`:
@@ -733,11 +846,11 @@ fn firaxis_mix_target(seed: u64) -> VictoryTarget {
 }
 
 /// Games per rival kind over `games` consecutive seeds from `start_seed`.
-fn rival_games(start_seed: u64, games: usize) -> BTreeMap<String, usize> {
+fn rival_games(faithful: bool, start_seed: u64, games: usize) -> BTreeMap<String, usize> {
     let mut counts = BTreeMap::new();
     for game in 0..games {
         *counts
-            .entry(rival_kind(start_seed + game as u64).to_string())
+            .entry(batch_rival_kind(faithful, start_seed + game as u64).to_string())
             .or_default() += 1;
     }
     counts
@@ -819,6 +932,80 @@ const LIVE_BAND_GAME_TURN: u32 = 60;
 /// The live tech mark, in raw game turns. See `LIVE_BAND_GAME_TURN`.
 const LIVE_PACE_GAME_TURN: u32 = 150;
 
+/// ⭐ THE TRACE MARKS (`--trace`, 2026-10-31), in raw game turns: the turns
+/// the live fidelity census reads a rival at (`events.jsonl` `kind: "state"`
+/// rows, first frame of the turn), plus the decades between them.
+const TRACE_TURNS: [u32; 15] = [
+    10, 20, 30, 40, 50, 60, 70, 80, 90, 100, 125, 150, 175, 200, 225,
+];
+
+/// One major's economy at one [`TRACE_TURNS`] mark: what the live seat's
+/// `public_stats`, `culture`, `science`, `tourism` and `domestic_tourists`
+/// read for a rival, so a native rival's trajectory can be set beside a live
+/// one. Yields are per turn and include the rung's handicap, as the host's do.
+#[derive(Clone, Serialize, Deserialize, Debug, PartialEq)]
+struct TraceSample {
+    turn: u32,
+    alive: bool,
+    /// Whether this seat played the rung's bonuses (`--handicap rivals`
+    /// exempts every measured seat).
+    handicapped: bool,
+    cities: usize,
+    population: i64,
+    production: f64,
+    food: f64,
+    science: f64,
+    culture: f64,
+    gold: f64,
+    faith: f64,
+    tourism: f64,
+    /// ⚠ `Game::domestic_tourists` is not floored at zero, so a seat whose
+    /// people mostly visit others can read negative natively; the host never
+    /// does. Engine-side, recorded here as found.
+    domestic: i64,
+    foreign: i64,
+    techs: usize,
+    civics: usize,
+    wonders: usize,
+    districts: usize,
+}
+
+impl TraceSample {
+    fn observe(g: &Game, pid: usize) -> Self {
+        let cities = g.player_city_ids(pid);
+        let mut yields = g.player_yield_extras(pid);
+        let (mut population, mut wonders, mut districts) = (0i64, 0usize, 0usize);
+        for cid in &cities {
+            yields.add(g.city_yields(*cid));
+            if let Some(city) = g.cities.get(cid) {
+                population += i64::from(city.pop);
+                wonders += city.wonders.len();
+                districts += city.districts.len();
+            }
+        }
+        Self {
+            turn: g.turn,
+            alive: g.players[pid].alive,
+            handicapped: !g.is_handicap_exempt(pid),
+            cities: cities.len(),
+            population,
+            production: yields.production,
+            food: yields.food,
+            science: yields.science,
+            culture: yields.culture,
+            gold: yields.gold,
+            faith: yields.faith,
+            tourism: g.tourism_per_turn(pid),
+            domestic: g.domestic_tourists(pid),
+            foreign: g.foreign_tourists(pid),
+            techs: g.players[pid].techs.len(),
+            civics: g.players[pid].civics.len(),
+            wonders,
+            districts,
+        }
+    }
+}
+
 /// One seat of one screened game, written to the JSONL file and read back by
 /// `--analyze`. A game yields one row per major seat.
 #[derive(Clone, Serialize, Deserialize, Debug)]
@@ -831,6 +1018,11 @@ struct Row {
     /// in older batches means unmeasured, never a zero-valued trajectory.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     trajectory: Vec<civvis::ai::player::PaceSample>,
+    /// ⭐ `--trace`: this seat's economy at every [`TRACE_TURNS`] mark it
+    /// lived to, rival chairs included. Empty — and so absent from the row —
+    /// without the flag.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    trace: Vec<TraceSample>,
     /// `game` for a screened seat. (Files written by the earlier paired designs
     /// also hold `anchor` rows; those are skipped by every estimate here.)
     kind: String,
@@ -1986,6 +2178,12 @@ struct Profile {
     difficulty_rotate: Option<DifficultyRotation>,
     /// ⭐ Whether one major seat per game plays a fixed rival ([`RIVAL_KINDS`]).
     rivals: bool,
+    /// ⭐ `--rivals firaxis-faithful`: every rival chair is [`FAITHFUL_KIND`]
+    /// instead of the rotating mix. Only meaningful with `rivals`.
+    faithful: bool,
+    /// ⭐ `--trace`: write every major's [`TraceSample`]s at [`TRACE_TURNS`]
+    /// onto its row. Off by default, so a row is byte for byte what it was.
+    trace: bool,
     /// ⭐ Rival chairs per game ([`rival_offset`]); one is the 2026-08-25 mix.
     rival_chairs: usize,
     /// ⭐ `--handicap rivals`: every measured seat is exempt from the rung's
@@ -2130,7 +2328,7 @@ fn play_game(
     // instrument that could price it.
     world.native_competitions = profile.native_competitions;
     let pinned = pinned_seats(profile.players, game, &profile.field);
-    let kind = rival_kind(seed);
+    let kind = batch_rival_kind(profile.faithful, seed);
     let mut majors = Vec::new();
     let mut ais: Vec<AdvancedAi> = (0..world.players.len())
         .map(|pid| {
@@ -2141,6 +2339,11 @@ fn play_game(
                 majors.push(pid);
                 match (pinned.get(index).copied().flatten(), rival_chair(index)) {
                     (Some(target), _) => field_seat(target, &profile.field_genes),
+                    // ⭐ A faithful chair is built from the registry alone:
+                    // `genomes[index]` — the arm's draw — never reaches it.
+                    (None, Some(offset)) if profile.faithful => {
+                        faithful_rival_seat(genes, seed, offset)
+                    }
                     (None, Some(offset)) => {
                         rival_seat(kind, rival_lane_seed(seed, offset), genes, &genomes[index])
                     }
@@ -2172,10 +2375,16 @@ fn play_game(
     let mut cities_at_live_band: Option<Vec<usize>> = None;
     let mut techs_at_live_pace: Option<Vec<usize>> = None;
     let mut trajectories = vec![Vec::new(); world.players.len()];
+    let mut traces: Vec<Vec<TraceSample>> = vec![Vec::new(); world.players.len()];
     run_game_observed(&mut world, &mut ais, |g| {
         if g.turn.is_multiple_of(25) {
             for &pid in &majors {
                 trajectories[pid].push(civvis::ai::player::PaceSample::observe(g, pid));
+            }
+        }
+        if profile.trace && TRACE_TURNS.contains(&g.turn) {
+            for &pid in &majors {
+                traces[pid].push(TraceSample::observe(g, pid));
             }
         }
         if techs_at_pace.is_none() && g.turn >= pace_turn {
@@ -2222,6 +2431,7 @@ fn play_game(
             );
             row.victories_off = closed.clone();
             row.trajectory = trajectories[seat].clone();
+            row.trace = std::mem::take(&mut traces[seat]);
             row.victory_portfolio = Some(ais[seat].victory_portfolio_report());
             row.player_target = civvis::ai::player::target_for(seed, index, &profile.target_mix)
                 .map_or("civvis", |target| target.as_str())
@@ -2294,6 +2504,8 @@ fn play_game(
                         row.rival_target = firaxis_mix_target(rival_lane_seed(seed, offset))
                             .as_str()
                             .to_string();
+                    } else if kind == FAITHFUL_KIND {
+                        row.rival_target = faithful_lane_name(seed, offset).to_string();
                     }
                 }
                 None if profile.rivals => row.rival_mix = "measured".to_string(),
@@ -2350,6 +2562,7 @@ fn row_for_seat(
         player_target: String::new(),
         victory_portfolio: None,
         trajectory: Vec::new(),
+        trace: Vec::new(),
         kind: "game".to_string(),
         game: index,
         pair: 0,
@@ -5468,6 +5681,19 @@ fn rivals_line(header: &Header) -> String {
     if header.rivals.is_empty() {
         return "rivals: none — every major draws a genome and is measured".to_string();
     }
+    if header.rivals == FAITHFUL_KIND {
+        return format!(
+            "rivals: ⭐ {} — {} per game play the deployment genome, each on a lane drawn \
+             per chair from the live Immortal census (science 9 : culture 6 : religious 4 : \
+             own choice 2); those seats are not measured · handicap: {}",
+            header.rivals,
+            match header.rival_chairs {
+                0 | 1 => "one chair".to_string(),
+                chairs => format!("{chairs} chairs"),
+            },
+            handicap_read(header)
+        );
+    }
     format!(
         "rivals: ⭐ {} — {} per game play a fixed opponent, rotating {} from the seed ({}); \
          those seats are not measured · handicap: {}",
@@ -5504,7 +5730,8 @@ struct RivalReport {
     handicap: String,
     /// Rival chairs per game; a pre-2026-09-08 file seated one.
     rival_chairs: usize,
-    /// Kind, games, games the rival itself won — in [`RIVAL_KINDS`] order.
+    /// Kind, games, games the rival itself won — in [`RIVAL_KINDS`] order, or
+    /// the one [`FAITHFUL_KIND`] of a `firaxis-faithful` batch.
     kinds: Vec<(String, usize, usize)>,
     /// Per gene past the bar: tag, whole-batch win Δ, (Δ, se, seats) per
     /// kind in `kinds` order, and whether every kind's sign agrees with the
@@ -5555,7 +5782,12 @@ fn rival_report(header: &Header, rows: &[Row]) -> Option<RivalReport> {
     if header.rivals.is_empty() && kind_of_game.is_empty() {
         return None;
     }
-    let kinds: Vec<(String, usize, usize)> = RIVAL_KINDS
+    let mix: &[&str] = if header.rivals == FAITHFUL_KIND {
+        &[FAITHFUL_KIND]
+    } else {
+        &RIVAL_KINDS
+    };
+    let kinds: Vec<(String, usize, usize)> = mix
         .iter()
         .map(|&kind| {
             let games = kind_of_game.values().filter(|(k, _)| *k == kind).count();
@@ -5956,7 +6188,17 @@ fn usage() -> ! {
          the majors' rung: [--difficulty RUNG] (default {}) or [--difficulty-rotate king:1,emperor:2,immortal:1] \
          drawn per game from the seed in those shares; barbarians stay at {}\n       \
          the rival mix: [--rivals firaxis-mix] seats one fixed opponent per game — legacy anchor / \
-         deployment genome retargeted at a live-census lane / random genome, in turn — that is not measured\n       \
+         STOCK agent (AdvancedAi::new, not the deployment genome) retargeted at an August-census lane / \
+         random genome, in turn — that is not measured\n       \
+         the faithful field: [--rivals firaxis-faithful] seats the deployment genome in EVERY rival chair \
+         (no rotation), built from the ledger alone so no arm's draw or --live-genome reaches it, each chair \
+         on a lane hashed from (seed, chair) over science 9 : culture 6 : religious 4 : own choice 2; the live \
+         shape since 2026-10-31 is the screen's own default board (6p 74x46 continents, 9 city-states = Small), \
+         so add only --difficulty immortal|deity --handicap rivals --rival-chairs 5 \
+         (the Lv 7 corpus of 2026-10-30 was 4p Tiny: --players 4 --width 60 --height 38 --city-states 6 --map pangaea)\n       \
+         the rival trajectories: [--trace] writes every major's economy (cities, population, yields, tourism, \
+         tourists, techs, civics, wonders, districts) at turns 10..100 by tens, 125, 150, 175, 200, 225 onto its \
+         row as `trace`; rows are unchanged without it\n       \
          the handicapped rivals: [--handicap all|rivals] (default all; rivals exempts every measured seat from \
          the rung's bonuses so only the rival chairs play with them, as the live seat meets Emperor) \
          [--rival-chairs N] (default 1, at most players-1); both need --rivals\n       \
@@ -6210,14 +6452,21 @@ fn main() {
     }
     // ⭐ THE RIVAL MIX. One chair per game plays a fixed opponent that is
     // never measured; see `RIVAL_KINDS`.
-    let rivals = match text(&args, "--rivals").as_deref() {
-        None | Some("none") => false,
-        Some("firaxis-mix") => true,
+    // ⭐ `firaxis-faithful` seats the deployment genome in every rival chair
+    // instead of the rotation; see `FAITHFUL_KIND`.
+    let (rivals, faithful) = match text(&args, "--rivals").as_deref() {
+        None | Some("none") => (false, false),
+        Some("firaxis-mix") => (true, false),
+        Some(FAITHFUL_KIND) => (true, true),
         Some(other) => {
-            eprintln!("unknown --rivals {other:?}; the mix is firaxis-mix (or none)");
+            eprintln!(
+                "unknown --rivals {other:?}; the mix is firaxis-mix, the deployment-genome \
+                 field is {FAITHFUL_KIND} (or none)"
+            );
             std::process::exit(2);
         }
     };
+    let trace = present(&args, "--trace");
     let handicap_arg = text(&args, "--handicap");
     let rival_chairs_arg =
         present(&args, "--rival-chairs").then(|| number(&args, "--rival-chairs", 1).max(0) as u64);
@@ -6545,12 +6794,12 @@ fn main() {
             .map(|rotation| rotation.games_by_rung(start_seed, games_to_play))
             .unwrap_or_default(),
         rivals: if rivals {
-            "firaxis-mix".to_string()
+            batch_rival_mix(faithful).to_string()
         } else {
             String::new()
         },
         rival_games: if rivals {
-            rival_games(start_seed, games_to_play)
+            rival_games(faithful, start_seed, games_to_play)
         } else {
             BTreeMap::new()
         },
@@ -6615,6 +6864,8 @@ fn main() {
         difficulty,
         difficulty_rotate,
         rivals,
+        faithful,
+        trace,
         rival_chairs,
         handicap_rivals,
     };
@@ -6648,6 +6899,7 @@ fn main() {
                     // ⭐ A `random` rival plays every screened gene at one
                     // half — the draw's own machinery, a flat prior.
                     if rivals
+                        && !faithful
                         && rival_kind(seed) == "random"
                         && rival_offset(players, game, rival_chairs, seat).is_some()
                     {
@@ -6775,6 +7027,7 @@ mod tests {
             player_target: String::new(),
             victory_portfolio: None,
             trajectory: Vec::new(),
+            trace: Vec::new(),
             kind: "game".into(),
             game,
             pair: 0,
@@ -8134,7 +8387,7 @@ mod tests {
             vec![333, 333, 333]
         );
         assert_eq!(
-            rival_games(26_081_900, 999)
+            rival_games(false, 26_081_900, 999)
                 .values()
                 .copied()
                 .collect::<Vec<_>>(),
@@ -8179,6 +8432,184 @@ mod tests {
         assert!(rival_seat("random", 1, &genes, &genome)
             .victory_target()
             .is_none());
+    }
+
+    /// ⭐ `firaxis-faithful`: one kind in every game, and a lane hashed per
+    /// (seed, chair) that keeps the census's shares, never runs in blocks,
+    /// and splits the chairs of one game.
+    #[test]
+    fn firaxis_faithful_seats_one_kind_and_draws_each_chairs_lane() {
+        for seed in 29_500_000u64..29_500_300 {
+            assert_eq!(batch_rival_kind(true, seed), FAITHFUL_KIND);
+            assert_eq!(batch_rival_kind(false, seed), rival_kind(seed));
+            assert_eq!(faithful_lane(seed, 2), faithful_lane(seed, 2));
+        }
+        assert_eq!(
+            rival_games(true, 29_500_000, 99),
+            BTreeMap::from([(FAITHFUL_KIND.to_string(), 99)])
+        );
+        assert_eq!(batch_rival_mix(true), FAITHFUL_KIND);
+        assert_eq!(batch_rival_mix(false), "firaxis-mix");
+        // The census's shares over 21,000 games of five chairs.
+        let total: u64 = LIVE_IMMORTAL_LANES.iter().map(|(_, weight)| weight).sum();
+        let mut lanes: BTreeMap<&str, usize> = BTreeMap::new();
+        let draws = 21_000 * 5;
+        for seed in 0u64..21_000 {
+            for chair in 0..5 {
+                *lanes.entry(faithful_lane_name(seed, chair)).or_default() += 1;
+            }
+        }
+        for (target, weight) in LIVE_IMMORTAL_LANES {
+            let name = target.map_or("own-choice", VictoryTarget::as_str);
+            let share = lanes[name] as f64 / draws as f64;
+            let want = weight as f64 / total as f64;
+            assert!(
+                (share - want).abs() < 0.01,
+                "{name}: {share:.4} vs {want:.4}"
+            );
+        }
+        assert_eq!(
+            lanes.keys().copied().collect::<Vec<_>>(),
+            ["culture", "own-choice", "religious", "science"]
+        );
+        // ⚠ No blocks: `firaxis_mix_target` hands 96 consecutive seeds one
+        // lane; the faithful draw mixes inside any short window, the 49-game
+        // window of the 2026-10-30 screen included.
+        for start in [0u64, 29_500_000, 29_500_105, 31_000_000] {
+            let window: BTreeSet<&str> = (start..start + 24)
+                .map(|seed| faithful_lane_name(seed, 0))
+                .collect();
+            assert!(window.len() >= 3, "seeds {start}..+24 drew {window:?}");
+        }
+        let all_one_lane = (0u64..200)
+            .filter(|&seed| {
+                (0..5)
+                    .map(|chair| faithful_lane(seed, chair))
+                    .collect::<Vec<_>>()
+                    .windows(2)
+                    .all(|pair| pair[0] == pair[1])
+            })
+            .count();
+        assert!(
+            all_one_lane < 10,
+            "{all_one_lane} of 200 games gave every chair one lane"
+        );
+        // The seat retargets at its lane, and an own-choice chair at nothing.
+        let genes = gene_table();
+        for seed in 0u64..40 {
+            for chair in 0..3 {
+                assert_eq!(
+                    faithful_rival_seat(&genes, seed, chair).victory_target(),
+                    faithful_lane(seed, chair)
+                );
+            }
+        }
+        assert!((0u64..200).any(|seed| faithful_lane(seed, 0).is_none()));
+    }
+
+    /// ⭐ THE ARM NEVER REACHES THE OPPOSITION. A faithful chair plays the
+    /// ledger's deployment genome — what a `--deployment-genome` measured seat
+    /// draws — whatever the arms drew and whatever `--live-genome` rewrote,
+    /// and `faithful_rival_seat` takes no genome to be handed one.
+    #[test]
+    fn the_arms_genome_never_reaches_a_faithful_chair() {
+        let genes = gene_table();
+        let deployment = faithful_genome(&genes);
+        assert_eq!(
+            deployment,
+            genes.iter().map(|gene| gene.default_on).collect::<Vec<_>>(),
+            "the faithful chair plays the ledger default"
+        );
+        assert!(deployment.iter().any(|&on| on) && deployment.iter().any(|&on| !on));
+        // It is exactly what a measured seat of a `--deployment-genome` run
+        // draws, in every seat of every game.
+        let tags: Vec<String> = genes.iter().map(|gene| gene.tag.to_string()).collect();
+        let families = families_of(&tags);
+        let nothing = vec![false; genes.len()];
+        let pinned = on_probabilities(&genes, &nothing, 0.25, 0.75, &families);
+        for game in 0..4 {
+            for seat in 0..6 {
+                assert_eq!(
+                    draw_genome(29_500_000, game, 6, seat, &pinned, &families),
+                    deployment
+                );
+            }
+        }
+        // A screen's arms draw genomes that differ from it, seat by seat...
+        let screened = vec![true; genes.len()];
+        let drawn = on_probabilities(&genes, &screened, 0.25, 0.75, &families);
+        let arms: Vec<Vec<bool>> = (0..6)
+            .map(|seat| draw_genome(29_500_000, 0, 6, seat, &drawn, &families))
+            .collect();
+        assert!(arms.iter().all(|arm| *arm != deployment));
+        // ...and `--live-genome` rewrites every `default_on`, but the faithful
+        // genome is read from the ledger, not from the table it rewrote.
+        let mut rewritten = gene_table();
+        apply_live_genome(&mut rewritten, &BTreeSet::new());
+        assert!(rewritten.iter().all(|gene| !gene.default_on));
+        assert_eq!(faithful_genome(&rewritten), deployment);
+    }
+
+    /// ⭐ `--trace` adds a `trace` array to a row and nothing else: a row
+    /// without one serializes exactly as before, and one with it round-trips.
+    #[test]
+    fn a_trace_is_absent_without_the_flag_and_round_trips_with_it() {
+        let plain = test_row(0, 0, "1", false);
+        let text = serde_json::to_string(&plain).expect("serializes");
+        assert!(!text.contains("\"trace\""), "{text}");
+        let mut traced = plain.clone();
+        traced.trace = vec![TraceSample {
+            turn: 80,
+            alive: true,
+            handicapped: true,
+            cities: 6,
+            population: 45,
+            production: 134.5,
+            food: 60.0,
+            science: 89.5,
+            culture: 94.9,
+            gold: 40.0,
+            faith: 10.0,
+            tourism: 41.3,
+            domestic: 35,
+            foreign: 2,
+            techs: 29,
+            civics: 20,
+            wonders: 4,
+            districts: 12,
+        }];
+        let text = serde_json::to_string(&traced).expect("serializes");
+        let back: Row = serde_json::from_str(&text).expect("parses");
+        assert_eq!(back.trace, traced.trace);
+        let without: Row =
+            serde_json::from_str(&serde_json::to_string(&plain).expect("serializes"))
+                .expect("parses");
+        assert!(without.trace.is_empty());
+        assert!(TRACE_TURNS.windows(2).all(|pair| pair[0] < pair[1]));
+        for mark in [20, 40, 60, 80, 100, 125, 150, 175] {
+            assert!(
+                TRACE_TURNS.contains(&mark),
+                "the live census reads turn {mark}"
+            );
+        }
+    }
+
+    /// The faithful header names its one kind in the banner and the report.
+    #[test]
+    fn a_faithful_header_reads_one_kind() {
+        let mut header = screen_header(&["a"]);
+        header.rivals = FAITHFUL_KIND.into();
+        header.handicap = HANDICAP_RIVALS.into();
+        header.rival_chairs = 5;
+        assert!(rivals_line(&header).contains("deployment genome"));
+        assert!(rivals_line(&header).contains("5 chairs"));
+        let mut rows = vec![test_row(0, 0, "1", false), test_row(0, 1, "1", true)];
+        for row in &mut rows {
+            row.kind = "rival".into();
+            row.rival_mix = FAITHFUL_KIND.into();
+        }
+        let report = rival_report(&header, &rows).expect("reports");
+        assert_eq!(report.kinds, vec![(FAITHFUL_KIND.to_string(), 1, 1)]);
     }
 
     /// ⭐ Rival chairs: `N` consecutive chairs from the rotating rival index,
