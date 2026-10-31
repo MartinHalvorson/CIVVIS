@@ -8832,6 +8832,28 @@ impl AdvancedAi {
         self.stalled_spreader_braves_the_march = false;
     }
 
+    /// Opt-in gene `anvil-garrisons-its-melee`; see
+    /// [`Self::anvil_garrisons_its_melee`].
+    pub fn enable_anvil_garrisons_its_melee(&mut self) {
+        self.anvil_garrisons_its_melee = true;
+    }
+
+    /// The twin of `enable_anvil_garrisons_its_melee`.
+    pub fn disable_anvil_garrisons_its_melee(&mut self) {
+        self.anvil_garrisons_its_melee = false;
+    }
+
+    /// Opt-in gene `defence-holds-under-fire`; see
+    /// [`Self::defence_holds_under_fire`].
+    pub fn enable_defence_holds_under_fire(&mut self) {
+        self.defence_holds_under_fire = true;
+    }
+
+    /// The twin of `enable_defence_holds_under_fire`.
+    pub fn disable_defence_holds_under_fire(&mut self) {
+        self.defence_holds_under_fire = false;
+    }
+
     /// Opt-in gene `religion-seat-defends-its-faith`; see
     /// [`Self::religion_seat_defends_its_faith`].
     pub fn enable_religion_seat_defends_its_faith(&mut self) {
