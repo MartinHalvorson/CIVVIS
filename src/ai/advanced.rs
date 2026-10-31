@@ -7875,6 +7875,11 @@ pub struct AdvancedAi {
     /// `BasicAi::opening_builder_after_the_first_settler`. Off by default.
     opening_builder_after_the_first_settler: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `religion-lane-spreads-from-founding`: a Religion-target seat that has
+    /// founded keeps the Religion plan's spreading posture, Faith reserve and
+    /// idle-queue Shrine/Temple production while its plan reads Expansion.
+    /// See `advanced/religion_lane_spreads.rs`. Off by default.
+    religion_lane_spreads_from_founding: bool,
     /// `rival-pace` (`gene_screen --rival-pace`): `Some(extra)` caps the
     /// plan's `desired_cities` at the live Immortal field's city curve plus
     /// `extra` (`rival_pace::city_cap`). `None` everywhere but a calibrated
@@ -9641,6 +9646,8 @@ mod live_gp_commitment;
 /// unescorted Settlers and Builders, unpillaged tiles — taken by movement
 /// and closed by peace. See `advanced/opportunistic_war.rs`.
 mod opportunistic_war;
+/// `religion-lane-spreads-from-founding`: see `advanced/religion_lane_spreads.rs`.
+mod religion_lane_spreads;
 /// A short, defender-only declaration shock. See
 /// `advanced/surprise_defense.rs`.
 mod surprise_defense;
@@ -11487,6 +11494,7 @@ impl AdvancedAi {
             luxury_swap_asks_2: false,
             opening_builder_after_the_first_settler: false,
             // ---- append: p-r ----------------------------------------
+            religion_lane_spreads_from_founding: false,
             rival_city_pace: None,
             prey_is_declared_on: false,
             prophet_race_takes_divine_spark: false,
@@ -28079,7 +28087,9 @@ impl AdvancedAi {
     /// idle. A large surplus may start a secondary campaign, while an active
     /// spreader keeps it moving after the initial purchase lowers the bank.
     fn religious_offensive_posture(&self, g: &Game, pid: usize, strategy: GrandStrategy) -> bool {
-        if strategy == GrandStrategy::Religion {
+        // `religion-lane-spreads-from-founding`: a Religion-target founder in
+        // any plan. See `advanced/religion_lane_spreads.rs`.
+        if strategy == GrandStrategy::Religion || self.religion_lane_spreads(g, pid) {
             return true;
         }
         if !g.victory_conditions.religious {
@@ -49937,7 +49947,8 @@ impl AdvancedAi {
         }
         self.advanced_great_people(g, pid, self.great_person_lane(g, pid, &plan));
         if self.victory_planning && g.victory_conditions.religious {
-            let committed = plan.strategy == GrandStrategy::Religion;
+            let committed =
+                plan.strategy == GrandStrategy::Religion || self.religion_lane_spreads(g, pid);
             let offensive = self.religious_offensive_posture(g, pid, plan.strategy);
             // A secondary campaign spends only the bank above a substantial
             // reserve, leaving Culture agents able to buy Naturalists or Rock
@@ -50075,6 +50086,13 @@ impl AdvancedAi {
             if self.victory_planning && plan.strategy == GrandStrategy::Religion {
                 self.religious_production(g, pid);
             } else if self.victory_planning && g.victory_conditions.religious {
+                // `religion-lane-spreads-from-founding`: a Religion-target
+                // founder in another plan still fills idle Holy Site queues
+                // with its Shrine and Temple. See
+                // `advanced/religion_lane_spreads.rs`.
+                if self.religion_lane_spreads(g, pid) {
+                    self.religious_production(g, pid);
+                }
                 // A founder outside the Religion lane still gets its Temple,
                 // or its Apostles and Inquisitors exist only on paper. See
                 // `founder_temple` (exact no-op while that flag is off).

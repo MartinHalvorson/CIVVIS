@@ -8733,6 +8733,17 @@ impl AdvancedAi {
         self.immortal_skips_the_prophet_race = false;
     }
 
+    /// Opt-in gene `religion-lane-spreads-from-founding`; see
+    /// [`Self::religion_lane_spreads_from_founding`].
+    pub fn enable_religion_lane_spreads_from_founding(&mut self) {
+        self.religion_lane_spreads_from_founding = true;
+    }
+
+    /// The twin of `enable_religion_lane_spreads_from_founding`.
+    pub fn disable_religion_lane_spreads_from_founding(&mut self) {
+        self.religion_lane_spreads_from_founding = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
