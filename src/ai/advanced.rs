@@ -5532,6 +5532,10 @@ pub struct AdvancedAi {
     /// are not displaced by a civilian build. See `advanced/defence_holds.rs`.
     /// Off by default.
     defence_holds_under_fire: bool,
+    /// `capital-walls-at-any-ratio`: at Immortal and Deity the capital's walls
+    /// arm on any watched major's soldier at our door. See
+    /// `advanced/capital_walls_at_any_ratio.rs`. Off by default.
+    capital_walls_at_any_ratio: bool,
     /// `diplo-seat-statue-harbor`: a Diplomacy seat's strongest coastal city
     /// builds the Harbor the Statue of Liberty needs. See
     /// `advanced/diplo_statue_harbor.rs`. Off by default.
@@ -8335,6 +8339,12 @@ pub struct AdvancedAi {
     /// `racer-spies-search-for-the-pad`: the leader's cities a Spy of ours
     /// stood in without the offer, and the turn it last did.
     racer_spy_searched: BTreeMap<u32, u32>,
+    /// `religion-seat-defends-its-faith`: a seat aiming at the Religious
+    /// Victory opens the founder defences the Domination lane already has:
+    /// the defensive Inquisition, the Holy City guard, the founder's
+    /// spreaders kept home, and (faithless) the homeland pass. See
+    /// `AdvancedAi::religion_seat_or_domination`. Off by default.
+    religion_seat_defends_its_faith: bool,
     // ---- append: s-s ------------------------------------------------
     /// `stalled-spreader-braves-the-march`: on a Religion seat, a spreader
     /// held three turns running by the apostle evasion yields only to a
@@ -8974,6 +8984,11 @@ pub struct AdvancedAi {
     /// threats are barbarians founds where it stands despite the tile risk.
     /// See `advanced/settler_raiders.rs`.
     settler_founds_under_raiders: bool,
+    /// `science-seat-allies`: a seat aiming at Science allies a safe
+    /// neighbour, never the leading science rival or a rival with a landed
+    /// space project, and the live binary passes its alliances to the host.
+    /// See `advanced/culture_seat_allies.rs`. Off by default.
+    science_seat_allies: bool,
     // ---- append: t-z ------------------------------------------------
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
@@ -9813,6 +9828,9 @@ mod food_focus_grows_the_small_city;
 
 /// `capital-monument-after-the-second-city`: see `advanced/capital_monument.rs`.
 mod capital_monument;
+
+/// `capital-walls-at-any-ratio`: see `advanced/capital_walls_at_any_ratio.rs`.
+mod capital_walls_at_any_ratio;
 
 /// `culture-seat-theater-first`: see `advanced/culture_theater_first.rs`.
 mod culture_theater_first;
@@ -11205,6 +11223,7 @@ impl AdvancedAi {
             // ---- append: c-d ----------------------------------------
             domination_targets_land_first: false,
             defence_holds_under_fire: false,
+            capital_walls_at_any_ratio: false,
             diplo_seat_statue_harbor: false,
             culture_routes_reach_every_rival: false,
             culture_seat_monuments: false,
@@ -11665,6 +11684,7 @@ impl AdvancedAi {
             racer_spies_search_for_the_pad: false,
             racer_spy_found_pads: BTreeSet::new(),
             racer_spy_searched: BTreeMap::new(),
+            religion_seat_defends_its_faith: false,
             // ---- append: s-s ----------------------------------------
             stalled_spreader_braves_the_march: false,
             spreader_hold_streaks: RefCell::new(BTreeMap::new()),
@@ -11781,6 +11801,7 @@ impl AdvancedAi {
             siege_moves_under_the_wing: false,
             science_drive_answers_the_launch: false,
             settler_founds_under_raiders: false,
+            science_seat_allies: false,
             // ---- append: t-z ----------------------------------------
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,
@@ -50272,7 +50293,11 @@ impl AdvancedAi {
                 && g.victory_conditions.religious
                 && self.counterweight_faithless(g, pid)
                 && (plan.strategy != GrandStrategy::Religion
-                    || active_victory_target == Some(VictoryTarget::Domination))
+                    || active_victory_target == Some(VictoryTarget::Domination)
+                    // `religion-seat-defends-its-faith`: a Religion seat that
+                    // lost the founding race still defends its homeland.
+                    || (self.religion_seat_defends_its_faith
+                        && active_victory_target == Some(VictoryTarget::Religion)))
             {
                 // Every other strategy still defends its homeland: a rival's
                 // religious victory needs a majority in every living major,

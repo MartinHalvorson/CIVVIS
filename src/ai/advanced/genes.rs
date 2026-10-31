@@ -4537,6 +4537,28 @@ pub const GENES: &[Gene] = &[
     // at t150-180 against the leader's 11-13. Under the gene the target is
     // the larger of the two. See `advanced/land_grab_outlasts.rs`.
     Gene { tag: "land-grab-outlasts-the-opening", field: "land_grab_outlasts_the_opening", kind: Kind::OptIn, enable: AdvancedAi::enable_land_grab_outlasts_the_opening, disable: AdvancedAi::disable_land_grab_outlasts_the_opening },
+    // The operator's non-Diplomatic Lv 7 lane (2026-10-31) seats Science
+    // first, and the live alliance gate passed alliances only for the
+    // Diplomatic lane (and Culture under `culture-seat-allies`): every
+    // Research Alliance `research-alliance-first` proposed on a Science seat
+    // was dropped. A Science seat allies its nearest safe rival, never the
+    // leading science rival or a space racer. See
+    // `advanced/culture_seat_allies.rs`.
+    Gene { tag: "science-seat-allies", field: "science_seat_allies", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_allies, disable: AdvancedAi::disable_science_seat_allies },
+    // `capital-walls-at-any-ratio`: 8 of 18 located Immortal city losses
+    // were the capital, and the attacker's power ratio barely told it apart
+    // from neighbours that never declared (medians 2.69 against 3.0); live
+    // civvis-20261030T201608Z lost an unwalled Athens to a 1.41x Egypt. At
+    // Immortal and Deity the capital's walls arm on any watched major soldier
+    // at our door. See `advanced/capital_walls_at_any_ratio.rs`.
+    Gene { tag: "capital-walls-at-any-ratio", field: "capital_walls_at_any_ratio", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_walls_at_any_ratio, disable: AdvancedAi::disable_capital_walls_at_any_ratio },
+    // The operator's non-Diplomatic Lv 7 lane (2026-10-31) rolls Religion
+    // seats, and -3b's audit found every founder defence gated to Domination
+    // (and Diplomacy): the defensive Inquisition, the Holy City guard, the
+    // founder's spreaders kept home, the faithless homeland pass. A Religious
+    // Victory needs our faith to hold our own cities too. Opens them for a
+    // seat aiming at Religion. See `defensive_apostle.rs`.
+    Gene { tag: "religion-seat-defends-its-faith", field: "religion_seat_defends_its_faith", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_defends_its_faith, disable: AdvancedAi::disable_religion_seat_defends_its_faith },
     // `religion-seat-founds-first`: the live 6p Immortal race is decided by
     // t30-37, and a Religion seat's Holy Site waits for its third city
     // (`expansion-before-prophet`): t29 and t36 in two lost races, none in a
