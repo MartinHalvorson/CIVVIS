@@ -1427,6 +1427,21 @@ struct FrameDelivery {
 }
 
 impl FrameDelivery {
+    /// The furthest frame any attached page reports having painted.
+    ///
+    /// A live mirror publishes every board at sequence 0 (`/load`, not the
+    /// stepper), so the sequence alone ties between two pages and the seat
+    /// whose id sorts last won, whatever it had drawn. The live Civilization
+    /// VI game waits on this turn (`tools/civ6_control/mirror_sync.py`), so a
+    /// second, backgrounded tab must not stand in for the page that is
+    /// keeping up: the turn breaks the tie.
+    fn furthest_painted(&self) -> Option<SpectatorFrame> {
+        self.seats
+            .values()
+            .filter_map(|seat| seat.painted)
+            .max_by_key(|frame| (frame.sequence, frame.turn))
+    }
+
     /// Forget the pages that stopped asking. A seat costs a cached copy of the
     /// world's tiles, and a closed tab must not go on holding turns open for a
     /// viewer that is not there to read them.
@@ -1756,11 +1771,7 @@ impl Shared {
         let mut delivery = lock_or_recover(&self.frame_delivery);
         delivery.retire_departed(Instant::now());
         let missed = delivery.missed;
-        let painted = delivery
-            .seats
-            .values()
-            .filter_map(|seat| seat.painted)
-            .max_by_key(|frame| frame.sequence);
+        let painted = delivery.furthest_painted();
         (missed, painted, delivery.seats.len(), delivery.autoplayed)
     }
 

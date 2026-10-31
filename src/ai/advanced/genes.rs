@@ -4331,7 +4331,7 @@ pub const GENES: &[Gene] = &[
     // civvis-20261030T123145Z held a Settler out from t50 past t80, at peace,
     // after sixteen "rival border whose city may be hidden" refusals, and
     // retired at t88 on four cities. The unresolved-border veto yields where
-    // our own cities press the site (population times closeness, 30 or more).
+    // our own cities press the site (population times closeness, 20 or more).
     // See `advanced/hidden_border_reach.rs`.
     Gene { tag: "hidden-border-yields-to-our-pressure", field: "hidden_border_yields_to_our_pressure", kind: Kind::OptIn, enable: AdvancedAi::enable_hidden_border_yields_to_our_pressure, disable: AdvancedAi::disable_hidden_border_yields_to_our_pressure },
     // The founder's Inquisition reserve holds only while the Apostle is five
