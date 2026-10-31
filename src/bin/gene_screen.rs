@@ -73,7 +73,7 @@
 //!               [--rivals firaxis-mix|firaxis-faithful]
 //!               [--handicap all|rivals] [--rival-chairs N] [--stock-civs] [--trace]
 //!               [--rival-rung RUNG|-N] [--rival-pace] [--rival-victory-pace PCT]
-//!               [--rival-late-science PCT]
+//!               [--rival-late-science PCT] [--rival-space-floor TECHS]
 //!   gene_screen --analyze PATH [PATH ...] [--json OUT] [--interactions]
 //!               [--denial] [--top N] [--by-civ TAG]
 //!   gene_screen --list
@@ -1952,6 +1952,10 @@ struct Header {
     /// which every earlier file played. Recorded like `rival_rung`.
     #[serde(default, skip_serializing_if = "is_zero_u32")]
     rival_late_science: u32,
+    /// ⭐ `--rival-space-floor` (2026-10-31): the techs a rival chair needed
+    /// before a space project, or 0 for none, which every earlier file played.
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    rival_space_floor: u32,
     /// ⭐ The binary that played these games. Absent in files written before
     /// 2026-08-23, which `tools/genes.py` grandfathers as history and
     /// marks `pre-fingerprint` rather than accepting silently.
@@ -2320,6 +2324,9 @@ struct Profile {
     /// ⭐ `--rival-late-science`: the share of their Science the rival chairs
     /// keep from Online turn 100 (`GameOptions::ai_late_science_pct`).
     rival_late_science: Option<u32>,
+    /// ⭐ `--rival-space-floor`: the techs a rival chair needs before a space
+    /// project (`GameOptions::ai_space_tech_floor`).
+    rival_space_floor: Option<u32>,
     /// ⭐ Rival chairs per game ([`rival_offset`]); one is the 2026-08-25 mix.
     rival_chairs: usize,
     /// ⭐ `--handicap rivals`: every measured seat is exempt from the rung's
@@ -2457,6 +2464,7 @@ fn play_game(
         ai_yield_rung,
         ai_space_project_cost_pct: profile.rival_victory_pace,
         ai_late_science_pct: profile.rival_late_science,
+        ai_space_tech_floor: profile.rival_space_floor,
         ..GameOptions::new(
             profile.players,
             profile.width,
@@ -4993,6 +5001,7 @@ fn read_rows(paths: &[String]) -> (Header, Vec<Row>) {
                                 || first.rival_pace != found.rival_pace
                                 || first.rival_victory_pace != found.rival_victory_pace
                                 || first.rival_late_science != found.rival_late_science
+                                || first.rival_space_floor != found.rival_space_floor
                                 || first.all_seats != found.all_seats
                                 || first.design != found.design
                                 || first.prior != found.prior
@@ -5908,6 +5917,12 @@ fn calibration_read(header: &Header) -> String {
             header.rival_late_science
         ));
     }
+    if header.rival_space_floor > 0 {
+        line.push_str(&format!(
+            ", space projects from {} techs",
+            header.rival_space_floor
+        ));
+    }
     line
 }
 
@@ -6692,7 +6707,12 @@ fn main() {
     // Science from Online turn 100 (`GameOptions::ai_late_science_pct`).
     let rival_late_science = present(&args, "--rival-late-science")
         .then(|| number(&args, "--rival-late-science", 100).clamp(1, 1000) as u32);
-    if (rival_victory_pace.is_some() || rival_late_science.is_some())
+    // ⭐ `--rival-space-floor TECHS`: no rival space project before TECHS techs
+    // (`GameOptions::ai_space_tech_floor`).
+    let rival_space_floor = present(&args, "--rival-space-floor")
+        .then(|| number(&args, "--rival-space-floor", 0).clamp(0, 200) as u32)
+        .filter(|floor| *floor > 0);
+    if (rival_victory_pace.is_some() || rival_late_science.is_some() || rival_space_floor.is_some())
         && (!faithful || handicap_arg.as_deref() != Some(HANDICAP_RIVALS))
     {
         eprintln!(
@@ -7055,6 +7075,7 @@ fn main() {
         rival_pace,
         rival_victory_pace: rival_victory_pace.unwrap_or(0),
         rival_late_science: rival_late_science.unwrap_or(0),
+        rival_space_floor: rival_space_floor.unwrap_or(0),
         deployment_genome,
         design: "independent".to_string(),
         prior: probabilities.clone(),
@@ -7116,6 +7137,7 @@ fn main() {
         rival_pace,
         rival_victory_pace,
         rival_late_science,
+        rival_space_floor,
         rival_chairs,
         handicap_rivals,
     };
@@ -7265,6 +7287,7 @@ mod tests {
             rival_pace: false,
             rival_victory_pace: 0,
             rival_late_science: 0,
+            rival_space_floor: 0,
             design: "independent".into(),
             prior: vec![0.5; genes.len()],
             p_on: 0.5,
@@ -8924,6 +8947,8 @@ mod tests {
         let mut late = again.clone();
         late.rival_late_science = 85;
         assert!(rivals_line(&late).contains("85% of their Science from turn 100"));
+        late.rival_space_floor = 58;
+        assert!(rivals_line(&late).contains("space projects from 58 techs"));
     }
 
     /// The faithful header names its one kind in the banner and the report.

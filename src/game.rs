@@ -5817,6 +5817,12 @@ pub struct GameOptions {
     /// is 100. A calibration knob for `gene_screen --rival-late-science`: the
     /// native rival out-researches the live Firaxis AI from about turn 100.
     pub ai_late_science_pct: Option<u32>,
+    /// ⭐ The techs a handicapped AI major must know before it may start one
+    /// of the four space projects. `None` — the default, and every live game —
+    /// is no floor. A calibration knob for `gene_screen --rival-space-floor`:
+    /// the native rival beelines the space branch and launches its first
+    /// satellite knowing ~50 techs, the live Firaxis AI knowing ~59.
+    pub ai_space_tech_floor: Option<u32>,
     /// Optional pre-game team assignment for each major seat. An empty vector
     /// means free-for-all; otherwise it must contain exactly `players`
     /// entries. Equal non-`None` values place those seats on one team.
@@ -5906,6 +5912,7 @@ impl GameOptions {
             ai_yield_rung: None,
             ai_space_project_cost_pct: None,
             ai_late_science_pct: None,
+            ai_space_tech_floor: None,
             teams: Vec::new(),
             disaster_intensity: DEFAULT_DISASTER_INTENSITY,
             game_modes: BTreeSet::new(),
@@ -6423,6 +6430,10 @@ pub struct Game {
     /// `GameOptions::ai_late_science_pct`. `None` in older saves.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ai_late_science_pct: Option<u32>,
+    /// The techs a handicapped AI major needs before a space project. See
+    /// `GameOptions::ai_space_tech_floor`. `None` in older saves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ai_space_tech_floor: Option<u32>,
     /// The published game whose rules this world is played by. Kept on the
     /// save alongside the rest of the setup so a restart offers what was
     /// actually played, rather than today's default.
@@ -7381,6 +7392,8 @@ struct GameSer {
     ai_space_project_cost_pct: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     ai_late_science_pct: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ai_space_tech_floor: Option<u32>,
     #[serde(default)]
     events: Vec<Event>,
     #[serde(default)]
@@ -7649,6 +7662,7 @@ impl From<GameSer> for Game {
             ai_yield_rung: s.ai_yield_rung,
             ai_space_project_cost_pct: s.ai_space_project_cost_pct,
             ai_late_science_pct: s.ai_late_science_pct,
+            ai_space_tech_floor: s.ai_space_tech_floor,
             mods: s.mods,
             events: s.events.into(),
             base_ruleset: s.base_ruleset,
@@ -7908,6 +7922,7 @@ impl From<Game> for GameSer {
             ai_yield_rung: g.ai_yield_rung,
             ai_space_project_cost_pct: g.ai_space_project_cost_pct,
             ai_late_science_pct: g.ai_late_science_pct,
+            ai_space_tech_floor: g.ai_space_tech_floor,
             mods: g.mods,
             events: g.events.into(),
             base_ruleset: g.base_ruleset,
@@ -8257,6 +8272,7 @@ impl Game {
             ai_yield_rung,
             ai_space_project_cost_pct,
             ai_late_science_pct,
+            ai_space_tech_floor,
             teams,
             disaster_intensity,
             game_modes,
@@ -8411,6 +8427,7 @@ impl Game {
             ai_yield_rung,
             ai_space_project_cost_pct,
             ai_late_science_pct,
+            ai_space_tech_floor,
             base_ruleset,
             start_era,
             future_era,
@@ -9288,30 +9305,48 @@ impl Game {
         self.handicap_exempt.contains(&pid)
     }
 
-    /// The factor on `project`'s cost for `pid`: `ai_space_project_cost_pct`
-    /// over 100 for one of the four space projects built by a handicapped AI
-    /// major, else 1. Always 1 when the option is unset, which every live game
-    /// and every save written before it is.
-    pub fn space_project_cost_scale(&self, pid: usize, project: &str) -> f64 {
-        let Some(pct) = self.ai_space_project_cost_pct else {
-            return 1.0;
-        };
-        let space = matches!(
+    /// One of the four space projects a Science victory is built from.
+    pub fn is_space_project(project: &str) -> bool {
+        matches!(
             project,
             "launch_earth_satellite"
                 | "launch_moon_landing"
                 | "launch_mars_colony"
                 | "exoplanet_expedition"
-        );
-        let rival =
-            self.players.get(pid).is_some_and(|player| {
-                !player.is_minor && !player.is_barbarian && !player.is_free_city
-            }) && !self.is_handicap_exempt(pid)
-                && !self.is_human_seat(pid);
-        if space && rival {
-            f64::from(pct) / 100.0
-        } else {
-            1.0
+        )
+    }
+
+    /// A handicapped AI major: the seats the calibration knobs reach.
+    fn calibrated_rival_seat(&self, pid: usize) -> bool {
+        self.players
+            .get(pid)
+            .is_some_and(|player| !player.is_minor && !player.is_barbarian && !player.is_free_city)
+            && !self.is_handicap_exempt(pid)
+            && !self.is_human_seat(pid)
+    }
+
+    /// The factor on `project`'s cost for `pid`: `ai_space_project_cost_pct`
+    /// over 100 for one of the four space projects built by a handicapped AI
+    /// major, else 1. Always 1 when the option is unset, which every live game
+    /// and every save written before it is.
+    pub fn space_project_cost_scale(&self, pid: usize, project: &str) -> f64 {
+        match self.ai_space_project_cost_pct {
+            Some(pct) if Self::is_space_project(project) && self.calibrated_rival_seat(pid) => {
+                f64::from(pct) / 100.0
+            }
+            _ => 1.0,
+        }
+    }
+
+    /// Whether `pid` may start `project` under `ai_space_tech_floor`: a
+    /// handicapped AI major needs that many techs for a space project. Always
+    /// true when the option is unset.
+    pub fn space_project_tech_floor_met(&self, pid: usize, project: &str) -> bool {
+        match self.ai_space_tech_floor {
+            Some(floor) if Self::is_space_project(project) && self.calibrated_rival_seat(pid) => {
+                self.players[pid].techs.len() >= floor as usize
+            }
+            _ => true,
         }
     }
 

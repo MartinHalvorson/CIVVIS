@@ -67,3 +67,26 @@ fn late_science_scales_the_rivals_science_from_the_mark() {
     );
     assert_eq!(g.handicap_yield_pct(0).science, 0.0, "exempt");
 }
+
+/// `ai_space_tech_floor`: a handicapped AI major may not start a space
+/// project before it knows that many techs; an exempt seat and any other
+/// project are never held.
+#[test]
+fn the_space_floor_holds_only_the_rivals_space_projects() {
+    let mut g = Game::new_full(2, 30, 18, 4_293, 300, 0, false);
+    g.handicap_exempt.insert(0);
+    assert!(
+        g.space_project_tech_floor_met(1, "launch_earth_satellite"),
+        "unset"
+    );
+    g.ai_space_tech_floor = Some(58);
+    assert!(!g.space_project_tech_floor_met(1, "launch_earth_satellite"));
+    assert!(g.space_project_tech_floor_met(1, "manhattan_project"));
+    assert!(
+        g.space_project_tech_floor_met(0, "launch_earth_satellite"),
+        "exempt"
+    );
+    let techs: Vec<_> = g.rules.techs.keys().take(58).copied().collect();
+    g.players[1].techs.extend(techs);
+    assert!(g.space_project_tech_floor_met(1, "launch_earth_satellite"));
+}

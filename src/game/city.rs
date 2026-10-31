@@ -7700,6 +7700,10 @@ impl Game {
                 }
             }
             Item::Project { project } => {
+                // `GameOptions::ai_space_tech_floor`: true unless set.
+                if !self.space_project_tech_floor_met(pid, project.as_str()) {
+                    return false;
+                }
                 if project == "repair_outer_defenses" {
                     let max = self.city_max_wall_hp(city);
                     return max > 0
