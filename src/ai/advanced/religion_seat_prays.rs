@@ -24,17 +24,27 @@
 //!
 //! **What the gene does.** For a Religion-target seat with no religion, no
 //! Prophet in hand and a Prophet still open (`prophet_race_open_for`), while
-//! our Prophet points are below the Prophet's price, the idle, unthreatened
-//! city that produces most among those with a standing Holy Site starts Holy
-//! Site Prayers. It runs right after `religion-seat-founds-first`'s claim,
-//! before the opening book's branch. It never takes a busy queue, and it
-//! stops the turn the points cover the price, the Prophet is in hand or the
-//! race closes; the Shrine and everything after the founding stay the
-//! existing path's.
+//! our Prophet points plus the current rate up to the race deadline
+//! ([`PRAYER_DEADLINE_STANDARD`]) fall short of the Prophet's price, the idle,
+//! unthreatened city that produces most among those with a standing Holy Site
+//! starts Holy Site Prayers. It runs right after `religion-seat-founds-first`'s
+//! claim, before the opening book's branch, and never takes a busy queue. A
+//! seat already on pace (Divine Spark, a Shrine) does not pray at all; at one
+//! point a turn from t16 it prays twice. The Shrine and everything after the
+//! founding stay the existing path's.
+//!
+//! **Why the deadline (calibrated probe, 2026-10-31).** Praying until the
+//! points covered the price founded by t30 in 14 of 20 seats against 0 of 11,
+//! but held the capital off its Settlers: cities at t80 5 against 7. The
+//! deadline keeps the Prayers to the race's actual shortfall.
 //!
 //! Off, or for a seat not aiming at Religion, nothing changes.
 
 use super::*;
+
+/// Standard turns by which the founding Prophet must be paid for: the live 6p
+/// Immortal race closed at t37-51 Online (about 55-77 Standard), so t36 Online.
+pub(super) const PRAYER_DEADLINE_STANDARD: u32 = 54;
 
 impl AdvancedAi {
     fn holy_site_prayers() -> Item {
@@ -45,8 +55,9 @@ impl AdvancedAi {
 
     /// The idle Holy Site city whose Prayers the race wants now. `None` with
     /// the gene off, for another target, once founded or a Prophet is in
-    /// hand, with the race closed, once the points cover the price, or when
-    /// no idle, unthreatened Holy Site city can pray.
+    /// hand, with the race closed, once the points and the rate up to the
+    /// deadline cover the price, or when no idle, unthreatened Holy Site city
+    /// can pray.
     pub(super) fn religion_seat_prayer_city(
         &self,
         g: &Game,
@@ -66,7 +77,15 @@ impl AdvancedAi {
             return None;
         }
         let points = player.gpp.get("prophet").copied().unwrap_or(0.0);
-        if points >= g.gp_cost(pid, "prophet") {
+        let rate = g
+            .great_person_points_per_turn(pid)
+            .get("prophet")
+            .copied()
+            .unwrap_or(0.0);
+        let left = g
+            .standard_duration(PRAYER_DEADLINE_STANDARD)
+            .saturating_sub(g.turn);
+        if points + rate * f64::from(left) >= g.gp_cost(pid, "prophet") {
             return None;
         }
         let prayers = Self::holy_site_prayers();
@@ -101,6 +120,7 @@ impl AdvancedAi {
         let name = g.cities[&cid].name.clone();
         let points = g.players[pid].gpp.get("prophet").copied().unwrap_or(0.0);
         let cost = g.gp_cost(pid, "prophet");
+        let deadline = g.standard_duration(PRAYER_DEADLINE_STANDARD);
         if g.apply(
             pid,
             &Action::Produce {
@@ -113,7 +133,8 @@ impl AdvancedAi {
             think!(self.journal(), Faith, Decision,
                    "{name} prays for the Prophet";
                    "religion-seat-prays-for-the-prophet: {points:.0} of {cost:.0} Prophet points, \
-                    {} of {} religions founded, an idle queue",
+                    short of the price by the t{deadline} deadline; {} of {} religions founded, \
+                    an idle queue",
                    g.religions_founded(), g.max_religions());
         }
     }
