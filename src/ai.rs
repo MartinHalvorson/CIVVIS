@@ -406,6 +406,7 @@ mod naval_demand;
 mod opening_builder;
 #[cfg(test)]
 mod policy_growth_tests;
+mod retainers_garrison;
 mod scout_first;
 mod scout_inference;
 mod siege_support;
@@ -3910,6 +3911,13 @@ pub struct BasicAi {
     /// reads the policy income paid to the player (`player_policy_yields`)
     /// beside the cities' yields. Set by the Advanced gene; off by default.
     pub(crate) deck_reads_player_income: bool,
+    /// `retainers-garrison-the-short-cities`: while Retainers is slotted, an
+    /// idle land soldier garrisons each Amenity-short city. See
+    /// `retainers_garrison.rs`. Set by the Advanced gene; off by default.
+    pub(crate) retainers_garrison_the_short_cities: bool,
+    /// Runtime state for `retainers_garrison_the_short_cities`: the city each
+    /// claiming soldier holds.
+    pub(crate) retainers_garrison_claims: BTreeMap<u32, u32>,
     /// `deck-prices-growth`: the policy counterfactual prices each city's
     /// growth surplus (`Weights::pol_growth` at the Food weight), so housing
     /// and amenity cards are worth the growth they release. Set by the
@@ -6008,6 +6016,8 @@ impl BasicAi {
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             deck_reads_player_income: false,
+            retainers_garrison_the_short_cities: false,
+            retainers_garrison_claims: BTreeMap::new(),
             deck_prices_growth: false,
             solvency_first_trade_slot: false,
             builder_tries_the_next_tile: false,
@@ -6103,6 +6113,16 @@ impl BasicAi {
     /// Disable the baseline half of the capital-settler-after-completion gene.
     pub(crate) fn disable_capital_settler_after_completion(&mut self) {
         self.capital_settler_after_completion = false;
+    }
+
+    /// See `retainers_garrison_the_short_cities`.
+    pub(crate) fn enable_retainers_garrison_the_short_cities(&mut self) {
+        self.retainers_garrison_the_short_cities = true;
+    }
+
+    /// The twin of `enable_retainers_garrison_the_short_cities`.
+    pub(crate) fn disable_retainers_garrison_the_short_cities(&mut self) {
+        self.retainers_garrison_the_short_cities = false;
     }
 
     /// See `deck_prices_growth`.
@@ -6555,6 +6575,8 @@ impl BasicAi {
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             deck_reads_player_income: false,
+            retainers_garrison_the_short_cities: false,
+            retainers_garrison_claims: BTreeMap::new(),
             deck_prices_growth: false,
             solvency_first_trade_slot: false,
             builder_tries_the_next_tile: false,
@@ -20423,6 +20445,11 @@ impl BasicAi {
         }
         if self.modernization_step(g, pid, uid) {
             return true;
+        }
+        // `retainers-garrison-the-short-cities`: an idle soldier garrisons
+        // an Amenity-short city while Retainers is slotted.
+        if let Some(acted) = self.retainers_garrison_step(g, pid, uid) {
+            return acted;
         }
         if self.patrol_step(g, pid, uid) {
             return true;

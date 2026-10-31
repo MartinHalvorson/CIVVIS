@@ -8349,6 +8349,10 @@ pub struct AdvancedAi {
     /// spreaders kept home, and (faithless) the homeland pass. See
     /// `AdvancedAi::religion_seat_or_domination`. Off by default.
     religion_seat_defends_its_faith: bool,
+    /// `retainers-garrison-the-short-cities`: with Retainers slotted, an idle
+    /// soldier garrisons each Amenity-short city. The behaviour lives on
+    /// `BasicAi::retainers_garrison_the_short_cities`. Off by default.
+    retainers_garrison_the_short_cities: bool,
     // ---- append: s-s ------------------------------------------------
     /// `stalled-spreader-braves-the-march`: on a Religion seat, a spreader
     /// held three turns running by the apostle evasion yields only to a
@@ -11694,6 +11698,7 @@ impl AdvancedAi {
             racer_spy_found_pads: BTreeSet::new(),
             racer_spy_searched: BTreeMap::new(),
             religion_seat_defends_its_faith: false,
+            retainers_garrison_the_short_cities: false,
             // ---- append: s-s ----------------------------------------
             stalled_spreader_braves_the_march: false,
             spreader_hold_streaks: RefCell::new(BTreeMap::new()),

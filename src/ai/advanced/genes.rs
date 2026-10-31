@@ -4581,6 +4581,12 @@ pub const GENES: &[Gene] = &[
     // 99 t80 seats holding it, Retainers in 18 of 89. The deck prices each
     // city's growth surplus. See `BasicAi::deck_prices_growth`.
     Gene { tag: "deck-prices-growth", field: "deck_prices_growth", kind: Kind::OptIn, enable: AdvancedAi::enable_deck_prices_growth, disable: AdvancedAi::disable_deck_prices_growth },
+    // Live Immortal 2026-10-31, deck-prices-growth seats with Retainers
+    // slotted: 1,014 Amenity-short city-turns, 110 (11%) holding a soldier;
+    // at t140 106 of 118 short cities stood at -1. At peace 1.4-1.8 units a
+    // city, 72-79% within three tiles of one. An idle soldier garrisons each
+    // short city while Retainers is slotted. See `ai/retainers_garrison.rs`.
+    Gene { tag: "retainers-garrison-the-short-cities", field: "retainers_garrison_the_short_cities", kind: Kind::OptIn, enable: AdvancedAi::enable_retainers_garrison_the_short_cities, disable: AdvancedAi::disable_retainers_garrison_the_short_cities },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
