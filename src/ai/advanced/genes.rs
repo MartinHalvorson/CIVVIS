@@ -4464,6 +4464,12 @@ pub const GENES: &[Gene] = &[
     // reads the same exemption. Needs `faith-war-is-no-front` (or -2). See
     // `war_policy_declaration` in `advanced/war_policy.rs`.
     Gene { tag: "board-ignores-the-faith-war", field: "board_ignores_the_faith_war", kind: Kind::OptIn, enable: AdvancedAi::enable_board_ignores_the_faith_war, disable: AdvancedAi::disable_board_ignores_the_faith_war },
+    // On a Religion seat, `spreader-steps-out-of-the-apostle` pins the corps
+    // in a pocket while an out-trading Apostle camps on every approach: live
+    // Immortal 063431Z logged 821 holds on 43 turns (one Missionary t118-177)
+    // and spread 5 times all game. After three held turns a spreader yields
+    // only to a lethal blow for six turns. See `advanced/stalled_spreader.rs`.
+    Gene { tag: "stalled-spreader-braves-the-march", field: "stalled_spreader_braves_the_march", kind: Kind::OptIn, enable: AdvancedAi::enable_stalled_spreader_braves_the_march, disable: AdvancedAi::disable_stalled_spreader_braves_the_march },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

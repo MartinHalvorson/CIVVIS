@@ -8287,6 +8287,14 @@ pub struct AdvancedAi {
     /// stood in without the offer, and the turn it last did.
     racer_spy_searched: BTreeMap<u32, u32>,
     // ---- append: s-s ------------------------------------------------
+    /// `stalled-spreader-braves-the-march`: on a Religion seat, a spreader
+    /// held three turns running by the apostle evasion yields only to a
+    /// lethal blow. See `advanced/stalled_spreader.rs`. Off by default.
+    stalled_spreader_braves_the_march: bool,
+    /// Per religious unit, the first and last turn of its current streak of
+    /// marches held by the apostle evasion. Read only with
+    /// `stalled-spreader-braves-the-march`.
+    spreader_hold_streaks: RefCell<BTreeMap<u32, (u32, u32)>>,
     /// `surprise-watch-holds-its-ratio`: a met major at twice our power seen
     /// within ten tiles of the original capital or an unwalled frontier city
     /// keeps that city's walls armed for the walls' ten-turn window, whatever
@@ -9676,6 +9684,9 @@ mod war_target_walls;
 
 /// `embassy-finds-the-capital`: see `advanced/embassy_capital.rs`.
 mod embassy_capital;
+
+/// `stalled-spreader-braves-the-march`: see `advanced/stalled_spreader.rs`.
+mod stalled_spreader;
 
 /// `racer-keeps-the-spies`: see `advanced/racer_keeps_the_spies.rs`.
 mod racer_keeps_the_spies;
@@ -11571,6 +11582,8 @@ impl AdvancedAi {
             racer_spy_found_pads: BTreeSet::new(),
             racer_spy_searched: BTreeMap::new(),
             // ---- append: s-s ----------------------------------------
+            stalled_spreader_braves_the_march: false,
+            spreader_hold_streaks: RefCell::new(BTreeMap::new()),
             surprise_watch_holds_its_ratio: false,
             surprise_watch_latches: BTreeMap::new(),
             stage_reads_the_muster_breakers: false,

@@ -8755,6 +8755,17 @@ impl AdvancedAi {
         self.board_ignores_the_faith_war = false;
     }
 
+    /// Opt-in gene `stalled-spreader-braves-the-march`; see
+    /// [`Self::stalled_spreader_braves_the_march`].
+    pub fn enable_stalled_spreader_braves_the_march(&mut self) {
+        self.stalled_spreader_braves_the_march = true;
+    }
+
+    /// The twin of `enable_stalled_spreader_braves_the_march`.
+    pub fn disable_stalled_spreader_braves_the_march(&mut self) {
+        self.stalled_spreader_braves_the_march = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
