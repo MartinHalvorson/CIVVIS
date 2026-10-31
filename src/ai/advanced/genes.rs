@@ -4537,6 +4537,14 @@ pub const GENES: &[Gene] = &[
     // at t150-180 against the leader's 11-13. Under the gene the target is
     // the larger of the two. See `advanced/land_grab_outlasts.rs`.
     Gene { tag: "land-grab-outlasts-the-opening", field: "land_grab_outlasts_the_opening", kind: Kind::OptIn, enable: AdvancedAi::enable_land_grab_outlasts_the_opening, disable: AdvancedAi::disable_land_grab_outlasts_the_opening },
+    // The operator's non-Diplomatic Lv 7 lane (2026-10-31) seats Science
+    // first, and the live alliance gate passed alliances only for the
+    // Diplomatic lane (and Culture under `culture-seat-allies`): every
+    // Research Alliance `research-alliance-first` proposed on a Science seat
+    // was dropped. A Science seat allies its nearest safe rival, never the
+    // leading science rival or a space racer. See
+    // `advanced/culture_seat_allies.rs`.
+    Gene { tag: "science-seat-allies", field: "science_seat_allies", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_allies, disable: AdvancedAi::disable_science_seat_allies },
     // `capital-walls-at-any-ratio`: 8 of 18 located Immortal city losses
     // were the capital, and the attacker's power ratio barely told it apart
     // from neighbours that never declared (medians 2.69 against 3.0); live

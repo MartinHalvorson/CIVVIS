@@ -8865,6 +8865,16 @@ impl AdvancedAi {
         self.land_grab_outlasts_the_opening = false;
     }
 
+    /// Opt-in gene `science-seat-allies`; see [`Self::science_seat_allies`].
+    pub fn enable_science_seat_allies(&mut self) {
+        self.science_seat_allies = true;
+    }
+
+    /// The twin of `enable_science_seat_allies`.
+    pub fn disable_science_seat_allies(&mut self) {
+        self.science_seat_allies = false;
+    }
+
     /// Opt-in gene `capital-walls-at-any-ratio`; see
     /// [`Self::capital_walls_at_any_ratio`].
     pub fn enable_capital_walls_at_any_ratio(&mut self) {
