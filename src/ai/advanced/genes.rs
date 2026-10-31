@@ -4427,6 +4427,17 @@ pub const GENES: &[Gene] = &[
     // `frontier-walls-before-the-surprise`. See
     // `advanced/surprise_watch_latch.rs`.
     Gene { tag: "surprise-watch-holds-its-ratio", field: "surprise_watch_holds_its_ratio", kind: Kind::OptIn, enable: AdvancedAi::enable_surprise_watch_holds_its_ratio, disable: AdvancedAi::disable_surprise_watch_holds_its_ratio },
+    // Live Lv 7 2026-10-30: two frontier Corinths fell at t27 (200156Z) and
+    // t28 (201608Z) with no walls while the journal read "Anvil at Corinth:
+    // … slinger in the city". The Anvil gives the city tile to a Shooter
+    // and puts melee on the ring, but an unwalled city's defence is its
+    // garrison's melee strength: 20 with a Warrior inside, 10 with a
+    // Slinger or nobody (Civ VI's own city defence read both ways). In
+    // 201608Z the Warrior that stood inside at t26 (defence 18.6) was posted
+    // to the ring at t27 and the city fell the next turn. With no standing
+    // walls, the Anvil's strongest melee soldier within a tile holds the
+    // city and makes no blow. See `advanced/anvil_garrisons_its_melee.rs`.
+    Gene { tag: "anvil-garrisons-its-melee", field: "anvil_garrisons_its_melee", kind: Kind::OptIn, enable: AdvancedAi::enable_anvil_garrisons_its_melee, disable: AdvancedAi::disable_anvil_garrisons_its_melee },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

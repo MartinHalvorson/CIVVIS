@@ -5503,6 +5503,11 @@ pub struct AdvancedAi {
     /// the cheapest units disbanded before the host's bankruptcy takes the
     /// costliest. See `advanced/solvency.rs`. Off by default.
     bankruptcy_exits_the_drain: bool,
+    /// `anvil-garrisons-its-melee`: the Anvil around a threatened city with
+    /// no standing walls posts its strongest melee soldier inside the city,
+    /// not a Shooter, and that garrison makes no blow. See
+    /// `advanced/anvil_garrisons_its_melee.rs`. Off by default.
+    anvil_garrisons_its_melee: bool,
     // ---- append: c-d ------------------------------------------------
     /// `diplo-seat-statue-harbor`: a Diplomacy seat's strongest coastal city
     /// builds the Harbor the Statue of Liberty needs. See
@@ -10036,6 +10041,9 @@ mod wonder_sites;
 /// `amphibious-siege-train`: a water-locked siege objective's guns and
 /// escorts cross as one group. See `advanced/amphibious_siege_train.rs`.
 mod amphibious_siege_train;
+/// `anvil-garrisons-its-melee`: an unwalled city's Anvil garrisons its
+/// strongest melee soldier. See `advanced/anvil_garrisons_its_melee.rs`.
+mod anvil_garrisons_its_melee;
 mod aqueduct_claims_the_capped_queue;
 /// `astrology-before-the-second-city`: the Prophet race's Astrology before
 /// the second city stands. See `advanced/astrology_before_the_second_city.rs`.
@@ -11077,6 +11085,7 @@ impl AdvancedAi {
             aqueduct_claims_the_capped_queue: false,
             aqueduct_recovery_reservations: RefCell::new(BTreeMap::new()),
             bankruptcy_exits_the_drain: false,
+            anvil_garrisons_its_melee: false,
             // ---- append: c-d ----------------------------------------
             diplo_seat_statue_harbor: false,
             culture_routes_reach_every_rival: false,
