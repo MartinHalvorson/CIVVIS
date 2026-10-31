@@ -27,6 +27,7 @@ mod counterfaith_source;
 mod defensive_apostle;
 
 mod domination_governors;
+mod domination_land_first;
 mod domination_modernization;
 mod domination_siege_milestones;
 mod regional_production_commitments;
@@ -2513,10 +2514,10 @@ pub struct AdvancedAi {
     /// needs no entry in `remap_unit_memory`. (last turn counted, turns).
     /// See `naval_escort_patience`.
     naval_escort_waits: BTreeMap<Pos, (u32, u8)>,
-    /// The last turn a Settler crossed alone toward each target site, under
-    /// `naval-crossing-keeps-going`. Keyed by the site, so it needs no entry
-    /// in `remap_unit_memory`. See `advanced/naval_crossing.rs`.
-    naval_crossing_targets: BTreeMap<Pos, u32>,
+    /// The last turn each Settler crossed alone, under
+    /// `naval-crossing-keeps-going`; remapped with the unit. See
+    /// `advanced/naval_crossing.rs`.
+    naval_crossing_units: BTreeMap<u32, u32>,
     /// Every visible hostile military unit as it stood BEFORE anything of
     /// ours acted this turn, under `settler_stack_discipline`. The live
     /// bridge's finishing volley (`civvis_orders::finish_live_war_units`)
@@ -5517,10 +5518,19 @@ pub struct AdvancedAi {
     /// `advanced/builder_travel_turns.rs`. Off by default.
     builder_prices_travel_in_turns: bool,
     // ---- append: c-d ------------------------------------------------
+<<<<<<< HEAD
     /// `capital-walls-at-any-ratio`: at Immortal and Deity the capital's walls
     /// arm on any watched major's soldier at our door. See
     /// `advanced/capital_walls_at_any_ratio.rs`. Off by default.
     capital_walls_at_any_ratio: bool,
+||||||| b823b2f86
+=======
+    /// `domination-targets-land-first`: a Domination seat ranks rivals it can
+    /// reach by land ahead of overseas ones in its frontier and capital picks
+    /// and its hand-over bar. See `advanced/domination_land_first.rs`. Off by
+    /// default.
+    domination_targets_land_first: bool,
+>>>>>>> origin/main
     /// `diplo-seat-statue-harbor`: a Diplomacy seat's strongest coastal city
     /// builds the Harbor the Statue of Liberty needs. See
     /// `advanced/diplo_statue_harbor.rs`. Off by default.
@@ -8317,6 +8327,14 @@ pub struct AdvancedAi {
     /// stood in without the offer, and the turn it last did.
     racer_spy_searched: BTreeMap<u32, u32>,
     // ---- append: s-s ------------------------------------------------
+    /// `stalled-spreader-braves-the-march`: on a Religion seat, a spreader
+    /// held three turns running by the apostle evasion yields only to a
+    /// lethal blow. See `advanced/stalled_spreader.rs`. Off by default.
+    stalled_spreader_braves_the_march: bool,
+    /// Per religious unit, the first and last turn of its current streak of
+    /// marches held by the apostle evasion. Read only with
+    /// `stalled-spreader-braves-the-march`.
+    spreader_hold_streaks: RefCell<BTreeMap<u32, (u32, u32)>>,
     /// `surprise-watch-holds-its-ratio`: a met major at twice our power seen
     /// within ten tiles of the original capital or an unwalled frontier city
     /// keeps that city's walls armed for the walls' ten-turn window, whatever
@@ -9713,6 +9731,8 @@ mod embassy_capital;
 
 /// `religion-race-keeps-expanding`: see `advanced/religion_race_expands.rs`.
 mod religion_race_expands;
+/// `stalled-spreader-braves-the-march`: see `advanced/stalled_spreader.rs`.
+mod stalled_spreader;
 
 /// `racer-keeps-the-spies`: see `advanced/racer_keeps_the_spies.rs`.
 mod racer_keeps_the_spies;
@@ -10675,6 +10695,11 @@ impl AdvancedAi {
                 .collect()
         };
         self.settler_targets = remap(&self.settler_targets);
+        self.naval_crossing_units = self
+            .naval_crossing_units
+            .iter()
+            .filter_map(|(uid, turn)| map.get(uid).map(|new| (*new, *turn)))
+            .collect();
         self.air_resource_colony_target = self
             .air_resource_colony_target
             .and_then(|(uid, site)| map.get(&uid).map(|new| (*new, site)));
@@ -10912,7 +10937,7 @@ impl AdvancedAi {
             settler_escort_journeys: BTreeMap::new(),
             guard_wait: BTreeMap::new(),
             naval_escort_waits: BTreeMap::new(),
-            naval_crossing_targets: BTreeMap::new(),
+            naval_crossing_units: BTreeMap::new(),
             turn_start_hostiles: Vec::new(),
             turn_start_hostiles_turn: None,
             religion_sues_peace: false,
@@ -11163,7 +11188,12 @@ impl AdvancedAi {
             bankruptcy_exits_the_drain: false,
             builder_prices_travel_in_turns: false,
             // ---- append: c-d ----------------------------------------
+<<<<<<< HEAD
             capital_walls_at_any_ratio: false,
+||||||| b823b2f86
+=======
+            domination_targets_land_first: false,
+>>>>>>> origin/main
             diplo_seat_statue_harbor: false,
             culture_routes_reach_every_rival: false,
             culture_seat_monuments: false,
@@ -11623,6 +11653,8 @@ impl AdvancedAi {
             racer_spy_found_pads: BTreeSet::new(),
             racer_spy_searched: BTreeMap::new(),
             // ---- append: s-s ----------------------------------------
+            stalled_spreader_braves_the_march: false,
+            spreader_hold_streaks: RefCell::new(BTreeMap::new()),
             surprise_watch_holds_its_ratio: false,
             surprise_watch_latches: BTreeMap::new(),
             stage_reads_the_muster_breakers: false,
@@ -15453,6 +15485,10 @@ impl AdvancedAi {
         // is nobody nearby to take anything from".
         let weakest_rival = major_rivals
             .iter()
+            // `domination-targets-land-first`: on a Domination seat the bar's
+            // weakest rival is one we can march to. See
+            // `advanced/domination_land_first.rs`.
+            .filter(|other| self.domination_land_rank(g, pid, **other) == 0)
             .filter(|other| {
                 !self.elective_war_in_reach || self.rival_is_in_campaign_reach(g, pid, **other)
             })
@@ -16024,19 +16060,28 @@ impl AdvancedAi {
                         .any(|city| Self::city_within_declaration_range(g, pid, g.cities[city].pos))
                 })
                 .min_by(|left, right| {
-                    self.campaign_target_value_with_culture(
-                        g,
-                        pid,
-                        *left,
-                        rival_culture_pressures.get(left).copied(),
-                    )
-                    .total_cmp(&self.campaign_target_value_with_culture(
-                        g,
-                        pid,
-                        *right,
-                        rival_culture_pressures.get(right).copied(),
-                    ))
-                    .then(left.cmp(right))
+                    // `domination-targets-land-first`: a rival we can march
+                    // to before one across water. See
+                    // `advanced/domination_land_first.rs`.
+                    self.domination_land_rank(g, pid, *left)
+                        .cmp(&self.domination_land_rank(g, pid, *right))
+                        .then_with(|| {
+                            self.campaign_target_value_with_culture(
+                                g,
+                                pid,
+                                *left,
+                                rival_culture_pressures.get(left).copied(),
+                            )
+                            .total_cmp(
+                                &self.campaign_target_value_with_culture(
+                                    g,
+                                    pid,
+                                    *right,
+                                    rival_culture_pressures.get(right).copied(),
+                                ),
+                            )
+                        })
+                        .then(left.cmp(right))
                 })
         } else {
             None

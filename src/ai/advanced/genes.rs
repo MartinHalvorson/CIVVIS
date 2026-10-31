@@ -4499,6 +4499,19 @@ pub const GENES: &[Gene] = &[
     // prophet race keys on the target, not the strategy. See
     // `advanced/religion_race_expands.rs`.
     Gene { tag: "religion-race-keeps-expanding", field: "religion_race_keeps_expanding", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_race_keeps_expanding, disable: AdvancedAi::disable_religion_race_keeps_expanding },
+    // On 6p Continents a Domination plan aimed overseas never declares: the
+    // army is kept on land at peace and the amphibious train forms only at
+    // war. Live 041027Z aimed at overseas Russia t78-85 and retired with no
+    // city; 22 of 45 rival slots in the long 6p games sat across water. Rivals
+    // reachable by land rank first in the frontier and capital picks and the
+    // hand-over bar. See `advanced/domination_land_first.rs`.
+    Gene { tag: "domination-targets-land-first", field: "domination_targets_land_first", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_targets_land_first, disable: AdvancedAi::disable_domination_targets_land_first },
+    // On a Religion seat, `spreader-steps-out-of-the-apostle` pins the corps
+    // in a pocket while an out-trading Apostle camps on every approach: live
+    // Immortal 063431Z logged 821 holds on 43 turns (one Missionary t118-177)
+    // and spread 5 times all game. After three held turns a spreader yields
+    // only to a lethal blow for six turns. See `advanced/stalled_spreader.rs`.
+    Gene { tag: "stalled-spreader-braves-the-march", field: "stalled_spreader_braves_the_march", kind: Kind::OptIn, enable: AdvancedAi::enable_stalled_spreader_braves_the_march, disable: AdvancedAi::disable_stalled_spreader_braves_the_march },
     // `capital-walls-at-any-ratio`: 8 of 18 located Immortal city losses
     // were the capital, and the attacker's power ratio barely told it apart
     // from neighbours that never declared (medians 2.69 against 3.0); live

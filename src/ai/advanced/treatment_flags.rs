@@ -8810,6 +8810,28 @@ impl AdvancedAi {
         self.religion_race_keeps_expanding = false;
     }
 
+    /// Opt-in gene `domination-targets-land-first`; see
+    /// [`Self::domination_targets_land_first`].
+    pub fn enable_domination_targets_land_first(&mut self) {
+        self.domination_targets_land_first = true;
+    }
+
+    /// The twin of `enable_domination_targets_land_first`.
+    pub fn disable_domination_targets_land_first(&mut self) {
+        self.domination_targets_land_first = false;
+    }
+
+    /// Opt-in gene `stalled-spreader-braves-the-march`; see
+    /// [`Self::stalled_spreader_braves_the_march`].
+    pub fn enable_stalled_spreader_braves_the_march(&mut self) {
+        self.stalled_spreader_braves_the_march = true;
+    }
+
+    /// The twin of `enable_stalled_spreader_braves_the_march`.
+    pub fn disable_stalled_spreader_braves_the_march(&mut self) {
+        self.stalled_spreader_braves_the_march = false;
+    }
+
     /// Opt-in gene `capital-walls-at-any-ratio`; see
     /// [`Self::capital_walls_at_any_ratio`].
     pub fn enable_capital_walls_at_any_ratio(&mut self) {
