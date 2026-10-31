@@ -8788,6 +8788,17 @@ impl AdvancedAi {
         self.religion_lane_hands_over = false;
     }
 
+    /// Opt-in gene `early-route-feeds-production`; see
+    /// [`Self::early_route_feeds_production`].
+    pub fn enable_early_route_feeds_production(&mut self) {
+        self.early_route_feeds_production = true;
+    }
+
+    /// The twin of `enable_early_route_feeds_production`.
+    pub fn disable_early_route_feeds_production(&mut self) {
+        self.early_route_feeds_production = false;
+    }
+
     /// Opt-in gene `domination-targets-land-first`; see
     /// [`Self::domination_targets_land_first`].
     pub fn enable_domination_targets_land_first(&mut self) {
