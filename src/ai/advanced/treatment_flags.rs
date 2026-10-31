@@ -8932,6 +8932,17 @@ impl AdvancedAi {
         self.base.disable_deck_prices_growth();
     }
 
+    /// Opt-in gene `friendship-keeps-the-peace`; see
+    /// [`Self::friendship_keeps_the_peace`].
+    pub fn enable_friendship_keeps_the_peace(&mut self) {
+        self.friendship_keeps_the_peace = true;
+    }
+
+    /// The twin of `enable_friendship_keeps_the_peace`.
+    pub fn disable_friendship_keeps_the_peace(&mut self) {
+        self.friendship_keeps_the_peace = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
