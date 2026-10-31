@@ -3,29 +3,33 @@
 //! Site starts one as soon as Astrology allows it, from the first city on and
 //! inside the opening book.
 //!
-//! **Why (live 6p Immortal, 2026-10-30/31, -3b's founding audit).**
-//! - Founding is the whole Religion lane, and it is lost early. Our seat
-//!   founded in 5 of 17 games (t28/44/48/54/54); the first rival religion
-//!   lands at a median t23 and the fourth, which closes the race on this
-//!   board, at a median t47.5.
-//! - The one early founder (t28) had its Holy Site at t14 and its Shrine at
-//!   t18. The rest placed the Holy Site at t18-31.
-//! - Nothing places it earlier on a live Religion seat. The race package that
-//!   reserves a race Holy Site (`enter-the-prophet-race-2`) is not on the live
-//!   genome, `expansion-before-prophet` (HostOnly) holds the strategy at
-//!   Expansion below three cities, `religious_production` runs only once the
-//!   four-build opening book is done and the strategy reads Religion, and even
-//!   then it only takes a city whose queue is empty. Live
-//!   civvis-20261031T044838Z (Robert the Bruce, Religion): Astrology at t10,
-//!   two cities at t20, and no Holy Site before the capital fell at t27.
+//! **Why (live 6p Immortal, 2026-10-31).**
+//! - The race is decided by t30-37. Of the last five Religion seats, the two
+//!   that founded had their Holy Site at t23 (founded t38) and t34 (founded
+//!   t60, a slot still open). Three lost every slot: civvis-20261031T093617Z
+//!   had no Holy Site before all four Prophets were claimed at t37, 094146Z
+//!   started it at t29 and 101410Z at t36.
+//! - The site waits for the third city. The race package does admit a
+//!   Religion seat (`prophet-race-takes-a-district-slot-2` opens "the Holy
+//!   Site for the Great Prophet race"), but `expansion-before-prophet`
+//!   (HostOnly) keeps the strategy at Expansion below three cities. The
+//!   capital meanwhile builds Settlers at 5-9 production: 094146Z had
+//!   Astrology at t9, its third city at t29 and its Holy Site at t29, and
+//!   101410Z had Astrology at t10, its third city at t28 and its site at t36.
+//!   `religious_production` runs only once the four-build opening book is
+//!   done, and then only in an empty queue.
+//! - A founding seat now lives. Under the operator's loosened retire rule
+//!   (one sixth of the leader from t120), 063431Z founded at t38 and played
+//!   to t179; a seat that loses the race hands its lane to Science at ~t74.
 //!
 //! **What the gene does.** For a Religion-target seat with no religion, no
 //! Prophet in hand and a Prophet still open (`prophet_race_open_for`), when no
 //! city of ours holds or queues a Holy Site, the idle city that produces most
 //! among those with a Holy Site placement claims the best-Faith one. It runs
 //! before the opening book's branch, after the book's held Settler has taken
-//! its queue, so the district goes in the turn Astrology lands rather than
-//! after the third city. It never takes a queue that holds anything, or a
+//! its queue, so the district goes into the first queue that empties after
+//! Astrology rather than after the third city: one Settler later, in
+//! exchange for the race. It never takes a queue that holds anything, or a
 //! threatened or freshly attacked city. Everything after the district (the
 //! Shrine, Prayers, the Prophet) is the existing path's.
 //!

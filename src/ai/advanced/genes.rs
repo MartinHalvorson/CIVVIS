@@ -4456,11 +4456,11 @@ pub const GENES: &[Gene] = &[
     // Religion-target founder keeps all three in any plan. See
     // `advanced/religion_lane_spreads.rs`.
     Gene { tag: "religion-lane-spreads-from-founding", field: "religion_lane_spreads_from_founding", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_lane_spreads_from_founding, disable: AdvancedAi::disable_religion_lane_spreads_from_founding },
-    // `religion-seat-founds-first`: live 6p Immortal seats founded in 5 of
-    // 17 (the race closes at a median t47.5) and placed the Holy Site at
-    // t18-31; nothing on the live genome places it before the third city and
-    // the opening book. A Religion-target seat's first idle city starts it the
-    // turn Astrology allows. See `advanced/religion_seat_founds_first.rs`.
+    // `religion-seat-founds-first`: the live 6p Immortal race is decided by
+    // t30-37, and a Religion seat's Holy Site waits for its third city
+    // (`expansion-before-prophet`): t29 and t36 in two lost races, none in a
+    // third. A Religion-target seat's first idle queue after Astrology starts
+    // it. See `advanced/religion_seat_founds_first.rs`.
     Gene { tag: "religion-seat-founds-first", field: "religion_seat_founds_first", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_founds_first, disable: AdvancedAi::disable_religion_seat_founds_first },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
