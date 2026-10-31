@@ -2514,10 +2514,10 @@ pub struct AdvancedAi {
     /// needs no entry in `remap_unit_memory`. (last turn counted, turns).
     /// See `naval_escort_patience`.
     naval_escort_waits: BTreeMap<Pos, (u32, u8)>,
-    /// The last turn a Settler crossed alone toward each target site, under
-    /// `naval-crossing-keeps-going`. Keyed by the site, so it needs no entry
-    /// in `remap_unit_memory`. See `advanced/naval_crossing.rs`.
-    naval_crossing_targets: BTreeMap<Pos, u32>,
+    /// The last turn each Settler crossed alone, under
+    /// `naval-crossing-keeps-going`; remapped with the unit. See
+    /// `advanced/naval_crossing.rs`.
+    naval_crossing_units: BTreeMap<u32, u32>,
     /// Every visible hostile military unit as it stood BEFORE anything of
     /// ours acted this turn, under `settler_stack_discipline`. The live
     /// bridge's finishing volley (`civvis_orders::finish_live_war_units`)
@@ -8325,6 +8325,14 @@ pub struct AdvancedAi {
     /// `AdvancedAi::religion_seat_or_domination`. Off by default.
     religion_seat_defends_its_faith: bool,
     // ---- append: s-s ------------------------------------------------
+    /// `stalled-spreader-braves-the-march`: on a Religion seat, a spreader
+    /// held three turns running by the apostle evasion yields only to a
+    /// lethal blow. See `advanced/stalled_spreader.rs`. Off by default.
+    stalled_spreader_braves_the_march: bool,
+    /// Per religious unit, the first and last turn of its current streak of
+    /// marches held by the apostle evasion. Read only with
+    /// `stalled-spreader-braves-the-march`.
+    spreader_hold_streaks: RefCell<BTreeMap<u32, (u32, u32)>>,
     /// `surprise-watch-holds-its-ratio`: a met major at twice our power seen
     /// within ten tiles of the original capital or an unwalled frontier city
     /// keeps that city's walls armed for the walls' ten-turn window, whatever
@@ -9721,6 +9729,8 @@ mod embassy_capital;
 
 /// `religion-race-keeps-expanding`: see `advanced/religion_race_expands.rs`.
 mod religion_race_expands;
+/// `stalled-spreader-braves-the-march`: see `advanced/stalled_spreader.rs`.
+mod stalled_spreader;
 
 /// `racer-keeps-the-spies`: see `advanced/racer_keeps_the_spies.rs`.
 mod racer_keeps_the_spies;
@@ -10680,6 +10690,11 @@ impl AdvancedAi {
                 .collect()
         };
         self.settler_targets = remap(&self.settler_targets);
+        self.naval_crossing_units = self
+            .naval_crossing_units
+            .iter()
+            .filter_map(|(uid, turn)| map.get(uid).map(|new| (*new, *turn)))
+            .collect();
         self.air_resource_colony_target = self
             .air_resource_colony_target
             .and_then(|(uid, site)| map.get(&uid).map(|new| (*new, site)));
@@ -10917,7 +10932,7 @@ impl AdvancedAi {
             settler_escort_journeys: BTreeMap::new(),
             guard_wait: BTreeMap::new(),
             naval_escort_waits: BTreeMap::new(),
-            naval_crossing_targets: BTreeMap::new(),
+            naval_crossing_units: BTreeMap::new(),
             turn_start_hostiles: Vec::new(),
             turn_start_hostiles_turn: None,
             religion_sues_peace: false,
@@ -11629,6 +11644,8 @@ impl AdvancedAi {
             racer_spy_searched: BTreeMap::new(),
             religion_seat_defends_its_faith: false,
             // ---- append: s-s ----------------------------------------
+            stalled_spreader_braves_the_march: false,
+            spreader_hold_streaks: RefCell::new(BTreeMap::new()),
             surprise_watch_holds_its_ratio: false,
             surprise_watch_latches: BTreeMap::new(),
             stage_reads_the_muster_breakers: false,
