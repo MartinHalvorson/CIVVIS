@@ -61,6 +61,8 @@ RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
 #: mod capped a wait on it): turns stop waiting for it until it is back within
 #: one. See `sync_mirror_turn`.
 MIRROR_GIVE_UP_TURNS = 2
+#: How often the painted turn is carried to the mod (`mirror_sync_beat`).
+MIRROR_SYNC_SECONDS = 0.05
 
 #: How long a finished run keeps its screenshots. Its `events.jsonl`, `why.log`
 #: and `brain.log` are kept forever — they are what every census reads.
@@ -689,6 +691,54 @@ def production_share_run(state: dict, reading: dict) -> int:
     run = state.get("production_share_run", 0) + 1 if reading["below"] else 0
     state["production_share_run"] = run
     return run
+
+
+# ★ A seat that leads a victory race is not retired on Production. Live 10-31
+# (6p Continents, Diplomatic lane): civvis-20261031T015208Z-cont2 was retired
+# at turn 187 on 19 Diplomatic Victory points against the best rival's 11
+# (share 0.239), civvis-20261031T024232Z at turn 178 on 18 against 11 (share
+# 0.228), each one Congress from the win. The share rule exists to end games
+# we cannot win, and once a race is ours raw Production no longer says that.
+# The lead is re-read from every `state` record, so a lead that lapses lets
+# the running count retire the game on its next turn below the line.
+RACE_LEAD_DVP = 10
+
+
+def _race_points(record: object, key: str) -> float | None:
+    if not isinstance(record, dict):
+        return None
+    return _nonnegative_metric(record.get(key))
+
+
+def victory_race_lead(event: dict) -> dict | None:
+    """The victory race this agent `state` record shows us leading, or None.
+
+    Diplomatic: our Diplomatic Victory points are at least
+    :data:`RACE_LEAD_DVP` and no met rival's are higher. Science: we hold at
+    least half the science victory points we need and no met rival holds
+    more. A record without our points, or without a readable rival, leads
+    nothing, so an unreadable record never spares a game.
+    """
+    if event.get("kind") != "state" or event.get("ctx") != "agent":
+        return None
+    rivals = event.get("rivals")
+    if not isinstance(rivals, list) or not rivals:
+        return None
+    turn = event.get("turn")
+    for race, key, floor in (
+        ("diplomatic", "dvp", RACE_LEAD_DVP),
+        ("science", "science_victory_points",
+         (_race_points(event, "science_victory_points_needed") or 0) / 2),
+    ):
+        ours = _race_points(event, key)
+        theirs = [points for points in (_race_points(rival, key) for rival in rivals)
+                  if points is not None]
+        if ours is None or not theirs or floor <= 0 or ours < floor:
+            continue
+        best = max(theirs)
+        if ours >= best:
+            return {"race": race, "turn": turn, "ours": ours, "best_rival": best}
+    return None
 
 
 DEFAULT_CIVVIS_STRATEGY = ""
@@ -5662,6 +5712,9 @@ def _play(args: argparse.Namespace) -> int:
             live_pause.release_state(args.tag)
             print(f"[pause] the game resumed at turn {event.get('turn')} after "
                   f"{event.get('held_s')}s", flush=True)
+        if kind == "state" and event.get("ctx") == "agent":
+            # Re-read every turn: see `victory_race_lead`.
+            state["race_lead"] = victory_race_lead(event)
         if kind == "host":
             state["hosted"] = bool(event.get("started"))
             print(f"[setup] host started={event.get('started')}")
@@ -5919,7 +5972,23 @@ def _play(args: argparse.Namespace) -> int:
                           "production standing; reading the next one", flush=True)
             elif reading is not None:
                 run = production_share_run(state, reading)
-                if run >= PRODUCTION_SHARE_TURNS:
+                lead = state.get("race_lead")
+                if run >= PRODUCTION_SHARE_TURNS and lead:
+                    # See `victory_race_lead`: the count runs on, so the
+                    # game retires on the first turn below once it lapses.
+                    spared = state.setdefault("race_lead_spared", {
+                        "first_turn": reading["turn"], "turns": 0})
+                    if spared.get("last_turn") != reading["turn"]:
+                        spared.update(last_turn=reading["turn"],
+                                      turns=spared["turns"] + 1, **lead,
+                                      share=reading["share"])
+                        print(f"[policy] turn {reading['turn']}: our Production is "
+                              f"{reading['share']:.0%} of the leader's, under "
+                              f"{reading['line']:.0%} for {run} turns, but we lead the "
+                              f"{lead['race']} race ({lead['ours']:g} against the best "
+                              f"rival's {lead['best_rival']:g}) — not retiring",
+                              flush=True)
+                elif run >= PRODUCTION_SHARE_TURNS:
                     reading["turns_below"] = run
                     print(f"[abandon] turn {reading['turn']}: our Production "
                           f"{reading['ours']} is {reading['share']:.0%} of the leader's "
@@ -6114,6 +6183,22 @@ def _play(args: argparse.Namespace) -> int:
     # lane one capped wait rather than one per turn.
     mirror_flow = {"synced": None, "attempt_at": 0.0, "failed": False,
                    "given_up": False}
+    # ★ On its own 50 ms beat, not the pause poll's. A played turn is waiting
+    # on this hop: the pause poll runs once per `watch.follow` pass (0.25 s
+    # plus the focus keeper's upkeep), which was a third of the mirror wait's
+    # polling latency (first live game, 10-31: median wait 0.64 s a turn). The
+    # beat reads one small host file and writes a row only when it changes.
+    mirror_beat = threading.Event()
+
+    def mirror_sync_beat() -> None:
+        said = None
+        while not mirror_beat.wait(MIRROR_SYNC_SECONDS):
+            try:
+                sync_mirror_turn(time.monotonic())
+            except Exception as error:  # a broken beat must not end the run
+                if str(error) != said:
+                    said = str(error)
+                    print(f"[mirror] sync failed: {error}", flush=True)
 
     def sync_mirror_turn(now: float) -> None:
         shown = mirror_sync.shown_turn(args.tag)
@@ -6152,7 +6237,6 @@ def _play(args: argparse.Namespace) -> int:
         wanted = live_pause.requested()
         now = time.monotonic()
         sync_operator_pace(now)
-        sync_mirror_turn(now)
         if wanted != pause_flow["synced"] and now - pause_flow["attempt_at"] >= 1.0:
             pause_flow["attempt_at"] = now
             turn = state.get("turn")
@@ -6202,6 +6286,9 @@ def _play(args: argparse.Namespace) -> int:
     # the budget ask "can this still get there?" instead of "is the clock up?".
     ceiling_s = (args.timeout_ceiling if args.timeout_ceiling is not None
                  else args.timeout * 1.5)
+    if not refused_at_seat:
+        threading.Thread(target=mirror_sync_beat, name="mirror-sync",
+                         daemon=True).start()
     reason = "stopped" if refused_at_seat else watch.follow(
         tail, args.timeout, record, stop_when=finished,
         each_poll=keep_foreground, poll_s=poll_s,
@@ -6269,6 +6356,7 @@ def _play(args: argparse.Namespace) -> int:
             print(f"recovered from stall after {consecutive} attempt(s)", flush=True)
             consecutive = 0
     events.close()
+    mirror_beat.set()
     # Whatever ended the run, it no longer holds a game.
     live_pause.release_state(args.tag)
 
@@ -6374,6 +6462,9 @@ def _play(args: argparse.Namespace) -> int:
         # verification runs never set this: a score gap is telemetry, not an
         # automatic retirement reason.
         "abandoned": state.get("abandoned"),
+        # Turns the Production-share rule would have retired a seat that led
+        # a victory race; see `victory_race_lead`.
+        "race_lead_spared": state.get("race_lead_spared"),
         # Preserve these historical diagnostics for old rows. New automatic
         # score retirements are disabled; operator-requested native retirement
         # is recorded separately as `operator_retire` below.
