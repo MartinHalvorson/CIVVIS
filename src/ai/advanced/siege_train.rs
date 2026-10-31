@@ -5943,6 +5943,7 @@ impl AdvancedAi {
         if self.anvil_orders_turn != Some((g.turn, cid)) {
             let heals = !g.is_arena() || g.tactics.heal;
             self.anvil_orders = anvil_orders_for(g, pid, &city, &group.units, &hostiles, heals);
+            self.anvil_garrisons_melee(g, pid, cid, &group.units, &hostiles);
             self.anvil_orders_turn = Some((g.turn, cid));
             self.anvil_rotate(g, pid, &city);
             if self.journal().wants(crate::reasoning::Level::Decision) {
@@ -5968,6 +5969,9 @@ impl AdvancedAi {
         self.census.anvil_turns += 1;
         let unit = g.units[&uid].clone();
         if unit.pos == post {
+            if self.anvil_garrison_holds(g, uid, post, city.pos, city.wall_hp) {
+                return Some(self.base.fortify_or_stop(g, pid, uid));
+            }
             if let Some(acted) = self.anvil_blow(g, pid, uid) {
                 return Some(acted);
             }

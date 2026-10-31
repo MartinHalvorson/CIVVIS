@@ -640,8 +640,12 @@ impl AdvancedAi {
                 )
             })
             .min_by(|left, right| {
-                left.2
-                    .total_cmp(&right.2)
+                // `domination-targets-land-first`: a capital we can march to
+                // before one across water. See
+                // `advanced/domination_land_first.rs`.
+                self.domination_land_rank(g, pid, left.0)
+                    .cmp(&self.domination_land_rank(g, pid, right.0))
+                    .then_with(|| left.2.total_cmp(&right.2))
                     .then_with(|| left.0.cmp(&right.0))
                     .then_with(|| left.1.cmp(&right.1))
             })

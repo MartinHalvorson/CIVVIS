@@ -4456,6 +4456,87 @@ pub const GENES: &[Gene] = &[
     // Religion-target founder keeps all three in any plan. See
     // `advanced/religion_lane_spreads.rs`.
     Gene { tag: "religion-lane-spreads-from-founding", field: "religion_lane_spreads_from_founding", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_lane_spreads_from_founding, disable: AdvancedAi::disable_religion_lane_spreads_from_founding },
+    // Live Immortal 054450Z (Domination, 10-31) held its war on Australia at
+    // 6-12x its power on 49 turns from t101: `war_policy_declaration` read
+    // our own faith war on Macedon as "another major war", although
+    // `faith-war-is-no-front` already keeps that war out of
+    // `one_war_holds_declaration`. Melbourne walled up by t123. The board
+    // reads the same exemption. Needs `faith-war-is-no-front` (or -2). See
+    // `war_policy_declaration` in `advanced/war_policy.rs`.
+    Gene { tag: "board-ignores-the-faith-war", field: "board_ignores_the_faith_war", kind: Kind::OptIn, enable: AdvancedAi::enable_board_ignores_the_faith_war, disable: AdvancedAi::disable_board_ignores_the_faith_war },
+    // Live Immortal 6p Continents 10-31: `naval-escort-patience` counts its
+    // wait per water tile, so a Settler crossing alone held two turns at every
+    // tile (042324Z: t52-79 afloat, 110 holds on 48 turns; 024232Z 22 turns,
+    // 011801Z 19). A voyage that has crossed alone steps on while the sea
+    // stays quiet. See `advanced/naval_crossing.rs`.
+    Gene { tag: "naval-crossing-keeps-going", field: "naval_crossing_keeps_going", kind: Kind::OptIn, enable: AdvancedAi::enable_naval_crossing_keeps_going, disable: AdvancedAi::disable_naval_crossing_keeps_going },
+    // Live Immortal seats 2026-10-30 (30 seats, t<=120): 63% of a Builder's
+    // consecutive jobs sat near a different city, a median 6 turns and 5 hexes
+    // apart against 2 and 2 inside one city, at 7.6 Builder-turns per
+    // improvement. Every destination was scored `value - 0.7 x wdist`, and
+    // 0.7 a hex is nothing against jobs worth 5-100. While a Builder has a
+    // charge to spare it now scores value per Builder-turn; its last charge
+    // keeps the untreated price. See `advanced/builder_travel_turns.rs`.
+    Gene { tag: "builder-prices-travel-in-turns", field: "builder_prices_travel_in_turns", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_prices_travel_in_turns, disable: AdvancedAi::disable_builder_prices_travel_in_turns },
+    // A Religion-target seat that lost the Prophet race keeps a Religion
+    // plan, with no religion, for the rest of the game: the 4th religion
+    // closed the race at a median t47.5 live (6p Immortal), and our seat
+    // founded in 5 of 17. With every slot claimed and none ours, it takes
+    // Science (else Culture, else Domination). See
+    // `advanced/religion_lane_hands_over.rs`.
+    Gene { tag: "religion-lane-hands-over", field: "religion_lane_hands_over", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_lane_hands_over, disable: AdvancedAi::disable_religion_lane_hands_over },
+    // The t80 production gate retires 16 of 20 6p Immortal seats at a median
+    // share of 0.23. The first Trader (~t21) goes foreign or to a city-state
+    // for ~4 Gold in kept and retired seats alike: `commercial-hub-and-traders`
+    // pays 1.5 per Gold, so a domestic route's Production never wins. Within
+    // ~100 Online turns, route Production outbids that premium. See
+    // `advanced/early_route_production.rs`.
+    Gene { tag: "early-route-feeds-production", field: "early_route_feeds_production", kind: Kind::OptIn, enable: AdvancedAi::enable_early_route_feeds_production, disable: AdvancedAi::disable_early_route_feeds_production },
+    // A Religion seat without a religion got the Religion strategy before the
+    // Expansion branch read its city count: 4 of 5 6p Immortal Religion seats
+    // ran Religion at t20-40 (every other lane ran Expansion), held a median 3
+    // cities at t60 against 4-5, and 4 of 5 were retired at the t80 gate. The
+    // prophet race keys on the target, not the strategy. See
+    // `advanced/religion_race_expands.rs`.
+    Gene { tag: "religion-race-keeps-expanding", field: "religion_race_keeps_expanding", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_race_keeps_expanding, disable: AdvancedAi::disable_religion_race_keeps_expanding },
+    // On 6p Continents a Domination plan aimed overseas never declares: the
+    // army is kept on land at peace and the amphibious train forms only at
+    // war. Live 041027Z aimed at overseas Russia t78-85 and retired with no
+    // city; 22 of 45 rival slots in the long 6p games sat across water. Rivals
+    // reachable by land rank first in the frontier and capital picks and the
+    // hand-over bar. See `advanced/domination_land_first.rs`.
+    Gene { tag: "domination-targets-land-first", field: "domination_targets_land_first", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_targets_land_first, disable: AdvancedAi::disable_domination_targets_land_first },
+    // On a Religion seat, `spreader-steps-out-of-the-apostle` pins the corps
+    // in a pocket while an out-trading Apostle camps on every approach: live
+    // Immortal 063431Z logged 821 holds on 43 turns (one Missionary t118-177)
+    // and spread 5 times all game. After three held turns a spreader yields
+    // only to a lethal blow for six turns. See `advanced/stalled_spreader.rs`.
+    Gene { tag: "stalled-spreader-braves-the-march", field: "stalled_spreader_braves_the_march", kind: Kind::OptIn, enable: AdvancedAi::enable_stalled_spreader_braves_the_march, disable: AdvancedAi::disable_stalled_spreader_braves_the_march },
+    // Live Lv 7 2026-10-30: two frontier Corinths fell at t27 (200156Z) and
+    // t28 (201608Z) with no walls while the journal read "Anvil at Corinth:
+    // … slinger in the city". The Anvil gives the city tile to a Shooter
+    // and puts melee on the ring, but an unwalled city's defence is its
+    // garrison's melee strength: 20 with a Warrior inside, 10 with a
+    // Slinger or nobody (Civ VI's own city defence read both ways). In
+    // 201608Z the Warrior that stood inside at t26 (defence 18.6) was posted
+    // to the ring at t27 and the city fell the next turn. With no standing
+    // walls, the Anvil's strongest melee soldier within a tile holds the
+    // city and makes no blow. See `advanced/anvil_garrisons_its_melee.rs`.
+    Gene { tag: "anvil-garrisons-its-melee", field: "anvil_garrisons_its_melee", kind: Kind::OptIn, enable: AdvancedAi::enable_anvil_garrisons_its_melee, disable: AdvancedAi::disable_anvil_garrisons_its_melee },
+    // The defence pass queues walls in a threatened city and the general pass
+    // switches it straight back: "switches to amphitheater, displacing walls"
+    // 50 times on the live journals, and 8 of the 10 cities lost unwalled at
+    // t45-100 on 6p Immortal seats had their walls displaced first. While the
+    // city is damaged or a visible enemy soldier stands within 4 tiles, a
+    // defensive commitment holds against a civilian build. See
+    // `advanced/defence_holds.rs`.
+    Gene { tag: "defence-holds-under-fire", field: "defence_holds_under_fire", kind: Kind::OptIn, enable: AdvancedAi::enable_defence_holds_under_fire, disable: AdvancedAi::disable_defence_holds_under_fire },
+    // Live Immortal 6p Continents 10-30/31: `rapid-city-expansion-2` is asked
+    // before `land_grab`, so every live seat planned the ordinary cadence
+    // floored at ten (1,223 of 1,894 readings past t110) and held 10 cities
+    // at t150-180 against the leader's 11-13. Under the gene the target is
+    // the larger of the two. See `advanced/land_grab_outlasts.rs`.
+    Gene { tag: "land-grab-outlasts-the-opening", field: "land_grab_outlasts_the_opening", kind: Kind::OptIn, enable: AdvancedAi::enable_land_grab_outlasts_the_opening, disable: AdvancedAi::disable_land_grab_outlasts_the_opening },
     // `religion-seat-founds-first`: the live 6p Immortal race is decided by
     // t30-37, and a Religion seat's Holy Site waits for its third city
     // (`expansion-before-prophet`): t29 and t36 in two lost races, none in a
