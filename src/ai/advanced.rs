@@ -9764,6 +9764,9 @@ mod immortal_prophet_race;
 /// `trade-quotes-pay-the-lump`: see `advanced/trade_quotes_lump.rs`.
 mod trade_quotes_lump;
 
+/// `contact-fleet`: see `advanced/contact_fleet.rs`.
+mod contact_fleet;
+
 use air_surge::{AirSurge, AirSurgeCensus, AirSurgeStatus};
 
 mod civilian_coordination;
@@ -33144,6 +33147,11 @@ impl AdvancedAi {
             let idle_route_trader_commitment = committed
                 .as_ref()
                 .is_some_and(|(_, item)| self.idle_route_trader_holds(g, pid, cid, plan, item));
+            // `contact-fleet`: the queued sea scout finishes while the contact
+            // gap is open and no ship of ours is charting.
+            let naval_eye_commitment = committed
+                .as_ref()
+                .is_some_and(|(_, item)| self.naval_eye_holds(g, pid, cid, plan, item));
             // `backlog-builder-takes-the-queue`: the claimed Builder finishes
             // while the worked backlog still runs ahead of the charges.
             let backlog_builder_commitment = committed
@@ -33206,6 +33214,7 @@ impl AdvancedAi {
                     || culture_monument_commitment
                     || statue_harbor_commitment
                     || idle_route_trader_commitment
+                    || naval_eye_commitment
                     || backlog_builder_commitment
                     || capped_aqueduct_commitment
                     || campus_building_commitment
@@ -33231,6 +33240,7 @@ impl AdvancedAi {
                     || culture_monument_commitment
                     || statue_harbor_commitment
                     || idle_route_trader_commitment
+                    || naval_eye_commitment
                     || backlog_builder_commitment
                     || capped_aqueduct_commitment
                     || campus_building_commitment
