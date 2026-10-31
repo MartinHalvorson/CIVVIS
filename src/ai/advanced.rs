@@ -5609,6 +5609,11 @@ pub struct AdvancedAi {
     /// Lab) puts it at the head of its queue over a deferrable head. See
     /// `advanced/campus_building_claims_the_queue.rs`. Off by default.
     campus_building_claims_the_queue: bool,
+    /// `campus-claims-wait-for-the-settler`: the free-slot Campus claim makes
+    /// no claim, and holds no claimed Campus against the scorer, while the
+    /// empire trails the city curve with a practical site left. See
+    /// `advanced/campus_claims_the_free_slot.rs`. Off by default.
+    campus_claims_wait_for_the_settler: bool,
     /// `crushing-steady-passes-the-edge`: a staged declaration passes the
     /// version-2 edge at `CRUSHING_STEADY_RATIO` times the target's steady
     /// military and `CRUSHING_PEAK_FLOOR` times its 30-turn peak, though it
@@ -11194,6 +11199,7 @@ impl AdvancedAi {
             delegations_asked: BTreeMap::new(),
             campus_claims_the_free_slot: false,
             campus_claims_the_free_slot_2: false,
+            campus_claims_wait_for_the_settler: false,
             city_under_fire_ranks_first: false,
             closed_border_blocker_declares: false,
             closed_border_holds: BTreeMap::new(),

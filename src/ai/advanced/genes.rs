@@ -4512,6 +4512,14 @@ pub const GENES: &[Gene] = &[
     // and spread 5 times all game. After three held turns a spreader yields
     // only to a lethal blow for six turns. See `advanced/stalled_spreader.rs`.
     Gene { tag: "stalled-spreader-braves-the-march", field: "stalled_spreader_braves_the_march", kind: Kind::OptIn, enable: AdvancedAi::enable_stalled_spreader_braves_the_march, disable: AdvancedAi::disable_stalled_spreader_braves_the_march },
+    // Live Immortal 2026-10-30/31: seats retired under the production-share
+    // line founded city 4 at a median t49 and city 5 at t89.5 (kept: t40,
+    // t49). A calibrated knockout of the free-slot Campus claim with
+    // campus-buildings-first and plaza-in-the-district-list gave Culture seats
+    // +10% production at t80 for -10% Science. While the empire trails the
+    // city curve with a site left, the claim waits. See
+    // `advanced/campus_claims_the_free_slot.rs`.
+    Gene { tag: "campus-claims-wait-for-the-settler", field: "campus_claims_wait_for_the_settler", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_claims_wait_for_the_settler, disable: AdvancedAi::disable_campus_claims_wait_for_the_settler },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

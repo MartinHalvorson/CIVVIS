@@ -285,3 +285,52 @@ fn version_two_claims_every_eligible_city_from_two_citizens() {
     let campus = head(&game, ranked[0]).unwrap();
     assert!(ai.free_slot_campus_holds(&game, 0, ranked[0], &plan, &campus));
 }
+
+/// `campus-claims-wait-for-the-settler`: an empire under the city curve with a
+/// site left makes no claim and holds no claimed Campus; at the curve, or
+/// with the gene off, version two claims as before.
+#[test]
+fn the_claim_waits_while_the_empire_trails_the_city_curve() {
+    let (mut game, ranked) = campus_less_empire(95_109, 1);
+    all_queue(&mut game, &ranked, &unit("knight"));
+    let step = game.standard_duration(CLAIM_CITY_CURVE_STANDARD).max(1);
+    // Six cities against a curve that wants seven.
+    game.turn = 5 * step + 1;
+    assert!(game.turn < game.standard_duration(CLAIM_CITY_CURVE_END_STANDARD));
+
+    let mut stock = AdvancedAi::new();
+    stock.enable_campus_claims_the_free_slot_2();
+    let mut gated = AdvancedAi::new();
+    gated.enable_campus_claims_the_free_slot_2();
+    gated.enable_campus_claims_wait_for_the_settler();
+    if !gated.base.has_practical_settle_site(&game, 0) {
+        // No site left: the gate stands aside and the claim runs.
+        assert!(!gated.campus_claims_wait_for_the_cities(&game, 0));
+        return;
+    }
+    assert!(gated.campus_claims_wait_for_the_cities(&game, 0));
+    assert!(!stock.campus_claims_wait_for_the_cities(&game, 0));
+
+    let mut waiting = game.clone();
+    let plan = gated.assess(&waiting, 0);
+    gated.claim_free_slot_campus(&mut waiting, 0, &plan);
+    assert!(
+        ranked
+            .iter()
+            .all(|cid| head(&waiting, *cid) == Some(unit("knight"))),
+        "under the curve: no claim"
+    );
+
+    let mut claimed = game.clone();
+    let plan = stock.assess(&claimed, 0);
+    stock.claim_free_slot_campus(&mut claimed, 0, &plan);
+    assert!(is_campus(&claimed, &head(&claimed, ranked[0])), "off: the claim runs");
+    let campus = head(&claimed, ranked[0]).unwrap();
+    assert!(stock.free_slot_campus_holds(&claimed, 0, ranked[0], &plan, &campus));
+    assert!(!gated.free_slot_campus_holds(&claimed, 0, ranked[0], &plan, &campus));
+
+    // At the curve (six cities, six wanted) the gate stands aside.
+    let mut level = game.clone();
+    level.turn = 4 * step;
+    assert!(!gated.campus_claims_wait_for_the_cities(&level, 0));
+}

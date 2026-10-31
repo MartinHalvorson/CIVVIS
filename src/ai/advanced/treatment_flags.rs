@@ -8832,6 +8832,17 @@ impl AdvancedAi {
         self.stalled_spreader_braves_the_march = false;
     }
 
+    /// Opt-in gene `campus-claims-wait-for-the-settler`; see
+    /// [`Self::campus_claims_wait_for_the_settler`].
+    pub fn enable_campus_claims_wait_for_the_settler(&mut self) {
+        self.campus_claims_wait_for_the_settler = true;
+    }
+
+    /// The twin of `enable_campus_claims_wait_for_the_settler`.
+    pub fn disable_campus_claims_wait_for_the_settler(&mut self) {
+        self.campus_claims_wait_for_the_settler = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -50,7 +50,38 @@ pub(super) const FREE_SLOT_CAMPUS_MIN_POP: i32 = 3;
 /// Version 2's floor: a two-citizen city's first slot goes to its Campus.
 pub(super) const FREE_SLOT_CAMPUS_MIN_POP_2: i32 = 2;
 
+/// `campus-claims-wait-for-the-settler`: the city curve the claim waits for
+/// is two cities plus one per this many standard turns (live turns 40, 60, 80
+/// and 100 at the seat's Quick speed want 4, 5, 6 and 7, the live Immortal
+/// rivals' own curve).
+pub(super) const CLAIM_CITY_CURVE_STANDARD: u32 = 30;
+
+/// The gate's end, in standard turns (live turn 100): past it the claim
+/// runs as before.
+pub(super) const CLAIM_CITY_CURVE_END_STANDARD: u32 = 150;
+
 impl AdvancedAi {
+    /// `campus-claims-wait-for-the-settler`: whether the empire trails the
+    /// city curve ([`CLAIM_CITY_CURVE_STANDARD`]) before
+    /// [`CLAIM_CITY_CURVE_END_STANDARD`] with a practical settle site left.
+    /// Live Immortal 2026-10-30/31: the seats retired under the
+    /// production-share line founded city 4 at a median t49 and city 5 at
+    /// t89.5 against the kept seats' t40 and t49; a calibrated knockout of
+    /// this claim, `campus-buildings-first` and `plaza-in-the-district-list`
+    /// on Culture seats gave +10% production at t80 and +18% at t100 for −10%
+    /// Science at t80. A pop-2 city's first Campus holds its queue 15-25 turns
+    /// at Immortal production. Always false with the gene off.
+    pub(super) fn campus_claims_wait_for_the_cities(&self, g: &Game, pid: usize) -> bool {
+        if !self.campus_claims_wait_for_the_settler
+            || g.turn >= g.standard_duration(CLAIM_CITY_CURVE_END_STANDARD)
+        {
+            return false;
+        }
+        let step = g.standard_duration(CLAIM_CITY_CURVE_STANDARD).max(1);
+        let wanted = 2 + (g.turn / step) as usize;
+        g.player_city_ids(pid).len() < wanted && self.base.has_practical_settle_site(g, pid)
+    }
+
     /// The Campus `cid` would claim and how long it takes: the first Campus
     /// (`BasicAi::first_campus_item`) of an unthreatened city of ours with
     /// [`FREE_SLOT_CAMPUS_MIN_POP`] citizens, none standing or queued, and
@@ -115,7 +146,9 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         item: &Item,
     ) -> bool {
-        if !self.campus_claims_the_free_slot && !self.campus_claims_the_free_slot_2 {
+        if (!self.campus_claims_the_free_slot && !self.campus_claims_the_free_slot_2)
+            || self.campus_claims_wait_for_the_cities(g, pid)
+        {
             return false;
         }
         let Item::District { district, .. } = item else {
@@ -135,7 +168,9 @@ impl AdvancedAi {
     /// it at the head of its queue, idle or over a deferrable item. One claim
     /// a turn. Exact no-op with the gene off.
     pub(super) fn claim_free_slot_campus(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
-        if !self.campus_claims_the_free_slot && !self.campus_claims_the_free_slot_2 {
+        if (!self.campus_claims_the_free_slot && !self.campus_claims_the_free_slot_2)
+            || self.campus_claims_wait_for_the_cities(g, pid)
+        {
             return;
         }
         // Version 2: every eligible city, each the quickest of those left.
