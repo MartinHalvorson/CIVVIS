@@ -9,11 +9,10 @@ fn two_shores() -> Game {
     for uid in g.units.keys().copied().collect::<Vec<_>>() {
         g.remove_unit(uid);
     }
-    for (pos, tile) in g.map.tiles.iter_mut() {
+    for tile in g.map.tiles.values_mut() {
         tile.feature = None;
         tile.hills = false;
-        tile.resource = None;
-        tile.terrain = if (20..=24).contains(&pos.0) {
+        tile.terrain = if (20..=24).contains(&tile.pos.0) {
             crate::name!("ocean")
         } else {
             crate::name!("grassland")
