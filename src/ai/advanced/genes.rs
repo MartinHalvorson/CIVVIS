@@ -4499,6 +4499,13 @@ pub const GENES: &[Gene] = &[
     // prophet race keys on the target, not the strategy. See
     // `advanced/religion_race_expands.rs`.
     Gene { tag: "religion-race-keeps-expanding", field: "religion_race_keeps_expanding", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_race_keeps_expanding, disable: AdvancedAi::disable_religion_race_keeps_expanding },
+    // On 6p Continents a Domination plan aimed overseas never declares: the
+    // army is kept on land at peace and the amphibious train forms only at
+    // war. Live 041027Z aimed at overseas Russia t78-85 and retired with no
+    // city; 22 of 45 rival slots in the long 6p games sat across water. Rivals
+    // reachable by land rank first in the frontier and capital picks and the
+    // hand-over bar. See `advanced/domination_land_first.rs`.
+    Gene { tag: "domination-targets-land-first", field: "domination_targets_land_first", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_targets_land_first, disable: AdvancedAi::disable_domination_targets_land_first },
     // Live Lv 7 2026-10-30: two frontier Corinths fell at t27 (200156Z) and
     // t28 (201608Z) with no walls while the journal read "Anvil at Corinth:
     // … slinger in the city". The Anvil gives the city tile to a Shooter
