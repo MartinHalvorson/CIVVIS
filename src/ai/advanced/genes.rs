@@ -4456,6 +4456,14 @@ pub const GENES: &[Gene] = &[
     // Religion-target founder keeps all three in any plan. See
     // `advanced/religion_lane_spreads.rs`.
     Gene { tag: "religion-lane-spreads-from-founding", field: "religion_lane_spreads_from_founding", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_lane_spreads_from_founding, disable: AdvancedAi::disable_religion_lane_spreads_from_founding },
+    // Live Immortal 054450Z (Domination, 10-31) held its war on Australia at
+    // 6-12x its power on 49 turns from t101: `war_policy_declaration` read
+    // our own faith war on Macedon as "another major war", although
+    // `faith-war-is-no-front` already keeps that war out of
+    // `one_war_holds_declaration`. Melbourne walled up by t123. The board
+    // reads the same exemption. Needs `faith-war-is-no-front` (or -2). See
+    // `war_policy_declaration` in `advanced/war_policy.rs`.
+    Gene { tag: "board-ignores-the-faith-war", field: "board_ignores_the_faith_war", kind: Kind::OptIn, enable: AdvancedAi::enable_board_ignores_the_faith_war, disable: AdvancedAi::disable_board_ignores_the_faith_war },
     // Live Immortal seats 2026-10-30/31 (35 games, Culture, Diplomatic and
     // Science targets): Writing came a median t50 (quartiles 37-65), tenth
     // in the order behind Sailing (97%) and Bronze Working (94%), and the
