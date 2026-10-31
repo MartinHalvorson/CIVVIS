@@ -135,3 +135,29 @@ fn the_launcher_wars_gates_hold() {
         "Domination keeps its own"
     );
 }
+
+/// 011801Z-cont1: the leading racer (Rome, its Mars base landed) stood out of
+/// reach, and a racer behind it (Mali, two projects) was fightable. A war on
+/// Mali stops nothing Rome launches: no counter.
+#[test]
+fn only_the_leading_racer_is_the_counter() {
+    let (mut g, mut ai) = fixture(VictoryTarget::Diplomacy);
+    ai.enable_launcher_war_serves_every_lane();
+    assert_eq!(
+        ai.launcher_lane_counter(&g, 0),
+        Some((1, GrandStrategy::Conquest))
+    );
+    // A third major, unmet and so out of reach, lands its Mars base.
+    let third = g.players.len();
+    let mut leader = g.players[1].clone();
+    leader.id = third;
+    leader
+        .science_projects
+        .insert("launch_mars_colony".to_string());
+    g.players.push(leader);
+    assert_eq!(
+        ai.launcher_lane_counter(&g, 0),
+        None,
+        "the leader is out of reach and the racer behind it is not fought"
+    );
+}
