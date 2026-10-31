@@ -8744,18 +8744,6 @@ impl AdvancedAi {
         self.religion_lane_spreads_from_founding = false;
     }
 
-<<<<<<< HEAD
-    /// Opt-in gene `domination-targets-land-first`; see
-    /// [`Self::domination_targets_land_first`].
-    pub fn enable_domination_targets_land_first(&mut self) {
-        self.domination_targets_land_first = true;
-    }
-
-    /// The twin of `enable_domination_targets_land_first`.
-    pub fn disable_domination_targets_land_first(&mut self) {
-        self.domination_targets_land_first = false;
-||||||| 588d652c1
-=======
     /// Opt-in gene `board-ignores-the-faith-war`; see
     /// [`Self::board_ignores_the_faith_war`].
     pub fn enable_board_ignores_the_faith_war(&mut self) {
@@ -8765,7 +8753,17 @@ impl AdvancedAi {
     /// The twin of `enable_board_ignores_the_faith_war`.
     pub fn disable_board_ignores_the_faith_war(&mut self) {
         self.board_ignores_the_faith_war = false;
->>>>>>> origin/main
+    }
+
+    /// Opt-in gene `domination-targets-land-first`; see
+    /// [`Self::domination_targets_land_first`].
+    pub fn enable_domination_targets_land_first(&mut self) {
+        self.domination_targets_land_first = true;
+    }
+
+    /// The twin of `enable_domination_targets_land_first`.
+    pub fn disable_domination_targets_land_first(&mut self) {
+        self.domination_targets_land_first = false;
     }
 
     // ---- append: a-b ------------------------------------------------
