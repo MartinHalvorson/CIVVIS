@@ -27,6 +27,7 @@ mod counterfaith_source;
 mod defensive_apostle;
 
 mod domination_governors;
+mod domination_land_first;
 mod domination_modernization;
 mod domination_siege_milestones;
 mod regional_production_commitments;
@@ -5517,6 +5518,11 @@ pub struct AdvancedAi {
     /// `advanced/builder_travel_turns.rs`. Off by default.
     builder_prices_travel_in_turns: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `domination-targets-land-first`: a Domination seat ranks rivals it can
+    /// reach by land ahead of overseas ones in its frontier and capital picks
+    /// and its hand-over bar. See `advanced/domination_land_first.rs`. Off by
+    /// default.
+    domination_targets_land_first: bool,
     /// `diplo-seat-statue-harbor`: a Diplomacy seat's strongest coastal city
     /// builds the Harbor the Statue of Liberty needs. See
     /// `advanced/diplo_statue_harbor.rs`. Off by default.
@@ -11166,6 +11172,7 @@ impl AdvancedAi {
             bankruptcy_exits_the_drain: false,
             builder_prices_travel_in_turns: false,
             // ---- append: c-d ----------------------------------------
+            domination_targets_land_first: false,
             diplo_seat_statue_harbor: false,
             culture_routes_reach_every_rival: false,
             culture_seat_monuments: false,
@@ -15457,6 +15464,10 @@ impl AdvancedAi {
         // is nobody nearby to take anything from".
         let weakest_rival = major_rivals
             .iter()
+            // `domination-targets-land-first`: on a Domination seat the bar's
+            // weakest rival is one we can march to. See
+            // `advanced/domination_land_first.rs`.
+            .filter(|other| self.domination_land_rank(g, pid, **other) == 0)
             .filter(|other| {
                 !self.elective_war_in_reach || self.rival_is_in_campaign_reach(g, pid, **other)
             })
@@ -16028,19 +16039,28 @@ impl AdvancedAi {
                         .any(|city| Self::city_within_declaration_range(g, pid, g.cities[city].pos))
                 })
                 .min_by(|left, right| {
-                    self.campaign_target_value_with_culture(
-                        g,
-                        pid,
-                        *left,
-                        rival_culture_pressures.get(left).copied(),
-                    )
-                    .total_cmp(&self.campaign_target_value_with_culture(
-                        g,
-                        pid,
-                        *right,
-                        rival_culture_pressures.get(right).copied(),
-                    ))
-                    .then(left.cmp(right))
+                    // `domination-targets-land-first`: a rival we can march
+                    // to before one across water. See
+                    // `advanced/domination_land_first.rs`.
+                    self.domination_land_rank(g, pid, *left)
+                        .cmp(&self.domination_land_rank(g, pid, *right))
+                        .then_with(|| {
+                            self.campaign_target_value_with_culture(
+                                g,
+                                pid,
+                                *left,
+                                rival_culture_pressures.get(left).copied(),
+                            )
+                            .total_cmp(
+                                &self.campaign_target_value_with_culture(
+                                    g,
+                                    pid,
+                                    *right,
+                                    rival_culture_pressures.get(right).copied(),
+                                ),
+                            )
+                        })
+                        .then(left.cmp(right))
                 })
         } else {
             None
