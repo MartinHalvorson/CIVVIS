@@ -208,5 +208,71 @@ class ProductionSharePolicyTest(unittest.TestCase):
                       "                             or PRODUCTION_SHARE_TURN)", source)
 
 
+def state_record(turn: int, dvp, rivals_dvp, svp=0, needed=25, rivals_svp=None) -> dict:
+    rivals_svp = rivals_svp or [0] * len(rivals_dvp)
+    return {
+        "kind": "state", "ctx": "agent", "turn": turn, "dvp": dvp,
+        "science_victory_points": svp, "science_victory_points_needed": needed,
+        "rivals": [{"dvp": d, "science_victory_points": s}
+                   for d, s in zip(rivals_dvp, rivals_svp)],
+    }
+
+
+class VictoryRaceLeadTest(unittest.TestCase):
+    """Live 10-31: two seats retired one Congress from a Diplomatic Victory."""
+
+    def test_the_two_retired_diplomats_lead(self):
+        for turn, ours, rivals in ((187, 19, [11, 9, 7, 4, 3]), (178, 18, [11, 8, 6, 5])):
+            lead = civ6_play.victory_race_lead(state_record(turn, ours, rivals))
+            self.assertEqual(lead, {"race": "diplomatic", "turn": turn,
+                                    "ours": ours, "best_rival": 11})
+
+    def test_a_tie_at_the_top_still_leads(self):
+        lead = civ6_play.victory_race_lead(state_record(205, 19, [19, 4]))
+        self.assertEqual(lead["race"], "diplomatic")
+
+    def test_under_the_floor_or_behind_leads_nothing(self):
+        floor = civ6_play.RACE_LEAD_DVP
+        self.assertIsNone(civ6_play.victory_race_lead(state_record(90, floor - 1, [2, 1])))
+        self.assertIsNone(civ6_play.victory_race_lead(state_record(180, 15, [17, 4])))
+        self.assertIsNotNone(civ6_play.victory_race_lead(state_record(150, floor, [floor])))
+
+    def test_half_the_science_points_and_ahead_leads_science(self):
+        lead = civ6_play.victory_race_lead(
+            state_record(200, 2, [3], svp=13, needed=25, rivals_svp=[10]))
+        self.assertEqual(lead, {"race": "science", "turn": 200, "ours": 13, "best_rival": 10})
+        self.assertIsNone(civ6_play.victory_race_lead(
+            state_record(200, 2, [3], svp=12, needed=25, rivals_svp=[0])))
+        self.assertIsNone(civ6_play.victory_race_lead(
+            state_record(200, 2, [3], svp=15, needed=25, rivals_svp=[23])))
+
+    def test_no_science_target_leads_no_science_race(self):
+        self.assertIsNone(civ6_play.victory_race_lead(
+            state_record(200, 0, [0], svp=0, needed=0, rivals_svp=[0])))
+
+    def test_unreadable_records_lead_nothing(self):
+        record = state_record(180, 19, [11])
+        self.assertIsNone(civ6_play.victory_race_lead(dict(record, kind="turn")))
+        self.assertIsNone(civ6_play.victory_race_lead(dict(record, ctx="heartbeat")))
+        self.assertIsNone(civ6_play.victory_race_lead(dict(record, rivals=[])))
+        self.assertIsNone(civ6_play.victory_race_lead(dict(record, dvp=-1)))
+        self.assertIsNone(civ6_play.victory_race_lead(dict(record, dvp=None)))
+        self.assertIsNone(civ6_play.victory_race_lead(
+            dict(record, rivals=[{"dvp": -1}, {"dvp": None}])))
+        self.assertIsNone(civ6_play.victory_race_lead(dict(record, rivals="none")))
+
+    def test_the_live_loop_spares_a_race_leader_before_it_retires(self):
+        source = Path(civ6_play.__file__).read_text(encoding="utf-8")
+        self.assertIn('if kind == "state" and event.get("ctx") == "agent":\n'
+                      "            # Re-read every turn: see `victory_race_lead`.\n"
+                      '            state["race_lead"] = victory_race_lead(event)', source)
+        branch = source.split("run = production_share_run(state, reading)", 1)[1][:2500]
+        spare = branch.index("if run >= PRODUCTION_SHARE_TURNS and lead:")
+        retire = branch.index("elif run >= PRODUCTION_SHARE_TURNS:")
+        self.assertLess(spare, retire)
+        self.assertNotIn("abandon_with_retire", branch[spare:retire])
+        self.assertIn('"race_lead_spared": state.get("race_lead_spared")', source)
+
+
 if __name__ == "__main__":
     unittest.main()
