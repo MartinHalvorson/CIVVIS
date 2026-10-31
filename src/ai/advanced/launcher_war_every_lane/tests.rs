@@ -4,7 +4,8 @@ use crate::ai::advanced::{GrandStrategy, VictoryTarget};
 
 /// 224544Z's shape on open grassland: two majors at peace, seat 1's city at
 /// (26, 12) stands a Spaceport at (24, 12) we have seen, its Moon landed and
-/// its Exoplanet not launched, and our army past 0.8 times its power.
+/// its Exoplanet not launched, and our army at eight cavalry to its five,
+/// past the 1.4x a Diplomatic seat needs.
 fn fixture(target: VictoryTarget) -> (Game, AdvancedAi) {
     let mut g = Game::new_full(2, 40, 24, 936301, 650, 0, false);
     for uid in g.units.keys().copied().collect::<Vec<_>>() {
@@ -36,7 +37,16 @@ fn fixture(target: VictoryTarget) -> (Game, AdvancedAi) {
     for project in ["launch_earth_satellite", "launch_moon_landing"] {
         g.players[1].science_projects.insert(project.to_string());
     }
-    for at in [(14, 10), (14, 12), (14, 14), (15, 11)] {
+    for at in [
+        (14, 10),
+        (14, 12),
+        (14, 14),
+        (15, 11),
+        (13, 11),
+        (13, 13),
+        (15, 13),
+        (12, 12),
+    ] {
         g.spawn_test_unit("cavalry", 0, at);
     }
     for at in [(30, 10), (30, 12), (30, 14), (31, 11), (31, 13)] {
@@ -134,4 +144,71 @@ fn the_launcher_wars_gates_hold() {
         None,
         "Domination keeps its own"
     );
+}
+
+/// 011801Z-cont1: the leading racer (Rome, its Mars base landed) stood out of
+/// reach, and a racer behind it (Mali, two projects) was fightable. A war on
+/// Mali stops nothing Rome launches: no counter.
+#[test]
+fn only_the_leading_racer_is_the_counter() {
+    let (mut g, mut ai) = fixture(VictoryTarget::Diplomacy);
+    ai.enable_launcher_war_serves_every_lane();
+    assert_eq!(
+        ai.launcher_lane_counter(&g, 0),
+        Some((1, GrandStrategy::Conquest))
+    );
+    // A third major, unmet and so out of reach, lands its Mars base.
+    let third = g.players.len();
+    let mut leader = g.players[1].clone();
+    leader.id = third;
+    leader
+        .science_projects
+        .insert("launch_mars_colony".to_string());
+    g.players.push(leader);
+    assert_eq!(
+        ai.launcher_lane_counter(&g, 0),
+        None,
+        "the leader is out of reach and the racer behind it is not fought"
+    );
+}
+
+/// 025738Z declared at 0.83x on a neighbour, raided no pad and lost half its
+/// Favor income: off Domination the counter needs 1.4x on a Diplomatic seat
+/// and 1.2x on another lane, though the launcher war's own edge is 0.8.
+#[test]
+fn off_domination_the_war_needs_the_lane_edge() {
+    let (mut g, mut ai) = fixture(VictoryTarget::Diplomacy);
+    ai.enable_launcher_war_serves_every_lane();
+    assert!(ai.launcher_lane_war(&g, 0, 1), "8 to 5: past 1.4x");
+    // Two more rival cavalry: 8 to 7, about 1.14x.
+    for at in [(32, 10), (32, 12)] {
+        g.spawn_test_unit("cavalry", 1, at);
+    }
+    let ratio = g.military_power(0) / ai.steady_rival_power(&g, 1).max(1.0);
+    assert!(ratio > 0.8 && ratio < 1.2, "{ratio}");
+    assert!(
+        ai.launcher_war_opens(&g, 0, 1),
+        "the launcher war's own edge passes"
+    );
+    assert!(!ai.launcher_lane_war(&g, 0, 1), "Diplomatic: short of 1.4x");
+    ai.retarget(VictoryTarget::Culture);
+    assert!(!ai.launcher_lane_war(&g, 0, 1), "Culture: short of 1.2x");
+}
+
+/// Operator 10-31: Science seats now play the lane. A Science seat keeps
+/// racing while it has landed as many projects as the racer; once the racer
+/// is ahead, the war is its counter.
+#[test]
+fn a_science_seat_fights_only_a_racer_ahead_of_it() {
+    let (mut g, mut ai) = fixture(VictoryTarget::Science);
+    ai.enable_launcher_war_serves_every_lane();
+    assert_eq!(
+        ai.launcher_lane_counter(&g, 0),
+        Some((1, GrandStrategy::Conquest)),
+        "the racer is two projects ahead"
+    );
+    for project in ["launch_earth_satellite", "launch_moon_landing"] {
+        g.players[0].science_projects.insert(project.to_string());
+    }
+    assert_eq!(ai.launcher_lane_counter(&g, 0), None, "level: race in lane");
 }
