@@ -8799,6 +8799,17 @@ impl AdvancedAi {
         self.early_route_feeds_production = false;
     }
 
+    /// Opt-in gene `religion-race-keeps-expanding`; see
+    /// [`Self::religion_race_keeps_expanding`].
+    pub fn enable_religion_race_keeps_expanding(&mut self) {
+        self.religion_race_keeps_expanding = true;
+    }
+
+    /// The twin of `enable_religion_race_keeps_expanding`.
+    pub fn disable_religion_race_keeps_expanding(&mut self) {
+        self.religion_race_keeps_expanding = false;
+    }
+
     /// Opt-in gene `capital-walls-at-any-ratio`; see
     /// [`Self::capital_walls_at_any_ratio`].
     pub fn enable_capital_walls_at_any_ratio(&mut self) {
