@@ -270,6 +270,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `solvent-or-hold` | off (unmeasured) | Opt-in gene `solvent-or-hold`; see `advanced/solvency.rs`. | 1 \| 1 |
 | `stage-reads-the-muster-breakers` | off (unmeasured) | Let a mustered siege count the guns it mustered when it stages. | 1 \| 1 |
 | `staging-gun-trusts-its-escort-2` | off (unmeasured) | Opt-in gene `staging-gun-trusts-its-escort-2`; see `Self::staging_gun_trusts_its_escort_2`. | 1 \| 2 |
+| `stalled-spreader-braves-the-march` | off (unmeasured) | Opt-in gene `stalled-spreader-braves-the-march`; see `Self::stalled_spreader_braves_the_march`. | 1 \| 1 |
 | `surprise-watch-holds-its-ratio` | off (unmeasured) | Opt-in gene `surprise-watch-holds-its-ratio`; see `Self::surprise_watch_holds_its_ratio`. | 1 \| 1 |
 | `the-giant-gets-the-peace-offer` | off (unmeasured) | Opt-in gene `the-giant-gets-the-peace-offer`; see `Self::the_giant_gets_the_peace_offer`. | 1 \| 1 |
 | `the-last-two-capitals-come-first` | off (unmeasured) | Opt-in gene `the-last-two-capitals-come-first`; see `Self::the_last_two_capitals_come_first`. | 1 \| 1 |
