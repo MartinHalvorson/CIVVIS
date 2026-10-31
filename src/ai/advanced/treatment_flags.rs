@@ -8897,6 +8897,19 @@ impl AdvancedAi {
         self.religion_seat_defends_its_faith = false;
     }
 
+    /// Opt-in gene `deck-prices-growth`; see
+    /// `BasicAi::deck_prices_growth`.
+    pub fn enable_deck_prices_growth(&mut self) {
+        self.deck_prices_growth = true;
+        self.base.enable_deck_prices_growth();
+    }
+
+    /// The twin of `enable_deck_prices_growth`.
+    pub fn disable_deck_prices_growth(&mut self) {
+        self.deck_prices_growth = false;
+        self.base.disable_deck_prices_growth();
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

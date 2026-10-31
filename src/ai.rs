@@ -404,6 +404,8 @@ mod industrial_zones;
 mod movement_risk;
 mod naval_demand;
 mod opening_builder;
+#[cfg(test)]
+mod policy_growth_tests;
 mod scout_first;
 mod scout_inference;
 mod siege_support;
@@ -778,6 +780,15 @@ const POLICY_PRIORITY: [&str; 20] = [
 /// scale of a civic unlocking, not of a turn passing.
 const POLICY_REVIEW_EVERY: u32 = 8;
 
+/// `deck-prices-growth`: a point of growth surplus is priced at this share of
+/// the Food weight, on top of the Food itself. Live Immortal 2026-10-30/31
+/// (seats alive past t120): 32-42% of our cities grew at half or a quarter
+/// for housing and 22-28% were short of Amenities at t80-t140, our citizens
+/// per city stood at 0.68-0.77 of the production leader's, and the deck
+/// slotted Insulae in 1 of the 99 t80 seats that held it and Retainers in 18
+/// of 89.
+const DECK_GROWTH_FOOD_SHARE: f64 = 1.0;
+
 /// A policy review has only a few dozen independent cards, while each active
 /// worker needs a full private game snapshot. Four branches are the measured
 /// knee on the deployment-shaped single-game workload; use the rest of the
@@ -827,6 +838,21 @@ fn empire_reading(
             + w.pol_science * y.science
             + w.pol_culture * y.culture
             + w.pol_faith * y.faith;
+        // `deck-prices-growth`: the Food that reaches the growth bank after
+        // the housing, amenity and loyalty throttles. Skipped at zero, so the
+        // shipped reading is untouched.
+        if w.pol_growth != 0.0 {
+            if let Some(city) = g.cities.get(&cid) {
+                let surplus = g.city_growth_surplus(
+                    pid,
+                    cid,
+                    y.food,
+                    g.city_housing(city),
+                    g.city_amenity_surplus(city),
+                );
+                value += w.pol_growth * surplus.max(0.0);
+            }
+        }
     }
     if let Some(y) = g.observed_yield_adjustments.get(&pid) {
         value += w.pol_food * y.food
@@ -1406,6 +1432,15 @@ pub struct Weights {
     /// prize is large. The right value is not derivable from that and is what
     /// an evaluation is for; this exists so the axis can be measured at all.
     pub pol_influence: f64,
+    /// What one point of a city's growth surplus -- its Food past consumption
+    /// after the housing, amenity and loyalty throttles
+    /// (`Game::city_growth_surplus`) -- is worth to the policy valuation.
+    ///
+    /// **Zero by default, which reproduces the shipped behaviour exactly.** A
+    /// housing card (Insulae, Medina Quarter) or an amenity card (Retainers,
+    /// Liberalism) moves no yield the sweep reads: it lifts a growth throttle,
+    /// so its value is the growth it releases. `deck-prices-growth` sets it.
+    pub pol_growth: f64,
     /// Fraction by which a challenger must beat the incumbent to take its
     /// slot. Zero re-shuffles the deck on noise; one never swaps at all.
     pub pol_swap_margin: f64,
@@ -1627,6 +1662,7 @@ impl Default for Weights {
             pol_faith: 0.7,
             pol_military: 0.05,
             pol_influence: 0.0,
+            pol_growth: 0.0,
             pol_swap_margin: 0.15,
             // Identity. Every production arm is multiplied by its category
             // gene, and multiplying a finite score by exactly 1.0 is exact, so
@@ -1795,6 +1831,7 @@ impl Weights {
         weights.pol_faith = template.pol_faith;
         weights.pol_military = template.pol_military;
         weights.pol_influence = template.pol_influence;
+        weights.pol_growth = template.pol_growth;
         weights.pol_swap_margin = template.pol_swap_margin;
         weights.policy_deck = template.policy_deck;
         weights.dedication_choice = template.dedication_choice;
@@ -3873,6 +3910,11 @@ pub struct BasicAi {
     /// reads the policy income paid to the player (`player_policy_yields`)
     /// beside the cities' yields. Set by the Advanced gene; off by default.
     pub(crate) deck_reads_player_income: bool,
+    /// `deck-prices-growth`: the policy counterfactual prices each city's
+    /// growth surplus (`Weights::pol_growth` at the Food weight), so housing
+    /// and amenity cards are worth the growth they release. Set by the
+    /// Advanced gene; off by default.
+    pub(crate) deck_prices_growth: bool,
     /// Reserve the first usable empty trade slot before ordinary production
     /// and judge safety at the city that can actually start the route. The
     /// old gate vetoes every Trader when any city in the empire has a local
@@ -5966,6 +6008,7 @@ impl BasicAi {
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             deck_reads_player_income: false,
+            deck_prices_growth: false,
             solvency_first_trade_slot: false,
             builder_tries_the_next_tile: false,
             naval_threat_triage: false,
@@ -6060,6 +6103,16 @@ impl BasicAi {
     /// Disable the baseline half of the capital-settler-after-completion gene.
     pub(crate) fn disable_capital_settler_after_completion(&mut self) {
         self.capital_settler_after_completion = false;
+    }
+
+    /// See `deck_prices_growth`.
+    pub(crate) fn enable_deck_prices_growth(&mut self) {
+        self.deck_prices_growth = true;
+    }
+
+    /// The twin of `enable_deck_prices_growth`.
+    pub(crate) fn disable_deck_prices_growth(&mut self) {
+        self.deck_prices_growth = false;
     }
 
     /// See `opening_builder_after_the_first_settler`.
@@ -6502,6 +6555,7 @@ impl BasicAi {
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             deck_reads_player_income: false,
+            deck_prices_growth: false,
             solvency_first_trade_slot: false,
             builder_tries_the_next_tile: false,
             naval_threat_triage: false,
@@ -9047,10 +9101,21 @@ impl BasicAi {
                 }
             }
         }
+        // `deck-prices-growth`: the same weights with the growth surplus
+        // priced at the Food weight.
+        let priced;
+        let deck_weights = if self.deck_prices_growth {
+            let mut w = self.w.clone();
+            w.pol_growth = w.pol_food * DECK_GROWTH_FOOD_SHARE;
+            priced = w;
+            &priced
+        } else {
+            &self.w
+        };
         revise_policy_deck(
             g,
             pid,
-            &self.w,
+            deck_weights,
             pool,
             self.maintenance_aware_deck,
             self.deck_reads_player_income,

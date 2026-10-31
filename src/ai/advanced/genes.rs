@@ -4559,6 +4559,14 @@ pub const GENES: &[Gene] = &[
     // Victory needs our faith to hold our own cities too. Opens them for a
     // seat aiming at Religion. See `defensive_apostle.rs`.
     Gene { tag: "religion-seat-defends-its-faith", field: "religion_seat_defends_its_faith", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_defends_its_faith, disable: AdvancedAi::disable_religion_seat_defends_its_faith },
+    // Live Immortal 2026-10-30/31, seats alive past t120: 32-42% of cities
+    // grew at half or a quarter for housing and 22-28% were short of
+    // Amenities at t80-t140, with our citizens per city at 0.68-0.77 of the
+    // production leader's. The policy counterfactual reads yields only, so a
+    // housing or amenity card read as nearly nothing: Insulae slotted in 1 of
+    // 99 t80 seats holding it, Retainers in 18 of 89. The deck prices each
+    // city's growth surplus. See `BasicAi::deck_prices_growth`.
+    Gene { tag: "deck-prices-growth", field: "deck_prices_growth", kind: Kind::OptIn, enable: AdvancedAi::enable_deck_prices_growth, disable: AdvancedAi::disable_deck_prices_growth },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
