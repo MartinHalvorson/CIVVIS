@@ -2513,6 +2513,10 @@ pub struct AdvancedAi {
     /// needs no entry in `remap_unit_memory`. (last turn counted, turns).
     /// See `naval_escort_patience`.
     naval_escort_waits: BTreeMap<Pos, (u32, u8)>,
+    /// The last turn a Settler crossed alone toward each target site, under
+    /// `naval-crossing-keeps-going`. Keyed by the site, so it needs no entry
+    /// in `remap_unit_memory`. See `advanced/naval_crossing.rs`.
+    naval_crossing_targets: BTreeMap<Pos, u32>,
     /// Every visible hostile military unit as it stood BEFORE anything of
     /// ours acted this turn, under `settler_stack_discipline`. The live
     /// bridge's finishing volley (`civvis_orders::finish_live_war_units`)
@@ -7883,6 +7887,10 @@ pub struct AdvancedAi {
     /// Builder follows its first Settler. The behaviour lives on
     /// `BasicAi::opening_builder_after_the_first_settler`. Off by default.
     opening_builder_after_the_first_settler: bool,
+    /// `naval-crossing-keeps-going`: a Settler that has crossed alone keeps
+    /// crossing on a quiet sea instead of waiting again at every water tile.
+    /// See `advanced/naval_crossing.rs`.
+    naval_crossing_keeps_going: bool,
     // ---- append: p-r ------------------------------------------------
     /// `religion-lane-spreads-from-founding`: a Religion-target seat that has
     /// founded keeps the Religion plan's spreading posture, Faith reserve and
@@ -10010,6 +10018,8 @@ mod expansion_schedule;
 mod government_ladder;
 mod governor_dividends;
 mod higher_level_strategy;
+/// `naval-crossing-keeps-going`: see `advanced/naval_crossing.rs`.
+mod naval_crossing;
 /// `near-rival-deterrence`: a land unit a turn while a neighbour at peace
 /// out-guns us in the opening. One opt-in gene; see
 /// `advanced/near_rival_deterrence.rs`.
@@ -10875,6 +10885,7 @@ impl AdvancedAi {
             settler_escort_journeys: BTreeMap::new(),
             guard_wait: BTreeMap::new(),
             naval_escort_waits: BTreeMap::new(),
+            naval_crossing_targets: BTreeMap::new(),
             turn_start_hostiles: Vec::new(),
             turn_start_hostiles_turn: None,
             religion_sues_peace: false,
@@ -11507,6 +11518,7 @@ impl AdvancedAi {
             launcher_war_ignores_the_edge: false,
             luxury_swap_asks_2: false,
             opening_builder_after_the_first_settler: false,
+            naval_crossing_keeps_going: false,
             // ---- append: p-r ----------------------------------------
             religion_lane_spreads_from_founding: false,
             rival_city_pace: None,

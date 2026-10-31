@@ -8755,6 +8755,17 @@ impl AdvancedAi {
         self.board_ignores_the_faith_war = false;
     }
 
+    /// Opt-in gene `naval-crossing-keeps-going`; see
+    /// [`Self::naval_crossing_keeps_going`].
+    pub fn enable_naval_crossing_keeps_going(&mut self) {
+        self.naval_crossing_keeps_going = true;
+    }
+
+    /// The twin of `enable_naval_crossing_keeps_going`.
+    pub fn disable_naval_crossing_keeps_going(&mut self) {
+        self.naval_crossing_keeps_going = false;
+    }
+
     /// Opt-in gene `builder-prices-travel-in-turns`; see
     /// [`Self::builder_prices_travel_in_turns`].
     pub fn enable_builder_prices_travel_in_turns(&mut self) {
