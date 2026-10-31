@@ -59,7 +59,11 @@ const LANES: [VictoryTarget; 4] = [
 fn every_named_lane_takes_the_writing_goal_under_the_gene() {
     for target in LANES {
         let (g, mut ai, _) = opening(target);
-        assert_eq!(ai.domination_campus_unlock_goal(&g, 0), None, "{target:?} stock");
+        assert_eq!(
+            ai.domination_campus_unlock_goal(&g, 0),
+            None,
+            "{target:?} stock"
+        );
         ai.enable_campus_unlock_in_every_lane();
         assert_eq!(
             ai.domination_campus_unlock_goal(&g, 0),
