@@ -14,7 +14,7 @@ const FRONTIER_WALLS_RATIO: f64 = 2.0;
 const FRONTIER_SETTLER_FINISH_TURNS: f64 = 2.0;
 
 impl AdvancedAi {
-    fn frontier_watch_city(g: &Game, pid: usize, cid: u32) -> bool {
+    pub(super) fn frontier_watch_city(g: &Game, pid: usize, cid: u32) -> bool {
         g.cities.get(&cid).is_some_and(|city| {
             city.owner == pid && !city.is_capital && g.city_max_wall_hp(city) <= 0
         })
@@ -88,6 +88,9 @@ impl AdvancedAi {
             .map(|((_, rival), _)| (*rival, g.military_power(*rival) / ours))
             .filter(|(_, ratio)| *ratio >= FRONTIER_WALLS_RATIO)
             .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)))
+            // `surprise-watch-holds-its-ratio`: see
+            // `advanced/surprise_watch_latch.rs`. `None` with the gene off.
+            .or_else(|| self.frontier_surprise_latched(g, pid, cid))
     }
 
     pub(super) fn frontier_walls_research_threat(
