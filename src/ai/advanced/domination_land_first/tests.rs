@@ -2,8 +2,8 @@ use super::*;
 use crate::ai::advanced::test_support::opt_in_off_in_both_controllers;
 use crate::ai::advanced::VictoryTarget;
 
-/// Our city and a rival on one grassland continent, a second rival's city
-/// behind a band of ocean.
+/// Our city and a rival on one grassland island, a second rival's city on
+/// another; ocean everywhere else, so the map's wrap cannot join them.
 fn two_shores() -> Game {
     let mut g = Game::new_full(3, 40, 24, 936_611, 650, 0, false);
     for uid in g.units.keys().copied().collect::<Vec<_>>() {
@@ -12,10 +12,12 @@ fn two_shores() -> Game {
     for tile in g.map.tiles.values_mut() {
         tile.feature = None;
         tile.hills = false;
-        tile.terrain = if (20..=24).contains(&tile.pos.0) {
-            crate::name!("ocean")
-        } else {
+        let (x, y) = tile.pos;
+        let land = (8..=16).contains(&y) && ((3..=18).contains(&x) || (26..=35).contains(&x));
+        tile.terrain = if land {
             crate::name!("grassland")
+        } else {
+            crate::name!("ocean")
         };
     }
     g.found_city_for(0, (10, 12), None);
