@@ -4464,6 +4464,12 @@ pub const GENES: &[Gene] = &[
     // reads the same exemption. Needs `faith-war-is-no-front` (or -2). See
     // `war_policy_declaration` in `advanced/war_policy.rs`.
     Gene { tag: "board-ignores-the-faith-war", field: "board_ignores_the_faith_war", kind: Kind::OptIn, enable: AdvancedAi::enable_board_ignores_the_faith_war, disable: AdvancedAi::disable_board_ignores_the_faith_war },
+    // Live Immortal 6p Continents 10-31: `naval-escort-patience` counts its
+    // wait per water tile, so a Settler crossing alone held two turns at every
+    // tile (042324Z: t52-79 afloat, 110 holds on 48 turns; 024232Z 22 turns,
+    // 011801Z 19). A voyage that has crossed alone steps on while the sea
+    // stays quiet. See `advanced/naval_crossing.rs`.
+    Gene { tag: "naval-crossing-keeps-going", field: "naval_crossing_keeps_going", kind: Kind::OptIn, enable: AdvancedAi::enable_naval_crossing_keeps_going, disable: AdvancedAi::disable_naval_crossing_keeps_going },
     // The t80 production gate retires 16 of 20 6p Immortal seats at a median
     // share of 0.23. The first Trader (~t21) goes foreign or to a city-state
     // for ~4 Gold in kept and retired seats alike: `commercial-hub-and-traders`
