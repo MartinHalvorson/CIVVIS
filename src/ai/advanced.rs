@@ -19097,6 +19097,19 @@ impl AdvancedAi {
                 }
                 _ if opening_archery_goal.is_some() => opening_archery_goal.as_deref(),
                 _ if defensive_walls_goal.is_some() => defensive_walls_goal.as_deref(),
+                // `diplo-match-point-beelines-the-points`: from match point the
+                // last points in the tree, whatever the plan reads, ahead of
+                // every war and lane arm below. Live Immortal
+                // civvis-20261031T011801Z stood on 19 of 20 from t172 while
+                // Rocketry (`domination-siege-research`), Guidance Systems (the
+                // wartime modernization) and then the counter plan's Satellites
+                // and Electricity took the slot; Seasteads started at t201 and
+                // Rome won on Science at t205. Behind only the walls and the
+                // opening Archery, which are done long before the bar. Exact
+                // no-op while the gene is off.
+                _ if self.diplo_match_point_tech(g, pid).is_some() => {
+                    self.diplo_match_point_tech(g, pid)
+                }
                 _ if conversion_upgrade_goal.is_some() => conversion_upgrade_goal,
                 _ if self.war_plan.as_ref().is_some_and(|plan| {
                     !g.players[pid].techs.contains(&plan.breakthrough_tech)
@@ -19265,11 +19278,6 @@ impl AdvancedAi {
                 _ if great_person_goal.is_some() => great_person_goal.as_deref(),
                 _ if science_commitment && science_lane_active => {
                     Self::science_victory_tech_goal(g, pid, GrandStrategy::Science)
-                }
-                // `diplo-match-point-beelines-the-points`: the last points in the
-                // tree, whatever the plan reads. Exact no-op while the gene is off.
-                _ if self.diplo_match_point_tech(g, pid).is_some() => {
-                    self.diplo_match_point_tech(g, pid)
                 }
                 GrandStrategy::Culture if self.phase_specialization_active(g) => {
                     ["printing", "radio", "computers"]
