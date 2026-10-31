@@ -4448,6 +4448,14 @@ pub const GENES: &[Gene] = &[
     // nor Diplomacy stays out of the race unless a Prophet is pending. See
     // `advanced/immortal_prophet_race.rs`.
     Gene { tag: "immortal-skips-the-prophet-race", field: "immortal_skips_the_prophet_race", kind: Kind::OptIn, enable: AdvancedAi::enable_immortal_skips_the_prophet_race, disable: AdvancedAi::disable_immortal_skips_the_prophet_race },
+    // Operator 10-31 rolls Religion-target seats into the Lv 7 lane. After
+    // founding (median t44-54 live), a Religion seat's plan reads Expansion
+    // until ~t125, and the spreading posture, the 80-Faith reserve and
+    // religious production all key on the plan, so the corps idles while
+    // rivals finish at t145-176 (native, 6 seats, 0 religious wins). A
+    // Religion-target founder keeps all three in any plan. See
+    // `advanced/religion_lane_spreads.rs`.
+    Gene { tag: "religion-lane-spreads-from-founding", field: "religion_lane_spreads_from_founding", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_lane_spreads_from_founding, disable: AdvancedAi::disable_religion_lane_spreads_from_founding },
     // A Religion-target seat that lost the Prophet race keeps a Religion
     // plan, with no religion, for the rest of the game: the 4th religion
     // closed the race at a median t47.5 live (6p Immortal), and our seat
