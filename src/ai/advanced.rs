@@ -8989,6 +8989,10 @@ pub struct AdvancedAi {
     /// space project, and the live binary passes its alliances to the host.
     /// See `advanced/culture_seat_allies.rs`. Off by default.
     science_seat_allies: bool,
+    /// `science-denounce-names-the-leader`: `science-threat-denial` denounces
+    /// only the most pressing science threat, the leading racer the launcher
+    /// war answers. See `advanced/science_threat_denial.rs`. Off by default.
+    science_denounce_names_the_leader: bool,
     // ---- append: t-z ------------------------------------------------
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
@@ -11802,6 +11806,7 @@ impl AdvancedAi {
             science_drive_answers_the_launch: false,
             settler_founds_under_raiders: false,
             science_seat_allies: false,
+            science_denounce_names_the_leader: false,
             // ---- append: t-z ----------------------------------------
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,
