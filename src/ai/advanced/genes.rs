@@ -4506,6 +4506,12 @@ pub const GENES: &[Gene] = &[
     // reachable by land rank first in the frontier and capital picks and the
     // hand-over bar. See `advanced/domination_land_first.rs`.
     Gene { tag: "domination-targets-land-first", field: "domination_targets_land_first", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_targets_land_first, disable: AdvancedAi::disable_domination_targets_land_first },
+    // On a Religion seat, `spreader-steps-out-of-the-apostle` pins the corps
+    // in a pocket while an out-trading Apostle camps on every approach: live
+    // Immortal 063431Z logged 821 holds on 43 turns (one Missionary t118-177)
+    // and spread 5 times all game. After three held turns a spreader yields
+    // only to a lethal blow for six turns. See `advanced/stalled_spreader.rs`.
+    Gene { tag: "stalled-spreader-braves-the-march", field: "stalled_spreader_braves_the_march", kind: Kind::OptIn, enable: AdvancedAi::enable_stalled_spreader_braves_the_march, disable: AdvancedAi::disable_stalled_spreader_braves_the_march },
     // Live Lv 7 2026-10-30: two frontier Corinths fell at t27 (200156Z) and
     // t28 (201608Z) with no walls while the journal read "Anvil at Corinth:
     // … slinger in the city". The Anvil gives the city tile to a Shooter
