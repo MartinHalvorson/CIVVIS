@@ -2396,8 +2396,8 @@ each:
 | kind | the seat |
 |---|---|
 | `legacy` | `AdvancedAi::legacy()`, the frozen anchor |
-| `firaxis-mix` | the deployment genome (`AdvancedAi::new()`) retargeted at one lane drawn in the shares the live Civilization VI ladder actually loses to — **diplomatic 32 : culture 27 : religious 8 : science 4 : domination 1** (the Hall of Fame census, `docs/eval/2026-08-18-we-screen-against-a-religion-game-and-lose-a-diplomacy-game.md`); 72 consecutive firaxis-mix games play each lane exactly its share |
-| `random` | a genome with every screened gene on at one half, drawn by the screen's own draw |
+| `firaxis-mix` | the **stock** agent (`AdvancedAi::new()`: the six `Production` genes and `Weights::default().city_target` 4 — ⚠ *not* the deployment genome since #3749, 2026-09-24, whatever this row said before) retargeted at one lane drawn in the shares the live Civilization VI ladder lost to in August — **diplomatic 32 : culture 27 : religious 8 : science 4 : domination 1** (the Hall of Fame census, `docs/eval/2026-08-18-we-screen-against-a-religion-game-and-lose-a-diplomacy-game.md`); 72 consecutive firaxis-mix games play each lane exactly its share |
+| `random` | a genome with every screened gene on at one half, drawn by the screen's own draw — under `--deployment-genome`, where nothing is screened, exactly the deployment genome |
 
 **The rival seat is not measured.** Its row is written with `kind: "rival"`
 (and `rival_mix` naming the kind, `rival_target` the lane a firaxis-mix rival
@@ -2449,6 +2449,74 @@ a win column from a `--handicap rivals` source is a statement about the seat
 against handicapped rivals, **not comparable to the self-play columns** beside
 it; the on-off difference (`win_delta_pp`, what the posterior reads) is the
 statement about the gene. The arithmetic is deliberately unchanged.
+
+### ⭐ The faithful field: `--rivals firaxis-faithful` (2026-10-31)
+
+**Why.** The mix's three kinds are three different opponents, and only one of
+them looks like the live Immortal field. On the 49-game Immortal culture screen
+of 2026-10-30 (`--rivals firaxis-mix --handicap rivals --rival-chairs 3`, 4p
+50x32) the measured seat won **12/17 against the stock `firaxis-mix` chair,
+4/16 against `legacy` and 0/16 against `random`** — which under
+`--deployment-genome` is the deployment genome. The live Lv 7 seat won 0 of ~20
+culture seats. Per-turn rival means against the 4p Tiny live census (53
+Immortal Pericles seats, 2026-10-30):
+
+| rival mean | t80 cities / pop / production | t80 wonders | t150 cities | t150 science |
+|---|---|---:|---:|---:|
+| live Immortal | 6.0 / 45 / 134 | 3.7 | 9.3 | 214 |
+| stock (`firaxis-mix`) | 3.3 / 22 / 76 | 0.2 | 4.3 | 90 |
+| `legacy` | 3.3 / 23 / 75 | 3.4 | 4.8 | 134 |
+| deployment genome (`random`) | 8.5 / 55 / 281 | 4.3 | 11 | 299 |
+
+The stock chair never passes five cities and leaves the wonders to us (our
+native culture wins held a median 13.5; the live seat holds 0–1 to turn 175).
+Its lane draw is blocky too: `firaxis_mix_target` indexes a 72-slot sequence by
+`seed / 3`, so 96 consecutive seeds all play the diplomatic lane, and every one
+of that screen's 51 `firaxis-mix` chairs did.
+
+**What it seats.** Every rival chair of every game — no rotation — plays the
+deployment genome, each gene at its ledger default read from the registry
+(`faithful_genome`), not from the table `--live-genome` rewrites, and built by a
+constructor that takes no genome (`faithful_rival_seat`): nothing an arm drew
+reaches the opposition. Each chair's lane is hashed from (seed, chair) over
+`LIVE_IMMORTAL_LANES` — **science 9 : culture 6 : religious 4 : own choice 2**,
+what beat the live Lv 7 seat (technology 9, culture 6, religious 4 of 19 rival
+wins) — so a short batch already plays the census and the chairs of one game
+split. An own-choice chair is not retargeted. Rows say `rival_mix:
+"firaxis-faithful"` and `rival_target` (`own-choice` for an untargeted chair);
+the header says `rivals: "firaxis-faithful"`, so `tools/genes.py` records it
+and `--analyze` refuses to merge it with a `firaxis-mix` source.
+
+**The live shape.** Since 2026-10-31 the live lane is six players on Continents
+`MAPSIZE_SMALL` — 74x46 and 9 city-states (`CIV6_MAP_SIZES` in `src/setup.rs`,
+`(6, 9)` in `tools/civ6_play.py`) — which is **the screen's own default board**,
+so no shape flag is needed:
+
+```
+gene_screen --rivals firaxis-faithful --handicap rivals --rival-chairs 5 \
+  --difficulty immortal --target-mix diplomatic --deployment-genome --trace --out rows.jsonl
+```
+
+(`--difficulty deity` for the 30% Deity rung; drop `--deployment-genome` and
+add `--genes …` to screen.) The Lv 7 corpus above was 4p Tiny Pangaea —
+`--players 4 --rival-chairs 3 --width 60 --height 38 --city-states 6 --map
+pangaea` — for re-reading it.
+
+**`--trace`** writes every major's economy at turns 10–100 by tens, 125, 150,
+175, 200 and 225 onto its row as `trace` (cities, population, the five yields
+with the rung's handicap, tourism, domestic and foreign tourists, techs,
+civics, wonders, districts, and whether the seat was handicapped) — what the
+live `events.jsonl` state rows read for a rival. Rows are byte for byte
+unchanged without it.
+
+**What it is not, yet.** It is not calibrated: the deployment genome
+over-delivers on width and science against the live field (above), so a
+faithful source is a harder opponent than live Immortal on the science lane,
+not an equal one. A rival pace cap is a separate decision. It costs more: the
+deployment chairs ran 3.0 s/turn against the stock chair's 1.27 on the same
+host, about 2.3x per game. And ⚠ `Game::domestic_tourists` is not floored at
+zero, so a seat whose people mostly visit others reads negative natively
+(seen in a trace at −12); the host never does. Engine-side, noted here only.
 
 ## ⭐ The drift meter (2026-08-25)
 
