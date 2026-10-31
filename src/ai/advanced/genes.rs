@@ -4398,8 +4398,8 @@ pub const GENES: &[Gene] = &[
     // the Prophet race by t58-60 with 36-93 points, the capital (6-9
     // Production) having spent t34-t55 on the race's Holy Site and Shrine
     // (civvis-20261030T220042Z, 134907Z), and 16 of 27 retired under the
-    // production rule. At Immortal and Deity a seat not aiming at Religion
-    // stays out of the race unless a Prophet is pending. See
+    // production rule. At Immortal and Deity a seat aiming at neither Religion
+    // nor Diplomacy stays out of the race unless a Prophet is pending. See
     // `advanced/immortal_prophet_race.rs`.
     Gene { tag: "immortal-skips-the-prophet-race", field: "immortal_skips_the_prophet_race", kind: Kind::OptIn, enable: AdvancedAi::enable_immortal_skips_the_prophet_race, disable: AdvancedAi::disable_immortal_skips_the_prophet_race },
     // ---- append: a-b ------------------------------------------------

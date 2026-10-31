@@ -55,5 +55,13 @@ fn a_high_tier_culture_seat_sits_the_race_out() {
 fn a_pending_prophet_still_founds() {
     let mut game = board("immortal");
     game.players[0].prophet_pending = true;
+    assert!(seat(VictoryTarget::Culture, true).prophet_race_open_for(&game, 0));
+}
+
+/// A Diplomatic seat keeps the race: the Mahabodhi Temple and the founder's
+/// Inquisition both need a religion of our own.
+#[test]
+fn a_diplomatic_seat_keeps_the_race() {
+    let game = board("deity");
     assert!(seat(VictoryTarget::Diplomacy, true).prophet_race_open_for(&game, 0));
 }

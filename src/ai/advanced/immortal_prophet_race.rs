@@ -19,8 +19,9 @@
 //!   (under a quarter of the leader's Production by t80-91).
 //!
 //! **What the gene does.** `prophet_race_open_for` reads closed at Immortal
-//! and Deity for a seat whose victory target is not Religion, before any
-//! other test, unless a Prophet is pending (a Prophet earned or bought still
+//! and Deity for a seat whose victory target is neither Religion nor
+//! Diplomacy (whose Mahabodhi points and founder defence need a faith), before
+//! any other test, unless a Prophet is pending (a Prophet earned or bought still
 //! founds). Every part of the race package admits through that gate or
 //! `prophet_race_enterable_for`, which calls it. Off, or below Immortal,
 //! nothing changes.
@@ -29,12 +30,18 @@ use super::*;
 
 impl AdvancedAi {
     /// Whether this seat sits out the Prophet race at its difficulty: the gene
-    /// is on, the majors play Immortal or Deity, and the seat is not aiming at
-    /// a Religious victory.
+    /// is on, the majors play Immortal or Deity, and the seat is aiming at
+    /// neither a Religious nor a Diplomatic victory. A Diplomatic seat keeps
+    /// the race: the Mahabodhi Temple's two points and the founder's
+    /// Inquisition defence (`inquisition-defends-the-diplomat`) both need a
+    /// religion of our own, and this gene's probe measured Culture seats only.
     pub(super) fn high_tier_skips_the_prophet_race(&self, g: &Game) -> bool {
         self.immortal_skips_the_prophet_race
             && matches!(g.difficulty.as_str(), "immortal" | "deity")
-            && self.active_victory_target(g) != Some(VictoryTarget::Religion)
+            && !matches!(
+                self.active_victory_target(g),
+                Some(VictoryTarget::Religion | VictoryTarget::Diplomacy)
+            )
     }
 }
 
