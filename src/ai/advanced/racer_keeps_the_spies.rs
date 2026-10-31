@@ -145,6 +145,32 @@ impl AdvancedAi {
         self.denial_spy_racers(g, pid)
     }
 
+    /// The cities of `seat` we have not seen: the host's public city count
+    /// (`ObservedPublicEmpireStats::city_count`) less the cities on our
+    /// board. Zero off the live adapter (no public figure) or when we see
+    /// them all. A Spy is assigned only to a city we know, so the pad search
+    /// cannot reach these: live Science seat civvis-20261031T095908Z
+    /// searched the Inca's four known cities sixteen times from t154 while
+    /// its pads stood in three of the eight it had not seen, which first
+    /// reached our board at t178 and were all disrupted at t181.
+    pub(crate) fn racer_unseen_cities(g: &Game, seat: usize) -> usize {
+        g.observed_public_empire_stats
+            .get(&seat)
+            .and_then(|stats| stats.city_count)
+            .map_or(0, |public| {
+                public.saturating_sub(g.player_city_ids(seat).len())
+            })
+    }
+
+    /// The leading space racer the Spies answer and its cities we have not
+    /// seen; `None` with `racer-keeps-the-spies` off or no racer. For the
+    /// contact-fleet's gate (a scout toward the racer's coast) and the pad
+    /// search's journal.
+    pub(crate) fn racer_spy_unseen_cities(&self, g: &Game, pid: usize) -> Option<(usize, usize)> {
+        let racer = Self::racer_spy_leader(g, &self.racer_spy_racers(g, pid))?;
+        Some((racer, Self::racer_unseen_cities(g, racer)))
+    }
+
     /// `racer-spies-search-for-the-pad`: what the search reads; `None` with
     /// the gene off.
     pub(crate) fn racer_spy_search(&self) -> Option<RacerSpySearch<'_>> {

@@ -265,6 +265,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `religion-lane-spreads-from-founding` | off (unmeasured) | Opt-in gene `religion-lane-spreads-from-founding`; see `Self::religion_lane_spreads_from_founding`. | 1 \| 1 |
 | `religion-race-keeps-expanding` | off (unmeasured) | Opt-in gene `religion-race-keeps-expanding`; see `Self::religion_race_keeps_expanding`. | 1 \| 1 |
 | `religion-seat-defends-its-faith` | off (unmeasured) | Opt-in gene `religion-seat-defends-its-faith`; see `Self::religion_seat_defends_its_faith`. | 1 \| 1 |
+| `religion-seat-founds-first` | off (unmeasured) | Opt-in gene `religion-seat-founds-first`; see `Self::religion_seat_founds_first`. | 1 \| 1 |
 | `science-denounce-names-the-leader` | off (unmeasured) | Opt-in gene `science-denounce-names-the-leader`; see `Self::science_denounce_names_the_leader`. | 1 \| 1 |
 | `science-drive-answers-the-launch` | off (unmeasured) | `science-drive-answers-the-launch`. | 1 \| 1 |
 | `science-seat-allies` | off (unmeasured) | Opt-in gene `science-seat-allies`; see `Self::science_seat_allies`. | 1 \| 1 |

@@ -8897,6 +8897,17 @@ impl AdvancedAi {
         self.religion_seat_defends_its_faith = false;
     }
 
+    /// Opt-in gene `religion-seat-founds-first`; see
+    /// [`Self::religion_seat_founds_first`].
+    pub fn enable_religion_seat_founds_first(&mut self) {
+        self.religion_seat_founds_first = true;
+    }
+
+    /// The twin of `enable_religion_seat_founds_first`.
+    pub fn disable_religion_seat_founds_first(&mut self) {
+        self.religion_seat_founds_first = false;
+    }
+
     /// Opt-in gene `science-denounce-names-the-leader`; see
     /// [`Self::science_denounce_names_the_leader`].
     pub fn enable_science_denounce_names_the_leader(&mut self) {

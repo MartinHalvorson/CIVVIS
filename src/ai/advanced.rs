@@ -7928,6 +7928,10 @@ pub struct AdvancedAi {
     /// keeps the Expansion strategy while short of its cities. See
     /// `advanced/religion_race_expands.rs`. Off by default.
     religion_race_keeps_expanding: bool,
+    /// `religion-seat-founds-first`: a Religion-target seat's first idle city
+    /// starts its Holy Site the turn Astrology allows it. See
+    /// `advanced/religion_seat_founds_first.rs`. Off by default.
+    religion_seat_founds_first: bool,
     /// `religion-lane-spreads-from-founding`: a Religion-target seat that has
     /// founded keeps the Religion plan's spreading posture, Faith reserve and
     /// idle-queue Shrine/Temple production while its plan reads Expansion.
@@ -11612,6 +11616,7 @@ impl AdvancedAi {
             // ---- append: p-r ----------------------------------------
             religion_lane_hands_over: false,
             religion_race_keeps_expanding: false,
+            religion_seat_founds_first: false,
             religion_lane_spreads_from_founding: false,
             rival_city_pace: None,
             prey_is_declared_on: false,
@@ -30773,11 +30778,15 @@ impl AdvancedAi {
                                 .map_or_else(String::new, |city| city.name.clone());
                             let landed = racer_spy_leader
                                 .map_or(0, |leader| Self::science_denial_stages(g, leader));
+                            let unseen = self
+                                .racer_spy_unseen_cities(g, pid)
+                                .map_or(0, |(_, unseen)| unseen);
                             think!(self.journal(), Military, Decision,
                                    "A Spy searches {racer}'s {city_name} for the Spaceport";
                                    "racer-spies-search-for-the-pad: {racer} has landed \
                                     {landed} space project(s) and Disrupt Rocketry is not \
-                                    offered in {here}, so the pad is elsewhere");
+                                    offered in {here}, so the pad is elsewhere; {unseen} of \
+                                    its cities we have not seen");
                         } else {
                             think!(self.journal(), Military, Decision,
                                    "A Spy goes to {racer}'s {city_name}";
@@ -50222,6 +50231,11 @@ impl AdvancedAi {
         // the city reaches the host's floor, whether or not the book is still
         // in play. See `opening_settler_waits`.
         self.base.play_pending_book_settler(g, pid);
+        // `religion-seat-founds-first`: a Religion-target seat's Holy Site in
+        // the first idle city, inside the book and before the third city.
+        // Exact no-op while the gene is off. See
+        // `advanced/religion_seat_founds_first.rs`.
+        self.claim_religion_seat_holy_site(g, pid, &plan);
         // Preserve the proven four-build opening before switching every city
         // to utility planning. This also keeps the frozen baseline comparable.
         if self.base.book_pos < 4 {
@@ -50802,6 +50816,8 @@ mod adopted_faith_balance;
 mod air_campaign;
 
 mod religious_interception;
+/// `religion-seat-founds-first`: see `advanced/religion_seat_founds_first.rs`.
+mod religion_seat_founds_first;
 
 /// `match-point-interception-ignores-power`: the faith's last holdout
 /// intercepts its spreader at a lower power floor. See

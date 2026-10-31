@@ -1050,6 +1050,13 @@ struct TraceSample {
     civics: usize,
     wonders: usize,
     districts: usize,
+    /// Whether this major has founded a religion, and whether it holds a Holy
+    /// Site: the Religion lane's founding gate (`religion-seat-founds-first`).
+    /// Absent in older batches.
+    #[serde(default)]
+    religion: bool,
+    #[serde(default)]
+    holy_site: bool,
 }
 
 impl TraceSample {
@@ -1057,12 +1064,14 @@ impl TraceSample {
         let cities = g.player_city_ids(pid);
         let mut yields = g.player_yield_extras(pid);
         let (mut population, mut wonders, mut districts) = (0i64, 0usize, 0usize);
+        let mut holy_site = false;
         for cid in &cities {
             yields.add(g.city_yields(*cid));
             if let Some(city) = g.cities.get(cid) {
                 population += i64::from(city.pop);
                 wonders += city.wonders.len();
                 districts += city.districts.len();
+                holy_site |= g.city_has_district_family(city, civvis::name!("holy_site"));
             }
         }
         Self {
@@ -1084,6 +1093,8 @@ impl TraceSample {
             civics: g.players[pid].civics.len(),
             wonders,
             districts,
+            religion: g.players[pid].religion.is_some(),
+            holy_site,
         }
     }
 }
@@ -8741,6 +8752,8 @@ mod tests {
             civics: 20,
             wonders: 4,
             districts: 12,
+            religion: true,
+            holy_site: true,
         }];
         let text = serde_json::to_string(&traced).expect("serializes");
         let back: Row = serde_json::from_str(&text).expect("parses");
