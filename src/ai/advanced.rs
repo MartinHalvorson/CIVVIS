@@ -7910,6 +7910,10 @@ pub struct AdvancedAi {
     /// crossing on a quiet sea instead of waiting again at every water tile.
     /// See `advanced/naval_crossing.rs`.
     naval_crossing_keeps_going: bool,
+    /// `land-grab-outlasts-the-opening`: under `rapid-city-expansion-2` the
+    /// city target keeps the land grab's land-aware horizon. See
+    /// `advanced/land_grab_outlasts.rs`.
+    land_grab_outlasts_the_opening: bool,
     // ---- append: p-r ------------------------------------------------
     /// `religion-lane-hands-over`: a Religion-target seat with no religion,
     /// no Prophet pending and every slot claimed retargets to Science (else
@@ -10072,6 +10076,8 @@ mod expansion_schedule;
 mod government_ladder;
 mod governor_dividends;
 mod higher_level_strategy;
+/// `land-grab-outlasts-the-opening`: see `advanced/land_grab_outlasts.rs`.
+mod land_grab_outlasts;
 /// `naval-crossing-keeps-going`: see `advanced/naval_crossing.rs`.
 mod naval_crossing;
 /// `near-rival-deterrence`: a land unit a turn while a neighbour at peace
@@ -11585,6 +11591,7 @@ impl AdvancedAi {
             luxury_swap_asks_2: false,
             opening_builder_after_the_first_settler: false,
             naval_crossing_keeps_going: false,
+            land_grab_outlasts_the_opening: false,
             // ---- append: p-r ----------------------------------------
             religion_lane_hands_over: false,
             religion_race_keeps_expanding: false,
@@ -15598,26 +15605,12 @@ impl AdvancedAi {
         // the practical-site search and the payback deadline pace the count.
         let ordinary_city_target = (city_floor + g.turn as usize / city_cadence).min(city_ceiling);
         let desired_cities = if self.rapid_city_expansion_2 {
-            rapid_city_expansion::city_target(g, ordinary_city_target, city_ceiling)
+            // `land-grab-outlasts-the-opening` keeps the land grab's horizon
+            // here; see `advanced/land_grab_outlasts.rs`.
+            let rapid = rapid_city_expansion::city_target(g, ordinary_city_target, city_ceiling);
+            self.rapid_city_target(g, rapid, land, science_targeted)
         } else if self.land_grab {
-            let land = if self.fog_land_capacity {
-                Self::fog_land_estimate(g, land)
-            } else {
-                land
-            };
-            // The science lane widens while a founded city can still mature
-            // into the super-linear pop term; see
-            // `SCIENCE_EXPANSION_CITY_CEILING`. Every other lane, and the
-            // science lane's second half, keep the shared ceiling.
-            let ceiling = if self.science_expansion_phase
-                && science_targeted
-                && g.turn < g.standard_duration(SCIENCE_EXPANSION_UNTIL_TURN)
-            {
-                SCIENCE_EXPANSION_CITY_CEILING
-            } else {
-                LAND_GRAB_CITY_CEILING
-            };
-            (2 + land / LAND_GRAB_TILES_PER_CITY).clamp(LAND_GRAB_CITY_FLOOR, ceiling)
+            self.land_grab_city_target(g, land, science_targeted)
         } else {
             ordinary_city_target
         };
