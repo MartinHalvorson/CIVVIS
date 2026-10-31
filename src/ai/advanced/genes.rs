@@ -4531,6 +4531,12 @@ pub const GENES: &[Gene] = &[
     // defensive commitment holds against a civilian build. See
     // `advanced/defence_holds.rs`.
     Gene { tag: "defence-holds-under-fire", field: "defence_holds_under_fire", kind: Kind::OptIn, enable: AdvancedAi::enable_defence_holds_under_fire, disable: AdvancedAi::disable_defence_holds_under_fire },
+    // Live Immortal 6p Continents 10-30/31: `rapid-city-expansion-2` is asked
+    // before `land_grab`, so every live seat planned the ordinary cadence
+    // floored at ten (1,223 of 1,894 readings past t110) and held 10 cities
+    // at t150-180 against the leader's 11-13. Under the gene the target is
+    // the larger of the two. See `advanced/land_grab_outlasts.rs`.
+    Gene { tag: "land-grab-outlasts-the-opening", field: "land_grab_outlasts_the_opening", kind: Kind::OptIn, enable: AdvancedAi::enable_land_grab_outlasts_the_opening, disable: AdvancedAi::disable_land_grab_outlasts_the_opening },
     // `capital-walls-at-any-ratio`: 8 of 18 located Immortal city losses
     // were the capital, and the attacker's power ratio barely told it apart
     // from neighbours that never declared (medians 2.69 against 3.0); live

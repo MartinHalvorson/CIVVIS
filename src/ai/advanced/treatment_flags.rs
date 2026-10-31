@@ -8854,6 +8854,17 @@ impl AdvancedAi {
         self.defence_holds_under_fire = false;
     }
 
+    /// Opt-in gene `land-grab-outlasts-the-opening`; see
+    /// [`Self::land_grab_outlasts_the_opening`].
+    pub fn enable_land_grab_outlasts_the_opening(&mut self) {
+        self.land_grab_outlasts_the_opening = true;
+    }
+
+    /// The twin of `enable_land_grab_outlasts_the_opening`.
+    pub fn disable_land_grab_outlasts_the_opening(&mut self) {
+        self.land_grab_outlasts_the_opening = false;
+    }
+
     /// Opt-in gene `capital-walls-at-any-ratio`; see
     /// [`Self::capital_walls_at_any_ratio`].
     pub fn enable_capital_walls_at_any_ratio(&mut self) {
