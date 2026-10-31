@@ -8897,6 +8897,17 @@ impl AdvancedAi {
         self.religion_seat_defends_its_faith = false;
     }
 
+    /// Opt-in gene `science-denounce-names-the-leader`; see
+    /// [`Self::science_denounce_names_the_leader`].
+    pub fn enable_science_denounce_names_the_leader(&mut self) {
+        self.science_denounce_names_the_leader = true;
+    }
+
+    /// The twin of `enable_science_denounce_names_the_leader`.
+    pub fn disable_science_denounce_names_the_leader(&mut self) {
+        self.science_denounce_names_the_leader = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

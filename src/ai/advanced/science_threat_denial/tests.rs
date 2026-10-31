@@ -374,6 +374,42 @@ fn the_most_pressing_threat_is_denounced_once_a_turn() {
     );
 }
 
+/// `science-denounce-names-the-leader`: only the most pressing threat is
+/// denounced; once it stands denounced, the next threat is not taken.
+#[test]
+fn only_the_leading_racer_is_denounced_under_the_gene() {
+    let mut g = board();
+    let mut ai = denier();
+    ai.enable_science_denounce_names_the_leader();
+    give_pad(&mut g, 1);
+    give_pad(&mut g, 2);
+    g.players[2]
+        .science_projects
+        .insert("launch_earth_satellite".to_string());
+    assert_eq!(
+        ai.science_threat_denunciation(&mut g, 0),
+        Some(2),
+        "the leading racer, as before"
+    );
+    assert_eq!(
+        ai.science_threat_denunciation(&mut g, 0),
+        None,
+        "the other threat is left alone"
+    );
+    assert!(
+        g.players[0].denounced_until.get(&1).copied().unwrap_or(0) <= g.turn,
+        "seat 1 was never denounced"
+    );
+}
+
+#[test]
+fn science_denounce_names_the_leader_is_opt_in() {
+    crate::ai::advanced::test_support::opt_in_off_in_both_controllers(
+        "science-denounce-names-the-leader",
+        |ai| ai.science_denounce_names_the_leader,
+    );
+}
+
 /// `science-denounce-waits-for-the-race`: a technology lead alone admits a
 /// threat but no denunciation; a pad we have seen does.
 #[test]

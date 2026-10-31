@@ -4559,6 +4559,14 @@ pub const GENES: &[Gene] = &[
     // Victory needs our faith to hold our own cities too. Opens them for a
     // seat aiming at Religion. See `defensive_apostle.rs`.
     Gene { tag: "religion-seat-defends-its-faith", field: "religion_seat_defends_its_faith", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_defends_its_faith, disable: AdvancedAi::disable_religion_seat_defends_its_faith },
+    // Live Immortal 6-major seats 2026-10-31 denounced every rival with a
+    // seen pad ("their space race is a science threat"): 111516Z all four at
+    // t142-150 and again every 21 turns, 104757Z 41 times, 094146Z 49. Every
+    // rival stood DENOUNCED by t160, so no seat could make a friend or an
+    // ally. Only the leading racer's denunciation serves the formal launcher
+    // war. Denounce only the most pressing science threat. See
+    // `advanced/science_threat_denial.rs`.
+    Gene { tag: "science-denounce-names-the-leader", field: "science_denounce_names_the_leader", kind: Kind::OptIn, enable: AdvancedAi::enable_science_denounce_names_the_leader, disable: AdvancedAi::disable_science_denounce_names_the_leader },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
