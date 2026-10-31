@@ -232,7 +232,7 @@ fn the_faith_defence_keeps_its_queue_with_the_gene() {
 /// neighbour's soldier at our door it trains the deterrent as before.
 #[test]
 fn the_deterrent_waits_until_parity_is_within_reach() {
-    let Some((mut game, _ours, theirs)) = neighbours(DETERRENCE_NEAR_TILES) else {
+    let Some((mut game, ours, theirs)) = neighbours(DETERRENCE_NEAR_TILES) else {
         panic!("fixture: two capitals within the neighbour radius");
     };
     game.players[0].techs.insert(crate::name!("bronze_working"));
@@ -273,12 +273,23 @@ fn the_deterrent_waits_until_parity_is_within_reach() {
     assert_eq!(land_units_queued(&near), 1, "within reach: the deterrent");
     assert!(ai.deterrence_unit_holds(&near, 0, &warrior));
 
-    // A rival with twice our power and a soldier beside its own city, within
-    // the door radius of ours, keeps the deterrent building out of reach.
+    // A rival with twice our power and a soldier beside our capital keeps the
+    // deterrent building out of reach.
     let mut door = game.clone();
     power(&mut door, 0, 40.0);
-    let at = door.cities[&theirs].pos;
+    let home = door.cities[&ours].pos;
+    let at = door
+        .nbrs(home)
+        .into_iter()
+        .find(|pos| {
+            door.map
+                .tiles
+                .get(pos)
+                .is_some_and(|tile| !door.rules.is_water(tile))
+        })
+        .expect("fixture: a land tile beside the capital");
     door.spawn_test_unit("warrior", 1, at);
+    assert!(door.cities.contains_key(&theirs));
     let plan = ai.assess(&door, 0);
     ai.claim_deterrence_unit(&mut door, 0, &plan);
     assert_eq!(land_units_queued(&door), 1, "a stronger soldier at the door");
