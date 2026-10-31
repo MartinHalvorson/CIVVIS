@@ -43,7 +43,8 @@ pub(crate) const FOUNDER_HOME_MIN_UNCONVERTED: usize = 2;
 impl AdvancedAi {
     /// Under the gene, the number of our cities not on `religion` when we
     /// founded it and at least [`FOUNDER_HOME_MIN_UNCONVERTED`] are off it.
-    /// `None` with the gene off, outside the Domination lane, with Religious
+    /// `None` with the gene off, outside the Domination lane (and, with
+    /// `religion-seat-defends-its-faith`, the Religion lane), with Religious
     /// Victory off, or for a faith we did not found.
     pub(super) fn founder_keeps_spreaders_home(
         &self,
@@ -53,7 +54,7 @@ impl AdvancedAi {
     ) -> Option<usize> {
         if !self.founder_converts_its_own_cities
             || !g.victory_conditions.religious
-            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || !self.religion_seat_or_domination(g)
             || g.players[pid].religion.as_deref() != Some(religion)
         {
             return None;

@@ -8733,6 +8733,17 @@ impl AdvancedAi {
         self.immortal_skips_the_prophet_race = false;
     }
 
+    /// Opt-in gene `religion-seat-defends-its-faith`; see
+    /// [`Self::religion_seat_defends_its_faith`].
+    pub fn enable_religion_seat_defends_its_faith(&mut self) {
+        self.religion_seat_defends_its_faith = true;
+    }
+
+    /// The twin of `enable_religion_seat_defends_its_faith`.
+    pub fn disable_religion_seat_defends_its_faith(&mut self) {
+        self.religion_seat_defends_its_faith = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

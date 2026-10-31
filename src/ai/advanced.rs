@@ -8277,6 +8277,12 @@ pub struct AdvancedAi {
     /// `racer-spies-search-for-the-pad`: the leader's cities a Spy of ours
     /// stood in without the offer, and the turn it last did.
     racer_spy_searched: BTreeMap<u32, u32>,
+    /// `religion-seat-defends-its-faith`: a seat aiming at the Religious
+    /// Victory opens the founder defences the Domination lane already has:
+    /// the defensive Inquisition, the Holy City guard, the founder's
+    /// spreaders kept home, and (faithless) the homeland pass. See
+    /// `AdvancedAi::religion_seat_or_domination`. Off by default.
+    religion_seat_defends_its_faith: bool,
     // ---- append: s-s ------------------------------------------------
     /// `surprise-watch-holds-its-ratio`: a met major at twice our power seen
     /// within ten tiles of the original capital or an unwalled frontier city
@@ -11557,6 +11563,7 @@ impl AdvancedAi {
             racer_spies_search_for_the_pad: false,
             racer_spy_found_pads: BTreeSet::new(),
             racer_spy_searched: BTreeMap::new(),
+            religion_seat_defends_its_faith: false,
             // ---- append: s-s ----------------------------------------
             surprise_watch_holds_its_ratio: false,
             surprise_watch_latches: BTreeMap::new(),
@@ -50091,7 +50098,11 @@ impl AdvancedAi {
                 && g.victory_conditions.religious
                 && self.counterweight_faithless(g, pid)
                 && (plan.strategy != GrandStrategy::Religion
-                    || active_victory_target == Some(VictoryTarget::Domination))
+                    || active_victory_target == Some(VictoryTarget::Domination)
+                    // `religion-seat-defends-its-faith`: a Religion seat that
+                    // lost the founding race still defends its homeland.
+                    || (self.religion_seat_defends_its_faith
+                        && active_victory_target == Some(VictoryTarget::Religion)))
             {
                 // Every other strategy still defends its homeland: a rival's
                 // religious victory needs a majority in every living major,

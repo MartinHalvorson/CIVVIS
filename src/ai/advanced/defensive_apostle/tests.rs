@@ -142,6 +142,48 @@ fn inquisition_defends_the_diplomat_opens_the_diplomatic_lane() {
     );
 }
 
+/// `religion-seat-defends-its-faith`: a Religion seat prepares the
+/// Inquisition, guards the Holy City and keeps the founder's spreaders home
+/// with the gene; no other lane gains anything.
+#[test]
+fn religion_seat_defends_its_faith_opens_the_religion_lane() {
+    let (g, _, _) = fixture();
+    let mut seat = AdvancedAi::targeting(VictoryTarget::Religion);
+    assert!(!seat.defensive_inquisition_ready(&g, 0), "off");
+    assert!(!seat.religion_seat_or_domination(&g), "off");
+    seat.enable_religion_seat_defends_its_faith();
+    assert!(seat.defensive_inquisition_ready(&g, 0), "on");
+    assert!(seat.religion_seat_or_domination(&g), "on");
+    for lane in [
+        VictoryTarget::Culture,
+        VictoryTarget::Science,
+        VictoryTarget::Diplomacy,
+        VictoryTarget::Score,
+    ] {
+        let mut other = AdvancedAi::targeting(lane);
+        other.enable_religion_seat_defends_its_faith();
+        assert!(!other.religion_seat_or_domination(&g), "{lane:?}: never");
+        if lane != VictoryTarget::Diplomacy {
+            assert!(
+                !other.defensive_inquisition_ready(&g, 0),
+                "{lane:?}: no Inquisition"
+            );
+        }
+    }
+    assert!(
+        AdvancedAi::targeting(VictoryTarget::Domination).religion_seat_or_domination(&g),
+        "Domination, as before"
+    );
+}
+
+#[test]
+fn religion_seat_defends_its_faith_is_opt_in() {
+    crate::ai::advanced::test_support::opt_in_off_in_both_controllers(
+        "religion-seat-defends-its-faith",
+        |ai| ai.religion_seat_defends_its_faith,
+    );
+}
+
 #[test]
 fn initial_spread_precedes_reserve_in_a_mostly_unconverted_empire() {
     let (mut g, ai, home) = fixture();

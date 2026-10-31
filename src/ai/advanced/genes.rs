@@ -4448,6 +4448,13 @@ pub const GENES: &[Gene] = &[
     // nor Diplomacy stays out of the race unless a Prophet is pending. See
     // `advanced/immortal_prophet_race.rs`.
     Gene { tag: "immortal-skips-the-prophet-race", field: "immortal_skips_the_prophet_race", kind: Kind::OptIn, enable: AdvancedAi::enable_immortal_skips_the_prophet_race, disable: AdvancedAi::disable_immortal_skips_the_prophet_race },
+    // The operator's non-Diplomatic Lv 7 lane (2026-10-31) rolls Religion
+    // seats, and -3b's audit found every founder defence gated to Domination
+    // (and Diplomacy): the defensive Inquisition, the Holy City guard, the
+    // founder's spreaders kept home, the faithless homeland pass. A Religious
+    // Victory needs our faith to hold our own cities too. Opens them for a
+    // seat aiming at Religion. See `defensive_apostle.rs`.
+    Gene { tag: "religion-seat-defends-its-faith", field: "religion_seat_defends_its_faith", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_defends_its_faith, disable: AdvancedAi::disable_religion_seat_defends_its_faith },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
