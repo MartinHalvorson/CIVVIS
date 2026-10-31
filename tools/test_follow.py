@@ -20,6 +20,7 @@ import follow  # noqa: E402
 #: Seat state this module must not read, redirected for the whole file.
 _SEAT_STATE: list[tuple[str, str]] = []
 _SEAT_STATE_ROOT: tempfile.TemporaryDirectory | None = None
+_SEAT_ENV: list[tuple[str, str | None]] = []
 
 
 def setUpModule() -> None:
@@ -69,12 +70,26 @@ def setUpModule() -> None:
                 os.path.join(_SEAT_STATE_ROOT.name,
                              os.path.relpath(resolved, home)))
     assert _SEAT_STATE, "the seat-state sweep found nothing; it has stopped working"
+    # Seat state `follow` reads through its helpers rather than an attribute:
+    # the operator's pause request (a recorder pause on this seat made a
+    # finished run read as live, failing FinishedRunStaysOffTheScreen) and
+    # the painted-turn report the live game waits on.
+    for variable, leaf in (("CIVVIS_LIVE_PAUSE_FILE", "live-pause.json"),
+                           ("CIVVIS_MIRROR_SHOWN_FILE", "mirror-shown.json")):
+        _SEAT_ENV.append((variable, os.environ.get(variable)))
+        os.environ[variable] = os.path.join(_SEAT_STATE_ROOT.name, leaf)
 
 
 def tearDownModule() -> None:
     for name, value in _SEAT_STATE:
         setattr(follow, name, value)
     _SEAT_STATE.clear()
+    for variable, value in _SEAT_ENV:
+        if value is None:
+            os.environ.pop(variable, None)
+        else:
+            os.environ[variable] = value
+    _SEAT_ENV.clear()
     if _SEAT_STATE_ROOT is not None:
         _SEAT_STATE_ROOT.cleanup()
 
@@ -515,3 +530,117 @@ class FinishedRunStaysOffTheScreen(unittest.TestCase):
                 follow.main()
 
         start.assert_called_once()
+
+
+def _river_tiles(turn: int, plots: list[dict]) -> bytes:
+    return json.dumps({"kind": "tiles", "turn": turn, "width": 12,
+                       "height": 9, "plots": plots}).encode()
+
+
+class StageIncrementalTest(unittest.TestCase):
+    """The follower's staged copy, kept between publishes, is the full rebuild.
+
+    `stage_events` keeps each event's flipped bytes and redoes a turn's tile
+    chunks together whenever that turn gains one (a turn's river edges are
+    decided across all of its chunks). Whatever the appends, the file must be
+    byte-identical to staging the same events from nothing.
+    """
+
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.previous = follow.STAGE, follow._STAGE_CACHE
+        follow.STAGE, follow._STAGE_CACHE = self.directory.name, None
+
+    def tearDown(self) -> None:
+        follow.STAGE, follow._STAGE_CACHE = self.previous
+        self.directory.cleanup()
+
+    def staged(self, lines, height) -> bytes:
+        follow.stage_events(lines, height)
+        return (Path(self.directory.name) / "events.jsonl").read_bytes()
+
+    def test_appends_match_a_rebuild_from_nothing(self) -> None:
+        events = [
+            json.dumps({"kind": "seat", "players": 4}).encode(),
+            _river_tiles(3, [{"x": 2, "y": 1, "rv": 1}, {"x": 3, "y": 1, "rv": 8}]),
+            json.dumps({"kind": "state", "turn": 3, "units": [{"x": 2, "y": 1}],
+                        "routes": [{"origin_x": 2, "origin_y": 8,
+                                    "destination_x": 3, "destination_y": 2}]}).encode(),
+            # The same turn gains a chunk later: its rivers are redone together.
+            _river_tiles(3, [{"x": 3, "y": 2, "rv": 4}, {"x": 2, "y": 1, "rv": 2}]),
+            json.dumps({"kind": "orders", "turn": 3}).encode(),
+            _river_tiles(4, [{"x": 5, "y": 8, "rv": 1}, {"x": 6, "y": 8, "rv": 0}]),
+            json.dumps({"kind": "state", "turn": 4, "cities": [{"x": 6, "y": 8}]}).encode(),
+            _river_tiles(4, [{"x": 7, "y": 3, "rv": 0}]),
+        ]
+        for height in (9, 10):
+            follow._STAGE_CACHE = None
+            lines = follow.EventLines()
+            for event in events:
+                lines.append(event)
+                kept = self.staged(lines, height)
+                follow_cache = follow._STAGE_CACHE
+                rebuilt = self.staged(list(lines), height)
+                follow._STAGE_CACHE = follow_cache
+                self.assertEqual(kept, rebuilt, f"height {height}, {len(lines)} events")
+
+    def test_a_new_list_starts_over(self) -> None:
+        first = follow.EventLines()
+        first.append(json.dumps({"kind": "state", "turn": 1}).encode())
+        self.staged(first, 9)
+        second = follow.EventLines()
+        second.append(json.dumps({"kind": "state", "turn": 9}).encode())
+        staged = self.staged(second, 9)
+        self.assertEqual([json.loads(line)["turn"] for line in staged.splitlines()], [9])
+
+
+class PaintedTurnReportTest(unittest.TestCase):
+    """The page's painted turn goes to the live game (`mirror_sync`)."""
+
+    def setUp(self) -> None:
+        self.directory = tempfile.TemporaryDirectory()
+        self.path = Path(self.directory.name) / "shown.json"
+        self.env = mock.patch.dict(os.environ, {"CIVVIS_MIRROR_SHOWN_FILE": str(self.path)})
+        self.env.start()
+
+    def tearDown(self) -> None:
+        self.env.stop()
+        self.directory.cleanup()
+
+    def test_report_names_the_run_and_both_turns(self) -> None:
+        status = {"turn": 41, "frames_painted": 40, "viewers": 1}
+        report: dict = {}
+        with mock.patch.object(follow, "http_get",
+                               return_value=json.dumps(status).encode()):
+            follow.report_shown("/runs/civvis-x", 41, report)
+        written = json.loads(self.path.read_text())
+        self.assertEqual((written["run"], written["game_turn"], written["published"],
+                          written["painted"], written["viewers"]),
+                         ("civvis-x", 41, 41, 40, 1))
+        self.assertEqual(follow.mirror_sync.shown_turn("civvis-x"), 40)
+
+    def test_an_unchanged_report_is_rewritten_once_a_second(self) -> None:
+        status = json.dumps({"turn": 5, "frames_painted": 5, "viewers": 1}).encode()
+        report: dict = {}
+        with mock.patch.object(follow, "http_get", return_value=status), \
+             mock.patch.object(follow.mirror_sync, "write_shown") as write, \
+             mock.patch.object(follow.time, "time", side_effect=[100.0, 100.5, 101.2]):
+            for _ in range(3):
+                follow.report_shown("/runs/r", 5, report)
+        self.assertEqual(write.call_count, 2, "a heartbeat, not a write per poll")
+
+    def test_no_server_writes_nothing(self) -> None:
+        with mock.patch.object(follow, "http_get", side_effect=OSError("refused")):
+            follow.report_shown("/runs/r", 5, {})
+        self.assertFalse(self.path.exists())
+
+    def test_the_wait_ends_when_the_game_turns(self) -> None:
+        reads = [([b"{}"], 7, 4, 38, True), ([b"{}"], 8, 4, 38, True)]
+        with mock.patch.object(follow, "read_events", side_effect=reads), \
+             mock.patch.object(follow, "report_shown") as report, \
+             mock.patch.object(follow.time, "sleep") as sleep:
+            follow.await_board("/runs/r", 7, 1, time.time(), {})
+        self.assertEqual(sleep.call_count, 2)
+        self.assertTrue(all(call.args[0] <= follow.FAST_POLL_SECONDS
+                            for call in sleep.call_args_list))
+        self.assertEqual(report.call_count, 2)
