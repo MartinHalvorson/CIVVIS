@@ -5511,6 +5511,11 @@ pub struct AdvancedAi {
     /// the cheapest units disbanded before the host's bankruptcy takes the
     /// costliest. See `advanced/solvency.rs`. Off by default.
     bankruptcy_exits_the_drain: bool,
+    /// `builder-prices-travel-in-turns`: while a Builder has a charge to
+    /// spare, a job scores its value per Builder-turn (the working turn plus
+    /// the whole turns of walking) instead of `value - 0.7 × wdist`. See
+    /// `advanced/builder_travel_turns.rs`. Off by default.
+    builder_prices_travel_in_turns: bool,
     // ---- append: c-d ------------------------------------------------
     /// `diplo-seat-statue-harbor`: a Diplomacy seat's strongest coastal city
     /// builds the Harbor the Statue of Liberty needs. See
@@ -9819,6 +9824,9 @@ mod chase_every_boost;
 /// table and at most three committed side objectives. Opt-in gene
 /// `boost-planner`; see `advanced/boost_planner.rs`.
 mod boost_planner;
+/// `builder-prices-travel-in-turns`: a Builder prices a walk in the turns it
+/// costs, not in hexes. See `advanced/builder_travel_turns.rs`.
+mod builder_travel_turns;
 /// `chop-for-expansion`: a Builder turns a forest into a Settler. The engine
 /// has always modelled feature removal and harvesting; nothing ever asked for
 /// one. See `advanced/chop_for_expansion.rs`.
@@ -11133,6 +11141,7 @@ impl AdvancedAi {
             aqueduct_claims_the_capped_queue: false,
             aqueduct_recovery_reservations: RefCell::new(BTreeMap::new()),
             bankruptcy_exits_the_drain: false,
+            builder_prices_travel_in_turns: false,
             // ---- append: c-d ----------------------------------------
             diplo_seat_statue_harbor: false,
             culture_routes_reach_every_rival: false,
@@ -42620,6 +42629,11 @@ impl AdvancedAi {
                 .as_ref()
                 .is_none_or(|reach| self.builder_job_out_of_reach(g, pid, uid, pos, reach))
         };
+        // `builder-prices-travel-in-turns`: the untreated `0.7` a hex unless
+        // the gene is on and this Builder has a charge to spare. See
+        // `advanced/builder_travel_turns.rs`.
+        let travel = self.builder_travel(g, uid);
+        let mut untreated_pick: Option<(f64, Pos)> = None;
         let best = {
             let _memo = g.query_memo();
             let current_target = self.builder_targets.get(&uid).copied().filter(|pos| {
@@ -42641,19 +42655,34 @@ impl AdvancedAi {
                             }
                             for improvement in self.worthwhile_improvements(g, pid, *pos, strategy)
                             {
-                                let score = self.production_foundation_improvement_value(
+                                let value = self.production_foundation_improvement_value(
                                     g,
                                     pid,
                                     *pos,
                                     &improvement,
                                     strategy,
                                     city_shortfall,
-                                ) - g.wdist(current, *pos) as f64 * 0.7;
+                                );
+                                let distance = g.wdist(current, *pos);
+                                let score = travel.score(value, distance);
                                 if best
                                     .map(|(old, bp)| score > old || (score == old && *pos < bp))
                                     .unwrap_or(true)
                                 {
                                     best = Some((score, *pos));
+                                }
+                                // Only to say when the gene changed the pick.
+                                if travel.priced_in_turns() {
+                                    let untreated = builder_travel_turns::BuilderTravel::LEGACY
+                                        .score(value, distance);
+                                    if untreated_pick
+                                        .map(|(old, bp)| {
+                                            untreated > old || (untreated == old && *pos < bp)
+                                        })
+                                        .unwrap_or(true)
+                                    {
+                                        untreated_pick = Some((untreated, *pos));
+                                    }
                                 }
                             }
                         }
@@ -42662,6 +42691,13 @@ impl AdvancedAi {
                 }
             }
         };
+        if let (Err(Some(pos)), Some((_, farther))) = (best, untreated_pick) {
+            if pos != farther {
+                think!(self.journal(), Expansion, Decision, "Builder takes the nearer work";
+                    "builder-prices-travel-in-turns: the job at {pos:?} is {} turn(s) off and the one at {farther:?} {}; per turn of the Builder's time the nearer one is worth more",
+                    travel.turns(g.wdist(current, pos)), travel.turns(g.wdist(current, farther)); pos);
+            }
+        }
         let target = match best {
             Ok(pos) => Some(pos),
             Err(found) => found,
@@ -42726,6 +42762,8 @@ impl AdvancedAi {
         reserved: &HashSet<Pos>,
     ) -> Vec<Pos> {
         let current = g.units[&uid].pos;
+        // `builder-prices-travel-in-turns`; untreated while the gene is off.
+        let travel = self.builder_travel(g, uid);
         let _memo = g.query_memo();
         let mut scored: Vec<(f64, Pos)> = Vec::new();
         for cid in g.player_city_ids(pid) {
@@ -42736,14 +42774,17 @@ impl AdvancedAi {
                 }
                 let mut here: Option<f64> = None;
                 for improvement in self.worthwhile_improvements(g, pid, *pos, strategy) {
-                    let score = self.production_foundation_improvement_value(
-                        g,
-                        pid,
-                        *pos,
-                        &improvement,
-                        strategy,
-                        city_shortfall,
-                    ) - g.wdist(current, *pos) as f64 * 0.7;
+                    let score = travel.score(
+                        self.production_foundation_improvement_value(
+                            g,
+                            pid,
+                            *pos,
+                            &improvement,
+                            strategy,
+                            city_shortfall,
+                        ),
+                        g.wdist(current, *pos),
+                    );
                     if here.is_none_or(|old| score > old) {
                         here = Some(score);
                     }

@@ -190,6 +190,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `bankruptcy-exits-the-drain` | off (unmeasured) | Opt-in gene `bankruptcy-exits-the-drain`; see `advanced/solvency.rs`. | 1 \| 1 |
 | `board-ignores-the-faith-war` | off (unmeasured) | Opt-in gene `board-ignores-the-faith-war`; see `Self::board_ignores_the_faith_war`. | 1 \| 1 |
 | `breaker-bought-for-the-siege` | off (unmeasured) | Buy the wall-breaker a held siege waits for. | 1 \| 1 |
+| `builder-prices-travel-in-turns` | off (unmeasured) | Opt-in gene `builder-prices-travel-in-turns`; see `Self::builder_prices_travel_in_turns`. | 1 \| 1 |
 | `campus-claims-the-free-slot` | off (unmeasured) | Claim a free district slot for a first Campus. | — \| 2 |
 | `campus-claims-the-free-slot-2` | off (unmeasured) | Version 2 of the free-slot Campus claim. | — \| 2 |
 | `campus-unlock-before-the-luxury` | off (unmeasured) | Unlock the Campus ahead of the luxury and Astrology detours. | 1 \| 1 |
