@@ -3286,6 +3286,11 @@ pub struct BasicAi {
     /// foreign landfalls rather than treating every coast as interchangeable.
     /// Opt-in gene `island-exploration`.
     pub(crate) island_exploration: bool,
+    /// While a living major is unmet or unlocated, or a city-state is unmet,
+    /// keep the one queued sea scout against the governor's rescoring, route
+    /// ships toward foreign landfall, and prefer the faster hull. Opt-in gene
+    /// `contact-fleet`; see `advanced/contact_fleet.rs`.
+    pub(crate) contact_fleet: bool,
     /// In peacetime the whole field army answers home threats, and a camp
     /// inside the camp reach ranks above raiders in the countryside.
     ///
@@ -5888,6 +5893,7 @@ impl BasicAi {
             naval_recon_2: false,
             naval_recon_3: false,
             island_exploration: false,
+            contact_fleet: false,
             camp_party: false,
             come_ashore: false,
             barbarian_settler_capture: false,
@@ -6411,6 +6417,7 @@ impl BasicAi {
             naval_recon_2: false,
             naval_recon_3: false,
             island_exploration: false,
+            contact_fleet: false,
             camp_party: false,
             come_ashore: false,
             barbarian_settler_capture: false,
@@ -11617,6 +11624,11 @@ impl BasicAi {
     pub(crate) fn best_naval_recon(&self, g: &Game, pid: usize, cid: u32) -> Option<String> {
         if !Self::city_has_naval_recon_launch(g, pid, cid) {
             return None;
+        }
+        // `contact-fleet`: the faster hull, when it is in reach. See
+        // `advanced/contact_fleet.rs`.
+        if let Some(fast) = self.contact_fleet_fast_hull(g, pid, cid) {
+            return Some(fast);
         }
         let mut best: Option<((i64, i64), String)> = None;
         for (name, spec) in &g.rules.units {
@@ -18531,19 +18543,26 @@ impl BasicAi {
             HashSet::new()
         };
         let origin = g.units[&uid].pos;
-        let island_home = if self.island_exploration
+        // `contact-fleet`: while the contact gap is open, a ship that can
+        // cross Ocean takes the same long look-ahead and foreign-landfall
+        // ranking as a full home continent. See `advanced/contact_fleet.rs`.
+        let island_home = if (self.island_exploration || self.contact_fleet)
             && !dry_only
             && g.rules.units[g.units[&uid].kind].domain.as_deref() == Some("sea")
         {
             let landmass = Self::capital_landmass(g, pid);
             (!landmass.is_empty()
-                && self.main_landmass_settlement_room(
-                    g,
-                    pid,
-                    &landmass,
-                    ISLAND_EXPLORATION_HOME_SITE_LIMIT + 1,
-                ) <= ISLAND_EXPLORATION_HOME_SITE_LIMIT)
-                .then_some(landmass)
+                && ((self.island_exploration
+                    && self.main_landmass_settlement_room(
+                        g,
+                        pid,
+                        &landmass,
+                        ISLAND_EXPLORATION_HOME_SITE_LIMIT + 1,
+                    ) <= ISLAND_EXPLORATION_HOME_SITE_LIMIT)
+                    || (self.contact_fleet
+                        && Self::naval_recon_can_cross_ocean(g, pid)
+                        && Self::contact_fleet_gap(g, pid))))
+            .then_some(landmass)
         } else {
             None
         };

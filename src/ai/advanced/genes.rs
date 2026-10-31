@@ -4394,6 +4394,11 @@ pub const GENES: &[Gene] = &[
     // next city until it finds the pad. Needs `racer-keeps-the-spies`. See
     // `advanced/racer_keeps_the_spies.rs`.
     Gene { tag: "racer-spies-search-for-the-pad", field: "racer_spies_search_for_the_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_racer_spies_search_for_the_pad, disable: AdvancedAi::disable_racer_spies_search_for_the_pad },
+    // While a living major is unmet or unlocated, or a city-state is unmet,
+    // the queued sea scout keeps its queue against the governor's rescoring,
+    // ships route toward foreign landfall, and the faster hull is preferred.
+    // See `advanced/contact_fleet.rs`.
+    Gene { tag: "contact-fleet", field: "contact_fleet", kind: Kind::OptIn, enable: AdvancedAi::enable_contact_fleet, disable: AdvancedAi::disable_contact_fleet },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
