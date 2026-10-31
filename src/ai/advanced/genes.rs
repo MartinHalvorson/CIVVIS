@@ -4512,6 +4512,25 @@ pub const GENES: &[Gene] = &[
     // and spread 5 times all game. After three held turns a spreader yields
     // only to a lethal blow for six turns. See `advanced/stalled_spreader.rs`.
     Gene { tag: "stalled-spreader-braves-the-march", field: "stalled_spreader_braves_the_march", kind: Kind::OptIn, enable: AdvancedAi::enable_stalled_spreader_braves_the_march, disable: AdvancedAi::disable_stalled_spreader_braves_the_march },
+    // Live Lv 7 2026-10-30: two frontier Corinths fell at t27 (200156Z) and
+    // t28 (201608Z) with no walls while the journal read "Anvil at Corinth:
+    // … slinger in the city". The Anvil gives the city tile to a Shooter
+    // and puts melee on the ring, but an unwalled city's defence is its
+    // garrison's melee strength: 20 with a Warrior inside, 10 with a
+    // Slinger or nobody (Civ VI's own city defence read both ways). In
+    // 201608Z the Warrior that stood inside at t26 (defence 18.6) was posted
+    // to the ring at t27 and the city fell the next turn. With no standing
+    // walls, the Anvil's strongest melee soldier within a tile holds the
+    // city and makes no blow. See `advanced/anvil_garrisons_its_melee.rs`.
+    Gene { tag: "anvil-garrisons-its-melee", field: "anvil_garrisons_its_melee", kind: Kind::OptIn, enable: AdvancedAi::enable_anvil_garrisons_its_melee, disable: AdvancedAi::disable_anvil_garrisons_its_melee },
+    // The defence pass queues walls in a threatened city and the general pass
+    // switches it straight back: "switches to amphitheater, displacing walls"
+    // 50 times on the live journals, and 8 of the 10 cities lost unwalled at
+    // t45-100 on 6p Immortal seats had their walls displaced first. While the
+    // city is damaged or a visible enemy soldier stands within 4 tiles, a
+    // defensive commitment holds against a civilian build. See
+    // `advanced/defence_holds.rs`.
+    Gene { tag: "defence-holds-under-fire", field: "defence_holds_under_fire", kind: Kind::OptIn, enable: AdvancedAi::enable_defence_holds_under_fire, disable: AdvancedAi::disable_defence_holds_under_fire },
     // `capital-walls-at-any-ratio`: 8 of 18 located Immortal city losses
     // were the capital, and the attacker's power ratio barely told it apart
     // from neighbours that never declared (medians 2.69 against 3.0); live
