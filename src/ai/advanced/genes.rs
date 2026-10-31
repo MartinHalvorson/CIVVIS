@@ -4512,6 +4512,17 @@ pub const GENES: &[Gene] = &[
     // and spread 5 times all game. After three held turns a spreader yields
     // only to a lethal blow for six turns. See `advanced/stalled_spreader.rs`.
     Gene { tag: "stalled-spreader-braves-the-march", field: "stalled_spreader_braves_the_march", kind: Kind::OptIn, enable: AdvancedAi::enable_stalled_spreader_braves_the_march, disable: AdvancedAi::disable_stalled_spreader_braves_the_march },
+    // Live Lv 7 2026-10-30: two frontier Corinths fell at t27 (200156Z) and
+    // t28 (201608Z) with no walls while the journal read "Anvil at Corinth:
+    // … slinger in the city". The Anvil gives the city tile to a Shooter
+    // and puts melee on the ring, but an unwalled city's defence is its
+    // garrison's melee strength: 20 with a Warrior inside, 10 with a
+    // Slinger or nobody (Civ VI's own city defence read both ways). In
+    // 201608Z the Warrior that stood inside at t26 (defence 18.6) was posted
+    // to the ring at t27 and the city fell the next turn. With no standing
+    // walls, the Anvil's strongest melee soldier within a tile holds the
+    // city and makes no blow. See `advanced/anvil_garrisons_its_melee.rs`.
+    Gene { tag: "anvil-garrisons-its-melee", field: "anvil_garrisons_its_melee", kind: Kind::OptIn, enable: AdvancedAi::enable_anvil_garrisons_its_melee, disable: AdvancedAi::disable_anvil_garrisons_its_melee },
     // Live Immortal 6p Continents 10-30/31: `rapid-city-expansion-2` is asked
     // before `land_grab`, so every live seat planned the ordinary cadence
     // floored at ten (1,223 of 1,894 readings past t110) and held 10 cities
