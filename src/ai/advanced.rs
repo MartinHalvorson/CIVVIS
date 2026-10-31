@@ -7875,6 +7875,11 @@ pub struct AdvancedAi {
     /// `BasicAi::opening_builder_after_the_first_settler`. Off by default.
     opening_builder_after_the_first_settler: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `rival-pace` (`gene_screen --rival-pace`): `Some(extra)` caps the
+    /// plan's `desired_cities` at the live Immortal field's city curve plus
+    /// `extra` (`rival_pace::city_cap`). `None` everywhere but a calibrated
+    /// rival chair. See `advanced/rival_pace.rs`.
+    rival_city_pace: Option<usize>,
     /// `prey-is-declared-on`: a Domination seat declares on a major rival
     /// under `prey_declaration::PREY_DECLARE_RATIO` of its military power
     /// without a home Defend row or a staged ring. See
@@ -8899,6 +8904,10 @@ pub struct AdvancedAi {
     /// and we lead the field, and races Science beside its lane while it
     /// drives. See `advanced/science_victory_drive.rs`. Off by default.
     science_drive_answers_the_launch: bool,
+    /// `settler-founds-under-raiders`: a stalled Settler whose only visible
+    /// threats are barbarians founds where it stands despite the tile risk.
+    /// See `advanced/settler_raiders.rs`.
+    settler_founds_under_raiders: bool,
     // ---- append: t-z ------------------------------------------------
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
@@ -9980,6 +9989,11 @@ mod higher_level_strategy;
 /// out-guns us in the opening. One opt-in gene; see
 /// `advanced/near_rival_deterrence.rs`.
 mod near_rival_deterrence;
+/// `rival-pace`: a calibrated rival chair's city horizon follows the live
+/// Immortal field's city count by turn. Not a gene — set only by
+/// `gene_screen --rival-pace` on its rival chairs; see
+/// `advanced/rival_pace.rs`.
+mod rival_pace;
 mod theology_fights;
 
 /// `growth-to-settle`: while the opening is behind the pace and no city can
@@ -10168,6 +10182,8 @@ pub(super) mod rapid_city_expansion;
 /// asks wider questions instead of holding, and a watchdog bounds every
 /// other hold. One opt-in gene; see `advanced/settler_never_idles.rs`.
 mod settler_never_idles;
+/// `settler-founds-under-raiders`: see `advanced/settler_raiders.rs`.
+mod settler_raiders;
 /// Route around a host-refused step before discarding its city destination.
 mod settler_route_recovery;
 mod settler_shelter;
@@ -11465,6 +11481,7 @@ impl AdvancedAi {
             luxury_swap_asks_2: false,
             opening_builder_after_the_first_settler: false,
             // ---- append: p-r ----------------------------------------
+            rival_city_pace: None,
             prey_is_declared_on: false,
             prophet_race_takes_divine_spark: false,
             racer_blocker_declares: false,
@@ -11647,6 +11664,7 @@ impl AdvancedAi {
             siege_tier_yields_to_the_bombers_2: false,
             siege_moves_under_the_wing: false,
             science_drive_answers_the_launch: false,
+            settler_founds_under_raiders: false,
             // ---- append: t-z ----------------------------------------
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,
@@ -11945,6 +11963,18 @@ impl AdvancedAi {
     /// Redirect an existing agent at a new explicit victory target without
     /// discarding campaign memory; the strategic plan re-assesses on the
     /// next turn. Used by the rollout-driven `StrategicAi`.
+    /// `rival-pace`: hold this seat's city horizon to the live Immortal
+    /// field's curve plus `extra` cities. For a calibrated rival chair only
+    /// (`gene_screen --rival-pace`); see `advanced/rival_pace.rs`.
+    pub fn set_rival_city_pace(&mut self, extra: usize) {
+        self.rival_city_pace = Some(extra);
+    }
+
+    /// The cities over the live curve this seat may plan for, when paced.
+    pub fn rival_city_pace(&self) -> Option<usize> {
+        self.rival_city_pace
+    }
+
     pub fn retarget(&mut self, target: VictoryTarget) {
         self.victory_target = Some(target);
         self.forced_target_player = None;
@@ -15559,6 +15589,13 @@ impl AdvancedAi {
         } else {
             desired_cities
         };
+        // `rival-pace`: a calibrated rival chair settles to the live field's
+        // curve, last so that no widening above can lift it back. See
+        // `advanced/rival_pace.rs`.
+        let desired_cities = match self.rival_city_pace {
+            Some(extra) => rival_pace::capped(g, desired_cities, cities.len(), extra),
+            None => desired_cities,
+        };
         let military_civ = matches!(
             g.players[pid].civ.as_str(),
             "Sumeria" | "Aztec" | "Nubia" | "Scythia" | "Byzantium"
@@ -19095,6 +19132,19 @@ impl AdvancedAi {
                 }
                 _ if opening_archery_goal.is_some() => opening_archery_goal.as_deref(),
                 _ if defensive_walls_goal.is_some() => defensive_walls_goal.as_deref(),
+                // `diplo-match-point-beelines-the-points`: from match point the
+                // last points in the tree, whatever the plan reads, ahead of
+                // every war and lane arm below. Live Immortal
+                // civvis-20261031T011801Z stood on 19 of 20 from t172 while
+                // Rocketry (`domination-siege-research`), Guidance Systems (the
+                // wartime modernization) and then the counter plan's Satellites
+                // and Electricity took the slot; Seasteads started at t201 and
+                // Rome won on Science at t205. Behind only the walls and the
+                // opening Archery, which are done long before the bar. Exact
+                // no-op while the gene is off.
+                _ if self.diplo_match_point_tech(g, pid).is_some() => {
+                    self.diplo_match_point_tech(g, pid)
+                }
                 _ if conversion_upgrade_goal.is_some() => conversion_upgrade_goal,
                 _ if self.war_plan.as_ref().is_some_and(|plan| {
                     !g.players[pid].techs.contains(&plan.breakthrough_tech)
@@ -19263,11 +19313,6 @@ impl AdvancedAi {
                 _ if great_person_goal.is_some() => great_person_goal.as_deref(),
                 _ if science_commitment && science_lane_active => {
                     Self::science_victory_tech_goal(g, pid, GrandStrategy::Science)
-                }
-                // `diplo-match-point-beelines-the-points`: the last points in the
-                // tree, whatever the plan reads. Exact no-op while the gene is off.
-                _ if self.diplo_match_point_tech(g, pid).is_some() => {
-                    self.diplo_match_point_tech(g, pid)
                 }
                 GrandStrategy::Culture if self.phase_specialization_active(g) => {
                     ["printing", "radio", "computers"]
@@ -41503,6 +41548,16 @@ impl AdvancedAi {
                 think!(self.journal(), Expansion, Detail, "Settler HELD short of {target:?}";
                        "{} tiles away and it did not move — {why}",
                        g.wdist(current, target); target);
+                // `settler-founds-under-raiders`: held by the safe-step guard a
+                // second turn running, among barbarians only, it founds where
+                // it stands. See `advanced/settler_raiders.rs`.
+                if current != target
+                    && matches!(g.route_step(uid, target, 0), Some(step) if g.can_move(uid, step))
+                    && self.settler_blocked_turns.get(&uid).copied().unwrap_or(0) >= 1
+                    && self.settler_founds_among_raiders(g, pid, uid)
+                {
+                    return true;
+                }
             }
         }
         if !self.settler_commit {
@@ -41640,7 +41695,17 @@ impl AdvancedAi {
             && self.settlement_tile_risk(g, pid, Some(uid), here, &visible)
                 > SETTLER_STEP_RISK_LIMIT
         {
-            return false;
+            // `settler-founds-under-raiders`: with barbarians the only threat
+            // and a city that would outlast them, the city is the safer piece.
+            if !self.settler_threat_is_raiders_only(g, pid, here, &visible)
+                || !self.raiders_spare_the_city(g, pid, uid, here, &visible)
+            {
+                return false;
+            }
+            think!(self.journal(), Expansion, Detail,
+                   "Settler founds among raiders at {here:?}";
+                   "settler-founds-under-raiders: every hostile in reach is a barbarian, \
+                    and the city would outlast them where the Settler would be taken"; here);
         }
         // A stalled route may reach a tile that the ordinary target loop had
         // already rejected. Keep the fallback behind the same Loyalty

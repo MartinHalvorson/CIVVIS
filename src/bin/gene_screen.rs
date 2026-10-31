@@ -72,6 +72,7 @@
 //!               [--difficulty-rotate king:1,emperor:2,immortal:1]
 //!               [--rivals firaxis-mix|firaxis-faithful]
 //!               [--handicap all|rivals] [--rival-chairs N] [--stock-civs] [--trace]
+//!               [--rival-rung RUNG|-N] [--rival-pace]
 //!   gene_screen --analyze PATH [PATH ...] [--json OUT] [--interactions]
 //!               [--denial] [--top N] [--by-civ TAG]
 //!   gene_screen --list
@@ -576,6 +577,10 @@ fn is_zero_usize(value: &usize) -> bool {
     *value == 0
 }
 
+fn is_false(value: &bool) -> bool {
+    !*value
+}
+
 fn is_zero_u8(value: &u8) -> bool {
     *value == 0
 }
@@ -767,12 +772,89 @@ fn faithful_genome(genes: &[Gene]) -> Vec<bool> {
 /// A `firaxis-faithful` chair: the deployment genome on its own lane. It
 /// takes no genome argument on purpose — nothing a measured arm drew, and no
 /// `--live-genome` file, can reach the opposition.
-fn faithful_rival_seat(genes: &[Gene], seed: u64, offset: usize) -> AdvancedAi {
+fn faithful_rival_seat(genes: &[Gene], seed: u64, offset: usize, pace: bool) -> AdvancedAi {
     let mut ai = seat_with_genome(genes, &faithful_genome(genes));
     if let Some(target) = faithful_lane(seed, offset) {
         ai.retarget(target);
     }
+    if pace {
+        ai.set_rival_city_pace(rival_pace_extra(offset));
+    }
     ai
+}
+
+/// ⭐ `--rival-pace`: the cities over the live curve a faithful chair may
+/// plan for. Chair 0 of every game — which rotates with the game index — is
+/// the field's best rival at [`RIVAL_PACE_BEST_EXTRA`]; the rest plan the
+/// curve itself (`rival_pace::LIVE_RIVAL_CITY_PACE` in
+/// `src/ai/advanced/rival_pace.rs`).
+fn rival_pace_extra(offset: usize) -> usize {
+    if offset == 0 {
+        RIVAL_PACE_BEST_EXTRA
+    } else {
+        0
+    }
+}
+
+/// How far the live Immortal field's best rival runs over its mean: 7 against
+/// 6.0 cities at turn 80, 8 against 6.7 at turn 100, 11 against 9.3 at 150
+/// (the 4p Tiny Lv 7 census, 2026-10-30), rounded up for the chair that may
+/// take it.
+const RIVAL_PACE_BEST_EXTRA: usize = 2;
+
+/// ⭐ `--rival-rung`: the rung whose YIELD bonus (`ai_yield_pct`) the rival
+/// chairs play (`GameOptions::ai_yield_rung`), named outright (`king`) or as
+/// rungs below the game's own (`-2`), so a `--difficulty-rotate` batch keeps
+/// the gap on every rung. Every discrete grant — the bonus start units, the
+/// era boosts, combat strength and experience — stays on the game's rung.
+#[derive(Clone, Debug, PartialEq)]
+enum RivalRung {
+    Named(String),
+    Below(usize),
+}
+
+impl RivalRung {
+    fn parse(text: &str, known: &[&str]) -> Result<RivalRung, String> {
+        let text = text.trim();
+        if let Some(steps) = text.strip_prefix('-') {
+            return match steps.parse::<usize>() {
+                Ok(steps) if steps > 0 => Ok(RivalRung::Below(steps)),
+                _ => Err(format!(
+                    "--rival-rung {text:?}: a relative rung is -N, N at least 1"
+                )),
+            };
+        }
+        if known.contains(&text) {
+            Ok(RivalRung::Named(text.to_string()))
+        } else {
+            Err(format!(
+                "unknown --rival-rung {text:?}; name a rung of {known:?} or -N rungs below the game's"
+            ))
+        }
+    }
+
+    /// The header's spelling: the rung's key, or `-N`.
+    fn id(&self) -> String {
+        match self {
+            RivalRung::Named(rung) => rung.clone(),
+            RivalRung::Below(steps) => format!("-{steps}"),
+        }
+    }
+
+    /// The yield rung of a game played at `game_rung` on `ladder` (ladder
+    /// order): `-N` steps down, never below the ladder's first rung.
+    fn resolve(&self, game_rung: &str, ladder: &[&str]) -> String {
+        match self {
+            RivalRung::Named(rung) => rung.clone(),
+            RivalRung::Below(steps) => {
+                let at = ladder
+                    .iter()
+                    .position(|rung| *rung == game_rung)
+                    .unwrap_or(0);
+                ladder[at.saturating_sub(*steps)].to_string()
+            }
+        }
+    }
 }
 
 /// The kind of rival the game on `seed` seats: the three kinds in turn.
@@ -1828,6 +1910,17 @@ struct Header {
     /// 2026-09-08, which seated one.
     #[serde(default, skip_serializing_if = "is_zero_usize")]
     rival_chairs: usize,
+    /// ⭐ `--rival-rung` (2026-10-31): the rung whose yield bonus the rival
+    /// chairs played — a rung's key, or `-N` rungs below each game's — or
+    /// empty for the game's own, which every earlier file played.
+    /// Provenance on the source: `tools/genes.py` records it when set and
+    /// `--analyze` refuses to merge files that disagree.
+    #[serde(default, skip_serializing_if = "String::is_empty")]
+    rival_rung: String,
+    /// ⭐ `--rival-pace` (2026-10-31): whether every faithful chair held its
+    /// city horizon to the live field's curve. Recorded like `rival_rung`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    rival_pace: bool,
     /// ⭐ The binary that played these games. Absent in files written before
     /// 2026-08-23, which `tools/genes.py` grandfathers as history and
     /// marks `pre-fingerprint` rather than accepting silently.
@@ -2184,6 +2277,12 @@ struct Profile {
     /// ⭐ `--trace`: write every major's [`TraceSample`]s at [`TRACE_TURNS`]
     /// onto its row. Off by default, so a row is byte for byte what it was.
     trace: bool,
+    /// ⭐ `--rival-rung`: the rung whose yield bonus the rival chairs play.
+    /// `None` is the game's own rung.
+    rival_rung: Option<RivalRung>,
+    /// ⭐ `--rival-pace`: every faithful chair's city horizon follows the live
+    /// field's curve ([`rival_pace_extra`]).
+    rival_pace: bool,
     /// ⭐ Rival chairs per game ([`rival_offset`]); one is the 2026-08-25 mix.
     rival_chairs: usize,
     /// ⭐ `--handicap rivals`: every measured seat is exempt from the rung's
@@ -2305,6 +2404,12 @@ fn play_game(
     } else {
         BTreeSet::new()
     };
+    // ⭐ `--rival-rung`: the rival chairs' yield bonus on its own rung, resolved
+    // against this game's rung so a rotation keeps the gap on every rung.
+    let ai_yield_rung = profile.rival_rung.as_ref().map(|rung| {
+        let rules = civvis::rules::Rules::shared();
+        rung.resolve(&difficulty, &difficulty_ladder(&rules))
+    });
     let mut world = Game::new_with(tournament_options(GameOptions {
         speed: profile.speed.id().to_string(),
         map_script: profile.map,
@@ -2312,6 +2417,7 @@ fn play_game(
         victory_conditions: victories,
         difficulty: difficulty.clone(),
         handicap_exempt,
+        ai_yield_rung,
         ..GameOptions::new(
             profile.players,
             profile.width,
@@ -2342,7 +2448,7 @@ fn play_game(
                     // ⭐ A faithful chair is built from the registry alone:
                     // `genomes[index]` — the arm's draw — never reaches it.
                     (None, Some(offset)) if profile.faithful => {
-                        faithful_rival_seat(genes, seed, offset)
+                        faithful_rival_seat(genes, seed, offset, profile.rival_pace)
                     }
                     (None, Some(offset)) => {
                         rival_seat(kind, rival_lane_seed(seed, offset), genes, &genomes[index])
@@ -4832,6 +4938,8 @@ fn read_rows(paths: &[String]) -> (Header, Vec<Row>) {
                                 || first.rivals != found.rivals
                                 || first.handicap != found.handicap
                                 || first.rival_chairs != found.rival_chairs
+                                || first.rival_rung != found.rival_rung
+                                || first.rival_pace != found.rival_pace
                                 || first.all_seats != found.all_seats
                                 || first.design != found.design
                                 || first.prior != found.prior
@@ -5685,13 +5793,14 @@ fn rivals_line(header: &Header) -> String {
         return format!(
             "rivals: ⭐ {} — {} per game play the deployment genome, each on a lane drawn \
              per chair from the live Immortal census (science 9 : culture 6 : religious 4 : \
-             own choice 2); those seats are not measured · handicap: {}",
+             own choice 2); those seats are not measured · handicap: {} · calibration: {}",
             header.rivals,
             match header.rival_chairs {
                 0 | 1 => "one chair".to_string(),
                 chairs => format!("{chairs} chairs"),
             },
-            handicap_read(header)
+            handicap_read(header),
+            calibration_read(header)
         );
     }
     format!(
@@ -5711,6 +5820,29 @@ fn rivals_line(header: &Header) -> String {
             .join(" "),
         handicap_read(header)
     )
+}
+
+/// How a faithful field was held down to the live one, for the banner.
+fn calibration_read(header: &Header) -> String {
+    let rung = if header.rival_rung.is_empty() {
+        "yields on the game's rung".to_string()
+    } else if header.rival_rung.starts_with('-') {
+        format!(
+            "yields {} rung(s) below the game's (start, boosts and combat on the game's)",
+            &header.rival_rung[1..]
+        )
+    } else {
+        format!(
+            "yields on {} (start, boosts and combat on the game's rung)",
+            header.rival_rung
+        )
+    };
+    let pace = if header.rival_pace {
+        "cities held to the live curve (one chair +2)"
+    } else {
+        "cities unpaced"
+    };
+    format!("{rung}, {pace}")
 }
 
 /// How the rung's handicap was dealt, for the banner and the report.
@@ -6196,6 +6328,11 @@ fn usage() -> ! {
          shape since 2026-10-31 is the screen's own default board (6p 74x46 continents, 9 city-states = Small), \
          so add only --difficulty immortal|deity --handicap rivals --rival-chairs 5 \
          (the Lv 7 corpus of 2026-10-30 was 4p Tiny: --players 4 --width 60 --height 38 --city-states 6 --map pangaea)\n       \
+         the calibrated faithful field: [--rival-rung RUNG|-N] the rival chairs play a lower rung's \
+         YIELD bonus (bonus start units, era boosts, combat strength and XP stay on the game's rung), \
+         named or N rungs below each game's, needs --handicap rivals; [--rival-pace] every faithful chair's \
+         city horizon follows the live Immortal field's curve (4/5/6/7/9/10/11 at t40/60/80/100/150/175/225, \
+         one chair per game +2); both need --rivals firaxis-faithful\n       \
          the rival trajectories: [--trace] writes every major's economy (cities, population, yields, tourism, \
          tourists, techs, civics, wonders, districts) at turns 10..100 by tens, 125, 150, 175, 200, 225 onto its \
          row as `trace`; rows are unchanged without it\n       \
@@ -6470,6 +6607,27 @@ fn main() {
     let handicap_arg = text(&args, "--handicap");
     let rival_chairs_arg =
         present(&args, "--rival-chairs").then(|| number(&args, "--rival-chairs", 1).max(0) as u64);
+    // ⭐ THE CALIBRATION KNOBS (2026-10-31): the faithful field held DOWN to
+    // the live Immortal field. Both need the faithful chairs, and the rung
+    // needs `--handicap rivals`, or it would reach a measured seat too.
+    let rival_rung = text(&args, "--rival-rung").map(|spec| {
+        RivalRung::parse(&spec, &known_rungs).unwrap_or_else(|why| {
+            eprintln!("{why}");
+            std::process::exit(2);
+        })
+    });
+    let rival_pace = present(&args, "--rival-pace");
+    if (rival_rung.is_some() || rival_pace) && !faithful {
+        eprintln!("--rival-rung and --rival-pace calibrate the faithful field, so they need --rivals {FAITHFUL_KIND}");
+        std::process::exit(2);
+    }
+    if rival_rung.is_some() && handicap_arg.as_deref() != Some(HANDICAP_RIVALS) {
+        eprintln!(
+            "--rival-rung moves the handicapped seats' yield bonus, so it needs --handicap rivals: \
+             otherwise every measured seat would play it too"
+        );
+        std::process::exit(2);
+    }
     let speed = match text(&args, "--speed") {
         None => GameSpeed::Online,
         Some(id) => GameSpeed::from_id(&id).unwrap_or_else(|| {
@@ -6809,6 +6967,8 @@ fn main() {
             String::new()
         },
         rival_chairs: if rivals { rival_chairs } else { 0 },
+        rival_rung: rival_rung.as_ref().map(RivalRung::id).unwrap_or_default(),
+        rival_pace,
         deployment_genome,
         design: "independent".to_string(),
         prior: probabilities.clone(),
@@ -6866,6 +7026,8 @@ fn main() {
         rivals,
         faithful,
         trace,
+        rival_rung: rival_rung.clone(),
+        rival_pace,
         rival_chairs,
         handicap_rivals,
     };
@@ -7011,6 +7173,8 @@ mod tests {
             rival_games: BTreeMap::new(),
             handicap: String::new(),
             rival_chairs: 0,
+            rival_rung: String::new(),
+            rival_pace: false,
             design: "independent".into(),
             prior: vec![0.5; genes.len()],
             p_on: 0.5,
@@ -8499,7 +8663,7 @@ mod tests {
         for seed in 0u64..40 {
             for chair in 0..3 {
                 assert_eq!(
-                    faithful_rival_seat(&genes, seed, chair).victory_target(),
+                    faithful_rival_seat(&genes, seed, chair, false).victory_target(),
                     faithful_lane(seed, chair)
                 );
             }
@@ -8592,6 +8756,69 @@ mod tests {
                 "the live census reads turn {mark}"
             );
         }
+    }
+
+    /// ⭐ `--rival-rung` names a rung or steps below each game's, never off
+    /// the ladder, and `--rival-pace` gives one chair per game the best
+    /// rival's two cities over the curve.
+    #[test]
+    fn the_rival_rung_resolves_on_the_ladder_and_the_pace_marks_one_chair() {
+        let rules = civvis::rules::Rules::embedded();
+        let ladder = difficulty_ladder(&rules);
+        assert_eq!(
+            RivalRung::parse("king", &ladder),
+            Ok(RivalRung::Named("king".into()))
+        );
+        assert_eq!(RivalRung::parse("-2", &ladder), Ok(RivalRung::Below(2)));
+        assert!(RivalRung::parse("-0", &ladder).is_err());
+        assert!(RivalRung::parse("-x", &ladder).is_err());
+        assert!(RivalRung::parse("godlike", &ladder).is_err());
+        assert_eq!(RivalRung::Below(2).id(), "-2");
+        assert_eq!(RivalRung::Named("prince".into()).id(), "prince");
+        assert_eq!(RivalRung::Below(2).resolve("immortal", &ladder), "king");
+        assert_eq!(RivalRung::Below(2).resolve("emperor", &ladder), "prince");
+        assert_eq!(RivalRung::Below(3).resolve("immortal", &ladder), "prince");
+        assert_eq!(RivalRung::Below(30).resolve("prince", &ladder), ladder[0]);
+        assert_eq!(
+            RivalRung::Named("king".into()).resolve("deity", &ladder),
+            "king"
+        );
+        let genes = gene_table();
+        for seed in 0u64..6 {
+            for chair in 0..5 {
+                let paced = faithful_rival_seat(&genes, seed, chair, true);
+                assert_eq!(
+                    paced.rival_city_pace(),
+                    Some(if chair == 0 { RIVAL_PACE_BEST_EXTRA } else { 0 })
+                );
+                assert_eq!(paced.victory_target(), faithful_lane(seed, chair));
+                assert_eq!(
+                    faithful_rival_seat(&genes, seed, chair, false).rival_city_pace(),
+                    None
+                );
+            }
+        }
+    }
+
+    /// The calibration is provenance: absent from a header that did not
+    /// set it, kept through a round trip, and named in the banner.
+    #[test]
+    fn the_calibration_rides_the_header_only_when_set() {
+        let mut header = screen_header(&["a"]);
+        header.rivals = FAITHFUL_KIND.into();
+        header.handicap = HANDICAP_RIVALS.into();
+        header.rival_chairs = 5;
+        let plain = serde_json::to_string(&header).expect("serializes");
+        assert!(!plain.contains("rival_rung") && !plain.contains("rival_pace"));
+        assert!(rivals_line(&header).contains("yields on the game's rung, cities unpaced"));
+        header.rival_rung = "-2".into();
+        header.rival_pace = true;
+        let back: Header =
+            serde_json::from_str(&serde_json::to_string(&header).expect("serializes"))
+                .expect("parses");
+        assert_eq!((back.rival_rung.as_str(), back.rival_pace), ("-2", true));
+        assert!(rivals_line(&back).contains("yields 2 rung(s) below the game's"));
+        assert!(rivals_line(&back).contains("held to the live curve"));
     }
 
     /// The faithful header names its one kind in the banner and the report.

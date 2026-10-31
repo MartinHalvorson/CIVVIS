@@ -8698,6 +8698,17 @@ impl AdvancedAi {
         self.surprise_watch_holds_its_ratio = false;
     }
 
+    /// Opt-in gene `settler-founds-under-raiders`; see
+    /// [`Self::settler_founds_under_raiders`].
+    pub fn enable_settler_founds_under_raiders(&mut self) {
+        self.settler_founds_under_raiders = true;
+    }
+
+    /// The twin of `enable_settler_founds_under_raiders`.
+    pub fn disable_settler_founds_under_raiders(&mut self) {
+        self.settler_founds_under_raiders = false;
+    }
+
     /// Opt-in gene `campus-unlock-in-every-lane`; see
     /// [`Self::campus_unlock_in_every_lane`].
     pub fn enable_campus_unlock_in_every_lane(&mut self) {
