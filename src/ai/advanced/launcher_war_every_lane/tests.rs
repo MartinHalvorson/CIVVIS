@@ -62,7 +62,10 @@ fn launcher_war_serves_every_lane_is_opt_in() {
 #[test]
 fn a_culture_seat_counters_the_racer_past_its_moon_with_war() {
     let (mut g, mut ai) = fixture(VictoryTarget::Culture);
-    assert!(ai.launcher_war_opens(&g, 0, 1), "fixture: the launcher war opens");
+    assert!(
+        ai.launcher_war_opens(&g, 0, 1),
+        "fixture: the launcher war opens"
+    );
     assert_eq!(ai.launcher_lane_counter(&g, 0), None, "off");
     ai.enable_launcher_war_serves_every_lane();
     assert_eq!(
@@ -126,5 +129,9 @@ fn the_launcher_wars_gates_hold() {
 
     let (g, mut ai) = fixture(VictoryTarget::Domination);
     ai.enable_launcher_war_serves_every_lane();
-    assert_eq!(ai.launcher_lane_counter(&g, 0), None, "Domination keeps its own");
+    assert_eq!(
+        ai.launcher_lane_counter(&g, 0),
+        None,
+        "Domination keeps its own"
+    );
 }
