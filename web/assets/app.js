@@ -24449,6 +24449,12 @@ function drawPlayerHud() {
   const viewSeat = Number.isInteger(state.player) ? state.player : null;
   const viewSeatAtWar = !activeWarPlayers && viewSeat !== null && state.players.some(other =>
     other.id !== viewSeat && other.alive && !other.is_barbarian && other.at_war_with_me);
+  // The seat whose eyes the page looks through — our own seat beside a live
+  // Civilization VI game, the civilization a spectator is watching as, or the
+  // player's own empire — wears the same gold the victory tracker gives it,
+  // so it stands out of the standings at a glance (operator 2026-10-30).
+  const focusSeatId = SPEC ? state.view_player : state.player;
+  const focusSeat = Number.isInteger(focusSeatId) ? focusSeatId : null;
   // Rank remains the score standing even when the visible rows are sorted by
   // another fact, so a #2 badge never starts meaning "second alphabetically".
   const scoreRankedMajors = state.players
@@ -24721,7 +24727,7 @@ function drawPlayerHud() {
           `<b>${kind === "score" ? ribbonScore(value) : ribbonStat(value)}</b>${markerHtml}</button>`;
       };
       const citiesOpen = openCityPlayer?.id === p.id;
-      return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}${locked ? " locked" : ""}${citiesOpen ? " cities-open" : ""}" style="--civ:${color};--civ-border:${pcol2(p.id)}" role="listitem">` +
+      return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}${locked ? " locked" : ""}${citiesOpen ? " cities-open" : ""}${p.id === focusSeat ? " focus-player" : ""}" style="--civ:${color};--civ-border:${pcol2(p.id)}" role="listitem">` +
         visibleColumns.map(rowCell).join("") + `</div>` +
         (citiesOpen ? playerHudCityRows(p, openCities, hiddenCities, visibleColumns) : "");
     }).join("") + `</div>` + hudResizeHandles("player standings", ["n", "s"]);
