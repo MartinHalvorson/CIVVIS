@@ -50820,9 +50820,9 @@ mod adopted_faith_balance;
 
 mod air_campaign;
 
-mod religious_interception;
 /// `religion-seat-founds-first`: see `advanced/religion_seat_founds_first.rs`.
 mod religion_seat_founds_first;
+mod religious_interception;
 
 /// `match-point-interception-ignores-power`: the faith's last holdout
 /// intercepts its spreader at a lower power floor. See
