@@ -4523,6 +4523,14 @@ pub const GENES: &[Gene] = &[
     // walls, the Anvil's strongest melee soldier within a tile holds the
     // city and makes no blow. See `advanced/anvil_garrisons_its_melee.rs`.
     Gene { tag: "anvil-garrisons-its-melee", field: "anvil_garrisons_its_melee", kind: Kind::OptIn, enable: AdvancedAi::enable_anvil_garrisons_its_melee, disable: AdvancedAi::disable_anvil_garrisons_its_melee },
+    // The defence pass queues walls in a threatened city and the general pass
+    // switches it straight back: "switches to amphitheater, displacing walls"
+    // 50 times on the live journals, and 8 of the 10 cities lost unwalled at
+    // t45-100 on 6p Immortal seats had their walls displaced first. While the
+    // city is damaged or a visible enemy soldier stands within 4 tiles, a
+    // defensive commitment holds against a civilian build. See
+    // `advanced/defence_holds.rs`.
+    Gene { tag: "defence-holds-under-fire", field: "defence_holds_under_fire", kind: Kind::OptIn, enable: AdvancedAi::enable_defence_holds_under_fire, disable: AdvancedAi::disable_defence_holds_under_fire },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
