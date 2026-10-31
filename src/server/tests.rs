@@ -675,6 +675,32 @@ fn every_turn_waits_for_its_frame_only_while_a_viewer_is_active() {
     );
 }
 
+/// A live mirror publishes every board at sequence 0, so the audit's painted
+/// frame must be the furthest TURN any page drew: the live game waits on it,
+/// and a second tab that stopped painting must not hold it back.
+#[test]
+fn a_mirror_reports_the_furthest_painted_turn_of_any_page() {
+    let now = Instant::now();
+    let mirror = |turn| SpectatorFrame {
+        seed: 1,
+        turn,
+        finished: false,
+        sequence: 0,
+    };
+    let mut delivery = FrameDelivery::default();
+    assert_eq!(delivery.furthest_painted(), None);
+    // "zz" sorts last: it used to win every tie whatever it had drawn.
+    for (viewer, turn) in [("aa", 41), ("zz", 37)] {
+        delivery.viewer_request(viewer, None, now);
+        delivery.frame_delivered(viewer, mirror(turn), now);
+        delivery.viewer_request(viewer, Some(mirror(turn)), now);
+    }
+    assert_eq!(
+        delivery.furthest_painted().map(|frame| frame.turn),
+        Some(41)
+    );
+}
+
 /// Two tabs on one exhibition are two promises, not one. The gate used to
 /// keep a single delivery cursor, so either page satisfying it released the
 /// turn and they took alternate ones — each seeing half the game while the
@@ -6377,8 +6403,9 @@ fn browser_orders_controls_interface_setup_and_logs() {
     assert!(EMBEDDED_INDEX.contains(
         "return Math.max(floor, PLAYER_HUD_CHROME_HEIGHT + rows * playerHudRowPitch());"
     ));
-    assert!(EMBEDDED_INDEX
-        .contains("minHeight:PLAYER_HUD_MIN_HEIGHT,\n            avoidsSidebar:true, fullWidth:true}"));
+    assert!(EMBEDDED_INDEX.contains(
+        "minHeight:PLAYER_HUD_MIN_HEIGHT,\n            avoidsSidebar:true, fullWidth:true}"
+    ));
     // The masthead spans the window whatever width a drag or a saved layout
     // carried (operator 2026-10-15: "full width of the window. not ~1\" from
     // the edge"); only its top and bottom edges are handles.

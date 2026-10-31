@@ -6098,7 +6098,8 @@ def _play(args: argparse.Namespace) -> int:
     # behind anyway (a wait the mod capped: hidden, frozen, restarting) is let
     # go -- no row, no wait -- until it is back within one, so it costs the
     # lane one capped wait rather than one per turn.
-    mirror_flow = {"synced": None, "attempt_at": 0.0, "given_up": False}
+    mirror_flow = {"synced": None, "attempt_at": 0.0, "failed": False,
+                   "given_up": False}
 
     def sync_mirror_turn(now: float) -> None:
         shown = mirror_sync.shown_turn(args.tag)
@@ -6117,11 +6118,15 @@ def _play(args: argparse.Namespace) -> int:
         if wanted == mirror_flow["synced"]:
             return
         # A turn the page has painted is news at once; dropping the row
-        # (nothing to wait for) is not urgent, and a failed write retries.
-        if wanted is None and now - mirror_flow["attempt_at"] < 1.0:
+        # (nothing to wait for) is not urgent, and a failed write (a busy
+        # channel, or one the brain has not created yet) retries shortly.
+        retry = 1.0 if wanted is None else 0.25 if mirror_flow["failed"] else 0.0
+        if now - mirror_flow["attempt_at"] < retry:
             return
         mirror_flow["attempt_at"] = now
-        if set_mirror_turn(orders_db_path(run_dir, args.orders_db), args.tag, wanted):
+        written = set_mirror_turn(orders_db_path(run_dir, args.orders_db), args.tag, wanted)
+        mirror_flow["failed"] = not written
+        if written:
             if (wanted is None) != (mirror_flow["synced"] is None):
                 print("[mirror] turns end once the CIVVIS page shows them"
                       if wanted is not None
