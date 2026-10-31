@@ -37,7 +37,15 @@ impl BasicAi {
         let builder = Item::Unit {
             unit: crate::name!("builder"),
         };
-        if g.apply(pid, &Action::Produce { city: cid, item: builder }).is_err() {
+        if g.apply(
+            pid,
+            &Action::Produce {
+                city: cid,
+                item: builder,
+            },
+        )
+        .is_err()
+        {
             return false;
         }
         self.opening_builder_paid = true;
