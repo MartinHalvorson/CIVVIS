@@ -29,10 +29,14 @@ fn diplomat(contact_fleet: bool) -> AdvancedAi {
 }
 
 /// Two majors and no city-states; player 0 holds one coastal city that can
-/// launch a ship into uncharted water, knows Cartography (so a Caravel
-/// outclasses a Galley), and has not met player 1, who holds no city. Every
-/// starting unit is gone and the turn is past the opening.
+/// launch a ship into uncharted water and has not met player 1, who holds no
+/// city. It knows Cartography (Ocean; the Galley retires behind the Caravel,
+/// so the cheapest hull is the Quadrireme) and Mercantilism (a Privateer
+/// outguns a Quadrireme, so the governor vetoes the Quadrireme at -2000, as
+/// the Barbary Corsair did to 003455Z's t84 Quadrireme). Every starting unit
+/// is gone and the turn is past the opening.
 fn coastal_seat() -> (Game, u32) {
+    let mut refusals = Vec::new();
     for seed in 0..60u64 {
         let mut game = Game::new_full(2, 40, 24, 431_700 + seed, 250, 0, false);
         for uid in game.units.keys().copied().collect::<Vec<_>>() {
@@ -47,6 +51,9 @@ fn coastal_seat() -> (Game, u32) {
         ] {
             game.players[0].techs.insert(Name::new(tech));
         }
+        game.players[0].civics.insert(Name::new("mercantilism"));
+        game.players[0].met.remove(&1);
+        game.players[1].met.remove(&0);
         let site = game
             .map
             .tiles
@@ -64,19 +71,35 @@ fn coastal_seat() -> (Game, u32) {
             .map(|(pos, _)| *pos)
             .min();
         let Some(site) = site else {
+            refusals.push(format!("{seed}: no coastal site"));
             continue;
         };
         let city = game.place_city(0, site, None);
         game.turn = 80;
-        if BasicAi::city_has_naval_recon_launch(&game, 0, city)
-            && game.can_produce(0, city, &unit("galley"))
-            && game.can_produce(0, city, &unit("caravel"))
-            && !game.has_met(0, 1)
-        {
+        let checks = [
+            (
+                "launch",
+                BasicAi::city_has_naval_recon_launch(&game, 0, city),
+            ),
+            ("quadrireme", game.can_produce(0, city, &unit("quadrireme"))),
+            ("caravel", game.can_produce(0, city, &unit("caravel"))),
+            ("privateer", game.can_produce(0, city, &unit("privateer"))),
+            ("unmet", !game.has_met(0, 1)),
+            ("alive", game.players[1].alive),
+        ];
+        if checks.iter().all(|(_, ok)| *ok) {
             return (game, city);
         }
+        refusals.push(format!(
+            "{seed}: {:?}",
+            checks
+                .iter()
+                .filter(|(_, ok)| !ok)
+                .map(|(name, _)| *name)
+                .collect::<Vec<_>>()
+        ));
     }
-    panic!("fixture: no seed gave a coastal city with uncharted water");
+    panic!("fixture: no seed gave a coastal city with uncharted water: {refusals:?}");
 }
 
 /// Meet player 1 and see one of its cities: with no city-states on the map
@@ -113,21 +136,22 @@ fn queue(game: &mut Game, city: u32, item: &Item) {
 }
 
 /// ★ The 003455Z shape: the sea scout the reservation laid down is worth
-/// less than anything else on the menu (a Galley beside a Caravel is vetoed
-/// outright), so the governor's rescoring replaced it the same turn. Under
-/// the gene it holds while the contact gap is open — and only then: a met,
-/// located rival with no city-state left unmet, or a charting ship of ours
-/// afloat, hands the queue back to the rescoring.
+/// less than anything else on the menu (here, as at t84, a Quadrireme beside
+/// a better-gunned raider is vetoed outright), so the governor's rescoring
+/// replaced it the same turn. Under the gene it holds while the contact gap
+/// is open — and only then: a met, located rival with no city-state left
+/// unmet, or a charting ship of ours afloat, hands the queue back.
 #[test]
 fn the_queued_sea_scout_holds_only_while_the_contact_gap_is_open() {
     let (mut game, city) = coastal_seat();
-    let galley = unit("galley");
-    queue(&mut game, city, &galley);
+    let hull = unit("quadrireme");
+    queue(&mut game, city, &hull);
     let plan = plan(game.turn);
     assert!(
         BasicAi::contact_fleet_gap(&game, 0),
         "fixture: player 1 is unmet"
     );
+    assert_eq!(BasicAi::contact_fleet_missing_majors(&game, 0), (1, 0));
     assert!(
         diplomat(true).base.naval_recon_on(),
         "fixture: the naval eye is live"
@@ -137,17 +161,17 @@ fn the_queued_sea_scout_holds_only_while_the_contact_gap_is_open() {
     diplomat(false).advanced_production(&mut off, 0, &plan, false);
     assert_ne!(
         off.cities[&city].queue.first(),
-        Some(&galley),
+        Some(&hull),
         "fixture: without the gene the rescoring replaces the hull"
     );
 
     let mut on = game.clone();
     let mut armed = diplomat(true);
-    assert!(armed.naval_eye_holds(&on, 0, city, &plan, &galley));
+    assert!(armed.naval_eye_holds(&on, 0, city, &plan, &hull));
     armed.advanced_production(&mut on, 0, &plan, false);
     assert_eq!(
         on.cities[&city].queue.first(),
-        Some(&galley),
+        Some(&hull),
         "the gene keeps the sea scout against a higher-scored item"
     );
 
@@ -156,11 +180,11 @@ fn the_queued_sea_scout_holds_only_while_the_contact_gap_is_open() {
     close_the_gap(&mut closed, city);
     assert!(!BasicAi::contact_fleet_gap(&closed, 0));
     let mut armed = diplomat(true);
-    assert!(!armed.naval_eye_holds(&closed, 0, city, &plan, &galley));
+    assert!(!armed.naval_eye_holds(&closed, 0, city, &plan, &hull));
     armed.advanced_production(&mut closed, 0, &plan, false);
     assert_ne!(
         closed.cities[&city].queue.first(),
-        Some(&galley),
+        Some(&hull),
         "with the gap closed the rescoring has the queue back"
     );
 
@@ -195,13 +219,13 @@ fn the_queued_sea_scout_holds_only_while_the_contact_gap_is_open() {
     let mut afloat = game.clone();
     let ship = afloat.spawn_test_unit("galley", 0, shore);
     if BasicAi::naval_recon_ship_can_chart(&afloat, 0, ship) {
-        assert!(!diplomat(true).naval_eye_holds(&afloat, 0, city, &plan, &galley));
+        assert!(!diplomat(true).naval_eye_holds(&afloat, 0, city, &plan, &hull));
     }
 
     // A threatened city keeps no hold.
     let mut threatened = plan.clone();
     threatened.threatened_city = Some(city);
-    assert!(!diplomat(true).naval_eye_holds(&game, 0, city, &threatened, &galley));
+    assert!(!diplomat(true).naval_eye_holds(&game, 0, city, &threatened, &hull));
     // Nor does anything but a sea unit.
     assert!(!diplomat(true).naval_eye_holds(&game, 0, city, &plan, &unit("warrior")));
 }
@@ -211,15 +235,10 @@ fn the_queued_sea_scout_holds_only_while_the_contact_gap_is_open() {
 /// the gap closed or the gene off, the stock cheapest hull. The live menu of
 /// 003455Z at t75 offered no Galley after Cartography, so the cheapest hull
 /// was the Quadrireme and the Caravel cost exactly twice it; the native
-/// ruleset keeps the Galley to Steam Power, so the fixture withdraws it.
+/// fixture's Cartography retires the Galley behind the Caravel the same way.
 #[test]
 fn the_faster_hull_is_chosen_only_inside_its_window() {
     let (mut game, city) = coastal_seat();
-    std::sync::Arc::make_mut(&mut game.rules)
-        .units
-        .get_mut("galley")
-        .expect("the Galley row")
-        .buildable = false;
     let stock = diplomat(false);
     let armed = diplomat(true);
     let cheapest = stock
