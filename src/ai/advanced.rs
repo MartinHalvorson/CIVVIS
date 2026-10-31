@@ -6433,6 +6433,10 @@ pub struct AdvancedAi {
     /// `advanced/culture_seat_allies.rs`. Off by default.
     culture_seat_allies: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `early-route-feeds-production`: within about 100 Online turns a
+    /// route's Production outbids the foreign-Gold premium. See
+    /// `advanced/early_route_production.rs`. Off by default.
+    early_route_feeds_production: bool,
     /// `food-focus-grows-the-small-city`: `civvis_orders` also asks the host
     /// to favour Food in a small city growing at two a turn or less. See
     /// `advanced/food_focus_grows_the_small_city.rs`. Off by default.
@@ -9698,6 +9702,8 @@ pub use air_city_assault::AirCityAssault;
 /// `war-target-prices-the-walls`: see `advanced/war_target_walls.rs`.
 mod war_target_walls;
 
+/// `early-route-feeds-production`: see `advanced/early_route_production.rs`.
+mod early_route_production;
 /// `embassy-finds-the-capital`: see `advanced/embassy_capital.rs`.
 mod embassy_capital;
 
@@ -11329,6 +11335,7 @@ impl AdvancedAi {
             culture_recovery_spends_the_bank: false,
             culture_seat_allies: false,
             // ---- append: e-f ----------------------------------------
+            early_route_feeds_production: false,
             food_focus_grows_the_small_city: false,
             friendship_ends_at_the_race: false,
             friendship_only_with_the_stronger: false,
@@ -43132,9 +43139,13 @@ impl AdvancedAi {
         // `commercial-hub-and-traders`: at peace with every major, a route's
         // Gold to a city-state or a rival we are not targeting. Not even a
         // zero is added off. See `advanced/commercial_routes.rs`.
-        if self.commercial_hub_and_traders {
+        // `early-route-feeds-production`: inside the early window the
+        // foreign-Gold premium gives way to the route's Production. See
+        // `advanced/early_route_production.rs`.
+        if self.commercial_hub_and_traders && !self.early_route_window(g) {
             value += self.international_gold_route_premium(g, pid, city.owner, yields);
         }
+        value += self.early_route_production_premium(g, yields);
 
         value
     }
