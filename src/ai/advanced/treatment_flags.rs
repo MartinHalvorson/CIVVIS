@@ -8722,6 +8722,17 @@ impl AdvancedAi {
         self.base.contact_fleet = false;
     }
 
+    /// Opt-in gene `immortal-skips-the-prophet-race`; see
+    /// [`Self::immortal_skips_the_prophet_race`].
+    pub fn enable_immortal_skips_the_prophet_race(&mut self) {
+        self.immortal_skips_the_prophet_race = true;
+    }
+
+    /// The twin of `enable_immortal_skips_the_prophet_race`.
+    pub fn disable_immortal_skips_the_prophet_race(&mut self) {
+        self.immortal_skips_the_prophet_race = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
