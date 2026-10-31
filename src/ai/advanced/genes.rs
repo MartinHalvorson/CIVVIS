@@ -4485,6 +4485,13 @@ pub const GENES: &[Gene] = &[
     // Science (else Culture, else Domination). See
     // `advanced/religion_lane_hands_over.rs`.
     Gene { tag: "religion-lane-hands-over", field: "religion_lane_hands_over", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_lane_hands_over, disable: AdvancedAi::disable_religion_lane_hands_over },
+    // The t80 production gate retires 16 of 20 6p Immortal seats at a median
+    // share of 0.23. The first Trader (~t21) goes foreign or to a city-state
+    // for ~4 Gold in kept and retired seats alike: `commercial-hub-and-traders`
+    // pays 1.5 per Gold, so a domestic route's Production never wins. Within
+    // ~100 Online turns, route Production outbids that premium. See
+    // `advanced/early_route_production.rs`.
+    Gene { tag: "early-route-feeds-production", field: "early_route_feeds_production", kind: Kind::OptIn, enable: AdvancedAi::enable_early_route_feeds_production, disable: AdvancedAi::disable_early_route_feeds_production },
     // Live Immortal seats 2026-10-30/31 (35 games, Culture, Diplomatic and
     // Science targets): Writing came a median t50 (quartiles 37-65), tenth
     // in the order behind Sailing (97%) and Bronze Working (94%), and the
