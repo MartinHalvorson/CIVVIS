@@ -5532,6 +5532,10 @@ pub struct AdvancedAi {
     /// are not displaced by a civilian build. See `advanced/defence_holds.rs`.
     /// Off by default.
     defence_holds_under_fire: bool,
+    /// `capital-walls-at-any-ratio`: at Immortal and Deity the capital's walls
+    /// arm on any watched major's soldier at our door. See
+    /// `advanced/capital_walls_at_any_ratio.rs`. Off by default.
+    capital_walls_at_any_ratio: bool,
     /// `diplo-seat-statue-harbor`: a Diplomacy seat's strongest coastal city
     /// builds the Harbor the Statue of Liberty needs. See
     /// `advanced/diplo_statue_harbor.rs`. Off by default.
@@ -9821,6 +9825,9 @@ mod food_focus_grows_the_small_city;
 /// `capital-monument-after-the-second-city`: see `advanced/capital_monument.rs`.
 mod capital_monument;
 
+/// `capital-walls-at-any-ratio`: see `advanced/capital_walls_at_any_ratio.rs`.
+mod capital_walls_at_any_ratio;
+
 /// `culture-seat-theater-first`: see `advanced/culture_theater_first.rs`.
 mod culture_theater_first;
 /// `diplo-match-point-beelines-the-points`; see
@@ -11212,6 +11219,7 @@ impl AdvancedAi {
             // ---- append: c-d ----------------------------------------
             domination_targets_land_first: false,
             defence_holds_under_fire: false,
+            capital_walls_at_any_ratio: false,
             diplo_seat_statue_harbor: false,
             culture_routes_reach_every_rival: false,
             culture_seat_monuments: false,

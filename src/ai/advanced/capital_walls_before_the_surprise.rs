@@ -148,7 +148,9 @@ impl AdvancedAi {
                     && g.turn - **seen <= window
             })
             .map(|(other, _)| (*other, g.military_power(*other) / ours))
-            .filter(|(_, ratio)| *ratio >= CAPITAL_WALLS_RATIO)
+            // `capital-walls-at-any-ratio`: 1.0 at Immortal and Deity. See
+            // `advanced/capital_walls_at_any_ratio.rs`.
+            .filter(|(_, ratio)| *ratio >= self.capital_walls_ratio(g))
             .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)))
     }
 

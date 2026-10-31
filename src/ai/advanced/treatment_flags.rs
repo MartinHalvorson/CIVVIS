@@ -8875,6 +8875,17 @@ impl AdvancedAi {
         self.science_seat_allies = false;
     }
 
+    /// Opt-in gene `capital-walls-at-any-ratio`; see
+    /// [`Self::capital_walls_at_any_ratio`].
+    pub fn enable_capital_walls_at_any_ratio(&mut self) {
+        self.capital_walls_at_any_ratio = true;
+    }
+
+    /// The twin of `enable_capital_walls_at_any_ratio`.
+    pub fn disable_capital_walls_at_any_ratio(&mut self) {
+        self.capital_walls_at_any_ratio = false;
+    }
+
     /// Opt-in gene `religion-seat-defends-its-faith`; see
     /// [`Self::religion_seat_defends_its_faith`].
     pub fn enable_religion_seat_defends_its_faith(&mut self) {
