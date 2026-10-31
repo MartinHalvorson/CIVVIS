@@ -5079,6 +5079,10 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `board-ignores-the-faith-war`: the war `faith-war-is-no-front`
+    /// exempts from `one_war_holds_declaration` does not hold the board's
+    /// declaration (`war_policy_declaration`) either. Off by default.
+    board_ignores_the_faith_war: bool,
     /// `aluminum-tile-spends-the-war-chest`: the Aluminum tile buy keeps the
     /// upkeep floor, not the purchase pass's whole reserve. See
     /// `AdvancedAi::aluminum_tile_reserve`. Off by default.
@@ -11032,6 +11036,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            board_ignores_the_faith_war: false,
             aluminum_tile_spends_the_war_chest: false,
             breaker_bought_for_the_siege: false,
             breaker_bought: BTreeMap::new(),

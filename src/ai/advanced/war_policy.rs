@@ -264,8 +264,18 @@ impl AdvancedAi {
         // `one_war_second_front`: the rival the one-war gate admits beside
         // the burning war is not held by it here either.
         let second_front = self.one_war_second_front(g, pid) == Some(target);
-        if let Some(enemy) = self
-            .one_war_enemies(g, pid)
+        // `board-ignores-the-faith-war`: the war `faith-war-is-no-front`
+        // already keeps out of `one_war_holds_declaration` does not hold the
+        // board's declaration either. Live Immortal civvis-20261031T054450Z
+        // held its war on Australia ("another major war, with Macedon") on
+        // 49 turns from 101 at 6-12 times Australia's power: the Macedon war
+        // was our own faith war, opened at 97, and Melbourne walled up by 123.
+        let enemies = if self.board_ignores_the_faith_war {
+            self.without_faith_war(g, pid, self.one_war_enemies(g, pid))
+        } else {
+            self.one_war_enemies(g, pid)
+        };
+        if let Some(enemy) = enemies
             .into_iter()
             .find(|enemy| *enemy != target && !second_front)
         {
@@ -706,6 +716,39 @@ mod tests {
         let plan = conquest(&two_fronts, Some(city_of(&two_fronts, 1, at(20, 8))));
         let Some(Err(reason)) = ai.war_policy_declaration(&two_fronts, 0, 1, &plan) else {
             panic!("a second front must hold the declaration");
+        };
+        assert!(reason.contains("another major war"), "{reason}");
+    }
+
+    /// `board-ignores-the-faith-war`: our own faith war on a third major
+    /// holds the board's declaration with the gene off and not with it on.
+    #[test]
+    fn our_faith_war_does_not_hold_the_board_declaration() {
+        let mut g = flat_board(35, &[at(6, 8), at(20, 8), at(30, 14)]);
+        war(&mut g, 0, 2);
+        let plan = conquest(&g, Some(city_of(&g, 1, at(20, 8))));
+        let mut ai = on();
+        ai.enable_faith_war_is_no_front();
+        ai.faith_war_before_the_flip_war =
+            Some(super::super::faith_war_before_the_flip::FaithWar {
+                rival: 2,
+                opened: 55,
+                spreader_seen: 59,
+            });
+        let Some(Err(reason)) = ai.war_policy_declaration(&g, 0, 1, &plan) else {
+            panic!("off: the faith war still holds the declaration");
+        };
+        assert!(reason.contains("another major war"), "off: {reason}");
+        ai.enable_board_ignores_the_faith_war();
+        let verdict = ai.war_policy_declaration(&g, 0, 1, &plan);
+        assert!(
+            !matches!(&verdict, Some(Err(reason)) if reason.contains("another major war")),
+            "on: {verdict:?}"
+        );
+        // A war that is not our faith war still holds it.
+        ai.faith_war_before_the_flip_war = None;
+        let Some(Err(reason)) = ai.war_policy_declaration(&g, 0, 1, &plan) else {
+            panic!("a real second front must hold the declaration");
         };
         assert!(reason.contains("another major war"), "{reason}");
     }
