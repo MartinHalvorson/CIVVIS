@@ -4456,6 +4456,13 @@ pub const GENES: &[Gene] = &[
     // Religion-target founder keeps all three in any plan. See
     // `advanced/religion_lane_spreads.rs`.
     Gene { tag: "religion-lane-spreads-from-founding", field: "religion_lane_spreads_from_founding", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_lane_spreads_from_founding, disable: AdvancedAi::disable_religion_lane_spreads_from_founding },
+    // On 6p Continents a Domination plan aimed overseas never declares: the
+    // army is kept on land at peace and the amphibious train forms only at
+    // war. Live 041027Z aimed at overseas Russia t78-85 and retired with no
+    // city; 22 of 45 rival slots in the long 6p games sat across water. Rivals
+    // reachable by land rank first in the frontier and capital picks and the
+    // hand-over bar. See `advanced/domination_land_first.rs`.
+    Gene { tag: "domination-targets-land-first", field: "domination_targets_land_first", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_targets_land_first, disable: AdvancedAi::disable_domination_targets_land_first },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
