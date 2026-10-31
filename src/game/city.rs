@@ -5978,6 +5978,8 @@ impl Game {
                             .unwrap_or(0) as f64,
             ),
             Item::Project { project } => {
+                // `GameOptions::ai_space_project_cost_pct`: 1 unless set.
+                let standard = standard * self.space_project_cost_scale(pid, project.as_str());
                 let maximum = self.rules.projects[project].cost_progression_max_pct;
                 if maximum <= 0.0 {
                     self.game_speed.scale(standard)
@@ -7698,6 +7700,10 @@ impl Game {
                 }
             }
             Item::Project { project } => {
+                // `GameOptions::ai_space_tech_floor`: true unless set.
+                if !self.space_project_tech_floor_met(pid, project.as_str()) {
+                    return false;
+                }
                 if project == "repair_outer_defenses" {
                     let max = self.city_max_wall_hp(city);
                     return max > 0

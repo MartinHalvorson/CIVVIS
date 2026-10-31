@@ -72,7 +72,8 @@
 //!               [--difficulty-rotate king:1,emperor:2,immortal:1]
 //!               [--rivals firaxis-mix|firaxis-faithful]
 //!               [--handicap all|rivals] [--rival-chairs N] [--stock-civs] [--trace]
-//!               [--rival-rung RUNG|-N] [--rival-pace]
+//!               [--rival-rung RUNG|-N] [--rival-pace] [--rival-victory-pace PCT]
+//!               [--rival-late-science PCT] [--rival-space-floor TECHS]
 //!   gene_screen --analyze PATH [PATH ...] [--json OUT] [--interactions]
 //!               [--denial] [--top N] [--by-civ TAG]
 //!   gene_screen --list
@@ -579,6 +580,10 @@ fn is_zero_usize(value: &usize) -> bool {
 
 fn is_false(value: &bool) -> bool {
     !*value
+}
+
+fn is_zero_u32(value: &u32) -> bool {
+    *value == 0
 }
 
 fn is_zero_u8(value: &u8) -> bool {
@@ -1116,6 +1121,11 @@ struct Row {
     /// without the flag.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     trace: Vec<TraceSample>,
+    /// ⭐ `--trace`: the turn this seat landed each space project it landed
+    /// (`launch_earth_satellite` … `exoplanet_expedition`), rival chairs
+    /// included. Empty — and so absent — without the flag, or with none landed.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    project_turns: BTreeMap<String, u32>,
     /// `game` for a screened seat. (Files written by the earlier paired designs
     /// also hold `anchor` rows; those are skipped by every estimate here.)
     kind: String,
@@ -1932,6 +1942,20 @@ struct Header {
     /// city horizon to the live field's curve. Recorded like `rival_rung`.
     #[serde(default, skip_serializing_if = "is_false")]
     rival_pace: bool,
+    /// ⭐ `--rival-victory-pace` (2026-10-31): the percentage the rival chairs
+    /// paid for the four space projects, or 0 for their ordinary cost, which
+    /// every earlier file played. Recorded like `rival_rung`.
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    rival_victory_pace: u32,
+    /// ⭐ `--rival-late-science` (2026-10-31): the share of their Science the
+    /// rival chairs kept from Online turn 100, in percent, or 0 for all of it,
+    /// which every earlier file played. Recorded like `rival_rung`.
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    rival_late_science: u32,
+    /// ⭐ `--rival-space-floor` (2026-10-31): the techs a rival chair needed
+    /// before a space project, or 0 for none, which every earlier file played.
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    rival_space_floor: u32,
     /// ⭐ The binary that played these games. Absent in files written before
     /// 2026-08-23, which `tools/genes.py` grandfathers as history and
     /// marks `pre-fingerprint` rather than accepting silently.
@@ -2294,6 +2318,15 @@ struct Profile {
     /// ⭐ `--rival-pace`: every faithful chair's city horizon follows the live
     /// field's curve ([`rival_pace_extra`]).
     rival_pace: bool,
+    /// ⭐ `--rival-victory-pace`: the space-project cost the rival chairs pay,
+    /// in percent (`GameOptions::ai_space_project_cost_pct`). `None` is 100.
+    rival_victory_pace: Option<u32>,
+    /// ⭐ `--rival-late-science`: the share of their Science the rival chairs
+    /// keep from Online turn 100 (`GameOptions::ai_late_science_pct`).
+    rival_late_science: Option<u32>,
+    /// ⭐ `--rival-space-floor`: the techs a rival chair needs before a space
+    /// project (`GameOptions::ai_space_tech_floor`).
+    rival_space_floor: Option<u32>,
     /// ⭐ Rival chairs per game ([`rival_offset`]); one is the 2026-08-25 mix.
     rival_chairs: usize,
     /// ⭐ `--handicap rivals`: every measured seat is exempt from the rung's
@@ -2429,6 +2462,9 @@ fn play_game(
         difficulty: difficulty.clone(),
         handicap_exempt,
         ai_yield_rung,
+        ai_space_project_cost_pct: profile.rival_victory_pace,
+        ai_late_science_pct: profile.rival_late_science,
+        ai_space_tech_floor: profile.rival_space_floor,
         ..GameOptions::new(
             profile.players,
             profile.width,
@@ -2493,7 +2529,17 @@ fn play_game(
     let mut techs_at_live_pace: Option<Vec<usize>> = None;
     let mut trajectories = vec![Vec::new(); world.players.len()];
     let mut traces: Vec<Vec<TraceSample>> = vec![Vec::new(); world.players.len()];
+    let mut project_turns: Vec<BTreeMap<String, u32>> = vec![BTreeMap::new(); world.players.len()];
     run_game_observed(&mut world, &mut ais, |g| {
+        if profile.trace {
+            for &pid in &majors {
+                for project in &g.players[pid].science_projects {
+                    project_turns[pid]
+                        .entry(project.to_string())
+                        .or_insert(g.turn);
+                }
+            }
+        }
         if g.turn.is_multiple_of(25) {
             for &pid in &majors {
                 trajectories[pid].push(civvis::ai::player::PaceSample::observe(g, pid));
@@ -2549,6 +2595,7 @@ fn play_game(
             row.victories_off = closed.clone();
             row.trajectory = trajectories[seat].clone();
             row.trace = std::mem::take(&mut traces[seat]);
+            row.project_turns = std::mem::take(&mut project_turns[seat]);
             row.victory_portfolio = Some(ais[seat].victory_portfolio_report());
             row.player_target = civvis::ai::player::target_for(seed, index, &profile.target_mix)
                 .map_or("civvis", |target| target.as_str())
@@ -2680,6 +2727,7 @@ fn row_for_seat(
         victory_portfolio: None,
         trajectory: Vec::new(),
         trace: Vec::new(),
+        project_turns: BTreeMap::new(),
         kind: "game".to_string(),
         game: index,
         pair: 0,
@@ -4951,6 +4999,9 @@ fn read_rows(paths: &[String]) -> (Header, Vec<Row>) {
                                 || first.rival_chairs != found.rival_chairs
                                 || first.rival_rung != found.rival_rung
                                 || first.rival_pace != found.rival_pace
+                                || first.rival_victory_pace != found.rival_victory_pace
+                                || first.rival_late_science != found.rival_late_science
+                                || first.rival_space_floor != found.rival_space_floor
                                 || first.all_seats != found.all_seats
                                 || first.design != found.design
                                 || first.prior != found.prior
@@ -5853,7 +5904,26 @@ fn calibration_read(header: &Header) -> String {
     } else {
         "cities unpaced"
     };
-    format!("{rung}, {pace}")
+    let mut line = format!("{rung}, {pace}");
+    if header.rival_victory_pace > 0 {
+        line.push_str(&format!(
+            ", space projects at {}% of their cost",
+            header.rival_victory_pace
+        ));
+    }
+    if header.rival_late_science > 0 {
+        line.push_str(&format!(
+            ", {}% of their Science from turn 100",
+            header.rival_late_science
+        ));
+    }
+    if header.rival_space_floor > 0 {
+        line.push_str(&format!(
+            ", space projects from {} techs",
+            header.rival_space_floor
+        ));
+    }
+    line
 }
 
 /// How the rung's handicap was dealt, for the banner and the report.
@@ -6628,6 +6698,29 @@ fn main() {
         })
     });
     let rival_pace = present(&args, "--rival-pace");
+    // ⭐ `--rival-victory-pace PCT`: the rival chairs' space projects cost PCT
+    // percent. The native field turns its science into a launch faster than
+    // the live Firaxis AI (see docs/GENE_SCREEN.md).
+    let rival_victory_pace = present(&args, "--rival-victory-pace")
+        .then(|| number(&args, "--rival-victory-pace", 100).clamp(1, 1000) as u32);
+    // ⭐ `--rival-late-science PCT`: the rival chairs keep PCT percent of their
+    // Science from Online turn 100 (`GameOptions::ai_late_science_pct`).
+    let rival_late_science = present(&args, "--rival-late-science")
+        .then(|| number(&args, "--rival-late-science", 100).clamp(1, 1000) as u32);
+    // ⭐ `--rival-space-floor TECHS`: no rival space project before TECHS techs
+    // (`GameOptions::ai_space_tech_floor`).
+    let rival_space_floor = present(&args, "--rival-space-floor")
+        .then(|| number(&args, "--rival-space-floor", 0).clamp(0, 200) as u32)
+        .filter(|floor| *floor > 0);
+    if (rival_victory_pace.is_some() || rival_late_science.is_some() || rival_space_floor.is_some())
+        && (!faithful || handicap_arg.as_deref() != Some(HANDICAP_RIVALS))
+    {
+        eprintln!(
+            "--rival-victory-pace and --rival-late-science act on the handicapped rival chairs, \
+             so they need --rivals {FAITHFUL_KIND} and --handicap rivals"
+        );
+        std::process::exit(2);
+    }
     if (rival_rung.is_some() || rival_pace) && !faithful {
         eprintln!("--rival-rung and --rival-pace calibrate the faithful field, so they need --rivals {FAITHFUL_KIND}");
         std::process::exit(2);
@@ -6980,6 +7073,9 @@ fn main() {
         rival_chairs: if rivals { rival_chairs } else { 0 },
         rival_rung: rival_rung.as_ref().map(RivalRung::id).unwrap_or_default(),
         rival_pace,
+        rival_victory_pace: rival_victory_pace.unwrap_or(0),
+        rival_late_science: rival_late_science.unwrap_or(0),
+        rival_space_floor: rival_space_floor.unwrap_or(0),
         deployment_genome,
         design: "independent".to_string(),
         prior: probabilities.clone(),
@@ -7039,6 +7135,9 @@ fn main() {
         trace,
         rival_rung: rival_rung.clone(),
         rival_pace,
+        rival_victory_pace,
+        rival_late_science,
+        rival_space_floor,
         rival_chairs,
         handicap_rivals,
     };
@@ -7186,6 +7285,9 @@ mod tests {
             rival_chairs: 0,
             rival_rung: String::new(),
             rival_pace: false,
+            rival_victory_pace: 0,
+            rival_late_science: 0,
+            rival_space_floor: 0,
             design: "independent".into(),
             prior: vec![0.5; genes.len()],
             p_on: 0.5,
@@ -7203,6 +7305,7 @@ mod tests {
             victory_portfolio: None,
             trajectory: Vec::new(),
             trace: Vec::new(),
+            project_turns: BTreeMap::new(),
             kind: "game".into(),
             game,
             pair: 0,
@@ -8832,6 +8935,20 @@ mod tests {
         assert_eq!((back.rival_rung.as_str(), back.rival_pace), ("-2", true));
         assert!(rivals_line(&back).contains("yields 2 rung(s) below the game's"));
         assert!(rivals_line(&back).contains("held to the live curve"));
+        let plain = serde_json::to_string(&back).expect("serializes");
+        assert!(!plain.contains("rival_victory_pace"));
+        let mut paced = back.clone();
+        paced.rival_victory_pace = 150;
+        let again: Header =
+            serde_json::from_str(&serde_json::to_string(&paced).expect("serializes"))
+                .expect("parses");
+        assert_eq!(again.rival_victory_pace, 150);
+        assert!(rivals_line(&again).contains("space projects at 150% of their cost"));
+        let mut late = again.clone();
+        late.rival_late_science = 85;
+        assert!(rivals_line(&late).contains("85% of their Science from turn 100"));
+        late.rival_space_floor = 58;
+        assert!(rivals_line(&late).contains("space projects from 58 techs"));
     }
 
     /// The faithful header names its one kind in the banner and the report.
