@@ -203,7 +203,7 @@ impl AdvancedAi {
         let item = Self::early_settler_item();
         let max_turns = g.standard_duration(EARLY_SETTLER_MAX_BUILD) as f64;
         let past_band = g.turn >= g.standard_duration(EARLY_SETTLER_FLOOR_STANDARD_TURN);
-        let mut best: Option<(f64, u32)> = None;
+        let mut candidates: Vec<(f64, u32)> = Vec::new();
         for &cid in &city_ids {
             let city = &g.cities[&cid];
             if Some(cid) == opening_capital
@@ -213,7 +213,7 @@ impl AdvancedAi {
                 || Self::early_settler_raider_near(g, city.pos)
                 || !Self::early_settler_may_displace(g, pid, cid)
                 || !g.can_produce(pid, cid, &item)
-                || (past_band && self.plan_settler_floor_skips(g, pid, cid, walkers + queued))
+                || (past_band && !self.settler_expansion_window_open(g, pid, cid))
             {
                 continue;
             }
@@ -223,13 +223,15 @@ impl AdvancedAi {
             if turns > max_turns {
                 continue;
             }
-            if best.is_none_or(|(old, old_city)| {
-                turns + 1e-9 < old || ((turns - old).abs() <= 1e-9 && cid < old_city)
-            }) {
-                best = Some((turns, cid));
-            }
+            candidates.push((turns, cid));
         }
-        let Some((turns, cid)) = best else {
+        // Soonest first, the lower city id on a tie. Past the band turn the
+        // site gate (a site scan) is asked only in that order, so it usually
+        // runs once. See `advanced/settler_floor_follows_the_plan.rs`.
+        candidates.sort_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        let Some((turns, cid)) = candidates.into_iter().find(|(_, cid)| {
+            !past_band || self.plan_settler_floor_has_a_seat(g, pid, *cid, walkers + queued)
+        }) else {
             return;
         };
         let displaced = g.cities[&cid].queue.first().cloned();

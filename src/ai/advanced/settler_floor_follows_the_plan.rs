@@ -44,20 +44,18 @@ impl AdvancedAi {
         }
     }
 
-    /// Whether `cid` is barred from the plan floor's Settler: past the band
-    /// turn, the city must still be inside the Settler's payback window and
-    /// the site gate must hold a seat for one more Settler.
-    pub(super) fn plan_settler_floor_skips(
+    /// Whether the site gate holds a seat for one more Settler from `cid`.
+    /// The claim asks it of its candidates soonest first, after the cheap
+    /// filters (the payback window among them), so the scan usually runs once.
+    pub(super) fn plan_settler_floor_has_a_seat(
         &self,
         g: &Game,
         pid: usize,
         cid: u32,
         settlers: usize,
     ) -> bool {
-        !self.settler_expansion_window_open(g, pid, cid)
-            || self
-                .settler_site_gate(g, pid, g.cities[&cid].pos, settlers)
-                .is_err()
+        self.settler_site_gate(g, pid, g.cities[&cid].pos, settlers)
+            .is_ok()
     }
 }
 
