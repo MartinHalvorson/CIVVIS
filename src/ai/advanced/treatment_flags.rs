@@ -8932,6 +8932,19 @@ impl AdvancedAi {
         self.base.disable_deck_prices_growth();
     }
 
+    /// Opt-in gene `retainers-garrison-the-short-cities`; see
+    /// `BasicAi::retainers_garrison_the_short_cities`.
+    pub fn enable_retainers_garrison_the_short_cities(&mut self) {
+        self.retainers_garrison_the_short_cities = true;
+        self.base.enable_retainers_garrison_the_short_cities();
+    }
+
+    /// The twin of `enable_retainers_garrison_the_short_cities`.
+    pub fn disable_retainers_garrison_the_short_cities(&mut self) {
+        self.retainers_garrison_the_short_cities = false;
+        self.base.disable_retainers_garrison_the_short_cities();
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
