@@ -252,6 +252,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `prophet-race-takes-divine-spark` | off (unmeasured) | Opt-in gene `prophet-race-takes-divine-spark`; see `advanced/astrology_before_the_second_city.rs`. | 1 \| 1 |
 | `racer-blocker-declares` | off (unmeasured) | Opt-in gene `racer-blocker-declares`; see `advanced/silent_counter.rs`. | 1 \| 1 |
 | `racer-spies-search-for-the-pad` | off (unmeasured) | Opt-in gene `racer-spies-search-for-the-pad`; see `Self::racer_spies_search_for_the_pad`. | 1 \| 1 |
+| `religion-lane-hands-over` | off (unmeasured) | Opt-in gene `religion-lane-hands-over`; see `Self::religion_lane_hands_over`. | 1 \| 1 |
 | `science-drive-answers-the-launch` | off (unmeasured) | `science-drive-answers-the-launch`. | 1 \| 1 |
 | `settler-founds-under-raiders` | off (unmeasured) | Opt-in gene `settler-founds-under-raiders`; see `Self::settler_founds_under_raiders`. | 1 \| 1 |
 | `siege-budget-counts-the-ram` | off (unmeasured) | Price a train-held Ram or Tower in the siege damage budget. | 1 \| 1 |

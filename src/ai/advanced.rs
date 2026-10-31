@@ -7875,6 +7875,11 @@ pub struct AdvancedAi {
     /// `BasicAi::opening_builder_after_the_first_settler`. Off by default.
     opening_builder_after_the_first_settler: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `religion-lane-hands-over`: a Religion-target seat with no religion,
+    /// no Prophet pending and every slot claimed retargets to Science (else
+    /// Culture, else Domination). See `advanced/religion_lane_hands_over.rs`.
+    /// Off by default.
+    religion_lane_hands_over: bool,
     /// `rival-pace` (`gene_screen --rival-pace`): `Some(extra)` caps the
     /// plan's `desired_cities` at the live Immortal field's city curve plus
     /// `extra` (`rival_pace::city_cap`). `None` everywhere but a calibrated
@@ -9641,6 +9646,8 @@ mod live_gp_commitment;
 /// unescorted Settlers and Builders, unpillaged tiles — taken by movement
 /// and closed by peace. See `advanced/opportunistic_war.rs`.
 mod opportunistic_war;
+/// `religion-lane-hands-over`: see `advanced/religion_lane_hands_over.rs`.
+mod religion_lane_hands_over;
 /// A short, defender-only declaration shock. See
 /// `advanced/surprise_defense.rs`.
 mod surprise_defense;
@@ -11487,6 +11494,7 @@ impl AdvancedAi {
             luxury_swap_asks_2: false,
             opening_builder_after_the_first_settler: false,
             // ---- append: p-r ----------------------------------------
+            religion_lane_hands_over: false,
             rival_city_pace: None,
             prey_is_declared_on: false,
             prophet_race_takes_divine_spark: false,
@@ -49634,6 +49642,10 @@ impl AdvancedAi {
         self.base.minor = g.players[pid].is_minor;
         self.base.barb = g.players[pid].is_barbarian;
         self.maintain_victory_portfolio(g, pid);
+        // `religion-lane-hands-over`: a Religion seat that lost the Prophet
+        // race takes Science before the turn reads its target. See
+        // `advanced/religion_lane_hands_over.rs`.
+        self.hand_over_a_lost_religion_lane(g, pid);
         let active_victory_target = self.active_victory_target(g);
         let specialization_active = self.phase_specialization_active(g);
         // See `lane_delegates_production`: this turn an assigned lane's

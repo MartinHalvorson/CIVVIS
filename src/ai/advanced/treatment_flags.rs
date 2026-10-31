@@ -8733,6 +8733,17 @@ impl AdvancedAi {
         self.immortal_skips_the_prophet_race = false;
     }
 
+    /// Opt-in gene `religion-lane-hands-over`; see
+    /// [`Self::religion_lane_hands_over`].
+    pub fn enable_religion_lane_hands_over(&mut self) {
+        self.religion_lane_hands_over = true;
+    }
+
+    /// The twin of `enable_religion_lane_hands_over`.
+    pub fn disable_religion_lane_hands_over(&mut self) {
+        self.religion_lane_hands_over = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -4448,6 +4448,13 @@ pub const GENES: &[Gene] = &[
     // nor Diplomacy stays out of the race unless a Prophet is pending. See
     // `advanced/immortal_prophet_race.rs`.
     Gene { tag: "immortal-skips-the-prophet-race", field: "immortal_skips_the_prophet_race", kind: Kind::OptIn, enable: AdvancedAi::enable_immortal_skips_the_prophet_race, disable: AdvancedAi::disable_immortal_skips_the_prophet_race },
+    // A Religion-target seat that lost the Prophet race keeps a Religion
+    // plan, with no religion, for the rest of the game: the 4th religion
+    // closed the race at a median t47.5 live (6p Immortal), and our seat
+    // founded in 5 of 17. With every slot claimed and none ours, it takes
+    // Science (else Culture, else Domination). See
+    // `advanced/religion_lane_hands_over.rs`.
+    Gene { tag: "religion-lane-hands-over", field: "religion_lane_hands_over", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_lane_hands_over, disable: AdvancedAi::disable_religion_lane_hands_over },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
