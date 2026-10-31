@@ -4394,6 +4394,16 @@ pub const GENES: &[Gene] = &[
     // next city until it finds the pad. Needs `racer-keeps-the-spies`. See
     // `advanced/racer_keeps_the_spies.rs`.
     Gene { tag: "racer-spies-search-for-the-pad", field: "racer_spies_search_for_the_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_racer_spies_search_for_the_pad, disable: AdvancedAi::disable_racer_spies_search_for_the_pad },
+    // Live Lv 7/8 2026-10-30/31: 7 of 8 seats declared on by t40 lost a
+    // city by t41, five of them with walls part-built. The walls' live 2.0x
+    // reading stood down when we armed (001453Z: bought warriors lifted us
+    // to 1.7x and Athens built a Monument first) or the rival dipped
+    // (173341Z: 1.6x). A 2x major seen within ten tiles of the capital or a
+    // frontier city keeps that city's walls, and Masonry, armed for the
+    // ten-turn window. Needs `capital-walls-before-the-surprise` and/or
+    // `frontier-walls-before-the-surprise`. See
+    // `advanced/surprise_watch_latch.rs`.
+    Gene { tag: "surprise-watch-holds-its-ratio", field: "surprise_watch_holds_its_ratio", kind: Kind::OptIn, enable: AdvancedAi::enable_surprise_watch_holds_its_ratio, disable: AdvancedAi::disable_surprise_watch_holds_its_ratio },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

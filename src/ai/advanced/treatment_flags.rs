@@ -8653,6 +8653,17 @@ impl AdvancedAi {
         self.racer_spies_search_for_the_pad = false;
     }
 
+    /// Opt-in gene `surprise-watch-holds-its-ratio`; see
+    /// [`Self::surprise_watch_holds_its_ratio`].
+    pub fn enable_surprise_watch_holds_its_ratio(&mut self) {
+        self.surprise_watch_holds_its_ratio = true;
+    }
+
+    /// The twin of `enable_surprise_watch_holds_its_ratio`.
+    pub fn disable_surprise_watch_holds_its_ratio(&mut self) {
+        self.surprise_watch_holds_its_ratio = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
