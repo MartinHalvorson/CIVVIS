@@ -8932,6 +8932,17 @@ impl AdvancedAi {
         self.base.disable_deck_prices_growth();
     }
 
+    /// Opt-in gene `religion-seat-prays-for-the-prophet`; see
+    /// [`Self::religion_seat_prays_for_the_prophet`].
+    pub fn enable_religion_seat_prays_for_the_prophet(&mut self) {
+        self.religion_seat_prays_for_the_prophet = true;
+    }
+
+    /// The twin of `enable_religion_seat_prays_for_the_prophet`.
+    pub fn disable_religion_seat_prays_for_the_prophet(&mut self) {
+        self.religion_seat_prays_for_the_prophet = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -7923,6 +7923,10 @@ pub struct AdvancedAi {
     /// `advanced/land_grab_outlasts.rs`.
     land_grab_outlasts_the_opening: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `religion-seat-prays-for-the-prophet`: a Religion-target seat's idle
+    /// Holy Site city runs Prayers while its Prophet points are short. See
+    /// `advanced/religion_seat_prays.rs`. Off by default.
+    religion_seat_prays_for_the_prophet: bool,
     /// `religion-lane-hands-over`: a Religion-target seat with no religion,
     /// no Prophet pending and every slot claimed retargets to Science (else
     /// Culture, else Domination). See `advanced/religion_lane_hands_over.rs`.
@@ -9734,6 +9738,8 @@ mod opportunistic_war;
 mod religion_lane_hands_over;
 /// `religion-lane-spreads-from-founding`: see `advanced/religion_lane_spreads.rs`.
 mod religion_lane_spreads;
+/// `religion-seat-prays-for-the-prophet`: see `advanced/religion_seat_prays.rs`.
+mod religion_seat_prays;
 /// A short, defender-only declaration shock. See
 /// `advanced/surprise_defense.rs`.
 mod surprise_defense;
@@ -11619,6 +11625,7 @@ impl AdvancedAi {
             naval_crossing_keeps_going: false,
             land_grab_outlasts_the_opening: false,
             // ---- append: p-r ----------------------------------------
+            religion_seat_prays_for_the_prophet: false,
             religion_lane_hands_over: false,
             religion_race_keeps_expanding: false,
             religion_seat_founds_first: false,
@@ -50241,6 +50248,10 @@ impl AdvancedAi {
         // Exact no-op while the gene is off. See
         // `advanced/religion_seat_founds_first.rs`.
         self.claim_religion_seat_holy_site(g, pid, &plan);
+        // `religion-seat-prays-for-the-prophet`: that site's Prayers while the
+        // Prophet points are short. Exact no-op while the gene is off. See
+        // `advanced/religion_seat_prays.rs`.
+        self.claim_religion_seat_prayers(g, pid, &plan);
         // Preserve the proven four-build opening before switching every city
         // to utility planning. This also keeps the frozen baseline comparable.
         if self.base.book_pos < 4 {

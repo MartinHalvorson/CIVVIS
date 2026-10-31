@@ -4581,6 +4581,13 @@ pub const GENES: &[Gene] = &[
     // 99 t80 seats holding it, Retainers in 18 of 89. The deck prices each
     // city's growth surplus. See `BasicAi::deck_prices_growth`.
     Gene { tag: "deck-prices-growth", field: "deck_prices_growth", kind: Kind::OptIn, enable: AdvancedAi::enable_deck_prices_growth, disable: AdvancedAi::disable_deck_prices_growth },
+    // `religion-seat-prays-for-the-prophet`: the first live
+    // `religion-seat-founds-first` carrier (civvis-20261031T140402Z) had its
+    // Holy Site by t16 and lost the race on 28 of 30 Prophet points at one a
+    // turn. A Religion-target seat's idle Holy Site city runs Prayers (10
+    // points per 25 Production) while the points are short. See
+    // `advanced/religion_seat_prays.rs`.
+    Gene { tag: "religion-seat-prays-for-the-prophet", field: "religion_seat_prays_for_the_prophet", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_prays_for_the_prophet, disable: AdvancedAi::disable_religion_seat_prays_for_the_prophet },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
