@@ -291,11 +291,13 @@ fn version_two_claims_every_eligible_city_from_two_citizens() {
 /// with the gene off, version two claims as before.
 #[test]
 fn the_claim_waits_while_the_empire_trails_the_city_curve() {
-    let (mut game, ranked) = campus_less_empire(95_109, 1);
+    let (mut game, mut ranked) = campus_less_empire(95_109, 2);
     all_queue(&mut game, &ranked, &unit("knight"));
+    // Five cities of ours against a curve that wants six.
+    let given = ranked.pop().unwrap();
+    game.cities.get_mut(&given).unwrap().owner = 1;
     let step = game.standard_duration(CLAIM_CITY_CURVE_STANDARD).max(1);
-    // Six cities against a curve that wants seven.
-    game.turn = 5 * step + 1;
+    game.turn = 4 * step + 1;
     assert!(game.turn < game.standard_duration(CLAIM_CITY_CURVE_END_STANDARD));
 
     let mut stock = AdvancedAi::new();
@@ -329,8 +331,8 @@ fn the_claim_waits_while_the_empire_trails_the_city_curve() {
     assert!(stock.free_slot_campus_holds(&claimed, 0, ranked[0], &plan, &campus));
     assert!(!gated.free_slot_campus_holds(&claimed, 0, ranked[0], &plan, &campus));
 
-    // At the curve (six cities, six wanted) the gate stands aside.
+    // At the curve (five cities, five wanted) the gate stands aside.
     let mut level = game.clone();
-    level.turn = 4 * step;
+    level.turn = 3 * step;
     assert!(!gated.campus_claims_wait_for_the_cities(&level, 0));
 }
