@@ -4559,6 +4559,12 @@ pub const GENES: &[Gene] = &[
     // Victory needs our faith to hold our own cities too. Opens them for a
     // seat aiming at Religion. See `defensive_apostle.rs`.
     Gene { tag: "religion-seat-defends-its-faith", field: "religion_seat_defends_its_faith", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_defends_its_faith, disable: AdvancedAi::disable_religion_seat_defends_its_faith },
+    // Live Immortal 6p Continents 10-31: past the band turn no claim queues a
+    // Settler, so at two or more cities short of the plan (t80-150) only 0.62
+    // cities a turn built one, 27% of them the top producer (6.3 turns there,
+    // 14.5 elsewhere). Under the gene the early-settler floor follows the
+    // plan's target. See `advanced/settler_floor_follows_the_plan.rs`.
+    Gene { tag: "settler-floor-follows-the-plan", field: "settler_floor_follows_the_plan", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_floor_follows_the_plan, disable: AdvancedAi::disable_settler_floor_follows_the_plan },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

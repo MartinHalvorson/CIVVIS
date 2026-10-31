@@ -86,10 +86,14 @@ impl AdvancedAi {
     /// above the plan's own target. Zero with the gene off and past the band
     /// turn.
     pub(super) fn early_settler_floor(&self, g: &Game, plan: &StrategicPlan) -> usize {
-        if !self.early_settler_floor
-            || g.turn >= g.standard_duration(EARLY_SETTLER_FLOOR_STANDARD_TURN)
-        {
+        if !self.early_settler_floor {
             return 0;
+        }
+        if g.turn >= g.standard_duration(EARLY_SETTLER_FLOOR_STANDARD_TURN) {
+            // `settler-floor-follows-the-plan`: past the band turn the floor
+            // is the plan's own target. See
+            // `advanced/settler_floor_follows_the_plan.rs`.
+            return self.plan_settler_floor(plan);
         }
         EARLY_SETTLER_FLOOR_CITIES.min(plan.desired_cities.max(1))
     }
@@ -198,6 +202,7 @@ impl AdvancedAi {
             .flatten();
         let item = Self::early_settler_item();
         let max_turns = g.standard_duration(EARLY_SETTLER_MAX_BUILD) as f64;
+        let past_band = g.turn >= g.standard_duration(EARLY_SETTLER_FLOOR_STANDARD_TURN);
         let mut best: Option<(f64, u32)> = None;
         for &cid in &city_ids {
             let city = &g.cities[&cid];
@@ -208,6 +213,7 @@ impl AdvancedAi {
                 || Self::early_settler_raider_near(g, city.pos)
                 || !Self::early_settler_may_displace(g, pid, cid)
                 || !g.can_produce(pid, cid, &item)
+                || (past_band && self.plan_settler_floor_skips(g, pid, cid, walkers + queued))
             {
                 continue;
             }
@@ -227,6 +233,17 @@ impl AdvancedAi {
             return;
         };
         let displaced = g.cities[&cid].queue.first().cloned();
+        if past_band {
+            if g.apply(pid, &Action::Produce { city: cid, item }).is_ok() {
+                think!(self.journal(), Expansion, Decision,
+                    "{} starts a Settler for the plan's city target", g.cities[&cid].name;
+                    "settler-floor-follows-the-plan: {n_cities} cities and {walkers} walking \
+                     against a target of {floor}, {turns:.1} turns{}",
+                    displaced.map_or(String::new(), |item| format!(
+                        "; {} keeps its progress", Self::plain_item(&item))));
+            }
+            return;
+        }
         if g.apply(pid, &Action::Produce { city: cid, item }).is_ok() {
             think!(self.journal(), Expansion, Decision,
                 "{} starts a Settler for the early city floor", g.cities[&cid].name;

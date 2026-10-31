@@ -8985,6 +8985,10 @@ pub struct AdvancedAi {
     /// space project, and the live binary passes its alliances to the host.
     /// See `advanced/culture_seat_allies.rs`. Off by default.
     science_seat_allies: bool,
+    /// `settler-floor-follows-the-plan`: past the band turn the early-settler
+    /// floor follows the plan's own city target. See
+    /// `advanced/settler_floor_follows_the_plan.rs`.
+    settler_floor_follows_the_plan: bool,
     // ---- append: t-z ------------------------------------------------
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
@@ -10223,6 +10227,8 @@ mod science_victory_drive;
 /// `advanced/settler_admission_journal.rs`.
 mod settler_admission_journal;
 mod settler_departure;
+/// `settler-floor-follows-the-plan`: see `advanced/settler_floor_follows_the_plan.rs`.
+mod settler_floor_follows_the_plan;
 mod settler_path_clear;
 /// `siege-shortfall-claims-the-projects`: see
 /// `advanced/siege_shortfall_projects.rs`.
@@ -11797,6 +11803,7 @@ impl AdvancedAi {
             science_drive_answers_the_launch: false,
             settler_founds_under_raiders: false,
             science_seat_allies: false,
+            settler_floor_follows_the_plan: false,
             // ---- append: t-z ----------------------------------------
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,

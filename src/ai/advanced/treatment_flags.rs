@@ -8897,6 +8897,17 @@ impl AdvancedAi {
         self.religion_seat_defends_its_faith = false;
     }
 
+    /// Opt-in gene `settler-floor-follows-the-plan`; see
+    /// [`Self::settler_floor_follows_the_plan`].
+    pub fn enable_settler_floor_follows_the_plan(&mut self) {
+        self.settler_floor_follows_the_plan = true;
+    }
+
+    /// The twin of `enable_settler_floor_follows_the_plan`.
+    pub fn disable_settler_floor_follows_the_plan(&mut self) {
+        self.settler_floor_follows_the_plan = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
