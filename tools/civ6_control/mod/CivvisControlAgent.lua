@@ -11782,7 +11782,8 @@ end;
 -- Returns "friendship", "alliance", or nil and why not. Only a seat
 -- assigned the Diplomatic lane asks (`VictoryLane`; off with `DiploAllies =
 -- false`): an alliance forbids a war on the ally, which a domination seat's
--- campaign planner does not price. Bare global for alliance_ask_test.lua.
+-- campaign planner does not price. A Culture seat asks too under
+-- `CultureAllies`. Bare global for alliance_ask_test.lua.
 -- Whether `subject` is a culture racer at `AllianceCultureRacerShare` of
 -- the bar it must pass (see `CivvisAllianceStep`). Bare global for
 -- alliance_ask_test.lua.
@@ -11808,7 +11809,13 @@ end;
 
 CivvisAllianceStep = function(player, pid, subject, verb, turn, config)
 	config = type(config) == "table" and config or {};
-	if config.VictoryLane ~= "diplomatic" or config.DiploAllies == false then
+	-- `CultureAllies` (`culture-seat-allies`, set by civ6_play.py when the
+	-- tag is armed): a Culture seat asks as well. Its planner never names
+	-- the science racer or the rival setting our culture bar, and the
+	-- culture-racer refusal below still applies.
+	if (config.VictoryLane ~= "diplomatic"
+			and not (config.VictoryLane == "culture" and config.CultureAllies == true))
+			or config.DiploAllies == false then
 		return nil, "alliance_off_lane";
 	end
 	if verb ~= "ALLIANCE_RESEARCH" and verb ~= "ALLIANCE_CULTURAL" and verb ~= "ALLIANCE_RELIGIOUS"
@@ -16846,6 +16853,46 @@ CivvisSelectVictoryThreat = function(candidates)
 		end
 	end
 	return threat, best;
+end
+
+-- ★★ A BALLOT NAMES ONLY A TARGET THE BALLOT OFFERS. A player-target
+-- resolution's `PossibleTargets` lists the majors we can name, and a rival
+-- we have not met is not among them; the leader and the threats are chosen
+-- from every living major. A target not on the ballot left the selection
+-- at its default, the first entry, which is us. Live Immortal
+-- civvis-20261031T003455Z (6 majors, Continents): at t137 the Diplomatic
+-- leader, player 1, was not met until t154, and the free denial vote went
+-- B on ourselves; the counter path's option B on Trade Policy, Border
+-- Control or Migration Treaty would land its penalty on us the same way.
+-- Returns the ballot index of `player`, or nil. Bare globals: the chunk is
+-- at the register cap; congress_unmet_target_test.lua reads them.
+CivvisCongressTargetIndex = function(targets, player)
+	local want = tonumber(player);
+	if want == nil then return nil; end
+	for idx, t in pairs(type(targets) == "table" and targets or {}) do
+		if tonumber(t) == want then return idx; end
+	end
+	return nil;
+end
+
+-- The Diplomatic Victory denial: option B on `leader` when the ballot offers
+-- it; otherwise B on the offered rival with the most points; with none
+-- offered, A on us (never B on us). Returns `option, selection`.
+CivvisCongressDenialTarget = function(targets, leader, candidates, pid, option, selection)
+	local idx = CivvisCongressTargetIndex(targets, leader);
+	if idx ~= nil then return option, idx; end
+	local best, bestPoints = nil, -1;
+	for _, c in ipairs(type(candidates) == "table" and candidates or {}) do
+		local id = type(c) == "table" and tonumber(c.id) or nil;
+		local at = (id ~= nil and id ~= tonumber(pid)) and CivvisCongressTargetIndex(targets, id) or nil;
+		if at ~= nil and (tonumber(c.points) or 0) > bestPoints then
+			best, bestPoints = at, tonumber(c.points) or 0;
+		end
+	end
+	if best ~= nil then return 2, best; end
+	local own = CivvisCongressTargetIndex(targets, pid);
+	if own ~= nil then return 1, own; end
+	return option, selection;
 end
 
 CivvisSelectCongressLeader = function(candidates)
@@ -22767,20 +22814,22 @@ function CivvisBoard.operatorHold(turn)
 	if type(now) ~= "number" or type(hold.polledAt) ~= "number"
 			or now < hold.polledAt or now - hold.polledAt >= hold.pollSeconds then
 		hold.polledAt = now;
-		-- The watch pace rides the same query (`CivvisBoard.paceHold`).
-		local asked, pace = false, 0;
+		-- The watch pace and the mirror's painted turn ride the same query
+		-- (`CivvisBoard.paceHold`, `CivvisBoard.mirrorHold`).
+		local asked, pace, shown = false, 0, nil;
 		if attachOrders() then
 			pcall(function()
 				local rows = DB.Query(string.format(
 					"SELECT kind, x FROM civvis.orders WHERE run = '%s' " ..
-					"AND kind IN ('pause', 'pace')", sqlSafe(cfg.RunTag)));
+					"AND kind IN ('pause', 'pace', 'mirror')", sqlSafe(cfg.RunTag)));
 				for _, row in ipairs(rows) do
 					if row.kind == "pause" then asked = true;
-					elseif row.kind == "pace" then pace = math.max(0, tonumber(row.x) or 0); end
+					elseif row.kind == "pace" then pace = math.max(0, tonumber(row.x) or 0);
+					elseif row.kind == "mirror" then shown = tonumber(row.x); end
 				end
 			end);
 		end
-		hold.asked, hold.paceMs = asked, pace;
+		hold.asked, hold.paceMs, hold.mirrorTurn = asked, pace, shown;
 	end
 	local heldFor = (type(now) == "number" and type(hold.since) == "number")
 		and math.floor(now - hold.since + 0.5) or nil;
@@ -22963,6 +23012,55 @@ function CivvisBoard.paceHold(turn)
 		                    wait_ms = math.floor(left * 1000 + 0.5) });
 	end
 	hold.pacing = true;
+	return true;
+end
+
+-- ★ THE MIRROR KEEPS UP. Operator 2026-10-30: "make sure the firaxis and
+-- civvis games aren't more than 1 turn apart. civvis should be driving
+-- firaxis so they should be roughly on the same turn (+-1) at all times".
+-- The CIVVIS page is rebuilt from this game's exports (`tools/follow.py`), so
+-- it can only trail; nothing used to stop Civilization VI running ahead of
+-- it. `civ6_play.py` writes the turn the page has PAINTED as the `mirror` row
+-- (`hold.mirrorTurn`, read with the pause), and our turn does not END until
+-- the page shows it: Civilization VI then reaches turn N+1 only with turn N
+-- on the page. The moves are not held back -- this waits only once the turn
+-- is settled, so the mirror catches up while they play.
+--
+-- No row (no page, a stale report, a mirror the harness has given up on) is no
+-- wait. A wait is capped at `capSeconds` a turn: a page that cannot paint must
+-- not stall the lane, so the turn ends anyway and says so.
+CivvisBoard.mirror = { capSeconds = 10 };
+function CivvisBoard.mirrorHold(turn)
+	local hold, mirror = CivvisBoard.hold, CivvisBoard.mirror;
+	local shown = hold.mirrorTurn;
+	hold.mirrorWaiting = false;
+	if type(shown) ~= "number" or shown >= turn then
+		if mirror.turn == turn and mirror.since ~= nil and not mirror.done then
+			mirror.done = true;
+			local now = CivvisClock.now();
+			emit("mirror_caught_up", { turn = turn, shown = shown,
+				waited_ms = type(now) == "number" and now >= mirror.since
+					and math.floor((now - mirror.since) * 1000 + 0.5) or nil });
+		end
+		return false;
+	end
+	if try(function() return UI.HasSentTurnComplete(); end, false) == true then
+		return false;
+	end
+	local now = CivvisClock.now();
+	if type(now) ~= "number" then return false; end
+	if mirror.turn ~= turn then
+		mirror.turn, mirror.since, mirror.done = turn, now, false;
+		emit("mirror_wait", { turn = turn, shown = shown });
+	end
+	if mirror.done then return false; end
+	if now < mirror.since or now - mirror.since >= mirror.capSeconds then
+		mirror.done = true;
+		emit("mirror_wait_capped", { turn = turn, shown = shown,
+			waited_ms = math.floor((now - mirror.since) * 1000 + 0.5) });
+		return false;
+	end
+	hold.mirrorWaiting = true;
 	return true;
 end
 
@@ -23309,10 +23407,9 @@ local function tick()
 					local option, selection, votes = 1, 1, 1;
 					local targets = r.PossibleTargets or {};
 					if rtype == "WC_RES_DIPLOVICTORY" then
-						option = 2;
-						for idx, t in pairs(targets) do
-							if tonumber(t) == leader then selection = idx; end
-						end
+						-- See `CivvisCongressDenialTarget`: never the default, us.
+						option, selection = CivvisCongressDenialTarget(targets, leader,
+							candidates, pid, 2, selection);
 						-- ★★★★ FAVOR IS BANKED UNTIL A LEADER IS WITHIN REACH.
 						--
 						-- Run `civvis-20260816T123936Z` ended at turn 239 on a rival's
@@ -23524,6 +23621,11 @@ local function tick()
 							and (rtype == "WC_RES_TRADE_TREATY"
 								or rtype == "WC_RES_BORDER_CONTROL"
 								or rtype == "WC_RES_MIGRATION_TREATY");
+						-- See `CivvisCongressTargetIndex`: a threat the ballot does
+						-- not offer would leave option B's penalty on us.
+						if counter and CivvisCongressTargetIndex(targets, threat) == nil then
+							counter = false;
+						end
 						if counter then
 							for idx, t in pairs(targets) do
 								if tonumber(t) == threat then selection = idx; end
@@ -23565,6 +23667,12 @@ local function tick()
 					-- leader's predicted one: it buys the outcome instead.
 					local deny = (not CivvisDiploRacer(cfg)) and CivvisParticipationDenialOption(rtype,
 						leader, pid, leaderPoints, envoyTally.wc_last_option, cfg) or nil;
+					-- See `CivvisCongressTargetIndex`: no option B naming a leader
+					-- the ballot does not offer.
+					if deny == 2 and r.TargetType == "PlayerType"
+							and CivvisCongressTargetIndex(targets, leader) == nil then
+						deny = nil;
+					end
 					if deny ~= nil and votes == 1 then
 						option = deny;
 						if r.TargetType == "PlayerType" then
@@ -23744,6 +23852,9 @@ local function tick()
 		if cfg.CivvisDecides and CivvisFrames.repairProduction(player, pid, turn) then
 			return;
 		end
+
+		-- The turn is played; it ends once the CIVVIS page shows it.
+		if CivvisBoard.mirrorHold(turn) then return; end
 
 		-- Answer whatever the game says it is waiting on, then end the turn
 		-- anyway.
@@ -24524,6 +24635,14 @@ CivvisQueue.onPeekPulse = function()
 	-- Orders the brain wrote for a held turn stay landed until it resumes; the
 	-- UI pulse above owns the held game's ticks.
 	if CivvisBoard.hold.held then return; end
+	-- A played turn waiting for the CIVVIS page: tick quietly until it paints.
+	-- One peek per wait: the tick sets it again while the page still trails,
+	-- so a turn that ended some other way cannot leave this ticking.
+	if CivvisBoard.hold.mirrorWaiting then
+		CivvisBoard.hold.mirrorWaiting = false;
+		tick();
+		return;
+	end
 	if not CivvisQueue.ordersLanded() then return; end
 	-- A turn held to the watch pace: tick quietly until its wait is up.
 	if CivvisBoard.hold.pacing then tick(); return; end

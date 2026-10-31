@@ -31,7 +31,7 @@ local env = {
 	ExposedMembers = { CivvisOperatorHold = true },
 	DB = { Query = function(sql)
 		queries = queries + 1
-		assert(sql:find("kind IN ('pause', 'pace')", 1, true), sql)
+		assert(sql:find("kind IN ('pause', 'pace', 'mirror')", 1, true), sql)
 		assert(sql:find("run = 'civvis-test'", 1, true), sql)
 		local out = {}
 		if rows > 0 then out[#out + 1] = { kind = "pause" } end

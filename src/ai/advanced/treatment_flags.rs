@@ -8653,6 +8653,27 @@ impl AdvancedAi {
         self.racer_spies_search_for_the_pad = false;
     }
 
+    /// Opt-in gene `launcher-war-serves-every-lane`; see
+    /// [`Self::launcher_war_serves_every_lane`].
+    pub fn enable_launcher_war_serves_every_lane(&mut self) {
+        self.launcher_war_serves_every_lane = true;
+    }
+
+    /// The twin of `enable_launcher_war_serves_every_lane`.
+    pub fn disable_launcher_war_serves_every_lane(&mut self) {
+        self.launcher_war_serves_every_lane = false;
+    }
+
+    /// Opt-in gene `culture-seat-allies`; see [`Self::culture_seat_allies`].
+    pub fn enable_culture_seat_allies(&mut self) {
+        self.culture_seat_allies = true;
+    }
+
+    /// The twin of `enable_culture_seat_allies`.
+    pub fn disable_culture_seat_allies(&mut self) {
+        self.culture_seat_allies = false;
+    }
+
     /// Opt-in gene `settler-founds-under-raiders`; see
     /// [`Self::settler_founds_under_raiders`].
     pub fn enable_settler_founds_under_raiders(&mut self) {

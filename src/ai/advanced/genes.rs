@@ -4394,11 +4394,28 @@ pub const GENES: &[Gene] = &[
     // next city until it finds the pad. Needs `racer-keeps-the-spies`. See
     // `advanced/racer_keeps_the_spies.rs`.
     Gene { tag: "racer-spies-search-for-the-pad", field: "racer_spies_search_for_the_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_racer_spies_search_for_the_pad, disable: AdvancedAi::disable_racer_spies_search_for_the_pad },
+    // Live Lv 7 Immortal 2026-10-30: nine Culture/Diplomatic seats lost to a
+    // Science Victory with no war on the racer between its Moon and its
+    // launch, five of them at 0.8x its power or better for most of that window
+    // (224544Z 35/36 turns). `counter-in-lane` answers a Science threat in
+    // lane off Domination, and the launcher war opens only from a Conquest
+    // plan. Off Domination, the racer `launcher_war_opens` names becomes the
+    // Conquest counter. Needs `launcher-war-ignores-the-edge`. See
+    // `advanced/launcher_war_every_lane.rs`.
+    Gene { tag: "launcher-war-serves-every-lane", field: "launcher_war_serves_every_lane", kind: Kind::OptIn, enable: AdvancedAi::enable_launcher_war_serves_every_lane, disable: AdvancedAi::disable_launcher_war_serves_every_lane },
+    // Ten live Lv 7 Culture seats 2026-10-30 held no alliance at t80, t120 or
+    // t160: the live binary and the agent passed alliances only for the
+    // Diplomatic lane, and early wars were the culture seats' worst losses.
+    // A Culture seat allies its nearest safe rival, never the science racer
+    // or the rival that sets our culture bar. See
+    // `advanced/culture_seat_allies.rs`.
+    Gene { tag: "culture-seat-allies", field: "culture_seat_allies", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_allies, disable: AdvancedAi::disable_culture_seat_allies },
     // Live Immortal 10-30, 21 seats: a Settler lived a median 8 turns (51% at
     // 8+, tails to 58) before founding, and 571 of ~630 "Settler HELD" lines
-    // were the safe-step guard against barbarian raiders. The stall-expiry
-    // fallback then refused on the same tile risk, though a barbarian never
-    // takes a city. With raiders the only visible threat it founds in place.
+    // were the safe-step guard against barbarian raiders, and the stall-expiry
+    // fallback then refused on the same tile risk. With barbarians the only
+    // visible threat and a city that would outlast them (live barbarians do
+    // take cities), the held Settler founds in place.
     // See `advanced/settler_raiders.rs`.
     Gene { tag: "settler-founds-under-raiders", field: "settler_founds_under_raiders", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_founds_under_raiders, disable: AdvancedAi::disable_settler_founds_under_raiders },
     // ---- append: a-b ------------------------------------------------

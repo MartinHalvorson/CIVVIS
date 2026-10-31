@@ -362,7 +362,27 @@ impl AdvancedAi {
     /// actually address, not abandon all denial because the nominal leader is
     /// un-actionable.  Reporting continues to expose that raw leader through
     /// `victory_denial`; only military/campaign routing uses this fallthrough.
+    ///
+    /// `launcher-war-serves-every-lane`: off Domination, a counter that is
+    /// not already a war (an in-lane race, or none) yields to the racer the
+    /// launcher war would open on. `None` from the gene with it off. See
+    /// `advanced/launcher_war_every_lane.rs`.
     pub(super) fn actionable_victory_denial_with_culture_pressures(
+        &self,
+        g: &Game,
+        pid: usize,
+        culture_pressures: &BTreeMap<usize, i32>,
+    ) -> Option<(usize, GrandStrategy)> {
+        let chosen = self.lane_victory_denial_with_culture_pressures(g, pid, culture_pressures);
+        if chosen.is_none_or(|(_, counter)| counter != GrandStrategy::Conquest) {
+            if let Some(counter) = self.launcher_lane_counter(g, pid) {
+                return Some(counter);
+            }
+        }
+        chosen
+    }
+
+    fn lane_victory_denial_with_culture_pressures(
         &self,
         g: &Game,
         pid: usize,
