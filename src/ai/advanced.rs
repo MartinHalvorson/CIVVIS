@@ -6410,6 +6410,11 @@ pub struct AdvancedAi {
     /// still buys Rock Bands and Naturalists once the Faith bank holds twice
     /// the cheapest on sale. See `advanced/culture_recovery_bank.rs`.
     culture_recovery_spends_the_bank: bool,
+    /// `culture-seat-allies`: a seat aiming at Culture allies a safe
+    /// neighbour, never the science racer or the rival that sets our culture
+    /// bar, and the live binary passes its alliances to the host. See
+    /// `advanced/culture_seat_allies.rs`. Off by default.
+    culture_seat_allies: bool,
     // ---- append: e-f ------------------------------------------------
     /// `food-focus-grows-the-small-city`: `civvis_orders` also asks the host
     /// to favour Food in a small city growing at two a turn or less. See
@@ -7354,6 +7359,11 @@ pub struct AdvancedAi {
     /// city of ours. See `advanced/defensive_apostle.rs`. Off by default.
     inquisition_answers_a_rival_majority: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `launcher-war-serves-every-lane`: off Domination, the space racer
+    /// the launcher war would open on is the denial counter, with war,
+    /// before every other clock. See `advanced/launcher_war_every_lane.rs`.
+    /// Off by default.
+    launcher_war_serves_every_lane: bool,
     /// `nuclear-goal-needs-a-launcher`: no nuclear war goal on a seat that
     /// cannot launch a device. See `advanced/nuclear_launcher.rs`. Off by
     /// default.
@@ -7856,6 +7866,10 @@ pub struct AdvancedAi {
     /// whose board holds none of the spare we put up, that spare first
     /// (`append_luxury_swap_order` in `civvis_orders`). Off by default.
     luxury_swap_asks_2: bool,
+    /// `opening-builder-after-the-first-settler`: the capital's first
+    /// Builder follows its first Settler. The behaviour lives on
+    /// `BasicAi::opening_builder_after_the_first_settler`. Off by default.
+    opening_builder_after_the_first_settler: bool,
     // ---- append: p-r ------------------------------------------------
     /// `prey-is-declared-on`: a Domination seat declares on a major rival
     /// under `prey_declaration::PREY_DECLARE_RATIO` of its military power
@@ -8255,6 +8269,15 @@ pub struct AdvancedAi {
     /// stood in without the offer, and the turn it last did.
     racer_spy_searched: BTreeMap<u32, u32>,
     // ---- append: s-s ------------------------------------------------
+    /// `surprise-watch-holds-its-ratio`: a met major at twice our power seen
+    /// within ten tiles of the original capital or an unwalled frontier city
+    /// keeps that city's walls armed for the walls' ten-turn window, whatever
+    /// the live ratio does. See `advanced/surprise_watch_latch.rs`. Off by
+    /// default.
+    surprise_watch_holds_its_ratio: bool,
+    /// The turn each (city, major) was last latched under
+    /// `surprise-watch-holds-its-ratio`: `None` is the original capital.
+    surprise_watch_latches: BTreeMap<(Option<u32>, usize), u32>,
     /// `stage-reads-the-muster-breakers`: once a siege's muster has closed,
     /// its Stage reads breakers out to `MUSTER_FAR` instead of `STAGING_FAR`.
     /// See `advanced/siege_train/stage_reads_the_muster.rs`. Off by default.
@@ -8872,6 +8895,10 @@ pub struct AdvancedAi {
     /// and we lead the field, and races Science beside its lane while it
     /// drives. See `advanced/science_victory_drive.rs`. Off by default.
     science_drive_answers_the_launch: bool,
+    /// `settler-founds-under-raiders`: a stalled Settler whose only visible
+    /// threats are barbarians founds where it stands despite the tile risk.
+    /// See `advanced/settler_raiders.rs`.
+    settler_founds_under_raiders: bool,
     // ---- append: t-z ------------------------------------------------
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
@@ -9608,6 +9635,8 @@ mod opportunistic_war;
 /// A short, defender-only declaration shock. See
 /// `advanced/surprise_defense.rs`.
 mod surprise_defense;
+/// `surprise-watch-holds-its-ratio`: see `advanced/surprise_watch_latch.rs`.
+mod surprise_watch_latch;
 
 /// The air surge: a three-tech beeline to Advanced Flight, an Aerodrome, a
 /// bomber wing, and the cavalry that takes the city the wing empties. See
@@ -9716,6 +9745,8 @@ mod diplo_statue_harbor;
 mod culture_recovery_bank;
 /// `culture-routes-reach-every-rival`: see `advanced/culture_routes.rs`.
 mod culture_routes;
+/// `culture-seat-allies`: see `advanced/culture_seat_allies.rs`.
+mod culture_seat_allies;
 /// `hidden-border-yields-to-our-pressure`: see `advanced/hidden_border_reach.rs`.
 mod hidden_border_reach;
 /// `trade-quotes-pay-the-lump`: see `advanced/trade_quotes_lump.rs`.
@@ -10053,6 +10084,8 @@ mod industrial_zone_claims_the_factory;
 /// `advanced/industrial_zone_claims_the_producer_queue.rs`.
 mod industrial_zone_claims_the_producer_queue;
 mod launcher_war;
+/// `launcher-war-serves-every-lane`: see `advanced/launcher_war_every_lane.rs`.
+mod launcher_war_every_lane;
 mod neighborhood_houses_the_capped_city;
 /// `nuclear-goal-needs-a-launcher`: see `advanced/nuclear_launcher.rs`.
 mod nuclear_launcher;
@@ -10138,6 +10171,8 @@ pub(super) mod rapid_city_expansion;
 /// asks wider questions instead of holding, and a watchdog bounds every
 /// other hold. One opt-in gene; see `advanced/settler_never_idles.rs`.
 mod settler_never_idles;
+/// `settler-founds-under-raiders`: see `advanced/settler_raiders.rs`.
+mod settler_raiders;
 /// Route around a host-refused step before discarding its city destination.
 mod settler_route_recovery;
 mod settler_shelter;
@@ -11228,6 +11263,7 @@ impl AdvancedAi {
             counterweight_defends_the_diplomat: false,
             counterweight_builds_its_source: false,
             culture_recovery_spends_the_bank: false,
+            culture_seat_allies: false,
             // ---- append: e-f ----------------------------------------
             food_focus_grows_the_small_city: false,
             friendship_ends_at_the_race: false,
@@ -11369,6 +11405,7 @@ impl AdvancedAi {
             inquisition_defends_the_diplomat: false,
             inquisition_answers_a_rival_majority: false,
             // ---- append: l-o ----------------------------------------
+            launcher_war_serves_every_lane: false,
             nuclear_goal_needs_a_launcher: false,
             launcher_war_skips_the_reserve: false,
             medina_quarter_houses_the_districts: false,
@@ -11430,6 +11467,7 @@ impl AdvancedAi {
             no_peace_with_a_launcher: false,
             launcher_war_ignores_the_edge: false,
             luxury_swap_asks_2: false,
+            opening_builder_after_the_first_settler: false,
             // ---- append: p-r ----------------------------------------
             prey_is_declared_on: false,
             prophet_race_takes_divine_spark: false,
@@ -11501,6 +11539,8 @@ impl AdvancedAi {
             racer_spy_found_pads: BTreeSet::new(),
             racer_spy_searched: BTreeMap::new(),
             // ---- append: s-s ----------------------------------------
+            surprise_watch_holds_its_ratio: false,
+            surprise_watch_latches: BTreeMap::new(),
             stage_reads_the_muster_breakers: false,
             siege_budget_counts_the_ram: false,
             siege_promotions_open_the_walls: false,
@@ -11611,6 +11651,7 @@ impl AdvancedAi {
             siege_tier_yields_to_the_bombers_2: false,
             siege_moves_under_the_wing: false,
             science_drive_answers_the_launch: false,
+            settler_founds_under_raiders: false,
             // ---- append: t-z ----------------------------------------
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,
@@ -11724,6 +11765,8 @@ impl AdvancedAi {
         // near the original capital, from the same turn-start frame.
         self.remember_capital_watch_sightings(g, pid);
         self.remember_frontier_watch_sightings(g, pid);
+        // `surprise-watch-holds-its-ratio`: see `advanced/surprise_watch_latch.rs`.
+        self.remember_surprise_watch_latches(g, pid);
         if !self.live_formationless_settler_shadow || self.turn_start_hostiles_turn == Some(g.turn)
         {
             return;
@@ -19057,6 +19100,19 @@ impl AdvancedAi {
                 }
                 _ if opening_archery_goal.is_some() => opening_archery_goal.as_deref(),
                 _ if defensive_walls_goal.is_some() => defensive_walls_goal.as_deref(),
+                // `diplo-match-point-beelines-the-points`: from match point the
+                // last points in the tree, whatever the plan reads, ahead of
+                // every war and lane arm below. Live Immortal
+                // civvis-20261031T011801Z stood on 19 of 20 from t172 while
+                // Rocketry (`domination-siege-research`), Guidance Systems (the
+                // wartime modernization) and then the counter plan's Satellites
+                // and Electricity took the slot; Seasteads started at t201 and
+                // Rome won on Science at t205. Behind only the walls and the
+                // opening Archery, which are done long before the bar. Exact
+                // no-op while the gene is off.
+                _ if self.diplo_match_point_tech(g, pid).is_some() => {
+                    self.diplo_match_point_tech(g, pid)
+                }
                 _ if conversion_upgrade_goal.is_some() => conversion_upgrade_goal,
                 _ if self.war_plan.as_ref().is_some_and(|plan| {
                     !g.players[pid].techs.contains(&plan.breakthrough_tech)
@@ -19225,11 +19281,6 @@ impl AdvancedAi {
                 _ if great_person_goal.is_some() => great_person_goal.as_deref(),
                 _ if science_commitment && science_lane_active => {
                     Self::science_victory_tech_goal(g, pid, GrandStrategy::Science)
-                }
-                // `diplo-match-point-beelines-the-points`: the last points in the
-                // tree, whatever the plan reads. Exact no-op while the gene is off.
-                _ if self.diplo_match_point_tech(g, pid).is_some() => {
-                    self.diplo_match_point_tech(g, pid)
                 }
                 GrandStrategy::Culture if self.phase_specialization_active(g) => {
                     ["printing", "radio", "computers"]
@@ -22500,7 +22551,11 @@ impl AdvancedAi {
         // other kind is proposed while it is not yet legal on our tree. Off,
         // `Stock`. See `advanced/research_alliance.rs`.
         let research_lane = self.research_alliance_lane(g, pid);
-        if research_lane == research_alliance::ResearchAllianceLane::Wait {
+        // `culture-seat-allies`: a Culture seat does not wait for Scientific
+        // Theory; it asks for the stock kind meanwhile.
+        if research_lane == research_alliance::ResearchAllianceLane::Wait
+            && !self.culture_seat_allies_on()
+        {
             return;
         }
         let research_first = research_lane == research_alliance::ResearchAllianceLane::Research;
@@ -22589,6 +22644,9 @@ impl AdvancedAi {
                     // `research-alliance-first`: a culture threat, or a
                     // partner inside the cool-down on our last ask. Never off.
                     && !self.research_alliance_barred(g, pid, other.id)
+                    // `culture-seat-allies`: nor the science racer, nor the
+                    // rival that sets our culture bar. Never off.
+                    && !self.culture_seat_ally_barred(g, pid, other.id)
             })
             .max_by(|left, right| {
                 let score = |other: usize| {
@@ -22647,7 +22705,9 @@ impl AdvancedAi {
                             .then_some(plan.target_player)
                             .flatten(),
                     );
-                    friendship + connected + complement + across + science
+                    // `culture-seat-allies`: the nearest partner first. Zero off.
+                    let near = self.culture_seat_ally_nearness(g, pid, other);
+                    friendship + connected + complement + across + science + near
                         - g.players[pid]
                             .grievances
                             .get(&other)
@@ -41463,6 +41523,16 @@ impl AdvancedAi {
                 think!(self.journal(), Expansion, Detail, "Settler HELD short of {target:?}";
                        "{} tiles away and it did not move — {why}",
                        g.wdist(current, target); target);
+                // `settler-founds-under-raiders`: held by the safe-step guard a
+                // second turn running, among barbarians only, it founds where
+                // it stands. See `advanced/settler_raiders.rs`.
+                if current != target
+                    && matches!(g.route_step(uid, target, 0), Some(step) if g.can_move(uid, step))
+                    && self.settler_blocked_turns.get(&uid).copied().unwrap_or(0) >= 1
+                    && self.settler_founds_among_raiders(g, pid, uid)
+                {
+                    return true;
+                }
             }
         }
         if !self.settler_commit {
@@ -41600,7 +41670,17 @@ impl AdvancedAi {
             && self.settlement_tile_risk(g, pid, Some(uid), here, &visible)
                 > SETTLER_STEP_RISK_LIMIT
         {
-            return false;
+            // `settler-founds-under-raiders`: with barbarians the only threat
+            // and a city that would outlast them, the city is the safer piece.
+            if !self.settler_threat_is_raiders_only(g, pid, here, &visible)
+                || !self.raiders_spare_the_city(g, pid, uid, here, &visible)
+            {
+                return false;
+            }
+            think!(self.journal(), Expansion, Detail,
+                   "Settler founds among raiders at {here:?}";
+                   "settler-founds-under-raiders: every hostile in reach is a barbarian, \
+                    and the city would outlast them where the Settler would be taken"; here);
         }
         // A stalled route may reach a tile that the ordinary target loop had
         // already rejected. Keep the fallback behind the same Loyalty

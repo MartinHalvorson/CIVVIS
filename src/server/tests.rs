@@ -675,6 +675,42 @@ fn every_turn_waits_for_its_frame_only_while_a_viewer_is_active() {
     );
 }
 
+/// The live mirror publishes each Civilization VI turn by `POST /load`, and
+/// the page parked on the turn it holds must wake for it then, not when its
+/// one-second long-poll cap runs out: the Firaxis game waits on that page.
+#[test]
+fn an_uploaded_board_wakes_the_page_waiting_for_the_next_turn() {
+    let port = exhibition(20_261_031);
+    http_post(port, "/pace", "{\"paused\":true}").expect("pause the exhibition");
+    let read = |target: &str| -> Value {
+        serde_json::from_str(&http_get(port, target).expect("a state")).expect("state is JSON")
+    };
+    let save = http_get(port, "/save").expect("a save of the opening");
+    http_post(port, "/step", "{\"count\":8}").expect("step the game on");
+    let held = read("/state?painted=&viewer=mirror");
+    let waiting = next_painted_state("mirror", &held);
+    let page = std::thread::spawn(move || {
+        let asked = Instant::now();
+        let body = http_get(port, &waiting).expect("the next board");
+        (asked.elapsed(), body)
+    });
+    std::thread::sleep(Duration::from_millis(150));
+    let loaded: Value =
+        serde_json::from_str(&http_post(port, "/load", &save).expect("load the board"))
+            .expect("load answers JSON");
+    assert!(loaded["error"].is_null(), "{}", loaded["error"]);
+    let (waited, body) = page.join().expect("the page thread");
+    let next: Value = serde_json::from_str(&body).expect("state is JSON");
+    assert_ne!(
+        next["turn"], held["turn"],
+        "the page was handed the loaded board"
+    );
+    assert!(
+        waited < Duration::from_millis(700),
+        "the page waited {waited:?} for a board loaded 150 ms after it asked"
+    );
+}
+
 /// A live mirror publishes every board at sequence 0, so the audit's painted
 /// frame must be the furthest TURN any page drew: the live game waits on it,
 /// and a second tab that stopped painting must not hold it back.
@@ -6377,6 +6413,16 @@ fn browser_orders_controls_interface_setup_and_logs() {
         "a lock is the viewer's stored choice, never derived from the watched civilization"
     );
     assert!(EMBEDDED_INDEX.contains("function seedOwnSeatLock(seats)"));
+    // A live verification game's own seat is always locked (operator
+    // 2026-10-31: "make sure during verification games the active player
+    // stays locked on the player hud"). It comes from the mirror's fixed
+    // seat at draw time, is never written to the viewer's stored set, cannot
+    // be clicked off, and is the first row held when fewer fit.
+    assert!(EMBEDDED_INDEX.contains("function liveSeatLockKey(seats)"));
+    assert!(EMBEDDED_INDEX.contains("if (key === liveSeatLockKey(seats)) return;"));
+    assert!(EMBEDDED_INDEX.contains("JSON.stringify([...chosenSeatLocks()])"));
+    assert!(EMBEDDED_INDEX.contains("const next = new Set(chosenSeatLocks());"));
+    assert!(EMBEDDED_INDEX.contains("const held = new Set([...live, ...locked].slice(0, holds));"));
     // A locked row holds at whichever edge it was about to leave, so it
     // needs both offsets, staggered by one row per row held above it.
     assert!(EMBEDDED_INDEX.contains("top: calc(var(--pin-head, 0) * var(--hud-row-pitch));"));

@@ -339,6 +339,20 @@ CivvisControlConfig.DiploAllies = false
 check("the switch turns it off", select(2, alliance(offPlayer, 6)), "alliance_off_lane")
 CivvisControlConfig.DiploAllies = nil
 
+-- `culture-seat-allies`: a Culture seat asks only under `CultureAllies`,
+-- and no other lane does.
+CivvisControlConfig.VictoryLane = "culture"
+local _, culturePlayer = fixture({ stateIndex = 1 })
+check("a culture seat asks nothing by default", select(2, alliance(culturePlayer, 6)), "alliance_off_lane")
+CivvisControlConfig.CultureAllies = true
+local _, cultureAsks = fixture({ stateIndex = 1 })
+check("a culture seat asks under CultureAllies", select(2, alliance(cultureAsks, 6)), "alliance_asked")
+CivvisControlConfig.VictoryLane = "domination"
+local _, dominationAsks = fixture({ stateIndex = 1 })
+check("CultureAllies opens only the culture lane", select(2, alliance(dominationAsks, 6)), "alliance_off_lane")
+CivvisControlConfig.VictoryLane = "diplomatic"
+CivvisControlConfig.CultureAllies = nil
+
 if failures > 0 then
 	realPrint(failures .. " failure(s)")
 	os.exit(1)

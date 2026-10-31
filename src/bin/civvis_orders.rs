@@ -3625,9 +3625,17 @@ fn plan_races_diplomacy(plan: Option<(&str, Option<&str>)>) -> bool {
 /// the ally, and the domination campaign planner does not price that. The
 /// agent's `CivvisAllianceStep` refuses them off the lane too; holding them
 /// here keeps eight to fifteen refusals a game out of the order ledger.
-/// Returns how many were dropped.
-fn drop_off_lane_alliances(plan: Option<(&str, Option<&str>)>, orders: &mut Vec<Order>) -> usize {
-    if plan_races_diplomacy(plan) {
+/// `culture_allies` (`culture-seat-allies`, armed on a seat aiming at
+/// Culture) keeps them for the Culture lane as well; the agent takes them
+/// under `CultureAllies`. Returns how many were dropped.
+fn drop_off_lane_alliances(
+    plan: Option<(&str, Option<&str>)>,
+    culture_allies: bool,
+    orders: &mut Vec<Order>,
+) -> usize {
+    if plan_races_diplomacy(plan)
+        || (culture_allies && plan.is_some_and(|(_, victory)| victory == Some("culture")))
+    {
         return 0;
     }
     let before = orders.len();
@@ -5313,7 +5321,8 @@ fn decide(
     let plan_facts = plan
         .as_ref()
         .map(|report| (report.strategy, report.victory_target));
-    let held_alliances = drop_off_lane_alliances(plan_facts, &mut orders);
+    let held_alliances =
+        drop_off_lane_alliances(plan_facts, ai.culture_seat_allies_armed(), &mut orders);
     if held_alliances > 0 {
         note_bits.push(format!("alliance_hold:off_lane={held_alliances}"));
     }
@@ -21434,7 +21443,7 @@ mod order_postcondition_tests {
 
     /// Alliance orders cross only on a seat assigned the Diplomatic lane.
     #[test]
-    fn alliance_orders_cross_only_on_the_diplomatic_lane() {
+    fn alliance_orders_cross_on_the_diplomatic_lane_or_an_armed_culture_seat() {
         let batch = || {
             vec![
                 Order {
@@ -21453,10 +21462,24 @@ mod order_postcondition_tests {
         };
         let mut kept = batch();
         assert_eq!(
-            drop_off_lane_alliances(Some(("expansion", Some("diplomatic"))), &mut kept),
+            drop_off_lane_alliances(Some(("expansion", Some("diplomatic"))), false, &mut kept),
             0
         );
         assert_eq!(kept.len(), 2);
+        // `culture-seat-allies`: a Culture seat keeps them while the gene is
+        // armed, and only a Culture seat.
+        let mut kept = batch();
+        assert_eq!(
+            drop_off_lane_alliances(Some(("culture", Some("culture"))), true, &mut kept),
+            0
+        );
+        assert_eq!(kept.len(), 2);
+        let mut orders = batch();
+        assert_eq!(
+            drop_off_lane_alliances(Some(("conquest", Some("domination"))), true, &mut orders),
+            1,
+            "the gene opens the Culture lane only"
+        );
         for plan in [
             None,
             Some(("diplomacy", None)),
@@ -21464,7 +21487,11 @@ mod order_postcondition_tests {
             Some(("culture", Some("culture"))),
         ] {
             let mut orders = batch();
-            assert_eq!(drop_off_lane_alliances(plan, &mut orders), 1, "{plan:?}");
+            assert_eq!(
+                drop_off_lane_alliances(plan, false, &mut orders),
+                1,
+                "{plan:?}"
+            );
             assert_eq!(orders.len(), 1);
             assert_eq!(orders[0].kind, "sell");
         }
