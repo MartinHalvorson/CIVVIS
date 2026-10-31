@@ -4478,6 +4478,13 @@ pub const GENES: &[Gene] = &[
     // charge to spare it now scores value per Builder-turn; its last charge
     // keeps the untreated price. See `advanced/builder_travel_turns.rs`.
     Gene { tag: "builder-prices-travel-in-turns", field: "builder_prices_travel_in_turns", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_prices_travel_in_turns, disable: AdvancedAi::disable_builder_prices_travel_in_turns },
+    // A Religion seat without a religion got the Religion strategy before the
+    // Expansion branch read its city count: 4 of 5 6p Immortal Religion seats
+    // ran Religion at t20-40 (every other lane ran Expansion), held a median 3
+    // cities at t60 against 4-5, and 4 of 5 were retired at the t80 gate. The
+    // prophet race keys on the target, not the strategy. See
+    // `advanced/religion_race_expands.rs`.
+    Gene { tag: "religion-race-keeps-expanding", field: "religion_race_keeps_expanding", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_race_keeps_expanding, disable: AdvancedAi::disable_religion_race_keeps_expanding },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

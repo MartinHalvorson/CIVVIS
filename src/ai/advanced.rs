@@ -7892,6 +7892,10 @@ pub struct AdvancedAi {
     /// See `advanced/naval_crossing.rs`.
     naval_crossing_keeps_going: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `religion-race-keeps-expanding`: a Religion seat racing for its Prophet
+    /// keeps the Expansion strategy while short of its cities. See
+    /// `advanced/religion_race_expands.rs`. Off by default.
+    religion_race_keeps_expanding: bool,
     /// `religion-lane-spreads-from-founding`: a Religion-target seat that has
     /// founded keeps the Religion plan's spreading posture, Faith reserve and
     /// idle-queue Shrine/Temple production while its plan reads Expansion.
@@ -9689,6 +9693,9 @@ mod war_target_walls;
 
 /// `embassy-finds-the-capital`: see `advanced/embassy_capital.rs`.
 mod embassy_capital;
+
+/// `religion-race-keeps-expanding`: see `advanced/religion_race_expands.rs`.
+mod religion_race_expands;
 
 /// `racer-keeps-the-spies`: see `advanced/racer_keeps_the_spies.rs`.
 mod racer_keeps_the_spies;
@@ -11520,6 +11527,7 @@ impl AdvancedAi {
             opening_builder_after_the_first_settler: false,
             naval_crossing_keeps_going: false,
             // ---- append: p-r ----------------------------------------
+            religion_race_keeps_expanding: false,
             religion_lane_spreads_from_founding: false,
             rival_city_pace: None,
             prey_is_declared_on: false,
@@ -15774,7 +15782,15 @@ impl AdvancedAi {
                 "countering a rival close to winning, ahead of the lane",
             )
         } else if let Some(target) = active_victory_target {
-            if target == VictoryTarget::Religion && g.players[pid].religion.is_none() {
+            if target == VictoryTarget::Religion
+                && g.players[pid].religion.is_none()
+                // `religion-race-keeps-expanding`: with cities still to found
+                // and a site in reach, the Expansion branch below answers
+                // first. See `advanced/religion_race_expands.rs`.
+                && !self.religion_race_expands_first(
+                    !specialization_active && cities.len() < desired_cities && has_site,
+                )
+            {
                 (
                     GrandStrategy::Religion,
                     "the religion lane still needs a religion",

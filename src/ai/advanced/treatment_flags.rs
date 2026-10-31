@@ -8777,6 +8777,17 @@ impl AdvancedAi {
         self.builder_prices_travel_in_turns = false;
     }
 
+    /// Opt-in gene `religion-race-keeps-expanding`; see
+    /// [`Self::religion_race_keeps_expanding`].
+    pub fn enable_religion_race_keeps_expanding(&mut self) {
+        self.religion_race_keeps_expanding = true;
+    }
+
+    /// The twin of `enable_religion_race_keeps_expanding`.
+    pub fn disable_religion_race_keeps_expanding(&mut self) {
+        self.religion_race_keeps_expanding = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
