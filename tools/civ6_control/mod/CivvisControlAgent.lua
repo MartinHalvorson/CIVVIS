@@ -23029,11 +23029,38 @@ end
 -- No row (no page, a stale report, a mirror the harness has given up on) is no
 -- wait. A wait is capped at `capSeconds` a turn: a page that cannot paint must
 -- not stall the lane, so the turn ends anyway and says so.
-CivvisBoard.mirror = { capSeconds = 10 };
+--
+-- ★ A WAITING TURN PEEKS AT THE ROW EVERY `peekSeconds`, not on the pause's
+-- quarter-second poll: the first gated games (10-31) waited a median 0.64 s
+-- a turn, and the quarter second was a fifth of it. The same budget as the
+-- orders peek (`CivvisQueue.ordersLanded`): wall-clock bounded, one one-row
+-- query, and only while a turn is actually waiting.
+CivvisBoard.mirror = { capSeconds = 10, peekSeconds = 0.05 };
+function CivvisBoard.mirrorPeek(now)
+	local mirror = CivvisBoard.mirror;
+	if type(mirror.peekedAt) == "number" and now >= mirror.peekedAt
+			and now - mirror.peekedAt < mirror.peekSeconds then
+		return;
+	end
+	mirror.peekedAt = now;
+	if not attachOrders() then return; end
+	pcall(function()
+		local rows = DB.Query(string.format(
+			"SELECT x FROM civvis.orders WHERE run = '%s' AND kind = 'mirror'",
+			sqlSafe(cfg.RunTag)));
+		local shown = nil;
+		for _, row in ipairs(rows) do shown = tonumber(row.x); end
+		CivvisBoard.hold.mirrorTurn = shown;
+	end);
+end
 function CivvisBoard.mirrorHold(turn)
 	local hold, mirror = CivvisBoard.hold, CivvisBoard.mirror;
-	local shown = hold.mirrorTurn;
 	hold.mirrorWaiting = false;
+	if mirror.turn == turn and not mirror.done then
+		local now = CivvisClock.now();
+		if type(now) == "number" then CivvisBoard.mirrorPeek(now); end
+	end
+	local shown = hold.mirrorTurn;
 	if type(shown) ~= "number" or shown >= turn then
 		if mirror.turn == turn and mirror.since ~= nil and not mirror.done then
 			mirror.done = true;
