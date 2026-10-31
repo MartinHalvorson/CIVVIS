@@ -7892,6 +7892,11 @@ pub struct AdvancedAi {
     /// See `advanced/naval_crossing.rs`.
     naval_crossing_keeps_going: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `religion-lane-hands-over`: a Religion-target seat with no religion,
+    /// no Prophet pending and every slot claimed retargets to Science (else
+    /// Culture, else Domination). See `advanced/religion_lane_hands_over.rs`.
+    /// Off by default.
+    religion_lane_hands_over: bool,
     /// `religion-lane-spreads-from-founding`: a Religion-target seat that has
     /// founded keeps the Religion plan's spreading posture, Faith reserve and
     /// idle-queue Shrine/Temple production while its plan reads Expansion.
@@ -9671,6 +9676,8 @@ mod live_gp_commitment;
 /// unescorted Settlers and Builders, unpillaged tiles — taken by movement
 /// and closed by peace. See `advanced/opportunistic_war.rs`.
 mod opportunistic_war;
+/// `religion-lane-hands-over`: see `advanced/religion_lane_hands_over.rs`.
+mod religion_lane_hands_over;
 /// `religion-lane-spreads-from-founding`: see `advanced/religion_lane_spreads.rs`.
 mod religion_lane_spreads;
 /// A short, defender-only declaration shock. See
@@ -11531,6 +11538,7 @@ impl AdvancedAi {
             opening_builder_after_the_first_settler: false,
             naval_crossing_keeps_going: false,
             // ---- append: p-r ----------------------------------------
+            religion_lane_hands_over: false,
             religion_lane_spreads_from_founding: false,
             rival_city_pace: None,
             prey_is_declared_on: false,
@@ -49715,6 +49723,10 @@ impl AdvancedAi {
         self.base.minor = g.players[pid].is_minor;
         self.base.barb = g.players[pid].is_barbarian;
         self.maintain_victory_portfolio(g, pid);
+        // `religion-lane-hands-over`: a Religion seat that lost the Prophet
+        // race takes Science before the turn reads its target. See
+        // `advanced/religion_lane_hands_over.rs`.
+        self.hand_over_a_lost_religion_lane(g, pid);
         let active_victory_target = self.active_victory_target(g);
         let specialization_active = self.phase_specialization_active(g);
         // See `lane_delegates_production`: this turn an assigned lane's
