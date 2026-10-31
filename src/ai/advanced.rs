@@ -9702,10 +9702,10 @@ pub use air_city_assault::AirCityAssault;
 /// `war-target-prices-the-walls`: see `advanced/war_target_walls.rs`.
 mod war_target_walls;
 
-/// `early-route-feeds-production`: see `advanced/early_route_production.rs`.
-mod early_route_production;
 /// `defence-holds-under-fire`: see `advanced/defence_holds.rs`.
 mod defence_holds;
+/// `early-route-feeds-production`: see `advanced/early_route_production.rs`.
+mod early_route_production;
 
 /// `embassy-finds-the-capital`: see `advanced/embassy_capital.rs`.
 mod embassy_capital;
