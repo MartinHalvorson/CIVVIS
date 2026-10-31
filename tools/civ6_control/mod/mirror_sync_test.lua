@@ -11,10 +11,12 @@ handle:close()
 
 local holdBlock = assert(source:match("(CivvisBoard%.hold = .-\nend\n)"),
 	"the operator hold is defined on CivvisBoard")
-local mirrorBlock = assert(source:match("(CivvisBoard%.mirror = .-\nend\n)"),
-	"the mirror hold is defined on CivvisBoard")
+local mirrorBlock = assert(source:match(
+	"(CivvisBoard%.mirror = .-\nfunction CivvisBoard%.mirrorHold%(turn%).-\nend\n)"),
+	"the mirror hold and its peek are defined on CivvisBoard")
 
 local clock, attached, sent, shown = 0, true, false, nil
+local peeks = 0
 local events = {}
 local env = {
 	string = string, math = math, type = type, tonumber = tonumber,
@@ -33,7 +35,12 @@ local env = {
 	UI = { HasSentTurnComplete = function() return sent end },
 	ExposedMembers = {},
 	DB = { Query = function(sql)
-		assert(sql:find("kind IN ('pause', 'pace', 'mirror')", 1, true), sql)
+		assert(sql:find("run = 'civvis-test'", 1, true), sql)
+		if sql:find("kind = 'mirror'", 1, true) then
+			peeks = peeks + 1
+		else
+			assert(sql:find("kind IN ('pause', 'pace', 'mirror')", 1, true), sql)
+		end
 		if shown == nil then return {} end
 		return { { kind = "mirror", x = shown } }
 	end },
@@ -124,6 +131,36 @@ env.awaiting.turn = 11
 poll(11)
 assert(board.hold.mirrorTurn == nil and board.mirrorHold(11) == false)
 attached = true
+
+-- 9. A waiting turn peeks at the row itself, at most every 50 ms: the page
+-- painting is seen without waiting for the pause's quarter-second poll.
+shown = 11
+clock = 20
+env.awaiting.turn = 12
+poll(12)
+assert(board.mirrorHold(12) == true)
+local before = peeks
+clock = 20.02
+assert(board.mirrorHold(12) == true)
+assert(peeks == before + 1, "the first waiting tick peeks")
+clock = 20.04
+assert(board.mirrorHold(12) == true and peeks == before + 1, "not again inside 50 ms")
+shown = 12
+clock = 20.08
+assert(board.mirrorHold(12) == false, "seen on the next peek, between pause polls")
+assert(events[#events].kind == "mirror_caught_up" and events[#events].payload.waited_ms == 80)
+clock = 20.2
+assert(board.mirrorHold(12) == false and peeks == before + 2, "a released turn stops peeking")
+-- A failed peek keeps what the pause poll last read.
+shown = 12
+clock = 21
+env.awaiting.turn = 13
+assert(board.mirrorHold(13) == true)
+local query = env.DB.Query
+env.DB.Query = function() error("locked") end
+clock = 21.1
+assert(board.mirrorHold(13) == true and board.hold.mirrorTurn == 12)
+env.DB.Query = query
 
 -- The wiring: the wait sits after the turn is settled (the moves play while
 -- the page catches up) and before any end-turn request; the peek pulse ticks a

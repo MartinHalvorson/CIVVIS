@@ -8664,6 +8664,40 @@ impl AdvancedAi {
         self.launcher_war_serves_every_lane = false;
     }
 
+    /// Opt-in gene `culture-seat-allies`; see [`Self::culture_seat_allies`].
+    pub fn enable_culture_seat_allies(&mut self) {
+        self.culture_seat_allies = true;
+    }
+
+    /// The twin of `enable_culture_seat_allies`.
+    pub fn disable_culture_seat_allies(&mut self) {
+        self.culture_seat_allies = false;
+    }
+
+    /// Opt-in gene `opening-builder-after-the-first-settler`; see
+    /// `BasicAi::opening_builder_after_the_first_settler`.
+    pub fn enable_opening_builder_after_the_first_settler(&mut self) {
+        self.opening_builder_after_the_first_settler = true;
+        self.base.enable_opening_builder_after_the_first_settler();
+    }
+
+    /// The twin of `enable_opening_builder_after_the_first_settler`.
+    pub fn disable_opening_builder_after_the_first_settler(&mut self) {
+        self.opening_builder_after_the_first_settler = false;
+        self.base.disable_opening_builder_after_the_first_settler();
+    }
+
+    /// Opt-in gene `surprise-watch-holds-its-ratio`; see
+    /// [`Self::surprise_watch_holds_its_ratio`].
+    pub fn enable_surprise_watch_holds_its_ratio(&mut self) {
+        self.surprise_watch_holds_its_ratio = true;
+    }
+
+    /// The twin of `enable_surprise_watch_holds_its_ratio`.
+    pub fn disable_surprise_watch_holds_its_ratio(&mut self) {
+        self.surprise_watch_holds_its_ratio = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

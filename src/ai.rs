@@ -403,6 +403,7 @@ mod commercial_hub;
 mod industrial_zones;
 mod movement_risk;
 mod naval_demand;
+mod opening_builder;
 mod scout_first;
 mod scout_inference;
 mod siege_support;
@@ -4076,6 +4077,18 @@ pub struct BasicAi {
     /// emergency choices remain authoritative. Set through
     /// `AdvancedAi::enable_capital_settler_after_completion`.
     pub(crate) capital_settler_after_completion: bool,
+    /// `opening-builder-after-the-first-settler`: once the capital's first
+    /// Settler is out (walking or founded) and the empire has never held a
+    /// Builder, the capital trains one before its next Settler. Live Immortal
+    /// seats 10-30 (54 games): first Builder at a median turn 26, 5% of owned
+    /// land improved at turn 40 against the rivals' 26%, and the rivals'
+    /// population ran 1.6x ours from turn 20. Set through
+    /// `AdvancedAi::enable_opening_builder_after_the_first_settler`.
+    pub(crate) opening_builder_after_the_first_settler: bool,
+    /// Receipt for `opening_builder_after_the_first_settler`: set the first
+    /// time the empire holds or queues a Builder, so the step fires at most
+    /// once a game and never after a Builder spends its last charge.
+    pub(crate) opening_builder_paid: bool,
     /// Independent first-slot exploration experiment.
     pub(crate) scout_first_opening: bool,
     /// Take the pantheon that founds a city. Civilization VI's Religious
@@ -5971,6 +5984,8 @@ impl BasicAi {
             land_grab: false,
             rapid_city_expansion_2: false,
             capital_settler_after_completion: false,
+            opening_builder_after_the_first_settler: false,
+            opening_builder_paid: false,
             scout_first_opening: false,
             expansion_pantheon: false,
             pantheon_for_the_prophet_race: false,
@@ -6039,6 +6054,16 @@ impl BasicAi {
     /// Disable the baseline half of the capital-settler-after-completion gene.
     pub(crate) fn disable_capital_settler_after_completion(&mut self) {
         self.capital_settler_after_completion = false;
+    }
+
+    /// See `opening_builder_after_the_first_settler`.
+    pub(crate) fn enable_opening_builder_after_the_first_settler(&mut self) {
+        self.opening_builder_after_the_first_settler = true;
+    }
+
+    /// The twin of `enable_opening_builder_after_the_first_settler`.
+    pub(crate) fn disable_opening_builder_after_the_first_settler(&mut self) {
+        self.opening_builder_after_the_first_settler = false;
     }
 
     /// Lead the pantheon prefix with the two that found a city (see
@@ -6494,6 +6519,8 @@ impl BasicAi {
             land_grab: false,
             rapid_city_expansion_2: false,
             capital_settler_after_completion: false,
+            opening_builder_after_the_first_settler: false,
+            opening_builder_paid: false,
             scout_first_opening: false,
             expansion_pantheon: false,
             pantheon_for_the_prophet_race: false,
@@ -10403,6 +10430,9 @@ impl BasicAi {
             }
         }
         let active_settlers = settlers;
+        if builders > 0 {
+            self.opening_builder_paid = true;
+        }
         // Treat queued units as part of the force plan. Without this, every
         // occupied city forgets what it is already building and the next
         // empty city can queue a duplicate settler, builder, or trader.
@@ -10630,6 +10660,12 @@ impl BasicAi {
             // Reserve the first slot before population-two Settler genes can
             // claim it. Successful production consumes exactly one book slot.
             if self.play_scout_first_opening(g, pid, *cid) {
+                continue;
+            }
+            // `opening-builder-after-the-first-settler`: the capital's first
+            // Builder follows its first Settler. See `opening_builder.rs`.
+            if self.play_opening_builder(g, pid, *cid, n_cities, active_settlers, builders) {
+                builders += 1;
                 continue;
             }
             // The normal production picker sits after the scripted opening

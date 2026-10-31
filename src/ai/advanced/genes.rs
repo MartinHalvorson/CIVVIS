@@ -4403,6 +4403,30 @@ pub const GENES: &[Gene] = &[
     // Conquest counter. Needs `launcher-war-ignores-the-edge`. See
     // `advanced/launcher_war_every_lane.rs`.
     Gene { tag: "launcher-war-serves-every-lane", field: "launcher_war_serves_every_lane", kind: Kind::OptIn, enable: AdvancedAi::enable_launcher_war_serves_every_lane, disable: AdvancedAi::disable_launcher_war_serves_every_lane },
+    // Ten live Lv 7 Culture seats 2026-10-30 held no alliance at t80, t120 or
+    // t160: the live binary and the agent passed alliances only for the
+    // Diplomatic lane, and early wars were the culture seats' worst losses.
+    // A Culture seat allies its nearest safe rival, never the science racer
+    // or the rival that sets our culture bar. See
+    // `advanced/culture_seat_allies.rs`.
+    Gene { tag: "culture-seat-allies", field: "culture_seat_allies", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_allies, disable: AdvancedAi::disable_culture_seat_allies },
+    // Live Immortal seats 2026-10-30 (54 games): the first Builder came at a
+    // median turn 26 (scout, Settler, slinger, Settler first), 5% of owned land
+    // stood improved at turn 40 against the rivals' 26%, and their population
+    // ran 1.6x ours from turn 20. Once the capital's first Settler is out and
+    // the empire has never held a Builder, the capital trains one before its
+    // next Settler. See `BasicAi::opening_builder_after_the_first_settler`.
+    Gene { tag: "opening-builder-after-the-first-settler", field: "opening_builder_after_the_first_settler", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_builder_after_the_first_settler, disable: AdvancedAi::disable_opening_builder_after_the_first_settler },
+    // Live Lv 7/8 2026-10-30/31: 7 of 8 seats declared on by t40 lost a
+    // city by t41, five of them with walls part-built. The walls' live 2.0x
+    // reading stood down when we armed (001453Z: bought warriors lifted us
+    // to 1.7x and Athens built a Monument first) or the rival dipped
+    // (173341Z: 1.6x). A 2x major seen within ten tiles of the capital or a
+    // frontier city keeps that city's walls, and Masonry, armed for the
+    // ten-turn window. Needs `capital-walls-before-the-surprise` and/or
+    // `frontier-walls-before-the-surprise`. See
+    // `advanced/surprise_watch_latch.rs`.
+    Gene { tag: "surprise-watch-holds-its-ratio", field: "surprise_watch_holds_its_ratio", kind: Kind::OptIn, enable: AdvancedAi::enable_surprise_watch_holds_its_ratio, disable: AdvancedAi::disable_surprise_watch_holds_its_ratio },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

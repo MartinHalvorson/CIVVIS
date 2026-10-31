@@ -34,7 +34,8 @@
 //! the counter in place of any counter that is not already a war: an in-lane
 //! race, or none. A Conquest counter already chosen keeps its rival, so
 //! `counter-culture-by-conquest` against a nearer culture finish stands.
-//! The most launches landed go first, then the lower seat. The declaration's own
+//! Only the leading racer, the most launches landed, is fought; the lower
+//! seat breaks a tie. The declaration's own
 //! gates (one war at a time, legality, reach) still hold. The plan's first
 //! objective is the pad city (`science-suppression-hits-the-pads`). Needs
 //! `launcher-war-ignores-the-edge`.
@@ -57,6 +58,24 @@ impl AdvancedAi {
         {
             return None;
         }
+        // Only the leading racer is fought: a war on a racer behind it
+        // stops nothing the leader launches. Live 011801Z-cont1: Rome landed
+        // the Mars base at 187 and won at 205 with us on 19 of 20 points; its
+        // pads stood out of the war's reach, and the gate read Mali, stalled
+        // at two projects, in its place.
+        let lead = g
+            .players
+            .iter()
+            .filter(|rival| {
+                rival.id != pid
+                    && rival.alive
+                    && !rival.is_minor
+                    && !rival.is_barbarian
+                    && !g.same_team(pid, rival.id)
+            })
+            .map(|rival| Self::science_denial_stages(g, rival.id))
+            .max()
+            .unwrap_or(0);
         let counter = g
             .players
             .iter()
@@ -67,6 +86,7 @@ impl AdvancedAi {
                     && !rival.is_barbarian
                     && !g.same_team(pid, rival.id)
                     && g.has_met(pid, rival.id)
+                    && Self::science_denial_stages(g, rival.id) == lead
             })
             // A friend or an ally cannot be declared on (190332Z's ally
             // Korea started projects at turn 160).
