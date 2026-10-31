@@ -158,3 +158,73 @@ fn the_civic_point_comes_before_the_government_ladder() {
         "on: the point first"
     );
 }
+
+/// The tech point comes before the war arms: live Immortal
+/// civvis-20261031T011801Z stood on 19 of 20 from t172 while the war plan's
+/// and the counter plan's research took the slot, and lost to Technology at
+/// t205 with Seasteads three turns started. Here an appointed war's
+/// breakthrough, the arm that leads every war arm, stands unresearched.
+#[test]
+fn the_tech_point_comes_before_the_war_breakthrough() {
+    use crate::ai::advanced::tests::wonder_plan;
+    let mut g = Game::new_full(2, 24, 16, 764, 300, 0, false);
+    g.turn = g.max_turns * 3 / 4;
+    let techs: Vec<Name> = g
+        .rules
+        .techs
+        .iter()
+        .filter(|(tech, spec)| spec.era < 8 && tech.as_str() != "rocketry")
+        .map(|(tech, _)| Name::new(tech))
+        .collect();
+    g.players[0].techs.extend(techs);
+    // The tech point's prerequisites are cleared, so this seed's Future
+    // layout cannot make the breakthrough a step toward it.
+    {
+        let rules = std::sync::Arc::make_mut(&mut g.rules);
+        rules
+            .techs
+            .get_mut("seasteads")
+            .expect("the tech point exists")
+            .requires
+            .clear();
+        if let Some(ancestors) = rules.tech_ancestors.get_mut("seasteads") {
+            ancestors.clear();
+        }
+    }
+    g.players[0].dvp = 19;
+    let plan = wonder_plan(GrandStrategy::Science, g.turn);
+    let mut seat = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    seat.war_plan = Some(WarPlan {
+        target_player: 1,
+        objective_city: g.player_city_ids(1).first().copied().unwrap_or(0),
+        breakthrough_tech: crate::name!("rocketry"),
+        assault_unit: crate::name!("bombard"),
+        predecessor: None,
+        breach_unit: None,
+        estimated_research_turns: 1,
+        estimated_production_turns: 3,
+        estimated_upgrade_gold: 0.0,
+        estimated_march_turns: 2,
+        phase: WarPhase::Research,
+        appointed_turn: g.turn - 5,
+        tech_turn: None,
+        declared_turn: None,
+        last_reviewed_turn: g.turn,
+        recovery_assessments: 0,
+    });
+    let mut off = g.clone();
+    seat.advanced_research(&mut off, 0, &plan);
+    assert_eq!(
+        off.players[0].research.as_deref(),
+        Some("rocketry"),
+        "off: the breakthrough takes the slot"
+    );
+    seat.enable_diplo_match_point_beelines_the_points();
+    let mut on = g.clone();
+    seat.advanced_research(&mut on, 0, &plan);
+    assert_eq!(
+        on.players[0].research.as_deref(),
+        Some("seasteads"),
+        "on: the point first"
+    );
+}

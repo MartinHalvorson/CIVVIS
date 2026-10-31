@@ -8687,6 +8687,28 @@ impl AdvancedAi {
         self.base.disable_opening_builder_after_the_first_settler();
     }
 
+    /// Opt-in gene `surprise-watch-holds-its-ratio`; see
+    /// [`Self::surprise_watch_holds_its_ratio`].
+    pub fn enable_surprise_watch_holds_its_ratio(&mut self) {
+        self.surprise_watch_holds_its_ratio = true;
+    }
+
+    /// The twin of `enable_surprise_watch_holds_its_ratio`.
+    pub fn disable_surprise_watch_holds_its_ratio(&mut self) {
+        self.surprise_watch_holds_its_ratio = false;
+    }
+
+    /// Opt-in gene `settler-founds-under-raiders`; see
+    /// [`Self::settler_founds_under_raiders`].
+    pub fn enable_settler_founds_under_raiders(&mut self) {
+        self.settler_founds_under_raiders = true;
+    }
+
+    /// The twin of `enable_settler_founds_under_raiders`.
+    pub fn disable_settler_founds_under_raiders(&mut self) {
+        self.settler_founds_under_raiders = false;
+    }
+
     /// Opt-in gene `immortal-skips-the-prophet-race`; see
     /// [`Self::immortal_skips_the_prophet_race`].
     pub fn enable_immortal_skips_the_prophet_race(&mut self) {

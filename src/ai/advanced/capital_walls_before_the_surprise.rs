@@ -86,7 +86,7 @@ impl AdvancedAi {
     }
 
     /// The watched majors' soldiers the seat sees within `radius` of `at`.
-    fn capital_watch_seen(
+    pub(super) fn capital_watch_seen(
         g: &Game,
         pid: usize,
         at: Pos,
@@ -129,7 +129,11 @@ impl AdvancedAi {
         if !self.capital_walls_before_the_surprise {
             return None;
         }
+        // `surprise-watch-holds-its-ratio`: a 2x major seen within ten tiles
+        // keeps the walls armed through a dip in the live ratio. `None` with
+        // the gene off. See `advanced/surprise_watch_latch.rs`.
         self.capital_watched_major_power(g, pid)
+            .or_else(|| self.capital_surprise_latched(g, pid))
     }
 
     /// Shared observation, without enabling either policy's spending or research.

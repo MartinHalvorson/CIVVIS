@@ -252,6 +252,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `racer-blocker-declares` | off (unmeasured) | Opt-in gene `racer-blocker-declares`; see `advanced/silent_counter.rs`. | 1 \| 1 |
 | `racer-spies-search-for-the-pad` | off (unmeasured) | Opt-in gene `racer-spies-search-for-the-pad`; see `Self::racer_spies_search_for_the_pad`. | 1 \| 1 |
 | `science-drive-answers-the-launch` | off (unmeasured) | `science-drive-answers-the-launch`. | 1 \| 1 |
+| `settler-founds-under-raiders` | off (unmeasured) | Opt-in gene `settler-founds-under-raiders`; see `Self::settler_founds_under_raiders`. | 1 \| 1 |
 | `siege-budget-counts-the-ram` | off (unmeasured) | Price a train-held Ram or Tower in the siege damage budget. | 1 \| 1 |
 | `siege-moves-under-the-wing` | off (unmeasured) | Opt-in gene `siege-moves-under-the-wing`; see `Self::siege_moves_under_the_wing`. | 1 \| 1 |
 | `siege-promotions-open-the-walls` | off (unmeasured) | Prefer the wall branch for siege guns in a walled major-war campaign. | 1 \| 1 |
@@ -260,6 +261,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `solvent-or-hold` | off (unmeasured) | Opt-in gene `solvent-or-hold`; see `advanced/solvency.rs`. | 1 \| 1 |
 | `stage-reads-the-muster-breakers` | off (unmeasured) | Let a mustered siege count the guns it mustered when it stages. | 1 \| 1 |
 | `staging-gun-trusts-its-escort-2` | off (unmeasured) | Opt-in gene `staging-gun-trusts-its-escort-2`; see `Self::staging_gun_trusts_its_escort_2`. | 1 \| 2 |
+| `surprise-watch-holds-its-ratio` | off (unmeasured) | Opt-in gene `surprise-watch-holds-its-ratio`; see `Self::surprise_watch_holds_its_ratio`. | 1 \| 1 |
 | `the-giant-gets-the-peace-offer` | off (unmeasured) | Opt-in gene `the-giant-gets-the-peace-offer`; see `Self::the_giant_gets_the_peace_offer`. | 1 \| 1 |
 | `the-last-two-capitals-come-first` | off (unmeasured) | Opt-in gene `the-last-two-capitals-come-first`; see `Self::the_last_two_capitals_come_first`. | 1 \| 1 |
 | `threatened-city-buys-its-defender` | off (unmeasured) | Buy the threatened city's defender while its menu sells one. | — \| 2 |
