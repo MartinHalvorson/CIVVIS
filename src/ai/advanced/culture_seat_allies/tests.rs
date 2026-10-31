@@ -176,3 +176,87 @@ fn a_culture_seat_does_not_wait_for_scientific_theory() {
     let asked = run(allies()).expect("the gene asks");
     assert_eq!(asked.1.as_deref(), Some("cultural"));
 }
+
+fn science_stock() -> AdvancedAi {
+    AdvancedAi::targeting(VictoryTarget::Science)
+}
+
+fn science_allies() -> AdvancedAi {
+    let mut ai = science_stock();
+    ai.enable_science_seat_allies();
+    ai
+}
+
+fn science_plan(turn: u32) -> StrategicPlan {
+    StrategicPlan {
+        strategy: GrandStrategy::Science,
+        ..culture_plan(turn)
+    }
+}
+
+#[test]
+fn science_seat_allies_is_opt_in() {
+    opt_in_off_in_both_controllers("science-seat-allies", |ai| ai.science_seat_allies);
+}
+
+#[test]
+fn only_a_science_seat_is_armed_by_the_science_gene() {
+    assert!(!science_stock().seat_allies_armed());
+    assert!(science_allies().seat_allies_armed());
+    let mut culture = stock();
+    culture.enable_science_seat_allies();
+    assert!(
+        !culture.seat_allies_armed(),
+        "the science gene does not open a Culture seat"
+    );
+    let mut science = science_stock();
+    science.enable_culture_seat_allies();
+    assert!(
+        !science.seat_allies_armed(),
+        "nor the culture gene a Science seat"
+    );
+}
+
+#[test]
+fn a_science_seat_never_asks_the_science_racer_but_may_ask_the_bar_holder() {
+    let run = |ai: AdvancedAi| {
+        let mut g = board();
+        // Seat 1 makes the most Science, seat 2 has landed a project, seat 3
+        // holds the most domestic tourists.
+        science(&mut g, 1, 90.0);
+        g.players[2]
+            .science_projects
+            .insert("launch_earth_satellite".to_string());
+        domestic(&mut g, 3, 400);
+        for pid in 0..4 {
+            g.players[pid]
+                .techs
+                .insert(crate::name!("scientific_theory"));
+        }
+        let mut ai = ai;
+        let plan = science_plan(g.turn);
+        ai.propose_strategic_alliance(&mut g, 0, &plan, None);
+        proposed(&g, 0).map(|(to, _)| to)
+    };
+    assert!(run(science_stock()).is_some(), "stock: someone is asked");
+    assert_eq!(
+        run(science_allies()),
+        Some(3),
+        "under the gene, the bar holder is the only safe partner left"
+    );
+}
+
+#[test]
+fn a_science_seat_keeps_waiting_for_a_research_alliance() {
+    let mut g = board();
+    science(&mut g, 1, 90.0);
+    let mut ai = science_allies();
+    ai.enable_research_alliance_first();
+    let plan = science_plan(g.turn);
+    ai.propose_strategic_alliance(&mut g, 0, &plan, None);
+    assert_eq!(
+        proposed(&g, 0),
+        None,
+        "no stock kind while our tree lacks Scientific Theory"
+    );
+}

@@ -264,6 +264,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `religion-lane-spreads-from-founding` | off (unmeasured) | Opt-in gene `religion-lane-spreads-from-founding`; see `Self::religion_lane_spreads_from_founding`. | 1 \| 1 |
 | `religion-race-keeps-expanding` | off (unmeasured) | Opt-in gene `religion-race-keeps-expanding`; see `Self::religion_race_keeps_expanding`. | 1 \| 1 |
 | `science-drive-answers-the-launch` | off (unmeasured) | `science-drive-answers-the-launch`. | 1 \| 1 |
+| `science-seat-allies` | off (unmeasured) | Opt-in gene `science-seat-allies`; see `Self::science_seat_allies`. | 1 \| 1 |
 | `settler-founds-under-raiders` | off (unmeasured) | Opt-in gene `settler-founds-under-raiders`; see `Self::settler_founds_under_raiders`. | 1 \| 1 |
 | `siege-budget-counts-the-ram` | off (unmeasured) | Price a train-held Ram or Tower in the siege damage budget. | 1 \| 1 |
 | `siege-moves-under-the-wing` | off (unmeasured) | Opt-in gene `siege-moves-under-the-wing`; see `Self::siege_moves_under_the_wing`. | 1 \| 1 |
