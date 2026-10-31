@@ -133,7 +133,7 @@ fn a_hostile_ship_holds_a_voyage_under_way() {
     }
     assert!(ai.settler_step_out_of_reach(&mut game, 0, settler, target));
     let here = game.units[&settler].pos;
-    assert!(ai.naval_crossing_underway(&game, target));
+    assert!(ai.naval_crossing_underway(&game, settler));
     let barbarian = game.players.iter().position(|p| p.is_barbarian).unwrap();
     let ship_tile = game
         .wdisk(here, 3)
@@ -151,4 +151,46 @@ fn a_hostile_ship_holds_a_voyage_under_way() {
     next_turn(&mut game, [settler, guard]);
     assert!(!ai.settler_step_out_of_reach(&mut game, 0, settler, target));
     assert_eq!(game.units[&settler].pos, here, "the ship keeps the hold");
+}
+
+/// Live 080511Z: a Settler afloat is retargeted between turns. Its voyage is
+/// keyed by the unit, so it still steps on toward the new site.
+#[test]
+fn a_retargeted_voyage_still_steps_on() {
+    let (mut game, mut ai, settler, guard, _first_water, target) = embarked();
+    ai.enable_naval_crossing_keeps_going();
+    let other = game
+        .nbrs(target)
+        .into_iter()
+        .find(|pos| game.map.get(*pos).is_some())
+        .expect("a tile beside the first site");
+    game.map.tiles.get_mut(&other).unwrap().terrain = crate::name!("plains");
+    for _ in 0..2 {
+        assert!(!ai.settler_step_out_of_reach(&mut game, 0, settler, target));
+        next_turn(&mut game, [settler, guard]);
+    }
+    assert!(ai.settler_step_out_of_reach(&mut game, 0, settler, target));
+    let here = game.units[&settler].pos;
+    assert!(game.rules.is_water(&game.map.tiles[&here]));
+    next_turn(&mut game, [settler, guard]);
+    ai.settler_targets.insert(settler, other);
+    if let Some(journey) = ai.settler_escort_journeys.get_mut(&settler) {
+        journey.target = other;
+    }
+    assert!(
+        ai.settler_step_out_of_reach(&mut game, 0, settler, other),
+        "the voyage under way survives the new target"
+    );
+    assert_ne!(game.units[&settler].pos, here);
+}
+
+/// The voyage mark follows the Settler through a unit-id remap.
+#[test]
+fn the_voyage_mark_follows_a_remapped_settler() {
+    let mut ai = AdvancedAi::new();
+    ai.enable_naval_crossing_keeps_going();
+    ai.naval_crossing_units.insert(7, 40);
+    ai.remap_unit_memory(&BTreeMap::from([(7, 70)]));
+    assert_eq!(ai.naval_crossing_units.get(&70), Some(&40));
+    assert!(!ai.naval_crossing_units.contains_key(&7));
 }
