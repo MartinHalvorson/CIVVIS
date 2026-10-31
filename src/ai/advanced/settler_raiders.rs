@@ -153,10 +153,35 @@ impl AdvancedAi {
             return false;
         };
         let visible = self.battlefront_visibility(g, pid);
-        if !self.settler_threat_is_raiders_only(g, pid, here, &visible) {
+        // Name the reason a held Settler stays a Settler, so a live seat can
+        // say which bar it failed (the founding itself is journaled by
+        // `founds_where_it_stands`).
+        let afloat = g.map.get(here).is_some_and(|tile| g.rules.is_water(tile));
+        let declined = if afloat {
+            Some("it is afloat")
+        } else if !self.settler_threat_is_raiders_only(g, pid, here, &visible) {
+            Some("a hostile in reach is not a barbarian's, or no hostile is in sight")
+        } else if !g.can_found_city(uid) {
+            Some("the ground it holds cannot take a city")
+        } else if !self.raiders_spare_the_city(g, pid, uid, here, &visible) {
+            Some("the raiders in reach would break the city")
+        } else {
+            None
+        };
+        if let Some(why) = declined {
+            think!(self.journal(), Expansion, Detail,
+                   "Settler stays a settler among raiders at {here:?}";
+                   "settler-founds-under-raiders: {why}"; here);
             return false;
         }
-        self.founds_where_it_stands(g, pid, uid, here)
+        let founded = self.founds_where_it_stands(g, pid, uid, here);
+        if !founded {
+            think!(self.journal(), Expansion, Detail,
+                   "Settler stays a settler among raiders at {here:?}";
+                   "settler-founds-under-raiders: the stall fallback declined the site \
+                    (its Loyalty, frontier or colony guard)"; here);
+        }
+        founded
     }
 }
 

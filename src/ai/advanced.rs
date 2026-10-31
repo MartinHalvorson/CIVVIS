@@ -2513,6 +2513,10 @@ pub struct AdvancedAi {
     /// needs no entry in `remap_unit_memory`. (last turn counted, turns).
     /// See `naval_escort_patience`.
     naval_escort_waits: BTreeMap<Pos, (u32, u8)>,
+    /// The last turn a Settler crossed alone toward each target site, under
+    /// `naval-crossing-keeps-going`. Keyed by the site, so it needs no entry
+    /// in `remap_unit_memory`. See `advanced/naval_crossing.rs`.
+    naval_crossing_targets: BTreeMap<Pos, u32>,
     /// Every visible hostile military unit as it stood BEFORE anything of
     /// ours acted this turn, under `settler_stack_discipline`. The live
     /// bridge's finishing volley (`civvis_orders::finish_live_war_units`)
@@ -5075,6 +5079,10 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// `board-ignores-the-faith-war`: the war `faith-war-is-no-front`
+    /// exempts from `one_war_holds_declaration` does not hold the board's
+    /// declaration (`war_policy_declaration`) either. Off by default.
+    board_ignores_the_faith_war: bool,
     /// `aluminum-tile-spends-the-war-chest`: the Aluminum tile buy keeps the
     /// upkeep floor, not the purchase pass's whole reserve. See
     /// `AdvancedAi::aluminum_tile_reserve`. Off by default.
@@ -5503,6 +5511,11 @@ pub struct AdvancedAi {
     /// the cheapest units disbanded before the host's bankruptcy takes the
     /// costliest. See `advanced/solvency.rs`. Off by default.
     bankruptcy_exits_the_drain: bool,
+    /// `builder-prices-travel-in-turns`: while a Builder has a charge to
+    /// spare, a job scores its value per Builder-turn (the working turn plus
+    /// the whole turns of walking) instead of `value - 0.7 × wdist`. See
+    /// `advanced/builder_travel_turns.rs`. Off by default.
+    builder_prices_travel_in_turns: bool,
     // ---- append: c-d ------------------------------------------------
     /// `diplo-seat-statue-harbor`: a Diplomacy seat's strongest coastal city
     /// builds the Harbor the Statue of Liberty needs. See
@@ -6416,6 +6429,10 @@ pub struct AdvancedAi {
     /// `advanced/culture_seat_allies.rs`. Off by default.
     culture_seat_allies: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `early-route-feeds-production`: within about 100 Online turns a
+    /// route's Production outbids the foreign-Gold premium. See
+    /// `advanced/early_route_production.rs`. Off by default.
+    early_route_feeds_production: bool,
     /// `food-focus-grows-the-small-city`: `civvis_orders` also asks the host
     /// to favour Food in a small city growing at two a turn or less. See
     /// `advanced/food_focus_grows_the_small_city.rs`. Off by default.
@@ -7874,7 +7891,25 @@ pub struct AdvancedAi {
     /// Builder follows its first Settler. The behaviour lives on
     /// `BasicAi::opening_builder_after_the_first_settler`. Off by default.
     opening_builder_after_the_first_settler: bool,
+    /// `naval-crossing-keeps-going`: a Settler that has crossed alone keeps
+    /// crossing on a quiet sea instead of waiting again at every water tile.
+    /// See `advanced/naval_crossing.rs`.
+    naval_crossing_keeps_going: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `religion-lane-hands-over`: a Religion-target seat with no religion,
+    /// no Prophet pending and every slot claimed retargets to Science (else
+    /// Culture, else Domination). See `advanced/religion_lane_hands_over.rs`.
+    /// Off by default.
+    religion_lane_hands_over: bool,
+    /// `religion-race-keeps-expanding`: a Religion seat racing for its Prophet
+    /// keeps the Expansion strategy while short of its cities. See
+    /// `advanced/religion_race_expands.rs`. Off by default.
+    religion_race_keeps_expanding: bool,
+    /// `religion-lane-spreads-from-founding`: a Religion-target seat that has
+    /// founded keeps the Religion plan's spreading posture, Faith reserve and
+    /// idle-queue Shrine/Temple production while its plan reads Expansion.
+    /// See `advanced/religion_lane_spreads.rs`. Off by default.
+    religion_lane_spreads_from_founding: bool,
     /// `rival-pace` (`gene_screen --rival-pace`): `Some(extra)` caps the
     /// plan's `desired_cities` at the live Immortal field's city curve plus
     /// `extra` (`rival_pace::city_cap`). `None` everywhere but a calibrated
@@ -9647,6 +9682,10 @@ mod live_gp_commitment;
 /// unescorted Settlers and Builders, unpillaged tiles — taken by movement
 /// and closed by peace. See `advanced/opportunistic_war.rs`.
 mod opportunistic_war;
+/// `religion-lane-hands-over`: see `advanced/religion_lane_hands_over.rs`.
+mod religion_lane_hands_over;
+/// `religion-lane-spreads-from-founding`: see `advanced/religion_lane_spreads.rs`.
+mod religion_lane_spreads;
 /// A short, defender-only declaration shock. See
 /// `advanced/surprise_defense.rs`.
 mod surprise_defense;
@@ -9669,8 +9708,13 @@ pub use air_city_assault::AirCityAssault;
 /// `war-target-prices-the-walls`: see `advanced/war_target_walls.rs`.
 mod war_target_walls;
 
+/// `early-route-feeds-production`: see `advanced/early_route_production.rs`.
+mod early_route_production;
 /// `embassy-finds-the-capital`: see `advanced/embassy_capital.rs`.
 mod embassy_capital;
+
+/// `religion-race-keeps-expanding`: see `advanced/religion_race_expands.rs`.
+mod religion_race_expands;
 
 /// `racer-keeps-the-spies`: see `advanced/racer_keeps_the_spies.rs`.
 mod racer_keeps_the_spies;
@@ -9799,6 +9843,9 @@ mod chase_every_boost;
 /// table and at most three committed side objectives. Opt-in gene
 /// `boost-planner`; see `advanced/boost_planner.rs`.
 mod boost_planner;
+/// `builder-prices-travel-in-turns`: a Builder prices a walk in the turns it
+/// costs, not in hexes. See `advanced/builder_travel_turns.rs`.
+mod builder_travel_turns;
 /// `chop-for-expansion`: a Builder turns a forest into a Settler. The engine
 /// has always modelled feature removal and harvesting; nothing ever asked for
 /// one. See `advanced/chop_for_expansion.rs`.
@@ -9997,6 +10044,8 @@ mod expansion_schedule;
 mod government_ladder;
 mod governor_dividends;
 mod higher_level_strategy;
+/// `naval-crossing-keeps-going`: see `advanced/naval_crossing.rs`.
+mod naval_crossing;
 /// `near-rival-deterrence`: a land unit a turn while a neighbour at peace
 /// out-guns us in the opening. One opt-in gene; see
 /// `advanced/near_rival_deterrence.rs`.
@@ -10862,6 +10911,7 @@ impl AdvancedAi {
             settler_escort_journeys: BTreeMap::new(),
             guard_wait: BTreeMap::new(),
             naval_escort_waits: BTreeMap::new(),
+            naval_crossing_targets: BTreeMap::new(),
             turn_start_hostiles: Vec::new(),
             turn_start_hostiles_turn: None,
             religion_sues_peace: false,
@@ -11020,6 +11070,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            board_ignores_the_faith_war: false,
             aluminum_tile_spends_the_war_chest: false,
             breaker_bought_for_the_siege: false,
             breaker_bought: BTreeMap::new(),
@@ -11109,6 +11160,7 @@ impl AdvancedAi {
             aqueduct_claims_the_capped_queue: false,
             aqueduct_recovery_reservations: RefCell::new(BTreeMap::new()),
             bankruptcy_exits_the_drain: false,
+            builder_prices_travel_in_turns: false,
             // ---- append: c-d ----------------------------------------
             diplo_seat_statue_harbor: false,
             culture_routes_reach_every_rival: false,
@@ -11288,6 +11340,7 @@ impl AdvancedAi {
             culture_recovery_spends_the_bank: false,
             culture_seat_allies: false,
             // ---- append: e-f ----------------------------------------
+            early_route_feeds_production: false,
             food_focus_grows_the_small_city: false,
             friendship_ends_at_the_race: false,
             friendship_only_with_the_stronger: false,
@@ -11492,7 +11545,11 @@ impl AdvancedAi {
             launcher_war_ignores_the_edge: false,
             luxury_swap_asks_2: false,
             opening_builder_after_the_first_settler: false,
+            naval_crossing_keeps_going: false,
             // ---- append: p-r ----------------------------------------
+            religion_lane_hands_over: false,
+            religion_race_keeps_expanding: false,
+            religion_lane_spreads_from_founding: false,
             rival_city_pace: None,
             prey_is_declared_on: false,
             prophet_race_takes_divine_spark: false,
@@ -15747,7 +15804,15 @@ impl AdvancedAi {
                 "countering a rival close to winning, ahead of the lane",
             )
         } else if let Some(target) = active_victory_target {
-            if target == VictoryTarget::Religion && g.players[pid].religion.is_none() {
+            if target == VictoryTarget::Religion
+                && g.players[pid].religion.is_none()
+                // `religion-race-keeps-expanding`: with cities still to found
+                // and a site in reach, the Expansion branch below answers
+                // first. See `advanced/religion_race_expands.rs`.
+                && !self.religion_race_expands_first(
+                    !specialization_active && cities.len() < desired_cities && has_site,
+                )
+            {
                 (
                     GrandStrategy::Religion,
                     "the religion lane still needs a religion",
@@ -28086,7 +28151,9 @@ impl AdvancedAi {
     /// idle. A large surplus may start a secondary campaign, while an active
     /// spreader keeps it moving after the initial purchase lowers the bank.
     fn religious_offensive_posture(&self, g: &Game, pid: usize, strategy: GrandStrategy) -> bool {
-        if strategy == GrandStrategy::Religion {
+        // `religion-lane-spreads-from-founding`: a Religion-target founder in
+        // any plan. See `advanced/religion_lane_spreads.rs`.
+        if strategy == GrandStrategy::Religion || self.religion_lane_spreads(g, pid) {
             return true;
         }
         if !g.victory_conditions.religious {
@@ -42592,6 +42659,11 @@ impl AdvancedAi {
                 .as_ref()
                 .is_none_or(|reach| self.builder_job_out_of_reach(g, pid, uid, pos, reach))
         };
+        // `builder-prices-travel-in-turns`: the untreated `0.7` a hex unless
+        // the gene is on and this Builder has a charge to spare. See
+        // `advanced/builder_travel_turns.rs`.
+        let travel = self.builder_travel(g, uid);
+        let mut untreated_pick: Option<(f64, Pos)> = None;
         let best = {
             let _memo = g.query_memo();
             let current_target = self.builder_targets.get(&uid).copied().filter(|pos| {
@@ -42613,19 +42685,34 @@ impl AdvancedAi {
                             }
                             for improvement in self.worthwhile_improvements(g, pid, *pos, strategy)
                             {
-                                let score = self.production_foundation_improvement_value(
+                                let value = self.production_foundation_improvement_value(
                                     g,
                                     pid,
                                     *pos,
                                     &improvement,
                                     strategy,
                                     city_shortfall,
-                                ) - g.wdist(current, *pos) as f64 * 0.7;
+                                );
+                                let distance = g.wdist(current, *pos);
+                                let score = travel.score(value, distance);
                                 if best
                                     .map(|(old, bp)| score > old || (score == old && *pos < bp))
                                     .unwrap_or(true)
                                 {
                                     best = Some((score, *pos));
+                                }
+                                // Only to say when the gene changed the pick.
+                                if travel.priced_in_turns() {
+                                    let untreated = builder_travel_turns::BuilderTravel::LEGACY
+                                        .score(value, distance);
+                                    if untreated_pick
+                                        .map(|(old, bp)| {
+                                            untreated > old || (untreated == old && *pos < bp)
+                                        })
+                                        .unwrap_or(true)
+                                    {
+                                        untreated_pick = Some((untreated, *pos));
+                                    }
                                 }
                             }
                         }
@@ -42634,6 +42721,13 @@ impl AdvancedAi {
                 }
             }
         };
+        if let (Err(Some(pos)), Some((_, farther))) = (best, untreated_pick) {
+            if pos != farther {
+                think!(self.journal(), Expansion, Decision, "Builder takes the nearer work";
+                    "builder-prices-travel-in-turns: the job at {pos:?} is {} turn(s) off and the one at {farther:?} {}; per turn of the Builder's time the nearer one is worth more",
+                    travel.turns(g.wdist(current, pos)), travel.turns(g.wdist(current, farther)); pos);
+            }
+        }
         let target = match best {
             Ok(pos) => Some(pos),
             Err(found) => found,
@@ -42698,6 +42792,8 @@ impl AdvancedAi {
         reserved: &HashSet<Pos>,
     ) -> Vec<Pos> {
         let current = g.units[&uid].pos;
+        // `builder-prices-travel-in-turns`; untreated while the gene is off.
+        let travel = self.builder_travel(g, uid);
         let _memo = g.query_memo();
         let mut scored: Vec<(f64, Pos)> = Vec::new();
         for cid in g.player_city_ids(pid) {
@@ -42708,14 +42804,17 @@ impl AdvancedAi {
                 }
                 let mut here: Option<f64> = None;
                 for improvement in self.worthwhile_improvements(g, pid, *pos, strategy) {
-                    let score = self.production_foundation_improvement_value(
-                        g,
-                        pid,
-                        *pos,
-                        &improvement,
-                        strategy,
-                        city_shortfall,
-                    ) - g.wdist(current, *pos) as f64 * 0.7;
+                    let score = travel.score(
+                        self.production_foundation_improvement_value(
+                            g,
+                            pid,
+                            *pos,
+                            &improvement,
+                            strategy,
+                            city_shortfall,
+                        ),
+                        g.wdist(current, *pos),
+                    );
                     if here.is_none_or(|old| score > old) {
                         here = Some(score);
                     }
@@ -43055,9 +43154,13 @@ impl AdvancedAi {
         // `commercial-hub-and-traders`: at peace with every major, a route's
         // Gold to a city-state or a rival we are not targeting. Not even a
         // zero is added off. See `advanced/commercial_routes.rs`.
-        if self.commercial_hub_and_traders {
+        // `early-route-feeds-production`: inside the early window the
+        // foreign-Gold premium gives way to the route's Production. See
+        // `advanced/early_route_production.rs`.
+        if self.commercial_hub_and_traders && !self.early_route_window(g) {
             value += self.international_gold_route_premium(g, pid, city.owner, yields);
         }
+        value += self.early_route_production_premium(g, yields);
 
         value
     }
@@ -49641,6 +49744,10 @@ impl AdvancedAi {
         self.base.minor = g.players[pid].is_minor;
         self.base.barb = g.players[pid].is_barbarian;
         self.maintain_victory_portfolio(g, pid);
+        // `religion-lane-hands-over`: a Religion seat that lost the Prophet
+        // race takes Science before the turn reads its target. See
+        // `advanced/religion_lane_hands_over.rs`.
+        self.hand_over_a_lost_religion_lane(g, pid);
         let active_victory_target = self.active_victory_target(g);
         let specialization_active = self.phase_specialization_active(g);
         // See `lane_delegates_production`: this turn an assigned lane's
@@ -49944,7 +50051,8 @@ impl AdvancedAi {
         }
         self.advanced_great_people(g, pid, self.great_person_lane(g, pid, &plan));
         if self.victory_planning && g.victory_conditions.religious {
-            let committed = plan.strategy == GrandStrategy::Religion;
+            let committed =
+                plan.strategy == GrandStrategy::Religion || self.religion_lane_spreads(g, pid);
             let offensive = self.religious_offensive_posture(g, pid, plan.strategy);
             // A secondary campaign spends only the bank above a substantial
             // reserve, leaving Culture agents able to buy Naturalists or Rock
@@ -50082,6 +50190,13 @@ impl AdvancedAi {
             if self.victory_planning && plan.strategy == GrandStrategy::Religion {
                 self.religious_production(g, pid);
             } else if self.victory_planning && g.victory_conditions.religious {
+                // `religion-lane-spreads-from-founding`: a Religion-target
+                // founder in another plan still fills idle Holy Site queues
+                // with its Shrine and Temple. See
+                // `advanced/religion_lane_spreads.rs`.
+                if self.religion_lane_spreads(g, pid) {
+                    self.religious_production(g, pid);
+                }
                 // A founder outside the Religion lane still gets its Temple,
                 // or its Apostles and Inquisitors exist only on paper. See
                 // `founder_temple` (exact no-op while that flag is off).
