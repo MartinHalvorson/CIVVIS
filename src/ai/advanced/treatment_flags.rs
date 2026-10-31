@@ -8821,6 +8821,17 @@ impl AdvancedAi {
         self.domination_targets_land_first = false;
     }
 
+    /// Opt-in gene `stalled-spreader-braves-the-march`; see
+    /// [`Self::stalled_spreader_braves_the_march`].
+    pub fn enable_stalled_spreader_braves_the_march(&mut self) {
+        self.stalled_spreader_braves_the_march = true;
+    }
+
+    /// The twin of `enable_stalled_spreader_braves_the_march`.
+    pub fn disable_stalled_spreader_braves_the_march(&mut self) {
+        self.stalled_spreader_braves_the_march = false;
+    }
+
     /// Opt-in gene `science-seat-allies`; see [`Self::science_seat_allies`].
     pub fn enable_science_seat_allies(&mut self) {
         self.science_seat_allies = true;
