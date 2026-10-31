@@ -226,6 +226,11 @@ class DesktopRescueQueue:
 DEFAULT_CIVVIS_VICTORY = "science"
 # Keep a deterministic default, while honoring the operator's selected leader.
 ROMAN_LEADER = "LEADER_TRAJAN"
+# `--leader random` keeps Civ VI's own "Random Leader" row, the picker's value
+# on every new game: no row is chosen, no leader is asserted against the seat,
+# and the seat event reports whichever leader the game rolled. Operator
+# 2026-10-31: "starting with the next game, lets go with a random leader".
+RANDOM_LEADER = "random"
 # The turn the opening is scored at. Sixty is where the measured split is
 # sharpest and is still early enough that a treatment has somewhere to act.
 OPENING_TEMPO_TURN = 60
@@ -2516,12 +2521,10 @@ def _leader_intro_visible(path: Path, bounds: tuple[int, int, int, int],
     Create Game page also displays that leader.  Require the intro's rendered
     ``BEGIN GAME`` control in its lower card band before using the fixed click.
     """
-    if not leader:
-        return False
     screen = desktop_size()
     if screen is None:
         return False
-    wanted = _normalized_label(leader_display_name(leader))
+    wanted = _normalized_label(leader_display_name(leader)) if leader else None
     screen_w, screen_h = screen
     x, y, w, h = bounds
     try:
@@ -2546,6 +2549,11 @@ def _leader_intro_visible(path: Path, bounds: tuple[int, int, int, int],
             break
     if not begin_game:
         return False
+    if wanted is None:
+        # RANDOM_LEADER: there is no name to read. The intro's own BEGIN GAME
+        # control in the lower card band is the page discriminator (the Create
+        # Game page's Start Game is rejected above), so it alone proves the card.
+        return True
     for observation in observations:
         if _normalized_label(str(observation.get("text", ""))) != wanted:
             continue
@@ -7086,6 +7094,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.status:
         return status()
     args.leader = resolve_live_leader(args.leader)
+    if args.leader.lower() == RANDOM_LEADER:
+        args.leader = None  # Civ VI's Random Leader row stays selected; see RANDOM_LEADER
     if args.tag is None:
         args.tag = (args.difficulty.replace("DIFFICULTY_", "").lower()
                     + "-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))

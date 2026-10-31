@@ -5087,3 +5087,27 @@ class RestartInPlaceTests(unittest.TestCase):
             civ6_play._uninstall_owned_mod("civvis-old")
         installed.assert_not_called()
         uninstall.assert_not_called()
+
+
+class RandomLeaderTests(unittest.TestCase):
+    """`--leader random` keeps Civ VI's Random Leader row (operator 2026-10-31)."""
+
+    def _intro(self, button_text):
+        bounds = (864, 33, 864, 542)
+        button = [{"text": button_text, "x": 0.70, "y": 0.41, "width": 0.08, "height": 0.02}]
+        with patch.object(civ6_play, "desktop_size", return_value=(1728, 1117)), \
+             patch.object(civ6_play.macos_ocr, "recognize", return_value=[]), \
+             patch.object(civ6_play, "_leader_ocr", return_value=[]), \
+             patch.object(civ6_play, "_leader_intro_button_ocr", return_value=button):
+            return civ6_play._leader_intro_visible(Path("leader-intro.png"), bounds, None)
+
+    def test_a_random_leader_card_is_proved_by_its_begin_game_control(self) -> None:
+        self.assertTrue(self._intro("BEGIN GAME"))
+
+    def test_a_random_leader_still_rejects_the_create_game_start_button(self) -> None:
+        self.assertFalse(self._intro("START GAME"))
+
+    def test_random_selects_no_row_and_asserts_no_leader(self) -> None:
+        self.assertEqual(civ6_play.resolve_live_leader(civ6_play.RANDOM_LEADER), "random")
+        with tempfile.TemporaryDirectory() as temporary:
+            self.assertTrue(civ6_play.select_requested_leader((0, 0, 10, 10), None, Path(temporary)))
