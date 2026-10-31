@@ -6561,11 +6561,13 @@ fn browser_orders_controls_interface_setup_and_logs() {
     assert!(EMBEDDED_INDEX.contains("function hudWidgetIsSquare(config) {"));
     assert!(!EMBEDDED_INDEX.contains("--player-hud-width"));
     // Every path keeps its top three plus the player's own civilization
-    // when that row is lower in this particular victory race.
+    // when that row is lower in this particular victory race — except on the
+    // dedicated display beside Civilization VI, which lists exactly two.
     assert!(EMBEDDED_INDEX.contains("const focusId = SPEC ? state.view_player : state.player;"));
     assert!(EMBEDDED_INDEX.contains("focusRank >= DEFAULT_VICTORY_LEADERS ? 1 : 0"));
-    assert!(EMBEDDED_INDEX
-        .contains("entry.hidden = index >= capacity && entry.dataset.victoryFocus !== \"true\";"));
+    assert!(EMBEDDED_INDEX.contains(
+        "entry.hidden = index >= capacity &&\n        (DEDICATED_DISPLAY || entry.dataset.victoryFocus !== \"true\");"
+    ));
     assert!(EMBEDDED_INDEX.contains("data-victory-focus=\"${isFocus}\""));
     assert!(EMBEDDED_INDEX.contains("grid-auto-rows: var(--hud-row-height);"));
     // A masthead row is one flat track per visible column in the viewer's

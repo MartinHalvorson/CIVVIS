@@ -120,6 +120,22 @@ class PixelSamplingCompatibilityTest(unittest.TestCase):
         self.assertEqual(list(popup_clear.pixel_values(LegacyImage())), [4, 5, 6])
 
 
+class WindowBoxTest(unittest.TestCase):
+    """The game window is the largest one, not ``window 1``."""
+
+    def test_a_capture_side_window_listed_first_is_not_the_game(self) -> None:
+        listed = subprocess.CompletedProcess(
+            ["osascript"], 0, stdout="0, 33, 66, 20;0, 33, 864, 542;", stderr="")
+        with mock.patch("subprocess.run", return_value=listed):
+            self.assertEqual(popup_clear.window_box(), (0, 33, 864, 542))
+
+    def test_only_a_side_window_means_no_game_window(self) -> None:
+        listed = subprocess.CompletedProcess(
+            ["osascript"], 0, stdout="0, 33, 66, 20;", stderr="")
+        with mock.patch("subprocess.run", return_value=listed):
+            self.assertIsNone(popup_clear.window_box())
+
+
 class PopupTimingTest(unittest.TestCase):
     def test_covered_dialogue_poll_is_bounded_to_a_quarter_second(self) -> None:
         self.assertEqual(popup_clear.covered_poll_delay(10.0), 0.25)
