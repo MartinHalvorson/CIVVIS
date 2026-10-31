@@ -8653,6 +8653,17 @@ impl AdvancedAi {
         self.racer_spies_search_for_the_pad = false;
     }
 
+    /// Opt-in gene `unmet-majors-call-for-a-ship`; see
+    /// [`Self::unmet_majors_call_for_a_ship`].
+    pub fn enable_unmet_majors_call_for_a_ship(&mut self) {
+        self.unmet_majors_call_for_a_ship = true;
+    }
+
+    /// The twin of `enable_unmet_majors_call_for_a_ship`.
+    pub fn disable_unmet_majors_call_for_a_ship(&mut self) {
+        self.unmet_majors_call_for_a_ship = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

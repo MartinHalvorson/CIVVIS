@@ -4394,6 +4394,15 @@ pub const GENES: &[Gene] = &[
     // next city until it finds the pad. Needs `racer-keeps-the-spies`. See
     // `advanced/racer_keeps_the_spies.rs`.
     Gene { tag: "racer-spies-search-for-the-pad", field: "racer_spies_search_for_the_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_racer_spies_search_for_the_pad, disable: AdvancedAi::disable_racer_spies_search_for_the_pad },
+    // Live Immortal 6-major Continents civvis-20261031T003455Z (2026-10-31)
+    // built no ship and never met player 4, which won on Science at t229
+    // with us on 17 Diplomatic points; all nine Disrupt Rocketry
+    // went to the two met rivals while three unmet or late-met ones launched
+    // the Exoplanet, and the Congress denial could not name the leader. The
+    // naval-recon reserve claims only an idle queue. While a living major is
+    // unmet and our ships cross Ocean, one sea scout takes the head of the
+    // fastest coastal queue. See `advanced/contact_ship.rs`.
+    Gene { tag: "unmet-majors-call-for-a-ship", field: "unmet_majors_call_for_a_ship", kind: Kind::OptIn, enable: AdvancedAi::enable_unmet_majors_call_for_a_ship, disable: AdvancedAi::disable_unmet_majors_call_for_a_ship },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

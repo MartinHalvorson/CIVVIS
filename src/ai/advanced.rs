@@ -9220,6 +9220,10 @@ pub struct AdvancedAi {
     /// credit lost −0.553 pp at scale (#2464). Opt-in gene
     /// `wonder-adjacent-sites-2`; see `advanced/wonder_sites.rs`.
     wonder_adjacent_sites_2: bool,
+    /// `unmet-majors-call-for-a-ship`: while a living major is unmet and our
+    /// ships can cross Ocean, the fastest coastal city puts one sea scout at
+    /// the head of its queue. See `advanced/contact_ship.rs`. Off by default.
+    unmet_majors_call_for_a_ship: bool,
 }
 
 /// Science weight floor at the start of a game, and at its very end.
@@ -9712,6 +9716,8 @@ mod culture_open_borders;
 /// `diplo-seat-statue-harbor`: see `advanced/diplo_statue_harbor.rs`.
 mod diplo_statue_harbor;
 
+/// `unmet-majors-call-for-a-ship`: see `advanced/contact_ship.rs`.
+mod contact_ship;
 /// `culture-recovery-spends-the-bank`: see `advanced/culture_recovery_bank.rs`.
 mod culture_recovery_bank;
 /// `culture-routes-reach-every-rival`: see `advanced/culture_routes.rs`.
@@ -11668,6 +11674,7 @@ impl AdvancedAi {
             wonder_adjacent_sites_2: false,
             wounded_out_of_reach: false,
             wounded_out_of_reach_2: false,
+            unmet_majors_call_for_a_ship: false,
         }
     }
 
@@ -50150,6 +50157,10 @@ impl AdvancedAi {
             // strategic reservations, before generic production buries the
             // reconnaissance gap under another building or wonder.
             self.reserve_idle_naval_recon(g, pid, &plan);
+            // `unmet-majors-call-for-a-ship`: on a map with an unmet major the
+            // sea scout takes the head of a busy queue too. Exact no-op off.
+            // See `advanced/contact_ship.rs`.
+            self.unmet_majors_call_for_a_ship(g, pid, &plan);
             // And the land eye, which the settler veto reads: the loyalty
             // forecast's unexplored-ground clause held four settlers idle for
             // the whole back half of run civvis-20260818T212725Z while the
