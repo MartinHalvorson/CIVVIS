@@ -237,6 +237,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `immortal-skips-the-prophet-race` | off (unmeasured) | Opt-in gene `immortal-skips-the-prophet-race`; see `Self::immortal_skips_the_prophet_race`. | 1 \| 1 |
 | `inquisition-answers-a-rival-majority` | off (unmeasured) | `inquisition-answers-a-rival-majority`. | 1 \| 1 |
 | `inquisition-defends-the-diplomat` | off (unmeasured) | `inquisition-defends-the-diplomat`. | 1 \| 1 |
+| `land-grab-outlasts-the-opening` | off (unmeasured) | Opt-in gene `land-grab-outlasts-the-opening`; see `Self::land_grab_outlasts_the_opening`. | 1 \| 1 |
 | `launcher-war-serves-every-lane` | off (unmeasured) | Opt-in gene `launcher-war-serves-every-lane`; see `Self::launcher_war_serves_every_lane`. | 1 \| 1 |
 | `launcher-war-skips-the-reserve` | off (unmeasured) | Opt-in gene `launcher-war-skips-the-reserve`; see `Self::launcher_war_skips_the_reserve`. | 1 \| 1 |
 | `medina-quarter-houses-the-districts` | off (unmeasured) | Opt-in gene `medina-quarter-houses-the-districts`; see `advanced/medina_quarter.rs`. | 1 \| 1 |

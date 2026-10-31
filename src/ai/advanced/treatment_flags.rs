@@ -8766,6 +8766,17 @@ impl AdvancedAi {
         self.naval_crossing_keeps_going = false;
     }
 
+    /// Opt-in gene `land-grab-outlasts-the-opening`; see
+    /// [`Self::land_grab_outlasts_the_opening`].
+    pub fn enable_land_grab_outlasts_the_opening(&mut self) {
+        self.land_grab_outlasts_the_opening = true;
+    }
+
+    /// The twin of `enable_land_grab_outlasts_the_opening`.
+    pub fn disable_land_grab_outlasts_the_opening(&mut self) {
+        self.land_grab_outlasts_the_opening = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

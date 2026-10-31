@@ -4470,6 +4470,12 @@ pub const GENES: &[Gene] = &[
     // 011801Z 19). A voyage that has crossed alone steps on while the sea
     // stays quiet. See `advanced/naval_crossing.rs`.
     Gene { tag: "naval-crossing-keeps-going", field: "naval_crossing_keeps_going", kind: Kind::OptIn, enable: AdvancedAi::enable_naval_crossing_keeps_going, disable: AdvancedAi::disable_naval_crossing_keeps_going },
+    // Live Immortal 6p Continents 10-30/31: `rapid-city-expansion-2` is asked
+    // before `land_grab`, so every live seat planned the ordinary cadence
+    // floored at ten (1,223 of 1,894 readings past t110) and held 10 cities
+    // at t150-180 against the leader's 11-13. Under the gene the target is
+    // the larger of the two. See `advanced/land_grab_outlasts.rs`.
+    Gene { tag: "land-grab-outlasts-the-opening", field: "land_grab_outlasts_the_opening", kind: Kind::OptIn, enable: AdvancedAi::enable_land_grab_outlasts_the_opening, disable: AdvancedAi::disable_land_grab_outlasts_the_opening },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
