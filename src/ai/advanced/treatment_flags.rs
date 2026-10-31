@@ -8766,6 +8766,17 @@ impl AdvancedAi {
         self.naval_crossing_keeps_going = false;
     }
 
+    /// Opt-in gene `builder-prices-travel-in-turns`; see
+    /// [`Self::builder_prices_travel_in_turns`].
+    pub fn enable_builder_prices_travel_in_turns(&mut self) {
+        self.builder_prices_travel_in_turns = true;
+    }
+
+    /// The twin of `enable_builder_prices_travel_in_turns`.
+    pub fn disable_builder_prices_travel_in_turns(&mut self) {
+        self.builder_prices_travel_in_turns = false;
+    }
+
     /// Opt-in gene `campus-unlock-in-every-lane`; see
     /// [`Self::campus_unlock_in_every_lane`].
     pub fn enable_campus_unlock_in_every_lane(&mut self) {
