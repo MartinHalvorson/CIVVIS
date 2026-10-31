@@ -2670,18 +2670,22 @@ def operator_turn_cap(requested: int, path: Path | None = None,
 #:   game; a single difficulty with no weight pins it.
 #: * `CIVVIS_SEAT_MAP` / `CIVVIS_SEAT_MAP_SIZE`: the map script and size (the
 #:   size IS the player count: Small is six).
+#: * `CIVVIS_SEAT_VICTORY_MIX`: `lane:weight,...` over `VICTORY_LANES`, rolled
+#:   once per game (operator 2026-10-31: "lets try to get non-diplomatic victory
+#:   wins on lv 7. all the other types please."). A non-empty
+#:   `~/.civvis-victory-lane` still pins the lane over it (VICTORY_LANE_FILE).
 #:
 #: Absent keys leave the command line alone. A malformed value is ignored with
 #: a warning, never fatal, as with VICTORY_LANE_FILE: a typo must not stop an
 #: unattended ladder.
 SEAT_KEYS = ("CIVVIS_SEAT_LEADER", "CIVVIS_SEAT_DIFFICULTY_MIX",
-             "CIVVIS_SEAT_MAP", "CIVVIS_SEAT_MAP_SIZE")
+             "CIVVIS_SEAT_MAP", "CIVVIS_SEAT_MAP_SIZE", "CIVVIS_SEAT_VICTORY_MIX")
 MAP_SIZES = ("MAPSIZE_DUEL", "MAPSIZE_TINY", "MAPSIZE_SMALL", "MAPSIZE_STANDARD",
              "MAPSIZE_LARGE", "MAPSIZE_HUGE")
 
 
-def _difficulty_mix(raw: str) -> "list[tuple[str, float]] | None":
-    """[(difficulty, weight), ...] from `DIFFICULTY_X:70,DIFFICULTY_Y:30`, else None."""
+def _weighted_mix(raw: str, names) -> "list[tuple[str, float]] | None":
+    """[(name, weight), ...] from `NAME:70,OTHER:30` over `names`, else None."""
     mix = []
     for part in raw.split(","):
         name, _, weight = part.strip().partition(":")
@@ -2690,10 +2694,15 @@ def _difficulty_mix(raw: str) -> "list[tuple[str, float]] | None":
             value = float(weight) if weight.strip() else 1.0
         except ValueError:
             return None
-        if name not in DIFFICULTIES or value < 0:
+        if name not in names or value < 0:
             return None
         mix.append((name, value))
     return mix if mix and sum(w for _, w in mix) > 0 else None
+
+
+def _difficulty_mix(raw: str) -> "list[tuple[str, float]] | None":
+    """[(difficulty, weight), ...] from `DIFFICULTY_X:70,DIFFICULTY_Y:30`, else None."""
+    return _weighted_mix(raw, DIFFICULTIES)
 
 
 def operator_seat(args, path: Path | None = None, warn=None, rng=None) -> dict:
@@ -2728,6 +2737,15 @@ def operator_seat(args, path: Path | None = None, warn=None, rng=None) -> dict:
         else:
             names, weights = zip(*mix)
             applied["difficulty"] = args.difficulty = rng.choices(names, weights=weights)[0]
+    raw_lanes = values.get("CIVVIS_SEAT_VICTORY_MIX")
+    if raw_lanes:
+        lanes = _weighted_mix(raw_lanes, VICTORY_LANES)
+        if lanes is None:
+            warn(f"CIVVIS_SEAT_VICTORY_MIX={raw_lanes!r} is not lane:weight,... over "
+                 f"{'|'.join(VICTORY_LANES)}; keeping {args.victory}")
+        else:
+            names, weights = zip(*lanes)
+            applied["victory"] = args.victory = rng.choices(names, weights=weights)[0]
     game_map = values.get("CIVVIS_SEAT_MAP")
     if game_map:
         if game_map in MAP_SCRIPTS:
