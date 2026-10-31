@@ -8687,6 +8687,17 @@ impl AdvancedAi {
         self.base.disable_opening_builder_after_the_first_settler();
     }
 
+    /// Opt-in gene `builder-prices-travel-in-turns`; see
+    /// [`Self::builder_prices_travel_in_turns`].
+    pub fn enable_builder_prices_travel_in_turns(&mut self) {
+        self.builder_prices_travel_in_turns = true;
+    }
+
+    /// The twin of `enable_builder_prices_travel_in_turns`.
+    pub fn disable_builder_prices_travel_in_turns(&mut self) {
+        self.builder_prices_travel_in_turns = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

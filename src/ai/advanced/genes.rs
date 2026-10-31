@@ -4417,6 +4417,14 @@ pub const GENES: &[Gene] = &[
     // the empire has never held a Builder, the capital trains one before its
     // next Settler. See `BasicAi::opening_builder_after_the_first_settler`.
     Gene { tag: "opening-builder-after-the-first-settler", field: "opening_builder_after_the_first_settler", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_builder_after_the_first_settler, disable: AdvancedAi::disable_opening_builder_after_the_first_settler },
+    // Live Immortal seats 2026-10-30 (30 seats, t<=120): 63% of a Builder's
+    // consecutive jobs sat near a different city, a median 6 turns and 5 hexes
+    // apart against 2 and 2 inside one city, at 7.6 Builder-turns per
+    // improvement. Every destination was scored `value - 0.7 x wdist`, and
+    // 0.7 a hex is nothing against jobs worth 5-100. While a Builder has a
+    // charge to spare it now scores value per Builder-turn; its last charge
+    // keeps the untreated price. See `advanced/builder_travel_turns.rs`.
+    Gene { tag: "builder-prices-travel-in-turns", field: "builder_prices_travel_in_turns", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_prices_travel_in_turns, disable: AdvancedAi::disable_builder_prices_travel_in_turns },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
