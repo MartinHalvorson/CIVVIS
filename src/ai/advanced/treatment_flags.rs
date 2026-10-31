@@ -8832,6 +8832,17 @@ impl AdvancedAi {
         self.stalled_spreader_braves_the_march = false;
     }
 
+    /// Opt-in gene `anvil-garrisons-its-melee`; see
+    /// [`Self::anvil_garrisons_its_melee`].
+    pub fn enable_anvil_garrisons_its_melee(&mut self) {
+        self.anvil_garrisons_its_melee = true;
+    }
+
+    /// The twin of `enable_anvil_garrisons_its_melee`.
+    pub fn disable_anvil_garrisons_its_melee(&mut self) {
+        self.anvil_garrisons_its_melee = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
