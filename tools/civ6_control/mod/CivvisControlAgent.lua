@@ -16848,6 +16848,46 @@ CivvisSelectVictoryThreat = function(candidates)
 	return threat, best;
 end
 
+-- ★★ A BALLOT NAMES ONLY A TARGET THE BALLOT OFFERS. A player-target
+-- resolution's `PossibleTargets` lists the majors we can name, and a rival
+-- we have not met is not among them; the leader and the threats are chosen
+-- from every living major. A target not on the ballot left the selection
+-- at its default, the first entry, which is us. Live Immortal
+-- civvis-20261031T003455Z (6 majors, Continents): at t137 the Diplomatic
+-- leader, player 1, was not met until t154, and the free denial vote went
+-- B on ourselves; the counter path's option B on Trade Policy, Border
+-- Control or Migration Treaty would land its penalty on us the same way.
+-- Returns the ballot index of `player`, or nil. Bare globals: the chunk is
+-- at the register cap; congress_unmet_target_test.lua reads them.
+CivvisCongressTargetIndex = function(targets, player)
+	local want = tonumber(player);
+	if want == nil then return nil; end
+	for idx, t in pairs(type(targets) == "table" and targets or {}) do
+		if tonumber(t) == want then return idx; end
+	end
+	return nil;
+end
+
+-- The Diplomatic Victory denial: option B on `leader` when the ballot offers
+-- it; otherwise B on the offered rival with the most points; with none
+-- offered, A on us (never B on us). Returns `option, selection`.
+CivvisCongressDenialTarget = function(targets, leader, candidates, pid, option, selection)
+	local idx = CivvisCongressTargetIndex(targets, leader);
+	if idx ~= nil then return option, idx; end
+	local best, bestPoints = nil, -1;
+	for _, c in ipairs(type(candidates) == "table" and candidates or {}) do
+		local id = type(c) == "table" and tonumber(c.id) or nil;
+		local at = (id ~= nil and id ~= tonumber(pid)) and CivvisCongressTargetIndex(targets, id) or nil;
+		if at ~= nil and (tonumber(c.points) or 0) > bestPoints then
+			best, bestPoints = at, tonumber(c.points) or 0;
+		end
+	end
+	if best ~= nil then return 2, best; end
+	local own = CivvisCongressTargetIndex(targets, pid);
+	if own ~= nil then return 1, own; end
+	return option, selection;
+end
+
 CivvisSelectCongressLeader = function(candidates)
 	local leader, leaderPoints, leaderScore = -1, -1, -1;
 	for _, candidate in ipairs(candidates or {}) do
@@ -23360,10 +23400,9 @@ local function tick()
 					local option, selection, votes = 1, 1, 1;
 					local targets = r.PossibleTargets or {};
 					if rtype == "WC_RES_DIPLOVICTORY" then
-						option = 2;
-						for idx, t in pairs(targets) do
-							if tonumber(t) == leader then selection = idx; end
-						end
+						-- See `CivvisCongressDenialTarget`: never the default, us.
+						option, selection = CivvisCongressDenialTarget(targets, leader,
+							candidates, pid, 2, selection);
 						-- ★★★★ FAVOR IS BANKED UNTIL A LEADER IS WITHIN REACH.
 						--
 						-- Run `civvis-20260816T123936Z` ended at turn 239 on a rival's
@@ -23575,6 +23614,11 @@ local function tick()
 							and (rtype == "WC_RES_TRADE_TREATY"
 								or rtype == "WC_RES_BORDER_CONTROL"
 								or rtype == "WC_RES_MIGRATION_TREATY");
+						-- See `CivvisCongressTargetIndex`: a threat the ballot does
+						-- not offer would leave option B's penalty on us.
+						if counter and CivvisCongressTargetIndex(targets, threat) == nil then
+							counter = false;
+						end
 						if counter then
 							for idx, t in pairs(targets) do
 								if tonumber(t) == threat then selection = idx; end
@@ -23616,6 +23660,12 @@ local function tick()
 					-- leader's predicted one: it buys the outcome instead.
 					local deny = (not CivvisDiploRacer(cfg)) and CivvisParticipationDenialOption(rtype,
 						leader, pid, leaderPoints, envoyTally.wc_last_option, cfg) or nil;
+					-- See `CivvisCongressTargetIndex`: no option B naming a leader
+					-- the ballot does not offer.
+					if deny == 2 and r.TargetType == "PlayerType"
+							and CivvisCongressTargetIndex(targets, leader) == nil then
+						deny = nil;
+					end
 					if deny ~= nil and votes == 1 then
 						option = deny;
 						if r.TargetType == "PlayerType" then
