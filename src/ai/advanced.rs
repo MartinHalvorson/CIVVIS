@@ -30778,11 +30778,15 @@ impl AdvancedAi {
                                 .map_or_else(String::new, |city| city.name.clone());
                             let landed = racer_spy_leader
                                 .map_or(0, |leader| Self::science_denial_stages(g, leader));
+                            let unseen = self
+                                .racer_spy_unseen_cities(g, pid)
+                                .map_or(0, |(_, unseen)| unseen);
                             think!(self.journal(), Military, Decision,
                                    "A Spy searches {racer}'s {city_name} for the Spaceport";
                                    "racer-spies-search-for-the-pad: {racer} has landed \
                                     {landed} space project(s) and Disrupt Rocketry is not \
-                                    offered in {here}, so the pad is elsewhere");
+                                    offered in {here}, so the pad is elsewhere; {unseen} of \
+                                    its cities we have not seen");
                         } else {
                             think!(self.journal(), Military, Decision,
                                    "A Spy goes to {racer}'s {city_name}";
