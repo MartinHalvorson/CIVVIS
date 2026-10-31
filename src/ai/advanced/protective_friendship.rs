@@ -30,11 +30,34 @@
 //! Friendly one is never asked. A native board carries no such reading and
 //! chooses exactly as before.
 
+//! **`friendship-keeps-the-peace`** (2026-10-31). Off the Domination lane,
+//! a friendship is a war forestalled, not a conquest forgone, and the
+//! Domination-era filters (`friendship-only-with-the-stronger`,
+//! `friendship-spares-the-prey`) let friendships lapse unrenewed. Across 24
+//! live Immortal 6-major seats of 2026-10-31 (every lane but Diplomatic), 34
+//! rivals were declared friends at some point, 22 of those friendships
+//! lapsed, and 9 of the lapsed friends later declared war on us (t109-t200).
+//! civvis-20261031T143921Z (Religion): England was a friend t39-t123, renewed
+//! once at t102, read Friendly for one turn after the t123 lapse, Unfriendly
+//! from t125, denounced us at t148 and declared war at t175. The live
+//! mirror drops `friends_until` the turn a friendship ends, so the gene
+//! remembers each expiry while it stands. On a seat aiming at anything but
+//! Domination: within [`FRIENDSHIP_RENEW_WINDOW`] turns of a lapse the
+//! renewal is asked at once (not on the cadence) and that rival is asked
+//! first, and the two Domination filters do not apply. The racer, target and
+//! converter guards stay.
+
 use super::*;
 
 /// Every third turn, staggered by seat, so a seat asks a partner who refused
 /// again before long without re-proposing every turn.
 const FRIENDSHIP_CADENCE: u32 = 3;
+
+/// `friendship-keeps-the-peace`: turns after a declared friendship lapses in
+/// which its renewal is asked at once. The host's leaders value a
+/// declaration only from Friendly, and live England read Friendly for one
+/// turn after its lapse.
+pub(super) const FRIENDSHIP_RENEW_WINDOW: u32 = 2;
 
 /// `friendship-ends-at-the-race`: the race progress at which a rival is no
 /// longer offered (or re-offered) a friendship. Live Emperor
@@ -131,12 +154,49 @@ impl AdvancedAi {
             || self.urgent_victory_threat(g, rival)
     }
 
+    /// `friendship-keeps-the-peace`: on, and the seat aims at a victory other
+    /// than Domination.
+    pub(super) fn friendship_keeps_the_peace_on(&self, g: &Game) -> bool {
+        self.friendship_keeps_the_peace
+            && matches!(self.active_victory_target(g), Some(target) if target != VictoryTarget::Domination)
+    }
+
+    /// `friendship-keeps-the-peace`: remember each standing friendship's
+    /// expiry (the live mirror drops it when the friendship ends), and name
+    /// the rivals whose friendship lapsed within [`FRIENDSHIP_RENEW_WINDOW`]
+    /// turns and is not standing now.
+    fn friendship_lapses(&self, g: &Game, pid: usize) -> BTreeSet<usize> {
+        let mut seen = self.friendship_expiry_seen.borrow_mut();
+        for (other, until) in &g.players[pid].friends_until {
+            if *until > g.turn {
+                seen.insert(*other, *until);
+            }
+        }
+        seen.iter()
+            .filter(|(other, until)| {
+                !g.are_friends(pid, **other)
+                    && **until <= g.turn
+                    && g.turn <= **until + FRIENDSHIP_RENEW_WINDOW
+            })
+            .map(|(other, _)| *other)
+            .collect()
+    }
+
     /// Offer a friendship-only deal to the strongest met major at peace with
     /// us that is not already a friend, is not denounced either way, and has
     /// no deal pending with us. Exact no-op with the gene off.
     pub(super) fn propose_protective_friendship(&self, g: &mut Game, pid: usize) {
+        // `friendship-keeps-the-peace`: the friendships that lapsed in the
+        // last few turns, read before the cadence so the renewal is not
+        // missed. Empty with the gene off or on the Domination lane.
+        let keeps_the_peace = self.friendship_keeps_the_peace_on(g);
+        let lapsed = if keeps_the_peace && self.befriend_the_strongest {
+            self.friendship_lapses(g, pid)
+        } else {
+            BTreeSet::new()
+        };
         if !self.befriend_the_strongest
-            || g.turn % FRIENDSHIP_CADENCE != pid as u32 % FRIENDSHIP_CADENCE
+            || (g.turn % FRIENDSHIP_CADENCE != pid as u32 % FRIENDSHIP_CADENCE && lapsed.is_empty())
         {
             return;
         }
@@ -177,6 +237,7 @@ impl AdvancedAi {
                     // `friendship-spares-the-prey`: a rival this much weaker is
                     // a conquest to make, not a war to forestall.
                     && !(self.friendship_spares_the_prey
+                        && !keeps_the_peace
                         && g.military_power(other.id)
                             < FRIENDSHIP_PREY_RATIO * g.military_power(pid))
                     // `friendship-spares-the-target`: the rival the campaign
@@ -185,6 +246,7 @@ impl AdvancedAi {
                         && self.plan.as_ref().and_then(|plan| plan.target_player)
                             == Some(other.id))
                     && !(self.friendship_only_with_the_stronger
+                        && !keeps_the_peace
                         && g.military_power(other.id) < g.military_power(pid))
                     // `friendship-spares-the-converter`: the founder whose
                     // faith we must fight is not made an illegal target.
@@ -196,8 +258,12 @@ impl AdvancedAi {
                     })
             })
             .max_by(|a, b| {
-                g.military_power(a.id)
-                    .total_cmp(&g.military_power(b.id))
+                // `friendship-keeps-the-peace`: a lapsed friend is renewed
+                // first. Empty off, so the order is unchanged.
+                lapsed
+                    .contains(&a.id)
+                    .cmp(&lapsed.contains(&b.id))
+                    .then(g.military_power(a.id).total_cmp(&g.military_power(b.id)))
                     .then(b.id.cmp(&a.id))
             })
             .map(|other| other.id);
@@ -220,9 +286,16 @@ impl AdvancedAi {
             && self.journal().wants(crate::reasoning::Level::Decision)
         {
             let civ = g.players[partner].civ.clone();
-            think!(self.journal(), Diplomacy, Decision,
-                "Offering friendship to {civ}";
-                "the strongest neighbour we are at peace with; while a friendship lasts neither of us may declare war");
+            if lapsed.contains(&partner) {
+                think!(self.journal(), Diplomacy, Decision,
+                    "Renewing the friendship with {civ}";
+                    "friendship-keeps-the-peace: it lapsed within {FRIENDSHIP_RENEW_WINDOW} turns; \
+                     a friend may not declare war on us");
+            } else {
+                think!(self.journal(), Diplomacy, Decision,
+                    "Offering friendship to {civ}";
+                    "the strongest neighbour we are at peace with; while a friendship lasts neither of us may declare war");
+            }
         }
     }
 }
@@ -543,5 +616,60 @@ mod tests {
         game.turn += 3;
         ai.propose_protective_friendship(&mut game, 0);
         assert!(game.pending_deals.is_empty());
+    }
+
+    /// `friendship-keeps-the-peace`: a weaker rival's friendship stands at
+    /// turn 30 and lapses at 31, an off-cadence turn; a Science seat renews
+    /// it at once despite `friendship-only-with-the-stronger`, and neither a
+    /// seat without the gene nor a Domination seat does.
+    #[test]
+    fn a_lapsed_friendship_is_renewed_at_once_off_domination() {
+        use crate::ai::advanced::VictoryTarget;
+        let run = |target: VictoryTarget, gene: bool| {
+            let mut game = three_majors();
+            assert!(game.military_power(1) < game.military_power(2));
+            let mut ai = AdvancedAi::targeting(target);
+            ai.enable_befriend_the_strongest();
+            ai.enable_friendship_only_with_the_stronger();
+            if gene {
+                ai.enable_friendship_keeps_the_peace();
+            }
+            // Turn 30: the friendship with seat 1 stands until 31.
+            game.players[0].friends_until.insert(1, 31);
+            game.players[1].friends_until.insert(0, 31);
+            ai.propose_protective_friendship(&mut game, 0);
+            game.pending_deals.clear();
+            // Turn 31: it lapsed, and the live mirror drops it.
+            game.turn = 31;
+            game.players[0].friends_until.remove(&1);
+            game.players[1].friends_until.remove(&0);
+            ai.propose_protective_friendship(&mut game, 0);
+            game.pending_deals
+                .iter()
+                .find(|deal| deal.from == 0 && deal.friendship)
+                .map(|deal| deal.to)
+        };
+        assert_eq!(
+            run(VictoryTarget::Science, true),
+            Some(1),
+            "renewed at once"
+        );
+        assert_eq!(
+            run(VictoryTarget::Science, false),
+            None,
+            "off: the cadence waits"
+        );
+        assert_eq!(
+            run(VictoryTarget::Domination, true),
+            None,
+            "a Domination seat keeps the Domination filters and the cadence"
+        );
+    }
+
+    #[test]
+    fn friendship_keeps_the_peace_is_opt_in() {
+        opt_in_off_in_both_controllers("friendship-keeps-the-peace", |ai| {
+            ai.friendship_keeps_the_peace
+        });
     }
 }
