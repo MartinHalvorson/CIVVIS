@@ -4478,6 +4478,13 @@ pub const GENES: &[Gene] = &[
     // charge to spare it now scores value per Builder-turn; its last charge
     // keeps the untreated price. See `advanced/builder_travel_turns.rs`.
     Gene { tag: "builder-prices-travel-in-turns", field: "builder_prices_travel_in_turns", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_prices_travel_in_turns, disable: AdvancedAi::disable_builder_prices_travel_in_turns },
+    // A Religion-target seat that lost the Prophet race keeps a Religion
+    // plan, with no religion, for the rest of the game: the 4th religion
+    // closed the race at a median t47.5 live (6p Immortal), and our seat
+    // founded in 5 of 17. With every slot claimed and none ours, it takes
+    // Science (else Culture, else Domination). See
+    // `advanced/religion_lane_hands_over.rs`.
+    Gene { tag: "religion-lane-hands-over", field: "religion_lane_hands_over", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_lane_hands_over, disable: AdvancedAi::disable_religion_lane_hands_over },
     // The t80 production gate retires 16 of 20 6p Immortal seats at a median
     // share of 0.23. The first Trader (~t21) goes foreign or to a city-state
     // for ~4 Gold in kept and retired seats alike: `commercial-hub-and-traders`

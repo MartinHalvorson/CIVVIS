@@ -8777,6 +8777,17 @@ impl AdvancedAi {
         self.builder_prices_travel_in_turns = false;
     }
 
+    /// Opt-in gene `religion-lane-hands-over`; see
+    /// [`Self::religion_lane_hands_over`].
+    pub fn enable_religion_lane_hands_over(&mut self) {
+        self.religion_lane_hands_over = true;
+    }
+
+    /// The twin of `enable_religion_lane_hands_over`.
+    pub fn disable_religion_lane_hands_over(&mut self) {
+        self.religion_lane_hands_over = false;
+    }
+
     /// Opt-in gene `early-route-feeds-production`; see
     /// [`Self::early_route_feeds_production`].
     pub fn enable_early_route_feeds_production(&mut self) {
