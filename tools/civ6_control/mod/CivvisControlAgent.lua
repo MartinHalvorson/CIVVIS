@@ -11810,11 +11810,13 @@ end;
 CivvisAllianceStep = function(player, pid, subject, verb, turn, config)
 	config = type(config) == "table" and config or {};
 	-- `CultureAllies` (`culture-seat-allies`, set by civ6_play.py when the
-	-- tag is armed): a Culture seat asks as well. Its planner never names
+	-- tag is armed): a Culture seat asks as well; `ScienceAllies`
+	-- (`science-seat-allies`) the same for a Science seat. Its planner never names
 	-- the science racer or the rival setting our culture bar, and the
 	-- culture-racer refusal below still applies.
 	if (config.VictoryLane ~= "diplomatic"
-			and not (config.VictoryLane == "culture" and config.CultureAllies == true))
+			and not (config.VictoryLane == "culture" and config.CultureAllies == true)
+			and not (config.VictoryLane == "science" and config.ScienceAllies == true))
 			or config.DiploAllies == false then
 		return nil, "alliance_off_lane";
 	end

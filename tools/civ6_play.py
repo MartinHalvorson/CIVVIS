@@ -1221,6 +1221,9 @@ def build_config(args: argparse.Namespace) -> dict:
         # takes them only with this on.
         "CultureAllies": bool(args.civvis_decides
                               and "culture-seat-allies" in (getattr(args, "civvis_with", []) or [])),
+        # `science-seat-allies`: the same for a Science seat.
+        "ScienceAllies": bool(args.civvis_decides
+                              and "science-seat-allies" in (getattr(args, "civvis_with", []) or [])),
         # Hand a builder to Civ 6's own automation when CIVVIS's improvement is
         # refused outright. A policy, counted as IMPROVE_AUTOMATED.
         "AutomateStuckBuilders": args.automate_stuck_builders,

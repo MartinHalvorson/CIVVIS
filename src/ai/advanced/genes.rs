@@ -4427,6 +4427,14 @@ pub const GENES: &[Gene] = &[
     // `frontier-walls-before-the-surprise`. See
     // `advanced/surprise_watch_latch.rs`.
     Gene { tag: "surprise-watch-holds-its-ratio", field: "surprise_watch_holds_its_ratio", kind: Kind::OptIn, enable: AdvancedAi::enable_surprise_watch_holds_its_ratio, disable: AdvancedAi::disable_surprise_watch_holds_its_ratio },
+    // The operator's non-Diplomatic Lv 7 lane (2026-10-31) seats Science
+    // first, and the live alliance gate passed alliances only for the
+    // Diplomatic lane (and Culture under `culture-seat-allies`): every
+    // Research Alliance `research-alliance-first` proposed on a Science seat
+    // was dropped. A Science seat allies its nearest safe rival, never the
+    // leading science rival or a space racer. See
+    // `advanced/culture_seat_allies.rs`.
+    Gene { tag: "science-seat-allies", field: "science_seat_allies", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_allies, disable: AdvancedAi::disable_science_seat_allies },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
