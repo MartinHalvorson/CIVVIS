@@ -1115,7 +1115,7 @@ impl AdvancedAi {
             let quiet = !Self::hostile_ship_near(g, pid, current, super::NAVAL_THREAT_RADIUS);
             // `naval-crossing-keeps-going`: a voyage already crossing alone
             // steps on while the sea stays quiet. See `advanced/naval_crossing.rs`.
-            let underway = quiet && self.naval_crossing_underway(g, target);
+            let underway = quiet && self.naval_crossing_underway(g, uid);
             let crosses = underway
                 || (self.naval_escort_patience && waited > super::NAVAL_ESCORT_PATIENCE && quiet);
             if !crosses {
@@ -1131,7 +1131,7 @@ impl AdvancedAi {
                        waited - 1, super::NAVAL_THREAT_RADIUS; current);
             }
             self.naval_escort_waits.remove(&current);
-            self.note_naval_crossing(g, target);
+            self.note_naval_crossing(g, uid);
         }
         // See `live_settler_capture_lessons`: the ground that took a settler
         // is entered only stacked, whether or not a raider is visible on it

@@ -2513,10 +2513,10 @@ pub struct AdvancedAi {
     /// needs no entry in `remap_unit_memory`. (last turn counted, turns).
     /// See `naval_escort_patience`.
     naval_escort_waits: BTreeMap<Pos, (u32, u8)>,
-    /// The last turn a Settler crossed alone toward each target site, under
-    /// `naval-crossing-keeps-going`. Keyed by the site, so it needs no entry
-    /// in `remap_unit_memory`. See `advanced/naval_crossing.rs`.
-    naval_crossing_targets: BTreeMap<Pos, u32>,
+    /// The last turn each Settler crossed alone, under
+    /// `naval-crossing-keeps-going`; remapped with the unit. See
+    /// `advanced/naval_crossing.rs`.
+    naval_crossing_units: BTreeMap<u32, u32>,
     /// Every visible hostile military unit as it stood BEFORE anything of
     /// ours acted this turn, under `settler_stack_discipline`. The live
     /// bridge's finishing volley (`civvis_orders::finish_live_war_units`)
@@ -10661,6 +10661,11 @@ impl AdvancedAi {
                 .collect()
         };
         self.settler_targets = remap(&self.settler_targets);
+        self.naval_crossing_units = self
+            .naval_crossing_units
+            .iter()
+            .filter_map(|(uid, turn)| map.get(uid).map(|new| (*new, *turn)))
+            .collect();
         self.air_resource_colony_target = self
             .air_resource_colony_target
             .and_then(|(uid, site)| map.get(&uid).map(|new| (*new, site)));
@@ -10898,7 +10903,7 @@ impl AdvancedAi {
             settler_escort_journeys: BTreeMap::new(),
             guard_wait: BTreeMap::new(),
             naval_escort_waits: BTreeMap::new(),
-            naval_crossing_targets: BTreeMap::new(),
+            naval_crossing_units: BTreeMap::new(),
             turn_start_hostiles: Vec::new(),
             turn_start_hostiles_turn: None,
             religion_sues_peace: false,
