@@ -4492,6 +4492,13 @@ pub const GENES: &[Gene] = &[
     // ~100 Online turns, route Production outbids that premium. See
     // `advanced/early_route_production.rs`.
     Gene { tag: "early-route-feeds-production", field: "early_route_feeds_production", kind: Kind::OptIn, enable: AdvancedAi::enable_early_route_feeds_production, disable: AdvancedAi::disable_early_route_feeds_production },
+    // A Religion seat without a religion got the Religion strategy before the
+    // Expansion branch read its city count: 4 of 5 6p Immortal Religion seats
+    // ran Religion at t20-40 (every other lane ran Expansion), held a median 3
+    // cities at t60 against 4-5, and 4 of 5 were retired at the t80 gate. The
+    // prophet race keys on the target, not the strategy. See
+    // `advanced/religion_race_expands.rs`.
+    Gene { tag: "religion-race-keeps-expanding", field: "religion_race_keeps_expanding", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_race_keeps_expanding, disable: AdvancedAi::disable_religion_race_keeps_expanding },
     // Live Immortal seats 2026-10-30/31 (35 games, Culture, Diplomatic and
     // Science targets): Writing came a median t50 (quartiles 37-65), tenth
     // in the order behind Sailing (97%) and Bronze Working (94%), and the
