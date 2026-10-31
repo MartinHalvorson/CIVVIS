@@ -4440,6 +4440,22 @@ pub const GENES: &[Gene] = &[
     // ships route toward foreign landfall, and the faster hull is preferred.
     // See `advanced/contact_fleet.rs`.
     Gene { tag: "contact-fleet", field: "contact_fleet", kind: Kind::OptIn, enable: AdvancedAi::enable_contact_fleet, disable: AdvancedAi::disable_contact_fleet },
+    // `immortal-skips-the-prophet-race`: live Immortal Culture seats lost
+    // the Prophet race by t58-60 with 36-93 points, the capital (6-9
+    // Production) having spent t34-t55 on the race's Holy Site and Shrine
+    // (civvis-20261030T220042Z, 134907Z), and 16 of 27 retired under the
+    // production rule. At Immortal and Deity a seat aiming at neither Religion
+    // nor Diplomacy stays out of the race unless a Prophet is pending. See
+    // `advanced/immortal_prophet_race.rs`.
+    Gene { tag: "immortal-skips-the-prophet-race", field: "immortal_skips_the_prophet_race", kind: Kind::OptIn, enable: AdvancedAi::enable_immortal_skips_the_prophet_race, disable: AdvancedAi::disable_immortal_skips_the_prophet_race },
+    // Operator 10-31 rolls Religion-target seats into the Lv 7 lane. After
+    // founding (median t44-54 live), a Religion seat's plan reads Expansion
+    // until ~t125, and the spreading posture, the 80-Faith reserve and
+    // religious production all key on the plan, so the corps idles while
+    // rivals finish at t145-176 (native, 6 seats, 0 religious wins). A
+    // Religion-target founder keeps all three in any plan. See
+    // `advanced/religion_lane_spreads.rs`.
+    Gene { tag: "religion-lane-spreads-from-founding", field: "religion_lane_spreads_from_founding", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_lane_spreads_from_founding, disable: AdvancedAi::disable_religion_lane_spreads_from_founding },
     // Live Immortal 6p Continents 10-31: `naval-escort-patience` counts its
     // wait per water tile, so a Settler crossing alone held two turns at every
     // tile (042324Z: t52-79 afloat, 110 holds on 48 turns; 024232Z 22 turns,

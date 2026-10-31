@@ -8722,6 +8722,28 @@ impl AdvancedAi {
         self.base.contact_fleet = false;
     }
 
+    /// Opt-in gene `immortal-skips-the-prophet-race`; see
+    /// [`Self::immortal_skips_the_prophet_race`].
+    pub fn enable_immortal_skips_the_prophet_race(&mut self) {
+        self.immortal_skips_the_prophet_race = true;
+    }
+
+    /// The twin of `enable_immortal_skips_the_prophet_race`.
+    pub fn disable_immortal_skips_the_prophet_race(&mut self) {
+        self.immortal_skips_the_prophet_race = false;
+    }
+
+    /// Opt-in gene `religion-lane-spreads-from-founding`; see
+    /// [`Self::religion_lane_spreads_from_founding`].
+    pub fn enable_religion_lane_spreads_from_founding(&mut self) {
+        self.religion_lane_spreads_from_founding = true;
+    }
+
+    /// The twin of `enable_religion_lane_spreads_from_founding`.
+    pub fn disable_religion_lane_spreads_from_founding(&mut self) {
+        self.religion_lane_spreads_from_founding = false;
+    }
+
     /// Opt-in gene `naval-crossing-keeps-going`; see
     /// [`Self::naval_crossing_keeps_going`].
     pub fn enable_naval_crossing_keeps_going(&mut self) {
