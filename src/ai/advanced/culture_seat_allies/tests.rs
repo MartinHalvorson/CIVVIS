@@ -135,7 +135,7 @@ fn the_nearest_safe_rival_is_asked() {
     // One rival is both the science leader and the bar holder; of the other
     // two, the nearer capital is asked.
     let ours = capital(&g, 0);
-    let mut rivals = vec![1, 2, 3];
+    let mut rivals = [1, 2, 3];
     rivals.sort_by_key(|seat| (g.wdist(ours, capital(&g, *seat)), *seat));
     let (nearest, farthest) = (rivals[0], rivals[2]);
     let barred = rivals[1];
