@@ -6410,6 +6410,11 @@ pub struct AdvancedAi {
     /// still buys Rock Bands and Naturalists once the Faith bank holds twice
     /// the cheapest on sale. See `advanced/culture_recovery_bank.rs`.
     culture_recovery_spends_the_bank: bool,
+    /// `culture-seat-allies`: a seat aiming at Culture allies a safe
+    /// neighbour, never the science racer or the rival that sets our culture
+    /// bar, and the live binary passes its alliances to the host. See
+    /// `advanced/culture_seat_allies.rs`. Off by default.
+    culture_seat_allies: bool,
     // ---- append: e-f ------------------------------------------------
     /// `food-focus-grows-the-small-city`: `civvis_orders` also asks the host
     /// to favour Food in a small city growing at two a turn or less. See
@@ -7861,6 +7866,10 @@ pub struct AdvancedAi {
     /// whose board holds none of the spare we put up, that spare first
     /// (`append_luxury_swap_order` in `civvis_orders`). Off by default.
     luxury_swap_asks_2: bool,
+    /// `opening-builder-after-the-first-settler`: the capital's first
+    /// Builder follows its first Settler. The behaviour lives on
+    /// `BasicAi::opening_builder_after_the_first_settler`. Off by default.
+    opening_builder_after_the_first_settler: bool,
     // ---- append: p-r ------------------------------------------------
     /// `prey-is-declared-on`: a Domination seat declares on a major rival
     /// under `prey_declaration::PREY_DECLARE_RATIO` of its military power
@@ -8260,6 +8269,15 @@ pub struct AdvancedAi {
     /// stood in without the offer, and the turn it last did.
     racer_spy_searched: BTreeMap<u32, u32>,
     // ---- append: s-s ------------------------------------------------
+    /// `surprise-watch-holds-its-ratio`: a met major at twice our power seen
+    /// within ten tiles of the original capital or an unwalled frontier city
+    /// keeps that city's walls armed for the walls' ten-turn window, whatever
+    /// the live ratio does. See `advanced/surprise_watch_latch.rs`. Off by
+    /// default.
+    surprise_watch_holds_its_ratio: bool,
+    /// The turn each (city, major) was last latched under
+    /// `surprise-watch-holds-its-ratio`: `None` is the original capital.
+    surprise_watch_latches: BTreeMap<(Option<u32>, usize), u32>,
     /// `stage-reads-the-muster-breakers`: once a siege's muster has closed,
     /// its Stage reads breakers out to `MUSTER_FAR` instead of `STAGING_FAR`.
     /// See `advanced/siege_train/stage_reads_the_muster.rs`. Off by default.
@@ -9613,6 +9631,8 @@ mod opportunistic_war;
 /// A short, defender-only declaration shock. See
 /// `advanced/surprise_defense.rs`.
 mod surprise_defense;
+/// `surprise-watch-holds-its-ratio`: see `advanced/surprise_watch_latch.rs`.
+mod surprise_watch_latch;
 
 /// The air surge: a three-tech beeline to Advanced Flight, an Aerodrome, a
 /// bomber wing, and the cavalry that takes the city the wing empties. See
@@ -9721,6 +9741,8 @@ mod diplo_statue_harbor;
 mod culture_recovery_bank;
 /// `culture-routes-reach-every-rival`: see `advanced/culture_routes.rs`.
 mod culture_routes;
+/// `culture-seat-allies`: see `advanced/culture_seat_allies.rs`.
+mod culture_seat_allies;
 /// `hidden-border-yields-to-our-pressure`: see `advanced/hidden_border_reach.rs`.
 mod hidden_border_reach;
 /// `trade-quotes-pay-the-lump`: see `advanced/trade_quotes_lump.rs`.
@@ -11232,6 +11254,7 @@ impl AdvancedAi {
             counterweight_defends_the_diplomat: false,
             counterweight_builds_its_source: false,
             culture_recovery_spends_the_bank: false,
+            culture_seat_allies: false,
             // ---- append: e-f ----------------------------------------
             food_focus_grows_the_small_city: false,
             friendship_ends_at_the_race: false,
@@ -11435,6 +11458,7 @@ impl AdvancedAi {
             no_peace_with_a_launcher: false,
             launcher_war_ignores_the_edge: false,
             luxury_swap_asks_2: false,
+            opening_builder_after_the_first_settler: false,
             // ---- append: p-r ----------------------------------------
             prey_is_declared_on: false,
             prophet_race_takes_divine_spark: false,
@@ -11506,6 +11530,8 @@ impl AdvancedAi {
             racer_spy_found_pads: BTreeSet::new(),
             racer_spy_searched: BTreeMap::new(),
             // ---- append: s-s ----------------------------------------
+            surprise_watch_holds_its_ratio: false,
+            surprise_watch_latches: BTreeMap::new(),
             stage_reads_the_muster_breakers: false,
             siege_budget_counts_the_ram: false,
             siege_promotions_open_the_walls: false,
@@ -11729,6 +11755,8 @@ impl AdvancedAi {
         // near the original capital, from the same turn-start frame.
         self.remember_capital_watch_sightings(g, pid);
         self.remember_frontier_watch_sightings(g, pid);
+        // `surprise-watch-holds-its-ratio`: see `advanced/surprise_watch_latch.rs`.
+        self.remember_surprise_watch_latches(g, pid);
         if !self.live_formationless_settler_shadow || self.turn_start_hostiles_turn == Some(g.turn)
         {
             return;
@@ -22513,7 +22541,11 @@ impl AdvancedAi {
         // other kind is proposed while it is not yet legal on our tree. Off,
         // `Stock`. See `advanced/research_alliance.rs`.
         let research_lane = self.research_alliance_lane(g, pid);
-        if research_lane == research_alliance::ResearchAllianceLane::Wait {
+        // `culture-seat-allies`: a Culture seat does not wait for Scientific
+        // Theory; it asks for the stock kind meanwhile.
+        if research_lane == research_alliance::ResearchAllianceLane::Wait
+            && !self.culture_seat_allies_on()
+        {
             return;
         }
         let research_first = research_lane == research_alliance::ResearchAllianceLane::Research;
@@ -22602,6 +22634,9 @@ impl AdvancedAi {
                     // `research-alliance-first`: a culture threat, or a
                     // partner inside the cool-down on our last ask. Never off.
                     && !self.research_alliance_barred(g, pid, other.id)
+                    // `culture-seat-allies`: nor the science racer, nor the
+                    // rival that sets our culture bar. Never off.
+                    && !self.culture_seat_ally_barred(g, pid, other.id)
             })
             .max_by(|left, right| {
                 let score = |other: usize| {
@@ -22660,7 +22695,9 @@ impl AdvancedAi {
                             .then_some(plan.target_player)
                             .flatten(),
                     );
-                    friendship + connected + complement + across + science
+                    // `culture-seat-allies`: the nearest partner first. Zero off.
+                    let near = self.culture_seat_ally_nearness(g, pid, other);
+                    friendship + connected + complement + across + science + near
                         - g.players[pid]
                             .grievances
                             .get(&other)
