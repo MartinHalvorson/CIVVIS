@@ -8698,6 +8698,107 @@ impl AdvancedAi {
         self.surprise_watch_holds_its_ratio = false;
     }
 
+    /// Opt-in gene `settler-founds-under-raiders`; see
+    /// [`Self::settler_founds_under_raiders`].
+    pub fn enable_settler_founds_under_raiders(&mut self) {
+        self.settler_founds_under_raiders = true;
+    }
+
+    /// The twin of `enable_settler_founds_under_raiders`.
+    pub fn disable_settler_founds_under_raiders(&mut self) {
+        self.settler_founds_under_raiders = false;
+    }
+
+    /// While a living major is unmet or unlocated, or a city-state is unmet,
+    /// the queued sea scout keeps its queue, ships route toward foreign
+    /// landfall, and the faster hull is preferred. Opt-in gene
+    /// `contact-fleet`; see `advanced/contact_fleet.rs`.
+    pub fn enable_contact_fleet(&mut self) {
+        self.base.contact_fleet = true;
+    }
+
+    /// The twin of `enable_contact_fleet`.
+    pub fn disable_contact_fleet(&mut self) {
+        self.base.contact_fleet = false;
+    }
+
+    /// Opt-in gene `immortal-skips-the-prophet-race`; see
+    /// [`Self::immortal_skips_the_prophet_race`].
+    pub fn enable_immortal_skips_the_prophet_race(&mut self) {
+        self.immortal_skips_the_prophet_race = true;
+    }
+
+    /// The twin of `enable_immortal_skips_the_prophet_race`.
+    pub fn disable_immortal_skips_the_prophet_race(&mut self) {
+        self.immortal_skips_the_prophet_race = false;
+    }
+
+    /// Opt-in gene `religion-lane-spreads-from-founding`; see
+    /// [`Self::religion_lane_spreads_from_founding`].
+    pub fn enable_religion_lane_spreads_from_founding(&mut self) {
+        self.religion_lane_spreads_from_founding = true;
+    }
+
+    /// The twin of `enable_religion_lane_spreads_from_founding`.
+    pub fn disable_religion_lane_spreads_from_founding(&mut self) {
+        self.religion_lane_spreads_from_founding = false;
+    }
+
+    /// Opt-in gene `board-ignores-the-faith-war`; see
+    /// [`Self::board_ignores_the_faith_war`].
+    pub fn enable_board_ignores_the_faith_war(&mut self) {
+        self.board_ignores_the_faith_war = true;
+    }
+
+    /// The twin of `enable_board_ignores_the_faith_war`.
+    pub fn disable_board_ignores_the_faith_war(&mut self) {
+        self.board_ignores_the_faith_war = false;
+    }
+
+    /// Opt-in gene `naval-crossing-keeps-going`; see
+    /// [`Self::naval_crossing_keeps_going`].
+    pub fn enable_naval_crossing_keeps_going(&mut self) {
+        self.naval_crossing_keeps_going = true;
+    }
+
+    /// The twin of `enable_naval_crossing_keeps_going`.
+    pub fn disable_naval_crossing_keeps_going(&mut self) {
+        self.naval_crossing_keeps_going = false;
+    }
+
+    /// Opt-in gene `builder-prices-travel-in-turns`; see
+    /// [`Self::builder_prices_travel_in_turns`].
+    pub fn enable_builder_prices_travel_in_turns(&mut self) {
+        self.builder_prices_travel_in_turns = true;
+    }
+
+    /// The twin of `enable_builder_prices_travel_in_turns`.
+    pub fn disable_builder_prices_travel_in_turns(&mut self) {
+        self.builder_prices_travel_in_turns = false;
+    }
+
+    /// Opt-in gene `religion-lane-hands-over`; see
+    /// [`Self::religion_lane_hands_over`].
+    pub fn enable_religion_lane_hands_over(&mut self) {
+        self.religion_lane_hands_over = true;
+    }
+
+    /// The twin of `enable_religion_lane_hands_over`.
+    pub fn disable_religion_lane_hands_over(&mut self) {
+        self.religion_lane_hands_over = false;
+    }
+
+    /// Opt-in gene `early-route-feeds-production`; see
+    /// [`Self::early_route_feeds_production`].
+    pub fn enable_early_route_feeds_production(&mut self) {
+        self.early_route_feeds_production = true;
+    }
+
+    /// The twin of `enable_early_route_feeds_production`.
+    pub fn disable_early_route_feeds_production(&mut self) {
+        self.early_route_feeds_production = false;
+    }
+
     /// Opt-in gene `science-seat-allies`; see [`Self::science_seat_allies`].
     pub fn enable_science_seat_allies(&mut self) {
         self.science_seat_allies = true;
