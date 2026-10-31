@@ -4403,6 +4403,13 @@ pub const GENES: &[Gene] = &[
     // Conquest counter. Needs `launcher-war-ignores-the-edge`. See
     // `advanced/launcher_war_every_lane.rs`.
     Gene { tag: "launcher-war-serves-every-lane", field: "launcher_war_serves_every_lane", kind: Kind::OptIn, enable: AdvancedAi::enable_launcher_war_serves_every_lane, disable: AdvancedAi::disable_launcher_war_serves_every_lane },
+    // Ten live Lv 7 Culture seats 2026-10-30 held no alliance at t80, t120 or
+    // t160: the live binary and the agent passed alliances only for the
+    // Diplomatic lane, and early wars were the culture seats' worst losses.
+    // A Culture seat allies its nearest safe rival, never the science racer
+    // or the rival that sets our culture bar. See
+    // `advanced/culture_seat_allies.rs`.
+    Gene { tag: "culture-seat-allies", field: "culture_seat_allies", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_allies, disable: AdvancedAi::disable_culture_seat_allies },
     // Live Immortal seats 2026-10-30 (54 games): the first Builder came at a
     // median turn 26 (scout, Settler, slinger, Settler first), 5% of owned land
     // stood improved at turn 40 against the rivals' 26%, and their population

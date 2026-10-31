@@ -61,6 +61,8 @@ RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
 #: mod capped a wait on it): turns stop waiting for it until it is back within
 #: one. See `sync_mirror_turn`.
 MIRROR_GIVE_UP_TURNS = 2
+#: How often the painted turn is carried to the mod (`mirror_sync_beat`).
+MIRROR_SYNC_SECONDS = 0.05
 
 #: How long a finished run keeps its screenshots. Its `events.jsonl`, `why.log`
 #: and `brain.log` are kept forever — they are what every census reads.
@@ -1213,6 +1215,12 @@ def build_config(args: argparse.Namespace) -> dict:
         # instead of only denying a rival's (`CivvisDiploRacer`). Absent when
         # the built-ins decide.
         "VictoryLane": args.civvis_victory if args.civvis_decides else None,
+        # `culture-seat-allies` (src/ai/advanced/culture_seat_allies.rs): a
+        # Culture seat's alliance orders reach the host. The live binary keeps
+        # them only while the tag is armed; the agent's `CivvisAllianceStep`
+        # takes them only with this on.
+        "CultureAllies": bool(args.civvis_decides
+                              and "culture-seat-allies" in (getattr(args, "civvis_with", []) or [])),
         # Hand a builder to Civ 6's own automation when CIVVIS's improvement is
         # refused outright. A policy, counted as IMPROVE_AUTOMATED.
         "AutomateStuckBuilders": args.automate_stuck_builders,
@@ -6108,6 +6116,22 @@ def _play(args: argparse.Namespace) -> int:
     # lane one capped wait rather than one per turn.
     mirror_flow = {"synced": None, "attempt_at": 0.0, "failed": False,
                    "given_up": False}
+    # ★ On its own 50 ms beat, not the pause poll's. A played turn is waiting
+    # on this hop: the pause poll runs once per `watch.follow` pass (0.25 s
+    # plus the focus keeper's upkeep), which was a third of the mirror wait's
+    # polling latency (first live game, 10-31: median wait 0.64 s a turn). The
+    # beat reads one small host file and writes a row only when it changes.
+    mirror_beat = threading.Event()
+
+    def mirror_sync_beat() -> None:
+        said = None
+        while not mirror_beat.wait(MIRROR_SYNC_SECONDS):
+            try:
+                sync_mirror_turn(time.monotonic())
+            except Exception as error:  # a broken beat must not end the run
+                if str(error) != said:
+                    said = str(error)
+                    print(f"[mirror] sync failed: {error}", flush=True)
 
     def sync_mirror_turn(now: float) -> None:
         shown = mirror_sync.shown_turn(args.tag)
@@ -6146,7 +6170,6 @@ def _play(args: argparse.Namespace) -> int:
         wanted = live_pause.requested()
         now = time.monotonic()
         sync_operator_pace(now)
-        sync_mirror_turn(now)
         if wanted != pause_flow["synced"] and now - pause_flow["attempt_at"] >= 1.0:
             pause_flow["attempt_at"] = now
             turn = state.get("turn")
@@ -6196,6 +6219,9 @@ def _play(args: argparse.Namespace) -> int:
     # the budget ask "can this still get there?" instead of "is the clock up?".
     ceiling_s = (args.timeout_ceiling if args.timeout_ceiling is not None
                  else args.timeout * 1.5)
+    if not refused_at_seat:
+        threading.Thread(target=mirror_sync_beat, name="mirror-sync",
+                         daemon=True).start()
     reason = "stopped" if refused_at_seat else watch.follow(
         tail, args.timeout, record, stop_when=finished,
         each_poll=keep_foreground, poll_s=poll_s,
@@ -6263,6 +6289,7 @@ def _play(args: argparse.Namespace) -> int:
             print(f"recovered from stall after {consecutive} attempt(s)", flush=True)
             consecutive = 0
     events.close()
+    mirror_beat.set()
     # Whatever ended the run, it no longer holds a game.
     live_pause.release_state(args.tag)
 
