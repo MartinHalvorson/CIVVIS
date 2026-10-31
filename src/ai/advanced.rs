@@ -8268,10 +8268,6 @@ pub struct AdvancedAi {
     /// `racer-spies-search-for-the-pad`: the leader's cities a Spy of ours
     /// stood in without the offer, and the turn it last did.
     racer_spy_searched: BTreeMap<u32, u32>,
-    /// `settler-founds-under-raiders`: a stalled Settler whose only visible
-    /// threats are barbarians founds where it stands despite the tile risk.
-    /// See `advanced/settler_raiders.rs`.
-    settler_founds_under_raiders: bool,
     // ---- append: s-s ------------------------------------------------
     /// `surprise-watch-holds-its-ratio`: a met major at twice our power seen
     /// within ten tiles of the original capital or an unwalled frontier city
@@ -8899,6 +8895,10 @@ pub struct AdvancedAi {
     /// and we lead the field, and races Science beside its lane while it
     /// drives. See `advanced/science_victory_drive.rs`. Off by default.
     science_drive_answers_the_launch: bool,
+    /// `settler-founds-under-raiders`: a stalled Settler whose only visible
+    /// threats are barbarians founds where it stands despite the tile risk.
+    /// See `advanced/settler_raiders.rs`.
+    settler_founds_under_raiders: bool,
     // ---- append: t-z ------------------------------------------------
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
@@ -11535,7 +11535,6 @@ impl AdvancedAi {
             racer_spies_search_for_the_pad: false,
             racer_spy_found_pads: BTreeSet::new(),
             racer_spy_searched: BTreeMap::new(),
-            settler_founds_under_raiders: false,
             // ---- append: s-s ----------------------------------------
             surprise_watch_holds_its_ratio: false,
             surprise_watch_latches: BTreeMap::new(),
@@ -11649,6 +11648,7 @@ impl AdvancedAi {
             siege_tier_yields_to_the_bombers_2: false,
             siege_moves_under_the_wing: false,
             science_drive_answers_the_launch: false,
+            settler_founds_under_raiders: false,
             // ---- append: t-z ----------------------------------------
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,
