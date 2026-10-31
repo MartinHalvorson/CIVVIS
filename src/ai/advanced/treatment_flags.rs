@@ -8709,6 +8709,41 @@ impl AdvancedAi {
         self.settler_founds_under_raiders = false;
     }
 
+    /// While a living major is unmet or unlocated, or a city-state is unmet,
+    /// the queued sea scout keeps its queue, ships route toward foreign
+    /// landfall, and the faster hull is preferred. Opt-in gene
+    /// `contact-fleet`; see `advanced/contact_fleet.rs`.
+    pub fn enable_contact_fleet(&mut self) {
+        self.base.contact_fleet = true;
+    }
+
+    /// The twin of `enable_contact_fleet`.
+    pub fn disable_contact_fleet(&mut self) {
+        self.base.contact_fleet = false;
+    }
+
+    /// Opt-in gene `immortal-skips-the-prophet-race`; see
+    /// [`Self::immortal_skips_the_prophet_race`].
+    pub fn enable_immortal_skips_the_prophet_race(&mut self) {
+        self.immortal_skips_the_prophet_race = true;
+    }
+
+    /// The twin of `enable_immortal_skips_the_prophet_race`.
+    pub fn disable_immortal_skips_the_prophet_race(&mut self) {
+        self.immortal_skips_the_prophet_race = false;
+    }
+
+    /// Opt-in gene `religion-lane-spreads-from-founding`; see
+    /// [`Self::religion_lane_spreads_from_founding`].
+    pub fn enable_religion_lane_spreads_from_founding(&mut self) {
+        self.religion_lane_spreads_from_founding = true;
+    }
+
+    /// The twin of `enable_religion_lane_spreads_from_founding`.
+    pub fn disable_religion_lane_spreads_from_founding(&mut self) {
+        self.religion_lane_spreads_from_founding = false;
+    }
+
     /// Opt-in gene `campus-unlock-in-every-lane`; see
     /// [`Self::campus_unlock_in_every_lane`].
     pub fn enable_campus_unlock_in_every_lane(&mut self) {
