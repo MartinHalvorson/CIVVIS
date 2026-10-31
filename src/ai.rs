@@ -403,6 +403,7 @@ mod commercial_hub;
 mod industrial_zones;
 mod movement_risk;
 mod naval_demand;
+mod opening_builder;
 mod scout_first;
 mod scout_inference;
 mod siege_support;
@@ -3286,6 +3287,11 @@ pub struct BasicAi {
     /// foreign landfalls rather than treating every coast as interchangeable.
     /// Opt-in gene `island-exploration`.
     pub(crate) island_exploration: bool,
+    /// While a living major is unmet or unlocated, or a city-state is unmet,
+    /// keep the one queued sea scout against the governor's rescoring, route
+    /// ships toward foreign landfall, and prefer the faster hull. Opt-in gene
+    /// `contact-fleet`; see `advanced/contact_fleet.rs`.
+    pub(crate) contact_fleet: bool,
     /// In peacetime the whole field army answers home threats, and a camp
     /// inside the camp reach ranks above raiders in the countryside.
     ///
@@ -4076,6 +4082,18 @@ pub struct BasicAi {
     /// emergency choices remain authoritative. Set through
     /// `AdvancedAi::enable_capital_settler_after_completion`.
     pub(crate) capital_settler_after_completion: bool,
+    /// `opening-builder-after-the-first-settler`: once the capital's first
+    /// Settler is out (walking or founded) and the empire has never held a
+    /// Builder, the capital trains one before its next Settler. Live Immortal
+    /// seats 10-30 (54 games): first Builder at a median turn 26, 5% of owned
+    /// land improved at turn 40 against the rivals' 26%, and the rivals'
+    /// population ran 1.6x ours from turn 20. Set through
+    /// `AdvancedAi::enable_opening_builder_after_the_first_settler`.
+    pub(crate) opening_builder_after_the_first_settler: bool,
+    /// Receipt for `opening_builder_after_the_first_settler`: set the first
+    /// time the empire holds or queues a Builder, so the step fires at most
+    /// once a game and never after a Builder spends its last charge.
+    pub(crate) opening_builder_paid: bool,
     /// Independent first-slot exploration experiment.
     pub(crate) scout_first_opening: bool,
     /// Take the pantheon that founds a city. Civilization VI's Religious
@@ -5888,6 +5906,7 @@ impl BasicAi {
             naval_recon_2: false,
             naval_recon_3: false,
             island_exploration: false,
+            contact_fleet: false,
             camp_party: false,
             come_ashore: false,
             barbarian_settler_capture: false,
@@ -5971,6 +5990,8 @@ impl BasicAi {
             land_grab: false,
             rapid_city_expansion_2: false,
             capital_settler_after_completion: false,
+            opening_builder_after_the_first_settler: false,
+            opening_builder_paid: false,
             scout_first_opening: false,
             expansion_pantheon: false,
             pantheon_for_the_prophet_race: false,
@@ -6039,6 +6060,16 @@ impl BasicAi {
     /// Disable the baseline half of the capital-settler-after-completion gene.
     pub(crate) fn disable_capital_settler_after_completion(&mut self) {
         self.capital_settler_after_completion = false;
+    }
+
+    /// See `opening_builder_after_the_first_settler`.
+    pub(crate) fn enable_opening_builder_after_the_first_settler(&mut self) {
+        self.opening_builder_after_the_first_settler = true;
+    }
+
+    /// The twin of `enable_opening_builder_after_the_first_settler`.
+    pub(crate) fn disable_opening_builder_after_the_first_settler(&mut self) {
+        self.opening_builder_after_the_first_settler = false;
     }
 
     /// Lead the pantheon prefix with the two that found a city (see
@@ -6411,6 +6442,7 @@ impl BasicAi {
             naval_recon_2: false,
             naval_recon_3: false,
             island_exploration: false,
+            contact_fleet: false,
             camp_party: false,
             come_ashore: false,
             barbarian_settler_capture: false,
@@ -6494,6 +6526,8 @@ impl BasicAi {
             land_grab: false,
             rapid_city_expansion_2: false,
             capital_settler_after_completion: false,
+            opening_builder_after_the_first_settler: false,
+            opening_builder_paid: false,
             scout_first_opening: false,
             expansion_pantheon: false,
             pantheon_for_the_prophet_race: false,
@@ -10403,6 +10437,9 @@ impl BasicAi {
             }
         }
         let active_settlers = settlers;
+        if builders > 0 {
+            self.opening_builder_paid = true;
+        }
         // Treat queued units as part of the force plan. Without this, every
         // occupied city forgets what it is already building and the next
         // empty city can queue a duplicate settler, builder, or trader.
@@ -10630,6 +10667,12 @@ impl BasicAi {
             // Reserve the first slot before population-two Settler genes can
             // claim it. Successful production consumes exactly one book slot.
             if self.play_scout_first_opening(g, pid, *cid) {
+                continue;
+            }
+            // `opening-builder-after-the-first-settler`: the capital's first
+            // Builder follows its first Settler. See `opening_builder.rs`.
+            if self.play_opening_builder(g, pid, *cid, n_cities, active_settlers, builders) {
+                builders += 1;
                 continue;
             }
             // The normal production picker sits after the scripted opening
@@ -11617,6 +11660,11 @@ impl BasicAi {
     pub(crate) fn best_naval_recon(&self, g: &Game, pid: usize, cid: u32) -> Option<String> {
         if !Self::city_has_naval_recon_launch(g, pid, cid) {
             return None;
+        }
+        // `contact-fleet`: the faster hull, when it is in reach. See
+        // `advanced/contact_fleet.rs`.
+        if let Some(fast) = self.contact_fleet_fast_hull(g, pid, cid) {
+            return Some(fast);
         }
         let mut best: Option<((i64, i64), String)> = None;
         for (name, spec) in &g.rules.units {
@@ -18531,19 +18579,26 @@ impl BasicAi {
             HashSet::new()
         };
         let origin = g.units[&uid].pos;
-        let island_home = if self.island_exploration
+        // `contact-fleet`: while the contact gap is open, a ship that can
+        // cross Ocean takes the same long look-ahead and foreign-landfall
+        // ranking as a full home continent. See `advanced/contact_fleet.rs`.
+        let island_home = if (self.island_exploration || self.contact_fleet)
             && !dry_only
             && g.rules.units[g.units[&uid].kind].domain.as_deref() == Some("sea")
         {
             let landmass = Self::capital_landmass(g, pid);
             (!landmass.is_empty()
-                && self.main_landmass_settlement_room(
-                    g,
-                    pid,
-                    &landmass,
-                    ISLAND_EXPLORATION_HOME_SITE_LIMIT + 1,
-                ) <= ISLAND_EXPLORATION_HOME_SITE_LIMIT)
-                .then_some(landmass)
+                && ((self.island_exploration
+                    && self.main_landmass_settlement_room(
+                        g,
+                        pid,
+                        &landmass,
+                        ISLAND_EXPLORATION_HOME_SITE_LIMIT + 1,
+                    ) <= ISLAND_EXPLORATION_HOME_SITE_LIMIT)
+                    || (self.contact_fleet
+                        && Self::naval_recon_can_cross_ocean(g, pid)
+                        && Self::contact_fleet_gap(g, pid))))
+            .then_some(landmass)
         } else {
             None
         };
