@@ -8674,6 +8674,19 @@ impl AdvancedAi {
         self.culture_seat_allies = false;
     }
 
+    /// Opt-in gene `opening-builder-after-the-first-settler`; see
+    /// `BasicAi::opening_builder_after_the_first_settler`.
+    pub fn enable_opening_builder_after_the_first_settler(&mut self) {
+        self.opening_builder_after_the_first_settler = true;
+        self.base.enable_opening_builder_after_the_first_settler();
+    }
+
+    /// The twin of `enable_opening_builder_after_the_first_settler`.
+    pub fn disable_opening_builder_after_the_first_settler(&mut self) {
+        self.opening_builder_after_the_first_settler = false;
+        self.base.disable_opening_builder_after_the_first_settler();
+    }
+
     /// Opt-in gene `settler-founds-under-raiders`; see
     /// [`Self::settler_founds_under_raiders`].
     pub fn enable_settler_founds_under_raiders(&mut self) {

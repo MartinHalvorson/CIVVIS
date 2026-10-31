@@ -4410,6 +4410,13 @@ pub const GENES: &[Gene] = &[
     // or the rival that sets our culture bar. See
     // `advanced/culture_seat_allies.rs`.
     Gene { tag: "culture-seat-allies", field: "culture_seat_allies", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_allies, disable: AdvancedAi::disable_culture_seat_allies },
+    // Live Immortal seats 2026-10-30 (54 games): the first Builder came at a
+    // median turn 26 (scout, Settler, slinger, Settler first), 5% of owned land
+    // stood improved at turn 40 against the rivals' 26%, and their population
+    // ran 1.6x ours from turn 20. Once the capital's first Settler is out and
+    // the empire has never held a Builder, the capital trains one before its
+    // next Settler. See `BasicAi::opening_builder_after_the_first_settler`.
+    Gene { tag: "opening-builder-after-the-first-settler", field: "opening_builder_after_the_first_settler", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_builder_after_the_first_settler, disable: AdvancedAi::disable_opening_builder_after_the_first_settler },
     // Live Immortal 10-30, 21 seats: a Settler lived a median 8 turns (51% at
     // 8+, tails to 58) before founding, and 571 of ~630 "Settler HELD" lines
     // were the safe-step guard against barbarian raiders, and the stall-expiry
