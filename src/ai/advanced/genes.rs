@@ -4492,6 +4492,13 @@ pub const GENES: &[Gene] = &[
     // ~100 Online turns, route Production outbids that premium. See
     // `advanced/early_route_production.rs`.
     Gene { tag: "early-route-feeds-production", field: "early_route_feeds_production", kind: Kind::OptIn, enable: AdvancedAi::enable_early_route_feeds_production, disable: AdvancedAi::disable_early_route_feeds_production },
+    // A Religion seat without a religion got the Religion strategy before the
+    // Expansion branch read its city count: 4 of 5 6p Immortal Religion seats
+    // ran Religion at t20-40 (every other lane ran Expansion), held a median 3
+    // cities at t60 against 4-5, and 4 of 5 were retired at the t80 gate. The
+    // prophet race keys on the target, not the strategy. See
+    // `advanced/religion_race_expands.rs`.
+    Gene { tag: "religion-race-keeps-expanding", field: "religion_race_keeps_expanding", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_race_keeps_expanding, disable: AdvancedAi::disable_religion_race_keeps_expanding },
     // On 6p Continents a Domination plan aimed overseas never declares: the
     // army is kept on land at peace and the amphibious train forms only at
     // war. Live 041027Z aimed at overseas Russia t78-85 and retired with no
