@@ -40,6 +40,17 @@ pub(crate) const DETERRENCE_NEAR_TILES: i32 = 10;
 /// Our power against the strongest neighbour's the claim builds toward.
 pub(crate) const DETERRENCE_RATIO: f64 = 1.0;
 
+/// `deterrence-within-reach`: the claim builds only while our power stands at
+/// this share of the neighbour's or more, where the deterrent can bring us to
+/// parity. Live Immortal 2026-10-30/31 (rival-turns at peace, a city within
+/// ten tiles, turns 30-80): declarations per 100 rival-turns ran 1.03 at
+/// 0.3-0.5, 0.98 at 0.5-0.7 and 0.89 at 0.7-0.9, and only parity halved it
+/// (0.50 at 0.9-1.1, 0.41 above). Seats that fell under the production-share
+/// line claimed at a median 0.64 of the neighbour's power, 59% of claims under
+/// 0.7, and spent 28% of production on units and walls by turn 80 against the
+/// kept seats' 16%.
+pub(crate) const DETERRENCE_REACH_RATIO: f64 = 0.75;
+
 /// The window, in standard turns: 45 and 120 are live turns 30 and 80 at the
 /// seat's Quick speed.
 pub(crate) const DETERRENCE_START_STANDARD: u32 = 45;
@@ -102,8 +113,16 @@ impl AdvancedAi {
         if !Self::deterrence_land_unit(g, unit) {
             return false;
         }
-        self.deterrence_threat(g, pid)
-            .is_some_and(|(_, theirs)| g.military_power(pid) < DETERRENCE_RATIO * theirs)
+        self.deterrence_threat(g, pid).is_some_and(|(_, theirs)| {
+            let ours = g.military_power(pid);
+            ours < DETERRENCE_RATIO * theirs && self.deterrence_parity_in_reach(ours, theirs)
+        })
+    }
+
+    /// `deterrence-within-reach`: whether our power stands close enough to the
+    /// neighbour's for the deterrent to reach parity. Always with the gene off.
+    pub(super) fn deterrence_parity_in_reach(&self, ours: f64, theirs: f64) -> bool {
+        !self.deterrence_within_reach || ours >= DETERRENCE_REACH_RATIO * theirs
     }
 
     fn deterrence_land_unit(g: &Game, unit: &Name) -> bool {
@@ -161,7 +180,7 @@ impl AdvancedAi {
             return;
         };
         let ours = g.military_power(pid);
-        if ours >= DETERRENCE_RATIO * theirs {
+        if ours >= DETERRENCE_RATIO * theirs || !self.deterrence_parity_in_reach(ours, theirs) {
             return;
         }
         let city_ids = g.player_city_ids(pid);

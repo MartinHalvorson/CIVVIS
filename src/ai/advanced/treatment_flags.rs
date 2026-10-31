@@ -8744,6 +8744,17 @@ impl AdvancedAi {
         self.religion_lane_spreads_from_founding = false;
     }
 
+    /// Opt-in gene `deterrence-within-reach`; see
+    /// [`Self::deterrence_within_reach`].
+    pub fn enable_deterrence_within_reach(&mut self) {
+        self.deterrence_within_reach = true;
+    }
+
+    /// The twin of `enable_deterrence_within_reach`.
+    pub fn disable_deterrence_within_reach(&mut self) {
+        self.deterrence_within_reach = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

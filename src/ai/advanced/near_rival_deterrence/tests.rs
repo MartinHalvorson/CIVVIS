@@ -226,3 +226,42 @@ fn the_faith_defence_keeps_its_queue_with_the_gene() {
         assert_eq!(kept.cities[&ours].queue.first(), Some(&head));
     }
 }
+
+/// `deterrence-within-reach`: far below parity the claim leaves the queue to
+/// the economy; within reach it trains the deterrent as before, and a queued
+/// deterrent out of reach no longer holds its slot.
+#[test]
+fn the_deterrent_waits_until_parity_is_within_reach() {
+    let Some((mut game, ours, _theirs)) = neighbours(DETERRENCE_NEAR_TILES) else {
+        panic!("fixture: two capitals within the neighbour radius");
+    };
+    game.players[0].techs.insert(crate::name!("bronze_working"));
+    let mut ai = armed();
+    ai.enable_deterrence_within_reach();
+
+    // Out of reach: 50 against 100.
+    power(&mut game, 0, 50.0);
+    power(&mut game, 1, 100.0);
+    let mut far = game.clone();
+    let plan = ai.assess(&far, 0);
+    ai.claim_deterrence_unit(&mut far, 0, &plan);
+    assert_eq!(land_units_queued(&far), 0, "out of reach: no claim");
+    let stock = armed();
+    let mut stock_far = game.clone();
+    let plan = stock.assess(&stock_far, 0);
+    stock.claim_deterrence_unit(&mut stock_far, 0, &plan);
+    assert_eq!(land_units_queued(&stock_far), 1, "the stock claim still builds");
+    let warrior = Item::Unit {
+        unit: crate::name!("warrior"),
+    };
+    assert!(!ai.deterrence_unit_holds(&game, 0, &warrior));
+    assert!(stock.deterrence_unit_holds(&game, 0, &warrior));
+
+    // Within reach: 80 against 100.
+    power(&mut game, 0, 80.0);
+    let plan = ai.assess(&game, 0);
+    ai.claim_deterrence_unit(&mut game, 0, &plan);
+    assert_eq!(land_units_queued(&game), 1, "within reach: the deterrent");
+    assert!(game.cities[&ours].queue.first().is_some());
+    assert!(ai.deterrence_unit_holds(&game, 0, &warrior));
+}

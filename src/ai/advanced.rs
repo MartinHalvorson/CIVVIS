@@ -5599,6 +5599,10 @@ pub struct AdvancedAi {
     /// displaces a Holy Site, Shrine or Temple at the head of a queue. See
     /// `deterrence_may_displace` in `advanced/near_rival_deterrence.rs`. Off by default.
     deterrence_spares_the_faith_defence: bool,
+    /// `deterrence-within-reach`: near-rival-deterrence builds only while our
+    /// power is within `DETERRENCE_REACH_RATIO` of the neighbour's. See
+    /// `advanced/near_rival_deterrence.rs`. Off by default.
+    deterrence_within_reach: bool,
     /// `civic-awaits-its-inspiration`: on a forced beeline a step whose
     /// inspiration is still ours to earn (Craftsmanship's improvements, Games
     /// and Recreation's Construction, Recorded History's Campuses) goes after
@@ -11134,6 +11138,7 @@ impl AdvancedAi {
             campus_building_claims_the_queue: false,
             crushing_steady_passes_the_edge: false,
             deterrence_spares_the_faith_defence: false,
+            deterrence_within_reach: false,
             civic_awaits_its_inspiration: false,
             capital_campus_before_the_plaza: false,
             counterweight_flips_the_small_towns: false,

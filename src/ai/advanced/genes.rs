@@ -4456,6 +4456,14 @@ pub const GENES: &[Gene] = &[
     // Religion-target founder keeps all three in any plan. See
     // `advanced/religion_lane_spreads.rs`.
     Gene { tag: "religion-lane-spreads-from-founding", field: "religion_lane_spreads_from_founding", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_lane_spreads_from_founding, disable: AdvancedAi::disable_religion_lane_spreads_from_founding },
+    // Live Immortal 2026-10-30/31: declarations per 100 rival-turns at peace
+    // (a city within ten tiles, t30-80) ran 0.9-1.0 from 0.3 to 0.9 of the
+    // neighbour's power and halved only at parity; seats under the
+    // production-share line claimed the deterrent at a median 0.64 and spent
+    // 28% of production on units and walls by t80 (kept seats 16%). The
+    // deterrent builds only while parity is within reach. See
+    // `advanced/near_rival_deterrence.rs`.
+    Gene { tag: "deterrence-within-reach", field: "deterrence_within_reach", kind: Kind::OptIn, enable: AdvancedAi::enable_deterrence_within_reach, disable: AdvancedAi::disable_deterrence_within_reach },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
