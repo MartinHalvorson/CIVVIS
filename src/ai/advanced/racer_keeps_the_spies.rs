@@ -80,9 +80,11 @@
 //! Under the gene, once the leader has landed a space project (it owns a
 //! pad), a Spy standing in one of the leader's cities where Disrupt Rocketry
 //! is not offered, with no pad seen there and none found there before,
-//! moves on: to the leader's city with a pad seen or found, else to its
-//! nearest city no Spy of ours holds and none has searched in the last
-//! [`RACER_SPY_SEARCH_MEMORY_TURNS`]. A Listening Post or Gain Sources it is
+//! moves on: to the leader's city with a pad seen or found, else to the city
+//! no Spy of ours holds and none has searched in the last
+//! [`RACER_SPY_SEARCH_MEMORY_TURNS`], the one searched least recently first
+//! (never searched before any), the nearest on a tie, so it cycles through
+//! every city before it returns to one. A Listening Post or Gain Sources it is
 //! running there does not hold it. A city where Disrupt Rocketry was offered
 //! to a Spy of ours is a found pad: a Spy there stays while it is pillaged,
 //! and the posts rank it with the pads we have seen. With every city of the
@@ -248,8 +250,8 @@ impl AdvancedAi {
     /// With `search` (`racer-spies-search-for-the-pad`), a found pad ranks as
     /// a seen one, and a Spy searching the leader's city (see
     /// [`Self::racer_spy_searching`]) moves to a pad seen or found, else to
-    /// the nearest of the leader's cities not searched lately; none left, it
-    /// stays.
+    /// the leader's city not searched lately that was searched least recently
+    /// (never first), the nearest on a tie; none left, it stays.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn racer_spy_post(
         g: &Game,
@@ -311,18 +313,28 @@ impl AdvancedAi {
             })
             .min_by_key(|cid| {
                 let city = &g.cities[cid];
-                // A search goes to the nearest city left to search; a post
-                // from outside goes to the capital and the cities nearest it.
-                let (capital_first, distance) = if searching {
-                    (false, from.map_or(0, |from| g.wdist(from, city.pos)))
+                // A search goes to the city it searched least recently (one
+                // never searched first), the nearest on a tie; a post from
+                // outside goes to the capital and the cities nearest it.
+                // Live 011801Z: "nearest not searched lately" re-picked Rome's
+                // Hispalis and Antium (t179, t189) once the memory lapsed,
+                // while the pad stood in Rome itself (first Disrupt t203).
+                let (searched_at, capital_first, distance) = if searching {
+                    (
+                        search.and_then(|search| search.searched.get(cid).copied()),
+                        false,
+                        from.map_or(0, |from| g.wdist(from, city.pos)),
+                    )
                 } else {
                     (
+                        None,
                         city.is_capital,
                         capital.map_or(0, |capital| g.wdist(capital, city.pos)),
                     )
                 };
                 (
                     std::cmp::Reverse(seen_pad(*cid)),
+                    searched_at,
                     std::cmp::Reverse(capital_first),
                     distance,
                     *cid,
