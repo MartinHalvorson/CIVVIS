@@ -8269,6 +8269,15 @@ pub struct AdvancedAi {
     /// stood in without the offer, and the turn it last did.
     racer_spy_searched: BTreeMap<u32, u32>,
     // ---- append: s-s ------------------------------------------------
+    /// `surprise-watch-holds-its-ratio`: a met major at twice our power seen
+    /// within ten tiles of the original capital or an unwalled frontier city
+    /// keeps that city's walls armed for the walls' ten-turn window, whatever
+    /// the live ratio does. See `advanced/surprise_watch_latch.rs`. Off by
+    /// default.
+    surprise_watch_holds_its_ratio: bool,
+    /// The turn each (city, major) was last latched under
+    /// `surprise-watch-holds-its-ratio`: `None` is the original capital.
+    surprise_watch_latches: BTreeMap<(Option<u32>, usize), u32>,
     /// `stage-reads-the-muster-breakers`: once a siege's muster has closed,
     /// its Stage reads breakers out to `MUSTER_FAR` instead of `STAGING_FAR`.
     /// See `advanced/siege_train/stage_reads_the_muster.rs`. Off by default.
@@ -9622,6 +9631,8 @@ mod opportunistic_war;
 /// A short, defender-only declaration shock. See
 /// `advanced/surprise_defense.rs`.
 mod surprise_defense;
+/// `surprise-watch-holds-its-ratio`: see `advanced/surprise_watch_latch.rs`.
+mod surprise_watch_latch;
 
 /// The air surge: a three-tech beeline to Advanced Flight, an Aerodrome, a
 /// bomber wing, and the cavalry that takes the city the wing empties. See
@@ -11519,6 +11530,8 @@ impl AdvancedAi {
             racer_spy_found_pads: BTreeSet::new(),
             racer_spy_searched: BTreeMap::new(),
             // ---- append: s-s ----------------------------------------
+            surprise_watch_holds_its_ratio: false,
+            surprise_watch_latches: BTreeMap::new(),
             stage_reads_the_muster_breakers: false,
             siege_budget_counts_the_ram: false,
             siege_promotions_open_the_walls: false,
@@ -11742,6 +11755,8 @@ impl AdvancedAi {
         // near the original capital, from the same turn-start frame.
         self.remember_capital_watch_sightings(g, pid);
         self.remember_frontier_watch_sightings(g, pid);
+        // `surprise-watch-holds-its-ratio`: see `advanced/surprise_watch_latch.rs`.
+        self.remember_surprise_watch_latches(g, pid);
         if !self.live_formationless_settler_shadow || self.turn_start_hostiles_turn == Some(g.turn)
         {
             return;
