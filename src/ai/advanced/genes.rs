@@ -4456,6 +4456,14 @@ pub const GENES: &[Gene] = &[
     // Religion-target founder keeps all three in any plan. See
     // `advanced/religion_lane_spreads.rs`.
     Gene { tag: "religion-lane-spreads-from-founding", field: "religion_lane_spreads_from_founding", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_lane_spreads_from_founding, disable: AdvancedAi::disable_religion_lane_spreads_from_founding },
+    // Live Immortal 054450Z (Domination, 10-31) held its war on Australia at
+    // 6-12x its power on 49 turns from t101: `war_policy_declaration` read
+    // our own faith war on Macedon as "another major war", although
+    // `faith-war-is-no-front` already keeps that war out of
+    // `one_war_holds_declaration`. Melbourne walled up by t123. The board
+    // reads the same exemption. Needs `faith-war-is-no-front` (or -2). See
+    // `war_policy_declaration` in `advanced/war_policy.rs`.
+    Gene { tag: "board-ignores-the-faith-war", field: "board_ignores_the_faith_war", kind: Kind::OptIn, enable: AdvancedAi::enable_board_ignores_the_faith_war, disable: AdvancedAi::disable_board_ignores_the_faith_war },
     // The t80 production gate retires 16 of 20 6p Immortal seats at a median
     // share of 0.23. The first Trader (~t21) goes foreign or to a city-state
     // for ~4 Gold in kept and retired seats alike: `commercial-hub-and-traders`
