@@ -8744,6 +8744,17 @@ impl AdvancedAi {
         self.religion_lane_spreads_from_founding = false;
     }
 
+    /// Opt-in gene `early-route-feeds-production`; see
+    /// [`Self::early_route_feeds_production`].
+    pub fn enable_early_route_feeds_production(&mut self) {
+        self.early_route_feeds_production = true;
+    }
+
+    /// The twin of `enable_early_route_feeds_production`.
+    pub fn disable_early_route_feeds_production(&mut self) {
+        self.early_route_feeds_production = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

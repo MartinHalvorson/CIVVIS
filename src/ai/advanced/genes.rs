@@ -4456,6 +4456,13 @@ pub const GENES: &[Gene] = &[
     // Religion-target founder keeps all three in any plan. See
     // `advanced/religion_lane_spreads.rs`.
     Gene { tag: "religion-lane-spreads-from-founding", field: "religion_lane_spreads_from_founding", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_lane_spreads_from_founding, disable: AdvancedAi::disable_religion_lane_spreads_from_founding },
+    // The t80 production gate retires 16 of 20 6p Immortal seats at a median
+    // share of 0.23. The first Trader (~t21) goes foreign or to a city-state
+    // for ~4 Gold in kept and retired seats alike: `commercial-hub-and-traders`
+    // pays 1.5 per Gold, so a domestic route's Production never wins. Within
+    // ~100 Online turns, route Production outbids that premium. See
+    // `advanced/early_route_production.rs`.
+    Gene { tag: "early-route-feeds-production", field: "early_route_feeds_production", kind: Kind::OptIn, enable: AdvancedAi::enable_early_route_feeds_production, disable: AdvancedAi::disable_early_route_feeds_production },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
