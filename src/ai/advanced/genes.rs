@@ -4427,6 +4427,14 @@ pub const GENES: &[Gene] = &[
     // `frontier-walls-before-the-surprise`. See
     // `advanced/surprise_watch_latch.rs`.
     Gene { tag: "surprise-watch-holds-its-ratio", field: "surprise_watch_holds_its_ratio", kind: Kind::OptIn, enable: AdvancedAi::enable_surprise_watch_holds_its_ratio, disable: AdvancedAi::disable_surprise_watch_holds_its_ratio },
+    // Live Immortal seats 2026-10-30/31 (35 games, Culture, Diplomatic and
+    // Science targets): Writing came a median t50 (quartiles 37-65), tenth
+    // in the order behind Sailing (97%) and Bronze Working (94%), and the
+    // first Campus finished t63. Our Science per citizen was 0.72 at t40
+    // against the best rival's 1.88. The Writing goal two founded cities take
+    // is Domination-only; this takes it under every named victory target.
+    // See `advanced/domination_research.rs`.
+    Gene { tag: "campus-unlock-in-every-lane", field: "campus_unlock_in_every_lane", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_unlock_in_every_lane, disable: AdvancedAi::disable_campus_unlock_in_every_lane },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

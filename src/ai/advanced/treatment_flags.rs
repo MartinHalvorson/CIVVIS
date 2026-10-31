@@ -8698,6 +8698,17 @@ impl AdvancedAi {
         self.surprise_watch_holds_its_ratio = false;
     }
 
+    /// Opt-in gene `campus-unlock-in-every-lane`; see
+    /// [`Self::campus_unlock_in_every_lane`].
+    pub fn enable_campus_unlock_in_every_lane(&mut self) {
+        self.campus_unlock_in_every_lane = true;
+    }
+
+    /// The twin of `enable_campus_unlock_in_every_lane`.
+    pub fn disable_campus_unlock_in_every_lane(&mut self) {
+        self.campus_unlock_in_every_lane = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -5543,6 +5543,10 @@ pub struct AdvancedAi {
     /// (Writing) is researched ahead of the Astrology and luxury-connection
     /// goals. See `advanced/domination_research.rs`. Off by default.
     campus_unlock_before_the_luxury: bool,
+    /// `campus-unlock-in-every-lane`: the Campus unlock (Writing) two founded
+    /// cities research is taken under every named victory target, not only
+    /// Domination. See `advanced/domination_research.rs`. Off by default.
+    campus_unlock_in_every_lane: bool,
     /// `denial-target-leads-the-fronts`: see
     /// `advanced/denial_target_front.rs`. Off by default.
     denial_target_leads_the_fronts: bool,
@@ -11089,6 +11093,7 @@ impl AdvancedAi {
             capital_watch_slinger_turn: None,
             city_state_war_is_no_front: false,
             campus_unlock_before_the_luxury: false,
+            campus_unlock_in_every_lane: false,
             denial_target_leads_the_fronts: false,
             delegations_reach_every_rival: false,
             delegations_asked: BTreeMap::new(),

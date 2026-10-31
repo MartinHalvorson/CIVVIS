@@ -32,12 +32,25 @@ impl AdvancedAi {
     /// An expanding conquest economy needs campuses before optional branches
     /// consume its early research. Military commitments and urgent defenses
     /// retain their earlier slots in the research chooser.
+    ///
+    /// `campus-unlock-in-every-lane` takes the same goal under every named
+    /// victory target. Live Immortal seats 2026-10-30/31 (35 games on
+    /// Culture, Diplomatic and Science targets) researched Writing at a
+    /// median t50, tenth behind Sailing and Bronze Working, and finished the
+    /// first Campus at t63, with our Science per citizen at 0.72 against the
+    /// best rival's 1.88 at t40 (2.6x, of which the rung's +60% explains
+    /// 1.6x).
     pub(super) fn domination_campus_unlock_goal(
         &self,
         g: &Game,
         pid: usize,
     ) -> Option<&'static str> {
-        (self.active_victory_target(g) == Some(VictoryTarget::Domination)
+        let lane_takes_it = match self.active_victory_target(g) {
+            Some(VictoryTarget::Domination) => true,
+            Some(_) => self.campus_unlock_in_every_lane,
+            None => false,
+        };
+        (lane_takes_it
             && g.player_city_ids(pid).len() >= 2
             && !g.players[pid].techs.contains(&crate::name!("writing")))
         .then_some("writing")
@@ -174,3 +187,6 @@ mod tests;
 
 #[cfg(test)]
 mod campus_unlock_tests;
+
+#[cfg(test)]
+mod campus_unlock_every_lane_tests;
