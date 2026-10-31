@@ -5518,19 +5518,15 @@ pub struct AdvancedAi {
     /// `advanced/builder_travel_turns.rs`. Off by default.
     builder_prices_travel_in_turns: bool,
     // ---- append: c-d ------------------------------------------------
-<<<<<<< HEAD
-    /// `capital-walls-at-any-ratio`: at Immortal and Deity the capital's walls
-    /// arm on any watched major's soldier at our door. See
-    /// `advanced/capital_walls_at_any_ratio.rs`. Off by default.
-    capital_walls_at_any_ratio: bool,
-||||||| b823b2f86
-=======
     /// `domination-targets-land-first`: a Domination seat ranks rivals it can
     /// reach by land ahead of overseas ones in its frontier and capital picks
     /// and its hand-over bar. See `advanced/domination_land_first.rs`. Off by
     /// default.
     domination_targets_land_first: bool,
->>>>>>> origin/main
+    /// `capital-walls-at-any-ratio`: at Immortal and Deity the capital's walls
+    /// arm on any watched major's soldier at our door. See
+    /// `advanced/capital_walls_at_any_ratio.rs`. Off by default.
+    capital_walls_at_any_ratio: bool,
     /// `diplo-seat-statue-harbor`: a Diplomacy seat's strongest coastal city
     /// builds the Harbor the Statue of Liberty needs. See
     /// `advanced/diplo_statue_harbor.rs`. Off by default.
@@ -11188,12 +11184,8 @@ impl AdvancedAi {
             bankruptcy_exits_the_drain: false,
             builder_prices_travel_in_turns: false,
             // ---- append: c-d ----------------------------------------
-<<<<<<< HEAD
-            capital_walls_at_any_ratio: false,
-||||||| b823b2f86
-=======
             domination_targets_land_first: false,
->>>>>>> origin/main
+            capital_walls_at_any_ratio: false,
             diplo_seat_statue_harbor: false,
             culture_routes_reach_every_rival: false,
             culture_seat_monuments: false,
