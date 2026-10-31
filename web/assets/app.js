@@ -822,12 +822,34 @@ function repeatedCivNames(majors) {
 // What the viewer chose, and nothing else. Deriving a lock from whichever
 // civilization was being watched meant the mark moved from row to row on its
 // own every time the view changed — including when the director changed it.
-function lockedSeats() {
+function chosenSeatLocks() {
   return HUD_LOCKS || NO_HUD_LOCKS;
 }
 
+// ★ THE SEAT CIVVIS PLAYS IN A LIVE VERIFICATION GAME IS ALWAYS LOCKED.
+// Operator 2026-10-31: "make sure during verification games the active player
+// stays locked on the player hud". A viewer's saved locks name civilizations,
+// and the ladder changes ours from game to game (Gran Colombia, Greece, the
+// Khmer): the stored lock stayed on a rival while our own row scrolled away.
+// This is not the watched-civilization default retired above. The live
+// mirror's seat is the one fixed fact of that page — `tools/follow.py` pins
+// the view to it for the whole game — so the mark cannot wander, and it is
+// added at draw time, never written to the stored set.
+function liveSeatLockKey(seats) {
+  try {
+    if (!livePause.available || !state || !Number.isInteger(state.player)) return null;
+  } catch (_) { return null; }  // drawn before the live controls exist
+  return seats.get(state.player) || null;
+}
+
+function lockedSeats() {
+  const chosen = chosenSeatLocks();
+  const live = liveSeatLockKey(seatKeysById(majorPlayers()));
+  return !live || chosen.has(live) ? chosen : new Set([...chosen, live]);
+}
+
 function saveHudLocks() {
-  try { localStorage.setItem(HUD_LOCK_STORAGE_KEY, JSON.stringify([...lockedSeats()])); }
+  try { localStorage.setItem(HUD_LOCK_STORAGE_KEY, JSON.stringify([...chosenSeatLocks()])); }
   catch (_) {}
 }
 
@@ -844,12 +866,15 @@ function seedOwnSeatLock(seats) {
 }
 
 function toggleSeatLock(id) {
-  const key = seatKeysById(majorPlayers()).get(id);
+  const seats = seatKeysById(majorPlayers());
+  const key = seats.get(id);
   if (!key) return;
+  // The live game's own seat stays locked whatever is clicked.
+  if (key === liveSeatLockKey(seats)) return;
   // Built from the stored set alone. Seeding it from a default that followed
   // the watched civilization meant a viewer's first click silently persisted a
   // second lock they had never made, and undoing that click left it behind.
-  const next = new Set(lockedSeats());
+  const next = new Set(chosenSeatLocks());
   if (next.has(key)) next.delete(key);
   else next.add(key);
   HUD_LOCKS = next;
@@ -24489,6 +24514,7 @@ function drawPlayerHud() {
   const repeatedCivs = repeatedCivNames(majors);
   seedOwnSeatLock(seats);
   const lockedKeys = lockedSeats();
+  const liveSeatKey = liveSeatLockKey(seats);
   // One line per row across the masthead — who this is and their twelve values
   // side by side — so a row is only as tall as its medallion: 26px, plus the
   // 2px gap under it. The fixed chrome and two-seat floor protect the turn
@@ -24614,10 +24640,13 @@ function drawPlayerHud() {
       // how tall the ribbon is right now; syncPlayerLockPins() settles that
       // against the rendered box. The markup only records the choice.
       const locked = lockedKeys.has(seats.get(p.id));
+      const liveSeat = liveSeatKey !== null && seats.get(p.id) === liveSeatKey;
       // Two seats can share a civilization, so a row the table repeats names
       // its leader as well — otherwise both lock controls read "Lock Rome".
       const seatName = repeatedCivs.has(p.civ) ? `${p.civ} under ${leader}` : p.civ;
-      const lockTitle = locked
+      const lockTitle = liveSeat
+        ? `${seatName} is the seat CIVVIS plays in this live game · always locked in view`
+        : locked
         ? `Unlock ${seatName} · its row scrolls with the rest of the table`
         : `Lock ${seatName} · its row stays in view while the table scrolls`;
       // Six identity facts open the dossier, exactly as the one wide button
@@ -24727,7 +24756,7 @@ function drawPlayerHud() {
           `<b>${kind === "score" ? ribbonScore(value) : ribbonStat(value)}</b>${markerHtml}</button>`;
       };
       const citiesOpen = openCityPlayer?.id === p.id;
-      return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}${locked ? " locked" : ""}${citiesOpen ? " cities-open" : ""}${p.id === focusSeat ? " focus-player" : ""}" style="--civ:${color};--civ-border:${pcol2(p.id)}" role="listitem">` +
+      return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}${locked ? " locked" : ""}${liveSeat ? " live-seat" : ""}${citiesOpen ? " cities-open" : ""}${p.id === focusSeat ? " focus-player" : ""}" style="--civ:${color};--civ-border:${pcol2(p.id)}" role="listitem">` +
         visibleColumns.map(rowCell).join("") + `</div>` +
         (citiesOpen ? playerHudCityRows(p, openCities, hiddenCities, visibleColumns) : "");
     }).join("") + `</div>` + hudResizeHandles("player standings", ["n", "s"]);
@@ -24925,7 +24954,11 @@ function syncPlayerLockPins() {
   // plain division reports.
   const visibleRows = Math.floor((ribbon.clientHeight + gap) / pitch);
   const holds = Math.max(0, Math.min(locked.length, Math.floor(visibleRows / 2), visibleRows - 1));
-  locked.slice(0, holds).forEach((card, index) => {
+  // A live game's own seat is held first when there is room for fewer locks
+  // than were made; the held rows still stack in table order.
+  const live = locked.filter(card => card.classList.contains("live-seat"));
+  const held = new Set([...live, ...locked].slice(0, holds));
+  locked.filter(card => held.has(card)).forEach((card, index) => {
     card.classList.add("pinned");
     card.style.setProperty("--pin-head", index);
     card.style.setProperty("--pin-tail", holds - 1 - index);

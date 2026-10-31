@@ -5789,6 +5789,13 @@ pub struct GameOptions {
     /// browser, `odds.rs` prices it as a human, below Prince it is PAID).
     /// Empty in every save written before this field existed.
     pub handicap_exempt: BTreeSet<usize>,
+    /// ⭐ The rung whose YIELD bonus (`ai_yield_pct`) every handicapped AI
+    /// seat plays, in place of `difficulty`'s own. `None` — the default — is
+    /// the game's rung. Only the percentage moves: the bonus start units, the
+    /// era boosts, combat strength and experience stay on the game's rung, and
+    /// so does everything else it decides (city-state walls, the AI behaviour
+    /// that reads the rung). See `Game::handicap_yield_spec`.
+    pub ai_yield_rung: Option<String>,
     /// Optional pre-game team assignment for each major seat. An empty vector
     /// means free-for-all; otherwise it must contain exactly `players`
     /// entries. Equal non-`None` values place those seats on one team.
@@ -5875,6 +5882,7 @@ impl GameOptions {
             speed: default_speed(),
             human_seats: BTreeSet::new(),
             handicap_exempt: BTreeSet::new(),
+            ai_yield_rung: None,
             teams: Vec::new(),
             disaster_intensity: DEFAULT_DISASTER_INTENSITY,
             game_modes: BTreeSet::new(),
@@ -6378,6 +6386,11 @@ pub struct Game {
     /// are placed during setup.
     #[serde(default)]
     pub handicap_exempt: BTreeSet<usize>,
+    /// The rung whose yield bonus the AI seats play, when it is not the
+    /// game's own. See `GameOptions::ai_yield_rung`. `None` in every save
+    /// written before this field existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ai_yield_rung: Option<String>,
     /// The published game whose rules this world is played by. Kept on the
     /// save alongside the rest of the setup so a restart offers what was
     /// actually played, rather than today's default.
@@ -7330,6 +7343,8 @@ struct GameSer {
     human_seats: BTreeSet<usize>,
     #[serde(default)]
     handicap_exempt: BTreeSet<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ai_yield_rung: Option<String>,
     #[serde(default)]
     events: Vec<Event>,
     #[serde(default)]
@@ -7595,6 +7610,7 @@ impl From<GameSer> for Game {
             speed,
             human_seats: s.human_seats,
             handicap_exempt: s.handicap_exempt,
+            ai_yield_rung: s.ai_yield_rung,
             mods: s.mods,
             events: s.events.into(),
             base_ruleset: s.base_ruleset,
@@ -7851,6 +7867,7 @@ impl From<Game> for GameSer {
             speed: g.game_speed.id().to_string(),
             human_seats: g.human_seats,
             handicap_exempt: g.handicap_exempt,
+            ai_yield_rung: g.ai_yield_rung,
             mods: g.mods,
             events: g.events.into(),
             base_ruleset: g.base_ruleset,
@@ -8197,6 +8214,7 @@ impl Game {
             speed,
             human_seats,
             handicap_exempt,
+            ai_yield_rung,
             teams,
             disaster_intensity,
             game_modes,
@@ -8348,6 +8366,7 @@ impl Game {
             speed,
             human_seats,
             handicap_exempt,
+            ai_yield_rung,
             base_ruleset,
             start_era,
             future_era,
@@ -9177,6 +9196,19 @@ impl Game {
         &self.rules.difficulties[&self.difficulty]
     }
 
+    /// ⭐ The rung whose yield bonus (`ai_yield_pct`) a handicapped AI seat
+    /// plays: the game's own rung unless `ai_yield_rung` names another (a key
+    /// this ruleset lacks falls back to the game's rung). Every discrete grant
+    /// — bonus start units, era boosts, combat strength, experience — always
+    /// reads [`Game::difficulty_spec`]: a calibrated rival field keeps the
+    /// rung's start and fight and converts a lower rung's percentage.
+    pub fn handicap_yield_spec(&self) -> &DifficultySpec {
+        self.ai_yield_rung
+            .as_ref()
+            .and_then(|rung| self.rules.difficulties.get(rung))
+            .unwrap_or_else(|| self.difficulty_spec())
+    }
+
     /// The rung the barbarian seat plays by: its raid band and spawn cadence.
     /// See [`default_barbarian_difficulty`]. Falls back to the seat's rung if
     /// a save names a rung this ruleset does not have.
@@ -9394,7 +9426,7 @@ impl Game {
         if !self.takes_handicap(pid) || self.is_human_seat(pid) {
             return Yields::default();
         }
-        self.difficulty_spec().ai_yield_pct
+        self.handicap_yield_spec().ai_yield_pct
     }
 
     /// Everything bought with a stockpiled yield scales by the game speed:

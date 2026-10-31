@@ -753,3 +753,83 @@ fn a_listening_post_in_a_padless_leader_city_gives_way_to_the_search() {
     let (city, _, second) = run(searches());
     assert_eq!(city, Some(second), "the search moves it on");
 }
+
+/// A third city for seat 1, at least five tiles from every city, the one
+/// farthest from the capital among the sites that fit.
+fn third_city(g: &mut Game, capital: u32) -> u32 {
+    let centre = g.cities[&capital].pos;
+    let site = g
+        .map
+        .tiles
+        .keys()
+        .copied()
+        .filter(|pos| {
+            let tile = &g.map.tiles[pos];
+            tile.owner_city.is_none()
+                && !g.rules.is_water(tile)
+                && g.cities.values().all(|city| g.wdist(city.pos, *pos) >= 5)
+        })
+        .max_by_key(|pos| (g.wdist(centre, *pos), std::cmp::Reverse(*pos)))
+        .expect("the fixture map has room for a third city");
+    let third = g.found_city_for(1, site, None);
+    // Seen, as `board` sees every other city: a Spy is posted only to a
+    // city we know.
+    let centre = g.cities[&third].pos;
+    g.players[0].explored.insert(centre);
+    third
+}
+
+#[test]
+fn the_search_visits_the_least_recently_searched_city_first() {
+    // The Spy stands in the racer's capital (no pad). The second city was
+    // searched long enough ago that the memory has lapsed; the third, the
+    // pad's city, has never been searched. The search goes to the third.
+    let (mut g, capital, second, _) = board();
+    let third = third_city(&mut g, capital);
+    hidden_pad(&mut g, third);
+    land(&mut g, 1, 1);
+    let spy = idle_spy(&mut g, capital);
+    let mut ai = searches();
+    ai.racer_spy_searched.insert(
+        second,
+        g.turn - g.standard_duration(RACER_SPY_SEARCH_MEMORY_TURNS),
+    );
+    let legal = g.legal_spy_actions(0, spy);
+    let racers = BTreeSet::from([1]);
+    let none = BTreeSet::new();
+    assert_eq!(
+        AdvancedAi::racer_spy_post(
+            &g,
+            spy,
+            Some(capital),
+            Some(1),
+            &racers,
+            &none,
+            &legal,
+            ai.racer_spy_search()
+        ),
+        Some(third),
+        "never searched before searched once"
+    );
+    // With both searched and both lapsed, the older search goes first.
+    ai.racer_spy_searched.insert(
+        third,
+        g.turn - g.standard_duration(RACER_SPY_SEARCH_MEMORY_TURNS) - 3,
+    );
+    assert_eq!(
+        AdvancedAi::racer_spy_post(
+            &g,
+            spy,
+            Some(capital),
+            Some(1),
+            &racers,
+            &none,
+            &legal,
+            ai.racer_spy_search()
+        ),
+        Some(third),
+        "the least recently searched first"
+    );
+    ai.advanced_spies(&mut g, 0, &conquest_on(1));
+    assert_eq!(g.spies[&spy].city, Some(third));
+}

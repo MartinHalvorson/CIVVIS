@@ -3124,7 +3124,11 @@ impl AdvancedAi {
             .without_faith_war(g, pid, self.one_war_enemies(g, pid))
             .into_iter()
             .any(|enemy| enemy != target);
-        other_war && !self.urgent_victory_threat(g, target)
+        // `launcher-war-serves-every-lane`: the leading space racer's war opens
+        // beside the burning one. See `advanced/launcher_war_every_lane.rs`.
+        other_war
+            && !self.urgent_victory_threat(g, target)
+            && !self.launcher_lane_war(g, pid, target)
     }
 
     /// A Joint War offer while any major war burns is a second front by
