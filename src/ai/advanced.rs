@@ -7866,6 +7866,10 @@ pub struct AdvancedAi {
     /// whose board holds none of the spare we put up, that spare first
     /// (`append_luxury_swap_order` in `civvis_orders`). Off by default.
     luxury_swap_asks_2: bool,
+    /// `opening-builder-after-the-first-settler`: the capital's first
+    /// Builder follows its first Settler. The behaviour lives on
+    /// `BasicAi::opening_builder_after_the_first_settler`. Off by default.
+    opening_builder_after_the_first_settler: bool,
     // ---- append: p-r ------------------------------------------------
     /// `prey-is-declared-on`: a Domination seat declares on a major rival
     /// under `prey_declaration::PREY_DECLARE_RATIO` of its military power
@@ -11443,6 +11447,7 @@ impl AdvancedAi {
             no_peace_with_a_launcher: false,
             launcher_war_ignores_the_edge: false,
             luxury_swap_asks_2: false,
+            opening_builder_after_the_first_settler: false,
             // ---- append: p-r ----------------------------------------
             prey_is_declared_on: false,
             prophet_race_takes_divine_spark: false,
