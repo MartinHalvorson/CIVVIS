@@ -2573,6 +2573,96 @@ what five rival chairs racing (6p) rather than live's three (4p) should do.
 At `-3` the wins move into the window and the opening falls out of band. A
 calibrated 6p game took 54–100 s at `--jobs 2` on a loaded fleet Mac.
 
+#### ⭐ Recalibrated to the live finish: `--rival-late-science 75 --rival-space-floor 62 --rival-victory-pace 175` (2026-10-31)
+
+**The recommended faithful field is now** rung −2 + pace **plus** these three
+knobs:
+
+```
+gene_screen --rivals firaxis-faithful --handicap rivals --rival-chairs 5 \
+  --rival-rung -2 --rival-pace \
+  --rival-late-science 75 --rival-space-floor 62 --rival-victory-pace 175 \
+  --difficulty immortal --deployment-genome --trace --out rows.jsonl
+```
+
+**Why.** Under rung −2 + pace the rival *economy* matches the live 6p Small
+Continents Immortal field through t175. Against met rivals' `public_stats`
+from the 10-31 live games, cities run 0.95–1.01x, production 0.91–1.20x,
+science 0.94–1.19x and techs −2 to +4. The rivals still *win* about 20–28
+turns early: Science at a median t181 against live t199–200, Culture at t173
+against t169 (-8e's harness rows read t141). So every uncapped verdict on a
+gene that pays back after ~t150 was under-credited.
+
+The cause is the race, not the economy:
+- **The tech leader runs ahead.** Leader techs at t125 / t150 read 54 / 66
+  against live 49 / 59.
+- **The native racer beelines the space branch.** Its first satellite comes
+  at ~t124 knowing ~50 techs. In 24 live seats the first rival satellite came
+  at a median **t152 knowing 59.5 techs**.
+
+The three knobs act on the handicapped rival chairs only, never on a measured
+seat and never in a live game (every option defaults to `None`):
+
+- **`--rival-late-science PCT`** (`GameOptions::ai_late_science_pct`): from
+  Online turn 100 (`AI_LATE_SCIENCE_FROM_STANDARD` = 150 standard), a rival's
+  Science, bonus included, is PCT percent of what it was.
+- **`--rival-space-floor TECHS`** (`GameOptions::ai_space_tech_floor`): no
+  rival may start a space project (Earth Satellite, Moon Landing, Mars Colony,
+  Exoplanet Expedition) before it knows TECHS techs.
+- **`--rival-victory-pace PCT`** (`GameOptions::ai_space_project_cost_pct`):
+  the four space projects cost a rival PCT percent. Alone this is weak: at
+  200% the finish moved t181 → t179, because the rival pours its production
+  in. It only bites once the floor gates the start.
+
+`--trace` also writes **`project_turns`** on every row: the first turn each
+major landed each space project. The table below is read from it
+(`scratchpad recal/projgaps.py` reads a winner's chain from the file).
+
+Measured at Immortal, 6p Small Continents, `--target-mix
+science,culture,religious,domination`, seeds 31100000+, 12 games a setting
+unless noted. Each cell is the median turn of the Science winner's satellite /
+Moon / Mars / Exoplanet / win, and the median Culture win:
+
+| setting (on top of rung −2 + pace) | sat / moon / mars / exo / win | culture win |
+|---|---|---|
+| none (the previous recommendation) | 124.5 / 128 / 143.5 / 156.5 / 181 | 173 (n 2) |
+| `--rival-victory-pace 200` | 128 / 134 / 155 / 162 / 179 | 149 (n 1) |
+| `--rival-late-science 75` | 136 / 140 / 156 / 164 / 185 | 171 (n 3) |
+| late-science 75 + `--rival-space-floor 62` | 153.5 / 158.5 / 166 / 170 / 187.5 | 173 (n 2) |
+| **late-science 75 + floor 62 + `--rival-victory-pace 175`** | **161 / 168 / 174.5 / 181 / 192** | **175 (n 4)** |
+| live (19 Technology losses, -8e) | 158 / 165 / 179 / 188 / 200 | 169 (n 11) |
+
+With the three knobs:
+- the winner's chain is within ~3–8 turns of live at every stage;
+- on the same seeds the game ends 7 turns later on average (184.7 against
+  177.7);
+- the rival mean techs sit within 2 of live at t150 and t175.
+
+The rival mean Science per turn reads 0.76 / 0.87 / 0.82x live at t100 / 150
+/ 175. That is the cost of matching the tech count and the leader, which drive
+the race.
+
+⚠ **These are rival-only clock knobs.** A file's absolute end turn is not
+comparable across calibrations: a later end is the rivals finishing later,
+not our seat doing better. Paired deltas inside one calibration (end turn,
+survival, score share) remain valid, since both arms share the knobs. Every
+header records all three, the calibration line names them, and `--analyze`
+refuses to merge files that differ on any of them.
+
+**Verdicts decided on the previous calibration, to re-read.** They were all
+measured with rung −2 + pace only, uncapped unless noted, and all
+under-credit late payoff:
+- the stage-1 Campus/Plaza claims re-arm (-f6 Culture, n 9–12);
+- -f6's culture-target lane check and `culture-keeps-every-border-open`;
+- -8b's `opening-builder-after-the-first-settler` (#4244: Culture n=12, end
+  turn +3.4 ± 4.8 without it) and #4287 `deck-prices-growth` (Culture and
+  Science n=12 each, survival ≈ 0, Culture production +10% at t150);
+- -8e's `land-grab-outlasts-the-opening` disarm (#4282);
+- -3b's Religion-seat knockout of its own ten armed genes (n=21, neutral).
+
+#4287 and the Campus claims are the most likely to move under 7+ more turns of
+payback.
+
 **What a calibrated source measures.** The measured seat lost all six games
 to a rival science win, ranked 6th of 6 in every one, kept every city it
 founded (one lost in one game) and ended on 10–14% of the table's score.
