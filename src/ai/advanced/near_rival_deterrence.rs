@@ -51,6 +51,24 @@ pub(crate) const DETERRENCE_RATIO: f64 = 1.0;
 /// kept seats' 16%.
 pub(crate) const DETERRENCE_REACH_RATIO: f64 = 0.75;
 
+/// `deterrence-within-reach` never yields before this standard turn (live
+/// turn 40 at the seat's Quick speed), nor while a stronger neighbour stands
+/// at our door (see `deterrence_rush_at_the_door`). Live Immortal 2026-10-30/31
+/// (81 seats): a city fell by t80 in 14 of 30 seats under the production-share
+/// line against 4 of 34 kept ones, most of them at war to rushes at t26-34
+/// (Stirling t26 at 88 power against 168, Babylon t27 at 58 against 148,
+/// Rome t34 at 102 against 189) before Masonry and Walls could stand; only
+/// units answer those.
+pub(crate) const DETERRENCE_REACH_FROM_STANDARD: u32 = 60;
+
+/// A met major at peace fielding this many times our power with a soldier
+/// seen within [`DETERRENCE_DOOR_TILES`] of one of our cities keeps the
+/// deterrent building whatever the ratio.
+pub(crate) const DETERRENCE_DOOR_RATIO: f64 = 2.0;
+
+/// See [`DETERRENCE_DOOR_RATIO`]; the surprise watch's latch radius.
+pub(crate) const DETERRENCE_DOOR_TILES: i32 = 10;
+
 /// The window, in standard turns: 45 and 120 are live turns 30 and 80 at the
 /// seat's Quick speed.
 pub(crate) const DETERRENCE_START_STANDARD: u32 = 45;
@@ -115,14 +133,37 @@ impl AdvancedAi {
         }
         self.deterrence_threat(g, pid).is_some_and(|(_, theirs)| {
             let ours = g.military_power(pid);
-            ours < DETERRENCE_RATIO * theirs && self.deterrence_parity_in_reach(ours, theirs)
+            ours < DETERRENCE_RATIO * theirs && !self.deterrence_yields(g, pid, ours, theirs)
         })
     }
 
-    /// `deterrence-within-reach`: whether our power stands close enough to the
-    /// neighbour's for the deterrent to reach parity. Always with the gene off.
-    pub(super) fn deterrence_parity_in_reach(&self, ours: f64, theirs: f64) -> bool {
-        !self.deterrence_within_reach || ours >= DETERRENCE_REACH_RATIO * theirs
+    /// `deterrence-within-reach`: whether the deterrent gives its queue back to
+    /// the economy. It does once live turn 40 has passed, while our power
+    /// stands below [`DETERRENCE_REACH_RATIO`] of the neighbour's, where a
+    /// unit or two cannot reach parity, and no stronger neighbour stands at
+    /// our door. Never with the gene off.
+    pub(super) fn deterrence_yields(&self, g: &Game, pid: usize, ours: f64, theirs: f64) -> bool {
+        self.deterrence_within_reach
+            && ours < DETERRENCE_REACH_RATIO * theirs
+            && g.turn >= g.standard_duration(DETERRENCE_REACH_FROM_STANDARD)
+            && !self.deterrence_rush_at_the_door(g, pid)
+    }
+
+    /// A met major at peace fielding [`DETERRENCE_DOOR_RATIO`] times our power
+    /// whose soldier we see within [`DETERRENCE_DOOR_TILES`] of one of our
+    /// cities this turn, or one the surprise watch has latched for the
+    /// capital or a frontier city.
+    fn deterrence_rush_at_the_door(&self, g: &Game, pid: usize) -> bool {
+        let ours = g.military_power(pid).max(1.0);
+        let cities = g.player_city_ids(pid);
+        let seen = cities.iter().any(|cid| {
+            Self::capital_watch_seen(g, pid, g.cities[cid].pos, DETERRENCE_DOOR_TILES)
+                .any(|unit| g.military_power(unit.owner) >= DETERRENCE_DOOR_RATIO * ours)
+        });
+        seen || self.capital_surprise_latched(g, pid).is_some()
+            || cities
+                .iter()
+                .any(|cid| self.frontier_surprise_latched(g, pid, *cid).is_some())
     }
 
     fn deterrence_land_unit(g: &Game, unit: &Name) -> bool {
@@ -180,7 +221,7 @@ impl AdvancedAi {
             return;
         };
         let ours = g.military_power(pid);
-        if ours >= DETERRENCE_RATIO * theirs || !self.deterrence_parity_in_reach(ours, theirs) {
+        if ours >= DETERRENCE_RATIO * theirs || self.deterrence_yields(g, pid, ours, theirs) {
             return;
         }
         let city_ids = g.player_city_ids(pid);

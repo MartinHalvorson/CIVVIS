@@ -228,40 +228,58 @@ fn the_faith_defence_keeps_its_queue_with_the_gene() {
 }
 
 /// `deterrence-within-reach`: far below parity the claim leaves the queue to
-/// the economy; within reach it trains the deterrent as before, and a queued
-/// deterrent out of reach no longer holds its slot.
+/// the economy; within reach, before live turn 40, or with a stronger
+/// neighbour's soldier at our door it trains the deterrent as before.
 #[test]
 fn the_deterrent_waits_until_parity_is_within_reach() {
-    let Some((mut game, ours, _theirs)) = neighbours(DETERRENCE_NEAR_TILES) else {
+    let Some((mut game, _ours, theirs)) = neighbours(DETERRENCE_NEAR_TILES) else {
         panic!("fixture: two capitals within the neighbour radius");
     };
     game.players[0].techs.insert(crate::name!("bronze_working"));
+    game.turn = game.standard_duration(DETERRENCE_REACH_FROM_STANDARD) + 2;
     let mut ai = armed();
     ai.enable_deterrence_within_reach();
+    let stock = armed();
+    let warrior = Item::Unit {
+        unit: crate::name!("warrior"),
+    };
 
-    // Out of reach: 50 against 100.
+    // Out of reach: 50 against 100 (half, under the door ratio).
     power(&mut game, 0, 50.0);
     power(&mut game, 1, 100.0);
     let mut far = game.clone();
     let plan = ai.assess(&far, 0);
     ai.claim_deterrence_unit(&mut far, 0, &plan);
     assert_eq!(land_units_queued(&far), 0, "out of reach: no claim");
-    let stock = armed();
     let mut stock_far = game.clone();
     let plan = stock.assess(&stock_far, 0);
     stock.claim_deterrence_unit(&mut stock_far, 0, &plan);
     assert_eq!(land_units_queued(&stock_far), 1, "the stock claim still builds");
-    let warrior = Item::Unit {
-        unit: crate::name!("warrior"),
-    };
     assert!(!ai.deterrence_unit_holds(&game, 0, &warrior));
     assert!(stock.deterrence_unit_holds(&game, 0, &warrior));
 
+    // Before live turn 40 the gene does not yield.
+    let mut early = game.clone();
+    early.turn = early.standard_duration(DETERRENCE_START_STANDARD) + 1;
+    let plan = ai.assess(&early, 0);
+    ai.claim_deterrence_unit(&mut early, 0, &plan);
+    assert_eq!(land_units_queued(&early), 1, "early: the deterrent");
+
     // Within reach: 80 against 100.
-    power(&mut game, 0, 80.0);
-    let plan = ai.assess(&game, 0);
-    ai.claim_deterrence_unit(&mut game, 0, &plan);
-    assert_eq!(land_units_queued(&game), 1, "within reach: the deterrent");
-    assert!(game.cities[&ours].queue.first().is_some());
-    assert!(ai.deterrence_unit_holds(&game, 0, &warrior));
+    let mut near = game.clone();
+    power(&mut near, 0, 80.0);
+    let plan = ai.assess(&near, 0);
+    ai.claim_deterrence_unit(&mut near, 0, &plan);
+    assert_eq!(land_units_queued(&near), 1, "within reach: the deterrent");
+    assert!(ai.deterrence_unit_holds(&near, 0, &warrior));
+
+    // A rival with twice our power and a soldier beside its own city, within
+    // the door radius of ours, keeps the deterrent building out of reach.
+    let mut door = game.clone();
+    power(&mut door, 0, 40.0);
+    let at = door.cities[&theirs].pos;
+    door.spawn_test_unit("warrior", 1, at);
+    let plan = ai.assess(&door, 0);
+    ai.claim_deterrence_unit(&mut door, 0, &plan);
+    assert_eq!(land_units_queued(&door), 1, "a stronger soldier at the door");
 }
