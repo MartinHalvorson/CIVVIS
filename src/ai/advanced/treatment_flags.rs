@@ -8722,6 +8722,17 @@ impl AdvancedAi {
         self.base.contact_fleet = false;
     }
 
+    /// Opt-in gene `naval-crossing-keeps-going`; see
+    /// [`Self::naval_crossing_keeps_going`].
+    pub fn enable_naval_crossing_keeps_going(&mut self) {
+        self.naval_crossing_keeps_going = true;
+    }
+
+    /// The twin of `enable_naval_crossing_keeps_going`.
+    pub fn disable_naval_crossing_keeps_going(&mut self) {
+        self.naval_crossing_keeps_going = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

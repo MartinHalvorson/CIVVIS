@@ -4440,6 +4440,12 @@ pub const GENES: &[Gene] = &[
     // ships route toward foreign landfall, and the faster hull is preferred.
     // See `advanced/contact_fleet.rs`.
     Gene { tag: "contact-fleet", field: "contact_fleet", kind: Kind::OptIn, enable: AdvancedAi::enable_contact_fleet, disable: AdvancedAi::disable_contact_fleet },
+    // Live Immortal 6p Continents 10-31: `naval-escort-patience` counts its
+    // wait per water tile, so a Settler crossing alone held two turns at every
+    // tile (042324Z: t52-79 afloat, 110 holds on 48 turns; 024232Z 22 turns,
+    // 011801Z 19). A voyage that has crossed alone steps on while the sea
+    // stays quiet. See `advanced/naval_crossing.rs`.
+    Gene { tag: "naval-crossing-keeps-going", field: "naval_crossing_keeps_going", kind: Kind::OptIn, enable: AdvancedAi::enable_naval_crossing_keeps_going, disable: AdvancedAi::disable_naval_crossing_keeps_going },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
