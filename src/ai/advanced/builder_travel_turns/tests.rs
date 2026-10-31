@@ -29,7 +29,13 @@ fn two_cities(from: Pos) -> (Game, u32, Pos, Pos) {
     for city in g.player_city_ids(0) {
         g.cities.get_mut(&city).unwrap().pop = 2;
     }
-    for tech in ["mining", "bronze_working", "animal_husbandry", "irrigation", "pottery"] {
+    for tech in [
+        "mining",
+        "bronze_working",
+        "animal_husbandry",
+        "irrigation",
+        "pottery",
+    ] {
         g.players[0].techs.insert(Name::new(tech));
     }
     let here = (5, 4);
@@ -215,7 +221,11 @@ fn the_live_kongo_builder_stays_for_the_long_walk_and_takes_the_short_one() {
     // 12.6 here". It walked, under escort holds t28-34.
     let value = 23.3 + 0.7 * 7.0;
     assert!(BuilderTravel::LEGACY.score(value, 7) > 12.6);
-    assert!(two.score(value, 7) < 12.6, "4 Builder-turns: {:.2} a turn", two.score(value, 7));
+    assert!(
+        two.score(value, 7) < 12.6,
+        "4 Builder-turns: {:.2} a turn",
+        two.score(value, 7)
+    );
     // t33, axial (9, 20) → (11, 20), 2 hexes: "adds 42.0 after travel, versus
     // 19.1 here". Two turns for more than twice the work still pays.
     let value = 42.0 + 0.7 * 2.0;

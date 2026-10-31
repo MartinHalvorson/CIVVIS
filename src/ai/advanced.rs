@@ -42648,9 +42648,8 @@ impl AdvancedAi {
                                 }
                                 // Only to say when the gene changed the pick.
                                 if travel.priced_in_turns() {
-                                    let untreated =
-                                        builder_travel_turns::BuilderTravel::LEGACY
-                                            .score(value, distance);
+                                    let untreated = builder_travel_turns::BuilderTravel::LEGACY
+                                        .score(value, distance);
                                     if untreated_pick
                                         .map(|(old, bp)| {
                                             untreated > old || (untreated == old && *pos < bp)
