@@ -833,3 +833,38 @@ fn the_search_visits_the_least_recently_searched_city_first() {
     ai.advanced_spies(&mut g, 0, &conquest_on(1));
     assert_eq!(g.spies[&spy].city, Some(third));
 }
+
+#[test]
+fn the_racers_unseen_cities_are_its_public_count_less_our_board() {
+    let (mut g, _, _, _) = board();
+    assert_eq!(
+        AdvancedAi::racer_unseen_cities(&g, 1),
+        0,
+        "no public figure off the live adapter"
+    );
+    Arc::make_mut(&mut g.observed_public_empire_stats)
+        .entry(1)
+        .or_default()
+        .city_count = Some(6);
+    assert_eq!(
+        AdvancedAi::racer_unseen_cities(&g, 1),
+        4,
+        "six public, two on our board"
+    );
+    Arc::make_mut(&mut g.observed_public_empire_stats)
+        .entry(1)
+        .or_default()
+        .city_count = Some(1);
+    assert_eq!(
+        AdvancedAi::racer_unseen_cities(&g, 1),
+        0,
+        "never below zero"
+    );
+    land(&mut g, 1, 1);
+    Arc::make_mut(&mut g.observed_public_empire_stats)
+        .entry(1)
+        .or_default()
+        .city_count = Some(5);
+    assert_eq!(keeps().racer_spy_unseen_cities(&g, 0), Some((1, 3)));
+    assert_eq!(stock().racer_spy_unseen_cities(&g, 0), None, "gene off");
+}
