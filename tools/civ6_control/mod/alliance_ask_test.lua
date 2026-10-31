@@ -350,8 +350,20 @@ check("a culture seat asks under CultureAllies", select(2, alliance(cultureAsks,
 CivvisControlConfig.VictoryLane = "domination"
 local _, dominationAsks = fixture({ stateIndex = 1 })
 check("CultureAllies opens only the culture lane", select(2, alliance(dominationAsks, 6)), "alliance_off_lane")
-CivvisControlConfig.VictoryLane = "diplomatic"
+-- `science-seat-allies`: a Science seat asks only under `ScienceAllies`.
 CivvisControlConfig.CultureAllies = nil
+CivvisControlConfig.VictoryLane = "science"
+local _, sciencePlayer = fixture({ stateIndex = 1 })
+check("a science seat asks nothing by default", select(2, alliance(sciencePlayer, 6)), "alliance_off_lane")
+CivvisControlConfig.CultureAllies = true
+local _, scienceCulture = fixture({ stateIndex = 1 })
+check("CultureAllies does not open the science lane", select(2, alliance(scienceCulture, 6)), "alliance_off_lane")
+CivvisControlConfig.CultureAllies = nil
+CivvisControlConfig.ScienceAllies = true
+local _, scienceAsks = fixture({ stateIndex = 1 })
+check("a science seat asks under ScienceAllies", select(2, alliance(scienceAsks, 5)), "alliance_asked")
+CivvisControlConfig.VictoryLane = "diplomatic"
+CivvisControlConfig.ScienceAllies = nil
 
 if failures > 0 then
 	realPrint(failures .. " failure(s)")

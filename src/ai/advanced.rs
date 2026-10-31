@@ -8976,6 +8976,11 @@ pub struct AdvancedAi {
     /// threats are barbarians founds where it stands despite the tile risk.
     /// See `advanced/settler_raiders.rs`.
     settler_founds_under_raiders: bool,
+    /// `science-seat-allies`: a seat aiming at Science allies a safe
+    /// neighbour, never the leading science rival or a rival with a landed
+    /// space project, and the live binary passes its alliances to the host.
+    /// See `advanced/culture_seat_allies.rs`. Off by default.
+    science_seat_allies: bool,
     // ---- append: t-z ------------------------------------------------
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
@@ -11783,6 +11788,7 @@ impl AdvancedAi {
             siege_moves_under_the_wing: false,
             science_drive_answers_the_launch: false,
             settler_founds_under_raiders: false,
+            science_seat_allies: false,
             // ---- append: t-z ----------------------------------------
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,

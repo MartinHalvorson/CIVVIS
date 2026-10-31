@@ -36,7 +36,20 @@
 //!   them (`CultureAllies`, set by `tools/civ6_play.py` when this tag is
 //!   armed).
 //!
-//! Off, or for a seat not aiming at Culture, nothing changes.
+//! **`science-seat-allies`** (2026-10-31) is the same for a seat aiming at
+//! Science. The operator's non-Diplomatic Lv 7 lane put every seat on Science
+//! first, and the gate above dropped every Research Alliance the armed
+//! `research-alliance-first` proposed there (level 2 shares a tech boost
+//! every 30 turns; level 3 adds 10% of the ally's Science). A Science seat
+//! keeps that gene's wait for a legal Research Alliance (no stock kind
+//! meanwhile), never allies the strongest science rival or a rival with a
+//! landed space project (the race, and the launcher war's target), and
+//! prefers the nearest rival. The bar-holder rule is Culture's only. The live
+//! binary keeps its alliance orders and the agent takes them under
+//! `ScienceAllies`.
+//!
+//! Off, or for a seat not aiming at Culture (or Science under
+//! `science-seat-allies`), nothing changes.
 
 use super::*;
 
@@ -52,18 +65,36 @@ impl AdvancedAi {
         self.culture_seat_allies && self.victory_target == Some(VictoryTarget::Culture)
     }
 
-    /// Whether this seat's alliance orders reach the host: the live orders
-    /// binary keeps them off the Diplomatic lane only when this is true.
+    /// `science-seat-allies`: on, and aiming at Science.
+    pub(super) fn science_seat_allies_on(&self) -> bool {
+        self.science_seat_allies && self.victory_target == Some(VictoryTarget::Science)
+    }
+
+    /// Whether either seat gene runs for this seat.
+    fn seat_allies_on(&self) -> bool {
+        self.culture_seat_allies_on() || self.science_seat_allies_on()
+    }
+
+    /// Whether this seat's alliance orders reach the host as a Culture seat.
     pub fn culture_seat_allies_armed(&self) -> bool {
         self.culture_seat_allies_on()
     }
 
-    /// Whether `other` is never a Culture seat's partner under the gene: the
-    /// strongest science rival, a rival that has landed a space project, or
-    /// the rival with the most domestic tourists. Always false with the gene
-    /// off or off the Culture target.
+    /// Whether this seat's alliance orders reach the host: the live orders
+    /// binary keeps them off the Diplomatic lane only when this is true and
+    /// the plan's lane is Culture or Science.
+    pub fn seat_allies_armed(&self) -> bool {
+        self.seat_allies_on()
+    }
+
+    /// Whether `other` is never a partner under either seat gene: the
+    /// strongest science rival or a rival that has landed a space project,
+    /// and on a Culture seat the rival with the most domestic tourists. On a
+    /// Science seat the strongest science rival is the race itself, and a
+    /// launcher war on it must stay legal. Always false with both genes off or
+    /// off their targets.
     pub(super) fn culture_seat_ally_barred(&self, g: &Game, pid: usize, other: usize) -> bool {
-        if !self.culture_seat_allies_on() {
+        if !self.seat_allies_on() {
             return false;
         }
         let rivals: Vec<usize> = g
@@ -88,14 +119,14 @@ impl AdvancedAi {
             .copied()
             .max_by_key(|rival| (g.domestic_tourists(*rival), std::cmp::Reverse(*rival)));
         Some(other) == strongest_science
-            || Some(other) == bar_holder
+            || (self.culture_seat_allies_on() && Some(other) == bar_holder)
             || Self::science_denial_stages(g, other) >= 1
     }
 
-    /// The ranking term that prefers the nearest partner: zero with the gene
-    /// off, off the Culture target, or without both capitals.
+    /// The ranking term that prefers the nearest partner: zero with both
+    /// genes off, off their targets, or without both capitals.
     pub(super) fn culture_seat_ally_nearness(&self, g: &Game, pid: usize, other: usize) -> f64 {
-        if !self.culture_seat_allies_on() {
+        if !self.seat_allies_on() {
             return 0.0;
         }
         let capital = |seat: usize| {
