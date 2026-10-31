@@ -11782,7 +11782,8 @@ end;
 -- Returns "friendship", "alliance", or nil and why not. Only a seat
 -- assigned the Diplomatic lane asks (`VictoryLane`; off with `DiploAllies =
 -- false`): an alliance forbids a war on the ally, which a domination seat's
--- campaign planner does not price. Bare global for alliance_ask_test.lua.
+-- campaign planner does not price. A Culture seat asks too under
+-- `CultureAllies`. Bare global for alliance_ask_test.lua.
 -- Whether `subject` is a culture racer at `AllianceCultureRacerShare` of
 -- the bar it must pass (see `CivvisAllianceStep`). Bare global for
 -- alliance_ask_test.lua.
@@ -11808,7 +11809,13 @@ end;
 
 CivvisAllianceStep = function(player, pid, subject, verb, turn, config)
 	config = type(config) == "table" and config or {};
-	if config.VictoryLane ~= "diplomatic" or config.DiploAllies == false then
+	-- `CultureAllies` (`culture-seat-allies`, set by civ6_play.py when the
+	-- tag is armed): a Culture seat asks as well. Its planner never names
+	-- the science racer or the rival setting our culture bar, and the
+	-- culture-racer refusal below still applies.
+	if (config.VictoryLane ~= "diplomatic"
+			and not (config.VictoryLane == "culture" and config.CultureAllies == true))
+			or config.DiploAllies == false then
 		return nil, "alliance_off_lane";
 	end
 	if verb ~= "ALLIANCE_RESEARCH" and verb ~= "ALLIANCE_CULTURAL" and verb ~= "ALLIANCE_RELIGIOUS"
@@ -23022,11 +23029,38 @@ end
 -- No row (no page, a stale report, a mirror the harness has given up on) is no
 -- wait. A wait is capped at `capSeconds` a turn: a page that cannot paint must
 -- not stall the lane, so the turn ends anyway and says so.
-CivvisBoard.mirror = { capSeconds = 10 };
+--
+-- ★ A WAITING TURN PEEKS AT THE ROW EVERY `peekSeconds`, not on the pause's
+-- quarter-second poll: the first gated games (10-31) waited a median 0.64 s
+-- a turn, and the quarter second was a fifth of it. The same budget as the
+-- orders peek (`CivvisQueue.ordersLanded`): wall-clock bounded, one one-row
+-- query, and only while a turn is actually waiting.
+CivvisBoard.mirror = { capSeconds = 10, peekSeconds = 0.05 };
+function CivvisBoard.mirrorPeek(now)
+	local mirror = CivvisBoard.mirror;
+	if type(mirror.peekedAt) == "number" and now >= mirror.peekedAt
+			and now - mirror.peekedAt < mirror.peekSeconds then
+		return;
+	end
+	mirror.peekedAt = now;
+	if not attachOrders() then return; end
+	pcall(function()
+		local rows = DB.Query(string.format(
+			"SELECT x FROM civvis.orders WHERE run = '%s' AND kind = 'mirror'",
+			sqlSafe(cfg.RunTag)));
+		local shown = nil;
+		for _, row in ipairs(rows) do shown = tonumber(row.x); end
+		CivvisBoard.hold.mirrorTurn = shown;
+	end);
+end
 function CivvisBoard.mirrorHold(turn)
 	local hold, mirror = CivvisBoard.hold, CivvisBoard.mirror;
-	local shown = hold.mirrorTurn;
 	hold.mirrorWaiting = false;
+	if mirror.turn == turn and not mirror.done then
+		local now = CivvisClock.now();
+		if type(now) == "number" then CivvisBoard.mirrorPeek(now); end
+	end
+	local shown = hold.mirrorTurn;
 	if type(shown) ~= "number" or shown >= turn then
 		if mirror.turn == turn and mirror.since ~= nil and not mirror.done then
 			mirror.done = true;

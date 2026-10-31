@@ -83,10 +83,11 @@ STAGE = os.environ.get("CIVVIS_FOLLOW_STAGE", os.path.join(RIG, "stage"))
 
 POLL_SECONDS = 1.0
 # Between those upkeep passes (windows, browser, newest run) the board and the
-# page are watched this often: a new turn starts its publish within 0.1 s
+# page are watched this often: a new turn starts its publish within 50 ms
 # instead of up to a whole poll later, and the painted turn the game waits on
-# (`mirror_sync`) reaches the report as soon as the page draws it.
-FAST_POLL_SECONDS = 0.1
+# (`mirror_sync`) reaches the report as soon as the page draws it. A tail read
+# and one local `/status` per beat.
+FAST_POLL_SECONDS = 0.05
 # A rebuild costs a process launch, so don't do it for every appended line; a
 # live Online-speed turn can take only a few seconds, and every completed state
 # export must reach the board before the next decision makes it stale.
