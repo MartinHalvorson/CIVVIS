@@ -5517,6 +5517,10 @@ pub struct AdvancedAi {
     /// `advanced/builder_travel_turns.rs`. Off by default.
     builder_prices_travel_in_turns: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `defence-holds-under-fire`: a threatened city's walls or land defender
+    /// are not displaced by a civilian build. See `advanced/defence_holds.rs`.
+    /// Off by default.
+    defence_holds_under_fire: bool,
     /// `diplo-seat-statue-harbor`: a Diplomacy seat's strongest coastal city
     /// builds the Harbor the Statue of Liberty needs. See
     /// `advanced/diplo_statue_harbor.rs`. Off by default.
@@ -9687,6 +9691,9 @@ pub use air_city_assault::AirCityAssault;
 /// `war-target-prices-the-walls`: see `advanced/war_target_walls.rs`.
 mod war_target_walls;
 
+/// `defence-holds-under-fire`: see `advanced/defence_holds.rs`.
+mod defence_holds;
+
 /// `embassy-finds-the-capital`: see `advanced/embassy_capital.rs`.
 mod embassy_capital;
 
@@ -11136,6 +11143,7 @@ impl AdvancedAi {
             bankruptcy_exits_the_drain: false,
             builder_prices_travel_in_turns: false,
             // ---- append: c-d ----------------------------------------
+            defence_holds_under_fire: false,
             diplo_seat_statue_harbor: false,
             culture_routes_reach_every_rival: false,
             culture_seat_monuments: false,
@@ -33810,6 +33818,15 @@ impl AdvancedAi {
                                             cid,
                                             current_item,
                                             plan,
+                                        )
+                                        // `defence-holds-under-fire`: see
+                                        // `advanced/defence_holds.rs`.
+                                        && !self.defence_holds_under_fire(
+                                            g,
+                                            pid,
+                                            cid,
+                                            current_item,
+                                            &item,
                                         )))
                         }
                         None => true,

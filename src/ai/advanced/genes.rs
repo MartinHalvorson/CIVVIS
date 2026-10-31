@@ -4478,6 +4478,14 @@ pub const GENES: &[Gene] = &[
     // charge to spare it now scores value per Builder-turn; its last charge
     // keeps the untreated price. See `advanced/builder_travel_turns.rs`.
     Gene { tag: "builder-prices-travel-in-turns", field: "builder_prices_travel_in_turns", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_prices_travel_in_turns, disable: AdvancedAi::disable_builder_prices_travel_in_turns },
+    // The defence pass queues walls in a threatened city and the general pass
+    // switches it straight back: "switches to amphitheater, displacing walls"
+    // 50 times on the live journals, and 8 of the 10 cities lost unwalled at
+    // t45-100 on 6p Immortal seats had their walls displaced first. While the
+    // city is damaged or a visible enemy soldier stands within 4 tiles, a
+    // defensive commitment holds against a civilian build. See
+    // `advanced/defence_holds.rs`.
+    Gene { tag: "defence-holds-under-fire", field: "defence_holds_under_fire", kind: Kind::OptIn, enable: AdvancedAi::enable_defence_holds_under_fire, disable: AdvancedAi::disable_defence_holds_under_fire },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

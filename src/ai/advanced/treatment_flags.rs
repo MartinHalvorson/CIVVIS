@@ -8777,6 +8777,17 @@ impl AdvancedAi {
         self.builder_prices_travel_in_turns = false;
     }
 
+    /// Opt-in gene `defence-holds-under-fire`; see
+    /// [`Self::defence_holds_under_fire`].
+    pub fn enable_defence_holds_under_fire(&mut self) {
+        self.defence_holds_under_fire = true;
+    }
+
+    /// The twin of `enable_defence_holds_under_fire`.
+    pub fn disable_defence_holds_under_fire(&mut self) {
+        self.defence_holds_under_fire = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
