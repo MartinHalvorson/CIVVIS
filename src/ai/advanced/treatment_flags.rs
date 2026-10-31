@@ -8810,6 +8810,17 @@ impl AdvancedAi {
         self.religion_race_keeps_expanding = false;
     }
 
+    /// Opt-in gene `domination-targets-land-first`; see
+    /// [`Self::domination_targets_land_first`].
+    pub fn enable_domination_targets_land_first(&mut self) {
+        self.domination_targets_land_first = true;
+    }
+
+    /// The twin of `enable_domination_targets_land_first`.
+    pub fn disable_domination_targets_land_first(&mut self) {
+        self.domination_targets_land_first = false;
+    }
+
     /// Opt-in gene `science-seat-allies`; see [`Self::science_seat_allies`].
     pub fn enable_science_seat_allies(&mut self) {
         self.science_seat_allies = true;
