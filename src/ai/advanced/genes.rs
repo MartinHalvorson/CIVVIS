@@ -4470,6 +4470,14 @@ pub const GENES: &[Gene] = &[
     // 011801Z 19). A voyage that has crossed alone steps on while the sea
     // stays quiet. See `advanced/naval_crossing.rs`.
     Gene { tag: "naval-crossing-keeps-going", field: "naval_crossing_keeps_going", kind: Kind::OptIn, enable: AdvancedAi::enable_naval_crossing_keeps_going, disable: AdvancedAi::disable_naval_crossing_keeps_going },
+    // Live Immortal seats 2026-10-30 (30 seats, t<=120): 63% of a Builder's
+    // consecutive jobs sat near a different city, a median 6 turns and 5 hexes
+    // apart against 2 and 2 inside one city, at 7.6 Builder-turns per
+    // improvement. Every destination was scored `value - 0.7 x wdist`, and
+    // 0.7 a hex is nothing against jobs worth 5-100. While a Builder has a
+    // charge to spare it now scores value per Builder-turn; its last charge
+    // keeps the untreated price. See `advanced/builder_travel_turns.rs`.
+    Gene { tag: "builder-prices-travel-in-turns", field: "builder_prices_travel_in_turns", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_prices_travel_in_turns, disable: AdvancedAi::disable_builder_prices_travel_in_turns },
     // On 6p Continents a Domination plan aimed overseas never declares: the
     // army is kept on land at peace and the amphibious train forms only at
     // war. Live 041027Z aimed at overseas Russia t78-85 and retired with no
