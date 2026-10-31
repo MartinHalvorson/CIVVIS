@@ -8664,6 +8664,16 @@ impl AdvancedAi {
         self.launcher_war_serves_every_lane = false;
     }
 
+    /// Opt-in gene `culture-seat-allies`; see [`Self::culture_seat_allies`].
+    pub fn enable_culture_seat_allies(&mut self) {
+        self.culture_seat_allies = true;
+    }
+
+    /// The twin of `enable_culture_seat_allies`.
+    pub fn disable_culture_seat_allies(&mut self) {
+        self.culture_seat_allies = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
