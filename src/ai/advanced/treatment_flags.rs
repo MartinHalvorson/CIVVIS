@@ -8919,6 +8919,19 @@ impl AdvancedAi {
         self.science_denounce_names_the_leader = false;
     }
 
+    /// Opt-in gene `deck-prices-growth`; see
+    /// `BasicAi::deck_prices_growth`.
+    pub fn enable_deck_prices_growth(&mut self) {
+        self.deck_prices_growth = true;
+        self.base.enable_deck_prices_growth();
+    }
+
+    /// The twin of `enable_deck_prices_growth`.
+    pub fn disable_deck_prices_growth(&mut self) {
+        self.deck_prices_growth = false;
+        self.base.disable_deck_prices_growth();
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
