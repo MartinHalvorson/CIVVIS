@@ -5743,6 +5743,10 @@ pub fn default_speed() -> String {
     "standard".to_string()
 }
 
+/// The standard turn from which `GameOptions::ai_late_science_pct` applies:
+/// turn 100 at Online speed.
+pub const AI_LATE_SCIENCE_FROM_STANDARD: u32 = 150;
+
 /// Everything a setup screen gets to choose about a game.
 #[derive(Clone, Debug)]
 pub struct GameOptions {
@@ -5807,6 +5811,12 @@ pub struct GameOptions {
     /// launch faster than the live Firaxis AI does. See
     /// `Game::space_project_cost_scale`.
     pub ai_space_project_cost_pct: Option<u32>,
+    /// ⭐ The percentage of their ordinary Science every handicapped AI seat
+    /// keeps from [`AI_LATE_SCIENCE_FROM_STANDARD`] standard turns on, applied
+    /// to the rung's yield bonus. `None` — the default, and every live game —
+    /// is 100. A calibration knob for `gene_screen --rival-late-science`: the
+    /// native rival out-researches the live Firaxis AI from about turn 100.
+    pub ai_late_science_pct: Option<u32>,
     /// Optional pre-game team assignment for each major seat. An empty vector
     /// means free-for-all; otherwise it must contain exactly `players`
     /// entries. Equal non-`None` values place those seats on one team.
@@ -5895,6 +5905,7 @@ impl GameOptions {
             handicap_exempt: BTreeSet::new(),
             ai_yield_rung: None,
             ai_space_project_cost_pct: None,
+            ai_late_science_pct: None,
             teams: Vec::new(),
             disaster_intensity: DEFAULT_DISASTER_INTENSITY,
             game_modes: BTreeSet::new(),
@@ -6408,6 +6419,10 @@ pub struct Game {
     /// before this field existed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ai_space_project_cost_pct: Option<u32>,
+    /// The late Science the handicapped AI seats keep, in percent. See
+    /// `GameOptions::ai_late_science_pct`. `None` in older saves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ai_late_science_pct: Option<u32>,
     /// The published game whose rules this world is played by. Kept on the
     /// save alongside the rest of the setup so a restart offers what was
     /// actually played, rather than today's default.
@@ -7364,6 +7379,8 @@ struct GameSer {
     ai_yield_rung: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     ai_space_project_cost_pct: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ai_late_science_pct: Option<u32>,
     #[serde(default)]
     events: Vec<Event>,
     #[serde(default)]
@@ -7631,6 +7648,7 @@ impl From<GameSer> for Game {
             handicap_exempt: s.handicap_exempt,
             ai_yield_rung: s.ai_yield_rung,
             ai_space_project_cost_pct: s.ai_space_project_cost_pct,
+            ai_late_science_pct: s.ai_late_science_pct,
             mods: s.mods,
             events: s.events.into(),
             base_ruleset: s.base_ruleset,
@@ -7889,6 +7907,7 @@ impl From<Game> for GameSer {
             handicap_exempt: g.handicap_exempt,
             ai_yield_rung: g.ai_yield_rung,
             ai_space_project_cost_pct: g.ai_space_project_cost_pct,
+            ai_late_science_pct: g.ai_late_science_pct,
             mods: g.mods,
             events: g.events.into(),
             base_ruleset: g.base_ruleset,
@@ -8237,6 +8256,7 @@ impl Game {
             handicap_exempt,
             ai_yield_rung,
             ai_space_project_cost_pct,
+            ai_late_science_pct,
             teams,
             disaster_intensity,
             game_modes,
@@ -8390,6 +8410,7 @@ impl Game {
             handicap_exempt,
             ai_yield_rung,
             ai_space_project_cost_pct,
+            ai_late_science_pct,
             base_ruleset,
             start_era,
             future_era,
@@ -9476,7 +9497,15 @@ impl Game {
         if !self.takes_handicap(pid) || self.is_human_seat(pid) {
             return Yields::default();
         }
-        self.handicap_yield_spec().ai_yield_pct
+        let mut pct = self.handicap_yield_spec().ai_yield_pct;
+        // `GameOptions::ai_late_science_pct`: from the late mark the rival's
+        // Science, bonus included, is that share of what it was.
+        if let Some(keep) = self.ai_late_science_pct {
+            if self.turn >= self.standard_duration(AI_LATE_SCIENCE_FROM_STANDARD) {
+                pct.science = (100.0 + pct.science) * f64::from(keep) / 100.0 - 100.0;
+            }
+        }
+        pct
     }
 
     /// Everything bought with a stockpiled yield scales by the game speed:

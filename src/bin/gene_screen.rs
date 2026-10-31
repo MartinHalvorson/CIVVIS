@@ -73,6 +73,7 @@
 //!               [--rivals firaxis-mix|firaxis-faithful]
 //!               [--handicap all|rivals] [--rival-chairs N] [--stock-civs] [--trace]
 //!               [--rival-rung RUNG|-N] [--rival-pace] [--rival-victory-pace PCT]
+//!               [--rival-late-science PCT]
 //!   gene_screen --analyze PATH [PATH ...] [--json OUT] [--interactions]
 //!               [--denial] [--top N] [--by-civ TAG]
 //!   gene_screen --list
@@ -1946,6 +1947,11 @@ struct Header {
     /// every earlier file played. Recorded like `rival_rung`.
     #[serde(default, skip_serializing_if = "is_zero_u32")]
     rival_victory_pace: u32,
+    /// ⭐ `--rival-late-science` (2026-10-31): the share of their Science the
+    /// rival chairs kept from Online turn 100, in percent, or 0 for all of it,
+    /// which every earlier file played. Recorded like `rival_rung`.
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    rival_late_science: u32,
     /// ⭐ The binary that played these games. Absent in files written before
     /// 2026-08-23, which `tools/genes.py` grandfathers as history and
     /// marks `pre-fingerprint` rather than accepting silently.
@@ -2311,6 +2317,9 @@ struct Profile {
     /// ⭐ `--rival-victory-pace`: the space-project cost the rival chairs pay,
     /// in percent (`GameOptions::ai_space_project_cost_pct`). `None` is 100.
     rival_victory_pace: Option<u32>,
+    /// ⭐ `--rival-late-science`: the share of their Science the rival chairs
+    /// keep from Online turn 100 (`GameOptions::ai_late_science_pct`).
+    rival_late_science: Option<u32>,
     /// ⭐ Rival chairs per game ([`rival_offset`]); one is the 2026-08-25 mix.
     rival_chairs: usize,
     /// ⭐ `--handicap rivals`: every measured seat is exempt from the rung's
@@ -2447,6 +2456,7 @@ fn play_game(
         handicap_exempt,
         ai_yield_rung,
         ai_space_project_cost_pct: profile.rival_victory_pace,
+        ai_late_science_pct: profile.rival_late_science,
         ..GameOptions::new(
             profile.players,
             profile.width,
@@ -4982,6 +4992,7 @@ fn read_rows(paths: &[String]) -> (Header, Vec<Row>) {
                                 || first.rival_rung != found.rival_rung
                                 || first.rival_pace != found.rival_pace
                                 || first.rival_victory_pace != found.rival_victory_pace
+                                || first.rival_late_science != found.rival_late_science
                                 || first.all_seats != found.all_seats
                                 || first.design != found.design
                                 || first.prior != found.prior
@@ -5884,13 +5895,20 @@ fn calibration_read(header: &Header) -> String {
     } else {
         "cities unpaced"
     };
+    let mut line = format!("{rung}, {pace}");
     if header.rival_victory_pace > 0 {
-        return format!(
-            "{rung}, {pace}, space projects at {}% of their cost",
+        line.push_str(&format!(
+            ", space projects at {}% of their cost",
             header.rival_victory_pace
-        );
+        ));
     }
-    format!("{rung}, {pace}")
+    if header.rival_late_science > 0 {
+        line.push_str(&format!(
+            ", {}% of their Science from turn 100",
+            header.rival_late_science
+        ));
+    }
+    line
 }
 
 /// How the rung's handicap was dealt, for the banner and the report.
@@ -6670,12 +6688,16 @@ fn main() {
     // the live Firaxis AI (see docs/GENE_SCREEN.md).
     let rival_victory_pace = present(&args, "--rival-victory-pace")
         .then(|| number(&args, "--rival-victory-pace", 100).clamp(1, 1000) as u32);
-    if rival_victory_pace.is_some()
+    // ⭐ `--rival-late-science PCT`: the rival chairs keep PCT percent of their
+    // Science from Online turn 100 (`GameOptions::ai_late_science_pct`).
+    let rival_late_science = present(&args, "--rival-late-science")
+        .then(|| number(&args, "--rival-late-science", 100).clamp(1, 1000) as u32);
+    if (rival_victory_pace.is_some() || rival_late_science.is_some())
         && (!faithful || handicap_arg.as_deref() != Some(HANDICAP_RIVALS))
     {
         eprintln!(
-            "--rival-victory-pace prices the handicapped rival chairs' space projects, so it needs \
-             --rivals {FAITHFUL_KIND} and --handicap rivals"
+            "--rival-victory-pace and --rival-late-science act on the handicapped rival chairs, \
+             so they need --rivals {FAITHFUL_KIND} and --handicap rivals"
         );
         std::process::exit(2);
     }
@@ -7032,6 +7054,7 @@ fn main() {
         rival_rung: rival_rung.as_ref().map(RivalRung::id).unwrap_or_default(),
         rival_pace,
         rival_victory_pace: rival_victory_pace.unwrap_or(0),
+        rival_late_science: rival_late_science.unwrap_or(0),
         deployment_genome,
         design: "independent".to_string(),
         prior: probabilities.clone(),
@@ -7092,6 +7115,7 @@ fn main() {
         rival_rung: rival_rung.clone(),
         rival_pace,
         rival_victory_pace,
+        rival_late_science,
         rival_chairs,
         handicap_rivals,
     };
@@ -7240,6 +7264,7 @@ mod tests {
             rival_rung: String::new(),
             rival_pace: false,
             rival_victory_pace: 0,
+            rival_late_science: 0,
             design: "independent".into(),
             prior: vec![0.5; genes.len()],
             p_on: 0.5,
@@ -8896,6 +8921,9 @@ mod tests {
                 .expect("parses");
         assert_eq!(again.rival_victory_pace, 150);
         assert!(rivals_line(&again).contains("space projects at 150% of their cost"));
+        let mut late = again.clone();
+        late.rival_late_science = 85;
+        assert!(rivals_line(&late).contains("85% of their Science from turn 100"));
     }
 
     /// The faithful header names its one kind in the banner and the report.

@@ -46,3 +46,24 @@ fn the_setting_survives_a_save_and_is_absent_unset() {
         .unwrap()
         .contains("ai_space_project_cost_pct"));
 }
+
+/// `ai_late_science_pct`: from the late mark the rival's Science bonus is
+/// rescaled so its Science is that share; before it, and for an exempt seat,
+/// nothing changes.
+#[test]
+fn late_science_scales_the_rivals_science_from_the_mark() {
+    let mut g = Game::new_full(2, 30, 18, 4_292, 300, 0, false);
+    g.difficulty = "immortal".to_string();
+    g.handicap_exempt.insert(0);
+    let before = g.handicap_yield_pct(1).science;
+    g.ai_late_science_pct = Some(85);
+    g.turn = 1;
+    assert_eq!(g.handicap_yield_pct(1).science, before, "before the mark");
+    g.turn = g.standard_duration(super::AI_LATE_SCIENCE_FROM_STANDARD);
+    let after = g.handicap_yield_pct(1).science;
+    assert!(
+        ((100.0 + after) - 0.85 * (100.0 + before)).abs() < 1e-9,
+        "{before} -> {after}"
+    );
+    assert_eq!(g.handicap_yield_pct(0).science, 0.0, "exempt");
+}
