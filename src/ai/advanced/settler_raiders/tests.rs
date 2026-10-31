@@ -92,3 +92,39 @@ fn no_hostile_is_no_raider_threat() {
     let visible = ai.battlefront_visibility(&g, 0);
     assert!(!ai.settler_threat_is_raiders_only(&g, 0, here, &visible));
 }
+
+/// The safe-step hold's answer founds among raiders, and only under the gene
+/// and with barbarians the only threat.
+#[test]
+fn a_held_settler_among_raiders_founds() {
+    let (g0, mut ai, uid, here) = board();
+    let mut g = g0.clone();
+    assert!(!ai.settler_founds_among_raiders(&mut g, 0, uid), "gene off");
+    assert!(g.city_at(here).is_none());
+    ai.enable_settler_founds_under_raiders();
+    assert!(ai.settler_founds_among_raiders(&mut g, 0, uid));
+    assert!(g.city_at(here).is_some());
+
+    let mut at_war = g0.clone();
+    at_war.at_war.insert((0, 1));
+    at_war.at_war.insert((1, 0));
+    at_war.spawn_test_unit("warrior", 1, (8, 8));
+    assert!(!ai.settler_founds_among_raiders(&mut at_war, 0, uid));
+    assert!(at_war.city_at(here).is_none());
+}
+
+/// Raiders strong enough to break the new city keep the refusal: live
+/// barbarians do take cities (civvis-20261031T002934Z lost two).
+#[test]
+fn raiders_that_would_break_the_city_keep_the_refusal() {
+    let (mut g, mut ai, uid, here) = board();
+    for pos in [(9, 7), (8, 7), (7, 6), (7, 7)] {
+        g.spawn_test_unit("modern_armor", g.barb_pid.unwrap(), pos);
+    }
+    ai.enable_settler_founds_under_raiders();
+    let visible = ai.battlefront_visibility(&g, 0);
+    assert!(ai.settler_threat_is_raiders_only(&g, 0, here, &visible));
+    assert!(!ai.raiders_spare_the_city(&g, 0, uid, here, &visible));
+    assert!(!ai.founds_where_it_stands(&mut g, 0, uid, here));
+    assert!(g.city_at(here).is_none());
+}

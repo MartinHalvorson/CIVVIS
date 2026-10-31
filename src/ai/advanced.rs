@@ -41460,6 +41460,16 @@ impl AdvancedAi {
                 think!(self.journal(), Expansion, Detail, "Settler HELD short of {target:?}";
                        "{} tiles away and it did not move — {why}",
                        g.wdist(current, target); target);
+                // `settler-founds-under-raiders`: held by the safe-step guard a
+                // second turn running, among barbarians only, it founds where
+                // it stands. See `advanced/settler_raiders.rs`.
+                if current != target
+                    && matches!(g.route_step(uid, target, 0), Some(step) if g.can_move(uid, step))
+                    && self.settler_blocked_turns.get(&uid).copied().unwrap_or(0) >= 1
+                    && self.settler_founds_among_raiders(g, pid, uid)
+                {
+                    return true;
+                }
             }
         }
         if !self.settler_commit {
@@ -41597,15 +41607,17 @@ impl AdvancedAi {
             && self.settlement_tile_risk(g, pid, Some(uid), here, &visible)
                 > SETTLER_STEP_RISK_LIMIT
         {
-            // `settler-founds-under-raiders`: a barbarian never takes a city,
-            // so with raiders the only threat the city is the safer piece.
-            if !self.settler_threat_is_raiders_only(g, pid, here, &visible) {
+            // `settler-founds-under-raiders`: with barbarians the only threat
+            // and a city that would outlast them, the city is the safer piece.
+            if !self.settler_threat_is_raiders_only(g, pid, here, &visible)
+                || !self.raiders_spare_the_city(g, pid, uid, here, &visible)
+            {
                 return false;
             }
             think!(self.journal(), Expansion, Detail,
                    "Settler founds among raiders at {here:?}";
                    "settler-founds-under-raiders: every hostile in reach is a barbarian, \
-                    which captures a Settler but never a city"; here);
+                    and the city would outlast them where the Settler would be taken"; here);
         }
         // A stalled route may reach a tile that the ordinary target loop had
         // already rejected. Keep the fallback behind the same Loyalty
