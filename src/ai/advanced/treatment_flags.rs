@@ -8766,6 +8766,72 @@ impl AdvancedAi {
         self.naval_crossing_keeps_going = false;
     }
 
+    /// Opt-in gene `builder-prices-travel-in-turns`; see
+    /// [`Self::builder_prices_travel_in_turns`].
+    pub fn enable_builder_prices_travel_in_turns(&mut self) {
+        self.builder_prices_travel_in_turns = true;
+    }
+
+    /// The twin of `enable_builder_prices_travel_in_turns`.
+    pub fn disable_builder_prices_travel_in_turns(&mut self) {
+        self.builder_prices_travel_in_turns = false;
+    }
+
+    /// Opt-in gene `religion-lane-hands-over`; see
+    /// [`Self::religion_lane_hands_over`].
+    pub fn enable_religion_lane_hands_over(&mut self) {
+        self.religion_lane_hands_over = true;
+    }
+
+    /// The twin of `enable_religion_lane_hands_over`.
+    pub fn disable_religion_lane_hands_over(&mut self) {
+        self.religion_lane_hands_over = false;
+    }
+
+    /// Opt-in gene `early-route-feeds-production`; see
+    /// [`Self::early_route_feeds_production`].
+    pub fn enable_early_route_feeds_production(&mut self) {
+        self.early_route_feeds_production = true;
+    }
+
+    /// The twin of `enable_early_route_feeds_production`.
+    pub fn disable_early_route_feeds_production(&mut self) {
+        self.early_route_feeds_production = false;
+    }
+
+    /// Opt-in gene `religion-race-keeps-expanding`; see
+    /// [`Self::religion_race_keeps_expanding`].
+    pub fn enable_religion_race_keeps_expanding(&mut self) {
+        self.religion_race_keeps_expanding = true;
+    }
+
+    /// The twin of `enable_religion_race_keeps_expanding`.
+    pub fn disable_religion_race_keeps_expanding(&mut self) {
+        self.religion_race_keeps_expanding = false;
+    }
+
+    /// Opt-in gene `domination-targets-land-first`; see
+    /// [`Self::domination_targets_land_first`].
+    pub fn enable_domination_targets_land_first(&mut self) {
+        self.domination_targets_land_first = true;
+    }
+
+    /// The twin of `enable_domination_targets_land_first`.
+    pub fn disable_domination_targets_land_first(&mut self) {
+        self.domination_targets_land_first = false;
+    }
+
+    /// Opt-in gene `stalled-spreader-braves-the-march`; see
+    /// [`Self::stalled_spreader_braves_the_march`].
+    pub fn enable_stalled_spreader_braves_the_march(&mut self) {
+        self.stalled_spreader_braves_the_march = true;
+    }
+
+    /// The twin of `enable_stalled_spreader_braves_the_march`.
+    pub fn disable_stalled_spreader_braves_the_march(&mut self) {
+        self.stalled_spreader_braves_the_march = false;
+    }
+
     /// Opt-in gene `land-grab-outlasts-the-opening`; see
     /// [`Self::land_grab_outlasts_the_opening`].
     pub fn enable_land_grab_outlasts_the_opening(&mut self) {
