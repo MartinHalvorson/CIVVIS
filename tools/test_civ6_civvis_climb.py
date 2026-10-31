@@ -3589,7 +3589,7 @@ class OperatorSeatTests(unittest.TestCase):
 
     def _args(self):
         return argparse.Namespace(leader="LEADER_PERICLES", difficulty="DIFFICULTY_IMMORTAL",
-                                  map="Pangaea.lua", map_size="MAPSIZE_TINY")
+                                  map="Pangaea.lua", map_size="MAPSIZE_TINY", victory="diplomatic")
 
     def _seat(self, text, rng=None):
         with tempfile.TemporaryDirectory() as temporary:
@@ -3621,6 +3621,18 @@ class OperatorSeatTests(unittest.TestCase):
                        rng=rng)[0].difficulty for _ in range(2000))
         self.assertEqual(set(rolls), {"DIFFICULTY_IMMORTAL", "DIFFICULTY_DEITY"})
         self.assertAlmostEqual(rolls["DIFFICULTY_DEITY"] / 2000, 0.30, delta=0.04)
+
+    def test_the_victory_mix_rolls_only_the_named_lanes(self) -> None:
+        import random
+        rng = random.Random(3)
+        mix = "CIVVIS_SEAT_VICTORY_MIX=culture:1,science:1,religious:1,domination:1\n"
+        rolls = collections.Counter(self._seat(mix, rng=rng)[0].victory for _ in range(800))
+        self.assertEqual(set(rolls), {"culture", "science", "religious", "domination"})
+        self.assertTrue(all(150 <= n <= 250 for n in rolls.values()), rolls)
+
+    def test_a_bad_victory_mix_keeps_the_lane(self) -> None:
+        args, applied, warnings = self._seat("CIVVIS_SEAT_VICTORY_MIX=diplomacy:1,science\n")
+        self.assertEqual((args.victory, applied, len(warnings)), ("diplomatic", {}, 1))
 
     def test_a_single_difficulty_pins_it(self) -> None:
         args, _, _ = self._seat("CIVVIS_SEAT_DIFFICULTY_MIX=DIFFICULTY_DEITY\n")
