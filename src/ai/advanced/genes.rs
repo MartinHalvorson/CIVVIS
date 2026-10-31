@@ -4565,6 +4565,14 @@ pub const GENES: &[Gene] = &[
     // third. A Religion-target seat's first idle queue after Astrology starts
     // it. See `advanced/religion_seat_founds_first.rs`.
     Gene { tag: "religion-seat-founds-first", field: "religion_seat_founds_first", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_founds_first, disable: AdvancedAi::disable_religion_seat_founds_first },
+    // Live Immortal 6-major seats 2026-10-31 denounced every rival with a
+    // seen pad ("their space race is a science threat"): 111516Z all four at
+    // t142-150 and again every 21 turns, 104757Z 41 times, 094146Z 49. Every
+    // rival stood DENOUNCED by t160, so no seat could make a friend or an
+    // ally. Only the leading racer's denunciation serves the formal launcher
+    // war. Denounce only the most pressing science threat. See
+    // `advanced/science_threat_denial.rs`.
+    Gene { tag: "science-denounce-names-the-leader", field: "science_denounce_names_the_leader", kind: Kind::OptIn, enable: AdvancedAi::enable_science_denounce_names_the_leader, disable: AdvancedAi::disable_science_denounce_names_the_leader },
     // Live Immortal 2026-10-30/31, seats alive past t120: 32-42% of cities
     // grew at half or a quarter for housing and 22-28% were short of
     // Amenities at t80-t140, with our citizens per city at 0.68-0.77 of the
