@@ -43,7 +43,7 @@ import time
 import urllib.error
 import urllib.request
 
-from civ6_control import live_pause
+from civ6_control import live_pause, mirror_sync
 
 RIG = os.environ.get(
     "CIVVIS_RIG", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -82,6 +82,11 @@ STATUS = os.environ.get("CIVVIS_FOLLOW_STATUS", os.path.join(RIG, "status.json")
 STAGE = os.environ.get("CIVVIS_FOLLOW_STAGE", os.path.join(RIG, "stage"))
 
 POLL_SECONDS = 1.0
+# Between those upkeep passes (windows, browser, newest run) the board and the
+# page are watched this often: a new turn starts its publish within 0.1 s
+# instead of up to a whole poll later, and the painted turn the game waits on
+# (`mirror_sync`) reaches the report as soon as the page draws it.
+FAST_POLL_SECONDS = 0.1
 # A rebuild costs a process launch, so don't do it for every appended line; a
 # live Online-speed turn can take only a few seconds, and every completed state
 # export must reach the board before the next decision makes it stale.
@@ -109,6 +114,8 @@ class EventLines(list):
 # the whole append-only journal once per poll and, unlike a dict keyed by run,
 # cannot retain every finished game's multi-megabyte event stream forever.
 _EVENT_CACHE = None
+# `stage_events`' flipped copy of that same list, kept beside it.
+_STAGE_CACHE = None
 
 
 def log(message):
@@ -334,75 +341,88 @@ def remap_river_masks(events, top):
     export turn. Earlier turns are transformed identically but are not summed
     into the live diagnostic.
     """
-    directions = ((1, 0), (1, -1), (0, -1),
-                  (-1, 0), (-1, 1), (0, 1))
-    encoded = (1, 2, 4, 8, 16, 32)
     lost_by_turn = {}
     by_turn = {}
     for event in events:
         if isinstance(event, dict) and event.get("kind") == "tiles":
             by_turn.setdefault(event.get("turn"), []).append(event)
     for turn, chunks in by_turn.items():
-        lost = 0
-        width = next((c["width"] for c in chunks if isinstance(c.get("width"), int)), 0)
-        wrap = (lambda x: x % width) if width > 0 else (lambda x: x)
-        plots = {}
-        for c in chunks:
-            for p in c.get("plots", []):
-                if isinstance(p, dict) and isinstance(p.get("x"), int) \
-                        and isinstance(p.get("y"), int):
-                    plots[(p["x"], p["y"])] = p
-        old = {xy: (p.get("rv") or 0) for xy, p in plots.items()}
-        if not any(old.values()):
-            continue
-        segments = {}
-        for start, mask in old.items():
-            axial = offset_to_axial(*start)
-            for direction, bit in enumerate(encoded):
-                if not mask & bit:
-                    continue
-                delta = directions[direction]
-                end = axial_to_offset(axial[0] + delta[0], axial[1] + delta[1])
-                end = (wrap(end[0]), end[1])
-                key = tuple(sorted((start, end)))
-                carriers = segments.setdefault(key, [])
-                if start not in carriers:
-                    carriers.append(start)
-
-        for plot in plots.values():
-            if "rv" in plot:
-                plot["rv"] = 0
-
-        for endpoints, carriers in segments.items():
-            available = [point for point in carriers if point in plots and point[1] <= top]
-            if not available:
-                # A flag held by the cropped polar row can move to its revealed
-                # opposite endpoint as the reciprocal edge.
-                available = [
-                    point for point in endpoints
-                    if point in plots and point[1] <= top
-                ]
-            if not available:
-                lost += 1
-                continue
-            carrier = available[0]
-            other = endpoints[1] if endpoints[0] == carrier else endpoints[0]
-            reflected_carrier = (carrier[0], top - carrier[1])
-            reflected_other = (wrap(other[0]), top - other[1])
-            axial = offset_to_axial(*reflected_carrier)
-            direction = next((
-                index for index, delta in enumerate(directions)
-                if (
-                    wrap(axial_to_offset(axial[0] + delta[0], axial[1] + delta[1])[0]),
-                    axial_to_offset(axial[0] + delta[0], axial[1] + delta[1])[1],
-                ) == reflected_other
-            ), None)
-            if direction is None:
-                lost += 1
-                continue
-            plots[carrier]["rv"] = (plots[carrier].get("rv") or 0) | encoded[direction]
-        lost_by_turn[turn] = lost
+        lost = remap_turn_rivers(chunks, top)
+        if lost is not None:
+            lost_by_turn[turn] = lost
     return lost_by_turn[max(lost_by_turn)] if lost_by_turn else 0
+
+
+def remap_turn_rivers(chunks, top):
+    """`remap_river_masks` for ONE export turn's tile chunks, in place.
+
+    A turn's river edges are decided from that turn's chunks alone, which is
+    what lets `stage_events` redo just the turns that gained a chunk. Returns
+    the segments the reflection could not represent, or None when the turn
+    exported no river at all (such a turn is not counted as the newest).
+    """
+    directions = ((1, 0), (1, -1), (0, -1),
+                  (-1, 0), (-1, 1), (0, 1))
+    encoded = (1, 2, 4, 8, 16, 32)
+    lost = 0
+    width = next((c["width"] for c in chunks if isinstance(c.get("width"), int)), 0)
+    wrap = (lambda x: x % width) if width > 0 else (lambda x: x)
+    plots = {}
+    for c in chunks:
+        for p in c.get("plots", []):
+            if isinstance(p, dict) and isinstance(p.get("x"), int) \
+                    and isinstance(p.get("y"), int):
+                plots[(p["x"], p["y"])] = p
+    old = {xy: (p.get("rv") or 0) for xy, p in plots.items()}
+    if not any(old.values()):
+        return None
+    segments = {}
+    for start, mask in old.items():
+        axial = offset_to_axial(*start)
+        for direction, bit in enumerate(encoded):
+            if not mask & bit:
+                continue
+            delta = directions[direction]
+            end = axial_to_offset(axial[0] + delta[0], axial[1] + delta[1])
+            end = (wrap(end[0]), end[1])
+            key = tuple(sorted((start, end)))
+            carriers = segments.setdefault(key, [])
+            if start not in carriers:
+                carriers.append(start)
+
+    for plot in plots.values():
+        if "rv" in plot:
+            plot["rv"] = 0
+
+    for endpoints, carriers in segments.items():
+        available = [point for point in carriers if point in plots and point[1] <= top]
+        if not available:
+            # A flag held by the cropped polar row can move to its revealed
+            # opposite endpoint as the reciprocal edge.
+            available = [
+                point for point in endpoints
+                if point in plots and point[1] <= top
+            ]
+        if not available:
+            lost += 1
+            continue
+        carrier = available[0]
+        other = endpoints[1] if endpoints[0] == carrier else endpoints[0]
+        reflected_carrier = (carrier[0], top - carrier[1])
+        reflected_other = (wrap(other[0]), top - other[1])
+        axial = offset_to_axial(*reflected_carrier)
+        direction = next((
+            index for index, delta in enumerate(directions)
+            if (
+                wrap(axial_to_offset(axial[0] + delta[0], axial[1] + delta[1])[0]),
+                axial_to_offset(axial[0] + delta[0], axial[1] + delta[1])[1],
+            ) == reflected_other
+        ), None)
+        if direction is None:
+            lost += 1
+            continue
+        plots[carrier]["rv"] = (plots[carrier].get("rv") or 0) | encoded[direction]
+    return lost
 
 
 def stage_events(lines, height):
@@ -410,32 +430,75 @@ def stage_events(lines, height):
 
     The copy is turned north-up on the way through. The real run directory is
     never touched — this rewrites only what the throwaway reconstruction reads.
+
+    ★ INCREMENTAL, because this was most of the mirror's lag. Re-decoding and
+    re-flipping the whole journal on every publish cost 1.8 s of a ~3.5 s
+    publish at turn 149 (44 MB, 23k events) and grew with the game, so the
+    page painted each turn 2.5-5 s after Civilization VI began it. The
+    follower's `read_events` list only ever grows, so each event is flipped
+    once and kept as bytes; a turn's tile chunks are redone together whenever
+    that turn gains one, because its river edges are decided across all of
+    them (`remap_turn_rivers`). The file is byte-identical to a full rebuild
+    (test_follow.StageIncrementalTest).
     """
+    global _STAGE_CACHE
     os.makedirs(STAGE, exist_ok=True)
-    top, dropped = mirror_axis(height), []
-    events = []
-    for chunk in lines:
+    top = mirror_axis(height)
+    cache = _STAGE_CACHE
+    if (cache is None or cache["lines"] is not lines or cache["top"] != top
+            or len(lines) < cache["count"]):
+        cache = {"lines": lines, "top": top, "count": 0, "out": [],
+                 "dropped": [], "tiles": {}, "lost": {}}
+        _STAGE_CACHE = cache
+    out, dropped_by, tiles = cache["out"], cache["dropped"], cache["tiles"]
+
+    def place(index, event):
+        dropped = []
+        flipped = flip_north_up(event, top, dropped)
+        if flipped is not None and flipped.get("kind") == "tiles":
+            flipped["height"] = top + 1
+        out[index] = None if flipped is None else json.dumps(flipped).encode()
+        dropped_by[index] = len(dropped)
+
+    regroup = []
+    for index in range(cache["count"], len(lines)):
+        out.append(None)
+        dropped_by.append(0)
         try:
-            events.append(json.loads(chunk))
+            event = json.loads(lines[index])
         except Exception:
             continue
-    lost = remap_river_masks(events, top)
-    if lost:
-        log(f"{lost} river segment(s) lost by the north-up reflection "
+        if isinstance(event, dict) and event.get("kind") == "tiles":
+            turn = event.get("turn")
+            tiles.setdefault(turn, []).append(index)
+            if turn not in regroup:
+                regroup.append(turn)
+            continue
+        place(index, event)
+    cache["count"] = len(lines)
+    for turn in regroup:
+        indices = tiles[turn]
+        # Fresh copies: the reflection rewrites the chunks in place.
+        chunks = [json.loads(lines[index]) for index in indices]
+        lost = remap_turn_rivers(chunks, top)
+        if lost is None:
+            cache["lost"].pop(turn, None)
+        else:
+            cache["lost"][turn] = lost
+        for index, chunk in zip(indices, chunks):
+            place(index, chunk)
+
+    newest = cache["lost"][max(cache["lost"])] if cache["lost"] else 0
+    if newest:
+        log(f"{newest} river segment(s) lost by the north-up reflection "
             f"(no exported plot can carry them on the flipped board)")
-    out = []
-    for event in events:
-        flipped = flip_north_up(event, top, dropped)
-        if flipped is not None:
-            if flipped.get("kind") == "tiles":
-                flipped["height"] = top + 1
-            out.append(json.dumps(flipped).encode())
+    dropped = sum(dropped_by)
     if dropped:
-        log(f"{len(dropped)} board object(s) on row {top + 1} dropped by the north-up "
+        log(f"{dropped} board object(s) on row {top + 1} dropped by the north-up "
             f"reflection (that row has no same-parity partner)")
     path = os.path.join(STAGE, "events.jsonl")
     with open(path, "wb") as handle:
-        handle.write(b"\n".join(out) + b"\n")
+        handle.write(b"\n".join(chunk for chunk in out if chunk is not None) + b"\n")
     return STAGE
 
 
@@ -935,6 +998,61 @@ def ensure_watching(watch):
     end tell''')
 
 
+def report_shown(run_dir, game_turn, report):
+    """Tell the live game which turn the page has painted (`mirror_sync`).
+
+    The game does not end a played turn until the page shows it, so this is
+    asked often (`FAST_POLL_SECONDS`) and the report is rewritten whenever it
+    changes and at least once a second besides: a report that stops changing
+    is a follower that stopped, and the game stops waiting for it.
+    """
+    try:
+        status = json.loads(http_get(PORT, "/status", timeout=1))
+    except Exception:
+        return
+    if not isinstance(status, dict):
+        return
+    viewers = status.get("viewers")
+    shown = (os.path.basename(run_dir), game_turn, status.get("turn"),
+             status.get("frames_painted"), viewers if isinstance(viewers, int) else None)
+    now = time.time()
+    if shown == report.get("shown") and now - report.get("at", 0.0) < 1.0:
+        return
+    try:
+        mirror_sync.write_shown(*shown, now=now)
+    except OSError:
+        return
+    report["shown"], report["at"] = shown, now
+
+
+def await_board(run_dir, published_turn, published_size, published_at, report):
+    """Wait out one upkeep poll, but return the moment the board moves.
+
+    The main loop's upkeep (window placement, the browser, the newest run)
+    stays at `POLL_SECONDS`; the event tail is incremental and cheap, so it is
+    read every `FAST_POLL_SECONDS` meanwhile, with the same publish rule the
+    loop applies, and the page's painted turn is reported on the same beat.
+    """
+    until = time.time() + POLL_SECONDS
+    game_turn = published_turn
+    while True:
+        report_shown(run_dir, game_turn, report)
+        left = until - time.time()
+        if left <= 0:
+            return
+        time.sleep(min(FAST_POLL_SECONDS, left))
+        lines, turn, _, _, _ = read_events(run_dir)
+        if lines is None:
+            return
+        game_turn = turn
+        size = getattr(lines, "board_revision", len(lines))
+        if turn is not None and turn != published_turn:
+            return
+        if (published_size is not None and size != published_size
+                and time.time() - published_at >= MIN_REPUBLISH_SECONDS):
+            return
+
+
 def write_status(**fields):
     fields["written"] = time.strftime("%FT%TZ", time.gmtime())
     try:
@@ -950,6 +1068,7 @@ def main():
     published_count, misses = 0, 0
     awaiting_export = False
     watch = {"dead_since": None, "last_revival": 0.0, "revivals": 0}
+    report, upkept_at = {}, 0.0
 
     while True:
         if os.path.exists(OPERATOR_HALT):
@@ -960,8 +1079,12 @@ def main():
             if server_alive(PORT):
                 stop_visible_server()
             return
-        misses = ensure_on_screen(misses)
-        ensure_watching(watch)
+        # Window upkeep keeps its own pace: a pass that `await_board` cut
+        # short because the board moved goes straight to the publish.
+        if time.time() - upkept_at >= POLL_SECONDS:
+            misses = ensure_on_screen(misses)
+            ensure_watching(watch)
+            upkept_at = time.time()
         run_dir, mtime = newest_run()
         if run_dir is None:
             log("no run directory yet")
@@ -1063,7 +1186,7 @@ def main():
         turn_moved = turn is not None and turn != published_turn
         grew = published_size is not None and size != published_size
         if not (turn_moved or (grew and since >= MIN_REPUBLISH_SECONDS)):
-            time.sleep(POLL_SECONDS)
+            await_board(run_dir, published_turn, published_size, published_at, report)
             continue
 
         game, summary = rebuild(run_dir, players)
@@ -1097,7 +1220,7 @@ def main():
             cities=len(answer.get("cities") or []), units=len(answer.get("units") or []),
             port=PORT, publishes=published_count, run_idle=stale,
         )
-        time.sleep(POLL_SECONDS)
+        await_board(run_dir, published_turn, published_size, published_at, report)
 
 
 if __name__ == "__main__":

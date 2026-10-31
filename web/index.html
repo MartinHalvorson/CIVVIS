@@ -1100,9 +1100,21 @@
   .victory-list { display: flex; flex-direction: column; gap: 3px; }
   .victory-entry { min-width: 0; }
   .victory-entry[hidden] { display: none; }
-  /* The civilization whose perspective is on screen remains identifiable
-     when it is appended below the three leaders for this path. */
-  .victory-entry.focus-player .victory-civ { color: var(--gold-bright); }
+  /* The civilization whose perspective is on screen — our own seat beside a
+     live Civilization VI game — stands out of every path it appears in: a
+     gold band with a gold edge behind the row, and its name in bold gold.
+     The band is painted behind the row rather than padded into it, so the
+     row keeps exactly the height the leader capacity is measured from. */
+  .victory-entry.focus-player { position: relative; isolation: isolate; }
+  .victory-entry.focus-player::before {
+    content: ""; position: absolute; inset: -1px -3px -2px -3px; z-index: -1;
+    border-radius: 4px; pointer-events: none;
+    background: linear-gradient(90deg, color-mix(in srgb, var(--gold) 30%, transparent),
+                color-mix(in srgb, var(--gold) 8%, transparent));
+    box-shadow: inset 2px 0 var(--gold-bright);
+  }
+  .victory-entry.focus-player .victory-civ { color: var(--gold-bright); font-weight: 800; }
+  .victory-entry.focus-player .victory-value { color: #f3e6c4; }
   .victory-entry.focus-player .victory-civ-dot {
     box-shadow: 0 0 0 1px var(--gold-bright), 0 0 6px color-mix(in srgb, var(--civ) 70%, transparent);
   }
@@ -3532,6 +3544,32 @@
                 0 var(--hud-row-gap) 0 #0b1714, 0 5px 14px #0009;
   }
   #playerhud .diplomacy-card:hover { transform: none; }
+  /* The seat whose eyes the page looks through — our own seat beside a live
+     Civilization VI game — is the one row a viewer always hunts for, so it
+     wears the victory tracker's gold: a warm opaque ground (it can be held
+     at an edge, where rows scroll beneath it), a gold frame and left edge,
+     and its name in bold gold. A war keeps its red edge on this row too. */
+  #playerhud .diplomacy-card.focus-player {
+    border-color: color-mix(in srgb, var(--gold-bright) 72%, transparent);
+    background: linear-gradient(105deg, color-mix(in srgb, var(--gold) 26%, #0b0d0f),
+                color-mix(in srgb, var(--gold) 10%, #171a1c));
+    box-shadow: inset 3px 0 var(--gold-bright), inset 0 1px #ffffff14;
+  }
+  #playerhud .diplomacy-card.focus-player:hover {
+    background: linear-gradient(100deg, color-mix(in srgb, var(--gold) 32%, #0e1113),
+                color-mix(in srgb, var(--gold) 14%, #1d2124));
+  }
+  #playerhud .diplomacy-card.focus-player.at-war {
+    box-shadow: inset 3px 0 var(--danger), inset 0 1px #fff1;
+  }
+  #playerhud .diplomacy-card.focus-player.pinned {
+    background: linear-gradient(105deg, color-mix(in srgb, var(--gold) 26%, #0b0d0f),
+                color-mix(in srgb, var(--gold) 10%, #171a1c));
+    box-shadow: inset 3px 0 var(--gold-bright), inset 0 1px #ffffff14, 0 0 0 1px #caa45655,
+                0 var(--hud-row-gap) 0 #090b0d, 0 5px 14px #0009;
+  }
+  #playerhud .diplomacy-card.focus-player .diplomacy-civ { color: var(--gold-bright); font-weight: 800; }
+  #playerhud .diplomacy-card.focus-player .diplomacy-player { color: #f3e6c4; }
   /* ── The cities behind a count ──────────────────────────────────────────
      A CITY figure opens that empire's cities as rows of the same table,
      directly under the seat: one city per row on the shared tracks, so a
@@ -4067,9 +4105,16 @@
   body.display-dedicated #maparea #victoryhud {
     top: calc(var(--player-hud-top, var(--panel-edge)) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));
     bottom: var(--panel-edge); left: auto; right: var(--panel-edge);
-    /* Wide enough for its own heading beside the fold and close controls. */
-    width: max(var(--victory-hud-width), 224px); height: auto;
+    /* Wide enough for its own heading beside the fold and close controls,
+       unless the viewer dragged it narrower (app.js carries that width). */
+    width: var(--dedicated-victory-width, max(var(--victory-hud-width), 224px)); height: auto;
     grid-template-rows: minmax(0, 1fr);
+  }
+  /* A narrowed panel ends its heading in an ellipsis rather than clipping
+     both of its ends around the centre. */
+  body.display-dedicated #maparea #victoryhud > .victory-region .hud-section-heading { justify-content: flex-start; }
+  body.display-dedicated #maparea #victoryhud > .victory-region .hud-section-heading > span {
+    min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis;
   }
   /* With the stats gone, the tracker's bar is the first one, so it is the
      one that leaves the close control's corner clear. */

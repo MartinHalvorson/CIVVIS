@@ -45,16 +45,22 @@ from civ6_control import (capture_budget, gamelock, launcher, macos_capture,
                           macos_input, macos_ocr, macos_window,
                           operator_retire, popup_clear, restart_handoff, vision,
                           watch)  # noqa: E402
-from civ6_control import live_pause  # noqa: E402
+from civ6_control import live_pause, mirror_sync  # noqa: E402
 from civ6_control.orders import (orders_db_path, request_restart,  # noqa: E402
                                  request_retire, reset_orders_db,
-                                 set_operator_pace, set_operator_pause)
+                                 set_mirror_turn, set_operator_pace,
+                                 set_operator_pause)
 # The mod's sentinel for a readback it could not resolve, imported rather than
 # repeated: this harness and the ledger have to agree on what "unreadable"
 # looks like, and a second copy of that fact is a second place for it to rot.
 from civ6_ladder import UNREADABLE, with_diagnostic  # noqa: E402
 
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
+
+#: The CIVVIS page this many turns behind the game has stopped keeping up (the
+#: mod capped a wait on it): turns stop waiting for it until it is back within
+#: one. See `sync_mirror_turn`.
+MIRROR_GIVE_UP_TURNS = 2
 
 #: How long a finished run keeps its screenshots. Its `events.jsonl`, `why.log`
 #: and `brain.log` are kept forever — they are what every census reads.
@@ -226,6 +232,11 @@ class DesktopRescueQueue:
 DEFAULT_CIVVIS_VICTORY = "science"
 # Keep a deterministic default, while honoring the operator's selected leader.
 ROMAN_LEADER = "LEADER_TRAJAN"
+# `--leader random` keeps Civ VI's own "Random Leader" row, the picker's value
+# on every new game: no row is chosen, no leader is asserted against the seat,
+# and the seat event reports whichever leader the game rolled. Operator
+# 2026-10-31: "starting with the next game, lets go with a random leader".
+RANDOM_LEADER = "random"
 # The turn the opening is scored at. Sixty is where the measured split is
 # sharpest and is still early enough that a treatment has somewhere to act.
 OPENING_TEMPO_TURN = 60
@@ -2522,12 +2533,10 @@ def _leader_intro_visible(path: Path, bounds: tuple[int, int, int, int],
     Create Game page also displays that leader.  Require the intro's rendered
     ``BEGIN GAME`` control in its lower card band before using the fixed click.
     """
-    if not leader:
-        return False
     screen = desktop_size()
     if screen is None:
         return False
-    wanted = _normalized_label(leader_display_name(leader))
+    wanted = _normalized_label(leader_display_name(leader)) if leader else None
     screen_w, screen_h = screen
     x, y, w, h = bounds
     try:
@@ -2552,6 +2561,11 @@ def _leader_intro_visible(path: Path, bounds: tuple[int, int, int, int],
             break
     if not begin_game:
         return False
+    if wanted is None:
+        # RANDOM_LEADER: there is no name to read. The intro's own BEGIN GAME
+        # control in the lower card band is the page discriminator (the Create
+        # Game page's Start Game is rejected above), so it alone proves the card.
+        return True
     for observation in observations:
         if _normalized_label(str(observation.get("text", ""))) != wanted:
             continue
@@ -6090,10 +6104,55 @@ def _play(args: argparse.Namespace) -> int:
                       flush=True)
             pace_flow["synced"] = pace
 
+    # ★ THE MIRROR KEEPS UP, on the same poll. Operator 2026-10-30: the
+    # Firaxis game and the CIVVIS page must never be more than one turn
+    # apart. `tools/follow.py` reports the turn the page has painted
+    # (`mirror_sync`); it becomes a `mirror` row, and the mod does not end a
+    # played turn until that turn is on the page. A page that falls two turns
+    # behind anyway (a wait the mod capped: hidden, frozen, restarting) is let
+    # go -- no row, no wait -- until it is back within one, so it costs the
+    # lane one capped wait rather than one per turn.
+    mirror_flow = {"synced": None, "attempt_at": 0.0, "failed": False,
+                   "given_up": False}
+
+    def sync_mirror_turn(now: float) -> None:
+        shown = mirror_sync.shown_turn(args.tag)
+        turn = state.get("turn")
+        if shown is not None and isinstance(turn, int) and turn >= 0:
+            behind = turn - shown
+            if behind >= MIRROR_GIVE_UP_TURNS and not mirror_flow["given_up"]:
+                mirror_flow["given_up"] = True
+                print(f"[mirror] the page shows turn {shown} with the game at {turn}; "
+                      "playing on without it until it catches up", flush=True)
+            elif behind <= 1 and mirror_flow["given_up"]:
+                mirror_flow["given_up"] = False
+                print(f"[mirror] the page caught up (turn {shown}); "
+                      "turns wait for it again", flush=True)
+        wanted = None if mirror_flow["given_up"] else shown
+        if wanted == mirror_flow["synced"]:
+            return
+        # A turn the page has painted is news at once; dropping the row
+        # (nothing to wait for) is not urgent, and a failed write (a busy
+        # channel, or one the brain has not created yet) retries shortly.
+        retry = 1.0 if wanted is None else 0.25 if mirror_flow["failed"] else 0.0
+        if now - mirror_flow["attempt_at"] < retry:
+            return
+        mirror_flow["attempt_at"] = now
+        written = set_mirror_turn(orders_db_path(run_dir, args.orders_db), args.tag, wanted)
+        mirror_flow["failed"] = not written
+        if written:
+            if (wanted is None) != (mirror_flow["synced"] is None):
+                print("[mirror] turns end once the CIVVIS page shows them"
+                      if wanted is not None
+                      else "[mirror] no page to wait for; turns end at once",
+                      flush=True)
+            mirror_flow["synced"] = wanted
+
     def operator_pause_requested() -> bool:
         wanted = live_pause.requested()
         now = time.monotonic()
         sync_operator_pace(now)
+        sync_mirror_turn(now)
         if wanted != pause_flow["synced"] and now - pause_flow["attempt_at"] >= 1.0:
             pause_flow["attempt_at"] = now
             turn = state.get("turn")
@@ -7092,6 +7151,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.status:
         return status()
     args.leader = resolve_live_leader(args.leader)
+    if args.leader.lower() == RANDOM_LEADER:
+        args.leader = None  # Civ VI's Random Leader row stays selected; see RANDOM_LEADER
     if args.tag is None:
         args.tag = (args.difficulty.replace("DIFFICULTY_", "").lower()
                     + "-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
