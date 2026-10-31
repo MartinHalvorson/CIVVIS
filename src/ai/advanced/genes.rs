@@ -4435,6 +4435,11 @@ pub const GENES: &[Gene] = &[
     // take cities), the held Settler founds in place.
     // See `advanced/settler_raiders.rs`.
     Gene { tag: "settler-founds-under-raiders", field: "settler_founds_under_raiders", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_founds_under_raiders, disable: AdvancedAi::disable_settler_founds_under_raiders },
+    // While a living major is unmet or unlocated, or a city-state is unmet,
+    // the queued sea scout keeps its queue against the governor's rescoring,
+    // ships route toward foreign landfall, and the faster hull is preferred.
+    // See `advanced/contact_fleet.rs`.
+    Gene { tag: "contact-fleet", field: "contact_fleet", kind: Kind::OptIn, enable: AdvancedAi::enable_contact_fleet, disable: AdvancedAi::disable_contact_fleet },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

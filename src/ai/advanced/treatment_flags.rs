@@ -8709,6 +8709,19 @@ impl AdvancedAi {
         self.settler_founds_under_raiders = false;
     }
 
+    /// While a living major is unmet or unlocated, or a city-state is unmet,
+    /// the queued sea scout keeps its queue, ships route toward foreign
+    /// landfall, and the faster hull is preferred. Opt-in gene
+    /// `contact-fleet`; see `advanced/contact_fleet.rs`.
+    pub fn enable_contact_fleet(&mut self) {
+        self.base.contact_fleet = true;
+    }
+
+    /// The twin of `enable_contact_fleet`.
+    pub fn disable_contact_fleet(&mut self) {
+        self.base.contact_fleet = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
