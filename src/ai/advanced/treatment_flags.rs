@@ -8733,6 +8733,61 @@ impl AdvancedAi {
         self.immortal_skips_the_prophet_race = false;
     }
 
+    /// Opt-in gene `religion-lane-spreads-from-founding`; see
+    /// [`Self::religion_lane_spreads_from_founding`].
+    pub fn enable_religion_lane_spreads_from_founding(&mut self) {
+        self.religion_lane_spreads_from_founding = true;
+    }
+
+    /// The twin of `enable_religion_lane_spreads_from_founding`.
+    pub fn disable_religion_lane_spreads_from_founding(&mut self) {
+        self.religion_lane_spreads_from_founding = false;
+    }
+
+    /// Opt-in gene `board-ignores-the-faith-war`; see
+    /// [`Self::board_ignores_the_faith_war`].
+    pub fn enable_board_ignores_the_faith_war(&mut self) {
+        self.board_ignores_the_faith_war = true;
+    }
+
+    /// The twin of `enable_board_ignores_the_faith_war`.
+    pub fn disable_board_ignores_the_faith_war(&mut self) {
+        self.board_ignores_the_faith_war = false;
+    }
+
+    /// Opt-in gene `naval-crossing-keeps-going`; see
+    /// [`Self::naval_crossing_keeps_going`].
+    pub fn enable_naval_crossing_keeps_going(&mut self) {
+        self.naval_crossing_keeps_going = true;
+    }
+
+    /// The twin of `enable_naval_crossing_keeps_going`.
+    pub fn disable_naval_crossing_keeps_going(&mut self) {
+        self.naval_crossing_keeps_going = false;
+    }
+
+    /// Opt-in gene `builder-prices-travel-in-turns`; see
+    /// [`Self::builder_prices_travel_in_turns`].
+    pub fn enable_builder_prices_travel_in_turns(&mut self) {
+        self.builder_prices_travel_in_turns = true;
+    }
+
+    /// The twin of `enable_builder_prices_travel_in_turns`.
+    pub fn disable_builder_prices_travel_in_turns(&mut self) {
+        self.builder_prices_travel_in_turns = false;
+    }
+
+    /// Opt-in gene `religion-lane-hands-over`; see
+    /// [`Self::religion_lane_hands_over`].
+    pub fn enable_religion_lane_hands_over(&mut self) {
+        self.religion_lane_hands_over = true;
+    }
+
+    /// The twin of `enable_religion_lane_hands_over`.
+    pub fn disable_religion_lane_hands_over(&mut self) {
+        self.religion_lane_hands_over = false;
+    }
+
     /// Opt-in gene `capital-walls-at-any-ratio`; see
     /// [`Self::capital_walls_at_any_ratio`].
     pub fn enable_capital_walls_at_any_ratio(&mut self) {
