@@ -9944,11 +9944,6 @@ mod early_settler_floor;
 /// scale with the rung. One opt-in gene; see
 /// `advanced/expansion_scales_with_difficulty.rs`.
 mod expansion_scales_with_difficulty;
-/// `rival-pace`: a calibrated rival chair's city horizon follows the live
-/// Immortal field's city count by turn. Not a gene — set only by
-/// `gene_screen --rival-pace` on its rival chairs; see
-/// `advanced/rival_pace.rs`.
-mod rival_pace;
 /// `expansion-schedule`: while the opening is behind the pace every recorded
 /// win came from, open the settler pipeline by the shortfall. One opt-in
 /// gene; see `advanced/expansion_schedule.rs`.
@@ -9964,6 +9959,11 @@ mod higher_level_strategy;
 /// out-guns us in the opening. One opt-in gene; see
 /// `advanced/near_rival_deterrence.rs`.
 mod near_rival_deterrence;
+/// `rival-pace`: a calibrated rival chair's city horizon follows the live
+/// Immortal field's city count by turn. Not a gene — set only by
+/// `gene_screen --rival-pace` on its rival chairs; see
+/// `advanced/rival_pace.rs`.
+mod rival_pace;
 mod theology_fights;
 
 /// `growth-to-settle`: while the opening is behind the pace and no city can

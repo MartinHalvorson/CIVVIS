@@ -802,11 +802,11 @@ fn rival_pace_extra(offset: usize) -> usize {
 /// take it.
 const RIVAL_PACE_BEST_EXTRA: usize = 2;
 
-/// ⭐ `--rival-rung`: the rung whose ECONOMIC handicap rows — yields, era
-/// boosts, bonus start units — the rival chairs play
-/// (`GameOptions::ai_economy_rung`), named outright (`king`) or as rungs below
-/// the game's own (`-2`), so a `--difficulty-rotate` batch keeps the gap on
-/// every rung. Combat strength and experience stay on the game's rung.
+/// ⭐ `--rival-rung`: the rung whose YIELD bonus (`ai_yield_pct`) the rival
+/// chairs play (`GameOptions::ai_yield_rung`), named outright (`king`) or as
+/// rungs below the game's own (`-2`), so a `--difficulty-rotate` batch keeps
+/// the gap on every rung. Every discrete grant — the bonus start units, the
+/// era boosts, combat strength and experience — stays on the game's rung.
 #[derive(Clone, Debug, PartialEq)]
 enum RivalRung {
     Named(String),
@@ -841,7 +841,7 @@ impl RivalRung {
         }
     }
 
-    /// The economy rung of a game played at `game_rung` on `ladder` (ladder
+    /// The yield rung of a game played at `game_rung` on `ladder` (ladder
     /// order): `-N` steps down, never below the ladder's first rung.
     fn resolve(&self, game_rung: &str, ladder: &[&str]) -> String {
         match self {
@@ -1910,7 +1910,7 @@ struct Header {
     /// 2026-09-08, which seated one.
     #[serde(default, skip_serializing_if = "is_zero_usize")]
     rival_chairs: usize,
-    /// ⭐ `--rival-rung` (2026-10-31): the rung whose economic rows the rival
+    /// ⭐ `--rival-rung` (2026-10-31): the rung whose yield bonus the rival
     /// chairs played — a rung's key, or `-N` rungs below each game's — or
     /// empty for the game's own, which every earlier file played.
     /// Provenance on the source: `tools/genes.py` records it when set and
@@ -2277,7 +2277,7 @@ struct Profile {
     /// ⭐ `--trace`: write every major's [`TraceSample`]s at [`TRACE_TURNS`]
     /// onto its row. Off by default, so a row is byte for byte what it was.
     trace: bool,
-    /// ⭐ `--rival-rung`: the rung whose economic rows the rival chairs play.
+    /// ⭐ `--rival-rung`: the rung whose yield bonus the rival chairs play.
     /// `None` is the game's own rung.
     rival_rung: Option<RivalRung>,
     /// ⭐ `--rival-pace`: every faithful chair's city horizon follows the live
@@ -2404,9 +2404,9 @@ fn play_game(
     } else {
         BTreeSet::new()
     };
-    // ⭐ `--rival-rung`: the rival chairs' economy on its own rung, resolved
+    // ⭐ `--rival-rung`: the rival chairs' yield bonus on its own rung, resolved
     // against this game's rung so a rotation keeps the gap on every rung.
-    let ai_economy_rung = profile.rival_rung.as_ref().map(|rung| {
+    let ai_yield_rung = profile.rival_rung.as_ref().map(|rung| {
         let rules = civvis::rules::Rules::shared();
         rung.resolve(&difficulty, &difficulty_ladder(&rules))
     });
@@ -2417,7 +2417,7 @@ fn play_game(
         victory_conditions: victories,
         difficulty: difficulty.clone(),
         handicap_exempt,
-        ai_economy_rung,
+        ai_yield_rung,
         ..GameOptions::new(
             profile.players,
             profile.width,
@@ -5825,15 +5825,15 @@ fn rivals_line(header: &Header) -> String {
 /// How a faithful field was held down to the live one, for the banner.
 fn calibration_read(header: &Header) -> String {
     let rung = if header.rival_rung.is_empty() {
-        "economy on the game's rung".to_string()
+        "yields on the game's rung".to_string()
     } else if header.rival_rung.starts_with('-') {
         format!(
-            "economy {} rung(s) below the game's (combat on the game's)",
+            "yields {} rung(s) below the game's (start, boosts and combat on the game's)",
             &header.rival_rung[1..]
         )
     } else {
         format!(
-            "economy on {} (combat on the game's rung)",
+            "yields on {} (start, boosts and combat on the game's rung)",
             header.rival_rung
         )
     };
@@ -6329,7 +6329,7 @@ fn usage() -> ! {
          so add only --difficulty immortal|deity --handicap rivals --rival-chairs 5 \
          (the Lv 7 corpus of 2026-10-30 was 4p Tiny: --players 4 --width 60 --height 38 --city-states 6 --map pangaea)\n       \
          the calibrated faithful field: [--rival-rung RUNG|-N] the rival chairs play a lower rung's \
-         ECONOMY (yields, era boosts, bonus start units; combat strength and XP stay on the game's rung), \
+         YIELD bonus (bonus start units, era boosts, combat strength and XP stay on the game's rung), \
          named or N rungs below each game's, needs --handicap rivals; [--rival-pace] every faithful chair's \
          city horizon follows the live Immortal field's curve (4/5/6/7/9/10/11 at t40/60/80/100/150/175/225, \
          one chair per game +2); both need --rivals firaxis-faithful\n       \
@@ -6623,7 +6623,7 @@ fn main() {
     }
     if rival_rung.is_some() && handicap_arg.as_deref() != Some(HANDICAP_RIVALS) {
         eprintln!(
-            "--rival-rung moves the handicapped seats' economy, so it needs --handicap rivals: \
+            "--rival-rung moves the handicapped seats' yield bonus, so it needs --handicap rivals: \
              otherwise every measured seat would play it too"
         );
         std::process::exit(2);
@@ -8810,14 +8810,14 @@ mod tests {
         header.rival_chairs = 5;
         let plain = serde_json::to_string(&header).expect("serializes");
         assert!(!plain.contains("rival_rung") && !plain.contains("rival_pace"));
-        assert!(rivals_line(&header).contains("economy on the game's rung, cities unpaced"));
+        assert!(rivals_line(&header).contains("yields on the game's rung, cities unpaced"));
         header.rival_rung = "-2".into();
         header.rival_pace = true;
         let back: Header =
             serde_json::from_str(&serde_json::to_string(&header).expect("serializes"))
                 .expect("parses");
         assert_eq!((back.rival_rung.as_str(), back.rival_pace), ("-2", true));
-        assert!(rivals_line(&back).contains("economy 2 rung(s) below the game's"));
+        assert!(rivals_line(&back).contains("yields 2 rung(s) below the game's"));
         assert!(rivals_line(&back).contains("held to the live curve"));
     }
 

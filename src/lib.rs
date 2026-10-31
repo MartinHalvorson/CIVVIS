@@ -249,21 +249,21 @@ mod tests {
         assert_eq!(below.handicap_combat_strength(0), 0.0);
     }
 
-    /// ⭐ `ai_economy_rung` hands the AI seats a LOWER rung's economic rows —
-    /// yields, era boosts, bonus start units — while combat strength and
-    /// experience stay on the game's rung, an exempt seat stays exempt, and
-    /// the setting survives a save. Unset, the game's rung is both.
+    /// ⭐ `ai_yield_rung` hands the AI seats a LOWER rung's yield bonus while
+    /// every discrete grant — bonus start units, era boosts, combat strength,
+    /// experience — stays on the game's rung, an exempt seat stays exempt,
+    /// and the setting survives a save. Unset, the game's rung is all of it.
     #[test]
-    fn an_economy_rung_moves_the_ai_economy_and_keeps_the_rungs_fight() {
+    fn a_yield_rung_moves_the_ai_percentage_and_keeps_the_rungs_grants() {
         let mut calibrated = options("immortal", "standard", &[]);
         calibrated.handicap_exempt = BTreeSet::from([0]);
-        calibrated.ai_economy_rung = Some("prince".to_string());
+        calibrated.ai_yield_rung = Some("king".to_string());
         let g = Game::new_with(calibrated);
         let immortal = &g.rules.difficulties["immortal"];
-        let prince = &g.rules.difficulties["prince"];
-        assert_eq!(g.handicap_economy_spec().order, prince.order);
-        assert_eq!(g.handicap_yield_pct(1), prince.ai_yield_pct);
-        assert_eq!(g.handicap_yield_pct(1), Default::default());
+        let king = &g.rules.difficulties["king"];
+        assert_eq!(g.handicap_yield_spec().order, king.order);
+        assert_eq!(g.handicap_yield_pct(1), king.ai_yield_pct);
+        assert!(king.ai_yield_pct.production < immortal.ai_yield_pct.production);
         assert_eq!(g.handicap_combat_strength(1), immortal.ai_combat_strength);
         assert!(
             immortal.ai_combat_strength > 0.0,
@@ -271,20 +271,23 @@ mod tests {
         );
         assert_eq!(g.handicap_xp_pct(1), immortal.ai_xp_pct);
         assert_eq!(g.handicap_yield_pct(0), Default::default());
-        // Prince hands out no bonus units, so the rival opens like the exempt
-        // seat: a Settler and a Warrior.
-        assert!(prince.ai_bonus_units.values().all(|&count| count == 0));
-        assert_eq!(g.player_unit_ids(1).len(), g.player_unit_ids(0).len());
+        // The rival still opens with Immortal's bonus start units.
+        let bonus: usize = immortal.ai_bonus_units.values().sum();
+        assert!(bonus > 0);
+        assert_eq!(
+            g.player_unit_ids(1).len(),
+            g.player_unit_ids(0).len() + bonus
+        );
         let restored: Game = serde_json::from_str(&serde_json::to_string(&g).unwrap()).unwrap();
-        assert_eq!(restored.ai_economy_rung.as_deref(), Some("prince"));
-        assert_eq!(restored.handicap_yield_pct(1), Default::default());
-        // Unset, the economy is the game's rung, and a save writes nothing.
+        assert_eq!(restored.ai_yield_rung.as_deref(), Some("king"));
+        assert_eq!(restored.handicap_yield_pct(1), king.ai_yield_pct);
+        // Unset, the yield bonus is the game's rung, and a save writes nothing.
         let plain = Game::new_with(options("immortal", "standard", &[]));
-        assert_eq!(plain.handicap_economy_spec().order, immortal.order);
+        assert_eq!(plain.handicap_yield_spec().order, immortal.order);
         assert_eq!(plain.handicap_yield_pct(1), immortal.ai_yield_pct);
         assert!(!serde_json::to_string(&plain)
             .unwrap()
-            .contains("ai_economy_rung"));
+            .contains("ai_yield_rung"));
     }
 
     /// The other shipped table the ladder is transcribed from, and the one
