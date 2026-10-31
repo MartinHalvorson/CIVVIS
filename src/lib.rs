@@ -249,6 +249,44 @@ mod tests {
         assert_eq!(below.handicap_combat_strength(0), 0.0);
     }
 
+    /// ⭐ `ai_economy_rung` hands the AI seats a LOWER rung's economic rows —
+    /// yields, era boosts, bonus start units — while combat strength and
+    /// experience stay on the game's rung, an exempt seat stays exempt, and
+    /// the setting survives a save. Unset, the game's rung is both.
+    #[test]
+    fn an_economy_rung_moves_the_ai_economy_and_keeps_the_rungs_fight() {
+        let mut calibrated = options("immortal", "standard", &[]);
+        calibrated.handicap_exempt = BTreeSet::from([0]);
+        calibrated.ai_economy_rung = Some("prince".to_string());
+        let g = Game::new_with(calibrated);
+        let immortal = &g.rules.difficulties["immortal"];
+        let prince = &g.rules.difficulties["prince"];
+        assert_eq!(g.handicap_economy_spec().order, prince.order);
+        assert_eq!(g.handicap_yield_pct(1), prince.ai_yield_pct);
+        assert_eq!(g.handicap_yield_pct(1), Default::default());
+        assert_eq!(g.handicap_combat_strength(1), immortal.ai_combat_strength);
+        assert!(
+            immortal.ai_combat_strength > 0.0,
+            "Immortal's fight is kept"
+        );
+        assert_eq!(g.handicap_xp_pct(1), immortal.ai_xp_pct);
+        assert_eq!(g.handicap_yield_pct(0), Default::default());
+        // Prince hands out no bonus units, so the rival opens like the exempt
+        // seat: a Settler and a Warrior.
+        assert!(prince.ai_bonus_units.values().all(|&count| count == 0));
+        assert_eq!(g.player_unit_ids(1).len(), g.player_unit_ids(0).len());
+        let restored: Game = serde_json::from_str(&serde_json::to_string(&g).unwrap()).unwrap();
+        assert_eq!(restored.ai_economy_rung.as_deref(), Some("prince"));
+        assert_eq!(restored.handicap_yield_pct(1), Default::default());
+        // Unset, the economy is the game's rung, and a save writes nothing.
+        let plain = Game::new_with(options("immortal", "standard", &[]));
+        assert_eq!(plain.handicap_economy_spec().order, immortal.order);
+        assert_eq!(plain.handicap_yield_pct(1), immortal.ai_yield_pct);
+        assert!(!serde_json::to_string(&plain)
+            .unwrap()
+            .contains("ai_economy_rung"));
+    }
+
     /// The other shipped table the ladder is transcribed from, and the one
     /// that runs the opposite way. `StartingBuildings` gates exactly one of
     /// its 24 rows on difficulty — `BUILDING_WALLS`, `ERA_ANCIENT`,
