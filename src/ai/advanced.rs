@@ -7871,6 +7871,11 @@ pub struct AdvancedAi {
     /// `BasicAi::opening_builder_after_the_first_settler`. Off by default.
     opening_builder_after_the_first_settler: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `rival-pace` (`gene_screen --rival-pace`): `Some(extra)` caps the
+    /// plan's `desired_cities` at the live Immortal field's city curve plus
+    /// `extra` (`rival_pace::city_cap`). `None` everywhere but a calibrated
+    /// rival chair. See `advanced/rival_pace.rs`.
+    rival_city_pace: Option<usize>,
     /// `prey-is-declared-on`: a Domination seat declares on a major rival
     /// under `prey_declaration::PREY_DECLARE_RATIO` of its military power
     /// without a home Defend row or a staged ring. See
@@ -9980,6 +9985,11 @@ mod higher_level_strategy;
 /// out-guns us in the opening. One opt-in gene; see
 /// `advanced/near_rival_deterrence.rs`.
 mod near_rival_deterrence;
+/// `rival-pace`: a calibrated rival chair's city horizon follows the live
+/// Immortal field's city count by turn. Not a gene — set only by
+/// `gene_screen --rival-pace` on its rival chairs; see
+/// `advanced/rival_pace.rs`.
+mod rival_pace;
 mod theology_fights;
 
 /// `growth-to-settle`: while the opening is behind the pace and no city can
@@ -11466,6 +11476,7 @@ impl AdvancedAi {
             luxury_swap_asks_2: false,
             opening_builder_after_the_first_settler: false,
             // ---- append: p-r ----------------------------------------
+            rival_city_pace: None,
             prey_is_declared_on: false,
             prophet_race_takes_divine_spark: false,
             racer_blocker_declares: false,
@@ -11947,6 +11958,18 @@ impl AdvancedAi {
     /// Redirect an existing agent at a new explicit victory target without
     /// discarding campaign memory; the strategic plan re-assesses on the
     /// next turn. Used by the rollout-driven `StrategicAi`.
+    /// `rival-pace`: hold this seat's city horizon to the live Immortal
+    /// field's curve plus `extra` cities. For a calibrated rival chair only
+    /// (`gene_screen --rival-pace`); see `advanced/rival_pace.rs`.
+    pub fn set_rival_city_pace(&mut self, extra: usize) {
+        self.rival_city_pace = Some(extra);
+    }
+
+    /// The cities over the live curve this seat may plan for, when paced.
+    pub fn rival_city_pace(&self) -> Option<usize> {
+        self.rival_city_pace
+    }
+
     pub fn retarget(&mut self, target: VictoryTarget) {
         self.victory_target = Some(target);
         self.forced_target_player = None;
@@ -15560,6 +15583,13 @@ impl AdvancedAi {
             desired_cities.min(cap).max(cities.len())
         } else {
             desired_cities
+        };
+        // `rival-pace`: a calibrated rival chair settles to the live field's
+        // curve, last so that no widening above can lift it back. See
+        // `advanced/rival_pace.rs`.
+        let desired_cities = match self.rival_city_pace {
+            Some(extra) => rival_pace::capped(g, desired_cities, cities.len(), extra),
+            None => desired_cities,
         };
         let military_civ = matches!(
             g.players[pid].civ.as_str(),
