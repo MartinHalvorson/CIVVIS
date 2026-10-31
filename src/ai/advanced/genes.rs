@@ -4545,6 +4545,13 @@ pub const GENES: &[Gene] = &[
     // leading science rival or a space racer. See
     // `advanced/culture_seat_allies.rs`.
     Gene { tag: "science-seat-allies", field: "science_seat_allies", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_allies, disable: AdvancedAi::disable_science_seat_allies },
+    // `capital-walls-at-any-ratio`: 8 of 18 located Immortal city losses
+    // were the capital, and the attacker's power ratio barely told it apart
+    // from neighbours that never declared (medians 2.69 against 3.0); live
+    // civvis-20261030T201608Z lost an unwalled Athens to a 1.41x Egypt. At
+    // Immortal and Deity the capital's walls arm on any watched major soldier
+    // at our door. See `advanced/capital_walls_at_any_ratio.rs`.
+    Gene { tag: "capital-walls-at-any-ratio", field: "capital_walls_at_any_ratio", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_walls_at_any_ratio, disable: AdvancedAi::disable_capital_walls_at_any_ratio },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
