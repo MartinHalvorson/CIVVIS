@@ -69,7 +69,7 @@ impl AdvancedAi {
     pub(super) fn holy_city_at_risk(&self, g: &Game, pid: usize) -> Option<u32> {
         if !self.founder_holds_the_holy_city
             || !g.victory_conditions.religious
-            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            || !self.religion_seat_or_domination(g)
         {
             return None;
         }

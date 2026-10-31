@@ -1,6 +1,18 @@
 use super::*;
 
 impl AdvancedAi {
+    /// The lanes whose founder defences run: Domination, and Religion with
+    /// `religion-seat-defends-its-faith` (the Holy City guard and the
+    /// founder's spreaders kept home read it; the defensive Inquisition and
+    /// the homeland pass name the gene directly).
+    pub(super) fn religion_seat_or_domination(&self, g: &Game) -> bool {
+        match self.active_victory_target(g) {
+            Some(VictoryTarget::Domination) => true,
+            Some(VictoryTarget::Religion) => self.religion_seat_defends_its_faith,
+            _ => false,
+        }
+    }
+
     /// Build the founder's defensive capability while its Temple still follows
     /// our faith. Waiting for a flipped city leaves only a few turns to save
     /// for an Apostle, launch the Inquisition, and buy its first defender.
@@ -10,11 +22,15 @@ impl AdvancedAi {
     /// paired live-genome seeds (Emperor, 4 players): Diplomatic seats 3 -> 4
     /// wins of 20, none lost; Culture seats 9 -> 7, both lost to rival
     /// Diplomatic victories -- so Culture, like Science, Religion and a seat
-    /// with no target, keeps the old reading.
+    /// with no target, keeps the old reading. With
+    /// `religion-seat-defends-its-faith`, Religion seats too: a Religious
+    /// Victory needs our faith to hold our own cities as well as everyone
+    /// else's.
     pub(super) fn defensive_inquisition_ready(&self, g: &Game, pid: usize) -> bool {
         let lane = match self.active_victory_target(g) {
             Some(VictoryTarget::Domination) => true,
             Some(VictoryTarget::Diplomacy) => self.inquisition_defends_the_diplomat,
+            Some(VictoryTarget::Religion) => self.religion_seat_defends_its_faith,
             _ => false,
         };
         if !lane || !g.victory_conditions.religious {
