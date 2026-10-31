@@ -6377,6 +6377,16 @@ fn browser_orders_controls_interface_setup_and_logs() {
         "a lock is the viewer's stored choice, never derived from the watched civilization"
     );
     assert!(EMBEDDED_INDEX.contains("function seedOwnSeatLock(seats)"));
+    // A live verification game's own seat is always locked (operator
+    // 2026-10-31: "make sure during verification games the active player
+    // stays locked on the player hud"). It comes from the mirror's fixed
+    // seat at draw time, is never written to the viewer's stored set, cannot
+    // be clicked off, and is the first row held when fewer fit.
+    assert!(EMBEDDED_INDEX.contains("function liveSeatLockKey(seats)"));
+    assert!(EMBEDDED_INDEX.contains("if (key === liveSeatLockKey(seats)) return;"));
+    assert!(EMBEDDED_INDEX.contains("JSON.stringify([...chosenSeatLocks()])"));
+    assert!(EMBEDDED_INDEX.contains("const next = new Set(chosenSeatLocks());"));
+    assert!(EMBEDDED_INDEX.contains("const held = new Set([...live, ...locked].slice(0, holds));"));
     // A locked row holds at whichever edge it was about to leave, so it
     // needs both offsets, staggered by one row per row held above it.
     assert!(EMBEDDED_INDEX.contains("top: calc(var(--pin-head, 0) * var(--hud-row-pitch));"));
