@@ -38,7 +38,7 @@ fn praying_capital() -> (Game, u32) {
     city.pop = 2;
     city.queue.clear();
     city.districts.insert(crate::name!("holy_site"), site);
-    game.turn = game.standard_duration(PRAYER_DEADLINE_STANDARD) - 8;
+    game.turn = AdvancedAi::prayer_deadline(&game) - 8;
     (game, capital)
 }
 
@@ -139,4 +139,16 @@ fn a_seat_on_pace_for_its_prophet_does_not_pray() {
     game.players[0].gpp.insert("prophet".to_string(), 0.0);
     let plan = ai.assess(&game, 0);
     assert_eq!(ai.religion_seat_prayer_city(&game, 0, &plan), Some(capital));
+}
+
+/// The deadline is later below Immortal, where the race closes later.
+#[test]
+fn the_deadline_follows_the_difficulty() {
+    let (mut game, _) = praying_capital();
+    game.difficulty = "immortal".to_string();
+    let immortal = AdvancedAi::prayer_deadline(&game);
+    game.difficulty = "emperor".to_string();
+    let emperor = AdvancedAi::prayer_deadline(&game);
+    assert!(emperor > immortal, "{emperor} against {immortal}");
+    assert_eq!(immortal, game.standard_duration(PRAYER_DEADLINE_STANDARD));
 }

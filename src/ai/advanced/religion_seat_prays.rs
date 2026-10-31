@@ -25,7 +25,8 @@
 //! **What the gene does.** For a Religion-target seat with no religion, no
 //! Prophet in hand and a Prophet still open (`prophet_race_open_for`), while
 //! our Prophet points plus the current rate up to the race deadline
-//! ([`PRAYER_DEADLINE_STANDARD`]) fall short of the Prophet's price, the idle,
+//! ([`PRAYER_DEADLINE_STANDARD`] at Immortal and Deity,
+//! [`PRAYER_DEADLINE_STANDARD_LOW_TIER`] below) fall short of the Prophet's price, the idle,
 //! unthreatened city that produces most among those with a standing Holy Site
 //! starts Holy Site Prayers. It runs right after `religion-seat-founds-first`'s
 //! claim, before the opening book's branch, and never takes a busy queue. A
@@ -42,11 +43,27 @@
 
 use super::*;
 
-/// Standard turns by which the founding Prophet must be paid for: the live 6p
-/// Immortal race closed at t37-51 Online (about 55-77 Standard), so t36 Online.
+/// Standard turns by which the founding Prophet must be paid for at Immortal
+/// and Deity: the live 6p Immortal race closed at t37-51 Online (about 55-77
+/// Standard), so t36 Online.
 pub(super) const PRAYER_DEADLINE_STANDARD: u32 = 54;
 
+/// The same deadline below Immortal. Live 6p Emperor seats founded the fourth
+/// religion at a median t65.5 Online (quartiles 56-83, n = 4) against t48.5 at
+/// Immortal (n = 54), so t48 Online.
+pub(super) const PRAYER_DEADLINE_STANDARD_LOW_TIER: u32 = 72;
+
 impl AdvancedAi {
+    /// The Prayer deadline on this board, in raw game turns.
+    pub(super) fn prayer_deadline(g: &Game) -> u32 {
+        let standard = if matches!(g.difficulty.as_str(), "immortal" | "deity") {
+            PRAYER_DEADLINE_STANDARD
+        } else {
+            PRAYER_DEADLINE_STANDARD_LOW_TIER
+        };
+        g.standard_duration(standard)
+    }
+
     fn holy_site_prayers() -> Item {
         Item::Project {
             project: crate::name!("holy_site_prayers"),
@@ -82,9 +99,7 @@ impl AdvancedAi {
             .get("prophet")
             .copied()
             .unwrap_or(0.0);
-        let left = g
-            .standard_duration(PRAYER_DEADLINE_STANDARD)
-            .saturating_sub(g.turn);
+        let left = Self::prayer_deadline(g).saturating_sub(g.turn);
         if points + rate * f64::from(left) >= g.gp_cost(pid, "prophet") {
             return None;
         }
@@ -120,7 +135,7 @@ impl AdvancedAi {
         let name = g.cities[&cid].name.clone();
         let points = g.players[pid].gpp.get("prophet").copied().unwrap_or(0.0);
         let cost = g.gp_cost(pid, "prophet");
-        let deadline = g.standard_duration(PRAYER_DEADLINE_STANDARD);
+        let deadline = Self::prayer_deadline(g);
         if g.apply(
             pid,
             &Action::Produce {
