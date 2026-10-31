@@ -414,6 +414,9 @@ mod city_name_tests;
 mod seating_tests;
 
 #[cfg(test)]
+mod space_project_cost_tests;
+
+#[cfg(test)]
 mod modifier_attachment_tests;
 
 /// Put `district` on a free tile of a test city and register it.
@@ -5796,6 +5799,14 @@ pub struct GameOptions {
     /// so does everything else it decides (city-state walls, the AI behaviour
     /// that reads the rung). See `Game::handicap_yield_spec`.
     pub ai_yield_rung: Option<String>,
+    /// ⭐ The percentage every handicapped AI seat pays for the four space
+    /// projects (Earth Satellite, Moon Landing, Mars Colony, Exoplanet
+    /// Expedition), over their ordinary cost. `None` — the default, and every
+    /// live game — is 100. A calibration knob for `gene_screen
+    /// --rival-victory-pace`: the native rival converts its science into a
+    /// launch faster than the live Firaxis AI does. See
+    /// `Game::space_project_cost_scale`.
+    pub ai_space_project_cost_pct: Option<u32>,
     /// Optional pre-game team assignment for each major seat. An empty vector
     /// means free-for-all; otherwise it must contain exactly `players`
     /// entries. Equal non-`None` values place those seats on one team.
@@ -5883,6 +5894,7 @@ impl GameOptions {
             human_seats: BTreeSet::new(),
             handicap_exempt: BTreeSet::new(),
             ai_yield_rung: None,
+            ai_space_project_cost_pct: None,
             teams: Vec::new(),
             disaster_intensity: DEFAULT_DISASTER_INTENSITY,
             game_modes: BTreeSet::new(),
@@ -6391,6 +6403,11 @@ pub struct Game {
     /// written before this field existed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub ai_yield_rung: Option<String>,
+    /// The space-project cost the handicapped AI seats pay, in percent. See
+    /// `GameOptions::ai_space_project_cost_pct`. `None` in every save written
+    /// before this field existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ai_space_project_cost_pct: Option<u32>,
     /// The published game whose rules this world is played by. Kept on the
     /// save alongside the rest of the setup so a restart offers what was
     /// actually played, rather than today's default.
@@ -7345,6 +7362,8 @@ struct GameSer {
     handicap_exempt: BTreeSet<usize>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     ai_yield_rung: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ai_space_project_cost_pct: Option<u32>,
     #[serde(default)]
     events: Vec<Event>,
     #[serde(default)]
@@ -7611,6 +7630,7 @@ impl From<GameSer> for Game {
             human_seats: s.human_seats,
             handicap_exempt: s.handicap_exempt,
             ai_yield_rung: s.ai_yield_rung,
+            ai_space_project_cost_pct: s.ai_space_project_cost_pct,
             mods: s.mods,
             events: s.events.into(),
             base_ruleset: s.base_ruleset,
@@ -7868,6 +7888,7 @@ impl From<Game> for GameSer {
             human_seats: g.human_seats,
             handicap_exempt: g.handicap_exempt,
             ai_yield_rung: g.ai_yield_rung,
+            ai_space_project_cost_pct: g.ai_space_project_cost_pct,
             mods: g.mods,
             events: g.events.into(),
             base_ruleset: g.base_ruleset,
@@ -8215,6 +8236,7 @@ impl Game {
             human_seats,
             handicap_exempt,
             ai_yield_rung,
+            ai_space_project_cost_pct,
             teams,
             disaster_intensity,
             game_modes,
@@ -8367,6 +8389,7 @@ impl Game {
             human_seats,
             handicap_exempt,
             ai_yield_rung,
+            ai_space_project_cost_pct,
             base_ruleset,
             start_era,
             future_era,
@@ -9242,6 +9265,33 @@ impl Game {
     /// boosts and the below-Prince human bonuses alike.
     pub fn is_handicap_exempt(&self, pid: usize) -> bool {
         self.handicap_exempt.contains(&pid)
+    }
+
+    /// The factor on `project`'s cost for `pid`: `ai_space_project_cost_pct`
+    /// over 100 for one of the four space projects built by a handicapped AI
+    /// major, else 1. Always 1 when the option is unset, which every live game
+    /// and every save written before it is.
+    pub fn space_project_cost_scale(&self, pid: usize, project: &str) -> f64 {
+        let Some(pct) = self.ai_space_project_cost_pct else {
+            return 1.0;
+        };
+        let space = matches!(
+            project,
+            "launch_earth_satellite"
+                | "launch_moon_landing"
+                | "launch_mars_colony"
+                | "exoplanet_expedition"
+        );
+        let rival =
+            self.players.get(pid).is_some_and(|player| {
+                !player.is_minor && !player.is_barbarian && !player.is_free_city
+            }) && !self.is_handicap_exempt(pid)
+                && !self.is_human_seat(pid);
+        if space && rival {
+            f64::from(pct) / 100.0
+        } else {
+            1.0
+        }
     }
 
     /// Whether this world is a Tactics arena rather than a Civ world.
