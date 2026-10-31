@@ -4427,6 +4427,14 @@ pub const GENES: &[Gene] = &[
     // `frontier-walls-before-the-surprise`. See
     // `advanced/surprise_watch_latch.rs`.
     Gene { tag: "surprise-watch-holds-its-ratio", field: "surprise_watch_holds_its_ratio", kind: Kind::OptIn, enable: AdvancedAi::enable_surprise_watch_holds_its_ratio, disable: AdvancedAi::disable_surprise_watch_holds_its_ratio },
+    // Live Immortal 10-30, 21 seats: a Settler lived a median 8 turns (51% at
+    // 8+, tails to 58) before founding, and 571 of ~630 "Settler HELD" lines
+    // were the safe-step guard against barbarian raiders, and the stall-expiry
+    // fallback then refused on the same tile risk. With barbarians the only
+    // visible threat and a city that would outlast them (live barbarians do
+    // take cities), the held Settler founds in place.
+    // See `advanced/settler_raiders.rs`.
+    Gene { tag: "settler-founds-under-raiders", field: "settler_founds_under_raiders", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_founds_under_raiders, disable: AdvancedAi::disable_settler_founds_under_raiders },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
