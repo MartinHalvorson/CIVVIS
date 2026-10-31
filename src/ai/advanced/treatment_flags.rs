@@ -8744,6 +8744,17 @@ impl AdvancedAi {
         self.religion_lane_spreads_from_founding = false;
     }
 
+    /// Opt-in gene `board-ignores-the-faith-war`; see
+    /// [`Self::board_ignores_the_faith_war`].
+    pub fn enable_board_ignores_the_faith_war(&mut self) {
+        self.board_ignores_the_faith_war = true;
+    }
+
+    /// The twin of `enable_board_ignores_the_faith_war`.
+    pub fn disable_board_ignores_the_faith_war(&mut self) {
+        self.board_ignores_the_faith_war = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
