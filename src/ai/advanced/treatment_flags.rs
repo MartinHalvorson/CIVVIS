@@ -8788,6 +8788,17 @@ impl AdvancedAi {
         self.religion_lane_hands_over = false;
     }
 
+    /// Opt-in gene `early-route-feeds-production`; see
+    /// [`Self::early_route_feeds_production`].
+    pub fn enable_early_route_feeds_production(&mut self) {
+        self.early_route_feeds_production = true;
+    }
+
+    /// The twin of `enable_early_route_feeds_production`.
+    pub fn disable_early_route_feeds_production(&mut self) {
+        self.early_route_feeds_production = false;
+    }
+
     /// Opt-in gene `stalled-spreader-braves-the-march`; see
     /// [`Self::stalled_spreader_braves_the_march`].
     pub fn enable_stalled_spreader_braves_the_march(&mut self) {

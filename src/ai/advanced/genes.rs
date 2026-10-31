@@ -4485,6 +4485,13 @@ pub const GENES: &[Gene] = &[
     // Science (else Culture, else Domination). See
     // `advanced/religion_lane_hands_over.rs`.
     Gene { tag: "religion-lane-hands-over", field: "religion_lane_hands_over", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_lane_hands_over, disable: AdvancedAi::disable_religion_lane_hands_over },
+    // The t80 production gate retires 16 of 20 6p Immortal seats at a median
+    // share of 0.23. The first Trader (~t21) goes foreign or to a city-state
+    // for ~4 Gold in kept and retired seats alike: `commercial-hub-and-traders`
+    // pays 1.5 per Gold, so a domestic route's Production never wins. Within
+    // ~100 Online turns, route Production outbids that premium. See
+    // `advanced/early_route_production.rs`.
+    Gene { tag: "early-route-feeds-production", field: "early_route_feeds_production", kind: Kind::OptIn, enable: AdvancedAi::enable_early_route_feeds_production, disable: AdvancedAi::disable_early_route_feeds_production },
     // On a Religion seat, `spreader-steps-out-of-the-apostle` pins the corps
     // in a pocket while an out-trading Apostle camps on every approach: live
     // Immortal 063431Z logged 821 holds on 43 turns (one Missionary t118-177)
