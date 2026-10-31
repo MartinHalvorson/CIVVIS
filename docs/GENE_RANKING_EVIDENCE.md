@@ -188,6 +188,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `aluminum-tile-spends-the-war-chest` | off (unmeasured) | Opt-in gene `aluminum-tile-spends-the-war-chest`; see `Self::aluminum_tile_spends_the_war_chest`. | 1 \| 1 |
 | `astrology-before-the-second-city` | off (unmeasured) | Opt-in gene `astrology-before-the-second-city`; see `advanced/astrology_before_the_second_city.rs`. | 1 \| 1 |
 | `bankruptcy-exits-the-drain` | off (unmeasured) | Opt-in gene `bankruptcy-exits-the-drain`; see `advanced/solvency.rs`. | 1 \| 1 |
+| `board-ignores-the-faith-war` | off (unmeasured) | Opt-in gene `board-ignores-the-faith-war`; see `Self::board_ignores_the_faith_war`. | 1 \| 1 |
 | `breaker-bought-for-the-siege` | off (unmeasured) | Buy the wall-breaker a held siege waits for. | 1 \| 1 |
 | `builder-prices-travel-in-turns` | off (unmeasured) | Opt-in gene `builder-prices-travel-in-turns`; see `Self::builder_prices_travel_in_turns`. | 1 \| 1 |
 | `campus-claims-the-free-slot` | off (unmeasured) | Claim a free district slot for a first Campus. | — \| 2 |
