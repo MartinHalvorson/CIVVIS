@@ -5631,6 +5631,10 @@ pub struct AdvancedAi {
     /// displaces a Holy Site, Shrine or Temple at the head of a queue. See
     /// `deterrence_may_displace` in `advanced/near_rival_deterrence.rs`. Off by default.
     deterrence_spares_the_faith_defence: bool,
+    /// `deck-prices-growth`: the policy deck prices the growth a housing or
+    /// amenity card releases. The behaviour lives on
+    /// `BasicAi::deck_prices_growth`. Off by default.
+    deck_prices_growth: bool,
     /// `civic-awaits-its-inspiration`: on a forced beeline a step whose
     /// inspiration is still ours to earn (Craftsmanship's improvements, Games
     /// and Recreation's Construction, Recorded History's Campuses) goes after
@@ -8989,6 +8993,10 @@ pub struct AdvancedAi {
     /// space project, and the live binary passes its alliances to the host.
     /// See `advanced/culture_seat_allies.rs`. Off by default.
     science_seat_allies: bool,
+    /// `science-denounce-names-the-leader`: `science-threat-denial` denounces
+    /// only the most pressing science threat, the leading racer the launcher
+    /// war answers. See `advanced/science_threat_denial.rs`. Off by default.
+    science_denounce_names_the_leader: bool,
     // ---- append: t-z ------------------------------------------------
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
@@ -11247,6 +11255,7 @@ impl AdvancedAi {
             campus_building_claims_the_queue: false,
             crushing_steady_passes_the_edge: false,
             deterrence_spares_the_faith_defence: false,
+            deck_prices_growth: false,
             civic_awaits_its_inspiration: false,
             capital_campus_before_the_plaza: false,
             counterweight_flips_the_small_towns: false,
@@ -11802,6 +11811,7 @@ impl AdvancedAi {
             science_drive_answers_the_launch: false,
             settler_founds_under_raiders: false,
             science_seat_allies: false,
+            science_denounce_names_the_leader: false,
             // ---- append: t-z ----------------------------------------
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,
@@ -50810,9 +50820,9 @@ mod adopted_faith_balance;
 
 mod air_campaign;
 
-mod religious_interception;
 /// `religion-seat-founds-first`: see `advanced/religion_seat_founds_first.rs`.
 mod religion_seat_founds_first;
+mod religious_interception;
 
 /// `match-point-interception-ignores-power`: the faith's last holdout
 /// intercepts its spreader at a lower power floor. See

@@ -8908,6 +8908,30 @@ impl AdvancedAi {
         self.religion_seat_founds_first = false;
     }
 
+    /// Opt-in gene `science-denounce-names-the-leader`; see
+    /// [`Self::science_denounce_names_the_leader`].
+    pub fn enable_science_denounce_names_the_leader(&mut self) {
+        self.science_denounce_names_the_leader = true;
+    }
+
+    /// The twin of `enable_science_denounce_names_the_leader`.
+    pub fn disable_science_denounce_names_the_leader(&mut self) {
+        self.science_denounce_names_the_leader = false;
+    }
+
+    /// Opt-in gene `deck-prices-growth`; see
+    /// `BasicAi::deck_prices_growth`.
+    pub fn enable_deck_prices_growth(&mut self) {
+        self.deck_prices_growth = true;
+        self.base.enable_deck_prices_growth();
+    }
+
+    /// The twin of `enable_deck_prices_growth`.
+    pub fn disable_deck_prices_growth(&mut self) {
+        self.deck_prices_growth = false;
+        self.base.disable_deck_prices_growth();
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
