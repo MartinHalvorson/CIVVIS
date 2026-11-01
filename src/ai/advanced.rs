@@ -8003,6 +8003,17 @@ pub struct AdvancedAi {
     /// every ordinary writer and claim, and the Spy trainer skips that city.
     /// See `advanced/launch_pad_holds_its_queue.rs`. Off by default.
     launch_pad_holds_its_queue: bool,
+    /// `lane-joins-the-race`: `domination-joins-the-race`'s entry for a
+    /// Culture or Religion seat. Once a rival has landed a space project, the
+    /// science drive's answer opens when the seat's techs are within
+    /// `SCIENCE_DRIVE_TECH_SLACK` of the field's best, not only on an
+    /// outright science lead. These lanes have no space-race exclusion to
+    /// lift. Live King civvis-20261101T135422Z (Culture) stood within three
+    /// techs of the field from about t210 after Germany's first landing at
+    /// t203, never answered (no outright lead, no pad of its own for
+    /// `science-drive-answers-from-the-pad`), and lost to Germany's Science
+    /// at t230. See `advanced/domination_joins_the_race.rs`. Off by default.
+    lane_joins_the_race: bool,
     // ---- append: p-r ------------------------------------------------
     /// `pillaged-districts-repair-first`: a pillaged district's repair claims its
     /// city after every other claim. See `advanced/pillaged_repairs_first.rs`.
@@ -11738,6 +11749,7 @@ impl AdvancedAi {
             launch_pad_keeps_its_rung: false,
             launcher_war_fights_the_faster_racer: false,
             launch_pad_holds_its_queue: false,
+            lane_joins_the_race: false,
             // ---- append: p-r ----------------------------------------
             pillaged_districts_repair_first: false,
             religion_lane_hands_over: false,

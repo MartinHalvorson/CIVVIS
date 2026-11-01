@@ -4685,6 +4685,12 @@ pub const GENES: &[Gene] = &[
     // once a rival has landed, the seat answers with its own race beside its
     // war. See `advanced/domination_joins_the_race.rs`.
     Gene { tag: "domination-joins-the-race", field: "domination_joins_the_race", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_joins_the_race, disable: AdvancedAi::disable_domination_joins_the_race },
+    // Live King 2026-11-01: Culture seat 135422Z stood within three techs of
+    // the field from about t210 after a rival's first landing at t203, never
+    // answered (no outright lead, no pad of its own), and lost to that
+    // rival's Science at t230. `domination-joins-the-race`'s parity entry for
+    // Culture and Religion. See `advanced/domination_joins_the_race.rs`.
+    Gene { tag: "lane-joins-the-race", field: "lane_joins_the_race", kind: Kind::OptIn, enable: AdvancedAi::enable_lane_joins_the_race, disable: AdvancedAi::disable_lane_joins_the_race },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

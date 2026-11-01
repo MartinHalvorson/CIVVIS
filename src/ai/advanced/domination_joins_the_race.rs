@@ -30,6 +30,17 @@ impl AdvancedAi {
             && standing.own_techs + SCIENCE_DRIVE_TECH_SLACK >= standing.best_rival_techs
     }
 
+    /// `lane-joins-the-race`: the same parity entry for a Culture or Religion
+    /// seat. A Diplomacy seat keeps its own rule (`SCIENCE_ANSWER_DIPLO_YIELD`).
+    pub(super) fn lane_answers_at_parity(&self, standing: &ScienceStanding) -> bool {
+        self.lane_joins_the_race
+            && matches!(
+                self.victory_target,
+                Some(VictoryTarget::Culture | VictoryTarget::Religion)
+            )
+            && standing.own_techs + SCIENCE_DRIVE_TECH_SLACK >= standing.best_rival_techs
+    }
+
     /// Whether the Domination exclusions of the space race hold this turn:
     /// a Domination seat, unless `domination-joins-the-race` has its answer
     /// driving. Identical to `victory_target == Some(Domination)` with the
@@ -78,6 +89,35 @@ mod tests {
         let mut culture = AdvancedAi::targeting(VictoryTarget::Culture);
         culture.enable_domination_joins_the_race();
         assert!(!culture.domination_answers_at_parity(&standing(70, 70)));
+    }
+
+    /// `lane-joins-the-race`: Culture and Religion seats at parity, with the
+    /// gene; 135422Z's 67 to 69 opens, 112906Z's 63 to 70 does not. Neither
+    /// Domination nor Diplomacy reads it.
+    #[test]
+    fn lane_parity_opens_the_answer_for_culture_and_religion_only() {
+        let mut culture = AdvancedAi::targeting(VictoryTarget::Culture);
+        assert!(!culture.lane_answers_at_parity(&standing(67, 69)));
+        culture.enable_lane_joins_the_race();
+        assert!(culture.lane_answers_at_parity(&standing(67, 69)));
+        assert!(!culture.lane_answers_at_parity(&standing(63, 70)));
+
+        let mut religion = AdvancedAi::targeting(VictoryTarget::Religion);
+        religion.enable_lane_joins_the_race();
+        assert!(religion.lane_answers_at_parity(&standing(70, 72)));
+
+        for target in [VictoryTarget::Domination, VictoryTarget::Diplomacy] {
+            let mut ai = AdvancedAi::targeting(target);
+            ai.enable_lane_joins_the_race();
+            assert!(!ai.lane_answers_at_parity(&standing(70, 70)), "{target:?}");
+        }
+    }
+
+    #[test]
+    fn lane_joins_the_race_is_a_native_opt_in_off_in_both_controllers() {
+        super::super::test_support::opt_in_off_in_both_controllers("lane-joins-the-race", |ai| {
+            ai.lane_joins_the_race
+        });
     }
 
     /// The exclusions hold for a Domination seat until its answer drives, and

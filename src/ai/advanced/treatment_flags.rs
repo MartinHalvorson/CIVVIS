@@ -9089,6 +9089,16 @@ impl AdvancedAi {
         self.domination_joins_the_race = false;
     }
 
+    /// Opt-in gene `lane-joins-the-race`; see [`Self::lane_joins_the_race`].
+    pub fn enable_lane_joins_the_race(&mut self) {
+        self.lane_joins_the_race = true;
+    }
+
+    /// The twin of `enable_lane_joins_the_race`.
+    pub fn disable_lane_joins_the_race(&mut self) {
+        self.lane_joins_the_race = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
