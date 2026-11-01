@@ -5900,7 +5900,7 @@ fn calibration_read(header: &Header) -> String {
         )
     };
     let pace = if header.rival_pace {
-        "cities held to the live curve (one chair +2)"
+        "cities held to the live curve, the King field's at King and the Immortal field's elsewhere (one chair +2)"
     } else {
         "cities unpaced"
     };

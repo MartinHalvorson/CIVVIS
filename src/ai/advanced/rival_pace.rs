@@ -13,6 +13,10 @@
 //! extra width compounds into the faithful field's 1.5–3x production and
 //! science against live, so the width has to be held to the live curve.
 //!
+//! At King the cap follows the live King field instead
+//! ([`LIVE_KING_RIVAL_CITY_PACE`], 2026-11-01): about two cities a rival under
+//! the Immortal curve through turn 175.
+//!
 //! ## What it changes
 //!
 //! With the flag set on a seat (`AdvancedAi::set_rival_city_pace`), the
@@ -39,6 +43,34 @@ pub const LIVE_RIVAL_CITY_PACE: [(u32, usize); 7] = [
     (225, 11),
 ];
 
+/// The live King field's rival-mean city count, by raw Online turn: 17 live
+/// 6p Small King games of 2026-11-01 (05:15Z-12:00Z), every met rival's public
+/// city count, rounded to the city (2.4 / 3.8 / 4.5 / 5.4 / 6.9 / 8.0 / 9.8
+/// at these marks). The Immortal curve held a King batch's faithful chairs to
+/// 8.5 cities and 1.55x the live King field's production at turn 150, and
+/// their science victories came at a median turn 225 against live's 237.
+pub const LIVE_KING_RIVAL_CITY_PACE: [(u32, usize); 7] = [
+    (40, 2),
+    (60, 4),
+    (80, 4),
+    (100, 5),
+    (150, 7),
+    (175, 8),
+    (225, 10),
+];
+
+/// The live field this game's rung plays: the King field's curve at King, the
+/// only rung below Emperor with a live census; the Immortal field's on every
+/// other rung (Emperor was fitted on it, and the native Prince default keeps
+/// the shipped curve).
+pub fn live_pace(g: &Game) -> &'static [(u32, usize)] {
+    if g.difficulty == "king" {
+        &LIVE_KING_RIVAL_CITY_PACE
+    } else {
+        &LIVE_RIVAL_CITY_PACE
+    }
+}
+
 /// An Online turn read on this game's clock. Online plays two Standard turns
 /// in three (`GameSpeed::scale_turns`), so an Online turn is 1.5 Standard
 /// turns, and `standard_duration` brings that back to this game's speed.
@@ -46,17 +78,18 @@ fn on_this_clock(g: &Game, online_turn: u32) -> u32 {
     g.standard_duration(online_turn * 3 / 2).max(1)
 }
 
-/// The live curve's city count at this turn: linear between its marks and
+/// The live curve's city count at this turn ([`live_pace`] picks the curve): linear between its marks and
 /// rounded to the nearest city, so a Settler for the next city can be on its
 /// way before the mark that counts it. Flat before the first mark and after
 /// the last.
 pub fn live_curve(g: &Game) -> usize {
     let turn = g.turn;
-    let first = LIVE_RIVAL_CITY_PACE[0];
+    let pace = live_pace(g);
+    let first = pace[0];
     if turn <= on_this_clock(g, first.0) {
         return first.1;
     }
-    for pair in LIVE_RIVAL_CITY_PACE.windows(2) {
+    for pair in pace.windows(2) {
         let (from, to) = (pair[0], pair[1]);
         let (start, end) = (on_this_clock(g, from.0), on_this_clock(g, to.0));
         if turn <= end {
@@ -66,7 +99,7 @@ pub fn live_curve(g: &Game) -> usize {
             return cities.round() as usize;
         }
     }
-    LIVE_RIVAL_CITY_PACE[LIVE_RIVAL_CITY_PACE.len() - 1].1
+    pace[pace.len() - 1].1
 }
 
 /// The most cities a paced seat plans for at this turn: the live curve plus
@@ -91,6 +124,22 @@ mod tests {
         let mut game = Game::new_full(2, 74, 46, 11, 250, 0, false);
         game.game_speed = crate::setup::GameSpeed::Online;
         game
+    }
+
+    /// A King game follows the live King field's curve; Emperor keeps the
+    /// Immortal field's.
+    #[test]
+    fn a_king_game_follows_the_king_field() {
+        let mut game = online_game();
+        game.difficulty = "king".to_string();
+        for (turn, cities) in LIVE_KING_RIVAL_CITY_PACE {
+            game.turn = turn;
+            assert_eq!(live_curve(&game), cities, "king turn {turn}");
+        }
+        game.turn = 150;
+        assert_eq!(city_cap(&game, 2), 9);
+        game.difficulty = "emperor".to_string();
+        assert_eq!(live_curve(&game), 9, "Emperor keeps the Immortal curve");
     }
 
     /// The curve hits every live mark on the Online clock, climbs between
