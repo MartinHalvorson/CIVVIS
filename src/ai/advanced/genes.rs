@@ -4616,6 +4616,11 @@ pub const GENES: &[Gene] = &[
     // travels, a threatened source buys its cover Missionary when the Faith
     // left covers the first Inquisitor. See `advanced/defensive_apostle.rs`.
     Gene { tag: "apostle-transit-keeps-the-cover", field: "apostle_transit_keeps_the_cover", kind: Kind::OptIn, enable: AdvancedAi::enable_apostle_transit_keeps_the_cover, disable: AdvancedAi::disable_apostle_transit_keeps_the_cover },
+    // `culture-keeps-every-border-open-2`: version one, buying passage only
+    // from the bar holder (most domestic tourists) — its visitors count twice.
+    // A King screen read version one at −1.7 pp share with wins unchanged. See
+    // `advanced/culture_open_borders.rs`.
+    Gene { tag: "culture-keeps-every-border-open-2", field: "culture_keeps_every_border_open_2", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_keeps_every_border_open_2, disable: AdvancedAi::disable_culture_keeps_every_border_open_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
