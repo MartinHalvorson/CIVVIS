@@ -9035,6 +9035,17 @@ impl AdvancedAi {
         self.science_drive_answers_from_the_pad = false;
     }
 
+    /// Opt-in gene `science-drive-answers-from-the-pad-2`; see
+    /// [`Self::science_drive_answers_from_the_pad_2`].
+    pub fn enable_science_drive_answers_from_the_pad_2(&mut self) {
+        self.science_drive_answers_from_the_pad_2 = true;
+    }
+
+    /// The twin of `enable_science_drive_answers_from_the_pad_2`.
+    pub fn disable_science_drive_answers_from_the_pad_2(&mut self) {
+        self.science_drive_answers_from_the_pad_2 = false;
+    }
+
     /// Opt-in gene `launch-pad-holds-its-queue`; see
     /// [`Self::launch_pad_holds_its_queue`].
     pub fn enable_launch_pad_holds_its_queue(&mut self) {

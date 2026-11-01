@@ -89,3 +89,45 @@ fn a_seat_level_on_the_pads_answers_the_launch() {
     fresh.maintain_science_drive(&g, 0);
     assert!(fresh.science_drive().is_none(), "behind on the pads");
 }
+
+#[test]
+fn science_drive_answers_from_the_pad_2_is_opt_in() {
+    opt_in_off_in_both_controllers("science-drive-answers-from-the-pad-2", |ai| {
+        ai.science_drive_answers_from_the_pad_2
+    });
+}
+
+/// 095815Z: our Moon against the racer's Mars, one project behind. Version 1
+/// waits for level pads; version 2 answers within one, and not two behind.
+#[test]
+fn a_seat_one_project_behind_answers_under_version_2() {
+    let mut g = trailing_board();
+    for project in ["launch_earth_satellite", "launch_moon_landing"] {
+        g.players[0].science_projects.insert(project.to_string());
+    }
+    for project in [
+        "launch_earth_satellite",
+        "launch_moon_landing",
+        "launch_mars_colony",
+    ] {
+        g.players[1].science_projects.insert(project.to_string());
+    }
+    let mut v1 = seat(VictoryTarget::Religion, true);
+    v1.maintain_science_drive(&g, 0);
+    assert!(v1.science_drive().is_none(), "v1: one behind is not level");
+
+    let mut v2 = seat(VictoryTarget::Religion, false);
+    v2.enable_science_drive_answers_from_the_pad_2();
+    assert!(v2.answer_holds_the_pad(&g, 0));
+    v2.maintain_science_drive(&g, 0);
+    let drive = v2.science_drive().expect("v2: within one answers");
+    assert!(drive.answering && !drive.assigned);
+
+    g.players[1]
+        .science_projects
+        .insert("exoplanet_expedition".to_string());
+    assert!(!v2.answer_holds_the_pad(&g, 0), "two behind");
+
+    g.players[0].science_projects.clear();
+    assert!(!v2.answer_holds_the_pad(&g, 0), "no pad of ours");
+}
