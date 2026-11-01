@@ -5528,6 +5528,13 @@ pub struct AdvancedAi {
     /// the hold is journalled. See `advanced/defensive_apostle.rs`. Off by
     /// default.
     apostle_transit_keeps_the_cover: bool,
+    /// `alliance-remembers-the-refusal`: a partner asked for an alliance that
+    /// did not ally is not asked again for thirty turns. See
+    /// `advanced/alliance_remembers_the_refusal.rs`. Off by default.
+    alliance_remembers_the_refusal: bool,
+    /// Partners asked for an alliance, by the turn asked. Written only while
+    /// `alliance_remembers_the_refusal` is on.
+    alliance_ask_turns: BTreeMap<usize, u32>,
     // ---- append: c-d ------------------------------------------------
     /// `culture-digs-one-museum`: a Culture seat makes one Museum an
     /// Archaeological Museum. See `advanced/culture_dig_museum.rs`. Off by default.
@@ -9842,6 +9849,10 @@ mod surprise_defense;
 /// `surprise-watch-holds-its-ratio`: see `advanced/surprise_watch_latch.rs`.
 mod surprise_watch_latch;
 
+/// `alliance-remembers-the-refusal`: see
+/// `advanced/alliance_remembers_the_refusal.rs`.
+mod alliance_remembers_the_refusal;
+
 /// The air surge: a three-tech beeline to Advanced Flight, an Aerodrome, a
 /// bomber wing, and the cavalry that takes the city the wing empties. See
 /// `advanced/air_surge.rs`.
@@ -11342,6 +11353,8 @@ impl AdvancedAi {
             builder_prices_travel_in_turns: false,
             anvil_garrisons_its_melee: false,
             apostle_transit_keeps_the_cover: false,
+            alliance_remembers_the_refusal: false,
+            alliance_ask_turns: BTreeMap::new(),
             // ---- append: c-d ----------------------------------------
             culture_digs_one_museum: false,
             culture_keeps_every_border_open_2: false,
@@ -22992,6 +23005,9 @@ impl AdvancedAi {
                     // `culture-seat-allies`: nor the science racer, nor the
                     // rival that sets our culture bar. Never off.
                     && !self.culture_seat_ally_barred(g, pid, other.id)
+                    // `alliance-remembers-the-refusal`: nor a partner asked
+                    // within thirty turns that did not ally. Never off.
+                    && !self.alliance_refusal_barred(g, pid, other.id)
             })
             .max_by(|left, right| {
                 let score = |other: usize| {
@@ -23100,6 +23116,7 @@ impl AdvancedAi {
             }
             if proposed {
                 self.research_alliance_note_asked(g, pid, partner, kind);
+                self.alliance_note_asked(g, partner);
                 if research_first {
                     think!(self.journal(), Diplomacy, Decision,
                            "Proposing a Research Alliance to {}", g.players[partner].civ;

@@ -4685,6 +4685,12 @@ pub const GENES: &[Gene] = &[
     // once a rival has landed, the seat answers with its own race beside its
     // war. See `advanced/domination_joins_the_race.rs`.
     Gene { tag: "domination-joins-the-race", field: "domination_joins_the_race", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_joins_the_race, disable: AdvancedAi::disable_domination_joins_the_race },
+    // Live King 2026-11-01: every Culture seat froze on a turn a rival
+    // refused our alliance ask, and most refusals were the same rival asked
+    // again on the ten-turn retry (081602Z six times, 102116Z four). A
+    // partner that did not ally is not re-asked for thirty turns. See
+    // `advanced/alliance_remembers_the_refusal.rs`.
+    Gene { tag: "alliance-remembers-the-refusal", field: "alliance_remembers_the_refusal", kind: Kind::OptIn, enable: AdvancedAi::enable_alliance_remembers_the_refusal, disable: AdvancedAi::disable_alliance_remembers_the_refusal },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
