@@ -8971,11 +8971,13 @@ impl AdvancedAi {
     /// [`Self::launch_pad_keeps_its_rung`].
     pub fn enable_launch_pad_keeps_its_rung(&mut self) {
         self.launch_pad_keeps_its_rung = true;
+        self.base.enable_launch_pad_resumes_its_foundation();
     }
 
     /// The twin of `enable_launch_pad_keeps_its_rung`.
     pub fn disable_launch_pad_keeps_its_rung(&mut self) {
         self.launch_pad_keeps_its_rung = false;
+        self.base.disable_launch_pad_resumes_its_foundation();
     }
 
     // ---- append: a-b ------------------------------------------------

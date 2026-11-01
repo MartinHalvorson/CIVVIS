@@ -7946,7 +7946,10 @@ pub struct AdvancedAi {
     ///
     /// In the live game below the pad came back through the Great Person
     /// activation path ("Resuming an activation path for a live Great
-    /// Person"), not the production valuation. Live Emperor civvis-20261101T043921Z: St. Petersburg (70-120
+    /// Person"), not the production valuation. The live seat's ordinary
+    /// production is the delegated governor's (`lane-delegates-production-2`),
+    /// so the gene also arms `BasicAi::launch_pad_resume_item`, which resumes
+    /// the city's own placed pad ahead of every economy step. Live Emperor civvis-20261101T043921Z: St. Petersburg (70-120
     /// Production) placed the pad at t161 and finished it at t193, with 8 of
     /// those 32 turns on the pad, and launched its Earth Satellite 36 turns
     /// after the leader's. civvis-20261101T023248Z: Hyderabad left its pad at
