@@ -9045,6 +9045,17 @@ impl AdvancedAi {
         self.culture_digs_one_museum = false;
     }
 
+    /// Opt-in gene `science-drive-answers-from-the-pad-2`; see
+    /// [`Self::science_drive_answers_from_the_pad_2`].
+    pub fn enable_science_drive_answers_from_the_pad_2(&mut self) {
+        self.science_drive_answers_from_the_pad_2 = true;
+    }
+
+    /// The twin of `enable_science_drive_answers_from_the_pad_2`.
+    pub fn disable_science_drive_answers_from_the_pad_2(&mut self) {
+        self.science_drive_answers_from_the_pad_2 = false;
+    }
+
     /// Opt-in gene `launch-pad-holds-its-queue`; see
     /// [`Self::launch_pad_holds_its_queue`].
     pub fn enable_launch_pad_holds_its_queue(&mut self) {
@@ -9054,6 +9065,17 @@ impl AdvancedAi {
     /// The twin of `enable_launch_pad_holds_its_queue`.
     pub fn disable_launch_pad_holds_its_queue(&mut self) {
         self.launch_pad_holds_its_queue = false;
+    }
+
+    /// Opt-in gene `launch-commits-the-endgame`; see
+    /// [`Self::launch_commits_the_endgame`].
+    pub fn enable_launch_commits_the_endgame(&mut self) {
+        self.launch_commits_the_endgame = true;
+    }
+
+    /// The twin of `enable_launch_commits_the_endgame`.
+    pub fn disable_launch_commits_the_endgame(&mut self) {
+        self.launch_commits_the_endgame = false;
     }
 
     // ---- append: a-b ------------------------------------------------

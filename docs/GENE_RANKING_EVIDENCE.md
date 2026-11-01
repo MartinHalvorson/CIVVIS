@@ -250,6 +250,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `inquisition-answers-a-rival-majority` | off (unmeasured) | `inquisition-answers-a-rival-majority`. | 1 \| 1 |
 | `inquisition-defends-the-diplomat` | off (unmeasured) | `inquisition-defends-the-diplomat`. | 1 \| 1 |
 | `land-grab-outlasts-the-opening` | off (unmeasured) | Opt-in gene `land-grab-outlasts-the-opening`; see `Self::land_grab_outlasts_the_opening`. | 1 \| 1 |
+| `launch-commits-the-endgame` | off (unmeasured) | Opt-in gene `launch-commits-the-endgame`; see `Self::launch_commits_the_endgame`. | 1 \| 1 |
 | `launch-pad-holds-its-queue` | off (unmeasured) | Opt-in gene `launch-pad-holds-its-queue`; see `Self::launch_pad_holds_its_queue`. | 1 \| 1 |
 | `launch-pad-keeps-its-rung` | off (unmeasured) | Opt-in gene `launch-pad-keeps-its-rung`; see `Self::launch_pad_keeps_its_rung`. | 1 \| 1 |
 | `launcher-war-fights-the-faster-racer` | off (unmeasured) | Opt-in gene `launcher-war-fights-the-faster-racer`; see `Self::launcher_war_fights_the_faster_racer`. | 1 \| 1 |
@@ -278,7 +279,8 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `religion-seat-founds-first` | off (unmeasured) | Opt-in gene `religion-seat-founds-first`; see `Self::religion_seat_founds_first`. | 1 \| 1 |
 | `retainers-garrison-the-short-cities` | off (unmeasured) | Opt-in gene `retainers-garrison-the-short-cities`; see `BasicAi::retainers_garrison_the_short_cities`. | 1 \| 1 |
 | `science-denounce-names-the-leader` | off (unmeasured) | Opt-in gene `science-denounce-names-the-leader`; see `Self::science_denounce_names_the_leader`. | 1 \| 1 |
-| `science-drive-answers-from-the-pad` | off (unmeasured) | Opt-in gene `science-drive-answers-from-the-pad`; see `Self::science_drive_answers_from_the_pad`. | 1 \| 1 |
+| `science-drive-answers-from-the-pad` | off (unmeasured) | Opt-in gene `science-drive-answers-from-the-pad`; see `Self::science_drive_answers_from_the_pad`. | — \| 2 |
+| `science-drive-answers-from-the-pad-2` | off (unmeasured) | Opt-in gene `science-drive-answers-from-the-pad-2`; see `Self::science_drive_answers_from_the_pad_2`. | — \| 2 |
 | `science-drive-answers-the-launch` | off (unmeasured) | `science-drive-answers-the-launch`. | 1 \| 1 |
 | `science-seat-allies` | off (unmeasured) | Opt-in gene `science-seat-allies`; see `Self::science_seat_allies`. | 1 \| 1 |
 | `settler-founds-under-raiders` | off (unmeasured) | Opt-in gene `settler-founds-under-raiders`; see `Self::settler_founds_under_raiders`. | 1 \| 1 |

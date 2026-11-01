@@ -7426,6 +7426,10 @@ pub struct AdvancedAi {
     /// city of ours. See `advanced/defensive_apostle.rs`. Off by default.
     inquisition_answers_a_rival_majority: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `launch-commits-the-endgame`: our own Earth Satellite commits an assigned
+    /// Religion or Culture seat to the science endgame. See
+    /// `advanced/launch_commits_endgame.rs`. Off by default.
+    launch_commits_the_endgame: bool,
     /// `launcher-war-serves-every-lane`: off Domination, the space racer
     /// the launcher war would open on is the denial counter, with war,
     /// before every other clock. See `advanced/launcher_war_every_lane.rs`.
@@ -9071,6 +9075,10 @@ pub struct AdvancedAi {
     /// the leading racer's. See `advanced/science_victory_drive.rs`. Off by
     /// default.
     science_drive_answers_from_the_pad: bool,
+    /// `science-drive-answers-from-the-pad-2`: the same, within one of the
+    /// leading racer's landed projects rather than level. See
+    /// `advanced/science_victory_drive.rs`. Off by default.
+    science_drive_answers_from_the_pad_2: bool,
     // ---- append: t-z ------------------------------------------------
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
@@ -10293,6 +10301,8 @@ mod industrial_zone_claims_the_factory;
 /// Industrial Zone or Workshop claims its city's queue. See
 /// `advanced/industrial_zone_claims_the_producer_queue.rs`.
 mod industrial_zone_claims_the_producer_queue;
+/// `launch-commits-the-endgame`: see `advanced/launch_commits_endgame.rs`.
+mod launch_commits_endgame;
 mod launcher_war;
 /// `launcher-war-serves-every-lane`: see `advanced/launcher_war_every_lane.rs`.
 mod launcher_war_every_lane;
@@ -11641,6 +11651,7 @@ impl AdvancedAi {
             inquisition_defends_the_diplomat: false,
             inquisition_answers_a_rival_majority: false,
             // ---- append: l-o ----------------------------------------
+            launch_commits_the_endgame: false,
             launcher_war_serves_every_lane: false,
             nuclear_goal_needs_a_launcher: false,
             launcher_war_skips_the_reserve: false,
@@ -11906,6 +11917,7 @@ impl AdvancedAi {
             science_seat_allies: false,
             science_denounce_names_the_leader: false,
             science_drive_answers_from_the_pad: false,
+            science_drive_answers_from_the_pad_2: false,
             // ---- append: t-z ----------------------------------------
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,

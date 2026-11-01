@@ -3697,6 +3697,35 @@ fn drop_deals_beside_war_or_peace(orders: &mut Vec<Order>) -> usize {
     before - orders.len()
 }
 
+/// Keep a batch's first alliance ask as its only deal session: every other
+/// alliance, sale and purchase in the batch waits for a later turn. Each one
+/// is a `CivvisTrade.ask`, and the asks of one batch open their sessions in
+/// the same frame. A rival that refuses an alliance answers with a statement
+/// of its own, which the host leaves "Adding to pending" while another of our
+/// sessions is still held open, and the game never advances. Live King, 11-01:
+/// every Culture seat froze on the turn of an alliance ask sent beside an
+/// EQUALIZE sale or an open-borders buy to a different rival (102116Z t120,
+/// four times from the same save; 063953Z t186; 091422Z t120; 081602Z t149).
+/// Each time, DiplomacyManager.csv ended on the alliance target's
+/// "AI_REFUSE_DEAL" then "MAKE_DEAL, POSITIVE, POSITIVE, Adding to pending".
+/// Alliance asks sent alone (081602Z t128 and t144; Science seats 043921Z and
+/// 023248Z) did not freeze. Sales and purchases are re-quoted every turn;
+/// the alliance ask is rarer and carries the plan. Returns how many orders
+/// were held back.
+fn hold_deals_beside_an_alliance(orders: &mut Vec<Order>) -> usize {
+    let Some(first) = orders.iter().position(|order| order.kind == "alliance") else {
+        return 0;
+    };
+    let before = orders.len();
+    let mut index = 0;
+    orders.retain(|order| {
+        let keep = index == first || !matches!(order.kind, "sell" | "buy" | "alliance");
+        index += 1;
+        keep
+    });
+    before - orders.len()
+}
+
 /// Why no favor sale order was appended this turn, for the note; `None` when
 /// one was. `plan` is the plan report's `(strategy, victory_target)`.
 fn append_favor_sale_order(
@@ -5892,6 +5921,10 @@ fn decide(
         note_bits.push(format!(
             "deals_dropped_for_war_or_peace={session_conflicts}"
         ));
+    }
+    let held_beside_alliance = hold_deals_beside_an_alliance(&mut orders);
+    if held_beside_alliance > 0 {
+        note_bits.push(format!("deals_held_beside_alliance={held_beside_alliance}"));
     }
     if let Some((target, needed)) = envoy_reclaim {
         let submitted = orders
@@ -11651,6 +11684,39 @@ mod tests {
     }
 
     use super::*;
+
+    /// See `hold_deals_beside_an_alliance`: beside an alliance ask, every
+    /// sale, purchase and second alliance ask waits; other orders stand, and a
+    /// batch with no alliance ask is untouched.
+    #[test]
+    fn an_alliance_ask_is_the_batch_s_only_deal_session() {
+        let order = |kind: &'static str, subject: i64, verb: &str| Order {
+            kind,
+            subject: Some(subject),
+            verb: Some(verb.to_string()),
+            pos: None,
+        };
+        let mut orders = vec![
+            order("sell", 3, "RESOURCE_NITER=10"),
+            order("friendship", 2, "DECLARE_FRIEND"),
+            order("alliance", 2, "ALLIANCE_CULTURAL"),
+            order("buy", 1, "OPEN_BORDERS"),
+            order("alliance", 4, "ALLIANCE_RESEARCH"),
+            order("envoy", 9, "ENVOY"),
+        ];
+        assert_eq!(hold_deals_beside_an_alliance(&mut orders), 3);
+        let left: Vec<(&str, i64)> = orders
+            .iter()
+            .map(|order| (order.kind, order.subject.unwrap()))
+            .collect();
+        assert_eq!(left, vec![("friendship", 2), ("alliance", 2), ("envoy", 9)]);
+        let mut quiet = vec![
+            order("sell", 3, "RESOURCE_NITER=10"),
+            order("buy", 1, "OPEN_BORDERS"),
+        ];
+        assert_eq!(hold_deals_beside_an_alliance(&mut quiet), 0);
+        assert_eq!(quiet.len(), 2);
+    }
 
     /// See `drop_deals_beside_war_or_peace`: a sale to the rival we declare on
     /// is dropped so the declaration gets the diplomacy session; deals with
