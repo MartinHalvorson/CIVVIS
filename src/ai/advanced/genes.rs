@@ -4644,6 +4644,12 @@ pub const GENES: &[Gene] = &[
     // Needs `science-victory-drive` and `science-drive-answers-the-launch`.
     // See `advanced/science_victory_drive.rs`.
     Gene { tag: "science-drive-answers-from-the-pad", field: "science_drive_answers_from_the_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_science_drive_answers_from_the_pad, disable: AdvancedAi::disable_science_drive_answers_from_the_pad },
+    // Live King 2026-11-01: every game ended in a Science victory, and the
+    // Domination seat 073004Z held the whole tree with no pad (all three
+    // exclusions) while Korea won at t257. Within three techs of the field,
+    // once a rival has landed, the seat answers with its own race beside its
+    // war. See `advanced/domination_joins_the_race.rs`.
+    Gene { tag: "domination-joins-the-race", field: "domination_joins_the_race", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_joins_the_race, disable: AdvancedAi::disable_domination_joins_the_race },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

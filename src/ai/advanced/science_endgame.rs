@@ -16,7 +16,7 @@ const LASERS: [&str; 2] = ["lagrange_laser_station", "terrestrial_laser_station"
 
 impl AdvancedAi {
     pub(super) fn science_endgame_committed(&self, g: &Game, pid: usize) -> bool {
-        self.victory_target != Some(VictoryTarget::Domination)
+        !self.space_race_excluded()
             && self.victory_planning
             && g.victory_conditions.science
             && (self.raced_target() == Some(VictoryTarget::Science)
@@ -70,7 +70,7 @@ impl AdvancedAi {
     /// the endgame lane alive until the flight can be accelerated.
     pub(super) fn science_endgame_lane_committed(&self, g: &Game, pid: usize) -> bool {
         let live_controller = self.victory_planning || self.victory_target.is_some();
-        self.victory_target != Some(VictoryTarget::Domination)
+        !self.space_race_excluded()
             && g.victory_conditions.science
             && (self.science_endgame_committed(g, pid)
                 || (live_controller
