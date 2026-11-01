@@ -9000,6 +9000,30 @@ impl AdvancedAi {
         self.culture_keeps_every_border_open_2 = false;
     }
 
+    /// Opt-in gene `fog-yields-to-a-stranded-settler`; see
+    /// [`Self::fog_yields_to_a_stranded_settler`].
+    pub fn enable_fog_yields_to_a_stranded_settler(&mut self) {
+        self.fog_yields_to_a_stranded_settler = true;
+    }
+
+    /// The twin of `enable_fog_yields_to_a_stranded_settler`.
+    pub fn disable_fog_yields_to_a_stranded_settler(&mut self) {
+        self.fog_yields_to_a_stranded_settler = false;
+    }
+
+    /// Opt-in gene `launch-pad-keeps-its-rung`; see
+    /// [`Self::launch_pad_keeps_its_rung`].
+    pub fn enable_launch_pad_keeps_its_rung(&mut self) {
+        self.launch_pad_keeps_its_rung = true;
+        self.base.enable_launch_pad_resumes_its_foundation();
+    }
+
+    /// The twin of `enable_launch_pad_keeps_its_rung`.
+    pub fn disable_launch_pad_keeps_its_rung(&mut self) {
+        self.launch_pad_keeps_its_rung = false;
+        self.base.disable_launch_pad_resumes_its_foundation();
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

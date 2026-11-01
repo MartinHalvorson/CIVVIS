@@ -4597,6 +4597,15 @@
           "culture-defense-theater-2": null
         }
       },
+      "culture-keeps-every-border-open": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "culture-keeps-every-border-open": null,
+          "culture-keeps-every-border-open-2": null
+        }
+      },
       "culture-lane-forecast": {
         "rule_on": [
           "culture-lane-forecast"

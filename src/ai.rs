@@ -401,6 +401,7 @@ mod advanced;
 mod campus_buildings;
 mod commercial_hub;
 mod industrial_zones;
+mod launch_pad_resume;
 mod movement_risk;
 mod naval_demand;
 mod opening_builder;
@@ -3918,6 +3919,10 @@ pub struct BasicAi {
     /// Runtime state for `retainers_garrison_the_short_cities`: the city each
     /// claiming soldier holds.
     pub(crate) retainers_garrison_claims: BTreeMap<u32, u32>,
+    /// `launch-pad-keeps-its-rung`: an idle city resumes its own placed,
+    /// unfinished Spaceport foundation while no pad of ours stands. See
+    /// `launch_pad_resume.rs`. Set by the Advanced gene; off by default.
+    pub(crate) launch_pad_resumes_its_foundation: bool,
     /// `deck-prices-growth`: the policy counterfactual prices each city's
     /// growth surplus (`Weights::pol_growth` at the Food weight), so housing
     /// and amenity cards are worth the growth they release. Set by the
@@ -6018,6 +6023,7 @@ impl BasicAi {
             deck_reads_player_income: false,
             retainers_garrison_the_short_cities: false,
             retainers_garrison_claims: BTreeMap::new(),
+            launch_pad_resumes_its_foundation: false,
             deck_prices_growth: false,
             solvency_first_trade_slot: false,
             builder_tries_the_next_tile: false,
@@ -6123,6 +6129,16 @@ impl BasicAi {
     /// The twin of `enable_retainers_garrison_the_short_cities`.
     pub(crate) fn disable_retainers_garrison_the_short_cities(&mut self) {
         self.retainers_garrison_the_short_cities = false;
+    }
+
+    /// See `launch_pad_resumes_its_foundation`.
+    pub(crate) fn enable_launch_pad_resumes_its_foundation(&mut self) {
+        self.launch_pad_resumes_its_foundation = true;
+    }
+
+    /// The twin of `enable_launch_pad_resumes_its_foundation`.
+    pub(crate) fn disable_launch_pad_resumes_its_foundation(&mut self) {
+        self.launch_pad_resumes_its_foundation = false;
     }
 
     /// See `deck_prices_growth`.
@@ -6577,6 +6593,7 @@ impl BasicAi {
             deck_reads_player_income: false,
             retainers_garrison_the_short_cities: false,
             retainers_garrison_claims: BTreeMap::new(),
+            launch_pad_resumes_its_foundation: false,
             deck_prices_growth: false,
             solvency_first_trade_slot: false,
             builder_tries_the_next_tile: false,
@@ -13363,6 +13380,12 @@ impl BasicAi {
             return self
                 .economic_recovery_item(g, pid, cid, traders)
                 .or_else(|| self.upkeep_free_recovery_item(g, pid, cid));
+        }
+        // `launch-pad-keeps-its-rung`: the city's own placed Spaceport, until
+        // the empire's first pad stands, ahead of every economy step. Local
+        // defence and economic recovery above still win.
+        if let Some(pad) = self.launch_pad_resume_item(g, pid, cid) {
+            return Some(pad);
         }
         // `housing-bound-city-builds-its-granary`: a housing-bound city's
         // Granary, then a short city's Amenity, ahead of every economy step
