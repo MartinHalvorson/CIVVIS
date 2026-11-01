@@ -4588,6 +4588,13 @@ pub const GENES: &[Gene] = &[
     // lapse) and the Domination-era stronger/prey filters do not apply. See
     // `advanced/protective_friendship.rs`.
     Gene { tag: "friendship-keeps-the-peace", field: "friendship_keeps_the_peace", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_keeps_the_peace, disable: AdvancedAi::disable_friendship_keeps_the_peace },
+    // `pillaged-districts-repair-first`: 26 of 63 lane seats had a pillaged
+    // district (77 spells, a median 10 turns, 19 never repaired by t150). The
+    // repair is priced 1,500 but the claim genes take the queue first; live
+    // civvis-20261101T024926Z lost the Prophet race on a Holy Site pillaged
+    // from t30 to t66. The repair now claims its city after every other claim.
+    // See `advanced/pillaged_repairs_first.rs`.
+    Gene { tag: "pillaged-districts-repair-first", field: "pillaged_districts_repair_first", kind: Kind::OptIn, enable: AdvancedAi::enable_pillaged_districts_repair_first, disable: AdvancedAi::disable_pillaged_districts_repair_first },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
