@@ -11948,6 +11948,33 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 		return;
 	end
 	if fromPlayer ~= other then return; end
+	-- ★★ A REFUSED ALLIANCE IS FOLLOWED BY THE RIVAL'S COUNTER. Live King
+	-- 2026-11-01: every Culture seat froze on the turn a rival refused our
+	-- alliance ask (102116Z t120 from four saves, 063953Z t186, 091422Z t120,
+	-- 081602Z t149, 143722Z t153). DiplomacyManager.csv ended each time on the
+	-- target's "MAKE_DEAL, AI_REFUSE_DEAL, NEGATIVE", then "MAKE_DEAL,
+	-- POSITIVE, POSITIVE, Adding to pending", never processed: we had closed
+	-- the session about 50 ms after the refusal, before that statement was
+	-- read, and in 143722Z another rival's DIPLOMATIC_KUDO then took the slot
+	-- ("Already has open session!"). The shipped screen leaves the session
+	-- open until the player answers (DiplomacyActionView.lua:2582, "the AI
+	-- will send, ACCEPT, REJECT, etc."), so the refusal keeps it open for
+	-- `AllianceCounterHoldSeconds` and the next statement from the rival in
+	-- it is refused the way DiplomacyDealView.lua OnRefuseDeal does
+	-- (SendWorkingDeal REJECTED, then CloseSession).
+	if session.counter_wait ~= nil then
+		local rejected = pcall(function()
+			DealManager.SendWorkingDeal(DealProposalAction.REJECTED, pid, other);
+		end);
+		emit("counter_answered", { turn = turn, target = other, kind = session.kind,
+			session = session.sessionID or -1, rejected = rejected,
+			deal_action = kVariants.DealAction ~= nil and tostring(kVariants.DealAction) or nil,
+			statement = try(function()
+				return DiplomacyManager.GetKeyName(kVariants.StatementSubType);
+			end, nil) });
+		CivvisTrade.close(pid, other, "counter_answered");
+		return;
+	end
 	local dealAction = kVariants.DealAction;
 	if dealAction == nil then return; end
 	local opening = try(function()
@@ -12026,6 +12053,17 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 		end) or false;
 		emit("alliance_response", { turn = turn, target = other, accepted = accepted,
 			deal_equal = dealEqual, submitted = submitted, deal_action = tostring(dealAction) });
+		-- See the counter above: a refusal waits for the rival's counter
+		-- instead of closing under it. `AllianceCounterHoldSeconds = 0`
+		-- restores the immediate close.
+		local counterHold = tonumber(cfg.AllianceCounterHoldSeconds) or 4;
+		if not accepted and counterHold > 0 then
+			session.counter_wait = { turn = turn };
+			pcall(function() LuaEvents.CivvisDealSession(other, true, counterHold); end);
+			emit("deal_session", { turn = turn, target = other, kind = session.kind,
+				phase = "counter_wait", session = session.sessionID or -1, hold = counterHold });
+			return;
+		end
 	else
 		CivvisOnIncomingDeal(other, pid, dealAction);
 	end
@@ -12043,6 +12081,10 @@ CivvisOnDealSessionClosed = function(sessionID)
 				-- accepted. Closing that screen is not evidence of a treaty and
 				-- must not produce a synthetic accepted peace result.
 				CivvisTrade.close(pid, subject, "session_closed", true);
+			elseif session.counter_wait ~= nil then
+				-- A refused alliance whose counter never came: the rival did
+				-- answer, so this is no unanswered ask and holds no turn.
+				CivvisTrade.close(pid, subject, "counter_not_sent", true);
 			else
 				CivvisTrade.abandon(subject, "session_closed");
 			end
