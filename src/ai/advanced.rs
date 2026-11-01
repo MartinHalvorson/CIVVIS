@@ -9095,6 +9095,10 @@ pub struct AdvancedAi {
     /// leading racer's landed projects rather than level. See
     /// `advanced/science_victory_drive.rs`. Off by default.
     science_drive_answers_from_the_pad_2: bool,
+    /// `gene_screen --seat-pace`: `true` caps the strategic plan's city
+    /// horizon at the live seat's own curve (`rival_pace::seat_capped`).
+    /// `false` everywhere but a measured harness seat under the flag.
+    seat_city_pace: bool,
     // ---- append: t-z ------------------------------------------------
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
@@ -9948,10 +9952,10 @@ mod diplo_match_point_research;
 /// `diplo-seat-wonder-claim`; see `advanced/diplo_wonder_claim.rs`.
 mod diplo_wonder_claim;
 
-/// `culture-seat-monuments`: see `advanced/culture_monuments.rs`.
-mod culture_monuments;
 /// `culture-keeps-every-border-open`: see `advanced/culture_open_borders.rs`.
 mod culture_dig_museum;
+/// `culture-seat-monuments`: see `advanced/culture_monuments.rs`.
+mod culture_monuments;
 mod culture_open_borders;
 
 /// `diplo-seat-statue-harbor`: see `advanced/diplo_statue_harbor.rs`.
@@ -11936,6 +11940,7 @@ impl AdvancedAi {
             science_denounce_names_the_leader: false,
             science_drive_answers_from_the_pad: false,
             science_drive_answers_from_the_pad_2: false,
+            seat_city_pace: false,
             // ---- append: t-z ----------------------------------------
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,
@@ -12244,6 +12249,17 @@ impl AdvancedAi {
     /// The cities over the live curve this seat may plan for, when paced.
     pub fn rival_city_pace(&self) -> Option<usize> {
         self.rival_city_pace
+    }
+
+    /// `gene_screen --seat-pace`: hold this measured seat's city horizon to
+    /// the live seat's own curve; see `advanced/rival_pace.rs`.
+    pub fn set_seat_city_pace(&mut self) {
+        self.seat_city_pace = true;
+    }
+
+    /// Whether this seat's city horizon follows the live seat's curve.
+    pub fn seat_city_pace(&self) -> bool {
+        self.seat_city_pace
     }
 
     pub fn retarget(&mut self, target: VictoryTarget) {
@@ -15856,6 +15872,13 @@ impl AdvancedAi {
         let desired_cities = match self.rival_city_pace {
             Some(extra) => rival_pace::capped(g, desired_cities, cities.len(), extra),
             None => desired_cities,
+        };
+        // `gene_screen --seat-pace`: a measured seat settles to the live
+        // seat's own curve. See `advanced/rival_pace.rs`.
+        let desired_cities = if self.seat_city_pace {
+            rival_pace::seat_capped(g, desired_cities, cities.len())
+        } else {
+            desired_cities
         };
         let military_civ = matches!(
             g.players[pid].civ.as_str(),

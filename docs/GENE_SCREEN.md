@@ -2542,6 +2542,14 @@ Two opt-in knobs, both for `--rivals firaxis-faithful` only, and both needed:
   King field instead (2026-11-01): 2 / 4 / 4 / 5 / 7 / 8 / 10 cities at the
   same turns, the rival mean of 17 live 6p Small King games. See the King
   re-fit below.
+- **`--seat-pace`** (2026-11-01, opt-in) caps every *measured* seat's planned
+  city count at the live seat's own curve: 3 / 4 / 5 / 6 / 8 / 9 / 10 cities
+  at the same turns, where our live seat runs on every rung within a city
+  through turn 100 (King 2.7 / 4.0 / 5.1 / 6.0 / 7.9 / 8.8 / 10.1). Unpaced, a
+  measured seat holds 9–10 cities at turns 100–150 and a King Culture seat
+  makes 2–3x live's Culture at turn 150. Use it for absolute win-rate reads of
+  genes that do not change expansion; never to screen a gene that does, since
+  the cap masks it. Paired deltas do not need it.
 
 Measured at Immortal on the default 6p Small Continents board, 6 games a
 setting, seeds 31100000–05, `--deployment-genome --trace`, against the live

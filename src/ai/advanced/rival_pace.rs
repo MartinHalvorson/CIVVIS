@@ -59,6 +59,23 @@ pub const LIVE_KING_RIVAL_CITY_PACE: [(u32, usize); 7] = [
     (225, 10),
 ];
 
+/// `gene_screen --seat-pace` (2026-11-01): the live seat's OWN city count, by
+/// raw Online turn: our seat in the live King (19 games), Emperor (14) and
+/// Immortal (14) games of 2026-10-30/11-01 agree within a city through turn
+/// 100 (King 2.7 / 4.0 / 5.1 / 6.0 / 7.9 / 8.8 / 10.1 at these marks; the
+/// later marks read only seats past the turn-120 retire rule). A measured
+/// harness seat holds 9-10 cities at turns 100-150 against live's 6 and 8,
+/// and makes 2-3x live's Culture at turn 150 (-f6's King culture seats).
+pub const LIVE_SEAT_CITY_PACE: [(u32, usize); 7] = [
+    (40, 3),
+    (60, 4),
+    (80, 5),
+    (100, 6),
+    (150, 8),
+    (175, 9),
+    (225, 10),
+];
+
 /// The live field this game's rung plays: the King field's curve at King, the
 /// only rung below Emperor with a live census; the Immortal field's on every
 /// other rung (Emperor was fitted on it, and the native Prince default keeps
@@ -83,8 +100,24 @@ fn on_this_clock(g: &Game, online_turn: u32) -> u32 {
 /// way before the mark that counts it. Flat before the first mark and after
 /// the last.
 pub fn live_curve(g: &Game) -> usize {
+    curve_at(g, live_pace(g))
+}
+
+/// The live seat's own curve at this turn ([`LIVE_SEAT_CITY_PACE`]).
+pub fn seat_curve(g: &Game) -> usize {
+    curve_at(g, &LIVE_SEAT_CITY_PACE)
+}
+
+/// `desired` held to the live seat's curve, and never below the `held`
+/// cities already founded or taken. See [`LIVE_SEAT_CITY_PACE`].
+pub fn seat_capped(g: &Game, desired: usize, held: usize) -> usize {
+    desired.min(seat_curve(g)).max(held)
+}
+
+/// `pace` read at this turn: linear between its marks and rounded to the
+/// nearest city, flat before the first mark and after the last.
+fn curve_at(g: &Game, pace: &[(u32, usize)]) -> usize {
     let turn = g.turn;
-    let pace = live_pace(g);
     let first = pace[0];
     if turn <= on_this_clock(g, first.0) {
         return first.1;
@@ -128,6 +161,22 @@ mod tests {
 
     /// A King game follows the live King field's curve; Emperor keeps the
     /// Immortal field's.
+    #[test]
+    fn the_seat_cap_follows_the_live_seat_on_every_rung() {
+        let mut game = online_game();
+        for difficulty in ["king", "emperor", "immortal"] {
+            game.difficulty = difficulty.to_string();
+            for (turn, cities) in LIVE_SEAT_CITY_PACE {
+                game.turn = turn;
+                assert_eq!(seat_curve(&game), cities, "{difficulty} turn {turn}");
+            }
+        }
+        game.turn = 100;
+        assert_eq!(seat_capped(&game, 12, 4), 6);
+        assert_eq!(seat_capped(&game, 12, 8), 8, "never below the held cities");
+        assert_eq!(seat_capped(&game, 5, 4), 5);
+    }
+
     #[test]
     fn a_king_game_follows_the_king_field() {
         let mut game = online_game();
