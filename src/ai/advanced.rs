@@ -36465,12 +36465,12 @@ impl AdvancedAi {
                     // placed pad is not a second pad.
                     let resumes_own_foundation = self.launch_pad_keeps_its_rung
                         && matches!(item, Item::District { pos, .. }
-                            if g.map
-                                .get(*pos)
-                                .and_then(|tile| tile.district_foundation.as_ref())
-                                .is_some_and(|foundation| {
-                                    g.district_family(foundation.district) == "spaceport"
-                                }));
+                        if g.map
+                            .get(*pos)
+                            .and_then(|tile| tile.district_foundation.as_ref())
+                            .is_some_and(|foundation| {
+                                g.district_family(foundation.district) == "spaceport"
+                            }));
                     if Self::city_has_spaceport(g, cid)
                         || (Self::city_has_spaceport_foundation(g, cid)
                             && !current_queued_spaceport
@@ -50794,11 +50794,11 @@ mod domination_solvency_tests;
 #[cfg(test)]
 mod commercial_hub_queue_tests;
 #[cfg(test)]
-mod launch_pad_rung_tests;
-#[cfg(test)]
 mod growth_farm_tests;
 #[cfg(test)]
 mod industrial_zone_tests;
+#[cfg(test)]
+mod launch_pad_rung_tests;
 #[cfg(test)]
 mod urban_planning_slot_tests;
 #[cfg(test)]
