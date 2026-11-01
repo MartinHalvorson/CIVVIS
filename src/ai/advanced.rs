@@ -8031,10 +8031,6 @@ pub struct AdvancedAi {
     /// `extra` (`rival_pace::city_cap`). `None` everywhere but a calibrated
     /// rival chair. See `advanced/rival_pace.rs`.
     rival_city_pace: Option<usize>,
-    /// `gene_screen --seat-pace`: `true` caps the strategic plan's city
-    /// horizon at the live seat's own curve (`rival_pace::seat_capped`).
-    /// `false` everywhere but a measured harness seat under the flag.
-    seat_city_pace: bool,
     /// `prey-is-declared-on`: a Domination seat declares on a major rival
     /// under `prey_declaration::PREY_DECLARE_RATIO` of its military power
     /// without a home Defend row or a staged ring. See
@@ -9099,6 +9095,10 @@ pub struct AdvancedAi {
     /// leading racer's landed projects rather than level. See
     /// `advanced/science_victory_drive.rs`. Off by default.
     science_drive_answers_from_the_pad_2: bool,
+    /// `gene_screen --seat-pace`: `true` caps the strategic plan's city
+    /// horizon at the live seat's own curve (`rival_pace::seat_capped`).
+    /// `false` everywhere but a measured harness seat under the flag.
+    seat_city_pace: bool,
     // ---- append: t-z ------------------------------------------------
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
@@ -11749,7 +11749,6 @@ impl AdvancedAi {
             religion_seat_founds_first: false,
             religion_lane_spreads_from_founding: false,
             rival_city_pace: None,
-            seat_city_pace: false,
             prey_is_declared_on: false,
             prophet_race_takes_divine_spark: false,
             racer_blocker_declares: false,
@@ -11941,6 +11940,7 @@ impl AdvancedAi {
             science_denounce_names_the_leader: false,
             science_drive_answers_from_the_pad: false,
             science_drive_answers_from_the_pad_2: false,
+            seat_city_pace: false,
             // ---- append: t-z ----------------------------------------
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,

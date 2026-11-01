@@ -8959,7 +8959,7 @@ mod tests {
         assert_eq!((back.rival_rung.as_str(), back.rival_pace), ("-2", true));
         assert!(rivals_line(&back).contains("yields 2 rung(s) below the game's"));
         assert!(rivals_line(&back).contains("held to the live curve"));
-        assert!(!rivals_line(&back).contains("live seat"));
+        assert!(!rivals_line(&back).contains("live seat's own city curve"));
         let mut seat = back.clone();
         seat.seat_pace = true;
         let seat: Header = serde_json::from_str(&serde_json::to_string(&seat).expect("serializes"))
