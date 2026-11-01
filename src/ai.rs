@@ -401,12 +401,12 @@ mod advanced;
 mod campus_buildings;
 mod commercial_hub;
 mod industrial_zones;
+mod launch_pad_resume;
 mod movement_risk;
 mod naval_demand;
 mod opening_builder;
 #[cfg(test)]
 mod policy_growth_tests;
-mod launch_pad_resume;
 mod retainers_garrison;
 mod scout_first;
 mod scout_inference;
