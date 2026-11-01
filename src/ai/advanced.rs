@@ -5522,6 +5522,12 @@ pub struct AdvancedAi {
     /// not a Shooter, and that garrison makes no blow. See
     /// `advanced/anvil_garrisons_its_melee.rs`. Off by default.
     anvil_garrisons_its_melee: bool,
+    /// `apostle-transit-keeps-the-cover`: while the founder's first Apostle
+    /// walks to launch the Inquisition, a threatened source still buys its
+    /// cover Missionary when the Faith left covers the first Inquisitor, and
+    /// the hold is journalled. See `advanced/defensive_apostle.rs`. Off by
+    /// default.
+    apostle_transit_keeps_the_cover: bool,
     // ---- append: c-d ------------------------------------------------
     /// `domination-targets-land-first`: a Domination seat ranks rivals it can
     /// reach by land ahead of overseas ones in its frontier and capital picks
@@ -11239,6 +11245,7 @@ impl AdvancedAi {
             bankruptcy_exits_the_drain: false,
             builder_prices_travel_in_turns: false,
             anvil_garrisons_its_melee: false,
+            apostle_transit_keeps_the_cover: false,
             // ---- append: c-d ----------------------------------------
             domination_targets_land_first: false,
             defence_holds_under_fire: false,

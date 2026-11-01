@@ -4594,6 +4594,14 @@ pub const GENES: &[Gene] = &[
     // city, 72-79% within three tiles of one. An idle soldier garrisons each
     // short city while Retainers is slotted. See `ai/retainers_garrison.rs`.
     Gene { tag: "retainers-garrison-the-short-cities", field: "retainers_garrison_the_short_cities", kind: Kind::OptIn, enable: AdvancedAi::enable_retainers_garrison_the_short_cities, disable: AdvancedAi::disable_retainers_garrison_the_short_cities },
+    // Live Emperor Religion seat civvis-20261031T034930Z (2026-11-01, -3b):
+    // the Apostle bought at t68 held every Faith purchase for the Inquisitor,
+    // silently, while Catholic spreaders worked the Holy City, which flipped
+    // at t80-90 with 254-769 Faith banked; nothing of ours could be bought
+    // after (2,670 Faith unspent at the t218 loss). While the Apostle
+    // travels, a threatened source buys its cover Missionary when the Faith
+    // left covers the first Inquisitor. See `advanced/defensive_apostle.rs`.
+    Gene { tag: "apostle-transit-keeps-the-cover", field: "apostle_transit_keeps_the_cover", kind: Kind::OptIn, enable: AdvancedAi::enable_apostle_transit_keeps_the_cover, disable: AdvancedAi::disable_apostle_transit_keeps_the_cover },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
