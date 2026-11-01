@@ -8956,6 +8956,17 @@ impl AdvancedAi {
         self.base.disable_retainers_garrison_the_short_cities();
     }
 
+    /// Opt-in gene `pillaged-districts-repair-first`; see
+    /// [`Self::pillaged_districts_repair_first`].
+    pub fn enable_pillaged_districts_repair_first(&mut self) {
+        self.pillaged_districts_repair_first = true;
+    }
+
+    /// The twin of `enable_pillaged_districts_repair_first`.
+    pub fn disable_pillaged_districts_repair_first(&mut self) {
+        self.pillaged_districts_repair_first = false;
+    }
+
     /// Opt-in gene `apostle-transit-keeps-the-cover`; see
     /// [`Self::apostle_transit_keeps_the_cover`].
     pub fn enable_apostle_transit_keeps_the_cover(&mut self) {

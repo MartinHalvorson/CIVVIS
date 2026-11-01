@@ -4594,6 +4594,13 @@ pub const GENES: &[Gene] = &[
     // city, 72-79% within three tiles of one. An idle soldier garrisons each
     // short city while Retainers is slotted. See `ai/retainers_garrison.rs`.
     Gene { tag: "retainers-garrison-the-short-cities", field: "retainers_garrison_the_short_cities", kind: Kind::OptIn, enable: AdvancedAi::enable_retainers_garrison_the_short_cities, disable: AdvancedAi::disable_retainers_garrison_the_short_cities },
+    // `pillaged-districts-repair-first`: 26 of 63 lane seats had a pillaged
+    // district (77 spells, a median 10 turns, 19 never repaired by t150). The
+    // repair is priced 1,500 but the claim genes take the queue first; live
+    // civvis-20261101T024926Z lost the Prophet race on a Holy Site pillaged
+    // from t30 to t66. The repair now claims its city after every other claim.
+    // See `advanced/pillaged_repairs_first.rs`.
+    Gene { tag: "pillaged-districts-repair-first", field: "pillaged_districts_repair_first", kind: Kind::OptIn, enable: AdvancedAi::enable_pillaged_districts_repair_first, disable: AdvancedAi::disable_pillaged_districts_repair_first },
     // Live Emperor Religion seat civvis-20261031T034930Z (2026-11-01, -3b):
     // the Apostle bought at t68 held every Faith purchase for the Inquisitor,
     // silently, while Catholic spreaders worked the Holy City, which flipped
