@@ -8956,6 +8956,17 @@ impl AdvancedAi {
         self.base.disable_retainers_garrison_the_short_cities();
     }
 
+    /// Opt-in gene `pillaged-districts-repair-first`; see
+    /// [`Self::pillaged_districts_repair_first`].
+    pub fn enable_pillaged_districts_repair_first(&mut self) {
+        self.pillaged_districts_repair_first = true;
+    }
+
+    /// The twin of `enable_pillaged_districts_repair_first`.
+    pub fn disable_pillaged_districts_repair_first(&mut self) {
+        self.pillaged_districts_repair_first = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
