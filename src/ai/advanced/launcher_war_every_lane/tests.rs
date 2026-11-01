@@ -333,3 +333,46 @@ fn a_tie_goes_to_the_racer_knowing_more_techs() {
         "the racer a project ahead"
     );
 }
+
+/// 050026Z left no line naming the gate that held the war on the leading
+/// racer; each gate now journals itself, and a war that opens journals none.
+#[test]
+fn the_gate_that_holds_the_launcher_war_is_journaled() {
+    let gate_lines = |ai: &AdvancedAi| -> Vec<String> {
+        ai.journal()
+            .since(0)
+            .thoughts
+            .iter()
+            .filter(|thought| thought.headline.starts_with("No launcher war on"))
+            .map(|thought| thought.detail.clone())
+            .collect()
+    };
+    let (mut g, mut ai) = fixture(VictoryTarget::Culture);
+    ai.enable_launcher_war_serves_every_lane();
+    ai.base.journal = crate::reasoning::Journal::recording();
+    assert!(ai.launcher_lane_counter(&g, 0).is_some());
+    assert!(gate_lines(&ai).is_empty(), "an opening war names no gate");
+
+    let pad: Pos = (24, 12);
+    g.map.tiles.get_mut(&pad).unwrap().pillaged = true;
+    ai.base.journal = crate::reasoning::Journal::recording();
+    assert_eq!(ai.launcher_lane_counter(&g, 0), None);
+    let lines = gate_lines(&ai);
+    assert_eq!(lines.len(), 1, "{lines:?}");
+    assert!(
+        lines[0].contains("no pad of theirs is seen standing"),
+        "{lines:?}"
+    );
+
+    g.map.tiles.get_mut(&pad).unwrap().pillaged = false;
+    for at in [(32, 10), (32, 12), (32, 14), (33, 11), (33, 13), (34, 12)] {
+        g.spawn_test_unit("cavalry", 1, at);
+    }
+    ai.base.journal = crate::reasoning::Journal::recording();
+    assert_eq!(ai.launcher_lane_counter(&g, 0), None);
+    let lines = gate_lines(&ai);
+    assert!(
+        lines.iter().any(|line| line.contains("under 1.2 times")),
+        "{lines:?}"
+    );
+}

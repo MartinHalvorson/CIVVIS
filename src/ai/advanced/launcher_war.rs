@@ -47,7 +47,7 @@ pub(crate) const PAD_RAID_REACH: i32 = 8;
 const PAD_BOMBER_MIN_HP: i32 = 50;
 /// `launcher-war-ignores-the-edge`: space projects a rival must have landed
 /// (the Moon) before its war opens short of the edge.
-const LAUNCHER_WAR_STAGES: usize = 2;
+pub(super) const LAUNCHER_WAR_STAGES: usize = 2;
 /// `launcher-war-ignores-the-edge`: our military, as a share of the racer's
 /// steady power, at which its war opens.
 pub(crate) const LAUNCHER_WAR_EDGE: f64 = 0.8;
@@ -66,7 +66,7 @@ impl AdvancedAi {
     }
 
     /// `rival`'s standing Spaceports we have seen, in position order.
-    fn standing_pads(g: &Game, pid: usize, rival: usize) -> Vec<Pos> {
+    pub(super) fn standing_pads(g: &Game, pid: usize, rival: usize) -> Vec<Pos> {
         let explored = &g.players[pid].explored;
         let mut pads: Vec<Pos> = g
             .player_city_ids(rival)
