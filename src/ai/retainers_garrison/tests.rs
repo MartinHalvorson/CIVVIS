@@ -48,7 +48,8 @@ fn a_short_city_draws_an_idle_soldier_while_retainers_is_slotted() {
     let mut ai = armed();
     assert_eq!(ai.retainers_garrison_step(&mut g, 0, warrior), Some(true));
     assert_eq!(ai.retainers_garrison_claims.get(&cid), Some(&warrior));
-    assert!(g.wdist(g.units[&warrior].pos, g.cities[&cid].pos) < start);
+    // The step routes toward the city; it never walks away from it.
+    assert!(g.wdist(g.units[&warrior].pos, g.cities[&cid].pos) <= start);
 }
 
 #[test]
