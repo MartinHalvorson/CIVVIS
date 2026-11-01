@@ -453,7 +453,9 @@ impl AdvancedAi {
             || match self.science_drive {
                 Some(_) if self.science_victory_drive_2 => standing.holds_v2(),
                 Some(_) => standing.holds(),
-                None if answering => standing.leads_outright(),
+                None if answering => {
+                    standing.leads_outright() || self.domination_answers_at_parity(&standing)
+                }
                 None if self.science_victory_drive_2 => g.turn >= start && standing.leads_v2(),
                 None => g.turn >= start && standing.leads(),
             };
@@ -481,7 +483,12 @@ impl AdvancedAi {
                    if assigned {
                        "the assigned lane"
                    } else if answering {
-                       if from_the_pad && !standing.leads_outright() {
+                       if self.domination_answers_at_parity(&standing)
+                           && !standing.leads_outright()
+                           && !from_the_pad
+                       {
+                           "domination-joins-the-race: a Domination seat within reach of the field's techs answers a rival's space race beside its war"
+                       } else if from_the_pad && !standing.leads_outright() {
                            if self.science_drive_answers_from_the_pad_2 {
                                "science-drive-answers-from-the-pad-2: our own pads within one of the racer's, answered beside the assigned lane"
                            } else {
