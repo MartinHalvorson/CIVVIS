@@ -5529,6 +5529,9 @@ pub struct AdvancedAi {
     /// default.
     apostle_transit_keeps_the_cover: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `culture-digs-one-museum`: a Culture seat makes one Museum an
+    /// Archaeological Museum. See `advanced/culture_dig_museum.rs`. Off by default.
+    culture_digs_one_museum: bool,
     /// `culture-keeps-every-border-open-2`: version one, buying passage only
     /// from the bar holder. See `advanced/culture_open_borders.rs`. Off by default.
     culture_keeps_every_border_open_2: bool,
@@ -9919,6 +9922,7 @@ mod diplo_wonder_claim;
 /// `culture-seat-monuments`: see `advanced/culture_monuments.rs`.
 mod culture_monuments;
 /// `culture-keeps-every-border-open`: see `advanced/culture_open_borders.rs`.
+mod culture_dig_museum;
 mod culture_open_borders;
 
 /// `diplo-seat-statue-harbor`: see `advanced/diplo_statue_harbor.rs`.
@@ -11300,6 +11304,7 @@ impl AdvancedAi {
             anvil_garrisons_its_melee: false,
             apostle_transit_keeps_the_cover: false,
             // ---- append: c-d ----------------------------------------
+            culture_digs_one_museum: false,
             culture_keeps_every_border_open_2: false,
             domination_targets_land_first: false,
             defence_holds_under_fire: false,
@@ -36410,6 +36415,7 @@ impl AdvancedAi {
                         + wartime_infrastructure_debt
                         + self.culture_floor_building_bonus(g, pid, spec)
                         + self.gold_floor_building_bonus(g, pid, *building, spec)
+                        + self.dig_museum_bonus(g, pid, *building)
                         + if building == "monument" && g.turn < 120 {
                             240.0
                         } else {

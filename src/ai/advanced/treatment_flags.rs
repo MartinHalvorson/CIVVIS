@@ -9035,6 +9035,16 @@ impl AdvancedAi {
         self.science_drive_answers_from_the_pad = false;
     }
 
+    /// Turn on `culture-digs-one-museum`. See [`Self::culture_digs_one_museum`].
+    pub fn enable_culture_digs_one_museum(&mut self) {
+        self.culture_digs_one_museum = true;
+    }
+
+    /// The twin of `enable_culture_digs_one_museum`.
+    pub fn disable_culture_digs_one_museum(&mut self) {
+        self.culture_digs_one_museum = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

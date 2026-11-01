@@ -4644,6 +4644,12 @@ pub const GENES: &[Gene] = &[
     // Needs `science-victory-drive` and `science-drive-answers-the-launch`.
     // See `advanced/science_victory_drive.rs`.
     Gene { tag: "science-drive-answers-from-the-pad", field: "science_drive_answers_from_the_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_science_drive_answers_from_the_pad, disable: AdvancedAi::disable_science_drive_answers_from_the_pad },
+    // `culture-digs-one-museum`: the two Museums tie and the base AI breaks
+    // toward Art, so a Culture seat never owns an Artifact slot (live King
+    // culture seat 091422Z: 66 Art Museum orders, no Archaeologist, lost t237
+    // 82 visitors short). One Archaeological Museum opens the dig line. See
+    // `advanced/culture_dig_museum.rs`.
+    Gene { tag: "culture-digs-one-museum", field: "culture_digs_one_museum", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_digs_one_museum, disable: AdvancedAi::disable_culture_digs_one_museum },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
