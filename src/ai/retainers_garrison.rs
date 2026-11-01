@@ -16,8 +16,8 @@
 //! the city is lost, or the city stands above zero.
 use super::BasicAi;
 use crate::game::{Game, Unit};
-use crate::Pos;
 use crate::think;
+use crate::Pos;
 
 /// The farthest an idle soldier walks to garrison a short city.
 pub(crate) const RETAINERS_GARRISON_RANGE: i32 = 6;
