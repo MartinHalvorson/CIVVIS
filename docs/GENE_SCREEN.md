@@ -2663,6 +2663,55 @@ under-credit late payoff:
 #4287 and the Campus claims are the most likely to move under 7+ more turns of
 payback.
 
+**Re-reads on the recalibrated field so far** (uncapped, n=12, seeds 29800000+
+unless noted):
+- **#4287 `deck-prices-growth`** (-8b, Culture): end turn +1.5 ± 3.5, share
+  +0.41 ± 0.35 pp, production +2% and Science +5% at t150. It won 1 game in each
+  arm, the first measured-seat wins seen on the faithful field. This agrees with
+  the old read; the gene stays armed.
+- **#4282 `land-grab-outlasts-the-opening`** (-8e): the old t150 Science and
+  production *cost* disappeared, since it was an artefact of games ending early.
+  Production now reads +3% at t150 and +8% at t175, with +1.3 and +1.9 cities.
+  Survival and end turn are still neutral (−0.5), so the gene stays disarmed. The
+  verdict was a misleading cost and is now an honest null.
+
+#### ⭐ At Emperor (Lv 6): the same flags with `--difficulty emperor` (2026-11-01)
+
+The live lane moved to Emperor on 10-31 after 153620Z. The recommended Emperor
+field keeps every flag above and changes only the difficulty:
+
+```
+gene_screen --rivals firaxis-faithful --handicap rivals --rival-chairs 5 \
+  --rival-rung -2 --rival-pace \
+  --rival-late-science 75 --rival-space-floor 62 --rival-victory-pace 175 \
+  --difficulty emperor --deployment-genome --trace --out rows.jsonl
+```
+
+`--rival-rung` counts from the game's difficulty, so at Emperor rung −2 gives
+the rivals Prince yields. The fit is against the 6 live 6p Small Continents
+Emperor games of 10-31 (met rivals' `public_stats`, 10–17 rivals a mark). Seeds
+were 31100000+, with 8 games at rung −2 and 12 at rung −1. Each cell is the
+harness rival mean over the live rival mean at t60 / t100 / t150 / t175:
+
+| rung | production | Science | techs (difference) | rival Science win |
+|---|---|---|---|---|
+| **−2** | **0.83 / 1.04 / 0.90 / 0.89x** | 0.63 / 0.69 / 0.85 / 0.99x | −4.2 / −2.5 / −4.1 / −4.2 | 8 of 8, median t209.5 |
+| −1 | 1.04 / 1.64 / 1.27 / 1.25x | 0.84 / 0.84 / 1.19 / 1.21x | −2.3 / +0.8 / +1.9 / +2.4 | 8 of 12 at t187; Culture 4 at t156 |
+
+The live Emperor rival finishes so far are two Technology wins, at t188 and t218,
+too few to separate the rungs on the finish. Production separates them cleanly,
+and rung −2 matches it. Under rung −2 the rivals run about 4 techs behind live,
+so the Emperor field is **mildly lenient**: late payoff is slightly
+over-credited. Paired deltas are fine. Refit once a dozen live Emperor games have
+finished.
+
+⚠ **The religion race closes later in the harness than live.** The first trace
+mark at which a 4th major has a religion is a median t85 at rung −2 (t90 at rung
+−1). Live, the 4th religion is founded at a median t65.5 at Emperor (n=4) and
+t48.5 at Immortal (n=54); these come from our seat's `founded_religions`, per
+-43. So a deadline fitted on the harness would over-pray live. Fit religion-race
+timing to live data, and read the harness for founding-rate deltas only.
+
 **What a calibrated source measures.** The measured seat lost all six games
 to a rival science win, ranked 6th of 6 in every one, kept every city it
 founded (one lost in one game) and ended on 10–14% of the table's score.
