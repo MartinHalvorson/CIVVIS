@@ -8989,6 +8989,17 @@ impl AdvancedAi {
         self.apostle_transit_keeps_the_cover = false;
     }
 
+    /// Turn on `culture-keeps-every-border-open-2`. See
+    /// [`Self::culture_keeps_every_border_open_2`].
+    pub fn enable_culture_keeps_every_border_open_2(&mut self) {
+        self.culture_keeps_every_border_open_2 = true;
+    }
+
+    /// The twin of `enable_culture_keeps_every_border_open_2`.
+    pub fn disable_culture_keeps_every_border_open_2(&mut self) {
+        self.culture_keeps_every_border_open_2 = false;
+    }
+
     /// Opt-in gene `fog-yields-to-a-stranded-settler`; see
     /// [`Self::fog_yields_to_a_stranded_settler`].
     pub fn enable_fog_yields_to_a_stranded_settler(&mut self) {
@@ -8998,6 +9009,30 @@ impl AdvancedAi {
     /// The twin of `enable_fog_yields_to_a_stranded_settler`.
     pub fn disable_fog_yields_to_a_stranded_settler(&mut self) {
         self.fog_yields_to_a_stranded_settler = false;
+    }
+
+    /// Opt-in gene `launch-pad-keeps-its-rung`; see
+    /// [`Self::launch_pad_keeps_its_rung`].
+    pub fn enable_launch_pad_keeps_its_rung(&mut self) {
+        self.launch_pad_keeps_its_rung = true;
+        self.base.enable_launch_pad_resumes_its_foundation();
+    }
+
+    /// The twin of `enable_launch_pad_keeps_its_rung`.
+    pub fn disable_launch_pad_keeps_its_rung(&mut self) {
+        self.launch_pad_keeps_its_rung = false;
+        self.base.disable_launch_pad_resumes_its_foundation();
+    }
+
+    /// Opt-in gene `science-drive-answers-from-the-pad`; see
+    /// [`Self::science_drive_answers_from_the_pad`].
+    pub fn enable_science_drive_answers_from_the_pad(&mut self) {
+        self.science_drive_answers_from_the_pad = true;
+    }
+
+    /// The twin of `enable_science_drive_answers_from_the_pad`.
+    pub fn disable_science_drive_answers_from_the_pad(&mut self) {
+        self.science_drive_answers_from_the_pad = false;
     }
 
     /// Opt-in gene `launch-commits-the-endgame`; see

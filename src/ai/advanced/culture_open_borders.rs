@@ -31,7 +31,14 @@
 //! built-up empire's liquidity proxy refuses (see
 //! [`AdvancedAi::lump_open_borders_quote`]). The view is restored before
 //! anything else reads it, and the authoritative game revalidates every
-//! harvested trade against the real civics. A purchase never spends into the
+//! harvested trade against the real civics.
+//!
+//! **Version two, `culture-keeps-every-border-open-2`**, buys only from the
+//! bar holder (the met rival with the most domestic tourists): visitors drawn
+//! from it count twice — ours rise and the bar falls — and a King screen read
+//! version one at −1.7 pp score share with wins unchanged, so the other
+//! grants' Gold may cost more than their pressure is worth. Enabling one turns
+//! the other off. A purchase never spends into the
 //! solvency reserve. Below the floor nothing changes; off, nothing changes.
 use super::AdvancedAi;
 use crate::game::{DealItems, Game, QuickDeal};
@@ -55,10 +62,19 @@ impl AdvancedAi {
         culture_threats: &BTreeSet<usize>,
         science_threats: &BTreeSet<usize>,
     ) -> usize {
-        if !self.culture_keeps_every_border_open
+        if !(self.culture_keeps_every_border_open || self.culture_keeps_every_border_open_2)
             || self.lane_lost
             || g.tourism_per_turn(pid) < OPEN_BORDERS_TOURISM_FLOOR
         {
+            return 0;
+        }
+        // Version two buys only from the bar holder: the met rival with the
+        // most domestic tourists, whose visitors to us also lower the bar.
+        let bar_holder = self
+            .culture_keeps_every_border_open_2
+            .then(|| Self::culture_bar_holder(g, pid))
+            .flatten();
+        if self.culture_keeps_every_border_open_2 && bar_holder.is_none() {
             return 0;
         }
         let revealed = Self::reveal_enforcing_civics(g, pid);
@@ -67,6 +83,7 @@ impl AdvancedAi {
         loop {
             let best = (0..g.players.len())
                 .filter(|partner| Some(*partner) != excluded_partner && !tried.contains(partner))
+                .filter(|partner| bar_holder.is_none_or(|holder| holder == *partner))
                 .filter_map(|partner| Self::lump_open_borders_quote(g, pid, partner))
                 .filter(|deal| {
                     self.culture_deal_allowed(deal, culture_threats)
@@ -92,6 +109,22 @@ impl AdvancedAi {
                 .remove(&crate::name!("early_empire"));
         }
         closed
+    }
+
+    /// The met, living rival major with the most domestic tourists — the bar
+    /// a culture victory has to clear (`Game::check_culture_victory`).
+    fn culture_bar_holder(g: &Game, pid: usize) -> Option<usize> {
+        (0..g.players.len())
+            .filter(|&rival| {
+                let player = &g.players[rival];
+                rival != pid
+                    && player.alive
+                    && !player.is_minor
+                    && !player.is_barbarian
+                    && !g.same_team(pid, rival)
+                    && g.has_met(pid, rival)
+            })
+            .max_by_key(|&rival| (g.domestic_tourists(rival), std::cmp::Reverse(rival)))
     }
 
     /// Every met major whose borders the view shows enforced but whose civics
