@@ -5054,6 +5054,15 @@
           "research-building-catchup-3": null
         }
       },
+      "science-drive-answers-from-the-pad": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "science-drive-answers-from-the-pad": null,
+          "science-drive-answers-from-the-pad-2": null
+        }
+      },
       "science-victory-drive": {
         "rule_on": [
           "science-victory-drive"

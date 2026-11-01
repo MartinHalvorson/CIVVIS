@@ -9063,6 +9063,10 @@ pub struct AdvancedAi {
     /// the leading racer's. See `advanced/science_victory_drive.rs`. Off by
     /// default.
     science_drive_answers_from_the_pad: bool,
+    /// `science-drive-answers-from-the-pad-2`: the same, within one of the
+    /// leading racer's landed projects rather than level. See
+    /// `advanced/science_victory_drive.rs`. Off by default.
+    science_drive_answers_from_the_pad_2: bool,
     // ---- append: t-z ------------------------------------------------
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
@@ -11892,6 +11896,7 @@ impl AdvancedAi {
             science_seat_allies: false,
             science_denounce_names_the_leader: false,
             science_drive_answers_from_the_pad: false,
+            science_drive_answers_from_the_pad_2: false,
             // ---- append: t-z ----------------------------------------
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,

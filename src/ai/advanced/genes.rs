@@ -4644,6 +4644,17 @@ pub const GENES: &[Gene] = &[
     // Needs `science-victory-drive` and `science-drive-answers-the-launch`.
     // See `advanced/science_victory_drive.rs`.
     Gene { tag: "science-drive-answers-from-the-pad", field: "science_drive_answers_from_the_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_science_drive_answers_from_the_pad, disable: AdvancedAi::disable_science_drive_answers_from_the_pad },
+    // Live King civvis-20261101T095815Z (with v1 armed) landed its Moon at
+    // 202, one project behind Gran Colombia's Mars at 203, so the level-pad
+    // reading never held. Research ran the war plan until an outright
+    // science lead opened the answer at 218. Smart Materials came at 221 and
+    // Offworld Mission at 231. Our Exoplanet launched at 223 against theirs
+    // at 221 with no laser station possible before 231, and Gran Colombia
+    // won at 233. The answer now also opens within one project of every
+    // rival. Replaces `science-drive-answers-from-the-pad` (either reads the
+    // pads; -2 adds the slack). Needs `science-victory-drive` and
+    // `science-drive-answers-the-launch`. See `advanced/science_victory_drive.rs`.
+    Gene { tag: "science-drive-answers-from-the-pad-2", field: "science_drive_answers_from_the_pad_2", kind: Kind::OptIn, enable: AdvancedAi::enable_science_drive_answers_from_the_pad_2, disable: AdvancedAi::disable_science_drive_answers_from_the_pad_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
