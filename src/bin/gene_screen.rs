@@ -6413,7 +6413,8 @@ fn usage() -> ! {
          YIELD bonus (bonus start units, era boosts, combat strength and XP stay on the game's rung), \
          named or N rungs below each game's, needs --handicap rivals; [--rival-pace] every faithful chair's \
          city horizon follows the live Immortal field's curve (4/5/6/7/9/10/11 at t40/60/80/100/150/175/225, \
-         one chair per game +2); both need --rivals firaxis-faithful\n       \
+         the King field's 2/4/4/5/7/8/10 at --difficulty king, one chair per game +2); both need --rivals \
+         firaxis-faithful\n       \
          the rival trajectories: [--trace] writes every major's economy (cities, population, yields, tourism, \
          tourists, techs, civics, wonders, districts) at turns 10..100 by tens, 125, 150, 175, 200, 225 onto its \
          row as `trace`; rows are unchanged without it\n       \
