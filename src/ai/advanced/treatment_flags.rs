@@ -8978,6 +8978,17 @@ impl AdvancedAi {
         self.launcher_war_fights_the_faster_racer = false;
     }
 
+    /// Opt-in gene `apostle-transit-keeps-the-cover`; see
+    /// [`Self::apostle_transit_keeps_the_cover`].
+    pub fn enable_apostle_transit_keeps_the_cover(&mut self) {
+        self.apostle_transit_keeps_the_cover = true;
+    }
+
+    /// The twin of `enable_apostle_transit_keeps_the_cover`.
+    pub fn disable_apostle_transit_keeps_the_cover(&mut self) {
+        self.apostle_transit_keeps_the_cover = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
