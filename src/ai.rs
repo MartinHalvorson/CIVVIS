@@ -3923,6 +3923,10 @@ pub struct BasicAi {
     /// unfinished Spaceport foundation while no pad of ours stands. See
     /// `launch_pad_resume.rs`. Set by the Advanced gene; off by default.
     pub(crate) launch_pad_resumes_its_foundation: bool,
+    /// `culture-digs-one-museum`: while the empire owns no Archaeological
+    /// Museum, the Museum tie breaks toward the Artifact slot. Lent by the
+    /// Advanced gene to a Culture seat's delegated call; off by default.
+    pub(crate) digs_one_museum: bool,
     /// `deck-prices-growth`: the policy counterfactual prices each city's
     /// growth surplus (`Weights::pol_growth` at the Food weight), so housing
     /// and amenity cards are worth the growth they release. Set by the
@@ -6024,6 +6028,7 @@ impl BasicAi {
             retainers_garrison_the_short_cities: false,
             retainers_garrison_claims: BTreeMap::new(),
             launch_pad_resumes_its_foundation: false,
+            digs_one_museum: false,
             deck_prices_growth: false,
             solvency_first_trade_slot: false,
             builder_tries_the_next_tile: false,
@@ -6129,6 +6134,17 @@ impl BasicAi {
     /// The twin of `enable_retainers_garrison_the_short_cities`.
     pub(crate) fn disable_retainers_garrison_the_short_cities(&mut self) {
         self.retainers_garrison_the_short_cities = false;
+    }
+
+    /// Whether `pid` owns an Archaeological Museum, built or in any queue.
+    pub(crate) fn owns_dig_museum(g: &Game, pid: usize) -> bool {
+        let dig = crate::name!("archaeological_museum");
+        g.cities.values().filter(|city| city.owner == pid).any(|city| {
+            city.buildings.iter().any(|built| g.building_is_family(*built, dig))
+                || city.queue.iter().any(|item| {
+                    matches!(item, Item::Building { building } if g.building_is_family(*building, dig))
+                })
+        })
     }
 
     /// See `launch_pad_resumes_its_foundation`.
@@ -6594,6 +6610,7 @@ impl BasicAi {
             retainers_garrison_the_short_cities: false,
             retainers_garrison_claims: BTreeMap::new(),
             launch_pad_resumes_its_foundation: false,
+            digs_one_museum: false,
             deck_prices_growth: false,
             solvency_first_trade_slot: false,
             builder_tries_the_next_tile: false,
@@ -14375,8 +14392,11 @@ impl BasicAi {
             let makes_science =
                 |b: &Name| -> bool { science_first && g.rules.buildings[b].yields.science > 0.0 };
             let tiebreak = self.slot_kind_tiebreak;
+            // `culture-digs-one-museum`: a Culture seat's first Museum takes the
+            // Artifact slot. See `advanced/culture_dig_museum.rs`.
+            let dig_first = self.digs_one_museum && !Self::owns_dig_museum(g, pid);
             let slot_worth = |b: &Name| -> f64 {
-                if !tiebreak {
+                if !tiebreak && !dig_first {
                     return 0.0;
                 }
                 g.rules.buildings[b]
@@ -14385,7 +14405,7 @@ impl BasicAi {
                     .map(|(kind, count)| {
                         let count = (*count).max(0) as f64;
                         if kind == "artifact" {
-                            count * 0.5
+                            count * if dig_first { 2.0 } else { 0.5 }
                         } else {
                             count
                         }

@@ -444,7 +444,7 @@ impl AdvancedAi {
         let adaptive_science_plan = self.adaptive_science_plan(g, pid);
         // `science-drive-answers-from-the-pad`: the answer also opens, and
         // holds, while our own landed projects are level with the leading
-        // racer's, whatever the science reading.
+        // racer's (within one under `-2`), whatever the science reading.
         let from_the_pad = answering && self.answer_holds_the_pad(g, pid);
         let driving = assigned
             || portfolio_science
@@ -489,7 +489,11 @@ impl AdvancedAi {
                        {
                            "domination-joins-the-race: a Domination seat within reach of the field's techs answers a rival's space race beside its war"
                        } else if from_the_pad && !standing.leads_outright() {
-                           "science-drive-answers-from-the-pad: our own pads level with the racer's, answered beside the assigned lane"
+                           if self.science_drive_answers_from_the_pad_2 {
+                               "science-drive-answers-from-the-pad-2: our own pads within one of the racer's, answered beside the assigned lane"
+                           } else {
+                               "science-drive-answers-from-the-pad: our own pads level with the racer's, answered beside the assigned lane"
+                           }
                        } else {
                            "a rival's space race, answered beside the assigned lane"
                        }
@@ -522,11 +526,22 @@ impl AdvancedAi {
     /// Systems over Smart Materials at 212), Smart Materials came at 227, our
     /// Exoplanet launched at 240 against theirs at 236, and the Ottomans won
     /// at 245. 071051Z, whose answer opened on an outright lead at 181, won.
-    /// `false` with the gene off.
+    ///
+    /// `science-drive-answers-from-the-pad-2`: within one project of every
+    /// rival, not only level. Live King civvis-20261101T095815Z (v1 armed
+    /// from t203) landed its Moon at 202; Gran Colombia landed Mars at 203,
+    /// one ahead, so the pad reading never held and the answer waited for an
+    /// outright science lead at 218. Research ran the war plan in between
+    /// (Nuclear Fusion over Nanotechnology at 202, then Computers and
+    /// Telecommunications), Smart Materials came at 221 and Offworld Mission
+    /// at 231. Our Exoplanet launched at 223 against theirs at 221, no laser
+    /// station could start before 231, and Gran Colombia won at 233.
+    /// `false` with both genes off.
     pub(super) fn answer_holds_the_pad(&self, g: &Game, pid: usize) -> bool {
-        if !self.science_drive_answers_from_the_pad {
+        if !self.science_drive_answers_from_the_pad && !self.science_drive_answers_from_the_pad_2 {
             return false;
         }
+        let slack = usize::from(self.science_drive_answers_from_the_pad_2);
         let ours = Self::science_denial_stages(g, pid);
         ours >= 1
             && g.players
@@ -538,7 +553,7 @@ impl AdvancedAi {
                         && !rival.is_barbarian
                         && g.has_met(pid, rival.id)
                 })
-                .all(|rival| Self::science_denial_stages(g, rival.id) <= ours)
+                .all(|rival| Self::science_denial_stages(g, rival.id) <= ours + slack)
     }
 
     /// `science-drive-answers-the-launch`: whether a met, living rival major

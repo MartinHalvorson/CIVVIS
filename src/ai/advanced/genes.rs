@@ -4644,6 +4644,41 @@ pub const GENES: &[Gene] = &[
     // Needs `science-victory-drive` and `science-drive-answers-the-launch`.
     // See `advanced/science_victory_drive.rs`.
     Gene { tag: "science-drive-answers-from-the-pad", field: "science_drive_answers_from_the_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_science_drive_answers_from_the_pad, disable: AdvancedAi::disable_science_drive_answers_from_the_pad },
+    // `culture-digs-one-museum`: the two Museums tie and the base AI breaks
+    // toward Art, so a Culture seat never owns an Artifact slot (live King
+    // culture seat 091422Z: 66 Art Museum orders, no Archaeologist, lost t237
+    // 82 visitors short). One Archaeological Museum opens the dig line. See
+    // `advanced/culture_dig_museum.rs`.
+    Gene { tag: "culture-digs-one-museum", field: "culture_digs_one_museum", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_digs_one_museum, disable: AdvancedAi::disable_culture_digs_one_museum },
+    // Live King civvis-20261101T095815Z (with v1 armed) landed its Moon at
+    // 202, one project behind Gran Colombia's Mars at 203, so the level-pad
+    // reading never held. Research ran the war plan until an outright
+    // science lead opened the answer at 218. Smart Materials came at 221 and
+    // Offworld Mission at 231. Our Exoplanet launched at 223 against theirs
+    // at 221 with no laser station possible before 231, and Gran Colombia
+    // won at 233. The answer now also opens within one project of every
+    // rival. Replaces `science-drive-answers-from-the-pad` (either reads the
+    // pads; -2 adds the slack). Needs `science-victory-drive` and
+    // `science-drive-answers-the-launch`. See `advanced/science_victory_drive.rs`.
+    Gene { tag: "science-drive-answers-from-the-pad-2", field: "science_drive_answers_from_the_pad_2", kind: Kind::OptIn, enable: AdvancedAi::enable_science_drive_answers_from_the_pad_2, disable: AdvancedAi::disable_science_drive_answers_from_the_pad_2 },
+    // Live King 2026-11-01: the Spy trainer and other claims take the pad
+    // city's queue, since the launch city is the top producer and a district
+    // at the head counts as routine work. 085353Z: Mbwila placed the pad at
+    // t175, trained a Spy at t180, then a reactor conversion, an air-surge
+    // unit and Research Grants; the pad finished at t206 and the Satellite
+    // landed at 215 against Khmer's 177. 081602Z trained Spies in Rome from
+    // t193 and never landed a Satellite. While no pad stands, the first pad
+    // goes back to the head of its city after every claim, short of a threat
+    // to that city, and the Spy trainer skips it.
+    // See `advanced/launch_pad_holds_its_queue.rs`.
+    Gene { tag: "launch-pad-holds-its-queue", field: "launch_pad_holds_its_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_launch_pad_holds_its_queue, disable: AdvancedAi::disable_launch_pad_holds_its_queue },
+    // `launch-commits-the-endgame`: live civvis-20261101T075446Z (assigned
+    // Religion) tied the tree 77-77 and led every launch, then lost the
+    // Exoplanet leg by four turns: the science endgame admits a launched seat
+    // only while it has no assigned lane, so its schedule never ran. Our own
+    // Earth Satellite now commits any lane but Domination. See
+    // `advanced/launch_commits_endgame.rs`.
+    Gene { tag: "launch-commits-the-endgame", field: "launch_commits_the_endgame", kind: Kind::OptIn, enable: AdvancedAi::enable_launch_commits_the_endgame, disable: AdvancedAi::disable_launch_commits_the_endgame },
     // Live King 2026-11-01: every game ended in a Science victory, and the
     // Domination seat 073004Z held the whole tree with no pad (all three
     // exclusions) while Korea won at t257. Within three techs of the field,

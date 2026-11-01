@@ -9035,6 +9035,49 @@ impl AdvancedAi {
         self.science_drive_answers_from_the_pad = false;
     }
 
+    /// Turn on `culture-digs-one-museum`. See [`Self::culture_digs_one_museum`].
+    pub fn enable_culture_digs_one_museum(&mut self) {
+        self.culture_digs_one_museum = true;
+    }
+
+    /// The twin of `enable_culture_digs_one_museum`.
+    pub fn disable_culture_digs_one_museum(&mut self) {
+        self.culture_digs_one_museum = false;
+    }
+
+    /// Opt-in gene `science-drive-answers-from-the-pad-2`; see
+    /// [`Self::science_drive_answers_from_the_pad_2`].
+    pub fn enable_science_drive_answers_from_the_pad_2(&mut self) {
+        self.science_drive_answers_from_the_pad_2 = true;
+    }
+
+    /// The twin of `enable_science_drive_answers_from_the_pad_2`.
+    pub fn disable_science_drive_answers_from_the_pad_2(&mut self) {
+        self.science_drive_answers_from_the_pad_2 = false;
+    }
+
+    /// Opt-in gene `launch-pad-holds-its-queue`; see
+    /// [`Self::launch_pad_holds_its_queue`].
+    pub fn enable_launch_pad_holds_its_queue(&mut self) {
+        self.launch_pad_holds_its_queue = true;
+    }
+
+    /// The twin of `enable_launch_pad_holds_its_queue`.
+    pub fn disable_launch_pad_holds_its_queue(&mut self) {
+        self.launch_pad_holds_its_queue = false;
+    }
+
+    /// Opt-in gene `launch-commits-the-endgame`; see
+    /// [`Self::launch_commits_the_endgame`].
+    pub fn enable_launch_commits_the_endgame(&mut self) {
+        self.launch_commits_the_endgame = true;
+    }
+
+    /// The twin of `enable_launch_commits_the_endgame`.
+    pub fn disable_launch_commits_the_endgame(&mut self) {
+        self.launch_commits_the_endgame = false;
+    }
+
     /// Opt-in gene `domination-joins-the-race`; see
     /// [`Self::domination_joins_the_race`].
     pub fn enable_domination_joins_the_race(&mut self) {

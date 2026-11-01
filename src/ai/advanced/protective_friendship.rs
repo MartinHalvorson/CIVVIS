@@ -182,6 +182,121 @@ impl AdvancedAi {
             .collect()
     }
 
+    /// Why `other` is not offered a friendship this turn, or `None` when it
+    /// is a candidate. [`Self::propose_protective_friendship`] filters on it,
+    /// and `friendship-keeps-the-peace` journals the reason a lapsed friend is
+    /// not renewed.
+    fn friendship_block(
+        &self,
+        g: &Game,
+        pid: usize,
+        other: usize,
+        keeps_the_peace: bool,
+        lapsed: &BTreeSet<usize>,
+    ) -> Option<&'static str> {
+        let denounced = |by: usize, of: usize| {
+            g.players[by]
+                .denounced_until
+                .get(&of)
+                .is_some_and(|until| *until > g.turn)
+        };
+        let rival = &g.players[other];
+        if other == pid
+            || !rival.alive
+            || rival.is_minor
+            || rival.is_barbarian
+            || !g.has_met(pid, other)
+            || g.same_team(pid, other)
+        {
+            return Some("not a met rival major");
+        }
+        if g.is_at_war(pid, other) {
+            return Some("we are at war");
+        }
+        if g.are_friends(pid, other) {
+            return Some("already a friend");
+        }
+        if denounced(pid, other) {
+            return Some("we have denounced them");
+        }
+        if denounced(other, pid) {
+            return Some("they have denounced us");
+        }
+        // A live board carries the host's own reading of this leader's
+        // attitude toward us, and the host's leaders value a declared
+        // friendship only from FRIENDLY; a colder one would refuse, and the
+        // bridge would decline to ask. Absent on a native board, so nothing
+        // changes there.
+        if let Some(state) = rival
+            .observed_diplomatic_state
+            .get(&pid)
+            .filter(|state| *state != "FRIENDLY")
+        {
+            // `friendship-keeps-the-peace`: our clock reads a friendship
+            // lapsed the turn before the host ends it, so on that turn the
+            // host still reads it as standing. Live King
+            // civvis-20261101T112906Z journalled Egypt as colder than
+            // FRIENDLY at t50, t71, t92 and on, each a turn before the host
+            // read FRIENDLY and the renewal landed (t51, t72, t93, ...).
+            return Some(if matches!(state.as_str(), "DECLARED_FRIEND" | "ALLIED") {
+                "the host still counts the friendship as standing; it ends next turn"
+            } else {
+                "their attitude toward us is colder than FRIENDLY, and the host befriends only from FRIENDLY"
+            });
+        }
+        // `friendship-ends-at-the-race`: a rival racing to win is left to the
+        // counter once the friendship lapses.
+        if self.friendship_ends_at_the_race && self.friend_is_racing(g, other) {
+            return Some("friendship-ends-at-the-race: they are racing to win, so they are left to the counter");
+        }
+        // `friendship-spares-the-prey`: a rival this much weaker is a conquest
+        // to make, not a war to forestall.
+        if self.friendship_spares_the_prey
+            && !keeps_the_peace
+            && g.military_power(other) < FRIENDSHIP_PREY_RATIO * g.military_power(pid)
+        {
+            return Some("friendship-spares-the-prey: a conquest to make");
+        }
+        // `friendship-spares-the-target`: the rival the campaign is aimed at
+        // is a war to open, not one to forbid.
+        if self.friendship_spares_the_target
+            && self.plan.as_ref().and_then(|plan| plan.target_player) == Some(other)
+        {
+            return Some("friendship-spares-the-target: the campaign is aimed at them");
+        }
+        // `friendship-only-with-the-stronger`: a weaker rival is a conquest to
+        // make, not a war to forestall.
+        if self.friendship_only_with_the_stronger
+            && !keeps_the_peace
+            && g.military_power(other) < g.military_power(pid)
+        {
+            return Some("friendship-only-with-the-stronger: weaker than us");
+        }
+        // `friendship-spares-the-converter`: the founder whose faith we must
+        // fight is not made an illegal target.
+        if self.friendship_spares_the_converter
+            && self.friendship_would_shield_the_converter(g, pid, other)
+        {
+            return Some("friendship-spares-the-converter: their faith is the one we must fight");
+        }
+        if g.pending_deals.iter().any(|deal| {
+            ((deal.from == pid && deal.to == other) || (deal.from == other && deal.to == pid))
+                // `friendship-keeps-the-peace`: our own alliance proposal does
+                // not hold back a lapsed friend's renewal. Off the Diplomatic,
+                // Culture and Science lanes the live binary drops the alliance
+                // order, but the board keeps the deal pending for about ten
+                // turns: live Religion seat civvis-20261101T024926Z proposed a
+                // Research Alliance to its two friends every ten turns
+                // (t129-t170), and the friendships that lapsed at t159 and
+                // t162 found a pending deal each and were never renewed. Empty
+                // `lapsed` off the gene.
+                && !(lapsed.contains(&other) && deal.from == pid && deal.alliance.is_some())
+        }) {
+            return Some("a deal with them is pending");
+        }
+        None
+    }
+
     /// Offer a friendship-only deal to the strongest met major at peace with
     /// us that is not already a friend, is not denounced either way, and has
     /// no deal pending with us. Exact no-op with the gene off.
@@ -200,76 +315,12 @@ impl AdvancedAi {
         {
             return;
         }
-        let denounced = |g: &Game, by: usize, of: usize| {
-            g.players[by]
-                .denounced_until
-                .get(&of)
-                .is_some_and(|until| *until > g.turn)
-        };
         let partner = g
             .players
             .iter()
             .filter(|other| {
-                other.id != pid
-                    && other.alive
-                    && !other.is_minor
-                    && !other.is_barbarian
-                    && g.has_met(pid, other.id)
-                    && !g.same_team(pid, other.id)
-                    && !g.is_at_war(pid, other.id)
-                    && !g.are_friends(pid, other.id)
-                    && !denounced(g, pid, other.id)
-                    && !denounced(g, other.id, pid)
-                    // A live board carries the host's own reading of this
-                    // leader's attitude toward us, and the host's leaders
-                    // value a declared friendship only from FRIENDLY; a colder
-                    // one would refuse, and the bridge would decline to ask.
-                    // Absent on a native board, so nothing changes there.
-                    && g.players[other.id]
-                        .observed_diplomatic_state
-                        .get(&pid)
-                        .is_none_or(|state| state == "FRIENDLY")
-                    // `friendship-ends-at-the-race`: a rival racing to win is
-                    // left to the counter once the friendship lapses.
-                    && !(self.friendship_ends_at_the_race && self.friend_is_racing(g, other.id))
-                    // `friendship-only-with-the-stronger`: a weaker rival is a
-                    // conquest to make, not a war to forestall.
-                    // `friendship-spares-the-prey`: a rival this much weaker is
-                    // a conquest to make, not a war to forestall.
-                    && !(self.friendship_spares_the_prey
-                        && !keeps_the_peace
-                        && g.military_power(other.id)
-                            < FRIENDSHIP_PREY_RATIO * g.military_power(pid))
-                    // `friendship-spares-the-target`: the rival the campaign
-                    // is aimed at is a war to open, not one to forbid.
-                    && !(self.friendship_spares_the_target
-                        && self.plan.as_ref().and_then(|plan| plan.target_player)
-                            == Some(other.id))
-                    && !(self.friendship_only_with_the_stronger
-                        && !keeps_the_peace
-                        && g.military_power(other.id) < g.military_power(pid))
-                    // `friendship-spares-the-converter`: the founder whose
-                    // faith we must fight is not made an illegal target.
-                    && !(self.friendship_spares_the_converter
-                        && self.friendship_would_shield_the_converter(g, pid, other.id))
-                    && !g.pending_deals.iter().any(|deal| {
-                        ((deal.from == pid && deal.to == other.id)
-                            || (deal.from == other.id && deal.to == pid))
-                            // `friendship-keeps-the-peace`: our own alliance
-                            // proposal does not hold back a lapsed friend's
-                            // renewal. Off the Diplomatic, Culture and Science
-                            // lanes the live binary drops the alliance order,
-                            // but the board keeps the deal pending for about
-                            // ten turns: live Religion seat
-                            // civvis-20261101T024926Z proposed a Research
-                            // Alliance to its two friends every ten turns
-                            // (t129-t170), and the friendships that lapsed at
-                            // t159 and t162 found a pending deal each and were
-                            // never renewed. Empty `lapsed` off the gene.
-                            && !(lapsed.contains(&other.id)
-                                && deal.from == pid
-                                && deal.alliance.is_some())
-                    })
+                self.friendship_block(g, pid, other.id, keeps_the_peace, &lapsed)
+                    .is_none()
             })
             .max_by(|a, b| {
                 // `friendship-keeps-the-peace`: a lapsed friend is renewed
@@ -281,6 +332,23 @@ impl AdvancedAi {
                     .then(b.id.cmp(&a.id))
             })
             .map(|other| other.id);
+        // `friendship-keeps-the-peace`: name the gate that holds back each
+        // lapsed friend not renewed this turn. Live King
+        // civvis-20261101T081602Z let Mali's friendship lapse at t117 without
+        // a line, and Mali declared war at t133; four of the day's King seats
+        // lost a lapsed friend to a war with no record of why. Empty `lapsed`
+        // off the gene, so nothing is written.
+        if self.journal().wants(crate::reasoning::Level::Decision) {
+            for &other in lapsed.iter().filter(|other| Some(**other) != partner) {
+                if let Some(reason) = self.friendship_block(g, pid, other, keeps_the_peace, &lapsed)
+                {
+                    let civ = &g.players[other].civ;
+                    think!(self.journal(), Diplomacy, Decision,
+                        "Not renewing the friendship with {civ}";
+                        "friendship-keeps-the-peace: {reason}");
+                }
+            }
+        }
         let Some(partner) = partner else {
             return;
         };
@@ -677,6 +745,76 @@ mod tests {
             run(VictoryTarget::Domination, true),
             None,
             "a Domination seat keeps the Domination filters and the cadence"
+        );
+    }
+
+    /// `friendship-keeps-the-peace`: a lapsed friend that is held back is
+    /// journalled with the gate that holds it. Seat 1's friendship lapses at
+    /// 31 while the host reads its attitude toward us as NEUTRAL: it is not
+    /// renewed, and the line names the attitude; off the gene, nothing is
+    /// written. A host that still reads DECLARED_FRIEND is named as standing.
+    #[test]
+    fn a_lapsed_friend_held_back_is_journalled_with_its_gate() {
+        use crate::ai::advanced::VictoryTarget;
+        use crate::ai::Ai;
+        use crate::reasoning::Journal;
+        let run = |gene: bool, state: &str| {
+            let mut game = three_majors();
+            let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+            let journal = Journal::recording();
+            ai.attach_journal(journal.handle());
+            ai.enable_befriend_the_strongest();
+            if gene {
+                ai.enable_friendship_keeps_the_peace();
+            }
+            game.players[0].friends_until.insert(1, 31);
+            game.players[1].friends_until.insert(0, 31);
+            ai.propose_protective_friendship(&mut game, 0);
+            game.pending_deals.clear();
+            game.turn = 31;
+            game.players[0].friends_until.remove(&1);
+            game.players[1].friends_until.remove(&0);
+            game.players[1]
+                .observed_diplomatic_state
+                .insert(0, state.to_string());
+            ai.propose_protective_friendship(&mut game, 0);
+            let renewed = game
+                .pending_deals
+                .iter()
+                .any(|deal| deal.from == 0 && deal.to == 1 && deal.friendship);
+            let held: Vec<String> = journal
+                .since(0)
+                .thoughts
+                .iter()
+                .filter(|thought| thought.headline.starts_with("Not renewing the friendship"))
+                .map(|thought| thought.detail.clone())
+                .collect();
+            (renewed, held)
+        };
+        let (renewed, held) = run(true, "NEUTRAL");
+        assert!(!renewed, "a NEUTRAL leader is not asked");
+        assert_eq!(
+            held.len(),
+            1,
+            "one line for the one lapsed friend: {held:?}"
+        );
+        assert!(
+            held[0].contains("colder than FRIENDLY"),
+            "the line names the gate: {}",
+            held[0]
+        );
+        let (renewed, held) = run(false, "NEUTRAL");
+        assert!(!renewed);
+        assert!(held.is_empty(), "off, nothing is written: {held:?}");
+        // The turn before the host ends the friendship it still reads
+        // DECLARED_FRIEND: named as standing, not as cold.
+        let (renewed, held) = run(true, "DECLARED_FRIEND");
+        assert!(!renewed);
+        assert_eq!(held.len(), 1, "{held:?}");
+        assert!(
+            held[0].contains("still counts the friendship as standing"),
+            "{}",
+            held[0]
         );
     }
 

@@ -5529,6 +5529,9 @@ pub struct AdvancedAi {
     /// default.
     apostle_transit_keeps_the_cover: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `culture-digs-one-museum`: a Culture seat makes one Museum an
+    /// Archaeological Museum. See `advanced/culture_dig_museum.rs`. Off by default.
+    culture_digs_one_museum: bool,
     /// `culture-keeps-every-border-open-2`: version one, buying passage only
     /// from the bar holder. See `advanced/culture_open_borders.rs`. Off by default.
     culture_keeps_every_border_open_2: bool,
@@ -7439,6 +7442,10 @@ pub struct AdvancedAi {
     /// city of ours. See `advanced/defensive_apostle.rs`. Off by default.
     inquisition_answers_a_rival_majority: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `launch-commits-the-endgame`: our own Earth Satellite commits an assigned
+    /// Religion or Culture seat to the science endgame. See
+    /// `advanced/launch_commits_endgame.rs`. Off by default.
+    launch_commits_the_endgame: bool,
     /// `launcher-war-serves-every-lane`: off Domination, the space racer
     /// the launcher war would open on is the denial counter, with war,
     /// before every other clock. See `advanced/launcher_war_every_lane.rs`.
@@ -7991,6 +7998,11 @@ pub struct AdvancedAi {
     /// the lower seat. See `advanced/launcher_war_every_lane.rs`. Off by
     /// default.
     launcher_war_fights_the_faster_racer: bool,
+    /// `launch-pad-holds-its-queue`: while no pad of ours stands, the city
+    /// carrying the first one has it put back at the head of its queue after
+    /// every ordinary writer and claim, and the Spy trainer skips that city.
+    /// See `advanced/launch_pad_holds_its_queue.rs`. Off by default.
+    launch_pad_holds_its_queue: bool,
     // ---- append: p-r ------------------------------------------------
     /// `pillaged-districts-repair-first`: a pillaged district's repair claims its
     /// city after every other claim. See `advanced/pillaged_repairs_first.rs`.
@@ -9079,6 +9091,10 @@ pub struct AdvancedAi {
     /// the leading racer's. See `advanced/science_victory_drive.rs`. Off by
     /// default.
     science_drive_answers_from_the_pad: bool,
+    /// `science-drive-answers-from-the-pad-2`: the same, within one of the
+    /// leading racer's landed projects rather than level. See
+    /// `advanced/science_victory_drive.rs`. Off by default.
+    science_drive_answers_from_the_pad_2: bool,
     // ---- append: t-z ------------------------------------------------
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
@@ -9935,6 +9951,7 @@ mod diplo_wonder_claim;
 /// `culture-seat-monuments`: see `advanced/culture_monuments.rs`.
 mod culture_monuments;
 /// `culture-keeps-every-border-open`: see `advanced/culture_open_borders.rs`.
+mod culture_dig_museum;
 mod culture_open_borders;
 
 /// `diplo-seat-statue-harbor`: see `advanced/diplo_statue_harbor.rs`.
@@ -10301,6 +10318,8 @@ mod industrial_zone_claims_the_factory;
 /// Industrial Zone or Workshop claims its city's queue. See
 /// `advanced/industrial_zone_claims_the_producer_queue.rs`.
 mod industrial_zone_claims_the_producer_queue;
+/// `launch-commits-the-endgame`: see `advanced/launch_commits_endgame.rs`.
+mod launch_commits_endgame;
 mod launcher_war;
 /// `launcher-war-serves-every-lane`: see `advanced/launcher_war_every_lane.rs`.
 mod launcher_war_every_lane;
@@ -10340,6 +10359,9 @@ mod culture_defense;
 mod decisive_window;
 mod domination_research;
 mod government_plaza;
+/// `launch-pad-holds-its-queue`: the first pad holds its city's queue. See
+/// `advanced/launch_pad_holds_its_queue.rs`.
+mod launch_pad_holds_its_queue;
 /// `paused-district-finishes`: a foundation the host quotes at two turns or
 /// less finishes first at full health. See `advanced/paused_district_finish.rs`.
 mod paused_district_finish;
@@ -11317,6 +11339,7 @@ impl AdvancedAi {
             anvil_garrisons_its_melee: false,
             apostle_transit_keeps_the_cover: false,
             // ---- append: c-d ----------------------------------------
+            culture_digs_one_museum: false,
             culture_keeps_every_border_open_2: false,
             domination_targets_land_first: false,
             defence_holds_under_fire: false,
@@ -11646,6 +11669,7 @@ impl AdvancedAi {
             inquisition_defends_the_diplomat: false,
             inquisition_answers_a_rival_majority: false,
             // ---- append: l-o ----------------------------------------
+            launch_commits_the_endgame: false,
             launcher_war_serves_every_lane: false,
             nuclear_goal_needs_a_launcher: false,
             launcher_war_skips_the_reserve: false,
@@ -11713,6 +11737,7 @@ impl AdvancedAi {
             land_grab_outlasts_the_opening: false,
             launch_pad_keeps_its_rung: false,
             launcher_war_fights_the_faster_racer: false,
+            launch_pad_holds_its_queue: false,
             // ---- append: p-r ----------------------------------------
             pillaged_districts_repair_first: false,
             religion_lane_hands_over: false,
@@ -11910,6 +11935,7 @@ impl AdvancedAi {
             science_seat_allies: false,
             science_denounce_names_the_leader: false,
             science_drive_answers_from_the_pad: false,
+            science_drive_answers_from_the_pad_2: false,
             // ---- append: t-z ----------------------------------------
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,
@@ -17047,6 +17073,10 @@ impl AdvancedAi {
         .flatten();
         let restore_space_race = self.base.exclude_space_race;
         self.base.exclude_space_race = self.space_race_excluded();
+        // `culture-digs-one-museum`: the delegated governor picks this seat's
+        // Museums. Lent for the call; see `advanced/culture_dig_museum.rs`.
+        let restore_dig_museum = self.base.digs_one_museum;
+        self.base.digs_one_museum = self.dig_museum_lane_active(g);
         // `purchases-keep-the-upkeep-reserve`: the delegated governor's own
         // Gold pass bought the Lighthouse that, with a Shrine, took
         // civvis-20261013T220550Z to 17 Gold at turn 199. Lent for the call;
@@ -17075,6 +17105,7 @@ impl AdvancedAi {
             self.base.cities(g, pid);
             self.base.reserve_floor = restore_reserve_floor;
             self.base.exclude_space_race = restore_space_race;
+            self.base.digs_one_museum = restore_dig_museum;
             self.base.w.mil_per_city = restore_military;
             self.base.w.faith_builder = restore_faith_builder;
             self.base.lent_military_floor_base = None;
@@ -17107,6 +17138,7 @@ impl AdvancedAi {
         self.base.cities(g, pid);
         self.base.reserve_floor = restore_reserve_floor;
         self.base.exclude_space_race = restore_space_race;
+        self.base.digs_one_museum = restore_dig_museum;
         self.base.w.city_target = restore_target;
         self.base.w.settler_stop_turn = restore_stop;
         self.base.w.builder_per_city = restore_builders;
@@ -36428,6 +36460,7 @@ impl AdvancedAi {
                         + wartime_infrastructure_debt
                         + self.culture_floor_building_bonus(g, pid, spec)
                         + self.gold_floor_building_bonus(g, pid, *building, spec)
+                        + self.dig_museum_bonus(g, pid, *building)
                         + if building == "monument" && g.turn < 120 {
                             240.0
                         } else {
@@ -50718,6 +50751,9 @@ impl AdvancedAi {
         // `paused-district-finishes`: after every ordinary writer, before the
         // declaration response and the defence handoffs below.
         self.claim_paused_district_finishes(g, pid);
+        // `launch-pad-holds-its-queue`: the first pad back at the head of its
+        // city, before the defence and loyalty handoffs below.
+        self.claim_launch_pad_holds_its_queue(g, pid, &plan);
         self.claim_frontier_walls_before_the_surprise(g, pid);
         // Make the declaration response the final authority over queues this
         // turn. Earlier governors can continue to express their peaceful
