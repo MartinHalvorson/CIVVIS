@@ -9089,6 +9089,17 @@ impl AdvancedAi {
         self.domination_joins_the_race = false;
     }
 
+    /// Opt-in gene `alliance-remembers-the-refusal`; see
+    /// [`Self::alliance_remembers_the_refusal`].
+    pub fn enable_alliance_remembers_the_refusal(&mut self) {
+        self.alliance_remembers_the_refusal = true;
+    }
+
+    /// The twin of `enable_alliance_remembers_the_refusal`.
+    pub fn disable_alliance_remembers_the_refusal(&mut self) {
+        self.alliance_remembers_the_refusal = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
