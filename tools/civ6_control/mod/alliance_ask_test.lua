@@ -45,7 +45,8 @@ print = function(line)
 	if type(line) == "string" and (line:find('"kind":"deal_', 1, true)
 			or line:find('"kind":"peace_', 1, true)
 			or line:find('"kind":"orphan_', 1, true)
-			or line:find('"kind":"alliance_', 1, true)) then
+			or line:find('"kind":"alliance_', 1, true)
+			or line:find('"kind":"counter_', 1, true)) then
 		events[#events + 1] = line
 	end
 end
@@ -291,10 +292,43 @@ local refused, refusedPlayer = fixture({ stateIndex = 1 })
 ok, why = alliance(refusedPlayer, 3)
 check("the refused ask still goes out", why, "alliance_asked")
 onStatement(7, 3, { StatementType = "MAKE_DEAL", SessionID = 951 })
+local closedBefore = #sessions.closed
 onStatement(3, 7, { StatementType = "MAKE_DEAL", SessionID = 951, DealAction = DealProposalAction.REJECTED })
 check("a refusal sends nothing back", #refused.sends, 1)
 check("a refusal is in the ledger", eventField(lastEvent("alliance_response"), "accepted"), "false")
-check("a refused session is closed", sessions.closed[#sessions.closed], 951)
+-- The refusal waits for the rival's counter rather than closing under it.
+check("a refused session stays open for the counter", #sessions.closed, closedBefore)
+check("the session is still ours", trade.sessions[3] and trade.sessions[3].kind, "alliance")
+check("the wait is in the ledger", eventField(lastEvent("deal_session"), "phase"), "counter_wait")
+check("the closer holds for the counter", holds[#holds] and holds[#holds].seconds, 4)
+-- The counter: refused as the shipped deal view refuses, then closed.
+onStatement(3, 7, { StatementType = "MAKE_DEAL", SessionID = 951, StatementSubType = "POSITIVE" })
+check("the counter is refused", refused.sends[2] and refused.sends[2][1], "rejected")
+check("the counter is answered in the ledger", eventField(lastEvent("counter_answered"), "statement"), "POSITIVE")
+check("a refused session is closed after its counter", sessions.closed[#sessions.closed], 951)
+check("the refused session is forgotten", trade.sessions[3], nil)
+-- A refusal whose counter never comes: the hold's close is no unanswered ask.
+TURN = 135
+local quiet, quietPlayer = fixture({ stateIndex = 1 })
+alliance(quietPlayer, 3)
+onStatement(7, 3, { StatementType = "MAKE_DEAL", SessionID = 953 })
+onStatement(3, 7, { StatementType = "MAKE_DEAL", SessionID = 953, DealAction = DealProposalAction.REJECTED })
+local unansweredBefore = trade.unanswered
+onClosed(953)
+check("no counter: the close is in the ledger", eventField(lastEvent("deal_session"), "why"), "counter_not_sent")
+check("no counter: not counted unanswered", trade.unanswered, unansweredBefore)
+check("no counter: the turn is not held", trade.turnHold, nil)
+check("no counter: the session is forgotten", trade.sessions[3], nil)
+-- `AllianceCounterHoldSeconds = 0` restores the immediate close.
+TURN = 138
+CivvisControlConfig.AllianceCounterHoldSeconds = 0
+local prompt, promptPlayer = fixture({ stateIndex = 1 })
+-- (Seat 6: seat 3 is inside the ask cooldown.)
+alliance(promptPlayer, 6)
+onStatement(7, 6, { StatementType = "MAKE_DEAL", SessionID = 954 })
+onStatement(6, 7, { StatementType = "MAKE_DEAL", SessionID = 954, DealAction = DealProposalAction.REJECTED })
+check("hold 0: a refused session is closed at once", sessions.closed[#sessions.closed], 954)
+CivvisControlConfig.AllianceCounterHoldSeconds = nil
 -- Accepted but unequal: nothing is accepted back.
 TURN = 140
 local unequal, unequalPlayer = fixture({ stateIndex = 1, dealsEqual = false })
