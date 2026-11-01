@@ -8989,6 +8989,17 @@ impl AdvancedAi {
         self.apostle_transit_keeps_the_cover = false;
     }
 
+    /// Turn on `culture-keeps-every-border-open-2`. See
+    /// [`Self::culture_keeps_every_border_open_2`].
+    pub fn enable_culture_keeps_every_border_open_2(&mut self) {
+        self.culture_keeps_every_border_open_2 = true;
+    }
+
+    /// The twin of `enable_culture_keeps_every_border_open_2`.
+    pub fn disable_culture_keeps_every_border_open_2(&mut self) {
+        self.culture_keeps_every_border_open_2 = false;
+    }
+
     /// Opt-in gene `fog-yields-to-a-stranded-settler`; see
     /// [`Self::fog_yields_to_a_stranded_settler`].
     pub fn enable_fog_yields_to_a_stranded_settler(&mut self) {

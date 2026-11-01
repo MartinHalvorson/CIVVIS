@@ -5529,6 +5529,9 @@ pub struct AdvancedAi {
     /// default.
     apostle_transit_keeps_the_cover: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `culture-keeps-every-border-open-2`: version one, buying passage only
+    /// from the bar holder. See `advanced/culture_open_borders.rs`. Off by default.
+    culture_keeps_every_border_open_2: bool,
     /// `domination-targets-land-first`: a Domination seat ranks rivals it can
     /// reach by land ahead of overseas ones in its frontier and capital picks
     /// and its hand-over bar. See `advanced/domination_land_first.rs`. Off by
@@ -11297,6 +11300,7 @@ impl AdvancedAi {
             anvil_garrisons_its_melee: false,
             apostle_transit_keeps_the_cover: false,
             // ---- append: c-d ----------------------------------------
+            culture_keeps_every_border_open_2: false,
             domination_targets_land_first: false,
             defence_holds_under_fire: false,
             capital_walls_at_any_ratio: false,
