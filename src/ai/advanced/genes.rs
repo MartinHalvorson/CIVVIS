@@ -4588,6 +4588,12 @@ pub const GENES: &[Gene] = &[
     // lapse) and the Domination-era stronger/prey filters do not apply. See
     // `advanced/protective_friendship.rs`.
     Gene { tag: "friendship-keeps-the-peace", field: "friendship_keeps_the_peace", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_keeps_the_peace, disable: AdvancedAi::disable_friendship_keeps_the_peace },
+    // Live Immortal 2026-10-31, deck-prices-growth seats with Retainers
+    // slotted: 1,014 Amenity-short city-turns, 110 (11%) holding a soldier;
+    // at t140 106 of 118 short cities stood at -1. At peace 1.4-1.8 units a
+    // city, 72-79% within three tiles of one. An idle soldier garrisons each
+    // short city while Retainers is slotted. See `ai/retainers_garrison.rs`.
+    Gene { tag: "retainers-garrison-the-short-cities", field: "retainers_garrison_the_short_cities", kind: Kind::OptIn, enable: AdvancedAi::enable_retainers_garrison_the_short_cities, disable: AdvancedAi::disable_retainers_garrison_the_short_cities },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
