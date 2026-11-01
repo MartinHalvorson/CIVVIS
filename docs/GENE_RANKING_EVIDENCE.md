@@ -204,6 +204,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `contact-fleet` | off (unmeasured) | While a living major is unmet or unlocated, or a city-state is unmet, the queued sea scout keeps its queue, ships route toward foreign landfall, and the faster hull is preferred. | 1 \| 1 |
 | `counterweight-builds-its-source` | off (unmeasured) | Opt-in gene `counterweight-builds-its-source`; see `Self::counterweight_builds_its_source`. | 1 \| 1 |
 | `counterweight-defends-the-diplomat` | off (unmeasured) | Opt-in gene `counterweight-defends-the-diplomat`; see `Self::counterweight_defends_the_diplomat`. | 1 \| 1 |
+| `culture-digs-one-museum` | off (unmeasured) | Turn on `culture-digs-one-museum`. | 1 \| 1 |
 | `culture-keeps-every-border-open` | off (unmeasured) | Turn on `culture-keeps-every-border-open`. | — \| 2 |
 | `culture-keeps-every-border-open-2` | off (unmeasured) | Turn on `culture-keeps-every-border-open-2`. | — \| 2 |
 | `culture-recovery-spends-the-bank` | off (unmeasured) | Opt-in gene `culture-recovery-spends-the-bank`; see `Self::culture_recovery_spends_the_bank`. | 1 \| 1 |
@@ -249,6 +250,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `inquisition-answers-a-rival-majority` | off (unmeasured) | `inquisition-answers-a-rival-majority`. | 1 \| 1 |
 | `inquisition-defends-the-diplomat` | off (unmeasured) | `inquisition-defends-the-diplomat`. | 1 \| 1 |
 | `land-grab-outlasts-the-opening` | off (unmeasured) | Opt-in gene `land-grab-outlasts-the-opening`; see `Self::land_grab_outlasts_the_opening`. | 1 \| 1 |
+| `launch-pad-holds-its-queue` | off (unmeasured) | Opt-in gene `launch-pad-holds-its-queue`; see `Self::launch_pad_holds_its_queue`. | 1 \| 1 |
 | `launch-pad-keeps-its-rung` | off (unmeasured) | Opt-in gene `launch-pad-keeps-its-rung`; see `Self::launch_pad_keeps_its_rung`. | 1 \| 1 |
 | `launcher-war-fights-the-faster-racer` | off (unmeasured) | Opt-in gene `launcher-war-fights-the-faster-racer`; see `Self::launcher_war_fights_the_faster_racer`. | 1 \| 1 |
 | `launcher-war-serves-every-lane` | off (unmeasured) | Opt-in gene `launcher-war-serves-every-lane`; see `Self::launcher_war_serves_every_lane`. | 1 \| 1 |

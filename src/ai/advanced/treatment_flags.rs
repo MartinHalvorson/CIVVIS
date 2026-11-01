@@ -9045,6 +9045,17 @@ impl AdvancedAi {
         self.culture_digs_one_museum = false;
     }
 
+    /// Opt-in gene `launch-pad-holds-its-queue`; see
+    /// [`Self::launch_pad_holds_its_queue`].
+    pub fn enable_launch_pad_holds_its_queue(&mut self) {
+        self.launch_pad_holds_its_queue = true;
+    }
+
+    /// The twin of `enable_launch_pad_holds_its_queue`.
+    pub fn disable_launch_pad_holds_its_queue(&mut self) {
+        self.launch_pad_holds_its_queue = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
