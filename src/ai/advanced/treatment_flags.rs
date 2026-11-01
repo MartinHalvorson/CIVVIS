@@ -8989,6 +8989,17 @@ impl AdvancedAi {
         self.apostle_transit_keeps_the_cover = false;
     }
 
+    /// Opt-in gene `commercial-hub-claims-the-route-slot`; see
+    /// [`Self::commercial_hub_claims_the_route_slot`].
+    pub fn enable_commercial_hub_claims_the_route_slot(&mut self) {
+        self.commercial_hub_claims_the_route_slot = true;
+    }
+
+    /// The twin of `enable_commercial_hub_claims_the_route_slot`.
+    pub fn disable_commercial_hub_claims_the_route_slot(&mut self) {
+        self.commercial_hub_claims_the_route_slot = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

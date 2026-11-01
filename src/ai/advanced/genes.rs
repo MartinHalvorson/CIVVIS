@@ -4616,6 +4616,13 @@ pub const GENES: &[Gene] = &[
     // travels, a threatened source buys its cover Missionary when the Faith
     // left covers the first Inquisitor. See `advanced/defensive_apostle.rs`.
     Gene { tag: "apostle-transit-keeps-the-cover", field: "apostle_transit_keeps_the_cover", kind: Kind::OptIn, enable: AdvancedAi::enable_apostle_transit_keeps_the_cover, disable: AdvancedAi::disable_apostle_transit_keeps_the_cover },
+    // `commercial-hub-claims-the-route-slot`: 48 lane seats held 0.00
+    // Commercial Hubs at t60 and 0.42 at t100, with trade capacity 1.1-1.3,
+    // while the lane's first non-Diplomatic win ran 3-4 routes from t60. The
+    // hub step opens at standard t90 and only in idle queues. From t40 Online,
+    // with every route slot taken, its pick claims the hub after the other
+    // claims. See `advanced/commercial_hub_claim.rs`.
+    Gene { tag: "commercial-hub-claims-the-route-slot", field: "commercial_hub_claims_the_route_slot", kind: Kind::OptIn, enable: AdvancedAi::enable_commercial_hub_claims_the_route_slot, disable: AdvancedAi::disable_commercial_hub_claims_the_route_slot },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

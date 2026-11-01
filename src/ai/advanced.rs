@@ -5529,6 +5529,10 @@ pub struct AdvancedAi {
     /// default.
     apostle_transit_keeps_the_cover: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `commercial-hub-claims-the-route-slot`: a Commercial Hub claims its city
+    /// from t40 while the trade routes fill their capacity. See
+    /// `advanced/commercial_hub_claim.rs`. Off by default.
+    commercial_hub_claims_the_route_slot: bool,
     /// `domination-targets-land-first`: a Domination seat ranks rivals it can
     /// reach by land ahead of overseas ones in its frontier and capital picks
     /// and its hand-over bar. See `advanced/domination_land_first.rs`. Off by
@@ -11258,6 +11262,7 @@ impl AdvancedAi {
             anvil_garrisons_its_melee: false,
             apostle_transit_keeps_the_cover: false,
             // ---- append: c-d ----------------------------------------
+            commercial_hub_claims_the_route_slot: false,
             domination_targets_land_first: false,
             defence_holds_under_fire: false,
             capital_walls_at_any_ratio: false,
@@ -50480,6 +50485,11 @@ impl AdvancedAi {
             // `prophet-race-earns-its-points`: the race's Holy Site city
             // starts its Shrine. Exact no-op while the gene is off.
             self.reserve_race_shrine(g, pid, &plan);
+            // `commercial-hub-claims-the-route-slot`: a Commercial Hub while the
+            // routes fill their capacity, after the claims above and before the
+            // repairs below. Exact no-op while the gene is off. See
+            // `advanced/commercial_hub_claim.rs`.
+            self.claim_route_slot_hub(g, pid, &plan);
             // `pillaged-districts-repair-first`: a pillaged district's repair,
             // after every claim above so none of them takes the queue back.
             // Exact no-op while the gene is off. See
@@ -50902,6 +50912,8 @@ mod defeated_majors;
 /// `advanced/counterweight_first_convert.rs`.
 mod counterweight_first_convert;
 
+/// `commercial-hub-claims-the-route-slot`: see `advanced/commercial_hub_claim.rs`.
+mod commercial_hub_claim;
 mod commercial_routes;
 
 #[cfg(test)]
