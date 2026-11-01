@@ -2733,6 +2733,51 @@ Both knobs are recorded on the header (`rival_rung`, `rival_pace`), so
 `tools/genes.py` writes them onto the source and `--analyze` refuses to merge
 a calibrated file with an uncalibrated one.
 
+#### ⭐ At King (Lv 5): the King city curve (2026-11-01)
+
+The live lane moved to King on 11-01. At `--difficulty king`, `--rival-pace`
+now holds the faithful chairs to the live King field's city curve (#4317):
+2 / 4 / 4 / 5 / 7 / 8 / 10 cities at turns 40 / 60 / 80 / 100 / 150 / 175 / 225.
+That curve is the rival mean of 17 live 6p Small King games (2.4 / 3.8 / 4.5 /
+5.4 / 6.9 / 8.0 / 9.8). The other flags are unchanged. `--rival-rung -1` and
+`-2` are the same at King, because no rung at or below Prince has a yield
+bonus:
+
+```
+gene_screen --rivals firaxis-faithful --handicap rivals --rival-chairs 5 \
+  --rival-rung -1 --rival-pace \
+  --rival-late-science 75 --rival-space-floor 62 --rival-victory-pace 175 \
+  --difficulty king --deployment-genome --trace --out rows.jsonl
+```
+
+Rival means against the live King field (met rivals' `public_stats`) at t100 /
+t150 / t175. Each batch is 12 games on seeds 31200000–11 with the live genome
+(the why.log header of 2026-11-01, 523 genes), on the culture / religious /
+domination mix:
+
+| field | cities | production | Science | techs | rival Science win (median) | our wins |
+|---|---|---|---|---|---|---|
+| live King | 5.4 / 6.9 / 8.0 | 84 / 172 / 237 | 77 / 135 / 174 | 30.2 / 44.4 / 51.0 | t237 (13 games) | 2 of ~17 non-Science seats |
+| Immortal curve | 6.2 / 8.5 / 9.5 | 119 / 267 / 358 | 63 / 127 / 203 | 28.3 / 41.6 / 49.5 | t225 (9 of 12) | 0 of 12 |
+| **King curve** | **4.6 / 6.5 / 7.5** | **112 / 230 / 307** | **65 / 129 / 190** | **29.6 / 42.0 / 49.6** | **t227 (8 of 12)** | **0 of 12** |
+
+The King curve brings production from 1.41–1.55x live down to 1.29–1.34x.
+Science and techs are within 16% of live at every mark. A faithful city still
+out-produces a live Firaxis King city: about 36 production at turn 150 against
+25. Rivals settle about 0.7 cities under the cap, so the King curve leaves
+them 10–15% under live on cities. That gap is accepted, because raising the
+cap would raise production further.
+
+`--rival-victory-pace` hardly moves the rival finish. At 175 / 210 / 250 on
+the Immortal curve, rivals won Science at a median t225 / t226 / t227. A rival
+launch is tech-gated, not production-gated, so the King refit leaves it at 175.
+The harness finish is still about 10 turns early against live.
+
+Our measured seat is too strong too. Unpaced, it holds 9–10 cities at turns
+100–150 against the live seat's 6 and 8, and a King Culture seat makes 2–3x
+live's Culture at turn 150 (-f6). Paired deltas stay valid. For absolute
+win-rate reads of genes that don't change expansion, see `--seat-pace`.
+
 ## ⭐ The drift meter (2026-08-25)
 
 Every `--analyze` now prints, under *how the games ended*, the batch's share
