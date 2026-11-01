@@ -6466,6 +6466,22 @@ pub struct AdvancedAi {
     /// bar, and the live binary passes its alliances to the host. See
     /// `advanced/culture_seat_allies.rs`. Off by default.
     culture_seat_allies: bool,
+    /// `domination-joins-the-race`: a Domination seat within
+    /// `SCIENCE_DRIVE_TECH_SLACK` techs of the field, once a rival has landed
+    /// a space project, opens the science drive's answer, and while that
+    /// answer drives the Domination exclusions of the space race lift (the
+    /// delegated governor's `exclude_space_race`, the scorer's Spaceport
+    /// veto, the endgame schedule's guard). The war plan is untouched.
+    ///
+    /// Live King civvis-20261101T073004Z (Domination): Rocketry t189, the
+    /// whole tree (77) by t250 at 448-475 Science a turn, eleven cities, and
+    /// no pad, because all three exclusions held; Korea launched its Earth
+    /// Satellite t207 and its Exoplanet Expedition t245 and won at t257. The
+    /// tech gates alone put our expedition near t236. The answer's own entry,
+    /// a science lead outright, never opened: at t220 we stood 67 techs to the
+    /// leader's 70. See `advanced/domination_joins_the_race.rs`. Off by
+    /// default.
+    domination_joins_the_race: bool,
     // ---- append: e-f ------------------------------------------------
     /// `fog-yields-to-a-stranded-settler`: the fogged-frontier settle veto
     /// yields once a Settler has walked fifteen turns. See
@@ -9082,6 +9098,10 @@ pub struct AdvancedAi {
     /// leading racer's landed projects rather than level. See
     /// `advanced/science_victory_drive.rs`. Off by default.
     science_drive_answers_from_the_pad_2: bool,
+    /// `gene_screen --seat-pace`: `true` caps the strategic plan's city
+    /// horizon at the live seat's own curve (`rival_pace::seat_capped`).
+    /// `false` everywhere but a measured harness seat under the flag.
+    seat_city_pace: bool,
     // ---- append: t-z ------------------------------------------------
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
@@ -9935,10 +9955,10 @@ mod diplo_match_point_research;
 /// `diplo-seat-wonder-claim`; see `advanced/diplo_wonder_claim.rs`.
 mod diplo_wonder_claim;
 
-/// `culture-seat-monuments`: see `advanced/culture_monuments.rs`.
-mod culture_monuments;
 /// `culture-keeps-every-border-open`: see `advanced/culture_open_borders.rs`.
 mod culture_dig_museum;
+/// `culture-seat-monuments`: see `advanced/culture_monuments.rs`.
+mod culture_monuments;
 mod culture_open_borders;
 
 /// `diplo-seat-statue-harbor`: see `advanced/diplo_statue_harbor.rs`.
@@ -10280,6 +10300,7 @@ mod campus_claims_the_free_slot;
 /// inspiration. See `advanced/civic_inspiration_wait.rs`.
 mod civic_inspiration_wait;
 mod culture_denial_heist;
+mod domination_joins_the_race;
 mod dvp_leader_front;
 /// `engineering-for-capped-fresh-water`: the Aqueduct technology for a
 /// capped empire when it costs a few turns. See
@@ -11509,6 +11530,7 @@ impl AdvancedAi {
             counterweight_builds_its_source: false,
             culture_recovery_spends_the_bank: false,
             culture_seat_allies: false,
+            domination_joins_the_race: false,
             // ---- append: e-f ----------------------------------------
             fog_yields_to_a_stranded_settler: false,
             early_route_feeds_production: false,
@@ -11922,6 +11944,7 @@ impl AdvancedAi {
             science_denounce_names_the_leader: false,
             science_drive_answers_from_the_pad: false,
             science_drive_answers_from_the_pad_2: false,
+            seat_city_pace: false,
             // ---- append: t-z ----------------------------------------
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,
@@ -12230,6 +12253,17 @@ impl AdvancedAi {
     /// The cities over the live curve this seat may plan for, when paced.
     pub fn rival_city_pace(&self) -> Option<usize> {
         self.rival_city_pace
+    }
+
+    /// `gene_screen --seat-pace`: hold this measured seat's city horizon to
+    /// the live seat's own curve; see `advanced/rival_pace.rs`.
+    pub fn set_seat_city_pace(&mut self) {
+        self.seat_city_pace = true;
+    }
+
+    /// Whether this seat's city horizon follows the live seat's curve.
+    pub fn seat_city_pace(&self) -> bool {
+        self.seat_city_pace
     }
 
     pub fn retarget(&mut self, target: VictoryTarget) {
@@ -15843,6 +15877,13 @@ impl AdvancedAi {
             Some(extra) => rival_pace::capped(g, desired_cities, cities.len(), extra),
             None => desired_cities,
         };
+        // `gene_screen --seat-pace`: a measured seat settles to the live
+        // seat's own curve. See `advanced/rival_pace.rs`.
+        let desired_cities = if self.seat_city_pace {
+            rival_pace::seat_capped(g, desired_cities, cities.len())
+        } else {
+            desired_cities
+        };
         let military_civ = matches!(
             g.players[pid].civ.as_str(),
             "Sumeria" | "Aztec" | "Nubia" | "Scythia" | "Byzantium"
@@ -17058,7 +17099,7 @@ impl AdvancedAi {
         })
         .flatten();
         let restore_space_race = self.base.exclude_space_race;
-        self.base.exclude_space_race = self.victory_target == Some(VictoryTarget::Domination);
+        self.base.exclude_space_race = self.space_race_excluded();
         // `culture-digs-one-museum`: the delegated governor picks this seat's
         // Museums. Lent for the call; see `advanced/culture_dig_museum.rs`.
         let restore_dig_museum = self.base.digs_one_museum;
@@ -36520,7 +36561,7 @@ impl AdvancedAi {
                     return -10_000.0;
                 }
                 if family == "spaceport" {
-                    if self.victory_target == Some(VictoryTarget::Domination) {
+                    if self.space_race_excluded() {
                         return -10_000.0;
                     }
                     let races_science = self.science_drive_active()
@@ -50386,7 +50427,7 @@ impl AdvancedAi {
         // foundations remain resumable. The named Domination seat also keeps
         // its existing exclusion of Spaceport production on this direct path.
         let restore_space_race = self.base.exclude_space_race;
-        self.base.exclude_space_race = self.victory_target == Some(VictoryTarget::Domination);
+        self.base.exclude_space_race = self.space_race_excluded();
         self.base.prioritize_live_great_person_activation(g, pid);
         self.base.exclude_space_race = restore_space_race;
         // Native boards have no host need list, but the same blockers: a
@@ -50416,7 +50457,7 @@ impl AdvancedAi {
         if self.base.book_pos < 4 {
             self.conquest_opening_production(g, pid, &plan);
             let restore_space_race = self.base.exclude_space_race;
-            self.base.exclude_space_race = self.victory_target == Some(VictoryTarget::Domination);
+            self.base.exclude_space_race = self.space_race_excluded();
             self.base.cities(g, pid);
             self.base.exclude_space_race = restore_space_race;
         } else {

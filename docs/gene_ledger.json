@@ -4617,6 +4617,15 @@
           "culture-lane-forecast-2": null
         }
       },
+      "culture-seat-theater-first": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "culture-seat-theater-first": null,
+          "culture-seat-theater-first-2": null
+        }
+      },
       "declaration-needs-the-edge": {
         "rule_on": [
           "declaration-needs-the-edge"

@@ -72,7 +72,7 @@
 //!               [--difficulty-rotate king:1,emperor:2,immortal:1]
 //!               [--rivals firaxis-mix|firaxis-faithful]
 //!               [--handicap all|rivals] [--rival-chairs N] [--stock-civs] [--trace]
-//!               [--rival-rung RUNG|-N] [--rival-pace] [--rival-victory-pace PCT]
+//!               [--rival-rung RUNG|-N] [--rival-pace] [--rival-victory-pace PCT] [--seat-pace]
 //!               [--rival-late-science PCT] [--rival-space-floor TECHS]
 //!   gene_screen --analyze PATH [PATH ...] [--json OUT] [--interactions]
 //!               [--denial] [--top N] [--by-civ TAG]
@@ -1942,6 +1942,10 @@ struct Header {
     /// city horizon to the live field's curve. Recorded like `rival_rung`.
     #[serde(default, skip_serializing_if = "is_false")]
     rival_pace: bool,
+    /// ⭐ `--seat-pace` (2026-11-01): whether every measured seat held its city
+    /// horizon to the live seat's own curve. Recorded like `rival_rung`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    seat_pace: bool,
     /// ⭐ `--rival-victory-pace` (2026-10-31): the percentage the rival chairs
     /// paid for the four space projects, or 0 for their ordinary cost, which
     /// every earlier file played. Recorded like `rival_rung`.
@@ -2318,6 +2322,9 @@ struct Profile {
     /// ⭐ `--rival-pace`: every faithful chair's city horizon follows the live
     /// field's curve ([`rival_pace_extra`]).
     rival_pace: bool,
+    /// ⭐ `--seat-pace`: every measured seat's city horizon follows the live
+    /// seat's own curve (`rival_pace::LIVE_SEAT_CITY_PACE`).
+    seat_pace: bool,
     /// ⭐ `--rival-victory-pace`: the space-project cost the rival chairs pay,
     /// in percent (`GameOptions::ai_space_project_cost_pct`). `None` is 100.
     rival_victory_pace: Option<u32>,
@@ -2502,6 +2509,9 @@ fn play_game(
                     }
                     (None, None) => {
                         let mut ai = seat_with_genome(genes, &genomes[index]);
+                        if profile.seat_pace {
+                            ai.set_seat_city_pace();
+                        }
                         if let Some(target) =
                             civvis::ai::player::target_for(seed, index, &profile.target_mix)
                         {
@@ -4999,6 +5009,7 @@ fn read_rows(paths: &[String]) -> (Header, Vec<Row>) {
                                 || first.rival_chairs != found.rival_chairs
                                 || first.rival_rung != found.rival_rung
                                 || first.rival_pace != found.rival_pace
+                                || first.seat_pace != found.seat_pace
                                 || first.rival_victory_pace != found.rival_victory_pace
                                 || first.rival_late_science != found.rival_late_science
                                 || first.rival_space_floor != found.rival_space_floor
@@ -5900,11 +5911,14 @@ fn calibration_read(header: &Header) -> String {
         )
     };
     let pace = if header.rival_pace {
-        "cities held to the live curve (one chair +2)"
+        "cities held to the live curve, the King field's at King and the Immortal field's elsewhere (one chair +2)"
     } else {
         "cities unpaced"
     };
     let mut line = format!("{rung}, {pace}");
+    if header.seat_pace {
+        line.push_str(", the measured seats held to the live seat's own city curve");
+    }
     if header.rival_victory_pace > 0 {
         line.push_str(&format!(
             ", space projects at {}% of their cost",
@@ -6413,7 +6427,10 @@ fn usage() -> ! {
          YIELD bonus (bonus start units, era boosts, combat strength and XP stay on the game's rung), \
          named or N rungs below each game's, needs --handicap rivals; [--rival-pace] every faithful chair's \
          city horizon follows the live Immortal field's curve (4/5/6/7/9/10/11 at t40/60/80/100/150/175/225, \
-         one chair per game +2); both need --rivals firaxis-faithful\n       \
+         the King field's 2/4/4/5/7/8/10 at --difficulty king, one chair per game +2); both need --rivals \
+         firaxis-faithful; [--seat-pace] every measured seat's city horizon follows the live seat's own \
+         curve (3/4/5/6/8/9/10 at t40/60/80/100/150/175/225), for absolute-rate reads of genes that do not \
+         change expansion (it masks any that do)\n       \
          the rival trajectories: [--trace] writes every major's economy (cities, population, yields, tourism, \
          tourists, techs, civics, wonders, districts) at turns 10..100 by tens, 125, 150, 175, 200, 225 onto its \
          row as `trace`; rows are unchanged without it\n       \
@@ -6698,6 +6715,10 @@ fn main() {
         })
     });
     let rival_pace = present(&args, "--rival-pace");
+    // ⭐ `--seat-pace`: every measured seat settles to the live seat's own
+    // city curve. Opt-in, for absolute-rate reads of genes that do not change
+    // expansion: it masks any gene that does.
+    let seat_pace = present(&args, "--seat-pace");
     // ⭐ `--rival-victory-pace PCT`: the rival chairs' space projects cost PCT
     // percent. The native field turns its science into a launch faster than
     // the live Firaxis AI (see docs/GENE_SCREEN.md).
@@ -7073,6 +7094,7 @@ fn main() {
         rival_chairs: if rivals { rival_chairs } else { 0 },
         rival_rung: rival_rung.as_ref().map(RivalRung::id).unwrap_or_default(),
         rival_pace,
+        seat_pace,
         rival_victory_pace: rival_victory_pace.unwrap_or(0),
         rival_late_science: rival_late_science.unwrap_or(0),
         rival_space_floor: rival_space_floor.unwrap_or(0),
@@ -7135,6 +7157,7 @@ fn main() {
         trace,
         rival_rung: rival_rung.clone(),
         rival_pace,
+        seat_pace,
         rival_victory_pace,
         rival_late_science,
         rival_space_floor,
@@ -7285,6 +7308,7 @@ mod tests {
             rival_chairs: 0,
             rival_rung: String::new(),
             rival_pace: false,
+            seat_pace: false,
             rival_victory_pace: 0,
             rival_late_science: 0,
             rival_space_floor: 0,
@@ -8935,6 +8959,13 @@ mod tests {
         assert_eq!((back.rival_rung.as_str(), back.rival_pace), ("-2", true));
         assert!(rivals_line(&back).contains("yields 2 rung(s) below the game's"));
         assert!(rivals_line(&back).contains("held to the live curve"));
+        assert!(!rivals_line(&back).contains("live seat's own city curve"));
+        let mut seat = back.clone();
+        seat.seat_pace = true;
+        let seat: Header = serde_json::from_str(&serde_json::to_string(&seat).expect("serializes"))
+            .expect("parses");
+        assert!(seat.seat_pace);
+        assert!(rivals_line(&seat).contains("held to the live seat's own city curve"));
         let plain = serde_json::to_string(&back).expect("serializes");
         assert!(!plain.contains("rival_victory_pace"));
         let mut paced = back.clone();

@@ -9093,6 +9093,17 @@ impl AdvancedAi {
         self.culture_seat_theater_first_2 = false;
     }
 
+    /// Opt-in gene `domination-joins-the-race`; see
+    /// [`Self::domination_joins_the_race`].
+    pub fn enable_domination_joins_the_race(&mut self) {
+        self.domination_joins_the_race = true;
+    }
+
+    /// The twin of `enable_domination_joins_the_race`.
+    pub fn disable_domination_joins_the_race(&mut self) {
+        self.domination_joins_the_race = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -4685,6 +4685,12 @@ pub const GENES: &[Gene] = &[
     // culture seats held 2-4 Campuses to 4-5 Theaters at t100 and lost mostly
     // to rival Science at t222-244. See `advanced/culture_theater_first.rs`.
     Gene { tag: "culture-seat-theater-first-2", field: "culture_seat_theater_first_2", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_theater_first_2, disable: AdvancedAi::disable_culture_seat_theater_first_2 },
+    // Live King 2026-11-01: every game ended in a Science victory, and the
+    // Domination seat 073004Z held the whole tree with no pad (all three
+    // exclusions) while Korea won at t257. Within three techs of the field,
+    // once a rival has landed, the seat answers with its own race beside its
+    // war. See `advanced/domination_joins_the_race.rs`.
+    Gene { tag: "domination-joins-the-race", field: "domination_joins_the_race", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_joins_the_race, disable: AdvancedAi::disable_domination_joins_the_race },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
