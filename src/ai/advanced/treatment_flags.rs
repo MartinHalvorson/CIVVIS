@@ -8465,6 +8465,7 @@ impl AdvancedAi {
     /// [`Self::culture_seat_theater_first`].
     pub fn enable_culture_seat_theater_first(&mut self) {
         self.culture_seat_theater_first = true;
+        self.culture_seat_theater_first_2 = false;
     }
 
     /// The twin of `enable_culture_seat_theater_first`.
@@ -8527,6 +8528,7 @@ impl AdvancedAi {
     /// [`Self::culture_keeps_every_border_open`].
     pub fn enable_culture_keeps_every_border_open(&mut self) {
         self.culture_keeps_every_border_open = true;
+        self.culture_keeps_every_border_open_2 = false;
     }
 
     /// The twin of `enable_culture_keeps_every_border_open`.
@@ -8992,6 +8994,7 @@ impl AdvancedAi {
     /// Turn on `culture-keeps-every-border-open-2`. See
     /// [`Self::culture_keeps_every_border_open_2`].
     pub fn enable_culture_keeps_every_border_open_2(&mut self) {
+        self.culture_keeps_every_border_open = false;
         self.culture_keeps_every_border_open_2 = true;
     }
 
@@ -9076,6 +9079,18 @@ impl AdvancedAi {
     /// The twin of `enable_launch_commits_the_endgame`.
     pub fn disable_launch_commits_the_endgame(&mut self) {
         self.launch_commits_the_endgame = false;
+    }
+
+    /// Turn on `culture-seat-theater-first-2`. See
+    /// [`Self::culture_seat_theater_first_2`].
+    pub fn enable_culture_seat_theater_first_2(&mut self) {
+        self.culture_seat_theater_first = false;
+        self.culture_seat_theater_first_2 = true;
+    }
+
+    /// The twin of `enable_culture_seat_theater_first_2`.
+    pub fn disable_culture_seat_theater_first_2(&mut self) {
+        self.culture_seat_theater_first_2 = false;
     }
 
     // ---- append: a-b ------------------------------------------------

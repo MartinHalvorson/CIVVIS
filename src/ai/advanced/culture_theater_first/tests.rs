@@ -174,3 +174,59 @@ fn the_free_slot_campus_yields_to_the_theater() {
         .free_slot_campus_item(&game, 0, cities[0], &plan)
         .is_some());
 }
+
+fn seat_two() -> AdvancedAi {
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.enable_culture_seat_theater_first_2();
+    ai
+}
+
+/// Version two: with no Campus the empire claims one Theater, then the rest
+/// wait; two standing Campuses admit a second.
+#[test]
+fn version_two_balances_theaters_against_campuses() {
+    let (game, cities) = theater_less_empire();
+    let mut busy = game.clone();
+    for cid in &cities {
+        busy.cities.get_mut(cid).unwrap().queue = vec![unit("warrior")];
+    }
+    let ai = seat_two();
+    assert!(!ai.culture_seat_theater_first, "version two turns one off");
+
+    let mut none = busy.clone();
+    claim(&ai, &mut none);
+    let claimed = cities
+        .iter()
+        .filter(|cid| is_theater(&none, none.cities[cid].queue.first()))
+        .count();
+    assert_eq!(claimed, 1, "the first Theater always goes ahead");
+
+    let mut two_campuses = busy.clone();
+    for cid in &cities[1..] {
+        crate::game::install_test_district(&mut two_campuses, *cid, "campus");
+    }
+    claim(&ai, &mut two_campuses);
+    let claimed = cities
+        .iter()
+        .filter(|cid| is_theater(&two_campuses, two_campuses.cities[cid].queue.first()))
+        .count();
+    assert_eq!(claimed, 2, "two Campuses admit two Theaters");
+}
+
+/// Version two: once the Theaters lead, the free-slot Campus keeps the slot.
+#[test]
+fn version_two_returns_the_slot_to_the_campus() {
+    let (mut game, cities) = theater_less_empire();
+    let theater = BasicAi::first_theater_item(&game, 0, cities[0]).unwrap();
+    game.cities.get_mut(&cities[0]).unwrap().queue = vec![theater];
+    let mut ai = seat_two();
+    ai.enable_campus_claims_the_free_slot_2();
+    let plan = ai.assess(&game, 0);
+
+    assert!(ai
+        .culture_theater_item(&game, 0, cities[1], &plan)
+        .is_none());
+    assert!(ai
+        .free_slot_campus_item(&game, 0, cities[1], &plan)
+        .is_some());
+}
