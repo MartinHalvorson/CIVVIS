@@ -419,3 +419,64 @@ fn nearby_trapped_spreader_does_not_cover_a_threatened_source() {
         2
     );
 }
+
+/// `apostle-transit-keeps-the-cover`: while the Apostle travels, a threatened
+/// source buys its cover Missionary when the Faith left still covers the
+/// first Inquisitor; with less it holds, and with the gene off it always
+/// holds, as before.
+#[test]
+fn a_threatened_source_is_covered_while_the_apostle_travels() {
+    let run = |gene: bool, spare: f64| {
+        let (mut g, mut ai, home) = fixture();
+        if gene {
+            ai.enable_apostle_transit_keeps_the_cover();
+        }
+        ai.religious_spending(&mut g, 0, false);
+        assert_eq!(
+            g.units
+                .values()
+                .filter(|u| u.owner == 0 && u.kind == "apostle")
+                .count(),
+            1,
+            "fixture: the Apostle is in the field"
+        );
+        // The Apostle walks off to launch the Inquisition: out of the
+        // source's watch, so it is no cover there.
+        let apostle = g
+            .units
+            .values()
+            .find(|u| u.owner == 0 && u.kind == "apostle")
+            .map(|u| u.id)
+            .unwrap();
+        g.units.get_mut(&apostle).unwrap().pos = (24, 20);
+        approaching_spreader(&mut g, "Orthodoxy", (5, 4));
+        let price = g
+            .unit_purchase_cost(0, home, "missionary", "faith")
+            .unwrap();
+        let ratio = g.rules.units["inquisitor"].cost / g.rules.units["missionary"].cost;
+        g.players[0].faith = price + price * ratio + spare;
+        ai.religious_spending(&mut g, 0, false);
+        let covered = g
+            .units
+            .values()
+            .any(|u| u.owner == 0 && u.kind == "missionary");
+        covered
+    };
+    assert!(
+        !run(false, 1.0),
+        "off: the Apostle's walk holds every purchase"
+    );
+    assert!(run(true, 1.0), "on: the source is covered");
+    assert!(
+        !run(true, -2.0),
+        "on, but the Missionary would eat the Inquisitor: it holds"
+    );
+}
+
+#[test]
+fn apostle_transit_keeps_the_cover_is_opt_in() {
+    crate::ai::advanced::test_support::opt_in_off_in_both_controllers(
+        "apostle-transit-keeps-the-cover",
+        |ai| ai.apostle_transit_keeps_the_cover,
+    );
+}

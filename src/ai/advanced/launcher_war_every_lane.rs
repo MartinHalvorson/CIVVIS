@@ -84,6 +84,51 @@ impl AdvancedAi {
         }
     }
 
+    /// Why no launcher war names a racer holding the lead with two projects
+    /// landed: the first gate it fails, journaled at Detail. Nothing changes
+    /// but the journal. Live: in 13 Science losses since 154548Z the counter
+    /// named the eventual winner in 8 and the war on it opened in none, and
+    /// 050026Z (5.2x Scythia's power at 175, its Moon landed) left no line
+    /// naming the gate that held it.
+    fn journal_launcher_gate(&self, g: &Game, pid: usize, lead: usize) {
+        if lead < super::launcher_war::LAUNCHER_WAR_STAGES
+            || !self.journal().wants(crate::reasoning::Level::Detail)
+        {
+            return;
+        }
+        for rival in g.players.iter().filter(|rival| {
+            rival.id != pid
+                && rival.alive
+                && !rival.is_minor
+                && !rival.is_barbarian
+                && !g.same_team(pid, rival.id)
+                && g.has_met(pid, rival.id)
+                && Self::science_denial_stages(g, rival.id) == lead
+        }) {
+            let ours = g.military_power(pid);
+            let theirs = self.steady_rival_power(g, rival.id).max(1.0);
+            let edge = self.lane_launcher_edge(g);
+            let gate = if !self.campaign_target_legal(g, pid, rival.id) {
+                "it is no legal target: a friend, an ally, or a road cut".to_string()
+            } else if rival.science_projects.contains("exoplanet_expedition") {
+                "its Exoplanet has launched".to_string()
+            } else if Self::standing_pads(g, pid, rival.id).is_empty() {
+                "no pad of theirs is seen standing".to_string()
+            } else if Self::our_cities_falling(g, pid) {
+                "a city of ours is falling".to_string()
+            } else if ours < edge * theirs {
+                format!("{ours:.0} power against their steady {theirs:.0}, under {edge:.1} times")
+            } else if !self.conquest_denial_actionable(g, pid, rival.id, GrandStrategy::Conquest) {
+                "the Conquest counter is not actionable: no land road or no reach".to_string()
+            } else {
+                continue;
+            };
+            think!(self.journal(), Military, Detail,
+                   "No launcher war on {}", rival.civ;
+                   "launcher-war-serves-every-lane: {} space projects landed; {}", lead, gate);
+        }
+    }
+
     /// Whether the war on `target` is the launcher war this gene names, which
     /// `one_war_holds_declaration` lets open beside a war already burning.
     /// Live 022405Z named Rome, the eventual winner, at 3.3x its power at
@@ -162,7 +207,11 @@ impl AdvancedAi {
                     std::cmp::Reverse(rival.id),
                 )
             })
-            .map(|rival| rival.id)?;
+            .map(|rival| rival.id);
+        let Some(counter) = counter else {
+            self.journal_launcher_gate(g, pid, lead);
+            return None;
+        };
         // A Science seat races in lane while it keeps pace: the war is only
         // its counter once the racer is ahead of our own launches.
         if self.active_victory_target(g) == Some(VictoryTarget::Science)

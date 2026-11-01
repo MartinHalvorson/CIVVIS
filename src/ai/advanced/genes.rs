@@ -4608,6 +4608,14 @@ pub const GENES: &[Gene] = &[
     // laser stations. A tie now goes to the racer knowing more techs. Needs
     // `launcher-war-serves-every-lane`. See `advanced/launcher_war_every_lane.rs`.
     Gene { tag: "launcher-war-fights-the-faster-racer", field: "launcher_war_fights_the_faster_racer", kind: Kind::OptIn, enable: AdvancedAi::enable_launcher_war_fights_the_faster_racer, disable: AdvancedAi::disable_launcher_war_fights_the_faster_racer },
+    // Live Emperor Religion seat civvis-20261031T034930Z (2026-11-01, -3b):
+    // the Apostle bought at t68 held every Faith purchase for the Inquisitor,
+    // silently, while Catholic spreaders worked the Holy City, which flipped
+    // at t80-90 with 254-769 Faith banked; nothing of ours could be bought
+    // after (2,670 Faith unspent at the t218 loss). While the Apostle
+    // travels, a threatened source buys its cover Missionary when the Faith
+    // left covers the first Inquisitor. See `advanced/defensive_apostle.rs`.
+    Gene { tag: "apostle-transit-keeps-the-cover", field: "apostle_transit_keeps_the_cover", kind: Kind::OptIn, enable: AdvancedAi::enable_apostle_transit_keeps_the_cover, disable: AdvancedAi::disable_apostle_transit_keeps_the_cover },
     // `fog-yields-to-a-stranded-settler`: live civvis-20261101T042616Z held
     // three cities t40-t127 with a Settler stranded t44-t177, 49 sites refused
     // as "beyond the empire's Loyalty reach on ground the seat has not
