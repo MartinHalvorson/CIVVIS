@@ -5522,6 +5522,12 @@ pub struct AdvancedAi {
     /// not a Shooter, and that garrison makes no blow. See
     /// `advanced/anvil_garrisons_its_melee.rs`. Off by default.
     anvil_garrisons_its_melee: bool,
+    /// `apostle-transit-keeps-the-cover`: while the founder's first Apostle
+    /// walks to launch the Inquisition, a threatened source still buys its
+    /// cover Missionary when the Faith left covers the first Inquisitor, and
+    /// the hold is journalled. See `advanced/defensive_apostle.rs`. Off by
+    /// default.
+    apostle_transit_keeps_the_cover: bool,
     // ---- append: c-d ------------------------------------------------
     /// `domination-targets-land-first`: a Domination seat ranks rivals it can
     /// reach by land ahead of overseas ones in its frontier and capital picks
@@ -7949,13 +7955,19 @@ pub struct AdvancedAi {
     /// Person"), not the production valuation. The live seat's ordinary
     /// production is the delegated governor's (`lane-delegates-production-2`),
     /// so the gene also arms `BasicAi::launch_pad_resume_item`, which resumes
-    /// the city's own placed pad ahead of every economy step. Live Emperor civvis-20261101T043921Z: St. Petersburg (70-120
-    /// Production) placed the pad at t161 and finished it at t193, with 8 of
-    /// those 32 turns on the pad, and launched its Earth Satellite 36 turns
-    /// after the leader's. civvis-20261101T023248Z: Hyderabad left its pad at
-    /// 79 of 900 on t159 for an AT Crew, a Bank, a power plant, a Stock
-    /// Exchange and the Eiffel Tower. See `unfinished_launch_pad_site`.
+    /// the city's own placed pad ahead of every economy step. Live Emperor
+    /// civvis-20261101T043921Z: St. Petersburg (70-120 Production) placed
+    /// the pad at t161 and finished it at t193, with 8 of those 32 turns on
+    /// the pad, and launched its Earth Satellite 36 turns after the leader's.
+    /// civvis-20261101T023248Z: Hyderabad left its pad at 79 of 900 on t159
+    /// for an AT Crew, a Bank, a power plant, a Stock Exchange and the Eiffel
+    /// Tower. See `unfinished_launch_pad_site`.
     launch_pad_keeps_its_rung: bool,
+    /// `launcher-war-fights-the-faster-racer`: a tie between space racers
+    /// with the same projects landed goes to the one knowing more techs, not
+    /// the lower seat. See `advanced/launcher_war_every_lane.rs`. Off by
+    /// default.
+    launcher_war_fights_the_faster_racer: bool,
     // ---- append: p-r ------------------------------------------------
     /// `pillaged-districts-repair-first`: a pillaged district's repair claims its
     /// city after every other claim. See `advanced/pillaged_repairs_first.rs`.
@@ -11272,6 +11284,7 @@ impl AdvancedAi {
             bankruptcy_exits_the_drain: false,
             builder_prices_travel_in_turns: false,
             anvil_garrisons_its_melee: false,
+            apostle_transit_keeps_the_cover: false,
             // ---- append: c-d ----------------------------------------
             domination_targets_land_first: false,
             defence_holds_under_fire: false,
@@ -11665,6 +11678,7 @@ impl AdvancedAi {
             naval_crossing_keeps_going: false,
             land_grab_outlasts_the_opening: false,
             launch_pad_keeps_its_rung: false,
+            launcher_war_fights_the_faster_racer: false,
             // ---- append: p-r ----------------------------------------
             pillaged_districts_repair_first: false,
             religion_lane_hands_over: false,

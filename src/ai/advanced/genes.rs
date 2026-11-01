@@ -4601,6 +4601,21 @@ pub const GENES: &[Gene] = &[
     // from t30 to t66. The repair now claims its city after every other claim.
     // See `advanced/pillaged_repairs_first.rs`.
     Gene { tag: "pillaged-districts-repair-first", field: "pillaged_districts_repair_first", kind: Kind::OptIn, enable: AdvancedAi::enable_pillaged_districts_repair_first, disable: AdvancedAi::disable_pillaged_districts_repair_first },
+    // Live Emperor civvis-20261101T043921Z launched its Exoplanet first (214)
+    // and lost at 224: at turn 180 two racers had their Moon landed, the
+    // launcher war's tie went to the lower seat (Georgia, 60 techs), and
+    // Hungary (64 techs, 387 Science against 267, at half our power) won on
+    // laser stations. A tie now goes to the racer knowing more techs. Needs
+    // `launcher-war-serves-every-lane`. See `advanced/launcher_war_every_lane.rs`.
+    Gene { tag: "launcher-war-fights-the-faster-racer", field: "launcher_war_fights_the_faster_racer", kind: Kind::OptIn, enable: AdvancedAi::enable_launcher_war_fights_the_faster_racer, disable: AdvancedAi::disable_launcher_war_fights_the_faster_racer },
+    // Live Emperor Religion seat civvis-20261031T034930Z (2026-11-01, -3b):
+    // the Apostle bought at t68 held every Faith purchase for the Inquisitor,
+    // silently, while Catholic spreaders worked the Holy City, which flipped
+    // at t80-90 with 254-769 Faith banked; nothing of ours could be bought
+    // after (2,670 Faith unspent at the t218 loss). While the Apostle
+    // travels, a threatened source buys its cover Missionary when the Faith
+    // left covers the first Inquisitor. See `advanced/defensive_apostle.rs`.
+    Gene { tag: "apostle-transit-keeps-the-cover", field: "apostle_transit_keeps_the_cover", kind: Kind::OptIn, enable: AdvancedAi::enable_apostle_transit_keeps_the_cover, disable: AdvancedAi::disable_apostle_transit_keeps_the_cover },
     // Live Emperor 2026-10-31/11-01: one game in three that began a Spaceport
     // left it for other builds. Once a claim borrows the queue, the placed
     // foundation reads as a second pad (-10,000) and the first-pad rung has

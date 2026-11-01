@@ -8967,6 +8967,28 @@ impl AdvancedAi {
         self.pillaged_districts_repair_first = false;
     }
 
+    /// Opt-in gene `launcher-war-fights-the-faster-racer`; see
+    /// [`Self::launcher_war_fights_the_faster_racer`].
+    pub fn enable_launcher_war_fights_the_faster_racer(&mut self) {
+        self.launcher_war_fights_the_faster_racer = true;
+    }
+
+    /// The twin of `enable_launcher_war_fights_the_faster_racer`.
+    pub fn disable_launcher_war_fights_the_faster_racer(&mut self) {
+        self.launcher_war_fights_the_faster_racer = false;
+    }
+
+    /// Opt-in gene `apostle-transit-keeps-the-cover`; see
+    /// [`Self::apostle_transit_keeps_the_cover`].
+    pub fn enable_apostle_transit_keeps_the_cover(&mut self) {
+        self.apostle_transit_keeps_the_cover = true;
+    }
+
+    /// The twin of `enable_apostle_transit_keeps_the_cover`.
+    pub fn disable_apostle_transit_keeps_the_cover(&mut self) {
+        self.apostle_transit_keeps_the_cover = false;
+    }
+
     /// Opt-in gene `launch-pad-keeps-its-rung`; see
     /// [`Self::launch_pad_keeps_its_rung`].
     pub fn enable_launch_pad_keeps_its_rung(&mut self) {

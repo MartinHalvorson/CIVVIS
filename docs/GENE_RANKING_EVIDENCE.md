@@ -187,6 +187,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `air-wing-grows-with-the-aluminum` | off (unmeasured) | Grow the Bomber wing past four while the Aluminum sustains it. | 1 \| 1 |
 | `aluminum-tile-spends-the-war-chest` | off (unmeasured) | Opt-in gene `aluminum-tile-spends-the-war-chest`; see `Self::aluminum_tile_spends_the_war_chest`. | 1 \| 1 |
 | `anvil-garrisons-its-melee` | off (unmeasured) | Opt-in gene `anvil-garrisons-its-melee`; see `Self::anvil_garrisons_its_melee`. | 1 \| 1 |
+| `apostle-transit-keeps-the-cover` | off (unmeasured) | Opt-in gene `apostle-transit-keeps-the-cover`; see `Self::apostle_transit_keeps_the_cover`. | 1 \| 1 |
 | `astrology-before-the-second-city` | off (unmeasured) | Opt-in gene `astrology-before-the-second-city`; see `advanced/astrology_before_the_second_city.rs`. | 1 \| 1 |
 | `bankruptcy-exits-the-drain` | off (unmeasured) | Opt-in gene `bankruptcy-exits-the-drain`; see `advanced/solvency.rs`. | 1 \| 1 |
 | `board-ignores-the-faith-war` | off (unmeasured) | Opt-in gene `board-ignores-the-faith-war`; see `Self::board_ignores_the_faith_war`. | 1 \| 1 |
@@ -247,6 +248,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `inquisition-defends-the-diplomat` | off (unmeasured) | `inquisition-defends-the-diplomat`. | 1 \| 1 |
 | `land-grab-outlasts-the-opening` | off (unmeasured) | Opt-in gene `land-grab-outlasts-the-opening`; see `Self::land_grab_outlasts_the_opening`. | 1 \| 1 |
 | `launch-pad-keeps-its-rung` | off (unmeasured) | Opt-in gene `launch-pad-keeps-its-rung`; see `Self::launch_pad_keeps_its_rung`. | 1 \| 1 |
+| `launcher-war-fights-the-faster-racer` | off (unmeasured) | Opt-in gene `launcher-war-fights-the-faster-racer`; see `Self::launcher_war_fights_the_faster_racer`. | 1 \| 1 |
 | `launcher-war-serves-every-lane` | off (unmeasured) | Opt-in gene `launcher-war-serves-every-lane`; see `Self::launcher_war_serves_every_lane`. | 1 \| 1 |
 | `launcher-war-skips-the-reserve` | off (unmeasured) | Opt-in gene `launcher-war-skips-the-reserve`; see `Self::launcher_war_skips_the_reserve`. | 1 \| 1 |
 | `medina-quarter-houses-the-districts` | off (unmeasured) | Opt-in gene `medina-quarter-houses-the-districts`; see `advanced/medina_quarter.rs`. | 1 \| 1 |
