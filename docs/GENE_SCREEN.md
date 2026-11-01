@@ -2538,7 +2538,10 @@ Two opt-in knobs, both for `--rivals firaxis-faithful` only, and both needed:
   60 / 80 / 100 / 150 / 175 / 225 — with chair 0 of each game (which rotates)
   allowed two more, the live best rival's margin
   (`src/ai/advanced/rival_pace.rs`). The cap stops settling; it never razes,
-  and conquest is untouched.
+  and conquest is untouched. At `--difficulty king` the cap follows the live
+  King field instead (2026-11-01): 2 / 4 / 4 / 5 / 7 / 8 / 10 cities at the
+  same turns, the rival mean of 17 live 6p Small King games. See the King
+  re-fit below.
 
 Measured at Immortal on the default 6p Small Continents board, 6 games a
 setting, seeds 31100000–05, `--deployment-genome --trace`, against the live
