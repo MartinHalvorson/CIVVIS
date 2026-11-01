@@ -253,8 +253,22 @@ impl AdvancedAi {
                     && !(self.friendship_spares_the_converter
                         && self.friendship_would_shield_the_converter(g, pid, other.id))
                     && !g.pending_deals.iter().any(|deal| {
-                        (deal.from == pid && deal.to == other.id)
-                            || (deal.from == other.id && deal.to == pid)
+                        ((deal.from == pid && deal.to == other.id)
+                            || (deal.from == other.id && deal.to == pid))
+                            // `friendship-keeps-the-peace`: our own alliance
+                            // proposal does not hold back a lapsed friend's
+                            // renewal. Off the Diplomatic, Culture and Science
+                            // lanes the live binary drops the alliance order,
+                            // but the board keeps the deal pending for about
+                            // ten turns: live Religion seat
+                            // civvis-20261101T024926Z proposed a Research
+                            // Alliance to its two friends every ten turns
+                            // (t129-t170), and the friendships that lapsed at
+                            // t159 and t162 found a pending deal each and were
+                            // never renewed. Empty `lapsed` off the gene.
+                            && !(lapsed.contains(&other.id)
+                                && deal.from == pid
+                                && deal.alliance.is_some())
                     })
             })
             .max_by(|a, b| {
@@ -671,5 +685,67 @@ mod tests {
         opt_in_off_in_both_controllers("friendship-keeps-the-peace", |ai| {
             ai.friendship_keeps_the_peace
         });
+    }
+
+    /// `friendship-keeps-the-peace`: our own pending alliance proposal to the
+    /// lapsed friend does not hold back its renewal; a pending deal the friend
+    /// proposed, or one without an alliance, still does.
+    #[test]
+    fn a_pending_alliance_proposal_does_not_block_the_renewal() {
+        use crate::ai::advanced::VictoryTarget;
+        use crate::game::DiplomaticDeal;
+        let run = |pending: Option<(usize, usize, bool)>| {
+            let mut game = three_majors();
+            let mut ai = AdvancedAi::targeting(VictoryTarget::Religion);
+            ai.enable_befriend_the_strongest();
+            ai.enable_friendship_keeps_the_peace();
+            game.players[0].friends_until.insert(1, 31);
+            game.players[1].friends_until.insert(0, 31);
+            ai.propose_protective_friendship(&mut game, 0);
+            game.pending_deals.clear();
+            game.turn = 31;
+            game.players[0].friends_until.remove(&1);
+            game.players[1].friends_until.remove(&0);
+            if let Some((from, to, alliance)) = pending {
+                let id = game.next_id;
+                game.next_id += 1;
+                game.pending_deals.push(DiplomaticDeal {
+                    id,
+                    from,
+                    to,
+                    give_gold: 0.0,
+                    request_gold: 0.0,
+                    // An alliance proposal bundles the friendship, as the
+                    // alliance desk's does; the other pending deal is a
+                    // passage sale, which carries neither.
+                    open_borders: !alliance,
+                    friendship: alliance,
+                    peace: false,
+                    alliance: alliance.then(|| "research".to_string()),
+                    defensive_pact: false,
+                    joint_war_target: None,
+                    promise: None,
+                    demand: false,
+                    expires: game.turn + 10,
+                });
+            }
+            ai.propose_protective_friendship(&mut game, 0);
+            game.pending_deals.iter().any(|deal| {
+                deal.from == 0 && deal.to == 1 && deal.friendship && deal.alliance.is_none()
+            })
+        };
+        assert!(run(None), "the renewal, as before");
+        assert!(
+            run(Some((0, 1, true))),
+            "our own pending alliance proposal does not hold it back"
+        );
+        assert!(
+            !run(Some((1, 0, true))),
+            "a deal the friend proposed still does"
+        );
+        assert!(
+            !run(Some((0, 1, false))),
+            "nor does a pending deal without an alliance (a passage sale)"
+        );
     }
 }
