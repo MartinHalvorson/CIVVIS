@@ -123,3 +123,17 @@ fn a_view_that_hides_rival_civics_still_buys_passage_and_is_restored() {
             .contains(&crate::name!("early_empire")));
     }
 }
+
+#[test]
+fn version_two_buys_only_from_the_bar_holder() {
+    let mut game = four_traders(60.0);
+    game.players[2].culture_lifetime = 9_000.0;
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.enable_culture_keeps_every_border_open_2();
+    let closed = ai.keep_every_border_open(&mut game, 0, None, &BTreeSet::new(), &BTreeSet::new());
+
+    assert_eq!(closed, 1);
+    assert!(game.has_open_borders(0, 2), "the bar holder grants passage");
+    assert!(!game.has_open_borders(0, 1));
+    assert!(!game.has_open_borders(0, 3));
+}

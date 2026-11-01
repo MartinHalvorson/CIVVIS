@@ -4616,6 +4616,11 @@ pub const GENES: &[Gene] = &[
     // travels, a threatened source buys its cover Missionary when the Faith
     // left covers the first Inquisitor. See `advanced/defensive_apostle.rs`.
     Gene { tag: "apostle-transit-keeps-the-cover", field: "apostle_transit_keeps_the_cover", kind: Kind::OptIn, enable: AdvancedAi::enable_apostle_transit_keeps_the_cover, disable: AdvancedAi::disable_apostle_transit_keeps_the_cover },
+    // `culture-keeps-every-border-open-2`: version one, buying passage only
+    // from the bar holder (most domestic tourists) — its visitors count twice.
+    // A King screen read version one at −1.7 pp share with wins unchanged. See
+    // `advanced/culture_open_borders.rs`.
+    Gene { tag: "culture-keeps-every-border-open-2", field: "culture_keeps_every_border_open_2", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_keeps_every_border_open_2, disable: AdvancedAi::disable_culture_keeps_every_border_open_2 },
     // `fog-yields-to-a-stranded-settler`: live civvis-20261101T042616Z held
     // three cities t40-t127 with a Settler stranded t44-t177, 49 sites refused
     // as "beyond the empire's Loyalty reach on ground the seat has not
@@ -4623,6 +4628,22 @@ pub const GENES: &[Gene] = &[
     // fired. Once a Settler has walked fifteen turns the fog clause yields.
     // See `advanced/fog_yields_stranded.rs`.
     Gene { tag: "fog-yields-to-a-stranded-settler", field: "fog_yields_to_a_stranded_settler", kind: Kind::OptIn, enable: AdvancedAi::enable_fog_yields_to_a_stranded_settler, disable: AdvancedAi::disable_fog_yields_to_a_stranded_settler },
+    // Live Emperor 2026-10-31/11-01: one game in three that began a Spaceport
+    // left it for other builds. Once a claim borrows the queue, the placed
+    // foundation reads as a second pad (-10,000) and the first-pad rung has
+    // lapsed (250), so the strategic controller never resumes it. 043921Z: placed t161, finished t193 (8 turns on it),
+    // Satellite 36 turns behind the leader. See `unfinished_launch_pad_site`.
+    Gene { tag: "launch-pad-keeps-its-rung", field: "launch_pad_keeps_its_rung", kind: Kind::OptIn, enable: AdvancedAi::enable_launch_pad_keeps_its_rung, disable: AdvancedAi::disable_launch_pad_keeps_its_rung },
+    // Live King civvis-20261101T075446Z (Religion) led the space race to Mars
+    // (Satellite 208, Moon 215, against the Ottomans' 215 and 224) on 320
+    // science against 394, so `science-drive-answers-the-launch`, which opens
+    // on an outright science lead, never drove: research stayed on the war
+    // plan, Smart Materials came at 227, our Exoplanet launched at 240 against
+    // theirs at 236, and the Ottomans won at 245. The answer now also opens
+    // and holds while our landed projects are level with the leading racer's.
+    // Needs `science-victory-drive` and `science-drive-answers-the-launch`.
+    // See `advanced/science_victory_drive.rs`.
+    Gene { tag: "science-drive-answers-from-the-pad", field: "science_drive_answers_from_the_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_science_drive_answers_from_the_pad, disable: AdvancedAi::disable_science_drive_answers_from_the_pad },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
