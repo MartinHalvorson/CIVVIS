@@ -4655,6 +4655,17 @@ pub const GENES: &[Gene] = &[
     // pads; -2 adds the slack). Needs `science-victory-drive` and
     // `science-drive-answers-the-launch`. See `advanced/science_victory_drive.rs`.
     Gene { tag: "science-drive-answers-from-the-pad-2", field: "science_drive_answers_from_the_pad_2", kind: Kind::OptIn, enable: AdvancedAi::enable_science_drive_answers_from_the_pad_2, disable: AdvancedAi::disable_science_drive_answers_from_the_pad_2 },
+    // Live King 2026-11-01: the Spy trainer and other claims take the pad
+    // city's queue, since the launch city is the top producer and a district
+    // at the head counts as routine work. 085353Z: Mbwila placed the pad at
+    // t175, trained a Spy at t180, then a reactor conversion, an air-surge
+    // unit and Research Grants; the pad finished at t206 and the Satellite
+    // landed at 215 against Khmer's 177. 081602Z trained Spies in Rome from
+    // t193 and never landed a Satellite. While no pad stands, the first pad
+    // goes back to the head of its city after every claim, short of a threat
+    // to that city, and the Spy trainer skips it.
+    // See `advanced/launch_pad_holds_its_queue.rs`.
+    Gene { tag: "launch-pad-holds-its-queue", field: "launch_pad_holds_its_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_launch_pad_holds_its_queue, disable: AdvancedAi::disable_launch_pad_holds_its_queue },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

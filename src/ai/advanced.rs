@@ -7975,6 +7975,11 @@ pub struct AdvancedAi {
     /// the lower seat. See `advanced/launcher_war_every_lane.rs`. Off by
     /// default.
     launcher_war_fights_the_faster_racer: bool,
+    /// `launch-pad-holds-its-queue`: while no pad of ours stands, the city
+    /// carrying the first one has it put back at the head of its queue after
+    /// every ordinary writer and claim, and the Spy trainer skips that city.
+    /// See `advanced/launch_pad_holds_its_queue.rs`. Off by default.
+    launch_pad_holds_its_queue: bool,
     // ---- append: p-r ------------------------------------------------
     /// `pillaged-districts-repair-first`: a pillaged district's repair claims its
     /// city after every other claim. See `advanced/pillaged_repairs_first.rs`.
@@ -10327,6 +10332,9 @@ mod culture_defense;
 mod decisive_window;
 mod domination_research;
 mod government_plaza;
+/// `launch-pad-holds-its-queue`: the first pad holds its city's queue. See
+/// `advanced/launch_pad_holds_its_queue.rs`.
+mod launch_pad_holds_its_queue;
 /// `paused-district-finishes`: a foundation the host quotes at two turns or
 /// less finishes first at full health. See `advanced/paused_district_finish.rs`.
 mod paused_district_finish;
@@ -11699,6 +11707,7 @@ impl AdvancedAi {
             land_grab_outlasts_the_opening: false,
             launch_pad_keeps_its_rung: false,
             launcher_war_fights_the_faster_racer: false,
+            launch_pad_holds_its_queue: false,
             // ---- append: p-r ----------------------------------------
             pillaged_districts_repair_first: false,
             religion_lane_hands_over: false,
@@ -50705,6 +50714,9 @@ impl AdvancedAi {
         // `paused-district-finishes`: after every ordinary writer, before the
         // declaration response and the defence handoffs below.
         self.claim_paused_district_finishes(g, pid);
+        // `launch-pad-holds-its-queue`: the first pad back at the head of its
+        // city, before the defence and loyalty handoffs below.
+        self.claim_launch_pad_holds_its_queue(g, pid, &plan);
         self.claim_frontier_walls_before_the_surprise(g, pid);
         // Make the declaration response the final authority over queues this
         // turn. Earlier governors can continue to express their peaceful
