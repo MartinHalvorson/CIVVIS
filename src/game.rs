@@ -419,6 +419,9 @@ mod space_project_cost_tests;
 #[cfg(test)]
 mod modifier_attachment_tests;
 
+#[cfg(test)]
+mod domestic_tourist_tests;
+
 /// Put `district` on a free tile of a test city and register it.
 ///
 /// One copy for the whole repository: `src/ai/advanced/tests.rs` carried a
@@ -31913,7 +31916,11 @@ impl Game {
             .filter(|source| source.id != pid)
             .map(|source| self.visiting_tourists_from(source.id, pid))
             .sum::<i64>();
-        generated.saturating_sub(visiting_elsewhere)
+        // A civilization's tourists abroad come out of its own pool, which
+        // cannot go below empty: the host's counter never reads negative (0
+        // of 174 live readings, 2026-10-31), and a negative native pool let
+        // any rival clear the Culture Victory bar against it.
+        generated.saturating_sub(visiting_elsewhere).max(0)
     }
 
     fn government_tourism_intolerance(&self, pid: usize) -> f64 {
