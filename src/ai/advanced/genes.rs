@@ -4594,6 +4594,20 @@ pub const GENES: &[Gene] = &[
     // city, 72-79% within three tiles of one. An idle soldier garrisons each
     // short city while Retainers is slotted. See `ai/retainers_garrison.rs`.
     Gene { tag: "retainers-garrison-the-short-cities", field: "retainers_garrison_the_short_cities", kind: Kind::OptIn, enable: AdvancedAi::enable_retainers_garrison_the_short_cities, disable: AdvancedAi::disable_retainers_garrison_the_short_cities },
+    // `pillaged-districts-repair-first`: 26 of 63 lane seats had a pillaged
+    // district (77 spells, a median 10 turns, 19 never repaired by t150). The
+    // repair is priced 1,500 but the claim genes take the queue first; live
+    // civvis-20261101T024926Z lost the Prophet race on a Holy Site pillaged
+    // from t30 to t66. The repair now claims its city after every other claim.
+    // See `advanced/pillaged_repairs_first.rs`.
+    Gene { tag: "pillaged-districts-repair-first", field: "pillaged_districts_repair_first", kind: Kind::OptIn, enable: AdvancedAi::enable_pillaged_districts_repair_first, disable: AdvancedAi::disable_pillaged_districts_repair_first },
+    // Live Emperor civvis-20261101T043921Z launched its Exoplanet first (214)
+    // and lost at 224: at turn 180 two racers had their Moon landed, the
+    // launcher war's tie went to the lower seat (Georgia, 60 techs), and
+    // Hungary (64 techs, 387 Science against 267, at half our power) won on
+    // laser stations. A tie now goes to the racer knowing more techs. Needs
+    // `launcher-war-serves-every-lane`. See `advanced/launcher_war_every_lane.rs`.
+    Gene { tag: "launcher-war-fights-the-faster-racer", field: "launcher_war_fights_the_faster_racer", kind: Kind::OptIn, enable: AdvancedAi::enable_launcher_war_fights_the_faster_racer, disable: AdvancedAi::disable_launcher_war_fights_the_faster_racer },
     // `fog-yields-to-a-stranded-settler`: live civvis-20261101T042616Z held
     // three cities t40-t127 with a Settler stranded t44-t177, 49 sites refused
     // as "beyond the empire's Loyalty reach on ground the seat has not

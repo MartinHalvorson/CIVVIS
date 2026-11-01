@@ -7933,7 +7933,16 @@ pub struct AdvancedAi {
     /// city target keeps the land grab's land-aware horizon. See
     /// `advanced/land_grab_outlasts.rs`.
     land_grab_outlasts_the_opening: bool,
+    /// `launcher-war-fights-the-faster-racer`: a tie between space racers
+    /// with the same projects landed goes to the one knowing more techs, not
+    /// the lower seat. See `advanced/launcher_war_every_lane.rs`. Off by
+    /// default.
+    launcher_war_fights_the_faster_racer: bool,
     // ---- append: p-r ------------------------------------------------
+    /// `pillaged-districts-repair-first`: a pillaged district's repair claims its
+    /// city after every other claim. See `advanced/pillaged_repairs_first.rs`.
+    /// Off by default.
+    pillaged_districts_repair_first: bool,
     /// `religion-lane-hands-over`: a Religion-target seat with no religion,
     /// no Prophet pending and every slot claimed retargets to Science (else
     /// Culture, else Domination). See `advanced/religion_lane_hands_over.rs`.
@@ -10275,6 +10284,8 @@ mod government_plaza;
 /// `paused-district-finishes`: a foundation the host quotes at two turns or
 /// less finishes first at full health. See `advanced/paused_district_finish.rs`.
 mod paused_district_finish;
+/// `pillaged-districts-repair-first`: see `advanced/pillaged_repairs_first.rs`.
+mod pillaged_repairs_first;
 mod prophet_race_points;
 /// `prophet-builds-its-site`: a Great Prophet never waits for its Holy Site,
 /// and the race stops paying once the host has no Prophet left. See
@@ -11638,7 +11649,9 @@ impl AdvancedAi {
             opening_builder_after_the_first_settler: false,
             naval_crossing_keeps_going: false,
             land_grab_outlasts_the_opening: false,
+            launcher_war_fights_the_faster_racer: false,
             // ---- append: p-r ----------------------------------------
+            pillaged_districts_repair_first: false,
             religion_lane_hands_over: false,
             religion_race_keeps_expanding: false,
             religion_seat_founds_first: false,
@@ -50479,6 +50492,11 @@ impl AdvancedAi {
             // `prophet-race-earns-its-points`: the race's Holy Site city
             // starts its Shrine. Exact no-op while the gene is off.
             self.reserve_race_shrine(g, pid, &plan);
+            // `pillaged-districts-repair-first`: a pillaged district's repair,
+            // after every claim above so none of them takes the queue back.
+            // Exact no-op while the gene is off. See
+            // `advanced/pillaged_repairs_first.rs`.
+            self.claim_pillaged_repairs(g, pid);
             // Emergency and victory reservations have had their turn. Reclaim
             // useful interrupted work before either routine governor fills
             // the remaining idle cities with unrelated new investments.
