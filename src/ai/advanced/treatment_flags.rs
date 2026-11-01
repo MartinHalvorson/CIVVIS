@@ -9013,6 +9013,17 @@ impl AdvancedAi {
         self.base.disable_launch_pad_resumes_its_foundation();
     }
 
+    /// Opt-in gene `science-drive-answers-from-the-pad`; see
+    /// [`Self::science_drive_answers_from_the_pad`].
+    pub fn enable_science_drive_answers_from_the_pad(&mut self) {
+        self.science_drive_answers_from_the_pad = true;
+    }
+
+    /// The twin of `enable_science_drive_answers_from_the_pad`.
+    pub fn disable_science_drive_answers_from_the_pad(&mut self) {
+        self.science_drive_answers_from_the_pad = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

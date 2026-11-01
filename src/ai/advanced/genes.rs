@@ -4629,6 +4629,16 @@ pub const GENES: &[Gene] = &[
     // lapsed (250), so the strategic controller never resumes it. 043921Z: placed t161, finished t193 (8 turns on it),
     // Satellite 36 turns behind the leader. See `unfinished_launch_pad_site`.
     Gene { tag: "launch-pad-keeps-its-rung", field: "launch_pad_keeps_its_rung", kind: Kind::OptIn, enable: AdvancedAi::enable_launch_pad_keeps_its_rung, disable: AdvancedAi::disable_launch_pad_keeps_its_rung },
+    // Live King civvis-20261101T075446Z (Religion) led the space race to Mars
+    // (Satellite 208, Moon 215, against the Ottomans' 215 and 224) on 320
+    // science against 394, so `science-drive-answers-the-launch`, which opens
+    // on an outright science lead, never drove: research stayed on the war
+    // plan, Smart Materials came at 227, our Exoplanet launched at 240 against
+    // theirs at 236, and the Ottomans won at 245. The answer now also opens
+    // and holds while our landed projects are level with the leading racer's.
+    // Needs `science-victory-drive` and `science-drive-answers-the-launch`.
+    // See `advanced/science_victory_drive.rs`.
+    Gene { tag: "science-drive-answers-from-the-pad", field: "science_drive_answers_from_the_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_science_drive_answers_from_the_pad, disable: AdvancedAi::disable_science_drive_answers_from_the_pad },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

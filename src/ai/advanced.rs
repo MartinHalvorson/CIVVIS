@@ -9055,6 +9055,11 @@ pub struct AdvancedAi {
     /// only the most pressing science threat, the leading racer the launcher
     /// war answers. See `advanced/science_threat_denial.rs`. Off by default.
     science_denounce_names_the_leader: bool,
+    /// `science-drive-answers-from-the-pad`: the answer to a rival's space
+    /// race also opens and holds while our own landed projects are level with
+    /// the leading racer's. See `advanced/science_victory_drive.rs`. Off by
+    /// default.
+    science_drive_answers_from_the_pad: bool,
     // ---- append: t-z ------------------------------------------------
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
@@ -11882,6 +11887,7 @@ impl AdvancedAi {
             settler_founds_under_raiders: false,
             science_seat_allies: false,
             science_denounce_names_the_leader: false,
+            science_drive_answers_from_the_pad: false,
             // ---- append: t-z ----------------------------------------
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,

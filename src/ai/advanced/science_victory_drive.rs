@@ -442,9 +442,14 @@ impl AdvancedAi {
         }
         let standing = Self::science_standing(g, pid);
         let adaptive_science_plan = self.adaptive_science_plan(g, pid);
+        // `science-drive-answers-from-the-pad`: the answer also opens, and
+        // holds, while our own landed projects are level with the leading
+        // racer's, whatever the science reading.
+        let from_the_pad = answering && self.answer_holds_the_pad(g, pid);
         let driving = assigned
             || portfolio_science
             || adaptive_science_plan
+            || from_the_pad
             || match self.science_drive {
                 Some(_) if self.science_victory_drive_2 => standing.holds_v2(),
                 Some(_) => standing.holds(),
@@ -476,7 +481,11 @@ impl AdvancedAi {
                    if assigned {
                        "the assigned lane"
                    } else if answering {
-                       "a rival's space race, answered beside the assigned lane"
+                       if from_the_pad && !standing.leads_outright() {
+                           "science-drive-answers-from-the-pad: our own pads level with the racer's, answered beside the assigned lane"
+                       } else {
+                           "a rival's space race, answered beside the assigned lane"
+                       }
                    } else if adaptive_science_plan {
                        "the public Science focus"
                    } else {
@@ -494,6 +503,35 @@ impl AdvancedAi {
             assigned,
             answering,
         });
+    }
+
+    /// `science-drive-answers-from-the-pad`: whether our own space race is
+    /// level with the field's: at least one project landed, and as many as
+    /// any met, living rival major. The answer opens on an outright science
+    /// lead, which a seat already level on the pads can lack. Live King
+    /// civvis-20261101T075446Z (Religion) landed its Satellite at 208 and its
+    /// Moon at 215, ahead of the Ottomans (215, 224), with 320 science against
+    /// 394: no drive opened, research stayed on the war plan (Predictive
+    /// Systems over Smart Materials at 212), Smart Materials came at 227, our
+    /// Exoplanet launched at 240 against theirs at 236, and the Ottomans won
+    /// at 245. 071051Z, whose answer opened on an outright lead at 181, won.
+    /// `false` with the gene off.
+    pub(super) fn answer_holds_the_pad(&self, g: &Game, pid: usize) -> bool {
+        if !self.science_drive_answers_from_the_pad {
+            return false;
+        }
+        let ours = Self::science_denial_stages(g, pid);
+        ours >= 1
+            && g.players
+                .iter()
+                .filter(|rival| {
+                    rival.id != pid
+                        && rival.alive
+                        && !rival.is_minor
+                        && !rival.is_barbarian
+                        && g.has_met(pid, rival.id)
+                })
+                .all(|rival| Self::science_denial_stages(g, rival.id) <= ours)
     }
 
     /// `science-drive-answers-the-launch`: whether a met, living rival major
@@ -998,6 +1036,9 @@ impl AdvancedAi {
         }
     }
 }
+
+#[cfg(test)]
+mod pad_tests;
 
 #[cfg(test)]
 mod tests {
