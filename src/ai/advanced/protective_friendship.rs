@@ -227,12 +227,22 @@ impl AdvancedAi {
         // friendship only from FRIENDLY; a colder one would refuse, and the
         // bridge would decline to ask. Absent on a native board, so nothing
         // changes there.
-        if !rival
+        if let Some(state) = rival
             .observed_diplomatic_state
             .get(&pid)
-            .is_none_or(|state| state == "FRIENDLY")
+            .filter(|state| *state != "FRIENDLY")
         {
-            return Some("their attitude toward us is colder than FRIENDLY, and the host befriends only from FRIENDLY");
+            // `friendship-keeps-the-peace`: our clock reads a friendship
+            // lapsed the turn before the host ends it, so on that turn the
+            // host still reads it as standing. Live King
+            // civvis-20261101T112906Z journalled Egypt as colder than
+            // FRIENDLY at t50, t71, t92 and on, each a turn before the host
+            // read FRIENDLY and the renewal landed (t51, t72, t93, ...).
+            return Some(if matches!(state.as_str(), "DECLARED_FRIEND" | "ALLIED") {
+                "the host still counts the friendship as standing; it ends next turn"
+            } else {
+                "their attitude toward us is colder than FRIENDLY, and the host befriends only from FRIENDLY"
+            });
         }
         // `friendship-ends-at-the-race`: a rival racing to win is left to the
         // counter once the friendship lapses.
@@ -742,13 +752,13 @@ mod tests {
     /// journalled with the gate that holds it. Seat 1's friendship lapses at
     /// 31 while the host reads its attitude toward us as NEUTRAL: it is not
     /// renewed, and the line names the attitude; off the gene, nothing is
-    /// written.
+    /// written. A host that still reads DECLARED_FRIEND is named as standing.
     #[test]
     fn a_lapsed_friend_held_back_is_journalled_with_its_gate() {
         use crate::ai::advanced::VictoryTarget;
         use crate::ai::Ai;
         use crate::reasoning::Journal;
-        let run = |gene: bool| {
+        let run = |gene: bool, state: &str| {
             let mut game = three_majors();
             let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
             let journal = Journal::recording();
@@ -766,7 +776,7 @@ mod tests {
             game.players[1].friends_until.remove(&0);
             game.players[1]
                 .observed_diplomatic_state
-                .insert(0, "NEUTRAL".to_string());
+                .insert(0, state.to_string());
             ai.propose_protective_friendship(&mut game, 0);
             let renewed = game
                 .pending_deals
@@ -781,7 +791,7 @@ mod tests {
                 .collect();
             (renewed, held)
         };
-        let (renewed, held) = run(true);
+        let (renewed, held) = run(true, "NEUTRAL");
         assert!(!renewed, "a NEUTRAL leader is not asked");
         assert_eq!(
             held.len(),
@@ -793,9 +803,19 @@ mod tests {
             "the line names the gate: {}",
             held[0]
         );
-        let (renewed, held) = run(false);
+        let (renewed, held) = run(false, "NEUTRAL");
         assert!(!renewed);
         assert!(held.is_empty(), "off, nothing is written: {held:?}");
+        // The turn before the host ends the friendship it still reads
+        // DECLARED_FRIEND: named as standing, not as cold.
+        let (renewed, held) = run(true, "DECLARED_FRIEND");
+        assert!(!renewed);
+        assert_eq!(held.len(), 1, "{held:?}");
+        assert!(
+            held[0].contains("still counts the friendship as standing"),
+            "{}",
+            held[0]
+        );
     }
 
     #[test]

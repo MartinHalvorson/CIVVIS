@@ -4644,6 +4644,12 @@ pub const GENES: &[Gene] = &[
     // Needs `science-victory-drive` and `science-drive-answers-the-launch`.
     // See `advanced/science_victory_drive.rs`.
     Gene { tag: "science-drive-answers-from-the-pad", field: "science_drive_answers_from_the_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_science_drive_answers_from_the_pad, disable: AdvancedAi::disable_science_drive_answers_from_the_pad },
+    // `culture-digs-one-museum`: the two Museums tie and the base AI breaks
+    // toward Art, so a Culture seat never owns an Artifact slot (live King
+    // culture seat 091422Z: 66 Art Museum orders, no Archaeologist, lost t237
+    // 82 visitors short). One Archaeological Museum opens the dig line. See
+    // `advanced/culture_dig_museum.rs`.
+    Gene { tag: "culture-digs-one-museum", field: "culture_digs_one_museum", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_digs_one_museum, disable: AdvancedAi::disable_culture_digs_one_museum },
     // Live King civvis-20261101T095815Z (with v1 armed) landed its Moon at
     // 202, one project behind Gran Colombia's Mars at 203, so the level-pad
     // reading never held. Research ran the war plan until an outright
@@ -4673,6 +4679,12 @@ pub const GENES: &[Gene] = &[
     // Earth Satellite now commits any lane but Domination. See
     // `advanced/launch_commits_endgame.rs`.
     Gene { tag: "launch-commits-the-endgame", field: "launch_commits_the_endgame", kind: Kind::OptIn, enable: AdvancedAi::enable_launch_commits_the_endgame, disable: AdvancedAi::disable_launch_commits_the_endgame },
+    // Live King 2026-11-01: every game ended in a Science victory, and the
+    // Domination seat 073004Z held the whole tree with no pad (all three
+    // exclusions) while Korea won at t257. Within three techs of the field,
+    // once a rival has landed, the seat answers with its own race beside its
+    // war. See `advanced/domination_joins_the_race.rs`.
+    Gene { tag: "domination-joins-the-race", field: "domination_joins_the_race", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_joins_the_race, disable: AdvancedAi::disable_domination_joins_the_race },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

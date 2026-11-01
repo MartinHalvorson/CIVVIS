@@ -9035,6 +9035,16 @@ impl AdvancedAi {
         self.science_drive_answers_from_the_pad = false;
     }
 
+    /// Turn on `culture-digs-one-museum`. See [`Self::culture_digs_one_museum`].
+    pub fn enable_culture_digs_one_museum(&mut self) {
+        self.culture_digs_one_museum = true;
+    }
+
+    /// The twin of `enable_culture_digs_one_museum`.
+    pub fn disable_culture_digs_one_museum(&mut self) {
+        self.culture_digs_one_museum = false;
+    }
+
     /// Opt-in gene `science-drive-answers-from-the-pad-2`; see
     /// [`Self::science_drive_answers_from_the_pad_2`].
     pub fn enable_science_drive_answers_from_the_pad_2(&mut self) {
@@ -9066,6 +9076,17 @@ impl AdvancedAi {
     /// The twin of `enable_launch_commits_the_endgame`.
     pub fn disable_launch_commits_the_endgame(&mut self) {
         self.launch_commits_the_endgame = false;
+    }
+
+    /// Opt-in gene `domination-joins-the-race`; see
+    /// [`Self::domination_joins_the_race`].
+    pub fn enable_domination_joins_the_race(&mut self) {
+        self.domination_joins_the_race = true;
+    }
+
+    /// The twin of `enable_domination_joins_the_race`.
+    pub fn disable_domination_joins_the_race(&mut self) {
+        self.domination_joins_the_race = false;
     }
 
     // ---- append: a-b ------------------------------------------------
