@@ -252,10 +252,10 @@ fn two_racers() -> (Game, AdvancedAi) {
         g.record_contact(0, rival);
     }
     // Seat 1 knows twelve techs, seat 2 those twelve and four more.
-    let techs: Vec<Name> = g.rules.techs.keys().take(16).cloned().collect();
+    let techs: Vec<Name> = g.rules.techs.keys().take(16).copied().collect();
     for (i, tech) in techs.into_iter().enumerate() {
         if i < 12 {
-            g.players[1].techs.insert(tech.clone());
+            g.players[1].techs.insert(tech);
         }
         g.players[2].techs.insert(tech);
     }
