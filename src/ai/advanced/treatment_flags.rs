@@ -8989,6 +8989,17 @@ impl AdvancedAi {
         self.apostle_transit_keeps_the_cover = false;
     }
 
+    /// Opt-in gene `fog-yields-to-a-stranded-settler`; see
+    /// [`Self::fog_yields_to_a_stranded_settler`].
+    pub fn enable_fog_yields_to_a_stranded_settler(&mut self) {
+        self.fog_yields_to_a_stranded_settler = true;
+    }
+
+    /// The twin of `enable_fog_yields_to_a_stranded_settler`.
+    pub fn disable_fog_yields_to_a_stranded_settler(&mut self) {
+        self.fog_yields_to_a_stranded_settler = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
