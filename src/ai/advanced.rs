@@ -6458,6 +6458,10 @@ pub struct AdvancedAi {
     /// `advanced/culture_seat_allies.rs`. Off by default.
     culture_seat_allies: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `fog-yields-to-a-stranded-settler`: the fogged-frontier settle veto
+    /// yields once a Settler has walked fifteen turns. See
+    /// `advanced/fog_yields_stranded.rs`. Off by default.
+    fog_yields_to_a_stranded_settler: bool,
     /// `early-route-feeds-production`: within about 100 Online turns a
     /// route's Production outbids the foreign-Gold premium. See
     /// `advanced/early_route_production.rs`. Off by default.
@@ -9885,6 +9889,8 @@ mod formation_refusals;
 mod siege_resource_purchase;
 mod strategic_deposit_prey;
 
+/// `fog-yields-to-a-stranded-settler`: see `advanced/fog_yields_stranded.rs`.
+mod fog_yields_stranded;
 /// `food-focus-grows-the-small-city`: see `advanced/food_focus_grows_the_small_city.rs`.
 mod food_focus_grows_the_small_city;
 
@@ -11468,6 +11474,7 @@ impl AdvancedAi {
             culture_recovery_spends_the_bank: false,
             culture_seat_allies: false,
             // ---- append: e-f ----------------------------------------
+            fog_yields_to_a_stranded_settler: false,
             early_route_feeds_production: false,
             food_focus_grows_the_small_city: false,
             friendship_ends_at_the_race: false,
@@ -40732,7 +40739,12 @@ impl AdvancedAi {
                 ));
             }
         }
-        if self.frontier_loyalty && Self::beyond_loyalty_reach(g, pid, site) {
+        // `fog-yields-to-a-stranded-settler`: a Settler that has walked fifteen
+        // turns lifts this clause. See `advanced/fog_yields_stranded.rs`.
+        if self.frontier_loyalty
+            && Self::beyond_loyalty_reach(g, pid, site)
+            && !self.fog_veto_yields(g, pid)
+        {
             return Some(
                 "it lies beyond the empire's Loyalty reach on ground the seat has not \
                  explored, where the rivals that press it have never been seen"
@@ -40945,9 +40957,10 @@ impl AdvancedAi {
         if self.settler_never_idles {
             self.note_settler_idle(g, uid);
         }
-        if self.settle_sooner {
+        if self.settle_sooner || self.fog_yields_to_a_stranded_settler {
             // The walk clock starts the first turn the Settler is stepped,
-            // whichever branch below steps it. See `settle_sooner`.
+            // whichever branch below steps it. See `settle_sooner` and
+            // `advanced/fog_yields_stranded.rs`.
             self.settler_walk_started.entry(uid).or_insert(g.turn);
         }
         if let Some(sites) = self.settler_dead_sites.get_mut(&uid) {
@@ -41245,9 +41258,11 @@ impl AdvancedAi {
                 // ⚠ Priced BEFORE the apply, for the reason in the city branch.
                 let worth = self.settle_value(g, pid, current);
                 let yielded = self.hidden_border_yield_before_founding(g, pid, current);
+                let fogged = self.fog_yield_before_founding(g, pid, current);
                 let founded = g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
                 if founded {
                     self.note_hidden_border_founding(current, yielded);
+                    self.note_fog_founding(current, fogged);
                     think!(self.journal(), Expansion, Decision, "Founding the capital at {current:?}";
                            "the site is worth {:.1}", worth; current);
                 } else {
@@ -41663,9 +41678,11 @@ impl AdvancedAi {
             // it closed is gone.
             let contested = self.contested_land_front(g, pid, current);
             let yielded = self.hidden_border_yield_before_founding(g, pid, current);
+            let fogged = self.fog_yield_before_founding(g, pid, current);
             let founded = g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
             if founded {
                 self.note_hidden_border_founding(current, yielded);
+                self.note_fog_founding(current, fogged);
                 if let Some((front, credit)) = contested {
                     *g.players[pid]
                         .counters
@@ -42033,9 +42050,11 @@ impl AdvancedAi {
         self.settler_closest.remove(&uid);
         // ⚠ Journal AFTER the engine answers; see the capital branch.
         let yielded = self.hidden_border_yield_before_founding(g, pid, here);
+        let fogged = self.fog_yield_before_founding(g, pid, here);
         let founded = g.apply(pid, &Action::FoundCity { unit: uid }).is_ok();
         if founded {
             self.note_hidden_border_founding(here, yielded);
+            self.note_fog_founding(here, fogged);
             think!(self.journal(), Expansion, Decision,
                    "Founding where the settler stands at {here:?}";
                    "it stalled {SETTLER_STALL_LIMIT} turns short of a better site \
