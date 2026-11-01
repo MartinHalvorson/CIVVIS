@@ -1,5 +1,5 @@
 use super::*;
-use crate::game::Action;
+use crate::game::{Action, Item};
 
 fn culture_seat_with_a_city(enabled: bool) -> (AdvancedAi, Game, u32) {
     let mut game = Game::new_full(2, 30, 16, 79_104, 200, 0, false);
@@ -63,4 +63,14 @@ fn off_or_another_lane_adds_nothing() {
     let mut science = AdvancedAi::targeting(VictoryTarget::Science);
     science.enable_culture_digs_one_museum();
     assert_eq!(science.dig_museum_bonus(&game, 0, dig), 0.0, "science seat");
+}
+
+#[test]
+fn the_delegated_governor_lends_the_flag_only_to_a_culture_seat() {
+    let (ai, game, _) = culture_seat_with_a_city(true);
+    assert!(ai.dig_museum_lane_active(&game));
+
+    let mut science = AdvancedAi::targeting(VictoryTarget::Science);
+    science.enable_culture_digs_one_museum();
+    assert!(!science.dig_museum_lane_active(&game));
 }
