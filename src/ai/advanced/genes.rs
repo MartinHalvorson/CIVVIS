@@ -4623,6 +4623,12 @@ pub const GENES: &[Gene] = &[
     // fired. Once a Settler has walked fifteen turns the fog clause yields.
     // See `advanced/fog_yields_stranded.rs`.
     Gene { tag: "fog-yields-to-a-stranded-settler", field: "fog_yields_to_a_stranded_settler", kind: Kind::OptIn, enable: AdvancedAi::enable_fog_yields_to_a_stranded_settler, disable: AdvancedAi::disable_fog_yields_to_a_stranded_settler },
+    // Live Emperor 2026-10-31/11-01: one game in three that began a Spaceport
+    // left it for other builds. Once a claim borrows the queue, the placed
+    // foundation reads as a second pad (-10,000) and the first-pad rung has
+    // lapsed (250), so the strategic controller never resumes it. 043921Z: placed t161, finished t193 (8 turns on it),
+    // Satellite 36 turns behind the leader. See `unfinished_launch_pad_site`.
+    Gene { tag: "launch-pad-keeps-its-rung", field: "launch_pad_keeps_its_rung", kind: Kind::OptIn, enable: AdvancedAi::enable_launch_pad_keeps_its_rung, disable: AdvancedAi::disable_launch_pad_keeps_its_rung },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

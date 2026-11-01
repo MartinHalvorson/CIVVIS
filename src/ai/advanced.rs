@@ -7939,6 +7939,34 @@ pub struct AdvancedAi {
     /// city target keeps the land grab's land-aware horizon. See
     /// `advanced/land_grab_outlasts.rs`.
     land_grab_outlasts_the_opening: bool,
+    /// `launch-pad-keeps-its-rung`: the city holding the empire's unfinished
+    /// first Spaceport may resume it, and keeps the 3,000 first-pad rung
+    /// until a pad stands.
+    ///
+    /// A claim (a Spy for science denial, a Trader, a Neighborhood) takes the
+    /// pad city's queue for a turn or two and Civilization VI keeps the placed
+    /// foundation. Two rules then keep the strategic controller off it:
+    /// - the one-pad-per-city veto reads any placed foundation that is not at
+    ///   the head of the queue as a SECOND pad, so resuming the same
+    ///   foundation scores -10,000;
+    /// - `one_launch_pad` ends the rung "the moment a pad is on its way",
+    ///   including in the city building it, on the reading that it "does not
+    ///   need to be told twice", so even unvetoed the pad would compete at
+    ///   250 against every Bank and Stock Exchange.
+    ///
+    /// In the live game below the pad came back through the Great Person
+    /// activation path ("Resuming an activation path for a live Great
+    /// Person"), not the production valuation. The live seat's ordinary
+    /// production is the delegated governor's (`lane-delegates-production-2`),
+    /// so the gene also arms `BasicAi::launch_pad_resume_item`, which resumes
+    /// the city's own placed pad ahead of every economy step. Live Emperor
+    /// civvis-20261101T043921Z: St. Petersburg (70-120 Production) placed
+    /// the pad at t161 and finished it at t193, with 8 of those 32 turns on
+    /// the pad, and launched its Earth Satellite 36 turns after the leader's.
+    /// civvis-20261101T023248Z: Hyderabad left its pad at 79 of 900 on t159
+    /// for an AT Crew, a Bank, a power plant, a Stock Exchange and the Eiffel
+    /// Tower. See `unfinished_launch_pad_site`.
+    launch_pad_keeps_its_rung: bool,
     /// `launcher-war-fights-the-faster-racer`: a tie between space racers
     /// with the same projects landed goes to the one knowing more techs, not
     /// the lower seat. See `advanced/launcher_war_every_lane.rs`. Off by
@@ -11656,6 +11684,7 @@ impl AdvancedAi {
             opening_builder_after_the_first_settler: false,
             naval_crossing_keeps_going: false,
             land_grab_outlasts_the_opening: false,
+            launch_pad_keeps_its_rung: false,
             launcher_war_fights_the_faster_racer: false,
             // ---- append: p-r ----------------------------------------
             pillaged_districts_repair_first: false,
@@ -29372,6 +29401,27 @@ impl AdvancedAi {
         best.map(|(cid, _)| cid)
     }
 
+    /// See `launch_pad_keeps_its_rung`: the city carrying the empire's first
+    /// pad while it is still unfinished, placed on its tile or queued, and
+    /// no pad of ours stands. Of two such cities, the better producer.
+    /// `None` once any pad stands, or before one is begun.
+    pub(crate) fn unfinished_launch_pad_site(g: &Game, pid: usize) -> Option<u32> {
+        let mut best: Option<(u32, f64)> = None;
+        for cid in g.player_city_ids(pid) {
+            if Self::city_has_spaceport(g, cid) {
+                return None;
+            }
+            if !Self::city_has_spaceport_commitment(g, cid) {
+                continue;
+            }
+            let production = g.city_yields(cid).production;
+            if best.is_none_or(|(_, seen)| production > seen) {
+                best = Some((cid, production));
+            }
+        }
+        best.map(|(cid, _)| cid)
+    }
+
     /// A Science seat gets one Harbor as empire-wide support infrastructure,
     /// but a second one must not turn the victory lane into a coastal-district
     /// collection project. Count both completed and queued Harbors so every
@@ -36435,9 +36485,20 @@ impl AdvancedAi {
                             && matches!(queued, Item::District { district, .. }
                                 if g.district_family(*district) == "spaceport")
                     });
+                    // See `launch_pad_keeps_its_rung`: resuming the city's own
+                    // placed pad is not a second pad.
+                    let resumes_own_foundation = self.launch_pad_keeps_its_rung
+                        && matches!(item, Item::District { pos, .. }
+                        if g.map
+                            .get(*pos)
+                            .and_then(|tile| tile.district_foundation.as_ref())
+                            .is_some_and(|foundation| {
+                                g.district_family(foundation.district) == "spaceport"
+                            }));
                     if Self::city_has_spaceport(g, cid)
                         || (Self::city_has_spaceport_foundation(g, cid)
-                            && !current_queued_spaceport)
+                            && !current_queued_spaceport
+                            && !resumes_own_foundation)
                     {
                         // Multiple Spaceports are rules-legal, but one city
                         // can execute only one project at a time. Put
@@ -36692,6 +36753,15 @@ impl AdvancedAi {
 
                 let strategic_family = match (plan.strategy, family.as_str()) {
                     (GrandStrategy::Science, "spaceport") if !specialization_active => 0.0,
+                    // See `launch_pad_keeps_its_rung`: the pad already begun
+                    // keeps the first-pad rung in its own city until it
+                    // stands, so a claim that borrows the queue hands it back.
+                    (GrandStrategy::Science, "spaceport")
+                        if self.launch_pad_keeps_its_rung
+                            && Self::unfinished_launch_pad_site(g, pid) == Some(cid) =>
+                    {
+                        3_000.0
+                    }
                     // See `one_launch_pad`: the rung is empire-wide, so it
                     // belongs to one city — the one the race would actually be
                     // run in — and it lapses the moment a pad is on its way.
@@ -50763,6 +50833,8 @@ mod commercial_hub_queue_tests;
 mod growth_farm_tests;
 #[cfg(test)]
 mod industrial_zone_tests;
+#[cfg(test)]
+mod launch_pad_rung_tests;
 #[cfg(test)]
 mod urban_planning_slot_tests;
 #[cfg(test)]
