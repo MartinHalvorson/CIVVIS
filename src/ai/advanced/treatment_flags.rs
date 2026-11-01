@@ -8967,6 +8967,17 @@ impl AdvancedAi {
         self.pillaged_districts_repair_first = false;
     }
 
+    /// Opt-in gene `launcher-war-fights-the-faster-racer`; see
+    /// [`Self::launcher_war_fights_the_faster_racer`].
+    pub fn enable_launcher_war_fights_the_faster_racer(&mut self) {
+        self.launcher_war_fights_the_faster_racer = true;
+    }
+
+    /// The twin of `enable_launcher_war_fights_the_faster_racer`.
+    pub fn disable_launcher_war_fights_the_faster_racer(&mut self) {
+        self.launcher_war_fights_the_faster_racer = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -7929,6 +7929,11 @@ pub struct AdvancedAi {
     /// city target keeps the land grab's land-aware horizon. See
     /// `advanced/land_grab_outlasts.rs`.
     land_grab_outlasts_the_opening: bool,
+    /// `launcher-war-fights-the-faster-racer`: a tie between space racers
+    /// with the same projects landed goes to the one knowing more techs, not
+    /// the lower seat. See `advanced/launcher_war_every_lane.rs`. Off by
+    /// default.
+    launcher_war_fights_the_faster_racer: bool,
     // ---- append: p-r ------------------------------------------------
     /// `pillaged-districts-repair-first`: a pillaged district's repair claims its
     /// city after every other claim. See `advanced/pillaged_repairs_first.rs`.
@@ -11637,6 +11642,7 @@ impl AdvancedAi {
             opening_builder_after_the_first_settler: false,
             naval_crossing_keeps_going: false,
             land_grab_outlasts_the_opening: false,
+            launcher_war_fights_the_faster_racer: false,
             // ---- append: p-r ----------------------------------------
             pillaged_districts_repair_first: false,
             religion_lane_hands_over: false,
