@@ -9000,6 +9000,17 @@ impl AdvancedAi {
         self.fog_yields_to_a_stranded_settler = false;
     }
 
+    /// Opt-in gene `launch-commits-the-endgame`; see
+    /// [`Self::launch_commits_the_endgame`].
+    pub fn enable_launch_commits_the_endgame(&mut self) {
+        self.launch_commits_the_endgame = true;
+    }
+
+    /// The twin of `enable_launch_commits_the_endgame`.
+    pub fn disable_launch_commits_the_endgame(&mut self) {
+        self.launch_commits_the_endgame = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -4623,6 +4623,13 @@ pub const GENES: &[Gene] = &[
     // fired. Once a Settler has walked fifteen turns the fog clause yields.
     // See `advanced/fog_yields_stranded.rs`.
     Gene { tag: "fog-yields-to-a-stranded-settler", field: "fog_yields_to_a_stranded_settler", kind: Kind::OptIn, enable: AdvancedAi::enable_fog_yields_to_a_stranded_settler, disable: AdvancedAi::disable_fog_yields_to_a_stranded_settler },
+    // `launch-commits-the-endgame`: live civvis-20261101T075446Z (assigned
+    // Religion) tied the tree 77-77 and led every launch, then lost the
+    // Exoplanet leg by four turns: the science endgame admits a launched seat
+    // only while it has no assigned lane, so its schedule never ran. Our own
+    // Earth Satellite now commits any lane but Domination. See
+    // `advanced/launch_commits_endgame.rs`.
+    Gene { tag: "launch-commits-the-endgame", field: "launch_commits_the_endgame", kind: Kind::OptIn, enable: AdvancedAi::enable_launch_commits_the_endgame, disable: AdvancedAi::disable_launch_commits_the_endgame },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
