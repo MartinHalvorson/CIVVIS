@@ -25,7 +25,9 @@ impl AdvancedAi {
                     .science_projects
                     .contains("exoplanet_expedition")
                 || Self::science_project_is_queued(g, pid, "exoplanet_expedition")
-                || (self.raced_target().is_none()
+                // `launch-commits-the-endgame`: our own Earth Satellite commits
+                // an assigned lane too. See `advanced/launch_commits_endgame.rs`.
+                || ((self.raced_target().is_none() || self.our_launch_commits_the_endgame(g, pid))
                     && LAUNCHES
                         .iter()
                         .any(|project| g.players[pid].science_projects.contains(*project))))
@@ -38,7 +40,8 @@ impl AdvancedAi {
     /// completed Earth Satellite into an abandoned Moon Landing.
     pub(super) fn science_endgame_production_committed(&self, g: &Game, pid: usize) -> bool {
         self.science_endgame_lane_committed(g, pid)
-            && self.raced_target() == Some(VictoryTarget::Science)
+            && (self.raced_target() == Some(VictoryTarget::Science)
+                || self.our_launch_commits_the_endgame(g, pid))
             && LAUNCHES.iter().any(|project| {
                 g.players[pid].science_projects.contains(*project)
                     || Self::science_project_is_queued(g, pid, project)

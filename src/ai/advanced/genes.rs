@@ -4666,6 +4666,13 @@ pub const GENES: &[Gene] = &[
     // to that city, and the Spy trainer skips it.
     // See `advanced/launch_pad_holds_its_queue.rs`.
     Gene { tag: "launch-pad-holds-its-queue", field: "launch_pad_holds_its_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_launch_pad_holds_its_queue, disable: AdvancedAi::disable_launch_pad_holds_its_queue },
+    // `launch-commits-the-endgame`: live civvis-20261101T075446Z (assigned
+    // Religion) tied the tree 77-77 and led every launch, then lost the
+    // Exoplanet leg by four turns: the science endgame admits a launched seat
+    // only while it has no assigned lane, so its schedule never ran. Our own
+    // Earth Satellite now commits any lane but Domination. See
+    // `advanced/launch_commits_endgame.rs`.
+    Gene { tag: "launch-commits-the-endgame", field: "launch_commits_the_endgame", kind: Kind::OptIn, enable: AdvancedAi::enable_launch_commits_the_endgame, disable: AdvancedAi::disable_launch_commits_the_endgame },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

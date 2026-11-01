@@ -7423,6 +7423,10 @@ pub struct AdvancedAi {
     /// city of ours. See `advanced/defensive_apostle.rs`. Off by default.
     inquisition_answers_a_rival_majority: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `launch-commits-the-endgame`: our own Earth Satellite commits an assigned
+    /// Religion or Culture seat to the science endgame. See
+    /// `advanced/launch_commits_endgame.rs`. Off by default.
+    launch_commits_the_endgame: bool,
     /// `launcher-war-serves-every-lane`: off Domination, the space racer
     /// the launcher war would open on is the denial counter, with war,
     /// before every other clock. See `advanced/launcher_war_every_lane.rs`.
@@ -10293,6 +10297,8 @@ mod industrial_zone_claims_the_factory;
 /// Industrial Zone or Workshop claims its city's queue. See
 /// `advanced/industrial_zone_claims_the_producer_queue.rs`.
 mod industrial_zone_claims_the_producer_queue;
+/// `launch-commits-the-endgame`: see `advanced/launch_commits_endgame.rs`.
+mod launch_commits_endgame;
 mod launcher_war;
 /// `launcher-war-serves-every-lane`: see `advanced/launcher_war_every_lane.rs`.
 mod launcher_war_every_lane;
@@ -11640,6 +11646,7 @@ impl AdvancedAi {
             inquisition_defends_the_diplomat: false,
             inquisition_answers_a_rival_majority: false,
             // ---- append: l-o ----------------------------------------
+            launch_commits_the_endgame: false,
             launcher_war_serves_every_lane: false,
             nuclear_goal_needs_a_launcher: false,
             launcher_war_skips_the_reserve: false,
