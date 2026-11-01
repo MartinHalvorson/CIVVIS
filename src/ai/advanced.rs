@@ -7119,6 +7119,13 @@ pub struct AdvancedAi {
     /// on the Diplomacy lane too. See `faith_war_lane` in
     /// `advanced/counterweight_diplomat.rs`.
     faith_war_defends_the_diplomat: bool,
+    /// `friendship-keeps-the-peace`: off the Domination lane a lapsing
+    /// friendship is renewed at once and the Domination filters do not
+    /// apply. See `advanced/protective_friendship.rs`. Off by default.
+    friendship_keeps_the_peace: bool,
+    /// `friendship-keeps-the-peace`: the last expiry seen for each declared
+    /// friendship, kept after the mirror drops it.
+    friendship_expiry_seen: std::cell::RefCell<BTreeMap<usize, u32>>,
     // ---- append: g-k ------------------------------------------------
     /// `immortal-skips-the-prophet-race`: at Immortal and Deity a seat not
     /// aiming at Religion stays out of the Prophet race. See
@@ -11500,6 +11507,8 @@ impl AdvancedAi {
             forward_airfield_project: false,
             forward_airfield_project_state: None,
             faith_war_defends_the_diplomat: false,
+            friendship_keeps_the_peace: false,
+            friendship_expiry_seen: std::cell::RefCell::new(BTreeMap::new()),
             // ---- append: g-k ----------------------------------------
             immortal_skips_the_prophet_race: false,
             hidden_border_yields_to_our_pressure: false,

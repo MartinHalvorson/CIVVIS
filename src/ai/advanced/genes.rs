@@ -4581,6 +4581,13 @@ pub const GENES: &[Gene] = &[
     // 99 t80 seats holding it, Retainers in 18 of 89. The deck prices each
     // city's growth surplus. See `BasicAi::deck_prices_growth`.
     Gene { tag: "deck-prices-growth", field: "deck_prices_growth", kind: Kind::OptIn, enable: AdvancedAi::enable_deck_prices_growth, disable: AdvancedAi::disable_deck_prices_growth },
+    // 24 live Immortal 6-major seats (2026-10-31, non-Diplomatic lanes): 34
+    // declared friendships, 22 lapsed unrenewed, and 9 lapsed friends later
+    // declared war on us (t109-t200). Off Domination, a lapsing friendship is
+    // renewed at once (the host reads Friendly for about a turn after the
+    // lapse) and the Domination-era stronger/prey filters do not apply. See
+    // `advanced/protective_friendship.rs`.
+    Gene { tag: "friendship-keeps-the-peace", field: "friendship_keeps_the_peace", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_keeps_the_peace, disable: AdvancedAi::disable_friendship_keeps_the_peace },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
