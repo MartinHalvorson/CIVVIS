@@ -4594,6 +4594,13 @@ pub const GENES: &[Gene] = &[
     // city, 72-79% within three tiles of one. An idle soldier garrisons each
     // short city while Retainers is slotted. See `ai/retainers_garrison.rs`.
     Gene { tag: "retainers-garrison-the-short-cities", field: "retainers_garrison_the_short_cities", kind: Kind::OptIn, enable: AdvancedAi::enable_retainers_garrison_the_short_cities, disable: AdvancedAi::disable_retainers_garrison_the_short_cities },
+    // `fog-yields-to-a-stranded-settler`: live civvis-20261101T042616Z held
+    // three cities t40-t127 with a Settler stranded t44-t177, 49 sites refused
+    // as "beyond the empire's Loyalty reach on ground the seat has not
+    // explored"; the hidden-border yield sits below that clause and never
+    // fired. Once a Settler has walked fifteen turns the fog clause yields.
+    // See `advanced/fog_yields_stranded.rs`.
+    Gene { tag: "fog-yields-to-a-stranded-settler", field: "fog_yields_to_a_stranded_settler", kind: Kind::OptIn, enable: AdvancedAi::enable_fog_yields_to_a_stranded_settler, disable: AdvancedAi::disable_fog_yields_to_a_stranded_settler },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
