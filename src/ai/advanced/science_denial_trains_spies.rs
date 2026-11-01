@@ -135,6 +135,9 @@ impl AdvancedAi {
                     && g.turn.saturating_sub(city.last_attacked) <= SPY_CLAIM_ATTACK_MEMORY;
                 plan.threatened_city != Some(*cid)
                     && !attacked
+                    // `launch-pad-holds-its-queue`: the first pad keeps its
+                    // city; the Spy trains in the next-best one.
+                    && !self.launch_pad_holds_city(g, pid, *cid)
                     && city
                         .queue
                         .first()
