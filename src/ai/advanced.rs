@@ -5529,6 +5529,9 @@ pub struct AdvancedAi {
     /// default.
     apostle_transit_keeps_the_cover: bool,
     // ---- append: c-d ------------------------------------------------
+    /// `culture-digs-one-museum`: a Culture seat makes one Museum an
+    /// Archaeological Museum. See `advanced/culture_dig_museum.rs`. Off by default.
+    culture_digs_one_museum: bool,
     /// `culture-keeps-every-border-open-2`: version one, buying passage only
     /// from the bar holder. See `advanced/culture_open_borders.rs`. Off by default.
     culture_keeps_every_border_open_2: bool,
@@ -9932,6 +9935,7 @@ mod diplo_wonder_claim;
 /// `culture-seat-monuments`: see `advanced/culture_monuments.rs`.
 mod culture_monuments;
 /// `culture-keeps-every-border-open`: see `advanced/culture_open_borders.rs`.
+mod culture_dig_museum;
 mod culture_open_borders;
 
 /// `diplo-seat-statue-harbor`: see `advanced/diplo_statue_harbor.rs`.
@@ -11318,6 +11322,7 @@ impl AdvancedAi {
             anvil_garrisons_its_melee: false,
             apostle_transit_keeps_the_cover: false,
             // ---- append: c-d ----------------------------------------
+            culture_digs_one_museum: false,
             culture_keeps_every_border_open_2: false,
             domination_targets_land_first: false,
             defence_holds_under_fire: false,
@@ -17050,6 +17055,10 @@ impl AdvancedAi {
         .flatten();
         let restore_space_race = self.base.exclude_space_race;
         self.base.exclude_space_race = self.victory_target == Some(VictoryTarget::Domination);
+        // `culture-digs-one-museum`: the delegated governor picks this seat's
+        // Museums. Lent for the call; see `advanced/culture_dig_museum.rs`.
+        let restore_dig_museum = self.base.digs_one_museum;
+        self.base.digs_one_museum = self.dig_museum_lane_active(g);
         // `purchases-keep-the-upkeep-reserve`: the delegated governor's own
         // Gold pass bought the Lighthouse that, with a Shrine, took
         // civvis-20261013T220550Z to 17 Gold at turn 199. Lent for the call;
@@ -17078,6 +17087,7 @@ impl AdvancedAi {
             self.base.cities(g, pid);
             self.base.reserve_floor = restore_reserve_floor;
             self.base.exclude_space_race = restore_space_race;
+            self.base.digs_one_museum = restore_dig_museum;
             self.base.w.mil_per_city = restore_military;
             self.base.w.faith_builder = restore_faith_builder;
             self.base.lent_military_floor_base = None;
@@ -17110,6 +17120,7 @@ impl AdvancedAi {
         self.base.cities(g, pid);
         self.base.reserve_floor = restore_reserve_floor;
         self.base.exclude_space_race = restore_space_race;
+        self.base.digs_one_museum = restore_dig_museum;
         self.base.w.city_target = restore_target;
         self.base.w.settler_stop_turn = restore_stop;
         self.base.w.builder_per_city = restore_builders;
@@ -36431,6 +36442,7 @@ impl AdvancedAi {
                         + wartime_infrastructure_debt
                         + self.culture_floor_building_bonus(g, pid, spec)
                         + self.gold_floor_building_bonus(g, pid, *building, spec)
+                        + self.dig_museum_bonus(g, pid, *building)
                         + if building == "monument" && g.turn < 120 {
                             240.0
                         } else {
