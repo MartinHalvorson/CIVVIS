@@ -4679,6 +4679,12 @@ pub const GENES: &[Gene] = &[
     // Earth Satellite now commits any lane but Domination. See
     // `advanced/launch_commits_endgame.rs`.
     Gene { tag: "launch-commits-the-endgame", field: "launch_commits_the_endgame", kind: Kind::OptIn, enable: AdvancedAi::enable_launch_commits_the_endgame, disable: AdvancedAi::disable_launch_commits_the_endgame },
+    // Live King 2026-11-01: every game ended in a Science victory, and the
+    // Domination seat 073004Z held the whole tree with no pad (all three
+    // exclusions) while Korea won at t257. Within three techs of the field,
+    // once a rival has landed, the seat answers with its own race beside its
+    // war. See `advanced/domination_joins_the_race.rs`.
+    Gene { tag: "domination-joins-the-race", field: "domination_joins_the_race", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_joins_the_race, disable: AdvancedAi::disable_domination_joins_the_race },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
