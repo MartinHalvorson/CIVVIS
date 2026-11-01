@@ -8967,6 +8967,17 @@ impl AdvancedAi {
         self.pillaged_districts_repair_first = false;
     }
 
+    /// Opt-in gene `launch-pad-keeps-its-rung`; see
+    /// [`Self::launch_pad_keeps_its_rung`].
+    pub fn enable_launch_pad_keeps_its_rung(&mut self) {
+        self.launch_pad_keeps_its_rung = true;
+    }
+
+    /// The twin of `enable_launch_pad_keeps_its_rung`.
+    pub fn disable_launch_pad_keeps_its_rung(&mut self) {
+        self.launch_pad_keeps_its_rung = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
