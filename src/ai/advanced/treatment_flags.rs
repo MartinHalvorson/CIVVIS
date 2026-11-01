@@ -8967,6 +8967,17 @@ impl AdvancedAi {
         self.pillaged_districts_repair_first = false;
     }
 
+    /// Opt-in gene `science-buildings-lead-the-beeline`; see
+    /// [`Self::science_buildings_lead_the_beeline`].
+    pub fn enable_science_buildings_lead_the_beeline(&mut self) {
+        self.science_buildings_lead_the_beeline = true;
+    }
+
+    /// The twin of `enable_science_buildings_lead_the_beeline`.
+    pub fn disable_science_buildings_lead_the_beeline(&mut self) {
+        self.science_buildings_lead_the_beeline = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

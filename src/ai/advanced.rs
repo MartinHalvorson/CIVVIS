@@ -9012,6 +9012,22 @@ pub struct AdvancedAi {
     /// only the most pressing science threat, the leading racer the launcher
     /// war answers. See `advanced/science_threat_denial.rs`. Off by default.
     science_denounce_names_the_leader: bool,
+    /// `science-buildings-lead-the-beeline`: the Campus building our cities
+    /// are equipped for (`unreachable_science_building_tech`, the Research
+    /// Lab once a University stands) leads the Science victory beeline when
+    /// its technology lies on that beeline's own path.
+    ///
+    /// The goal existed but sat last, behind `science_victory_goal`, and a
+    /// Science seat beelines Rocketry from about turn 90, so it never took the
+    /// slot. Chemistry is a Rocketry prerequisite, so the beeline took it
+    /// anyway, but late: after Square Rigging, Mass Production,
+    /// Industrialization and Steam Power. Live 2026-11-01 (Emperor/King, 13
+    /// seats): Chemistry at t139-t213, 21-36 techs after Education when its
+    /// own path is about 10; Research Labs in no city at t150 in most seats,
+    /// and our Science per citizen 1.67 against the eventual winner's 2.95.
+    /// Only the order moves: the technology is one the beeline needs. Off by
+    /// default.
+    science_buildings_lead_the_beeline: bool,
     // ---- append: t-z ------------------------------------------------
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
@@ -11833,6 +11849,7 @@ impl AdvancedAi {
             settler_founds_under_raiders: false,
             science_seat_allies: false,
             science_denounce_names_the_leader: false,
+            science_buildings_lead_the_beeline: false,
             // ---- append: t-z ----------------------------------------
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,
@@ -19159,6 +19176,14 @@ impl AdvancedAi {
             } else {
                 None
             };
+            // See `science_buildings_lead_the_beeline`: only a technology on
+            // the beeline's own path, so the order moves and the path does not.
+            let beeline_building_goal = science_victory_goal
+                .filter(|_| self.science_buildings_lead_the_beeline)
+                .and_then(|goal| {
+                    self.unreachable_science_building_tech(g, pid)
+                        .filter(|tech| *tech != goal && self.tech_leads_to(g, tech, goal))
+                });
             if let Some(goal) = self.science_endgame_research_goal(g, pid) {
                 for tech in g.available_techs(pid) {
                     if self.tech_leads_to(g, &tech, goal) && !available.contains(&tech) {
@@ -19484,6 +19509,9 @@ impl AdvancedAi {
                 // about to land its target. See `boosted_bargain_tech_3`.
                 _ if bargain_goal_3.is_some() => bargain_goal_3.as_deref(),
                 _ if science_harbor_goal.is_some() => science_harbor_goal,
+                // `science-buildings-lead-the-beeline`: the Campus building the
+                // empire is equipped for goes first along its own beeline.
+                _ if beeline_building_goal.is_some() => beeline_building_goal,
                 _ if science_victory_goal.is_some() => science_victory_goal,
                 _ if great_person_goal.is_some() => great_person_goal.as_deref(),
                 _ if science_commitment && science_lane_active => {
@@ -19755,6 +19783,12 @@ impl AdvancedAi {
                                 format!(
                                     "the {step} step toward {}, needed to modernize the standing army at war",
                                     plain(goal)
+                                )
+                            } else if beeline_building_goal == Some(goal) {
+                                format!(
+                                    "science-buildings-lead-the-beeline: the {step} step toward {}, for the Campus building our cities are equipped for, on the way to {}",
+                                    plain(goal),
+                                    science_victory_goal.map(plain).unwrap_or_default()
                                 )
                             } else if domination_campus_goal == Some(goal) {
                                 "unlock campuses for the expanding domination economy".to_string()
@@ -50731,6 +50765,8 @@ mod commercial_hub_queue_tests;
 mod growth_farm_tests;
 #[cfg(test)]
 mod industrial_zone_tests;
+#[cfg(test)]
+mod science_beeline_tests;
 #[cfg(test)]
 mod urban_planning_slot_tests;
 #[cfg(test)]

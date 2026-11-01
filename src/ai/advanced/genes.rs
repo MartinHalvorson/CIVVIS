@@ -4601,6 +4601,12 @@ pub const GENES: &[Gene] = &[
     // from t30 to t66. The repair now claims its city after every other claim.
     // See `advanced/pillaged_repairs_first.rs`.
     Gene { tag: "pillaged-districts-repair-first", field: "pillaged_districts_repair_first", kind: Kind::OptIn, enable: AdvancedAi::enable_pillaged_districts_repair_first, disable: AdvancedAi::disable_pillaged_districts_repair_first },
+    // Live 2026-11-01 Emperor/King: the Science seat's Rocketry beeline took
+    // Chemistry at t139-t213, 21-36 techs after Education, so Research Labs
+    // stood in no city at t150 in most seats (Science per citizen 1.67 vs the
+    // winner's 2.95). The equipped Campus building's tech now leads the
+    // beeline when it lies on the path. See `science_buildings_lead_the_beeline`.
+    Gene { tag: "science-buildings-lead-the-beeline", field: "science_buildings_lead_the_beeline", kind: Kind::OptIn, enable: AdvancedAi::enable_science_buildings_lead_the_beeline, disable: AdvancedAi::disable_science_buildings_lead_the_beeline },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
