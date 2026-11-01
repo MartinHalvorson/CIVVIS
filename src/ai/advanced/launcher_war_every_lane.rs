@@ -36,7 +36,8 @@
 //! race, or none. A Conquest counter already chosen keeps its rival, so
 //! `counter-culture-by-conquest` against a nearer culture finish stands.
 //! Only the leading racer, the most launches landed, is fought; the lower
-//! seat breaks a tie. The declaration's own
+//! seat breaks a tie (with `launcher-war-fights-the-faster-racer`, the racer
+//! knowing more techs). The declaration's own
 //! gates (one war at a time, legality, reach) still hold. The plan's first
 //! objective is the pad city (`science-suppression-hits-the-pads`). Needs
 //! `launcher-war-ignores-the-edge`.
@@ -61,6 +62,25 @@ impl AdvancedAi {
             DIPLOMATIC_LAUNCHER_EDGE
         } else {
             LANE_LAUNCHER_EDGE
+        }
+    }
+
+    /// `launcher-war-fights-the-faster-racer`: the key that breaks a tie
+    /// between racers with the same projects landed, the racer who knows more
+    /// techs first. `0` with the gene off, so the lower seat breaks the tie
+    /// as before.
+    ///
+    /// Live Emperor civvis-20261101T043921Z, turn 180: Georgia (seat 3, 60
+    /// techs, 267 Science) and Hungary (seat 5, 64 techs, 387 Science) each
+    /// had their Moon landed, and the lower seat named Georgia. Hungary, at
+    /// half our power, landed Mars at 203, knew Offworld Mission first, and
+    /// its laser stations brought the Exoplanet home at 224, ten turns ahead
+    /// of ours, which launched first (214).
+    fn faster_racer_key(&self, g: &Game, rival: usize) -> usize {
+        if self.launcher_war_fights_the_faster_racer {
+            g.players[rival].techs.len()
+        } else {
+            0
         }
     }
 
@@ -138,6 +158,7 @@ impl AdvancedAi {
             .max_by_key(|rival| {
                 (
                     Self::science_denial_stages(g, rival.id),
+                    self.faster_racer_key(g, rival.id),
                     std::cmp::Reverse(rival.id),
                 )
             })

@@ -212,3 +212,124 @@ fn a_science_seat_fights_only_a_racer_ahead_of_it() {
     }
     assert_eq!(ai.launcher_lane_counter(&g, 0), None, "level: race in lane");
 }
+
+/// 043921Z at turn 180: two racers at peace, each with its Moon landed and a
+/// pad we have seen, our army well past both. Seat 1 knows the fewer techs,
+/// seat 2 the more.
+fn two_racers() -> (Game, AdvancedAi) {
+    let mut g = Game::new_full(3, 40, 30, 936302, 650, 0, false);
+    for uid in g.units.keys().copied().collect::<Vec<_>>() {
+        g.remove_unit(uid);
+    }
+    g.barb_camps.clear();
+    g.barb_naval_camps.clear();
+    for tile in g.map.tiles.values_mut() {
+        tile.terrain = crate::name!("grassland");
+        tile.feature = None;
+        tile.resource = None;
+        tile.hills = false;
+    }
+    g.found_city_for(0, (10, 14), None);
+    g.found_city_for(0, (12, 18), None);
+    for (rival, city_at, pad) in [(1, (24, 8), (22, 8)), (2, (24, 20), (22, 20))] {
+        let city = g.found_city_for(rival, city_at, None);
+        let tile = g.map.tiles.get_mut(&pad).unwrap();
+        tile.owner_city = Some(city);
+        tile.district = Some(crate::name!("spaceport"));
+        tile.improvement = None;
+        tile.pillaged = false;
+        g.cities
+            .get_mut(&city)
+            .unwrap()
+            .districts
+            .insert(crate::name!("spaceport"), pad);
+        g.players[0].explored.insert(pad);
+        for project in ["launch_earth_satellite", "launch_moon_landing"] {
+            g.players[rival]
+                .science_projects
+                .insert(project.to_string());
+        }
+        g.record_contact(0, rival);
+    }
+    // Seat 1 knows twelve techs, seat 2 those twelve and four more.
+    let techs: Vec<Name> = g.rules.techs.keys().take(16).copied().collect();
+    for (i, tech) in techs.into_iter().enumerate() {
+        if i < 12 {
+            g.players[1].techs.insert(tech);
+        }
+        g.players[2].techs.insert(tech);
+    }
+    for at in [
+        (14, 12),
+        (14, 14),
+        (14, 16),
+        (15, 13),
+        (15, 15),
+        (13, 13),
+        (13, 15),
+        (12, 14),
+        (16, 14),
+        (16, 16),
+    ] {
+        g.spawn_test_unit("cavalry", 0, at);
+    }
+    for at in [(28, 6), (28, 8)] {
+        g.spawn_test_unit("cavalry", 1, at);
+    }
+    for at in [(28, 20), (28, 22)] {
+        g.spawn_test_unit("cavalry", 2, at);
+    }
+    g.current = 0;
+    g.turn = 180;
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    ai.enable_launcher_war_ignores_the_edge();
+    ai.enable_launcher_war_serves_every_lane();
+    (g, ai)
+}
+
+#[test]
+fn launcher_war_fights_the_faster_racer_is_opt_in() {
+    opt_in_off_in_both_controllers("launcher-war-fights-the-faster-racer", |ai| {
+        ai.launcher_war_fights_the_faster_racer
+    });
+}
+
+/// 043921Z: the tie between two racers past their Moon went to the lower
+/// seat; under the gene it goes to the racer knowing more techs, and a lead
+/// in projects still outranks techs.
+#[test]
+fn a_tie_goes_to_the_racer_knowing_more_techs() {
+    let (mut g, mut ai) = two_racers();
+    assert!(
+        g.players[2].techs.len() > g.players[1].techs.len(),
+        "fixture: seat 2 knows more"
+    );
+    assert!(
+        ai.launcher_war_opens(&g, 0, 1),
+        "fixture: seat 1 is fightable"
+    );
+    assert!(
+        ai.launcher_war_opens(&g, 0, 2),
+        "fixture: seat 2 is fightable"
+    );
+    assert_eq!(
+        ai.launcher_lane_counter(&g, 0),
+        Some((1, GrandStrategy::Conquest)),
+        "off: the lower seat"
+    );
+    ai.enable_launcher_war_fights_the_faster_racer();
+    assert_eq!(
+        ai.launcher_lane_counter(&g, 0),
+        Some((2, GrandStrategy::Conquest)),
+        "on: the racer knowing more techs"
+    );
+    // A project ahead still outranks techs.
+    g.players[1]
+        .science_projects
+        .insert("launch_mars_colony".to_string());
+    assert_eq!(
+        ai.launcher_lane_counter(&g, 0),
+        Some((1, GrandStrategy::Conquest)),
+        "the racer a project ahead"
+    );
+}
