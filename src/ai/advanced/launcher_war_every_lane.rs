@@ -91,7 +91,9 @@ impl AdvancedAi {
     /// 050026Z (5.2x Scythia's power at 175, its Moon landed) left no line
     /// naming the gate that held it.
     fn journal_launcher_gate(&self, g: &Game, pid: usize, lead: usize) {
-        if lead < LAUNCHER_WAR_STAGES || !self.journal().wants(crate::reasoning::Level::Detail) {
+        if lead < super::launcher_war::LAUNCHER_WAR_STAGES
+            || !self.journal().wants(crate::reasoning::Level::Detail)
+        {
             return;
         }
         for rival in g.players.iter().filter(|rival| {
