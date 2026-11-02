@@ -1,0 +1,381 @@
+{
+  "schema": 1,
+  "scope": "Native observation and host-harness actuation regression, no native execution or strength estimate",
+  "source": {
+    "head": "48a75679796ebc8c06e3801ee9426a0b44329e6d",
+    "base_main": "bedefb280e9d052d302134fa99883fe59e098bd4",
+    "recorded_utc": "2026-11-02T22:55:51.908002+00:00",
+    "files": {
+      "tools/civ6_control/mod/CivvisControlAgent.lua": "d4ee927cbd0b707280f926b8eaf542d68aec40abf6fa68306f0a42d14f95d448",
+      "tools/civ6_control/mod/host_board_test.lua": "fb602130aa02eef8691e10b28e07729c2c023a6f04dfe6a3f972aecfcf6e7210",
+      "docs/eval/2026-11-02-builder-naval-distance.extract.py": "a03433f6c6ca67381a2a4f369a2aeb1be35977515f9a3924fa18b7587455ce75"
+    },
+    "lua_runtime": "lupa.lua51"
+  },
+  "observations": {
+    "run": "civvis-20261102T202907Z",
+    "source": "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261102T202907Z/events.jsonl",
+    "source_bytes": 18877534,
+    "source_sha256": "18fdeab0e79248fe9d7007c3e458fcc405943d0c367f3ac4ceaf04f71ca76525",
+    "scope": "Native observation slices, not host execution or a production/strength estimate.",
+    "cases": [
+      {
+        "turn": 96,
+        "hold": {
+          "builder": 2490377,
+          "builder_reach": "path",
+          "ctx": "agent",
+          "from": [
+            26,
+            31
+          ],
+          "hostile": 8519700,
+          "hostile_pos": [
+            29,
+            31
+          ],
+          "hostile_reach": "base_moves",
+          "hostile_type": "UNIT_CARAVEL",
+          "kind": "builder_barbarian_capture_hold",
+          "run": "civvis-20261102T202907Z",
+          "sent": [
+            27,
+            31
+          ],
+          "t": 1793651640,
+          "turn": 96,
+          "utc": "2026-11-02T20:34:00.780Z",
+          "want": [
+            27,
+            31
+          ]
+        },
+        "hold_line": 7047,
+        "tile": {
+          "ap": 1,
+          "cl": -1,
+          "ct": "CONTINENT_PANNOTIA",
+          "flooded": false,
+          "fw": false,
+          "i": false,
+          "o": 0,
+          "oc": 131073,
+          "r": "RESOURCE_IRON",
+          "ri": false,
+          "rv": 0,
+          "submerged": false,
+          "t": "TERRAIN_DESERT_HILLS",
+          "vis": true,
+          "w": false,
+          "x": 27,
+          "y": 31,
+          "yl": [
+            0,
+            1,
+            0,
+            1,
+            0,
+            0
+          ]
+        },
+        "tile_line": 7042,
+        "state_line": 7038,
+        "state_turn": 96,
+        "city_centers": [],
+        "owned_districts_on_destination": [],
+        "owned_plain_land": true
+      },
+      {
+        "turn": 97,
+        "hold": {
+          "builder": 2490377,
+          "builder_reach": "path",
+          "ctx": "agent",
+          "from": [
+            26,
+            31
+          ],
+          "hostile": 8519700,
+          "hostile_pos": [
+            30,
+            33
+          ],
+          "hostile_reach": "base_moves",
+          "hostile_type": "UNIT_CARAVEL",
+          "kind": "builder_barbarian_capture_hold",
+          "run": "civvis-20261102T202907Z",
+          "sent": [
+            27,
+            31
+          ],
+          "t": 1793651644,
+          "turn": 97,
+          "utc": "2026-11-02T20:34:04.567Z",
+          "want": [
+            27,
+            31
+          ]
+        },
+        "hold_line": 7188,
+        "tile": {
+          "ap": 1,
+          "cl": -1,
+          "ct": "CONTINENT_PANNOTIA",
+          "flooded": false,
+          "fw": false,
+          "i": false,
+          "o": 0,
+          "oc": 131073,
+          "r": "RESOURCE_IRON",
+          "ri": false,
+          "rv": 0,
+          "submerged": false,
+          "t": "TERRAIN_DESERT_HILLS",
+          "vis": true,
+          "w": false,
+          "x": 27,
+          "y": 31,
+          "yl": [
+            0,
+            1,
+            0,
+            1,
+            0,
+            0
+          ]
+        },
+        "tile_line": 7042,
+        "state_line": 7175,
+        "state_turn": 97,
+        "city_centers": [],
+        "owned_districts_on_destination": [],
+        "owned_plain_land": true
+      },
+      {
+        "turn": 108,
+        "hold": {
+          "builder": 2752516,
+          "builder_reach": "path",
+          "ctx": "agent",
+          "from": [
+            23,
+            35
+          ],
+          "hostile": 9109514,
+          "hostile_pos": [
+            27,
+            39
+          ],
+          "hostile_reach": "base_moves",
+          "hostile_type": "UNIT_CARAVEL",
+          "kind": "builder_barbarian_capture_hold",
+          "run": "civvis-20261102T202907Z",
+          "sent": [
+            24,
+            37
+          ],
+          "t": 1793651674,
+          "turn": 108,
+          "utc": "2026-11-02T20:34:34.829Z",
+          "want": [
+            24,
+            37
+          ]
+        },
+        "hold_line": 8129,
+        "tile": {
+          "ap": 0,
+          "cl": -1,
+          "ct": "CONTINENT_PANNOTIA",
+          "flooded": false,
+          "fw": true,
+          "i": false,
+          "o": 0,
+          "oc": 65536,
+          "ri": true,
+          "rv": 3,
+          "submerged": false,
+          "t": "TERRAIN_TUNDRA",
+          "vis": true,
+          "w": false,
+          "x": 24,
+          "y": 37,
+          "yl": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "tile_line": 8124,
+        "state_line": 8120,
+        "state_turn": 108,
+        "city_centers": [],
+        "owned_districts_on_destination": [],
+        "owned_plain_land": true
+      }
+    ],
+    "sources": [
+      {
+        "line": 7038,
+        "file": "line-007038.jsonl",
+        "bytes": 63121,
+        "sha256": "9316fc4d80272dd15c0894e5e5b194c72b615cbcc4163e9ef0bbbb4c61675965"
+      },
+      {
+        "line": 7042,
+        "file": "line-007042.jsonl",
+        "bytes": 35014,
+        "sha256": "36686334fcc5b6a80e8c6d537f0620d199fbdd777547723fe1aef6ee73515736"
+      },
+      {
+        "line": 7047,
+        "file": "line-007047.jsonl",
+        "bytes": 364,
+        "sha256": "3b47e36406706943f7c1fa738bdae7c1580569ec0f0f8e9c44e1b161e076bd3c"
+      },
+      {
+        "line": 7175,
+        "file": "line-007175.jsonl",
+        "bytes": 63739,
+        "sha256": "dc91278a46ffe3e3ba741624effd2af34ba5aaef0abb4e8edc369b484c64b47a"
+      },
+      {
+        "line": 7188,
+        "file": "line-007188.jsonl",
+        "bytes": 364,
+        "sha256": "f0e4dfd577ee5a940d28891390913f4f1f2dc4c1cfb1f2f97c57b48d2b97cf60"
+      },
+      {
+        "line": 8120,
+        "file": "line-008120.jsonl",
+        "bytes": 65928,
+        "sha256": "9cdc74b4053dd8da6c440e95d2e9e02ada0f2fc7bb13f5f44a9cb996725f40a0"
+      },
+      {
+        "line": 8124,
+        "file": "line-008124.jsonl",
+        "bytes": 37054,
+        "sha256": "88d9097b9bcb20a171cc0f43c14f2d37d264bba57cc99f7d9952967ae52dd02a"
+      },
+      {
+        "line": 8129,
+        "file": "line-008129.jsonl",
+        "bytes": 365,
+        "sha256": "9496b2839c136b98c9cdd0d9641511e1d51c03985df73a910fb8c95701195c57"
+      }
+    ]
+  },
+  "tests": {
+    "red_failed": 3,
+    "green_host_board_checks": 186,
+    "lua_test_files": 114,
+    "runtime": "lupa.lua51",
+    "all_passed": true
+  },
+  "shipped_rule": "Base/Assets/Gameplay/Data/Units.xml:804 (UNIT_CARAVEL, DOMAIN_SEA, BaseMoves=4)",
+  "archive": {
+    "file": "2026-11-02-builder-naval-distance.raw.tar.xz",
+    "bytes": 370764,
+    "sha256": "eed5db19ca5f90e83b37867654594e130e4e5ad4785e1c1634958e706a0f7b11",
+    "members": [
+      {
+        "path": "all-lua-tests.json",
+        "bytes": 11646,
+        "sha256": "4d031b2e8c00373ea5a7c5338946386beb16a270a2b1a87350f9e0fb59f6011e"
+      },
+      {
+        "path": "all-lua-tests.log",
+        "bytes": 641974,
+        "sha256": "913e076fc9fe90f7bfcd7e5ccab0c30e4a4c4f12f62007fc7e9232b4737acc3b"
+      },
+      {
+        "path": "baseline-agent.lua",
+        "bytes": 1221247,
+        "sha256": "f1bda1ee36eacb768fbdb697c0a86955ee737378f01f6c6ee120c5bcaa62c80d"
+      },
+      {
+        "path": "extract.py",
+        "bytes": 2911,
+        "sha256": "a03433f6c6ca67381a2a4f369a2aeb1be35977515f9a3924fa18b7587455ce75"
+      },
+      {
+        "path": "green-final-host-board.log",
+        "bytes": 130753,
+        "sha256": "8ba38834084b75f81296702762a198ada1dc7f6d9e351843992b52a6ca8edc50"
+      },
+      {
+        "path": "harness.lua",
+        "bytes": 67514,
+        "sha256": "fb602130aa02eef8691e10b28e07729c2c023a6f04dfe6a3f972aecfcf6e7210"
+      },
+      {
+        "path": "native-observations/line-007038.jsonl",
+        "bytes": 63121,
+        "sha256": "9316fc4d80272dd15c0894e5e5b194c72b615cbcc4163e9ef0bbbb4c61675965"
+      },
+      {
+        "path": "native-observations/line-007042.jsonl",
+        "bytes": 35014,
+        "sha256": "36686334fcc5b6a80e8c6d537f0620d199fbdd777547723fe1aef6ee73515736"
+      },
+      {
+        "path": "native-observations/line-007047.jsonl",
+        "bytes": 364,
+        "sha256": "3b47e36406706943f7c1fa738bdae7c1580569ec0f0f8e9c44e1b161e076bd3c"
+      },
+      {
+        "path": "native-observations/line-007175.jsonl",
+        "bytes": 63739,
+        "sha256": "dc91278a46ffe3e3ba741624effd2af34ba5aaef0abb4e8edc369b484c64b47a"
+      },
+      {
+        "path": "native-observations/line-007188.jsonl",
+        "bytes": 364,
+        "sha256": "f0e4dfd577ee5a940d28891390913f4f1f2dc4c1cfb1f2f97c57b48d2b97cf60"
+      },
+      {
+        "path": "native-observations/line-008120.jsonl",
+        "bytes": 65928,
+        "sha256": "9cdc74b4053dd8da6c440e95d2e9e02ada0f2fc7bb13f5f44a9cb996725f40a0"
+      },
+      {
+        "path": "native-observations/line-008124.jsonl",
+        "bytes": 37054,
+        "sha256": "88d9097b9bcb20a171cc0f43c14f2d37d264bba57cc99f7d9952967ae52dd02a"
+      },
+      {
+        "path": "native-observations/line-008129.jsonl",
+        "bytes": 365,
+        "sha256": "9496b2839c136b98c9cdd0d9641511e1d51c03985df73a910fb8c95701195c57"
+      },
+      {
+        "path": "native-observations/observations.json",
+        "bytes": 5847,
+        "sha256": "16ef15e1bd30d4057834fad748dbdca2848470cad1e37749a7b5d7b3ae896fd5"
+      },
+      {
+        "path": "red-final-host-board.log",
+        "bytes": 131803,
+        "sha256": "3203acdb6f3e6e0f0f31ddcc237b632010ababb208f6a49956419955441e832e"
+      },
+      {
+        "path": "shipped-caravel-rules.txt",
+        "bytes": 1140,
+        "sha256": "f33703a6552e9d80545a4a056e0f6f9079e9559a307423b4e047e646aa0fc8e9"
+      },
+      {
+        "path": "source-receipt.json",
+        "bytes": 587,
+        "sha256": "f025443a4b7ec5676fa42c7a8ba3d73ffaf609283e5d3496dcc43663fb1a91a9"
+      },
+      {
+        "path": "source.patch",
+        "bytes": 5314,
+        "sha256": "c5787b957cc1d46f58491d74e66810e068d1f5b52b2a4a8a6795fd9dc785cd4f"
+      }
+    ]
+  }
+}
