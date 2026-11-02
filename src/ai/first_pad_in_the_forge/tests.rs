@@ -138,3 +138,32 @@ fn other_items_are_allowed() {
         assert!(ai.first_pad_item_allowed(&g, 0, cid, &monument));
     }
 }
+
+/// `BasicAi::pick_item`'s first-pad step: the stock picker hands the first
+/// pad to the weak city it is filling; under the gene that city is vetoed.
+#[test]
+fn the_basic_picker_leaves_the_first_pad_to_the_forge() {
+    let (mut g, capital, others) = board();
+    for cid in &others {
+        g.cities.get_mut(cid).unwrap().pop = 6;
+    }
+    let ai = armed();
+    let weak = *others
+        .iter()
+        .find(|cid| {
+            BasicAi::city_can_place_a_pad(&g, 0, **cid) && !ai.first_pad_city_allowed(&g, 0, **cid)
+        })
+        .expect("fixture: a weak city that can place a pad and is vetoed");
+    assert!(ai.first_pad_city_allowed(&g, 0, capital));
+    let is_pad = |item: &Option<Item>| matches!(item, Some(Item::District { district, .. }) if g.district_family(*district) == "spaceport");
+    let stock = BasicAi::new().pick_item(&g, 0, weak, 2, 2, 2, 2, 1, 10, 5, 5);
+    assert!(
+        is_pad(&stock),
+        "fixture: the stock step gives the weak city the pad: {stock:?}"
+    );
+    let gene = ai.pick_item(&g, 0, weak, 2, 2, 2, 2, 1, 10, 5, 5);
+    assert!(
+        !is_pad(&gene),
+        "the weak city leaves the first pad alone: {gene:?}"
+    );
+}
