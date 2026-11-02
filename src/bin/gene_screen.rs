@@ -106,8 +106,8 @@
 //! genome and an outcome like any other, and the estimator here never needed
 //! the pairing. Only the sampling changed.
 use civvis::ai::{run_game_observed, AdvancedAi, Ai, VictoryTarget};
-use civvis::reasoning::{Journal, Level, Topic};
 use civvis::game::{Game, GameOptions, DIPLOMATIC_VICTORY_POINTS};
+use civvis::reasoning::{Journal, Level, Topic};
 use civvis::rng::Rng;
 use civvis::setup::{GameSpeed, MapScript};
 use serde::{Deserialize, Serialize};
@@ -2558,7 +2558,10 @@ fn play_game(
         .collect();
     // ⭐ `--journal`: one shared log for this game's measured seats, drained
     // every turn so the ring (`reasoning::RING_CAPACITY`) never drops a turn.
-    let journal = profile.journal_seeds.contains(&seed).then(Journal::recording);
+    let journal = profile
+        .journal_seeds
+        .contains(&seed)
+        .then(Journal::recording);
     if let Some(journal) = &journal {
         for (index, &pid) in majors.iter().enumerate() {
             if pinned.get(index).copied().flatten().is_none() && rival_chair(index).is_none() {
