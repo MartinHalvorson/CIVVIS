@@ -4697,15 +4697,6 @@ pub const GENES: &[Gene] = &[
     // partner that did not ally is not re-asked for thirty turns. See
     // `advanced/alliance_remembers_the_refusal.rs`.
     Gene { tag: "alliance-remembers-the-refusal", field: "alliance_remembers_the_refusal", kind: Kind::OptIn, enable: AdvancedAi::enable_alliance_remembers_the_refusal, disable: AdvancedAi::disable_alliance_remembers_the_refusal },
-<<<<<<< HEAD
-    // Native King Domination seats lost to rival Culture behind a declared
-    // friendship: 30700000 accepted France's offer at t128 and t149, 30700004
-    // offered Gaul at t105 and t126; every counter read "barred: we are
-    // declared friends". A racer's offer is refused, and culture alone counts
-    // as racing. See `advanced/protective_friendship.rs`.
-    Gene { tag: "friendship-refuses-the-racer", field: "friendship_refuses_the_racer", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_refuses_the_racer, disable: AdvancedAi::disable_friendship_refuses_the_racer },
-||||||| f7eadb9e0
-=======
     // Live King 2026-11-01: 7 of 25 seats assigned Culture, Religion or
     // Domination led the field outright before any rival landed a space
     // project, by 9 to 86 turns, and `science-drive-answers-the-launch`
@@ -4718,7 +4709,12 @@ pub const GENES: &[Gene] = &[
     // drive beside the assigned lane. Needs `science-victory-drive` and
     // `science-drive-answers-the-launch`. See `advanced/science_victory_drive.rs`.
     Gene { tag: "science-drive-leads-beside-the-lane", field: "science_drive_leads_beside_the_lane", kind: Kind::OptIn, enable: AdvancedAi::enable_science_drive_leads_beside_the_lane, disable: AdvancedAi::disable_science_drive_leads_beside_the_lane },
->>>>>>> origin/main
+    // Native King Domination seats lost to rival Culture behind a declared
+    // friendship: 30700000 accepted France's offer at t128 and t149, 30700004
+    // offered Gaul at t105 and t126; every counter read "barred: we are
+    // declared friends". A racer's offer is refused, and culture alone counts
+    // as racing. See `advanced/protective_friendship.rs`.
+    Gene { tag: "friendship-refuses-the-racer", field: "friendship_refuses_the_racer", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_refuses_the_racer, disable: AdvancedAi::disable_friendship_refuses_the_racer },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
