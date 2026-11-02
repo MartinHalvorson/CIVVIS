@@ -12,12 +12,13 @@
 //!   turn", while Telavi (54 Production), Tbilisi (34) and Poti (32) could
 //!   place one; civvis-20261101T150036Z in Panamá, "about 225 turns at 4.0".
 //!   Four more started at 26-39 turns.
+//! - Over the 23 games the first pad stood in a city under 80% of the best
+//!   placing producer in 9 (Production share 0.09 to 0.75), and those pads
+//!   took 24-38 turns to build against 11-17 for the rest.
 //! - The idle-Great-Person activation path reserves "the fastest idle city"
 //!   for a missing Spaceport, which is the city with an empty queue, not the
-//!   producer: civvis-20261102T094900Z (Inca, 466 Science against the field's
-//!   217) placed its only pad in Chucuito, outside its top four producers,
-//!   landed its Earth Satellite at t212 and lost Science at t255. The path
-//!   placed the first pad in 7 of the 23 games.
+//!   producer: civvis-20261102T105550Z started it in Chicago at 18 Production
+//!   against the best placing producer's 78 and finished it 36 turns later.
 //! - `launch-pad-holds-its-queue` then holds the first pad wherever it was
 //!   placed.
 //!

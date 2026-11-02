@@ -4729,15 +4729,25 @@ pub const GENES: &[Gene] = &[
     // cities, in the Domination goal's slot. See
     // `advanced/domination_research.rs`.
     Gene { tag: "campus-unlock-every-lane", field: "campus_unlock_every_lane", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_unlock_every_lane, disable: AdvancedAi::disable_campus_unlock_every_lane },
+    // Live King 11-01/02 (30 games): the first Builder came at a median
+    // t33.5, one improvement by t40, no chop before t40 and no improved
+    // luxury at t40, while a Builder sold for 100 Gold against a median bank
+    // of 86-106 from t15 to t30; the early Gold bought Traders, Warriors,
+    // Monuments and Archers, and 9 Builders in 30 games. Under the gene a
+    // builderless opening with work for a Builder buys one above the upkeep
+    // floor, ahead of the idle-route Trader. See
+    // `advanced/gold_buys_the_opening_builder.rs`.
+    Gene { tag: "gold-buys-the-opening-builder", field: "gold_buys_the_opening_builder", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_buys_the_opening_builder, disable: AdvancedAi::disable_gold_buys_the_opening_builder },
     // Live King 11-01/02, 23 games with a first pad: under a Science plan
     // every city prices the first pad at the 3,000-point rung, so the first
     // idle city takes it: 091117Z placed it in Gori ("about 200 turns at
     // 4.5 a turn") beside Telavi at 54 Production; 150036Z in Panama ("about
-    // 225 turns"); four more at 26-39 turns. The idle-Great-Person path took
-    // the "fastest idle city" in 7 of the 23 (094900Z: Chucuito, outside the
-    // top four producers, lost Science at t255 leading 466 to 217). Under the
-    // gene the first pad goes only to a city within 80% of the best placing
-    // producer. See `ai/first_pad_in_the_forge.rs`.
+    // 225 turns"). Over 23 games the first pad stood in a city under 80% of
+    // the best placing producer in 9 (Production share 0.09-0.75) and took
+    // 24-38 turns to build against 11-17 for the rest; the idle-Great-Person
+    // path places it in "the fastest idle city" (105550Z: Chicago at 18 against
+    // 78, 36 turns). Under the gene the first pad goes only to a city within
+    // 80% of the best placing producer. See `ai/first_pad_in_the_forge.rs`.
     Gene { tag: "first-pad-in-the-forge", field: "first_pad_in_the_forge", kind: Kind::OptIn, enable: AdvancedAi::enable_first_pad_in_the_forge, disable: AdvancedAi::disable_first_pad_in_the_forge },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
