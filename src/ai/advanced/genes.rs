@@ -4759,6 +4759,14 @@ pub const GENES: &[Gene] = &[
     // the gene the best pad city keeps the Satellite at its head until it
     // lands. See `advanced/satellite_holds_the_pad.rs`.
     Gene { tag: "satellite-holds-the-pad", field: "satellite_holds_the_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_satellite_holds_the_pad, disable: AdvancedAi::disable_satellite_holds_the_pad },
+    // Live King 11-01/02: Domination seats won 0 of 13 (8 lost to Science,
+    // 5 to Culture, tech gap −5 at t150) while Religion seats, which
+    // `religion-lane-hands-over` retargets to Science near t47, won 6 of 20,
+    // all by Science, at a gap of −6. 8 of 9 traced Domination seats held no
+    // rival capital at t150. Under the gene a Domination seat that holds no
+    // rival capital at standard turn 180 (live t120) retargets to Science.
+    // See `advanced/stalled_conquest_takes_science.rs`.
+    Gene { tag: "stalled-conquest-takes-science", field: "stalled_conquest_takes_science", kind: Kind::OptIn, enable: AdvancedAi::enable_stalled_conquest_takes_science, disable: AdvancedAi::disable_stalled_conquest_takes_science },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
