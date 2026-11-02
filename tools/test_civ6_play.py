@@ -2007,6 +2007,29 @@ class Civ6PlayTest(unittest.TestCase):
         self.assertEqual(civ6_play.setup_drift(live, args(map_size="MAPSIZE_TINY")), [])
 
 
+class MirrorSyncStartsBeforeSetupTest(unittest.TestCase):
+    """Operator 11-02: "2, 3, 4 should all be present. no turns skipped".
+
+    The control mod plays the opening on its own while `play` is still in its
+    setup (civvis-20261102T145704Z was configured at +73.8 s with turn 3
+    played). A mirror beat started with the follow loop arrived two turns past
+    the page, gave up on it, and the CIVVIS page went from turn 1 to turn 4.
+    """
+
+    def test_the_beat_starts_before_any_bootstrap(self) -> None:
+        tree = ast.parse(Path(civ6_play.__file__).read_text())
+        play = next(node for node in tree.body
+                    if isinstance(node, ast.FunctionDef) and node.name == "_play")
+        source = ast.get_source_segment(Path(civ6_play.__file__).read_text(), play)
+        start = source.index("threading.Thread(target=mirror_sync_beat")
+        self.assertEqual(source.count("target=mirror_sync_beat"), 1, "started once")
+        for setup in ("bootstrap_saved_game(tail, record", "restart_in_place(tail, record",
+                      "bootstrap_game(tail, record"):
+            self.assertLess(start, source.index(setup), setup)
+        # Every way out of the setup stops it; the follow loop's end still does.
+        self.assertGreaterEqual(source.count("mirror_beat.set()"), 5)
+
+
 class SetupRowReadbackTest(unittest.TestCase):
     """The Create Game panel, at the geometry that broke every batch on 2026-08-02.
 

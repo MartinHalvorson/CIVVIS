@@ -50,6 +50,35 @@ class ShownTurn(unittest.TestCase):
                 path.write_text(body)
                 self.assertIsNone(mirror_sync.shown_turn("civvis-a", path, now=100.0), body)
 
+    def test_a_page_still_coming_shows_turn_zero(self):
+        """Operator 11-02: "2, 3, 4 should all be present. no turns skipped".
+
+        Every 11-02 game put turn 1 on the page and then turn 3, 4 or 5: the
+        follower said nothing while the server booted, and no report is no
+        wait. A pending report for this run is turn 0, so turn 1 is held.
+        """
+        with TemporaryDirectory() as tmp:
+            path = Path(tmp) / "shown.json"
+            mirror_sync.write_shown("civvis-a", 1, None, None, None, path=path,
+                                    now=100.0, pending=True)
+            self.assertTrue(json.loads(path.read_text())["pending"])
+            self.assertEqual(mirror_sync.shown_turn("civvis-a", path, now=101.0), 0)
+            self.assertIsNone(mirror_sync.shown_turn("civvis-b", path, now=101.0),
+                              "another run's page is not this one's")
+            self.assertIsNone(mirror_sync.shown_turn("civvis-a", path, now=105.1),
+                              "a follower that stopped is not waited on")
+            # Once the server answers, its turns are the report, pending or not.
+            mirror_sync.write_shown("civvis-a", 2, 1, None, 0, path=path,
+                                    now=100.0, pending=True)
+            self.assertEqual(mirror_sync.shown_turn("civvis-a", path, now=101.0), 1)
+            # An ordinary report is never pending, and one with no turn is no wait.
+            mirror_sync.write_shown("civvis-a", 1, None, None, None, path=path, now=100.0)
+            self.assertNotIn("pending", json.loads(path.read_text()))
+            self.assertIsNone(mirror_sync.shown_turn("civvis-a", path, now=101.0))
+            path.write_text('{"run": "civvis-a", "updated_at": 100, "pending": 1}')
+            self.assertIsNone(mirror_sync.shown_turn("civvis-a", path, now=100.0),
+                              "only a literal true is pending")
+
     def test_the_path_follows_the_environment(self):
         with TemporaryDirectory() as tmp:
             path = Path(tmp) / "elsewhere.json"

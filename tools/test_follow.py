@@ -317,6 +317,8 @@ class FollowTest(unittest.TestCase):
         start.assert_not_called()
         waits = [m for m in messages if "waiting for the run's first map export" in m]
         self.assertEqual(len(waits), 1, f"expected one wait line, got {messages}")
+        # ... but the game is told a page is coming, so its opening waits for it.
+        self.assertEqual(follow.mirror_sync.shown_turn("a"), 0)
 
     def test_a_refused_start_names_the_binary_s_own_reason(self) -> None:
         """The status alone reads the same for a wait and a misconfiguration."""
@@ -524,6 +526,7 @@ class FinishedRunStaysOffTheScreen(unittest.TestCase):
                                return_value=([b"{}"], 7, 6, 38, True)), \
              mock.patch.object(follow, "server_alive", return_value=False), \
              mock.patch.object(follow, "start_visible_server") as start, \
+             mock.patch.object(follow, "page_status", return_value=None), \
              mock.patch.object(follow, "log", lambda _m: None), \
              mock.patch.object(follow.time, "sleep", side_effect=[StopIteration]):
             with self.assertRaises(StopIteration):
@@ -628,6 +631,92 @@ class PaintedTurnReportTest(unittest.TestCase):
             for _ in range(3):
                 follow.report_shown("/runs/r", 5, report)
         self.assertEqual(write.call_count, 2, "a heartbeat, not a write per poll")
+
+    def test_a_page_still_coming_is_turn_zero(self) -> None:
+        """Operator 11-02: "2, 3, 4 should all be present. no turns skipped"."""
+        follow.report_pending("/runs/civvis-x", 1, {})
+        written = json.loads(self.path.read_text())
+        self.assertEqual((written["run"], written["game_turn"], written["pending"]),
+                         ("civvis-x", 1, True))
+        self.assertEqual(follow.mirror_sync.shown_turn("civvis-x"), 0)
+
+    def test_the_opening_is_pending_until_a_page_watches(self) -> None:
+        """A server whose page has not drawn would release turn 1 unseen."""
+        for status, shown in ((None, 0),
+                              ({"turn": 1, "frames_painted": None, "viewers": 0}, 0),
+                              ({"turn": 1, "frames_painted": None, "viewers": 1}, 0),
+                              ({"turn": 1, "frames_painted": 1, "viewers": 1}, 1)):
+            with self.subTest(status=status), \
+                 mock.patch.object(follow, "page_status", return_value=status):
+                follow.report_opening("/runs/civvis-x", 1, {})
+                self.assertEqual(follow.mirror_sync.shown_turn("civvis-x"), shown)
+
+    def test_the_server_boot_keeps_the_game_told(self) -> None:
+        """A follower quiet through the boot reads as no page, and turns run on."""
+        class LiveProcess:
+            pid = 4242
+            returncode = None
+
+            @staticmethod
+            def poll() -> None:
+                return None
+
+        calls = []
+        with tempfile.TemporaryDirectory() as temporary:
+            previous_rig = follow.RIG
+            follow.RIG = temporary
+            try:
+                with mock.patch.object(follow, "read_events", return_value=([], 1, 4, 9, True)), \
+                     mock.patch.object(follow, "stage_events", return_value=temporary), \
+                     mock.patch.object(follow, "server_alive", side_effect=[False, False, True]), \
+                     mock.patch.object(follow.subprocess, "Popen", return_value=LiveProcess()), \
+                     mock.patch.object(follow, "hold_the_frame"), \
+                     mock.patch.object(follow, "refresh_mirror_page"), \
+                     mock.patch.object(follow, "log", lambda _m: None), \
+                     mock.patch.object(follow.time, "sleep") as sleep:
+                    self.assertTrue(follow.start_visible_server(
+                        temporary, 4, keep_reporting=lambda: calls.append(len(sleep.mock_calls))))
+            finally:
+                follow.RIG = previous_rig
+        handoff = round(follow.HANDOFF_SECONDS / follow.FAST_POLL_SECONDS)
+        self.assertEqual(len(calls), 2 + handoff, "every boot wait and handoff beat reports")
+        self.assertEqual(calls, sorted(calls))
+        self.assertAlmostEqual(sum(c.args[0] for c in sleep.mock_calls),
+                               2 * 1 + follow.HANDOFF_SECONDS)
+
+    def test_a_slow_status_does_not_stretch_the_handoff(self) -> None:
+        class LiveProcess:
+            pid = 4242
+            returncode = None
+
+            @staticmethod
+            def poll() -> None:
+                return None
+
+        clock = [0.0]
+
+        def slow_report() -> None:
+            clock[0] += 0.9          # each /status answering near its timeout
+
+        with tempfile.TemporaryDirectory() as temporary:
+            previous_rig = follow.RIG
+            follow.RIG = temporary
+            try:
+                with mock.patch.object(follow, "read_events", return_value=([], 1, 4, 9, True)), \
+                     mock.patch.object(follow, "stage_events", return_value=temporary), \
+                     mock.patch.object(follow, "server_alive", return_value=True), \
+                     mock.patch.object(follow.subprocess, "Popen", return_value=LiveProcess()), \
+                     mock.patch.object(follow, "hold_the_frame"), \
+                     mock.patch.object(follow, "refresh_mirror_page"), \
+                     mock.patch.object(follow, "log", lambda _m: None), \
+                     mock.patch.object(follow.time, "monotonic", lambda: clock[0]), \
+                     mock.patch.object(follow.time, "sleep",
+                                       side_effect=lambda s: clock.__setitem__(0, clock[0] + s)):
+                    self.assertTrue(follow.start_visible_server(
+                        temporary, 4, keep_reporting=slow_report))
+            finally:
+                follow.RIG = previous_rig
+        self.assertLess(clock[0], follow.HANDOFF_SECONDS + 1.0)
 
     def test_no_server_writes_nothing(self) -> None:
         with mock.patch.object(follow, "http_get", side_effect=OSError("refused")):
