@@ -9205,6 +9205,17 @@ impl AdvancedAi {
         self.stalled_conquest_takes_science = false;
     }
 
+    /// Opt-in gene `old-techs-before-the-beeline`; see
+    /// `advanced/old_techs_before_the_beeline.rs`.
+    pub fn enable_old_techs_before_the_beeline(&mut self) {
+        self.old_techs_before_the_beeline = true;
+    }
+
+    /// The twin of `enable_old_techs_before_the_beeline`.
+    pub fn disable_old_techs_before_the_beeline(&mut self) {
+        self.old_techs_before_the_beeline = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

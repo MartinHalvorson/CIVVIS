@@ -270,6 +270,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `naval-crossing-keeps-going` | off (unmeasured) | Opt-in gene `naval-crossing-keeps-going`; see `Self::naval_crossing_keeps_going`. | 1 \| 1 |
 | `neighborhood-houses-the-capped-city` | off (unmeasured) | Opt-in gene `neighborhood-houses-the-capped-city`; see `advanced/neighborhood_houses_the_capped_city.rs`. | 1 \| 1 |
 | `nuclear-goal-needs-a-launcher` | off (unmeasured) | Opt-in gene `nuclear-goal-needs-a-launcher`; see `Self::nuclear_goal_needs_a_launcher`. | 1 \| 1 |
+| `old-techs-before-the-beeline` | off (unmeasured) | Opt-in gene `old-techs-before-the-beeline`; see `advanced/old_techs_before_the_beeline.rs`. | 1 \| 1 |
 | `open-city-draws-the-front` | off (unmeasured) | Opt-in gene `open-city-draws-the-front`; see `advanced/open_city_front.rs`. | 1 \| 1 |
 | `opening-builder-after-the-first-settler` | off (unmeasured) | Opt-in gene `opening-builder-after-the-first-settler`; see `BasicAi::opening_builder_after_the_first_settler`. | 1 \| 1 |
 | `pillaged-districts-repair-first` | off (unmeasured) | Opt-in gene `pillaged-districts-repair-first`; see `Self::pillaged_districts_repair_first`. | 1 \| 1 |
