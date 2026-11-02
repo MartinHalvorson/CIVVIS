@@ -5500,6 +5500,39 @@ fn decide(
             }
         }
     }
+    // A power bridge uses the existing strategic market transport. It never
+    // competes with another purchase already proposed in this frame.
+    if !orders.iter().any(|order| order.kind == "buy") {
+        let wants = ai.science_power_fuel_wants(&mirror_state.game, 0);
+        if !wants.is_empty() {
+            let reserve = (ai
+                .purchase_upkeep_floor_reading(&mirror_state.game, 0)
+                .ceil() as i64)
+                .max(100);
+            let worth = |resource: &str, amount: u32| {
+                mirror_state.game.strategic_gold_value(0, resource, amount)
+            };
+            let give_worth = |_: i64, _: &str, _: u32| 0.0;
+            let result = append_resource_buy_order(
+                &wants,
+                &[],
+                state,
+                &mut orders,
+                &worth,
+                &give_worth,
+                ResourceBuyBudget {
+                    reserve,
+                    gold_limit: Some(mirror_state.game.players[0].gold.floor() as i64),
+                    credit_income: true,
+                    cadence: true,
+                },
+            );
+            match result {
+                None => note_bits.push("science_power_fuel_buy=1".to_string()),
+                Some(why) => note_bits.push(format!("science_power_fuel:{why}")),
+            }
+        }
+    }
     // `luxury-buy-asks`: no rival has ever priced a luxury for us -- 644
     // EQUALIZE asks of October 4-5, every answer a refusal with nothing on our
     // side (364 of them to rivals we had not denounced) -- while each ask held
