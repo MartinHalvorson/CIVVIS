@@ -9126,6 +9126,17 @@ impl AdvancedAi {
         self.science_drive_leads_beside_the_lane = false;
     }
 
+    /// Opt-in gene `deterrence-trusts-a-friend`; see
+    /// [`Self::deterrence_trusts_a_friend`].
+    pub fn enable_deterrence_trusts_a_friend(&mut self) {
+        self.deterrence_trusts_a_friend = true;
+    }
+
+    /// The twin of `enable_deterrence_trusts_a_friend`.
+    pub fn disable_deterrence_trusts_a_friend(&mut self) {
+        self.deterrence_trusts_a_friend = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

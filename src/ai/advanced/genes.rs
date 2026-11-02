@@ -4709,6 +4709,12 @@ pub const GENES: &[Gene] = &[
     // drive beside the assigned lane. Needs `science-victory-drive` and
     // `science-drive-answers-the-launch`. See `advanced/science_victory_drive.rs`.
     Gene { tag: "science-drive-leads-beside-the-lane", field: "science_drive_leads_beside_the_lane", kind: Kind::OptIn, enable: AdvancedAi::enable_science_drive_leads_beside_the_lane, disable: AdvancedAi::disable_science_drive_leads_beside_the_lane },
+    // Live Emperor/King 11-01: 144 of 262 near-rival deterrents (55%)
+    // targeted a declared friend, and a declared friend declared war within
+    // ten turns on 1.0 per 100 rival-turns (vs 8.0 unfriendly, 10.3 friendly).
+    // Under the gene a declared friend is not a deterrence neighbour. See
+    // `advanced/deterrence_trusts_a_friend.rs`.
+    Gene { tag: "deterrence-trusts-a-friend", field: "deterrence_trusts_a_friend", kind: Kind::OptIn, enable: AdvancedAi::enable_deterrence_trusts_a_friend, disable: AdvancedAi::disable_deterrence_trusts_a_friend },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

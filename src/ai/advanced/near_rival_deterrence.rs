@@ -80,6 +80,9 @@ impl AdvancedAi {
                     && !other.is_free_city
                     && g.has_met(pid, other.id)
                     && !g.is_at_war(pid, other.id)
+                    // `deterrence-trusts-a-friend`: see
+                    // `advanced/deterrence_trusts_a_friend.rs`.
+                    && !self.deterrence_spares_a_friend(g, pid, other.id)
             })
             .filter(|other| {
                 g.cities.values().any(|city| {
