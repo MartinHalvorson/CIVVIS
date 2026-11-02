@@ -9170,6 +9170,17 @@ impl AdvancedAi {
         self.gold_buys_the_opening_builder = false;
     }
 
+    /// Opt-in gene `stalled-conquest-takes-science`; see
+    /// [`Self::stalled_conquest_takes_science`].
+    pub fn enable_stalled_conquest_takes_science(&mut self) {
+        self.stalled_conquest_takes_science = true;
+    }
+
+    /// The twin of `enable_stalled_conquest_takes_science`.
+    pub fn disable_stalled_conquest_takes_science(&mut self) {
+        self.stalled_conquest_takes_science = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
