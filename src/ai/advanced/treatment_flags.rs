@@ -9183,6 +9183,17 @@ impl AdvancedAi {
         self.base.disable_first_pad_in_the_forge();
     }
 
+    /// Opt-in gene `satellite-holds-the-pad`; see
+    /// [`Self::satellite_holds_the_pad`].
+    pub fn enable_satellite_holds_the_pad(&mut self) {
+        self.satellite_holds_the_pad = true;
+    }
+
+    /// The twin of `enable_satellite_holds_the_pad`.
+    pub fn disable_satellite_holds_the_pad(&mut self) {
+        self.satellite_holds_the_pad = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
