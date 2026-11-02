@@ -358,14 +358,31 @@ impl AdvancedAi {
         let item = Item::Unit {
             unit: Name::new(&unit),
         };
+        let forecast = self
+            .near_rival_deterrence_2
+            .then(|| self.threat_forecast(g, pid, rival))
+            .flatten();
         if g.apply(pid, &Action::Produce { city: cid, item }).is_ok() {
-            think!(self.journal(), Military, Decision,
-                "{} trains a deterrent against {}", g.cities[&cid].name, g.players[rival].civ;
-                "near-rival-deterrence: {} for {ours:.0} power against their {theirs:.0}, a city \
-                 within {DETERRENCE_NEAR_TILES} tiles; {turns:.1} turns{}",
-                unit.replace('_', " "),
-                displaced.map_or(String::new(), |item| format!(
-                    "; {} keeps its progress", Self::plain_item(&item))));
+            if let Some(forecast) = forecast {
+                think!(self.journal(), Military, Decision,
+                    "{} trains a deterrent against {}", g.cities[&cid].name, g.players[rival].civ;
+                    "near-rival-deterrence-2: {} — forecast {:.0}% to declare within ten turns \
+                     (nearest city {} tiles, {} soldiers at our door); their quality power \
+                     {theirs:.1} (mean strength {:.0}) against our {ours:.1} ({:.0}); {turns:.1} \
+                     turns{}",
+                    unit.replace('_', " "), 100.0 * forecast.hazard, forecast.nearest,
+                    forecast.massed, forecast.their_quality, forecast.our_quality,
+                    displaced.map_or(String::new(), |item| format!(
+                        "; {} keeps its progress", Self::plain_item(&item))));
+            } else {
+                think!(self.journal(), Military, Decision,
+                    "{} trains a deterrent against {}", g.cities[&cid].name, g.players[rival].civ;
+                    "near-rival-deterrence: {} for {ours:.0} power against their {theirs:.0}, a city \
+                     within {DETERRENCE_NEAR_TILES} tiles; {turns:.1} turns{}",
+                    unit.replace('_', " "),
+                    displaced.map_or(String::new(), |item| format!(
+                        "; {} keeps its progress", Self::plain_item(&item))));
+            }
         }
     }
 }
