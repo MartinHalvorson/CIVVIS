@@ -22,6 +22,13 @@
 //! - `launch-pad-holds-its-queue` then holds the first pad wherever it was
 //!   placed.
 //!
+//! Three places start the first pad, and the gene vetoes each: the strategic
+//! scorer (`AdvancedAi::production_value`), the idle-Great-Person activation
+//! path, and `BasicAi::pick_item`'s first-pad step, which hands the pad to
+//! whichever city it is filling once Rocketry is known. Live
+//! civvis-20261102T142440Z (gene armed) placed it through that step in
+//! Liverpool at 48 Production while Birmingham stood at 65.
+//!
 //! Off, every call answers `true`.
 
 use super::BasicAi;
