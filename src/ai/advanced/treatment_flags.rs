@@ -9170,6 +9170,30 @@ impl AdvancedAi {
         self.gold_buys_the_opening_builder = false;
     }
 
+    /// Opt-in gene `first-pad-in-the-forge`; see
+    /// [`Self::first_pad_in_the_forge`].
+    pub fn enable_first_pad_in_the_forge(&mut self) {
+        self.first_pad_in_the_forge = true;
+        self.base.enable_first_pad_in_the_forge();
+    }
+
+    /// The twin of `enable_first_pad_in_the_forge`.
+    pub fn disable_first_pad_in_the_forge(&mut self) {
+        self.first_pad_in_the_forge = false;
+        self.base.disable_first_pad_in_the_forge();
+    }
+
+    /// Opt-in gene `satellite-holds-the-pad`; see
+    /// [`Self::satellite_holds_the_pad`].
+    pub fn enable_satellite_holds_the_pad(&mut self) {
+        self.satellite_holds_the_pad = true;
+    }
+
+    /// The twin of `enable_satellite_holds_the_pad`.
+    pub fn disable_satellite_holds_the_pad(&mut self) {
+        self.satellite_holds_the_pad = false;
+    }
+
     /// Opt-in gene `stalled-conquest-takes-science`; see
     /// [`Self::stalled_conquest_takes_science`].
     pub fn enable_stalled_conquest_takes_science(&mut self) {

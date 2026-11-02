@@ -6498,6 +6498,11 @@ pub struct AdvancedAi {
     /// we are declared friends with. See `advanced/deterrence_trusts_a_friend.rs`.
     deterrence_trusts_a_friend: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `first-pad-in-the-forge`: the empire's first Spaceport only in a city
+    /// within `FIRST_PAD_FORGE_SHARE` of the best placing producer; the flag
+    /// lives on `BasicAi`, which the Great Person activation path reads. See
+    /// `ai/first_pad_in_the_forge.rs`. Off by default.
+    first_pad_in_the_forge: bool,
     /// `fog-yields-to-a-stranded-settler`: the fogged-frontier settle veto
     /// yields once a Settler has walked fifteen turns. See
     /// `advanced/fog_yields_stranded.rs`. Off by default.
@@ -8465,6 +8470,10 @@ pub struct AdvancedAi {
     /// `BasicAi::retainers_garrison_the_short_cities`. Off by default.
     retainers_garrison_the_short_cities: bool,
     // ---- append: s-s ------------------------------------------------
+    /// `satellite-holds-the-pad`: once a pad stands and the Earth Satellite
+    /// has not landed, the best pad city keeps the Satellite at its head. See
+    /// `advanced/satellite_holds_the_pad.rs`. Off by default.
+    satellite_holds_the_pad: bool,
     /// `stalled-conquest-takes-science`: a Domination seat that holds no rival
     /// capital at standard turn 180 retargets to Science. See
     /// `advanced/stalled_conquest_takes_science.rs`. Off by default.
@@ -10378,6 +10387,8 @@ mod neighborhood_houses_the_capped_city;
 /// `nuclear-goal-needs-a-launcher`: see `advanced/nuclear_launcher.rs`.
 mod nuclear_launcher;
 mod peacetime_republic;
+/// `satellite-holds-the-pad`: see `advanced/satellite_holds_the_pad.rs`.
+mod satellite_holds_the_pad;
 mod science_denial_every_pad;
 mod science_denial_trains_spies;
 mod science_endgame;
@@ -11580,6 +11591,7 @@ impl AdvancedAi {
             domination_joins_the_race: false,
             deterrence_trusts_a_friend: false,
             // ---- append: e-f ----------------------------------------
+            first_pad_in_the_forge: false,
             fog_yields_to_a_stranded_settler: false,
             early_route_feeds_production: false,
             food_focus_grows_the_small_city: false,
@@ -11875,6 +11887,7 @@ impl AdvancedAi {
             religion_seat_defends_its_faith: false,
             retainers_garrison_the_short_cities: false,
             // ---- append: s-s ----------------------------------------
+            satellite_holds_the_pad: false,
             stalled_conquest_takes_science: false,
             stalled_spreader_braves_the_march: false,
             spreader_hold_streaks: RefCell::new(BTreeMap::new()),
@@ -36633,6 +36646,11 @@ impl AdvancedAi {
                     if self.space_race_excluded() {
                         return -10_000.0;
                     }
+                    // `first-pad-in-the-forge`: the empire's first pad only in a
+                    // producer. See `ai/first_pad_in_the_forge.rs`.
+                    if !self.base.first_pad_city_allowed(g, pid, cid) {
+                        return -10_000.0;
+                    }
                     let races_science = self.science_drive_active()
                         || self.space_race_lane(g, pid)
                         || self.raced_target() == Some(VictoryTarget::Science)
@@ -50857,6 +50875,10 @@ impl AdvancedAi {
         // `launch-pad-holds-its-queue`: the first pad back at the head of its
         // city, before the defence and loyalty handoffs below.
         self.claim_launch_pad_holds_its_queue(g, pid, &plan);
+        // `satellite-holds-the-pad`: the standing pad keeps the Earth
+        // Satellite until it lands, bridging the pad hold and
+        // `launch-commits-the-endgame`.
+        self.claim_satellite_holds_the_pad(g, pid, &plan);
         self.claim_frontier_walls_before_the_surprise(g, pid);
         // Make the declaration response the final authority over queues this
         // turn. Earlier governors can continue to express their peaceful

@@ -20,6 +20,17 @@ as an out-of-band ``mirror`` row in the run's orders database
 (:func:`orders.set_mirror_turn`); the mod does not END a played turn until
 that turn is on the page (``CivvisBoard.mirrorHold``), capped per turn so a
 page that cannot paint never stalls the lane.
+
+★ THE OPENING IS HELD TOO (operator 11-02: the videos "jump from turn 1 to
+turn 5. 2, 3, 4 should all be present. no turns skipped").  The mirror server
+cannot start until the game exports its first map, which it does at turn 1;
+the server then boots and the browser reloads, ~4 s that the opening plays
+through at ~1 s a turn.  The follower said nothing meanwhile, and no report is
+"no page", which is not waited for -- so every game of 11-02 put turn 1 on the
+page and then turn 3, 4 or 5.  Now the follower writes a PENDING report from
+the moment it adopts a run until its page answers, and a pending report shows
+turn 0: the game holds turn 1 until the page paints it, and every turn after.
+A page that never comes costs one capped wait; ``civ6_play`` then lets it go.
 """
 
 from __future__ import annotations
@@ -47,14 +58,21 @@ def shown_path() -> Path:
 
 def write_shown(run: str, game_turn: int | None, published: int | None,
                 painted: int | None, viewers: int | None,
-                path: Path | None = None, now: float | None = None) -> None:
-    """Report what the mirror has on screen for ``run`` (atomically)."""
+                path: Path | None = None, now: float | None = None,
+                pending: bool = False) -> None:
+    """Report what the mirror has on screen for ``run`` (atomically).
+
+    ``pending``: the follower serves ``run`` but its page has nothing of it
+    yet (no map export, or the server and browser still coming up).
+    """
     target = path or shown_path()
     payload: dict[str, Any] = {
         "run": run, "game_turn": game_turn, "published": published,
         "painted": painted, "viewers": viewers,
         "updated_at": time.time() if now is None else now,
     }
+    if pending:
+        payload["pending"] = True
     target.parent.mkdir(parents=True, exist_ok=True)
     temporary_name: str | None = None
     try:
@@ -93,8 +111,9 @@ def shown_turn(run: str, path: Path | None = None,
 
     The PAINTED turn while a page is watching, since that is what the operator
     sees beside the game; the published one when no page is attached (the
-    server still holds the board).  ``None`` for another run's report, a stale
-    one, or one with no turn at all.
+    server still holds the board); 0 while the follower says this run's page is
+    still coming (``pending``), so the opening waits for it.  ``None`` for
+    another run's report, a stale one, or one with no turn at all.
     """
     report = read_shown(path)
     if report is None or report.get("run") != run:
@@ -110,4 +129,6 @@ def shown_turn(run: str, path: Path | None = None,
     viewers = _turn(report.get("viewers")) or 0
     if viewers > 0 and painted is not None:
         return painted
+    if published is None and painted is None and report.get("pending") is True:
+        return 0
     return published
