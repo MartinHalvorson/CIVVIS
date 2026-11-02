@@ -40,6 +40,11 @@ fn first_launch_keeps_research_ships_off() {
 fn recovery_keeps_the_missing_prerequisite_then_satellites() {
     let mut g = board(&["advanced_flight", "satellites"]);
     let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    ai.enable_victory_portfolio();
+    assert_eq!(
+        ai.decision_objective(GrandStrategy::Recovery),
+        GrandStrategy::Recovery
+    );
     ai.enable_first_launch_keeps_research();
     // The first launch may not be stranded behind irrelevant era backlog.
     g.world_era = 0;
