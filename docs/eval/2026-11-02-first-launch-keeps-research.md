@@ -91,3 +91,32 @@ Satellite. The primary endpoint remains wins. Among timing endpoints, inspect
 the interval from Earth Satellite to Moon Landing and both launch times,
 alongside owned Satellites. This clarification precedes any screen outcomes;
 the optimized build is still running and no rows have been written.
+
+## Captured native proposal activation
+
+The hash-bound `2026-11-02-first-launch-keeps-research.native.tar.xz` retains
+the exact input read from frame 0 of turn 182 in
+`civvis-20261102T161612Z`, reconstructed from its complete input capture
+(snapshot 518). It also retains both raw stdout/stderr streams and the query
+record with observed controller genomes and binary hash. Both queries use
+the same current-controller binary and immutable input; only
+`--with first-launch-keeps-research` differs. Both exit successfully. The
+control proposes `TECH_PRINTING`; the treatment proposes `TECH_SATELLITES`.
+The firing gate validates the archive, paired settings and changed orders.
+
+This is one-shot proposal activation on a captured native board. It is not
+reproduction of the historical process's internal state, host execution, or
+a win-rate estimate. The artifact remains outside the strength ledger.
+To repeat, build `civvis_orders` at this candidate revision, extract the
+archive, copy `captured-events.jsonl` into two disposable directories as
+`events.jsonl`, and run the recorded arguments with their `--mirror` paths
+pointing to those directories. Never point replay outputs at a live run.
+
+The next Science run, `civvis-20261102T165603Z`, lost at t198. Native states
+first show Satellites at t167, a completed Spaceport at t174, Earth Satellite
+at t184 and Moon Landing at t197. Satellites already had seven turns of slack
+before the Spaceport completed, so this is a control case in which earlier
+Satellites alone would not shorten the observed construction path. The pad
+city produced roughly 40–46 per turn during construction and still lacked
+its own Factory; regional production and power require separate inspection.
+Retain this counterexample when judging the research treatment's payoff.
