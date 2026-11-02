@@ -317,6 +317,13 @@ fn version_two_watches_past_the_window() {
     v2.claim_deterrence_unit(&mut on, 0, &plan);
     assert_eq!(land_units_queued(&on), 1);
 
+    let mut late = game.clone();
+    late.turn = late.standard_duration(DETERRENCE_WATCH_END_STANDARD);
+    assert!(
+        v2.deterrence_threat(&late, 0).is_none(),
+        "v2's watch ends at live turn 150"
+    );
+
     let mut friends = game.clone();
     friends.players[0]
         .observed_diplomatic_state

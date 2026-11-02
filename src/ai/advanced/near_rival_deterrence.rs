@@ -36,11 +36,15 @@
 //! stood down; Babylon's Pikemen (45) took two cities from our Warriors (20)
 //! in nine turns, and after turn 80 nothing watched its climb to 493 before
 //! the second war took Moscow. Version 2 keeps v1's neighbour inside v1's
-//! window and adds, from the window's start to the end of the game, any met
-//! major at peace whose war forecast hazard reaches
-//! [`war_forecast::FORECAST_HAZARD_FLOOR`] (see `advanced/war_forecast.rs`
-//! for the census). Both sides are weighed in quality power, so ten
-//! Warriors no longer read level with four Pikemen. While the neighbour
+//! window and adds, from the window's start to
+//! [`DETERRENCE_WATCH_END_STANDARD`] (live turn 150), any met major at peace
+//! whose war forecast hazard reaches [`war_forecast::FORECAST_HAZARD_FLOOR`]
+//! (see `advanced/war_forecast.rs` for the census). The watch stops there:
+//! 13 of the census's 14 wars that cost us a city began by live turn 142,
+//! and 1 of the 33 begun after turn 160 did; an all-game watch read 0.9
+//! points of score share worse than v1 at Emperor (32 paired seeds) for an
+//! army 10% larger and no city kept. Both sides are weighed in quality
+//! power, so ten Warriors no longer read level with four Pikemen. While the neighbour
 //! out-guns us, one obsolete land unit a turn is upgraded, best strength
 //! gained per gold first, above [`DETERRENCE_UPGRADE_RESERVE_BASE`] plus
 //! [`DETERRENCE_UPGRADE_RESERVE_PER_CITY`] a city.
@@ -59,6 +63,10 @@ pub(crate) const DETERRENCE_RATIO: f64 = 1.0;
 /// seat's Quick speed.
 pub(crate) const DETERRENCE_START_STANDARD: u32 = 45;
 pub(crate) const DETERRENCE_END_STANDARD: u32 = 120;
+
+/// Version 2's forecast watch ends here, in standard turns: live turn 150 at
+/// Quick speed.
+pub(crate) const DETERRENCE_WATCH_END_STANDARD: u32 = 225;
 
 /// Land units in training at once under the claim.
 pub(crate) const DETERRENCE_MAX_QUEUED: usize = 2;
@@ -83,7 +91,9 @@ impl AdvancedAi {
             return None;
         }
         let in_window = g.turn < g.standard_duration(DETERRENCE_END_STANDARD);
-        if !in_window && !self.near_rival_deterrence_2 {
+        let watching = self.near_rival_deterrence_2
+            && g.turn < g.standard_duration(DETERRENCE_WATCH_END_STANDARD);
+        if !in_window && !watching {
             return None;
         }
         let ours: Vec<Pos> = g
