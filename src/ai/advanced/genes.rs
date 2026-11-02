@@ -4775,6 +4775,16 @@ pub const GENES: &[Gene] = &[
     // rival capital at standard turn 180 (live t120) retargets to Science.
     // See `advanced/stalled_conquest_takes_science.rs`.
     Gene { tag: "stalled-conquest-takes-science", field: "stalled_conquest_takes_science", kind: Kind::OptIn, enable: AdvancedAi::enable_stalled_conquest_takes_science, disable: AdvancedAi::disable_stalled_conquest_takes_science },
+    // Operator 11-02, live Lv 6 civvis-20261102T163456Z (Inca): the air-surge
+    // beeline reached Flight t127 / Advanced Flight t138 while Iron Working
+    // waited to t116 and Machinery to t139, so the seat bought 12 Warriors
+    // (t81-114) and 12 Archers (t121-138) in the Renaissance and Industrial
+    // eras and still fielded both in the Information era. Under the gene the
+    // research slot takes, ahead of the air surge and every lane beeline, the
+    // technology our land army waits on to upgrade once the world has left
+    // its era, then any technology two eras behind the world. See
+    // `advanced/old_techs_before_the_beeline.rs`.
+    Gene { tag: "old-techs-before-the-beeline", field: "old_techs_before_the_beeline", kind: Kind::OptIn, enable: AdvancedAi::enable_old_techs_before_the_beeline, disable: AdvancedAi::disable_old_techs_before_the_beeline },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
