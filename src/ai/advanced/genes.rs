@@ -3295,6 +3295,8 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "siege-buys-the-gun-resource", field: "siege_buys_the_gun_resource", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_buys_the_gun_resource, disable: AdvancedAi::disable_siege_buys_the_gun_resource },
     // Native-only purchase proposal; strength requires native trials.
     Gene { tag: "science-power-buys-fuel", field: "science_power_buys_fuel", kind: Kind::OptIn, enable: AdvancedAi::enable_science_power_buys_fuel, disable: AdvancedAi::disable_science_power_buys_fuel },
+    // Native site proposal only; outcome evidence requires native games.
+    Gene { tag: "spaceport-above-the-sea", field: "spaceport_above_the_sea", kind: Kind::OptIn, enable: AdvancedAi::enable_spaceport_above_the_sea, disable: AdvancedAi::disable_spaceport_above_the_sea },
     // The decisive window spent ~1,200 science a game off the Advanced
     // Flight path after the air surge's horizon opened (10-06/07 Emperor),
     // and captures ran 0.20 per 100 turns before the Bomber against 1.24

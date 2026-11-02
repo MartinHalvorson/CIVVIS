@@ -9225,6 +9225,16 @@ impl AdvancedAi {
         self.science_power_buys_fuel = false;
     }
 
+    /// Prefer a legal non-lowland site when starting a native Spaceport.
+    pub fn enable_spaceport_above_the_sea(&mut self) {
+        self.spaceport_above_the_sea = true;
+    }
+
+    /// The twin of `enable_spaceport_above_the_sea`.
+    pub fn disable_spaceport_above_the_sea(&mut self) {
+        self.spaceport_above_the_sea = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

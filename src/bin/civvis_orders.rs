@@ -55,6 +55,8 @@ mod formation_refusals;
 mod host_move_postconditions;
 #[path = "civvis_orders/host_ranged_history.rs"]
 mod host_ranged_history;
+#[path = "civvis_orders/spaceport_above_sea.rs"]
+mod spaceport_above_sea;
 #[path = "civvis_orders/unit_identity.rs"]
 mod unit_identity;
 
@@ -5894,6 +5896,10 @@ fn decide(
     // real change, while stale unit/deal replays and conflicting city production
     // requests are not sent twice to the host. Strike retries stay enabled; see
     // the method comment.
+    let safer_pads = spaceport_above_sea::retarget(ai, mirror_state, &mut orders);
+    if safer_pads > 0 {
+        note_bits.push(format!("spaceport_above_the_sea={safer_pads}"));
+    }
     let same_turn_replays = host_move_refusals.suppress_same_turn_replays(&mut orders, state, ours);
     if same_turn_replays > 0 {
         note_bits.push(format!("same_turn_replays={same_turn_replays}"));

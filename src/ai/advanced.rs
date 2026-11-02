@@ -8472,6 +8472,8 @@ pub struct AdvancedAi {
     /// `BasicAi::retainers_garrison_the_short_cities`. Off by default.
     retainers_garrison_the_short_cities: bool,
     // ---- append: s-s ------------------------------------------------
+    /// Prefer a legal non-lowland site for a new native Spaceport. Opt-in.
+    spaceport_above_the_sea: bool,
     /// Native fuel bridge for ready research power. Off by default.
     science_power_buys_fuel: bool,
     /// `satellite-holds-the-pad`: once a pad stands and the Earth Satellite
@@ -10417,6 +10419,7 @@ mod siege_shortfall_projects;
 mod siege_tier_before_the_beeline;
 /// `siege-moves-under-the-wing`: see `advanced/siege_under_the_wing.rs`.
 mod siege_under_the_wing;
+mod spaceport_above_sea;
 mod trader_fills_the_idle_route;
 pub use science_victory_drive::ScienceDrive;
 
@@ -11894,6 +11897,7 @@ impl AdvancedAi {
             religion_seat_defends_its_faith: false,
             retainers_garrison_the_short_cities: false,
             // ---- append: s-s ----------------------------------------
+            spaceport_above_the_sea: false,
             science_power_buys_fuel: false,
             satellite_holds_the_pad: false,
             stalled_conquest_takes_science: false,
