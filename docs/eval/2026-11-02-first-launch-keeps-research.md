@@ -79,3 +79,15 @@ This is outside the new treatment's Science-target gate, so it is neither a
 treatment result nor evidence for broadening the rule. It illustrates why
 earlier Satellites alone cannot count as the goal: the lane handover and
 launch-production policies must also turn that economy into a victory.
+
+## Endpoint clarification before the screen starts
+
+The project's technology gates in `data/projects.json` are Rocketry for
+Earth Satellite and Satellites for Moon Landing (which also requires Earth
+Satellite). Thus the gene's name refers to retaining research commitment
+around the first launch, and its direct technology payoff is opening the
+**Moon Landing**. Earlier Satellites does not itself unlock an earlier Earth
+Satellite. The primary endpoint remains wins. Among timing endpoints, inspect
+the interval from Earth Satellite to Moon Landing and both launch times,
+alongside owned Satellites. This clarification precedes any screen outcomes;
+the optimized build is still running and no rows have been written.
