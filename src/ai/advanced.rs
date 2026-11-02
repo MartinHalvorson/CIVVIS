@@ -7475,6 +7475,11 @@ pub struct AdvancedAi {
     /// city of ours. See `advanced/defensive_apostle.rs`. Off by default.
     inquisition_answers_a_rival_majority: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `old-techs-before-the-beeline`: the technology our land army waits on
+    /// to upgrade once the world has left its era, then any technology two
+    /// eras behind the world, ahead of the air surge and every lane beeline.
+    /// See `advanced/old_techs_before_the_beeline.rs`. Off by default.
+    old_techs_before_the_beeline: bool,
     /// `launch-commits-the-endgame`: our own Earth Satellite commits an assigned
     /// Religion or Culture seat to the science endgame. See
     /// `advanced/launch_commits_endgame.rs`. Off by default.
@@ -10391,6 +10396,9 @@ mod launcher_war_every_lane;
 mod neighborhood_houses_the_capped_city;
 /// `nuclear-goal-needs-a-launcher`: see `advanced/nuclear_launcher.rs`.
 mod nuclear_launcher;
+/// `old-techs-before-the-beeline`: the army's upgrade techs and the old-era
+/// backlog ahead of the beeline. See `advanced/old_techs_before_the_beeline.rs`.
+mod old_techs_before_the_beeline;
 mod peacetime_republic;
 /// `satellite-holds-the-pad`: see `advanced/satellite_holds_the_pad.rs`.
 mod satellite_holds_the_pad;
@@ -11746,6 +11754,7 @@ impl AdvancedAi {
             inquisition_defends_the_diplomat: false,
             inquisition_answers_a_rival_majority: false,
             // ---- append: l-o ----------------------------------------
+            old_techs_before_the_beeline: false,
             launch_commits_the_endgame: false,
             launcher_war_serves_every_lane: false,
             nuclear_goal_needs_a_launcher: false,
@@ -19507,6 +19516,9 @@ impl AdvancedAi {
             // `siege-tier-before-the-beeline`: read once, only if every arm
             // above it passes. See the arm below.
             let siege_tier = std::cell::OnceCell::new();
+            // `old-techs-before-the-beeline`: read once, only if every arm
+            // above it passes. See the arm below.
+            let old_techs = std::cell::OnceCell::new();
             let forced_goal = match objective {
                 // `capital-walls-before-the-surprise`: Masonry for the capital
                 // goes ahead of the opening Archery too. 040735Z's slot opened
@@ -19602,6 +19614,27 @@ impl AdvancedAi {
                         .copied()
                         .flatten()
                         .map(|pick| self.siege_tier_pick(&pick))
+                }
+                // `old-techs-before-the-beeline`: behind the siege tier and
+                // ahead of the air surge and every lane beeline, the
+                // technology our land army waits on to upgrade once the world
+                // has left its era, then any technology two eras behind the
+                // world. See `advanced/old_techs_before_the_beeline.rs`.
+                _ if old_techs
+                    .get_or_init(|| {
+                        self.old_techs_before_the_beeline_goal(
+                            g,
+                            pid,
+                            endgame_research_preempts_wartime || first_launch_goal.is_some(),
+                        )
+                    })
+                    .is_some() =>
+                {
+                    old_techs
+                        .get()
+                        .copied()
+                        .flatten()
+                        .map(|pick| self.old_tech_pick(g, &pick))
                 }
                 _ if self.air_surge_research_goal(g, pid).is_some() => {
                     self.air_surge_research_goal(g, pid)
@@ -19970,6 +20003,15 @@ impl AdvancedAi {
                                         ))
                                         .unwrap_or_default(),
                                     window.turns,
+                                )
+                            } else if old_techs.get().copied().flatten().is_some_and(
+                                |pick: old_techs_before_the_beeline::OldTechPick| {
+                                    pick.tech.as_str() == goal
+                                },
+                            ) {
+                                format!(
+                                    "old-techs-before-the-beeline: the {step} step toward {}, owed from an era the world has left",
+                                    plain(goal)
                                 )
                             } else if domination_siege_goal.as_deref() == Some(goal) {
                                 format!("domination-siege-research: unlock {} to supply the missing wall-breaking capability for the campaign", plain(goal))
