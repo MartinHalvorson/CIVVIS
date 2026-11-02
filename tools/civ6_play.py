@@ -6027,6 +6027,78 @@ def _play(args: argparse.Namespace) -> int:
             return True
         return False
 
+    # ★ THE MIRROR KEEPS UP. Operator 2026-10-30: the
+    # Firaxis game and the CIVVIS page must never be more than one turn
+    # apart. `tools/follow.py` reports the turn the page has painted
+    # (`mirror_sync`); it becomes a `mirror` row, and the mod does not end a
+    # played turn until that turn is on the page. A page that falls two turns
+    # behind anyway (a wait the mod capped: hidden, frozen, restarting) is let
+    # go -- no row, no wait -- until it is back within one, so it costs the
+    # lane one capped wait rather than one per turn.
+    mirror_flow = {"synced": None, "attempt_at": 0.0, "failed": False,
+                   "given_up": False}
+    # ★ On its own 50 ms beat, not the pause poll's. A played turn is waiting
+    # on this hop: the pause poll runs once per `watch.follow` pass (0.25 s
+    # plus the focus keeper's upkeep), which was a third of the mirror wait's
+    # polling latency (first live game, 10-31: median wait 0.64 s a turn). The
+    # beat reads one small host file and writes a row only when it changes.
+    mirror_beat = threading.Event()
+
+    def mirror_sync_beat() -> None:
+        said = None
+        while not mirror_beat.wait(MIRROR_SYNC_SECONDS):
+            try:
+                sync_mirror_turn(time.monotonic())
+            except Exception as error:  # a broken beat must not end the run
+                if str(error) != said:
+                    said = str(error)
+                    print(f"[mirror] sync failed: {error}", flush=True)
+
+    def sync_mirror_turn(now: float) -> None:
+        shown = mirror_sync.shown_turn(args.tag)
+        turn = state.get("turn")
+        if shown is not None and isinstance(turn, int) and turn >= 0:
+            behind = turn - shown
+            if behind >= MIRROR_GIVE_UP_TURNS and not mirror_flow["given_up"]:
+                mirror_flow["given_up"] = True
+                print(f"[mirror] the page shows turn {shown} with the game at {turn}; "
+                      "playing on without it until it catches up", flush=True)
+            elif behind <= 1 and mirror_flow["given_up"]:
+                mirror_flow["given_up"] = False
+                print(f"[mirror] the page caught up (turn {shown}); "
+                      "turns wait for it again", flush=True)
+        wanted = None if mirror_flow["given_up"] else shown
+        if wanted == mirror_flow["synced"]:
+            return
+        # A turn the page has painted is news at once; dropping the row
+        # (nothing to wait for) is not urgent, and a failed write (a busy
+        # channel, or one the brain has not created yet) retries shortly.
+        retry = 1.0 if wanted is None else 0.25 if mirror_flow["failed"] else 0.0
+        if now - mirror_flow["attempt_at"] < retry:
+            return
+        mirror_flow["attempt_at"] = now
+        written = set_mirror_turn(orders_db_path(run_dir, args.orders_db), args.tag, wanted)
+        mirror_flow["failed"] = not written
+        if written:
+            if (wanted is None) != (mirror_flow["synced"] is None):
+                print("[mirror] turns end once the CIVVIS page shows them"
+                      if wanted is not None
+                      else "[mirror] no page to wait for; turns end at once",
+                      flush=True)
+            mirror_flow["synced"] = wanted
+
+    # ★ STARTED BEFORE THE SETUP, not with the follow loop. The control mod
+    # plays the opening on its own while this process is still probing for
+    # leader intros ("live board arrived before a leader intro was visible";
+    # civvis-20261102T145704Z was configured at +73.8 s, with turn 3 already
+    # played), so a beat started with `watch.follow` arrived with the game two
+    # turns past the page, gave up on it, and the CIVVIS page went from turn 1
+    # to turn 4. Operator 11-02: "2, 3, 4 should all be present. no turns
+    # skipped." The setup feeds `record` too, so `state` is live from here;
+    # a channel the brain has not created yet is retried on the beat.
+    threading.Thread(target=mirror_sync_beat, name="mirror-sync",
+                     daemon=True).start()
+
     if args.load_save:
         bootstrapped = bootstrap_saved_game(tail, record, run_dir, args,
                                             verify_s=args.load_wait)
@@ -6038,11 +6110,13 @@ def _play(args: argparse.Namespace) -> int:
             print("[restart] falling back to stopping Civilization VI and "
                   "launching it afresh", flush=True)
             if not launcher.stop():
+                mirror_beat.set()
                 stop_brain()
                 print("could not stop the game the restart left", file=sys.stderr)
                 return 3
             modinstall.install(config)
             if not launch_to_menu():
+                mirror_beat.set()
                 stop_brain()
                 print("the game did not reach the main menu", file=sys.stderr)
                 return 3
@@ -6050,6 +6124,7 @@ def _play(args: argparse.Namespace) -> int:
     else:
         bootstrapped = bootstrap_game(tail, record, run_dir, args)
     if not bootstrapped:
+        mirror_beat.set()
         stop_brain()
         print("could not load the saved game" if args.load_save else
               "could not start a game from the main menu", file=sys.stderr)
@@ -6176,66 +6251,6 @@ def _play(args: argparse.Namespace) -> int:
                       flush=True)
             pace_flow["synced"] = pace
 
-    # ★ THE MIRROR KEEPS UP, on the same poll. Operator 2026-10-30: the
-    # Firaxis game and the CIVVIS page must never be more than one turn
-    # apart. `tools/follow.py` reports the turn the page has painted
-    # (`mirror_sync`); it becomes a `mirror` row, and the mod does not end a
-    # played turn until that turn is on the page. A page that falls two turns
-    # behind anyway (a wait the mod capped: hidden, frozen, restarting) is let
-    # go -- no row, no wait -- until it is back within one, so it costs the
-    # lane one capped wait rather than one per turn.
-    mirror_flow = {"synced": None, "attempt_at": 0.0, "failed": False,
-                   "given_up": False}
-    # ★ On its own 50 ms beat, not the pause poll's. A played turn is waiting
-    # on this hop: the pause poll runs once per `watch.follow` pass (0.25 s
-    # plus the focus keeper's upkeep), which was a third of the mirror wait's
-    # polling latency (first live game, 10-31: median wait 0.64 s a turn). The
-    # beat reads one small host file and writes a row only when it changes.
-    mirror_beat = threading.Event()
-
-    def mirror_sync_beat() -> None:
-        said = None
-        while not mirror_beat.wait(MIRROR_SYNC_SECONDS):
-            try:
-                sync_mirror_turn(time.monotonic())
-            except Exception as error:  # a broken beat must not end the run
-                if str(error) != said:
-                    said = str(error)
-                    print(f"[mirror] sync failed: {error}", flush=True)
-
-    def sync_mirror_turn(now: float) -> None:
-        shown = mirror_sync.shown_turn(args.tag)
-        turn = state.get("turn")
-        if shown is not None and isinstance(turn, int) and turn >= 0:
-            behind = turn - shown
-            if behind >= MIRROR_GIVE_UP_TURNS and not mirror_flow["given_up"]:
-                mirror_flow["given_up"] = True
-                print(f"[mirror] the page shows turn {shown} with the game at {turn}; "
-                      "playing on without it until it catches up", flush=True)
-            elif behind <= 1 and mirror_flow["given_up"]:
-                mirror_flow["given_up"] = False
-                print(f"[mirror] the page caught up (turn {shown}); "
-                      "turns wait for it again", flush=True)
-        wanted = None if mirror_flow["given_up"] else shown
-        if wanted == mirror_flow["synced"]:
-            return
-        # A turn the page has painted is news at once; dropping the row
-        # (nothing to wait for) is not urgent, and a failed write (a busy
-        # channel, or one the brain has not created yet) retries shortly.
-        retry = 1.0 if wanted is None else 0.25 if mirror_flow["failed"] else 0.0
-        if now - mirror_flow["attempt_at"] < retry:
-            return
-        mirror_flow["attempt_at"] = now
-        written = set_mirror_turn(orders_db_path(run_dir, args.orders_db), args.tag, wanted)
-        mirror_flow["failed"] = not written
-        if written:
-            if (wanted is None) != (mirror_flow["synced"] is None):
-                print("[mirror] turns end once the CIVVIS page shows them"
-                      if wanted is not None
-                      else "[mirror] no page to wait for; turns end at once",
-                      flush=True)
-            mirror_flow["synced"] = wanted
-
     def operator_pause_requested() -> bool:
         wanted = live_pause.requested()
         now = time.monotonic()
@@ -6289,9 +6304,8 @@ def _play(args: argparse.Namespace) -> int:
     # the budget ask "can this still get there?" instead of "is the clock up?".
     ceiling_s = (args.timeout_ceiling if args.timeout_ceiling is not None
                  else args.timeout * 1.5)
-    if not refused_at_seat:
-        threading.Thread(target=mirror_sync_beat, name="mirror-sync",
-                         daemon=True).start()
+    if refused_at_seat:
+        mirror_beat.set()
     reason = "stopped" if refused_at_seat else watch.follow(
         tail, args.timeout, record, stop_when=finished,
         each_poll=keep_foreground, poll_s=poll_s,
