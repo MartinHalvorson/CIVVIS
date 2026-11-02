@@ -9205,9 +9205,6 @@ impl AdvancedAi {
         self.stalled_conquest_takes_science = false;
     }
 
-    // ---- append: a-b ------------------------------------------------
-    // ---- append: c-d ------------------------------------------------
-    // ---- append: e-f ------------------------------------------------
     /// Keep a committed first Science launch on its research path.
     pub fn enable_first_launch_keeps_research(&mut self) {
         self.first_launch_keeps_research = true;
@@ -9218,6 +9215,9 @@ impl AdvancedAi {
         self.first_launch_keeps_research = false;
     }
 
+    // ---- append: a-b ------------------------------------------------
+    // ---- append: c-d ------------------------------------------------
+    // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
