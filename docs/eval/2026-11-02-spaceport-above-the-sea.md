@@ -89,3 +89,10 @@ raw host lines documenting the original tile's flooding and submersion.
 Its five-case firing receipt passes `gene_fires.py --max 0`; generated
 evaluation metadata is current. This is proposal activation and host
 observation, not execution of the safer placement, saved turns or a win gain.
+
+The captured binary is pinned to prototype `c0322cc12`. Current main's
+independent `old-techs-before-the-beeline` opt-in was then integrated; it
+defaults off and is absent from the query profile. The selector and bridge
+file hashes still match the archive. All eight behavior tests, 14 convention
+checks and `cargo check --tests --locked` pass on the combined tree. The
+current firing, ledger, evaluation-metadata and formatting checks also pass.
