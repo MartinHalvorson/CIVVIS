@@ -162,6 +162,22 @@ clock = 21.1
 assert(board.mirrorHold(13) == true and board.hold.mirrorTurn == 12)
 env.DB.Query = query
 
+-- 10. A page still coming is turn 0 (operator 11-02: "2, 3, 4 should all be
+-- present. no turns skipped"): the follower reports the new run's page as
+-- pending until it paints, so the opening turn waits for it like any other.
+shown = 0
+clock = 30
+env.awaiting.turn = 1
+poll(1)
+assert(board.hold.mirrorTurn == 0, "a zero row is a turn, not no row")
+assert(board.mirrorHold(1) == true and board.hold.mirrorWaiting == true)
+assert(events[#events].kind == "mirror_wait" and events[#events].payload.shown == 0)
+shown = 1
+clock = 32.5
+poll(1)
+assert(board.mirrorHold(1) == false)
+assert(events[#events].kind == "mirror_caught_up" and events[#events].payload.waited_ms == 2500)
+
 -- The wiring: the wait sits after the turn is settled (the moves play while
 -- the page catches up) and before any end-turn request; the peek pulse ticks a
 -- waiting turn, once per wait, ahead of the landed-orders check.
