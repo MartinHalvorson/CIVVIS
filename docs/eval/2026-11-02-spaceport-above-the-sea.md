@@ -53,13 +53,39 @@ non-lowland tile reading. Record complete inputs, observed genomes, source
 and binary hashes, and raw responses. Native execution and complete outcome
 validation remain separate gates.
 
-Seven focused Rust tests pass in the local unoptimized CI profile, covering
+The initial seven focused Rust tests passed in the local unoptimized CI profile, covering
 the opt-in, safe/legal alternatives, fallbacks, Flood Barrier state, existing
 construction, ownership and invalid originals. Fourteen append-convention
-tests and formatting checks pass. CLI compilation and captured queries are
-pending; no proposal activation or outcome benefit is claimed yet.
+tests and formatting checks pass. This was preregistration validation;
+the final observations below supersede the pending CLI/query status.
 
 The first query attempt passed the bundle as one comma-separated CLI flag.
 The decider refused it before planning (exit 2, no genome or orders). Keep
 that failed invocation with the evidence; the corrected call supplies one
 `--with` argument per played tag. No candidate result came from that attempt.
+
+The initial valid four-case query changed the site in the t139 and t140
+reads, with all other order content equal. The actual captured t140/frame0
+read still showed a Research Lab and no placed pad, even though later t140
+observations show construction. Do not label that stale pre-placement read
+as a construction control. Before the final query, add t140/frame1, whose
+captured input explicitly includes the placed, incomplete Spaceport. Retain
+the four original cases. An additional behavior test covers a foundation
+that remains placed while another item occupies its queue.
+
+## Final proposal validation
+
+All eight focused tests pass, including the placed-foundation regression.
+The native CLI builds in the unoptimized CI profile. All five final pairs
+and repeated controls pass with only the tested gene changed in the observed
+genomes. At t139/frame0 and t140/frame0, Ternate's proposed placement changes
+from (49,31) to the native-offered non-lowland (48,27). All other order
+content is identical. The placed t140/frame1 pad, the pillaged t176 pad,
+and the later winner's already non-lowland t166 placement stay unchanged.
+
+The archive retains immutable input reads, raw responses, source/binary
+hashes and patch, the exact profile source, the failed CLI invocation, and
+raw host lines documenting the original tile's flooding and submersion.
+Its five-case firing receipt passes `gene_fires.py --max 0`; generated
+evaluation metadata is current. This is proposal activation and host
+observation, not execution of the safer placement, saved turns or a win gain.

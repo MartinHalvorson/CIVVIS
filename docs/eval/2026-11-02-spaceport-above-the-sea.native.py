@@ -29,13 +29,14 @@ def main():
     bundle = profile.decode().strip()
     assert tag not in bundle.split(",")
     (args.out / "profile.txt").write_bytes(profile)
-    cases = [("civvis-20261102T171007Z", t) for t in [139, 140, 176]]
-    cases.append(("civvis-20261102T185903Z", 166))
+    cases = [("civvis-20261102T171007Z", t, 0) for t in [139, 140, 176]]
+    cases.append(("civvis-20261102T185903Z", 166, 0))
+    cases.append(("civvis-20261102T171007Z", 140, 1))
     binary_hash = hashlib.sha256(args.binary.read_bytes()).hexdigest()
     summary = []
-    for run, turn in cases:
+    for run, turn, frame in cases:
         matches = [r for r in records((args.root / run / "decisions.jsonl").read_bytes())
-                   if r["decision"]["turn"] == turn and r["decision"]["frame"] == 0]
+                   if r["decision"]["turn"] == turn and r["decision"]["frame"] == frame]
         assert len(matches) == 1
         record = matches[0]
         capture = record["input_capture"]
@@ -44,7 +45,7 @@ def main():
         for read in capture["reads"]:
             candidate = captured_input(capture, read["snapshot_id"])
             states = [r for r in records(candidate) if r.get("kind") == "state"]
-            if states and (states[-1]["turn"], states[-1].get("frame", 0)) == (turn, 0):
+            if states and (states[-1]["turn"], states[-1].get("frame", 0)) == (turn, frame):
                 raw = candidate
                 snapshot = read["snapshot_id"]
                 state = states[-1]
@@ -55,10 +56,10 @@ def main():
             if r.get("kind") == "tiles" and isinstance(r.get("plots"), list):
                 for plot in r["plots"]:
                     plots[(plot["x"], plot["y"])] = plot
-        directory = args.out / f"{run}-{turn}"
+        directory = args.out / f"{run}-{turn}-frame{frame}"
         directory.mkdir()
         (directory / "captured-events.jsonl").write_bytes(raw)
-        result = {"complete": False, "run": run, "turn": turn, "frame": 0,
+        result = {"complete": False, "run": run, "turn": turn, "frame": frame,
                   "scope": "One-shot Science queries on one actual captured read; no original process replay, host execution, or strength claim",
                   "source_decision_sha256": record["sha256"], "source_capture": capture,
                   "snapshot_id": snapshot, "binary_sha256": binary_hash,
@@ -117,7 +118,7 @@ def main():
         result["site_changes"] = changes
         result["complete"] = True
         (directory / "result.json").write_text(json.dumps(result, indent=2) + "\n")
-        row = {"run": run, "turn": turn, "site_changes": len(changes),
+        row = {"run": run, "turn": turn, "frame": frame, "site_changes": len(changes),
                "orders_otherwise_equal": result["all_other_order_content_equal"]}
         summary.append(row)
         print(json.dumps(row), flush=True)
