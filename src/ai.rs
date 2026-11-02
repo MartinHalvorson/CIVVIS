@@ -13875,9 +13875,13 @@ impl BasicAi {
                 // than this simulator's queue entry.
                 Self::empire_district_family_ready_or_queued(g, pid, "spaceport")
             };
+            // `first-pad-in-the-forge`: the empire's first pad only in a
+            // producer. This step hands it to whichever city is being filled.
+            // See `ai/first_pad_in_the_forge.rs`.
             if !self.exclude_space_race
                 && !has_spaceport
                 && g.players[pid].techs.contains(&crate::name!("rocketry"))
+                && self.first_pad_city_allowed(g, pid, cid)
             {
                 if let Some(pos) = g
                     .district_sites(cid, crate::name!("spaceport"))
