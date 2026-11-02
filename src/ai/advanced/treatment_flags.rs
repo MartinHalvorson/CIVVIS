@@ -9126,6 +9126,17 @@ impl AdvancedAi {
         self.science_drive_leads_beside_the_lane = false;
     }
 
+    /// Opt-in gene `friendship-refuses-the-racer`; see
+    /// [`Self::friendship_refuses_the_racer`].
+    pub fn enable_friendship_refuses_the_racer(&mut self) {
+        self.friendship_refuses_the_racer = true;
+    }
+
+    /// The twin of `enable_friendship_refuses_the_racer`.
+    pub fn disable_friendship_refuses_the_racer(&mut self) {
+        self.friendship_refuses_the_racer = false;
+    }
+
     /// Opt-in gene `deterrence-trusts-a-friend`; see
     /// [`Self::deterrence_trusts_a_friend`].
     pub fn enable_deterrence_trusts_a_friend(&mut self) {

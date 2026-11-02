@@ -66,6 +66,13 @@ pub(super) const FRIENDSHIP_RENEW_WINDOW: u32 = 2;
 /// Conquest counter is barred: we are declared friends".
 pub(super) const FRIENDSHIP_RACE_CEILING: i32 = 45;
 
+/// `friendship-refuses-the-racer`: a rival whose culture race is projected to
+/// finish within this many turns reads as racing. A declared friendship lasts
+/// thirty standard turns and the Conquest counter needs about fifteen more to
+/// stage and march, so a race finishing inside both is one the friendship
+/// would bar.
+pub(super) const FRIENDSHIP_CULTURE_HORIZON: f64 = 45.0;
+
 // `friendship-only-with-the-stronger`: a friendship is offered (and renewed)
 // only to a rival whose military power is at least ours. Live Emperor, the
 // four games after `befriend-the-strongest` was armed (2026-10-18): of 1,483
@@ -149,9 +156,19 @@ impl AdvancedAi {
 
     /// `friendship-ends-at-the-race`: whether `rival`'s best race reads
     /// [`FRIENDSHIP_RACE_CEILING`] or more, or the counter reads it urgent.
-    fn friend_is_racing(&self, g: &Game, rival: usize) -> bool {
+    /// `friendship-refuses-the-racer`: or its culture race is projected to
+    /// finish within [`FRIENDSHIP_CULTURE_HORIZON`]. A friendship outlives
+    /// the reading it was offered on: native King Domination seat 30700004
+    /// offered Gaul friendship at t105 and t126, under the ceiling, then read
+    /// "the Conquest counter is barred: we are declared friends" at 61% and
+    /// lost to Gaul's Culture at t169.
+    pub(super) fn friend_is_racing(&self, g: &Game, rival: usize) -> bool {
         self.rival_pressure(g, rival).1 >= FRIENDSHIP_RACE_CEILING
             || self.urgent_victory_threat(g, rival)
+            || (self.friendship_refuses_the_racer
+                && self
+                    .projected_culture_finish(g, rival)
+                    .is_some_and(|turns| turns <= FRIENDSHIP_CULTURE_HORIZON))
     }
 
     /// `friendship-keeps-the-peace`: on, and the seat aims at a victory other
@@ -816,6 +833,79 @@ mod tests {
             "{}",
             held[0]
         );
+    }
+
+    /// `friendship-refuses-the-racer`: a racer's offer of friendship is
+    /// refused with the gene and priced as before without it. Native King
+    /// Domination seat 30700000 accepted France's offer at t128 and t149
+    /// while France's culture read 45% and 64% and lost to it at t161.
+    #[test]
+    fn a_racer_s_offer_of_friendship_is_refused() {
+        use crate::ai::advanced::{GrandStrategy, StrategicPlan};
+        use crate::game::{DiplomaticDeal, ObservedPublicEmpireStats};
+        use std::sync::Arc;
+        let mut game = three_majors();
+        // Seat 1 one visitor short of the largest other staycation.
+        let stats = Arc::make_mut(&mut game.observed_public_empire_stats);
+        for (pid, foreign) in [(0, 0), (1, 19), (2, 0)] {
+            stats.insert(
+                pid,
+                ObservedPublicEmpireStats {
+                    domestic_tourists: Some(20),
+                    foreign_tourists: Some(foreign),
+                    ..Default::default()
+                },
+            );
+        }
+        let offer = |from: usize| DiplomaticDeal {
+            id: 1,
+            from,
+            to: 0,
+            give_gold: 0.0,
+            request_gold: 0.0,
+            open_borders: false,
+            friendship: true,
+            peace: false,
+            alliance: None,
+            defensive_pact: false,
+            joint_war_target: None,
+            promise: None,
+            demand: false,
+            expires: game.turn + 1,
+        };
+        let plan = StrategicPlan {
+            strategy: GrandStrategy::Expansion,
+            target_player: None,
+            target_city: None,
+            threatened_city: None,
+            desired_cities: 3,
+            assessed_turn: game.turn,
+            rush: false,
+        };
+        let mut on = AdvancedAi::new();
+        on.enable_friendship_refuses_the_racer();
+        let off = AdvancedAi::new();
+        assert!(on.friend_is_racing(&game, 1), "fixture: seat 1 is racing");
+        assert_eq!(
+            on.incoming_deal_value(&game, 0, &offer(1), &plan),
+            -1_000.0,
+            "on: the racer's offer is refused"
+        );
+        assert!(
+            off.incoming_deal_value(&game, 0, &offer(1), &plan) > 0.0,
+            "off: priced as before"
+        );
+        assert!(
+            on.incoming_deal_value(&game, 0, &offer(2), &plan) > 0.0,
+            "on: a rival that is not racing is priced as before"
+        );
+    }
+
+    #[test]
+    fn friendship_refuses_the_racer_is_opt_in() {
+        opt_in_off_in_both_controllers("friendship-refuses-the-racer", |ai| {
+            ai.friendship_refuses_the_racer
+        });
     }
 
     #[test]
