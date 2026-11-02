@@ -9109,6 +9109,11 @@ pub struct AdvancedAi {
     /// horizon at the live seat's own curve (`rival_pace::seat_capped`).
     /// `false` everywhere but a measured harness seat under the flag.
     seat_city_pace: bool,
+    /// `science-drive-leads-beside-the-lane`: from Online turn 140 a seat
+    /// assigned another lane opens the science drive on its own outright
+    /// lead, without waiting for a rival's launch. See
+    /// `advanced/science_victory_drive.rs`. Off by default.
+    science_drive_leads_beside_the_lane: bool,
     // ---- append: t-z ------------------------------------------------
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
@@ -11958,6 +11963,7 @@ impl AdvancedAi {
             science_drive_answers_from_the_pad: false,
             science_drive_answers_from_the_pad_2: false,
             seat_city_pace: false,
+            science_drive_leads_beside_the_lane: false,
             // ---- append: t-z ----------------------------------------
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,
