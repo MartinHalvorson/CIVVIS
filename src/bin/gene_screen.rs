@@ -2422,7 +2422,7 @@ fn drain_journal(journal: &Journal, cursor: u64, lines: &mut Vec<String>) -> u64
     for thought in delta.thoughts {
         if !matches!(
             thought.topic,
-            Topic::Strategy | Topic::Military | Topic::Diplomacy
+            Topic::Strategy | Topic::Military | Topic::Diplomacy | Topic::Research
         ) || thought.level > Level::Decision
         {
             continue;
@@ -6492,7 +6492,7 @@ fn usage() -> ! {
          the rival trajectories: [--trace] writes every major's economy (cities, population, yields, tourism, \
          tourists, techs, civics, wonders, districts) at turns 10..100 by tens, 125, 150, 175, 200, 225 onto its \
          row as `trace`; rows are unchanged without it; [--journal SEED[,SEED]] writes those seeds' \
-         measured-seat reasoning (strategy, war and diplomacy decisions) to <out>.journal.<seed>.txt\n       \
+         measured-seat reasoning (strategy, war, diplomacy and research decisions) to <out>.journal.<seed>.txt\n       \
          the handicapped rivals: [--handicap all|rivals] (default all; rivals exempts every measured seat from \
          the rung's bonuses so only the rival chairs play with them, as the live seat meets Emperor) \
          [--rival-chairs N] (default 1, at most players-1); both need --rivals\n       \
@@ -7327,6 +7327,39 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn journal_keeps_research_decisions_and_advances_past_filtered_detail() {
+        let journal = Journal::recording();
+        journal.begin_turn(123, 4);
+        journal.note(
+            Topic::Research,
+            Level::Decision,
+            "Researching satellites".into(),
+            "the next launch technology".into(),
+            None,
+        );
+        journal.note(
+            Topic::Research,
+            Level::Detail,
+            "candidate scores".into(),
+            String::new(),
+            None,
+        );
+        let mut lines = Vec::new();
+        let cursor = drain_journal(&journal, 0, &mut lines);
+        assert_eq!(
+            lines,
+            ["t123 p4 Research Researching satellites | the next launch technology"]
+        );
+        assert_eq!(cursor, 2, "the cursor also passes filtered detail");
+        assert_eq!(drain_journal(&journal, cursor, &mut lines), cursor);
+        assert_eq!(
+            lines.len(),
+            1,
+            "the next drain must not duplicate a decision"
+        );
+    }
 
     #[test]
     fn a_live_genome_header_or_tag_list_sets_every_default() {
