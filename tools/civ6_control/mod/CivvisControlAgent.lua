@@ -20354,6 +20354,33 @@ CivvisBoard.holdVisibleBuilderCaptureLegs = function(pid, turn, rows)
 	end);
 	if #threats == 0 then return; end
 
+	-- Read the active host abilities, including trait-granted ones, rather than
+	-- treating every ship as unable to raid a civilian on shore. UnitPanel.lua
+	-- reads GetAbility():GetAbilities(); UnitAbilities.xml binds raiding effects.
+	local function canCoastalRaid(threat)
+		return try(function()
+			local abilities = threat.unit:GetAbility():GetAbilities();
+			if type(abilities) ~= "table" then return nil; end
+			local active = {};
+			for _, index in pairs(abilities) do
+				local ability = GameInfo.UnitAbilities[index];
+				if ability == nil or ability.UnitAbilityType == nil then return nil; end
+				active[ability.UnitAbilityType] = true;
+			end
+			if next(active) == nil then return false; end
+			for link in GameInfo.UnitAbilityModifiers() do
+				if active[link.UnitAbilityType] then
+					local modifier = GameInfo.Modifiers[link.ModifierId];
+					if modifier == nil or modifier.ModifierType == nil then return nil; end
+					if modifier.ModifierType == "MODIFIER_UNIT_ADJUST_RAIDING" then
+						return true;
+					end
+				end
+			end
+			return false;
+		end, nil);
+	end
+
 	local function threatReaches(threat, x, y)
 		if threat.scout then
 			local distance = tonumber(try(function()
@@ -20376,11 +20403,12 @@ CivvisBoard.holdVisibleBuilderCaptureLegs = function(pid, turn, rows)
 		local definition = try(function()
 			return GameInfo.Units[threat.unit:GetUnitType()];
 		end, nil);
-		-- Match the Settler guard: a naval distance envelope cannot capture a
-		-- Builder on ordinary land. Native 20261102T202907Z t96 held its Iron
+		-- A non-raiding naval distance envelope cannot capture a Builder on
+		-- ordinary land. Native 20261102T202907Z t96 held its Iron
 		-- approach for a Caravel under the distance fallback. Keep positive paths,
 		-- water, city/district transitions and unavailable terrain conservative.
-		if definition ~= nil and definition.Domain == "DOMAIN_SEA" then
+		if definition ~= nil and definition.Domain == "DOMAIN_SEA"
+				and canCoastalRaid(threat) == false then
 			local plot = try(function() return Map.GetPlot(x, y); end, nil);
 			local water = try(function() return plot:IsWater(); end, nil);
 			local city = try(function() return plot:IsCity(); end, nil);

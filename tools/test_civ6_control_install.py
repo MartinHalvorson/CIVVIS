@@ -1179,14 +1179,14 @@ class ProtectedInstallTest(unittest.TestCase):
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         hold = source.split(
             "CivvisBoard.holdVisibleBarbarianCombatCaptureLegs = function", 1
-        )[1].split("CivvisBoard.holdVisibleScoutCaptureLegs", 1)[0]
+        )[1].split("CivvisBoard.holdVisibleBuilderCaptureLegs = function", 1)[0]
 
         self.assertIn("unit = unit,", hold)
         self.assertIn("local function threatReaches(threat, x, y)", hold)
         self.assertIn(
             "UnitManager.GetMoveToPathEx(threat.unit, destination)", hold
         )
-        self.assertIn("local definition = GameInfo.Units[threat.unit:GetUnitType()]", hold)
+        self.assertIn("GameInfo.Units[threat.unit:GetUnitType()]", hold)
         self.assertIn("definition.BaseMoves", hold)
         self.assertIn("if distance >= 0 and distance <= baseMoves then", hold)
         self.assertIn("hostile_reach = reachKind", hold)

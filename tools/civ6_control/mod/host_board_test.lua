@@ -122,6 +122,26 @@ GameInfo = setmetatable({}, { __index = function(_, k)
 			return nil
 		end })
 	end
+	if k == "UnitAbilities" then
+		return { ABILITY_COASTAL_RAID = { UnitAbilityType = "ABILITY_COASTAL_RAID" },
+			ABILITY_MELEE_COASTAL_RAID = { UnitAbilityType = "ABILITY_MELEE_COASTAL_RAID" },
+			ABILITY_TEST_PASSIVE = { UnitAbilityType = "ABILITY_TEST_PASSIVE" } }
+	end
+	if k == "UnitAbilityModifiers" then
+		return function()
+			local links = {
+				{ UnitAbilityType = "ABILITY_COASTAL_RAID", ModifierId = "UNIT_COASTAL_RAID" },
+				{ UnitAbilityType = "ABILITY_MELEE_COASTAL_RAID", ModifierId = "UNIT_COASTAL_RAID" },
+				{ UnitAbilityType = "ABILITY_TEST_PASSIVE", ModifierId = "UNIT_TEST_PASSIVE" },
+			}
+			local index = 0
+			return function() index = index + 1; return links[index] end
+		end
+	end
+	if k == "Modifiers" then
+		return { UNIT_COASTAL_RAID = { ModifierType = "MODIFIER_UNIT_ADJUST_RAIDING" },
+			UNIT_TEST_PASSIVE = { ModifierType = "MODIFIER_UNIT_ADJUST_MOVEMENT" } }
+	end
 	return stub()
 end })
 rawset(_G, "CivvisControlConfig", {})
@@ -141,6 +161,10 @@ local function unitObject(u)
 		GetMovesRemaining = function() return u.moves end,
 		GetUnitType = function() return u.kind end,
 		GetType = function() return u.kind end,
+		GetAbility = function() return { GetAbilities = function()
+			if u.ability_unknown then return nil end
+			return u.abilities or {}
+		end } end,
 		GetDamage = function() return 0 end,
 		GetGreatPerson = function() return nil end,
 		GetFortifyTurns = function() return 0 end,
@@ -949,11 +973,22 @@ for _, navalKind in ipairs({ "UNIT_GALLEY", "UNIT_CARAVEL" }) do
 		{ name = "district", water = false, city = false, district = 5, held = true },
 		{ name = "unknown", held = true },
 		{ name = "native path", water = false, city = false, district = -1, path = true, held = true },
+		{ name = "raid ability", water = false, city = false, district = -1,
+			abilities = { "ABILITY_COASTAL_RAID" }, held = true },
+		{ name = "melee raid ability", water = false, city = false, district = -1,
+			abilities = { "ABILITY_MELEE_COASTAL_RAID" }, held = true },
+		{ name = "unknown ability read", water = false, city = false, district = -1,
+			ability_unknown = true, held = true },
+		{ name = "unknown ability metadata", water = false, city = false, district = -1,
+			abilities = { "ABILITY_TEST_UNKNOWN" }, held = true },
+		{ name = "non-raiding ability", water = false, city = false, district = -1,
+			abilities = { "ABILITY_TEST_PASSIVE" }, held = false },
 	}) do
 		reset()
 		host.cities[1] = { x = 1, y = 1 }
 		host.units[61] = { id = 61, kind = "UNIT_BUILDER", x = 1, y = 1, moves = 2 }
-		host.barbarians[107] = { id = 107, kind = navalKind, x = 4, y = 1, moves = 0 }
+		host.barbarians[107] = { id = 107, kind = navalKind, x = 4, y = 1, moves = 0,
+			abilities = case.abilities, ability_unknown = case.ability_unknown }
 		if case.water ~= nil then
 			terrainPlots[plotIndex(2, 1)] = {
 				IsWater = function() return case.water end,

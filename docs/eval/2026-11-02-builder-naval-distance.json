@@ -1,13 +1,14 @@
 {
-  "schema": 1,
+  "schema": 2,
   "scope": "Native observation and host-harness actuation regression, no native execution or strength estimate",
   "source": {
-    "head": "48a75679796ebc8c06e3801ee9426a0b44329e6d",
-    "base_main": "bedefb280e9d052d302134fa99883fe59e098bd4",
-    "recorded_utc": "2026-11-02T22:55:51.908002+00:00",
+    "head": "675d1c73f59a6e503671fa694e9a561e837e423f",
+    "base_main": "4cdddb41483b70f8872e20b5d33030eb8c797887",
+    "recorded_utc": "2026-11-02T23:14:14.468114+00:00",
     "files": {
-      "tools/civ6_control/mod/CivvisControlAgent.lua": "d4ee927cbd0b707280f926b8eaf542d68aec40abf6fa68306f0a42d14f95d448",
-      "tools/civ6_control/mod/host_board_test.lua": "fb602130aa02eef8691e10b28e07729c2c023a6f04dfe6a3f972aecfcf6e7210",
+      "tools/civ6_control/mod/CivvisControlAgent.lua": "b21e16984d3fe83ee4a324a48ec5a1407f035b5096144311fcfd08dc4eda77f3",
+      "tools/civ6_control/mod/host_board_test.lua": "1fc4b679580938c5e3b61bc11a29fefd46defddf7d2e5c0cdb75f73b1326b4d5",
+      "tools/test_civ6_control_install.py": "8e5b116246839689621f5e83fe670d484b96b26ddb7e5a7720a872c23592606d",
       "docs/eval/2026-11-02-builder-naval-distance.extract.py": "a03433f6c6ca67381a2a4f369a2aeb1be35977515f9a3924fa18b7587455ce75"
     },
     "lua_runtime": "lupa.lua51"
@@ -269,27 +270,57 @@
     ]
   },
   "tests": {
-    "red_failed": 3,
-    "green_host_board_checks": 186,
+    "original_failed": 5,
+    "intermediate_broad_naval_exception_failed_raid_checks": 8,
+    "green_host_board_checks": 196,
     "lua_test_files": 114,
+    "python_install_tests": 139,
     "runtime": "lupa.lua51",
     "all_passed": true
   },
-  "shipped_rule": "Base/Assets/Gameplay/Data/Units.xml:804 (UNIT_CARAVEL, DOMAIN_SEA, BaseMoves=4)",
-  "archive": {
-    "file": "2026-11-02-builder-naval-distance.raw.tar.xz",
-    "bytes": 370764,
-    "sha256": "eed5db19ca5f90e83b37867654594e130e4e5ad4785e1c1634958e706a0f7b11",
-    "members": [
+  "shipped_rules": {
+    "files": {
+      "Base/Assets/Gameplay/Data/Units.xml": "ef9d3984d41c5bbb8363ae2195e646eef1353f7b76b7e5cab95d47b3ab762305",
+      "Base/Assets/Gameplay/Data/UnitAbilities.xml": "f6148b9cf29aa522556150a9131146b68984a7df435dcc2b14951a34bb2020ee",
+      "Base/Assets/UI/Panels/UnitPanel.lua": "59e0ee36a36aeeef927a1024751f2d3c7a259ffefc45159738eb6c684368f8b3"
+    },
+    "facts": [
       {
-        "path": "all-lua-tests.json",
-        "bytes": 11646,
-        "sha256": "4d031b2e8c00373ea5a7c5338946386beb16a270a2b1a87350f9e0fb59f6011e"
+        "source": "Base/Assets/Gameplay/Data/Units.xml:804",
+        "unit": "UNIT_CARAVEL",
+        "domain": "DOMAIN_SEA",
+        "base_moves": 4
       },
       {
-        "path": "all-lua-tests.log",
-        "bytes": 641974,
-        "sha256": "913e076fc9fe90f7bfcd7e5ccab0c30e4a4c4f12f62007fc7e9232b4737acc3b"
+        "source": "Base/Assets/UI/Panels/UnitPanel.lua:2225,2267",
+        "api": "GetAbility():GetAbilities()"
+      },
+      {
+        "source": "Base/Assets/Gameplay/Data/UnitAbilities.xml:652-657,1053-1054",
+        "ability_links": [
+          "ABILITY_COASTAL_RAID",
+          "ABILITY_MELEE_COASTAL_RAID"
+        ],
+        "modifier": "UNIT_COASTAL_RAID",
+        "modifier_type": "MODIFIER_UNIT_ADJUST_RAIDING"
+      }
+    ]
+  },
+  "native_limit": "The captured holds lack the hostile active-ability list. Actual live bypass awaits a supported ability read; unknown abilities preserve the prior hold.",
+  "archive": {
+    "file": "2026-11-02-builder-naval-distance.raw.tar.xz",
+    "bytes": 375296,
+    "sha256": "c64fe523a2c9f2e6ab45dc7269fde22af8cda9b659acfe1096c5cbbee450c053",
+    "members": [
+      {
+        "path": "all-lua-tests-02.json",
+        "bytes": 11733,
+        "sha256": "a432592be1417d73a1b14c2a0d5cd337fc3782f6e09c40f004b44756d409684a"
+      },
+      {
+        "path": "all-lua-tests-02.log",
+        "bytes": 659095,
+        "sha256": "5b296a8f9553d08a55372179ee04a0edc96e9d1b0355a3bc8c227badff963b78"
       },
       {
         "path": "baseline-agent.lua",
@@ -302,14 +333,14 @@
         "sha256": "a03433f6c6ca67381a2a4f369a2aeb1be35977515f9a3924fa18b7587455ce75"
       },
       {
-        "path": "green-final-host-board.log",
-        "bytes": 130753,
-        "sha256": "8ba38834084b75f81296702762a198ada1dc7f6d9e351843992b52a6ca8edc50"
+        "path": "green-raid-guard.log",
+        "bytes": 147875,
+        "sha256": "787df5ce169631c247bb0b2e2fa32f10a2fec5c076ebf03052862ede183ad3bf"
       },
       {
         "path": "harness.lua",
-        "bytes": 67514,
-        "sha256": "fb602130aa02eef8691e10b28e07729c2c023a6f04dfe6a3f972aecfcf6e7210"
+        "bytes": 69294,
+        "sha256": "1fc4b679580938c5e3b61bc11a29fefd46defddf7d2e5c0cdb75f73b1326b4d5"
       },
       {
         "path": "native-observations/line-007038.jsonl",
@@ -357,24 +388,34 @@
         "sha256": "16ef15e1bd30d4057834fad748dbdca2848470cad1e37749a7b5d7b3ae896fd5"
       },
       {
-        "path": "red-final-host-board.log",
-        "bytes": 131803,
-        "sha256": "3203acdb6f3e6e0f0f31ddcc237b632010ababb208f6a49956419955441e832e"
+        "path": "python-install-tests.log",
+        "bytes": 239,
+        "sha256": "79bd2573ab2a866d9c4d8dbd0b134e411ba2f743dde406e69fcf11f0ae3ee200"
       },
       {
-        "path": "shipped-caravel-rules.txt",
-        "bytes": 1140,
-        "sha256": "f33703a6552e9d80545a4a056e0f6f9079e9559a307423b4e047e646aa0fc8e9"
+        "path": "red-original-complete.log",
+        "bytes": 149624,
+        "sha256": "e95255a5a5a7a7f01ca40bbbbe5907c380f62020d062cff0b7b0b956439948b8"
+      },
+      {
+        "path": "red-raid-guard.log",
+        "bytes": 145426,
+        "sha256": "945255261ee44778e33ddcb94e05b323d9a8007d3388023e4a0e50a6fe99f6aa"
+      },
+      {
+        "path": "shipped-rule-facts.json",
+        "bytes": 943,
+        "sha256": "85ded23ffbf8e4ee39ecb9d551a2a9734fcddbd38170bac77d4101c8291f7fc4"
       },
       {
         "path": "source-receipt.json",
-        "bytes": 587,
-        "sha256": "f025443a4b7ec5676fa42c7a8ba3d73ffaf609283e5d3496dcc43663fb1a91a9"
+        "bytes": 697,
+        "sha256": "1b662830ee6e1d8069df42bb3c44891382d7d15bf4bdb59b0f905055957d2851"
       },
       {
         "path": "source.patch",
-        "bytes": 5314,
-        "sha256": "c5787b957cc1d46f58491d74e66810e068d1f5b52b2a4a8a6795fd9dc785cd4f"
+        "bytes": 13452,
+        "sha256": "ce9cd7287562175607ae258b976cd6b5e59d5e2622fd1d9f5950a5c1cb38eac9"
       }
     ]
   }
