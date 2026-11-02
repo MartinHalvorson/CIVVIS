@@ -30,10 +30,46 @@
 //! ([`AdvancedAi::culture_theater_holds`]).
 //!
 //! Off, or for a seat not aiming at Culture, nothing changes.
+//!
+//! **Version two, `culture-seat-theater-first-2`, balances the claim against
+//! the Campuses.** A city claims its first Theater Square only while the
+//! empire's Theater Squares, standing or queued, number fewer than its
+//! Campuses (at least one: the first Theater always goes ahead, which keeps
+//! version one's fix); otherwise the free-slot Campus claim keeps that city's
+//! slot. The two settle near one each. Live King culture seats today stood
+//! at 2-4 Campuses against 4-5 Theaters at t100 (063953Z 2/4, 081602Z 2/4,
+//! 091422Z 4/5, 112906Z 3/5) and 2-7 Campuses on 7-10 cities at t150, sat
+//! 5-10 technologies behind the rival mean, and lost mostly to a rival
+//! Science finish at t222-244. Small cities hold one or two district slots,
+//! so a Theater first in every city leaves each Campus waiting for the
+//! second. Enabling one version turns the other off.
 
 use super::*;
 
 impl AdvancedAi {
+    /// Either version is on.
+    fn theater_first_active(&self) -> bool {
+        self.culture_seat_theater_first || self.culture_seat_theater_first_2
+    }
+
+    /// Version two's gate: the empire's Theater Squares, standing or queued,
+    /// number fewer than its Campuses, or than one.
+    pub(super) fn theaters_trail_campuses(g: &Game, pid: usize) -> bool {
+        let holds = |city: &crate::game::City, family: &str| {
+            g.city_has_district_family(city, Name::new(family))
+                || city.queue.iter().any(|item| {
+                    matches!(item, Item::District { district, .. }
+                        if g.district_family(*district) == family)
+                })
+        };
+        let (mut theaters, mut campuses) = (0usize, 0usize);
+        for city in g.cities.values().filter(|city| city.owner == pid) {
+            theaters += usize::from(holds(city, "theater_square"));
+            campuses += usize::from(holds(city, "campus"));
+        }
+        theaters < campuses.max(1)
+    }
+
     /// The first Theater Square `cid` would claim and its build turns: a
     /// Culture seat's unthreatened city of ours with none standing or queued.
     /// `None` with the gene off or for another victory target.
@@ -44,9 +80,12 @@ impl AdvancedAi {
         cid: u32,
         plan: &StrategicPlan,
     ) -> Option<(Item, f64)> {
-        if !self.culture_seat_theater_first
+        if !self.theater_first_active()
             || self.active_victory_target(g) != Some(VictoryTarget::Culture)
         {
+            return None;
+        }
+        if self.culture_seat_theater_first_2 && !Self::theaters_trail_campuses(g, pid) {
             return None;
         }
         let city = g.cities.get(&cid)?;
@@ -81,7 +120,7 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         item: &Item,
     ) -> bool {
-        if !self.culture_seat_theater_first
+        if !self.theater_first_active()
             || self.active_victory_target(g) != Some(VictoryTarget::Culture)
         {
             return false;
@@ -143,7 +182,7 @@ impl AdvancedAi {
     /// See the module: every eligible city of a Culture seat claims its first
     /// Theater Square. Exact no-op with the gene off or for another target.
     pub(super) fn claim_culture_theaters(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
-        if !self.culture_seat_theater_first
+        if !self.theater_first_active()
             || self.active_victory_target(g) != Some(VictoryTarget::Culture)
         {
             return;
