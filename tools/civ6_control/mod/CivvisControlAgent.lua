@@ -20414,6 +20414,10 @@ CivvisBoard.holdVisibleBuilderCaptureLegs = function(pid, turn, rows)
 			local city = try(function() return plot:IsCity(); end, nil);
 			local district = tonumber(try(function() return plot:GetDistrictType(); end, nil));
 			if water == false and city == false and district ~= nil and district < 0 then
+				emit("builder_naval_land_clear", {
+					turn = turn, hostile = threat.id, hostile_type = threat.name,
+					at = { x, y }, reason = "known_no_raiding_ability",
+				});
 				return false, "naval_land";
 			end
 		end

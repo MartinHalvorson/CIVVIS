@@ -32,10 +32,10 @@ reads the active host abilities through the API used by shipped
 infer raid capability from a list of ship names.
 
 The harness loads the real control script and exercises its `applyOrders`.
-Before the repair, five land-movement checks fail, including the native
-turn-96 coordinates. An intermediate blanket naval exception fails eight
+Before the repair, five land-movement checks and the new classification-record
+check fail, including the native turn-96 coordinates. An intermediate blanket naval exception fails eight
 new raid/unknown-ability checks; those failures are retained. Afterward all
-196 host-board checks pass. Both ship types also retain holds for water,
+197 host-board checks pass. Both ship types also retain holds for water,
 city, district, unknown terrain, positive native paths, raid abilities and
 unknown ability reads. All 114
 discovered mod test files pass locally under `lupa.lua51`; CI runs the
@@ -44,12 +44,15 @@ The 139 Python installation tests pass too. Their Settler-reach source check
 now ends before the Builder function, rather than accidentally depending on
 an unrelated local-variable assignment inside that function.
 
-The companion JSON binds the 375,296-byte raw archive and all 21 members:
+The companion JSON binds the 375,772-byte raw archive and all 23 members:
 selected native rows, red/green logs, complete local Lua test results,
 the shipped unit-row readout, baseline script, harness and source receipt.
 This is evidence of the corrected host-harness movement decision, not actual
 movement in the captured game or an increase in win rate. The captured holds
 do not include the hostile ability list; actual live bypass still requires a
-supported ability read, and unknown data preserves the hold. The Science fuel
+supported ability read, and unknown data preserves the hold. Future native
+traces can use `builder_naval_land_clear` to verify that a
+non-raiding classification was actually made; that event alone is not proof
+of an executed move or improved yields. The Science fuel
 pilot remains defined by its original plan; this change is recorded as a
 separate runtime version if it reaches a later family.

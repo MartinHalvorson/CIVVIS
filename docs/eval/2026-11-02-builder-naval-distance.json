@@ -2,12 +2,12 @@
   "schema": 2,
   "scope": "Native observation and host-harness actuation regression, no native execution or strength estimate",
   "source": {
-    "head": "675d1c73f59a6e503671fa694e9a561e837e423f",
-    "base_main": "4cdddb41483b70f8872e20b5d33030eb8c797887",
-    "recorded_utc": "2026-11-02T23:14:14.468114+00:00",
+    "head": "a5de8800ef0d704d2c9f0276f5c76b2057740210",
+    "base_main": "3ff83fba4488741cb791b1f74cbe85fb72e44a3e",
+    "recorded_utc": "2026-11-02T23:22:08.962481+00:00",
     "files": {
-      "tools/civ6_control/mod/CivvisControlAgent.lua": "b21e16984d3fe83ee4a324a48ec5a1407f035b5096144311fcfd08dc4eda77f3",
-      "tools/civ6_control/mod/host_board_test.lua": "1fc4b679580938c5e3b61bc11a29fefd46defddf7d2e5c0cdb75f73b1326b4d5",
+      "tools/civ6_control/mod/CivvisControlAgent.lua": "661b8e99d5d8e2d630956d484d673cf3bf403565d78c4f0a9d10b444cc4a61be",
+      "tools/civ6_control/mod/host_board_test.lua": "9ee1bd15a2200d39d712194de2720c34c8d7bc3d3d5aeff15f096cf4833c084c",
       "tools/test_civ6_control_install.py": "8e5b116246839689621f5e83fe670d484b96b26ddb7e5a7720a872c23592606d",
       "docs/eval/2026-11-02-builder-naval-distance.extract.py": "a03433f6c6ca67381a2a4f369a2aeb1be35977515f9a3924fa18b7587455ce75"
     },
@@ -270,9 +270,9 @@
     ]
   },
   "tests": {
-    "original_failed": 5,
+    "original_failed": 6,
     "intermediate_broad_naval_exception_failed_raid_checks": 8,
-    "green_host_board_checks": 196,
+    "green_host_board_checks": 197,
     "lua_test_files": 114,
     "python_install_tests": 139,
     "runtime": "lupa.lua51",
@@ -306,21 +306,22 @@
       }
     ]
   },
+  "live_readback_event": "builder_naval_land_clear records threat classification, not an executed move or yield gain",
   "native_limit": "The captured holds lack the hostile active-ability list. Actual live bypass awaits a supported ability read; unknown abilities preserve the prior hold.",
   "archive": {
     "file": "2026-11-02-builder-naval-distance.raw.tar.xz",
-    "bytes": 375296,
-    "sha256": "c64fe523a2c9f2e6ab45dc7269fde22af8cda9b659acfe1096c5cbbee450c053",
+    "bytes": 375772,
+    "sha256": "567ea1fbf1d0ac721e4e8b2b5a7889ea14a03fb04d737e6df994bd368eb01d3d",
     "members": [
       {
-        "path": "all-lua-tests-02.json",
+        "path": "all-lua-tests-03.json",
         "bytes": 11733,
-        "sha256": "a432592be1417d73a1b14c2a0d5cd337fc3782f6e09c40f004b44756d409684a"
+        "sha256": "723dd78d7a84d36a844a4b2e4b35d09e7822cf3854934141b271b346f0e4b183"
       },
       {
-        "path": "all-lua-tests-02.log",
-        "bytes": 659095,
-        "sha256": "5b296a8f9553d08a55372179ee04a0edc96e9d1b0355a3bc8c227badff963b78"
+        "path": "all-lua-tests-03.log",
+        "bytes": 660129,
+        "sha256": "1117b107861a20d45bd3fd232f712da3c688f342a65873399e524b845159b130"
       },
       {
         "path": "baseline-agent.lua",
@@ -333,12 +334,22 @@
         "sha256": "a03433f6c6ca67381a2a4f369a2aeb1be35977515f9a3924fa18b7587455ce75"
       },
       {
-        "path": "green-raid-guard.log",
-        "bytes": 147875,
-        "sha256": "787df5ce169631c247bb0b2e2fa32f10a2fec5c076ebf03052862ede183ad3bf"
+        "path": "green-telemetry.log",
+        "bytes": 148899,
+        "sha256": "5d52d5d2c6bf8c092d0dd9b71b69ced1a1054ae7c7cbb24cdef49f815cd02ac2"
       },
       {
         "path": "harness.lua",
+        "bytes": 69529,
+        "sha256": "9ee1bd15a2200d39d712194de2720c34c8d7bc3d3d5aeff15f096cf4833c084c"
+      },
+      {
+        "path": "intermediate-agent.lua",
+        "bytes": 1222023,
+        "sha256": "d4ee927cbd0b707280f926b8eaf542d68aec40abf6fa68306f0a42d14f95d448"
+      },
+      {
+        "path": "intermediate-harness.lua",
         "bytes": 69294,
         "sha256": "1fc4b679580938c5e3b61bc11a29fefd46defddf7d2e5c0cdb75f73b1326b4d5"
       },
@@ -388,14 +399,14 @@
         "sha256": "16ef15e1bd30d4057834fad748dbdca2848470cad1e37749a7b5d7b3ae896fd5"
       },
       {
-        "path": "python-install-tests.log",
+        "path": "python-install-tests-02.log",
         "bytes": 239,
-        "sha256": "79bd2573ab2a866d9c4d8dbd0b134e411ba2f743dde406e69fcf11f0ae3ee200"
+        "sha256": "b0f1bfaaef1c3487ea917df679bc42b29eeccb0391e6fb62e1fc5c749079754f"
       },
       {
-        "path": "red-original-complete.log",
-        "bytes": 149624,
-        "sha256": "e95255a5a5a7a7f01ca40bbbbe5907c380f62020d062cff0b7b0b956439948b8"
+        "path": "red-original-final.log",
+        "bytes": 149713,
+        "sha256": "a9cdfc5d314c4b7b05805b141e06171038cf8ea24e970c2eecb9a479c3cf68fb"
       },
       {
         "path": "red-raid-guard.log",
@@ -410,12 +421,12 @@
       {
         "path": "source-receipt.json",
         "bytes": 697,
-        "sha256": "1b662830ee6e1d8069df42bb3c44891382d7d15bf4bdb59b0f905055957d2851"
+        "sha256": "30d67d5873752c8ba71b1b8bcb426230618a4617fbf21fb45780729597ec2bd3"
       },
       {
         "path": "source.patch",
-        "bytes": 13452,
-        "sha256": "ce9cd7287562175607ae258b976cd6b5e59d5e2622fd1d9f5950a5c1cb38eac9"
+        "bytes": 13865,
+        "sha256": "5f95dfc053d265eb0bbaceb1cc6eebf60ac405ebfad0b2770226f70bbbd30c6a"
       }
     ]
   }

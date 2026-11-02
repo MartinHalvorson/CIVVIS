@@ -1023,6 +1023,9 @@ host.paths["2490377:" .. plotIndex(27, 31)] = {
 applyOrders(player, PID, 96, { row(2490377, "MOVE_TO", 27, 31) })
 check("native Caravel distance hold permits land Builder approach",
 	ops(2490377), "UNITOPERATION_MOVE_TO@27,31")
+check("native Caravel land clear records the observed capability decision",
+	has(lastEvent("builder_naval_land_clear"), '"hostile":8519700')
+	and has(lastEvent("builder_naval_land_clear"), '"reason":"known_no_raiding_ability"'), true)
 
 reset()
 host.cities[1] = { x = 1, y = 1 }
