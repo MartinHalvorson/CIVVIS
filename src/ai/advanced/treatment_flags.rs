@@ -9115,6 +9115,7 @@ impl AdvancedAi {
         self.alliance_remembers_the_refusal = false;
     }
 
+<<<<<<< HEAD
     /// Opt-in gene `friendship-refuses-the-racer`; see
     /// [`Self::friendship_refuses_the_racer`].
     pub fn enable_friendship_refuses_the_racer(&mut self) {
@@ -9124,6 +9125,18 @@ impl AdvancedAi {
     /// The twin of `enable_friendship_refuses_the_racer`.
     pub fn disable_friendship_refuses_the_racer(&mut self) {
         self.friendship_refuses_the_racer = false;
+||||||| f7eadb9e0
+=======
+    /// Opt-in gene `science-drive-leads-beside-the-lane`; see
+    /// [`Self::science_drive_leads_beside_the_lane`].
+    pub fn enable_science_drive_leads_beside_the_lane(&mut self) {
+        self.science_drive_leads_beside_the_lane = true;
+    }
+
+    /// The twin of `enable_science_drive_leads_beside_the_lane`.
+    pub fn disable_science_drive_leads_beside_the_lane(&mut self) {
+        self.science_drive_leads_beside_the_lane = false;
+>>>>>>> origin/main
     }
 
     // ---- append: a-b ------------------------------------------------
