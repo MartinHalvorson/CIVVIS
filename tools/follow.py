@@ -94,6 +94,9 @@ FAST_POLL_SECONDS = 0.05
 MIN_REPUBLISH_SECONDS = 1.0
 # Older than this and the run is finished or dead, not "the ongoing game".
 RUN_FRESH_SECONDS = 900.0
+# After a fresh server first answers, the browser reconnects and may restore its
+# all-players view; the seat is pinned again once this handoff is over.
+HANDOFF_SECONDS = 2.0
 
 
 class EventLines(list):
@@ -655,7 +658,7 @@ def server_log_reason():
     return f"no reason recorded in {path}"
 
 
-def start_visible_server(run_dir, players):
+def start_visible_server(run_dir, players, keep_reporting=None):
     """The window the operator is actually looking at.
 
     `--spectate`, not a human seat. A seat draws the lobby rail ("start new
@@ -669,7 +672,12 @@ def start_visible_server(run_dir, players):
     `--speed online --turns 250` because the HUD prints them: a mirror that
     reports "Standard" for a game being played on Online is quietly wrong on
     screen, which is the one thing a mirror cannot be.
+
+    `keep_reporting` is called through every wait here (`report_opening`): the
+    game is holding its opening turn for this page, and a follower that went
+    quiet for the boot would read as no page at all.
     """
+    report = keep_reporting or (lambda: None)
     log(f"starting mirror server on :{PORT}")
     out = open(os.path.join(RIG, "server.log"), "a")
     # The staged copy, not the run directory: the server's own first read must be
@@ -696,7 +704,15 @@ def start_visible_server(run_dir, players):
             # default all-players spectator view after this first pin. Reassert
             # once the page has completed that handoff; otherwise a fresh server
             # can expose the generated world instead of the Firaxis seat's fog.
-            time.sleep(2.0)
+            # Reported every beat, but never longer than the old fixed sleep:
+            # a slow `/status` must not stretch the handoff.
+            handoff_until = time.monotonic() + HANDOFF_SECONDS
+            for _ in range(round(HANDOFF_SECONDS / FAST_POLL_SECONDS)):
+                report()
+                left = handoff_until - time.monotonic()
+                if left <= 0:
+                    break
+                time.sleep(min(FAST_POLL_SECONDS, left))
             hold_the_frame()
             return True
         if process.poll() is not None:
@@ -710,6 +726,7 @@ def start_visible_server(run_dir, players):
             log(f"mirror server exited during startup with status "
                 f"{process.returncode}: {server_log_reason()}")
             return False
+        report()
         time.sleep(1)
     return False
 
@@ -999,31 +1016,78 @@ def ensure_watching(watch):
     end tell''')
 
 
-def report_shown(run_dir, game_turn, report):
+def report_shown(run_dir, game_turn, report, status=None):
     """Tell the live game which turn the page has painted (`mirror_sync`).
 
     The game does not end a played turn until the page shows it, so this is
     asked often (`FAST_POLL_SECONDS`) and the report is rewritten whenever it
     changes and at least once a second besides: a report that stops changing
     is a follower that stopped, and the game stops waiting for it.
+
+    Returns whether the page's server answered. `status` is one it already
+    gave (`report_opening`).
     """
-    try:
-        status = json.loads(http_get(PORT, "/status", timeout=1))
-    except Exception:
-        return
-    if not isinstance(status, dict):
-        return
+    if status is None:
+        status = page_status()
+    if status is None:
+        return False
     viewers = status.get("viewers")
     shown = (os.path.basename(run_dir), game_turn, status.get("turn"),
              status.get("frames_painted"), viewers if isinstance(viewers, int) else None)
+    _write_report(shown, report)
+    return True
+
+
+def page_status():
+    """The mirror server's `/status`, or None while nothing answers."""
+    try:
+        status = json.loads(http_get(PORT, "/status", timeout=1))
+    except Exception:
+        return None
+    return status if isinstance(status, dict) else None
+
+
+def _write_report(shown, report, pending=False):
     now = time.time()
     if shown == report.get("shown") and now - report.get("at", 0.0) < 1.0:
         return
     try:
-        mirror_sync.write_shown(*shown, now=now)
+        mirror_sync.write_shown(*shown, now=now, pending=pending)
     except OSError:
         return
     report["shown"], report["at"] = shown, now
+
+
+def report_pending(run_dir, game_turn, report):
+    """Tell the live game this run's page is coming but shows nothing yet.
+
+    ★ Operator 11-02: the videos "jump from turn 1 to turn 5. 2, 3, 4 should
+    all be present. no turns skipped". The server cannot start before the
+    game's first map export (turn 1); it then boots and the browser reloads,
+    ~4 s the opening played through at ~1 s a turn while this follower said
+    nothing -- and no report is "no page", which the game does not wait for.
+    Every 11-02 game's page went from turn 1 to turn 3, 4 or 5. A pending
+    report shows turn 0 (`mirror_sync.shown_turn`): the game holds turn 1
+    until the page paints it.
+    """
+    _write_report((os.path.basename(run_dir), game_turn, None, None, None),
+                  report, pending=True)
+
+
+def report_opening(run_dir, game_turn, report):
+    """`report_shown` while this run's page comes up: pending until it paints.
+
+    A server whose page has not drawn yet (none attached, or the browser still
+    reloading) would report its published turn as shown, and release the
+    opening before the page drew it. After the handoff `report_shown` alone
+    decides, so a seat with no page at all waits only this long.
+    """
+    status = page_status()
+    if (status is not None and status.get("viewers")
+            and status.get("frames_painted") is not None):
+        report_shown(run_dir, game_turn, report, status)
+    else:
+        report_pending(run_dir, game_turn, report)
 
 
 def await_board(run_dir, published_turn, published_size, published_at, report):
@@ -1172,15 +1236,23 @@ def main():
                     log("waiting for the run's first map export before starting "
                         "the mirror server; the game has exported no tiles yet")
                     awaiting_export = True
+                # The game must not play its opening past a page still to come.
+                report_pending(run_dir, turn, report)
                 time.sleep(POLL_SECONDS)
                 continue
             awaiting_export = False
-            if start_visible_server(run_dir, players):
+            if start_visible_server(
+                    run_dir, players,
+                    keep_reporting=lambda: report_opening(run_dir, turn, report)):
                 published_turn, published_size = turn, size
                 published_at = time.time()
+                # Straight on to the next turn's publish: the game holds each
+                # opening turn for the page, so a fixed sleep here is a second
+                # of turn 2 waiting on nothing.
+                await_board(run_dir, published_turn, published_size, published_at, report)
             else:
                 log(f"mirror server did not come up on :{PORT}")
-            time.sleep(POLL_SECONDS)
+                time.sleep(POLL_SECONDS)
             continue
 
         since = time.time() - published_at
