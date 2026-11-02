@@ -7181,6 +7181,10 @@ pub struct AdvancedAi {
     /// `advanced/protective_friendship.rs`. Off by default.
     friendship_refuses_the_racer: bool,
     // ---- append: g-k ------------------------------------------------
+    /// `gold-buys-the-opening-builder`: in the opening, with no Builder afield
+    /// and work for one, the treasury buys the Builder. See
+    /// `advanced/gold_buys_the_opening_builder.rs`. Off by default.
+    gold_buys_the_opening_builder: bool,
     /// `immortal-skips-the-prophet-race`: at Immortal and Deity a seat not
     /// aiming at Religion stays out of the Prophet race. See
     /// `advanced/immortal_prophet_race.rs`. Off by default.
@@ -10341,6 +10345,9 @@ mod far_settle_site;
 /// `founder-converts-its-own-cities`: a founder's spreaders convert our own
 /// cities before any foreign one. See `advanced/founder_home.rs`.
 mod founder_home;
+/// `gold-buys-the-opening-builder`: a builderless opening buys its Builder
+/// with the idle treasury. See `advanced/gold_buys_the_opening_builder.rs`.
+mod gold_buys_the_opening_builder;
 mod gold_buys_the_settler;
 mod granary_claims_the_bound_queue;
 /// `founder-holds-the-holy-city`: a founder keeps its Holy City on its own
@@ -11660,6 +11667,7 @@ impl AdvancedAi {
             friendship_expiry_seen: std::cell::RefCell::new(BTreeMap::new()),
             friendship_refuses_the_racer: false,
             // ---- append: g-k ----------------------------------------
+            gold_buys_the_opening_builder: false,
             immortal_skips_the_prophet_race: false,
             hidden_border_yields_to_our_pressure: false,
             gold_buys_the_idle_trader: false,
@@ -50321,6 +50329,10 @@ impl AdvancedAi {
         // an empty route slot. Both preserve the city-saving purchase lane.
         if !emergency_city_defense && !surprise_defense_purchase {
             self.capital_watch_slinger_upgrade(g, pid);
+            // `gold-buys-the-opening-builder`: a builderless opening's Builder
+            // before the route slot's Trader. See
+            // `advanced/gold_buys_the_opening_builder.rs`.
+            self.opening_builder_purchase(g, pid, &plan);
             self.idle_trader_purchase(g, pid, &plan);
         }
         // Once a city-saving purchase has had its one action, the turn a

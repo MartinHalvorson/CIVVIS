@@ -15867,7 +15867,7 @@ impl BasicAi {
     /// everything it owned kept paying for Builders that then stood on a tile
     /// for the rest of the game - the audit counted nearly two hundred of
     /// them across six games, some idle from turn 25 to the end.
-    fn has_builder_work(g: &Game, pid: usize) -> bool {
+    pub(crate) fn has_builder_work(g: &Game, pid: usize) -> bool {
         // Every owned tile asks the same empire-wide questions of the same
         // empire; hold a memo scope over the whole sweep.
         let _memo = g.query_memo();
