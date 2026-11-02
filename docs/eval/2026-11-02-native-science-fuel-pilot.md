@@ -31,5 +31,11 @@ causes of yield differences.
 After eight configured Science attempts, restore the prior empty screen
 file. An earlier stop requires a concrete command/finance failure or user
 steering, with all attempts and the reason retained. Missing fields or
-ambiguous delivery stay unknown. The plan is currently unarmed; a separate
-receipt will record the start time, preregistration commit and file change.
+ambiguous delivery stay unknown.
+
+The preregistration was pushed as `ff1df764c` before assignment. The empty
+screen file was armed at `2026-11-02T19:01:33.564184Z`; the companion arm
+receipt records the verified upstream commit, immutable plan hash, file
+change and unchanged baseline-file hashes. The current game keeps its
+previous assignment. No pilot outcome or fuel-delivery verdict is available
+at arming.
