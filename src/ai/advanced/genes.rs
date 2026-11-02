@@ -4679,6 +4679,12 @@ pub const GENES: &[Gene] = &[
     // Earth Satellite now commits any lane but Domination. See
     // `advanced/launch_commits_endgame.rs`.
     Gene { tag: "launch-commits-the-endgame", field: "launch_commits_the_endgame", kind: Kind::OptIn, enable: AdvancedAi::enable_launch_commits_the_endgame, disable: AdvancedAi::disable_launch_commits_the_endgame },
+    // `culture-seat-theater-first-2`: version one balanced against the
+    // Campuses: a city claims its first Theater only while the empire's
+    // Theaters (standing or queued) trail its Campuses, or one. Live King
+    // culture seats held 2-4 Campuses to 4-5 Theaters at t100 and lost mostly
+    // to rival Science at t222-244. See `advanced/culture_theater_first.rs`.
+    Gene { tag: "culture-seat-theater-first-2", field: "culture_seat_theater_first_2", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_theater_first_2, disable: AdvancedAi::disable_culture_seat_theater_first_2 },
     // Live King 2026-11-01: every game ended in a Science victory, and the
     // Domination seat 073004Z held the whole tree with no pad (all three
     // exclusions) while Korea won at t257. Within three techs of the field,

@@ -5536,6 +5536,9 @@ pub struct AdvancedAi {
     /// `alliance_remembers_the_refusal` is on.
     alliance_ask_turns: BTreeMap<usize, u32>,
     // ---- append: c-d ------------------------------------------------
+    /// `culture-seat-theater-first-2`: version one, balanced against the
+    /// Campuses. See `advanced/culture_theater_first.rs`. Off by default.
+    culture_seat_theater_first_2: bool,
     /// `culture-digs-one-museum`: a Culture seat makes one Museum an
     /// Archaeological Museum. See `advanced/culture_dig_museum.rs`. Off by default.
     culture_digs_one_museum: bool,
@@ -11361,6 +11364,7 @@ impl AdvancedAi {
             alliance_remembers_the_refusal: false,
             alliance_ask_turns: BTreeMap::new(),
             // ---- append: c-d ----------------------------------------
+            culture_seat_theater_first_2: false,
             culture_digs_one_museum: false,
             culture_keeps_every_border_open_2: false,
             domination_targets_land_first: false,
