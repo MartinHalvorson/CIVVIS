@@ -6498,6 +6498,8 @@ pub struct AdvancedAi {
     /// we are declared friends with. See `advanced/deterrence_trusts_a_friend.rs`.
     deterrence_trusts_a_friend: bool,
     // ---- append: e-f ------------------------------------------------
+    /// Keep the first Science launch on its research path. Opt-in.
+    first_launch_keeps_research: bool,
     /// `first-pad-in-the-forge`: the empire's first Spaceport only in a city
     /// within `FIRST_PAD_FORGE_SHARE` of the best placing producer; the flag
     /// lives on `BasicAi`, which the Great Person activation path reads. See
@@ -8474,8 +8476,6 @@ pub struct AdvancedAi {
     /// has not landed, the best pad city keeps the Satellite at its head. See
     /// `advanced/satellite_holds_the_pad.rs`. Off by default.
     satellite_holds_the_pad: bool,
-    /// Keep the first Science launch on its research path. Opt-in.
-    first_launch_keeps_research: bool,
     /// `stalled-conquest-takes-science`: a Domination seat that holds no rival
     /// capital at standard turn 180 retargets to Science. See
     /// `advanced/stalled_conquest_takes_science.rs`. Off by default.
@@ -11594,6 +11594,7 @@ impl AdvancedAi {
             domination_joins_the_race: false,
             deterrence_trusts_a_friend: false,
             // ---- append: e-f ----------------------------------------
+            first_launch_keeps_research: false,
             first_pad_in_the_forge: false,
             fog_yields_to_a_stranded_settler: false,
             early_route_feeds_production: false,
@@ -11891,7 +11892,6 @@ impl AdvancedAi {
             retainers_garrison_the_short_cities: false,
             // ---- append: s-s ----------------------------------------
             satellite_holds_the_pad: false,
-            first_launch_keeps_research: false,
             stalled_conquest_takes_science: false,
             stalled_spreader_braves_the_march: false,
             spreader_hold_streaks: RefCell::new(BTreeMap::new()),
