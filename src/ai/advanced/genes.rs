@@ -4759,6 +4759,10 @@ pub const GENES: &[Gene] = &[
     // the gene the best pad city keeps the Satellite at its head until it
     // lands. See `advanced/satellite_holds_the_pad.rs`.
     Gene { tag: "satellite-holds-the-pad", field: "satellite_holds_the_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_satellite_holds_the_pad, disable: AdvancedAi::disable_satellite_holds_the_pad },
+    // Native Emperor 20261102T161612Z owned Rocketry at t171, diverted to
+    // Ballistics and wartime upgrades, then owned Satellites at t196.
+    // Keep the first launch through Recovery and optional modernization.
+    Gene { tag: "first-launch-keeps-research", field: "first_launch_keeps_research", kind: Kind::OptIn, enable: AdvancedAi::enable_first_launch_keeps_research, disable: AdvancedAi::disable_first_launch_keeps_research },
     // Live King 11-01/02: Domination seats won 0 of 13 (8 lost to Science,
     // 5 to Culture, tech gap −5 at t150) while Religion seats, which
     // `religion-lane-hands-over` retargets to Science near t47, won 6 of 20,
