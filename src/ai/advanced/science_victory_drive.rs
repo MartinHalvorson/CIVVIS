@@ -123,6 +123,10 @@ pub const SCIENCE_DRIVE_HOLD: f64 = 0.75;
 /// launch. Live Emperor civvis-20261030T111154Z opened the answer at t194
 /// standing on 18 of 20, one session from its own victory.
 pub const SCIENCE_ANSWER_DIPLO_YIELD: i64 = 16;
+/// `science-drive-leads-beside-the-lane`: the Standard turn (Online turn
+/// 140) from which a seat assigned another lane races on its own outright
+/// science lead, without waiting for a rival's launch.
+pub const SCIENCE_LEAD_OPEN_STANDARD: u32 = 210;
 /// Version 2 requires this relative science lead before an adaptive race
 /// starts. A one-beaker fluctuation is not a victory commitment.
 pub const SCIENCE_DRIVE_LEAD_MARGIN: f64 = 0.10;
@@ -413,9 +417,12 @@ impl AdvancedAi {
             // answer then closes through the assigned-lane return below.
             && !(self.victory_target == Some(VictoryTarget::Diplomacy)
                 && g.players[pid].dvp >= SCIENCE_ANSWER_DIPLO_YIELD);
+        // `science-drive-leads-beside-the-lane`: from Online turn 140 a seat
+        // assigned another lane also races on its own outright lead.
+        let leading_open = self.science_lead_opens(g, pid);
         let assigned = match self.victory_target {
             Some(VictoryTarget::Science) => true,
-            Some(_) if answering => false,
+            Some(_) if answering || leading_open => false,
             Some(_) => {
                 self.science_drive = None;
                 return;
@@ -432,6 +439,7 @@ impl AdvancedAi {
             None => {
                 assigned
                     || answering
+                    || leading_open
                     || portfolio_science
                     || launch_committed
                     || (g.turn >= start && (g.turn - start).is_multiple_of(review))
@@ -456,6 +464,7 @@ impl AdvancedAi {
                 None if answering => {
                     standing.leads_outright() || self.domination_answers_at_parity(&standing)
                 }
+                None if leading_open => Self::science_lead_is_meaningful(&standing),
                 None if self.science_victory_drive_2 => g.turn >= start && standing.leads_v2(),
                 None => g.turn >= start && standing.leads(),
             };
@@ -497,6 +506,8 @@ impl AdvancedAi {
                        } else {
                            "a rival's space race, answered beside the assigned lane"
                        }
+                   } else if leading_open {
+                       "science-drive-leads-beside-the-lane: an outright science lead, raced beside the assigned lane"
                    } else if adaptive_science_plan {
                        "the public Science focus"
                    } else {
@@ -512,8 +523,46 @@ impl AdvancedAi {
             standing,
             launch_city,
             assigned,
-            answering,
+            // A lead-opened drive races beside the lane exactly as an answer
+            // does: `raced_target` reads Science, and a Domination seat's
+            // space-race exclusions lift under `domination-joins-the-race`.
+            answering: answering || leading_open,
         });
+    }
+
+    /// `science-drive-leads-beside-the-lane`: whether a seat assigned another
+    /// lane may open the drive on its own lead this turn: the gene and the
+    /// answer on, Online turn 140 reached, and not a Diplomatic seat near its
+    /// own victory. `false` with the gene off.
+    ///
+    /// Live King, 2026-11-01: 7 of 25 seats assigned Culture, Religion or
+    /// Domination led the field outright (Science 1.1x the best rival's and
+    /// a tech more) before any rival landed a space project, 9 to 86 turns
+    /// before it. The answer waited for that launch in every one. Two won
+    /// anyway (071051Z, 110755Z). 075446Z (Religion) led from 184, no rival
+    /// launched until 215, and it lost the Exoplanet race at 245 by four
+    /// turns. 141505Z and 151815Z (Domination) led from 143 and 110, at 1.5x
+    /// and 1.8x the field's Science by 160, opened the drive only at the
+    /// rival launches of 190 and 184, landed their first projects at 211 and
+    /// 208, and lost to rival Culture victories at 216 and 214. 091422Z and
+    /// 131400Z led 13 and 9 turns before the first launch.
+    pub(super) fn science_lead_opens(&self, g: &Game, pid: usize) -> bool {
+        self.science_drive_leads_beside_the_lane
+            && self.science_drive_answers_the_launch
+            && self
+                .victory_target
+                .is_some_and(|target| target != VictoryTarget::Science)
+            && g.turn >= g.standard_duration(SCIENCE_LEAD_OPEN_STANDARD)
+            && !(self.victory_target == Some(VictoryTarget::Diplomacy)
+                && g.players[pid].dvp >= SCIENCE_ANSWER_DIPLO_YIELD)
+    }
+
+    /// An outright lead worth racing on: ahead on techs and at least
+    /// [`SCIENCE_DRIVE_LEAD_MARGIN`] over the best rival's Science.
+    pub(super) fn science_lead_is_meaningful(standing: &ScienceStanding) -> bool {
+        standing.leads_outright()
+            && standing.own_science
+                >= standing.best_rival_science * (1.0 + SCIENCE_DRIVE_LEAD_MARGIN)
     }
 
     /// `science-drive-answers-from-the-pad`: whether our own space race is
@@ -1059,6 +1108,8 @@ impl AdvancedAi {
     }
 }
 
+#[cfg(test)]
+mod lead_tests;
 #[cfg(test)]
 mod pad_tests;
 
