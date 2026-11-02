@@ -5536,6 +5536,11 @@ pub struct AdvancedAi {
     /// `alliance_remembers_the_refusal` is on.
     alliance_ask_turns: BTreeMap<usize, u32>,
     // ---- append: c-d ------------------------------------------------
+    /// `campus-unlock-every-lane`: every seat, not only Domination, takes
+    /// the Campus unlock (Writing) once it holds two cities, in the slot the
+    /// Domination goal already holds. See `advanced/domination_research.rs`.
+    /// Off by default.
+    campus_unlock_every_lane: bool,
     /// `culture-seat-theater-first-2`: version one, balanced against the
     /// Campuses. See `advanced/culture_theater_first.rs`. Off by default.
     culture_seat_theater_first_2: bool,
@@ -11373,6 +11378,7 @@ impl AdvancedAi {
             alliance_remembers_the_refusal: false,
             alliance_ask_turns: BTreeMap::new(),
             // ---- append: c-d ----------------------------------------
+            campus_unlock_every_lane: false,
             culture_seat_theater_first_2: false,
             culture_digs_one_museum: false,
             culture_keeps_every_border_open_2: false,
@@ -19394,6 +19400,7 @@ impl AdvancedAi {
             let production_technology_goal = self.named_production_technology_goal(g, pid, plan);
             let domination_siege_goal = self.domination_siege_research_goal(g, pid, plan);
             let domination_campus_goal = self.domination_campus_unlock_goal(g, pid);
+            let every_lane_campus_goal = self.every_lane_campus_unlock_goal(g, pid);
             let endgame_goal = self.science_endgame_research_goal(g, pid);
             let endgame_research_preempts_wartime =
                 self.science_endgame_research_preempts_wartime(g, pid, endgame_goal);
@@ -19639,6 +19646,10 @@ impl AdvancedAi {
                 // Two founded cities can invest in campuses. Finish their
                 // unlock before optional bargains and generic branch scores.
                 _ if domination_campus_goal.is_some() => domination_campus_goal,
+                // `campus-unlock-every-lane`: the same unlock for a Culture,
+                // Religion or adaptive seat, which otherwise has no Writing
+                // goal at all. See `advanced/domination_research.rs`.
+                _ if every_lane_campus_goal.is_some() => every_lane_campus_goal,
                 // `boosted-bargain-first`: a Eureka in hand on a technology
                 // two turns from done is a tech for a fifth of its price, and
                 // the beeline walks past it every turn. Behind the luxury

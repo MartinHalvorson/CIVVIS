@@ -4721,6 +4721,14 @@ pub const GENES: &[Gene] = &[
     // Under the gene a declared friend is not a deterrence neighbour. See
     // `advanced/deterrence_trusts_a_friend.rs`.
     Gene { tag: "deterrence-trusts-a-friend", field: "deterrence_trusts_a_friend", kind: Kind::OptIn, enable: AdvancedAi::enable_deterrence_trusts_a_friend, disable: AdvancedAi::disable_deterrence_trusts_a_friend },
+    // Live King 11-01/02 (28 games): Writing landed at a median t37 on
+    // Domination seats (which hold the Campus-unlock goal) but t45 on
+    // Religion, t50 on adaptive and t69 on Culture seats; the first Campus
+    // finished at a median t64 and its turn correlates -0.59 with Science at
+    // t100. Under the gene every lane takes Writing once it holds two
+    // cities, in the Domination goal's slot. See
+    // `advanced/domination_research.rs`.
+    Gene { tag: "campus-unlock-every-lane", field: "campus_unlock_every_lane", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_unlock_every_lane, disable: AdvancedAi::disable_campus_unlock_every_lane },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
