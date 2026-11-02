@@ -2509,6 +2509,17 @@ civics, wonders, districts, and whether the seat was handicapped) — what the
 live `events.jsonl` state rows read for a rival. Rows are byte for byte
 unchanged without it.
 
+**`--journal SEED[,SEED]`** (2026-11-02) writes the measured seat's reasoning
+for those seeds — the `think!` lines on the Strategy, Military and Diplomacy
+topics at Decision depth or above, as `t<turn> p<player> <topic> <headline> |
+<detail>` — to `<out>.journal.<seed>.txt`. The journal is drained every turn,
+so the ring never drops one, and recording changes no decision: seeds
+30700000–04 of a seat-paced King Domination batch replayed byte for byte. To
+replay one game of an earlier batch, repeat its `--start-seed`, `--games` and
+`--jobs`: the rival chairs rotate with the game index. Its first read found
+King Domination seats losing to culture racers while "the Conquest counter is
+barred: we are declared friends".
+
 **Uncalibrated, it is stronger than live.** The deployment genome
 over-delivers on width and science against the live field (above), so an
 uncalibrated faithful source is a harder opponent than live Immortal: on the 6p
