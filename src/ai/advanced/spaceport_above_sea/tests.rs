@@ -138,3 +138,20 @@ fn a_foreign_city_or_illegal_original_is_not_rewritten() {
         None
     );
 }
+
+#[test]
+fn a_placed_foundation_remains_committed_with_another_item_in_the_queue() {
+    let (mut g, ai, cid, low, _) = board();
+    g.map.tiles.get_mut(&low).unwrap().district_foundation =
+        Some(crate::world::DistrictFoundation {
+            district: crate::name!("spaceport"),
+            cost: 900.0,
+        });
+    g.cities.get_mut(&cid).unwrap().queue.push(Item::Building {
+        building: crate::name!("research_lab"),
+    });
+    assert_eq!(
+        ai.native_spaceport_above_sea_position(&g, 0, cid, low),
+        None
+    );
+}

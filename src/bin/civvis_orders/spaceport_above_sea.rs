@@ -20,7 +20,7 @@ pub(super) fn retarget(
         };
         let old = civvis::hex::offset_to_axial(x, y);
         if let Some(pos) = ai.native_spaceport_above_sea_position(&mirror.game, 0, cid, old) {
-            order.pos = Some(civvis::hex::axial_to_offset(pos));
+            order.pos = Some(civvis::hex::axial_to_offset(pos.0, pos.1));
             changed += 1;
         }
     }

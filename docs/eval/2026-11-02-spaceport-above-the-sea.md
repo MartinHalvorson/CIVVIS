@@ -38,7 +38,10 @@ The fixed captured-input query cases are frame 0 of t139, t140 and t176 in
 the motivating parent, plus frame 0 of t166 in `civvis-20261102T185903Z`
 (the first Spaceport order in the later unscreened Science win). Each query
 uses a private immutable captured read, a Science controller, and the same
-snapshot of the standing force-on bundle. Only this new tag differs between
+snapshot of the standing force-on bundle, represented by the actually
+observed forced-tag list in the later unscreened run's genome. Retain that
+profile source; the reproducer does not edit the standing file or silently
+drop a refused tag. Only this new tag differs between
 arms. Every control is repeated. This is a one-shot query on captured boards,
 not replay of the original persistent controller or commands sent to a host.
 The later source run was assigned Culture; the explicitly Science query is
@@ -55,3 +58,8 @@ the opt-in, safe/legal alternatives, fallbacks, Flood Barrier state, existing
 construction, ownership and invalid originals. Fourteen append-convention
 tests and formatting checks pass. CLI compilation and captured queries are
 pending; no proposal activation or outcome benefit is claimed yet.
+
+The first query attempt passed the bundle as one comma-separated CLI flag.
+The decider refused it before planning (exit 2, no genome or orders). Keep
+that failed invocation with the evidence; the corrected call supplies one
+`--with` argument per played tag. No candidate result came from that attempt.

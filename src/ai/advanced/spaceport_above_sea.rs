@@ -20,11 +20,7 @@ impl AdvancedAi {
         let city = g.cities.get(&cid)?;
         let pad = crate::name!("spaceport");
         if city.owner != pid
-            || city.districts.keys().any(|d| g.district_family(*d) == pad)
-            || city.queue.iter().any(|item| {
-                matches!(item, Item::District { district, .. }
-                    if g.district_family(*district) == pad)
-            })
+            || Self::city_has_spaceport_commitment(g, cid)
             || (city.buildings.contains(&crate::name!("flood_barrier"))
                 && !city
                     .pillaged_buildings
