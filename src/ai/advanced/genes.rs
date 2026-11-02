@@ -4715,6 +4715,12 @@ pub const GENES: &[Gene] = &[
     // declared friends". A racer's offer is refused, and culture alone counts
     // as racing. See `advanced/protective_friendship.rs`.
     Gene { tag: "friendship-refuses-the-racer", field: "friendship_refuses_the_racer", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_refuses_the_racer, disable: AdvancedAi::disable_friendship_refuses_the_racer },
+    // Live Emperor/King 11-01: 144 of 262 near-rival deterrents (55%)
+    // targeted a declared friend, and a declared friend declared war within
+    // ten turns on 1.0 per 100 rival-turns (vs 8.0 unfriendly, 10.3 friendly).
+    // Under the gene a declared friend is not a deterrence neighbour. See
+    // `advanced/deterrence_trusts_a_friend.rs`.
+    Gene { tag: "deterrence-trusts-a-friend", field: "deterrence_trusts_a_friend", kind: Kind::OptIn, enable: AdvancedAi::enable_deterrence_trusts_a_friend, disable: AdvancedAi::disable_deterrence_trusts_a_friend },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -6489,6 +6489,9 @@ pub struct AdvancedAi {
     /// leader's 70. See `advanced/domination_joins_the_race.rs`. Off by
     /// default.
     domination_joins_the_race: bool,
+    /// `deterrence-trusts-a-friend`: no near-rival deterrent against a rival
+    /// we are declared friends with. See `advanced/deterrence_trusts_a_friend.rs`.
+    deterrence_trusts_a_friend: bool,
     // ---- append: e-f ------------------------------------------------
     /// `fog-yields-to-a-stranded-settler`: the fogged-frontier settle veto
     /// yields once a Settler has walked fifteen turns. See
@@ -9939,6 +9942,8 @@ mod denial_needs_a_road;
 /// `denial-target-leads-the-fronts`: the countered rival we are fighting
 /// leads the wartime fronts. See `advanced/denial_target_front.rs`.
 mod denial_target_front;
+/// `deterrence-trusts-a-friend`: see `advanced/deterrence_trusts_a_friend.rs`.
+mod deterrence_trusts_a_friend;
 mod runaway_expander;
 // `found-against-a-rival-faith`. See `advanced/faith_veto.rs`.
 mod faith_veto;
@@ -11553,6 +11558,7 @@ impl AdvancedAi {
             culture_recovery_spends_the_bank: false,
             culture_seat_allies: false,
             domination_joins_the_race: false,
+            deterrence_trusts_a_friend: false,
             // ---- append: e-f ----------------------------------------
             fog_yields_to_a_stranded_settler: false,
             early_route_feeds_production: false,
