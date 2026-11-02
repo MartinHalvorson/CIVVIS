@@ -2,12 +2,12 @@
   "schema": 2,
   "scope": "Native observation and host-harness actuation regression, no native execution or strength estimate",
   "source": {
-    "head": "a5de8800ef0d704d2c9f0276f5c76b2057740210",
+    "head": "f70e9f5ad8560284181646783c3d8eba99f1abc9",
     "base_main": "3ff83fba4488741cb791b1f74cbe85fb72e44a3e",
-    "recorded_utc": "2026-11-02T23:22:08.962481+00:00",
+    "recorded_utc": "2026-11-02T23:29:54.361732+00:00",
     "files": {
       "tools/civ6_control/mod/CivvisControlAgent.lua": "661b8e99d5d8e2d630956d484d673cf3bf403565d78c4f0a9d10b444cc4a61be",
-      "tools/civ6_control/mod/host_board_test.lua": "9ee1bd15a2200d39d712194de2720c34c8d7bc3d3d5aeff15f096cf4833c084c",
+      "tools/civ6_control/mod/host_board_test.lua": "005dee5456f13f83cdd0397867c6f5c30db1e108a88ad41e9863537093accaef",
       "tools/test_civ6_control_install.py": "8e5b116246839689621f5e83fe670d484b96b26ddb7e5a7720a872c23592606d",
       "docs/eval/2026-11-02-builder-naval-distance.extract.py": "a03433f6c6ca67381a2a4f369a2aeb1be35977515f9a3924fa18b7587455ce75"
     },
@@ -275,6 +275,7 @@
     "green_host_board_checks": 197,
     "lua_test_files": 114,
     "python_install_tests": 139,
+    "ci_type_validator_passed": true,
     "runtime": "lupa.lua51",
     "all_passed": true
   },
@@ -307,21 +308,22 @@
     ]
   },
   "live_readback_event": "builder_naval_land_clear records threat classification, not an executed move or yield gain",
+  "fixture_revision": "CI type-name validation rejected UNIT-prefixed mock modifier IDs; final fixtures use TEST-prefixed IDs without changing their modifier types.",
   "native_limit": "The captured holds lack the hostile active-ability list. Actual live bypass awaits a supported ability read; unknown abilities preserve the prior hold.",
   "archive": {
     "file": "2026-11-02-builder-naval-distance.raw.tar.xz",
-    "bytes": 375772,
-    "sha256": "567ea1fbf1d0ac721e4e8b2b5a7889ea14a03fb04d737e6df994bd368eb01d3d",
+    "bytes": 376016,
+    "sha256": "8fd290c976a32d1c4cb18aef4bb442ac44202d7f856ad6bf17d6039d5f1700f5",
     "members": [
       {
-        "path": "all-lua-tests-03.json",
-        "bytes": 11733,
-        "sha256": "723dd78d7a84d36a844a4b2e4b35d09e7822cf3854934141b271b346f0e4b183"
+        "path": "all-lua-tests-05.json",
+        "bytes": 11821,
+        "sha256": "8a358580d82e54b6b574708fda7bb7f95d6e32eb59df159b910918c85832c2d7"
       },
       {
-        "path": "all-lua-tests-03.log",
-        "bytes": 660129,
-        "sha256": "1117b107861a20d45bd3fd232f712da3c688f342a65873399e524b845159b130"
+        "path": "all-lua-tests-05.log",
+        "bytes": 660103,
+        "sha256": "704b40e39fe743d0de0c6334eadea645ce82184348e2c7753a0f6c932fed5c7d"
       },
       {
         "path": "baseline-agent.lua",
@@ -334,14 +336,14 @@
         "sha256": "a03433f6c6ca67381a2a4f369a2aeb1be35977515f9a3924fa18b7587455ce75"
       },
       {
-        "path": "green-telemetry.log",
-        "bytes": 148899,
-        "sha256": "5d52d5d2c6bf8c092d0dd9b71b69ced1a1054ae7c7cbb24cdef49f815cd02ac2"
+        "path": "green-fixture-final.log",
+        "bytes": 148892,
+        "sha256": "9b83e2ec7bff405b3e6a9f86ef5d8c62c8f2d8b91d3e89a229f681db0057d9e1"
       },
       {
         "path": "harness.lua",
-        "bytes": 69529,
-        "sha256": "9ee1bd15a2200d39d712194de2720c34c8d7bc3d3d5aeff15f096cf4833c084c"
+        "bytes": 69564,
+        "sha256": "005dee5456f13f83cdd0397867c6f5c30db1e108a88ad41e9863537093accaef"
       },
       {
         "path": "intermediate-agent.lua",
@@ -404,9 +406,9 @@
         "sha256": "b0f1bfaaef1c3487ea917df679bc42b29eeccb0391e6fb62e1fc5c749079754f"
       },
       {
-        "path": "red-original-final.log",
-        "bytes": 149713,
-        "sha256": "a9cdfc5d314c4b7b05805b141e06171038cf8ea24e970c2eecb9a479c3cf68fb"
+        "path": "red-original-fixture-final.log",
+        "bytes": 149714,
+        "sha256": "bbfdadfe557b666ce59b06d0153b07158eaa57635aa438638102a179a999588e"
       },
       {
         "path": "red-raid-guard.log",
@@ -421,12 +423,17 @@
       {
         "path": "source-receipt.json",
         "bytes": 697,
-        "sha256": "30d67d5873752c8ba71b1b8bcb426230618a4617fbf21fb45780729597ec2bd3"
+        "sha256": "482ed221ff49197821a7ec3450b55f12f0ebed74a8a99b780dab678763c88900"
       },
       {
         "path": "source.patch",
-        "bytes": 13865,
-        "sha256": "5f95dfc053d265eb0bbaceb1cc6eebf60ac405ebfad0b2770226f70bbbd30c6a"
+        "bytes": 13900,
+        "sha256": "e96486b9840c4aaf9d435c743c334484db3d6dc1e2a3168756e1660b24a070b2"
+      },
+      {
+        "path": "type-validator.log",
+        "bytes": 52,
+        "sha256": "76b2f2df9945fa147ccab737240ed2365cfae514b97b9afd08b297a1f60818f4"
       }
     ]
   }

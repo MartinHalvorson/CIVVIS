@@ -43,8 +43,10 @@ standalone Lua 5.1 interpreter. No Rust or simulated-engine behavior changes.
 The 139 Python installation tests pass too. Their Settler-reach source check
 now ends before the Builder function, rather than accidentally depending on
 an unrelated local-variable assignment inside that function.
+The workflow's type-name validator passes after giving the mock modifier IDs
+a test prefix; their modifier types and tested behavior stay the same.
 
-The companion JSON binds the 375,772-byte raw archive and all 23 members:
+The companion JSON binds the 376,016-byte raw archive and all 24 members:
 selected native rows, red/green logs, complete local Lua test results,
 the shipped unit-row readout, baseline script, harness and source receipt.
 This is evidence of the corrected host-harness movement decision, not actual

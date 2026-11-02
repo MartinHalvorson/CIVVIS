@@ -130,17 +130,17 @@ GameInfo = setmetatable({}, { __index = function(_, k)
 	if k == "UnitAbilityModifiers" then
 		return function()
 			local links = {
-				{ UnitAbilityType = "ABILITY_COASTAL_RAID", ModifierId = "UNIT_COASTAL_RAID" },
-				{ UnitAbilityType = "ABILITY_MELEE_COASTAL_RAID", ModifierId = "UNIT_COASTAL_RAID" },
-				{ UnitAbilityType = "ABILITY_TEST_PASSIVE", ModifierId = "UNIT_TEST_PASSIVE" },
+				{ UnitAbilityType = "ABILITY_COASTAL_RAID", ModifierId = "TEST_COASTAL_RAID_MODIFIER" },
+				{ UnitAbilityType = "ABILITY_MELEE_COASTAL_RAID", ModifierId = "TEST_COASTAL_RAID_MODIFIER" },
+				{ UnitAbilityType = "ABILITY_TEST_PASSIVE", ModifierId = "TEST_PASSIVE_MODIFIER" },
 			}
 			local index = 0
 			return function() index = index + 1; return links[index] end
 		end
 	end
 	if k == "Modifiers" then
-		return { UNIT_COASTAL_RAID = { ModifierType = "MODIFIER_UNIT_ADJUST_RAIDING" },
-			UNIT_TEST_PASSIVE = { ModifierType = "MODIFIER_UNIT_ADJUST_MOVEMENT" } }
+		return { TEST_COASTAL_RAID_MODIFIER = { ModifierType = "MODIFIER_UNIT_ADJUST_RAIDING" },
+			TEST_PASSIVE_MODIFIER = { ModifierType = "MODIFIER_UNIT_ADJUST_MOVEMENT" } }
 	end
 	return stub()
 end })
