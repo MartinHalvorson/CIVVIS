@@ -1,4 +1,4 @@
-# Science power buys fuel: work in progress
+# Science power buys fuel: opt-in proposal validation
 
 Hypothesis: a Science seat with a ready Coal plant and multiple unpowered
 Research Labs can benefit from buying a short fuel bridge while its own
@@ -50,7 +50,8 @@ be read back from native events.
 
 ## Validation and promotion gates
 
-Implementation is in progress. Required validation includes:
+The proposal checks below are complete; native execution and outcome checks
+remain required before promotion:
 
 - Focused tests for ready demand, no demand/plant, another lane, late deadline,
   low/negative finances, and existing Coal stock or income; ensure the gene
