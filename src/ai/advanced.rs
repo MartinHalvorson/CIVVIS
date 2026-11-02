@@ -7168,6 +7168,10 @@ pub struct AdvancedAi {
     /// `friendship-keeps-the-peace`: the last expiry seen for each declared
     /// friendship, kept after the mirror drops it.
     friendship_expiry_seen: std::cell::RefCell<BTreeMap<usize, u32>>,
+    /// `friendship-refuses-the-racer`: a racer's offer of friendship is
+    /// refused, and a culture race counts toward the racing reading. See
+    /// `advanced/protective_friendship.rs`. Off by default.
+    friendship_refuses_the_racer: bool,
     // ---- append: g-k ------------------------------------------------
     /// `immortal-skips-the-prophet-race`: at Immortal and Deity a seat not
     /// aiming at Religion stays out of the Prophet race. See
@@ -11637,6 +11641,7 @@ impl AdvancedAi {
             faith_war_defends_the_diplomat: false,
             friendship_keeps_the_peace: false,
             friendship_expiry_seen: std::cell::RefCell::new(BTreeMap::new()),
+            friendship_refuses_the_racer: false,
             // ---- append: g-k ----------------------------------------
             immortal_skips_the_prophet_race: false,
             hidden_border_yields_to_our_pressure: false,
@@ -22682,6 +22687,14 @@ impl AdvancedAi {
                 GrandStrategy::Conquest => 45.0,
                 _ => 25.0,
             };
+        }
+        // `friendship-refuses-the-racer`: a friendship forbids the war that
+        // counters a racer for its whole term, so a racer's offer of one is
+        // refused, as our own offers to it already are. See
+        // `advanced/protective_friendship.rs`.
+        if deal.friendship && self.friendship_refuses_the_racer && self.friend_is_racing(g, partner)
+        {
+            return -1_000.0;
         }
         if deal.friendship {
             value += if plan.strategy == GrandStrategy::Diplomacy {
