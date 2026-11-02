@@ -9115,6 +9115,17 @@ impl AdvancedAi {
         self.alliance_remembers_the_refusal = false;
     }
 
+    /// Opt-in gene `science-drive-leads-beside-the-lane`; see
+    /// [`Self::science_drive_leads_beside_the_lane`].
+    pub fn enable_science_drive_leads_beside_the_lane(&mut self) {
+        self.science_drive_leads_beside_the_lane = true;
+    }
+
+    /// The twin of `enable_science_drive_leads_beside_the_lane`.
+    pub fn disable_science_drive_leads_beside_the_lane(&mut self) {
+        self.science_drive_leads_beside_the_lane = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
