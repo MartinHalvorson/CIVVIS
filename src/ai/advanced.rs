@@ -8474,6 +8474,10 @@ pub struct AdvancedAi {
     /// has not landed, the best pad city keeps the Satellite at its head. See
     /// `advanced/satellite_holds_the_pad.rs`. Off by default.
     satellite_holds_the_pad: bool,
+    /// `stalled-conquest-takes-science`: a Domination seat that holds no rival
+    /// capital at standard turn 180 retargets to Science. See
+    /// `advanced/stalled_conquest_takes_science.rs`. Off by default.
+    stalled_conquest_takes_science: bool,
     /// `stalled-spreader-braves-the-march`: on a Religion seat, a spreader
     /// held three turns running by the apostle evasion yields only to a
     /// lethal blow. See `advanced/stalled_spreader.rs`. Off by default.
@@ -9912,6 +9916,9 @@ mod embassy_capital;
 
 /// `religion-race-keeps-expanding`: see `advanced/religion_race_expands.rs`.
 mod religion_race_expands;
+/// `stalled-conquest-takes-science`: see
+/// `advanced/stalled_conquest_takes_science.rs`.
+mod stalled_conquest_takes_science;
 /// `stalled-spreader-braves-the-march`: see `advanced/stalled_spreader.rs`.
 mod stalled_spreader;
 
@@ -11881,6 +11888,7 @@ impl AdvancedAi {
             retainers_garrison_the_short_cities: false,
             // ---- append: s-s ----------------------------------------
             satellite_holds_the_pad: false,
+            stalled_conquest_takes_science: false,
             stalled_spreader_braves_the_march: false,
             spreader_hold_streaks: RefCell::new(BTreeMap::new()),
             surprise_watch_holds_its_ratio: false,
@@ -50127,6 +50135,9 @@ impl AdvancedAi {
         // race takes Science before the turn reads its target. See
         // `advanced/religion_lane_hands_over.rs`.
         self.hand_over_a_lost_religion_lane(g, pid);
+        // `stalled-conquest-takes-science`: see
+        // `advanced/stalled_conquest_takes_science.rs`.
+        self.hand_over_a_stalled_conquest(g, pid);
         let active_victory_target = self.active_victory_target(g);
         let specialization_active = self.phase_specialization_active(g);
         // See `lane_delegates_production`: this turn an assigned lane's
