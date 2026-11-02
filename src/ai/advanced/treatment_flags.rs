@@ -9205,6 +9205,16 @@ impl AdvancedAi {
         self.stalled_conquest_takes_science = false;
     }
 
+    /// Keep a committed first Science launch on its research path.
+    pub fn enable_first_launch_keeps_research(&mut self) {
+        self.first_launch_keeps_research = true;
+    }
+
+    /// The twin of `enable_first_launch_keeps_research`.
+    pub fn disable_first_launch_keeps_research(&mut self) {
+        self.first_launch_keeps_research = false;
+    }
+
     /// Ask the native market for Coal serving ready research power.
     pub fn enable_science_power_buys_fuel(&mut self) {
         self.science_power_buys_fuel = true;
