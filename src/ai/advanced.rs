@@ -8474,6 +8474,8 @@ pub struct AdvancedAi {
     /// has not landed, the best pad city keeps the Satellite at its head. See
     /// `advanced/satellite_holds_the_pad.rs`. Off by default.
     satellite_holds_the_pad: bool,
+    /// Keep the first Science launch on its research path. Opt-in.
+    first_launch_keeps_research: bool,
     /// `stalled-conquest-takes-science`: a Domination seat that holds no rival
     /// capital at standard turn 180 retargets to Science. See
     /// `advanced/stalled_conquest_takes_science.rs`. Off by default.
@@ -10358,6 +10360,7 @@ mod dvp_leader_front;
 mod engineering_for_capped_fresh_water;
 mod falling_city_takers;
 mod far_settle_site;
+mod first_launch_research;
 /// `founder-converts-its-own-cities`: a founder's spreaders convert our own
 /// cities before any foreign one. See `advanced/founder_home.rs`.
 mod founder_home;
@@ -11888,6 +11891,7 @@ impl AdvancedAi {
             retainers_garrison_the_short_cities: false,
             // ---- append: s-s ----------------------------------------
             satellite_holds_the_pad: false,
+            first_launch_keeps_research: false,
             stalled_conquest_takes_science: false,
             stalled_spreader_braves_the_march: false,
             spreader_hold_streaks: RefCell::new(BTreeMap::new()),
@@ -19355,11 +19359,14 @@ impl AdvancedAi {
             let science_lane_active = self.victory_target == Some(VictoryTarget::Science)
                 || self.phase_specialization_active(g)
                 || self.science_drive_active();
-            let science_victory_goal = if science_lane_active {
-                Self::science_victory_tech_goal(g, pid, objective)
-            } else {
-                None
-            };
+            let first_launch_goal = self.first_launch_research_goal(g, pid);
+            let science_victory_goal = first_launch_goal.or_else(|| {
+                if science_lane_active {
+                    Self::science_victory_tech_goal(g, pid, objective)
+                } else {
+                    None
+                }
+            });
             if let Some(goal) = self.science_endgame_research_goal(g, pid) {
                 for tech in g.available_techs(pid) {
                     if self.tech_leads_to(g, &tech, goal) && !available.contains(&tech) {
@@ -19632,6 +19639,9 @@ impl AdvancedAi {
                 _ if production_technology_goal.is_some() => production_technology_goal
                     .as_ref()
                     .map(|tech| tech.as_str()),
+                // An owned Rocketry commits the first launch through Recovery
+                // and optional modernization; urgent defenses remain above.
+                _ if first_launch_goal.is_some() => first_launch_goal,
                 _ if wartime_modernization_goal.is_some() => wartime_modernization_goal.as_deref(),
                 _ if domination_siege_goal.is_some() => domination_siege_goal.as_deref(),
                 // Once the late launch chain is committed, finish its remaining
@@ -19808,6 +19818,15 @@ impl AdvancedAi {
                         {
                             available.push(tech);
                         }
+                    }
+                }
+            }
+            // The committed first launch may cross the rolling era window.
+            // Admit only its available prerequisites, only while it owns the goal.
+            if first_launch_goal.is_some() && forced_goal == first_launch_goal {
+                for tech in g.available_techs(pid) {
+                    if self.tech_leads_to(g, &tech, "satellites") && !available.contains(&tech) {
+                        available.push(tech);
                     }
                 }
             }
