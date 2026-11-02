@@ -4749,6 +4749,16 @@ pub const GENES: &[Gene] = &[
     // 78, 36 turns). Under the gene the first pad goes only to a city within
     // 80% of the best placing producer. See `ai/first_pad_in_the_forge.rs`.
     Gene { tag: "first-pad-in-the-forge", field: "first_pad_in_the_forge", kind: Kind::OptIn, enable: AdvancedAi::enable_first_pad_in_the_forge, disable: AdvancedAi::disable_first_pad_in_the_forge },
+    // Live King 11-01/02, 22 games with a standing pad: `launch-pad-holds-
+    // its-queue` holds the pad until it stands and `launch-commits-the-
+    // endgame` commits only once the Earth Satellite lands; in between the
+    // Satellite took a median 7 turns but 14-30 in four games, and 13 of 22
+    // pad cities switched off it twice or more (131016Z: reactor conversion,
+    // Builder, Jet Bomber, Broadcast Center, Helicopter; Satellite ~t217;
+    // lost Science at t223 while leading the field's Science at t200). Under
+    // the gene the best pad city keeps the Satellite at its head until it
+    // lands. See `advanced/satellite_holds_the_pad.rs`.
+    Gene { tag: "satellite-holds-the-pad", field: "satellite_holds_the_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_satellite_holds_the_pad, disable: AdvancedAi::disable_satellite_holds_the_pad },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

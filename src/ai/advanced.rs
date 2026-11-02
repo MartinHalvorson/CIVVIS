@@ -8470,6 +8470,10 @@ pub struct AdvancedAi {
     /// `BasicAi::retainers_garrison_the_short_cities`. Off by default.
     retainers_garrison_the_short_cities: bool,
     // ---- append: s-s ------------------------------------------------
+    /// `satellite-holds-the-pad`: once a pad stands and the Earth Satellite
+    /// has not landed, the best pad city keeps the Satellite at its head. See
+    /// `advanced/satellite_holds_the_pad.rs`. Off by default.
+    satellite_holds_the_pad: bool,
     /// `stalled-spreader-braves-the-march`: on a Religion seat, a spreader
     /// held three turns running by the apostle evasion yields only to a
     /// lethal blow. See `advanced/stalled_spreader.rs`. Off by default.
@@ -10376,6 +10380,8 @@ mod neighborhood_houses_the_capped_city;
 /// `nuclear-goal-needs-a-launcher`: see `advanced/nuclear_launcher.rs`.
 mod nuclear_launcher;
 mod peacetime_republic;
+/// `satellite-holds-the-pad`: see `advanced/satellite_holds_the_pad.rs`.
+mod satellite_holds_the_pad;
 mod science_denial_every_pad;
 mod science_denial_trains_spies;
 mod science_endgame;
@@ -11874,6 +11880,7 @@ impl AdvancedAi {
             religion_seat_defends_its_faith: false,
             retainers_garrison_the_short_cities: false,
             // ---- append: s-s ----------------------------------------
+            satellite_holds_the_pad: false,
             stalled_spreader_braves_the_march: false,
             spreader_hold_streaks: RefCell::new(BTreeMap::new()),
             surprise_watch_holds_its_ratio: false,
@@ -50857,6 +50864,10 @@ impl AdvancedAi {
         // `launch-pad-holds-its-queue`: the first pad back at the head of its
         // city, before the defence and loyalty handoffs below.
         self.claim_launch_pad_holds_its_queue(g, pid, &plan);
+        // `satellite-holds-the-pad`: the standing pad keeps the Earth
+        // Satellite until it lands, bridging the pad hold and
+        // `launch-commits-the-endgame`.
+        self.claim_satellite_holds_the_pad(g, pid, &plan);
         self.claim_frontier_walls_before_the_surprise(g, pid);
         // Make the declaration response the final authority over queues this
         // turn. Earlier governors can continue to express their peaceful
