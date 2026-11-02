@@ -38,7 +38,7 @@ not affect those reported estimates.
 The changed diagnostic executable also completed. After aligning genes by
 tag, all 18 realized genomes and every other seat-row field match the
 original apart from elapsed seconds. The two new registry tags are fixed
-OFF. All recorded source-file hashes remain unchanged after the run. The
+OFF. The run receipt confirms no source-file changes during execution. The
 new journals retain 840 and 812 Research-topic lines; those include civics
 and repeated planning entries, not that many unique technology choices.
 In the enabled Science seat (002/4), research selects Rocketry at 97,
@@ -58,3 +58,8 @@ selected prefix; the 64-game win-rate estimate remains unresolved. These
 diagnostics do not justify the reserved 128-game confirmation ahead of the
 concrete native placement, founding and defense failures. There is no
 ledger ingestion, default promotion or native execution claim.
+
+The final PR integrates main's Holy Site repair after recording these
+comparisons. The archived replay evidence describes its pinned builds; it
+does not assert that the later combined executable replayed those games.
+The diagnostic filter itself is unchanged by that integration.
