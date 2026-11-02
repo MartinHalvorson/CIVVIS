@@ -25,6 +25,12 @@ Coal banked. A Coal plant must be buildable or already stand, with at least
 two unpowered Labs within six tiles of its Industrial Zone. Oil/Nuclear
 plant cities do not request Coal. Immediate home threats, an excluded fossil
 power lane, and fewer than ten turns to the turn cap veto the request.
+The producing Industrial Zone and served Campuses must be active, and
+pillaged Labs do not qualify as the research payoff.
+Before starting a Coal plant, a buildable Oil or Nuclear alternative with
+positive fuel income or at least ten fuel banked also releases the Coal want.
+This prevents the late Oil supply in the motivating run from attracting a
+new Coal purchase merely because its Coal income remains zero.
 
 The request is 20 Coal, minimum 10, using the existing strategic-buy
 transport. It preserves the larger of 100 Gold and the upkeep reserve,
@@ -51,6 +57,10 @@ Implementation is in progress. Required validation includes:
   remains off in both controllers.
 - A paired query on identical captured native reads, varying only this flag,
   demonstrating the proposed Coal buy, reserve/cadence behavior and controls.
+  Fixed initial cases are first frames of turns 150, 152, 155, 161 and 184
+  in the motivating run: include the off-cadence frame and the later Oil
+  supply control, even if neither emits a different order. Do not report a
+  zero-change result as a strength null.
 - Native execution evidence: accepted terms, delivered Coal, actual plant
   construction, power/yield changes and ongoing cost, followed by complete
   game outcomes with the rest of the deployed profile held fixed.
@@ -59,3 +69,32 @@ This transport acts only on the native bridge. A simulator screen that never
 executes the resource purchase cannot establish its strength. Do not credit
 the separate first-launch research screen to this candidate. No default
 promotion until native execution and win/survival evidence support it.
+
+## Direct host power readback
+
+The installed Expansion 2 UI supplies a direct validation route:
+`DLC/Expansion2/UI/Additions/CityPanelPower.lua:36` obtains `pCity:GetPower()`;
+lines 42–45 read `GetFreePower()`, `GetTemporaryPower()` and
+`GetRequiredPower()`, and line 51 checks `IsFullyPowered()`. The current
+captured board has no direct city power fields, so its unpowered-Lab count
+is explicitly a reconstruction. Before treating a live trial as execution
+evidence, record the host's power readout alongside delivered fuel and
+plant completion. An increase in model-predicted Science is insufficient.
+
+## Observed validation
+
+Nine focused Rust behavior tests pass with
+`CARGO_PROFILE_CI_OPT_LEVEL=0 cargo test --profile ci --locked --lib science_power_fuel`.
+This is an unoptimized local behavior check, not the full CI suite.
+
+The five preregistered captured-read comparisons completed successfully.
+Each also repeats its control and verifies stable proposed orders. At t152,
+t155 and t161, enabling only this gene adds a request for 20 Coal with a
+592-Gold ceiling. At t150 (off cadence) and t184 (a fuelled Oil alternative),
+both arms add no buy. All non-buy orders are identical in every pair.
+
+The compressed native archive retains input reads, source hashes and patch,
+the reproducer, raw responses and observed genomes. Its companion firing
+receipt passes `tools/gene_fires.py --max 0`. These are proposal results,
+not accepted deals: 592 is a ceiling, not a verified payment. No power gain,
+host resource delivery, native win improvement or default promotion is claimed.

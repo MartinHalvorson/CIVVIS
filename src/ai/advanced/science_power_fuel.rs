@@ -30,6 +30,9 @@ impl AdvancedAi {
             .values()
             .filter(|city| city.owner == pid)
             .any(|city| {
+                if !active_district(g, city, crate::name!("industrial_zone")) {
+                    return false;
+                }
                 // Another plant cannot use Coal. Never buy a conversion here.
                 if city
                     .buildings
@@ -43,6 +46,26 @@ impl AdvancedAi {
                 {
                     return false;
                 }
+                if !city.buildings.contains(&crate::name!("coal_power_plant"))
+                    && [
+                        ("oil", "oil_power_plant"),
+                        ("uranium", "nuclear_power_plant"),
+                    ]
+                    .into_iter()
+                    .any(|(fuel, building)| {
+                        (g.strategic_resource_rate(pid, fuel) > 0.0
+                            || g.strategic_stockpile(pid, Name::new(fuel)) >= 10.0)
+                            && g.can_produce(
+                                pid,
+                                city.id,
+                                &Item::Building {
+                                    building: Name::new(building),
+                                },
+                            )
+                    })
+                {
+                    return false;
+                }
                 let origin = g
                     .city_district_family_position(city, crate::name!("industrial_zone"))
                     .unwrap_or(city.pos);
@@ -51,6 +74,10 @@ impl AdvancedAi {
                     .filter(|other| {
                         other.owner == pid
                             && other.buildings.contains(&crate::name!("research_lab"))
+                            && !other
+                                .pillaged_buildings
+                                .contains(&crate::name!("research_lab"))
+                            && active_district(g, other, crate::name!("campus"))
                             && !g.city_is_powered(other)
                             && g.wdist(origin, other.pos) <= 6
                     })
@@ -74,6 +101,14 @@ impl AdvancedAi {
             renewal: false,
         }]
     }
+}
+
+// The Game helper is private to its module. These two non-Encampment
+// families are active precisely when their completed district is unpillaged.
+fn active_district(g: &Game, city: &crate::game::City, family: Name) -> bool {
+    city.districts.iter().any(|(district, pos)| {
+        g.district_family(*district) == family && g.map.get(*pos).is_some_and(|tile| !tile.pillaged)
+    })
 }
 
 #[cfg(test)]

@@ -46,6 +46,24 @@ fn board() -> (Game, AdvancedAi) {
         .unwrap()
         .buildings
         .push(crate::name!("research_lab"));
+    for cid in [first, second] {
+        let site = g.cities[&cid]
+            .owned_tiles
+            .iter()
+            .copied()
+            .find(|pos| {
+                g.map.tiles[pos].district.is_none()
+                    && !g.rules.is_water(&g.map.tiles[pos])
+                    && g.rules.is_passable(&g.map.tiles[pos])
+            })
+            .unwrap();
+        let city = g.cities.get_mut(&cid).unwrap();
+        city.pop = 7;
+        city.districts.insert(crate::name!("campus"), site);
+        city.buildings
+            .extend([crate::name!("library"), crate::name!("university")]);
+        g.map.tiles.get_mut(&site).unwrap().district = Some(crate::name!("campus"));
+    }
     g.players[0].techs = g.rules.techs.keys().copied().collect();
     g.players[0].gold = 300.0;
     g.players[0].gold_per_turn = 50.0;
@@ -63,6 +81,10 @@ fn science_power_fuel_is_an_opt_in() {
 #[test]
 fn ready_research_power_names_a_bounded_coal_block() {
     let (g, ai) = board();
+    assert!(g
+        .player_city_ids(0)
+        .iter()
+        .all(|cid| g.city_power_demand(&g.cities[cid]) > 0.0));
     let wants = ai.science_power_fuel_wants(&g, 0);
     assert_eq!(wants.len(), 1);
     assert_eq!(wants[0].resource, "RESOURCE_COAL");
@@ -86,6 +108,44 @@ fn treasury_and_income_protect_the_reserve() {
     assert!(ai.science_power_fuel_wants(&g, 0).is_empty());
     g.players[0].gold = 300.0;
     g.players[0].gold_per_turn = -1.0;
+    assert!(ai.science_power_fuel_wants(&g, 0).is_empty());
+}
+
+#[test]
+fn a_fuelled_buildable_alternative_does_not_buy_coal() {
+    let (mut g, ai) = board();
+    g.players[0]
+        .strategic_resources
+        .insert(crate::name!("oil"), 10.0);
+    assert!(ai.science_power_fuel_wants(&g, 0).is_empty());
+}
+
+#[test]
+fn a_pillaged_lab_is_not_power_demand_to_buy_for() {
+    let (mut g, ai) = board();
+    let first = g.player_city_ids(0)[0];
+    g.cities
+        .get_mut(&first)
+        .unwrap()
+        .pillaged_buildings
+        .insert(crate::name!("research_lab"));
+    assert!(ai.science_power_fuel_wants(&g, 0).is_empty());
+}
+
+#[test]
+fn an_inactive_existing_plant_does_not_buy_fuel() {
+    let (mut g, ai) = board();
+    let first = g.player_city_ids(0)[0];
+    g.cities
+        .get_mut(&first)
+        .unwrap()
+        .buildings
+        .push(crate::name!("coal_power_plant"));
+    let site = *g.cities[&first]
+        .districts
+        .get(crate::name!("industrial_zone"))
+        .unwrap();
+    g.map.tiles.get_mut(&site).unwrap().pillaged = true;
     assert!(ai.science_power_fuel_wants(&g, 0).is_empty());
 }
 
