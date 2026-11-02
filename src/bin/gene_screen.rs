@@ -105,7 +105,8 @@
 //! says `foldover` or `prior`) still analyse: their rows are seats with a
 //! genome and an outcome like any other, and the estimator here never needed
 //! the pairing. Only the sampling changed.
-use civvis::ai::{run_game_observed, AdvancedAi, VictoryTarget};
+use civvis::ai::{run_game_observed, AdvancedAi, Ai, VictoryTarget};
+use civvis::reasoning::{Journal, Level, Topic};
 use civvis::game::{Game, GameOptions, DIPLOMATIC_VICTORY_POINTS};
 use civvis::rng::Rng;
 use civvis::setup::{GameSpeed, MapScript};
@@ -2340,6 +2341,12 @@ struct Profile {
     /// handicap (`GameOptions::handicap_exempt`) and only the rival chairs
     /// play with it.
     handicap_rivals: bool,
+    /// ⭐ `--journal SEED[,SEED]`: the seeds whose measured seats record their
+    /// reasoning journal (`think!`), written to `<out>.journal.<seed>.txt`.
+    /// Empty records nothing, and recording changes no decision.
+    journal_seeds: BTreeSet<u64>,
+    /// The `--out` path the journal files are named after.
+    journal_base: String,
 }
 
 /// ⭐ WHICH MAJOR SEATS THE FIELD PINS, AND TO WHAT — one entry per major
@@ -2407,6 +2414,32 @@ fn field_seat(target: VictoryTarget, lane_genes: &[String]) -> AdvancedAi {
 /// counts in every measured seat's `score_share`, and their Diplomatic
 /// Victory Points and tourists are what `rival_dvp` / `rival_tourists`
 /// report, so a measured row can say how close the pursuer came.
+/// `--journal`: append every thought after `cursor` on the strategy, war and
+/// diplomacy topics, at Decision depth or above, as `t<turn> p<player>
+/// <topic> <headline> | <detail>`. Returns the cursor to ask with next.
+fn drain_journal(journal: &Journal, cursor: u64, lines: &mut Vec<String>) -> u64 {
+    let delta = journal.since(cursor);
+    for thought in delta.thoughts {
+        if !matches!(
+            thought.topic,
+            Topic::Strategy | Topic::Military | Topic::Diplomacy
+        ) || thought.level > Level::Decision
+        {
+            continue;
+        }
+        let detail = if thought.detail.is_empty() {
+            String::new()
+        } else {
+            format!(" | {}", thought.detail)
+        };
+        lines.push(format!(
+            "t{} p{} {:?} {}{detail}",
+            thought.turn, thought.player, thought.topic, thought.headline
+        ));
+    }
+    delta.cursor
+}
+
 fn play_game(
     profile: &Profile,
     genes: &[Gene],
@@ -2523,6 +2556,18 @@ fn play_game(
             }
         })
         .collect();
+    // ⭐ `--journal`: one shared log for this game's measured seats, drained
+    // every turn so the ring (`reasoning::RING_CAPACITY`) never drops a turn.
+    let journal = profile.journal_seeds.contains(&seed).then(Journal::recording);
+    if let Some(journal) = &journal {
+        for (index, &pid) in majors.iter().enumerate() {
+            if pinned.get(index).copied().flatten().is_none() && rival_chair(index).is_none() {
+                ais[pid].attach_journal(journal.handle());
+            }
+        }
+    }
+    let mut journal_cursor = 0;
+    let mut journal_lines: Vec<String> = Vec::new();
     // ⭐ THE SCIENCE-PACE READ: every seat's tech count at the start of the
     // turn equivalent to Standard turn `SCIENCE_PACE_STANDARD_TURN` on this
     // batch's clock. A game that ends before it leaves this `None`, and the
@@ -2541,6 +2586,9 @@ fn play_game(
     let mut traces: Vec<Vec<TraceSample>> = vec![Vec::new(); world.players.len()];
     let mut project_turns: Vec<BTreeMap<String, u32>> = vec![BTreeMap::new(); world.players.len()];
     run_game_observed(&mut world, &mut ais, |g| {
+        if let Some(journal) = &journal {
+            journal_cursor = drain_journal(journal, journal_cursor, &mut journal_lines);
+        }
         if profile.trace {
             for &pid in &majors {
                 for project in &g.players[pid].science_projects {
@@ -2583,6 +2631,13 @@ fn play_game(
             techs_at_live_pace = Some(g.players.iter().map(|p| p.techs.len()).collect());
         }
     });
+    if let Some(journal) = &journal {
+        drain_journal(journal, journal_cursor, &mut journal_lines);
+        let path = format!("{}.journal.{seed}.txt", profile.journal_base);
+        if let Err(error) = std::fs::write(&path, journal_lines.join("\n") + "\n") {
+            eprintln!("cannot write {path}: {error}");
+        }
+    }
     let secs = started.elapsed().as_secs_f64();
     majors
         .iter()
@@ -6433,7 +6488,8 @@ fn usage() -> ! {
          change expansion (it masks any that do)\n       \
          the rival trajectories: [--trace] writes every major's economy (cities, population, yields, tourism, \
          tourists, techs, civics, wonders, districts) at turns 10..100 by tens, 125, 150, 175, 200, 225 onto its \
-         row as `trace`; rows are unchanged without it\n       \
+         row as `trace`; rows are unchanged without it; [--journal SEED[,SEED]] writes those seeds' \
+         measured-seat reasoning (strategy, war and diplomacy decisions) to <out>.journal.<seed>.txt\n       \
          the handicapped rivals: [--handicap all|rivals] (default all; rivals exempts every measured seat from \
          the rung's bonuses so only the rival chairs play with them, as the live seat meets Emperor) \
          [--rival-chairs N] (default 1, at most players-1); both need --rivals\n       \
@@ -6719,6 +6775,20 @@ fn main() {
     // city curve. Opt-in, for absolute-rate reads of genes that do not change
     // expansion: it masks any gene that does.
     let seat_pace = present(&args, "--seat-pace");
+    // ⭐ `--journal SEED[,SEED]`: the measured seats of these seeds write their
+    // reasoning journal beside the rows. Diagnostic only: no row changes.
+    let journal_seeds: BTreeSet<u64> = text(&args, "--journal")
+        .map(|spec| {
+            spec.split(',')
+                .map(|seed| {
+                    seed.trim().parse().unwrap_or_else(|_| {
+                        eprintln!("--journal takes seeds separated by commas, not {seed:?}");
+                        std::process::exit(2);
+                    })
+                })
+                .collect()
+        })
+        .unwrap_or_default();
     // ⭐ `--rival-victory-pace PCT`: the rival chairs' space projects cost PCT
     // percent. The native field turns its science into a launch faster than
     // the live Firaxis AI (see docs/GENE_SCREEN.md).
@@ -7163,6 +7233,8 @@ fn main() {
         rival_space_floor,
         rival_chairs,
         handicap_rivals,
+        journal_seeds,
+        journal_base: out_path.clone(),
     };
     println!(
         "gene screen: {games_to_play} games ({} measured seats of {} chairs, every drawn seat its own genome, on at p={p_on} / {p_default_on} default-on) · {} of {} genes screened · {players}p {width}x{height} {} · {} · {turns} turns · {city_states} city-states · {} civs · seeds {start_seed}..{} · {jobs} jobs · rows → {out_path}",
