@@ -8470,6 +8470,8 @@ pub struct AdvancedAi {
     /// `BasicAi::retainers_garrison_the_short_cities`. Off by default.
     retainers_garrison_the_short_cities: bool,
     // ---- append: s-s ------------------------------------------------
+    /// Native fuel bridge for ready research power. Off by default.
+    science_power_buys_fuel: bool,
     /// `satellite-holds-the-pad`: once a pad stands and the Earth Satellite
     /// has not landed, the best pad city keeps the Satellite at its head. See
     /// `advanced/satellite_holds_the_pad.rs`. Off by default.
@@ -10392,6 +10394,7 @@ mod satellite_holds_the_pad;
 mod science_denial_every_pad;
 mod science_denial_trains_spies;
 mod science_endgame;
+mod science_power_fuel;
 mod science_suppression_pads;
 mod science_threat_denial;
 mod science_trade;
@@ -11887,6 +11890,7 @@ impl AdvancedAi {
             religion_seat_defends_its_faith: false,
             retainers_garrison_the_short_cities: false,
             // ---- append: s-s ----------------------------------------
+            science_power_buys_fuel: false,
             satellite_holds_the_pad: false,
             stalled_conquest_takes_science: false,
             stalled_spreader_braves_the_march: false,

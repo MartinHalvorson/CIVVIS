@@ -9205,6 +9205,16 @@ impl AdvancedAi {
         self.stalled_conquest_takes_science = false;
     }
 
+    /// Ask the native market for Coal serving ready research power.
+    pub fn enable_science_power_buys_fuel(&mut self) {
+        self.science_power_buys_fuel = true;
+    }
+
+    /// The twin of `enable_science_power_buys_fuel`.
+    pub fn disable_science_power_buys_fuel(&mut self) {
+        self.science_power_buys_fuel = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

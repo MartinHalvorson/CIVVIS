@@ -3293,6 +3293,8 @@ pub const GENES: &[Gene] = &[
     // best). The bridge buys the resource the better gun waits on, sized to
     // the guns its blow needs. See `gun_resource::siege_gun_resource_wants`.
     Gene { tag: "siege-buys-the-gun-resource", field: "siege_buys_the_gun_resource", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_buys_the_gun_resource, disable: AdvancedAi::disable_siege_buys_the_gun_resource },
+    // Native-only purchase proposal; strength requires native trials.
+    Gene { tag: "science-power-buys-fuel", field: "science_power_buys_fuel", kind: Kind::OptIn, enable: AdvancedAi::enable_science_power_buys_fuel, disable: AdvancedAi::disable_science_power_buys_fuel },
     // The decisive window spent ~1,200 science a game off the Advanced
     // Flight path after the air surge's horizon opened (10-06/07 Emperor),
     // and captures ran 0.20 per 100 turns before the Bomber against 1.24
