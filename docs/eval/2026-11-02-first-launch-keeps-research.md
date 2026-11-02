@@ -60,3 +60,22 @@ do not credit their effect to this research treatment.
 
 Status: implementation and validation in progress; no outcome or win-rate
 improvement established, no default promotion authorized by this evidence.
+
+## Validation observation, 2026-11-02
+
+All six focused tests pass with
+`CARGO_PROFILE_CI_OPT_LEVEL=0 cargo test --profile ci --locked --lib first_launch_research`.
+This is an unoptimized local behavior check, not the full optimized CI suite.
+The Recovery fixture explicitly enables the victory portfolio and asserts
+that its effective objective is Recovery before checking research choices.
+
+The next completed native loss, `civvis-20261102T163456Z` (Emperor,
+Domination target, controller `27927468d`), independently emphasizes the
+launch endpoint. Its native states first show Rocketry at t166 and Satellites
+at t189; the terminal t227 state reports 12 cities, 449.773 Science per turn,
+Future Tech being researched, no science projects, and zero science victory
+points. The ladder records a loss to Technology and no first Spaceport.
+This is outside the new treatment's Science-target gate, so it is neither a
+treatment result nor evidence for broadening the rule. It illustrates why
+earlier Satellites alone cannot count as the goal: the lane handover and
+launch-production policies must also turn that economy into a victory.
