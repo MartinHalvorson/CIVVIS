@@ -4773,6 +4773,15 @@ pub const GENES: &[Gene] = &[
     // rival capital at standard turn 180 (live t120) retargets to Science.
     // See `advanced/stalled_conquest_takes_science.rs`.
     Gene { tag: "stalled-conquest-takes-science", field: "stalled_conquest_takes_science", kind: Kind::OptIn, enable: AdvancedAi::enable_stalled_conquest_takes_science, disable: AdvancedAi::disable_stalled_conquest_takes_science },
+    // Live Lv 6 civvis-20261102T185013Z lost 4 of 5 cities to Babylon, which
+    // declared at 215 host power against our 279: Pikemen (45) against
+    // Warriors (20), a gap plain power cannot see, and the second war came
+    // after v1's turn-80 window. Over 68 live games a ten-turn hazard
+    // (nearness, soldiers at our door, denouncement, friendship, late game)
+    // plus a quality-weighted army at least level with ours warned of 12 of
+    // the 14 city-losing declarations 3-20 turns ahead; v1 warned of 6.
+    // See `advanced/war_forecast.rs` and `advanced/near_rival_deterrence.rs`.
+    Gene { tag: "near-rival-deterrence-2", field: "near_rival_deterrence_2", kind: Kind::OptIn, enable: AdvancedAi::enable_near_rival_deterrence_2, disable: AdvancedAi::disable_near_rival_deterrence_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

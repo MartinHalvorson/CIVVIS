@@ -9225,6 +9225,18 @@ impl AdvancedAi {
         self.science_power_buys_fuel = false;
     }
 
+    /// Opt-in gene `near-rival-deterrence-2`, version 2 of
+    /// `near-rival-deterrence`; see `advanced/near_rival_deterrence.rs`.
+    pub fn enable_near_rival_deterrence_2(&mut self) {
+        self.near_rival_deterrence = false;
+        self.near_rival_deterrence_2 = true;
+    }
+
+    /// The twin of `enable_near_rival_deterrence_2`.
+    pub fn disable_near_rival_deterrence_2(&mut self) {
+        self.near_rival_deterrence_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

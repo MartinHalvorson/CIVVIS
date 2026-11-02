@@ -30,7 +30,22 @@
 //! the next band (1.5) is half again the army. The claim runs after the
 //! early city floor's Settler and before the Prophet race and the routine
 //! claims; the end-of-turn defence redirects keep the last word.
+//!
+//! **`near-rival-deterrence-2` (2026-11-02).** Live Lv 6
+//! civvis-20261102T185013Z read Babylon at 215 power against our 279 and
+//! stood down; Babylon's Pikemen (45) took two cities from our Warriors (20)
+//! in nine turns, and after turn 80 nothing watched its climb to 493 before
+//! the second war took Moscow. Version 2 keeps v1's neighbour inside v1's
+//! window and adds, from the window's start to the end of the game, any met
+//! major at peace whose war forecast hazard reaches
+//! [`war_forecast::FORECAST_HAZARD_FLOOR`] (see `advanced/war_forecast.rs`
+//! for the census). Both sides are weighed in quality power, so ten
+//! Warriors no longer read level with four Pikemen. While the neighbour
+//! out-guns us, one obsolete land unit a turn is upgraded, best strength
+//! gained per gold first, above [`DETERRENCE_UPGRADE_RESERVE_BASE`] plus
+//! [`DETERRENCE_UPGRADE_RESERVE_PER_CITY`] a city.
 
+use super::war_forecast::FORECAST_HAZARD_FLOOR;
 use super::*;
 
 /// A rival whose nearest known city stands within this many tiles of one of
@@ -51,15 +66,24 @@ pub(crate) const DETERRENCE_MAX_QUEUED: usize = 2;
 /// The longest unit build, in standard turns, the claim will queue.
 pub(crate) const DETERRENCE_MAX_BUILD: u32 = 18;
 
+/// Gold kept back from a version 2 upgrade: this much…
+pub(crate) const DETERRENCE_UPGRADE_RESERVE_BASE: f64 = 60.0;
+
+/// …plus this much per city.
+pub(crate) const DETERRENCE_UPGRADE_RESERVE_PER_CITY: f64 = 15.0;
+
 impl AdvancedAi {
     /// The strongest met major at peace with a known city within
     /// [`DETERRENCE_NEAR_TILES`] of ours, and its power. `None` with the
     /// gene off, outside the window, and with no such neighbour.
     pub(super) fn deterrence_threat(&self, g: &Game, pid: usize) -> Option<(usize, f64)> {
-        if !self.near_rival_deterrence
+        if !(self.near_rival_deterrence || self.near_rival_deterrence_2)
             || g.turn < g.standard_duration(DETERRENCE_START_STANDARD)
-            || g.turn >= g.standard_duration(DETERRENCE_END_STANDARD)
         {
+            return None;
+        }
+        let in_window = g.turn < g.standard_duration(DETERRENCE_END_STANDARD);
+        if !in_window && !self.near_rival_deterrence_2 {
             return None;
         }
         let ours: Vec<Pos> = g
@@ -69,6 +93,21 @@ impl AdvancedAi {
             .collect();
         if ours.is_empty() {
             return None;
+        }
+        if self.near_rival_deterrence_2 {
+            // Version 2: the forecast names the neighbour and prices both
+            // armies by unit quality. `deterrence-trusts-a-friend` still
+            // spares a friend.
+            return self
+                .threat_forecasts(g, pid)
+                .into_iter()
+                .filter(|forecast| !self.deterrence_spares_a_friend(g, pid, forecast.rival))
+                .filter(|forecast| {
+                    (in_window && forecast.nearest <= DETERRENCE_NEAR_TILES)
+                        || forecast.hazard >= FORECAST_HAZARD_FLOOR
+                })
+                .map(|forecast| (forecast.rival, forecast.theirs))
+                .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)));
         }
         g.players
             .iter()
@@ -96,6 +135,16 @@ impl AdvancedAi {
             .max_by(|a, b| a.1.total_cmp(&b.1).then(b.0.cmp(&a.0)))
     }
 
+    /// Our power on the scale [`Self::deterrence_threat`] reports theirs:
+    /// quality power under version 2, plain power under version 1.
+    pub(super) fn deterrence_our_power(&self, g: &Game, pid: usize) -> f64 {
+        if self.near_rival_deterrence_2 {
+            Self::quality_power(g, pid, pid)
+        } else {
+            g.military_power(pid)
+        }
+    }
+
     /// Whether the claim still wants the land unit at the head of `cid`'s
     /// queue: a neighbour still out-guns us.
     pub(super) fn deterrence_unit_holds(&self, g: &Game, pid: usize, item: &Item) -> bool {
@@ -105,8 +154,9 @@ impl AdvancedAi {
         if !Self::deterrence_land_unit(g, unit) {
             return false;
         }
-        self.deterrence_threat(g, pid)
-            .is_some_and(|(_, theirs)| g.military_power(pid) < DETERRENCE_RATIO * theirs)
+        self.deterrence_threat(g, pid).is_some_and(|(_, theirs)| {
+            self.deterrence_our_power(g, pid) < DETERRENCE_RATIO * theirs
+        })
     }
 
     fn deterrence_land_unit(g: &Game, unit: &Name) -> bool {
@@ -157,15 +207,68 @@ impl AdvancedAi {
         }
     }
 
+    /// Version 2: upgrade the one land unit that gains the most strength per
+    /// gold, while the gold left covers [`DETERRENCE_UPGRADE_RESERVE_BASE`]
+    /// plus [`DETERRENCE_UPGRADE_RESERVE_PER_CITY`] a city and the upkeep
+    /// rise fits the income.
+    fn deterrence_upgrade(&self, g: &mut Game, pid: usize, rival: usize, ours: f64, theirs: f64) {
+        let reserve = DETERRENCE_UPGRADE_RESERVE_BASE
+            + DETERRENCE_UPGRADE_RESERVE_PER_CITY * g.player_city_ids(pid).len() as f64;
+        let gold = g.players[pid].gold;
+        let income = g.players[pid].gold_per_turn;
+        let best = g
+            .player_unit_ids(pid)
+            .into_iter()
+            .filter_map(|uid| {
+                let unit = &g.units[&uid];
+                let from = &g.rules.units[unit.kind];
+                if from.class != "military"
+                    || from.siege
+                    || from.promotion_class == "recon"
+                    || matches!(from.domain.as_deref(), Some("sea" | "air"))
+                    || self.amphibious_locked(uid)
+                {
+                    return None;
+                }
+                let (target, price, _) = g.unit_gold_upgrade_offer(pid, uid)?;
+                let to = &g.rules.units[target];
+                let gain = to.strength.max(to.ranged_attack_strength())
+                    - from.strength.max(from.ranged_attack_strength());
+                let upkeep = (to.maintenance - from.maintenance).max(0.0);
+                (gain > 0.0 && gold - price >= reserve && income >= upkeep).then_some((
+                    gain / price.max(1.0),
+                    std::cmp::Reverse(uid),
+                    uid,
+                    target,
+                    price,
+                ))
+            })
+            .max_by(|a, b| a.0.total_cmp(&b.0).then(a.1.cmp(&b.1)));
+        let Some((_, _, uid, target, price)) = best else {
+            return;
+        };
+        let from = g.units[&uid].kind;
+        if g.apply(pid, &Action::UpgradeUnit { unit: uid }).is_ok() {
+            think!(self.journal(), Military, Decision,
+                "Upgrading against {}", g.players[rival].civ;
+                "near-rival-deterrence-2: {} to {} for {price:.0} gold; our quality power {ours:.0} \
+                 against their {theirs:.0}",
+                plain(&from), plain(&target));
+        }
+    }
+
     /// See the module: one land unit in the city that trains it soonest while
     /// a neighbour out-guns us. Exact no-op with the gene off.
     pub(super) fn claim_deterrence_unit(&self, g: &mut Game, pid: usize, plan: &StrategicPlan) {
         let Some((rival, theirs)) = self.deterrence_threat(g, pid) else {
             return;
         };
-        let ours = g.military_power(pid);
+        let ours = self.deterrence_our_power(g, pid);
         if ours >= DETERRENCE_RATIO * theirs {
             return;
+        }
+        if self.near_rival_deterrence_2 {
+            self.deterrence_upgrade(g, pid, rival, ours, theirs);
         }
         let city_ids = g.player_city_ids(pid);
         let queued = city_ids

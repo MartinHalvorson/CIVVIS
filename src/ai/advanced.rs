@@ -8036,6 +8036,16 @@ pub struct AdvancedAi {
     /// every ordinary writer and claim, and the Spy trainer skips that city.
     /// See `advanced/launch_pad_holds_its_queue.rs`. Off by default.
     launch_pad_holds_its_queue: bool,
+    /// `near-rival-deterrence-2`: version 2 of `near-rival-deterrence`. The
+    /// war forecast (`advanced/war_forecast.rs`) names the neighbour, from
+    /// live turn 30 to the end of the game: v1's ten-tile neighbour inside
+    /// its window, or any met major at peace whose ten-turn declaration
+    /// hazard reaches `war_forecast::FORECAST_HAZARD_FLOOR`. Power is
+    /// weighed by unit quality (`AdvancedAi::quality_power`), and while the
+    /// neighbour out-guns us one obsolete land unit a turn is upgraded above
+    /// a gold reserve. See `advanced/near_rival_deterrence.rs`. Off by
+    /// default.
+    near_rival_deterrence_2: bool,
     // ---- append: p-r ------------------------------------------------
     /// `pillaged-districts-repair-first`: a pillaged district's repair claims its
     /// city after every other claim. See `advanced/pillaged_repairs_first.rs`.
@@ -10208,6 +10218,10 @@ mod prey_declaration;
 mod prey_war_is_kept;
 /// `war-faith-buys-the-army`: see `advanced/war_faith.rs`.
 mod war_faith;
+/// Which neighbour is likely to declare on us, and whose army would win:
+/// the ten-turn hazard and quality-weighted power. Read by
+/// `near-rival-deterrence-2`.
+mod war_forecast;
 /// Target feasibility, the declaration and the peace term read off the
 /// board's requirements. Opt-in gene `war-policy-via-board`.
 mod war_policy;
@@ -11815,6 +11829,7 @@ impl AdvancedAi {
             launch_pad_keeps_its_rung: false,
             launcher_war_fights_the_faster_racer: false,
             launch_pad_holds_its_queue: false,
+            near_rival_deterrence_2: false,
             // ---- append: p-r ----------------------------------------
             pillaged_districts_repair_first: false,
             religion_lane_hands_over: false,

@@ -226,3 +226,151 @@ fn the_faith_defence_keeps_its_queue_with_the_gene() {
         assert_eq!(kept.cities[&ours].queue.first(), Some(&head));
     }
 }
+
+fn armed_2() -> AdvancedAi {
+    let mut ai = AdvancedAi::new();
+    ai.enable_near_rival_deterrence_2();
+    ai
+}
+
+/// Land tiles at exactly `ring` tiles from `home`, in a fixed order.
+fn ring(game: &Game, home: Pos, ring: i32) -> Vec<Pos> {
+    let mut tiles: Vec<Pos> = game
+        .map
+        .tiles
+        .iter()
+        .filter(|(pos, tile)| game.wdist(**pos, home) == ring && !game.rules.is_water(tile))
+        .map(|(pos, _)| *pos)
+        .collect();
+    tiles.sort();
+    tiles
+}
+
+/// civvis-20261102T185013Z in miniature: our 280 power is Warriors, their
+/// 215 is Musketmen in sight. Plain power reads us ahead and v1 stands down;
+/// version 2 weighs the quality and trains.
+fn warriors_against_musketmen(gap: i32) -> (Game, u32) {
+    let Some((mut game, ours, _theirs)) = neighbours(gap) else {
+        panic!("fixture: two capitals within {gap} tiles");
+    };
+    game.players[0].techs.insert(crate::name!("bronze_working"));
+    let home = game.cities[&ours].pos;
+    for _ in 0..4 {
+        game.spawn_unit("warrior", 0, home);
+    }
+    for pos in ring(&game, home, 2).into_iter().take(3) {
+        game.spawn_unit("musketman", 1, pos);
+    }
+    power(&mut game, 0, 280.0);
+    power(&mut game, 1, 215.0);
+    (game, ours)
+}
+
+#[test]
+fn version_two_weighs_unit_quality() {
+    let (game, _ours) = warriors_against_musketmen(DETERRENCE_NEAR_TILES);
+
+    let v1 = armed();
+    let mut plain = game.clone();
+    let plan = v1.assess(&plain, 0);
+    v1.claim_deterrence_unit(&mut plain, 0, &plan);
+    assert_eq!(
+        land_units_queued(&plain),
+        0,
+        "v1: 280 against 215 reads level"
+    );
+
+    let v2 = armed_2();
+    let (rival, theirs) = v2
+        .deterrence_threat(&game, 0)
+        .expect("v2 reads the neighbour");
+    assert_eq!(rival, 1);
+    let ours = v2.deterrence_our_power(&game, 0);
+    assert!(
+        ours < theirs,
+        "quality power: our {ours:.1} against their {theirs:.1}"
+    );
+    let mut weighed = game.clone();
+    let plan = v2.assess(&weighed, 0);
+    v2.claim_deterrence_unit(&mut weighed, 0, &plan);
+    assert_eq!(land_units_queued(&weighed), 1, "v2 trains the deterrent");
+}
+
+/// Past v1's window, version 2 keeps watching a near neighbour whose
+/// forecast stands, and a declared friend's hazard falls under the floor.
+#[test]
+fn version_two_watches_past_the_window() {
+    let (mut game, _ours) = warriors_against_musketmen(7);
+    game.turn = game.standard_duration(DETERRENCE_END_STANDARD) + 10;
+
+    assert!(
+        armed().deterrence_threat(&game, 0).is_none(),
+        "v1 stops at its window"
+    );
+    let v2 = armed_2();
+    assert!(
+        v2.deterrence_threat(&game, 0).is_some(),
+        "v2: a near neighbour with soldiers at our door"
+    );
+    let mut on = game.clone();
+    let plan = v2.assess(&on, 0);
+    v2.claim_deterrence_unit(&mut on, 0, &plan);
+    assert_eq!(land_units_queued(&on), 1);
+
+    let mut friends = game.clone();
+    friends.players[0]
+        .observed_diplomatic_state
+        .insert(1, "DECLARED_FRIEND".to_string());
+    assert!(
+        v2.deterrence_threat(&friends, 0).is_none(),
+        "a declared friend's hazard is under the floor past the window"
+    );
+}
+
+/// While out-gunned, version 2 upgrades an obsolete unit above the gold
+/// reserve, and not below it; v1 never upgrades.
+#[test]
+fn version_two_upgrades_above_the_reserve() {
+    let (mut game, ours) = warriors_against_musketmen(DETERRENCE_NEAR_TILES);
+    let home = game.cities[&ours].pos;
+    game.players[0].techs.insert(crate::name!("archery"));
+    let slinger = game.spawn_unit("slinger", 0, home);
+    power(&mut game, 1, 400.0);
+    game.players[0].gold = 10_000.0;
+    let unit = game.units.get_mut(&slinger).unwrap();
+    unit.acted = false;
+    unit.moves_left = unit.moves_left.max(1.0);
+    let Some((_, price, _)) = game.unit_gold_upgrade_offer(0, slinger) else {
+        panic!(
+            "fixture: the Slinger can become an Archer: {:?}",
+            game.unit_gold_upgrade_detail(0, slinger)
+        );
+    };
+    let reserve = DETERRENCE_UPGRADE_RESERVE_BASE + DETERRENCE_UPGRADE_RESERVE_PER_CITY;
+
+    let mut rich = game.clone();
+    rich.players[0].gold = reserve + price + 1.0;
+    rich.players[0].gold_per_turn = 10.0;
+    let v1 = armed();
+    let mut plain = rich.clone();
+    let plan = v1.assess(&plain, 0);
+    v1.claim_deterrence_unit(&mut plain, 0, &plan);
+    assert_eq!(plain.units[&slinger].kind, "slinger", "v1 never upgrades");
+
+    let v2 = armed_2();
+    let plan = v2.assess(&rich, 0);
+    v2.claim_deterrence_unit(&mut rich, 0, &plan);
+    assert!(
+        rich.units
+            .get(&slinger)
+            .is_none_or(|unit| unit.kind != "slinger"),
+        "v2 upgrades the Slinger"
+    );
+
+    let mut poor = game.clone();
+    poor.players[0].gold = reserve + price - 1.0;
+    poor.players[0].gold_per_turn = 10.0;
+    let plan = v2.assess(&poor, 0);
+    v2.claim_deterrence_unit(&mut poor, 0, &plan);
+    assert_eq!(poor.units[&slinger].kind, "slinger", "the reserve holds");
+}

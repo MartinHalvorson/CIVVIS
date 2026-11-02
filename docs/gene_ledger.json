@@ -4970,6 +4970,15 @@
           "naval-recon-3": null
         }
       },
+      "near-rival-deterrence": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "near-rival-deterrence": null,
+          "near-rival-deterrence-2": null
+        }
+      },
       "never-an-empty-queue": {
         "rule_on": [
           "never-an-empty-queue-2"
