@@ -4729,6 +4729,15 @@ pub const GENES: &[Gene] = &[
     // cities, in the Domination goal's slot. See
     // `advanced/domination_research.rs`.
     Gene { tag: "campus-unlock-every-lane", field: "campus_unlock_every_lane", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_unlock_every_lane, disable: AdvancedAi::disable_campus_unlock_every_lane },
+    // Live King 11-01/02 (30 games): the first Builder came at a median
+    // t33.5, one improvement by t40, no chop before t40 and no improved
+    // luxury at t40, while a Builder sold for 100 Gold against a median bank
+    // of 86-106 from t15 to t30; the early Gold bought Traders, Warriors,
+    // Monuments and Archers, and 9 Builders in 30 games. Under the gene a
+    // builderless opening with work for a Builder buys one above the upkeep
+    // floor, ahead of the idle-route Trader. See
+    // `advanced/gold_buys_the_opening_builder.rs`.
+    Gene { tag: "gold-buys-the-opening-builder", field: "gold_buys_the_opening_builder", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_buys_the_opening_builder, disable: AdvancedAi::disable_gold_buys_the_opening_builder },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

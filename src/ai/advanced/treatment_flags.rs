@@ -9159,6 +9159,17 @@ impl AdvancedAi {
         self.campus_unlock_every_lane = false;
     }
 
+    /// Opt-in gene `gold-buys-the-opening-builder`; see
+    /// [`Self::gold_buys_the_opening_builder`].
+    pub fn enable_gold_buys_the_opening_builder(&mut self) {
+        self.gold_buys_the_opening_builder = true;
+    }
+
+    /// The twin of `enable_gold_buys_the_opening_builder`.
+    pub fn disable_gold_buys_the_opening_builder(&mut self) {
+        self.gold_buys_the_opening_builder = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
