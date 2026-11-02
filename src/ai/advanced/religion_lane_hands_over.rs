@@ -19,13 +19,19 @@
 //! of 965 seats, 10-31). If Science is off it takes Culture, then
 //! Domination. The retarget is permanent: no slot reopens. Off, nothing
 //! changes.
+//!
+//! The native host can report the Prophet class exhausted before every
+//! rival founds. In `civvis-20261102T203602Z` that public signal arrived at
+//! t39, while the fourth religion appeared at t57. Count that same terminal
+//! signal used by `prophet_class_exhausted`, with the existing exception for
+//! a Prophet already pending for our seat. Missing telemetry stays unknown.
 
 use super::*;
 
 impl AdvancedAi {
     /// Whether no religion of ours can still be founded: none held, no
     /// Prophet of ours pending, and the founded religions plus the Prophets
-    /// other majors hold fill every slot.
+    /// other majors hold fill every slot, or the host reports none left.
     pub(super) fn religion_race_lost(g: &Game, pid: usize) -> bool {
         let player = &g.players[pid];
         if player.religion.is_some() || player.prophet_pending {
@@ -36,7 +42,7 @@ impl AdvancedAi {
                 .iter()
                 .filter(|candidate| candidate.prophet_pending)
                 .count();
-        claimed >= g.max_religions()
+        claimed >= g.max_religions() || Self::prophet_class_exhausted(g, pid)
     }
 
     /// The lane a lost Religion seat takes: the first of Science, Culture and
@@ -66,8 +72,8 @@ impl AdvancedAi {
         };
         think!(self.journal(), Strategy, Strategy,
                "Handing the Religion lane to {}", lane.as_str();
-               "religion-lane-hands-over: all {} religions are claimed and none is ours, so no Prophet we recruit can found one",
-               g.max_religions());
+               "religion-lane-hands-over: {} of {} religions founded, host Prophet class exhausted={}; none is ours and no Prophet is pending",
+               g.religions_founded(), g.max_religions(), Self::prophet_class_exhausted(g, pid));
         self.retarget(lane);
     }
 }
