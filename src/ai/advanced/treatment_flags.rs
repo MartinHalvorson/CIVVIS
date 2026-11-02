@@ -9236,6 +9236,17 @@ impl AdvancedAi {
         self.old_techs_before_the_beeline = false;
     }
 
+    /// Opt-in gene `site-shuns-the-nest`; see
+    /// [`Self::site_shuns_the_nest`].
+    pub fn enable_site_shuns_the_nest(&mut self) {
+        self.site_shuns_the_nest = true;
+    }
+
+    /// The twin of `enable_site_shuns_the_nest`.
+    pub fn disable_site_shuns_the_nest(&mut self) {
+        self.site_shuns_the_nest = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

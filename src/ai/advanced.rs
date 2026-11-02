@@ -8477,6 +8477,10 @@ pub struct AdvancedAi {
     /// `BasicAi::retainers_garrison_the_short_cities`. Off by default.
     retainers_garrison_the_short_cities: bool,
     // ---- append: s-s ------------------------------------------------
+    /// `site-shuns-the-nest`: a settle site near a known barbarian camp is
+    /// priced down by the camp's distance. See
+    /// `advanced/site_shuns_the_nest.rs`. Off by default.
+    site_shuns_the_nest: bool,
     /// Native fuel bridge for ready research power. Off by default.
     science_power_buys_fuel: bool,
     /// `satellite-holds-the-pad`: once a pad stands and the Earth Satellite
@@ -10075,6 +10079,8 @@ mod builder_travel_turns;
 mod chop_for_expansion;
 
 mod site_lookahead;
+/// `site-shuns-the-nest`: see `advanced/site_shuns_the_nest.rs`.
+mod site_shuns_the_nest;
 
 /// The standing city's district plan: which districts, on which reserved
 /// plots, and the tile a very valuable site needs bought. Opt-in gene
@@ -11903,6 +11909,7 @@ impl AdvancedAi {
             religion_seat_defends_its_faith: false,
             retainers_garrison_the_short_cities: false,
             // ---- append: s-s ----------------------------------------
+            site_shuns_the_nest: false,
             science_power_buys_fuel: false,
             satellite_holds_the_pad: false,
             stalled_conquest_takes_science: false,
@@ -38674,7 +38681,10 @@ impl AdvancedAi {
             } else {
                 0.0
             };
-        self.settlement_tile_risk(g, pid, None, pos, visible) + isolation + provocation
+        // `site-shuns-the-nest`: a known camp near the site. Zero with the
+        // gene off. See `advanced/site_shuns_the_nest.rs`.
+        let nest = self.nest_penalty(g, pos);
+        self.settlement_tile_risk(g, pid, None, pos, visible) + isolation + provocation + nest
     }
 
     /// How much of the ground within `FOREIGN_BORDER_RADIUS` of `pos` a rival

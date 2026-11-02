@@ -4783,6 +4783,13 @@ pub const GENES: &[Gene] = &[
     // its era, then any technology two eras behind the world. See
     // `advanced/old_techs_before_the_beeline.rs`.
     Gene { tag: "old-techs-before-the-beeline", field: "old_techs_before_the_beeline", kind: Kind::OptIn, enable: AdvancedAi::enable_old_techs_before_the_beeline, disable: AdvancedAi::disable_old_techs_before_the_beeline },
+    // Live Immortal 6p Continents 10-30..11-02: 42 settler captures, 26
+    // `site-in-barbarian-nest`, 18 by t100; 9 of the 26 dossiers that name
+    // the site had a camp within 3 of it. The site value priced only the
+    // hostiles visible when the site was chosen. Under the gene a known camp
+    // takes 80 / 50 / 25 off a site 2 / 3 / 4 tiles from it. See
+    // `advanced/site_shuns_the_nest.rs`.
+    Gene { tag: "site-shuns-the-nest", field: "site_shuns_the_nest", kind: Kind::OptIn, enable: AdvancedAi::enable_site_shuns_the_nest, disable: AdvancedAi::disable_site_shuns_the_nest },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
