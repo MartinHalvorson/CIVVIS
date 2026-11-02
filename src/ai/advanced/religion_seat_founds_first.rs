@@ -34,6 +34,16 @@
 //! Shrine, Prayers, the Prophet) is the existing path's.
 //!
 //! Off, or for a seat not aiming at Religion, nothing changes.
+//!
+//! A native paused district is a tile foundation even when another item is
+//! the only imported queue head. Live Immortal `civvis-20261102T203602Z`
+//! placed Holy Sites in Puel Mapu at t17, Ngulu Mapu at t23 and Nag Mapu at
+//! t26 as defenders displaced the first two. Prophets were exhausted at t39;
+//! the first site completed at t42. While an own foundation is paused, the
+//! claim can resume one in an idle, unthreatened city, but cannot place a new
+//! site elsewhere. Its ordinary production/Faith ordering remains unchanged.
+//! This preserves the existing resume path without multiplying foundations;
+//! it does not establish that the Prophet race will be won.
 
 use super::*;
 
@@ -76,6 +86,18 @@ impl AdvancedAi {
         {
             return None;
         }
+        let paused: BTreeSet<Pos> = g
+            .player_city_ids(pid)
+            .into_iter()
+            .flat_map(|cid| &g.cities[&cid].owned_tiles)
+            .filter(|pos| {
+                g.map
+                    .get(**pos)
+                    .and_then(|tile| tile.district_foundation.as_ref())
+                    .is_some_and(|foundation| g.district_family(foundation.district) == "holy_site")
+            })
+            .copied()
+            .collect();
         let mut best: Option<(f64, f64, u32, Item)> = None;
         for cid in g.player_city_ids(pid) {
             let city = &g.cities[&cid];
@@ -91,6 +113,9 @@ impl AdvancedAi {
                     continue;
                 };
                 if g.district_family(*district) != "holy_site" {
+                    continue;
+                }
+                if !paused.is_empty() && !paused.contains(pos) {
                     continue;
                 }
                 let faith = g.district_yields(*district, *pos).faith;
