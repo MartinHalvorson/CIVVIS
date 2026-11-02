@@ -1,4 +1,4 @@
-# First-launch research: diagnostic exposure check
+# First-launch research: activation demonstrated, strength unresolved
 
 The 64-game pilot remains unresolved. This follow-up uses existing seeds
 202611020000–202611020002. They were initially selected with a Python
@@ -11,30 +11,10 @@ provides two negative controls and one game with treatment exposure, not
 additional independent strength observations. The reserved confirmation
 seeds remain unused.
 
-First replay that prefix with the original frozen binary and `--journal`
-for seeds 000 and 002. Verify the full seat rows against the original pilot,
-excluding elapsed seconds. Retain the exact binary hash, invocation and
-headers, including any unstamped-header warning. The binary hash identifies
-the executable even if its runtime source-tree lookup has moved.
-
-The initial diagnostic exposed an instrument limitation: `drain_journal`
-keeps Strategy, Military and Diplomacy but drops the Research topic. Its
-first replay matches all six seat rows of seed 000, but its journal cannot
-answer which research choices occurred. Preserve that failed observation
-path as evidence. Add Research decisions to the diagnostic filter, verify
-that it retains their reasons and cursor semantics, and replay the same
-prefix while checking its genomes and game results against the originals.
-
-If necessary, compare the same prefix with the tested tag disabled on all
-seats. Before interpreting that comparison, verify that all other gene bits
-and game settings match; compare by tag if the registry gained default-OFF
-genes. An outcome or trace difference can show that some policy action was
-affected in these games. A journal entry naming Satellites or a reached
-project alone cannot establish that enabling the tag changed that choice.
-
-No default change, ledger ingestion, or win-rate estimate will follow from
-these selected diagnostic examples. Record any replay mismatch explicitly;
-do not use a changed game as if it were the original pilot's missing log.
+The original `--journal` filtered out Research entries. Its diagnostic
+filter now retains Research decisions and their reasons. All 79 instrument
+tests pass, including real journal retention and cursor behavior. The
+original filtered journals remain in the archive alongside the new ones.
 
 The original executable replay completed: all 18 seat rows match the pilot
 apart from elapsed seconds. Its explicit `--deployment-genome` counterpart
@@ -55,9 +35,26 @@ the published pilot totals: 18/106 enabled wins and 46/278 control wins;
 assigned Science is 6/16 versus 14/37. The diagnostic selection mistake did
 not affect those reported estimates.
 
-The logging fix passes all 79 `gene_screen` tests, including real Research
-decision/reason retention and advancing the cursor past filtered Detail
-entries. The longer replay using that changed diagnostic binary is still
-running; its header matches the original profile and priors, with the two
-new registry tags fixed OFF. Its full realized rows must match before its
-journals can be treated as the original pilot's additional observations.
+The changed diagnostic executable also completed. After aligning genes by
+tag, all 18 realized genomes and every other seat-row field match the
+original apart from elapsed seconds. The two new registry tags are fixed
+OFF. All recorded source-file hashes remain unchanged after the run. The
+new journals retain 840 and 812 Research-topic lines; those include civics
+and repeated planning entries, not that many unique technology choices.
+In the enabled Science seat (002/4), research selects Rocketry at 97,
+Advanced Flight at 100 and Satellites at 102. These are selections, not
+ownership/completion turns, and are not same-state counterfactual choices.
+
+The companion JSON binds the 507,700-byte archive and its 28 verified member
+hashes: original and replayed rows, both generations of journals, exact
+invocations and warnings, binary/source receipts, comparison outputs,
+explicit-bit recount and test log. The frozen executable's hash begins
+`40a9dacea732`; the changed diagnostic's begins `3f5a667d8404`. The latter
+is an unoptimized, patched diagnostic build. Elapsed times are excluded from
+comparisons; no performance conclusion is drawn across these builds.
+
+Keep the research gene OFF. Model activation is now demonstrated in this
+selected prefix; the 64-game win-rate estimate remains unresolved. These
+diagnostics do not justify the reserved 128-game confirmation ahead of the
+concrete native placement, founding and defense failures. There is no
+ledger ingestion, default promotion or native execution claim.
