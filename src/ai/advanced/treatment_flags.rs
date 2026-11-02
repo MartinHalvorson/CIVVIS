@@ -9148,6 +9148,17 @@ impl AdvancedAi {
         self.deterrence_trusts_a_friend = false;
     }
 
+    /// Opt-in gene `campus-unlock-every-lane`; see
+    /// [`Self::campus_unlock_every_lane`].
+    pub fn enable_campus_unlock_every_lane(&mut self) {
+        self.campus_unlock_every_lane = true;
+    }
+
+    /// The twin of `enable_campus_unlock_every_lane`.
+    pub fn disable_campus_unlock_every_lane(&mut self) {
+        self.campus_unlock_every_lane = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

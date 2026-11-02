@@ -43,6 +43,32 @@ impl AdvancedAi {
         .then_some("writing")
     }
 
+    /// `campus-unlock-every-lane`: the Domination Campus unlock above, for
+    /// every lane. Live King 2026-11-01/02, 28 games of the random-leader 6p
+    /// Continents lane: Writing landed at a median t37 on Domination seats,
+    /// which hold this goal, but t45 on Religion seats, t50 on adaptive seats
+    /// and t69 on Culture seats (t31, t69, t75), which hold no Writing goal and
+    /// reach it through bargains and the generic argmax behind Sailing,
+    /// Irrigation, Masonry, Bronze Working, Shipbuilding and Horseback Riding.
+    /// The first Campus finished at a median t64 (t38 to t98), and its turn
+    /// correlates -0.59 with Science at t100; at Immortal our Science stood at
+    /// 8.5 against the rival median's 29 at t40.
+    ///
+    /// The goal takes the Domination goal's slot in the research chooser:
+    /// behind the military, barbarian, Astrology and luxury-connection
+    /// contracts, ahead of bargains and the lane's own beeline. `None` with
+    /// the gene off, before the second city, or once Writing is known.
+    pub(super) fn every_lane_campus_unlock_goal(
+        &self,
+        g: &Game,
+        pid: usize,
+    ) -> Option<&'static str> {
+        (self.campus_unlock_every_lane
+            && g.player_city_ids(pid).len() >= 2
+            && !g.players[pid].techs.contains(&crate::name!("writing")))
+        .then_some("writing")
+    }
+
     pub(super) fn domination_siege_research_goal(
         &self,
         g: &Game,
