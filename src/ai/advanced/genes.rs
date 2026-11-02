@@ -4738,6 +4738,17 @@ pub const GENES: &[Gene] = &[
     // floor, ahead of the idle-route Trader. See
     // `advanced/gold_buys_the_opening_builder.rs`.
     Gene { tag: "gold-buys-the-opening-builder", field: "gold_buys_the_opening_builder", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_buys_the_opening_builder, disable: AdvancedAi::disable_gold_buys_the_opening_builder },
+    // Live King 11-01/02, 23 games with a first pad: under a Science plan
+    // every city prices the first pad at the 3,000-point rung, so the first
+    // idle city takes it: 091117Z placed it in Gori ("about 200 turns at
+    // 4.5 a turn") beside Telavi at 54 Production; 150036Z in Panama ("about
+    // 225 turns"). Over 23 games the first pad stood in a city under 80% of
+    // the best placing producer in 9 (Production share 0.09-0.75) and took
+    // 24-38 turns to build against 11-17 for the rest; the idle-Great-Person
+    // path places it in "the fastest idle city" (105550Z: Chicago at 18 against
+    // 78, 36 turns). Under the gene the first pad goes only to a city within
+    // 80% of the best placing producer. See `ai/first_pad_in_the_forge.rs`.
+    Gene { tag: "first-pad-in-the-forge", field: "first_pad_in_the_forge", kind: Kind::OptIn, enable: AdvancedAi::enable_first_pad_in_the_forge, disable: AdvancedAi::disable_first_pad_in_the_forge },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
