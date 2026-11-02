@@ -1580,6 +1580,40 @@ CivvisMajorProduction = function()
 	return out;
 end;
 
+-- BEGIN city power observation
+-- Shipped DLC/Expansion2/UI/Additions/CityPanelPower.lua:36,42-54 reads
+-- these same accessors. Keep host readings separate: an active project can
+-- power a city without free + temporary meeting required power. Missing
+-- accessors remain unknown, including on rulesets without the power system.
+-- Bare global: the main chunk is already at its local-variable ceiling.
+CivvisCityPower = function(city)
+	local power = try(function() return city:GetPower(); end, nil);
+	if power == nil then return nil; end
+	local function number(read)
+		local value = try(read, nil);
+		if type(value) == "number" and value == value
+			and value > -math.huge and value < math.huge then return value; end
+		return nil;
+	end
+	local function boolean(read)
+		local value = try(read, nil);
+		if type(value) == "boolean" then return value; end
+		return nil;
+	end
+	local out = {
+		free = number(function() return power:GetFreePower(); end),
+		temporary = number(function() return power:GetTemporaryPower(); end),
+		required = number(function() return power:GetRequiredPower(); end),
+		fully_powered = boolean(function() return power:IsFullyPowered(); end),
+		fully_powered_by_active_project = boolean(function()
+			return power:IsFullyPoweredByActiveProject();
+		end),
+	};
+	if next(out) == nil then return nil; end
+	return out;
+end;
+-- END city power observation
+
 local function rivalBest(player, pid)
 	local diplomacy = try(function() return player:GetDiplomacy(); end);
 	if diplomacy == nil then return nil, 0, nil, 0; end
@@ -7639,6 +7673,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 			name = try(function() return Locale.Lookup(city:GetName()); end, ""),
 			buildings = built,
 			pillaged_buildings = pillagedBuildings,
+			power = CivvisCityPower(city),
 			x = try(function() return city:GetX(); end, -1),
 			y = try(function() return city:GetY(); end, -1),
 			pop = try(function() return city:GetPopulation(); end, -1),

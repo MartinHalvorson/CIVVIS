@@ -19,7 +19,8 @@
 //! decisive-window and siege-tier arms), so it also ranks ahead of every lane
 //! beeline below the air surge. It yields when the Bomber's own technology is
 //! the next legal step (`air_surge_missing_techs <= 1`) and while a committed
-//! launch chain owns the endgame.
+//! launch chain owns research: `first-launch-keeps-research`'s first launch
+//! after Rocketry, or the endgame after the Moon Landing.
 //!
 //! **Why (operator, 2026-11-02, live Lv 6 Emperor civvis-20261102T163456Z,
 //! Inca).** The air-surge beeline admits every legal step toward Advanced
