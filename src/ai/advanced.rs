@@ -6498,6 +6498,11 @@ pub struct AdvancedAi {
     /// we are declared friends with. See `advanced/deterrence_trusts_a_friend.rs`.
     deterrence_trusts_a_friend: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `first-pad-in-the-forge`: the empire's first Spaceport only in a city
+    /// within `FIRST_PAD_FORGE_SHARE` of the best placing producer; the flag
+    /// lives on `BasicAi`, which the Great Person activation path reads. See
+    /// `ai/first_pad_in_the_forge.rs`. Off by default.
+    first_pad_in_the_forge: bool,
     /// `fog-yields-to-a-stranded-settler`: the fogged-frontier settle veto
     /// yields once a Settler has walked fifteen turns. See
     /// `advanced/fog_yields_stranded.rs`. Off by default.
@@ -11566,6 +11571,7 @@ impl AdvancedAi {
             domination_joins_the_race: false,
             deterrence_trusts_a_friend: false,
             // ---- append: e-f ----------------------------------------
+            first_pad_in_the_forge: false,
             fog_yields_to_a_stranded_settler: false,
             early_route_feeds_production: false,
             food_focus_grows_the_small_city: false,
@@ -36615,6 +36621,11 @@ impl AdvancedAi {
                 }
                 if family == "spaceport" {
                     if self.space_race_excluded() {
+                        return -10_000.0;
+                    }
+                    // `first-pad-in-the-forge`: the empire's first pad only in a
+                    // producer. See `ai/first_pad_in_the_forge.rs`.
+                    if !self.base.first_pad_city_allowed(g, pid, cid) {
                         return -10_000.0;
                     }
                     let races_science = self.science_drive_active()

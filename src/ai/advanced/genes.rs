@@ -4729,6 +4729,16 @@ pub const GENES: &[Gene] = &[
     // cities, in the Domination goal's slot. See
     // `advanced/domination_research.rs`.
     Gene { tag: "campus-unlock-every-lane", field: "campus_unlock_every_lane", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_unlock_every_lane, disable: AdvancedAi::disable_campus_unlock_every_lane },
+    // Live King 11-01/02, 23 games with a first pad: under a Science plan
+    // every city prices the first pad at the 3,000-point rung, so the first
+    // idle city takes it: 091117Z placed it in Gori ("about 200 turns at
+    // 4.5 a turn") beside Telavi at 54 Production; 150036Z in Panama ("about
+    // 225 turns"); four more at 26-39 turns. The idle-Great-Person path took
+    // the "fastest idle city" in 7 of the 23 (094900Z: Chucuito, outside the
+    // top four producers, lost Science at t255 leading 466 to 217). Under the
+    // gene the first pad goes only to a city within 80% of the best placing
+    // producer. See `ai/first_pad_in_the_forge.rs`.
+    Gene { tag: "first-pad-in-the-forge", field: "first_pad_in_the_forge", kind: Kind::OptIn, enable: AdvancedAi::enable_first_pad_in_the_forge, disable: AdvancedAi::disable_first_pad_in_the_forge },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

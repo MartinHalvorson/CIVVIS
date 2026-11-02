@@ -9159,6 +9159,19 @@ impl AdvancedAi {
         self.campus_unlock_every_lane = false;
     }
 
+    /// Opt-in gene `first-pad-in-the-forge`; see
+    /// [`Self::first_pad_in_the_forge`].
+    pub fn enable_first_pad_in_the_forge(&mut self) {
+        self.first_pad_in_the_forge = true;
+        self.base.enable_first_pad_in_the_forge();
+    }
+
+    /// The twin of `enable_first_pad_in_the_forge`.
+    pub fn disable_first_pad_in_the_forge(&mut self) {
+        self.first_pad_in_the_forge = false;
+        self.base.disable_first_pad_in_the_forge();
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

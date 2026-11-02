@@ -400,6 +400,7 @@ type PlotPurchaseCandidate = (f64, std::cmp::Reverse<(u32, Pos)>, Action);
 mod advanced;
 mod campus_buildings;
 mod commercial_hub;
+mod first_pad_in_the_forge;
 mod industrial_zones;
 mod launch_pad_resume;
 mod movement_risk;
@@ -4153,6 +4154,11 @@ pub struct BasicAi {
     /// time the empire holds or queues a Builder, so the step fires at most
     /// once a game and never after a Builder spends its last charge.
     pub(crate) opening_builder_paid: bool,
+    /// `first-pad-in-the-forge`: while no Spaceport of ours is committed, a
+    /// city may start the first one only within `FIRST_PAD_FORGE_SHARE` of
+    /// the best placing producer. See `ai/first_pad_in_the_forge.rs`. Set
+    /// through `AdvancedAi::enable_first_pad_in_the_forge`.
+    pub(crate) first_pad_in_the_forge: bool,
     /// Independent first-slot exploration experiment.
     pub(crate) scout_first_opening: bool,
     /// Take the pantheon that founds a city. Civilization VI's Religious
@@ -6056,6 +6062,7 @@ impl BasicAi {
             capital_settler_after_completion: false,
             opening_builder_after_the_first_settler: false,
             opening_builder_paid: false,
+            first_pad_in_the_forge: false,
             scout_first_opening: false,
             expansion_pantheon: false,
             pantheon_for_the_prophet_race: false,
@@ -6638,6 +6645,7 @@ impl BasicAi {
             capital_settler_after_completion: false,
             opening_builder_after_the_first_settler: false,
             opening_builder_paid: false,
+            first_pad_in_the_forge: false,
             scout_first_opening: false,
             expansion_pantheon: false,
             pantheon_for_the_prophet_race: false,
@@ -13245,6 +13253,11 @@ impl BasicAi {
                     } else {
                         self.live_great_person_activation_resume_item(g, pid, city)
                     }?;
+                    // `first-pad-in-the-forge`: the first Spaceport only in a
+                    // producer. See `ai/first_pad_in_the_forge.rs`.
+                    if !self.first_pad_item_allowed(g, pid, city, &item) {
+                        return None;
+                    }
                     let remaining = (g.item_cost_for_city(pid, city, &item)
                         - g.cities[&city].production)
                         .max(0.0);
