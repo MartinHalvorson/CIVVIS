@@ -39,3 +39,25 @@ receipt records the verified upstream commit, immutable plan hash, file
 change and unchanged baseline-file hashes. The current game keeps its
 previous assignment. No pilot outcome or fuel-delivery verdict is available
 at arming.
+
+The read-only collector `tools/civ6_science_fuel_pilot.py` joins `-contN`
+continuations before applying the eight-family boundary, keeps other lanes
+and pending/setup attempts separate, and hashes the source bytes it reads.
+It retains actual genome transitions, exact runtime build records, all buy
+deal replies (numeric resource IDs are not guessed), candidate notes, and
+native city power and yield text. It selects the earliest observed frame
+of each turn for the census; raw event hashes identify those observations.
+It never changes the screen file or decides that a sent acceptance delivered
+fuel. Five focused tests cover family boundaries, genome normalization,
+missing/false/zero readings, raw deal terms and an incomplete live log tail.
+
+An interim collection at approximately 20:31 UTC has one completed primary
+Science family, `civvis-20261102T201043Z`, assigned off. It lost to a rival
+Science victory at turn 227. First native ownership was Rocketry 193,
+Satellites 201, first completed Spaceport 208 and Earth Satellite 216;
+Moon Landing was still under construction at the final observation.
+The launch city had direct host power during construction and launch.
+This control does not demonstrate the candidate's fuel execution or benefit.
+Five completed other-lane families remain separate; none has a positive
+candidate note. The next attempt is pending. No conclusion or stop rule has
+changed, and the final archive will retain all assigned attempts.
