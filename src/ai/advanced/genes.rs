@@ -4729,6 +4729,15 @@ pub const GENES: &[Gene] = &[
     // cities, in the Domination goal's slot. See
     // `advanced/domination_research.rs`.
     Gene { tag: "campus-unlock-every-lane", field: "campus_unlock_every_lane", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_unlock_every_lane, disable: AdvancedAi::disable_campus_unlock_every_lane },
+    // Live King 11-01/02: the capital's Campus started a median 20 turns
+    // after Writing (3 of 4 wins inside 6), behind Monuments, Archers,
+    // Granaries, Walls and Temples; with campus-unlock-every-lane armed,
+    // Writing came at t33/t37 but the first Campus still started at t50/t62.
+    // Under the gene, once Writing is known and no Campus is committed, the
+    // safe city that finishes its first Campus soonest puts it ahead of a
+    // Monument, Granary, Shrine, Temple or peacetime soldier. See
+    // `advanced/first_campus_takes_a_filler.rs`.
+    Gene { tag: "first-campus-takes-a-filler", field: "first_campus_takes_a_filler", kind: Kind::OptIn, enable: AdvancedAi::enable_first_campus_takes_a_filler, disable: AdvancedAi::disable_first_campus_takes_a_filler },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -6498,6 +6498,12 @@ pub struct AdvancedAi {
     /// we are declared friends with. See `advanced/deterrence_trusts_a_friend.rs`.
     deterrence_trusts_a_friend: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `first-campus-takes-a-filler`: once Writing is known and no Campus is
+    /// committed, the empire's first Campus displaces a Monument, Granary,
+    /// Shrine, Temple or peacetime soldier at the head of the city that
+    /// finishes it soonest. See `advanced/first_campus_takes_a_filler.rs`.
+    /// Off by default.
+    first_campus_takes_a_filler: bool,
     /// `fog-yields-to-a-stranded-settler`: the fogged-frontier settle veto
     /// yields once a Settler has walked fifteen turns. See
     /// `advanced/fog_yields_stranded.rs`. Off by default.
@@ -10338,6 +10344,9 @@ mod dvp_leader_front;
 mod engineering_for_capped_fresh_water;
 mod falling_city_takers;
 mod far_settle_site;
+/// `first-campus-takes-a-filler`: the empire's first Campus displaces a
+/// filler. See `advanced/first_campus_takes_a_filler.rs`.
+mod first_campus_takes_a_filler;
 /// `founder-converts-its-own-cities`: a founder's spreaders convert our own
 /// cities before any foreign one. See `advanced/founder_home.rs`.
 mod founder_home;
@@ -11566,6 +11575,7 @@ impl AdvancedAi {
             domination_joins_the_race: false,
             deterrence_trusts_a_friend: false,
             // ---- append: e-f ----------------------------------------
+            first_campus_takes_a_filler: false,
             fog_yields_to_a_stranded_settler: false,
             early_route_feeds_production: false,
             food_focus_grows_the_small_city: false,
@@ -50831,6 +50841,10 @@ impl AdvancedAi {
         // `paused-district-finishes`: after every ordinary writer, before the
         // declaration response and the defence handoffs below.
         self.claim_paused_district_finishes(g, pid);
+        // `first-campus-takes-a-filler`: the empire's first Campus displaces a
+        // filler, after every ordinary writer and claim. See
+        // `advanced/first_campus_takes_a_filler.rs`.
+        self.claim_first_campus_takes_a_filler(g, pid, &plan);
         // `launch-pad-holds-its-queue`: the first pad back at the head of its
         // city, before the defence and loyalty handoffs below.
         self.claim_launch_pad_holds_its_queue(g, pid, &plan);

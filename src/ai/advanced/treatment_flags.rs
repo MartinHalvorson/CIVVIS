@@ -9159,6 +9159,17 @@ impl AdvancedAi {
         self.campus_unlock_every_lane = false;
     }
 
+    /// Opt-in gene `first-campus-takes-a-filler`; see
+    /// [`Self::first_campus_takes_a_filler`].
+    pub fn enable_first_campus_takes_a_filler(&mut self) {
+        self.first_campus_takes_a_filler = true;
+    }
+
+    /// The twin of `enable_first_campus_takes_a_filler`.
+    pub fn disable_first_campus_takes_a_filler(&mut self) {
+        self.first_campus_takes_a_filler = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
