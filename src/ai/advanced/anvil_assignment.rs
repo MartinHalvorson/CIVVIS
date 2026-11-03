@@ -1,8 +1,8 @@
-//! `anvil-follows-the-defense`: a Defend force forms around its own city.
+//! `anvil-follows-the-defense`: an eligible Anvil follows its Defend city.
 //!
-//! Read the stable task-force key, never the group's tactical contact tile.
-//! Other board missions retain ordinary movement. With either the board or
-//! this opt-in gene disabled, preserve the original global-threat routing.
+//! Preserve the original global warning and nearest-force eligibility. Once
+//! that formation would act, its board Defend city can replace the unrelated
+//! global threat city. Other missions keep the original fallback.
 use super::objective_board::ObjectiveKey;
 use super::*;
 
@@ -14,37 +14,37 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         group: &ForceGroup,
     ) -> Option<u32> {
-        let cid = if self.anvil_follows_the_defense && self.objective_board {
-            // Defend has one task force per domain. Relieve, offensive and
-            // unassigned forces keep their own mission instead of being borrowed
-            // by the global threat city's formation.
-            let force = self
-                .objective_board_state
+        // Preserve the original eligibility, including a global warning. A
+        // board Defend row alone also occurs during ordinary early scouting.
+        let original = plan.threatened_city?;
+        let city = g.cities.get(&original).filter(|city| city.owner == pid)?;
+        let nearest = self
+            .force_groups
+            .iter()
+            .filter(|other| other.domain == ForceDomain::Land)
+            .min_by_key(|other| (g.wdist(other.anchor, city.pos), other.id))
+            .map(|other| other.id)?;
+        if group.domain != ForceDomain::Land
+            || group.id != nearest
+            || g.wdist(group.anchor, city.pos) > THREAT_RELIEF_RADIUS
+        {
+            return None;
+        }
+        let assigned = if self.anvil_follows_the_defense && self.objective_board {
+            self.objective_board_state
                 .forces
                 .iter()
-                .find(|force| force.id == group.id && force.domain == ForceDomain::Land)?;
-            match force.objective_key {
-                ObjectiveKey::Defend(cid) => cid,
-                _ => return None,
-            }
+                .find(|force| force.id == group.id && force.domain == ForceDomain::Land)
+                .and_then(|force| match force.objective_key {
+                    ObjectiveKey::Defend(cid) => Some(cid),
+                    _ => None,
+                })
         } else {
-            let cid = plan.threatened_city?;
-            let city = g.cities.get(&cid).filter(|city| city.owner == pid)?;
-            let nearest = self
-                .force_groups
-                .iter()
-                .filter(|other| other.domain == ForceDomain::Land)
-                .min_by_key(|other| (g.wdist(other.anchor, city.pos), other.id))
-                .map(|other| other.id)?;
-            if group.id != nearest {
-                return None;
-            }
-            cid
+            None
         };
+        let cid = assigned.unwrap_or(original);
         let city = g.cities.get(&cid).filter(|city| city.owner == pid)?;
-        (group.domain == ForceDomain::Land
-            && g.wdist(group.anchor, city.pos) <= THREAT_RELIEF_RADIUS)
-            .then_some(cid)
+        (g.wdist(group.anchor, city.pos) <= THREAT_RELIEF_RADIUS).then_some(cid)
     }
 }
 

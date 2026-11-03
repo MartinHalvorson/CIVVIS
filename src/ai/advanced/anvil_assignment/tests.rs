@@ -73,8 +73,8 @@ fn board_disabled_preserves_the_original_selection() {
 }
 
 #[test]
-fn other_missions_are_not_taken_for_the_global_threat() {
-    let (g, mut ai, plan, group, capital, _) = fixture();
+fn other_missions_preserve_the_original_global_defense_fallback() {
+    let (g, mut ai, plan, group, capital, frontier) = fixture();
     for key in [
         ObjectiveKey::Siege(capital),
         ObjectiveKey::Relieve(capital),
@@ -82,17 +82,21 @@ fn other_missions_are_not_taken_for_the_global_threat() {
         ObjectiveKey::Reserve,
     ] {
         ai.objective_board_state.forces[0].objective_key = key;
-        assert_eq!(ai.anvil_defense_city(&g, 0, &plan, &group), None, "{key:?}");
+        assert_eq!(
+            ai.anvil_defense_city(&g, 0, &plan, &group),
+            Some(frontier),
+            "{key:?}"
+        );
     }
     ai.objective_board_state.forces.clear();
-    assert_eq!(ai.anvil_defense_city(&g, 0, &plan, &group), None);
+    assert_eq!(ai.anvil_defense_city(&g, 0, &plan, &group), Some(frontier));
 }
 
 #[test]
-fn an_explicit_defend_does_not_need_a_global_threat() {
-    let (g, ai, mut plan, group, capital, _) = fixture();
+fn an_explicit_defend_does_not_create_an_anvil_without_the_original_warning() {
+    let (g, ai, mut plan, group, _, _) = fixture();
     plan.threatened_city = None;
-    assert_eq!(ai.anvil_defense_city(&g, 0, &plan, &group), Some(capital));
+    assert_eq!(ai.anvil_defense_city(&g, 0, &plan, &group), None);
 }
 
 #[test]
@@ -126,4 +130,14 @@ fn default_and_toggle_are_explicit() {
     assert!(ai.anvil_follows_the_defense);
     ai.disable_anvil_follows_the_defense();
     assert!(!ai.anvil_follows_the_defense);
+}
+
+#[test]
+fn the_original_nearest_force_gate_is_preserved() {
+    let (g, mut ai, plan, group, _, frontier) = fixture();
+    let mut other = group.clone();
+    other.id = 18;
+    other.anchor = g.cities[&frontier].pos;
+    ai.force_groups.push(other);
+    assert_eq!(ai.anvil_defense_city(&g, 0, &plan, &group), None);
 }
