@@ -4825,6 +4825,7 @@ pub const GENES: &[Gene] = &[
     // plan's Conquest target for a bounded window. See
     // `advanced/city_state_harvest.rs`.
     Gene { tag: "city-state-harvest", field: "city_state_harvest", kind: Kind::OptIn, enable: AdvancedAi::enable_city_state_harvest, disable: AdvancedAi::disable_city_state_harvest },
+    Gene { tag: "launch-pad-spares-the-repair", field: "launch_pad_spares_the_repair", kind: Kind::OptIn, enable: AdvancedAi::enable_launch_pad_spares_the_repair, disable: AdvancedAi::disable_launch_pad_spares_the_repair },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -89,6 +89,12 @@ impl AdvancedAi {
         };
         let city = &g.cities[&cid];
         let displaced = city.queue.first().cloned();
+        if displaced
+            .as_ref()
+            .is_some_and(|item| self.launch_pad_spares_repair(g, pid, cid, item))
+        {
+            return;
+        }
         if displaced.as_ref() == Some(&pad) {
             return;
         }

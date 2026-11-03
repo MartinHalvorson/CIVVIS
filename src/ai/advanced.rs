@@ -7494,6 +7494,10 @@ pub struct AdvancedAi {
     /// `advanced/gold_buys_the_backlog_builder.rs`. Off by default.
     gold_buys_the_backlog_builder: bool,
     // ---- append: l-o ------------------------------------------------
+    /// `launch-pad-spares-the-repair`: an already selected legal repair
+    /// keeps the first pad's queue. See `advanced/launch_pad_repair.rs`.
+    /// Off by default; requires the original pad hold.
+    launch_pad_spares_the_repair: bool,
     /// `old-techs-before-the-beeline`: the technology our land army waits on
     /// to upgrade once the world has left its era, then any technology two
     /// eras behind the world, ahead of the air surge and every lane beeline.
@@ -10246,10 +10250,10 @@ mod war_policy;
 /// bill, and pillage with the movement the march does not use. Two opt-in
 /// genes; see `advanced/city_campaign.rs`.
 mod city_campaign;
-/// `city-state-war-is-no-front`: see `advanced/city_state_war_is_no_front.rs`.
-mod city_state_war_is_no_front;
 /// `city-state-harvest`: see `advanced/city_state_harvest.rs`.
 mod city_state_harvest;
+/// `city-state-war-is-no-front`: see `advanced/city_state_war_is_no_front.rs`.
+mod city_state_war_is_no_front;
 
 /// Shared fog-safe battlefront observations and city-pressure calculations.
 mod battlefront;
@@ -10468,6 +10472,7 @@ mod government_plaza;
 /// `launch-pad-holds-its-queue`: the first pad holds its city's queue. See
 /// `advanced/launch_pad_holds_its_queue.rs`.
 mod launch_pad_holds_its_queue;
+mod launch_pad_repair;
 /// `paused-district-finishes`: a foundation the host quotes at two turns or
 /// less finishes first at full health. See `advanced/paused_district_finish.rs`.
 mod paused_district_finish;
@@ -11789,6 +11794,7 @@ impl AdvancedAi {
             inquisition_answers_a_rival_majority: false,
             gold_buys_the_backlog_builder: false,
             // ---- append: l-o ----------------------------------------
+            launch_pad_spares_the_repair: false,
             old_techs_before_the_beeline: false,
             launch_commits_the_endgame: false,
             launcher_war_serves_every_lane: false,

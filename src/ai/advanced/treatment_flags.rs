@@ -9282,6 +9282,16 @@ impl AdvancedAi {
         self.city_state_harvest_target = None;
     }
 
+    /// Preserve an already selected legal repair when the first pad holds.
+    pub fn enable_launch_pad_spares_the_repair(&mut self) {
+        self.launch_pad_spares_the_repair = true;
+    }
+
+    /// The twin of `enable_launch_pad_spares_the_repair`.
+    pub fn disable_launch_pad_spares_the_repair(&mut self) {
+        self.launch_pad_spares_the_repair = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
