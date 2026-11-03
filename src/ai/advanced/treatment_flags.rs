@@ -9304,6 +9304,16 @@ impl AdvancedAi {
         self.near_done_work_finishes = false;
     }
 
+    /// Opt-in gene `founding-voyage`; see [`Self::founding_voyage`].
+    pub fn enable_founding_voyage(&mut self) {
+        self.founding_voyage = true;
+    }
+
+    /// The twin of `enable_founding_voyage`.
+    pub fn disable_founding_voyage(&mut self) {
+        self.founding_voyage = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
