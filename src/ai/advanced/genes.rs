@@ -4807,6 +4807,16 @@ pub const GENES: &[Gene] = &[
     // tie) whose cards do not already speed a Builder. See
     // `advanced/gold_buys_the_backlog_builder.rs`.
     Gene { tag: "gold-buys-the-backlog-builder", field: "gold_buys_the_backlog_builder", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_buys_the_backlog_builder, disable: AdvancedAi::disable_gold_buys_the_backlog_builder },
+    // Operator 2026-11-02: production is best spent on what a card boosts
+    // (units +50%, Settlers +50%, ships +100%). The deck review prices a
+    // production card by what it adds to the queue heads, but a full deck is
+    // reviewed only every eighth turn. Live, 69 games 11-01/02: Feudal
+    // Contract boosted no head on 84% of its slotted turns, Agoge 72%; an
+    // unlocked unslotted card would have boosted the head on 8,676
+    // city-turns, ~1,290 Production a game (Limes, International Waters,
+    // Grande Armee most). Under the gene the review also runs on the turn
+    // the set of queue cards worth slotting changes. See `ai/deck_queue.rs`.
+    Gene { tag: "deck-follows-the-queue", field: "deck_follows_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_deck_follows_the_queue, disable: AdvancedAi::disable_deck_follows_the_queue },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

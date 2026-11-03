@@ -6497,6 +6497,11 @@ pub struct AdvancedAi {
     /// `deterrence-trusts-a-friend`: no near-rival deterrent against a rival
     /// we are declared friends with. See `advanced/deterrence_trusts_a_friend.rs`.
     deterrence_trusts_a_friend: bool,
+    /// `deck-follows-the-queue`: the policy deck re-reviews off its cadence
+    /// on the turn the queue cards worth slotting change. The behaviour lives
+    /// on `BasicAi::deck_follows_the_queue`; see `ai/deck_queue.rs`. Off by
+    /// default.
+    deck_follows_the_queue: bool,
     // ---- append: e-f ------------------------------------------------
     /// Keep the first Science launch on its research path. Opt-in.
     first_launch_keeps_research: bool,
@@ -11618,6 +11623,7 @@ impl AdvancedAi {
             culture_seat_allies: false,
             domination_joins_the_race: false,
             deterrence_trusts_a_friend: false,
+            deck_follows_the_queue: false,
             // ---- append: e-f ----------------------------------------
             first_launch_keeps_research: false,
             first_pad_in_the_forge: false,
