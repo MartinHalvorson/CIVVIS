@@ -1,41 +1,31 @@
 use super::super::tests::{strategic_wonder_fixture, wonder_plan};
 use super::*;
 
-/// The first ordinary building and the first non-urgent displacer the
-/// fixture city can produce.
-fn ordinary_items(g: &Game, city: u32) -> (Item, Item) {
-    let menu = g.producible_items(0, city);
-    let head = menu
-        .iter()
-        .find(|item| {
-            matches!(item, Item::Building { .. })
-                && !AdvancedAi::near_done_displacer_is_urgent(g, item)
-        })
-        .cloned()
-        .expect("fixture: an ordinary building is producible");
-    let displacer = menu
-        .iter()
-        .find(|item| {
-            **item != head
-                && matches!(item, Item::Unit { .. })
-                && !AdvancedAi::near_done_displacer_is_urgent(g, item)
-        })
-        .or_else(|| {
-            menu.iter().find(|item| {
-                **item != head
-                    && matches!(item, Item::Building { .. })
-                    && !AdvancedAi::near_done_displacer_is_urgent(g, item)
-            })
-        })
-        .cloned()
-        .expect("fixture: a non-urgent displacer is producible");
-    (head, displacer)
+fn unit(name: &str) -> Item {
+    Item::Unit {
+        unit: crate::name::Name::new(name),
+    }
+}
+
+/// The fixture city trains both (`production_commitment`'s fixture checks
+/// the same pair): a Warrior head and an ordinary (non-urgent) Builder.
+fn ordinary_items(_g: &Game, _city: u32) -> (Item, Item) {
+    (unit("warrior"), unit("builder"))
 }
 
 /// A Science seat's city whose head has `left` Production to go, the heads
 /// noted, then displaced by `displacer` (the fixture's ordinary one when
 /// `None`). Returns the board, the city, the head and the displacer.
 fn displaced(left: f64, displacer: Option<Item>, gene: bool) -> (Game, u32, Item, Item) {
+    displaced_with(left, None, displacer, gene)
+}
+
+fn displaced_with(
+    left: f64,
+    head: Option<Item>,
+    displacer: Option<Item>,
+    gene: bool,
+) -> (Game, u32, Item, Item) {
     let (mut g, city) = strategic_wonder_fixture(6_402, "great_library");
     let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
     ai.base.book_pos = 4;
@@ -48,8 +38,13 @@ fn displaced(left: f64, displacer: Option<Item>, gene: bool) -> (Game, u32, Item
         c.production = 0.0;
         c.production_progress.clear();
     }
-    let (head, ordinary) = ordinary_items(&g, city);
+    let (ordinary_head, ordinary) = ordinary_items(&g, city);
+    let head = head.unwrap_or(ordinary_head);
     let displacer = displacer.unwrap_or(ordinary);
+    assert!(
+        g.can_produce(0, city, &head),
+        "fixture: {head:?} is producible"
+    );
     assert!(
         g.can_produce(0, city, &displacer),
         "fixture: {displacer:?} is producible"
@@ -104,14 +99,17 @@ fn a_head_far_from_done_stays_displaced() {
 
 #[test]
 fn an_urgent_displacer_keeps_the_queue() {
-    let warrior = Item::Unit {
-        unit: crate::name!("warrior"),
-    };
-    let (g, city, _, displacer) = displaced(1.0, Some(warrior.clone()), true);
+    let warrior = unit("warrior");
+    let (g, city, _, displacer) =
+        displaced_with(1.0, Some(unit("builder")), Some(warrior.clone()), true);
     assert_eq!(displacer, warrior);
     assert_eq!(g.cities[&city].queue.first(), Some(&warrior));
-    let settler = Item::Unit {
-        unit: crate::name!("settler"),
-    };
-    assert!(AdvancedAi::near_done_displacer_is_urgent(&g, &settler));
+    assert!(AdvancedAi::near_done_displacer_is_urgent(
+        &g,
+        &unit("settler")
+    ));
+    assert!(!AdvancedAi::near_done_displacer_is_urgent(
+        &g,
+        &unit("builder")
+    ));
 }
