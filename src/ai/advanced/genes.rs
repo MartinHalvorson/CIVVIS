@@ -4783,6 +4783,18 @@ pub const GENES: &[Gene] = &[
     // its era, then any technology two eras behind the world. See
     // `advanced/old_techs_before_the_beeline.rs`.
     Gene { tag: "old-techs-before-the-beeline", field: "old_techs_before_the_beeline", kind: Kind::OptIn, enable: AdvancedAi::enable_old_techs_before_the_beeline, disable: AdvancedAi::disable_old_techs_before_the_beeline },
+    // `saved-work-is-seen`: live, the host keeps a switched item's progress
+    // (382 of 383 resumed Buildings in 38 Emperor/Immortal games on
+    // 2026-11-02 restarted from it), but the menu export carried `pr` for
+    // districts only, so the mirror's bank never held a paused unit, building
+    // or project: the resume path fired about once a game while a median 17
+    // paused units, buildings and projects a game were never finished, their
+    // saved work 4.9-7.9% of all city production. Under the gene the host's
+    // saved work on paused units, buildings and projects enters
+    // `City::production_progress` before production, as the native engine
+    // already keeps it. Inert on a native board (no host menu). See
+    // `advanced/saved_work_is_seen.rs`.
+    Gene { tag: "saved-work-is-seen", field: "saved_work_is_seen", kind: Kind::OptIn, enable: AdvancedAi::enable_saved_work_is_seen, disable: AdvancedAi::disable_saved_work_is_seen },
     // `city-state-harvest`: live Immortal 11-02 (17 games) captured no city;
     // the gap to the median rival at t100 was population (56 against 36),
     // while the median seat at t80 had two city-state cities within eight
