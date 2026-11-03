@@ -1,5 +1,5 @@
 use super::super::*;
-use super::{HARVEST_DECLARE_PATIENCE, HARVEST_FROM_TURN};
+use super::{HARVEST_DECLARE_PATIENCE, HARVEST_FROM_TURN, HARVEST_MUSTER_BODIES};
 
 /// Seat 0 with two cities and a Warrior; major 1 far away; city-state 2 with
 /// one population-6 city four tiles from our capital, met and explored.
@@ -99,10 +99,24 @@ fn a_far_or_small_or_strong_city_state_is_skipped() {
 }
 
 #[test]
-fn the_overlay_makes_the_plan_a_conquest_of_the_city() {
+fn the_overlay_points_the_war_at_the_city_under_the_lane() {
     let (mut g, city) = fixture();
     let mut ai = harvest_ai();
     ai.maintain_city_state_harvest(&mut g, 0);
+    let science = StrategicPlan {
+        strategy: GrandStrategy::Science,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    let mut before = science.clone();
+    ai.apply_city_state_harvest_to_strategy(&mut before);
+    assert_eq!(before, science, "named, not yet at war: the plan is untouched");
+    ai.maintain_city_state_harvest(&mut g, 0);
+    assert!(g.is_at_war(0, 2), "the muster declared");
     let mut plan = StrategicPlan {
         strategy: GrandStrategy::Science,
         target_player: None,
@@ -113,7 +127,7 @@ fn the_overlay_makes_the_plan_a_conquest_of_the_city() {
         rush: false,
     };
     ai.apply_city_state_harvest_to_strategy(&mut plan);
-    assert_eq!(plan.strategy, GrandStrategy::Conquest);
+    assert_eq!(plan.strategy, GrandStrategy::Science, "the lane keeps its strategy");
     assert_eq!(plan.target_player, Some(2));
     assert_eq!(plan.target_city, Some(city));
 
@@ -140,6 +154,11 @@ fn a_major_war_or_spent_patience_releases_the_name() {
     let (mut g, _) = fixture();
     let mut ai = harvest_ai();
     ai.maintain_city_state_harvest(&mut g, 0);
+    for uid in g.player_unit_ids(0) {
+        g.remove_unit(uid);
+    }
+    ai.maintain_city_state_harvest(&mut g, 0);
+    assert!(!g.is_at_war(0, 2), "no muster, no declaration");
     g.turn += HARVEST_DECLARE_PATIENCE;
     ai.maintain_city_state_harvest(&mut g, 0);
     assert_eq!(ai.city_state_harvest_target, None, "no declaration in time");
@@ -171,4 +190,24 @@ fn a_rebel_free_city_beside_us_is_named() {
     ai.maintain_city_state_harvest(&mut g, 0);
     let target = ai.city_state_harvest_target.clone().expect("named");
     assert_eq!(target.declared_turn, Some(g.turn), "a Free City is always at war");
+}
+
+#[test]
+fn a_muster_beside_the_city_declares_and_a_thin_one_does_not() {
+    let (mut g, _) = fixture();
+    let mut ai = harvest_ai();
+    ai.maintain_city_state_harvest(&mut g, 0);
+    ai.maintain_city_state_harvest(&mut g, 0);
+    assert!(g.is_at_war(0, 2));
+    assert_eq!(g.players[0].counters.get("city_state_harvest:declared"), Some(&1));
+
+    let (mut g, _) = fixture();
+    let mut ai = harvest_ai();
+    ai.maintain_city_state_harvest(&mut g, 0);
+    let ours = g.player_unit_ids(0);
+    for uid in ours.iter().skip(HARVEST_MUSTER_BODIES - 1) {
+        g.remove_unit(*uid);
+    }
+    ai.maintain_city_state_harvest(&mut g, 0);
+    assert!(!g.is_at_war(0, 2), "two bodies are not a muster");
 }
