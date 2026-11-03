@@ -9257,6 +9257,31 @@ impl AdvancedAi {
         self.gold_buys_the_backlog_builder = false;
     }
 
+    /// Opt-in gene `deck-follows-the-queue`; the behaviour lives on
+    /// `BasicAi::deck_follows_the_queue`, see `ai/deck_queue.rs`.
+    pub fn enable_deck_follows_the_queue(&mut self) {
+        self.deck_follows_the_queue = true;
+        self.base.enable_deck_follows_the_queue();
+    }
+
+    /// The twin of `enable_deck_follows_the_queue`.
+    pub fn disable_deck_follows_the_queue(&mut self) {
+        self.deck_follows_the_queue = false;
+        self.base.disable_deck_follows_the_queue();
+    }
+
+    /// Aim a bounded Conquest window at a soft city-state city beside the
+    /// empire. See [`Self::city_state_harvest`].
+    pub fn enable_city_state_harvest(&mut self) {
+        self.city_state_harvest = true;
+    }
+
+    /// The twin of `enable_city_state_harvest`.
+    pub fn disable_city_state_harvest(&mut self) {
+        self.city_state_harvest = false;
+        self.city_state_harvest_target = None;
+    }
+
     /// Enable measured routing to the board's assigned Defend city.
     pub fn enable_anvil_follows_the_defense(&mut self) {
         self.anvil_follows_the_defense = true;

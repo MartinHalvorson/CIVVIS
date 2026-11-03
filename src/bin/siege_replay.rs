@@ -21,6 +21,12 @@
 //!     --target Rustavi --turns 40 --seeds 8 \
 //!     --with-file ~/.civvis-live-force-on [--with tag,tag] [--without tag,tag]
 //! ```
+//!
+//! `--force-target` aims the campaign at the target city's owner
+//! (`AdvancedAi::retarget_against`) instead of letting the plan choose: the
+//! feasibility probe for a war the seat would not open on its own, such as a
+//! nearby city-state. `--lane <science|culture|religious|domination>` seats
+//! our agent on that victory lane instead of Domination.
 
 use civvis::ai::{AdvancedAi, Ai, VictoryTarget};
 use civvis::game::{Action, Game};
@@ -68,6 +74,7 @@ fn military_units(g: &Game, pid: usize) -> usize {
         .count()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn replay(
     base: &Game,
     seed: u64,
@@ -76,6 +83,8 @@ fn replay(
     target_pos: (i32, i32),
     turns: u32,
     why: Option<&str>,
+    force_owner: Option<usize>,
+    lane: VictoryTarget,
 ) -> Outcome {
     let mut g = base.clone();
     g.rng = civvis::rng::Rng::new(seed);
@@ -85,7 +94,10 @@ fn replay(
     let mut ais: Vec<Box<dyn Ai>> = Vec::new();
     for pid in 0..g.players.len() {
         if pid == 0 {
-            let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+            let mut ai = AdvancedAi::targeting(lane);
+            if let Some(owner) = force_owner {
+                ai.retarget_against(lane, owner);
+            }
             ai.enable_live_bridge_universe();
             ai.apply_gene_ledger_with_forced_live(forced);
             for tag in without {
@@ -162,7 +174,7 @@ fn replay(
 fn main() {
     let args: Vec<String> = std::env::args().collect();
     let Some(run) = text(&args, "--run") else {
-        eprintln!("usage: siege_replay --run <run dir> --turn T --target <city> [--turns N] [--seeds K] [--with-file F] [--with a,b] [--without a,b] [--why]");
+        eprintln!("usage: siege_replay --run <run dir> --turn T --target <city> [--turns N] [--seeds K] [--with-file F] [--with a,b] [--without a,b] [--force-target] [--lane L] [--why]");
         std::process::exit(2);
     };
     let turn = number(&args, "--turn", 0) as u32;
@@ -226,6 +238,18 @@ fn main() {
     let forced: Vec<&str> = forced_tags.iter().map(String::as_str).collect();
     let without = tags(text(&args, "--without"));
     let why = args.iter().any(|arg| arg == "--why");
+    let force_owner = args
+        .iter()
+        .any(|arg| arg == "--force-target")
+        .then_some(target_city.owner);
+    let lane: VictoryTarget = text(&args, "--lane")
+        .map(|lane| {
+            lane.parse().unwrap_or_else(|_| {
+                eprintln!("unknown --lane {lane:?}");
+                std::process::exit(2);
+            })
+        })
+        .unwrap_or(VictoryTarget::Domination);
     let mut captured = 0;
     let mut breached = 0;
     for seed in 0..seeds {
@@ -238,6 +262,8 @@ fn main() {
             target_pos,
             turns,
             name,
+            force_owner,
+            lane,
         );
         captured += usize::from(out.captured.is_some());
         breached += usize::from(out.walls_down.is_some());
