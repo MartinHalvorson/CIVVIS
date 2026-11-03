@@ -31,8 +31,7 @@ fn board() -> (Game, u32, Item, Item) {
     g.players[0].techs = g.rules.techs.keys().cloned().collect();
     g.cities.get_mut(&cid).unwrap().pop = 14;
     g.turn = 100;
-    install_test_district(&mut g, cid, "industrial_zone");
-    let industrial = g.cities[&cid].districts[&crate::name!("industrial_zone")];
+    let industrial = install_test_district(&mut g, cid, "industrial_zone");
     g.map.tiles.get_mut(&industrial).unwrap().pillaged = true;
     let site = g.district_sites(cid, crate::name!("spaceport"))[0];
     let pad = Item::District {
