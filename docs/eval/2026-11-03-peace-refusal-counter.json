@@ -1,0 +1,68 @@
+{
+  "decision": "Ship bounded counter handling for interactive peace refusals; preserve the operator transport mode.",
+  "scope": "Offline handler repair with native direct-transport observations. No live peace-session activation, native treaty or win-rate claim.",
+  "source": {
+    "utc": "2026-11-03T01:33:35.889748+00:00",
+    "base_head": "76f85d228dd1649d2f6a3cb2e5241b45f6f859df",
+    "files": {
+      "tools/civ6_control/mod/CivvisControlAgent.lua": {
+        "bytes": 1224369,
+        "sha256": "41fd309f8214bff0e7a5b71f738ee3e3fbce76f0fbde679f65228513674fac30"
+      },
+      "tools/civ6_control/mod/deal_session_test.lua": {
+        "bytes": 41166,
+        "sha256": "0c7019d27bf56f8b7aec44e1cfcfd90213eacfbf9e4825e23a183c46847590ed"
+      }
+    },
+    "patch_sha256": "b89510d463c98ac2ff065a4485ca54928c88e5e07a9df6f904a086f6cdad5f21"
+  },
+  "handler_checks": [
+    {
+      "label": "original",
+      "exit": 1,
+      "sources": {
+        "CivvisControlAgent.lua": "9f9c8bc89c3c1981a71db23fe97a555e08eac835045aad7da75404a050d1872e",
+        "CivvisControlAutoClose.lua": "4f245c0a33f2cc7787a555aff871d6db7e81999513a101bf9be8476e12b17335",
+        "CivvisControlHeartbeat.lua": "b4ca7707f23745bede5f9fa62f4247455405247dd9f32df1b4ba00f6fa91b0e0",
+        "CivvisControlMapView.lua": "222827d97444a4dac711f52000502bfd3ba84e176922864e6140fae61c191219",
+        "CivvisControlSetup.lua": "d126785f38e0a3ba82834ce6d4884306f0ee7110b4fd2fc82274750c7cadb9a5"
+      },
+      "test_sha256": "0c7019d27bf56f8b7aec44e1cfcfd90213eacfbf9e4825e23a183c46847590ed",
+      "failed_checks": 7,
+      "passing_checks": 165
+    },
+    {
+      "label": "candidate",
+      "exit": 0,
+      "sources": {
+        "CivvisControlAgent.lua": "41fd309f8214bff0e7a5b71f738ee3e3fbce76f0fbde679f65228513674fac30",
+        "CivvisControlAutoClose.lua": "4f245c0a33f2cc7787a555aff871d6db7e81999513a101bf9be8476e12b17335",
+        "CivvisControlHeartbeat.lua": "b4ca7707f23745bede5f9fa62f4247455405247dd9f32df1b4ba00f6fa91b0e0",
+        "CivvisControlMapView.lua": "222827d97444a4dac711f52000502bfd3ba84e176922864e6140fae61c191219",
+        "CivvisControlSetup.lua": "d126785f38e0a3ba82834ce6d4884306f0ee7110b4fd2fc82274750c7cadb9a5"
+      },
+      "test_sha256": "0c7019d27bf56f8b7aec44e1cfcfd90213eacfbf9e4825e23a183c46847590ed",
+      "failed_checks": 0,
+      "passing_checks": 172
+    }
+  ],
+  "discovered_lua_files_passed": 114,
+  "installer_tests_passed": 139,
+  "default_counter_hold_seconds": 4,
+  "disable_setting": "PeaceCounterHoldSeconds = 0",
+  "native_transport": "trade; source play log records this explicitly, and the current operator setting is retained.",
+  "native_source_run": "civvis-20261103T002240Z",
+  "native_direct_peace_turns": [
+    97,
+    102
+  ],
+  "native_peace_sessions_opened": 0,
+  "historical_oct3_peace_freeze_csv": "Unavailable; source commentary documents it but it was not newly verified.",
+  "failed_fixture_delivery": "Initial isolated candidate fixture omitted CivvisControlAutoClose.lua; retained separately and corrected by copying all discovered production Lua helpers. Do not count that delivery failure as candidate behavior.",
+  "archive": {
+    "path": "docs/eval/2026-11-03-peace-refusal-counter.raw.tar.xz",
+    "bytes": 420272,
+    "sha256": "df6e39865090dee60d61f2ec89d6dd695c7b2cd9087e3c61b9df0f5c8675c215",
+    "members": 154
+  }
+}
