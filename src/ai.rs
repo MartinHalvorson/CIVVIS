@@ -16728,21 +16728,24 @@ impl BasicAi {
         let _memo = g.query_memo();
         g.player_city_ids(pid)
             .into_iter()
-            .map(|cid| {
-                g.city_citizen_plan(cid)
-                    .worked_tiles
-                    .into_iter()
-                    .filter(|pos| {
-                        g.map.get(*pos).is_some_and(|tile| {
-                            tile.district.is_none() && (tile.improvement.is_none() || tile.pillaged)
-                        }) && g
-                            .valid_improvements(pid, *pos)
-                            .iter()
-                            .any(|improvement| g.rules.improvements[improvement].builder_buildable)
-                    })
-                    .count()
-            })
+            .map(|cid| Self::unimproved_worked_tiles_in(g, pid, cid))
             .sum()
+    }
+
+    /// [`BasicAi::unimproved_worked_tiles`] for one city.
+    pub(crate) fn unimproved_worked_tiles_in(g: &Game, pid: usize, cid: u32) -> usize {
+        g.city_citizen_plan(cid)
+            .worked_tiles
+            .into_iter()
+            .filter(|pos| {
+                g.map.get(*pos).is_some_and(|tile| {
+                    tile.district.is_none() && (tile.improvement.is_none() || tile.pillaged)
+                }) && g
+                    .valid_improvements(pid, *pos)
+                    .iter()
+                    .any(|improvement| g.rules.improvements[improvement].builder_buildable)
+            })
+            .count()
     }
 
     /// See `builder_before_the_army_3`: a Builder while the empire holds (or

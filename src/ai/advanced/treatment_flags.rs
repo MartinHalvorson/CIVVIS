@@ -9236,6 +9236,17 @@ impl AdvancedAi {
         self.old_techs_before_the_beeline = false;
     }
 
+    /// Opt-in gene `gold-buys-the-backlog-builder`; see
+    /// `advanced/gold_buys_the_backlog_builder.rs`.
+    pub fn enable_gold_buys_the_backlog_builder(&mut self) {
+        self.gold_buys_the_backlog_builder = true;
+    }
+
+    /// The twin of `enable_gold_buys_the_backlog_builder`.
+    pub fn disable_gold_buys_the_backlog_builder(&mut self) {
+        self.gold_buys_the_backlog_builder = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

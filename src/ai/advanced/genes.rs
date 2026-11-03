@@ -4783,6 +4783,18 @@ pub const GENES: &[Gene] = &[
     // its era, then any technology two eras behind the world. See
     // `advanced/old_techs_before_the_beeline.rs`.
     Gene { tag: "old-techs-before-the-beeline", field: "old_techs_before_the_beeline", kind: Kind::OptIn, enable: AdvancedAi::enable_old_techs_before_the_beeline, disable: AdvancedAi::disable_old_techs_before_the_beeline },
+    // `gold-buys-the-backlog-builder`: live (38 Emperor/Immortal games,
+    // 2026-11-02) 64% / 48% of the worked land tiles stood unimproved at t60 /
+    // t80, 4.7-6.5 of them improvable now per game, against 1.0-2.3 Builders
+    // afield; in 17 of 38 games at t40 and 13 at t60 the Builders afield or
+    // training fell short of `builder_backlog_item`'s own quota because the
+    // Campus, Granary, Walls and Settler claims took the queue. Under the gene
+    // the treasury buys that missing Builder above the purchase upkeep floor,
+    // at peace, after the opening Builder and the idle route's Trader, in the
+    // city owning the most unimproved worked tiles (the weakest producer on a
+    // tie) whose cards do not already speed a Builder. See
+    // `advanced/gold_buys_the_backlog_builder.rs`.
+    Gene { tag: "gold-buys-the-backlog-builder", field: "gold_buys_the_backlog_builder", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_buys_the_backlog_builder, disable: AdvancedAi::disable_gold_buys_the_backlog_builder },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
