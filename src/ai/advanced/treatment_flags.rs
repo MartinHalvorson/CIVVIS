@@ -9236,6 +9236,16 @@ impl AdvancedAi {
         self.old_techs_before_the_beeline = false;
     }
 
+    /// Opt-in gene `saved-work-is-seen`; see `advanced/saved_work_is_seen.rs`.
+    pub fn enable_saved_work_is_seen(&mut self) {
+        self.saved_work_is_seen = true;
+    }
+
+    /// The twin of `enable_saved_work_is_seen`.
+    pub fn disable_saved_work_is_seen(&mut self) {
+        self.saved_work_is_seen = false;
+    }
+
     /// Opt-in gene `deck-follows-the-queue`; the behaviour lives on
     /// `BasicAi::deck_follows_the_queue`, see `ai/deck_queue.rs`.
     pub fn enable_deck_follows_the_queue(&mut self) {

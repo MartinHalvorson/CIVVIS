@@ -8624,6 +8624,8 @@ pub(crate) struct HostMenus {
     pub unit_resource_prices: BTreeMap<u32, BTreeMap<String, f64>>,
     pub purchasable: BTreeMap<u32, BTreeMap<String, crate::game::HostPurchaseEntry>>,
     pub district_plots: BTreeMap<u32, BTreeMap<crate::name::Name, BTreeSet<crate::Pos>>>,
+    /// See [`crate::game::Game::host_saved_work`].
+    pub saved_work: BTreeMap<u32, BTreeMap<String, f64>>,
 }
 
 fn host_menus_from(
@@ -8641,10 +8643,22 @@ fn host_menus_from(
             let mut translated = BTreeMap::new();
             let mut resource_prices = BTreeMap::new();
             let mut plots: BTreeMap<crate::name::Name, BTreeSet<crate::Pos>> = BTreeMap::new();
+            let mut saved = BTreeMap::new();
             for row in menu {
                 let Some(key) = host_production_key(rules, &row.t, row.f) else {
                     continue;
                 };
+                // Saved work on a paused unit, building or project. A district's
+                // belongs to its foundation (`apply_host_district_progress`); a
+                // Wonder's and a formation's key names no plot or tier.
+                if key.starts_with("unit:")
+                    || key.starts_with("building:")
+                    || key.starts_with("project:")
+                {
+                    if let Some(progress) = row.pr.and_then(reading).filter(|p| *p > 0.0) {
+                        saved.insert(key.clone(), progress);
+                    }
+                }
                 if key.starts_with("unit:") || key.starts_with("formation:") {
                     if let Some(price) = row.r.and_then(reading) {
                         resource_prices.insert(key.clone(), price);
@@ -8681,6 +8695,9 @@ fn host_menus_from(
             }
             if !resource_prices.is_empty() {
                 out.unit_resource_prices.insert(*cid, resource_prices);
+            }
+            if !saved.is_empty() {
+                out.saved_work.insert(*cid, saved);
             }
             if !plots.is_empty() {
                 out.district_plots.insert(*cid, plots);
@@ -14129,6 +14146,7 @@ pub fn rebuild_from_state(
     // promotion blocks are.
     let menus = host_menus_from(&state.cities, &city_ids, &game.rules);
     game.replace_host_unit_resource_prices(menus.unit_resource_prices);
+    game.replace_host_saved_work(menus.saved_work);
     game.replace_host_menus(menus.buildable, menus.purchasable, menus.district_plots);
     seat_live_spies(&mut game, state);
     block_live_spy_production(&mut game, state.spy_capacity);
@@ -15415,6 +15433,7 @@ impl LiveMirror {
         );
         self.game
             .replace_host_unit_resource_prices(menus.unit_resource_prices);
+        self.game.replace_host_saved_work(menus.saved_work);
         self.game
             .replace_host_menus(menus.buildable, menus.purchasable, menus.district_plots);
         let blocked_purchases = blocked_production_from(

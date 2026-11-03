@@ -1,0 +1,128 @@
+{
+  "utc": "2026-11-03T02:37:30.123939+00:00",
+  "decision": "Add explicit --delivery hybrid; retain FIFO as the default.",
+  "scope": "Original-program replay conformance only. No policy treatment, host action, resource delivery or strength claim. The intermittent FIFO root cause remains unresolved.",
+  "actual_cli_controls": {
+    "culture-hybrid-01": {
+      "through_turn": 100,
+      "passed": true,
+      "control_requests": [
+        279,
+        279
+      ],
+      "delivery_counts": [
+        {
+          "regular": 274,
+          "fifo": 5
+        },
+        {
+          "regular": 274,
+          "fifo": 5
+        }
+      ],
+      "native_decisions_sha256": "239eb28f1ee0cd78642065013fbc48b4e8b07b67c583d5a643d41c8e01a0faf6"
+    },
+    "mali-hybrid-01": {
+      "through_turn": 60,
+      "passed": true,
+      "control_requests": [
+        134,
+        134
+      ],
+      "delivery_counts": [
+        {
+          "regular": 128,
+          "fifo": 6
+        },
+        {
+          "regular": 128,
+          "fifo": 6
+        }
+      ],
+      "native_decisions_sha256": "50cf0af9b55886bbda2a41b25d8bb9fa71324b29a160deaf800a3bf1a5bcdb64"
+    }
+  },
+  "successful_actual_cli_requests": 826,
+  "negative_reference": {
+    "passed": false,
+    "expected_reads": 16,
+    "actual_reads": 17,
+    "full_payload_matches": true,
+    "identity_errors": [],
+    "read_sequence_matches": false
+  },
+  "focused_tests": 23,
+  "default_fifo_source_unchanged": true,
+  "retained_failures": [
+    "Original Culture FIFO control: 266 matching requests, then turn96/frame1 deadline with14/17 delivered identical reads.",
+    "First unchanged FIFO unit suite: test_each_open_gets_only_its_own_bytes timed out at5s; later complete suites passed.",
+    "First full new suite exposed unclosed child pipes; explicit cleanup added and actual child streams checked closed."
+  ],
+  "module_docstring_only_change_after_mali_cli": {
+    "only_module_docstring_changed": true,
+    "executed_mali_driver_sha256": "77f3ced02b0ccf51d059c0149c5562d213d404f62391c485b0829b6ade2fcce8",
+    "current_driver_sha256": "56a8e54bf1d6c96b4e90a870342ad89012a23e5b1e77ac6fde808fcdff2391f2"
+  },
+  "source_sha256": {
+    "tools/civ6_captured_read_replay.py": "56a8e54bf1d6c96b4e90a870342ad89012a23e5b1e77ac6fde808fcdff2391f2",
+    "tools/test_civ6_captured_read_replay.py": "3f08602e980cfca4e0e961e541f43de65434dcb7a3e26b225d9b1762326acec6"
+  },
+  "verification": [
+    {
+      "case": "culture-original-fifo-failure",
+      "control": 0,
+      "passed": false,
+      "requests_verified": 266,
+      "failure": "TimeoutError: decider reply deadline expired"
+    },
+    {
+      "case": "culture-private-prototype",
+      "control": 0,
+      "passed": true,
+      "requests_verified": 279,
+      "failure": null
+    },
+    {
+      "case": "culture-private-prototype",
+      "control": 1,
+      "passed": true,
+      "requests_verified": 279,
+      "failure": null
+    },
+    {
+      "case": "mali-hybrid-01",
+      "control": 0,
+      "passed": true,
+      "requests_verified": 134,
+      "failure": null
+    },
+    {
+      "case": "mali-hybrid-01",
+      "control": 1,
+      "passed": true,
+      "requests_verified": 134,
+      "failure": null
+    },
+    {
+      "case": "culture-hybrid-01",
+      "control": 0,
+      "passed": true,
+      "requests_verified": 279,
+      "failure": null
+    },
+    {
+      "case": "culture-hybrid-01",
+      "control": 1,
+      "passed": true,
+      "requests_verified": 279,
+      "failure": null
+    }
+  ],
+  "archive": {
+    "path": "docs/eval/2026-11-03-captured-read-delivery.raw.tar.xz",
+    "bytes": 3594796,
+    "sha256": "269d7e91ef5c7c97e40c0203f5352cf68689cfaab927ae21d8b9b88eb61e63b4",
+    "members": 87,
+    "manifest": "SHA256SUMS.json"
+  }
+}
