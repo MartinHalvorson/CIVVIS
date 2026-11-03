@@ -1,63 +1,46 @@
-# Native Science fuel feasibility pilot
+# Eight-family native Science fuel feasibility pilot
 
-The candidate and direct power export are merged as `f64e789` and `f58006c`.
-The attached raw host state from `civvis-20261102T185013Z` t1/frame1 confirms
-that St. Petersburg exports free/temporary/required power of zero,
-`fully_powered=true`, and `fully_powered_by_active_project=false`. The JSON
-plan records the source line and its hash. This proves the observation path
-at zero demand; it does not establish a delivered fuel block or Lab gain.
+**Completed: the candidate did not demonstrate Coal delivery.** The first eight configured Science families after arming produced 23 explicit Coal-buy offers in two enabled families. All 23 correlated replies were unclosable; none produced a matching `deal_closed` sent command. This does not establish a Lab Science gain or a strength improvement. Keep `science-power-buys-fuel` default OFF.
 
-Before arming the empty native screen file, push this preregistration. Then
-use the existing `science-power-buys-fuel` run-tag on/off screen for the first
-eight configured Science game families begun after arming. Retired attempts
-count; continuations share one game. Keep setup attrition and other lanes
-separately visible. Preserve the current native seat mix and other flags.
-No manually selected arms, difficulty changes or restart of the current game.
+The registered stop rule completed on November 3 at `02:02:09.621488Z`: the monitor verified that the screen still contained the owned tag and restored its previously empty bytes. The stop receipt binds the final census and collector hash. It did not stop a live game or change the external verification policy.
 
-The primary question is execution: proposed Coal, actual paid terms,
-delivered stock, plant completion, direct host power and ongoing cost.
-Retain full outcomes and normalize observed genomes with only this tag
-removed. Changing binaries/profiles stay separate. This small pilot cannot
-justify a default change or a pooled win-rate conclusion.
+## Complete primary cohort
 
-The native trade handler exports `deal_offer`, `deal_response` and
-`deal_closed` (`CivvisControlAgent.lua:12260–12299,14435`). An accepted command
-or sent deal is not itself delivery. Retain raw terms and before/after fuel
-readings; the host's `pay` measure is Gold + 25×GPT, not a verified lump-sum
-payment. Read city power, plant ownership, Science and yield-source text
-together. Growth, other construction and policy changes remain possible
-causes of yield differences.
+Times and run tags are UTC. “Retired” is the existing production-share stop, kept separate from terminal defeats. Actual genome readback agrees with each listed arm.
 
-After eight configured Science attempts, restore the prior empty screen
-file. An earlier stop requires a concrete command/finance failure or user
-steering, with all attempts and the reason retained. Missing fields or
-ambiguous delivery stay unknown.
+| Run | Difficulty | Arm | Ending | Coal buys |
+|---|---|---|---|---:|
+| Nov 2 `201043Z` | Emperor | off | Rival Science, 227 | 0 |
+| Nov 2 `202907Z` | Immortal | on | Retired, 126 | 0 |
+| Nov 2 `205136Z` | Immortal | on | Retired, 124 | 0 |
+| Nov 2 `211245Z` | Immortal | on | Rival Science, 199 | 0 |
+| Nov 2 `213554Z` | Immortal | on | Rival Science, 196 | 5 |
+| Nov 2 `234025Z` | Immortal | on | Rival Science, 215 | 18 |
+| Nov 3 `014143Z` | Immortal | off | Rival Science, 180 | 0 |
+| Nov 3 `015442Z` | Immortal | off | Retired, 129 | 0 |
 
-The preregistration was pushed as `ff1df764c` before assignment. The empty
-screen file was armed at `2026-11-02T19:01:33.564184Z`; the companion arm
-receipt records the verified upstream commit, immutable plan hash, file
-change and unchanged baseline-file hashes. The current game keeps its
-previous assignment. No pilot outcome or fuel-delivery verdict is available
-at arming.
+There were five enabled and three disabled families, five terminal rival-Science losses and three production-share retirements. The latter occurred at 81/506, 85/511 and 70/488 production, respectively, after three qualifying turns below one sixth of the leader. No victory was observed. These are feasibility outcomes, not a pooled win-rate comparison.
 
-The read-only collector `tools/civ6_science_fuel_pilot.py` joins `-contN`
-continuations before applying the eight-family boundary, keeps other lanes
-and pending/setup attempts separate, and hashes the source bytes it reads.
-It retains actual genome transitions, exact runtime build records, all buy
-deal replies (numeric resource IDs are not guessed), candidate notes, and
-native city power and yield text. It selects the earliest observed frame
-of each turn for the census; raw event hashes identify those observations.
-It never changes the screen file or decides that a sent acceptance delivered
-fuel. Five focused tests cover family boundaries, genome normalization,
-missing/false/zero readings, raw deal terms and an incomplete live log tail.
+## Execution and finance
 
-An interim collection at approximately 20:31 UTC has one completed primary
-Science family, `civvis-20261102T201043Z`, assigned off. It lost to a rival
-Science victory at turn 227. First native ownership was Rocketry 193,
-Satellites 201, first completed Spaceport 208 and Earth Satellite 216;
-Moon Landing was still under construction at the final observation.
-The launch city had direct host power during construction and launch.
-This control does not demonstrate the candidate's fuel execution or benefit.
-Five completed other-lane families remain separate; none has a positive
-candidate note. The next attempt is pending. No conclusion or stop rule has
-changed, and the final archive will retain all assigned attempts.
+The two exposed primary families generated 56 positive candidate-note rows. Notes are not separate purchases: the actual 23 offers requested `RESOURCE_COAL=20`. Each reply is joined by the native `from` player and explicit `asked_turn` to its offer's `target` and turn; resource IDs in the replies are not guessed.
+
+Nine replies had a positive `pay` quote and all nine exceeded their own ceiling. The other fourteen replies were also unclosable; a zero quote is not a free accepted purchase. `pay` is the handler's Gold + 25×GPT metric, not a verified payment. The recorded nominal offer caps and full quoted terms remain in the JSON and raw slices. No accepted payment or delivered stock is attributed to these requests, and missing stock fields remain unknown.
+
+The gross-income guard also limited exposure: family `211245Z` showed unpowered Labs with positive Coal income and generated no candidate buy note. That follows version one's defined positive-income exclusion; it is a possible net-supply blind spot, not evidence that a submitted order failed. A smaller purchase block is another follow-up hypothesis. Neither change was applied during this pilot.
+
+Twenty-six assigned other-lane families remain separate. One assigned Domination family had 15 candidate notes and five explicit Coal-buy offers, with no matching sent close. Three additional Coal offer rows lacking a direction are retained as unclassified. They are not added to the Science cohort or attributed to this candidate.
+
+## Context and interpretation
+
+Preregistration `ff1df764c` was pushed before the screen was armed at `2026-11-02T19:01:33.564184Z`. The companion immutable plan and arm receipt define the first-eight-family boundary, continuation joining, other-lane retention and ownership-based restoration. The prior game retained its existing assignment.
+
+An external operator changed future difficulty from Emperor to Immortal around 20:13 UTC. That policy was preserved. Binaries also changed: the first five families used executable hash `bdb0125b…`, the sixth `3a260648…`, and the final two `4f269c73…`. After removing only the tested tag, the first six share normalized-genome hash `3b1af166…`; the final two use `bad9651d…`. There is no matching difficulty/binary/normalized-profile bucket containing both arms. Do not pool these histories into a treatment effect or promote a default from them.
+
+The direct power exporter was read back before arming from native `185013Z` turn 1/frame 1: free/temporary/required power zero, `fully_powered=true`, and active-project power false. That established the observation path at zero demand. The final census retains native city power, plant/Lab ownership, Science and yield-source text without attributing changes caused by growth, construction or policies to fuel.
+
+## Validation and reproduction
+
+Five collector tests passed after integrating current main. The collector's bytes still match the monitor's frozen SHA-256. The archive retains the final stop census, arm/plan, ownership restoration, monitor source/log, all 34 configured-family summaries and observed genotypes, primary power readings, all retained buy/Coal deal rows, and candidate notes. Every selected raw line is checked against its recorded hash and original source line; every whole source file still matched the stop census when packaged. No setup/pending family or beyond-boundary Science family was present at that stop snapshot.
+
+The adjacent `.final.json` binds the archive's hash and member count. `SHA256SUMS.json` binds every other member. Extract it and run `python3 final-analysis.py` to recompute the aggregate from the frozen census; that script makes no live-game commands. The general read-only collector remains `tools/civ6_science_fuel_pilot.py`. No strength ledger or reserved research confirmation seed was used.
