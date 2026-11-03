@@ -272,11 +272,22 @@ impl AdvancedAi {
         if let Some(mut target) = self.city_state_harvest_target.take() {
             let owner = target.resolve(g);
             let at_war = g.is_at_war(pid, target.player);
+            // A declaration the host refused. Live, `civvis_orders` applies
+            // the opening to its own model, where it holds for the frame,
+            // and the host's `CanDeclareWarOn` can still say no (a city-state
+            // peace treaty the mirror does not carry: live 152836Z declared
+            // on Bandar Brunei every frame t175-185 against `war_refused`).
+            // The next frame reads no war, so the name goes.
+            let refused = target.declared_turn.is_some() && !at_war && owner == Some(target.player);
             if at_war && target.declared_turn.is_none() {
                 target.declared_turn = Some(g.turn);
                 Self::harvest_count(g, pid, "declared");
             }
-            if !at_war && owner == Some(target.player) && !Self::harvest_major_war(g, pid) {
+            if !at_war
+                && !refused
+                && owner == Some(target.player)
+                && !Self::harvest_major_war(g, pid)
+            {
                 let (bodies, power) = Self::harvest_muster(g, pid, target.city);
                 let theirs = g.military_power(target.player).max(1.0);
                 if bodies >= HARVEST_MUSTER_BODIES && power >= HARVEST_LOCAL_EDGE * theirs {
@@ -303,6 +314,9 @@ impl AdvancedAi {
                 Some("the city is ours")
             } else if owner != Some(target.player) {
                 Some("the city changed hands")
+            } else if refused {
+                Self::harvest_count(g, pid, "refused");
+                Some("the host refused the war")
             } else if Self::harvest_major_war(g, pid) {
                 Some("a major is at war with us")
             } else if target.declared_turn.is_none()
