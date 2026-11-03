@@ -1,0 +1,76 @@
+{
+  "schema": 1,
+  "created_utc": "2026-11-02T18:56:30.483102+00:00",
+  "gene": "science-power-buys-fuel",
+  "candidate_revision": "f64e7899a79541b38a6d908ee89dbf858a2d7273",
+  "status": "preregistered; not armed",
+  "start_gate": "Push this preregistration before arming the empty screen file; direct native power fields have been read back.",
+  "assignment": "Existing run-tag on/off screen. No manual arm selection. Preserve current leader/difficulty/victory mix and all other flags.",
+  "sample": {
+    "science_configured_game_families": 8,
+    "count_retired_science_attempts": true,
+    "continuations": "join by stem; do not count twice",
+    "setup_failures": "retain as attrition, not a configured game",
+    "other_lanes": "retain assigned attempts separately; not part of primary execution cohort"
+  },
+  "primary_question": "Do candidate-labelled Coal requests produce accepted paid terms, observed delivered stock and native power in reachable Labs?",
+  "readings": [
+    "raw Coal buy proposals and ceiling",
+    "candidate note and actual observed genome",
+    "native offer/response/close events and paid terms",
+    "Coal stock/income before and after",
+    "plant construction and direct city power fields",
+    "native city Science and yield-source text",
+    "treasury/income/ongoing obligations",
+    "complete outcomes and retirements"
+  ],
+  "interpretation": [
+    "An emitted buy, closable reply or sent acceptance alone is not delivery.",
+    "A ceiling and the host pay metric (Gold + 25*GPT) are not verified nominal payments.",
+    "Concurrent construction, growth and policy changes prevent attributing a city yield delta solely to Coal.",
+    "No default promotion or pooled win-rate inference from this feasibility pilot.",
+    "Record exact binary/source/profile hashes. Compare matching revisions and normalized genomes separately; never pool changing builds as a fixed treatment.",
+    "Missing telemetry and ambiguous delivery remain unknown, not zero or failure."
+  ],
+  "stop_rule": "After the first eight configured Science game families begun after arming, restore the prior empty screen file. Stop earlier only for a concrete command/finance failure or user steering, retaining all attempts and reason.",
+  "runtime_baseline": {
+    ".civvis-verification-policy": {
+      "exists": true,
+      "sha256": "2f39f2549325cb75e351b43f1a5437c5f82d2816460de3e2dd27b7790f9fcf92"
+    },
+    ".civvis-live-force-on": {
+      "exists": true,
+      "sha256": "ff057c71fee2dd55fb86a27a53f4072b3e4c1d92f5927664dcf76df3d7aa47f7"
+    },
+    ".civvis-live-screen-gene": {
+      "exists": true,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    ".civvis-victory-lane": {
+      "exists": true,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "power_readback": {
+    "run": "civvis-20261102T185013Z",
+    "source": "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261102T185013Z/events.jsonl",
+    "line": 88,
+    "turn": 1,
+    "frame": 1,
+    "raw_line_sha256": "f975e7b6bc4441e6ab48a55d0a4b7551462d2a89540ab0d2c267cfbfce1f88e6",
+    "scope": "Direct host power export works at zero demand; this is not a fuel delivery or powered-Lab gain.",
+    "cities": [
+      {
+        "id": 65536,
+        "name": "St. Petersburg",
+        "power": {
+          "free": 0,
+          "fully_powered": true,
+          "fully_powered_by_active_project": false,
+          "required": 0,
+          "temporary": 0
+        }
+      }
+    ]
+  }
+}

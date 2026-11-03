@@ -1,0 +1,119 @@
+{
+  "utc": "2026-11-03T03:40:52.727499+00:00",
+  "scope": "Read-only evidence tooling and three selected historical Immortal Culture runs. No live command, screen arm, default change, matched treatment comparison or strength estimate.",
+  "focused_tests": 10,
+  "exact_cli_reproduction_cases": 3,
+  "cases": [
+    {
+      "run": "civvis-20261103T002240Z",
+      "state_rows": 452,
+      "observation_rows": 109,
+      "unknown_state_fields": {
+        "units": 0,
+        "artifact_inventory": 1,
+        "museum_inventory": 0
+      },
+      "production_proposals": 0,
+      "owned_digger_rows": 0,
+      "zero_artifact_observation_rows": 109,
+      "idle_museum_legal_quote_frames": 11,
+      "first_museum_turn": 153,
+      "artifact_person_rows": 109,
+      "terminal_outcome": {
+        "ctx": "agent",
+        "kind": "victory",
+        "local_player": 0,
+        "local_team": 0,
+        "run": "civvis-20261103T002240Z",
+        "score": 617,
+        "t": 1793666154,
+        "team": 5,
+        "turn": 182,
+        "turns_played": 182,
+        "utc": "2026-11-03T00:35:55.339Z",
+        "victory": 5,
+        "victory_type": "VICTORY_TECHNOLOGY",
+        "won": false
+      },
+      "report_sha256": "1945fbf02dd17a36f1cdc718d1ff7b46218b304b9b70704c2e801992e3c33283"
+    },
+    {
+      "run": "civvis-20261103T012701Z",
+      "state_rows": 567,
+      "observation_rows": 0,
+      "unknown_state_fields": {
+        "units": 0,
+        "artifact_inventory": 1,
+        "museum_inventory": 0
+      },
+      "production_proposals": 0,
+      "owned_digger_rows": 0,
+      "zero_artifact_observation_rows": 0,
+      "idle_museum_legal_quote_frames": 0,
+      "first_museum_turn": null,
+      "artifact_person_rows": 0,
+      "terminal_outcome": {
+        "ctx": "agent",
+        "kind": "victory",
+        "local_player": 0,
+        "local_team": 0,
+        "run": "civvis-20261103T012701Z",
+        "score": 867,
+        "t": 1793670065,
+        "team": 1,
+        "turn": 198,
+        "turns_played": 198,
+        "utc": "2026-11-03T01:41:06.601Z",
+        "victory": 5,
+        "victory_type": "VICTORY_TECHNOLOGY",
+        "won": false
+      },
+      "report_sha256": "871f0041cec2ad33bd7c2ce65df2640552526304c0ee7e4ceddeee4e6e81faaf"
+    },
+    {
+      "run": "civvis-20261103T024543Z",
+      "state_rows": 503,
+      "observation_rows": 5,
+      "unknown_state_fields": {
+        "units": 0,
+        "artifact_inventory": 1,
+        "museum_inventory": 0
+      },
+      "production_proposals": 0,
+      "owned_digger_rows": 0,
+      "zero_artifact_observation_rows": 5,
+      "idle_museum_legal_quote_frames": 1,
+      "first_museum_turn": 186,
+      "artifact_person_rows": 0,
+      "terminal_outcome": {
+        "ctx": "agent",
+        "kind": "victory",
+        "local_player": 0,
+        "local_team": 0,
+        "run": "civvis-20261103T024543Z",
+        "score": 795,
+        "t": 1793674700,
+        "team": 3,
+        "turn": 187,
+        "turns_played": 187,
+        "utc": "2026-11-03T02:58:21.095Z",
+        "victory": 5,
+        "victory_type": "VICTORY_TECHNOLOGY",
+        "won": false
+      },
+      "report_sha256": "e35e9169873427284e2837a18f39815a0abbfccb0c01037f7d60635a55dd6d22"
+    }
+  ],
+  "source_sha256": {
+    "tools/civ6_artifact_activation_audit.py": "e30dd8398cb06e66ce1b2877d95c77e764bf91a3fe99e83e7f3c3014b105c61c",
+    "tools/test_civ6_artifact_activation_audit.py": "5af6b25335fc13ba9064de1b533b85121122561e27cc3ecfb9ac730263732458",
+    "tools/civ6_science_fuel_pilot.py": "50aa006885eec687d9127bbff54242fd2aec33fca4cbb8abb600d7ae933c2576"
+  },
+  "interpretation": "State frames are not independent games. All three had one startup frame with unknown work inventory; it stays unknown. The Museum-only late case has no Artifact-requiring physical person. Source program/profile changes are preserved in runtime/genome records and are not pooled as a treatment effect.",
+  "archive": {
+    "path": "docs/eval/2026-11-03-artifact-execution-audit.raw.tar.xz",
+    "bytes": 2819196,
+    "sha256": "fbc3c559cd2be4a1767a707788482b0f5aca630a4f7be6adee45503d366c41d2",
+    "members": 29
+  }
+}
