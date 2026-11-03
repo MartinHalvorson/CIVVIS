@@ -23,8 +23,11 @@
 //! t150), with two or more cities: when Builders afield plus those in any
 //! queue are below `builder_backlog_item`'s quota, buy one Builder above the
 //! purchase upkeep floor. The city is the one owning the most unimproved
-//! worked tiles, the weakest producer on a tie (Gold is worth most where
-//! Production is scarce), then the cheapest. A city whose slotted cards
+//! worked tiles; on a tie one at or one short of its housing (an improvement
+//! there pays half a Housing besides its yield: 54% of our Lv 7 cities were
+//! capped at t60 with a median 0 housing improvements), then the weakest
+//! producer (Gold is worth most where Production is scarce), then the
+//! cheapest. A city whose slotted cards
 //! already speed a Builder (Ilkum, Public Works) trains its own and is
 //! skipped, as is one attacked within four turns or with a barbarian raider
 //! in its home ring. One purchase a turn. Off, nothing runs.
@@ -110,9 +113,10 @@ impl AdvancedAi {
         let builder = Item::Unit {
             unit: crate::name!("builder"),
         };
-        // Most unimproved worked tiles first, then the weakest producer, then
-        // the cheapest price, then the lowest id.
-        let mut best: Option<(std::cmp::Reverse<usize>, i64, i64, u32)> = None;
+        // Most unimproved worked tiles first, then a city at (or one short
+        // of) its housing, then the weakest producer, then the cheapest
+        // price, then the lowest id.
+        let mut best: Option<(std::cmp::Reverse<usize>, bool, i64, i64, u32)> = None;
         {
             let _memo = g.query_memo();
             for cid in g.player_city_ids(pid) {
@@ -142,8 +146,10 @@ impl AdvancedAi {
                     continue;
                 }
                 let production = g.city_yields(cid).production;
+                let capped = g.city_housing(city) - f64::from(city.pop) < 2.0;
                 let key = (
                     std::cmp::Reverse(own),
+                    !capped,
                     (production * 100.0).round() as i64,
                     (price * 100.0).round() as i64,
                     cid,
@@ -153,7 +159,7 @@ impl AdvancedAi {
                 }
             }
         }
-        let Some((std::cmp::Reverse(own), _, price, cid)) = best else {
+        let Some((std::cmp::Reverse(own), _, _, price, cid)) = best else {
             return false;
         };
         if g.apply(
