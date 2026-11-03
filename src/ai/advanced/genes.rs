@@ -4844,6 +4844,12 @@ pub const GENES: &[Gene] = &[
     // Shrine, Spaceport, Wonder or project. See
     // `advanced/near_done_work_finishes.rs`.
     Gene { tag: "near-done-work-finishes", field: "near_done_work_finishes", kind: Kind::OptIn, enable: AdvancedAi::enable_near_done_work_finishes, disable: AdvancedAi::disable_near_done_work_finishes },
+    // Live, both Māori seats (11-01 King, 11-03 Immortal): the Settler started
+    // embarked on ocean, knew no land, and stood until the defeat "no cities
+    // remain" at turn 6; the mirror's fog priors give a land unit at sea no
+    // route. Under the gene it sails toward the edge of the known sea. See
+    // `advanced/maori_founds_from_the_sea.rs`.
+    Gene { tag: "founding-voyage", field: "founding_voyage", kind: Kind::OptIn, enable: AdvancedAi::enable_founding_voyage, disable: AdvancedAi::disable_founding_voyage },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

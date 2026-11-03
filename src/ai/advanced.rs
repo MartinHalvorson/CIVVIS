@@ -6514,6 +6514,10 @@ pub struct AdvancedAi {
     /// The city-state the harvest declared on, while that war runs.
     city_state_harvest_war: Option<String>,
     // ---- append: e-f ------------------------------------------------
+    /// `founding-voyage`: an embarked Settler of a seat with no city sails to
+    /// the edge of the known sea when no site is reachable. See
+    /// `advanced/maori_founds_from_the_sea.rs`. Off by default.
+    founding_voyage: bool,
     /// Keep the first Science launch on its research path. Opt-in.
     first_launch_keeps_research: bool,
     /// `first-pad-in-the-forge`: the empire's first Spaceport only in a city
@@ -10351,6 +10355,7 @@ mod threatened_reserve;
 /// `advanced/yield_floors.rs`.
 mod yield_floors;
 
+mod maori_founds_from_the_sea;
 mod marginal_usefulness;
 mod production_commitment;
 mod production_compounding;
@@ -11655,6 +11660,7 @@ impl AdvancedAi {
             city_state_harvest_cooldown: 0,
             city_state_harvest_war: None,
             // ---- append: e-f ----------------------------------------
+            founding_voyage: false,
             first_launch_keeps_research: false,
             first_pad_in_the_forge: false,
             fog_yields_to_a_stranded_settler: false,
@@ -41223,6 +41229,11 @@ impl AdvancedAi {
     /// `advanced/settler_never_idles.rs`.
     fn advanced_settler_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let acted = self.advanced_settler_step_inner(g, pid, uid);
+        // `founding-voyage`: a cityless seat's embarked Settler with nowhere to
+        // go sails toward land. See `advanced/maori_founds_from_the_sea.rs`.
+        if !acted && self.founding_voyage_step(g, pid, uid) {
+            return true;
+        }
         if acted || !self.settler_never_idles {
             return acted;
         }
