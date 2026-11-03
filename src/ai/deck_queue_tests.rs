@@ -127,11 +127,21 @@ fn the_signature_names_the_card_the_head_wants() {
 #[test]
 fn a_city_too_small_to_gain_a_production_point_is_ignored() {
     let (mut g, cid) = city_building(settler());
+    // Colonization's +50% is worth half a Production point to a city making
+    // one and a half.
     Arc::make_mut(&mut g.observed_city_yield_adjustments).remove(&cid);
+    let fresh = g.city_yields(cid).production;
+    Arc::make_mut(&mut g.observed_city_yield_adjustments).insert(
+        cid,
+        Yields {
+            production: 1.5 - fresh,
+            ..Default::default()
+        },
+    );
     let production = g.city_yields(cid).production;
     assert!(
         production * 0.5 < super::deck_queue::DECK_QUEUE_MIN_BOOST,
-        "fixture: a fresh city makes {production} Production"
+        "fixture: the city makes {production} Production"
     );
     assert!(queue_card_signature(&mut g, 0).is_empty());
 }
