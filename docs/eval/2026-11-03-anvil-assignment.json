@@ -1,0 +1,355 @@
+{
+  "utc": "2026-11-03T05:43:57.260172+00:00",
+  "decision": "Retain the narrowed default-OFF candidate for review; no native strength or promotion claim.",
+  "gene": "anvil-follows-the-defense",
+  "scope": "Development inputs reused for scope refinement. Captured proposals and read-conformance controls, not held-out confirmation, host execution, saved-city outcomes or victory-rate evidence.",
+  "source_commit": "9b5a17bd8c08b4b608168a059a2ba2f6a77aca7d",
+  "candidate_binary_sha256": "e974af1582c400d4e841502cc9f33aa056288869c22f8d7d2df4226b769ac139",
+  "native_binary_sha256": "4f269c7368c7aea82b589d09fef2b448b98b161d2ee166d055cf2c1bde50702a",
+  "census": {
+    "eligible_logs": 42,
+    "unique_single_force_anvil_observations": 145,
+    "mismatch_observations": 53,
+    "mismatch_games": 22
+  },
+  "original_native_qualified_requests": 422,
+  "candidate_off_full_payload_controls": [
+    82,
+    82
+  ],
+  "candidate_on_first_order_change_controls": [
+    {
+      "variant": "on-0",
+      "requests": 79,
+      "stopped_request": [
+        39,
+        0
+      ],
+      "valid_prefix_comparison": true
+    },
+    {
+      "variant": "on-1",
+      "requests": 79,
+      "stopped_request": [
+        39,
+        0
+      ],
+      "valid_prefix_comparison": true
+    }
+  ],
+  "fresh_board_queries": 20,
+  "fresh_board_cases": [
+    {
+      "run": "civvis-20261103T034543Z",
+      "turn": 39,
+      "changed": true,
+      "removed_orders": [
+        {
+          "kind": "unit",
+          "subject": 196608,
+          "verb": "MOVE_TO",
+          "x": 62,
+          "y": 32
+        },
+        {
+          "kind": "unit",
+          "subject": 196608,
+          "verb": "FORTIFY",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "unit",
+          "subject": 589830,
+          "verb": "MOVE_TO",
+          "x": 66,
+          "y": 32
+        }
+      ],
+      "added_orders": [
+        {
+          "kind": "unit",
+          "subject": 196608,
+          "verb": "MOVE_TO",
+          "x": 61,
+          "y": 33
+        },
+        {
+          "kind": "unit",
+          "subject": 589830,
+          "verb": "MOVE_TO",
+          "x": 67,
+          "y": 32
+        }
+      ]
+    },
+    {
+      "run": "civvis-20261103T034543Z",
+      "turn": 40,
+      "changed": false,
+      "removed_orders": [],
+      "added_orders": []
+    },
+    {
+      "run": "civvis-20261103T040708Z",
+      "turn": 26,
+      "changed": false,
+      "removed_orders": [],
+      "added_orders": []
+    },
+    {
+      "run": "civvis-20261103T025902Z",
+      "turn": 29,
+      "changed": true,
+      "removed_orders": [
+        {
+          "kind": "unit",
+          "subject": 131073,
+          "verb": "MOVE_TO",
+          "x": 67,
+          "y": 33
+        }
+      ],
+      "added_orders": [
+        {
+          "kind": "unit",
+          "subject": 131073,
+          "verb": "MOVE_TO",
+          "x": 67,
+          "y": 32
+        }
+      ]
+    }
+  ],
+  "local_rust": {
+    "command": [
+      "cargo",
+      "test",
+      "--profile",
+      "ci",
+      "--locked"
+    ],
+    "passed": 6705,
+    "failed": 0,
+    "ignored": 56,
+    "focused_routing_tests": 9
+  },
+  "append_tests": 14,
+  "manifest_tests": 21,
+  "retained_development_checks": [
+    "Original-routing scaffold: three compatibility tests passed; five initial routing tests failed.",
+    "Initial append checks had three failures; placement was corrected and all fourteen passed.",
+    "Initial module declaration order failed formatting; corrected source passes.",
+    "First prototype ON changed at6/0 by forming an Anvil without the original warning. Its full Rust suite was intentionally stopped incomplete. Narrowed revision preserves original eligibility.",
+    "The first scope explanation blamed non-Defend fallback; actual trace already had Defend. The corrected explanation and both traces remain retained.",
+    "First independent verifier compared normalized profiles to raw metadata; the documented eight-field reader normalization corrected that comparison without changing input, payload or read gates."
+  ],
+  "binary_artifacts": "Exact native and candidate executables plus original regression-test executable retained outside the worktree; archive binds hashes and includes source, captured inputs, outputs and independent reconstruction.",
+  "no_native_treatment_armed": true,
+  "no_strength_ledger_update": true,
+  "verification": {
+    "scope": "Read-only independent evidence checks; no game execution or strength estimate.",
+    "qualifications": [
+      {
+        "case": "native-qualified-01",
+        "control": 0,
+        "requests": 82
+      },
+      {
+        "case": "native-qualified-01",
+        "control": 1,
+        "requests": 82
+      },
+      {
+        "case": "native-qualified-khmer-01",
+        "control": 0,
+        "requests": 66
+      },
+      {
+        "case": "native-qualified-khmer-01",
+        "control": 1,
+        "requests": 66
+      },
+      {
+        "case": "native-qualified-korea-01",
+        "control": 0,
+        "requests": 63
+      },
+      {
+        "case": "native-qualified-korea-01",
+        "control": 1,
+        "requests": 63
+      }
+    ],
+    "prefixes": [
+      {
+        "revision": "01",
+        "arm": "off-0",
+        "requests": 82,
+        "matching": 82,
+        "first_change": null
+      },
+      {
+        "revision": "01",
+        "arm": "off-1",
+        "requests": 82,
+        "matching": 82,
+        "first_change": null
+      },
+      {
+        "revision": "01",
+        "arm": "on-0",
+        "requests": 8,
+        "matching": 7,
+        "first_change": [
+          6,
+          0
+        ]
+      },
+      {
+        "revision": "01",
+        "arm": "on-1",
+        "requests": 8,
+        "matching": 7,
+        "first_change": [
+          6,
+          0
+        ]
+      },
+      {
+        "revision": "02",
+        "arm": "off-0",
+        "requests": 82,
+        "matching": 82,
+        "first_change": null
+      },
+      {
+        "revision": "02",
+        "arm": "off-1",
+        "requests": 82,
+        "matching": 82,
+        "first_change": null
+      },
+      {
+        "revision": "02",
+        "arm": "on-0",
+        "requests": 79,
+        "matching": 78,
+        "first_change": [
+          39,
+          0
+        ]
+      },
+      {
+        "revision": "02",
+        "arm": "on-1",
+        "requests": 79,
+        "matching": 78,
+        "first_change": [
+          39,
+          0
+        ]
+      }
+    ],
+    "fresh_boards": [
+      {
+        "revision": "01",
+        "run": "civvis-20261103T034543Z",
+        "turn": 39,
+        "changed": true
+      },
+      {
+        "revision": "01",
+        "run": "civvis-20261103T034543Z",
+        "turn": 40,
+        "changed": false
+      },
+      {
+        "revision": "01",
+        "run": "civvis-20261103T040708Z",
+        "turn": 26,
+        "changed": false
+      },
+      {
+        "revision": "01",
+        "run": "civvis-20261103T025902Z",
+        "turn": 29,
+        "changed": true
+      },
+      {
+        "revision": "02",
+        "run": "civvis-20261103T034543Z",
+        "turn": 39,
+        "changed": true
+      },
+      {
+        "revision": "02",
+        "run": "civvis-20261103T034543Z",
+        "turn": 40,
+        "changed": false
+      },
+      {
+        "revision": "02",
+        "run": "civvis-20261103T040708Z",
+        "turn": 26,
+        "changed": false
+      },
+      {
+        "revision": "02",
+        "run": "civvis-20261103T025902Z",
+        "turn": 29,
+        "changed": true
+      }
+    ],
+    "census_members_verified": 84,
+    "census_reproduced": {
+      "eligible_logs": 42,
+      "unique_single_force_anvil_observations": 145,
+      "mismatch_observations": 53,
+      "mismatch_games": 22
+    }
+  },
+  "archive": {
+    "path": "docs/eval/2026-11-03-anvil-assignment.raw.tar.xz",
+    "bytes": 4741352,
+    "sha256": "525c1678935ea8d7a1592f288afe788e0f585734839ebc41721b290212380b0d",
+    "members": 379,
+    "manifest": "SHA256SUMS.json"
+  },
+  "post_archive_checks": {
+    "gene_activation_gate": {
+      "exit": 0,
+      "registered": 747,
+      "shown_to_fire": 717,
+      "waived": 30,
+      "unproven": 0
+    },
+    "genes_check_exit": 0,
+    "eval_manifest_check_exit": 0,
+    "gene_fire_unit_tests": {
+      "command": [
+        "python3",
+        "-m",
+        "unittest",
+        "discover",
+        "-s",
+        "tools",
+        "-p",
+        "test_gene_fires.py"
+      ],
+      "exit": 0,
+      "summary": [
+        "Ran 24 tests in 15.029s",
+        "OK"
+      ],
+      "initial_invocation": "Module-style invocation lacked tools on import path and loaded no tests; failed log retained privately. Correct discovery invocation completed."
+    },
+    "logs_sha256": {
+      "gene-fire-gate.log": "d19173d8c465e5b6ad17dfa7a5722d3cf834cf39066aafeb980fec7b637b86bd",
+      "genes-check.log": "83e21fc96cd8f0f3166ea47657c13a713e4e12fb7a2aafee0525706d354be50c",
+      "manifest-check.log": "6eb2f793cc7103b812e5a57d47499d9f5f9b9cc839cb3ac2e0ef868ab624b272",
+      "gene-fire-tests-corrected.log": "d368a19776c3364310e9ba5d9be2ec81bf5beb18bd4226ae2826cc2889affd5f",
+      "gene-fire-tests-import-failure.log": "4e4ee650df96542affb9c88264ce41ae6dbbb3023c24b0088470ac4c1ad32969"
+    }
+  }
+}

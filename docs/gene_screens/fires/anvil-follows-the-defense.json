@@ -1,0 +1,15 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "anvil-follows-the-defense",
+  "scope": "Development inputs reused for scope refinement. Captured proposals and read-conformance controls, not held-out confirmation, host execution, saved-city outcomes or victory-rate evidence.",
+  "archive": {
+    "path": "docs/eval/2026-11-03-anvil-assignment.raw.tar.xz",
+    "sha256": "525c1678935ea8d7a1592f288afe788e0f585734839ebc41721b290212380b0d"
+  },
+  "members": [
+    "queries-02/civvis-20261103T034543Z-39/result.json",
+    "queries-02/civvis-20261103T034543Z-40/result.json",
+    "queries-02/civvis-20261103T040708Z-26/result.json",
+    "queries-02/civvis-20261103T025902Z-29/result.json"
+  ]
+}
