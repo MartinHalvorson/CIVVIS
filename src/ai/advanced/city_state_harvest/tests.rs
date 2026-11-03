@@ -333,3 +333,28 @@ fn a_released_harvest_war_still_lifts_a_power_gap_recovery() {
         "a major war keeps Recovery"
     );
 }
+
+#[test]
+fn a_shifted_city_id_or_owner_seat_is_re_read_from_the_tile() {
+    let (mut g, city) = fixture();
+    let mut ai = harvest_ai();
+    ai.maintain_city_state_harvest(&mut g, 0);
+    assert!(ai.city_state_harvest_target.is_some(), "named");
+    // Live, the next decision frame's mirror can number the same city and
+    // the same city-state differently.
+    {
+        let target = ai.city_state_harvest_target.as_mut().unwrap();
+        target.city = 424_242;
+        target.player = 1;
+    }
+    ai.maintain_city_state_harvest(&mut g, 0);
+    let target = ai
+        .city_state_harvest_target
+        .clone()
+        .expect("kept: the city on the tile is still the city-state's");
+    assert_eq!((target.player, target.city), (2, city));
+    assert_eq!(
+        g.players[0].counters.get("city_state_harvest:released"),
+        None
+    );
+}

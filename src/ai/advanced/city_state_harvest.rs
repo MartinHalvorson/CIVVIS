@@ -104,6 +104,39 @@ pub(crate) struct HarvestTarget {
     pub(crate) city: u32,
     pub(crate) named_turn: u32,
     pub(crate) declared_turn: Option<u32>,
+    /// The city's tile and its owner's civilization at the naming. Live, the
+    /// mirror's city ids and minor seats are not stable from one decision
+    /// frame to the next (live Immortal 11-03: 115249Z named Kwila, 121631Z
+    /// Madrid, 122920Z Tutub, and each released "the city changed hands" in
+    /// the same turn, 122920Z's release naming Cardiff), so the target is
+    /// re-read from these every frame.
+    pub(crate) pos: Pos,
+    pub(crate) owner_civ: String,
+}
+
+/// The living player of civilization `civ`, the stable key for an owner.
+fn player_by_civ(g: &Game, civ: &str) -> Option<usize> {
+    g.players
+        .iter()
+        .find(|player| player.alive && player.civ == civ)
+        .map(|player| player.id)
+}
+
+impl HarvestTarget {
+    /// Re-read the city id and owner seat from the tile and the owner's
+    /// civilization; returns the tile's current owner.
+    fn resolve(&mut self, g: &Game) -> Option<usize> {
+        let cid = g.city_at(self.pos)?;
+        self.city = cid;
+        let owner = g.cities.get(&cid)?.owner;
+        if g.players
+            .get(owner)
+            .is_some_and(|p| p.civ == self.owner_civ)
+        {
+            self.player = owner;
+        }
+        Some(owner)
+    }
 }
 
 impl AdvancedAi {
@@ -231,12 +264,13 @@ impl AdvancedAi {
         // standing. Forget it only once it is over.
         if self
             .city_state_harvest_war
-            .is_some_and(|cs| !g.players.get(cs).is_some_and(|p| p.alive) || !g.is_at_war(pid, cs))
+            .as_deref()
+            .is_none_or(|civ| player_by_civ(g, civ).is_none_or(|cs| !g.is_at_war(pid, cs)))
         {
             self.city_state_harvest_war = None;
         }
         if let Some(mut target) = self.city_state_harvest_target.take() {
-            let owner = g.cities.get(&target.city).map(|city| city.owner);
+            let owner = target.resolve(g);
             let at_war = g.is_at_war(pid, target.player);
             if at_war && target.declared_turn.is_none() {
                 target.declared_turn = Some(g.turn);
@@ -249,7 +283,7 @@ impl AdvancedAi {
                     if let Some(opening) = self.preferred_war_opening(g, pid, target.player) {
                         if g.apply(pid, &opening).is_ok() && g.is_at_war(pid, target.player) {
                             target.declared_turn = Some(g.turn);
-                            self.city_state_harvest_war = Some(target.player);
+                            self.city_state_harvest_war = Some(target.owner_civ.clone());
                             Self::harvest_count(g, pid, "declared");
                             self.plan = None;
                             if self.journal().wants(crate::reasoning::Level::Strategy) {
@@ -329,6 +363,8 @@ impl AdvancedAi {
             city,
             named_turn: g.turn,
             declared_turn: g.is_at_war(pid, player).then_some(g.turn),
+            pos: g.cities[&city].pos,
+            owner_civ: g.players[player].civ.clone(),
         });
         self.plan = None;
     }

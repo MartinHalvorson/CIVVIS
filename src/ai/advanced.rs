@@ -6512,7 +6512,7 @@ pub struct AdvancedAi {
     /// No new harvest name before this turn.
     city_state_harvest_cooldown: u32,
     /// The city-state the harvest declared on, while that war runs.
-    city_state_harvest_war: Option<usize>,
+    city_state_harvest_war: Option<String>,
     // ---- append: e-f ------------------------------------------------
     /// Keep the first Science launch on its research path. Opt-in.
     first_launch_keeps_research: bool,
