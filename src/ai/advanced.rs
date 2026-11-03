@@ -5459,6 +5459,8 @@ pub struct AdvancedAi {
     /// `activation-keeps-its-building`; see
     /// `BasicAi::activation_keeps_its_building`.
     activation_keeps_its_building: bool,
+    /// Opt-in for an owned native person requiring an existing Artifact.
+    artifact_before_more_museums: bool,
     /// The strategic scorer does not displace a queued siege unit that holds
     /// production while its city is not threatened. Opt-in gene
     /// `breaker-keeps-its-queue`; see `AdvancedAi::breaker_commitment_holds`.
@@ -10019,6 +10021,8 @@ mod diplo_match_point_research;
 /// `diplo-seat-wonder-claim`; see `advanced/diplo_wonder_claim.rs`.
 mod diplo_wonder_claim;
 
+#[cfg(test)]
+mod artifact_activation_tests;
 /// `culture-keeps-every-border-open`: see `advanced/culture_open_borders.rs`.
 mod culture_dig_museum;
 /// `culture-seat-monuments`: see `advanced/culture_monuments.rs`.
@@ -11408,6 +11412,7 @@ impl AdvancedAi {
             builder_before_the_army_3: false,
             activation_resume_waits: false,
             activation_keeps_its_building: false,
+            artifact_before_more_museums: false,
             breaker_keeps_its_queue: false,
             breaker_to_the_fastest: false,
             age_closer_spends_the_reserve: false,
@@ -33553,7 +33558,10 @@ impl AdvancedAi {
             // defense above and upkeep recovery retain their precedence.
             let live_gp_commitment = committed.as_ref().is_some_and(|(_, item)| {
                 Self::production_commitment_is_legal(g, pid, cid, item)
-                    && Self::live_gp_district_commitment(g, pid, item)
+                    && (Self::live_gp_district_commitment(g, pid, item)
+                        || (self.artifact_before_more_museums
+                            && BasicAi::live_artifact_activation_pending(g, pid)
+                            && matches!(item, Item::Unit { unit } if unit == "archaeologist")))
             });
             // The catch-up pass has already chosen one idle queue. Preserve
             // a legal Campus building while Domination trails public research,

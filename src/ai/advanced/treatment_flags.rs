@@ -3204,6 +3204,18 @@ impl AdvancedAi {
         self.base.activation_keeps_its_building = false;
     }
 
+    /// One digger for an owned person's missing Artifact, before more Museums.
+    pub fn enable_artifact_before_more_museums(&mut self) {
+        self.artifact_before_more_museums = true;
+        self.base.artifact_before_more_museums = true;
+    }
+
+    /// Restore the existing activation capacity path.
+    pub fn disable_artifact_before_more_museums(&mut self) {
+        self.artifact_before_more_museums = false;
+        self.base.artifact_before_more_museums = false;
+    }
+
     /// The working reserve, and the first Builder or a missing Monument
     /// bought ahead of the purchase argmax. See `treasury_at_work_2`.
     pub fn enable_treasury_at_work_2(&mut self) {
