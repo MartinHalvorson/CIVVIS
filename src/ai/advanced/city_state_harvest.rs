@@ -125,7 +125,10 @@ impl AdvancedAi {
             .filter(|unit| {
                 unit.owner == pid
                     && g.rules.units[unit.kind].class == "military"
-                    && !matches!(g.rules.units[unit.kind].domain.as_deref(), Some("sea" | "air"))
+                    && !matches!(
+                        g.rules.units[unit.kind].domain.as_deref(),
+                        Some("sea" | "air")
+                    )
                     && g.wdist(unit.pos, target.pos) <= HARVEST_MUSTER_TILES
             })
             .fold((0, 0.0), |(bodies, power), unit| {
@@ -137,7 +140,11 @@ impl AdvancedAi {
     }
 
     /// The softest qualifying city-state city, or `None`.
-    pub(crate) fn city_state_harvest_candidate(&self, g: &Game, pid: usize) -> Option<(usize, u32)> {
+    pub(crate) fn city_state_harvest_candidate(
+        &self,
+        g: &Game,
+        pid: usize,
+    ) -> Option<(usize, u32)> {
         let ours = g.player_city_ids(pid);
         if ours.len() < 2 {
             return None;
@@ -190,7 +197,7 @@ impl AdvancedAi {
                     - distance as f64 * 4.0
                     - city.wall_hp.max(0) as f64 / 20.0
                     - g.military_power(m) / our_power * 30.0;
-                let better = best.as_ref().map_or(true, |(top, top_m, top_c)| {
+                let better = best.as_ref().is_none_or(|(top, top_m, top_c)| {
                     score > *top || (score == *top && (m, cid) < (*top_m, *top_c))
                 });
                 if better {

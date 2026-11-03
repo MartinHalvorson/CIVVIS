@@ -74,6 +74,7 @@ fn military_units(g: &Game, pid: usize) -> usize {
         .count()
 }
 
+#[allow(clippy::too_many_arguments)]
 fn replay(
     base: &Game,
     seed: u64,

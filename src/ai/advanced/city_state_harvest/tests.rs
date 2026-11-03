@@ -46,7 +46,9 @@ fn off_names_nothing() {
     let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
     ai.maintain_city_state_harvest(&mut g, 0);
     assert_eq!(ai.city_state_harvest_target, None);
-    assert!(!g.players[0].counters.contains_key("city_state_harvest:named"));
+    assert!(!g.players[0]
+        .counters
+        .contains_key("city_state_harvest:named"));
 }
 
 #[test]
@@ -57,7 +59,10 @@ fn a_soft_city_state_city_beside_us_is_named() {
     ai.maintain_city_state_harvest(&mut g, 0);
     let target = ai.city_state_harvest_target.clone().expect("named");
     assert_eq!((target.player, target.city), (2, city));
-    assert_eq!(g.players[0].counters.get("city_state_harvest:named"), Some(&1));
+    assert_eq!(
+        g.players[0].counters.get("city_state_harvest:named"),
+        Some(&1)
+    );
 }
 
 #[test]
@@ -79,10 +84,18 @@ fn an_invested_or_foreign_suzerainty_is_kept() {
     let ai = harvest_ai();
     g.players[1].envoys = vec![(2, 3)];
     assert_eq!(g.suzerain_of(2), Some(1));
-    assert_eq!(ai.city_state_harvest_candidate(&g, 0), None, "a major's city-state");
+    assert_eq!(
+        ai.city_state_harvest_candidate(&g, 0),
+        None,
+        "a major's city-state"
+    );
     let (mut g, _) = fixture();
     g.players[0].envoys = vec![(2, 2)];
-    assert_eq!(ai.city_state_harvest_candidate(&g, 0), None, "our own investment");
+    assert_eq!(
+        ai.city_state_harvest_candidate(&g, 0),
+        None,
+        "our own investment"
+    );
 }
 
 #[test]
@@ -114,7 +127,10 @@ fn the_overlay_points_the_war_at_the_city_under_the_lane() {
     };
     let mut before = science.clone();
     ai.apply_city_state_harvest_to_strategy(&mut before);
-    assert_eq!(before, science, "named, not yet at war: the plan is untouched");
+    assert_eq!(
+        before, science,
+        "named, not yet at war: the plan is untouched"
+    );
     ai.maintain_city_state_harvest(&mut g, 0);
     assert!(g.is_at_war(0, 2), "the muster declared");
     let mut plan = StrategicPlan {
@@ -127,7 +143,11 @@ fn the_overlay_points_the_war_at_the_city_under_the_lane() {
         rush: false,
     };
     ai.apply_city_state_harvest_to_strategy(&mut plan);
-    assert_eq!(plan.strategy, GrandStrategy::Science, "the lane keeps its strategy");
+    assert_eq!(
+        plan.strategy,
+        GrandStrategy::Science,
+        "the lane keeps its strategy"
+    );
     assert_eq!(plan.target_player, Some(2));
     assert_eq!(plan.target_city, Some(city));
 
@@ -149,7 +169,10 @@ fn a_major_war_or_spent_patience_releases_the_name() {
     g.at_war.insert((0, 1));
     ai.maintain_city_state_harvest(&mut g, 0);
     assert_eq!(ai.city_state_harvest_target, None, "a major war");
-    assert_eq!(g.players[0].counters.get("city_state_harvest:released"), Some(&1));
+    assert_eq!(
+        g.players[0].counters.get("city_state_harvest:released"),
+        Some(&1)
+    );
 
     let (mut g, _) = fixture();
     let mut ai = harvest_ai();
@@ -173,11 +196,17 @@ fn the_capture_is_counted() {
     ai.maintain_city_state_harvest(&mut g, 0);
     g.at_war.insert((0, 2));
     ai.maintain_city_state_harvest(&mut g, 0);
-    assert_eq!(g.players[0].counters.get("city_state_harvest:declared"), Some(&1));
+    assert_eq!(
+        g.players[0].counters.get("city_state_harvest:declared"),
+        Some(&1)
+    );
     g.cities.get_mut(&city).unwrap().owner = 0;
     ai.maintain_city_state_harvest(&mut g, 0);
     assert_eq!(ai.city_state_harvest_target, None);
-    assert_eq!(g.players[0].counters.get("city_state_harvest:captured"), Some(&1));
+    assert_eq!(
+        g.players[0].counters.get("city_state_harvest:captured"),
+        Some(&1)
+    );
 }
 
 #[test]
@@ -189,7 +218,11 @@ fn a_rebel_free_city_beside_us_is_named() {
     assert_eq!(ai.city_state_harvest_candidate(&g, 0), Some((2, city)));
     ai.maintain_city_state_harvest(&mut g, 0);
     let target = ai.city_state_harvest_target.clone().expect("named");
-    assert_eq!(target.declared_turn, Some(g.turn), "a Free City is always at war");
+    assert_eq!(
+        target.declared_turn,
+        Some(g.turn),
+        "a Free City is always at war"
+    );
 }
 
 #[test]
@@ -199,7 +232,10 @@ fn a_muster_beside_the_city_declares_and_a_thin_one_does_not() {
     ai.maintain_city_state_harvest(&mut g, 0);
     ai.maintain_city_state_harvest(&mut g, 0);
     assert!(g.is_at_war(0, 2));
-    assert_eq!(g.players[0].counters.get("city_state_harvest:declared"), Some(&1));
+    assert_eq!(
+        g.players[0].counters.get("city_state_harvest:declared"),
+        Some(&1)
+    );
 
     let (mut g, _) = fixture();
     let mut ai = harvest_ai();
