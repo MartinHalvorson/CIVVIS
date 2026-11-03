@@ -1,0 +1,29 @@
+{
+  "utc": "2026-11-03T01:17:50.602771+00:00",
+  "decision": "WITHHOLD the proposed version; do not add it to the active registry or deployment defaults.",
+  "candidate_source_head": "252a65cc19a5a5f7e3836639a455ac6bcae3d965",
+  "candidate_binary_sha256": "8f79e71f0d6bffbc9de5cab2341025b05a80370b63421488572cc516386dccd1",
+  "focused_tests": 14,
+  "native_one_shot_queries": 24,
+  "changed_order_cases": 0,
+  "compared_cases": 4,
+  "source_native_game_was_at_major_war_and_in_recovery": true,
+  "latest_configured_culture_families_censused": 12,
+  "families_with_any_museum": 2,
+  "museum_first_frame_turns": 39,
+  "peace_museum_first_frame_turns": 0,
+  "reason": "The candidate intentionally excludes major war and Recovery. Its source loss was in both regimes. The missing delegated-governor branch is a code observation, not the demonstrated cause of this native loss: Recovery dispatches strategic production. No candidate action change was demonstrated, and the current twelve-family census has zero peaceful Museum exposure.",
+  "next_question": "Study the native war/recovery production choices and local threat before designing another intervention. Do not relax the guards solely to manufacture activation.",
+  "limits": [
+    "Not a persistent replay, native execution, completed dig or Leakey activation test.",
+    "No win-rate effect estimate, promotion, pilot-setting change or use of reserved research confirmation seeds.",
+    "Initial diagnostic query.py mistakenly filters host production orders by kind=city in an unused display field; its full ordered orders arrays and native_actions are retained and authoritative. compare.py compares full ordered host orders."
+  ],
+  "archive": {
+    "path": "docs/eval/2026-11-03-culture-digs-one-museum-2.raw.tar.xz",
+    "bytes": 3400860,
+    "sha256": "35502739ae57bfbabd89ba54d8df0135fc483f18009eb36bc250c2f49a14f9ff",
+    "members": 97,
+    "manifest": "SHA256SUMS.json"
+  }
+}

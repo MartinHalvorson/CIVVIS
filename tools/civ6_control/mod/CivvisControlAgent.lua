@@ -6421,6 +6421,8 @@ CivvisMenus.buildable = function(city)
 				t = row.BuildingType,
 				c = try(function() return queue:GetBuildingCost(row.Index); end, -1),
 				p = try(function() return queue:GetTurnsLeft(row.Hash); end, -1),
+				-- Saved work on a paused building (`saved-work-is-seen`).
+				pr = try(function() return queue:GetBuildingProgress(row.Index); end, nil),
 			};
 		end
 	end
@@ -6444,6 +6446,7 @@ CivvisMenus.buildable = function(city)
 						c = try(function() return queue:GetUnitCost(row.Index); end, -1),
 						p = try(function() return queue:GetTurnsLeft(row.Hash); end, -1),
 						r = CivvisMenus.resource_cost(queue, row.Index, standard),
+						pr = try(function() return queue:GetUnitProgress(row.Index); end, nil),
 					};
 					-- `ProductionPanel.lua:2150-2172`: the results table says whether
 					-- a Corps or Army may be trained here; each tier is asked again.
@@ -6483,6 +6486,7 @@ CivvisMenus.buildable = function(city)
 				t = row.ProjectType,
 				c = try(function() return queue:GetProjectCost(row.Index); end, -1),
 				p = try(function() return queue:GetTurnsLeft(row.ProjectType); end, -1),
+				pr = try(function() return queue:GetProjectProgress(row.Index); end, nil),
 			};
 		end
 	end
@@ -12072,6 +12076,20 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 		elseif accepted and not equalityChecked then
 			CivvisTrade.close(pid, other, "deal_equality_unreadable");
 			return;
+		elseif not accepted then
+			-- A peace refusal uses the same MAKE_DEAL conversation as an
+			-- alliance refusal. Retain ownership until its counter is answered
+			-- or the bounded closer ends the wait; closing under the following
+			-- statement bypasses the shared counter handler above. This does
+			-- not enable peace sessions in the operator's trade-only mode.
+			local counterHold = tonumber(cfg.PeaceCounterHoldSeconds) or 4;
+			if counterHold > 0 then
+				session.counter_wait = { turn = turn };
+				pcall(function() LuaEvents.CivvisDealSession(other, true, counterHold); end);
+				emit("deal_session", { turn = turn, target = other, kind = session.kind,
+					phase = "counter_wait", session = session.sessionID or -1, hold = counterHold });
+				return;
+			end
 		end
 	elseif session.kind == "alliance" then
 		-- See `CivvisAllianceStep`. The rival's ACCEPTED is its verdict, and
@@ -12117,7 +12135,7 @@ CivvisOnDealSessionClosed = function(sessionID)
 				-- must not produce a synthetic accepted peace result.
 				CivvisTrade.close(pid, subject, "session_closed", true);
 			elseif session.counter_wait ~= nil then
-				-- A refused alliance whose counter never came: the rival did
+				-- A refused offer whose counter never came: the rival did
 				-- answer, so this is no unanswered ask and holds no turn.
 				CivvisTrade.close(pid, subject, "counter_not_sent", true);
 			else
