@@ -31,6 +31,11 @@ use super::*;
 /// A displaced head that finishes within this many turns goes back.
 pub(crate) const NEAR_DONE_MAX_TURNS: f64 = 2.0;
 
+/// Version 2 takes up an idle queue only from this standard turn (live turn
+/// 60 at Online speed): its first read, with no such wait, cost 0.125 cities
+/// at t40 (z −1.8) inside the expansion window.
+pub(crate) const NEAR_DONE_IDLE_FROM_STANDARD: u32 = 90;
+
 /// A city attacked within this many turns keeps its new head.
 const NEAR_DONE_ATTACK_MEMORY: u32 = 4;
 
@@ -49,9 +54,10 @@ impl AdvancedAi {
         plan.strategy != GrandStrategy::Recovery && plan.threatened_city != Some(cid) && !attacked
     }
 
-    /// Version 2: an empty queue takes up the paused build that finishes
-    /// soonest within [`NEAR_DONE_MAX_TURNS`], unless the city is closed
-    /// (above) or due to train the next Settler. Returns whether it did.
+    /// Version 2: from [`NEAR_DONE_IDLE_FROM_STANDARD`], an empty queue takes
+    /// up the paused build that finishes soonest within
+    /// [`NEAR_DONE_MAX_TURNS`], unless the city is closed (above) or due to
+    /// train the next Settler. Returns whether it did.
     fn near_done_takes_the_idle_queue(
         &self,
         g: &mut Game,
@@ -61,7 +67,8 @@ impl AdvancedAi {
         counts: &EmpireCounts,
     ) -> bool {
         let n_cities = g.player_city_ids(pid).len();
-        if !g.cities[&cid].queue.is_empty()
+        if g.turn < g.standard_duration(NEAR_DONE_IDLE_FROM_STANDARD)
+            || !g.cities[&cid].queue.is_empty()
             || !self.near_done_city_open(g, cid, plan)
             || self
                 .base

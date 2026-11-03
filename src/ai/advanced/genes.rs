@@ -4851,7 +4851,10 @@ pub const GENES: &[Gene] = &[
     // Version 2 also lets an empty queue take up a paused build within two
     // turns of done before any writer runs (never in a threatened, attacked
     // or recovering city, nor one due to train the next Settler), so version
-    // 1's restore protects it. See `advanced/near_done_work_finishes.rs`.
+    // 1's restore protects it, from standard turn 90 (live t60): taking up
+    // idle queues from turn 1 cost 0.125 cities at t40 (z −1.8) and 0.71
+    // final cities in its first paired read. See
+    // `advanced/near_done_work_finishes.rs`.
     Gene { tag: "near-done-work-finishes-2", field: "near_done_work_finishes_2", kind: Kind::OptIn, enable: AdvancedAi::enable_near_done_work_finishes_2, disable: AdvancedAi::disable_near_done_work_finishes_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------

@@ -117,8 +117,9 @@ fn an_urgent_displacer_keeps_the_queue() {
 /// Version 2: an idle queue with a paused build one Production short takes
 /// it up before any writer runs, and it is then the noted head; version 1
 /// leaves the queue empty.
-fn idle_with_paused(version: u8) -> (Game, u32, Item, BTreeMap<u32, Item>) {
+fn idle_with_paused(version: u8, late: bool) -> (Game, u32, Item, BTreeMap<u32, Item>) {
     let (mut g, city) = strategic_wonder_fixture(6_402, "great_library");
+    let turn = if late { after_the_window(&g) } else { 1 };
     let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
     ai.base.book_pos = 4;
     if version == 2 {
@@ -136,19 +137,31 @@ fn idle_with_paused(version: u8) -> (Game, u32, Item, BTreeMap<u32, Item>) {
         c.production_progress
             .insert("unit:warrior".to_string(), cost - 1.0);
     }
+    g.turn = turn;
     let plan = wonder_plan(GrandStrategy::Science, g.turn);
     let heads = ai.near_done_heads(&mut g, 0, &plan);
     (g, city, warrior, heads)
 }
 
+fn after_the_window(g: &Game) -> u32 {
+    g.standard_duration(NEAR_DONE_IDLE_FROM_STANDARD)
+}
+
 #[test]
 fn version_two_takes_up_near_done_saved_work_in_an_idle_queue() {
-    let (g, city, warrior, heads) = idle_with_paused(2);
+    let (g, city, warrior, heads) = idle_with_paused(2, true);
     assert_eq!(g.cities[&city].queue.first(), Some(&warrior));
     assert_eq!(heads.get(&city), Some(&warrior));
-    let (g1, city1, _, heads1) = idle_with_paused(1);
+    let (g1, city1, _, heads1) = idle_with_paused(1, true);
     assert!(g1.cities[&city1].queue.is_empty());
     assert!(!heads1.contains_key(&city1));
+}
+
+#[test]
+fn version_two_waits_out_the_expansion_window() {
+    let (g, city, _, heads) = idle_with_paused(2, false);
+    assert!(g.cities[&city].queue.is_empty());
+    assert!(!heads.contains_key(&city));
 }
 
 #[test]
