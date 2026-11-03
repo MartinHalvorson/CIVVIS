@@ -129,7 +129,7 @@ fn the_overlay_points_the_war_at_the_city_under_the_lane() {
         rush: false,
     };
     let mut before = science.clone();
-    ai.apply_city_state_harvest_to_strategy(&g, &mut before);
+    ai.apply_city_state_harvest_to_strategy(&g, 0, &mut before);
     assert_eq!(
         before, science,
         "named, not yet at war: the plan is untouched"
@@ -145,7 +145,7 @@ fn the_overlay_points_the_war_at_the_city_under_the_lane() {
         assessed_turn: g.turn,
         rush: false,
     };
-    ai.apply_city_state_harvest_to_strategy(&g, &mut plan);
+    ai.apply_city_state_harvest_to_strategy(&g, 0, &mut plan);
     assert_eq!(
         plan.strategy,
         GrandStrategy::Science,
@@ -160,7 +160,7 @@ fn the_overlay_points_the_war_at_the_city_under_the_lane() {
         ..plan.clone()
     };
     threatened.target_player = None;
-    ai.apply_city_state_harvest_to_strategy(&g, &mut threatened);
+    ai.apply_city_state_harvest_to_strategy(&g, 0, &mut threatened);
     assert_eq!(
         threatened.strategy,
         GrandStrategy::Recovery,
@@ -173,7 +173,7 @@ fn the_overlay_points_the_war_at_the_city_under_the_lane() {
         threatened_city: None,
         ..plan.clone()
     };
-    ai.apply_city_state_harvest_to_strategy(&g, &mut gap_only);
+    ai.apply_city_state_harvest_to_strategy(&g, 0, &mut gap_only);
     assert_eq!(
         gap_only.strategy,
         GrandStrategy::Culture,
@@ -297,5 +297,39 @@ fn a_city_state_waits_for_the_expansion_window_and_skips_a_science_seat() {
         science.city_state_harvest_candidate(&g, 0),
         Some((2, city)),
         "our rebel Free City is retaken early and on any lane"
+    );
+}
+
+#[test]
+fn a_released_harvest_war_still_lifts_a_power_gap_recovery() {
+    let (mut g, _) = fixture();
+    let mut ai = harvest_ai();
+    ai.maintain_city_state_harvest(&mut g, 0);
+    ai.maintain_city_state_harvest(&mut g, 0);
+    assert!(g.is_at_war(0, 2), "declared");
+    ai.city_state_harvest_target = None;
+    let mut plan = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    ai.apply_city_state_harvest_to_strategy(&g, 0, &mut plan);
+    assert_eq!(plan.strategy, GrandStrategy::Culture);
+    assert_eq!(plan.target_player, None, "no name, no target");
+
+    g.at_war.insert((0, 1));
+    let mut major = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        ..plan.clone()
+    };
+    ai.apply_city_state_harvest_to_strategy(&g, 0, &mut major);
+    assert_eq!(
+        major.strategy,
+        GrandStrategy::Recovery,
+        "a major war keeps Recovery"
     );
 }

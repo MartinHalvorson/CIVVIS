@@ -226,6 +226,15 @@ impl AdvancedAi {
         if !self.city_state_harvest {
             return;
         }
+        // The harvest's war outlives its name: the shipped peace desk offers a
+        // minor no peace, so a siege that ran out of patience leaves the war
+        // standing. Forget it only once it is over.
+        if self
+            .city_state_harvest_war
+            .is_some_and(|cs| !g.players.get(cs).is_some_and(|p| p.alive) || !g.is_at_war(pid, cs))
+        {
+            self.city_state_harvest_war = None;
+        }
         if let Some(mut target) = self.city_state_harvest_target.take() {
             let owner = g.cities.get(&target.city).map(|city| city.owner);
             let at_war = g.is_at_war(pid, target.player);
@@ -240,6 +249,7 @@ impl AdvancedAi {
                     if let Some(opening) = self.preferred_war_opening(g, pid, target.player) {
                         if g.apply(pid, &opening).is_ok() && g.is_at_war(pid, target.player) {
                             target.declared_turn = Some(g.turn);
+                            self.city_state_harvest_war = Some(target.player);
                             Self::harvest_count(g, pid, "declared");
                             self.plan = None;
                             if self.journal().wants(crate::reasoning::Level::Strategy) {
@@ -336,27 +346,41 @@ impl AdvancedAi {
     /// losing ground at home"). That posture, not the city, is what the
     /// paired reads priced. The harvest war is the only war while it runs (a
     /// major war releases it), so the gap is not ours to close.
-    pub(crate) fn apply_city_state_harvest_to_strategy(&self, g: &Game, plan: &mut StrategicPlan) {
+    pub(crate) fn apply_city_state_harvest_to_strategy(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &mut StrategicPlan,
+    ) {
         if !self.city_state_harvest || self.war_plan.is_some() {
             return;
         }
-        let Some(target) = &self.city_state_harvest_target else {
-            return;
-        };
-        if target.declared_turn.is_none() {
+        let named = self
+            .city_state_harvest_target
+            .as_ref()
+            .filter(|target| target.declared_turn.is_some());
+        if named.is_none() && self.city_state_harvest_war.is_none() {
             return;
         }
         if plan.strategy == GrandStrategy::Recovery {
-            if plan.threatened_city.is_some() {
+            if plan.threatened_city.is_some() || Self::harvest_major_war(g, pid) {
                 return;
             }
             let Some(lane) = self.active_victory_target(g) else {
                 return;
             };
             plan.strategy = lane.strategy();
+            if self.journal().wants(crate::reasoning::Level::Strategy) {
+                think!(self.journal(), Strategy, Strategy,
+                       "City-state harvest keeps the {} lane", plan.strategy.as_str();
+                       "the Recovery read a power gap to a major we are not fighting; \
+                        no city of ours is threatened");
+            }
         }
-        plan.target_player = Some(target.player);
-        plan.target_city = Some(target.city);
+        if let Some(target) = named {
+            plan.target_player = Some(target.player);
+            plan.target_city = Some(target.city);
+        }
     }
 }
 
