@@ -9293,6 +9293,17 @@ impl AdvancedAi {
         self.science_specializes_earlier = false;
     }
 
+    /// Opt-in gene `near-done-work-finishes`; see
+    /// `advanced/near_done_work_finishes.rs`.
+    pub fn enable_near_done_work_finishes(&mut self) {
+        self.near_done_work_finishes = true;
+    }
+
+    /// The twin of `enable_near_done_work_finishes`.
+    pub fn disable_near_done_work_finishes(&mut self) {
+        self.near_done_work_finishes = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

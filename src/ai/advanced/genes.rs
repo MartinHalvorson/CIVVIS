@@ -4832,6 +4832,18 @@ pub const GENES: &[Gene] = &[
     // assigned Science lane specializes at a third of the clock, as Culture
     // already does. See `advanced/science_specializes_earlier.rs`.
     Gene { tag: "science-specializes-earlier", field: "science_specializes_earlier", kind: Kind::OptIn, enable: AdvancedAi::enable_science_specializes_earlier, disable: AdvancedAi::disable_science_specializes_earlier },
+    // `near-done-work-finishes`: live (39 Immortal games with
+    // `saved-work-is-seen`, 2026-11-03), 1,204 items were paused with saved
+    // work; 47% of that work sat in items within two turns of finishing when
+    // they were paused (177 within one turn), because the claims and
+    // governors displace the head every turn and the resume path only sees
+    // an empty queue. Under the gene a head displaced this turn that
+    // finishes within two turns goes back to the head after every ordinary
+    // writer, unless the city is threatened, attacked or recovering, or the
+    // displacing item is a soldier, Settler, defence building, Holy Site,
+    // Shrine, Spaceport, Wonder or project. See
+    // `advanced/near_done_work_finishes.rs`.
+    Gene { tag: "near-done-work-finishes", field: "near_done_work_finishes", kind: Kind::OptIn, enable: AdvancedAi::enable_near_done_work_finishes, disable: AdvancedAi::disable_near_done_work_finishes },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

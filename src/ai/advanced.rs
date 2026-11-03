@@ -8062,6 +8062,11 @@ pub struct AdvancedAi {
     /// every ordinary writer and claim, and the Spy trainer skips that city.
     /// See `advanced/launch_pad_holds_its_queue.rs`. Off by default.
     launch_pad_holds_its_queue: bool,
+    /// `near-done-work-finishes`: a head a production writer displaced this
+    /// turn goes back to the head when it finishes within two turns, unless
+    /// the displacing item is urgent. See
+    /// `advanced/near_done_work_finishes.rs`. Off by default.
+    near_done_work_finishes: bool,
     // ---- append: p-r ------------------------------------------------
     /// `pillaged-districts-repair-first`: a pillaged district's repair claims its
     /// city after every other claim. See `advanced/pillaged_repairs_first.rs`.
@@ -10252,10 +10257,10 @@ mod war_policy;
 /// bill, and pillage with the movement the march does not use. Two opt-in
 /// genes; see `advanced/city_campaign.rs`.
 mod city_campaign;
-/// `city-state-war-is-no-front`: see `advanced/city_state_war_is_no_front.rs`.
-mod city_state_war_is_no_front;
 /// `city-state-harvest`: see `advanced/city_state_harvest.rs`.
 mod city_state_harvest;
+/// `city-state-war-is-no-front`: see `advanced/city_state_war_is_no_front.rs`.
+mod city_state_war_is_no_front;
 
 /// Shared fog-safe battlefront observations and city-pressure calculations.
 mod battlefront;
@@ -10303,6 +10308,8 @@ mod higher_level_strategy;
 mod land_grab_outlasts;
 /// `naval-crossing-keeps-going`: see `advanced/naval_crossing.rs`.
 mod naval_crossing;
+/// `near-done-work-finishes`: see `advanced/near_done_work_finishes.rs`.
+mod near_done_work_finishes;
 /// `near-rival-deterrence`: a land unit a turn while a neighbour at peace
 /// out-guns us in the opening. One opt-in gene; see
 /// `advanced/near_rival_deterrence.rs`.
@@ -11868,6 +11875,7 @@ impl AdvancedAi {
             launch_pad_keeps_its_rung: false,
             launcher_war_fights_the_faster_racer: false,
             launch_pad_holds_its_queue: false,
+            near_done_work_finishes: false,
             // ---- append: p-r ----------------------------------------
             pillaged_districts_repair_first: false,
             religion_lane_hands_over: false,
@@ -50634,6 +50642,9 @@ impl AdvancedAi {
         // projects join the saved-work bank before any production writer
         // prices an item. Exact no-op while the gene is off.
         self.see_host_saved_work(g, pid);
+        // `near-done-work-finishes`: every city's head before any production
+        // writer runs. Empty while the gene is off.
+        let near_done_heads = self.near_done_heads(g, pid);
 
         // `border-parity-2`: the severe-deficit preemption, beside the siege
         // reclaim it mirrors.
@@ -51004,6 +51015,11 @@ impl AdvancedAi {
         // `paused-district-finishes`: after every ordinary writer, before the
         // declaration response and the defence handoffs below.
         self.claim_paused_district_finishes(g, pid);
+        // `near-done-work-finishes`: a head displaced this turn that finishes
+        // within two turns goes back to the head, after every ordinary writer
+        // and before the pad holds and the defence handoffs below. Exact
+        // no-op while the gene is off. See `advanced/near_done_work_finishes.rs`.
+        self.claim_near_done_work_finishes(g, pid, &plan, &near_done_heads);
         // `launch-pad-holds-its-queue`: the first pad back at the head of its
         // city, before the defence and loyalty handoffs below.
         self.claim_launch_pad_holds_its_queue(g, pid, &plan);
