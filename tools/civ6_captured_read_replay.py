@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Qualify original-binary planning against ordered, captured native reads.
 
-POSIX only. Each filesystem open receives its own FIFO and recorded text.
+POSIX only. FIFO delivery is the default; hybrid uses a regular file only when
+all recorded reads within a request are identical. Actual read traces still gate qualification.
 This never publishes orders, runs a treatment, or estimates native strength.
 """
 from __future__ import annotations
@@ -123,6 +124,47 @@ class FifoReads:
         self.thread.join(timeout=1)
 
 
+
+class IdenticalReads:
+    """Publish one regular snapshot; never infer how many opens consumed it.
+
+    Only identical recorded byte strings may use this delivery. After the
+    reply, run_control still checks the complete actual captured read trace,
+    including its count, as well as frame identity and the full payload.
+    """
+
+    mode = "regular"
+
+    def __init__(self, path, reads):
+        if not reads or not reads[0] or any(data != reads[0] for data in reads):
+            raise ValueError("regular delivery requires identical nonempty recorded reads")
+        self.path = Path(path)
+        self.reads = reads
+        self.error = None
+        self.served = None  # A regular file cannot acknowledge consumption.
+        self.phase = "regular_snapshot_ready"
+        self.read_number = None
+        self.bytes_sent = self.path.write_bytes(reads[0])
+        self.done = threading.Event()
+        self.done.set()
+
+    def finish(self):
+        # Delivery is ready, not proven consumed. Actual captured reads below
+        # are the authority; extra/fewer opens must still fail qualification.
+        pass
+
+    def close(self):
+        pass
+
+
+def deliver_reads(path, reads, timeout, mode):
+    if mode not in {"fifo", "hybrid"}:
+        raise ValueError("delivery mode must be fifo or hybrid")
+    if mode == "hybrid" and reads and all(data == reads[0] for data in reads):
+        return IdenticalReads(path, reads)
+    return FifoReads(path, reads, timeout)
+
+
 def expanded_reads(capture):
     validate_input_capture(capture)
     if not capture["complete"] or not capture["reads"]:
@@ -242,7 +284,7 @@ def request_reply(process, timeout):
                 return json.loads(line)
 
 
-def run_control(context, records, mapping, directory, timeout):
+def run_control(context, records, mapping, directory, timeout, delivery="fifo"):
     directory.mkdir()
     command, cwd = replay_command(context, directory)
     process, feeder, key = None, None, None
@@ -258,7 +300,8 @@ def run_control(context, records, mapping, directory, timeout):
                 path = directory / "events.jsonl"
                 if path.exists():
                     path.unlink()
-                feeder = FifoReads(path, expected, timeout)
+                feeder = deliver_reads(path, expected, timeout, delivery)
+                delivery_kind = getattr(feeder, "mode", "fifo")
                 process.stdin.write(f"{key[0]}\n")
                 process.stdin.flush()
                 reply = request_reply(process, timeout)
@@ -267,7 +310,7 @@ def run_control(context, records, mapping, directory, timeout):
                 feeder.finish()
                 feeder = None
                 actual = expanded_reads(reply["input_capture"])
-                result = {"request": key, "identity_errors": request_identity_errors(reply, *key),
+                result = {"request": key, "input_delivery": delivery_kind, "identity_errors": request_identity_errors(reply, *key),
                           "native_payload_matches": exact_fact(control_payload(record), control_payload(reply)),
                           "read_sequence_matches": expected == actual, "recorded_reads": len(expected),
                           "replayed_reads": len(actual), "expected_read_sha256": [sha(x) for x in expected],
@@ -282,7 +325,7 @@ def run_control(context, records, mapping, directory, timeout):
         except Exception as error:
             return {"passed": False, "command": command, "cwd": cwd, "requests": results,
                     "failed_request": key,
-                    "input_delivery": ({"served": feeder.served, "expected": len(feeder.reads),
+                    "input_delivery": ({"mode": getattr(feeder, "mode", "fifo"), "served": feeder.served, "expected": len(feeder.reads),
                                         "done": feeder.done.is_set(), "error": feeder.error,
                                         "phase": feeder.phase, "read_number": feeder.read_number,
                                         "bytes_sent": feeder.bytes_sent}
@@ -298,6 +341,13 @@ def run_control(context, records, mapping, directory, timeout):
                 except subprocess.TimeoutExpired:
                     process.kill()
                     process.wait()
+            if process is not None:
+                for stream in (process.stdin, process.stdout):
+                    if stream is not None and not stream.closed:
+                        try:
+                            stream.close()
+                        except OSError:
+                            pass
 
 
 def main():
@@ -307,13 +357,15 @@ def main():
     parser.add_argument("--through-turn", type=int, required=True)
     parser.add_argument("--out", type=Path, required=True)
     parser.add_argument("--request-timeout", type=float, default=30)
+    parser.add_argument("--delivery", choices=("fifo", "hybrid"), default="fifo",
+                        help="hybrid uses a regular file only for identical reads; all qualification gates remain required")
     args = parser.parse_args()
     if args.through_turn < 1 or args.request_timeout <= 0:
         parser.error("turn and timeout must be positive")
     args.out = args.out.resolve()
     args.out.mkdir(parents=True, exist_ok=False)
     report = {"scope": "original-binary ordered-input reproduction only; no treatment or native strength estimate",
-              "passed": False, "through_turn": args.through_turn, "controls": []}
+              "passed": False, "through_turn": args.through_turn, "delivery": args.delivery, "controls": []}
     try:
         context = json.loads(args.context.read_text())
         replay_command(context, args.out / "preflight")
@@ -324,7 +376,7 @@ def main():
         report["native_decisions_sha256"] = sha(native.encode())
         mapping, report["sealed_captures"] = seal_captures(records, args.out)
         for number in range(2):
-            result = run_control(context, records, mapping, args.out / f"control-{number}", args.request_timeout)
+            result = run_control(context, records, mapping, args.out / f"control-{number}", args.request_timeout, args.delivery)
             report["controls"].append(result)
             if not result["passed"]:
                 break
