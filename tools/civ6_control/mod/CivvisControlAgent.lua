@@ -6421,6 +6421,8 @@ CivvisMenus.buildable = function(city)
 				t = row.BuildingType,
 				c = try(function() return queue:GetBuildingCost(row.Index); end, -1),
 				p = try(function() return queue:GetTurnsLeft(row.Hash); end, -1),
+				-- Saved work on a paused building (`saved-work-is-seen`).
+				pr = try(function() return queue:GetBuildingProgress(row.Index); end, nil),
 			};
 		end
 	end
@@ -6444,6 +6446,7 @@ CivvisMenus.buildable = function(city)
 						c = try(function() return queue:GetUnitCost(row.Index); end, -1),
 						p = try(function() return queue:GetTurnsLeft(row.Hash); end, -1),
 						r = CivvisMenus.resource_cost(queue, row.Index, standard),
+						pr = try(function() return queue:GetUnitProgress(row.Index); end, nil),
 					};
 					-- `ProductionPanel.lua:2150-2172`: the results table says whether
 					-- a Corps or Army may be trained here; each tier is asked again.
@@ -6483,6 +6486,7 @@ CivvisMenus.buildable = function(city)
 				t = row.ProjectType,
 				c = try(function() return queue:GetProjectCost(row.Index); end, -1),
 				p = try(function() return queue:GetTurnsLeft(row.ProjectType); end, -1),
+				pr = try(function() return queue:GetProjectProgress(row.Index); end, nil),
 			};
 		end
 	end
