@@ -26,7 +26,9 @@
 //! with a major is running and the empire is past [`HARVEST_FROM_TURN`] with
 //! two cities, it names the best city-state city that is:
 //!
-//! - owned by a city-state we have MET, its centre EXPLORED (fog-honest: the
+//! - owned by a city-state we have MET, or by the Free Cities (a city that
+//!   rebelled on loyalty: across 72 recorded runs of 11-02, 24 of our cities
+//!   flipped and 8 were taken back), its centre EXPLORED (fog-honest: the
 //!   `players[pid].explored` idiom `early_conquest.rs` uses);
 //! - within [`HARVEST_REACH_TILES`] of one of our cities;
 //! - at population [`HARVEST_MIN_POP`] or more;
@@ -106,7 +108,15 @@ impl AdvancedAi {
             return None;
         }
         let mut best: Option<(f64, usize, u32)> = None;
-        for minor in g.players.iter().filter(|p| p.is_minor && !p.is_barbarian && p.alive) {
+        // A Free Cities seat carries `is_barbarian` and is always at war; a
+        // city of ours that rebelled into it is the cheapest city on the
+        // board (live Immortal 221554Z: Okayama, population 7, flipped at
+        // turn 90 with no defender and was never retaken).
+        for minor in g
+            .players
+            .iter()
+            .filter(|p| p.alive && ((p.is_minor && !p.is_barbarian) || p.is_free_city))
+        {
             let m = minor.id;
             if !g.has_met(pid, m) {
                 continue;

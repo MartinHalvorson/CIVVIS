@@ -160,3 +160,15 @@ fn the_capture_is_counted() {
     assert_eq!(ai.city_state_harvest_target, None);
     assert_eq!(g.players[0].counters.get("city_state_harvest:captured"), Some(&1));
 }
+
+#[test]
+fn a_rebel_free_city_beside_us_is_named() {
+    let (mut g, city) = fixture();
+    g.players[2].is_barbarian = true;
+    g.players[2].is_free_city = true;
+    let mut ai = harvest_ai();
+    assert_eq!(ai.city_state_harvest_candidate(&g, 0), Some((2, city)));
+    ai.maintain_city_state_harvest(&mut g, 0);
+    let target = ai.city_state_harvest_target.clone().expect("named");
+    assert_eq!(target.declared_turn, Some(g.turn), "a Free City is always at war");
+}
