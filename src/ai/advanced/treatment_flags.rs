@@ -9246,6 +9246,17 @@ impl AdvancedAi {
         self.saved_work_is_seen = false;
     }
 
+    /// Opt-in gene `gold-buys-the-backlog-builder`; see
+    /// `advanced/gold_buys_the_backlog_builder.rs`.
+    pub fn enable_gold_buys_the_backlog_builder(&mut self) {
+        self.gold_buys_the_backlog_builder = true;
+    }
+
+    /// The twin of `enable_gold_buys_the_backlog_builder`.
+    pub fn disable_gold_buys_the_backlog_builder(&mut self) {
+        self.gold_buys_the_backlog_builder = false;
+    }
+
     /// Opt-in gene `deck-follows-the-queue`; the behaviour lives on
     /// `BasicAi::deck_follows_the_queue`, see `ai/deck_queue.rs`.
     pub fn enable_deck_follows_the_queue(&mut self) {
