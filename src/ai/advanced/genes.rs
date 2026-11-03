@@ -4817,6 +4817,14 @@ pub const GENES: &[Gene] = &[
     // Grande Armee most). Under the gene the review also runs on the turn
     // the set of queue cards worth slotting changes. See `ai/deck_queue.rs`.
     Gene { tag: "deck-follows-the-queue", field: "deck_follows_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_deck_follows_the_queue, disable: AdvancedAi::disable_deck_follows_the_queue },
+    // `city-state-harvest`: live Immortal 11-02 (17 games) captured no city;
+    // the gap to the median rival at t100 was population (56 against 36),
+    // while the median seat at t80 had two city-state cities within eight
+    // tiles at population 5-12 and a fifth of our military. The softest one
+    // with no suzerain but us and at most one of our envoys becomes the
+    // plan's Conquest target for a bounded window. See
+    // `advanced/city_state_harvest.rs`.
+    Gene { tag: "city-state-harvest", field: "city_state_harvest", kind: Kind::OptIn, enable: AdvancedAi::enable_city_state_harvest, disable: AdvancedAi::disable_city_state_harvest },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

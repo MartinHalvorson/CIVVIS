@@ -9270,6 +9270,18 @@ impl AdvancedAi {
         self.base.disable_deck_follows_the_queue();
     }
 
+    /// Aim a bounded Conquest window at a soft city-state city beside the
+    /// empire. See [`Self::city_state_harvest`].
+    pub fn enable_city_state_harvest(&mut self) {
+        self.city_state_harvest = true;
+    }
+
+    /// The twin of `enable_city_state_harvest`.
+    pub fn disable_city_state_harvest(&mut self) {
+        self.city_state_harvest = false;
+        self.city_state_harvest_target = None;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
