@@ -129,7 +129,7 @@ fn the_overlay_points_the_war_at_the_city_under_the_lane() {
         rush: false,
     };
     let mut before = science.clone();
-    ai.apply_city_state_harvest_to_strategy(&mut before);
+    ai.apply_city_state_harvest_to_strategy(&g, &mut before);
     assert_eq!(
         before, science,
         "named, not yet at war: the plan is untouched"
@@ -145,7 +145,7 @@ fn the_overlay_points_the_war_at_the_city_under_the_lane() {
         assessed_turn: g.turn,
         rush: false,
     };
-    ai.apply_city_state_harvest_to_strategy(&mut plan);
+    ai.apply_city_state_harvest_to_strategy(&g, &mut plan);
     assert_eq!(
         plan.strategy,
         GrandStrategy::Science,
@@ -154,13 +154,31 @@ fn the_overlay_points_the_war_at_the_city_under_the_lane() {
     assert_eq!(plan.target_player, Some(2));
     assert_eq!(plan.target_city, Some(city));
 
-    let mut recovery = StrategicPlan {
+    let mut threatened = StrategicPlan {
         strategy: GrandStrategy::Recovery,
+        threatened_city: Some(city),
         ..plan.clone()
     };
-    recovery.target_player = None;
-    ai.apply_city_state_harvest_to_strategy(&mut recovery);
-    assert_eq!(recovery.strategy, GrandStrategy::Recovery, "home first");
+    threatened.target_player = None;
+    ai.apply_city_state_harvest_to_strategy(&g, &mut threatened);
+    assert_eq!(
+        threatened.strategy,
+        GrandStrategy::Recovery,
+        "a threatened city first"
+    );
+    assert_eq!(threatened.target_player, None);
+
+    let mut gap_only = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        threatened_city: None,
+        ..plan.clone()
+    };
+    ai.apply_city_state_harvest_to_strategy(&g, &mut gap_only);
+    assert_eq!(
+        gap_only.strategy,
+        GrandStrategy::Culture,
+        "a power gap to a major we are not fighting is not the harvest's Recovery"
+    );
 }
 
 #[test]

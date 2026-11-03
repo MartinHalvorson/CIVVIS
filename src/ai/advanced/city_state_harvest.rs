@@ -324,19 +324,39 @@ impl AdvancedAi {
     }
 
     /// The overlay: while the harvest's war runs, the plan's target is that
-    /// city, under the lane's own grand strategy. A home emergency
-    /// (`Recovery`) and a timed-war appointment keep their own target.
-    pub(crate) fn apply_city_state_harvest_to_strategy(&self, plan: &mut StrategicPlan) {
+    /// city, under the lane's own grand strategy. A threatened city of ours
+    /// keeps `Recovery` and its own target, as does a timed-war appointment.
+    ///
+    /// ★ A Recovery with no threatened city is lifted. `assess` reads
+    /// Recovery's power gap against the strongest MET major, at peace or not
+    /// (`recovery_opponent_power` is `strongest_rival` unless
+    /// `recovery-reads-the-war` is on), so declaring on a city-state of 73
+    /// power put a 400-power Culture seat into Recovery because a 905-power
+    /// major existed elsewhere (siege_replay 224444Z t80 → t122, "at war and
+    /// losing ground at home"). That posture, not the city, is what the
+    /// paired reads priced. The harvest war is the only war while it runs (a
+    /// major war releases it), so the gap is not ours to close.
+    pub(crate) fn apply_city_state_harvest_to_strategy(&self, g: &Game, plan: &mut StrategicPlan) {
         if !self.city_state_harvest || self.war_plan.is_some() {
             return;
         }
         let Some(target) = &self.city_state_harvest_target else {
             return;
         };
-        if target.declared_turn.is_some() && plan.strategy != GrandStrategy::Recovery {
-            plan.target_player = Some(target.player);
-            plan.target_city = Some(target.city);
+        if target.declared_turn.is_none() {
+            return;
         }
+        if plan.strategy == GrandStrategy::Recovery {
+            if plan.threatened_city.is_some() {
+                return;
+            }
+            let Some(lane) = self.active_victory_target(g) else {
+                return;
+            };
+            plan.strategy = lane.strategy();
+        }
+        plan.target_player = Some(target.player);
+        plan.target_city = Some(target.city);
     }
 }
 
