@@ -10250,10 +10250,10 @@ mod war_policy;
 /// bill, and pillage with the movement the march does not use. Two opt-in
 /// genes; see `advanced/city_campaign.rs`.
 mod city_campaign;
-/// `city-state-war-is-no-front`: see `advanced/city_state_war_is_no_front.rs`.
-mod city_state_war_is_no_front;
 /// `city-state-harvest`: see `advanced/city_state_harvest.rs`.
 mod city_state_harvest;
+/// `city-state-war-is-no-front`: see `advanced/city_state_war_is_no_front.rs`.
+mod city_state_war_is_no_front;
 
 /// Shared fog-safe battlefront observations and city-pressure calculations.
 mod battlefront;
