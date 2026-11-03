@@ -297,6 +297,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `science-drive-leads-beside-the-lane` | off (unmeasured) | Opt-in gene `science-drive-leads-beside-the-lane`; see `Self::science_drive_leads_beside_the_lane`. | 1 \| 1 |
 | `science-power-buys-fuel` | off (unmeasured) | Ask the native market for Coal serving ready research power. | 1 \| 1 |
 | `science-seat-allies` | off (unmeasured) | Opt-in gene `science-seat-allies`; see `Self::science_seat_allies`. | 1 \| 1 |
+| `science-specializes-earlier` | off (unmeasured) | Opt-in gene `science-specializes-earlier`; see `Self::science_specializes_earlier`. | 1 \| 1 |
 | `settler-founds-under-raiders` | off (unmeasured) | Opt-in gene `settler-founds-under-raiders`; see `Self::settler_founds_under_raiders`. | 1 \| 1 |
 | `siege-budget-counts-the-ram` | off (unmeasured) | Price a train-held Ram or Tower in the siege damage budget. | 1 \| 1 |
 | `siege-moves-under-the-wing` | off (unmeasured) | Opt-in gene `siege-moves-under-the-wing`; see `Self::siege_moves_under_the_wing`. | 1 \| 1 |
