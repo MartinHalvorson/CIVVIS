@@ -6994,6 +6994,16 @@ pub struct Game {
     /// [`Game::item_cost_for_city`] prices from it.
     #[serde(default)]
     pub host_buildable: Arc<BTreeMap<u32, BTreeMap<String, HostMenuEntry>>>,
+    /// The HOST's saved work per city on PAUSED units, buildings and projects
+    /// (`StateCity::buildable[].pr`, from `BuildQueue:GetUnitProgress`,
+    /// `GetBuildingProgress` and `GetProjectProgress`), keyed like
+    /// [`City::production_progress`] (`unit:builder`, `building:library`,
+    /// `project:...`), positive readings only. Districts are bound to their
+    /// foundation by the mirror instead; Wonders and formations need a plot or
+    /// tier this key does not carry and are left out. Read only by the opt-in
+    /// gene `saved-work-is-seen`. Empty in an ordinary game.
+    #[serde(default)]
+    pub host_saved_work: Arc<BTreeMap<u32, BTreeMap<String, f64>>>,
     /// Observed native per-technology costs and saved research progress, by
     /// player. Like production menus, these are refreshed host facts, not rules.
     #[serde(default)]
@@ -7770,6 +7780,7 @@ impl From<GameSer> for Game {
             blocked_production: Arc::new(BTreeMap::new()),
             blocked_purchases: Arc::new(BTreeMap::new()),
             host_buildable: Arc::new(BTreeMap::new()),
+            host_saved_work: Arc::new(BTreeMap::new()),
             host_research_quotes: Arc::new(BTreeMap::new()),
             host_unit_resource_prices: Arc::new(BTreeMap::new()),
             host_purchasable: Arc::new(BTreeMap::new()),
@@ -8526,6 +8537,7 @@ impl Game {
             blocked_production: Arc::new(BTreeMap::new()),
             blocked_purchases: Arc::new(BTreeMap::new()),
             host_buildable: Arc::new(BTreeMap::new()),
+            host_saved_work: Arc::new(BTreeMap::new()),
             host_research_quotes: Arc::new(BTreeMap::new()),
             host_unit_resource_prices: Arc::new(BTreeMap::new()),
             host_purchasable: Arc::new(BTreeMap::new()),

@@ -241,7 +241,13 @@ check("failed progress accessor stays unknown", raisingProgress.pr, nil)
 check("failed progress accessor does not discard the menu row", raisingProgress.c, 51)
 local missingProgress = find(menus.buildable(fakeCity(fakeQueue({ progressMissing = true }))), "DISTRICT_CAMPUS") or {}
 check("missing progress stays unknown", missingProgress.pr, nil)
-check("unit progress is not inferred from district work", (find(buildable, "UNIT_WARRIOR") or {}).pr, nil)
+check("unit progress is not inferred from district work", (find(buildable, "UNIT_WARRIOR") or {}).pr, 7)
+-- `saved-work-is-seen`: every unit, building and project row carries its own
+-- saved work (`GetUnitProgress`/`GetBuildingProgress`/`GetProjectProgress`).
+check("a paused unit's own saved work crosses", (find(buildable, "UNIT_WARRIOR") or {}).pr, 7)
+check("a tier row carries no saved work of its own", (find(buildable, "UNIT_WARRIOR", 1) or {}).pr, nil)
+check("a building's saved work crosses, zero included", (find(buildable, "BUILDING_GRANARY") or {}).pr, 0)
+check("a project's saved work crosses, zero included", (find(buildable, "PROJECT_ENHANCE_DISTRICT_CAMPUS") or {}).pr, 0)
 check("a project crosses", (find(buildable, "PROJECT_ENHANCE_DISTRICT_CAMPUS") or {}).c, 15)
 check("a building crosses", (find(buildable, "BUILDING_GRANARY") or {}).c, 120)
 local count = 0
