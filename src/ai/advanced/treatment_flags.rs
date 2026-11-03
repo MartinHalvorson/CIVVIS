@@ -9304,6 +9304,18 @@ impl AdvancedAi {
         self.near_done_work_finishes = false;
     }
 
+    /// Make the hostile that pins our siege guns the battle planner's
+    /// priority kill. See [`Self::gun_threat_draws_the_strike`].
+    pub fn enable_gun_threat_draws_the_strike(&mut self) {
+        self.gun_threat_draws_the_strike = true;
+    }
+
+    /// The twin of `enable_gun_threat_draws_the_strike`.
+    pub fn disable_gun_threat_draws_the_strike(&mut self) {
+        self.gun_threat_draws_the_strike = false;
+        self.gun_threat_sources.clear();
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

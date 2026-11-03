@@ -4844,6 +4844,15 @@ pub const GENES: &[Gene] = &[
     // Shrine, Spaceport, Wonder or project. See
     // `advanced/near_done_work_finishes.rs`.
     Gene { tag: "near-done-work-finishes", field: "near_done_work_finishes", kind: Kind::OptIn, enable: AdvancedAi::enable_near_done_work_finishes, disable: AdvancedAi::disable_near_done_work_finishes },
+    // `gun-threat-draws-the-strike`: siege_replay 224444Z (a city-state
+    // siege) logged 23 gun steps "the move to X was refused", every one legal
+    // for the engine; 19 were `guns-stay-out-of-reach` holding the gun off a
+    // tile one visible hostile could kill it on, for twenty turns, while
+    // nothing moved to kill or screen that hostile. Live 11-02/03: 23% of
+    // 1,093 "stops short of its post" lines are such refusals. The pinning
+    // hostile becomes the battle planner's priority kill. See
+    // `advanced/gun_threat_strike.rs`.
+    Gene { tag: "gun-threat-draws-the-strike", field: "gun_threat_draws_the_strike", kind: Kind::OptIn, enable: AdvancedAi::enable_gun_threat_draws_the_strike, disable: AdvancedAi::disable_gun_threat_draws_the_strike },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

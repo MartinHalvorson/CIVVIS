@@ -7204,6 +7204,13 @@ pub struct AdvancedAi {
     /// `advanced/protective_friendship.rs`. Off by default.
     friendship_refuses_the_racer: bool,
     // ---- append: g-k ------------------------------------------------
+    /// `gun-threat-draws-the-strike`: the hostile whose one blow holds a
+    /// siege gun back (`guns-stay-out-of-reach`) is the battle planner's
+    /// priority kill. See `advanced/gun_threat_strike.rs`. Off by default.
+    gun_threat_draws_the_strike: bool,
+    /// The hostiles pinning our guns, from the last lethal-tile marking.
+    /// Written only while `gun_threat_draws_the_strike` is on.
+    gun_threat_sources: BTreeSet<u32>,
     /// `gold-buys-the-opening-builder`: in the opening, with no Builder afield
     /// and work for one, the treasury buys the Builder. See
     /// `advanced/gold_buys_the_opening_builder.rs`. Off by default.
@@ -10190,6 +10197,8 @@ mod battle_planner;
 /// `defenders-hold-the-walls`: see `advanced/defenders_hold_the_walls.rs`.
 mod defenders_hold_the_walls;
 mod guns_stay_out_of_reach;
+/// `gun-threat-draws-the-strike`: see `advanced/gun_threat_strike.rs`.
+mod gun_threat_strike;
 mod unit_preservation;
 pub(super) use battle_planner::strike_reach_of as movement_strike_reach;
 
@@ -11751,6 +11760,8 @@ impl AdvancedAi {
             friendship_expiry_seen: std::cell::RefCell::new(BTreeMap::new()),
             friendship_refuses_the_racer: false,
             // ---- append: g-k ----------------------------------------
+            gun_threat_draws_the_strike: false,
+            gun_threat_sources: BTreeSet::new(),
             gold_buys_the_opening_builder: false,
             immortal_skips_the_prophet_race: false,
             hidden_border_yields_to_our_pressure: false,

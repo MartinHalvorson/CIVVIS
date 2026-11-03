@@ -36,6 +36,7 @@ impl AdvancedAi {
     /// empty with the gene off.
     pub(super) fn mark_gun_lethal_tiles(&mut self, g: &Game, pid: usize) {
         self.base.gun_lethal_tiles.clear();
+        self.gun_threat_sources.clear();
         if !self.guns_stay_out_of_reach {
             return;
         }
@@ -59,18 +60,30 @@ impl AdvancedAi {
             let hp = f64::from(unit.hp);
             let mut tiles = vec![unit.pos];
             tiles.extend(g.reachable(uid));
+            let mut threats: Vec<u32> = Vec::new();
             let lethal: HashMap<Pos, f64> = tiles
                 .into_iter()
                 .filter_map(|tile| {
-                    let blow = field
-                        .contributions(tile, uid)
-                        .iter()
-                        .filter(|(source, _)| source.is_some_and(|id| id & STRUCTURE_SOURCE == 0))
-                        .map(|(_, blow)| (blow * crate::ai::COMBAT_ROLL_MAX).ceil().min(100.0))
-                        .fold(0.0, f64::max);
+                    let mut blow: f64 = 0.0;
+                    for (source, raw) in field.contributions(tile, uid).iter() {
+                        let Some(id) = source.filter(|id| id & STRUCTURE_SOURCE == 0) else {
+                            continue;
+                        };
+                        let hit = (raw * crate::ai::COMBAT_ROLL_MAX).ceil().min(100.0);
+                        // `gun-threat-draws-the-strike`: the unit whose one
+                        // blow holds this gun back. See
+                        // `advanced/gun_threat_strike.rs`.
+                        if hit >= hp {
+                            threats.push(id);
+                        }
+                        blow = blow.max(hit);
+                    }
                     (blow >= hp).then_some((tile, blow))
                 })
                 .collect();
+            if self.gun_threat_draws_the_strike && !lethal.is_empty() {
+                self.gun_threat_sources.extend(threats);
+            }
             if !lethal.is_empty() {
                 self.base.gun_lethal_tiles.insert(uid, lethal);
             }

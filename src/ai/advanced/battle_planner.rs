@@ -1649,7 +1649,7 @@ impl AdvancedAi {
                         strength,
                         spec.siege,
                         spec.is_melee_capable(),
-                    ),
+                    ) + self.strike_priority_bonus(uid),
                     siege: spec.siege,
                     captures: spec.is_melee_capable(),
                 }
