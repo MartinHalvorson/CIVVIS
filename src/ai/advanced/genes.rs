@@ -4783,6 +4783,16 @@ pub const GENES: &[Gene] = &[
     // its era, then any technology two eras behind the world. See
     // `advanced/old_techs_before_the_beeline.rs`.
     Gene { tag: "old-techs-before-the-beeline", field: "old_techs_before_the_beeline", kind: Kind::OptIn, enable: AdvancedAi::enable_old_techs_before_the_beeline, disable: AdvancedAi::disable_old_techs_before_the_beeline },
+    // Operator 2026-11-02: production is best spent on what a card boosts
+    // (units +50%, Settlers +50%, ships +100%). The deck review prices a
+    // production card by what it adds to the queue heads, but a full deck is
+    // reviewed only every eighth turn. Live, 69 games 11-01/02: Feudal
+    // Contract boosted no head on 84% of its slotted turns, Agoge 72%; an
+    // unlocked unslotted card would have boosted the head on 8,676
+    // city-turns, ~1,290 Production a game (Limes, International Waters,
+    // Grande Armee most). Under the gene the review also runs on the turn
+    // the set of queue cards worth slotting changes. See `ai/deck_queue.rs`.
+    Gene { tag: "deck-follows-the-queue", field: "deck_follows_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_deck_follows_the_queue, disable: AdvancedAi::disable_deck_follows_the_queue },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

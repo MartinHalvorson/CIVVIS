@@ -9236,6 +9236,19 @@ impl AdvancedAi {
         self.old_techs_before_the_beeline = false;
     }
 
+    /// Opt-in gene `deck-follows-the-queue`; the behaviour lives on
+    /// `BasicAi::deck_follows_the_queue`, see `ai/deck_queue.rs`.
+    pub fn enable_deck_follows_the_queue(&mut self) {
+        self.deck_follows_the_queue = true;
+        self.base.enable_deck_follows_the_queue();
+    }
+
+    /// The twin of `enable_deck_follows_the_queue`.
+    pub fn disable_deck_follows_the_queue(&mut self) {
+        self.deck_follows_the_queue = false;
+        self.base.disable_deck_follows_the_queue();
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

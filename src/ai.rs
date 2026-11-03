@@ -400,6 +400,9 @@ type PlotPurchaseCandidate = (f64, std::cmp::Reverse<(u32, Pos)>, Action);
 mod advanced;
 mod campus_buildings;
 mod commercial_hub;
+mod deck_queue;
+#[cfg(test)]
+mod deck_queue_tests;
 mod first_pad_in_the_forge;
 mod industrial_zones;
 mod launch_pad_resume;
@@ -1189,6 +1192,7 @@ fn revise_policy_deck(
     pool: Option<&WorkPool>,
     net_maintenance: bool,
     player_income: bool,
+    force_review: bool,
 ) {
     let slots = g.gov_slots(pid);
     let total = slots.military + slots.economic + slots.diplomatic + slots.wildcard;
@@ -1212,7 +1216,7 @@ fn revise_policy_deck(
         return;
     }
     let held: Vec<Name> = g.players[pid].policies.iter().cloned().collect();
-    if held.len() as i64 >= total && !g.turn.is_multiple_of(POLICY_REVIEW_EVERY) {
+    if held.len() as i64 >= total && !g.turn.is_multiple_of(POLICY_REVIEW_EVERY) && !force_review {
         return;
     }
 
@@ -3933,6 +3937,13 @@ pub struct BasicAi {
     /// and amenity cards are worth the growth they release. Set by the
     /// Advanced gene; off by default.
     pub(crate) deck_prices_growth: bool,
+    /// `deck-follows-the-queue`: the policy deck re-reviews off its cadence on
+    /// the turn the queue cards worth slotting change. See `ai/deck_queue.rs`.
+    /// Set by the Advanced gene; off by default.
+    pub(crate) deck_follows_the_queue: bool,
+    /// `deck-follows-the-queue`: each seat's queue-card signature as of its
+    /// last turn. Empty while the gene is off.
+    deck_queue_signature: RefCell<BTreeMap<usize, BTreeSet<Name>>>,
     /// Reserve the first usable empty trade slot before ordinary production
     /// and judge safety at the city that can actually start the route. The
     /// old gate vetoes every Trader when any city in the empire has a local
@@ -6036,6 +6047,8 @@ impl BasicAi {
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
             deck_prices_growth: false,
+            deck_follows_the_queue: false,
+            deck_queue_signature: RefCell::new(BTreeMap::new()),
             solvency_first_trade_slot: false,
             builder_tries_the_next_tile: false,
             naval_threat_triage: false,
@@ -6172,6 +6185,17 @@ impl BasicAi {
     /// The twin of `enable_deck_prices_growth`.
     pub(crate) fn disable_deck_prices_growth(&mut self) {
         self.deck_prices_growth = false;
+    }
+
+    /// See `deck_follows_the_queue`.
+    pub(crate) fn enable_deck_follows_the_queue(&mut self) {
+        self.deck_follows_the_queue = true;
+    }
+
+    /// The twin of `enable_deck_follows_the_queue`.
+    pub(crate) fn disable_deck_follows_the_queue(&mut self) {
+        self.deck_follows_the_queue = false;
+        self.deck_queue_signature.borrow_mut().clear();
     }
 
     /// See `opening_builder_after_the_first_settler`.
@@ -6619,6 +6643,8 @@ impl BasicAi {
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
             deck_prices_growth: false,
+            deck_follows_the_queue: false,
+            deck_queue_signature: RefCell::new(BTreeMap::new()),
             solvency_first_trade_slot: false,
             builder_tries_the_next_tile: false,
             naval_threat_triage: false,
@@ -9176,6 +9202,9 @@ impl BasicAi {
         } else {
             &self.w
         };
+        // `deck-follows-the-queue`: a review off the cadence on the turn the
+        // queue cards worth slotting change. False with the gene off.
+        let queue_changed = self.deck_queue_review_due(g, pid);
         revise_policy_deck(
             g,
             pid,
@@ -9183,6 +9212,7 @@ impl BasicAi {
             pool,
             self.maintenance_aware_deck,
             self.deck_reads_player_income,
+            queue_changed,
         );
         // The engine's own gate, restated here rather than guessed at. This
         // asked once per player per turn for the whole game and was refused
@@ -20964,11 +20994,11 @@ mod tests {
         };
 
         let mut serial = initial.clone();
-        revise_policy_deck(&mut serial, 0, &weights, None, false, false);
+        revise_policy_deck(&mut serial, 0, &weights, None, false, false, false);
         for threads in [4, 5] {
             let mut parallel = initial.clone();
             let pool = WorkPool::new(threads);
-            revise_policy_deck(&mut parallel, 0, &weights, Some(&pool), false, false);
+            revise_policy_deck(&mut parallel, 0, &weights, Some(&pool), false, false, false);
 
             assert_eq!(serial.log, parallel.log, "threads={threads}");
             assert_eq!(
