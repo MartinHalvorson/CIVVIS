@@ -4795,6 +4795,36 @@ pub const GENES: &[Gene] = &[
     // already keeps it. Inert on a native board (no host menu). See
     // `advanced/saved_work_is_seen.rs`.
     Gene { tag: "saved-work-is-seen", field: "saved_work_is_seen", kind: Kind::OptIn, enable: AdvancedAi::enable_saved_work_is_seen, disable: AdvancedAi::disable_saved_work_is_seen },
+    // `gold-buys-the-backlog-builder`: live (38 Emperor/Immortal games,
+    // 2026-11-02) 64% / 48% of the worked land tiles stood unimproved at t60 /
+    // t80, 4.7-6.5 of them improvable now per game, against 1.0-2.3 Builders
+    // afield; in 17 of 38 games at t40 and 13 at t60 the Builders afield or
+    // training fell short of `builder_backlog_item`'s own quota because the
+    // Campus, Granary, Walls and Settler claims took the queue. Under the gene
+    // the treasury buys that missing Builder above the purchase upkeep floor,
+    // at peace, after the opening Builder and the idle route's Trader, in the
+    // city owning the most unimproved worked tiles (the weakest producer on a
+    // tie) whose cards do not already speed a Builder. See
+    // `advanced/gold_buys_the_backlog_builder.rs`.
+    Gene { tag: "gold-buys-the-backlog-builder", field: "gold_buys_the_backlog_builder", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_buys_the_backlog_builder, disable: AdvancedAi::disable_gold_buys_the_backlog_builder },
+    // Operator 2026-11-02: production is best spent on what a card boosts
+    // (units +50%, Settlers +50%, ships +100%). The deck review prices a
+    // production card by what it adds to the queue heads, but a full deck is
+    // reviewed only every eighth turn. Live, 69 games 11-01/02: Feudal
+    // Contract boosted no head on 84% of its slotted turns, Agoge 72%; an
+    // unlocked unslotted card would have boosted the head on 8,676
+    // city-turns, ~1,290 Production a game (Limes, International Waters,
+    // Grande Armee most). Under the gene the review also runs on the turn
+    // the set of queue cards worth slotting changes. See `ai/deck_queue.rs`.
+    Gene { tag: "deck-follows-the-queue", field: "deck_follows_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_deck_follows_the_queue, disable: AdvancedAi::disable_deck_follows_the_queue },
+    // `city-state-harvest`: live Immortal 11-02 (17 games) captured no city;
+    // the gap to the median rival at t100 was population (56 against 36),
+    // while the median seat at t80 had two city-state cities within eight
+    // tiles at population 5-12 and a fifth of our military. The softest one
+    // with no suzerain but us and at most one of our envoys becomes the
+    // plan's Conquest target for a bounded window. See
+    // `advanced/city_state_harvest.rs`.
+    Gene { tag: "city-state-harvest", field: "city_state_harvest", kind: Kind::OptIn, enable: AdvancedAi::enable_city_state_harvest, disable: AdvancedAi::disable_city_state_harvest },
     // Live Immortal 6p Continents 11-02/03: the seat never reached its city
     // target, so Expansion (a beaker 1.2 against Science's 4.2) lasted to the
     // halfway clock, 55% of the logged strategy turns. Every decided game was

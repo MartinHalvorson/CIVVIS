@@ -9246,6 +9246,42 @@ impl AdvancedAi {
         self.saved_work_is_seen = false;
     }
 
+    /// Opt-in gene `gold-buys-the-backlog-builder`; see
+    /// `advanced/gold_buys_the_backlog_builder.rs`.
+    pub fn enable_gold_buys_the_backlog_builder(&mut self) {
+        self.gold_buys_the_backlog_builder = true;
+    }
+
+    /// The twin of `enable_gold_buys_the_backlog_builder`.
+    pub fn disable_gold_buys_the_backlog_builder(&mut self) {
+        self.gold_buys_the_backlog_builder = false;
+    }
+
+    /// Opt-in gene `deck-follows-the-queue`; the behaviour lives on
+    /// `BasicAi::deck_follows_the_queue`, see `ai/deck_queue.rs`.
+    pub fn enable_deck_follows_the_queue(&mut self) {
+        self.deck_follows_the_queue = true;
+        self.base.enable_deck_follows_the_queue();
+    }
+
+    /// The twin of `enable_deck_follows_the_queue`.
+    pub fn disable_deck_follows_the_queue(&mut self) {
+        self.deck_follows_the_queue = false;
+        self.base.disable_deck_follows_the_queue();
+    }
+
+    /// Aim a bounded Conquest window at a soft city-state city beside the
+    /// empire. See [`Self::city_state_harvest`].
+    pub fn enable_city_state_harvest(&mut self) {
+        self.city_state_harvest = true;
+    }
+
+    /// The twin of `enable_city_state_harvest`.
+    pub fn disable_city_state_harvest(&mut self) {
+        self.city_state_harvest = false;
+        self.city_state_harvest_target = None;
+    }
+
     /// Opt-in gene `science-specializes-earlier`; see
     /// [`Self::science_specializes_earlier`].
     pub fn enable_science_specializes_earlier(&mut self) {

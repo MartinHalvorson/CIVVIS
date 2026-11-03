@@ -9998,7 +9998,10 @@ local function exportState(player, pid, turn, frame, eventKind)
 		-- `civvis_build_unplayable` on 29 turns across eight cities. Keyed by the
 		-- host's resource type; the Rust side translates. Only the strategic
 		-- class — the same filter the shipped TopPanel_Expansion2 uses.
-		-- ⚠ nil, not `{}`, when nothing is stocked: see `great_person_points`.
+		-- Keep successful zero stock readings; omit only unavailable/invalid
+		-- amounts. A nonempty map of zeros distinguishes an empty bank from a
+		-- failed read. With no usable query, keep nil rather than `{}` (which
+		-- the Lua encoder would serialize as an array).
 		-- TopPanel_Expansion2.lua:50-55,64: gross accumulation includes imports
 		-- and bonuses. Unit/power demand is separate, not subtracted here.
 		strategic_resource_income = try(function()
@@ -10032,7 +10035,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 					local amount = try(function()
 						return resources:GetResourceAmount(row.ResourceType);
 					end, nil);
-					if amount ~= nil and amount > 0 then
+					if type(amount) == "number" and amount >= 0 and amount < math.huge then
 						out[row.ResourceType] = amount;
 						any = true;
 					end
@@ -10047,7 +10050,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 		-- does not know a copy is out: live Emperor civvis-20261007T131449Z
 		-- (game 354) sold Turtles and Marble to Kongo at turns 126 and 132,
 		-- then priced both into seven Oil asks from 155 that the last-copy
-		-- guard refused unproposed. nil when none is held, as above.
+		-- guard refused unproposed. Keep nil when none is held here.
 		luxury_counts = try(function()
 			local resources = player:GetResources();
 			if resources == nil then return nil; end

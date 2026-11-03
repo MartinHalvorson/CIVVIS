@@ -1,0 +1,32 @@
+{
+  "schema": 1,
+  "armed_utc": "2026-11-02T19:01:33.564184+00:00",
+  "gene": "science-power-buys-fuel",
+  "preregistration_commit": "ff1df764c27ae7a60841226e6f52024d8142e36d",
+  "upstream_commit_verified": "ff1df764c27ae7a60841226e6f52024d8142e36d",
+  "plan_sha256": "700c24419302a2b98c59cce150e88f3e2206f494dabe19356f04add0c0bc0307",
+  "screen_path": "/Users/martbot-mbp-m5-max-128/.civvis-live-screen-gene",
+  "before_hex": "",
+  "before_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "after_sha256": "3a6a4c232fc867ada604a6c9a0e9be5a35aef3b602c2fe6ab129afa1e7848723",
+  "baseline_files": {
+    ".civvis-verification-policy": {
+      "exists": true,
+      "sha256": "2f39f2549325cb75e351b43f1a5437c5f82d2816460de3e2dd27b7790f9fcf92"
+    },
+    ".civvis-live-force-on": {
+      "exists": true,
+      "sha256": "ff057c71fee2dd55fb86a27a53f4072b3e4c1d92f5927664dcf76df3d7aa47f7"
+    },
+    ".civvis-live-screen-gene": {
+      "exists": true,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    ".civvis-victory-lane": {
+      "exists": true,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  },
+  "scope": "Single native screen tag at next no-game boundary; current game and all other preferences unchanged.",
+  "cohort": "First eight configured Science game families with this actual screen assignment after armed_utc. Retirements count; continuations join. Setup failures and unassigned starts remain visible."
+}

@@ -6497,6 +6497,20 @@ pub struct AdvancedAi {
     /// `deterrence-trusts-a-friend`: no near-rival deterrent against a rival
     /// we are declared friends with. See `advanced/deterrence_trusts_a_friend.rs`.
     deterrence_trusts_a_friend: bool,
+    /// `deck-follows-the-queue`: the policy deck re-reviews off its cadence
+    /// on the turn the queue cards worth slotting change. The behaviour lives
+    /// on `BasicAi::deck_follows_the_queue`; see `ai/deck_queue.rs`. Off by
+    /// default.
+    deck_follows_the_queue: bool,
+    /// `city-state-harvest`: a soft city-state city beside the empire is the
+    /// plan's Conquest target for a bounded window. See
+    /// `advanced/city_state_harvest.rs`. Off by default.
+    city_state_harvest: bool,
+    /// The city the harvest is aimed at. Written only while
+    /// `city_state_harvest` is on.
+    city_state_harvest_target: Option<city_state_harvest::HarvestTarget>,
+    /// No new harvest name before this turn.
+    city_state_harvest_cooldown: u32,
     // ---- append: e-f ------------------------------------------------
     /// Keep the first Science launch on its research path. Opt-in.
     first_launch_keeps_research: bool,
@@ -7474,6 +7488,11 @@ pub struct AdvancedAi {
     /// "spread our faith first" wait does not hold once a rival faith holds a
     /// city of ours. See `advanced/defensive_apostle.rs`. Off by default.
     inquisition_answers_a_rival_majority: bool,
+    /// `gold-buys-the-backlog-builder`: past the opening, while the empire
+    /// holds fewer Builders than its unimproved worked tiles call for, the
+    /// treasury buys one in the city that owns the most of them. See
+    /// `advanced/gold_buys_the_backlog_builder.rs`. Off by default.
+    gold_buys_the_backlog_builder: bool,
     // ---- append: l-o ------------------------------------------------
     /// `old-techs-before-the-beeline`: the technology our land army waits on
     /// to upgrade once the world has left its era, then any technology two
@@ -10233,6 +10252,8 @@ mod war_policy;
 mod city_campaign;
 /// `city-state-war-is-no-front`: see `advanced/city_state_war_is_no_front.rs`.
 mod city_state_war_is_no_front;
+/// `city-state-harvest`: see `advanced/city_state_harvest.rs`.
+mod city_state_harvest;
 
 /// Shared fog-safe battlefront observations and city-pressure calculations.
 mod battlefront;
@@ -10382,6 +10403,8 @@ mod first_launch_research;
 /// `founder-converts-its-own-cities`: a founder's spreaders convert our own
 /// cities before any foreign one. See `advanced/founder_home.rs`.
 mod founder_home;
+/// `gold-buys-the-backlog-builder`: see `advanced/gold_buys_the_backlog_builder.rs`.
+mod gold_buys_the_backlog_builder;
 /// `gold-buys-the-opening-builder`: a builderless opening buys its Builder
 /// with the idle treasury. See `advanced/gold_buys_the_opening_builder.rs`.
 mod gold_buys_the_opening_builder;
@@ -11617,6 +11640,10 @@ impl AdvancedAi {
             culture_seat_allies: false,
             domination_joins_the_race: false,
             deterrence_trusts_a_friend: false,
+            deck_follows_the_queue: false,
+            city_state_harvest: false,
+            city_state_harvest_target: None,
+            city_state_harvest_cooldown: 0,
             // ---- append: e-f ----------------------------------------
             first_launch_keeps_research: false,
             first_pad_in_the_forge: false,
@@ -11766,6 +11793,7 @@ impl AdvancedAi {
             industrial_zone_claims_the_factory: false,
             inquisition_defends_the_diplomat: false,
             inquisition_answers_a_rival_majority: false,
+            gold_buys_the_backlog_builder: false,
             // ---- append: l-o ----------------------------------------
             old_techs_before_the_beeline: false,
             launch_commits_the_endgame: false,
@@ -50329,6 +50357,10 @@ impl AdvancedAi {
         // `assess` aims the army. Exact no-op while off. See
         // `advanced/early_conquest.rs`.
         self.maintain_conquest_opening(g, pid);
+        // `city-state-harvest`: name, keep or release the city-state city
+        // the plan conquers next. Exact no-op while off. See
+        // `advanced/city_state_harvest.rs`.
+        self.maintain_city_state_harvest(g, pid);
         // `city_campaign`: drop the cities the plan has taken, expire one
         // never launched, draw or refresh one at peace. See
         // `advanced/city_campaign.rs`.
@@ -50365,10 +50397,12 @@ impl AdvancedAi {
         if rush_routes_frozen || self.plan_stale(g, pid) {
             let mut next = self.assess(g, pid);
             self.apply_war_plan_to_strategy(&mut next);
+            self.apply_city_state_harvest_to_strategy(&mut next);
             self.apply_air_surge_to_strategy(g, pid, &mut next);
             self.plan = Some(next);
         } else if let Some(mut current) = self.plan.take() {
             self.apply_war_plan_to_strategy(&mut current);
+            self.apply_city_state_harvest_to_strategy(&mut current);
             self.apply_air_surge_to_strategy(g, pid, &mut current);
             self.plan = Some(current);
         }
@@ -50448,6 +50482,11 @@ impl AdvancedAi {
             // `advanced/gold_buys_the_opening_builder.rs`.
             self.opening_builder_purchase(g, pid, &plan);
             self.idle_trader_purchase(g, pid, &plan);
+            // `gold-buys-the-backlog-builder`: past the opening buy and the
+            // route slot's Trader, a Builder for the unimproved worked tiles
+            // the queues have not answered. See
+            // `advanced/gold_buys_the_backlog_builder.rs`.
+            self.backlog_builder_purchase(g, pid, &plan);
         }
         // Once a city-saving purchase has had its one action, the turn a
         // breakthrough arrives still upgrades appointed predecessors before
