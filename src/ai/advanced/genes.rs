@@ -4832,6 +4832,13 @@ pub const GENES: &[Gene] = &[
     // assigned Science lane specializes at a third of the clock, as Culture
     // already does. See `advanced/science_specializes_earlier.rs`.
     Gene { tag: "science-specializes-earlier", field: "science_specializes_earlier", kind: Kind::OptIn, enable: AdvancedAi::enable_science_specializes_earlier, disable: AdvancedAi::disable_science_specializes_earlier },
+    // `harvest-takes-the-weak-neighbour`: 11 of 68 live Lv 7 seats (11-02/03)
+    // held, at t100-160 on a non-Science lane with no major war, a major at
+    // a third of our power or less with a population 9-12 city within six
+    // tiles of ours. The city-state harvest's muster, declaration and
+    // Recovery rule take it the same way. See
+    // `advanced/city_state_harvest.rs`.
+    Gene { tag: "harvest-takes-the-weak-neighbour", field: "weak_neighbour_harvest", kind: Kind::OptIn, enable: AdvancedAi::enable_weak_neighbour_harvest, disable: AdvancedAi::disable_weak_neighbour_harvest },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

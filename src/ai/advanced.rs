@@ -9183,6 +9183,10 @@ pub struct AdvancedAi {
     /// see it. See `advanced/saved_work_is_seen.rs`. Off by default.
     saved_work_is_seen: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `harvest-takes-the-weak-neighbour`: the harvest (see
+    /// `advanced/city_state_harvest.rs`) also musters and declares on a
+    /// weak major's border city after the expansion window. Off by default.
+    weak_neighbour_harvest: bool,
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
     /// See `advanced/trade_quotes_lump.rs`. Off by default.
@@ -12074,6 +12078,7 @@ impl AdvancedAi {
             science_drive_leads_beside_the_lane: false,
             saved_work_is_seen: false,
             // ---- append: t-z ----------------------------------------
+            weak_neighbour_harvest: false,
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,
             unchosen_war_takes_the_first_peace: false,

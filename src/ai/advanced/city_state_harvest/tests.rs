@@ -333,3 +333,88 @@ fn a_released_harvest_war_still_lifts_a_power_gap_recovery() {
         "a major war keeps Recovery"
     );
 }
+
+/// The fixture's player 2 as a weak MAJOR neighbour instead of a city-state.
+fn weak_neighbour() -> (Game, u32) {
+    let (mut g, city) = fixture();
+    g.players[2].is_minor = false;
+    (g, city)
+}
+
+#[test]
+fn a_weak_major_is_named_only_under_its_own_gene() {
+    let (mut g, city) = weak_neighbour();
+    let mut ai = harvest_ai();
+    assert_eq!(
+        ai.harvest_candidate(&g, 0),
+        None,
+        "city-state-harvest alone skips majors"
+    );
+    ai.enable_weak_neighbour_harvest();
+    assert_eq!(ai.harvest_candidate(&g, 0), Some((2, city, true)));
+
+    let mut science = AdvancedAi::targeting(VictoryTarget::Science);
+    science.enable_weak_neighbour_harvest();
+    assert_eq!(
+        science.harvest_candidate(&g, 0),
+        None,
+        "never a Science seat"
+    );
+
+    g.turn = HARVEST_CITY_STATE_FROM_TURN - 1;
+    assert_eq!(
+        ai.harvest_candidate(&g, 0),
+        None,
+        "after the expansion window"
+    );
+
+    let mut alone = AdvancedAi::targeting(VictoryTarget::Culture);
+    alone.enable_weak_neighbour_harvest();
+    g.turn = HARVEST_CITY_STATE_FROM_TURN + 5;
+    let (cs_game, _) = fixture();
+    assert_eq!(
+        alone.harvest_candidate(&cs_game, 0),
+        None,
+        "the neighbour gene alone takes no city-state"
+    );
+    assert_eq!(alone.harvest_candidate(&g, 0), Some((2, city, true)));
+}
+
+#[test]
+fn the_neighbour_war_itself_does_not_release_the_name() {
+    let (mut g, _) = weak_neighbour();
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
+    ai.enable_weak_neighbour_harvest();
+    ai.maintain_city_state_harvest(&mut g, 0);
+    let target = ai.city_state_harvest_target.clone().expect("named");
+    assert!(target.major);
+    g.at_war.insert((0, 2));
+    ai.maintain_city_state_harvest(&mut g, 0);
+    assert!(
+        ai.city_state_harvest_target.is_some(),
+        "the war with the target is the harvest, not a reason to release it"
+    );
+    let mut plan = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: g.turn,
+        rush: false,
+    };
+    ai.apply_city_state_harvest_to_strategy(&g, 0, &mut plan);
+    assert_eq!(
+        plan.strategy,
+        GrandStrategy::Culture,
+        "the target war lifts the gap"
+    );
+    assert_eq!(plan.target_player, Some(2));
+
+    g.at_war.insert((0, 1));
+    ai.maintain_city_state_harvest(&mut g, 0);
+    assert_eq!(
+        ai.city_state_harvest_target, None,
+        "another major's war releases it"
+    );
+}

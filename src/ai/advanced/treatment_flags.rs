@@ -9293,6 +9293,24 @@ impl AdvancedAi {
         self.science_specializes_earlier = false;
     }
 
+    /// Let the harvest take a weak major's border city too. See
+    /// [`Self::weak_neighbour_harvest`].
+    pub fn enable_weak_neighbour_harvest(&mut self) {
+        self.weak_neighbour_harvest = true;
+    }
+
+    /// The twin of `enable_weak_neighbour_harvest`.
+    pub fn disable_weak_neighbour_harvest(&mut self) {
+        self.weak_neighbour_harvest = false;
+        if self
+            .city_state_harvest_target
+            .as_ref()
+            .is_some_and(|target| target.major)
+        {
+            self.city_state_harvest_target = None;
+        }
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

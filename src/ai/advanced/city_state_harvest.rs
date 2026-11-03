@@ -80,6 +80,10 @@ pub(crate) const HARVEST_CITY_STATE_FROM_TURN: u32 = 100;
 pub(crate) const HARVEST_REACH_TILES: i32 = 6;
 /// The city-state city's least population worth a war.
 pub(crate) const HARVEST_MIN_POP: i32 = 4;
+/// `harvest-takes-the-weak-neighbour`: a weak MAJOR's city's least
+/// population worth the war (its cities are the bigger prize: the 11 of 68
+/// live Lv 7 seats of 11-02/03 with such a target saw population 9-12).
+pub(crate) const HARVEST_MAJOR_MIN_POP: i32 = 5;
 /// Our envoys at the city-state above which its suzerainty is kept.
 pub(crate) const HARVEST_MAX_OUR_ENVOYS: i64 = 1;
 /// The city-state's public military as a share of ours.
@@ -104,6 +108,9 @@ pub(crate) struct HarvestTarget {
     pub(crate) city: u32,
     pub(crate) named_turn: u32,
     pub(crate) declared_turn: Option<u32>,
+    /// A weak major's city (`harvest-takes-the-weak-neighbour`), not a
+    /// city-state's or a Free City's.
+    pub(crate) major: bool,
 }
 
 impl AdvancedAi {
@@ -115,13 +122,31 @@ impl AdvancedAi {
     }
 
     fn harvest_major_war(g: &Game, pid: usize) -> bool {
+        Self::harvest_major_war_but(g, pid, None)
+    }
+
+    /// A war with a major other than `except` (the harvest's own target).
+    fn harvest_major_war_but(g: &Game, pid: usize, except: Option<usize>) -> bool {
         g.players.iter().any(|player| {
             player.id != pid
+                && Some(player.id) != except
                 && player.alive
                 && !player.is_minor
                 && !player.is_barbarian
                 && g.is_at_war(pid, player.id)
         })
+    }
+
+    fn harvest_on(&self) -> bool {
+        self.city_state_harvest || self.weak_neighbour_harvest
+    }
+
+    fn harvest_label(major: bool) -> &'static str {
+        if major {
+            "Neighbour harvest"
+        } else {
+            "City-state harvest"
+        }
     }
 
     /// Our land military bodies within the muster radius of `city`, and
@@ -155,6 +180,11 @@ impl AdvancedAi {
         g: &Game,
         pid: usize,
     ) -> Option<(usize, u32)> {
+        self.harvest_candidate(g, pid).map(|(m, cid, _)| (m, cid))
+    }
+
+    /// The best harvest target: `(owner, city, owner is a major)`.
+    pub(crate) fn harvest_candidate(&self, g: &Game, pid: usize) -> Option<(usize, u32, bool)> {
         let ours = g.player_city_ids(pid);
         if ours.len() < 2 {
             return None;
@@ -163,7 +193,7 @@ impl AdvancedAi {
         if our_power <= 0.0 {
             return None;
         }
-        let mut best: Option<(f64, usize, u32)> = None;
+        let mut best: Option<(f64, usize, u32, bool)> = None;
         // A city-state waits for the expansion window to close, and a Science
         // seat (the lane of the first Lv 7 non-Diplomatic win, 025902Z) never
         // opens a city-state war: a Campus plan is where the war costs most.
@@ -173,17 +203,25 @@ impl AdvancedAi {
         // city of ours that rebelled into it is the cheapest city on the
         // board (live Immortal 221554Z: Okayama, population 7, flipped at
         // turn 90 with no defender and was never retaken).
-        for minor in g.players.iter().filter(|p| {
-            p.alive && ((city_states_open && p.is_minor && !p.is_barbarian) || p.is_free_city)
+        // `harvest-takes-the-weak-neighbour`: a major at a fifth to a third of
+        // our power, under the same window and Science rule.
+        let majors_open = self.weak_neighbour_harvest && city_states_open;
+        for owner in g.players.iter().filter(|p| {
+            p.alive
+                && p.id != pid
+                && ((self.city_state_harvest
+                    && ((city_states_open && p.is_minor && !p.is_barbarian) || p.is_free_city))
+                    || (majors_open && !p.is_minor && !p.is_barbarian && !p.is_free_city))
         }) {
-            let m = minor.id;
+            let m = owner.id;
+            let major = !owner.is_minor && !owner.is_barbarian && !owner.is_free_city;
             if !g.has_met(pid, m) {
                 continue;
             }
-            if g.suzerain_of(m).is_some_and(|suzerain| suzerain != pid) {
+            if !major && g.suzerain_of(m).is_some_and(|suzerain| suzerain != pid) {
                 continue;
             }
-            if g.envoys_at(pid, m) > HARVEST_MAX_OUR_ENVOYS {
+            if !major && g.envoys_at(pid, m) > HARVEST_MAX_OUR_ENVOYS {
                 continue;
             }
             if g.military_power(m) > HARVEST_MAX_POWER_SHARE * our_power {
@@ -194,7 +232,12 @@ impl AdvancedAi {
             }
             for cid in g.player_city_ids(m) {
                 let city = &g.cities[&cid];
-                if city.pop < HARVEST_MIN_POP || !g.players[pid].explored.contains(&city.pos) {
+                let floor = if major {
+                    HARVEST_MAJOR_MIN_POP
+                } else {
+                    HARVEST_MIN_POP
+                };
+                if city.pop < floor || !g.players[pid].explored.contains(&city.pos) {
                     continue;
                 }
                 let distance = ours
@@ -210,20 +253,20 @@ impl AdvancedAi {
                     - distance as f64 * 4.0
                     - city.wall_hp.max(0) as f64 / 20.0
                     - g.military_power(m) / our_power * 30.0;
-                let better = best.as_ref().is_none_or(|(top, top_m, top_c)| {
+                let better = best.as_ref().is_none_or(|(top, top_m, top_c, _)| {
                     score > *top || (score == *top && (m, cid) < (*top_m, *top_c))
                 });
                 if better {
-                    best = Some((score, m, cid));
+                    best = Some((score, m, cid, major));
                 }
             }
         }
-        best.map(|(_, m, cid)| (m, cid))
+        best.map(|(_, m, cid, major)| (m, cid, major))
     }
 
     /// Name, keep or release the harvest target, before the plan is read.
     pub(crate) fn maintain_city_state_harvest(&mut self, g: &mut Game, pid: usize) {
-        if !self.city_state_harvest {
+        if !self.harvest_on() {
             return;
         }
         // The harvest's war outlives its name: the shipped peace desk offers a
@@ -242,7 +285,10 @@ impl AdvancedAi {
                 target.declared_turn = Some(g.turn);
                 Self::harvest_count(g, pid, "declared");
             }
-            if !at_war && owner == Some(target.player) && !Self::harvest_major_war(g, pid) {
+            if !at_war
+                && owner == Some(target.player)
+                && !Self::harvest_major_war_but(g, pid, Some(target.player))
+            {
                 let (bodies, power) = Self::harvest_muster(g, pid, target.city);
                 let theirs = g.military_power(target.player).max(1.0);
                 if bodies >= HARVEST_MUSTER_BODIES && power >= HARVEST_LOCAL_EDGE * theirs {
@@ -255,7 +301,7 @@ impl AdvancedAi {
                             if self.journal().wants(crate::reasoning::Level::Strategy) {
                                 let c = &g.cities[&target.city];
                                 think!(self.journal(), Military, Strategy,
-                                       "City-state harvest declares on {}", c.name;
+                                       "{} declares on {}", Self::harvest_label(target.major), c.name;
                                        "{bodies} bodies within {HARVEST_MUSTER_TILES} tiles at \
                                         {power:.0} strength against its {theirs:.0}"; c.pos);
                             }
@@ -269,7 +315,7 @@ impl AdvancedAi {
                 Some("the city is ours")
             } else if owner != Some(target.player) {
                 Some("the city changed hands")
-            } else if Self::harvest_major_war(g, pid) {
+            } else if Self::harvest_major_war_but(g, pid, Some(target.player)) {
                 Some("a major is at war with us")
             } else if target.declared_turn.is_none()
                 && g.turn >= target.named_turn + HARVEST_DECLARE_PATIENCE
@@ -295,7 +341,7 @@ impl AdvancedAi {
                         .map(|city| city.name.clone())
                         .unwrap_or_default();
                     think!(self.journal(), Military, Strategy,
-                           "City-state harvest releases {}", name;
+                           "{} releases {}", Self::harvest_label(target.major), name;
                            "{why}, {} turns after it was named", g.turn - target.named_turn);
                 }
                 self.plan = None;
@@ -312,14 +358,14 @@ impl AdvancedAi {
         {
             return;
         }
-        let Some((player, city)) = self.city_state_harvest_candidate(g, pid) else {
+        let Some((player, city, major)) = self.harvest_candidate(g, pid) else {
             return;
         };
         Self::harvest_count(g, pid, "named");
         if self.journal().wants(crate::reasoning::Level::Strategy) {
             let c = &g.cities[&city];
             think!(self.journal(), Military, Strategy,
-                   "City-state harvest names {}", c.name;
+                   "{} names {}", Self::harvest_label(major), c.name;
                    "pop {}, walls {}, its military {:.0} against our {:.0}, {} of our envoys",
                    c.pop, c.wall_hp, g.military_power(player), g.military_power(pid),
                    g.envoys_at(pid, player); c.pos);
@@ -329,6 +375,7 @@ impl AdvancedAi {
             city,
             named_turn: g.turn,
             declared_turn: g.is_at_war(pid, player).then_some(g.turn),
+            major,
         });
         self.plan = None;
     }
@@ -352,7 +399,7 @@ impl AdvancedAi {
         pid: usize,
         plan: &mut StrategicPlan,
     ) {
-        if !self.city_state_harvest || self.war_plan.is_some() {
+        if !self.harvest_on() || self.war_plan.is_some() {
             return;
         }
         let named = self
@@ -363,7 +410,10 @@ impl AdvancedAi {
             return;
         }
         if plan.strategy == GrandStrategy::Recovery {
-            if plan.threatened_city.is_some() || Self::harvest_major_war(g, pid) {
+            let ours = named
+                .map(|target| target.player)
+                .or(self.city_state_harvest_war);
+            if plan.threatened_city.is_some() || Self::harvest_major_war_but(g, pid, ours) {
                 return;
             }
             let Some(lane) = self.active_victory_target(g) else {
