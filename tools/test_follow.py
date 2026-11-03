@@ -172,6 +172,66 @@ class FollowTest(unittest.TestCase):
         refresh.assert_called_once_with(4242)
         self.assertEqual(hold.call_count, 2)
 
+    def test_the_page_clock_is_the_seat_clock(self) -> None:
+        """`--speed online --turns 250` was a constant: Standard games printed /250."""
+        cases = (
+            # (seat fields, expected (speed, turns))
+            ({"speed": "GAMESPEED_STANDARD", "max_turns": 650}, ("standard", 650)),
+            ({"speed": "GAMESPEED_STANDARD", "max_turns": 500}, ("standard", 500)),
+            # No engine readback: the speed's own Civilization VI limit.
+            ({"speed": "GAMESPEED_STANDARD", "max_turns": -1}, ("standard", 500)),
+            ({"speed": "GAMESPEED_MARATHON"}, ("marathon", 1500)),
+            ({"speed": "GAMESPEED_QUICK"}, ("quick", 330)),
+            ({"speed": "GAMESPEED_ONLINE", "max_turns": 250}, ("online", 250)),
+            # A seat that names no speed is the lane's historical default.
+            ({}, ("online", 250)),
+        )
+        for seat, expected in cases:
+            with self.subTest(seat=seat), tempfile.TemporaryDirectory() as temporary:
+                Path(temporary, "events.jsonl").write_text(
+                    json.dumps({"kind": "seat", "players": 6, **seat}) + "\n")
+                follow.read_events(temporary)
+                self.assertEqual(follow.seat_clock(temporary), expected)
+
+    def test_another_runs_seat_is_not_this_runs_clock(self) -> None:
+        with tempfile.TemporaryDirectory() as shown, \
+             tempfile.TemporaryDirectory() as other:
+            Path(other, "events.jsonl").write_text(json.dumps(
+                {"kind": "seat", "speed": "GAMESPEED_EPIC", "max_turns": 750}) + "\n")
+            follow.read_events(other)
+            self.assertEqual(follow.seat_clock(shown), ("online", 250))
+
+    def test_the_visible_server_starts_on_the_seat_clock(self) -> None:
+        class LiveProcess:
+            pid = 4242
+            returncode = None
+
+            @staticmethod
+            def poll() -> None:
+                return None
+
+        with tempfile.TemporaryDirectory() as temporary:
+            Path(temporary, "events.jsonl").write_text(json.dumps(
+                {"kind": "seat", "players": 6, "speed": "GAMESPEED_STANDARD",
+                 "max_turns": 500}) + "\n")
+            previous_rig = follow.RIG
+            follow.RIG = temporary
+            try:
+                with mock.patch.object(follow, "stage_events", return_value=temporary), \
+                     mock.patch.object(follow, "server_alive", return_value=True), \
+                     mock.patch.object(follow.subprocess, "Popen",
+                                       return_value=LiveProcess()) as popen, \
+                     mock.patch.object(follow, "hold_the_frame"), \
+                     mock.patch.object(follow, "refresh_mirror_page"), \
+                     mock.patch.object(follow, "log", lambda _m: None), \
+                     mock.patch.object(follow.time, "sleep"):
+                    self.assertTrue(follow.start_visible_server(temporary, 6))
+            finally:
+                follow.RIG = previous_rig
+        command = popen.call_args.args[0]
+        self.assertEqual(command[command.index("--speed") + 1], "standard")
+        self.assertEqual(command[command.index("--turns") + 1], "500")
+
     def test_refreshing_an_existing_tab_uses_a_new_url_without_activating_chrome(self) -> None:
         with mock.patch.object(follow, "mirror_on_screen", return_value=True), \
              mock.patch.object(follow, "chrome") as chrome:
