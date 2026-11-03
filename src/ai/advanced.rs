@@ -10176,12 +10176,12 @@ mod close_as_a_body;
 
 mod siege_production;
 
+/// Opt-in routing from a Defend task force to its assigned city.
+mod anvil_assignment;
 /// Siege train and anvil: the doctrines of a force whose objective is a city
 /// — an enemy city to take, a city of ours to hold. Two opt-in genes; see
 /// `advanced/siege_train.rs`.
 mod siege_train;
-/// Opt-in routing from a Defend task force to its assigned city.
-mod anvil_assignment;
 
 /// Choose siege promotions for the active campaign walls.
 mod siege_promotions_open_the_walls;
