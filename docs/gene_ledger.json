@@ -4597,6 +4597,15 @@
           "culture-defense-theater-2": null
         }
       },
+      "culture-digs-one-museum": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "culture-digs-one-museum": null,
+          "culture-digs-one-museum-2": null
+        }
+      },
       "culture-keeps-every-border-open": {
         "rule_on": [],
         "head": null,

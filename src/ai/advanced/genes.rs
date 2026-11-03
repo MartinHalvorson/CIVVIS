@@ -4652,6 +4652,8 @@ pub const GENES: &[Gene] = &[
     // 82 visitors short). One Archaeological Museum opens the dig line. See
     // `advanced/culture_dig_museum.rs`.
     Gene { tag: "culture-digs-one-museum", field: "culture_digs_one_museum", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_digs_one_museum, disable: AdvancedAi::disable_culture_digs_one_museum },
+    // Version two: the same Museum choice, plus one idle queue for a digger.
+    Gene { tag: "culture-digs-one-museum-2", field: "culture_digs_one_museum_2", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_digs_one_museum_2, disable: AdvancedAi::disable_culture_digs_one_museum_2 },
     // Live King civvis-20261101T095815Z (with v1 armed) landed its Moon at
     // 202, one project behind Gran Colombia's Mars at 203, so the level-pad
     // reading never held. Research ran the war plan until an outright
