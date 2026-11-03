@@ -91,7 +91,7 @@ fn a_legal_building_repair_keeps_its_turn_too() {
     };
     g.map.tiles.get_mut(&pos).unwrap().pillaged = false;
     let c = g.cities.get_mut(&cid).unwrap();
-    c.buildings.insert(crate::name!("workshop"));
+    c.buildings.push(crate::name!("workshop"));
     c.pillaged_buildings.insert(crate::name!("workshop"));
     let repair = Item::Repair {
         repair: crate::name!("workshop"),
