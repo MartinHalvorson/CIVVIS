@@ -89,6 +89,20 @@ impl AdvancedAi {
         let builder = Item::Unit {
             unit: crate::name!("builder"),
         };
+        // A Builder at the head of a queue that its city finishes next turn is
+        // already the empire's Builder: buying it now spends about 100 Gold for
+        // one turn, while Gold binds from t30 to t60. Live: 4 of the 30 games
+        // of 2026-11-03 bought their own head Builder with one turn left (for
+        // example Vimayapura t29 and Caracas t30, 100 Gold each).
+        if g.player_city_ids(pid).into_iter().any(|cid| {
+            let city = &g.cities[&cid];
+            let rate = g.city_yields(cid).production;
+            matches!(city.queue.first(), Some(Item::Unit { unit }) if *unit == "builder")
+                && rate > 0.0
+                && g.item_cost_for_city(pid, cid, &builder) - city.production <= rate + 1e-9
+        }) {
+            return false;
+        }
         // (not already training one, price, city): the city training a
         // Builder first, then the cheapest, then the lowest id.
         let mut best: Option<(bool, i64, u32)> = None;
