@@ -6511,6 +6511,8 @@ pub struct AdvancedAi {
     city_state_harvest_target: Option<city_state_harvest::HarvestTarget>,
     /// No new harvest name before this turn.
     city_state_harvest_cooldown: u32,
+    /// The city-state the harvest declared on, while that war runs.
+    city_state_harvest_war: Option<usize>,
     // ---- append: e-f ------------------------------------------------
     /// Keep the first Science launch on its research path. Opt-in.
     first_launch_keeps_research: bool,
@@ -11644,6 +11646,7 @@ impl AdvancedAi {
             city_state_harvest: false,
             city_state_harvest_target: None,
             city_state_harvest_cooldown: 0,
+            city_state_harvest_war: None,
             // ---- append: e-f ----------------------------------------
             first_launch_keeps_research: false,
             first_pad_in_the_forge: false,
@@ -50397,12 +50400,12 @@ impl AdvancedAi {
         if rush_routes_frozen || self.plan_stale(g, pid) {
             let mut next = self.assess(g, pid);
             self.apply_war_plan_to_strategy(&mut next);
-            self.apply_city_state_harvest_to_strategy(&mut next);
+            self.apply_city_state_harvest_to_strategy(g, pid, &mut next);
             self.apply_air_surge_to_strategy(g, pid, &mut next);
             self.plan = Some(next);
         } else if let Some(mut current) = self.plan.take() {
             self.apply_war_plan_to_strategy(&mut current);
-            self.apply_city_state_harvest_to_strategy(&mut current);
+            self.apply_city_state_harvest_to_strategy(g, pid, &mut current);
             self.apply_air_surge_to_strategy(g, pid, &mut current);
             self.plan = Some(current);
         }
