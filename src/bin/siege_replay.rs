@@ -178,7 +178,8 @@ fn replay(
             // The grand strategy too, so a war's posture cost is visible.
             if thought.player == 0
                 && (thought.headline.to_lowercase().contains(&needle)
-                    || thought.headline.starts_with("Grand strategy"))
+                    || thought.headline.starts_with("Grand strategy")
+                    || thought.headline.starts_with("Gun threat"))
             {
                 let detail: String = thought.detail.chars().take(220).collect();
                 eprintln!("  t{} {} | {}", thought.turn, thought.headline, detail);

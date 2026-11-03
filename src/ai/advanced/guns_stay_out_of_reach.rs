@@ -82,6 +82,19 @@ impl AdvancedAi {
                 })
                 .collect();
             if self.gun_threat_draws_the_strike && !lethal.is_empty() {
+                threats.sort_unstable();
+                threats.dedup();
+                if self.journal().wants(crate::reasoning::Level::Detail) {
+                    for id in &threats {
+                        if let Some(hostile) = g.units.get(id) {
+                            crate::think!(self.journal(), Military, Detail,
+                                   "Gun threat: the {} at {:?} pins the {}", hostile.kind, hostile.pos,
+                                   g.units[&uid].kind;
+                                   "its one blow destroys the gun on {} reachable tile(s); it is the \
+                                    battle planner's priority kill", lethal.len());
+                        }
+                    }
+                }
                 self.gun_threat_sources.extend(threats);
             }
             if !lethal.is_empty() {
