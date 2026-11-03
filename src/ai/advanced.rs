@@ -9152,6 +9152,11 @@ pub struct AdvancedAi {
     /// lead, without waiting for a rival's launch. See
     /// `advanced/science_victory_drive.rs`. Off by default.
     science_drive_leads_beside_the_lane: bool,
+    /// `saved-work-is-seen`: the host's saved work on paused units, buildings
+    /// and projects (`Game::host_saved_work`) enters `City::production_progress`
+    /// before production, so the resume path and every remaining-cost price
+    /// see it. See `advanced/saved_work_is_seen.rs`. Off by default.
+    saved_work_is_seen: bool,
     // ---- append: t-z ------------------------------------------------
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
@@ -10402,6 +10407,8 @@ mod old_techs_before_the_beeline;
 mod peacetime_republic;
 /// `satellite-holds-the-pad`: see `advanced/satellite_holds_the_pad.rs`.
 mod satellite_holds_the_pad;
+/// `saved-work-is-seen`: see `advanced/saved_work_is_seen.rs`.
+mod saved_work_is_seen;
 mod science_denial_every_pad;
 mod science_denial_trains_spies;
 mod science_endgame;
@@ -12027,6 +12034,7 @@ impl AdvancedAi {
             science_drive_answers_from_the_pad_2: false,
             seat_city_pace: false,
             science_drive_leads_beside_the_lane: false,
+            saved_work_is_seen: false,
             // ---- append: t-z ----------------------------------------
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,
@@ -50567,6 +50575,11 @@ impl AdvancedAi {
         // the final pre-production state.
         self.settlement_atlas.borrow_mut().clear();
         self.lane_progress_cache.0.replace(None);
+
+        // `saved-work-is-seen`: the host's paused units, buildings and
+        // projects join the saved-work bank before any production writer
+        // prices an item. Exact no-op while the gene is off.
+        self.see_host_saved_work(g, pid);
 
         // `border-parity-2`: the severe-deficit preemption, beside the siege
         // reclaim it mirrors.
