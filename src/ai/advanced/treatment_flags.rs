@@ -9246,6 +9246,17 @@ impl AdvancedAi {
         self.saved_work_is_seen = false;
     }
 
+    /// Opt-in gene `science-specializes-earlier`; see
+    /// [`Self::science_specializes_earlier`].
+    pub fn enable_science_specializes_earlier(&mut self) {
+        self.science_specializes_earlier = true;
+    }
+
+    /// The twin of `enable_science_specializes_earlier`.
+    pub fn disable_science_specializes_earlier(&mut self) {
+        self.science_specializes_earlier = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

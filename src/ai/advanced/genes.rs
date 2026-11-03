@@ -4795,6 +4795,13 @@ pub const GENES: &[Gene] = &[
     // already keeps it. Inert on a native board (no host menu). See
     // `advanced/saved_work_is_seen.rs`.
     Gene { tag: "saved-work-is-seen", field: "saved_work_is_seen", kind: Kind::OptIn, enable: AdvancedAi::enable_saved_work_is_seen, disable: AdvancedAi::disable_saved_work_is_seen },
+    // Live Immortal 6p Continents 11-02/03: the seat never reached its city
+    // target, so Expansion (a beaker 1.2 against Science's 4.2) lasted to the
+    // halfway clock, 55% of the logged strategy turns. Every decided game was
+    // lost to a rival's science victory at t188-215. Under the gene an
+    // assigned Science lane specializes at a third of the clock, as Culture
+    // already does. See `advanced/science_specializes_earlier.rs`.
+    Gene { tag: "science-specializes-earlier", field: "science_specializes_earlier", kind: Kind::OptIn, enable: AdvancedAi::enable_science_specializes_earlier, disable: AdvancedAi::disable_science_specializes_earlier },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
