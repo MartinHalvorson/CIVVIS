@@ -5080,6 +5080,8 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// Follow the objective board's own Defend assignment. Off by default.
+    anvil_follows_the_defense: bool,
     /// `board-ignores-the-faith-war`: the war `faith-war-is-no-front`
     /// exempts from `one_war_holds_declaration` does not hold the board's
     /// declaration (`war_policy_declaration`) either. Off by default.
@@ -11335,6 +11337,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            anvil_follows_the_defense: false,
             board_ignores_the_faith_war: false,
             aluminum_tile_spends_the_war_chest: false,
             breaker_bought_for_the_siege: false,
@@ -51354,3 +51357,6 @@ mod native_domination_activation_tests;
 
 #[cfg(test)]
 mod builder_job_safety_tests;
+
+/// Opt-in formation routing; preserves the original Anvil when disabled.
+mod anvil_assignment;
