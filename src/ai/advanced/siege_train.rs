@@ -88,9 +88,7 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use super::{
-    AdvancedAi, AppliedAttack, ForceDomain, ForceGroup, StrategicPlan, THREAT_RELIEF_RADIUS,
-};
+use super::{AdvancedAi, AppliedAttack, ForceDomain, ForceGroup, StrategicPlan};
 use crate::game::{effective_strength, expected_damage, Action, Game};
 use crate::think;
 use crate::Pos;

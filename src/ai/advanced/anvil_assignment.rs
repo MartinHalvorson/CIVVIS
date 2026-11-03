@@ -1,11 +1,9 @@
 //! `anvil-follows-the-defense`: a Defend force forms around its own city.
 //!
-//! The board can assign Defend Constantinople while the independent strategic
-//! plan names Trebizond. The original Anvil reads the latter and takes the
-//! nearest land force away from its board assignment. This candidate reads the
-//! stable task-force key, never the group's tactical contact tile. Other board
-//! missions retain their ordinary movement. Board disabled or gene withheld:
-//! preserve the original nearest-force/global-threat routing.
+//! Read the stable task-force key, never the group's tactical contact tile.
+//! Other board missions retain ordinary movement. With either the board or
+//! this opt-in gene disabled, preserve the original global-threat routing.
+use super::objective_board::ObjectiveKey;
 use super::*;
 
 impl AdvancedAi {
@@ -16,13 +14,36 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         group: &ForceGroup,
     ) -> Option<u32> {
-        let cid = plan.threatened_city?;
+        let cid = if self.anvil_follows_the_defense && self.objective_board {
+            // Defend has one task force per domain. Relieve, offensive and
+            // unassigned forces keep their own mission instead of being borrowed
+            // by the global threat city's formation.
+            let force = self
+                .objective_board_state
+                .forces
+                .iter()
+                .find(|force| force.id == group.id && force.domain == ForceDomain::Land)?;
+            match force.objective_key {
+                ObjectiveKey::Defend(cid) => cid,
+                _ => return None,
+            }
+        } else {
+            let cid = plan.threatened_city?;
+            let city = g.cities.get(&cid).filter(|city| city.owner == pid)?;
+            let nearest = self
+                .force_groups
+                .iter()
+                .filter(|other| other.domain == ForceDomain::Land)
+                .min_by_key(|other| (g.wdist(other.anchor, city.pos), other.id))
+                .map(|other| other.id)?;
+            if group.id != nearest {
+                return None;
+            }
+            cid
+        };
         let city = g.cities.get(&cid).filter(|city| city.owner == pid)?;
-        let nearest = self.force_groups.iter()
-            .filter(|other| other.domain == ForceDomain::Land)
-            .min_by_key(|other| (g.wdist(other.anchor, city.pos), other.id))
-            .map(|other| other.id)?;
-        (group.id == nearest && g.wdist(group.anchor, city.pos) <= THREAT_RELIEF_RADIUS)
+        (group.domain == ForceDomain::Land
+            && g.wdist(group.anchor, city.pos) <= THREAT_RELIEF_RADIUS)
             .then_some(cid)
     }
 }

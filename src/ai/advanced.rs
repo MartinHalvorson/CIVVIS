@@ -10180,6 +10180,8 @@ mod siege_production;
 /// — an enemy city to take, a city of ours to hold. Two opt-in genes; see
 /// `advanced/siege_train.rs`.
 mod siege_train;
+/// Opt-in routing from a Defend task force to its assigned city.
+mod anvil_assignment;
 
 /// Choose siege promotions for the active campaign walls.
 mod siege_promotions_open_the_walls;
@@ -51357,6 +51359,3 @@ mod native_domination_activation_tests;
 
 #[cfg(test)]
 mod builder_job_safety_tests;
-
-/// Opt-in formation routing; preserves the original Anvil when disabled.
-mod anvil_assignment;

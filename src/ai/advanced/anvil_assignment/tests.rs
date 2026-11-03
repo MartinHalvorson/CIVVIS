@@ -1,5 +1,5 @@
-use super::*;
 use super::super::objective_board::{ObjectiveKey, TaskForce};
+use super::*;
 
 fn fixture() -> (Game, AdvancedAi, StrategicPlan, ForceGroup, u32, u32) {
     let mut g = Game::new_full(2, 24, 16, 59006400, 250, 0, false);
@@ -16,22 +16,39 @@ fn fixture() -> (Game, AdvancedAi, StrategicPlan, ForceGroup, u32, u32) {
     let capital = g.city_at((4, 4)).unwrap();
     let frontier = g.city_at((9, 4)).unwrap();
     let group = ForceGroup {
-        id: 17, domain: ForceDomain::Land, units: vec![], anchor: (6, 4),
-        objective: (5, 4), focus_target: Some((5, 4)),
-        posture: ForcePosture::Engage, readiness: 0.0, local_strength_ratio: 0.4,
+        id: 17,
+        domain: ForceDomain::Land,
+        units: vec![],
+        anchor: (6, 4),
+        objective: (5, 4),
+        focus_target: Some((5, 4)),
+        posture: ForcePosture::Engage,
+        readiness: 0.0,
+        local_strength_ratio: 0.4,
     };
     let mut ai = AdvancedAi::targeting(VictoryTarget::Religion);
     ai.objective_board = true;
     ai.enable_anvil_follows_the_defense();
     ai.force_groups = vec![group.clone()];
     ai.objective_board_state.forces.push(TaskForce {
-        id: 17, objective_key: ObjectiveKey::Defend(capital), domain: ForceDomain::Land,
-        units: vec![], rally: (4, 4), doctrine_state: ForcePosture::Engage,
-        aimed_at: (4, 4), formed: g.turn,
+        id: 17,
+        objective_key: ObjectiveKey::Defend(capital),
+        domain: ForceDomain::Land,
+        units: vec![],
+        rally: (4, 4),
+        doctrine_state: ForcePosture::Engage,
+        aimed_at: (4, 4),
+        formed: g.turn,
     });
-    let plan = StrategicPlan { strategy: GrandStrategy::Recovery, target_player: None,
-        target_city: None, threatened_city: Some(frontier), desired_cities: 3,
-        assessed_turn: g.turn, rush: false };
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Recovery,
+        target_player: None,
+        target_city: None,
+        threatened_city: Some(frontier),
+        desired_cities: 3,
+        assessed_turn: g.turn,
+        rush: false,
+    };
     (g, ai, plan, group, capital, frontier)
 }
 
@@ -58,8 +75,12 @@ fn board_disabled_preserves_the_original_selection() {
 #[test]
 fn other_missions_are_not_taken_for_the_global_threat() {
     let (g, mut ai, plan, group, capital, _) = fixture();
-    for key in [ObjectiveKey::Siege(capital), ObjectiveKey::Relieve(capital),
-                ObjectiveKey::Recon(0), ObjectiveKey::Reserve] {
+    for key in [
+        ObjectiveKey::Siege(capital),
+        ObjectiveKey::Relieve(capital),
+        ObjectiveKey::Recon(0),
+        ObjectiveKey::Reserve,
+    ] {
         ai.objective_board_state.forces[0].objective_key = key;
         assert_eq!(ai.anvil_defense_city(&g, 0, &plan, &group), None, "{key:?}");
     }
@@ -90,7 +111,9 @@ fn a_lost_missing_or_distant_assigned_city_is_rejected() {
 #[test]
 fn an_unassigned_closer_force_cannot_take_the_defend_force_off_its_city() {
     let (g, mut ai, plan, group, capital, _) = fixture();
-    let mut other = group.clone(); other.id = 18; other.anchor = (4, 4);
+    let mut other = group.clone();
+    other.id = 18;
+    other.anchor = (4, 4);
     ai.force_groups.push(other);
     assert_eq!(ai.anvil_defense_city(&g, 0, &plan, &group), Some(capital));
 }
@@ -99,6 +122,8 @@ fn an_unassigned_closer_force_cannot_take_the_defend_force_off_its_city() {
 fn default_and_toggle_are_explicit() {
     let mut ai = AdvancedAi::targeting(VictoryTarget::Religion);
     assert!(!ai.anvil_follows_the_defense);
-    ai.enable_anvil_follows_the_defense(); assert!(ai.anvil_follows_the_defense);
-    ai.disable_anvil_follows_the_defense(); assert!(!ai.anvil_follows_the_defense);
+    ai.enable_anvil_follows_the_defense();
+    assert!(ai.anvil_follows_the_defense);
+    ai.disable_anvil_follows_the_defense();
+    assert!(!ai.anvil_follows_the_defense);
 }

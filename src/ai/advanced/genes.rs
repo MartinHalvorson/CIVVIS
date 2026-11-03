@@ -4807,8 +4807,8 @@ pub const GENES: &[Gene] = &[
     // tie) whose cards do not already speed a Builder. See
     // `advanced/gold_buys_the_backlog_builder.rs`.
     Gene { tag: "gold-buys-the-backlog-builder", field: "gold_buys_the_backlog_builder", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_buys_the_backlog_builder, disable: AdvancedAi::disable_gold_buys_the_backlog_builder },
-    // ---- append: a-b ------------------------------------------------
     Gene { tag: "anvil-follows-the-defense", field: "anvil_follows_the_defense", kind: Kind::OptIn, enable: AdvancedAi::enable_anvil_follows_the_defense, disable: AdvancedAi::disable_anvil_follows_the_defense },
+    // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------

@@ -9257,7 +9257,6 @@ impl AdvancedAi {
         self.gold_buys_the_backlog_builder = false;
     }
 
-    // ---- append: a-b ------------------------------------------------
     /// Enable measured routing to the board's assigned Defend city.
     pub fn enable_anvil_follows_the_defense(&mut self) {
         self.anvil_follows_the_defense = true;
@@ -9266,6 +9265,7 @@ impl AdvancedAi {
     pub fn disable_anvil_follows_the_defense(&mut self) {
         self.anvil_follows_the_defense = false;
     }
+    // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
