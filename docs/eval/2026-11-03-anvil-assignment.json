@@ -351,5 +351,10 @@
       "gene-fire-tests-corrected.log": "d368a19776c3364310e9ba5d9be2ec81bf5beb18bd4226ae2826cc2889affd5f",
       "gene-fire-tests-import-failure.log": "4e4ee650df96542affb9c88264ce41ae6dbbb3023c24b0088470ac4c1ad32969"
     }
+  },
+  "integration_supplement": {
+    "path": "docs/eval/2026-11-03-anvil-assignment.integration.json",
+    "source_commit": "19a717d6ecd6b6715274d6e269e3564ed4443335",
+    "archive_sha256": "7e3ef338b3aa7b5d7282b563557f4692fc9439fc0f79daf19fbf5855f300c63d"
   }
 }
