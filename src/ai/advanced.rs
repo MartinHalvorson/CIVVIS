@@ -6497,6 +6497,15 @@ pub struct AdvancedAi {
     /// `deterrence-trusts-a-friend`: no near-rival deterrent against a rival
     /// we are declared friends with. See `advanced/deterrence_trusts_a_friend.rs`.
     deterrence_trusts_a_friend: bool,
+    /// `city-state-harvest`: a soft city-state city beside the empire is the
+    /// plan's Conquest target for a bounded window. See
+    /// `advanced/city_state_harvest.rs`. Off by default.
+    city_state_harvest: bool,
+    /// The city the harvest is aimed at. Written only while
+    /// `city_state_harvest` is on.
+    city_state_harvest_target: Option<city_state_harvest::HarvestTarget>,
+    /// No new harvest name before this turn.
+    city_state_harvest_cooldown: u32,
     // ---- append: e-f ------------------------------------------------
     /// Keep the first Science launch on its research path. Opt-in.
     first_launch_keeps_research: bool,
@@ -10224,6 +10233,8 @@ mod war_policy;
 mod city_campaign;
 /// `city-state-war-is-no-front`: see `advanced/city_state_war_is_no_front.rs`.
 mod city_state_war_is_no_front;
+/// `city-state-harvest`: see `advanced/city_state_harvest.rs`.
+mod city_state_harvest;
 
 /// Shared fog-safe battlefront observations and city-pressure calculations.
 mod battlefront;
@@ -11604,6 +11615,9 @@ impl AdvancedAi {
             culture_seat_allies: false,
             domination_joins_the_race: false,
             deterrence_trusts_a_friend: false,
+            city_state_harvest: false,
+            city_state_harvest_target: None,
+            city_state_harvest_cooldown: 0,
             // ---- append: e-f ----------------------------------------
             first_launch_keeps_research: false,
             first_pad_in_the_forge: false,
@@ -50309,6 +50323,10 @@ impl AdvancedAi {
         // `assess` aims the army. Exact no-op while off. See
         // `advanced/early_conquest.rs`.
         self.maintain_conquest_opening(g, pid);
+        // `city-state-harvest`: name, keep or release the city-state city
+        // the plan conquers next. Exact no-op while off. See
+        // `advanced/city_state_harvest.rs`.
+        self.maintain_city_state_harvest(g, pid);
         // `city_campaign`: drop the cities the plan has taken, expire one
         // never launched, draw or refresh one at peace. See
         // `advanced/city_campaign.rs`.
@@ -50345,10 +50363,12 @@ impl AdvancedAi {
         if rush_routes_frozen || self.plan_stale(g, pid) {
             let mut next = self.assess(g, pid);
             self.apply_war_plan_to_strategy(&mut next);
+            self.apply_city_state_harvest_to_strategy(&mut next);
             self.apply_air_surge_to_strategy(g, pid, &mut next);
             self.plan = Some(next);
         } else if let Some(mut current) = self.plan.take() {
             self.apply_war_plan_to_strategy(&mut current);
+            self.apply_city_state_harvest_to_strategy(&mut current);
             self.apply_air_surge_to_strategy(g, pid, &mut current);
             self.plan = Some(current);
         }
