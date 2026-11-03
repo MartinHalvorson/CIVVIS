@@ -37,7 +37,8 @@ local realPrint = print
 print = function(line)
 	if type(line) == "string" and (line:find('"kind":"deal_', 1, true)
 			or line:find('"kind":"peace_', 1, true)
-			or line:find('"kind":"orphan_', 1, true)) then
+			or line:find('"kind":"orphan_', 1, true)
+			or line:find('"kind":"counter_', 1, true)) then
 		events[#events + 1] = line
 	end
 end
@@ -370,9 +371,58 @@ TURN = 80
 local refused, refusedPlayer = fixture({ atWar = true })
 applyOrder(refusedPlayer, 7, { kind = "peace", subject = "6" }, TURN)
 onStatement(7, 6, { StatementType = "MAKE_DEAL", SessionID = 904 })
+local closedBeforePeaceRefusal = #sessions.closed
 onStatement(6, 7, { StatementType = "MAKE_DEAL", SessionID = 904, DealAction = DealProposalAction.REJECTED })
 check("a refused peace sends nothing more", #refused.sends, 1)
 check("the refusal is in the ledger", eventField(lastEvent("peace_response"), "accepted"), "false")
+
+-- A refusal may be followed by the rival's counter in this same session.
+-- Closing at the refusal loses ownership before that next statement arrives.
+check("a refused peace keeps its session for the counter", trade.sessions[6] ~= nil, true)
+check("a peace refusal does not close under its counter", #sessions.closed, closedBeforePeaceRefusal)
+check("the peace counter wait is recorded", eventField(lastEvent("deal_session"), "phase"), "counter_wait")
+check("the peace counter hold is bounded", holds[#holds] and holds[#holds].seconds, 4)
+onStatement(6, 7, { StatementType = "MAKE_DEAL", SessionID = 9999, StatementSubType = "POSITIVE" })
+onStatement(6, 7, { StatementType = "GREETING", SessionID = 904, StatementSubType = "POSITIVE" })
+onStatement(7, 6, { StatementType = "MAKE_DEAL", SessionID = 904, StatementSubType = "POSITIVE" })
+check("unrelated statements do not consume a peace counter", #refused.sends, 1)
+onStatement(6, 7, { StatementType = "MAKE_DEAL", SessionID = 904, StatementSubType = "POSITIVE" })
+check("the peace counter is refused", refused.sends[2] and refused.sends[2][1], "rejected")
+check("the peace counter is recorded", eventField(lastEvent("counter_answered"), "statement"), "POSITIVE")
+check("peace closes after the counter is answered", sessions.closed[#sessions.closed], 904)
+check("the answered peace counter is forgotten", trade.sessions[6], nil)
+check("a refused counter does not enact peace", refused.atWar, true)
+
+TURN = 84
+local noCounter, noCounterPlayer = fixture({ atWar = true })
+applyOrder(noCounterPlayer, 7, { kind = "peace", subject = "18" }, TURN)
+onStatement(7, 18, { StatementType = "MAKE_DEAL", SessionID = 918 })
+onStatement(18, 7, { StatementType = "MAKE_DEAL", SessionID = 918, DealAction = DealProposalAction.REJECTED })
+local unansweredBeforePeaceCounter = trade.unanswered
+onClosed(918)
+check("no peace counter closes with its own reason", eventField(lastEvent("deal_session"), "why"), "counter_not_sent")
+check("a refused peace is not an unanswered ask", trade.unanswered, unansweredBeforePeaceCounter)
+check("no peace counter leaves no held turn", trade.turnHold, nil)
+check("no peace counter leaves no session", trade.sessions[18], nil)
+
+CivvisControlConfig.PeaceCounterHoldSeconds = 0
+TURN = 85
+local immediate, immediatePlayer = fixture({ atWar = true })
+applyOrder(immediatePlayer, 7, { kind = "peace", subject = "19" }, TURN)
+onStatement(7, 19, { StatementType = "MAKE_DEAL", SessionID = 919 })
+onStatement(19, 7, { StatementType = "MAKE_DEAL", SessionID = 919, DealAction = DealProposalAction.REJECTED })
+check("zero peace counter hold restores immediate close", trade.sessions[19], nil)
+check("zero hold closes the actual session", sessions.closed[#sessions.closed], 919)
+CivvisControlConfig.PeaceCounterHoldSeconds = nil
+
+CivvisControlConfig.DealSessions = "trade"
+TURN = 86
+local requestedBeforeTradeOnly = #sessions.requested
+local directPeace, directPeacePlayer = fixture({ atWar = true })
+applyOrder(directPeacePlayer, 7, { kind = "peace", subject = "20" }, TURN)
+check("trade-only peace retains its direct proposal", directPeace.sends[1] and directPeace.sends[1][1], "proposed")
+check("trade-only peace opens no session", #sessions.requested, requestedBeforeTradeOnly)
+check("trade-only peace registers no counter wait", trade.sessions[20], nil)
 
 -- ── Peace-only mode keeps trade asks direct but still opens a peace session ──
 CivvisControlConfig.DealSessions = "peace"

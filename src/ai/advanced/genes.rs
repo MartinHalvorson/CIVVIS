@@ -4773,6 +4773,28 @@ pub const GENES: &[Gene] = &[
     // rival capital at standard turn 180 (live t120) retargets to Science.
     // See `advanced/stalled_conquest_takes_science.rs`.
     Gene { tag: "stalled-conquest-takes-science", field: "stalled_conquest_takes_science", kind: Kind::OptIn, enable: AdvancedAi::enable_stalled_conquest_takes_science, disable: AdvancedAi::disable_stalled_conquest_takes_science },
+    // Operator 11-02, live Lv 6 civvis-20261102T163456Z (Inca): the air-surge
+    // beeline reached Flight t127 / Advanced Flight t138 while Iron Working
+    // waited to t116 and Machinery to t139, so the seat bought 12 Warriors
+    // (t81-114) and 12 Archers (t121-138) in the Renaissance and Industrial
+    // eras and still fielded both in the Information era. Under the gene the
+    // research slot takes, ahead of the air surge and every lane beeline, the
+    // technology our land army waits on to upgrade once the world has left
+    // its era, then any technology two eras behind the world. See
+    // `advanced/old_techs_before_the_beeline.rs`.
+    Gene { tag: "old-techs-before-the-beeline", field: "old_techs_before_the_beeline", kind: Kind::OptIn, enable: AdvancedAi::enable_old_techs_before_the_beeline, disable: AdvancedAi::disable_old_techs_before_the_beeline },
+    // `saved-work-is-seen`: live, the host keeps a switched item's progress
+    // (382 of 383 resumed Buildings in 38 Emperor/Immortal games on
+    // 2026-11-02 restarted from it), but the menu export carried `pr` for
+    // districts only, so the mirror's bank never held a paused unit, building
+    // or project: the resume path fired about once a game while a median 17
+    // paused units, buildings and projects a game were never finished, their
+    // saved work 4.9-7.9% of all city production. Under the gene the host's
+    // saved work on paused units, buildings and projects enters
+    // `City::production_progress` before production, as the native engine
+    // already keeps it. Inert on a native board (no host menu). See
+    // `advanced/saved_work_is_seen.rs`.
+    Gene { tag: "saved-work-is-seen", field: "saved_work_is_seen", kind: Kind::OptIn, enable: AdvancedAi::enable_saved_work_is_seen, disable: AdvancedAi::disable_saved_work_is_seen },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
