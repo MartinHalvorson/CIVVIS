@@ -1,5 +1,8 @@
 use super::super::*;
-use super::{HARVEST_DECLARE_PATIENCE, HARVEST_FROM_TURN, HARVEST_MUSTER_BODIES};
+use super::{
+    HARVEST_CITY_STATE_FROM_TURN, HARVEST_DECLARE_PATIENCE, HARVEST_FROM_TURN,
+    HARVEST_MUSTER_BODIES,
+};
 
 /// Seat 0 with two cities and a Warrior; major 1 far away; city-state 2 with
 /// one population-6 city four tiles from our capital, met and explored.
@@ -30,12 +33,12 @@ fn fixture() -> (Game, u32) {
         g.spawn_test_unit("warrior", 0, (4, 8));
     }
     g.current = 0;
-    g.turn = HARVEST_FROM_TURN + 5;
+    g.turn = HARVEST_CITY_STATE_FROM_TURN + 5;
     (g, city)
 }
 
 fn harvest_ai() -> AdvancedAi {
-    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Culture);
     ai.enable_city_state_harvest();
     ai
 }
@@ -246,4 +249,35 @@ fn a_muster_beside_the_city_declares_and_a_thin_one_does_not() {
     }
     ai.maintain_city_state_harvest(&mut g, 0);
     assert!(!g.is_at_war(0, 2), "two bodies are not a muster");
+}
+
+#[test]
+fn a_city_state_waits_for_the_expansion_window_and_skips_a_science_seat() {
+    let (mut g, city) = fixture();
+    let ai = harvest_ai();
+    g.turn = HARVEST_CITY_STATE_FROM_TURN - 1;
+    assert_eq!(
+        ai.city_state_harvest_candidate(&g, 0),
+        None,
+        "inside the window"
+    );
+    g.turn = HARVEST_CITY_STATE_FROM_TURN;
+    assert_eq!(ai.city_state_harvest_candidate(&g, 0), Some((2, city)));
+
+    let mut science = AdvancedAi::targeting(VictoryTarget::Science);
+    science.enable_city_state_harvest();
+    assert_eq!(
+        science.city_state_harvest_candidate(&g, 0),
+        None,
+        "a Science seat"
+    );
+
+    g.players[2].is_barbarian = true;
+    g.players[2].is_free_city = true;
+    g.turn = HARVEST_FROM_TURN + 1;
+    assert_eq!(
+        science.city_state_harvest_candidate(&g, 0),
+        Some((2, city)),
+        "our rebel Free City is retaken early and on any lane"
+    );
 }

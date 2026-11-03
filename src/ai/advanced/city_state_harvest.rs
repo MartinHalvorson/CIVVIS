@@ -24,7 +24,9 @@
 //!
 //! While no other overlay owns the war (no timed-war appointment), no war
 //! with a major is running and the empire is past [`HARVEST_FROM_TURN`] with
-//! two cities, it names the best city-state city that is:
+//! two cities, it names the best city that is (a city-state's only from
+//! [`HARVEST_CITY_STATE_FROM_TURN`], after the expansion window, and never
+//! on a Science seat):
 //!
 //! - owned by a city-state we have MET, or by the Free Cities (a city that
 //!   rebelled on loyalty: across 72 recorded runs of 11-02, 24 of our cities
@@ -64,8 +66,16 @@
 use super::*;
 use crate::think;
 
-/// The earliest turn a city-state is named (Online speed).
+/// The earliest turn any harvest is named (Online speed): a rebel Free City.
 pub(crate) const HARVEST_FROM_TURN: u32 = 40;
+/// The earliest turn a CITY-STATE city is named. The paired Immortal read of
+/// version two (2026-11-03, live genome ± the gene, seeds 43540000+) fired
+/// in three of thirteen pairs and took a city in each, but where it fired
+/// inside the expansion window it cost the economy: declared at turn 50,
+/// science at turn 150 169 -> 132 and score share .159 -> .140 (the city
+/// count fell behind from turn 60); at turn 80, science at 100 76 -> 45 and
+/// share .119 -> .112; at turn 125, science 45 -> 49 and share .092 -> .094.
+pub(crate) const HARVEST_CITY_STATE_FROM_TURN: u32 = 100;
 /// Tiles from the nearest of our cities to the city-state city.
 pub(crate) const HARVEST_REACH_TILES: i32 = 6;
 /// The city-state city's least population worth a war.
@@ -154,15 +164,18 @@ impl AdvancedAi {
             return None;
         }
         let mut best: Option<(f64, usize, u32)> = None;
+        // A city-state waits for the expansion window to close, and a Science
+        // seat (the lane of the first Lv 7 non-Diplomatic win, 025902Z) never
+        // opens a city-state war: a Campus plan is where the war costs most.
+        let city_states_open = g.turn >= HARVEST_CITY_STATE_FROM_TURN
+            && self.active_victory_target(g) != Some(VictoryTarget::Science);
         // A Free Cities seat carries `is_barbarian` and is always at war; a
         // city of ours that rebelled into it is the cheapest city on the
         // board (live Immortal 221554Z: Okayama, population 7, flipped at
         // turn 90 with no defender and was never retaken).
-        for minor in g
-            .players
-            .iter()
-            .filter(|p| p.alive && ((p.is_minor && !p.is_barbarian) || p.is_free_city))
-        {
+        for minor in g.players.iter().filter(|p| {
+            p.alive && ((city_states_open && p.is_minor && !p.is_barbarian) || p.is_free_city)
+        }) {
             let m = minor.id;
             if !g.has_met(pid, m) {
                 continue;
