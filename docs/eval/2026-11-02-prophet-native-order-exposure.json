@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "recorded_utc": "2026-11-03T00:14:41.458099+00:00",
+  "recorded_utc": "2026-11-03T00:20:28.722793+00:00",
   "scope": "Native handover activation and first changed host order on a qualified captured-world prefix; no counterfactual outcome, accepted-peace or strength estimate.",
   "run": "civvis-20261102T232731Z",
   "native": {
@@ -248,12 +248,12 @@
   ],
   "delivery_limit": "Two later parameterized repetitions timed out before the action endpoint, including the experimental last-snapshot delivery mode. Causes remain unresolved; failures are retained and no failing variant is counted as an action comparison.",
   "experimental_executed_source_sha256": "22f4f50a7334595fceba805273960c70421a8fae44786adba00c923f8248432d",
-  "reproducer_sha256": "346f6f6869da0a44e6511349e9ba63e183cc09362e8c7ebff8974bcba64d2240",
+  "reproducer_sha256": "53d741b5e90d0326261384f34c3cd6daf713c7017b689a256bf1d9dea2ceaa3f",
   "base_driver_sha256": "f0cb7f2b84173dca2115514b35e12a55acea7cffe303c3d0ba22f41d6c628e7e",
   "archive": {
     "file": "2026-11-02-prophet-native-order-exposure.raw.tar.xz",
-    "bytes": 934248,
-    "sha256": "d38481986ab51ab034a922e9a8eb6edfcf429842eccf03558a0535b4704c10b6",
+    "bytes": 934220,
+    "sha256": "eb5323ff44602f8102ab32dd64034623e1f7f76f344008589ca260d6a4d12352",
     "members": [
       {
         "path": "before-program-provenance.json",
@@ -732,8 +732,8 @@
       },
       {
         "path": "replay.py",
-        "bytes": 10060,
-        "sha256": "346f6f6869da0a44e6511349e9ba63e183cc09362e8c7ebff8974bcba64d2240"
+        "bytes": 10059,
+        "sha256": "53d741b5e90d0326261384f34c3cd6daf713c7017b689a256bf1d9dea2ceaa3f"
       },
       {
         "path": "reproducer-help.txt",

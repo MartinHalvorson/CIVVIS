@@ -109,7 +109,7 @@ if args.delivery=='last-snapshot':
   (out/'delivery-qualification.json').write_text(json.dumps(proof_report,indent=2)+'\n')
   print(json.dumps({'delivery_control':number,'passed':control['passed'],'requests':len(control['requests']),'error':control.get('error')}),flush=True)
   if not control['passed']:raise SystemExit(2)
- 
+
 
 # This changes ONLY the compared payload for these counterfactual runs. The
 # original full-payload qualifications above stay separate and unmodified;

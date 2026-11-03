@@ -52,7 +52,7 @@ out. The underlying cause is unresolved. The public reproducer defaults
 to the original delivery mode and fails closed on deadline, identity or
 read-byte disagreement. Failing variants do not count as action comparisons.
 
-The companion JSON verifies the 934,248-byte archive and all 102 member
+The companion JSON verifies the 934,220-byte archive and all 102 member
 hashes: original observations, sealed inputs, full native replies, commands,
 genomes, submitted-request readback, terminal summary, valid comparisons,
 both failed repetitions, and source/provenance receipts. The exact recorded
