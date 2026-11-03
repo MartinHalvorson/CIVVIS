@@ -358,3 +358,27 @@ fn a_shifted_city_id_or_owner_seat_is_re_read_from_the_tile() {
         None
     );
 }
+
+#[test]
+fn a_war_the_host_refused_releases_the_name() {
+    let (mut g, _) = fixture();
+    let mut ai = harvest_ai();
+    ai.maintain_city_state_harvest(&mut g, 0);
+    ai.maintain_city_state_harvest(&mut g, 0);
+    assert!(
+        g.is_at_war(0, 2),
+        "the model holds the declaration for the frame"
+    );
+    // Live, the next frame's mirror reads the host, which refused it.
+    g.at_war.retain(|pair| *pair != (0, 2) && *pair != (2, 0));
+    assert!(!g.is_at_war(0, 2));
+    ai.maintain_city_state_harvest(&mut g, 0);
+    assert_eq!(ai.city_state_harvest_target, None);
+    assert_eq!(
+        g.players[0].counters.get("city_state_harvest:refused"),
+        Some(&1)
+    );
+    assert_eq!(ai.city_state_harvest_war, None, "no war to remember");
+    ai.maintain_city_state_harvest(&mut g, 0);
+    assert_eq!(ai.city_state_harvest_target, None, "the cooldown holds");
+}
