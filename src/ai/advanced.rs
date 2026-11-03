@@ -8067,6 +8067,11 @@ pub struct AdvancedAi {
     /// the displacing item is urgent. See
     /// `advanced/near_done_work_finishes.rs`. Off by default.
     near_done_work_finishes: bool,
+    /// `near-done-work-finishes-2`: version 1, and a city whose queue is
+    /// empty when production starts first takes up a paused build within two
+    /// turns of done, so version 1's restore then protects it. See
+    /// `advanced/near_done_work_finishes.rs`. Off by default.
+    near_done_work_finishes_2: bool,
     // ---- append: p-r ------------------------------------------------
     /// `pillaged-districts-repair-first`: a pillaged district's repair claims its
     /// city after every other claim. See `advanced/pillaged_repairs_first.rs`.
@@ -11876,6 +11881,7 @@ impl AdvancedAi {
             launcher_war_fights_the_faster_racer: false,
             launch_pad_holds_its_queue: false,
             near_done_work_finishes: false,
+            near_done_work_finishes_2: false,
             // ---- append: p-r ----------------------------------------
             pillaged_districts_repair_first: false,
             religion_lane_hands_over: false,
@@ -50644,7 +50650,7 @@ impl AdvancedAi {
         self.see_host_saved_work(g, pid);
         // `near-done-work-finishes`: every city's head before any production
         // writer runs. Empty while the gene is off.
-        let near_done_heads = self.near_done_heads(g, pid);
+        let near_done_heads = self.near_done_heads(g, pid, &plan);
 
         // `border-parity-2`: the severe-deficit preemption, beside the siege
         // reclaim it mirrors.

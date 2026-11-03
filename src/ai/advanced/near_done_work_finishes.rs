@@ -35,11 +35,96 @@ pub(crate) const NEAR_DONE_MAX_TURNS: f64 = 2.0;
 const NEAR_DONE_ATTACK_MEMORY: u32 = 4;
 
 impl AdvancedAi {
-    /// Each of our cities' head before any production writer runs. Empty
-    /// with the gene off.
-    pub(super) fn near_done_heads(&self, g: &Game, pid: usize) -> BTreeMap<u32, Item> {
-        if !self.near_done_work_finishes {
+    /// Either version of the family.
+    pub(super) fn near_done_on(&self) -> bool {
+        self.near_done_work_finishes || self.near_done_work_finishes_2
+    }
+
+    /// Whether this city may be touched at all this turn: not under
+    /// Recovery, not threatened, not attacked within four turns.
+    fn near_done_city_open(&self, g: &Game, cid: u32, plan: &StrategicPlan) -> bool {
+        let city = &g.cities[&cid];
+        let attacked = city.last_attacked > 0
+            && g.turn.saturating_sub(city.last_attacked) <= NEAR_DONE_ATTACK_MEMORY;
+        plan.strategy != GrandStrategy::Recovery && plan.threatened_city != Some(cid) && !attacked
+    }
+
+    /// Version 2: an empty queue takes up the paused build that finishes
+    /// soonest within [`NEAR_DONE_MAX_TURNS`], unless the city is closed
+    /// (above) or due to train the next Settler. Returns whether it did.
+    fn near_done_takes_the_idle_queue(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        cid: u32,
+        plan: &StrategicPlan,
+        counts: &EmpireCounts,
+    ) -> bool {
+        let n_cities = g.player_city_ids(pid).len();
+        if !g.cities[&cid].queue.is_empty()
+            || !self.near_done_city_open(g, cid, plan)
+            || self
+                .base
+                .settler_due(g, pid, cid, n_cities, counts.settlers)
+        {
+            return false;
+        }
+        let best = {
+            let _memo = g.query_memo();
+            g.producible_items(pid, cid)
+                .into_iter()
+                .filter(|item| {
+                    !matches!(item, Item::Project { project } if g.rules.projects[project].repeatable)
+                        && g.item_invested_production(cid, item) > 0.0
+                })
+                .filter_map(|item| {
+                    let turns = self.production_build_turns(g, pid, cid, &item);
+                    (turns.is_finite()
+                        && turns <= NEAR_DONE_MAX_TURNS
+                        && self.production_value(g, pid, cid, &item, plan, counts) > 0.0)
+                        .then(|| (turns, format!("{item:?}"), item))
+                })
+                .min_by(|a, b| a.0.total_cmp(&b.0).then_with(|| a.1.cmp(&b.1)))
+        };
+        let Some((turns, _, item)) = best else {
+            return false;
+        };
+        if g.apply(
+            pid,
+            &Action::Produce {
+                city: cid,
+                item: item.clone(),
+            },
+        )
+        .is_err()
+        {
+            return false;
+        }
+        if self.journal().wants(crate::reasoning::Level::Decision) {
+            let city_name = g.cities[&cid].name.clone();
+            think!(self.journal(), Economy, Decision,
+                "{} takes up its nearly finished {}", city_name, Self::plain_item(&item);
+                "near-done-work-finishes-2: about {turns:.1} turns left on saved work; the idle queue finishes it before any new item");
+        }
+        true
+    }
+
+    /// Each of our cities' head before any production writer runs (after
+    /// version 2 has filled the idle queues it may). Empty with the gene off.
+    pub(super) fn near_done_heads(
+        &self,
+        g: &mut Game,
+        pid: usize,
+        plan: &StrategicPlan,
+    ) -> BTreeMap<u32, Item> {
+        if !self.near_done_on() {
             return BTreeMap::new();
+        }
+        if self.near_done_work_finishes_2 {
+            let counts = self.counts(g, pid);
+            for cid in g.player_city_ids(pid) {
+                self.near_done_takes_the_idle_queue(g, pid, cid, plan, &counts);
+            }
         }
         g.player_city_ids(pid)
             .into_iter()
@@ -86,10 +171,7 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         heads: &BTreeMap<u32, Item>,
     ) {
-        if !self.near_done_work_finishes
-            || heads.is_empty()
-            || plan.strategy == GrandStrategy::Recovery
-        {
+        if !self.near_done_on() || heads.is_empty() || plan.strategy == GrandStrategy::Recovery {
             return;
         }
         for (cid, item) in heads {

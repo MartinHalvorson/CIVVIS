@@ -4844,6 +4844,15 @@ pub const GENES: &[Gene] = &[
     // Shrine, Spaceport, Wonder or project. See
     // `advanced/near_done_work_finishes.rs`.
     Gene { tag: "near-done-work-finishes", field: "near_done_work_finishes", kind: Kind::OptIn, enable: AdvancedAi::enable_near_done_work_finishes, disable: AdvancedAi::disable_near_done_work_finishes },
+    // `near-done-work-finishes-2`: live, with version 1 armed (19 Immortal
+    // games, 2026-11-03), near-done pauses fell only from 11.7 to 10.6 a
+    // game; 36% of the remaining ones were builds already paused when the
+    // city's queue went empty, which a claim then filled with something new.
+    // Version 2 also lets an empty queue take up a paused build within two
+    // turns of done before any writer runs (never in a threatened, attacked
+    // or recovering city, nor one due to train the next Settler), so version
+    // 1's restore protects it. See `advanced/near_done_work_finishes.rs`.
+    Gene { tag: "near-done-work-finishes-2", field: "near_done_work_finishes_2", kind: Kind::OptIn, enable: AdvancedAi::enable_near_done_work_finishes_2, disable: AdvancedAi::disable_near_done_work_finishes_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

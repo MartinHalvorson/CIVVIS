@@ -59,7 +59,8 @@ fn displaced_with(
     .expect("fixture: the head starts");
     let cost = g.item_cost_for_city(0, city, &head);
     g.cities.get_mut(&city).unwrap().production = (cost - left).max(1.0);
-    let heads = ai.near_done_heads(&g, 0);
+    let plan = wonder_plan(GrandStrategy::Science, g.turn);
+    let heads = ai.near_done_heads(&mut g, 0, &plan);
     assert_eq!(
         heads.get(&city),
         gene.then_some(&head),
@@ -73,7 +74,6 @@ fn displaced_with(
         },
     )
     .expect("fixture: the displacer starts");
-    let plan = wonder_plan(GrandStrategy::Science, g.turn);
     ai.claim_near_done_work_finishes(&mut g, 0, &plan, &heads);
     (g, city, head, displacer)
 }
@@ -112,4 +112,52 @@ fn an_urgent_displacer_keeps_the_queue() {
         &g,
         &unit("builder")
     ));
+}
+
+/// Version 2: an idle queue with a paused build one Production short takes
+/// it up before any writer runs, and it is then the noted head; version 1
+/// leaves the queue empty.
+fn idle_with_paused(version: u8) -> (Game, u32, Item, BTreeMap<u32, Item>) {
+    let (mut g, city) = strategic_wonder_fixture(6_402, "great_library");
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    ai.base.book_pos = 4;
+    if version == 2 {
+        ai.enable_near_done_work_finishes_2();
+    } else {
+        ai.enable_near_done_work_finishes();
+    }
+    let warrior = unit("warrior");
+    let cost = g.item_cost_for_city(0, city, &warrior);
+    {
+        let c = g.cities.get_mut(&city).unwrap();
+        c.queue.clear();
+        c.production = 0.0;
+        c.production_progress.clear();
+        c.production_progress
+            .insert("unit:warrior".to_string(), cost - 1.0);
+    }
+    let plan = wonder_plan(GrandStrategy::Science, g.turn);
+    let heads = ai.near_done_heads(&mut g, 0, &plan);
+    (g, city, warrior, heads)
+}
+
+#[test]
+fn version_two_takes_up_near_done_saved_work_in_an_idle_queue() {
+    let (g, city, warrior, heads) = idle_with_paused(2);
+    assert_eq!(g.cities[&city].queue.first(), Some(&warrior));
+    assert_eq!(heads.get(&city), Some(&warrior));
+    let (g1, city1, _, heads1) = idle_with_paused(1);
+    assert!(g1.cities[&city1].queue.is_empty());
+    assert!(!heads1.contains_key(&city1));
+}
+
+#[test]
+fn the_versions_are_exclusive() {
+    let mut ai = AdvancedAi::new();
+    ai.enable_near_done_work_finishes();
+    ai.enable_near_done_work_finishes_2();
+    assert!(!ai.near_done_work_finishes && ai.near_done_work_finishes_2);
+    ai.enable_near_done_work_finishes();
+    assert!(ai.near_done_work_finishes && !ai.near_done_work_finishes_2);
+    assert!(ai.near_done_on());
 }

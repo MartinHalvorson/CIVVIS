@@ -9296,12 +9296,25 @@ impl AdvancedAi {
     /// Opt-in gene `near-done-work-finishes`; see
     /// `advanced/near_done_work_finishes.rs`.
     pub fn enable_near_done_work_finishes(&mut self) {
+        self.near_done_work_finishes_2 = false;
         self.near_done_work_finishes = true;
     }
 
     /// The twin of `enable_near_done_work_finishes`.
     pub fn disable_near_done_work_finishes(&mut self) {
         self.near_done_work_finishes = false;
+    }
+
+    /// Opt-in gene `near-done-work-finishes-2`, version 2 of the family;
+    /// see `advanced/near_done_work_finishes.rs`.
+    pub fn enable_near_done_work_finishes_2(&mut self) {
+        self.near_done_work_finishes = false;
+        self.near_done_work_finishes_2 = true;
+    }
+
+    /// The twin of `enable_near_done_work_finishes_2`.
+    pub fn disable_near_done_work_finishes_2(&mut self) {
+        self.near_done_work_finishes_2 = false;
     }
 
     // ---- append: a-b ------------------------------------------------
