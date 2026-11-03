@@ -66,9 +66,9 @@ fn displaced(left: f64, displacer: Option<Item>, gene: bool) -> (Game, u32, Item
     g.cities.get_mut(&city).unwrap().production = (cost - left).max(1.0);
     let heads = ai.near_done_heads(&g, 0);
     assert_eq!(
-        heads.len(),
-        usize::from(gene),
-        "heads are noted only with the gene"
+        heads.get(&city),
+        gene.then_some(&head),
+        "the head is noted only with the gene"
     );
     g.apply(
         0,
