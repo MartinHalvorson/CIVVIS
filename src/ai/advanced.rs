@@ -5547,9 +5547,6 @@ pub struct AdvancedAi {
     /// `culture-digs-one-museum`: a Culture seat makes one Museum an
     /// Archaeological Museum. See `advanced/culture_dig_museum.rs`. Off by default.
     culture_digs_one_museum: bool,
-    /// Version two also reserves one idle Museum queue for a nearby dig.
-    /// See `advanced/culture_dig_museum.rs`. Off by default.
-    culture_digs_one_museum_2: bool,
     /// `culture-keeps-every-border-open-2`: version one, buying passage only
     /// from the bar holder. See `advanced/culture_open_borders.rs`. Off by default.
     culture_keeps_every_border_open_2: bool,
@@ -11423,7 +11420,6 @@ impl AdvancedAi {
             campus_unlock_every_lane: false,
             culture_seat_theater_first_2: false,
             culture_digs_one_museum: false,
-            culture_digs_one_museum_2: false,
             culture_keeps_every_border_open_2: false,
             domination_targets_land_first: false,
             defence_holds_under_fire: false,
@@ -33621,9 +33617,6 @@ impl AdvancedAi {
             let culture_monument_commitment = committed
                 .as_ref()
                 .is_some_and(|(_, item)| self.culture_monument_holds(g, pid, cid, plan, item));
-            let culture_digger_commitment = committed
-                .as_ref()
-                .is_some_and(|(_, item)| self.culture_digger_holds(g, item));
             // `diplo-seat-statue-harbor`: the Statue's Harbor finishes.
             let statue_harbor_commitment = committed
                 .as_ref()
@@ -33698,7 +33691,6 @@ impl AdvancedAi {
                     || culture_theater_commitment
                     || diplo_wonder_commitment
                     || culture_monument_commitment
-                    || culture_digger_commitment
                     || statue_harbor_commitment
                     || idle_route_trader_commitment
                     || naval_eye_commitment
@@ -33725,7 +33717,6 @@ impl AdvancedAi {
                     || culture_theater_commitment
                     || diplo_wonder_commitment
                     || culture_monument_commitment
-                    || culture_digger_commitment
                     || statue_harbor_commitment
                     || idle_route_trader_commitment
                     || naval_eye_commitment
@@ -50810,9 +50801,6 @@ impl AdvancedAi {
             // Theater claim (whose heads they leave alone). Exact no-op while
             // the gene is off. See `advanced/culture_monuments.rs`.
             self.claim_culture_monuments(g, pid, &plan);
-            // Version two funds one digger after the Culture infrastructure
-            // claims, while earlier reservations keep their queues.
-            self.claim_culture_digger(g, pid, &plan);
             // `diplo-seat-statue-harbor`: the Statue of Liberty's Harbor on a
             // Diplomacy seat. Exact no-op while the gene is off. See
             // `advanced/diplo_statue_harbor.rs`.

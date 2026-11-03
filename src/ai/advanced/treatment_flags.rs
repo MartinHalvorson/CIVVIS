@@ -9040,24 +9040,12 @@ impl AdvancedAi {
 
     /// Turn on `culture-digs-one-museum`. See [`Self::culture_digs_one_museum`].
     pub fn enable_culture_digs_one_museum(&mut self) {
-        self.culture_digs_one_museum_2 = false;
         self.culture_digs_one_museum = true;
     }
 
     /// The twin of `enable_culture_digs_one_museum`.
     pub fn disable_culture_digs_one_museum(&mut self) {
         self.culture_digs_one_museum = false;
-    }
-
-    /// Version two retains the Museum choice and funds one digger.
-    pub fn enable_culture_digs_one_museum_2(&mut self) {
-        self.culture_digs_one_museum = false;
-        self.culture_digs_one_museum_2 = true;
-    }
-
-    /// Disable version two without changing version one.
-    pub fn disable_culture_digs_one_museum_2(&mut self) {
-        self.culture_digs_one_museum_2 = false;
     }
 
     /// Opt-in gene `science-drive-answers-from-the-pad-2`; see
