@@ -8498,6 +8498,10 @@ pub struct AdvancedAi {
     /// `BasicAi::retainers_garrison_the_short_cities`. Off by default.
     retainers_garrison_the_short_cities: bool,
     // ---- append: s-s ------------------------------------------------
+    /// `science-specializes-earlier`: an assigned Science lane leaves the
+    /// development half at a third of the clock, as Culture already does.
+    /// See `advanced/science_specializes_earlier.rs`. Off by default.
+    science_specializes_earlier: bool,
     /// Native fuel bridge for ready research power. Off by default.
     science_power_buys_fuel: bool,
     /// `satellite-holds-the-pad`: once a pad stands and the Earth Satellite
@@ -10355,6 +10359,8 @@ mod opening_settlement;
 /// `quest-boost`. See `advanced/city_state_quests.rs`.
 pub(crate) mod city_state_quests;
 
+/// `science-specializes-earlier`: see `advanced/science_specializes_earlier.rs`.
+mod science_specializes_earlier;
 /// A known Galápagos or Bermuda science job just beyond the ordinary
 /// settlement forecast's second ring remains a purchasable city asset.
 mod science_wonder_sites;
@@ -11941,6 +11947,7 @@ impl AdvancedAi {
             religion_seat_defends_its_faith: false,
             retainers_garrison_the_short_cities: false,
             // ---- append: s-s ----------------------------------------
+            science_specializes_earlier: false,
             science_power_buys_fuel: false,
             satellite_holds_the_pad: false,
             stalled_conquest_takes_science: false,
@@ -29832,7 +29839,12 @@ impl AdvancedAi {
                     >= g.max_turns.min(g.game_speed.turn_limit())
                         * DOMINATION_SPECIALIZATION_PERCENT;
         }
-        !self.victory_planning || culture_buildup || Self::victory_specialization_active(g)
+        // `science-specializes-earlier`: the Science lane's buildup starts at
+        // the same third. False with the gene off.
+        !self.victory_planning
+            || culture_buildup
+            || self.science_buildup(g)
+            || Self::victory_specialization_active(g)
     }
 
     /// Count completed and queued Harbors so the late Science lane can see a
