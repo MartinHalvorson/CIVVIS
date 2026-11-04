@@ -28,13 +28,19 @@
 //!
 //! **The rule.** After `gold-buys-the-backlog-builder`, while no city is
 //! threatened and no city-saving purchase took the turn: among our cities
-//! within [`CAPPED_GRANARY_HEADROOM`] of their housing, with no Granary (or
-//! the civilization's replacement), not attacked in four turns, and not
-//! about to finish one ([`CAPPED_GRANARY_FINISH_TURNS`]), buy the Granary of
-//! the most capped, then the weakest producer, then the cheapest, when the
-//! Gold above the upkeep floor covers it -- twice it while at war with a
-//! major, so a defender's price stays in the bank. One a turn. Off, nothing
-//! runs.
+//! that housing really blocks -- within [`CAPPED_GRANARY_HEADROOM`] of their
+//! housing with Food left over after their citizens eat -- with no Granary
+//! (or the civilization's replacement), not attacked in four turns, and not
+//! already building one well along ([`CAPPED_GRANARY_FINISH_TURNS`] turns
+//! or [`CAPPED_GRANARY_INVESTED_SHARE`] of its cost invested), buy the
+//! Granary of the most capped, then the weakest producer, then the cheapest,
+//! when the Gold above the upkeep floor covers it -- and, while at war with a
+//! major, the price of an emergency defender besides
+//! (`emergency_defender_price`), so a Granary never spends a city-saving
+//! purchase. One a turn. Off, nothing runs. (-af's caution from
+//! `gold-buys-the-production-tile`, which spent above the upkeep floor in the
+//! opening and read cities at t150 -0.63, z -2.1: judge this on cities lost
+//! and cities at t150 at war pace, not on population alone.)
 
 use super::*;
 
@@ -44,6 +50,10 @@ pub(super) const CAPPED_GRANARY_HEADROOM: f64 = 1.0;
 
 /// A queued Granary this close to done finishes on its own.
 pub(super) const CAPPED_GRANARY_FINISH_TURNS: f64 = 2.0;
+
+/// A queued Granary with this share of its cost invested finishes on its own
+/// rather than have its Production paid for twice.
+pub(super) const CAPPED_GRANARY_INVESTED_SHARE: f64 = 0.3;
 
 /// A city attacked within this many turns is not where the Granary is bought.
 const CAPPED_GRANARY_ATTACK_MEMORY: u32 = 4;
@@ -102,7 +112,13 @@ impl AdvancedAi {
                 && !other.is_free_city
                 && g.is_at_war(pid, other.id)
         });
-        let budget = g.players[pid].gold - self.purchase_upkeep_floor(g, pid, 0.0);
+        // At war with a major, an emergency defender's price stays banked.
+        let war_reserve = if at_major_war {
+            self.emergency_defender_price(g, pid).unwrap_or(0.0)
+        } else {
+            0.0
+        };
+        let budget = g.players[pid].gold - self.purchase_upkeep_floor(g, pid, 0.0) - war_reserve;
         if budget <= 0.0 {
             return false;
         }
@@ -120,7 +136,9 @@ impl AdvancedAi {
                 }
                 let housing = g.city_housing(city);
                 let over = f64::from(city.pop) - housing;
-                if over + CAPPED_GRANARY_HEADROOM < 0.0 {
+                // Housing blocks only a city that would otherwise grow.
+                let fed = g.city_yields(cid).food - 2.0 * f64::from(city.pop) > 0.0;
+                if over + CAPPED_GRANARY_HEADROOM < 0.0 || !fed {
                     continue;
                 }
                 let Some(building) = Self::capped_granary_item(g, pid, cid) else {
@@ -130,9 +148,11 @@ impl AdvancedAi {
                 if g.purchase_is_blocked(cid, &item) {
                     continue;
                 }
-                if city.queue.first() == Some(&item)
-                    && self.production_build_turns(g, pid, cid, &item)
-                        <= CAPPED_GRANARY_FINISH_TURNS
+                let invested = g.item_invested_production(cid, &item);
+                if invested >= g.item_cost_for_city(pid, cid, &item) * CAPPED_GRANARY_INVESTED_SHARE
+                    || (city.queue.first() == Some(&item)
+                        && self.production_build_turns(g, pid, cid, &item)
+                            <= CAPPED_GRANARY_FINISH_TURNS)
                 {
                     continue;
                 }
@@ -140,8 +160,7 @@ impl AdvancedAi {
                 else {
                     continue;
                 };
-                let needed = if at_major_war { 2.0 * price } else { price };
-                if needed > budget + 1e-9 {
+                if price > budget + 1e-9 {
                     continue;
                 }
                 let production = g.city_yields(cid).production;
@@ -181,7 +200,7 @@ impl AdvancedAi {
             "{} buys its Granary at its housing cap", g.cities[&cid].name;
             "gold-buys-the-capped-granary: population {:+.1} against housing; {price:.0} Gold of a {budget:.0} budget{}",
             over,
-            if at_major_war { " (twice the price held at war)" } else { "" });
+            if at_major_war { format!(" ({war_reserve:.0} held for a defender at war)") } else { String::new() });
         true
     }
 }

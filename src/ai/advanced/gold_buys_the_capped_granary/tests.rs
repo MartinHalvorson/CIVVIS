@@ -16,6 +16,17 @@ fn capped_capital() -> (Game, u32) {
     game.cities.get_mut(&capital).unwrap().pop = housing.floor() as i32;
     game.cities.get_mut(&capital).unwrap().queue.clear();
     game.players[0].gold = 1_000.0;
+    // Food enough to grow: housing, not Food, is what blocks it.
+    let food = game.city_yields(capital).food;
+    let pop = f64::from(game.cities[&capital].pop);
+    std::sync::Arc::make_mut(&mut game.observed_city_yield_adjustments)
+        .entry(capital)
+        .or_default()
+        .food += (2.0 * pop + 3.0 - food).max(0.0);
+    assert!(
+        game.city_yields(capital).food > 2.0 * pop,
+        "fixture: a fed city"
+    );
     (game, capital)
 }
 
@@ -60,8 +71,8 @@ fn a_capped_city_buys_its_granary_under_the_gene() {
     );
 }
 
-/// A city with housing to spare, an empty treasury, or a threatened city in
-/// the plan buys nothing.
+/// A city with housing to spare, a starving one, an empty treasury, or a
+/// threatened city in the plan buys nothing.
 #[test]
 fn room_to_grow_no_gold_or_a_threat_buys_nothing() {
     let mut ai = AdvancedAi::new();
@@ -73,6 +84,17 @@ fn room_to_grow_no_gold_or_a_threat_buys_nothing() {
     assert!(
         !ai.capped_granary_purchase(&mut roomy, 0, &plan),
         "room to grow"
+    );
+
+    let (mut starving, capital) = capped_capital();
+    let food = starving.city_yields(capital).food;
+    std::sync::Arc::make_mut(&mut starving.observed_city_yield_adjustments)
+        .entry(capital)
+        .or_default()
+        .food -= food;
+    assert!(
+        !ai.capped_granary_purchase(&mut starving, 0, &plan),
+        "no surplus to grow on"
     );
 
     let (mut poor, _) = capped_capital();
