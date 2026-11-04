@@ -251,6 +251,9 @@ mod tests {
             ..StateSnapshot::default()
         };
         assert_eq!(plan(&state).get(&1), Some(&None));
+        let (orders, _) = super::super::great_person_orders_led(&state, true);
+        assert_eq!(orders.len(), 1);
+        assert_eq!(orders[0].verb.as_deref(), Some("KEEP_GREAT_PERSON"));
     }
 
     #[test]

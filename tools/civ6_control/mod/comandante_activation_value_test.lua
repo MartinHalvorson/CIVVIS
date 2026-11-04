@@ -346,5 +346,24 @@ paezArmy(); GameInfo.Units.UNIT_KNIGHT.Domain = nil; run()
 check("unknown recipient domain keeps activation compatibility", #host.commands, 1)
 GameInfo.Units.UNIT_KNIGHT.Domain = "DOMAIN_LAND"
 
+-- `generals-lead-the-army`: a General CIVVIS walks to a front or keeps in
+-- place is not retired by this driver underneath the order. Live
+-- civvis-20261104T093211Z t55: the bridge sent Santander MOVE_TO the army and
+-- this driver retired him the same frame. A row for another unit, or none,
+-- keeps the activation behaviour.
+reset(); host.individual = GP_INDIVIDUAL
+run({ { kind = "unit", subject = 1, verb = "MOVE_TO", x = 2, y = 1 } })
+check("a General CIVVIS leads is not retired by the driver", #host.commands, 0)
+reset(); host.individual = GP_INDIVIDUAL
+run({ { kind = "unit", subject = 1, verb = "KEEP_GREAT_PERSON" } })
+check("a General CIVVIS keeps in place is not retired", #host.commands, 0)
+reset(); host.individual = GP_INDIVIDUAL
+run({ { kind = "unit", subject = 2, verb = "MOVE_TO", x = 3, y = 1 } })
+check("another unit's row keeps the activation behaviour", #host.commands, 1)
+check("led General helper reads the rows", CivvisComandante.ledByCivvis(1,
+	"GREAT_PERSON_CLASS_GENERAL", { { kind = "unit", subject = 1, verb = "KEEP_GREAT_PERSON" } }), true)
+check("led General helper ignores a Great Scientist", CivvisComandante.ledByCivvis(1,
+	"GREAT_PERSON_CLASS_SCIENTIST", { { kind = "unit", subject = 1, verb = "MOVE_TO" } }), false)
+
 if failures > 0 then print(string.format("%d failure(s)", failures)); os.exit(1) end
 print("all checks passed")
