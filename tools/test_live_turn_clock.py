@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from live_turn_clock import rescue_stalls
+from live_turn_clock import decision_waits, rescue_stalls
 
 
 def stamp(seconds: float) -> str:
@@ -15,9 +15,7 @@ def stamp(seconds: float) -> str:
     return f"2026-09-02T10:{int(minute):02d}:{second:06.3f}Z"
 
 
-class RescueStallsTest(unittest.TestCase):
-    """Unnumbered recovery requests retain their next-event gap for diagnosis."""
-
+class JsonlTestCase(unittest.TestCase):
     def write(self, events) -> Path:
         handle = tempfile.NamedTemporaryFile("w", suffix=".jsonl", delete=False)
         for event in events:
@@ -25,6 +23,10 @@ class RescueStallsTest(unittest.TestCase):
         handle.close()
         self.addCleanup(lambda: Path(handle.name).unlink(missing_ok=True))
         return Path(handle.name)
+
+
+class RescueStallsTest(JsonlTestCase):
+    """Unnumbered recovery requests retain their next-event gap for diagnosis."""
 
     def test_the_gap_after_each_ask_is_labeled_as_an_observation(self):
         path = self.write([
@@ -78,6 +80,53 @@ class RescueStallsTest(unittest.TestCase):
         found = rescue_stalls(path)
         self.assertAlmostEqual(found["span"], 100.0, places=3)
         self.assertAlmostEqual(100 * found["seconds"] / found["span"], 23.5, places=3)
+
+
+class DecisionWaitsTest(JsonlTestCase):
+    def test_replans_pair_with_their_own_state_and_preserve_unanswered_frames(self):
+        path = self.write([
+            {"kind": "state", "turn": 4, "utc": stamp(0)},
+            {"kind": "orders", "turn": 4, "utc": stamp(0.125)},
+            {"kind": "state", "turn": 4, "frame": 1, "utc": stamp(1)},
+            {"kind": "orders", "turn": 4, "frame": 1, "utc": stamp(31)},
+            {"kind": "state", "turn": 4, "frame": 2, "utc": stamp(32)},
+            {"kind": "orders", "turn": 5, "frame": 2, "utc": stamp(33)},
+        ])
+        found = decision_waits(path)
+        self.assertEqual(found["matched"], 2)
+        self.assertEqual(found["unanswered"], 1)
+        self.assertEqual(found["seconds"], 30.125)
+        self.assertEqual(found["samples"][-1], {"turn": 4, "frame": 1, "seconds": 30.0})
+
+    def test_interleaved_receipts_do_not_double_count_wall_time_or_duplicates(self):
+        path = self.write([
+            {"kind": "state", "turn": 4, "frame": 0, "utc": stamp(0)},
+            {"kind": "state", "turn": 4, "frame": 1, "utc": stamp(1)},
+            {"kind": "state", "turn": 4, "frame": 0, "utc": stamp(2)},
+            {"kind": "orders", "turn": 4, "frame": 1, "utc": stamp(3)},
+            {"kind": "orders", "turn": 4, "frame": 0, "utc": stamp(4)},
+            {"kind": "orders", "turn": 4, "frame": 0, "utc": stamp(5)},
+            {"kind": "state", "turn": 4, "frame": 0, "utc": stamp(6)},
+        ])
+        found = decision_waits(path)
+        self.assertEqual(found["seconds"], 4)
+        self.assertEqual(found["matched"], 2)
+        self.assertEqual(found["unanswered"], 0)
+
+    def test_invalid_and_backwards_receipts_do_not_make_negative_waits(self):
+        path = self.write([
+            {"kind": "state", "turn": 4, "utc": stamp(2)},
+            {"kind": "orders", "turn": 4, "utc": stamp(1)},
+            {"kind": "state", "turn": 5, "frame": "bad", "utc": stamp(3)},
+            {"kind": "orders", "turn": 4, "utc": stamp(4)},
+            {"kind": "state", "turn": 6},
+        ])
+        with path.open("a") as handle:
+            handle.write('not json\n[]\n')
+        found = decision_waits(path)
+        self.assertEqual(found["seconds"], 2)
+        self.assertEqual(found["matched"], 1)
+        self.assertEqual(found["unanswered"], 0)
 
 
 if __name__ == "__main__":
