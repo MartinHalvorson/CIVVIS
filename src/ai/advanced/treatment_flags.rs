@@ -9258,6 +9258,74 @@ impl AdvancedAi {
         self.saved_work_is_seen = false;
     }
 
+    /// Opt-in gene `gold-buys-the-backlog-builder`; see
+    /// `advanced/gold_buys_the_backlog_builder.rs`.
+    pub fn enable_gold_buys_the_backlog_builder(&mut self) {
+        self.gold_buys_the_backlog_builder = true;
+    }
+
+    /// The twin of `enable_gold_buys_the_backlog_builder`.
+    pub fn disable_gold_buys_the_backlog_builder(&mut self) {
+        self.gold_buys_the_backlog_builder = false;
+    }
+
+    /// Opt-in gene `deck-follows-the-queue`; the behaviour lives on
+    /// `BasicAi::deck_follows_the_queue`, see `ai/deck_queue.rs`.
+    pub fn enable_deck_follows_the_queue(&mut self) {
+        self.deck_follows_the_queue = true;
+        self.base.enable_deck_follows_the_queue();
+    }
+
+    /// The twin of `enable_deck_follows_the_queue`.
+    pub fn disable_deck_follows_the_queue(&mut self) {
+        self.deck_follows_the_queue = false;
+        self.base.disable_deck_follows_the_queue();
+    }
+
+    /// Aim a bounded Conquest window at a soft city-state city beside the
+    /// empire. See [`Self::city_state_harvest`].
+    pub fn enable_city_state_harvest(&mut self) {
+        self.city_state_harvest = true;
+    }
+
+    /// The twin of `enable_city_state_harvest`.
+    pub fn disable_city_state_harvest(&mut self) {
+        self.city_state_harvest = false;
+        self.city_state_harvest_target = None;
+    }
+
+    /// Opt-in gene `science-specializes-earlier`; see
+    /// [`Self::science_specializes_earlier`].
+    pub fn enable_science_specializes_earlier(&mut self) {
+        self.science_specializes_earlier = true;
+    }
+
+    /// The twin of `enable_science_specializes_earlier`.
+    pub fn disable_science_specializes_earlier(&mut self) {
+        self.science_specializes_earlier = false;
+    }
+
+    /// Opt-in gene `near-done-work-finishes`; see
+    /// `advanced/near_done_work_finishes.rs`.
+    pub fn enable_near_done_work_finishes(&mut self) {
+        self.near_done_work_finishes = true;
+    }
+
+    /// The twin of `enable_near_done_work_finishes`.
+    pub fn disable_near_done_work_finishes(&mut self) {
+        self.near_done_work_finishes = false;
+    }
+
+    /// Opt-in gene `founding-voyage`; see [`Self::founding_voyage`].
+    pub fn enable_founding_voyage(&mut self) {
+        self.founding_voyage = true;
+    }
+
+    /// The twin of `enable_founding_voyage`.
+    pub fn disable_founding_voyage(&mut self) {
+        self.founding_voyage = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

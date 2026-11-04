@@ -1,0 +1,57 @@
+{
+  "utc": "2026-11-03T04:04:14.590878+00:00",
+  "decision": "Preserve successful finite nonnegative strategic stock readings, including zero. Omit invalid/unavailable amounts. Keep nil if every query is unknown.",
+  "scope": "Existing observation field and unchanged getter calls only. No native API argument probe, policy/default flag, deal action or strength estimate. Historical missing values remain unknown. Native stock-map readback after deployment is pending.",
+  "source_sha256": {
+    "before_agent": "41fd309f8214bff0e7a5b71f738ee3e3fbce76f0fbde679f65228513674fac30",
+    "candidate_agent": "7771ed16356d11d54f40373655d730db1d5cb74c75e7c1343d41505583381ad6",
+    "focused_test": "89efe4b1ffc05f612e36d2026c4010f82ff6802f3a82eb084758c7fa9244b234"
+  },
+  "focused_comparison": {
+    "before_passed": 12,
+    "before_failed": 4,
+    "candidate_passed": 16,
+    "candidate_failed": 0
+  },
+  "complete_agent_lua51_compiles": true,
+  "discovered_lua_test_files": 115,
+  "lua_test_files_passed": 115,
+  "installer_tests_passed": 139,
+  "reference": {
+    "asset": "DLC/Expansion2/UI/Replacements/ReportScreen_Expansion2.lua",
+    "sha256": "28d2dc57ac497180f3c0467f9ad0b22f8edf7cb346af44e3c269d2950855bcc3",
+    "rows": [
+      {
+        "line": 34,
+        "text": "\t\t\tlocal miscResourceTotal:number = pResources:GetResourceAmount(resourceHash);"
+      },
+      {
+        "line": 85,
+        "text": "\tkResources[eResourceType].Stockpile\t= pPlayerResources:GetResourceAmount(eResourceType)"
+      },
+      {
+        "line": 96,
+        "text": "\t\t\tlocal internalResourceAmount:number = pResourceData:GetResourceAmount(row.Index);"
+      },
+      {
+        "line": 115,
+        "text": "\t\t\tif pResourceData:GetResourceAmount(row.ResourceType) > 0 then"
+      }
+    ]
+  },
+  "archive": {
+    "path": "docs/eval/2026-11-03-strategic-stockpile-zero.raw.tar.xz",
+    "bytes": 346088,
+    "sha256": "eff2da5df7ff61ca1ad474f2c608de7a75f7828e397c6e376a186c5180e65ffb",
+    "members": 14
+  },
+  "encoder_validation_after_packaging": {
+    "candidate_agent_sha256": "7771ed16356d11d54f40373655d730db1d5cb74c75e7c1343d41505583381ad6",
+    "encoded": "{\"RESOURCE_COAL\":0,\"RESOURCE_IRON\":0}",
+    "decoded": {
+      "RESOURCE_COAL": 0,
+      "RESOURCE_IRON": 0
+    },
+    "scope": "Actual production export expression and production encoder with mocked successful zero getter results. No native API readback or host action."
+  }
+}

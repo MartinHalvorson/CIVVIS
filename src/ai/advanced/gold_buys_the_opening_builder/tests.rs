@@ -96,3 +96,47 @@ fn gold_buys_the_opening_builder_is_a_native_opt_in_off_in_both_controllers() {
         |ai| ai.gold_buys_the_opening_builder,
     );
 }
+
+/// A Builder its city finishes next turn is not bought; one with several
+/// turns left still is.
+#[test]
+fn a_builder_landing_next_turn_is_not_bought() {
+    let Some((game, capital)) = young_empire(2_000.0) else {
+        panic!("fixture: a young empire");
+    };
+    let builder = Item::Unit {
+        unit: crate::name!("builder"),
+    };
+    let cost = game.item_cost_for_city(0, capital, &builder);
+    let rate = game.city_yields(capital).production;
+    assert!(
+        rate > 0.0 && cost > 2.0 * rate,
+        "fixture: a Builder takes several turns"
+    );
+    let ai = armed();
+
+    let mut almost = game.clone();
+    {
+        let city = almost.cities.get_mut(&capital).unwrap();
+        city.queue = vec![builder.clone()];
+        city.production = cost - rate * 0.5;
+    }
+    let plan = ai.assess(&almost, 0);
+    assert!(
+        !ai.opening_builder_purchase(&mut almost, 0, &plan),
+        "it lands next turn"
+    );
+    assert_eq!(almost.players[0].gold, game.players[0].gold);
+
+    let mut early = game.clone();
+    {
+        let city = early.cities.get_mut(&capital).unwrap();
+        city.queue = vec![builder];
+        city.production = 0.0;
+    }
+    let plan = ai.assess(&early, 0);
+    assert!(
+        ai.opening_builder_purchase(&mut early, 0, &plan),
+        "several turns left: buy"
+    );
+}
