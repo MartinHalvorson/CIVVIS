@@ -415,6 +415,7 @@ mod retainers_garrison;
 mod scout_first;
 mod scout_inference;
 mod siege_support;
+mod slinger_first;
 pub use advanced::commitments::{CommitmentCensus, CommitmentLedger};
 pub use advanced::victory_portfolio::{
     DevelopmentPhase, PortfolioReport, PortfolioTrace, VictoryEstimate,
@@ -4180,6 +4181,8 @@ pub struct BasicAi {
     pub(crate) first_pad_in_the_forge: bool,
     /// Independent first-slot exploration experiment.
     pub(crate) scout_first_opening: bool,
+    /// Opt-in first-slot ranged support; later recon behavior stays enabled.
+    pub(crate) slinger_first_opening: bool,
     /// Take the pantheon that founds a city. Civilization VI's Religious
     /// Settlements grants a free Settler in the capital
     /// (`RELIGIOUS_SETTLEMENTS_SETTLER_MODIFIER`, `Expansion2_Beliefs.xml`),
@@ -6087,6 +6090,7 @@ impl BasicAi {
             opening_builder_paid: false,
             first_pad_in_the_forge: false,
             scout_first_opening: false,
+            slinger_first_opening: false,
             expansion_pantheon: false,
             pantheon_for_the_prophet_race: false,
             opening_settler_waits: false,
@@ -6685,6 +6689,7 @@ impl BasicAi {
             opening_builder_paid: false,
             first_pad_in_the_forge: false,
             scout_first_opening: false,
+            slinger_first_opening: false,
             expansion_pantheon: false,
             pantheon_for_the_prophet_race: false,
             opening_settler_waits: false,
@@ -10837,6 +10842,11 @@ impl BasicAi {
             }
             // Reserve the first slot before population-two Settler genes can
             // claim it. Successful production consumes exactly one book slot.
+            if self.play_slinger_first_opening(g, pid, *cid) {
+                military += 1;
+                ranged += 1;
+                continue;
+            }
             if self.play_scout_first_opening(g, pid, *cid) {
                 continue;
             }
