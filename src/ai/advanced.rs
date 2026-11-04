@@ -5548,6 +5548,15 @@ pub struct AdvancedAi {
     /// Partners asked for an alliance, by the turn asked. Written only while
     /// `alliance_remembers_the_refusal` is on.
     alliance_ask_turns: BTreeMap<usize, u32>,
+    /// `builderless-empire-trains-one`: an empire of two or more cities with
+    /// no Builder afield or queued and a worked backlog puts one at the head
+    /// of its fastest safe city. See `advanced/builderless_empire_trains_one.rs`.
+    /// Off by default.
+    builderless_empire_trains_one: bool,
+    /// `builderless-empire-trains-one-2`: version one, and a Settler with no
+    /// production invested yields the head to the empire's only Builder.
+    /// Off by default.
+    builderless_empire_trains_one_2: bool,
     // ---- append: c-d ------------------------------------------------
     /// `campus-unlock-every-lane`: every seat, not only Domination, takes
     /// the Campus unlock (Writing) once it holds two cities, in the slot the
@@ -10499,6 +10508,9 @@ mod aqueduct_claims_the_capped_queue;
 mod astrology_before_the_second_city;
 mod backlog_builder_takes_the_queue;
 mod band_hunt;
+/// `builderless-empire-trains-one`: an empire with no Builder and a worked
+/// backlog trains one. See `advanced/builderless_empire_trains_one.rs`.
+mod builderless_empire_trains_one;
 /// `campus-building-claims-the-queue`: a standing Campus's next building
 /// claims its city's queue. See `advanced/campus_building_claims_the_queue.rs`.
 mod campus_building_claims_the_queue;
@@ -11592,6 +11604,8 @@ impl AdvancedAi {
             apostle_transit_keeps_the_cover: false,
             alliance_remembers_the_refusal: false,
             alliance_ask_turns: BTreeMap::new(),
+            builderless_empire_trains_one: false,
+            builderless_empire_trains_one_2: false,
             // ---- append: c-d ----------------------------------------
             campus_unlock_every_lane: false,
             culture_seat_theater_first_2: false,
@@ -49115,6 +49129,11 @@ impl AdvancedAi {
             // claims. Exact no-op while the gene is off. See
             // `advanced/backlog_builder_takes_the_queue.rs`.
             self.claim_backlog_builder(g, pid, &plan);
+            // `builderless-empire-trains-one`: when no Builder is held at all,
+            // the fastest safe city's. A no-op once the backlog claim has
+            // fired, and with the gene off. See
+            // `advanced/builderless_empire_trains_one.rs`.
+            self.claim_builderless_empire_builder(g, pid, &plan);
             // `aqueduct-claims-the-capped-queue`: the most capped city's legal
             // Aqueduct, after the backlog Builder and ahead of the Prophet race
             // and the routine claims. Exact no-op while the gene is off. See
