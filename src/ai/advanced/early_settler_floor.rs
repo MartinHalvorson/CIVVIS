@@ -87,7 +87,7 @@ impl AdvancedAi {
     /// turn.
     pub(super) fn early_settler_floor(&self, g: &Game, plan: &StrategicPlan) -> usize {
         if !self.early_settler_floor
-            || g.turn >= g.standard_duration(EARLY_SETTLER_FLOOR_STANDARD_TURN)
+            || g.turn >= self.econ_window(g, EARLY_SETTLER_FLOOR_STANDARD_TURN)
         {
             return 0;
         }
@@ -197,7 +197,7 @@ impl AdvancedAi {
             })
             .flatten();
         let item = Self::early_settler_item();
-        let max_turns = g.standard_duration(EARLY_SETTLER_MAX_BUILD) as f64;
+        let max_turns = self.econ_window(g, EARLY_SETTLER_MAX_BUILD) as f64;
         let mut best: Option<(f64, u32)> = None;
         for &cid in &city_ids {
             let city = &g.cities[&cid];
@@ -232,7 +232,7 @@ impl AdvancedAi {
                 "{} starts a Settler for the early city floor", g.cities[&cid].name;
                 "early-settler-floor: {n_cities} cities and {walkers} walking against a floor of \
                  {floor} before turn {}, {turns:.1} turns{}",
-                g.standard_duration(EARLY_SETTLER_FLOOR_STANDARD_TURN),
+                self.econ_window(g, EARLY_SETTLER_FLOOR_STANDARD_TURN),
                 displaced.map_or(String::new(), |item| format!(
                     "; {} keeps its progress", Self::plain_item(&item))));
         }

@@ -74,7 +74,7 @@ impl AdvancedAi {
                 - g.item_invested_production(cid, &monument);
             remaining.max(0.0) / production.max(0.5)
         });
-        (turns <= g.standard_duration(CAPITAL_MONUMENT_MAX_STANDARD) as f64)
+        (turns <= self.econ_window(g, CAPITAL_MONUMENT_MAX_STANDARD) as f64)
             .then_some((monument, turns))
     }
 

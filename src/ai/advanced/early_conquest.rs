@@ -661,12 +661,12 @@ impl AdvancedAi {
     // ------------------------------------------------------------------
 
     /// The original deadline plus preparation time after reservation opens.
-    fn conquest_commit_base(g: &Game, opening: &ConquestOpening) -> u32 {
-        g.standard_duration(CONQUEST_COMMIT_DEADLINE).max(
+    fn conquest_commit_base(&self, g: &Game, opening: &ConquestOpening) -> u32 {
+        self.econ_window(g, CONQUEST_COMMIT_DEADLINE).max(
             opening
                 .opened
                 .max(opening.preparing_since.unwrap_or(opening.opened))
-                .saturating_add(g.standard_duration(CONQUEST_MIN_PREPARATION_TURNS)),
+                .saturating_add(self.econ_window(g, CONQUEST_MIN_PREPARATION_TURNS)),
         )
     }
 
@@ -697,7 +697,7 @@ impl AdvancedAi {
     /// preparation window. A near-assembled force may receive one fixed,
     /// bounded extension at that deadline.
     fn conquest_commit_due(g: &Game, opening: &ConquestOpening) -> u32 {
-        let base = Self::conquest_commit_base(g, opening);
+        let base = self.conquest_commit_base(g, opening);
         base.max(opening.grace_until.unwrap_or(base))
     }
 
@@ -922,7 +922,7 @@ impl AdvancedAi {
             || threatened
             || self.conquest_closed
             || self.conquest_opening.is_some()
-            || g.turn >= g.standard_duration(CONQUEST_COMMIT_DEADLINE)
+            || g.turn >= self.econ_window(g, CONQUEST_COMMIT_DEADLINE)
             || counts.scouts >= CONQUEST_SEARCH_SCOUTS
             || g.cities.get(&cid).is_none_or(|city| city.owner != pid)
             || self.conquest_target(g, pid).is_some()
@@ -1514,7 +1514,7 @@ impl AdvancedAi {
         }
         self.conquest_revalidate_rally(g, pid);
         if let Some(opening) = self.conquest_opening.as_mut() {
-            let base = Self::conquest_commit_base(g, opening);
+            let base = self.conquest_commit_base(g, opening);
             if opening.grace_until.is_none()
                 && opening.assembled.is_none()
                 && g.turn >= base
@@ -1653,7 +1653,7 @@ impl AdvancedAi {
     /// game whose opening died with the old process, and may name it again
     /// for [`CONQUEST_RESUME_GRACE_TURNS`] after its first turn.
     fn conquest_naming_deadline(&self, g: &Game) -> u32 {
-        let deadline = g.standard_duration(CONQUEST_COMMIT_DEADLINE);
+        let deadline = self.econ_window(g, CONQUEST_COMMIT_DEADLINE);
         let grace = g.standard_duration(CONQUEST_RESUME_GRACE_TURNS).max(1);
         match self.conquest_first_turn {
             Some(first) if first > 1 && first <= deadline + grace => deadline.max(first + grace),
@@ -1794,8 +1794,8 @@ impl AdvancedAi {
         let home = g.cities[&capital].pos;
         let march = (f64::from(g.wdist(home, rally)) / CONQUEST_MARCH_TILES_PER_TURN).ceil();
         let now = f64::from(g.turn);
-        let deadline = f64::from(g.standard_duration(CONQUEST_COMMIT_DEADLINE))
-            .max(now + first + f64::from(g.standard_duration(CONQUEST_MIN_PREPARATION_TURNS)));
+        let deadline = f64::from(self.econ_window(g, CONQUEST_COMMIT_DEADLINE))
+            .max(now + first + f64::from(self.econ_window(g, CONQUEST_MIN_PREPARATION_TURNS)));
         Some((first + book + build + march, deadline - now))
     }
 
