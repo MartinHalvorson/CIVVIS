@@ -6297,6 +6297,25 @@ fn civvis_game_speed(civ6: &str) -> Option<GameSpeed> {
     GameSpeed::from_id(&id)
 }
 
+/// The turn the game Civilization VI is playing ends on, as the seat reports it.
+///
+/// The engine's own readback wins (`seat.max_turns`, `Game.GetMaxGameTurns()`):
+/// the harness may have created the game with a custom limit, and a page that
+/// printed the speed's stock limit over it would be quietly wrong. Without a
+/// readback, the speed's own limit (`GameSpeed::turn_limit`, Civilization VI's
+/// `GameSpeed_Turns` sums: Online 250, Quick 330, Standard 500, Epic 750,
+/// Marathon 1500). `None` when the seat names neither, so the caller says what
+/// it is guessing.
+///
+/// ★ `civvis play --mirror` used to rebuild every board with a literal 250, which
+/// is Online's limit alone, so a Standard game's page read TURN n/250.
+pub fn host_turn_limit(state: &StateSnapshot) -> Option<u32> {
+    u32::try_from(state.seat.max_turns)
+        .ok()
+        .filter(|turns| *turns > 0)
+        .or_else(|| civvis_game_speed(&state.seat.speed).map(GameSpeed::turn_limit))
+}
+
 /// Civilization VI emits `DIFFICULTY_SETTLER`; CIVVIS uses the rules key `settler`.
 fn civvis_difficulty(civ6: &str) -> Option<String> {
     let id = civ6
@@ -12904,8 +12923,9 @@ fn step_turn_and_score(ctx: &mut HostStepCtx<'_>) {
 }
 
 fn step_max_turns(ctx: &mut HostStepCtx<'_>) {
-    // ★★★ AND HOW MANY TURNS ARE LEFT. `rebuild_game` hardcodes 500; this build's real
-    // limit at Tiny/Online reads 250 (`seat.max_turns`, and the HUD shows TURN n/250).
+    // ★★★ AND HOW MANY TURNS ARE LEFT. `rebuild_game` hardcodes 500; the game's real
+    // limit is the seat's (`host_turn_limit`: the engine readback, else the speed's
+    // own), and the HUD prints it as TURN n/<limit>. Callers pass that in.
     // CIVVIS keys several windows on the remaining turns — `expansion_pays_back_for`
     // asks whether a settler can still pay for itself before the game ends, and
     // `expansion_window_open` reserves the endgame — so a horizon that is twice too
