@@ -200,6 +200,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `campus-claims-the-free-slot-2` | off (unmeasured) | Version 2 of the free-slot Campus claim. | — \| 2 |
 | `campus-unlock-before-the-luxury` | off (unmeasured) | Unlock the Campus ahead of the luxury and Astrology detours. | 1 \| 1 |
 | `campus-unlock-every-lane` | off (unmeasured) | Opt-in gene `campus-unlock-every-lane`; see `Self::campus_unlock_every_lane`. | 1 \| 1 |
+| `capital-leaves-the-frost` | off (unmeasured) | Opt-in gene `capital-leaves-the-frost`; see `Self::capital_leaves_the_frost`. | 1 \| 1 |
 | `capital-monument-after-the-second-city` | off (unmeasured) | Opt-in gene `capital-monument-after-the-second-city`; see `Self::capital_monument_after_the_second_city`. | 1 \| 1 |
 | `capital-walls-at-any-ratio` | off (unmeasured) | Opt-in gene `capital-walls-at-any-ratio`; see `Self::capital_walls_at_any_ratio`. | 1 \| 1 |
 | `capital-watch-arms-the-slinger` | off (unmeasured) | Opt-in `capital-watch-arms-the-slinger`; see `advanced/capital_watch_slinger.rs`. | 1 \| 1 |
@@ -241,6 +242,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `faith-war-is-no-front` | off (unmeasured) | Keep a faith war from choosing the campaign front. | — \| 2 |
 | `faith-war-is-no-front-2` | off (unmeasured) | Version 2 of `faith-war-is-no-front`. | — \| 2 |
 | `faith-war-needs-the-edge` | off (unmeasured) | Opt-in gene `faith-war-needs-the-edge`; see `Self::faith_war_needs_the_edge`. | 1 \| 1 |
+| `first-capital-before-the-camp` | off (unmeasured) | Opening defence priority for the threatened sole capital. | 1 \| 1 |
 | `first-launch-keeps-research` | off (unmeasured) | Keep a committed first Science launch on its research path. | 1 \| 1 |
 | `first-pad-in-the-forge` | off (unmeasured) | Opt-in gene `first-pad-in-the-forge`; see `Self::first_pad_in_the_forge`. | 1 \| 1 |
 | `fog-yields-to-a-stranded-settler` | off (unmeasured) | Opt-in gene `fog-yields-to-a-stranded-settler`; see `Self::fog_yields_to_a_stranded_settler`. | 1 \| 1 |
@@ -256,6 +258,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `friendship-spares-the-prey` | off (unmeasured) | Offer no friendship to a rival weak enough to be prey. | 1 \| 1 |
 | `friendship-spares-the-target` | off (unmeasured) | Offer no friendship to the campaign's target. | 1 \| 1 |
 | `frontier-walls-before-the-surprise` | off (unmeasured) | Prepare a watched frontier city's first fortifications before war. | 1 \| 1 |
+| `generals-lead-the-army` | off (unmeasured) | Opt-in gene `generals-lead-the-army`; see `Self::generals_lead_the_army`. | 1 \| 1 |
 | `gold-buys-the-backlog-builder` | off (unmeasured) | Opt-in gene `gold-buys-the-backlog-builder`; see `advanced/gold_buys_the_backlog_builder.rs`. | 1 \| 1 |
 | `gold-buys-the-idle-trader` | off (unmeasured) | Buy an empty route slot's Trader with the idle bank. | 1 \| 1 |
 | `gold-buys-the-opening-builder` | off (unmeasured) | Opt-in gene `gold-buys-the-opening-builder`; see `Self::gold_buys_the_opening_builder`. | 1 \| 1 |

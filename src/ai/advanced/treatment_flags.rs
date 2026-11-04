@@ -9394,6 +9394,38 @@ impl AdvancedAi {
         self.ranged_finish_on_the_mean = false;
     }
 
+    /// Opening defence priority for the threatened sole capital.
+    pub fn enable_first_capital_before_the_camp(&mut self) {
+        self.first_capital_before_the_camp = true;
+    }
+
+    /// Restore the existing objective-board priorities.
+    pub fn disable_first_capital_before_the_camp(&mut self) {
+        self.first_capital_before_the_camp = false;
+    }
+
+    /// Opt-in gene `generals-lead-the-army`; see
+    /// [`Self::generals_lead_the_army`].
+    pub fn enable_generals_lead_the_army(&mut self) {
+        self.generals_lead_the_army = true;
+    }
+
+    /// The twin of `enable_generals_lead_the_army`.
+    pub fn disable_generals_lead_the_army(&mut self) {
+        self.generals_lead_the_army = false;
+    }
+
+    /// Opt-in gene `capital-leaves-the-frost`; see
+    /// [`Self::capital_leaves_the_frost`].
+    pub fn enable_capital_leaves_the_frost(&mut self) {
+        self.capital_leaves_the_frost = true;
+    }
+
+    /// The twin of `enable_capital_leaves_the_frost`.
+    pub fn disable_capital_leaves_the_frost(&mut self) {
+        self.capital_leaves_the_frost = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
