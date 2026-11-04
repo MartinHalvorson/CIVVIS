@@ -50,6 +50,13 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
+# Where macOS ReportCrash writes `Civ6_Exe_Child-<stamp>.ips`. A native crash's
+# stack lives only here, so a crashed segment copies its report beside its run.
+CRASH_REPORTS = Path.home() / "Library" / "Logs" / "DiagnosticReports"
+# How long a crash recovery waits for ReportCrash to write that report. It
+# lands about a second after the process dies; the harness reaches recovery
+# several seconds later, so this almost never waits at all.
+CRASH_REPORT_WAIT_S = 10.0
 
 # How often the popup backstop looks at the screen, in seconds. Tight because
 # the operator watches this window and a leader portrait must not sit over it
@@ -2315,6 +2322,51 @@ def check_attempt_decider(args, tag: str, binary: Path) -> bool:
     return not report.failures
 
 
+def is_native_crash(why: str | None, record: dict) -> bool:
+    """Whether Civ VI itself died under a running game, as opposed to ending it.
+
+    A native Civ VI abort can follow a perfectly fresh turn. On 2026-09-28 the
+    core SIGABRTed at t200 with per-turn autosaves enabled. The watcher returned
+    "exited" and the supervisor started a new game. Require the harness's
+    explicit crash reason and stopped flag; an ordinary exit, operator stop, or
+    game-over screen must never read as a crash.
+    """
+    return (why == "exited" and record.get("reason") == "game exited"
+            and record.get("game_stopped") is True)
+
+
+def preserve_crash_evidence(run_tag: str, segment_started_at: float) -> None:
+    """Keep a natively crashed segment's logs and crash report before a relaunch.
+
+    ★★★ THE RELAUNCH OVERWROTE THE ONLY RECORD OF WHAT CRASHED. Live
+    civvis-20261104T152818Z SIGSEGVed at t280 on Civ's "Game Core" thread,
+    under the dispatcher that logs `GameCore RECV (%i): %s`, 50 ms after our
+    t280 orders landed. `net_message_debug.log` names the message that
+    dispatcher was handling, and `Automation.log` holds the mod's last lines --
+    but only freezes were snapshotted, and the `-cont1` reload truncated every
+    file in Logs 20 s later. The same save then played t280 cleanly, so the
+    crash is not reproducible on demand: the logs from the crash itself are
+    the only evidence there will be. Both copies are read-only and bounded,
+    and neither can stop the recovery.
+    """
+    run_dir = RUN_ROOT / run_tag
+    try:
+        manifest = civ6_native_log_snapshot.snapshot(
+            env.logs_dir(), run_dir / "native-crash-logs")
+        print(f"[resume] native crash log snapshot: {manifest}", flush=True)
+    except OSError as error:
+        print(f"[resume] native crash log snapshot failed: {error}", flush=True)
+    try:
+        copied = civ6_native_log_snapshot.copy_crash_reports(
+            CRASH_REPORTS, run_dir / "native-crash-report",
+            since=segment_started_at, wait_s=CRASH_REPORT_WAIT_S, clock=time)
+    except OSError as error:
+        print(f"[resume] native crash report copy failed: {error}", flush=True)
+    else:
+        print(f"[resume] native crash report: {', '.join(copied) or 'none found'}",
+              flush=True)
+
+
 def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, args,
                          started_at: float, latest=None, recent=None,
                          used_saves=None, stride_index: int | None = None) -> Path | None:
@@ -2342,14 +2394,8 @@ def resume_from_autosave(record: dict, why: str | None, resumes_so_far: int, arg
     make a later stride clamp back onto the same board. Everything else falls
     through to the ledger exactly as before.
     """
-    # A native Civ VI abort can follow a perfectly fresh turn. On
-    # 2026-09-28 the core SIGABRTed at t200 with per-turn autosaves enabled.
-    # The watcher returned "exited" and the supervisor started a new game. Require
-    # the harness's explicit crash reason and stopped flag; an ordinary exit,
-    # operator stop, or game-over screen must never restart a finished match.
-    native_crash = (why == "exited" and record.get("reason") == "game exited"
-                    and record.get("game_stopped") is True)
-    if (why != "frozen" and not native_crash) or resumes_so_far >= args.max_resumes:
+    if (why != "frozen" and not is_native_crash(why, record)) \
+            or resumes_so_far >= args.max_resumes:
         return None
     # ⚠ A historical score-retired game must stay retired.  Current
     # verification policy never makes that automatic score call, but old rows
@@ -3347,6 +3393,9 @@ def main() -> int:
         # file next to a real one reads as "the decider said nothing". The single
         # decider logs to `<run-dir>/brain.log`, where `civ6_play` puts it.
         attempt_started_at = time.time()
+        # When the running segment (the attempt, then each `-contN`) launched:
+        # a crash report older than this belongs to some earlier game.
+        segment_started_at = attempt_started_at
         prepare_cleanup_ownership(
             tag, baseline_pids=getattr(env, "_LAST_GAME_PIDS", ()))
         play = subprocess.Popen(
@@ -3412,6 +3461,10 @@ def main() -> int:
                 write_settler_capture_dossiers(run_tag)
                 # Read once per run: this is the attempt's row unless it resumes.
                 record = outcome_of(run_tag)
+                # Like a freeze's, before anything can relaunch into Logs, and
+                # whatever cleanup decided: copying is read-only.
+                if is_native_crash(why, record):
+                    preserve_crash_evidence(run_tag, segment_started_at)
                 if not cleanup_ok:
                     print(f"[resume] cleanup for {run_tag} was not proven; "
                           "not launching a continuation over a surviving game",
@@ -3464,6 +3517,7 @@ def main() -> int:
                 prepare_cleanup_ownership(
                     cont, baseline_pids=getattr(env, "_LAST_GAME_PIDS", ()))
                 torn_down = False
+                segment_started_at = time.time()
                 play = subprocess.Popen(
                     play_command(args, cont, RUN_ROOT / cont / "orders.sqlite",
                                  attempt_bin, load_save=save),

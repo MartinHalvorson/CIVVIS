@@ -1,9 +1,11 @@
-"""Bounded evidence capture before a frozen native game is relaunched."""
+"""Bounded evidence capture before a frozen or crashed native game is relaunched."""
 
 from __future__ import annotations
 
 import hashlib
 import json
+import shutil
+import time
 from pathlib import Path
 
 
@@ -94,3 +96,53 @@ def snapshot(source: Path, destination: Path, *, file_limit: int = 32 * 1024 * 1
                                     "file_limit": file_limit, "total_limit": total_limit,
                                     "files": entries}, indent=2) + "\n")
     return manifest
+
+
+def copy_crash_reports(reports: Path, destination: Path, *, since: float,
+                       prefix: str = "Civ6_Exe_Child-", wait_s: float = 0.0,
+                       poll_s: float = 0.5, limit: int = 4,
+                       clock=None) -> list[str]:
+    """Copy macOS crash reports written for this game segment; return their names.
+
+    ★ A NATIVE CRASH IS NAMED BY ITS STACK, AND macOS KEEPS THE STACK. Live
+    civvis-20261104T152818Z died at t280 with a SIGSEGV on Civ's own "Game
+    Core" thread (a null node in a list walk under `GameCore RECV`), and the
+    only copy of that stack was the `.ips` in the user's DiagnosticReports,
+    pruned by the OS on its own schedule. ReportCrash writes it a moment
+    after the process dies, so the caller may give it ``wait_s`` to land.
+    Only reports modified at or after ``since`` (the segment's launch) are
+    taken, newest first, at most ``limit``. Existing copies are never
+    replaced. Errors on individual files are skipped; a missing reports
+    directory yields an empty list.
+    """
+    clock = clock or time
+
+    def candidates() -> list[Path]:
+        try:
+            found = [path for path in reports.iterdir()
+                     if path.name.startswith(prefix) and path.suffix == ".ips"
+                     and path.is_file() and path.stat().st_mtime >= since]
+        except OSError:
+            return []
+        return sorted(found, key=lambda path: path.stat().st_mtime, reverse=True)[:limit]
+
+    deadline = clock.time() + max(0.0, wait_s)
+    found = candidates()
+    while not found and clock.time() < deadline:
+        clock.sleep(poll_s)
+        found = candidates()
+    copied = []
+    for path in found:
+        target = destination / path.name
+        if target.exists():
+            copied.append(path.name)
+            continue
+        try:
+            destination.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(path, target)
+        except OSError:
+            # A failed copy can leave a partial file; it is not evidence.
+            target.unlink(missing_ok=True)
+            continue
+        copied.append(path.name)
+    return copied

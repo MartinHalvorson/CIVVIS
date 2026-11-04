@@ -30,6 +30,24 @@ def sha(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def read_sha256(reads):
+    """Keep one digest per read, hashing repeated immutable objects once.
+
+    `expanded_reads` repeats the same bytes object for a captured read count.
+    The cache is local and retains only the preceding object; mutable buffers
+    are always hashed again. Read order/count and the full byte comparison in
+    `run_control` remain unchanged.
+    """
+    previous, digest = None, None
+    result = []
+    for data in reads:
+        if not isinstance(data, bytes) or data is not previous:
+            digest = sha(data)
+            previous = data if isinstance(data, bytes) else None
+        result.append(digest)
+    return result
+
+
 class FifoReads:
     """Serve one immutable byte string per open, with a distinct next inode."""
 
@@ -313,8 +331,8 @@ def run_control(context, records, mapping, directory, timeout, delivery="fifo"):
                 result = {"request": key, "input_delivery": delivery_kind, "identity_errors": request_identity_errors(reply, *key),
                           "native_payload_matches": exact_fact(control_payload(record), control_payload(reply)),
                           "read_sequence_matches": expected == actual, "recorded_reads": len(expected),
-                          "replayed_reads": len(actual), "expected_read_sha256": [sha(x) for x in expected],
-                          "actual_read_sha256": [sha(x) for x in actual]}
+                          "replayed_reads": len(actual), "expected_read_sha256": read_sha256(expected),
+                          "actual_read_sha256": read_sha256(actual)}
                 results.append(result)
                 if result["identity_errors"] or not result["native_payload_matches"] or not result["read_sequence_matches"]:
                     raise ValueError(f"original-binary control differs at {key}")
