@@ -76,12 +76,6 @@ impl SkirmishLedger {
     pub fn material_swing(&self) -> f64 {
         self.material_destroyed - self.material_lost
     }
-
-    /// Units killed per unit lost. `None` when nothing of this agent's died,
-    /// which is a real outcome and must not be flattened into a number.
-    pub fn exchange_ratio(&self) -> Option<f64> {
-        (self.losses > 0).then(|| self.kills as f64 / self.losses as f64)
-    }
 }
 
 /// One seed, played twice with the seats swapped.
