@@ -4233,6 +4233,7 @@ impl GreatPersonStall {
     }
 }
 
+#[cfg(test)]
 fn great_person_orders(state: &civvis::mirror::StateSnapshot) -> (Vec<Order>, GreatPersonStall) {
     great_person_orders_led(state, false)
 }
