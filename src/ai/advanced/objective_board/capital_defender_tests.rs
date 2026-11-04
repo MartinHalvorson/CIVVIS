@@ -213,3 +213,21 @@ fn the_early_city_most_at_risk_leads_not_the_capital() {
     assert!(rows[0].urgent && rows[1].urgent);
     assert!(!rows[3].urgent, "a later city keeps its own urgency");
 }
+
+/// An outclassed Defend force holds its city under version two; a Relieve
+/// still marches, and nothing changes with the gene off or on an arena.
+#[test]
+fn an_outclassed_defence_holds_the_city() {
+    let mut ai = AdvancedAi::new();
+    let defend = Some(ObjectiveKind::Defend);
+    assert!(!ai.defend_holds_when_outclassed(false, defend, 0.1), "off");
+    ai.enable_capital_keeps_its_defender_2();
+    assert!(ai.defend_holds_when_outclassed(false, defend, 0.1));
+    assert!(ai.defend_holds_when_outclassed(false, defend, DEFEND_HOLD_RATIO - 0.01));
+    assert!(!ai.defend_holds_when_outclassed(false, defend, DEFEND_HOLD_RATIO));
+    assert!(!ai.defend_holds_when_outclassed(false, Some(ObjectiveKind::Relieve), 0.1));
+    assert!(
+        !ai.defend_holds_when_outclassed(true, defend, 0.1),
+        "an arena"
+    );
+}

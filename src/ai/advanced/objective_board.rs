@@ -146,6 +146,10 @@ pub const SIEGE_RANGED_FLOOR: usize = 3;
 /// `siege-ranged-floor`: the field bodies a Siege row asks for, the shooters
 /// and a melee taker with a spare.
 pub const SIEGE_BODY_FLOOR: usize = 5;
+/// `capital-keeps-its-defender-2`: a Defend force below this share of the
+/// local hostile strength holds its city instead of engaging in the field.
+pub const DEFEND_HOLD_RATIO: f64 = 0.5;
+
 /// `capital-keeps-its-defender-2`: the first this many cities we founded —
 /// the operator's early_city_lost restart reads the same three.
 pub const EARLY_CITIES: usize = 3;
@@ -1819,6 +1823,26 @@ impl AdvancedAi {
             "capital-keeps-its-defender-2: risk = hostile strength in relief range over the city's own at its health; losing any of the first {EARLY_CITIES} cities ends the game");
     }
 
+    /// `capital-keeps-its-defender-2`: a Defend force below
+    /// [`DEFEND_HOLD_RATIO`] of the local hostile strength holds its city —
+    /// city strength, walls and the city's strike — instead of engaging the
+    /// threat in the field. Live Lv 8 Deity Korea (-af's trace): Defend
+    /// forces engaged at local strength 0.06-0.25 outside the city in four
+    /// early-city losses; 210549Z sent Yangsan's only unit five tiles out at
+    /// 0.15 and 0.06, and the empty city fell at turn 27. A Relieve force
+    /// still marches. Off on an arena (nothing stands still there).
+    pub(super) fn defend_holds_when_outclassed(
+        &self,
+        arena: bool,
+        kind: Option<ObjectiveKind>,
+        local_strength_ratio: f64,
+    ) -> bool {
+        self.capital_keeps_its_defender_2
+            && !arena
+            && kind == Some(ObjectiveKind::Defend)
+            && local_strength_ratio < DEFEND_HOLD_RATIO
+    }
+
     /// Move the rows keyed in `first` ahead of the rest, each group in its
     /// existing order.
     fn rows_first(rows: &mut Vec<Objective>, first: &BTreeSet<ObjectiveKey>) {
@@ -3074,6 +3098,13 @@ impl AdvancedAi {
                 (ForcePosture::Recover, force_medoid)
             } else {
                 match kind {
+                    Some(ObjectiveKind::Defend | ObjectiveKind::Relieve)
+                        if self.defend_holds_when_outclassed(arena, kind, local_strength_ratio) =>
+                    {
+                        // `capital-keeps-its-defender-2`: an outclassed
+                        // defence holds the city instead of sallying.
+                        (ForcePosture::Hold, objective)
+                    }
                     Some(ObjectiveKind::Defend | ObjectiveKind::Relieve) => {
                         // On an arena nothing stands still (the shipped
                         // ladder's own exception): the defence engages the
