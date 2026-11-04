@@ -1,0 +1,21 @@
+# First capital defence before opening camp clearing
+
+`first-capital-before-the-camp` is an opt-in, default-OFF priority rule. An existing Defend row becomes urgent when it protects our sole capital, the strategic plan names that city threatened, and the turn is within 60 Standard-equivalent turns. Normal observed-pressure/contact gates still decide whether the row exists. Existing board urgency ranks it before offensive objectives and permits recalling troops assigned elsewhere. Expansion, warning clearance or the end of the opening window releases this additional priority. Production and combat legality are unchanged.
+
+## Native cause and proposal result
+
+Standard Immortal Gran Colombia run `civvis-20261104T060224Z` gave its sole two-unit force to ClearCamp at turn12 while Defend Bogotá and Relieve Bogotá had no force. The same turn's opening defence interrupted the first Settler for nearby barbarian pressure; at turn67 the empire still held one city. This establishes the planning failure, not an earlier-expansion counterfactual.
+
+A preserved candidate built from the production sources of `33775713b` reproduced all163 original native payloads through turn70 twice. Request identity and the number, order and bytes of actual captured reads match throughout. The ON comparisons match the first22 order lists and stop at the first changed order, turn12/frame0, request23, in both repetitions. The board assigns its two soldiers to Defend Bogotá instead of ClearCamp. The changed proposal cancels Slinger196608's `MOVE_TO (27,13)`. No added move or arrival at the capital is established. Both ON repetitions match each other on complete control payloads through that boundary. The captured world is not replayed beyond the first changed proposal for the ON arm.
+
+Twenty additional fresh-board queries cover turns12,14,16 and67. Each has original/OFF, candidate/OFF, repeated candidate/OFF and repeated candidate/ON controls. Before/OFF and repeat comparisons match complete payloads. Turn12 changes one order; the other three boards are unchanged. These development inputs were reused to diagnose the rule, so they are not held-out confirmation. Fresh-board queries are not persistent histories.
+
+The archive `2026-11-04-first-capital-defense.native.tar.xz` preserves the raw inputs, original qualification receipts, replies, actual read captures, command/profile records, query drivers and independent verifier. SHA-256 is `4e356ad4f5cd15ff8302db62e9fa4cf1bbafb6b7554e7b6c0acc59f951568641` (1,051,872 bytes). Run the archive's `verify.py <extracted-root> <repository-root>` to reconstruct all read and payload controls. The separate `captured_native_action_pairs_v1` record checks successful raw queries, matched input, argument/profile differences restricted to this bit, and a changed order. It establishes proposal activation only.
+
+## Fixture correction and remaining validation
+
+The first integrated allocation test used an attacker three tiles from the capital but outside current sight. CI correctly produced no Defend row and failed the fixture. A Builder on an owned first-ring tile now reveals the attacker through normal visibility; explicit visibility assertions guard the setup. A separate negative test removes that observer and requires no Defend row even when the plan still names the capital threatened. The policy's observation gate was not widened.
+
+Six tests cover default OFF/withhold, release after expansion or warning clearance, ownership/capital scope, speed-scaled boundaries, actual board allocation from a camp to capital defence, and the unseen-attacker negative control. The source type check passed; execution of the corrected tests and full integration validation remain pending at this checkpoint.
+
+Main subsequently added the independent ranged finishing opt-in. The two additive registration conflicts are resolved by retaining both registry entries and both pairs of toggles. The first-capital helper and objective-board hook are unchanged. The archive above describes the pre-integration candidate; compatibility of the combined executable must be verified separately before a live trial. This report does not establish host execution, earlier retained expansion, saved cities, stronger play, or a win-rate improvement. The new flag has not been added to the live force-on list by this task.

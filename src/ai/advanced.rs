@@ -8527,6 +8527,10 @@ pub struct AdvancedAi {
     /// soldier garrisons each Amenity-short city. The behaviour lives on
     /// `BasicAi::retainers_garrison_the_short_cities`. Off by default.
     retainers_garrison_the_short_cities: bool,
+    /// `ranged-finish-on-the-mean`: the live finishing volley commits a line
+    /// whose every attacker is ranged on its centre-roll damage. See
+    /// `advanced/ranged_finish.rs`. Off by default.
+    ranged_finish_on_the_mean: bool,
     // ---- append: s-s ------------------------------------------------
     /// `science-specializes-earlier`: an assigned Science lane leaves the
     /// development half at a third of the clock, as Culture already does.
@@ -10190,6 +10194,9 @@ mod outclassed_siege;
 /// planned moves actually crossed. Opt-in gene `own-column-is-not-a-refusal`;
 /// see `advanced/own_column.rs`.
 mod own_column;
+/// `ranged-finish-on-the-mean`: a ranged-only finishing volley commits on
+/// its expected roll. See `advanced/ranged_finish.rs`.
+mod ranged_finish;
 /// Recon disruption: the pass picket. One opt-in gene; see
 /// `advanced/recon_disruption.rs`.
 mod recon_disruption;
@@ -12000,6 +12007,7 @@ impl AdvancedAi {
             racer_spy_searched: BTreeMap::new(),
             religion_seat_defends_its_faith: false,
             retainers_garrison_the_short_cities: false,
+            ranged_finish_on_the_mean: false,
             // ---- append: s-s ----------------------------------------
             science_specializes_earlier: false,
             spaceport_above_the_sea: false,
