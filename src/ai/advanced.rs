@@ -6545,6 +6545,12 @@ pub struct AdvancedAi {
     /// brings a shooter and [`camps_close_the_age::CAMP_AGE_MARGIN`] times
     /// the guard. Off by default.
     camps_close_the_age_2: bool,
+    /// `capital-keeps-its-defender`: while our capital has a Defend row, the
+    /// row is urgent and ranks first on the board, ahead of a secondary
+    /// city under fire, an Escort and a Recon, so the board never sends the
+    /// capital's last soldier elsewhere. See
+    /// `objective_board.rs` (`capital_defend_first`). Off by default.
+    capital_keeps_its_defender: bool,
     // ---- append: e-f ------------------------------------------------
     /// Scale only the free-slot Campus claim’s build-time budget. Opt-in.
     free_slot_campus_clock: bool,
@@ -11773,6 +11779,7 @@ impl AdvancedAi {
             capital_frost_looks: Vec::new(),
             camps_close_the_age: false,
             camps_close_the_age_2: false,
+            capital_keeps_its_defender: false,
             // ---- append: e-f ----------------------------------------
             free_slot_campus_clock: false,
             first_capital_before_the_camp: false,
