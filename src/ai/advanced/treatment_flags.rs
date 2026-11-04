@@ -9383,6 +9383,17 @@ impl AdvancedAi {
         self.guns_stay_out_of_reach_3 = false;
     }
 
+    /// Opt-in gene `generals-lead-the-army`; see
+    /// [`Self::generals_lead_the_army`].
+    pub fn enable_generals_lead_the_army(&mut self) {
+        self.generals_lead_the_army = true;
+    }
+
+    /// The twin of `enable_generals_lead_the_army`.
+    pub fn disable_generals_lead_the_army(&mut self) {
+        self.generals_lead_the_army = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

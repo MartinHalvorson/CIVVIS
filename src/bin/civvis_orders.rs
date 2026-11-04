@@ -51,6 +51,8 @@ mod air_assault_continuation;
 mod citizen_growth;
 #[path = "civvis_orders/formation_refusals.rs"]
 mod formation_refusals;
+#[path = "civvis_orders/generals_lead_the_army.rs"]
+mod generals_lead_the_army;
 #[path = "civvis_orders/host_move_postconditions.rs"]
 mod host_move_postconditions;
 #[path = "civvis_orders/host_ranged_history.rs"]
@@ -4220,6 +4222,9 @@ struct GreatPersonStall {
     no_empty_slot: usize,
     /// Founded zero-charge Prophets sent for retirement this frame.
     retired_prophets: usize,
+    /// Generals kept with a front of the army this frame
+    /// (`generals-lead-the-army`); not a stall, so outside `total`.
+    generals_leading: usize,
 }
 
 impl GreatPersonStall {
@@ -4229,12 +4234,41 @@ impl GreatPersonStall {
 }
 
 fn great_person_orders(state: &civvis::mirror::StateSnapshot) -> (Vec<Order>, GreatPersonStall) {
+    great_person_orders_led(state, false)
+}
+
+/// [`great_person_orders`], with `generals-lead-the-army` deciding whether a
+/// General walks to a front of our land army instead of retiring. See
+/// `civvis_orders/generals_lead_the_army.rs`.
+fn great_person_orders_led(
+    state: &civvis::mirror::StateSnapshot,
+    lead_with_generals: bool,
+) -> (Vec<Order>, GreatPersonStall) {
     let mut orders = Vec::new();
     let mut stall = GreatPersonStall::default();
+    let led = if lead_with_generals {
+        generals_lead_the_army::plan(state)
+    } else {
+        std::collections::BTreeMap::new()
+    };
     for unit in &state.units {
         let Some(person) = &unit.great_person else {
             continue;
         };
+        // `generals-lead-the-army`: a General kept for a front walks to its
+        // post (or holds beside it) and is never retired while it leads.
+        if let Some(post) = led.get(&unit.id) {
+            stall.generals_leading += 1;
+            if let Some(tile) = post {
+                orders.push(Order {
+                    kind: "unit",
+                    subject: Some(unit.id),
+                    verb: Some("MOVE_TO".to_string()),
+                    pos: Some(*tile),
+                });
+            }
+            continue;
+        }
         // ★★★★ A PROPHET WHOSE RELIGION IS ALREADY FOUNDED, WITH NO CHARGE LEFT,
         // IS A GHOST — and a ghost blocks a hex for the rest of the game. This
         // build leaves the zero-charge unit on the map after the religion is
@@ -5645,7 +5679,14 @@ fn decide(
         note_bits.push(format!("sales={sales}"));
     }
 
-    let (person_orders, great_person_stall) = great_person_orders(state);
+    let (person_orders, great_person_stall) =
+        great_person_orders_led(state, ai.generals_lead_the_army_enabled());
+    if great_person_stall.generals_leading > 0 {
+        note_bits.push(format!(
+            "generals_leading={}",
+            great_person_stall.generals_leading
+        ));
+    }
     if !person_orders.is_empty() {
         note_bits.push(format!("great_people_orders={}", person_orders.len()));
         // Retirements go FIRST: the ghost's hex is what other units in this

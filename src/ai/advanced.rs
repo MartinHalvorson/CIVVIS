@@ -7511,6 +7511,11 @@ pub struct AdvancedAi {
     /// Defend or Relieve task force may close on the attackers of our own
     /// city. See `advanced/guns_stay_out_of_reach.rs`.
     guns_stay_out_of_reach_3: bool,
+    /// `generals-lead-the-army`: the live bridge keeps a Great General or a
+    /// Comandante General with each front of our land army instead of
+    /// retiring it on arrival. See `advanced/generals_lead_the_army.rs`. Off
+    /// by default.
+    generals_lead_the_army: bool,
     // ---- append: l-o ------------------------------------------------
     /// `old-techs-before-the-beeline`: the technology our land army waits on
     /// to upgrade once the world has left its era, then any technology two
@@ -10446,6 +10451,9 @@ mod first_launch_research;
 /// `founder-converts-its-own-cities`: a founder's spreaders convert our own
 /// cities before any foreign one. See `advanced/founder_home.rs`.
 mod founder_home;
+/// `generals-lead-the-army`: the live bridge keeps a General with each front
+/// instead of retiring it. See `advanced/generals_lead_the_army.rs`.
+mod generals_lead_the_army;
 /// `gold-buys-the-backlog-builder`: see `advanced/gold_buys_the_backlog_builder.rs`.
 mod gold_buys_the_backlog_builder;
 /// `gold-buys-the-opening-builder`: a builderless opening buys its Builder
@@ -11844,6 +11852,7 @@ impl AdvancedAi {
             gold_buys_the_backlog_builder: false,
             guns_stay_out_of_reach_2: false,
             guns_stay_out_of_reach_3: false,
+            generals_lead_the_army: false,
             // ---- append: l-o ----------------------------------------
             old_techs_before_the_beeline: false,
             launch_commits_the_endgame: false,

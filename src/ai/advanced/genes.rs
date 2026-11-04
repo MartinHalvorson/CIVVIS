@@ -4884,6 +4884,15 @@ pub const GENES: &[Gene] = &[
     // two with every member of a Defend or Relieve task force left free to
     // close on the attackers. See `advanced/guns_stay_out_of_reach.rs`.
     Gene { tag: "guns-stay-out-of-reach-3", field: "guns_stay_out_of_reach_3", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_stay_out_of_reach_3, disable: AdvancedAi::disable_guns_stay_out_of_reach_3 },
+    // Gran Colombia receives a Comandante General every era: +5 Combat
+    // Strength and +1 Movement to land units within 2 tiles, in every era.
+    // The live bridge retired each one the turn it arrived (live GC games
+    // 11-03/04: every Comandante activated on its first turn), trading the
+    // aura for a one-shot civic, Trader or promotion. Under the gene the
+    // bridge keeps one General per front with our largest land cluster
+    // nearest the enemy and retires only the surplus. Live bridge only. See
+    // `advanced/generals_lead_the_army.rs`.
+    Gene { tag: "generals-lead-the-army", field: "generals_lead_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_generals_lead_the_army, disable: AdvancedAi::disable_generals_lead_the_army },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
