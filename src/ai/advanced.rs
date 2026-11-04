@@ -31840,6 +31840,133 @@ impl AdvancedAi {
         value
     }
 
+    /// Evaluate static site values, using the persistent pool only for a
+    /// sufficiently large miss batch. Every result is returned in input order
+    /// and each candidate's arithmetic is independent, so worker scheduling
+    /// cannot affect tie-breaking or floating-point reduction order.
+    fn settlement_static_values_uncached(
+        &self,
+        g: &Game,
+        pid: usize,
+        positions: &[Pos],
+    ) -> Vec<(Pos, f64)> {
+        let pool = self
+            .work_pool
+            .as_ref()
+            .filter(|pool| pool.threads() > 1 && positions.len() >= 32);
+        if let Some(pool) = pool {
+            let active = pool
+                .threads()
+                .min(positions.len())
+                .min(SETTLEMENT_SCORE_MAX_WORKERS);
+            let states = (0..active)
+                .map(|_| (g.speculative_clone(), self.clone()))
+                .collect::<Vec<_>>();
+            let positions = Arc::new(positions.to_vec());
+            let worker_positions = Arc::clone(&positions);
+            let values = pool.map_stateful_limited(
+                positions.len(),
+                SETTLEMENT_SCORE_MAX_WORKERS,
+                states,
+                move |(game, ai), indices| {
+                    indices
+                        .map(|index| {
+                            let pos = worker_positions[index];
+                            (index, ai.settlement_static_value_uncached(&game, pid, pos))
+                        })
+                        .collect()
+                },
+            );
+            return positions.iter().copied().zip(values).collect();
+        }
+
+        positions
+            .iter()
+            .copied()
+            .map(|pos| (pos, self.settlement_static_value_uncached(g, pid, pos)))
+            .collect()
+    }
+
+    /// Fill the turn-scoped atlas for the supplied positions. The atlas is
+    /// deliberately disabled outside an active controller turn: public
+    /// advice/evaluator calls can mutate a game between queries without
+    /// passing through this controller's lifecycle, and those callers retain
+    /// the original uncached semantics.
+    fn settlement_atlas_values(&self, g: &Game, pid: usize, positions: &[Pos]) {
+        if self.battlefront_frame.is_none() || positions.is_empty() {
+            return;
+        }
+        let misses = {
+            let mut atlas = self.settlement_atlas.borrow_mut();
+            if !atlas.matches(g, pid) {
+                atlas.start(g, pid);
+            }
+            positions
+                .iter()
+                .copied()
+                .filter(|pos| !atlas.values.contains_key(pos))
+                .collect::<Vec<_>>()
+        };
+        if misses.is_empty() {
+            return;
+        }
+        let values = self.settlement_static_values_uncached(g, pid, &misses);
+        let mut atlas = self.settlement_atlas.borrow_mut();
+        if !atlas.matches(g, pid) {
+            atlas.start(g, pid);
+        }
+        atlas.values.extend(values);
+    }
+
+    fn settlement_atlas_value(&self, g: &Game, pid: usize, pos: Pos) -> f64 {
+        self.settlement_atlas_values(g, pid, &[pos]);
+        self.settlement_atlas
+            .borrow()
+            .values
+            .get(&pos)
+            .copied()
+            .unwrap_or_else(|| self.settlement_static_value_uncached(g, pid, pos))
+    }
+
+    fn settle_value_visible(&self, g: &Game, pid: usize, pos: Pos, visible: &TileBits) -> f64 {
+        let mut value = if self.battlefront_frame.is_some() {
+            self.settlement_atlas_value(g, pid, pos)
+        } else {
+            self.settlement_static_value_uncached(g, pid, pos)
+        };
+        value -= self.settlement_safety_penalty(g, pid, pos, visible);
+        // `capital-leaves-the-frost`: the first city's frozen ground. Zero
+        // with the gene off and once the empire holds a city.
+        value -= self.frost_capital_penalty(g, pid, pos);
+        // `contested_land_first`: the ground between us and a neighbour,
+        // while the army can hold it. Zero with the gene off.
+        value += self.contested_land_credit(g, pid, pos);
+        if self.defensible_sites {
+            value += self.defensibility(g, pid, pos);
+        }
+        // `chokepoint-siting` / `canal-city`: the gates this city's own
+        // ground would hold, and the two seas its center would join. Both
+        // return 0.0 with their gene off. See `advanced/chokepoints.rs`.
+        value += self.chokepoint_site_bonus(g, pid, pos);
+        value += self.canal_city_bonus(g, pid, pos);
+        value
+    }
+
+    /// Penalize a site for threats the acting player can actually see. Hidden
+    /// units do not enter this term: a full-state route would make CivVis
+    /// settlers clairvoyant, while an obvious visible attack envelope is
+    /// precisely the risk the player can reasonably avoid.
+    fn settlement_tile_risk(
+        &self,
+        g: &Game,
+        pid: usize,
+        uid: Option<u32>,
+        pos: Pos,
+        visible: &TileBits,
+    ) -> f64 {
+        self.settlement_tile_risk_with_support(g, pid, uid, pos, visible, true)
+    }
+
     /// Would `guard`, standing on `pos`, be broken by the first visible
     /// hostile military unit that can reach it on that surface? The same bar
     /// `settlement_unit_step_toward_safe` applies to a formation leader:
@@ -32167,6 +32294,107 @@ impl AdvancedAi {
         } else {
             1.0
         }
+    }
+
+    fn settlement_safety_penalty(&self, g: &Game, pid: usize, pos: Pos, visible: &TileBits) -> f64 {
+        let support_distance = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|cid| g.wdist(pos, g.cities[&cid].pos))
+            .min();
+        let isolation = support_distance
+            .filter(|distance| *distance > 6)
+            .map(|distance| (distance - 6).min(8) as f64 * 3.5)
+            .unwrap_or(0.0);
+        // ★★★★ A SITE PRESSED AGAINST A RIVAL'S BORDER IS A PROVOCATION, and
+        // on the live Settler seat it has been answered with a war three times
+        // in five games, each within ten turns of the founding, each costing
+        // cities: T021044Z Puteoli (t65, "worth −22.7", beside Babylon → war
+        // t67, two cities lost), T040537Z Ostia (t53) and Mediolanum (t66)
+        // beside an unseen Khmer → war t61, both captured and the capital with
+        // them, T045316Z Lugdunum/Mediolanum (t52/56) beside Sweden → war t60.
+        // Firaxis' AI holds a grievance for settling near it and reads a
+        // border-hugging city as the weak one to take; nothing in the site
+        // value knew a border was there — the loyalty forecast asks about
+        // cities, and the cities were in fog. The border is visible ground.
+        // Behind `settlement_safety`, the live seat's settler-survival gate.
+        // `contested_land_first`: pressing a neighbour's border is the point
+        // where the ground is contested and the army can hold it. See
+        // `advanced/contested_land.rs`.
+        let provocation =
+            if self.settlement_safety && !self.contested_land_waives_provocation(g, pid, pos) {
+                self.foreign_border_pressure(g, pid, pos)
+            } else {
+                0.0
+            };
+        self.settlement_tile_risk(g, pid, None, pos, visible) + isolation + provocation
+    }
+
+    /// How much of the ground within `FOREIGN_BORDER_RADIUS` of `pos` a rival
+    /// major already owns, priced per tile and capped. See
+    /// `settlement_safety_penalty`.
+    fn foreign_border_pressure(&self, g: &Game, pid: usize, pos: Pos) -> f64 {
+        let owned = g
+            .wdisk(pos, FOREIGN_BORDER_RADIUS)
+            .into_iter()
+            .filter(|tile| {
+                g.map
+                    .get(*tile)
+                    .and_then(|t| t.owner_city)
+                    .and_then(|city| g.cities.get(&city))
+                    .map(|city| city.owner)
+                    .is_some_and(|owner| {
+                        owner != pid
+                            && g.players
+                                .get(owner)
+                                .is_some_and(|p| p.alive && !p.is_minor && !p.is_barbarian)
+                    })
+            })
+            .count();
+        (owned as f64 * FOREIGN_BORDER_TILE_PENALTY).min(FOREIGN_BORDER_PENALTY_CAP)
+    }
+
+    /// How well a site can be held, on the same scale `settle_value` uses for
+    /// everything else. Never positive: this only ever discounts a site.
+    ///
+    /// Two terms, for the two things the shipped score is silent about. A camp
+    /// or barbarian city nearby is what actually takes new cities, and it is
+    /// filtered out of the rival-proximity penalty above. Distance from the
+    /// empire's own nearest city decides whether help can arrive at all: the
+    /// measured loss lands at city age ten, which is less time than a soldier
+    /// needs to cross open ground.
+    ///
+    /// Six tiles is the same threshold the rival-proximity penalty uses, and
+    /// the isolation term is capped so a first city — which has no other city
+    /// to be near — cannot be discounted without bound.
+    fn defensibility(&self, g: &Game, pid: usize, pos: Pos) -> f64 {
+        let camp_distance = g
+            .barb_camps
+            .keys()
+            .chain(
+                g.cities
+                    .values()
+                    .filter(|city| g.players[city.owner].is_barbarian)
+                    .map(|city| &city.pos),
+            )
+            .map(|camp| g.wdist(pos, *camp))
+            .min()
+            .unwrap_or(20);
+        let exposure = match camp_distance < 6 {
+            true => (6 - camp_distance) as f64 * 7.0,
+            false => 0.0,
+        };
+        let support_distance = g
+            .player_city_ids(pid)
+            .into_iter()
+            .map(|cid| g.wdist(pos, g.cities[&cid].pos))
+            .min()
+            .unwrap_or(0);
+        let isolation = match support_distance > 6 {
+            true => (support_distance - 6).min(6) as f64 * 5.0,
+            false => 0.0,
+        };
+        -(exposure + isolation)
     }
 
     /// Lower is a better operational objective. Unlike a nearest-city rule,
