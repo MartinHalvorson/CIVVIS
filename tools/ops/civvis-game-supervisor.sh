@@ -17,6 +17,9 @@
 # `civ6_launch.py --stop/--restart` is the documented clean path and it cleared
 # it in ten seconds. See civvis-civ6-the-game-core-wedges-after-hard-kills.
 set -u
+# zsh nices every `&` job +5 by default; the next-head prebuild sets its own
+# priority explicitly (tools/test_ops_background_priority.py).
+unsetopt BG_NICE
 export PATH="$HOME/.cargo/bin:$PATH"
 # ⚠ PINNED to a known-good revision while `main`'s mod is broken. HEAD reaches
 # the in-game map and the agent context NEVER loads (22 autoclose events, zero
