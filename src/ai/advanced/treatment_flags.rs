@@ -5020,6 +5020,17 @@ impl AdvancedAi {
         self.camps_close_the_age_2 = false;
     }
 
+    /// Opt-in gene `gold-buys-the-capped-granary`; see
+    /// [`Self::gold_buys_the_capped_granary`].
+    pub fn enable_gold_buys_the_capped_granary(&mut self) {
+        self.gold_buys_the_capped_granary = true;
+    }
+
+    /// The twin of `enable_gold_buys_the_capped_granary`.
+    pub fn disable_gold_buys_the_capped_granary(&mut self) {
+        self.gold_buys_the_capped_granary = false;
+    }
+
     /// Opt-in gene `capital-keeps-its-defender`; see
     /// [`Self::capital_keeps_its_defender`].
     pub fn enable_capital_keeps_its_defender(&mut self) {

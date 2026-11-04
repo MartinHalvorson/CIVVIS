@@ -4962,6 +4962,13 @@ pub const GENES: &[Gene] = &[
     // brings a shooter (no return damage; the kill plan fires it first) and
     // `CAMP_AGE_MARGIN` times the guard. See `advanced/camps_close_the_age.rs`.
     Gene { tag: "camps-close-the-age-2", field: "camps_close_the_age_2", kind: Kind::OptIn, enable: AdvancedAi::enable_camps_close_the_age_2, disable: AdvancedAi::disable_camps_close_the_age_2 },
+    // Live Deity Online 11-04: 59% of our city-turns t30-100 stood within two
+    // of their housing; 39% of the capped cities had no Granary while the
+    // treasury held a median 127-145 Gold against a 130-Gold Granary that
+    // `spend_gold`'s 100 + 25 a city reserve never released. The treasury
+    // buys the capped city's Granary above the upkeep floor. See
+    // `advanced/gold_buys_the_capped_granary.rs`.
+    Gene { tag: "gold-buys-the-capped-granary", field: "gold_buys_the_capped_granary", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_buys_the_capped_granary, disable: AdvancedAi::disable_gold_buys_the_capped_granary },
     // Live Lv 7 Immortal Standard (11-04 10:44Z on, -af's census): 5 of ~25
     // games lost Bogota before turn 100, and in 4 of them the capital held no
     // soldier of ours within a tile for the 1-4 turns before it fell. The
