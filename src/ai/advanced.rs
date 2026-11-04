@@ -6545,6 +6545,10 @@ pub struct AdvancedAi {
     /// brings a shooter and [`camps_close_the_age::CAMP_AGE_MARGIN`] times
     /// the guard. Off by default.
     camps_close_the_age_2: bool,
+    /// `districts-price-the-improvement`: a district site pays for the
+    /// improvement (and bonus resource) it bulldozes, worked or not. See
+    /// `advanced/district_planning.rs`. Off by default.
+    districts_price_the_improvement: bool,
     // ---- append: e-f ------------------------------------------------
     /// Scale only the free-slot Campus claim’s build-time budget. Opt-in.
     free_slot_campus_clock: bool,
@@ -11773,6 +11777,7 @@ impl AdvancedAi {
             capital_frost_looks: Vec::new(),
             camps_close_the_age: false,
             camps_close_the_age_2: false,
+            districts_price_the_improvement: false,
             // ---- append: e-f ----------------------------------------
             free_slot_campus_clock: false,
             first_capital_before_the_camp: false,
@@ -51315,6 +51320,9 @@ impl AdvancedAi {
         // The last reading of the turn: what became of every decision, with
         // `Unit::acted` still saying what each unit did. Observes only.
         self.reconcile_commitments(g, pid);
+        // `districts-price-the-improvement`: a fresh District on a Farm,
+        // Mine or bonus resource moves to a clean site before the turn ends.
+        self.resite_bulldozing_districts(g, pid);
         if g.winner.is_none() && g.current == pid {
             let _ = g.apply(pid, &Action::EndTurn);
         }

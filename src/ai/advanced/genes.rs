@@ -4962,6 +4962,13 @@ pub const GENES: &[Gene] = &[
     // brings a shooter (no return damage; the kill plan fires it first) and
     // `CAMP_AGE_MARGIN` times the guard. See `advanced/camps_close_the_age.rs`.
     Gene { tag: "camps-close-the-age-2", field: "camps_close_the_age_2", kind: Kind::OptIn, enable: AdvancedAi::enable_camps_close_the_age_2, disable: AdvancedAi::disable_camps_close_the_age_2 },
+    // `districts-price-the-improvement` (2026-11-04): 372 of 773 districts
+    // the live seat placed (42 games, 11-04) went onto an improved tile — 120
+    // on Farms, 61 on an improved Wheat/Rice/Maize/Cattle — because the
+    // planner charges a site only the edge of a tile a citizen works THIS
+    // turn. Under the gene any improved or bonus-resource site pays its tile
+    // as if worked. See `advanced/district_planning.rs`.
+    Gene { tag: "districts-price-the-improvement", field: "districts_price_the_improvement", kind: Kind::OptIn, enable: AdvancedAi::enable_districts_price_the_improvement, disable: AdvancedAi::disable_districts_price_the_improvement },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
