@@ -42,7 +42,7 @@
 //! friendship blocks any declaration until it expires.
 
 use civvis::ai::{AdvancedAi, Ai, ExpansionCensus, PlanReport};
-use civvis::game::{Action, DiplomaticDeal, Game};
+use civvis::game::{Action, DiplomaticDeal, Game, Item};
 use civvis::reasoning::Journal;
 
 /// The fitted logit's terms. See the module documentation.
@@ -70,8 +70,11 @@ pub type Declaration = (u32, usize, usize);
 /// What one rival chair needs to roll its declarations.
 #[derive(Clone, Debug)]
 pub struct Pace {
-    /// The odds multiplier, in percent.
+    /// The odds multiplier, in percent; 0 is no declarations.
     pub pct: u32,
+    /// `--rival-walls`: the share of this chair's cities, in percent, that
+    /// may raise walls; `None` leaves every city free to.
+    pub walls_pct: Option<u32>,
     /// The game's seed, for the hash.
     pub seed: u64,
     /// The measured seats this chair may declare on.
@@ -85,6 +88,8 @@ pub struct PacedSeat {
     pub declared: Vec<Declaration>,
     /// Friendships, alliances and pacts the knob turned down or withdrew.
     pub refused: u32,
+    /// Wall builds `--rival-walls` turned into a soldier.
+    pub vetoed_walls: u32,
 }
 
 impl PacedSeat {
@@ -94,6 +99,7 @@ impl PacedSeat {
             pace,
             declared: Vec::new(),
             refused: 0,
+            vetoed_walls: 0,
         }
     }
 }
@@ -114,7 +120,12 @@ impl Ai for PacedSeat {
             let bonds: Vec<u32> = g
                 .pending_deals
                 .iter()
-                .filter(|deal| deal.to == pid && pace.targets.contains(&deal.from) && binds(deal))
+                .filter(|deal| {
+                    pace.pct > 0
+                        && deal.to == pid
+                        && pace.targets.contains(&deal.from)
+                        && binds(deal)
+                })
                 .map(|deal| deal.id)
                 .collect();
             for deal in bonds {
@@ -122,7 +133,7 @@ impl Ai for PacedSeat {
                     self.refused += 1;
                 }
             }
-            for &target in &pace.targets {
+            for &target in pace.targets.iter().filter(|_| pace.pct > 0) {
                 if g.winner.is_some() {
                     break;
                 }
@@ -141,9 +152,13 @@ impl Ai for PacedSeat {
         if let Some(pace) = &self.pace {
             let before = g.pending_deals.len();
             g.pending_deals.retain(|deal| {
-                !(deal.from == pid && pace.targets.contains(&deal.to) && binds(deal))
+                pace.pct == 0
+                    || !(deal.from == pid && pace.targets.contains(&deal.to) && binds(deal))
             });
             self.refused += (before - g.pending_deals.len()) as u32;
+            if let Some(walls_pct) = pace.walls_pct {
+                self.vetoed_walls += veto_walls(g, pid, pace.seed, walls_pct);
+            }
         }
     }
 
@@ -166,6 +181,63 @@ impl Ai for PacedSeat {
     fn attach_journal(&mut self, journal: Journal) {
         Ai::attach_journal(&mut self.ai, journal);
     }
+}
+
+/// ⭐ `--rival-walls PCT` (2026-11-04): only PCT percent of a chair's cities,
+/// keyed by city, may build walls; the rest build their strongest land
+/// soldier instead. The CIVVIS chairs wall far faster than the live Firaxis
+/// field: 70% of their cities stood walled at turn 100, 84% at 150 and 86%
+/// at 200 (4 games at `--rival-war-pace 200`), against 38%, 53% and 64% of
+/// the live field's known cities. The measured seat took no city in 18
+/// war-paced games (live 0.69 by turn 250), with sieges reading "walls
+/// 100/100 … breakers: 0 gun(s) fit". Returns the builds it turned.
+pub fn veto_walls(g: &mut Game, pid: usize, seed: u64, walls_pct: u32) -> u32 {
+    let share = walls_pct.min(100) as f64 / 100.0;
+    let mut vetoed = 0;
+    for cid in g.player_city_ids(pid) {
+        let walling = g.cities.get(&cid).is_some_and(|city| {
+            matches!(city.queue.first(), Some(Item::Building { building }) if is_wall(building.as_str()))
+        });
+        if !walling || city_roll(seed, cid) < share {
+            continue;
+        }
+        let soldier = g
+            .rules
+            .units
+            .iter()
+            .filter(|(_, def)| {
+                def.strength > 0.0 && !matches!(def.domain.as_deref(), Some("sea" | "air"))
+            })
+            .map(|(name, def)| (*name, def.strength))
+            .filter(|(name, _)| g.can_produce(pid, cid, &Item::Unit { unit: *name }))
+            .max_by(|a, b| {
+                a.1.total_cmp(&b.1)
+                    .then_with(|| b.0.as_str().cmp(a.0.as_str()))
+            });
+        if let Some((unit, _)) = soldier {
+            if g.apply(
+                pid,
+                &Action::Produce {
+                    city: cid,
+                    item: Item::Unit { unit },
+                },
+            )
+            .is_ok()
+            {
+                vetoed += 1;
+            }
+        }
+    }
+    vetoed
+}
+
+fn is_wall(building: &str) -> bool {
+    matches!(building, "walls" | "medieval_walls" | "renaissance_walls")
+}
+
+/// A uniform draw in `[0, 1)` per city for `--rival-walls`.
+fn city_roll(seed: u64, city: u32) -> f64 {
+    roll(seed ^ 0x5741_4C4C_5300, u32::MAX, city as usize, 0)
 }
 
 /// A deal that would bind the two players out of war: a friendship, an
@@ -315,6 +387,16 @@ mod tests {
             doubled > 1.8 * plain && doubled < 2.0 * plain,
             "{doubled} vs {plain}"
         );
+    }
+
+    #[test]
+    fn every_wall_tier_is_a_wall_and_the_city_draw_is_spread() {
+        assert!(is_wall("walls") && is_wall("medieval_walls") && is_wall("renaissance_walls"));
+        assert!(!is_wall("walls_of_benin") && !is_wall("monument"));
+        let under = (0..10_000u32)
+            .filter(|city| city_roll(44_700_000, *city) < 0.55)
+            .count();
+        assert!((5_300..5_700).contains(&under), "{under}");
     }
 
     #[test]

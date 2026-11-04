@@ -74,7 +74,7 @@
 //!               [--handicap all|rivals] [--rival-chairs N] [--stock-civs] [--trace]
 //!               [--rival-rung RUNG|-N] [--rival-pace] [--rival-victory-pace PCT] [--seat-pace]
 //!               [--rival-late-science PCT] [--rival-space-floor TECHS]
-//!               [--rival-war-pace PCT]
+//!               [--rival-war-pace PCT] [--rival-walls PCT]
 //!   gene_screen --analyze PATH [PATH ...] [--json OUT] [--interactions]
 //!               [--denial] [--top N] [--by-civ TAG]
 //!   gene_screen --list
@@ -1998,6 +1998,11 @@ struct Header {
     /// which every earlier file played. See [`rival_war_pace`].
     #[serde(default, skip_serializing_if = "is_zero_u32")]
     rival_war_pace: u32,
+    /// ⭐ `--rival-walls` (2026-11-04): the share of a chair's cities, in
+    /// percent, that may raise walls, or 0 for every city, which every earlier
+    /// file played. See [`rival_war_pace::veto_walls`].
+    #[serde(default, skip_serializing_if = "is_zero_u32")]
+    rival_walls: u32,
     /// ⭐ The binary that played these games. Absent in files written before
     /// 2026-08-23, which `tools/genes.py` grandfathers as history and
     /// marks `pre-fingerprint` rather than accepting silently.
@@ -2376,6 +2381,9 @@ struct Profile {
     /// measured seats, in percent of the live-fitted hazard
     /// ([`rival_war_pace`]). `None` is no knob.
     rival_war_pace: Option<u32>,
+    /// ⭐ `--rival-walls`: the share of a chair's cities that may raise walls
+    /// ([`rival_war_pace::veto_walls`]). `None` is no knob.
+    rival_walls: Option<u32>,
     /// ⭐ Rival chairs per game ([`rival_offset`]); one is the 2026-08-25 mix.
     rival_chairs: usize,
     /// ⭐ `--handicap rivals`: every measured seat is exempt from the rung's
@@ -2632,7 +2640,8 @@ fn play_game(
     // ⭐ `--trace` / `--rival-war-pace`: the live ladder's war census for each
     // measured seat — the turns it entered a war with another major, and its
     // cities lost and taken at raw turn 100.
-    let war_census = profile.trace || profile.rival_war_pace.is_some();
+    let war_census =
+        profile.trace || profile.rival_war_pace.is_some() || profile.rival_walls.is_some();
     let mut war_starts: Vec<Vec<u32>> = vec![Vec::new(); world.players.len()];
     let mut at_war_with: Vec<BTreeSet<usize>> = vec![BTreeSet::new(); world.players.len()];
     let mut marks_100: Option<Vec<(usize, usize)>> = None;
@@ -2732,13 +2741,15 @@ fn play_game(
         }
     };
     let mut rival_war_turns: Vec<Vec<u32>> = vec![Vec::new(); world.players.len()];
-    if let Some(pct) = profile.rival_war_pace {
+    if profile.rival_war_pace.is_some() || profile.rival_walls.is_some() {
+        let pct = profile.rival_war_pace.unwrap_or(0);
         let mut paced: Vec<rival_war_pace::PacedSeat> = ais
             .drain(..)
             .enumerate()
             .map(|(pid, ai)| {
                 let pace = chairs.contains(&pid).then(|| rival_war_pace::Pace {
                     pct,
+                    walls_pct: profile.rival_walls,
                     seed,
                     targets: measured.clone(),
                 });
@@ -5204,6 +5215,7 @@ fn read_rows(paths: &[String]) -> (Header, Vec<Row>) {
                                 || first.rival_late_science != found.rival_late_science
                                 || first.rival_space_floor != found.rival_space_floor
                                 || first.rival_war_pace != found.rival_war_pace
+                                || first.rival_walls != found.rival_walls
                                 || first.all_seats != found.all_seats
                                 || first.design != found.design
                                 || first.prior != found.prior
@@ -6128,6 +6140,12 @@ fn calibration_read(header: &Header) -> String {
             header.rival_space_floor
         ));
     }
+    if header.rival_walls > 0 {
+        line.push_str(&format!(
+            ", walls in {}% of the chairs' cities",
+            header.rival_walls
+        ));
+    }
     if header.rival_war_pace > 0 {
         line.push_str(&format!(
             ", wars on the measured seats at {}% of the live declaration odds",
@@ -6959,8 +6977,14 @@ fn main() {
     // `rival_war_pace`.
     let rival_war_pace = present(&args, "--rival-war-pace")
         .then(|| number(&args, "--rival-war-pace", 100).clamp(1, 10_000) as u32);
-    if rival_war_pace.is_some() && !rivals {
-        eprintln!("--rival-war-pace acts on the rival chairs, so it needs --rivals");
+    // ⭐ `--rival-walls PCT`: only PCT percent of a chair's cities may raise
+    // walls; the rest build a soldier (`rival_war_pace::veto_walls`).
+    let rival_walls = present(&args, "--rival-walls")
+        .then(|| number(&args, "--rival-walls", 100).clamp(0, 100) as u32);
+    if (rival_war_pace.is_some() || rival_walls.is_some()) && !rivals {
+        eprintln!(
+            "--rival-war-pace and --rival-walls act on the rival chairs, so they need --rivals"
+        );
         std::process::exit(2);
     }
     if (rival_rung.is_some() || rival_pace) && !faithful {
@@ -7320,6 +7344,7 @@ fn main() {
         rival_late_science: rival_late_science.unwrap_or(0),
         rival_space_floor: rival_space_floor.unwrap_or(0),
         rival_war_pace: rival_war_pace.unwrap_or(0),
+        rival_walls: rival_walls.unwrap_or(0),
         deployment_genome,
         design: "independent".to_string(),
         prior: probabilities.clone(),
@@ -7384,6 +7409,7 @@ fn main() {
         rival_late_science,
         rival_space_floor,
         rival_war_pace,
+        rival_walls,
         rival_chairs,
         handicap_rivals,
         journal_seeds,
@@ -7571,6 +7597,7 @@ mod tests {
             rival_late_science: 0,
             rival_space_floor: 0,
             rival_war_pace: 0,
+            rival_walls: 0,
             design: "independent".into(),
             prior: vec![0.5; genes.len()],
             p_on: 0.5,
