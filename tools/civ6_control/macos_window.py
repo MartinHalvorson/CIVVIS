@@ -23,6 +23,8 @@ from civ6_control import macos_capture, macos_input, popup_clear
 #: Events can block on Accessibility when a foreground app is busy, so unknown
 #: geometry must be retried on the next poll rather than stall the game.
 HOST_PROBE_TIMEOUT_S = 10.0
+WINDOW_PROBE_ERROR_INTERVAL_S = 60.0
+_window_probe_last_error_at: float | None = None
 
 #: Waits between setup screenshot attempts.  The sequence is bounded and
 #: spreads retries across a transient host-load spike rather than sampling it
@@ -101,6 +103,7 @@ def game_window(game_process: str) -> tuple[int, int, int, int] | None:
     window yet" beside a visible 1634x1084 "Civilization VI" window and
     played no turns.
     """
+    global _window_probe_last_error_at
     script = ('tell application "System Events" to tell '
               f'process "{game_process}"\n'
               'set out to ""\n'
@@ -119,6 +122,20 @@ def game_window(game_process: str) -> tuple[int, int, int, int] | None:
               f"{HOST_PROBE_TIMEOUT_S:g}s; treating the geometry as unknown",
               flush=True)
         return None
+    if out.returncode != 0:
+        # A compiler/Accessibility failure is different from a game with no
+        # window. Keep the retry contract, but expose the host error without
+        # flooding the setup poll or accepting stdout from a failed probe.
+        now = time.monotonic()
+        if (_window_probe_last_error_at is None or
+                now - _window_probe_last_error_at >= WINDOW_PROBE_ERROR_INTERVAL_S):
+            detail = " ".join((out.stderr or "").split())[:240] or "no error detail"
+            print(f"[window] System Events geometry probe failed "
+                  f"(exit {out.returncode}): {detail}; "
+                  "treating the geometry as unknown", flush=True)
+            _window_probe_last_error_at = now
+        return None
+    _window_probe_last_error_at = None
     best: tuple[int, int, int, int] | None = None
     for record in (out.stdout or "").split(";"):
         parts = [part.strip() for part in record.split(",") if part.strip()]

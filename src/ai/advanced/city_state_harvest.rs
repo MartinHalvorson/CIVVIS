@@ -63,6 +63,7 @@
 //!
 //! Off, every entry point returns before reading the board.
 
+use super::outclassed_siege::{field_outclasses, STREAK_TURNS};
 use super::*;
 use crate::think;
 
@@ -131,6 +132,10 @@ pub(crate) struct HarvestTarget {
     /// re-read from these every frame.
     pub(crate) pos: Pos,
     pub(crate) owner_civ: String,
+    /// Turns running on which the city's visible field outclassed our army
+    /// (`outclassed_siege::field_outclasses`), counted once a turn.
+    pub(crate) outclassed_turns: u32,
+    pub(crate) outclass_seen_turn: u32,
 }
 
 /// The living player of civilization `civ`, the stable key for an owner.
@@ -249,6 +254,14 @@ impl AdvancedAi {
                 if city.pop < HARVEST_MIN_POP || !g.players[pid].explored.contains(&city.pos) {
                     continue;
                 }
+                // An army the city's own field out-classes cannot take it:
+                // live 224444Z's harvest declared on Johannesburg, whose field
+                // cannons one-shot our catapults, and the siege never formed.
+                // Total power (73 against our 400) could not see it. See
+                // `advanced/outclassed_siege.rs`.
+                if field_outclasses(g, pid, m, city.pos) {
+                    continue;
+                }
                 let distance = ours
                     .iter()
                     .map(|own| g.wdist(g.cities[own].pos, city.pos))
@@ -298,12 +311,23 @@ impl AdvancedAi {
             // on Bandar Brunei every frame t175-185 against `war_refused`).
             // The next frame reads no war, so the name goes.
             let refused = target.declared_turn.is_some() && !at_war && owner == Some(target.player);
+            let outclassed =
+                owner == Some(target.player) && field_outclasses(g, pid, target.player, target.pos);
+            if target.outclass_seen_turn != g.turn {
+                target.outclass_seen_turn = g.turn;
+                target.outclassed_turns = if outclassed {
+                    target.outclassed_turns + 1
+                } else {
+                    0
+                };
+            }
             if at_war && target.declared_turn.is_none() {
                 target.declared_turn = Some(g.turn);
                 Self::harvest_count(g, pid, "declared");
             }
             if !at_war
                 && !refused
+                && !outclassed
                 && owner == Some(target.player)
                 && !Self::harvest_major_war(g, pid)
             {
@@ -336,6 +360,11 @@ impl AdvancedAi {
             } else if refused {
                 Self::harvest_count(g, pid, "refused");
                 Some("the host refused the war")
+            } else if target.outclassed_turns >= STREAK_TURNS {
+                // A streak, as the siege board's own stand-down reads it: one
+                // reading would have forfeited 7 of 13 live captures there.
+                Self::harvest_count(g, pid, "outclassed");
+                Some("the city's field outclasses our army")
             } else if Self::harvest_major_war(g, pid) {
                 Some("a major is at war with us")
             } else if target.declared_turn.is_none()
@@ -398,6 +427,8 @@ impl AdvancedAi {
             declared_turn: g.is_at_war(pid, player).then_some(g.turn),
             pos: g.cities[&city].pos,
             owner_civ: g.players[player].civ.clone(),
+            outclassed_turns: 0,
+            outclass_seen_turn: g.turn,
         });
         self.plan = None;
     }
