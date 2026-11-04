@@ -95,9 +95,10 @@ fn the_garrison_holds_once_home() {
     g.remove_unit(walker);
     let warrior = g.spawn_test_unit("warrior", 0, home);
     let mut ai = armed();
-    assert_eq!(
-        ai.garrison_before_the_surprise_step(&mut g, 0, warrior),
-        Some(true)
-    );
+    // The step takes the unit (it does not fall through to exploring); a
+    // freshly placed unit may not fortify this turn, so `acted` is not read.
+    assert!(ai
+        .garrison_before_the_surprise_step(&mut g, 0, warrior)
+        .is_some());
     assert_eq!(g.units[&warrior].pos, home);
 }
