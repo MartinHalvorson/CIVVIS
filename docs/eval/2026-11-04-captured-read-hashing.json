@@ -1,0 +1,68 @@
+{
+  "component_benchmark": {
+    "scope": "Six interleaved component microbenchmark pairs on one fixed native snapshot, parent CPU seconds on this Mac. This is not whole-replay speedup, CI cost or gameplay/strength evidence. Both implementations emit identical eighteen-entry hash arrays.",
+    "source_request": [
+      308,
+      0
+    ],
+    "snapshot_bytes": 91231928,
+    "snapshot_sha256": "765fdbebe34115e24b665e03f92e8e3c1595e6ccbb3fed05aaf25c6a98ab8701",
+    "read_count": 18,
+    "old_sha_calls": 18,
+    "new_sha_calls": 1,
+    "samples": [
+      {
+        "old": 0.549727,
+        "new": 0.030763000000000096
+      },
+      {
+        "new": 0.030688999999999966,
+        "old": 0.5452029999999999
+      },
+      {
+        "old": 0.5448750000000002,
+        "new": 0.030826999999999938
+      },
+      {
+        "new": 0.031401000000000234,
+        "old": 0.5495509999999997
+      },
+      {
+        "old": 0.5662039999999999,
+        "new": 0.03110799999999969
+      },
+      {
+        "new": 0.03127700000000022,
+        "old": 0.5483900000000004
+      }
+    ],
+    "median_old_cpu_seconds": 0.5489705,
+    "median_new_cpu_seconds": 0.030967499999999815,
+    "replay_tools_source": "ac7274cbe1698d2500c8ca900938ce8e0f6a0184"
+  },
+  "native_control_qualification": {
+    "passed": true,
+    "replay_tools_source": "ac7274cbe1698d2500c8ca900938ce8e0f6a0184",
+    "native_source": "94ae21fb7fc6cf6d0862b29e32ab4f8f08e26338",
+    "native_requests": 996,
+    "through_request": [
+      360,
+      2
+    ],
+    "all_request_receipts_identical_to_completed_old_control": true,
+    "all_full_native_payloads_and_actual_reads_match": true,
+    "wall_seconds": 403.612378917,
+    "parent_cpu_seconds": 221.148406,
+    "scope": "Functional full-history qualification; timings are not a controlled whole-replay speedup comparison.",
+    "canonical_request_receipts_sha256": "3a1ac9ba78396f11ed2fc61d49afee5d12605bbbf93f8e7c42741c315bcb0a44",
+    "native_decisions_sha256": "991994e48404661c9d6a5c24cc913188d7902c4378a26bde7ff074b609ac3a95",
+    "old_request_receipts_sha256": "3a1ac9ba78396f11ed2fc61d49afee5d12605bbbf93f8e7c42741c315bcb0a44",
+    "new_request_receipts_sha256": "3a1ac9ba78396f11ed2fc61d49afee5d12605bbbf93f8e7c42741c315bcb0a44",
+    "exact_json_types_verified": true
+  },
+  "local_tests": {
+    "captured_read_replay": 27,
+    "decision_trace": 11
+  },
+  "scope": "Hash-list computation only. Full read-byte equality, order/count, payload and identity checks remain. Native control is an actual local validation result; its wall time is not a paired whole-replay speedup measurement."
+}
