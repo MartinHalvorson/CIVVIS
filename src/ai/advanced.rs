@@ -8563,6 +8563,9 @@ pub struct AdvancedAi {
     /// `advanced/ranged_finish.rs`. Off by default.
     ranged_finish_on_the_mean: bool,
     // ---- append: s-s ------------------------------------------------
+    /// Refine an existing emergency defender for a visible mounted threat.
+    /// See `advanced/spears_answer_the_horse.rs`. Off by default.
+    spears_answer_the_horse: bool,
     /// `science-specializes-earlier`: an assigned Science lane leaves the
     /// development half at a third of the clock, as Culture already does.
     /// See `advanced/science_specializes_earlier.rs`. Off by default.
@@ -10555,6 +10558,7 @@ mod siege_tier_before_the_beeline;
 /// `siege-moves-under-the-wing`: see `advanced/siege_under_the_wing.rs`.
 mod siege_under_the_wing;
 mod spaceport_above_sea;
+mod spears_answer_the_horse;
 mod trader_fills_the_idle_route;
 pub use science_victory_drive::ScienceDrive;
 
@@ -12054,6 +12058,7 @@ impl AdvancedAi {
             retainers_garrison_the_short_cities: false,
             ranged_finish_on_the_mean: false,
             // ---- append: s-s ----------------------------------------
+            spears_answer_the_horse: false,
             science_specializes_earlier: false,
             spaceport_above_the_sea: false,
             science_power_buys_fuel: false,
@@ -32446,6 +32451,7 @@ impl AdvancedAi {
             .then(|| g.player_vision_frame(pid));
         let mut best: Option<(i32, u32, Option<Item>, Item)> = None;
         let mut retained: Option<(i32, u32, Item)> = None;
+        let mut counter_rescue: Option<(i32, u32, Option<Item>, Item)> = None;
         for city in g.player_city_ids(pid) {
             let committed = g.cities[&city].queue.first().cloned();
             let siege_defence = self.base.besieged_city_item(g, pid, city);
@@ -32495,6 +32501,7 @@ impl AdvancedAi {
             // when its repair project is legal, so put that answer ahead of a
             // multi-turn unit without weakening the evidence gate above.
             let defence = Self::outer_defense_repair_item(g, pid, city).unwrap_or(defence);
+            let counter = self.spear_for_local_horse(g, pid, city, &defence, committed.as_ref());
             let damage = CITY_MAX_HP.saturating_sub(g.cities[&city].hp);
             let wall_damage = g
                 .city_max_wall_hp(&g.cities[&city])
@@ -32536,6 +32543,22 @@ impl AdvancedAi {
                     || paused_finish.as_ref() == Some(*item))
                     && g.can_produce(pid, city, item)
             }) {
+                // A fresh defensive head can be refined, but only after all
+                // existing unsafe-queue rescues. Keep the same damage/city
+                // priority among retained defensive reservations.
+                if let Some(counter) = counter.filter(|_| Self::active_queue_answers_siege(g, item))
+                {
+                    if counter_rescue
+                        .as_ref()
+                        .is_none_or(|(old_damage, old_city, _, _)| {
+                            total_damage > *old_damage
+                                || (total_damage == *old_damage && city < *old_city)
+                        })
+                    {
+                        counter_rescue = Some((total_damage, city, committed.clone(), counter));
+                    }
+                    continue;
+                }
                 if retained.as_ref().is_none_or(|(old_damage, old_city, _)| {
                     total_damage > *old_damage || (total_damage == *old_damage && city < *old_city)
                 }) {
@@ -32547,6 +32570,7 @@ impl AdvancedAi {
                 continue;
             }
 
+            let defence = counter.unwrap_or(defence);
             if best.as_ref().is_none_or(|(best_damage, best_city, _, _)| {
                 total_damage > *best_damage || (total_damage == *best_damage && city < *best_city)
             }) {
@@ -32554,7 +32578,14 @@ impl AdvancedAi {
             }
         }
 
-        let Some((damage, city, committed, defence)) = best else {
+        let rescue = best.or_else(|| {
+            counter_rescue.filter(|(damage, city, _, _)| {
+                retained.as_ref().is_none_or(|(old_damage, old_city, _)| {
+                    damage > old_damage || (damage == old_damage && city < old_city)
+                })
+            })
+        });
+        let Some((damage, city, committed, defence)) = rescue else {
             return retained.map(|(_, city, item)| (city, item));
         };
         let city_name = g.cities[&city].name.clone();
