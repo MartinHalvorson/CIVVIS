@@ -16132,7 +16132,18 @@ impl BasicAi {
     /// already queued in it, and the city would finish it within
     /// [`Self::FIRST_CAMPUS_MAX_TURNS`]. `None` otherwise.
     pub(crate) fn first_campus_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
-        Self::first_district_item(g, pid, cid, "campus")
+        Self::first_campus_item_with_budget(g, pid, cid, Self::FIRST_CAMPUS_MAX_TURNS)
+    }
+
+    /// First Campus with an explicit build-time budget. Other district
+    /// callers retain their existing fifteen-turn limit.
+    pub(crate) fn first_campus_item_with_budget(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        max_turns: f64,
+    ) -> Option<Item> {
+        Self::first_district_item_with_budget(g, pid, cid, "campus", max_turns)
     }
 
     /// The first Theater Square (or its replacement, Greece's Acropolis) on
@@ -16145,6 +16156,16 @@ impl BasicAi {
     /// replacement where it has one) on the site with the highest total
     /// yield, when the city would finish it within `FIRST_CAMPUS_MAX_TURNS`.
     fn first_district_item(g: &Game, pid: usize, cid: u32, family: &str) -> Option<Item> {
+        Self::first_district_item_with_budget(g, pid, cid, family, Self::FIRST_CAMPUS_MAX_TURNS)
+    }
+
+    fn first_district_item_with_budget(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        family: &str,
+        max_turns: f64,
+    ) -> Option<Item> {
         let city = g.cities.get(&cid)?;
         if g.city_has_district_family(city, Name::new(family)) {
             return None;
@@ -16182,7 +16203,7 @@ impl BasicAi {
         let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
             g.item_cost_for(pid, &item) / g.city_yields(cid).production.max(0.5)
         });
-        (turns <= Self::FIRST_CAMPUS_MAX_TURNS).then_some(item)
+        (turns <= max_turns).then_some(item)
     }
 
     /// See `prophet_race_takes_a_district_slot`: `item` unless it is a Campus
