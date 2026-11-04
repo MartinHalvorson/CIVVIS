@@ -206,6 +206,7 @@ fn replay(
     hold: bool,
     why: bool,
     attacker_ai: &str,
+    declare_after: u32,
 ) -> Outcome {
     let journal = civvis::reasoning::Journal::recording();
     let mut g = base.clone();
@@ -268,7 +269,7 @@ fn replay(
     let mut fallen: BTreeSet<(i32, i32)> = BTreeSet::new();
     while g.winner.is_none() && g.turn < start + turns && g.players[0].alive {
         let pid = g.current;
-        if pid == attacker && !asked {
+        if pid == attacker && !asked && g.turn >= start + declare_after {
             asked = true;
             if !g.is_at_war(attacker, 0) {
                 out.declared = g.apply(attacker, &Action::DeclareWar { player: 0 }).is_ok();
@@ -425,6 +426,10 @@ fn main() {
     // retargeted at us. `ledger` (default) is the deployment genome on the
     // Domination lane; `legacy` is the frozen anchor; `new` is the engine's
     // default agent every other chair plays.
+    // `--declare-after N`: start at peace and let the attacker declare N
+    // turns in, so a defence that acts before the war (a garrison called
+    // home, Walls) is played from the turn it would have started.
+    let declare_after = number(&args, "--declare-after", 0) as u32;
     let attacker_ai = text(&args, "--attacker-ai").unwrap_or_else(|| "ledger".into());
     if !["ledger", "legacy", "new"].contains(&attacker_ai.as_str()) {
         eprintln!("unknown --attacker-ai {attacker_ai:?}");
@@ -456,6 +461,7 @@ fn main() {
                 hold,
                 why && seed == 0,
                 &attacker_ai,
+                declare_after,
             )
         }));
         let Ok(out) = run else {
