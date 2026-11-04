@@ -7513,6 +7513,10 @@ pub struct AdvancedAi {
     /// Defend or Relieve task force may close on the attackers of our own
     /// city. See `advanced/guns_stay_out_of_reach.rs`.
     guns_stay_out_of_reach_3: bool,
+    /// `gold-buys-the-production-tile`: in the opening, idle Gold buys a
+    /// border tile of two or more Production beside a city working a poorer
+    /// one. See `advanced/gold_buys_the_production_tile.rs`. Off by default.
+    gold_buys_the_production_tile: bool,
     // ---- append: l-o ------------------------------------------------
     /// `old-techs-before-the-beeline`: the technology our land army waits on
     /// to upgrade once the world has left its era, then any technology two
@@ -10461,6 +10465,10 @@ mod gold_buys_the_backlog_builder;
 /// `gold-buys-the-opening-builder`: a builderless opening buys its Builder
 /// with the idle treasury. See `advanced/gold_buys_the_opening_builder.rs`.
 mod gold_buys_the_opening_builder;
+/// `gold-buys-the-production-tile`: opening Gold buys a Production tile
+/// beside a city working a poorer one. See
+/// `advanced/gold_buys_the_production_tile.rs`.
+mod gold_buys_the_production_tile;
 mod gold_buys_the_settler;
 mod granary_claims_the_bound_queue;
 /// `founder-holds-the-holy-city`: a founder keeps its Holy City on its own
@@ -11855,6 +11863,7 @@ impl AdvancedAi {
             gold_buys_the_backlog_builder: false,
             guns_stay_out_of_reach_2: false,
             guns_stay_out_of_reach_3: false,
+            gold_buys_the_production_tile: false,
             // ---- append: l-o ----------------------------------------
             old_techs_before_the_beeline: false,
             launch_commits_the_endgame: false,
@@ -50556,6 +50565,10 @@ impl AdvancedAi {
             // before the route slot's Trader. See
             // `advanced/gold_buys_the_opening_builder.rs`.
             self.opening_builder_purchase(g, pid, &plan);
+            // `gold-buys-the-production-tile`: then a border tile of two or
+            // more Production beside a city working a poorer one. See
+            // `advanced/gold_buys_the_production_tile.rs`.
+            self.production_tile_purchase(g, pid, &plan);
             self.idle_trader_purchase(g, pid, &plan);
             // `gold-buys-the-backlog-builder`: past the opening buy and the
             // route slot's Trader, a Builder for the unimproved worked tiles

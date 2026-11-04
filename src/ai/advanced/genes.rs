@@ -4891,6 +4891,15 @@ pub const GENES: &[Gene] = &[
     // melee lines keep the floor. See `advanced/ranged_finish.rs`.
     Gene { tag: "ranged-finish-on-the-mean", field: "ranged_finish_on_the_mean", kind: Kind::OptIn, enable: AdvancedAi::enable_ranged_finish_on_the_mean, disable: AdvancedAi::disable_ranged_finish_on_the_mean },
     Gene { tag: "first-capital-before-the-camp", field: "first_capital_before_the_camp", kind: Kind::OptIn, enable: AdvancedAi::enable_first_capital_before_the_camp, disable: AdvancedAi::disable_first_capital_before_the_camp },
+    // Live Lv 7 Immortal Standard (11-03/04): Gold sat at 100-190 through
+    // t20-t45 because Standard prices put a Warrior at 160 and a Builder near
+    // 200, while a border tile costs 50-75; the purchase phase wants
+    // reserve + 200 + cost before any plot, so no game bought a tile before
+    // t80. 17 of 26 capitals at t30 worked a tile of at most one Production
+    // beside a buyable Hill or Forest of two or more. Under the gene, the
+    // opening buys that tile above the upkeep floor once a turn, at peace.
+    // See `advanced/gold_buys_the_production_tile.rs`.
+    Gene { tag: "gold-buys-the-production-tile", field: "gold_buys_the_production_tile", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_buys_the_production_tile, disable: AdvancedAi::disable_gold_buys_the_production_tile },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

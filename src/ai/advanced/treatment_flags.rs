@@ -9404,6 +9404,17 @@ impl AdvancedAi {
         self.first_capital_before_the_camp = false;
     }
 
+    /// Opt-in gene `gold-buys-the-production-tile`; see
+    /// [`Self::gold_buys_the_production_tile`].
+    pub fn enable_gold_buys_the_production_tile(&mut self) {
+        self.gold_buys_the_production_tile = true;
+    }
+
+    /// The twin of `enable_gold_buys_the_production_tile`.
+    pub fn disable_gold_buys_the_production_tile(&mut self) {
+        self.gold_buys_the_production_tile = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
