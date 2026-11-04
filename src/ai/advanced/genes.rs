@@ -4973,6 +4973,13 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "capital-keeps-its-defender", field: "capital_keeps_its_defender", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_defender, disable: AdvancedAi::disable_capital_keeps_its_defender },
     // Preserve the original capital's Loyalty anchor; default OFF.
     Gene { tag: "capital-keeps-its-governor", field: "capital_keeps_its_governor", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_governor, disable: AdvancedAi::disable_capital_keeps_its_governor },
+    // Live alliances were only ever of the lane's own kind, and never off the
+    // Diplomatic/Culture/Science lanes. Under the gene the seat holds a
+    // Military Alliance with the empire fighting our enemy (+5 combat strength
+    // against it) or the strongest neighbour at our border (no war with it,
+    // and the alliance's Defensive Pact against anyone else). See
+    // `military_alliance_shield.rs`.
+    Gene { tag: "military-alliance-shield", field: "military_alliance_shield", kind: Kind::OptIn, enable: AdvancedAi::enable_military_alliance_shield, disable: AdvancedAi::disable_military_alliance_shield },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

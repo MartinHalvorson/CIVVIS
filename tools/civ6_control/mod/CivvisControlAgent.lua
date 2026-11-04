@@ -11905,10 +11905,16 @@ CivvisAllianceStep = function(player, pid, subject, verb, turn, config)
 	-- tag is armed): a Culture seat asks as well; `ScienceAllies`
 	-- (`science-seat-allies`) the same for a Science seat. Its planner never names
 	-- the science racer or the rival setting our culture bar, and the
-	-- culture-racer refusal below still applies.
+	-- culture-racer refusal below still applies. `MilitaryAllies`
+	-- (`military-alliance-shield`): a Military Alliance on any lane -- the
+	-- binary lets through only that desk's own ask, which prices the
+	-- Domination target itself (+5 combat strength against a common enemy,
+	-- Expansion1_Alliances.xml:146; and the alliance's automatic Defensive
+	-- Pact).
 	if (config.VictoryLane ~= "diplomatic"
 			and not (config.VictoryLane == "culture" and config.CultureAllies == true)
-			and not (config.VictoryLane == "science" and config.ScienceAllies == true))
+			and not (config.VictoryLane == "science" and config.ScienceAllies == true)
+			and not (verb == "ALLIANCE_MILITARY" and config.MilitaryAllies == true))
 			or config.DiploAllies == false then
 		return nil, "alliance_off_lane";
 	end

@@ -2169,6 +2169,9 @@ impl AdvancedAi {
         free_slot_campus_clock => enable_free_slot_campus_clock, disable_free_slot_campus_clock;
         /// Opt-in gene `camps-close-the-age`; see [`Self::camps_close_the_age`].
         camps_close_the_age => enable_camps_close_the_age, disable_camps_close_the_age;
+        /// Opt-in gene `military-alliance-shield`; see
+        /// `advanced/military_alliance_shield.rs`.
+        military_alliance_shield => enable_military_alliance_shield, disable_military_alliance_shield;
     }
 }
 
