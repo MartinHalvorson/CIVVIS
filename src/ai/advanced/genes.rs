@@ -4943,6 +4943,17 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "slots-survive-the-roll", field: "slots_survive_the_roll", kind: Kind::OptIn, enable: AdvancedAi::enable_slots_survive_the_roll, disable: AdvancedAi::disable_slots_survive_the_roll },
     // Only the existing free-slot Campus claim; default OFF, Online no-op.
     Gene { tag: "free-slot-campus-clock", field: "free_slot_campus_clock", kind: Kind::OptIn, enable: AdvancedAi::enable_free_slot_campus_clock, disable: AdvancedAi::disable_free_slot_campus_clock },
+    // Live Lv 7 Immortal (83 runs, 11-03/04): 50 seats entered the first
+    // Dark Age, 30 of them 1-3 Era Score short of the Normal threshold, and
+    // in 14 of those a barbarian camp stood on our own board at the era's end
+    // with a force of one to three units. A cleared camp is a Historic Moment
+    // worth 2 (3 beside our city) through the Medieval era. At Standard the
+    // near-misses held 4.5 cities at turn 200 against 7.5 for the near-makes,
+    // with 0.79 loyalty flips a game against 0.12 (-af). Under the gene a seat
+    // 1-6 short raises its ClearCamp rows by an Age's worth, asks two bodies
+    // of each, and dates them to the era's end. See
+    // `advanced/camps_close_the_age.rs`.
+    Gene { tag: "camps-close-the-age", field: "camps_close_the_age", kind: Kind::OptIn, enable: AdvancedAi::enable_camps_close_the_age, disable: AdvancedAi::disable_camps_close_the_age },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

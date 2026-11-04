@@ -6535,6 +6535,12 @@ pub struct AdvancedAi {
     /// Tiles the first Settler stood on when `capital_leaves_the_frost`
     /// stepped it off frozen ground; a look never returns to one.
     capital_frost_looks: Vec<Pos>,
+    /// `camps-close-the-age`: a seat a camp or two short of a Normal Age,
+    /// while a cleared camp still scores a Historic Moment, raises its
+    /// ClearCamp rows by an age's worth, asks two bodies of each, and dates
+    /// them to the era's end once the countdown runs. See
+    /// `advanced/camps_close_the_age.rs`. Off by default.
+    camps_close_the_age: bool,
     // ---- append: e-f ------------------------------------------------
     /// Scale only the free-slot Campus claim’s build-time budget. Opt-in.
     free_slot_campus_clock: bool,
@@ -10617,6 +10623,10 @@ pub use gene_ledger::{
 /// `advanced/camp_buyout.rs`.
 mod camp_buyout;
 
+/// `camps-close-the-age`: ClearCamp rows close a first-era Age gap. One
+/// opt-in gene; see `advanced/camps_close_the_age.rs`.
+mod camps_close_the_age;
+
 /// `early-archers`: an Archer for every city, the frontier city first, while
 /// the world is Ancient and Classical, and Archery chased until a city can
 /// train one. One opt-in gene; see `advanced/early_archers.rs`.
@@ -11757,6 +11767,7 @@ impl AdvancedAi {
             city_state_harvest_war: None,
             capital_leaves_the_frost: false,
             capital_frost_looks: Vec::new(),
+            camps_close_the_age: false,
             // ---- append: e-f ----------------------------------------
             free_slot_campus_clock: false,
             first_capital_before_the_camp: false,
