@@ -4615,9 +4615,42 @@ def press_escape(times: int = 2) -> bool:
 #: row before stopping the game regardless. The mod polls on game-core
 #: events, which fire many times per frame while the game is live.
 ABANDON_RETIRE_WAIT_S = 12.0
+#: How often the abandon path re-reads Automation.log for that answer.
+ABANDON_RETIRE_POLL_S = 0.25
 
 OPERATOR_RETIRE_RETRY_S = 15.0
 OPERATOR_RETIRE_SETTLE_S = 0.8
+
+
+def _await_retire_answer(run_tag: str, wait_s: float = ABANDON_RETIRE_WAIT_S,
+                         poll_s: float = ABANDON_RETIRE_POLL_S,
+                         settle_s: float = OPERATOR_RETIRE_SETTLE_S,
+                         clock=time.monotonic, sleep=time.sleep) -> bool:
+    """Wait for the mod's ``retired`` line, at most ``wait_s``; True if it came.
+
+    ★ THE BOUND WAS SPENT IN FULL ON EVERY ABANDON. This used to be a flat
+    ``time.sleep(ABANDON_RETIRE_WAIT_S)`` followed by one read, so a weak game
+    the retire rule had called sat twelve seconds after the mod had already
+    answered. The answer is prompt: the operator path, which hears the same
+    ``retired`` event through the watcher, had it within the same mod second
+    as the order (civvis-20261104T061527Z: order written 06:16:57Z, mod ``t``
+    06:16:57, relayed 06:16:58.774Z). The abandon path stops the watcher, so
+    it reads ``Automation.log`` itself, every ``poll_s``.
+
+    The mod emits ``retired`` right after ``UI.RequestAction(ACTION_RETIRE)``
+    returns and that request reaches the game core asynchronously, so an
+    answered retire keeps the operator path's ``OPERATOR_RETIRE_SETTLE_S``
+    frame window before the teardown closes the game. An unanswered one still
+    stops at the bound, as before.
+    """
+    deadline = clock() + wait_s
+    answered = _retire_was_answered(run_tag)
+    while not answered and clock() < deadline:
+        sleep(poll_s)
+        answered = _retire_was_answered(run_tag)
+    if answered and settle_s > 0:
+        sleep(settle_s)
+    return answered
 
 
 def dismiss_world_congress_between_turns() -> bool:
@@ -5993,7 +6026,7 @@ def _play(args: argparse.Namespace) -> int:
             # has ALREADY parked cannot hold the loop open. A parked core
             # cannot answer a retire at all — nothing is listening — and
             # the outside watchdog is the only remedy for that case.
-            time.sleep(ABANDON_RETIRE_WAIT_S)
+            #
             # ⚠⚠ AND READ THE ANSWER, or a success is indistinguishable
             # from a failure.
             #
@@ -6005,9 +6038,10 @@ def _play(args: argparse.Namespace) -> int:
             # holds `"kind":"retired","why":"requested"`, our own
             # `"kind":"defeat","ours":true`, and the `EndGameMenu` opening.
             #
-            # So ask the log directly, once, and put the answer in the run
-            # record where the next person will look.
-            state["retire_confirmed"] = _retire_was_answered(args.tag)
+            # So ask the log directly — polled, so the wait ends when the
+            # answer lands (`_await_retire_answer`) — and put the answer in
+            # the run record where the next person will look.
+            state["retire_confirmed"] = _await_retire_answer(args.tag)
             print("[abandon] retire "
                   + ("acknowledged by the mod"
                      if state["retire_confirmed"]
