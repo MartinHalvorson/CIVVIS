@@ -5042,6 +5042,19 @@ impl AdvancedAi {
         self.builderless_empire_trains_one = false;
     }
 
+    /// Opt-in gene `builderless-empire-trains-one-2`; see
+    /// [`Self::builderless_empire_trains_one_2`]. One version of the family
+    /// plays.
+    pub fn enable_builderless_empire_trains_one_2(&mut self) {
+        self.builderless_empire_trains_one = false;
+        self.builderless_empire_trains_one_2 = true;
+    }
+
+    /// The twin of `enable_builderless_empire_trains_one_2`.
+    pub fn disable_builderless_empire_trains_one_2(&mut self) {
+        self.builderless_empire_trains_one_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -39,6 +39,13 @@
 //! claim a turn, after the backlog claim (which, when it fires, leaves a
 //! Builder held and this a no-op). The governor's rescoring keeps the Builder
 //! through [`AdvancedAi::backlog_builder_holds`]. Off, nothing runs.
+//!
+//! **Version two** (`builderless-empire-trains-one-2`). Live Deity Online
+//! civvis-20261104T211604Z: the capital ran Scout, Slinger and four Settlers
+//! and held no Builder until turn 30, so version one, which keeps every
+//! Settler's queue, never fired. Under version two a Settler with no
+//! production invested yields the head to the empire's only Builder; the
+//! early Settler floor's own city still keeps it.
 
 use super::*;
 
@@ -86,7 +93,10 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) {
-        if !self.builderless_empire_trains_one || self.base.minor || self.base.barb {
+        if !(self.builderless_empire_trains_one || self.builderless_empire_trains_one_2)
+            || self.base.minor
+            || self.base.barb
+        {
             return;
         }
         let cities = g.player_city_ids(pid);
@@ -125,7 +135,7 @@ impl AdvancedAi {
                     continue;
                 }
                 if let Some(head) = city.queue.first() {
-                    if !Self::builderless_head_yields(g, pid, cid, head, at_major_war)
+                    if !self.builderless_head_yields(g, cid, head, at_major_war)
                         || self.deterrence_unit_holds(g, pid, head)
                         || self.bound_granary_holds(g, pid, cid, plan, head)
                         || self.production_build_turns(g, pid, cid, head) <= 1.0
@@ -166,19 +176,18 @@ impl AdvancedAi {
     }
 
     /// Whether `head` may yield the queue to the empire's only Builder: not a
-    /// Settler, a Builder, Walls, a wonder, a project, or a military unit
-    /// while at war with a major.
-    fn builderless_head_yields(
-        g: &Game,
-        _pid: usize,
-        _cid: u32,
-        head: &Item,
-        at_major_war: bool,
-    ) -> bool {
+    /// Builder, Walls, a wonder, a project, a military unit while at war with
+    /// a major, or a Settler -- except, under version two, a Settler with no
+    /// production invested.
+    fn builderless_head_yields(&self, g: &Game, cid: u32, head: &Item, at_major_war: bool) -> bool {
         match head {
             Item::Unit { unit } => {
-                if matches!(unit.as_str(), "settler" | "builder") {
+                if *unit == "builder" {
                     return false;
+                }
+                if *unit == "settler" {
+                    return self.builderless_empire_trains_one_2
+                        && g.item_invested_production(cid, head) <= f64::EPSILON;
                 }
                 let Some(spec) = g.rules.units.get(unit) else {
                     return false;

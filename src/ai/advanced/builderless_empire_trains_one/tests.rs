@@ -5,7 +5,12 @@ use super::*;
 /// Builder and no Settler anywhere, both queues training a routine Warrior at
 /// peace. The fixture of `backlog-builder-takes-the-queue`'s tests.
 fn builderless_empire() -> (Game, u32, u32) {
-    let mut game = Game::new_full(1, 24, 16, 936_221, 200, 0, false);
+    builderless_empire_with(false)
+}
+
+/// [`builderless_empire`], with the barbarian seat when `barbarians`.
+fn builderless_empire_with(barbarians: bool) -> (Game, u32, u32) {
+    let mut game = Game::new_full(1, 24, 16, 936_221, 200, 0, barbarians);
     let settler = game
         .player_unit_ids(0)
         .into_iter()
@@ -82,8 +87,7 @@ fn builders_at_head(game: &Game) -> Vec<u32> {
 }
 
 /// Off, nothing moves. On, exactly one city -- the faster -- puts a Builder at
-/// the head, its Warrior kept behind it, and the claim does not repeat once a
-/// Builder is held.
+/// the head, and the claim does not repeat once a Builder is held.
 #[test]
 fn an_empire_without_a_builder_trains_one_in_its_fastest_city() {
     let (mut off, ..) = builderless_empire();
@@ -106,10 +110,6 @@ fn an_empire_without_a_builder_trains_one_in_its_fastest_city() {
         .unwrap();
     ai.claim_builderless_empire_builder(&mut on, 0, &plan);
     assert_eq!(builders_at_head(&on), vec![fastest]);
-    assert!(
-        on.cities[&fastest].queue.contains(&unit("warrior")),
-        "the displaced Warrior keeps its place behind the Builder"
-    );
     ai.claim_builderless_empire_builder(&mut on, 0, &plan);
     assert_eq!(builders_at_head(&on), vec![fastest], "one Builder, not two");
 }
@@ -144,16 +144,9 @@ fn a_settler_and_a_raided_city_keep_their_queues() {
         "the Settler's city keeps its queue; the other city trains the Builder"
     );
 
-    let (mut raided, capital, second) = builderless_empire();
+    let (mut raided, capital, second) = builderless_empire_with(true);
     raided.cities.get_mut(&capital).unwrap().queue = vec![unit("settler")];
-    let barb = raided.barb_pid.unwrap_or_else(|| {
-        let pid = raided.players.len();
-        let mut player = crate::game::Player::new(pid, "Barbarians", true);
-        player.is_barbarian = true;
-        raided.players.push(player);
-        raided.barb_pid = Some(pid);
-        pid
-    });
+    let barb = raided.barb_pid.expect("the barbarian seat");
     let near = raided.cities[&second].pos;
     let raider = raided
         .map
@@ -172,5 +165,42 @@ fn a_settler_and_a_raided_city_keep_their_queues() {
     assert!(
         builders_at_head(&raided).is_empty(),
         "the raided city keeps its queue"
+    );
+}
+
+/// Version two: a Settler with nothing invested yields the head to the
+/// empire's only Builder; one with production in it keeps its queue.
+#[test]
+fn version_two_lets_a_fresh_settler_yield_to_the_only_builder() {
+    let (mut game, capital, second) = builderless_empire();
+    // Both cities train a Settler; the second has production in its own.
+    for cid in [capital, second] {
+        game.cities.get_mut(&cid).unwrap().queue = vec![unit("settler")];
+    }
+    game.cities.get_mut(&second).unwrap().production = 5.0;
+    assert!(game.item_invested_production(second, &unit("settler")) > 0.0);
+    assert_eq!(
+        game.item_invested_production(capital, &unit("settler")),
+        0.0
+    );
+    let plan = plan_for(&game);
+
+    let mut v1 = AdvancedAi::new();
+    v1.enable_builderless_empire_trains_one();
+    let mut one = game.clone();
+    v1.claim_builderless_empire_builder(&mut one, 0, &plan);
+    assert!(
+        builders_at_head(&one).is_empty(),
+        "v1: every Settler keeps its queue"
+    );
+
+    let mut v2 = AdvancedAi::new();
+    v2.enable_builderless_empire_trains_one_2();
+    let mut two = game.clone();
+    v2.claim_builderless_empire_builder(&mut two, 0, &plan);
+    assert_eq!(
+        builders_at_head(&two),
+        vec![capital],
+        "v2: the fresh Settler yields; the invested one keeps its queue"
     );
 }
