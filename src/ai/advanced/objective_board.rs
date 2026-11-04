@@ -1708,6 +1708,42 @@ impl AdvancedAi {
         }
     }
 
+    /// `capital-keeps-its-defender`: our capital's Defend row, when the board
+    /// has one, becomes urgent and ranks first. Live Lv 7 Immortal Standard
+    /// 11-04: in 4 of the 5 capitals lost before turn 100 the capital held no
+    /// soldier of ours within a tile for the 1-4 turns before it fell, while
+    /// its Defend row stood on the board unserved behind a secondary city
+    /// under fire, a settler's Escort and a Recon (190341Z t44: "Defend
+    /// Bogota, value 60, need 76, no force"). Urgency alone holds back only
+    /// offensive rows, and the allocation serves rows in rank order, so the
+    /// row must lead. Its Relieve follows it as before (a dependency). With
+    /// the gene off nothing is read.
+    pub(super) fn capital_defend_first(&mut self, g: &Game, pid: usize, rows: &mut Vec<Objective>) {
+        let Some(index) = rows.iter().position(|row| match row.key {
+            ObjectiveKey::Defend(cid) => g
+                .cities
+                .get(&cid)
+                .is_some_and(|city| city.owner == pid && city.is_capital),
+            _ => false,
+        }) else {
+            return;
+        };
+        rows[index].urgent = true;
+        if index == 0 {
+            return;
+        }
+        let passed: Vec<String> = rows[..index]
+            .iter()
+            .map(|row| format!("{} {}", row.kind.as_str(), row.label))
+            .collect();
+        let row = rows.remove(index);
+        let label = row.label.clone();
+        rows.insert(0, row);
+        think!(self.journal(), Military, Decision,
+            "{} keeps its defender: the capital's defense ranks first", label;
+            "capital-keeps-its-defender: ahead of {}", passed.join(", "));
+    }
+
     /// Move the rows keyed in `first` ahead of the rest, each group in its
     /// existing order.
     fn rows_first(rows: &mut Vec<Objective>, first: &BTreeSet<ObjectiveKey>) {
@@ -1795,6 +1831,11 @@ impl AdvancedAi {
         Self::rank_rows(g, &mut rows, &pool, &facts);
         if self.city_under_fire_ranks_first {
             self.city_under_fire_first(g, pid, &visible, &mut rows);
+        }
+        // `capital-keeps-its-defender`: after every other reordering, so a
+        // secondary city under fire ranks behind the capital.
+        if self.capital_keeps_its_defender {
+            self.capital_defend_first(g, pid, &mut rows);
         }
 
         // Last turn's forces, less the dead and the departed.
@@ -3988,3 +4029,6 @@ mod breaker_match_tests;
 
 #[cfg(test)]
 mod camp_age_tests;
+
+#[cfg(test)]
+mod capital_defender_tests;
