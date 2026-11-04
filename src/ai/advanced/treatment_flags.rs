@@ -5029,6 +5029,8 @@ impl AdvancedAi {
     /// The twin of `enable_breaker_spares_the_backlog_builder`.
     pub fn disable_breaker_spares_the_backlog_builder(&mut self) {
         self.breaker_spares_the_backlog_builder = false;
+    }
+
     /// Opt-in gene `builderless-empire-trains-one`; see
     /// [`Self::builderless_empire_trains_one`].
     pub fn enable_builderless_empire_trains_one(&mut self) {
