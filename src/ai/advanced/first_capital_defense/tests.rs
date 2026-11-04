@@ -19,7 +19,13 @@ fn opening() -> (Game, u32, u32, StrategicPlan) {
         tile.resource = None;
         tile.improvement = None;
     }
+    // Match the native Gran Colombia seat. The default Roman fixture grants
+    // a free Monument, artificially increasing the capital's board value.
+    g.players[0].civ = "Gran Colombia".to_string();
     let capital = g.found_city_for(0, at(14, 8), None);
+    assert!(!g.cities[&capital]
+        .buildings
+        .contains(&crate::name!("monument")));
     g.found_city_for(1, at(30, 8), None);
     g.players[0].explored.extend(g.map.tiles.keys().copied());
     g.players[0].met.insert(1);
@@ -37,6 +43,10 @@ fn opening() -> (Game, u32, u32, StrategicPlan) {
     assert!(g.unit_visible_to(raider, 0));
     let soldier = g.spawn_test_unit("warrior", 0, at(7, 8));
     g.barb_camps.insert(at(6, 10), g.turn);
+    // The motivating native camp had a known guard and was worth185, rather
+    // than an unguarded camp's120. Our distant soldier sees this guard.
+    g.spawn_test_unit("spearman", g.barb_pid.unwrap(), at(6, 10));
+    assert!(g.player_can_see(0, at(6, 10)));
     let plan = StrategicPlan {
         strategy: GrandStrategy::Expansion,
         target_player: None,
