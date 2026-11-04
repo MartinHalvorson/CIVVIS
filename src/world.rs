@@ -1185,12 +1185,6 @@ impl TileBits {
 }
 
 impl TileGrid {
-    /// The position at a tile index, as handed out by [`TileGrid::index_of`].
-    #[inline]
-    pub fn pos_at(&self, index: usize) -> Option<Pos> {
-        self.tiles.get(index).map(|tile| tile.pos)
-    }
-
     /// The positions in a bit set, in map order.
     pub fn positions(&self, bits: &TileBits) -> impl Iterator<Item = Pos> + '_ {
         bits.iter()
