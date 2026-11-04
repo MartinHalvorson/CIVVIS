@@ -14860,12 +14860,14 @@ impl AdvancedAi {
             return self.lane_progress_table_uncached(g, pid);
         }
         let epoch = g.map.tiles.epoch();
-        if let Some(&(_, _, _, table)) = self
-            .lane_progress_cache
-            .0
-            .borrow()
-            .iter()
-            .find(|(turn, seat, map_epoch, _)| *turn == g.turn && *seat == pid && *map_epoch == epoch)
+        if let Some(&(_, _, _, table)) =
+            self.lane_progress_cache
+                .0
+                .borrow()
+                .iter()
+                .find(|(turn, seat, map_epoch, _)| {
+                    *turn == g.turn && *seat == pid && *map_epoch == epoch
+                })
         {
             return table;
         }
