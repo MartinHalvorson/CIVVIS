@@ -508,6 +508,37 @@ class StaleInteractiveCaptureRecoveryTest(unittest.TestCase):
 # than failing to collect the file, which is what used to happen.
 @unittest.skipUnless(Image is not None, "Pillow is not installed on this host")
 class PopupClearTest(unittest.TestCase):
+    def test_congress_darkness_keeps_the_exact_pixel_threshold(self):
+        image = Image.new("RGB", (1000, 600), (24, 24, 24))
+        draw = ImageDraw.Draw(image)
+        draw.rectangle((520, 564, 650, 582), fill=(20, 120, 90))
+        # The probe is 830 x 468 pixels. Exactly 117 rows below luminance
+        # 24 is the required 25%; a pixel equal to 24 must not count as dark.
+        draw.rectangle((120, 72, 949, 188), fill=(23, 23, 23))
+        self.assertIsNotNone(popup_clear.congress_return_button(image, image.convert("L")))
+        image.putpixel((120, 72), (24, 24, 24))
+        self.assertIsNone(popup_clear.congress_return_button(image, image.convert("L")))
+
+    def test_color_scans_are_shared_within_a_frame_and_fresh_on_the_next(self):
+        bare = Image.new("RGB", (1000, 600), (120, 120, 120))
+        card = bare.copy()
+        draw = ImageDraw.Draw(card)
+        draw.rectangle((330, 40, 670, 245), fill=(225, 221, 202))
+        draw.rectangle((405, 181, 505, 206), fill=(32, 86, 148))
+        # Empty hit lists must be reusable too. A stale hit list from the
+        # previous capture could miss a real popup or target the live map.
+        with mock.patch.object(popup_clear, "blue_clusters",
+                               wraps=popup_clear.blue_clusters) as blue, \
+             mock.patch.object(popup_clear, "red_clusters",
+                               wraps=popup_clear.red_clusters) as red:
+            self.assertEqual(popup_clear.classify(bare)[:2], ("map", []))
+            kind, targets, _ = popup_clear.classify(card)
+            self.assertEqual(kind, "advisor")
+            self.assertEqual(len(targets), 1)
+            self.assertEqual(popup_clear.classify(bare)[:2], ("map", []))
+        self.assertEqual(blue.call_count, 3, "one blue scan per captured frame")
+        self.assertEqual(red.call_count, 3, "one red scan per captured frame")
+
     def test_advisor_card_uses_its_leftmost_continue_button(self) -> None:
         image = Image.new("RGB", (1000, 600), (99, 95, 62))
         draw = ImageDraw.Draw(image)

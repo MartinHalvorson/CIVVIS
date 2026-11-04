@@ -755,6 +755,14 @@ impl DangerField {
         out
     }
 
+    /// Whether any visible hostile's strike reach holds `tile` — the only
+    /// tiles where a unit blow can land at all.
+    pub(super) fn reaches_tile(&self, tile: Pos) -> bool {
+        self.reaches
+            .iter()
+            .any(|(_, reach)| reach.binary_search(&tile).is_ok())
+    }
+
     /// The whole field at one tile.
     pub(super) fn danger(&mut self, tile: Pos, uid: u32) -> f64 {
         self.contributions(tile, uid)

@@ -3204,6 +3204,18 @@ impl AdvancedAi {
         self.base.activation_keeps_its_building = false;
     }
 
+    /// One digger for an owned person's missing Artifact, before more Museums.
+    pub fn enable_artifact_before_more_museums(&mut self) {
+        self.artifact_before_more_museums = true;
+        self.base.artifact_before_more_museums = true;
+    }
+
+    /// Restore the existing activation capacity path.
+    pub fn disable_artifact_before_more_museums(&mut self) {
+        self.artifact_before_more_museums = false;
+        self.base.artifact_before_more_museums = false;
+    }
+
     /// The working reserve, and the first Builder or a missing Monument
     /// bought ahead of the purchase argmax. See `treasury_at_work_2`.
     pub fn enable_treasury_at_work_2(&mut self) {
@@ -9225,6 +9237,16 @@ impl AdvancedAi {
         self.science_power_buys_fuel = false;
     }
 
+    /// Prefer a legal non-lowland site when starting a native Spaceport.
+    pub fn enable_spaceport_above_the_sea(&mut self) {
+        self.spaceport_above_the_sea = true;
+    }
+
+    /// The twin of `enable_spaceport_above_the_sea`.
+    pub fn disable_spaceport_above_the_sea(&mut self) {
+        self.spaceport_above_the_sea = false;
+    }
+
     /// Opt-in gene `old-techs-before-the-beeline`; see
     /// `advanced/old_techs_before_the_beeline.rs`.
     pub fn enable_old_techs_before_the_beeline(&mut self) {
@@ -9312,6 +9334,37 @@ impl AdvancedAi {
     /// The twin of `enable_founding_voyage`.
     pub fn disable_founding_voyage(&mut self) {
         self.founding_voyage = false;
+    }
+
+    /// Enable measured routing to the board's assigned Defend city.
+    pub fn enable_anvil_follows_the_defense(&mut self) {
+        self.anvil_follows_the_defense = true;
+    }
+    /// Preserve the original global threat-city routing.
+    pub fn disable_anvil_follows_the_defense(&mut self) {
+        self.anvil_follows_the_defense = false;
+    }
+    /// Opt-in gene `garrison-before-the-surprise`; see
+    /// `BasicAi::garrison_before_the_surprise`.
+    pub fn enable_garrison_before_the_surprise(&mut self) {
+        self.garrison_before_the_surprise = true;
+        self.base.enable_garrison_before_the_surprise();
+    }
+
+    /// The twin of `enable_garrison_before_the_surprise`.
+    pub fn disable_garrison_before_the_surprise(&mut self) {
+        self.garrison_before_the_surprise = false;
+        self.base.disable_garrison_before_the_surprise();
+    /// Opt-in gene `guns-stay-out-of-reach-2`; version two of the family, so
+    /// version one is turned off. See [`Self::guns_stay_out_of_reach_2`].
+    pub fn enable_guns_stay_out_of_reach_2(&mut self) {
+        self.guns_stay_out_of_reach = false;
+        self.guns_stay_out_of_reach_2 = true;
+    }
+
+    /// The twin of `enable_guns_stay_out_of_reach_2`.
+    pub fn disable_guns_stay_out_of_reach_2(&mut self) {
+        self.guns_stay_out_of_reach_2 = false;
     }
 
     // ---- append: a-b ------------------------------------------------
