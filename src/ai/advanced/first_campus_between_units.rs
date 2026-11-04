@@ -46,6 +46,33 @@ impl AdvancedAi {
         let Item::Unit { unit } = item else {
             return false;
         };
+        if self.journal().wants(crate::reasoning::Level::Detail) {
+            let cities = g.player_city_ids(pid);
+            let healthy: Vec<_> = g
+                .player_unit_ids(pid)
+                .into_iter()
+                .filter(|id| Self::first_campus_healthy_land_unit(g, &g.units[id]))
+                .map(|id| format!("{}:{}", g.units[&id].kind, g.units[&id].hp))
+                .collect();
+            let campuses: Vec<_> = cities
+                .iter()
+                .filter(|id| {
+                    let c = &g.cities[*id];
+                    g.city_has_district_family(c, crate::name!("campus"))
+                        || c.queue.iter().any(|queued| {
+                            matches!(queued, Item::District { district, .. }
+                                if g.district_family(*district) == "campus")
+                        })
+                })
+                .map(|id| g.cities[id].name.as_str())
+                .collect();
+            think!(self.journal(), Cities, Detail,
+                   "{} checks a first-Campus gap", city.name;
+                   "first-campus-between-the-units: {}; invested {:.1}, cost {:.1}, production {:.1}; {} cities, healthy land {:?}; Campus cities {:?}",
+                   Self::plain_item(item), g.item_invested_production(cid, item),
+                   g.item_cost_for_city(pid, cid, item), g.city_yields(cid).production,
+                   cities.len(), healthy, campuses);
+        }
         if !g
             .rules
             .units
@@ -72,18 +99,19 @@ impl AdvancedAi {
         let needed = FIRST_CAMPUS_HEALTHY_UNITS_PER_CITY * cities.len();
         g.player_unit_ids(pid)
             .into_iter()
-            .filter(|id| {
-                let unit = &g.units[id];
-                let spec = &g.rules.units[unit.kind];
-                unit.hp >= FIRST_CAMPUS_HEALTHY_HP
-                    && spec.class == "military"
-                    && spec.domain.as_deref().is_none_or(|domain| domain == "land")
-                    && spec.promotion_class != "recon"
-                    && (spec.is_melee_capable() || spec.has_ranged_attack())
-            })
+            .filter(|id| Self::first_campus_healthy_land_unit(g, &g.units[id]))
             .take(needed)
             .count()
             >= needed
+    }
+
+    fn first_campus_healthy_land_unit(g: &Game, unit: &crate::game::Unit) -> bool {
+        let spec = &g.rules.units[unit.kind];
+        unit.hp >= FIRST_CAMPUS_HEALTHY_HP
+            && spec.class == "military"
+            && spec.domain.as_deref().is_none_or(|domain| domain == "land")
+            && spec.promotion_class != "recon"
+            && (spec.is_melee_capable() || spec.has_ranged_attack())
     }
 }
 
