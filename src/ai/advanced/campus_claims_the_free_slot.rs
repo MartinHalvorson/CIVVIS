@@ -170,22 +170,51 @@ impl AdvancedAi {
                 continue;
             };
             if self.early_settler_floor_holds(g, pid, cid, plan) {
+                self.explain_free_slot_campus_hold(g, cid, turns, "early Settler floor");
                 continue;
             }
             match g.cities[&cid].queue.first() {
                 Some(item) => {
-                    if self.deterrence_unit_holds(g, pid, item)
-                        || self.bound_granary_holds(g, pid, cid, plan, item)
-                        || self.idle_route_trader_holds(g, pid, cid, plan, item)
-                        || self.backlog_builder_holds(g, pid, cid, plan, item)
-                        || self.capped_aqueduct_holds(g, pid, cid, plan, item)
-                        || self.capped_neighborhood_holds(g, pid, cid, plan, item)
-                        || self.producer_zone_claim_holds(g, pid, cid, plan, item)
-                        || self.factory_claim_holds(g, pid, cid, plan, item)
-                        || self.campus_building_claim_holds(g, pid, cid, plan, item)
-                        || Self::queued_wall_breaker(g, item)
-                        || !Self::capped_aqueduct_may_defer(g, pid, cid, item, at_major_war)
-                    {
+                    // Preserve the original short-circuit order: report the
+                    // first binding hold, rather than guessing from the queue.
+                    let hold = if self.deterrence_unit_holds(g, pid, item) {
+                        Some("near-rival deterrence")
+                    } else if self.bound_granary_holds(g, pid, cid, plan, item) {
+                        Some("bound Granary claim")
+                    } else if self.idle_route_trader_holds(g, pid, cid, plan, item) {
+                        Some("idle-route Trader claim")
+                    } else if self.backlog_builder_holds(g, pid, cid, plan, item) {
+                        Some("backlog Builder claim")
+                    } else if self.capped_aqueduct_holds(g, pid, cid, plan, item) {
+                        Some("capped-city Aqueduct claim")
+                    } else if self.capped_neighborhood_holds(g, pid, cid, plan, item) {
+                        Some("capped-city Neighborhood claim")
+                    } else if self.producer_zone_claim_holds(g, pid, cid, plan, item) {
+                        Some("producer Industrial Zone claim")
+                    } else if self.factory_claim_holds(g, pid, cid, plan, item) {
+                        Some("Factory claim")
+                    } else if self.campus_building_claim_holds(g, pid, cid, plan, item) {
+                        Some("Campus building claim")
+                    } else if Self::queued_wall_breaker(g, item) {
+                        Some("queued wall-breaker")
+                    } else if !Self::capped_aqueduct_may_defer(g, pid, cid, item, at_major_war) {
+                        let remaining = g.item_cost_for_city(pid, cid, item)
+                            - g.item_invested_production(cid, item);
+                        if remaining <= g.city_yields(cid).production {
+                            Some("queue finishes within one turn")
+                        } else if at_major_war
+                            && matches!(item, Item::Unit { unit }
+                                if g.rules.units.get(unit).is_some_and(|spec| spec.class == "military"))
+                        {
+                            Some("military queue protected during a major war")
+                        } else {
+                            Some("queue type or invested progress is not deferrable")
+                        }
+                    } else {
+                        None
+                    };
+                    if let Some(reason) = hold {
+                        self.explain_free_slot_campus_hold(g, cid, turns, reason);
                         continue;
                     }
                 }
@@ -193,6 +222,12 @@ impl AdvancedAi {
                 // Settler step: the city count is what the gate reads.
                 None => {
                     if self.base.settler_due(g, pid, cid, n_cities, settlers) {
+                        self.explain_free_slot_campus_hold(
+                            g,
+                            cid,
+                            turns,
+                            "Settler due in idle city",
+                        );
                         continue;
                     }
                 }
@@ -228,6 +263,16 @@ impl AdvancedAi {
                head.map_or_else(|| "an idle queue".to_string(), |item| format!(
                    "{} (it keeps its progress)", Self::plain_item(&item))));
         true
+    }
+
+    /// Explain a hold only after the shared picker has found a feasible
+    /// first Campus. This records the existing decision; it changes no claim.
+    fn explain_free_slot_campus_hold(&self, g: &Game, cid: u32, turns: f64, reason: &str) {
+        think!(self.journal(), Cities, Detail,
+               "{} postpones its first Campus", g.cities[&cid].name;
+               "campus-claims-the-free-slot: {turns:.1} turns; held by {reason}; queue {}",
+               g.cities[&cid].queue.first().map_or_else(
+                   || "idle".to_string(), Self::plain_item));
     }
 }
 
