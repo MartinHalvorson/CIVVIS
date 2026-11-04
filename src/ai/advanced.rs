@@ -5080,6 +5080,8 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// Follow the objective board's own Defend assignment. Off by default.
+    anvil_follows_the_defense: bool,
     /// `board-ignores-the-faith-war`: the war `faith-war-is-no-front`
     /// exempts from `one_war_holds_declaration` does not hold the board's
     /// declaration (`war_policy_declaration`) either. Off by default.
@@ -5459,6 +5461,8 @@ pub struct AdvancedAi {
     /// `activation-keeps-its-building`; see
     /// `BasicAi::activation_keeps_its_building`.
     activation_keeps_its_building: bool,
+    /// Opt-in for an owned native person requiring an existing Artifact.
+    artifact_before_more_museums: bool,
     /// The strategic scorer does not displace a queued siege unit that holds
     /// production while its city is not threatened. Opt-in gene
     /// `breaker-keeps-its-queue`; see `AdvancedAi::breaker_commitment_holds`.
@@ -8511,6 +8515,8 @@ pub struct AdvancedAi {
     /// development half at a third of the clock, as Culture already does.
     /// See `advanced/science_specializes_earlier.rs`. Off by default.
     science_specializes_earlier: bool,
+    /// Prefer a legal non-lowland site for a new native Spaceport. Opt-in.
+    spaceport_above_the_sea: bool,
     /// Native fuel bridge for ready research power. Off by default.
     science_power_buys_fuel: bool,
     /// `satellite-holds-the-pad`: once a pad stands and the Earth Satellite
@@ -10053,6 +10059,8 @@ mod diplo_match_point_research;
 /// `diplo-seat-wonder-claim`; see `advanced/diplo_wonder_claim.rs`.
 mod diplo_wonder_claim;
 
+#[cfg(test)]
+mod artifact_activation_tests;
 /// `culture-keeps-every-border-open`: see `advanced/culture_open_borders.rs`.
 mod culture_dig_museum;
 /// `culture-seat-monuments`: see `advanced/culture_monuments.rs`.
@@ -10203,6 +10211,8 @@ mod close_as_a_body;
 
 mod siege_production;
 
+/// Opt-in routing from a Defend task force to its assigned city.
+mod anvil_assignment;
 /// Siege train and anvil: the doctrines of a force whose objective is a city
 /// — an enemy city to take, a city of ours to hold. Two opt-in genes; see
 /// `advanced/siege_train.rs`.
@@ -10475,6 +10485,7 @@ mod siege_shortfall_projects;
 mod siege_tier_before_the_beeline;
 /// `siege-moves-under-the-wing`: see `advanced/siege_under_the_wing.rs`.
 mod siege_under_the_wing;
+mod spaceport_above_sea;
 mod trader_fills_the_idle_route;
 pub use science_victory_drive::ScienceDrive;
 
@@ -11371,6 +11382,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            anvil_follows_the_defense: false,
             board_ignores_the_faith_war: false,
             aluminum_tile_spends_the_war_chest: false,
             breaker_bought_for_the_siege: false,
@@ -11451,6 +11463,7 @@ impl AdvancedAi {
             builder_before_the_army_3: false,
             activation_resume_waits: false,
             activation_keeps_its_building: false,
+            artifact_before_more_museums: false,
             breaker_keeps_its_queue: false,
             breaker_to_the_fastest: false,
             age_closer_spends_the_reserve: false,
@@ -11962,6 +11975,7 @@ impl AdvancedAi {
             retainers_garrison_the_short_cities: false,
             // ---- append: s-s ----------------------------------------
             science_specializes_earlier: false,
+            spaceport_above_the_sea: false,
             science_power_buys_fuel: false,
             satellite_holds_the_pad: false,
             stalled_conquest_takes_science: false,
@@ -33610,7 +33624,10 @@ impl AdvancedAi {
             // defense above and upkeep recovery retain their precedence.
             let live_gp_commitment = committed.as_ref().is_some_and(|(_, item)| {
                 Self::production_commitment_is_legal(g, pid, cid, item)
-                    && Self::live_gp_district_commitment(g, pid, item)
+                    && (Self::live_gp_district_commitment(g, pid, item)
+                        || (self.artifact_before_more_museums
+                            && BasicAi::live_artifact_activation_pending(g, pid)
+                            && matches!(item, Item::Unit { unit } if unit == "archaeologist")))
             });
             // The catch-up pass has already chosen one idle queue. Preserve
             // a legal Campus building while Domination trails public research,

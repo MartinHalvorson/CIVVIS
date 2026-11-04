@@ -1,0 +1,16 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "spaceport-above-the-sea",
+  "scope": "Five fixed captured reads plus stable controls. Two fresh choices change only Spaceport coordinates to offered non-lowland sites. Placed/pillaged/safe controls do not change. No execution or strength claim.",
+  "archive": {
+    "path": "docs/eval/2026-11-02-spaceport-above-the-sea.native.tar.xz",
+    "sha256": "3b974ab093a5cd4cd7fabfc617f618c9f35989282d816e0a2fd603152da08655"
+  },
+  "members": [
+    "cases/civvis-20261102T171007Z-139-frame0/result.json",
+    "cases/civvis-20261102T171007Z-140-frame0/result.json",
+    "cases/civvis-20261102T171007Z-140-frame1/result.json",
+    "cases/civvis-20261102T171007Z-176-frame0/result.json",
+    "cases/civvis-20261102T185903Z-166-frame0/result.json"
+  ]
+}

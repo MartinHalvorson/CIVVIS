@@ -9,6 +9,10 @@ the brain's answer), `polls` is the mod's own count from the `turn` record,
 `frames` counts replan/combat frames, `popups` counts autoclose traffic and
 `stuck` the popups that needed desktop help. Events without a stamp (runs from
 before `civ6_play.record` stamped them) are skipped, so an old run prints nothing.
+
+The decision summary also pairs every replanning frame's state/orders receipts.
+These gaps include transport, operator pauses and native execution, not just brain computation;
+overlapping gaps count once in the total. Unanswered frames are counted separately.
 """
 from __future__ import annotations
 
@@ -111,6 +115,60 @@ def rescue_stalls(events_path: Path) -> dict:
             "screens": screens}
 
 
+def decision_waits(events_path: Path) -> dict:
+    """Pair state/orders receipts for every frame, including combat replans.
+
+    This includes transport, planning and native order execution before its
+    receipt; it is not a measurement of brain CPU time. Unanswered states
+    remain visible, including the last frame of a running or interrupted game.
+    """
+    pending = {}
+    completed = set()
+    paused = set()
+    samples = []
+    intervals = []
+    with events_path.open("r", errors="replace") as handle:
+        for raw in handle:
+            try:
+                event = json.loads(raw)
+            except ValueError:
+                continue
+            if not isinstance(event, dict):
+                continue
+            kind = event.get("kind")
+            turn = event.get("turn")
+            frame = event.get("frame", 0)
+            at = parse_stamp(event.get("utc"))
+            if (kind not in ("state", "orders", "operator_paused") or at is None
+                    or type(turn) is not int or type(frame) is not int):
+                continue
+            key = (turn, frame)
+            if key in completed:
+                continue
+            if kind == "state":
+                pending.setdefault(key, at)
+            elif kind == "operator_paused":
+                if key in pending and at >= pending[key]:
+                    paused.add(key)
+            elif key in pending and at >= pending[key]:
+                start = pending.pop(key)
+                samples.append({"turn": turn, "frame": frame,
+                                "operator_paused": key in paused,
+                                "seconds": round((at - start).total_seconds(), 3)})
+                intervals.append((start, at))
+                completed.add(key)
+    # A relay can interleave frames; merge intervals so the total never
+    # double-counts their overlapping wall time.
+    seconds = 0.0
+    end = None
+    for start, finish in sorted(intervals):
+        uncovered = max(start, end) if end is not None else start
+        seconds += max(0.0, (finish - uncovered).total_seconds())
+        end = max(end, finish) if end is not None else finish
+    return {"metric": "state_to_orders_receipt_gap", "seconds": round(seconds, 3),
+            "matched": len(samples), "unanswered": len(pending), "samples": samples}
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("run", type=Path, help="run directory or its events.jsonl")
@@ -119,8 +177,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     path = args.run / "events.jsonl" if args.run.is_dir() else args.run
     rows = turn_clock(path)
+    decisions = decision_waits(path)
     if args.json:
-        print(json.dumps({"turns": rows, "rescue": rescue_stalls(path)}))
+        print(json.dumps({"turns": rows, "rescue": rescue_stalls(path), "decisions": decisions}))
         return 0
     timed = [r for r in rows if "dur" in r]
     if not timed:
@@ -140,6 +199,13 @@ def main(argv: list[str] | None = None) -> int:
               "not measured recovery time")
     else:
         print("recovery requests: no asks")
+    print(f"all decision frames: {decisions['matched']} matched, "
+          f"{decisions['unanswered']} unanswered; state-to-orders receipt gaps "
+          f"{decisions['seconds'] / 60:.2f} min (overlaps counted once; not brain CPU time)")
+    print("slowest decision receipts (turn/frame: seconds): " + ", ".join(
+        f"{r['turn']}/{r['frame']}: {r['seconds']:.3f}"
+        + (" [operator pause]" if r["operator_paused"] else "")
+        for r in sorted(decisions["samples"], key=lambda r: -r["seconds"])[:args.slowest]))
     print("turn  board     dur   wait polls frames popups stuck")
     for r in sorted(timed, key=lambda r: -r["dur"])[:args.slowest]:
         print(f"{r['turn']:>4}  {r['board_at']}  {r['dur']:>5}  {r.get('wait', '-'):>5} "
