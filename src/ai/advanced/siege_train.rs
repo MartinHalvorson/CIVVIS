@@ -2257,10 +2257,12 @@ impl AdvancedAi {
         if let Some(prey) = self.loyalty_prey_for(g, pid, group.anchor) {
             return Some(prey);
         }
+        // `outclassed-siege-stands-down`: a stood-down city musters no train.
         let enemy_city = |cid: u32| {
             g.cities
                 .get(&cid)
                 .filter(|city| city.owner != pid && g.is_at_war(pid, city.owner))
+                .filter(|city| !self.siege_stood_down_at(g, city.pos))
                 .map(|_| cid)
         };
         g.city_at(group.objective).and_then(enemy_city).or_else(|| {

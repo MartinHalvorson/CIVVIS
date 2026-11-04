@@ -4865,6 +4865,18 @@ pub const GENES: &[Gene] = &[
     // later in the frame no longer vetoes. See
     // `advanced/guns_stay_out_of_reach.rs`.
     Gene { tag: "guns-stay-out-of-reach-2", field: "guns_stay_out_of_reach_2", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_stay_out_of_reach_2, disable: AdvancedAi::disable_guns_stay_out_of_reach_2 },
+    // Live Immortal Standard 012627Z: the Siege of Chucuito sat in Stage
+    // from turn 222 to 309 while the army went 16 to 5, 44 of 55 losses
+    // healthy land units removed by one blow of an AT Crew, a Cuirassier or a
+    // Giant Death Robot; the board read "743 against their 579" (power is a
+    // linear sum) and every peace offer was refused. Under the gene a Siege
+    // row whose city's visible field units have sat 25+ strength over the
+    // defence of half our land army for four turns running leaves the board
+    // for ten turns, keyed by the city's tile, unless the city is falling
+    // (126 live episodes: 26 would stand down, 2 of 13 captures among them,
+    // 167 of our units lost near those cities afterwards). See
+    // `advanced/outclassed_siege.rs`.
+    Gene { tag: "outclassed-siege-stands-down", field: "outclassed_siege_stands_down", kind: Kind::OptIn, enable: AdvancedAi::enable_outclassed_siege_stands_down, disable: AdvancedAi::disable_outclassed_siege_stands_down },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

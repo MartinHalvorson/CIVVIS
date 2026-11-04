@@ -9357,6 +9357,17 @@ impl AdvancedAi {
         self.guns_stay_out_of_reach_2 = false;
     }
 
+    /// Opt-in gene `outclassed-siege-stands-down`; see
+    /// [`Self::outclassed_siege_stands_down`].
+    pub fn enable_outclassed_siege_stands_down(&mut self) {
+        self.outclassed_siege_stands_down = true;
+    }
+
+    /// The twin of `enable_outclassed_siege_stands_down`.
+    pub fn disable_outclassed_siege_stands_down(&mut self) {
+        self.outclassed_siege_stands_down = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

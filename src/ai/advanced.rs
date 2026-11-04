@@ -8079,6 +8079,13 @@ pub struct AdvancedAi {
     /// the displacing item is urgent. See
     /// `advanced/near_done_work_finishes.rs`. Off by default.
     near_done_work_finishes: bool,
+    /// `outclassed-siege-stands-down`: a Siege row whose city's field units
+    /// have removed-by-one-blow most of the army for four turns running
+    /// leaves the board. See `advanced/outclassed_siege.rs`. Off by default.
+    outclassed_siege_stands_down: bool,
+    /// `outclassed-siege-stands-down`: by city tile, the first and the last
+    /// turn of the field's current outclassed streak. Empty with the gene off.
+    outclassed_sieges: BTreeMap<Pos, (u32, u32)>,
     // ---- append: p-r ------------------------------------------------
     /// `pillaged-districts-repair-first`: a pillaged district's repair claims its
     /// city after every other claim. See `advanced/pillaged_repairs_first.rs`.
@@ -10168,6 +10175,10 @@ mod missionary_field;
 /// with nothing left in reach. Opt-in gene `one-war-at-a-time`; see
 /// `advanced/one_war.rs`.
 mod one_war;
+/// A siege whose field defenders remove most of the army with one blow
+/// stands down. Opt-in gene `outclassed-siege-stands-down`; see
+/// `advanced/outclassed_siege.rs`.
+mod outclassed_siege;
 /// Our own column is not the host's refusal: the live bridge reports which
 /// planned moves actually crossed. Opt-in gene `own-column-is-not-a-refusal`;
 /// see `advanced/own_column.rs`.
@@ -11900,6 +11911,8 @@ impl AdvancedAi {
             launcher_war_fights_the_faster_racer: false,
             launch_pad_holds_its_queue: false,
             near_done_work_finishes: false,
+            outclassed_siege_stands_down: false,
+            outclassed_sieges: BTreeMap::new(),
             // ---- append: p-r ----------------------------------------
             pillaged_districts_repair_first: false,
             religion_lane_hands_over: false,
