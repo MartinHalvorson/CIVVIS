@@ -9368,6 +9368,17 @@ impl AdvancedAi {
         self.outclassed_siege_stands_down = false;
     }
 
+    /// Opt-in gene `ranged-finish-on-the-mean`; see
+    /// [`Self::ranged_finish_on_the_mean`].
+    pub fn enable_ranged_finish_on_the_mean(&mut self) {
+        self.ranged_finish_on_the_mean = true;
+    }
+
+    /// The twin of `enable_ranged_finish_on_the_mean`.
+    pub fn disable_ranged_finish_on_the_mean(&mut self) {
+        self.ranged_finish_on_the_mean = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
