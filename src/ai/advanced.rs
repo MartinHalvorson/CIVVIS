@@ -7562,6 +7562,10 @@ pub struct AdvancedAi {
     /// border tile of two or more Production beside a city working a poorer
     /// one. See `advanced/gold_buys_the_production_tile.rs`. Off by default.
     gold_buys_the_production_tile: bool,
+    /// `gold-buys-the-capped-granary`: the treasury buys a housing-capped
+    /// city's Granary above the purchase upkeep floor. See
+    /// `advanced/gold_buys_the_capped_granary.rs`. Off by default.
+    gold_buys_the_capped_granary: bool,
     // ---- append: l-o ------------------------------------------------
     /// `old-techs-before-the-beeline`: the technology our land army waits on
     /// to upgrade once the world has left its era, then any technology two
@@ -10523,6 +10527,9 @@ mod free_slot_campus_clock;
 mod generals_lead_the_army;
 /// `gold-buys-the-backlog-builder`: see `advanced/gold_buys_the_backlog_builder.rs`.
 mod gold_buys_the_backlog_builder;
+/// `gold-buys-the-capped-granary`: the treasury buys a housing-capped city's
+/// Granary. See `advanced/gold_buys_the_capped_granary.rs`.
+mod gold_buys_the_capped_granary;
 /// `gold-buys-the-opening-builder`: a builderless opening buys its Builder
 /// with the idle treasury. See `advanced/gold_buys_the_opening_builder.rs`.
 mod gold_buys_the_opening_builder;
@@ -11941,6 +11948,7 @@ impl AdvancedAi {
             generals_lead_the_army: false,
             garrison_before_the_surprise: false,
             gold_buys_the_production_tile: false,
+            gold_buys_the_capped_granary: false,
             // ---- append: l-o ----------------------------------------
             old_techs_before_the_beeline: false,
             launch_commits_the_endgame: false,
@@ -48762,6 +48770,9 @@ impl AdvancedAi {
             // the queues have not answered. See
             // `advanced/gold_buys_the_backlog_builder.rs`.
             self.backlog_builder_purchase(g, pid, &plan);
+            // `gold-buys-the-capped-granary`: then a housing-capped city's
+            // Granary. See `advanced/gold_buys_the_capped_granary.rs`.
+            self.capped_granary_purchase(g, pid, &plan);
         }
         // Once a city-saving purchase has had its one action, the turn a
         // breakthrough arrives still upgrades appointed predecessors before
