@@ -5551,6 +5551,12 @@ pub struct AdvancedAi {
     /// Partners asked for an alliance, by the turn asked. Written only while
     /// `alliance_remembers_the_refusal` is on.
     alliance_ask_turns: BTreeMap<usize, u32>,
+    /// `breaker-spares-the-backlog-builder`: the Domination siege
+    /// reservation does not take a queue whose head is the Builder
+    /// `backlog-builder-takes-the-queue` claimed while the backlog still
+    /// wants it (`backlog_builder_holds`), as it already spares the housing
+    /// Granary. See `advanced/siege_production.rs`. Off by default.
+    breaker_spares_the_backlog_builder: bool,
     // ---- append: c-d ------------------------------------------------
     /// Opt-in: preserve the original capital's needed Governor Loyalty.
     capital_keeps_its_governor: bool,
@@ -11593,6 +11599,7 @@ impl AdvancedAi {
             apostle_transit_keeps_the_cover: false,
             alliance_remembers_the_refusal: false,
             alliance_ask_turns: BTreeMap::new(),
+            breaker_spares_the_backlog_builder: false,
             // ---- append: c-d ----------------------------------------
             capital_keeps_its_governor: false,
             campus_unlock_every_lane: false,
