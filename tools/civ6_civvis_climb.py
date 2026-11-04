@@ -68,8 +68,8 @@ DEFAULT_STRATEGY = ""
 CLEANUP_OWNERSHIP_FILE = "cleanup-ownership.json"
 
 sys.path.insert(0, str(HERE))
-from civ6_control import (gamelock, install, launcher, live_pause,  # noqa: E402
-                          macos_input, macos_window, popup_clear,
+from civ6_control import (game_speed, gamelock, install, launcher,  # noqa: E402
+                          live_pause, macos_input, macos_window, popup_clear,
                           restart_handoff)
 import civ6_env as env  # noqa: E402
 import computer_control as desktop_control  # noqa: E402
@@ -2612,10 +2612,18 @@ def operator_victory_lane(requested: str, path: Path | None = None,
 
 
 # Civilization VI's score clock is also this harness's usual finish horizon.
-# The standard 250 turns are useful for comparable ladder screens, but a live
-# Science/Domination operator may deliberately need longer: the evaluation
-# budget for Domination is 650 turns, and stopping at 250 can award a score win
-# before either requested lane has had a chance to finish.
+# By default a game plays to its speed's own limit (`game_turn_limit`), so the
+# horizon moves with the speed. A live Science/Domination operator may
+# deliberately want longer: the evaluation budget for Domination is 650 turns,
+# and stopping an Online game at 250 can award a score win before either
+# requested lane has had a chance to finish.
+#
+# ⚠ THE CAP IS AN ABSOLUTE TURN, NOT A MULTIPLE OF THE SPEED. 650 was written
+# on 2026-09-03 for Online (2.6x its 250) and stayed in place when the lane
+# moved to Standard on 2026-11-03, where it replaced Standard's own 500. That
+# is how the page came to print TURN n/650. The override still applies to
+# every speed, so `operator_turn_cap` names the speed's own limit whenever it
+# overrides one.
 #
 # Like VICTORY_LANE_FILE, this is read by the per-batch climber rather than an
 # environment inherited by a multi-day supervisor. An absent, blank, malformed
@@ -2627,8 +2635,26 @@ TURN_CAP_FILE = Path(
 )
 
 
+def game_turn_limit(requested: int | None, speed: str, warn=None) -> int:
+    """``--max-turns`` when it names a positive turn, else the speed's own limit.
+
+    An unknown speed falls back to the default speed's limit, with a warning;
+    `civ6_play` refuses an unknown speed at setup anyway.
+    """
+    if requested is not None and requested > 0:
+        return requested
+    limit = game_speed.turn_limit(speed)
+    if limit is not None:
+        return limit
+    warn = warn or (lambda message: print(message, file=sys.stderr))
+    fallback = game_speed.TURN_LIMITS[game_speed.DEFAULT_SPEED]
+    warn(f"--speed {speed!r} is not a Civilization VI game speed; "
+         f"playing to {fallback} turns ({game_speed.DEFAULT_SPEED})")
+    return fallback
+
+
 def operator_turn_cap(requested: int, path: Path | None = None,
-                      warn=None) -> int:
+                      warn=None, speed: str | None = None) -> int:
     """The operator's positive turn-cap override, else ``requested``."""
     path = TURN_CAP_FILE if path is None else path
     warn = warn or (lambda message: print(message, file=sys.stderr))
@@ -2653,7 +2679,10 @@ def operator_turn_cap(requested: int, path: Path | None = None,
              f"keeping {requested}")
         return requested
     if cap != requested:
-        warn(f"turn-cap file {path} pins {cap}; overriding {requested}")
+        stock = game_speed.turn_limit(speed)
+        whose = (f" ({game_speed.speed_type(speed)}'s own limit)"
+                 if stock is not None and stock == requested else "")
+        warn(f"turn-cap file {path} pins {cap}; overriding {requested}{whose}")
     return cap
 
 
@@ -2844,8 +2873,11 @@ def main() -> int:
     # Six players, because the size IS the player count — see `civ6_play.py`.
     # MAPSIZE_TINY is four, MAPSIZE_DUEL two.
     ap.add_argument("--map-size", default="MAPSIZE_SMALL")
-    ap.add_argument("--speed", default="GAMESPEED_ONLINE")
-    ap.add_argument("--max-turns", type=int, default=250)
+    ap.add_argument("--speed", default=game_speed.DEFAULT_SPEED)
+    # Absent, the speed's own Civ VI limit (`game_turn_limit`): Online 250,
+    # Quick 330, Standard 500, Epic 750, Marathon 1500. It was a fixed 250, which
+    # is Online's alone, so a Standard game would have been scored at turn 250.
+    ap.add_argument("--max-turns", type=int, default=None)
     # Kept only so old external launchers remain parse-compatible.  Live play
     # accepts but ignores it: score gaps are recorded for analysis and never
     # retire a verification game.
@@ -3103,11 +3135,10 @@ def main() -> int:
     args.victory = operator_victory_lane(args.victory)
     # Re-read per game as well: the deal channel is a policy-file key.
     args.deal_sessions = deal_sessions_mode(args.deal_sessions)
-    # The same per-batch policy seam controls the actual game score clock. A
-    # long Science/Domination game must not be cut off at the normal 250-turn
-    # comparison horizon because its Terminal-owned supervisor predates the
-    # operator's request. See TURN_CAP_FILE.
-    args.max_turns = operator_turn_cap(args.max_turns)
+    # The game's score clock: the speed's own limit unless `--max-turns` names
+    # one, then the operator's per-batch cap over either. See TURN_CAP_FILE.
+    args.max_turns = operator_turn_cap(
+        game_turn_limit(args.max_turns, args.speed), speed=args.speed)
     refusal = screen_refusal(args)
     if refusal is not None:
         print(f"⚠ live screen refused: {refusal}; this batch plays unarmed",

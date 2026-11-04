@@ -4001,10 +4001,24 @@ class TheSetupScreenIsReadOnceAndLookedAtNotSleptThrough(unittest.TestCase):
         # budget has run out at 21 s -- eight, where one flat sleep gave one.
         self.assertEqual(len(looks), 8)
 
+    def test_the_first_menu_attempt_outlasts_the_boot_logos(self) -> None:
+        # 18 of 24 games on 2026-11-03 ran attempt 1's 20 s budget out seconds
+        # before the menu drew (+30-34 s vs +31-41 s) and re-paid the attempt
+        # preamble. Only attempt 1 starts under the logos, so only it waits longer.
+        import inspect
+        self.assertGreaterEqual(civ6_play.FIRST_MENU_POLL_BUDGET_S, 40.0)
+        self.assertLess(civ6_play.SCREEN_POLL_BUDGET_S, civ6_play.FIRST_MENU_POLL_BUDGET_S)
+        source = inspect.getsource(civ6_play.bootstrap_game)
+        call = source.split("top = _poll_screen(read_top_menu")[1].split("\n        menu_point")[0]
+        self.assertIn("FIRST_MENU_POLL_BUDGET_S", call)
+        self.assertIn("if attempt == 1 else SCREEN_POLL_BUDGET_S", call)
+        # The submenu read keeps the ordinary budget.
+        self.assertIn("sub = _poll_screen(read_submenu)", source)
+
     def test_the_bootstrap_polls_the_menu_instead_of_sleeping_twenty_seconds(self) -> None:
         import inspect
         source = inspect.getsource(civ6_play.bootstrap_game)
-        self.assertIn("_poll_screen(read_top_menu)", source)
+        self.assertIn("_poll_screen(read_top_menu, budget_s=", source)
         self.assertIn("_poll_screen(read_submenu)", source)
         # Two flat waits remain and neither is on the path every game takes:
         # no game WINDOW yet (the launcher has already seen the menu in the
@@ -4828,7 +4842,7 @@ class TheIntroScreensAreNotTheMenu(unittest.TestCase):
     def test_the_menu_read_waits_out_an_intro_before_trusting_rows(self) -> None:
         import inspect
         source = inspect.getsource(civ6_play.bootstrap_game)
-        reader = source.split("def read_top_menu():")[1].split("top = _poll_screen(read_top_menu)")[0]
+        reader = source.split("def read_top_menu():")[1].split("top = _poll_screen(read_top_menu")[0]
         self.assertIn("if point is None and _intro_screen_visible(menushot, bounds):", reader)
         # Checked only when the label read failed, and before the row
         # fallback that mistook the splash's lines and the logo for rows.
