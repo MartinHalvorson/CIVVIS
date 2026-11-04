@@ -4854,6 +4854,15 @@
           "growth-prices-the-farm-2": null
         }
       },
+      "guns-stay-out-of-reach": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "guns-stay-out-of-reach": null,
+          "guns-stay-out-of-reach-2": null
+        }
+      },
       "holdout-keeps-the-faith-war": {
         "rule_on": [
           "holdout-keeps-the-faith-war"
