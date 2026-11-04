@@ -1975,6 +1975,35 @@ fn a_civ6_seat_rebuilds_with_its_setup_rules_and_ui_settings() {
 }
 
 #[test]
+fn the_host_turn_limit_is_the_engine_readback_else_the_speeds_own() {
+    // `civvis play --mirror` rebuilt every board with 250, Online's limit alone, so
+    // a Standard game's page read TURN n/250.
+    let seat = |speed: &str, max_turns: i64| {
+        let mut state = StateSnapshot::default();
+        state.seat.speed = speed.to_string();
+        state.seat.max_turns = max_turns;
+        host_turn_limit(&state)
+    };
+    // The harness's custom limit, read back from the running game, wins.
+    assert_eq!(seat("GAMESPEED_STANDARD", 650), Some(650));
+    assert_eq!(seat("GAMESPEED_ONLINE", 650), Some(650));
+    // No readback (absent is 0, a failed read is -1): the speed's own limit.
+    for (speed, turns) in [
+        ("GAMESPEED_ONLINE", 250),
+        ("GAMESPEED_QUICK", 330),
+        ("GAMESPEED_STANDARD", 500),
+        ("GAMESPEED_EPIC", 750),
+        ("GAMESPEED_MARATHON", 1500),
+    ] {
+        assert_eq!(seat(speed, 0), Some(turns), "{speed}");
+        assert_eq!(seat(speed, -1), Some(turns), "{speed}");
+    }
+    // Neither: no guess here; the caller names its own.
+    assert_eq!(seat("", 0), None);
+    assert_eq!(seat("GAMESPEED_LUDICROUS", -1), None);
+}
+
+#[test]
 fn rival_identity_follows_the_compacted_mirror_seat() {
     let snapshot = Snapshot::from_chunks(&[TilesChunk {
         turn: 20,
