@@ -9383,6 +9383,16 @@ impl AdvancedAi {
         self.guns_stay_out_of_reach_3 = false;
     }
 
+    /// Opt-in gene `economy-clock`; see [`Self::economy_clock`].
+    pub fn enable_economy_clock(&mut self) {
+        self.economy_clock = true;
+    }
+
+    /// The twin of `enable_economy_clock`.
+    pub fn disable_economy_clock(&mut self) {
+        self.economy_clock = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -49,7 +49,7 @@ impl AdvancedAi {
             || self.base.minor
             || self.base.barb
             || plan.threatened_city.is_some()
-            || g.turn >= g.standard_duration(OPENING_BUILDER_END_STANDARD)
+            || g.turn >= self.econ_window(g, OPENING_BUILDER_END_STANDARD)
         {
             return false;
         }

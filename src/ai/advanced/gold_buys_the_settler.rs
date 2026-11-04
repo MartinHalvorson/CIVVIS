@@ -102,7 +102,7 @@ impl AdvancedAi {
     /// Whether the window is open for `pid` this turn. See the module.
     pub(super) fn settler_fund_open(&self, g: &Game, pid: usize, plan: &StrategicPlan) -> bool {
         if !self.gold_buys_the_settler
-            || g.turn >= g.standard_duration(SETTLER_FUND_END_STANDARD)
+            || g.turn >= self.econ_window(g, SETTLER_FUND_END_STANDARD)
             || plan.threatened_city.is_some()
         {
             return false;
@@ -207,7 +207,7 @@ impl AdvancedAi {
             return SettlerFund::Off;
         };
         let income = g.players[pid].gold_per_turn.max(0.0);
-        let horizon = g.standard_duration(SETTLER_FUND_SAVE_STANDARD) as f64;
+        let horizon = self.econ_window(g, SETTLER_FUND_SAVE_STANDARD) as f64;
         if bank + income * horizon + f64::EPSILON >= floor + price {
             think!(self.journal(), Expansion, Detail,
                 "Saving the treasury for a Settler";

@@ -4884,6 +4884,13 @@ pub const GENES: &[Gene] = &[
     // two with every member of a Defend or Relieve task force left free to
     // close on the attackers. See `advanced/guns_stay_out_of_reach.rs`.
     Gene { tag: "guns-stay-out-of-reach-3", field: "guns_stay_out_of_reach_3", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_stay_out_of_reach_3, disable: AdvancedAi::disable_guns_stay_out_of_reach_3 },
+    // Live moved to Standard speed on 11-03; nearly every window was tuned at
+    // Online, so at Standard an opening, expansion or build-cap window ends at
+    // 0.76x (written with standard_duration) or 0.5x (raw) of its economy
+    // time, and fixed gold reserves buy half as much. Under the gene those
+    // sites read the cost-ratio clock; Online is byte-identical. See
+    // `advanced/economy_clock.rs`.
+    Gene { tag: "economy-clock", field: "economy_clock", kind: Kind::OptIn, enable: AdvancedAi::enable_economy_clock, disable: AdvancedAi::disable_economy_clock },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

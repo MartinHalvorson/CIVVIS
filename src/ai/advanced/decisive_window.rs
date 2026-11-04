@@ -475,7 +475,7 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) -> Option<DecisiveWindow> {
-        let horizon = g.standard_duration(DECISIVE_RESEARCH_HORIZON) as f64;
+        let horizon = self.econ_window(g, DECISIVE_RESEARCH_HORIZON) as f64;
         self.decisive_window_within(g, pid, plan, horizon)
     }
 
@@ -490,7 +490,7 @@ impl AdvancedAi {
         if !self.decisive_window
             || !(self.active_victory_target(g) == Some(VictoryTarget::Domination)
                 || plan.strategy == GrandStrategy::Conquest)
-            || g.turn < g.standard_duration(DECISIVE_WINDOW_OPENS)
+            || g.turn < self.econ_window(g, DECISIVE_WINDOW_OPENS)
             || g.player_city_ids(pid).len() < 2
         {
             return None;
@@ -794,7 +794,7 @@ impl AdvancedAi {
         pid: usize,
         plan: &StrategicPlan,
     ) -> Option<Name> {
-        let horizon = g.standard_duration(DECISIVE_RESEARCH_HORIZON) as f64;
+        let horizon = self.econ_window(g, DECISIVE_RESEARCH_HORIZON) as f64;
         self.decisive_window_civic_goal_within(g, pid, plan, horizon)
     }
 

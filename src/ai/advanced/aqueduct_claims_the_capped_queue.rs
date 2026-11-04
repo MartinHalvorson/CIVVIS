@@ -121,7 +121,7 @@ impl AdvancedAi {
                 g.item_cost_for_city(pid, cid, &item) - g.item_invested_production(cid, &item);
             remaining.max(0.0) / production.max(0.5)
         });
-        (turns <= g.standard_duration(CAPPED_AQUEDUCT_MAX_STANDARD) as f64)
+        (turns <= self.econ_window(g, CAPPED_AQUEDUCT_MAX_STANDARD) as f64)
             .then_some((item, turns, over))
     }
 

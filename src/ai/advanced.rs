@@ -7211,6 +7211,10 @@ pub struct AdvancedAi {
     /// refused, and a culture race counts toward the racing reading. See
     /// `advanced/protective_friendship.rs`. Off by default.
     friendship_refuses_the_racer: bool,
+    /// `economy-clock`: windows, build caps and gold reserves tuned at Online
+    /// keep their economy time at every other speed. See
+    /// `advanced/economy_clock.rs`. Off by default; a no-op at Online.
+    economy_clock: bool,
     // ---- append: g-k ------------------------------------------------
     /// `gold-buys-the-opening-builder`: in the opening, with no Builder afield
     /// and work for one, the treasury buys the Builder. See
@@ -9979,6 +9983,8 @@ mod war_target_walls;
 mod defence_holds;
 /// `early-route-feeds-production`: see `advanced/early_route_production.rs`.
 mod early_route_production;
+/// `economy-clock`: see `advanced/economy_clock.rs`.
+mod economy_clock;
 
 /// `embassy-finds-the-capital`: see `advanced/embassy_capital.rs`.
 mod embassy_capital;
@@ -11788,6 +11794,7 @@ impl AdvancedAi {
             friendship_keeps_the_peace: false,
             friendship_expiry_seen: std::cell::RefCell::new(BTreeMap::new()),
             friendship_refuses_the_racer: false,
+            economy_clock: false,
             // ---- append: g-k ----------------------------------------
             gold_buys_the_opening_builder: false,
             immortal_skips_the_prophet_race: false,
@@ -13559,7 +13566,7 @@ impl AdvancedAi {
             || self.air_surge_active()
             || (self.selective_timed_war
                 && self.selective_timed_war_target().is_none())
-            || g.turn < g.standard_duration(RUSH_WINDOW_CLOSES)
+            || g.turn < self.econ_window(g, RUSH_WINDOW_CLOSES)
             || g.turn < self.peace_until
             || g.player_city_ids(pid).len() < 2
             || self.threatened_city(g, pid).is_some()
@@ -13830,7 +13837,7 @@ impl AdvancedAi {
     }
 
     fn war_treasury_floor(&self, g: &Game, pid: usize) -> f64 {
-        let ordinary = 100.0 + 25.0 * g.player_city_ids(pid).len() as f64;
+        let ordinary = self.econ_gold(g, 100.0 + 25.0 * g.player_city_ids(pid).len() as f64);
         self.war_plan
             .as_ref()
             .map(|plan| ordinary + self.war_upgrade_bill(g, pid, plan))
@@ -17172,7 +17179,7 @@ impl AdvancedAi {
                 unit: "settler".into(),
             },
         ) / production;
-        remaining > build + g.standard_duration(SETTLE_LAG + SETTLE_PAYBACK) as f64
+        remaining > build + self.econ_window(g, SETTLE_LAG + SETTLE_PAYBACK) as f64
     }
 
     /// The stock adaptive-expansion deadline: a payoff horizon, bounded by
@@ -17229,7 +17236,7 @@ impl AdvancedAi {
         } else if self.victory_target.is_some() {
             // Assigned lanes have always carried a distinct cutoff. Neither
             // adaptive experiment is allowed to widen it.
-            g.turn < g.standard_duration(175)
+            g.turn < self.econ_window(g, 175)
         } else {
             self.adaptive_expansion_window_open(g)
         }
@@ -27639,8 +27646,10 @@ impl AdvancedAi {
             GrandStrategy::Science => 250.0 + 50.0 * city_count as f64,
             GrandStrategy::Religion => 150.0 + 50.0 * city_count as f64,
             GrandStrategy::Conquest | GrandStrategy::Recovery => 75.0 + 25.0 * city_count as f64,
-        }
-        .max(self.war_treasury_floor(g, pid));
+        };
+        let reserve = self
+            .econ_gold(g, reserve)
+            .max(self.war_treasury_floor(g, pid));
         // `science_victory_drive`: with Rocketry known the race's pad and
         // its buildings are what the Gold is for.
         let reserve = if self.science_drive_spends(g, pid) {
@@ -37931,8 +37940,8 @@ impl AdvancedAi {
             };
         }
 
-        let horizon = g.standard_duration(SETTLEMENT_FORECAST_HORIZON) as f64;
-        let ring_two_at = g.standard_duration(SETTLEMENT_SECOND_RING_DELAY) as f64;
+        let horizon = self.econ_window(g, SETTLEMENT_FORECAST_HORIZON) as f64;
+        let ring_two_at = self.econ_window(g, SETTLEMENT_SECOND_RING_DELAY) as f64;
         let housing = Self::settlement_base_housing(g, pid, pos);
         let mut beam = vec![SettlementForecastState {
             selected: [0; SETTLEMENT_FORECAST_POPULATION],
@@ -38211,7 +38220,7 @@ impl AdvancedAi {
         let positions = g.wdisk(pos, 2);
         let forecast = self.settlement_growth_forecast_from_positions(g, pid, pos, &positions);
         let housing = Self::settlement_base_housing(g, pid, pos);
-        let horizon = g.standard_duration(SETTLEMENT_FORECAST_HORIZON) as f64;
+        let horizon = self.econ_window(g, SETTLEMENT_FORECAST_HORIZON) as f64;
         let growth_readiness = forecast.turns_to_four.map_or_else(
             || {
                 -4.0 * SETTLEMENT_FORECAST_POPULATION.saturating_sub(forecast.reached_population)
