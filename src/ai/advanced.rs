@@ -7512,6 +7512,8 @@ pub struct AdvancedAi {
     /// city. See `advanced/guns_stay_out_of_reach.rs`.
     guns_stay_out_of_reach_3: bool,
     // ---- append: l-o ------------------------------------------------
+    /// Opt-in first capital slot for ranged support; later recon flags are unchanged.
+    pub(crate) opening_ranged_support: bool,
     /// `old-techs-before-the-beeline`: the technology our land army waits on
     /// to upgrade once the world has left its era, then any technology two
     /// eras behind the world, ahead of the air surge and every lane beeline.
@@ -11845,6 +11847,7 @@ impl AdvancedAi {
             guns_stay_out_of_reach_2: false,
             guns_stay_out_of_reach_3: false,
             // ---- append: l-o ----------------------------------------
+            opening_ranged_support: false,
             old_techs_before_the_beeline: false,
             launch_commits_the_endgame: false,
             launcher_war_serves_every_lane: false,

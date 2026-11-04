@@ -4889,6 +4889,9 @@ pub const GENES: &[Gene] = &[
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
+    // First-slot ranged support. Leaves later recon settings unchanged;
+    // the opening Scout is displaced. No Native strength claim.
+    Gene { tag: "opening-ranged-support", field: "opening_ranged_support", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_ranged_support, disable: AdvancedAi::disable_opening_ranged_support },
     // ---- append: p-r ------------------------------------------------
     // ---- append: s-s ------------------------------------------------
     // ---- append: t-z ------------------------------------------------
