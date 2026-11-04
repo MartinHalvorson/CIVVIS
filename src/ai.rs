@@ -404,10 +404,10 @@ mod deck_queue;
 #[cfg(test)]
 mod deck_queue_tests;
 mod first_pad_in_the_forge;
+mod garrison_before_the_surprise;
 mod industrial_zones;
 mod launch_pad_resume;
 mod movement_risk;
-mod garrison_before_the_surprise;
 mod naval_demand;
 mod opening_builder;
 #[cfg(test)]
