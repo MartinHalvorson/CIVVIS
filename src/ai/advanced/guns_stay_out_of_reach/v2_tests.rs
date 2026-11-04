@@ -139,3 +139,40 @@ fn a_unit_inside_the_reach_may_only_step_to_a_lighter_blow() {
     // Back out of the reach: taken.
     assert!(ai.base.path_move(&mut g, 0, archer, (17, 10)));
 }
+
+/// Version three: a member of a Defend task force is left free to close on
+/// the attackers of our own city; every other unit keeps version two's veto.
+#[test]
+fn version_three_frees_the_defenders_and_keeps_the_veto_for_the_rest() {
+    use crate::ai::advanced::objective_board::{ObjectiveKey, TaskForce};
+    use crate::ai::advanced::{ForceDomain, ForcePosture};
+    crate::ai::advanced::test_support::opt_in_off_in_both_controllers(
+        "guns-stay-out-of-reach-3",
+        |ai| ai.guns_stay_out_of_reach_3,
+    );
+    let (mut g, mut ai, archer, gun, _) = fixture();
+    let defender = g.spawn_test_unit("archer", 0, (16, 8));
+    let city = g.city_at((6, 10)).expect("our city");
+    ai.enable_guns_stay_out_of_reach_2();
+    ai.enable_guns_stay_out_of_reach_3();
+    assert!(!ai.guns_stay_out_of_reach && !ai.guns_stay_out_of_reach_2);
+    ai.objective_board_state.forces.push(TaskForce {
+        id: 1,
+        objective_key: ObjectiveKey::Defend(city),
+        domain: ForceDomain::Land,
+        units: vec![defender],
+        rally: (6, 10),
+        doctrine_state: ForcePosture::Hold,
+        aimed_at: (6, 10),
+        formed: g.turn,
+    });
+    ai.mark_gun_lethal_tiles(&g, 0);
+    assert!(!ai.base.unit_lethal_blows.contains_key(&defender));
+    assert!(ai.base.unit_lethal_blows.contains_key(&archer));
+    assert!(
+        ai.base.gun_lethal_tiles.contains_key(&gun),
+        "the guns are carried"
+    );
+    assert!(ai.base.path_move(&mut g, 0, defender, (17, 8)));
+    assert!(ai.base.path_move(&mut g, 0, defender, (18, 8)));
+}
