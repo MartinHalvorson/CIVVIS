@@ -9208,6 +9208,13 @@ pub struct AdvancedAi {
     /// before production, so the resume path and every remaining-cost price
     /// see it. See `advanced/saved_work_is_seen.rs`. Off by default.
     saved_work_is_seen: bool,
+    /// `siege-post-yields-to-one-blow`: a healthy siege member standing where
+    /// one visible hostile's blow removes it no longer holds its post. See
+    /// `advanced/siege_post_yields.rs`. Off by default.
+    siege_post_yields_to_one_blow: bool,
+    /// `siege-post-yields-to-one-blow`: this frame's healthy siege members on
+    /// a one-blow tile. Empty with the gene off.
+    siege_posts_under_one_blow: BTreeSet<u32>,
     // ---- append: t-z ------------------------------------------------
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
@@ -10239,6 +10246,9 @@ mod siege_promotions_open_the_walls;
 /// `sea-locked-front-moves-on`: a front the army cannot walk to gives way to
 /// an enemy it can. See `advanced/sea_locked_front.rs`.
 mod sea_locked_front;
+/// `siege-post-yields-to-one-blow`: a healthy siege member on a one-blow tile
+/// may leave its post. See `advanced/siege_post_yields.rs`.
+mod siege_post_yields;
 /// `siege-target-needs-a-road`: a siege the army cannot walk to is stood
 /// down. See `advanced/siege_road.rs`.
 mod siege_road;
@@ -12119,6 +12129,8 @@ impl AdvancedAi {
             seat_city_pace: false,
             science_drive_leads_beside_the_lane: false,
             saved_work_is_seen: false,
+            siege_post_yields_to_one_blow: false,
+            siege_posts_under_one_blow: BTreeSet::new(),
             // ---- append: t-z ----------------------------------------
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,
@@ -47436,7 +47448,9 @@ impl AdvancedAi {
         // the siege step.
         let siege_post_holds = spec.class == "military"
             && unit.hp >= battle_planner::ROTATE_HP
-            && (self.active_siege_member(g, pid, uid) || self.staging_siege_member(g, pid, uid));
+            && (self.active_siege_member(g, pid, uid) || self.staging_siege_member(g, pid, uid))
+            // `siege-post-yields-to-one-blow`: not on a one-blow tile.
+            && !self.siege_posts_under_one_blow.contains(&uid);
         if !unwanted_settler_adjacent && !holding_threatened_city && !siege_post_holds {
             if let Some(acted) = self.base.healing_step(g, pid, uid) {
                 return acted;
@@ -49341,6 +49355,10 @@ impl AdvancedAi {
         // `advanced/guns_stay_out_of_reach.rs`.
         self.mark_gun_lethal_tiles(g, pid);
         self.guns_step_out_of_reach(g, pid);
+        // `siege-post-yields-to-one-blow`: the healthy siege members on a
+        // one-blow tile, for the post exemption below. Nothing with the gene
+        // off. See `advanced/siege_post_yields.rs`.
+        self.mark_siege_posts_under_one_blow(g, pid);
         let mut air_assault_units = self.plan_air_city_assault(g, pid, plan);
         for (uid, moves, attacks) in held_readiness {
             if let Some(unit) = g.units.get_mut(&uid) {

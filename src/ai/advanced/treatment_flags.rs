@@ -9368,6 +9368,17 @@ impl AdvancedAi {
         self.outclassed_siege_stands_down = false;
     }
 
+    /// Opt-in gene `siege-post-yields-to-one-blow`; see
+    /// [`Self::siege_post_yields_to_one_blow`].
+    pub fn enable_siege_post_yields_to_one_blow(&mut self) {
+        self.siege_post_yields_to_one_blow = true;
+    }
+
+    /// The twin of `enable_siege_post_yields_to_one_blow`.
+    pub fn disable_siege_post_yields_to_one_blow(&mut self) {
+        self.siege_post_yields_to_one_blow = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -4877,6 +4877,15 @@ pub const GENES: &[Gene] = &[
     // 167 of our units lost near those cities afterwards). See
     // `advanced/outclassed_siege.rs`.
     Gene { tag: "outclassed-siege-stands-down", field: "outclassed_siege_stands_down", kind: Kind::OptIn, enable: AdvancedAi::enable_outclassed_siege_stands_down, disable: AdvancedAi::disable_outclassed_siege_stands_down },
+    // A healthy siege member skips the recovery and the retreat
+    // (`siege_post_holds`), so a shooter on a one-blow tile keeps chipping and
+    // dies: 36 of 131 live Immortal losses that struck that turn were
+    // Archers, Crossbows and Bombards dealing 2-13 to a Line Infantry or a
+    // Modern Armor from inside its reach. Under the gene a siege member whose
+    // own tile is one visible hostile UNIT's upper-roll blow from removal
+    // loses the exemption; the city's strike does not count. See
+    // `advanced/siege_post_yields.rs`.
+    Gene { tag: "siege-post-yields-to-one-blow", field: "siege_post_yields_to_one_blow", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_post_yields_to_one_blow, disable: AdvancedAi::disable_siege_post_yields_to_one_blow },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
