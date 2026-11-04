@@ -333,6 +333,24 @@ CivvisPolicy.unlockObservation = function(culture)
 	if next(result) == nil then return nil; end
 	return result;
 end;
+-- GovernmentScreen.lua:1390-1422 exposes Confirm only before a policy change
+-- and at zero unlock cost. RequestPolicyChanges itself does not enforce that
+-- UI gate: native174321 at turn67 changed cards with53 Gold against a115 Gold
+-- quote, without a deduction. Do not bypass it or buy an unpriced unlock.
+CivvisPolicy.changeWindow = function(culture)
+	local observed = CivvisPolicy.unlockObservation(culture);
+	if observed ~= nil and observed.made == true then
+		return false, "policy_change_pending", observed;
+	end
+	if observed == nil or observed.made ~= false
+			or observed.unlock_cost == nil or observed.unlock_cost < 0 then
+		return false, "policy_change_unknown", observed;
+	end
+	if observed.unlock_cost ~= 0 then
+		return false, "policy_change_locked", observed;
+	end
+	return true, nil, observed;
+end;
 -- Per-city production names the engine has already rejected on this turn. This is
 -- deliberately turn-scoped: a strategic resource or prerequisite can change later,
 -- but retrying the same impossible choice in every blocker pass cannot help.
@@ -5044,6 +5062,14 @@ local function fillPolicies(player)
 	if open <= 0 then return nil; end
 	local slots = try(function() return culture:GetNumPolicySlots(); end, 0) or 0;
 	if slots <= 0 then return nil; end
+	local allowed, why, observed = CivvisPolicy.changeWindow(culture);
+	if not allowed then
+		emit("policy_change_deferred", {
+			turn = try(function() return Game.GetCurrentGameTurn(); end),
+			source = "fill", why = why, observation = observed,
+		});
+		return nil;
+	end
 
 	local taken = {};
 	for i = 0, slots - 1 do
@@ -14772,6 +14798,14 @@ local function applyOrder(player, pid, row, turn)
 			});
 			return false, "policy_deck_same_turn";
 		end
+		local allowed, why, observed = CivvisPolicy.changeWindow(culture);
+		if not allowed then
+			emit("policy_deck_deferred", {
+				turn = turn, desired = desiredNames, why = why,
+				observation = observed,
+			});
+			return false, why;
+		end
 
 		-- Seat constrained cards first. A typed card may fall back to a Wildcard
 		-- slot, while a Wildcard-only card cannot fall back to a typed slot.
@@ -14882,6 +14916,14 @@ local function applyOrder(player, pid, row, turn)
 			end
 		end
 		if target == nil then return false, "no_slot_for_" .. resolved; end
+		local allowed, why, observed = CivvisPolicy.changeWindow(culture);
+		if not allowed then
+			emit("policy_deferred", {
+				turn = turn, policy = resolved, why = why,
+				observation = observed,
+			});
+			return false, why;
+		end
 		local addList = {};
 		addList[target] = row2.Hash;
 		-- ★★★★★ THE SLOT MUST BE CLEARED IN THE SAME REQUEST, EVEN WHEN EMPTY.
