@@ -5064,7 +5064,9 @@ mod guard {
     /// defines, if `line` is one.
     fn entry_names(line: &str) -> Option<(&str, &str)> {
         let body = line.strip_prefix("        ")?;
-        if body.starts_with(' ') || body.starts_with("//") {
+        // Deeper lines, comments, and the macro's own `$flag => $enable`
+        // pattern are not entries.
+        if body.starts_with(' ') || body.starts_with("//") || body.starts_with('$') {
             return None;
         }
         let (_flag, names) = body.split_once(" => ")?;
