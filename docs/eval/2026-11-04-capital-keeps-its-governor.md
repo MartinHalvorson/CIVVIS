@@ -61,3 +61,64 @@ policy correction.
 
 The Campus screen remains unchanged. There is no new live arming, default
 promotion, saved-capital claim or win-rate claim from this work.
+
+## Verified proposal change and safe-transfer control
+
+Candidate checkpoint: `f088c8e7f6715397ed72dd203938fbf294190343`.
+Executable SHA256:
+`9f1ef5d168f321108da7475eebd822a047c447587afeac36c2cb576fe2375997`.
+Both candidate-OFF controls reproduce the corrected reference's complete
+orders/decision payloads and actual read sequences on all 225 requests. Two
+ON probes first differ at 69/0, request 164. Two successful persistent OFF/ON
+prefix pairs each close stdin and actually exit zero; they share the capture
+argument within each pair, vary only the named argv/genome bit, and verify
+every actual read byte version/count/order and the full per-arm payloads.
+Only the `governor_assign` of Magnus to native city 196609 is removed. There
+are no added orders, and every other order keeps its exact sequence.
+
+The independent verifier checks canonical native decision hashes, binary
+metadata, source exports, full repeated payloads, exact actual read sequences
+and capture maps, and binds the 69/0 native pre-state to its captured last
+read. The original native assignments at 69 and 78 are checked in the preserved
+host reports, with actual Free Cities ownership at 90/0. These remain original
+host outcomes; the ON prefix stops at its first difference.
+
+A separate authentic native history, `civvis-20261104T193444Z`, contains a safe
+capital transfer at 106/0, with +28 Loyalty per turn before Magnus leaves.
+Two original controls reproduce all 344 native payloads through 130/2. Two
+corrected reference queries repeat the same corrected planner, then two
+successful OFF/ON pairs each query all 344 requests. Every orders/decision
+payload remains unchanged, including the safe transfer to Guayaquil (native
+city 262147); all actual reads match and all four EOF exits are zero. The
+independent verifier checks this negative control too.
+
+The hash-bound `.native.tar.xz` archive contains raw captured inputs, signed
+native records, actual per-arm replies and EOF receipts, both source contexts,
+source exports, verifiers, build/test receipts and the frozen pre-query intent.
+Exact duplicate files are tar hardlinks after SHA256 and streaming byte equality
+checks; the raw content is preserved. Binaries are identified by immutable
+hashes and source checkpoints rather than bundled. See its `README.txt`.
+
+## Validation and deployment
+
+All six new focused tests pass. The full local Rust suite passes 6,854 tests,
+with 53 unit tests and four doctests ignored. Incremental Rust quality reports
+the changed lines formatted and warning-free. The local `ci` build uses
+`CARGO_PROFILE_CI_LTO=off CARGO_BUILD_JOBS=4`; repository/hosted profiles are
+unchanged. Own compiler and test processes were restored from Darwin background
+scheduling so the builds could finish, retaining the four-job build cap.
+
+No engine rule changes or deployment-default changes are made. This is a
+selected development history and negative control, not a strength screen.
+The ongoing Campus screen and force-on file remain unchanged; this gene stays
+OFF and unarmed. Any later live screen must track loss of both the original
+capital and the city that no longer receives the Governor, alongside science,
+production and expansion.
+
+Fresh extraction re-verifies all 167 manifest file hashes, source exports and
+the independent positive/negative corpus checks (verifier exit zero). The
+3,242,756-byte archive SHA256 is
+`6e5a42bf8368647443f963f1e9492ca94b1f7554d4664a2bb368de49d53e114c`.
+`tools/gene_fires.py --max 0` passes: 769 genes, 733 shown to fire,
+36 existing waivers, zero unproven; no new waiver. Evaluation inventory and
+gene-ledger/ranking consistency checks pass.
