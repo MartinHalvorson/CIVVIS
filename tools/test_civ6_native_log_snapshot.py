@@ -3,6 +3,7 @@
 import hashlib
 import io
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -183,3 +184,77 @@ class SnapshotTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class CrashReportTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.reports = Path(self.tmp.name) / "DiagnosticReports"
+        self.reports.mkdir()
+        self.destination = Path(self.tmp.name) / "run" / "native-crash-report"
+
+    def report(self, name, mtime, body=b"{}"):
+        path = self.reports / name
+        path.write_bytes(body)
+        os.utime(path, (mtime, mtime))
+        return path
+
+    def test_only_this_segments_civ_reports_are_copied(self):
+        self.report("Civ6_Exe_Child-2026-11-03-071230.ips", 100.0)       # earlier game
+        self.report("Civ6_Exe_Child-2026-11-04-094633.ips", 500.0, b"stack")
+        self.report("replayd-2026-11-04-094700.ips", 600.0)               # not Civ
+        self.report("Civ6_Exe_Child-2026-11-04-094700.diag", 600.0)       # not a report
+        copied = logs.copy_crash_reports(self.reports, self.destination, since=400.0)
+        self.assertEqual(copied, ["Civ6_Exe_Child-2026-11-04-094633.ips"])
+        self.assertEqual((self.destination / copied[0]).read_bytes(), b"stack")
+
+    def test_an_existing_copy_is_never_replaced(self):
+        self.report("Civ6_Exe_Child-a.ips", 500.0, b"new")
+        self.destination.mkdir(parents=True)
+        (self.destination / "Civ6_Exe_Child-a.ips").write_bytes(b"kept")
+        self.assertEqual(logs.copy_crash_reports(self.reports, self.destination, since=0.0),
+                         ["Civ6_Exe_Child-a.ips"])
+        self.assertEqual((self.destination / "Civ6_Exe_Child-a.ips").read_bytes(), b"kept")
+
+    def test_waits_a_bounded_time_for_a_late_report(self):
+        reports = self.reports
+        destination = self.destination
+
+        class Clock:
+            now = 0.0
+            sleeps = 0
+
+            def time(self):
+                return self.now
+
+            def sleep(self, seconds):
+                self.sleeps += 1
+                self.now += seconds
+                if self.sleeps == 2:
+                    path = reports / "Civ6_Exe_Child-late.ips"
+                    path.write_bytes(b"late")
+                    os.utime(path, (1000.0, 1000.0))
+
+        clock = Clock()
+        copied = logs.copy_crash_reports(reports, destination, since=10.0,
+                                         wait_s=5.0, poll_s=0.5, clock=clock)
+        self.assertEqual(copied, ["Civ6_Exe_Child-late.ips"])
+        self.assertEqual(clock.sleeps, 2)
+
+        empty = Path(self.tmp.name) / "empty"
+        empty.mkdir()
+        clock = Clock()
+        self.assertEqual(logs.copy_crash_reports(empty, destination, since=10.0,
+                                                 wait_s=2.0, poll_s=0.5, clock=clock), [])
+        self.assertEqual(clock.sleeps, 4)
+        self.assertFalse((Path(self.tmp.name) / "nowhere").exists())
+        self.assertEqual(logs.copy_crash_reports(Path(self.tmp.name) / "nowhere",
+                                                 destination, since=0.0), [])
+
+    def test_a_failed_copy_leaves_no_partial_file(self):
+        self.report("Civ6_Exe_Child-a.ips", 500.0, b"stack")
+        with mock.patch.object(logs.shutil, "copyfile", side_effect=OSError("disk full")):
+            self.assertEqual(logs.copy_crash_reports(self.reports, self.destination,
+                                                     since=0.0), [])
+        self.assertFalse((self.destination / "Civ6_Exe_Child-a.ips").exists())

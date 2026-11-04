@@ -13,6 +13,7 @@ from pathlib import Path
 import argparse
 import collections
 import json
+import os
 import re
 import signal
 import sys
@@ -655,9 +656,16 @@ class _Harness:
         self.saved = {name: getattr(climb, name) for name in
                       ("LEDGER", "BLOCKED_BACKOFF_S", "teardown", "busy",
                        "wake_steam", "outcome_of", "code_state", "RUN_ROOT",
-                       "check_attempt_decider")}
+                       "check_attempt_decider", "CRASH_REPORTS", "CRASH_REPORT_WAIT_S")}
         climb.LEDGER = self.ledger
         climb.RUN_ROOT = self.runs
+        # Never this seat's own DiagnosticReports: a real Civ crash on the
+        # machine running the suite must not leak into a test's run dir.
+        self.crash_reports = root / "DiagnosticReports"
+        self.crash_reports.mkdir()
+        climb.CRASH_REPORTS = self.crash_reports
+        # `sleep` is a no-op below, so a real wait would spin on the clock.
+        climb.CRASH_REPORT_WAIT_S = 0.0
         climb.BLOCKED_BACKOFF_S = (0.0, 0.0, 0.0)   # the table, without the waiting
         climb.teardown = lambda *args, **kwargs: None
         climb.busy = lambda: None
@@ -2253,6 +2261,71 @@ class ResumeFromAutosaveTests(_Harness, unittest.TestCase):
                 record, "exited", 0, args, 1234.5, latest=finder))
         self.assertIsNone(climb.resume_from_autosave(
             crashed, "exited", args.max_resumes, args, 1234.5, latest=finder))
+
+    def test_a_crashed_game_keeps_its_native_logs_and_crash_report_before_the_reload(self):
+        (self.native_logs / "net_message_debug.log").write_text("GameCore RECV (0): last")
+        stale = self.crash_reports / "Civ6_Exe_Child-2026-11-03-071230.ips"
+        stale.write_text("an earlier game's crash")
+        os.utime(stale, (1.0, 1.0))
+        test = self
+
+        class Recording(FakeProc):
+            def __init__(self, argv, *args, **kwargs):
+                if "--load-save" in argv:
+                    logs = list(test.runs.glob("*/native-crash-logs/net_message_debug.log"))
+                    test.assertEqual(len(logs), 1)
+                    test.assertEqual(logs[0].read_text(), "GameCore RECV (0): last")
+                    reports = sorted(p.name for p in
+                                     test.runs.glob("*/native-crash-report/*.ips"))
+                    test.assertEqual(reports, ["Civ6_Exe_Child-2026-11-04-094633.ips"])
+                    # The relaunch truncates Logs; the snapshot must not follow.
+                    (test.native_logs / "net_message_debug.log").write_text("")
+                else:
+                    # The game this launch starts is the one that crashes.
+                    (test.crash_reports / "Civ6_Exe_Child-2026-11-04-094633.ips") \
+                        .write_text('{"exception":"EXC_BAD_ACCESS"}')
+                super().__init__(argv, *args, **kwargs)
+
+        with mock.patch.object(climb, "wait_watching_the_turn",
+                               side_effect=["exited", "exited"]), \
+             mock.patch.object(climb, "_recent_autosaves",
+                               return_value=[Path("/saves/AutoSave_0279.Civ6Save")]), \
+             mock.patch.object(climb.subprocess, "Popen", Recording):
+            _, rows = self.climb_with([
+                {"last_turn": 280, "reason": "game exited", "game_stopped": True},
+                {"last_turn": 300, "reason": "finished"},
+            ], attempts=1)
+        self.assertEqual(rows[0]["last_turn"], 300)
+        self.assertEqual(len(rows[0]["resumes"]), 1)
+        self.assertEqual(len(list(self.runs.glob("*/native-crash-logs/manifest.json"))), 1)
+
+    def test_an_ordinary_exit_or_freeze_takes_no_crash_snapshot(self):
+        with mock.patch.object(climb, "preserve_crash_evidence") as preserved:
+            self.climb_with([{"last_turn": 250, "reason": "finished"}], attempts=1)
+        preserved.assert_not_called()
+        with mock.patch.object(climb, "wait_watching_the_turn",
+                               side_effect=["frozen", "exited"]), \
+             mock.patch.object(climb, "_recent_autosaves",
+                               return_value=[Path("/saves/AutoSave_0101.Civ6Save")]), \
+             mock.patch.object(climb, "preserve_crash_evidence") as preserved:
+            self.climb_with([{"last_turn": 102}, {"last_turn": 250}], attempts=1)
+        preserved.assert_not_called()
+
+    def test_crash_evidence_failure_does_not_prevent_recovery(self):
+        with mock.patch.object(climb, "wait_watching_the_turn",
+                               side_effect=["exited", "exited"]), \
+             mock.patch.object(climb, "_recent_autosaves",
+                               return_value=[Path("/saves/AutoSave_0279.Civ6Save")]), \
+             mock.patch.object(climb.civ6_native_log_snapshot, "snapshot",
+                               side_effect=OSError("disk full")), \
+             mock.patch.object(climb.civ6_native_log_snapshot, "copy_crash_reports",
+                               side_effect=OSError("disk full")) as copied:
+            _, rows = self.climb_with([
+                {"last_turn": 280, "reason": "game exited", "game_stopped": True},
+                {"last_turn": 300, "reason": "finished"},
+            ], attempts=1)
+        self.assertEqual(rows[0]["last_turn"], 300)
+        copied.assert_called_once()
 
     def test_crashed_game_is_reloaded_instead_of_spending_a_new_attempt(self):
         newest = Path("/saves/AutoSave_0200.Civ6Save")
