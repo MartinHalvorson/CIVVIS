@@ -29,10 +29,11 @@ impl AdvancedAi {
         // are needed only when some excluded tile is a legal, charted home for
         // the missing resource, and that is rare; `threatened_city` floods
         // every enemy's attack reach against every city of ours. Asking it
-        // first spent ~11% of the late-game decider (replay of
-        // civvis-20261104T074315Z from turn 340) on scans whose answer could
-        // not change an empty result. The result is unchanged: threatened
-        // still means no site, and otherwise the same sites pass.
+        // first spent decider time (11% of a turn-340 sample, 3.3% of the
+        // instructions retired over all 1,100 requests of
+        // civvis-20261104T074315Z) on scans whose answer could not change an
+        // empty result. The result is unchanged: threatened still means no
+        // site, and otherwise the same sites pass.
         let charted: Vec<Pos> = excluded
             .iter()
             .copied()
