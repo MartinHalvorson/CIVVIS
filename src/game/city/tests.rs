@@ -204,3 +204,69 @@ fn founding_on_a_tile_whose_owner_city_is_gone_does_not_panic() {
     let ours = g.spawn_unit("settler", 0, owned);
     let _ = g.can_found_city(ours);
 }
+
+/// `Player::citizens_grow_into_the_cap` (`gene_screen --seat-host-citizens`):
+/// at the housing cap the citizen strategy ordinarily trades Food away (the
+/// Food weight times 0.55, no growth surplus); with the flag the city keeps a
+/// growth surplus and its Food weight, as the host's governor plays the live
+/// seat. With room to grow the flag changes nothing.
+#[test]
+fn a_capped_city_keeps_its_food_only_when_it_grows_into_the_cap() {
+    let (mut game, city) = settler_city();
+    game.cities.get_mut(&city).unwrap().queue = vec![Item::Unit {
+        unit: crate::name!("warrior"),
+    }];
+    let housing = game.city_housing(&game.cities[&city]);
+    game.cities.get_mut(&city).unwrap().pop = housing.floor() as i32;
+    let pop = f64::from(game.cities[&city].pop);
+    assert!(housing - pop <= 1.0, "fixture: at the cap");
+    assert!(game.city_amenity_surplus(&game.cities[&city]) >= -2);
+
+    let off = game.citizen_strategy(city);
+    assert_eq!(
+        off.food_target,
+        2.0 * pop,
+        "off: no growth surplus at the cap"
+    );
+    game.players[0].citizens_grow_into_the_cap = true;
+    let on = game.citizen_strategy(city);
+    assert_eq!(
+        on.food_target,
+        2.0 * pop + 1.0,
+        "on: the cap keeps a surplus"
+    );
+    assert!(
+        (on.weights.food * 0.55 - off.weights.food).abs() < 1e-9,
+        "on: the Food weight is not halved ({} against {})",
+        on.weights.food,
+        off.weights.food
+    );
+
+    // Room to grow: identical either way.
+    game.cities.get_mut(&city).unwrap().pop = 1;
+    let roomy_on = game.citizen_strategy(city);
+    game.players[0].citizens_grow_into_the_cap = false;
+    let roomy_off = game.citizen_strategy(city);
+    assert_eq!(roomy_on.food_target, roomy_off.food_target);
+    assert_eq!(roomy_on.weights.food, roomy_off.weights.food);
+}
+
+/// The flag defaults off, and a saved player written before it existed loads
+/// with it off.
+#[test]
+fn citizens_grow_into_the_cap_defaults_off_and_old_saves_load_off() {
+    let (game, _) = settler_city();
+    let player = game.players[0].clone();
+    assert!(!player.citizens_grow_into_the_cap);
+    let mut value = serde_json::to_value(&player).expect("a Player serializes");
+    let object = value.as_object_mut().expect("a Player is an object");
+    assert!(object.remove("citizens_grow_into_the_cap").is_some());
+    let old: Player = serde_json::from_value(value).expect("an old save loads");
+    assert!(!old.citizens_grow_into_the_cap);
+
+    let mut on = player.clone();
+    on.citizens_grow_into_the_cap = true;
+    let round: Player =
+        serde_json::from_value(serde_json::to_value(&on).unwrap()).expect("round trip");
+    assert!(round.citizens_grow_into_the_cap);
+}
