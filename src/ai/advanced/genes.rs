@@ -4962,6 +4962,17 @@ pub const GENES: &[Gene] = &[
     // brings a shooter (no return damage; the kill plan fires it first) and
     // `CAMP_AGE_MARGIN` times the guard. See `advanced/camps_close_the_age.rs`.
     Gene { tag: "camps-close-the-age-2", field: "camps_close_the_age_2", kind: Kind::OptIn, enable: AdvancedAi::enable_camps_close_the_age_2, disable: AdvancedAi::disable_camps_close_the_age_2 },
+    // Live Lv 7 Immortal at Standard (41 Gran Colombia games, 11-04): rivals
+    // grew from 5 to 8 cities over turns 100-200, almost all by settling,
+    // while we held 4-5. From turn 80 the top Settler hold in the governor's
+    // journal is the threatened Recovery (40% of holds at t80-119, 63% at
+    // t120-199), which bars a Settler in every city. In 52% of those
+    // city-turns no visible enemy soldier stood within 7 tiles. Under the
+    // gene a city more than 6 tiles from the threatened one, with no visible
+    // hostile within 8, no recent hit, and more land soldiers than cities,
+    // may train one Settler for a site that is equally quiet. See
+    // `advanced/quiet_cities_keep_settling.rs`.
+    Gene { tag: "quiet-cities-keep-settling", field: "quiet_cities_keep_settling", kind: Kind::OptIn, enable: AdvancedAi::enable_quiet_cities_keep_settling, disable: AdvancedAi::disable_quiet_cities_keep_settling },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

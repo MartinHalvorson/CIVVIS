@@ -8574,6 +8574,10 @@ pub struct AdvancedAi {
     /// whose every attacker is ranged on its centre-roll damage. See
     /// `advanced/ranged_finish.rs`. Off by default.
     ranged_finish_on_the_mean: bool,
+    /// `quiet-cities-keep-settling`: while a threatened Recovery holds
+    /// Settlers, a city out of the war's reach may still train one. See
+    /// `advanced/quiet_cities_keep_settling.rs`. Off by default.
+    quiet_cities_keep_settling: bool,
     // ---- append: s-s ------------------------------------------------
     /// Refine an existing emergency defender for a visible mounted threat.
     /// See `advanced/spears_answer_the_horse.rs`. Off by default.
@@ -10631,6 +10635,11 @@ mod camp_buyout;
 /// opt-in gene; see `advanced/camps_close_the_age.rs`.
 mod camps_close_the_age;
 
+/// `quiet-cities-keep-settling`: a threatened Recovery holds the Settler only
+/// where the war can reach. One opt-in gene; see
+/// `advanced/quiet_cities_keep_settling.rs`.
+mod quiet_cities_keep_settling;
+
 /// `early-archers`: an Archer for every city, the frontier city first, while
 /// the world is Ancient and Classical, and Archery chased until a city can
 /// train one. One opt-in gene; see `advanced/early_archers.rs`.
@@ -12084,6 +12093,7 @@ impl AdvancedAi {
             religion_seat_defends_its_faith: false,
             retainers_garrison_the_short_cities: false,
             ranged_finish_on_the_mean: false,
+            quiet_cities_keep_settling: false,
             // ---- append: s-s ----------------------------------------
             spears_answer_the_horse: false,
             science_specializes_earlier: false,
@@ -36060,7 +36070,14 @@ impl AdvancedAi {
             return value;
         }
         let raw = match item {
-            Item::Unit { unit } if unit == "settler" && threatened_recovery_holds_settlers => {
+            // `quiet-cities-keep-settling`: the hold stays on the threatened
+            // city and its ring, and lifts for one Settler from a city the
+            // war cannot reach. See `advanced/quiet_cities_keep_settling.rs`.
+            Item::Unit { unit }
+                if unit == "settler"
+                    && threatened_recovery_holds_settlers
+                    && !self.quiet_city_keeps_settling(g, pid, cid, plan, counts) =>
+            {
                 -10_000.0
             }
             // `early-conquest-opening`: the capital's production is RESERVED
@@ -36136,6 +36153,12 @@ impl AdvancedAi {
                                 .flatten()
                         })
                     };
+                    // A Settler past the Recovery hold (the quiet-city
+                    // exemption) founds out of the war's reach too.
+                    let site = site.filter(|(pos, _)| {
+                        !threatened_recovery_holds_settlers
+                            || self.quiet_settle_site(g, pid, plan, *pos)
+                    });
                     if let Some(site) = site {
                         (920.0 + site.1 * 4.0) * self.settler_price
                     } else {

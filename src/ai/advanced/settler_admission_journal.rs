@@ -114,6 +114,7 @@ impl AdvancedAi {
         if self.plan_city_target
             && plan.strategy == GrandStrategy::Recovery
             && plan.threatened_city.is_some()
+            && !self.quiet_city_keeps_settling(g, pid, cid, plan, counts)
         {
             return "the recovery plan holds Settlers while a city is threatened".to_string();
         }
