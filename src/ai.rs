@@ -399,6 +399,7 @@ type PlotPurchaseCandidate = (f64, std::cmp::Reverse<(u32, Pos)>, Action);
 
 mod advanced;
 mod campus_buildings;
+mod capital_keeps_its_governor;
 mod commercial_hub;
 mod deck_queue;
 #[cfg(test)]
@@ -2624,6 +2625,8 @@ pub struct BasicAi {
     /// five-turn Governor when the city's runway is under
     /// [`VICTOR_SHORT_RUNWAY_TURNS`].
     pub(crate) victor_first_for_a_short_runway: bool,
+    /// Opt-in: an original capital keeps a Governor needed for its Loyalty.
+    pub(crate) capital_keeps_its_governor: bool,
     /// Build a building that MAKES SCIENCE before one that does not.
     ///
     /// Buildings are picked cheapest-first, and that order is deliberate policy
@@ -5952,6 +5955,7 @@ impl BasicAi {
             prophet_race_takes_a_district_slot: false,
             prophet_race_takes_a_district_slot_2: false,
             victor_first_for_a_short_runway: false,
+            capital_keeps_its_governor: false,
             science_building_first: false,
             housing_reserve: false,
             campus_before_harbor: false,
@@ -6563,6 +6567,7 @@ impl BasicAi {
             prophet_race_takes_a_district_slot: false,
             prophet_race_takes_a_district_slot_2: false,
             victor_first_for_a_short_runway: false,
+            capital_keeps_its_governor: false,
             science_building_first: false,
             housing_reserve: false,
             campus_before_harbor: false,
@@ -9656,7 +9661,7 @@ impl BasicAi {
                 let Action::ReassignGovernor { governor, city } = &action else {
                     return None;
                 };
-                if *city != target {
+                if *city != target || !self.capital_governor_may_depart(g, pid, governor) {
                     return None;
                 }
                 let state = &g.players[pid].governor_roster[governor];
