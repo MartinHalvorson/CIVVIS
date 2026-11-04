@@ -4912,6 +4912,7 @@ pub const GENES: &[Gene] = &[
     // turn fewer than the speed's opening walk budget. Russia and Canada are
     // exempt. See `advanced/frost_capital.rs`.
     Gene { tag: "capital-leaves-the-frost", field: "capital_leaves_the_frost", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_leaves_the_frost, disable: AdvancedAi::disable_capital_leaves_the_frost },
+    Gene { tag: "first-campus-between-the-units", field: "first_campus_between_the_units", kind: Kind::OptIn, enable: AdvancedAi::enable_first_campus_between_the_units, disable: AdvancedAi::disable_first_campus_between_the_units },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

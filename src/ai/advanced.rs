@@ -6529,6 +6529,8 @@ pub struct AdvancedAi {
     // ---- append: e-f ------------------------------------------------
     /// Give a threatened sole capital opening defence priority. Opt-in.
     first_capital_before_the_camp: bool,
+    /// Let an established army place its first Campus between fresh units. Opt-in.
+    first_campus_between_the_units: bool,
     /// `founding-voyage`: an embarked Settler of a seat with no city sails to
     /// the edge of the known sea when no site is reachable. See
     /// `advanced/maori_founds_from_the_sea.rs`. Off by default.
@@ -10192,6 +10194,7 @@ pub(crate) mod contested_land;
 /// and a religious unit steps out of a raider's reach. Two opt-in genes; see
 /// `advanced/missionary_field.rs`.
 mod apostle_evasion;
+mod first_campus_between_units;
 mod first_capital_defense;
 /// An assigned lane's first-half production dispatch. Opt-in gene
 /// `lane-delegates-production`; see `advanced/lane_delegates_production.rs`.
@@ -11724,6 +11727,7 @@ impl AdvancedAi {
             capital_frost_looks: Vec::new(),
             // ---- append: e-f ----------------------------------------
             first_capital_before_the_camp: false,
+            first_campus_between_the_units: false,
             founding_voyage: false,
             first_launch_keeps_research: false,
             first_pad_in_the_forge: false,
