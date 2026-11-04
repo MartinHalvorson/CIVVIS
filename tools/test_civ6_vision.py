@@ -56,3 +56,56 @@ class MenuVisionTest(unittest.TestCase):
             vision._regular_menu_rows(rows),
             rows,
         )
+
+
+def _menu_window_image(background: int, band: int):
+    """A 200x300 game window with five evenly spaced bright bands in the menu column."""
+    from PIL import Image
+
+    image = Image.new("L", (200, 300), background)
+    left = int(200 * vision.MENU_COLUMN[0])
+    right = int(200 * vision.MENU_COLUMN[2])
+    for top in (130, 140, 150, 160, 170):
+        for y in range(top, top + 4):
+            for x in range(left, right):
+                image.putpixel((x, y), band)
+    return image
+
+
+@unittest.skipUnless(vision.available(), "Pillow is required for vision tests")
+class LoadingCardTest(unittest.TestCase):
+    """The boot loading card's stripes are not the top-level menu."""
+
+    # Mean window luminance measured on the live 864x542-point window over the
+    # 116 top-menu clicks of 2026-11-03 05:10Z .. 11-04 06:02Z: every row-fallback
+    # click landed on a loading card, every label read on a real menu.
+    LOADING_CARDS = (5.8, 19.4)
+    REAL_MENUS = (58.6, 71.7)
+
+    def _rows(self, image):
+        with tempfile.TemporaryDirectory() as directory:
+            shot = Path(directory) / "menu-attempt1.png"
+            image.save(shot)
+            bounds = (0, 0, image.width, image.height)
+            return (vision.menu_rows(shot, bounds, scale=1.0),
+                    vision.rows_in(shot, bounds, vision.MENU_COLUMN, scale=1.0),
+                    vision.window_luma(shot, bounds, scale=1.0))
+
+    def test_dark_loading_card_reads_no_menu_rows(self) -> None:
+        rows, unguarded, luma = self._rows(_menu_window_image(background=4, band=230))
+        self.assertGreaterEqual(len(unguarded), 4)  # what the fallback used to click
+        self.assertLess(luma, vision.DARK_WINDOW_LUMA)
+        self.assertEqual(rows, [])
+
+    def test_lit_menu_rows_are_unchanged(self) -> None:
+        rows, unguarded, luma = self._rows(_menu_window_image(background=60, band=200))
+        self.assertGreaterEqual(luma, vision.DARK_WINDOW_LUMA)
+        self.assertEqual(len(rows), 5)
+        self.assertEqual(rows, unguarded)
+
+    def test_cut_sits_between_measured_cards_and_menus(self) -> None:
+        self.assertLess(self.LOADING_CARDS[1], vision.DARK_WINDOW_LUMA)
+        self.assertLess(vision.DARK_WINDOW_LUMA, self.REAL_MENUS[0])
+
+    def test_missing_screenshot_has_no_luma(self) -> None:
+        self.assertIsNone(vision.window_luma(Path("/nonexistent/menu.png"), (0, 0, 10, 10)))

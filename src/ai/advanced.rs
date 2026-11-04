@@ -6527,6 +6527,8 @@ pub struct AdvancedAi {
     /// stepped it off frozen ground; a look never returns to one.
     capital_frost_looks: Vec<Pos>,
     // ---- append: e-f ------------------------------------------------
+    /// Give a threatened sole capital opening defence priority. Opt-in.
+    first_capital_before_the_camp: bool,
     /// `founding-voyage`: an embarked Settler of a seat with no city sails to
     /// the edge of the known sea when no site is reachable. See
     /// `advanced/maori_founds_from_the_sea.rs`. Off by default.
@@ -8534,6 +8536,10 @@ pub struct AdvancedAi {
     /// soldier garrisons each Amenity-short city. The behaviour lives on
     /// `BasicAi::retainers_garrison_the_short_cities`. Off by default.
     retainers_garrison_the_short_cities: bool,
+    /// `ranged-finish-on-the-mean`: the live finishing volley commits a line
+    /// whose every attacker is ranged on its centre-roll damage. See
+    /// `advanced/ranged_finish.rs`. Off by default.
+    ranged_finish_on_the_mean: bool,
     // ---- append: s-s ------------------------------------------------
     /// `science-specializes-earlier`: an assigned Science lane leaves the
     /// development half at a third of the clock, as Culture already does.
@@ -10181,6 +10187,7 @@ pub(crate) mod contested_land;
 /// and a religious unit steps out of a raider's reach. Two opt-in genes; see
 /// `advanced/missionary_field.rs`.
 mod apostle_evasion;
+mod first_capital_defense;
 /// An assigned lane's first-half production dispatch. Opt-in gene
 /// `lane-delegates-production`; see `advanced/lane_delegates_production.rs`.
 mod lane_delegates_production;
@@ -10198,6 +10205,9 @@ mod outclassed_siege;
 /// planned moves actually crossed. Opt-in gene `own-column-is-not-a-refusal`;
 /// see `advanced/own_column.rs`.
 mod own_column;
+/// `ranged-finish-on-the-mean`: a ranged-only finishing volley commits on
+/// its expected roll. See `advanced/ranged_finish.rs`.
+mod ranged_finish;
 /// Recon disruption: the pass picket. One opt-in gene; see
 /// `advanced/recon_disruption.rs`.
 mod recon_disruption;
@@ -11705,6 +11715,7 @@ impl AdvancedAi {
             capital_leaves_the_frost: false,
             capital_frost_looks: Vec::new(),
             // ---- append: e-f ----------------------------------------
+            first_capital_before_the_camp: false,
             founding_voyage: false,
             first_launch_keeps_research: false,
             first_pad_in_the_forge: false,
@@ -12009,6 +12020,7 @@ impl AdvancedAi {
             racer_spy_searched: BTreeMap::new(),
             religion_seat_defends_its_faith: false,
             retainers_garrison_the_short_cities: false,
+            ranged_finish_on_the_mean: false,
             // ---- append: s-s ----------------------------------------
             science_specializes_earlier: false,
             spaceport_above_the_sea: false,
