@@ -1196,6 +1196,10 @@ fn revise_policy_deck(
     player_income: bool,
     force_review: bool,
 ) {
+    if g.host_policy_change_blocked(pid) {
+        return;
+    }
+    let force_review = force_review || g.host_policy_change_window(pid) == Some(true);
     let slots = g.gov_slots(pid);
     let total = slots.military + slots.economic + slots.diplomatic + slots.wildcard;
     if total <= 0 {
