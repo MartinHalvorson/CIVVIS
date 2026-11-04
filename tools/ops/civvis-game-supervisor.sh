@@ -606,6 +606,42 @@ display_mirror_server_pid() {
   return 1
 }
 
+# >>> mirror refresh waits
+# ★ THE DISPLAY REFRESH SLEPT A FLAT 9 s WHEREVER MAIN HAD MOVED. Its three
+# waits were `sleep 2` after TERMing the follower, `sleep 2` after TERMing the
+# server and `sleep 5` after starting the replacement -- paid in full at every
+# boundary whose built revision changed, which on a busy merge day is most of
+# them, although the climb then retires that replacement and starts its own
+# (`ensure_mirror`). Traced 2026-11-04 06:47Z (civvis-20261104T063240Z ->
+# 064755Z): cycle 06:47:41, refresh 06:47:44, replacement up 06:47:48, climb
+# 06:47:53.5. Each wait now ends when its condition holds -- the process gone,
+# the replacement server listening on the mirror port -- and never runs past
+# the flat sleep it replaced, so the climb still finds a listening server to
+# retire by port.
+wait_for_pid_exit() {
+  local pid=$1 limit=$2
+  local -F deadline
+  zmodload zsh/datetime 2>/dev/null || { sleep "$limit"; return 0 }
+  deadline=$(( EPOCHREALTIME + limit ))
+  while kill -0 "$pid" 2>/dev/null && (( EPOCHREALTIME < deadline )); do
+    sleep 0.1
+  done
+  return 0
+}
+
+wait_for_mirror_listener() {
+  local limit=$1
+  local -F deadline
+  zmodload zsh/datetime 2>/dev/null || { sleep "$limit"; return 0 }
+  deadline=$(( EPOCHREALTIME + limit ))
+  until display_mirror_server_pid >/dev/null; do
+    (( EPOCHREALTIME < deadline )) || return 1
+    sleep 0.1
+  done
+  return 0
+}
+# <<< mirror refresh waits
+
 # ★★★★★ A REFUSAL REPEATED FOR AN HOUR IS AN OUTAGE, AND IT READ AS ROUTINE.
 #
 # Every reason this loop declines to start a batch -- a dirty head tree, a fetch
@@ -924,12 +960,12 @@ while true; do
     say "display mirror is cwd='${FOLLOW_CWD:-absent}' revision='${FOLLOW_REVISION:-unknown}', want cwd='$REPO' revision='$HEAD_SHA'; refreshing exact mirror owners"
     if [[ -n "$FOLLOW_PID" ]] && kill -0 "$FOLLOW_PID" 2>/dev/null; then
       kill -TERM "$FOLLOW_PID" 2>/dev/null || true
-      sleep 2
+      wait_for_pid_exit "$FOLLOW_PID" 2
     fi
     MIRROR_PID=$(display_mirror_server_pid || true)
     if [[ -n "$MIRROR_PID" ]] && kill -0 "$MIRROR_PID" 2>/dev/null; then
       kill -TERM "$MIRROR_PID" 2>/dev/null || true
-      sleep 2
+      wait_for_pid_exit "$MIRROR_PID" 2
     fi
     mkdir -p "$MIRROR_HOME"
     # `civvis play --mirror` inherits these launch stamps through follow.py.
@@ -941,7 +977,7 @@ while true; do
         > "$FOLLOW_LOG" 2>&1 & )
     print -r -- "$HEAD_SHA" > "$FOLLOW_REVISION_FILE.$$.tmp"
     mv -f "$FOLLOW_REVISION_FILE.$$.tmp" "$FOLLOW_REVISION_FILE"
-    sleep 5
+    wait_for_mirror_listener 5 || true
   fi
 
   # The ownership scan above runs before the fetch/build/mirror-preflight
