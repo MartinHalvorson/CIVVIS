@@ -330,3 +330,104 @@ fn a_caller_priced_gold_card_is_judged_by_its_price() {
     assert!(!ai.solvency_keeps_card_priced(&g, 0, "civil_prestige", "economic_union", Some(12.0)));
     assert!(ai.solvency_keeps_card_priced(&g, 0, "civil_prestige", "economic_union", Some(5.0)));
 }
+
+/// Compare the forecast with the bill charged by an actual upgrade, including
+/// the zero-cost clamp before subtracting the old and new per-unit bills.
+#[test]
+fn upgrade_upkeep_forecast_matches_the_charged_policy_and_formation_delta() {
+    let mut mismatches = Vec::new();
+    for card in [None, Some("conscription"), Some("levee_en_masse")] {
+        for formation in [0, 1, 2] {
+            let (mut g, _, units) = fixture();
+            g.players[0].policies = card.into_iter().map(Name::new).collect();
+            g.units.get_mut(&units[0]).unwrap().formation = formation;
+            let target = g.unit_gold_upgrade_offer(0, units[0]).unwrap().0;
+            let forecast = AdvancedAi::upgrade_upkeep_delta(&g, units[0], target);
+            let before = g.unit_gold_maintenance(0);
+            g.apply(0, &Action::UpgradeUnit { unit: units[0] }).unwrap();
+            let charged = g.unit_gold_maintenance(0) - before;
+            if (forecast - charged).abs() > 1e-9 {
+                mismatches.push((card, formation, forecast, charged));
+            }
+        }
+    }
+    assert!(
+        mismatches.is_empty(),
+        "forecast/charged mismatches: {mismatches:?}"
+    );
+}
+
+#[test]
+fn discounted_upgrade_uses_only_the_income_it_will_actually_add() {
+    let (mut g, plan, units) = fixture();
+    g.players[0].policies = ["levee_en_masse", "professional_army"]
+        .into_iter()
+        .map(Name::new)
+        .collect();
+    g.players[0].gold_per_turn = 1.0;
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.enable_solvent_or_hold();
+    ai.fund_domination_upgrades(&mut g, 0, &plan);
+    assert_eq!(
+        crossbows(&g, &units),
+        1,
+        "one Gold of income carries exactly one discounted Crossbowman"
+    );
+}
+
+#[test]
+fn discounted_upgrade_still_preserves_zero_income_and_cash_floor() {
+    let (mut g, plan, units) = fixture();
+    g.players[0].policies = ["levee_en_masse", "professional_army"]
+        .into_iter()
+        .map(Name::new)
+        .collect();
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    ai.enable_solvent_or_hold();
+    g.players[0].gold_per_turn = 0.0;
+    let mut no_income = g.clone();
+    ai.fund_domination_upgrades(&mut no_income, 0, &plan);
+    assert_eq!(crossbows(&no_income, &units), 0);
+    g.players[0].gold_per_turn = 1.0;
+    let price = g.unit_gold_upgrade_offer(0, units[0]).unwrap().1;
+    g.players[0].gold = price + 29.0;
+    ai.fund_domination_upgrades(&mut g, 0, &plan);
+    assert_eq!(crossbows(&g, &units), 0, "the cash floor still applies");
+}
+
+#[test]
+fn upgrade_upkeep_uses_the_observed_current_formation_bill_once() {
+    let (mut g, _, units) = fixture();
+    let uid = units[0];
+    g.units.get_mut(&uid).unwrap().formation = 1;
+    g.players[0].policies = [crate::name!("levee_en_masse")].into_iter().collect();
+    std::sync::Arc::make_mut(&mut g.host_unit_facts).insert(
+        uid,
+        crate::game::HostUnitFacts {
+            maintenance: Some(2.0),
+            ..Default::default()
+        },
+    );
+    let before = g.unit_gold_maintenance(0);
+    let forecast = AdvancedAi::upgrade_upkeep_delta(&g, uid, crate::name!("crossbowman"));
+    // A successor observation must not reuse the predecessor's native quote.
+    g.units.get_mut(&uid).unwrap().kind = crate::name!("crossbowman");
+    std::sync::Arc::make_mut(&mut g.host_unit_facts).remove(&uid);
+    let after = g.unit_gold_maintenance(0);
+    assert_eq!(
+        forecast,
+        after - before,
+        "native maintenance already includes formation; the target is modeled"
+    );
+}
+
+#[test]
+fn upgrade_upkeep_is_zero_in_an_arena() {
+    let (mut g, _, units) = fixture();
+    g.map_script = crate::setup::MapScript::Battlefield;
+    assert!(g.is_arena());
+    assert_eq!(
+        AdvancedAi::upgrade_upkeep_delta(&g, units[0], crate::name!("crossbowman")),
+        0.0
+    );
+}

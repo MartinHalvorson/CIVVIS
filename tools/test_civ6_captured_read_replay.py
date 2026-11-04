@@ -6,6 +6,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+from unittest import mock
 
 import civ6_captured_read_replay as replay
 
@@ -184,6 +185,131 @@ class EvidenceTests(unittest.TestCase):
             with self.subTest(case=case), self.assertRaises(ValueError):
                 replay.replay_command(context, Path("/tmp/control"))
 
+
+
+
+class HybridDeliveryTests(unittest.TestCase):
+    def test_regular_snapshot_never_claims_a_consumption_count(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "events.jsonl"
+            data = b"identical\x00snapshot"
+            feeder = replay.IdenticalReads(path, [data] * 2)
+            program = "import pathlib,sys,json; p=pathlib.Path(sys.argv[1]); print(json.dumps([p.read_bytes().hex() for _ in range(3)]))"
+            result = subprocess.run([sys.executable, "-c", program, str(path)],
+                                    capture_output=True, text=True, check=True, timeout=3)
+            self.assertEqual(json.loads(result.stdout), [data.hex()] * 3)
+            feeder.finish()
+            self.assertIsNone(feeder.served, "extra opens are judged by the actual capture, not inferred here")
+            feeder.close()
+
+    def test_regular_snapshot_rejects_empty_or_variable_reads(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for reads in ([], [b""], [b"one", b"two"]):
+                with self.subTest(reads=reads), self.assertRaises(ValueError):
+                    replay.IdenticalReads(Path(directory) / "events.jsonl", reads)
+
+    def test_hybrid_variable_reads_keep_the_original_fifo(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "events.jsonl"
+            reads = [b"first", b"second"]
+            feeder = replay.deliver_reads(path, reads, 3, "hybrid")
+            try:
+                self.assertIsInstance(feeder, replay.FifoReads)
+                program = "import pathlib,sys,json; p=pathlib.Path(sys.argv[1]); print(json.dumps([p.read_bytes().decode() for _ in range(2)]))"
+                result = subprocess.run([sys.executable, "-c", program, str(path)],
+                                        capture_output=True, text=True, check=True, timeout=3)
+                feeder.finish()
+                self.assertEqual(json.loads(result.stdout), ["first", "second"])
+            finally:
+                feeder.close()
+
+    def probe(self, actual_count=2, frame=0, marker="same", complete=True, delivery="hybrid"):
+        # An independent child opens the real delivered path and constructs its
+        # own capture from the bytes it actually read. It never sees the
+        # expected capture count or the expected decision payload.
+        program = r"""
+import json,pathlib,sys
+root=pathlib.Path(sys.argv[1]); count=int(sys.argv[2]); frame=int(sys.argv[3]); marker=sys.argv[4]; complete=sys.argv[5]=='true'
+for line in sys.stdin:
+    blobs=[(root/'events.jsonl').read_bytes() for _ in range(count)]
+    capture=root/'actual'; capture.mkdir()
+    (capture/'bytes.bin').write_bytes(b''.join(blobs))
+    offset=0; index=[]
+    for number,blob in enumerate(blobs):
+        index.append({'id':number,'parent':None,'offset':offset,'append_bytes':len(blob),'total_bytes':len(blob)})
+        offset+=len(blob)
+    (capture/'snapshots.jsonl').write_text(''.join(json.dumps(row)+'\n' for row in index))
+    trace={'schema':1,'complete':complete,'error':None,'directory':str(capture),'source':str(root/'events.jsonl'),'archive':'bytes.bin','index':'snapshots.jsonl','reads':[{'snapshot_id':number,'count':1} for number in range(count)]}
+    print(json.dumps({'turn':int(line),'decision':{'turn':int(line),'frame':frame,'marker':marker},'orders':[],'input_capture':trace}),flush=True)
+"""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            source = root / "source"
+            source.mkdir()
+            data = b"snapshot\n"
+            (source / "bytes.bin").write_bytes(data)
+            (source / "snapshots.jsonl").write_text(json.dumps(
+                {"id": 0, "parent": None, "offset": 0, "append_bytes": len(data), "total_bytes": len(data)}) + "\n")
+            capture = {"schema": 1, "complete": True, "error": None, "directory": str(source),
+                       "source": str(root / "original-events"), "archive": "bytes.bin",
+                       "index": "snapshots.jsonl", "reads": [{"snapshot_id": 0, "count": 2}]}
+            record = {"turn": 1, "decision": {"turn": 1, "frame": 0, "marker": "same"},
+                      "orders": [], "input_capture": capture}
+            def command(context, output):
+                return ([sys.executable, "-c", program, str(output), str(actual_count),
+                         str(frame), marker, str(complete).lower()], str(root))
+            kwargs = {} if delivery is None else {"delivery": delivery}
+            processes = []
+            original_popen = subprocess.Popen
+            def launch(*args, **options):
+                process = original_popen(*args, **options)
+                processes.append(process)
+                return process
+            with mock.patch.object(replay, "replay_command", side_effect=command), \
+                    mock.patch.object(replay.subprocess, "Popen", side_effect=launch):
+                result = replay.run_control({}, [record], {str(source): source}, root / "run", 3, **kwargs)
+            self.assertEqual(len(processes), 1)
+            self.assertTrue(processes[0].stdin.closed)
+            self.assertTrue(processes[0].stdout.closed)
+            return result
+
+    def test_hybrid_identical_actual_reads_can_qualify(self):
+        result = self.probe()
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(result["requests"][0]["input_delivery"], "regular")
+        self.assertEqual(result["requests"][0]["replayed_reads"], 2)
+
+    def test_fifo_remains_the_run_control_default(self):
+        result = self.probe(delivery=None)
+        self.assertTrue(result["passed"], result)
+        self.assertEqual(result["requests"][0]["input_delivery"], "fifo")
+
+    def test_fewer_and_extra_actual_opens_cannot_qualify(self):
+        for count in (1, 3):
+            with self.subTest(count=count):
+                result = self.probe(actual_count=count)
+                self.assertFalse(result["passed"])
+                request = result["requests"][0]
+                self.assertTrue(request["native_payload_matches"])
+                self.assertEqual(request["identity_errors"], [])
+                self.assertFalse(request["read_sequence_matches"])
+                self.assertEqual(request["replayed_reads"], count)
+
+    def test_frame_and_complete_payload_checks_are_still_required(self):
+        wrong_frame = self.probe(frame=1)
+        self.assertFalse(wrong_frame["passed"])
+        self.assertTrue(wrong_frame["requests"][0]["identity_errors"])
+        self.assertTrue(wrong_frame["requests"][0]["read_sequence_matches"])
+        wrong_metadata = self.probe(marker="changed")
+        self.assertFalse(wrong_metadata["passed"])
+        self.assertEqual(wrong_metadata["requests"][0]["identity_errors"], [])
+        self.assertTrue(wrong_metadata["requests"][0]["read_sequence_matches"])
+        self.assertFalse(wrong_metadata["requests"][0]["native_payload_matches"])
+
+    def test_an_incomplete_actual_capture_cannot_qualify(self):
+        result = self.probe(complete=False)
+        self.assertFalse(result["passed"])
+        self.assertIn("complete", result["error"])
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,12 @@
+{
+  "registered_utc": "2026-10-25T20:50:50.851105+00:00",
+  "native_evidence": "Fixed174828Z original and diagnostic2x263 fullpayload andorderedread controls allpass; root tracesidentical;7actualindustryProducecalls belowexistingrecoveryreserve whilemodelincomeequalnativeactual. Directcaller src/ai/advanced/industrial_zone_claims_the_producer_queue.rs.",
+  "evidence_sha256": "f68296b694ade1d515d922d2ca9105d8fc33edf15283c55b99af728dbaf5cdb5",
+  "rule": "Respect existing treasury recovery threshold income<-0.5 andGold<100+25*cities in this optional industrial reservation and its hold, preserving the funded negative-income and break-even boundaries. Do not reorder other reservations or change native configuration/force/genome.",
+  "red_before_source_change": [
+    "actual idle IndustrialZone and Workshop claims must leave all queues alone in witnessed depleted-deficit conditions",
+    "a legal existing industrial commitment must stop receiving this claim-specific protection in recovery"
+  ],
+  "unchanged_controls": "All existing module cases plus exact recovery reserve/break-even boundaries that still produce an IndustrialZone. Derive exact catalog/count fromsource andbuilt executable.",
+  "validation": "Require genuine failing intendedassertions on unchanged production and existingcontrolsallpassing. Then exact focusedGREEN, mergedsourcecheck/quality and required hosted fullCI beforeintegration. No simulation or recorded-history planning difference is a native win-rate estimate."
+}

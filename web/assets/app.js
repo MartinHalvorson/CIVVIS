@@ -822,12 +822,34 @@ function repeatedCivNames(majors) {
 // What the viewer chose, and nothing else. Deriving a lock from whichever
 // civilization was being watched meant the mark moved from row to row on its
 // own every time the view changed — including when the director changed it.
-function lockedSeats() {
+function chosenSeatLocks() {
   return HUD_LOCKS || NO_HUD_LOCKS;
 }
 
+// ★ THE SEAT CIVVIS PLAYS IN A LIVE VERIFICATION GAME IS ALWAYS LOCKED.
+// Operator 2026-10-31: "make sure during verification games the active player
+// stays locked on the player hud". A viewer's saved locks name civilizations,
+// and the ladder changes ours from game to game (Gran Colombia, Greece, the
+// Khmer): the stored lock stayed on a rival while our own row scrolled away.
+// This is not the watched-civilization default retired above. The live
+// mirror's seat is the one fixed fact of that page — `tools/follow.py` pins
+// the view to it for the whole game — so the mark cannot wander, and it is
+// added at draw time, never written to the stored set.
+function liveSeatLockKey(seats) {
+  try {
+    if (!livePause.available || !state || !Number.isInteger(state.player)) return null;
+  } catch (_) { return null; }  // drawn before the live controls exist
+  return seats.get(state.player) || null;
+}
+
+function lockedSeats() {
+  const chosen = chosenSeatLocks();
+  const live = liveSeatLockKey(seatKeysById(majorPlayers()));
+  return !live || chosen.has(live) ? chosen : new Set([...chosen, live]);
+}
+
 function saveHudLocks() {
-  try { localStorage.setItem(HUD_LOCK_STORAGE_KEY, JSON.stringify([...lockedSeats()])); }
+  try { localStorage.setItem(HUD_LOCK_STORAGE_KEY, JSON.stringify([...chosenSeatLocks()])); }
   catch (_) {}
 }
 
@@ -844,12 +866,15 @@ function seedOwnSeatLock(seats) {
 }
 
 function toggleSeatLock(id) {
-  const key = seatKeysById(majorPlayers()).get(id);
+  const seats = seatKeysById(majorPlayers());
+  const key = seats.get(id);
   if (!key) return;
+  // The live game's own seat stays locked whatever is clicked.
+  if (key === liveSeatLockKey(seats)) return;
   // Built from the stored set alone. Seeding it from a default that followed
   // the watched civilization meant a viewer's first click silently persisted a
   // second lock they had never made, and undoing that click left it behind.
-  const next = new Set(lockedSeats());
+  const next = new Set(chosenSeatLocks());
   if (next.has(key)) next.delete(key);
   else next.add(key);
   HUD_LOCKS = next;
@@ -944,15 +969,19 @@ try {
   }
 } catch (error) {}
 // The dedicated display beside Civilization VI is the regular map plus the
-// player HUD only. Apply this after saved preferences so reloads and new games
-// cannot restore extra overlays or hide the player HUD.
+// player HUD and the victory tracker (operator, 2026-10-30: the ladder plays
+// Culture and Diplomatic seats, and the race toward them belongs on screen).
+// Apply this after saved preferences so reloads and new games cannot restore
+// extra overlays or hide either one.
 const DEDICATED_DISPLAY = new URLSearchParams(location.search).get("display") === "dedicated";
 if (DEDICATED_DISPLAY) {
   OVERLAY_VISIBILITY.players = true;
-  OVERLAY_VISIBILITY.victory = false;
+  OVERLAY_VISIBILITY.victory = true;
   OVERLAY_VISIBILITY.minimap = false;
   OVERLAY_VISIBILITY.controls = false;
   OVERLAY_VISIBILITY.lenses = false;
+  // The stylesheet stands the tracker as the right-hand panel here.
+  document.body.classList.add("display-dedicated");
 }
 function applyOverlayVisibility() {
   for (const name of OVERLAY_NAMES) {
@@ -2253,6 +2282,11 @@ function playerClosestVictory(player) {
   return victory && turns !== null && Number.isFinite(count) ? {victory, turns:count} : null;
 }
 
+function closestVictoryTurnsLabel(turns) {
+  const cap = Number(turnCapLabel());
+  return Number.isFinite(cap) && Number(turns) >= cap ? `${cap}+` : String(turns);
+}
+
 // The plan palette already gives every road its colour; a score win is the
 // one road no plan is named for, and keeps the plain cell colour.
 const CLOSEST_VICTORY_PLAN_CLASS = {
@@ -2266,11 +2300,13 @@ function closestVictoryTitle(player) {
     victory && turns !== null && Number.isFinite(Number(turns)));
   if (!etas.length) return "No victory the planner can put a clock on yet";
   const [[victory, turns], ...rest] = etas;
-  const turnsText = count => `${count} turn${Number(count) === 1 ? "" : "s"}`;
+  const turnsLabel = closestVictoryTurnsLabel(turns);
+  const turnsText = count => `${closestVictoryTurnsLabel(count)} turn${Number(count) === 1 ? "" : "s"}`;
   const head = `Closest victory: ${titleCase(victory)} in about ${turnsText(turns)}` +
-    (Number.isFinite(Number(state?.turn)) ? ` (turn ${Number(state.turn) + Number(turns)})` : "");
+    (!turnsLabel.endsWith("+") && Number.isFinite(Number(state?.turn))
+      ? ` (turn ${Number(state.turn) + Number(turns)})` : "");
   const others = rest.length
-    ? ` · then ${rest.map(([other, count]) => `${titleCase(other)} ${count}`).join(", ")}`
+    ? ` · then ${rest.map(([other, count]) => `${titleCase(other)} ${closestVictoryTurnsLabel(count)}`).join(", ")}`
     : "";
   return `${head}${others} · the victory planner's estimate at today's pace`;
 }
@@ -3341,6 +3377,18 @@ try {
   const saved = JSON.parse(localStorage.getItem(HUD_LAYOUT_STORAGE_KEY) || "{}");
   if (saved && typeof saved === "object") HUD_LAYOUT = saved;
 } catch (_) { HUD_LAYOUT = {}; }
+// Like its overlays, the dedicated display's tracker position is fixed: a
+// drag saved in its Chrome profile (on 2026-10-30, the narrow window's
+// full-width band) would otherwise hold the tracker off the right-hand panel
+// the stylesheet stands it in, for every game after. Its width is the
+// viewer's, though — the operator narrowed the panel by its edge — so a rail
+// width carries into the stylesheet; anything wider than a rail is a band.
+if (DEDICATED_DISPLAY && HUD_LAYOUT.victory) {
+  const width = Math.round(Number(HUD_LAYOUT.victory.width));
+  if (width > 0 && width <= window.innerWidth * .45)
+    document.body.style.setProperty("--dedicated-victory-width", `${width}px`);
+  delete HUD_LAYOUT.victory;
+}
 
 // Keep the authored frame proportion while sizing the *frame diagonal* against
 // the screen rather than against a particular monitor. The shared panel
@@ -23817,6 +23865,11 @@ function victoryDescription(victory, metric) {
 }
 
 const DEFAULT_VICTORY_LEADERS = 3;
+// The dedicated display beside Civilization VI (operator, 2026-10-30: "rank the
+// victory tracker victory types in order of closest to victory ... top 2 only")
+// lists exactly two leaders on every path, the viewed civilization included
+// only when it is one of them, and stands the paths nearest a win first.
+const DEDICATED_VICTORY_LEADERS = 2;
 
 // Measure the space the rendered track actually has instead of coupling this
 // behavior to a hard-coded widget height. This keeps custom layouts, keyboard
@@ -23863,13 +23916,15 @@ function victoryLeaderCapacity(victoryHud) {
 function syncVictoryLeaderCapacity(victoryHud = document.getElementById("victoryhud")) {
   const tracks = [...(victoryHud?.querySelectorAll(".victory-track") || [])];
   if (!tracks.length) return;
-  const capacity = victoryLeaderCapacity(victoryHud);
+  const capacity = DEDICATED_DISPLAY ? DEDICATED_VICTORY_LEADERS : victoryLeaderCapacity(victoryHud);
   for (const track of tracks) {
     for (const [index, entry] of [...track.querySelectorAll(".victory-entry")].entries())
       // A player looking through their own fog should never disappear merely
       // because three rivals lead a path. Keep that one row in addition to
-      // the capacity the panel can otherwise show.
-      entry.hidden = index >= capacity && entry.dataset.victoryFocus !== "true";
+      // the capacity the panel can otherwise show — except on the dedicated
+      // display, whose two rows per path are the whole point of the space.
+      entry.hidden = index >= capacity &&
+        (DEDICATED_DISPLAY || entry.dataset.victoryFocus !== "true");
   }
 }
 
@@ -24116,9 +24171,17 @@ function playerHudOverview() {
   const focusPlayer = Number.isInteger(focusId)
     ? contenders.find(player => player.id === focusId)
     : null;
-  let defaultVictoryRows = Math.min(DEFAULT_VICTORY_LEADERS, contenders.length);
+  let defaultVictoryRows = Math.min(
+    DEDICATED_DISPLAY ? DEDICATED_VICTORY_LEADERS : DEFAULT_VICTORY_LEADERS, contenders.length);
   const enabledVictoryTracks = VICTORY_TRACKS
     .filter(track => state.victory_conditions?.[track.id] !== false);
+  if (DEDICATED_DISPLAY) {
+    // Closest to a win is the path's leading meter — the same progress its
+    // top row draws. The sort is stable, so ties keep the usual order.
+    const leading = new Map(enabledVictoryTracks.map(track => [track.id,
+      Math.max(0, ...contenders.map(player => +victoryMetric(player, track.id).progress || 0))]));
+    enabledVictoryTracks.sort((a, b) => leading.get(b.id) - leading.get(a.id));
+  }
   const victoryTracks = enabledVictoryTracks.map(track => {
     const researchField = track.id === "science" ? "techs"
       : track.id === "culture" ? "civics" : null;
@@ -24134,7 +24197,7 @@ function playerHudOverview() {
     const focusRank = focusPlayer
       ? ranked.findIndex(player => player.id === focusPlayer.id)
       : -1;
-    defaultVictoryRows = Math.max(defaultVictoryRows,
+    if (!DEDICATED_DISPLAY) defaultVictoryRows = Math.max(defaultVictoryRows,
       Math.min(DEFAULT_VICTORY_LEADERS, ranked.length) + (focusRank >= DEFAULT_VICTORY_LEADERS ? 1 : 0));
     return `<section class="victory-track" style="--track:${track.color}" aria-label="${track.label} victory leaders">` +
       `<div class="victory-heading"><b>${track.label}</b></div>` +
@@ -24411,6 +24474,12 @@ function drawPlayerHud() {
   const viewSeat = Number.isInteger(state.player) ? state.player : null;
   const viewSeatAtWar = !activeWarPlayers && viewSeat !== null && state.players.some(other =>
     other.id !== viewSeat && other.alive && !other.is_barbarian && other.at_war_with_me);
+  // The seat whose eyes the page looks through — our own seat beside a live
+  // Civilization VI game, the civilization a spectator is watching as, or the
+  // player's own empire — wears the same gold the victory tracker gives it,
+  // so it stands out of the standings at a glance (operator 2026-10-30).
+  const focusSeatId = SPEC ? state.view_player : state.player;
+  const focusSeat = Number.isInteger(focusSeatId) ? focusSeatId : null;
   // Rank remains the score standing even when the visible rows are sorted by
   // another fact, so a #2 badge never starts meaning "second alphabetically".
   const scoreRankedMajors = state.players
@@ -24445,6 +24514,7 @@ function drawPlayerHud() {
   const repeatedCivs = repeatedCivNames(majors);
   seedOwnSeatLock(seats);
   const lockedKeys = lockedSeats();
+  const liveSeatKey = liveSeatLockKey(seats);
   // One line per row across the masthead — who this is and their twelve values
   // side by side — so a row is only as tall as its medallion: 26px, plus the
   // 2px gap under it. The fixed chrome and two-seat floor protect the turn
@@ -24570,10 +24640,13 @@ function drawPlayerHud() {
       // how tall the ribbon is right now; syncPlayerLockPins() settles that
       // against the rendered box. The markup only records the choice.
       const locked = lockedKeys.has(seats.get(p.id));
+      const liveSeat = liveSeatKey !== null && seats.get(p.id) === liveSeatKey;
       // Two seats can share a civilization, so a row the table repeats names
       // its leader as well — otherwise both lock controls read "Lock Rome".
       const seatName = repeatedCivs.has(p.civ) ? `${p.civ} under ${leader}` : p.civ;
-      const lockTitle = locked
+      const lockTitle = liveSeat
+        ? `${seatName} is the seat CIVVIS plays in this live game · always locked in view`
+        : locked
         ? `Unlock ${seatName} · its row scrolls with the rest of the table`
         : `Lock ${seatName} · its row stays in view while the table scrolls`;
       // Six identity facts open the dossier, exactly as the one wide button
@@ -24649,7 +24722,7 @@ function drawPlayerHud() {
               `<span class="ai-plan${tone ? ` ${tone}` : ""}">` +
               (closest
                 ? `<span class="closest-victory-road">${escapeAttr(closest.victory)}</span>` +
-                  `<span class="closest-victory-turns">-${closest.turns}</span>`
+                  `<span class="closest-victory-turns">-${closestVictoryTurnsLabel(closest.turns)}</span>`
                 : "—") +
               `</span></span></button>`;
           }
@@ -24683,7 +24756,7 @@ function drawPlayerHud() {
           `<b>${kind === "score" ? ribbonScore(value) : ribbonStat(value)}</b>${markerHtml}</button>`;
       };
       const citiesOpen = openCityPlayer?.id === p.id;
-      return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}${locked ? " locked" : ""}${citiesOpen ? " cities-open" : ""}" style="--civ:${color};--civ-border:${pcol2(p.id)}" role="listitem">` +
+      return `<div class="diplomacy-card ${stateClass} ${expanded ? "expanded" : ""}${locked ? " locked" : ""}${liveSeat ? " live-seat" : ""}${citiesOpen ? " cities-open" : ""}${p.id === focusSeat ? " focus-player" : ""}" style="--civ:${color};--civ-border:${pcol2(p.id)}" role="listitem">` +
         visibleColumns.map(rowCell).join("") + `</div>` +
         (citiesOpen ? playerHudCityRows(p, openCities, hiddenCities, visibleColumns) : "");
     }).join("") + `</div>` + hudResizeHandles("player standings", ["n", "s"]);
@@ -24881,7 +24954,11 @@ function syncPlayerLockPins() {
   // plain division reports.
   const visibleRows = Math.floor((ribbon.clientHeight + gap) / pitch);
   const holds = Math.max(0, Math.min(locked.length, Math.floor(visibleRows / 2), visibleRows - 1));
-  locked.slice(0, holds).forEach((card, index) => {
+  // A live game's own seat is held first when there is room for fewer locks
+  // than were made; the held rows still stack in table order.
+  const live = locked.filter(card => card.classList.contains("live-seat"));
+  const held = new Set([...live, ...locked].slice(0, holds));
+  locked.filter(card => held.has(card)).forEach((card, index) => {
     card.classList.add("pinned");
     card.style.setProperty("--pin-head", index);
     card.style.setProperty("--pin-tail", holds - 1 - index);

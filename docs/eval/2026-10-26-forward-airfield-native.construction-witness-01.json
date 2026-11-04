@@ -1,0 +1,4232 @@
+{
+  "run": "civvis-20261026T083924Z",
+  "witnesses": [
+    {
+      "turn": 138,
+      "frame": 0,
+      "order": {
+        "kind": "produce",
+        "subject": 655369,
+        "verb": "DISTRICT_ENCAMPMENT",
+        "x": 38,
+        "y": 32
+      },
+      "journal": [
+        "[why] t138 Cities/Decision Beijing prepares a forward airfield | forward-airfield-project: offered encampment at 2.0 turns; one producer for capital (44, 18), field (35, 28); future stages and arrival are not yet observed"
+      ],
+      "pre_city": {
+        "amenities": 8,
+        "amenities_bankruptcy": 0,
+        "amenities_city_states": 0,
+        "amenities_civics": 0,
+        "amenities_districts": 0,
+        "amenities_entertainment": 3,
+        "amenities_great_people": 0,
+        "amenities_improvements": 4,
+        "amenities_luxuries": 6,
+        "amenities_national_parks": 0,
+        "amenities_natural_wonders": 0,
+        "amenities_needed": 9,
+        "amenities_religion": 0,
+        "amenities_starting_era": 0,
+        "amenities_war_weariness": 5,
+        "buildable": [
+          {
+            "c": 100,
+            "n": 18,
+            "p": 2,
+            "pr": 0,
+            "s": [
+              {
+                "x": 41,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 31
+              },
+              {
+                "x": 42,
+                "y": 30
+              },
+              {
+                "x": 41,
+                "y": 28
+              },
+              {
+                "x": 40,
+                "y": 28
+              },
+              {
+                "x": 39,
+                "y": 28
+              },
+              {
+                "x": 38,
+                "y": 30
+              },
+              {
+                "x": 38,
+                "y": 31
+              },
+              {
+                "x": 39,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 33
+              },
+              {
+                "x": 42,
+                "y": 32
+              },
+              {
+                "x": 42,
+                "y": 31
+              },
+              {
+                "x": 43,
+                "y": 30
+              },
+              {
+                "x": 42,
+                "y": 29
+              },
+              {
+                "x": 41,
+                "y": 27
+              },
+              {
+                "x": 40,
+                "y": 27
+              }
+            ],
+            "t": "DISTRICT_ENCAMPMENT"
+          },
+          {
+            "c": 100,
+            "n": 2,
+            "p": 2,
+            "pr": 0,
+            "s": [
+              {
+                "x": 39,
+                "y": 33
+              },
+              {
+                "x": 40,
+                "y": 33
+              }
+            ],
+            "t": "DISTRICT_HARBOR"
+          },
+          {
+            "c": 170,
+            "n": 13,
+            "p": 3,
+            "pr": 0,
+            "s": [
+              {
+                "x": 41,
+                "y": 31
+              },
+              {
+                "x": 42,
+                "y": 30
+              },
+              {
+                "x": 41,
+                "y": 28
+              },
+              {
+                "x": 40,
+                "y": 28
+              },
+              {
+                "x": 39,
+                "y": 28
+              },
+              {
+                "x": 38,
+                "y": 30
+              },
+              {
+                "x": 38,
+                "y": 31
+              },
+              {
+                "x": 39,
+                "y": 32
+              },
+              {
+                "x": 42,
+                "y": 31
+              },
+              {
+                "x": 42,
+                "y": 29
+              },
+              {
+                "x": 41,
+                "y": 27
+              },
+              {
+                "x": 39,
+                "y": 27
+              },
+              {
+                "x": 38,
+                "y": 32
+              }
+            ],
+            "t": "DISTRICT_AERODROME"
+          },
+          {
+            "c": 100,
+            "n": 18,
+            "p": 2,
+            "pr": 0,
+            "s": [
+              {
+                "x": 41,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 31
+              },
+              {
+                "x": 42,
+                "y": 30
+              },
+              {
+                "x": 41,
+                "y": 28
+              },
+              {
+                "x": 40,
+                "y": 28
+              },
+              {
+                "x": 39,
+                "y": 28
+              },
+              {
+                "x": 38,
+                "y": 30
+              },
+              {
+                "x": 38,
+                "y": 31
+              },
+              {
+                "x": 39,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 33
+              },
+              {
+                "x": 42,
+                "y": 32
+              },
+              {
+                "x": 42,
+                "y": 31
+              },
+              {
+                "x": 43,
+                "y": 30
+              },
+              {
+                "x": 42,
+                "y": 29
+              },
+              {
+                "x": 41,
+                "y": 27
+              },
+              {
+                "x": 40,
+                "y": 27
+              }
+            ],
+            "t": "DISTRICT_COMMERCIAL_HUB"
+          },
+          {
+            "c": 100,
+            "n": 18,
+            "p": 2,
+            "pr": 0,
+            "s": [
+              {
+                "x": 41,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 31
+              },
+              {
+                "x": 42,
+                "y": 30
+              },
+              {
+                "x": 41,
+                "y": 28
+              },
+              {
+                "x": 40,
+                "y": 28
+              },
+              {
+                "x": 39,
+                "y": 28
+              },
+              {
+                "x": 38,
+                "y": 30
+              },
+              {
+                "x": 38,
+                "y": 31
+              },
+              {
+                "x": 39,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 33
+              },
+              {
+                "x": 42,
+                "y": 32
+              },
+              {
+                "x": 42,
+                "y": 31
+              },
+              {
+                "x": 43,
+                "y": 30
+              },
+              {
+                "x": 42,
+                "y": 29
+              },
+              {
+                "x": 41,
+                "y": 27
+              },
+              {
+                "x": 40,
+                "y": 27
+              }
+            ],
+            "t": "DISTRICT_ENTERTAINMENT_COMPLEX"
+          },
+          {
+            "c": 170,
+            "n": 18,
+            "p": 3,
+            "pr": 0,
+            "s": [
+              {
+                "x": 41,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 31
+              },
+              {
+                "x": 42,
+                "y": 30
+              },
+              {
+                "x": 41,
+                "y": 28
+              },
+              {
+                "x": 40,
+                "y": 28
+              },
+              {
+                "x": 39,
+                "y": 28
+              },
+              {
+                "x": 38,
+                "y": 30
+              },
+              {
+                "x": 38,
+                "y": 31
+              },
+              {
+                "x": 39,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 33
+              },
+              {
+                "x": 42,
+                "y": 32
+              },
+              {
+                "x": 42,
+                "y": 31
+              },
+              {
+                "x": 43,
+                "y": 30
+              },
+              {
+                "x": 42,
+                "y": 29
+              },
+              {
+                "x": 41,
+                "y": 27
+              },
+              {
+                "x": 40,
+                "y": 27
+              }
+            ],
+            "t": "DISTRICT_NEIGHBORHOOD"
+          },
+          {
+            "c": 100,
+            "n": 2,
+            "p": 2,
+            "pr": 0,
+            "s": [
+              {
+                "x": 39,
+                "y": 33
+              },
+              {
+                "x": 40,
+                "y": 33
+              }
+            ],
+            "t": "DISTRICT_WATER_ENTERTAINMENT_COMPLEX"
+          },
+          {
+            "c": 170,
+            "n": 18,
+            "p": 3,
+            "pr": 0,
+            "s": [
+              {
+                "x": 41,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 31
+              },
+              {
+                "x": 42,
+                "y": 30
+              },
+              {
+                "x": 41,
+                "y": 28
+              },
+              {
+                "x": 40,
+                "y": 28
+              },
+              {
+                "x": 39,
+                "y": 28
+              },
+              {
+                "x": 38,
+                "y": 30
+              },
+              {
+                "x": 38,
+                "y": 31
+              },
+              {
+                "x": 39,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 33
+              },
+              {
+                "x": 42,
+                "y": 32
+              },
+              {
+                "x": 42,
+                "y": 31
+              },
+              {
+                "x": 43,
+                "y": 30
+              },
+              {
+                "x": 42,
+                "y": 29
+              },
+              {
+                "x": 41,
+                "y": 27
+              },
+              {
+                "x": 40,
+                "y": 27
+              }
+            ],
+            "t": "DISTRICT_PRESERVE"
+          },
+          {
+            "c": 30,
+            "p": 1,
+            "t": "BUILDING_MONUMENT"
+          },
+          {
+            "c": 40,
+            "p": 1,
+            "t": "BUILDING_WATER_MILL"
+          },
+          {
+            "c": 60,
+            "p": 1,
+            "t": "BUILDING_TEMPLE"
+          },
+          {
+            "c": 110,
+            "p": 2,
+            "t": "BUILDING_CASTLE"
+          },
+          {
+            "c": 145,
+            "p": 3,
+            "t": "BUILDING_MUSEUM_ART"
+          },
+          {
+            "c": 145,
+            "p": 3,
+            "t": "BUILDING_MUSEUM_ARTIFACT"
+          },
+          {
+            "c": 355,
+            "p": 7,
+            "t": "BUILDING_HAGIA_SOPHIA"
+          },
+          {
+            "c": 355,
+            "p": 7,
+            "t": "BUILDING_MONT_ST_MICHEL"
+          },
+          {
+            "c": 725,
+            "p": 15,
+            "t": "BUILDING_HERMITAGE"
+          },
+          {
+            "c": 810,
+            "p": 16,
+            "t": "BUILDING_CRISTO_REDENTOR"
+          },
+          {
+            "c": 355,
+            "p": 7,
+            "t": "BUILDING_KILWA_KISIWANI"
+          },
+          {
+            "c": 460,
+            "p": 9,
+            "t": "BUILDING_TAJ_MAHAL"
+          },
+          {
+            "c": 150,
+            "p": 3,
+            "t": "BUILDING_COAL_POWER_PLANT"
+          },
+          {
+            "c": 90,
+            "p": 2,
+            "t": "BUILDING_GREAT_BATH"
+          },
+          {
+            "c": 175,
+            "p": 2,
+            "r": 0,
+            "t": "UNIT_SETTLER"
+          },
+          {
+            "c": 77,
+            "p": 1,
+            "r": 0,
+            "t": "UNIT_BUILDER"
+          },
+          {
+            "c": 140,
+            "p": 3,
+            "r": 2,
+            "t": "UNIT_BOMBARD"
+          },
+          {
+            "c": 165,
+            "p": 3,
+            "r": 0,
+            "t": "UNIT_FIELD_CANNON"
+          },
+          {
+            "c": 190,
+            "p": 4,
+            "r": 0,
+            "t": "UNIT_RANGER"
+          },
+          {
+            "c": 120,
+            "p": 2,
+            "r": 0,
+            "t": "UNIT_OBSERVATION_BALLOON"
+          },
+          {
+            "c": 180,
+            "p": 3,
+            "r": 2,
+            "t": "UNIT_LINE_INFANTRY"
+          },
+          {
+            "c": 125,
+            "p": 2,
+            "r": 0,
+            "t": "UNIT_PIKE_AND_SHOT"
+          },
+          {
+            "c": 165,
+            "p": 3,
+            "r": 2,
+            "t": "UNIT_CUIRASSIER"
+          },
+          {
+            "c": 165,
+            "p": 3,
+            "r": 2,
+            "t": "UNIT_COLOMBIAN_LLANERO"
+          },
+          {
+            "c": 115,
+            "p": 2,
+            "t": "PROJECT_ENHANCE_DISTRICT_INDUSTRIAL_ZONE"
+          },
+          {
+            "c": 115,
+            "p": 2,
+            "t": "PROJECT_ENHANCE_DISTRICT_HOLY_SITE"
+          },
+          {
+            "c": 115,
+            "p": 2,
+            "t": "PROJECT_ENHANCE_DISTRICT_CAMPUS"
+          },
+          {
+            "c": 115,
+            "p": 2,
+            "t": "PROJECT_ENHANCE_DISTRICT_THEATER"
+          }
+        ],
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_FACTORY",
+          "BUILDING_STONEHENGE",
+          "BUILDING_MEENAKSHI_TEMPLE"
+        ],
+        "capital": true,
+        "center_yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 1,
+          "science": 0
+        },
+        "damage": 0,
+        "defense": 69,
+        "district_capacity": 6,
+        "districts": [
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_WONDER",
+            "wall_damage": 0,
+            "x": 40,
+            "y": 31
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_DAM",
+            "wall_damage": 0,
+            "x": 39,
+            "y": 31
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_THEATER",
+            "wall_damage": 0,
+            "x": 41,
+            "y": 30
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 200,
+            "max_wall_damage": 100,
+            "pillaged": false,
+            "type": "DISTRICT_CITY_CENTER",
+            "wall_damage": 0,
+            "x": 40,
+            "y": 30
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_INDUSTRIAL_ZONE",
+            "wall_damage": 0,
+            "x": 39,
+            "y": 30
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_HOLY_SITE",
+            "wall_damage": 0,
+            "x": 41,
+            "y": 29
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_WONDER",
+            "wall_damage": 0,
+            "x": 40,
+            "y": 29
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_AQUEDUCT",
+            "wall_damage": 0,
+            "x": 39,
+            "y": 29
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_CAMPUS",
+            "wall_damage": 0,
+            "x": 42,
+            "y": 28
+          }
+        ],
+        "falls_to": 62,
+        "food": 21.3477,
+        "food_disfavored": false,
+        "food_favored": false,
+        "food_focus_managed": false,
+        "food_surplus": 11,
+        "great_works": [
+          {
+            "building": "BUILDING_AMPHITHEATER",
+            "creator": "LOC_GREAT_PERSON_INDIVIDUAL_HOMER_NAME",
+            "object": "GREATWORKOBJECT_WRITING",
+            "slot": 0,
+            "type": "GREATWORK_HOMER_1"
+          },
+          {
+            "building": "BUILDING_AMPHITHEATER",
+            "creator": "LOC_GREAT_PERSON_INDIVIDUAL_OVID_NAME",
+            "object": "GREATWORKOBJECT_WRITING",
+            "slot": 1,
+            "type": "GREATWORK_OVID_2"
+          }
+        ],
+        "growth_threshold": 103,
+        "growth_turns": 8,
+        "happiness": 3,
+        "happiness_growth_mult": -15,
+        "happiness_yield_mult": -10,
+        "housing": 21,
+        "housing_from_buildings": 4,
+        "housing_from_civics": 3,
+        "housing_from_districts": 3,
+        "housing_from_great_people": 0,
+        "housing_from_great_works": 0,
+        "housing_from_improvements": 4,
+        "housing_from_starting_era": 0,
+        "housing_from_water": 7,
+        "housing_growth_mult": 1,
+        "id": 655369,
+        "loyalty": 100,
+        "loyalty_per_turn": 11.375,
+        "max_damage": 200,
+        "max_wall_damage": 100,
+        "name": "Beijing",
+        "original_capital": true,
+        "original_owner": 1,
+        "overall_growth_mult": 1.05078,
+        "pantheon_active": "BELIEF_RELIGIOUS_SETTLEMENTS",
+        "pillaged_buildings": [
+          "BUILDING_MONUMENT"
+        ],
+        "pop": 17,
+        "producing_hash": 0,
+        "production": 49,
+        "production_cost": -1,
+        "production_progress": -1,
+        "production_turns": -1,
+        "purchasable": [],
+        "ranged_strength": 60,
+        "religion": "RELIGION_CATHOLICISM",
+        "religion_turns": 0,
+        "specialists": [],
+        "wall_damage": 0,
+        "wonders": [
+          {
+            "type": "BUILDING_STONEHENGE",
+            "x": 40,
+            "y": 31
+          },
+          {
+            "type": "BUILDING_MEENAKSHI_TEMPLE",
+            "x": 40,
+            "y": 29
+          }
+        ],
+        "worked": [
+          {
+            "x": 41,
+            "y": 33,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 1,
+              "gold": 0,
+              "production": 4,
+              "science": 0
+            }
+          },
+          {
+            "x": 42,
+            "y": 32,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 1,
+              "gold": 0,
+              "production": 4,
+              "science": 0
+            }
+          },
+          {
+            "x": 41,
+            "y": 32,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 1,
+              "gold": 0,
+              "production": 4,
+              "science": 0
+            }
+          },
+          {
+            "x": 40,
+            "y": 32,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 3,
+              "gold": 3,
+              "production": 1,
+              "science": 0
+            }
+          },
+          {
+            "x": 39,
+            "y": 32,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 2,
+              "gold": 0,
+              "production": 3,
+              "science": 0
+            }
+          },
+          {
+            "x": 42,
+            "y": 31,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 2,
+              "gold": 0,
+              "production": 3,
+              "science": 0
+            }
+          },
+          {
+            "x": 41,
+            "y": 31,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 2,
+              "gold": 0,
+              "production": 3,
+              "science": 0
+            }
+          },
+          {
+            "x": 38,
+            "y": 31,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 4,
+              "gold": 0,
+              "production": 1,
+              "science": 0
+            }
+          },
+          {
+            "x": 43,
+            "y": 30,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 2,
+              "gold": 0,
+              "production": 4,
+              "science": 0
+            }
+          },
+          {
+            "x": 42,
+            "y": 30,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 3,
+              "gold": 0,
+              "production": 0,
+              "science": 0
+            }
+          },
+          {
+            "x": 40,
+            "y": 30,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 2,
+              "gold": 0,
+              "production": 1,
+              "science": 0
+            }
+          },
+          {
+            "x": 42,
+            "y": 29,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 1,
+              "gold": 2,
+              "production": 2,
+              "science": 0
+            }
+          },
+          {
+            "x": 40,
+            "y": 28,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 3,
+              "gold": 0,
+              "production": 1,
+              "science": 0
+            }
+          },
+          {
+            "x": 39,
+            "y": 28,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 5,
+              "gold": 0,
+              "production": 0,
+              "science": 0
+            }
+          },
+          {
+            "x": 41,
+            "y": 27,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 1,
+              "gold": 2,
+              "production": 2,
+              "science": 0
+            }
+          },
+          {
+            "x": 40,
+            "y": 27,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 1,
+              "gold": 0,
+              "production": 5,
+              "science": 0
+            }
+          },
+          {
+            "x": 39,
+            "y": 27,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 5,
+              "gold": 0,
+              "production": 0,
+              "science": 0
+            }
+          },
+          {
+            "x": 38,
+            "y": 27,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 5,
+              "gold": 2,
+              "production": 1,
+              "science": 0
+            }
+          }
+        ],
+        "x": 40,
+        "y": 30,
+        "yield_sources": {
+          "culture": "+1 from Modifiers\n+4 from GreatWorks\n+5 from Districts\n +5 from Theater Square\n+5 from Population\n+4 from Buildings\n +3 from Amphitheater\n +1 from Palace\n-10(-1.9) from Amenities",
+          "faith": "+1 from Modifiers\n+1 from Districts\n +1 from Holy Site\n+8 from Buildings\n +3 from Meenakshi Temple\n +2 from Stonehenge\n +3 from Shrine\n-10(-1) from Amenities",
+          "food": "+1 from Buildings\n +1 from Granary\n+44 from Worked Tiles",
+          "gold": "+5 from Buildings\n +5 from Palace\n+9 from Worked Tiles\n-10(-1.3) from Amenities",
+          "production": "+6 from Districts\n +5 from Industrial Zone\n +1 from Holy Site\n+10 from Buildings\n +5 from Factory\n +3 from Workshop\n +2 from Palace\n+39 from Worked Tiles\n-10(-5.5) from Amenities",
+          "science": "+2 from Districts\n +2 from Campus\n+8.5 from Population\n+11 from Buildings\n +6 from University\n +3 from Library\n +2 from Palace\n-10(-2.1) from Amenities"
+        },
+        "yields": {
+          "culture": 17.1914,
+          "faith": 9,
+          "food": 45,
+          "gold": 12.6016,
+          "production": 49.5,
+          "science": 19.3516
+        }
+      },
+      "verified_order": {
+        "checked_on": 139,
+        "ctx": "agent",
+        "kind": "order_verified",
+        "order_kind": "produce",
+        "run": "civvis-20261026T083924Z",
+        "subject": 655369,
+        "t": 1793004494,
+        "turn": 138,
+        "utc": "2026-10-26T08:48:14.302Z",
+        "verb": "DISTRICT_ENCAMPMENT"
+      },
+      "first_completed_state": {
+        "turn": 140,
+        "frame": 0,
+        "utc": "2026-10-26T08:48:20.765Z"
+      },
+      "post_city": {
+        "amenities": 9,
+        "amenities_bankruptcy": 0,
+        "amenities_city_states": 0,
+        "amenities_civics": 1,
+        "amenities_districts": 0,
+        "amenities_entertainment": 3,
+        "amenities_great_people": 0,
+        "amenities_improvements": 4,
+        "amenities_luxuries": 7,
+        "amenities_national_parks": 0,
+        "amenities_natural_wonders": 0,
+        "amenities_needed": 9,
+        "amenities_religion": 0,
+        "amenities_starting_era": 0,
+        "amenities_war_weariness": 6,
+        "buildable": [
+          {
+            "c": 103,
+            "n": 2,
+            "p": 2,
+            "pr": 0,
+            "s": [
+              {
+                "x": 39,
+                "y": 33
+              },
+              {
+                "x": 40,
+                "y": 33
+              }
+            ],
+            "t": "DISTRICT_HARBOR"
+          },
+          {
+            "c": 175,
+            "n": 12,
+            "p": 3,
+            "pr": 0,
+            "s": [
+              {
+                "x": 41,
+                "y": 31
+              },
+              {
+                "x": 42,
+                "y": 30
+              },
+              {
+                "x": 41,
+                "y": 28
+              },
+              {
+                "x": 40,
+                "y": 28
+              },
+              {
+                "x": 39,
+                "y": 28
+              },
+              {
+                "x": 38,
+                "y": 30
+              },
+              {
+                "x": 38,
+                "y": 31
+              },
+              {
+                "x": 39,
+                "y": 32
+              },
+              {
+                "x": 42,
+                "y": 31
+              },
+              {
+                "x": 42,
+                "y": 29
+              },
+              {
+                "x": 41,
+                "y": 27
+              },
+              {
+                "x": 39,
+                "y": 27
+              }
+            ],
+            "t": "DISTRICT_AERODROME"
+          },
+          {
+            "c": 103,
+            "n": 17,
+            "p": 2,
+            "pr": 0,
+            "s": [
+              {
+                "x": 41,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 31
+              },
+              {
+                "x": 42,
+                "y": 30
+              },
+              {
+                "x": 41,
+                "y": 28
+              },
+              {
+                "x": 40,
+                "y": 28
+              },
+              {
+                "x": 39,
+                "y": 28
+              },
+              {
+                "x": 38,
+                "y": 30
+              },
+              {
+                "x": 38,
+                "y": 31
+              },
+              {
+                "x": 39,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 33
+              },
+              {
+                "x": 42,
+                "y": 32
+              },
+              {
+                "x": 42,
+                "y": 31
+              },
+              {
+                "x": 43,
+                "y": 30
+              },
+              {
+                "x": 42,
+                "y": 29
+              },
+              {
+                "x": 41,
+                "y": 27
+              },
+              {
+                "x": 40,
+                "y": 27
+              }
+            ],
+            "t": "DISTRICT_COMMERCIAL_HUB"
+          },
+          {
+            "c": 103,
+            "n": 17,
+            "p": 2,
+            "pr": 0,
+            "s": [
+              {
+                "x": 41,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 31
+              },
+              {
+                "x": 42,
+                "y": 30
+              },
+              {
+                "x": 41,
+                "y": 28
+              },
+              {
+                "x": 40,
+                "y": 28
+              },
+              {
+                "x": 39,
+                "y": 28
+              },
+              {
+                "x": 38,
+                "y": 30
+              },
+              {
+                "x": 38,
+                "y": 31
+              },
+              {
+                "x": 39,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 33
+              },
+              {
+                "x": 42,
+                "y": 32
+              },
+              {
+                "x": 42,
+                "y": 31
+              },
+              {
+                "x": 43,
+                "y": 30
+              },
+              {
+                "x": 42,
+                "y": 29
+              },
+              {
+                "x": 41,
+                "y": 27
+              },
+              {
+                "x": 40,
+                "y": 27
+              }
+            ],
+            "t": "DISTRICT_ENTERTAINMENT_COMPLEX"
+          },
+          {
+            "c": 175,
+            "n": 17,
+            "p": 3,
+            "pr": 0,
+            "s": [
+              {
+                "x": 41,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 31
+              },
+              {
+                "x": 42,
+                "y": 30
+              },
+              {
+                "x": 41,
+                "y": 28
+              },
+              {
+                "x": 40,
+                "y": 28
+              },
+              {
+                "x": 39,
+                "y": 28
+              },
+              {
+                "x": 38,
+                "y": 30
+              },
+              {
+                "x": 38,
+                "y": 31
+              },
+              {
+                "x": 39,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 33
+              },
+              {
+                "x": 42,
+                "y": 32
+              },
+              {
+                "x": 42,
+                "y": 31
+              },
+              {
+                "x": 43,
+                "y": 30
+              },
+              {
+                "x": 42,
+                "y": 29
+              },
+              {
+                "x": 41,
+                "y": 27
+              },
+              {
+                "x": 40,
+                "y": 27
+              }
+            ],
+            "t": "DISTRICT_NEIGHBORHOOD"
+          },
+          {
+            "c": 103,
+            "n": 2,
+            "p": 2,
+            "pr": 0,
+            "s": [
+              {
+                "x": 39,
+                "y": 33
+              },
+              {
+                "x": 40,
+                "y": 33
+              }
+            ],
+            "t": "DISTRICT_WATER_ENTERTAINMENT_COMPLEX"
+          },
+          {
+            "c": 175,
+            "n": 17,
+            "p": 3,
+            "pr": 0,
+            "s": [
+              {
+                "x": 41,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 31
+              },
+              {
+                "x": 42,
+                "y": 30
+              },
+              {
+                "x": 41,
+                "y": 28
+              },
+              {
+                "x": 40,
+                "y": 28
+              },
+              {
+                "x": 39,
+                "y": 28
+              },
+              {
+                "x": 38,
+                "y": 30
+              },
+              {
+                "x": 38,
+                "y": 31
+              },
+              {
+                "x": 39,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 33
+              },
+              {
+                "x": 42,
+                "y": 32
+              },
+              {
+                "x": 42,
+                "y": 31
+              },
+              {
+                "x": 43,
+                "y": 30
+              },
+              {
+                "x": 42,
+                "y": 29
+              },
+              {
+                "x": 41,
+                "y": 27
+              },
+              {
+                "x": 40,
+                "y": 27
+              }
+            ],
+            "t": "DISTRICT_PRESERVE"
+          },
+          {
+            "c": 30,
+            "p": 1,
+            "t": "BUILDING_MONUMENT"
+          },
+          {
+            "c": 45,
+            "p": 1,
+            "t": "BUILDING_BARRACKS"
+          },
+          {
+            "c": 40,
+            "p": 1,
+            "t": "BUILDING_WATER_MILL"
+          },
+          {
+            "c": 60,
+            "p": 1,
+            "t": "BUILDING_STABLE"
+          },
+          {
+            "c": 60,
+            "p": 1,
+            "t": "BUILDING_TEMPLE"
+          },
+          {
+            "c": 145,
+            "p": 2,
+            "t": "BUILDING_MUSEUM_ART"
+          },
+          {
+            "c": 145,
+            "p": 2,
+            "t": "BUILDING_MUSEUM_ARTIFACT"
+          },
+          {
+            "c": 355,
+            "p": 6,
+            "t": "BUILDING_HAGIA_SOPHIA"
+          },
+          {
+            "c": 355,
+            "p": 6,
+            "t": "BUILDING_MONT_ST_MICHEL"
+          },
+          {
+            "c": 725,
+            "p": 13,
+            "t": "BUILDING_HERMITAGE"
+          },
+          {
+            "c": 810,
+            "p": 14,
+            "t": "BUILDING_CRISTO_REDENTOR"
+          },
+          {
+            "c": 355,
+            "p": 6,
+            "t": "BUILDING_KILWA_KISIWANI"
+          },
+          {
+            "c": 460,
+            "p": 8,
+            "t": "BUILDING_TAJ_MAHAL"
+          },
+          {
+            "c": 150,
+            "p": 2,
+            "t": "BUILDING_COAL_POWER_PLANT"
+          },
+          {
+            "c": 90,
+            "p": 1,
+            "t": "BUILDING_GREAT_BATH"
+          },
+          {
+            "c": 175,
+            "p": 3,
+            "r": 0,
+            "t": "UNIT_SETTLER"
+          },
+          {
+            "c": 77,
+            "p": 1,
+            "r": 0,
+            "t": "UNIT_BUILDER"
+          },
+          {
+            "c": 165,
+            "p": 3,
+            "r": 0,
+            "t": "UNIT_FIELD_CANNON"
+          },
+          {
+            "c": 190,
+            "p": 3,
+            "r": 0,
+            "t": "UNIT_RANGER"
+          },
+          {
+            "c": 120,
+            "p": 2,
+            "r": 0,
+            "t": "UNIT_OBSERVATION_BALLOON"
+          },
+          {
+            "c": 215,
+            "p": 4,
+            "r": 1,
+            "t": "UNIT_ARTILLERY"
+          },
+          {
+            "c": 180,
+            "p": 3,
+            "r": 10,
+            "t": "UNIT_LINE_INFANTRY"
+          },
+          {
+            "c": 125,
+            "p": 2,
+            "r": 0,
+            "t": "UNIT_PIKE_AND_SHOT"
+          },
+          {
+            "c": 165,
+            "p": 3,
+            "r": 10,
+            "t": "UNIT_CUIRASSIER"
+          },
+          {
+            "c": 119,
+            "p": 2,
+            "t": "PROJECT_ENHANCE_DISTRICT_ENCAMPMENT"
+          },
+          {
+            "c": 119,
+            "p": 2,
+            "t": "PROJECT_ENHANCE_DISTRICT_INDUSTRIAL_ZONE"
+          },
+          {
+            "c": 119,
+            "p": 2,
+            "t": "PROJECT_ENHANCE_DISTRICT_HOLY_SITE"
+          },
+          {
+            "c": 119,
+            "p": 2,
+            "t": "PROJECT_ENHANCE_DISTRICT_CAMPUS"
+          },
+          {
+            "c": 119,
+            "p": 2,
+            "t": "PROJECT_ENHANCE_DISTRICT_THEATER"
+          }
+        ],
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_FACTORY",
+          "BUILDING_STONEHENGE",
+          "BUILDING_MEENAKSHI_TEMPLE"
+        ],
+        "capital": true,
+        "center_yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 1,
+          "science": 0
+        },
+        "damage": 0,
+        "defense": 71,
+        "district_capacity": 6,
+        "districts": [
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 100,
+            "max_wall_damage": 400,
+            "pillaged": false,
+            "type": "DISTRICT_ENCAMPMENT",
+            "wall_damage": 0,
+            "x": 38,
+            "y": 32
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_WONDER",
+            "wall_damage": 0,
+            "x": 40,
+            "y": 31
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_DAM",
+            "wall_damage": 0,
+            "x": 39,
+            "y": 31
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_THEATER",
+            "wall_damage": 0,
+            "x": 41,
+            "y": 30
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 200,
+            "max_wall_damage": 400,
+            "pillaged": false,
+            "type": "DISTRICT_CITY_CENTER",
+            "wall_damage": 0,
+            "x": 40,
+            "y": 30
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_INDUSTRIAL_ZONE",
+            "wall_damage": 0,
+            "x": 39,
+            "y": 30
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_HOLY_SITE",
+            "wall_damage": 0,
+            "x": 41,
+            "y": 29
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_WONDER",
+            "wall_damage": 0,
+            "x": 40,
+            "y": 29
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_AQUEDUCT",
+            "wall_damage": 0,
+            "x": 39,
+            "y": 29
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_CAMPUS",
+            "wall_damage": 0,
+            "x": 42,
+            "y": 28
+          }
+        ],
+        "falls_to": 62,
+        "food": 41.6289,
+        "food_disfavored": false,
+        "food_favored": false,
+        "food_focus_managed": false,
+        "food_surplus": 11,
+        "great_works": [
+          {
+            "building": "BUILDING_AMPHITHEATER",
+            "creator": "LOC_GREAT_PERSON_INDIVIDUAL_HOMER_NAME",
+            "object": "GREATWORKOBJECT_WRITING",
+            "slot": 0,
+            "type": "GREATWORK_HOMER_1"
+          },
+          {
+            "building": "BUILDING_AMPHITHEATER",
+            "creator": "LOC_GREAT_PERSON_INDIVIDUAL_OVID_NAME",
+            "object": "GREATWORKOBJECT_WRITING",
+            "slot": 1,
+            "type": "GREATWORK_OVID_2"
+          }
+        ],
+        "growth_threshold": 103,
+        "growth_turns": 6,
+        "happiness": 4,
+        "happiness_growth_mult": 0,
+        "happiness_yield_mult": 0,
+        "housing": 21,
+        "housing_from_buildings": 4,
+        "housing_from_civics": 3,
+        "housing_from_districts": 3,
+        "housing_from_great_people": 0,
+        "housing_from_great_works": 0,
+        "housing_from_improvements": 4,
+        "housing_from_starting_era": 0,
+        "housing_from_water": 7,
+        "housing_growth_mult": 1,
+        "id": 655369,
+        "loyalty": 100,
+        "loyalty_per_turn": 6.375,
+        "max_damage": 200,
+        "max_wall_damage": 400,
+        "name": "Beijing",
+        "original_capital": true,
+        "original_owner": 1,
+        "overall_growth_mult": 0.996094,
+        "pantheon_active": "BELIEF_RELIGIOUS_SETTLEMENTS",
+        "pillaged_buildings": [
+          "BUILDING_MONUMENT"
+        ],
+        "pop": 17,
+        "producing_hash": 0,
+        "production": 57,
+        "production_cost": -1,
+        "production_progress": -1,
+        "production_turns": -1,
+        "purchasable": [
+          {
+            "f": 175,
+            "t": "UNIT_MISSIONARY"
+          },
+          {
+            "g": 180,
+            "t": "BUILDING_BARRACKS"
+          },
+          {
+            "g": 160,
+            "t": "BUILDING_WATER_MILL"
+          }
+        ],
+        "ranged_strength": 60,
+        "religion": "RELIGION_CATHOLICISM",
+        "religion_turns": -1,
+        "specialists": [],
+        "wall_damage": 0,
+        "wonders": [
+          {
+            "type": "BUILDING_STONEHENGE",
+            "x": 40,
+            "y": 31
+          },
+          {
+            "type": "BUILDING_MEENAKSHI_TEMPLE",
+            "x": 40,
+            "y": 29
+          }
+        ],
+        "worked": [
+          {
+            "x": 41,
+            "y": 33,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 1,
+              "gold": 0,
+              "production": 4,
+              "science": 0
+            }
+          },
+          {
+            "x": 42,
+            "y": 32,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 1,
+              "gold": 0,
+              "production": 4,
+              "science": 0
+            }
+          },
+          {
+            "x": 41,
+            "y": 32,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 1,
+              "gold": 0,
+              "production": 4,
+              "science": 0
+            }
+          },
+          {
+            "x": 40,
+            "y": 32,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 3,
+              "gold": 3,
+              "production": 1,
+              "science": 0
+            }
+          },
+          {
+            "x": 39,
+            "y": 32,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 2,
+              "gold": 0,
+              "production": 4,
+              "science": 0
+            }
+          },
+          {
+            "x": 42,
+            "y": 31,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 2,
+              "gold": 0,
+              "production": 4,
+              "science": 0
+            }
+          },
+          {
+            "x": 41,
+            "y": 31,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 2,
+              "gold": 0,
+              "production": 3,
+              "science": 0
+            }
+          },
+          {
+            "x": 38,
+            "y": 31,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 4,
+              "gold": 0,
+              "production": 1,
+              "science": 0
+            }
+          },
+          {
+            "x": 43,
+            "y": 30,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 2,
+              "gold": 0,
+              "production": 4,
+              "science": 0
+            }
+          },
+          {
+            "x": 42,
+            "y": 30,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 3,
+              "gold": 0,
+              "production": 0,
+              "science": 0
+            }
+          },
+          {
+            "x": 40,
+            "y": 30,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 2,
+              "gold": 0,
+              "production": 1,
+              "science": 0
+            }
+          },
+          {
+            "x": 42,
+            "y": 29,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 1,
+              "gold": 2,
+              "production": 2,
+              "science": 0
+            }
+          },
+          {
+            "x": 40,
+            "y": 28,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 3,
+              "gold": 0,
+              "production": 1,
+              "science": 0
+            }
+          },
+          {
+            "x": 39,
+            "y": 28,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 5,
+              "gold": 0,
+              "production": 0,
+              "science": 0
+            }
+          },
+          {
+            "x": 41,
+            "y": 27,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 1,
+              "gold": 2,
+              "production": 2,
+              "science": 0
+            }
+          },
+          {
+            "x": 40,
+            "y": 27,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 1,
+              "gold": 0,
+              "production": 5,
+              "science": 0
+            }
+          },
+          {
+            "x": 39,
+            "y": 27,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 5,
+              "gold": 0,
+              "production": 0,
+              "science": 0
+            }
+          },
+          {
+            "x": 38,
+            "y": 27,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 5,
+              "gold": 2,
+              "production": 1,
+              "science": 0
+            }
+          }
+        ],
+        "x": 40,
+        "y": 30,
+        "yield_sources": {
+          "culture": "+1 from Modifiers\n+4 from GreatWorks\n+5 from Districts\n +5 from Theater Square\n+5 from Population\n+4 from Buildings\n +3 from Amphitheater\n +1 from Palace",
+          "faith": "+1 from Modifiers\n+1 from Districts\n +1 from Holy Site\n+8 from Buildings\n +3 from Meenakshi Temple\n +2 from Stonehenge\n +3 from Shrine",
+          "food": "+1 from Buildings\n +1 from Granary\n+44 from Worked Tiles",
+          "gold": "+5 from Buildings\n +5 from Palace\n+9 from Worked Tiles",
+          "production": "+6 from Districts\n +5 from Industrial Zone\n +1 from Holy Site\n+10 from Buildings\n +5 from Factory\n +3 from Workshop\n +2 from Palace\n+41 from Worked Tiles",
+          "science": "+2 from Districts\n +2 from Campus\n+8.5 from Population\n+11 from Buildings\n +6 from University\n +3 from Library\n +2 from Palace"
+        },
+        "yields": {
+          "culture": 19.0977,
+          "faith": 10,
+          "food": 45,
+          "gold": 14,
+          "production": 57,
+          "science": 21.5
+        }
+      },
+      "input_capture": {
+        "archive": "bytes.bin",
+        "complete": true,
+        "directory": "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261026T083924Z/input-captures/process-siol4y28/reads",
+        "error": null,
+        "index": "snapshots.jsonl",
+        "reads": [
+          {
+            "count": 18,
+            "snapshot_id": 393
+          }
+        ],
+        "schema": 1,
+        "source": "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261026T083924Z/events.jsonl"
+      },
+      "binary_sha256": "85d5a904f8df01055d13775e5285fe41737a7a02d96abe61dfe3105ab0f53a09"
+    },
+    {
+      "turn": 140,
+      "frame": 0,
+      "order": {
+        "kind": "produce",
+        "subject": 655369,
+        "verb": "BUILDING_BARRACKS",
+        "x": null,
+        "y": null
+      },
+      "journal": [
+        "[why] t140 Cities/Decision Beijing prepares a forward airfield | forward-airfield-project: offered barracks at 1.0 turns; one producer for capital (44, 18), field (35, 28); future stages and arrival are not yet observed"
+      ],
+      "pre_city": {
+        "amenities": 9,
+        "amenities_bankruptcy": 0,
+        "amenities_city_states": 0,
+        "amenities_civics": 1,
+        "amenities_districts": 0,
+        "amenities_entertainment": 3,
+        "amenities_great_people": 0,
+        "amenities_improvements": 4,
+        "amenities_luxuries": 7,
+        "amenities_national_parks": 0,
+        "amenities_natural_wonders": 0,
+        "amenities_needed": 9,
+        "amenities_religion": 0,
+        "amenities_starting_era": 0,
+        "amenities_war_weariness": 6,
+        "buildable": [
+          {
+            "c": 103,
+            "n": 2,
+            "p": 2,
+            "pr": 0,
+            "s": [
+              {
+                "x": 39,
+                "y": 33
+              },
+              {
+                "x": 40,
+                "y": 33
+              }
+            ],
+            "t": "DISTRICT_HARBOR"
+          },
+          {
+            "c": 175,
+            "n": 12,
+            "p": 3,
+            "pr": 0,
+            "s": [
+              {
+                "x": 41,
+                "y": 31
+              },
+              {
+                "x": 42,
+                "y": 30
+              },
+              {
+                "x": 41,
+                "y": 28
+              },
+              {
+                "x": 40,
+                "y": 28
+              },
+              {
+                "x": 39,
+                "y": 28
+              },
+              {
+                "x": 38,
+                "y": 30
+              },
+              {
+                "x": 38,
+                "y": 31
+              },
+              {
+                "x": 39,
+                "y": 32
+              },
+              {
+                "x": 42,
+                "y": 31
+              },
+              {
+                "x": 42,
+                "y": 29
+              },
+              {
+                "x": 41,
+                "y": 27
+              },
+              {
+                "x": 39,
+                "y": 27
+              }
+            ],
+            "t": "DISTRICT_AERODROME"
+          },
+          {
+            "c": 103,
+            "n": 17,
+            "p": 2,
+            "pr": 0,
+            "s": [
+              {
+                "x": 41,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 31
+              },
+              {
+                "x": 42,
+                "y": 30
+              },
+              {
+                "x": 41,
+                "y": 28
+              },
+              {
+                "x": 40,
+                "y": 28
+              },
+              {
+                "x": 39,
+                "y": 28
+              },
+              {
+                "x": 38,
+                "y": 30
+              },
+              {
+                "x": 38,
+                "y": 31
+              },
+              {
+                "x": 39,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 33
+              },
+              {
+                "x": 42,
+                "y": 32
+              },
+              {
+                "x": 42,
+                "y": 31
+              },
+              {
+                "x": 43,
+                "y": 30
+              },
+              {
+                "x": 42,
+                "y": 29
+              },
+              {
+                "x": 41,
+                "y": 27
+              },
+              {
+                "x": 40,
+                "y": 27
+              }
+            ],
+            "t": "DISTRICT_COMMERCIAL_HUB"
+          },
+          {
+            "c": 103,
+            "n": 17,
+            "p": 2,
+            "pr": 0,
+            "s": [
+              {
+                "x": 41,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 31
+              },
+              {
+                "x": 42,
+                "y": 30
+              },
+              {
+                "x": 41,
+                "y": 28
+              },
+              {
+                "x": 40,
+                "y": 28
+              },
+              {
+                "x": 39,
+                "y": 28
+              },
+              {
+                "x": 38,
+                "y": 30
+              },
+              {
+                "x": 38,
+                "y": 31
+              },
+              {
+                "x": 39,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 33
+              },
+              {
+                "x": 42,
+                "y": 32
+              },
+              {
+                "x": 42,
+                "y": 31
+              },
+              {
+                "x": 43,
+                "y": 30
+              },
+              {
+                "x": 42,
+                "y": 29
+              },
+              {
+                "x": 41,
+                "y": 27
+              },
+              {
+                "x": 40,
+                "y": 27
+              }
+            ],
+            "t": "DISTRICT_ENTERTAINMENT_COMPLEX"
+          },
+          {
+            "c": 175,
+            "n": 17,
+            "p": 3,
+            "pr": 0,
+            "s": [
+              {
+                "x": 41,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 31
+              },
+              {
+                "x": 42,
+                "y": 30
+              },
+              {
+                "x": 41,
+                "y": 28
+              },
+              {
+                "x": 40,
+                "y": 28
+              },
+              {
+                "x": 39,
+                "y": 28
+              },
+              {
+                "x": 38,
+                "y": 30
+              },
+              {
+                "x": 38,
+                "y": 31
+              },
+              {
+                "x": 39,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 33
+              },
+              {
+                "x": 42,
+                "y": 32
+              },
+              {
+                "x": 42,
+                "y": 31
+              },
+              {
+                "x": 43,
+                "y": 30
+              },
+              {
+                "x": 42,
+                "y": 29
+              },
+              {
+                "x": 41,
+                "y": 27
+              },
+              {
+                "x": 40,
+                "y": 27
+              }
+            ],
+            "t": "DISTRICT_NEIGHBORHOOD"
+          },
+          {
+            "c": 103,
+            "n": 2,
+            "p": 2,
+            "pr": 0,
+            "s": [
+              {
+                "x": 39,
+                "y": 33
+              },
+              {
+                "x": 40,
+                "y": 33
+              }
+            ],
+            "t": "DISTRICT_WATER_ENTERTAINMENT_COMPLEX"
+          },
+          {
+            "c": 175,
+            "n": 17,
+            "p": 3,
+            "pr": 0,
+            "s": [
+              {
+                "x": 41,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 31
+              },
+              {
+                "x": 42,
+                "y": 30
+              },
+              {
+                "x": 41,
+                "y": 28
+              },
+              {
+                "x": 40,
+                "y": 28
+              },
+              {
+                "x": 39,
+                "y": 28
+              },
+              {
+                "x": 38,
+                "y": 30
+              },
+              {
+                "x": 38,
+                "y": 31
+              },
+              {
+                "x": 39,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 33
+              },
+              {
+                "x": 42,
+                "y": 32
+              },
+              {
+                "x": 42,
+                "y": 31
+              },
+              {
+                "x": 43,
+                "y": 30
+              },
+              {
+                "x": 42,
+                "y": 29
+              },
+              {
+                "x": 41,
+                "y": 27
+              },
+              {
+                "x": 40,
+                "y": 27
+              }
+            ],
+            "t": "DISTRICT_PRESERVE"
+          },
+          {
+            "c": 30,
+            "p": 1,
+            "t": "BUILDING_MONUMENT"
+          },
+          {
+            "c": 45,
+            "p": 1,
+            "t": "BUILDING_BARRACKS"
+          },
+          {
+            "c": 40,
+            "p": 1,
+            "t": "BUILDING_WATER_MILL"
+          },
+          {
+            "c": 60,
+            "p": 1,
+            "t": "BUILDING_STABLE"
+          },
+          {
+            "c": 60,
+            "p": 1,
+            "t": "BUILDING_TEMPLE"
+          },
+          {
+            "c": 145,
+            "p": 2,
+            "t": "BUILDING_MUSEUM_ART"
+          },
+          {
+            "c": 145,
+            "p": 2,
+            "t": "BUILDING_MUSEUM_ARTIFACT"
+          },
+          {
+            "c": 355,
+            "p": 6,
+            "t": "BUILDING_HAGIA_SOPHIA"
+          },
+          {
+            "c": 355,
+            "p": 6,
+            "t": "BUILDING_MONT_ST_MICHEL"
+          },
+          {
+            "c": 725,
+            "p": 13,
+            "t": "BUILDING_HERMITAGE"
+          },
+          {
+            "c": 810,
+            "p": 14,
+            "t": "BUILDING_CRISTO_REDENTOR"
+          },
+          {
+            "c": 355,
+            "p": 6,
+            "t": "BUILDING_KILWA_KISIWANI"
+          },
+          {
+            "c": 460,
+            "p": 8,
+            "t": "BUILDING_TAJ_MAHAL"
+          },
+          {
+            "c": 150,
+            "p": 2,
+            "t": "BUILDING_COAL_POWER_PLANT"
+          },
+          {
+            "c": 90,
+            "p": 1,
+            "t": "BUILDING_GREAT_BATH"
+          },
+          {
+            "c": 175,
+            "p": 3,
+            "r": 0,
+            "t": "UNIT_SETTLER"
+          },
+          {
+            "c": 77,
+            "p": 1,
+            "r": 0,
+            "t": "UNIT_BUILDER"
+          },
+          {
+            "c": 165,
+            "p": 3,
+            "r": 0,
+            "t": "UNIT_FIELD_CANNON"
+          },
+          {
+            "c": 190,
+            "p": 3,
+            "r": 0,
+            "t": "UNIT_RANGER"
+          },
+          {
+            "c": 120,
+            "p": 2,
+            "r": 0,
+            "t": "UNIT_OBSERVATION_BALLOON"
+          },
+          {
+            "c": 215,
+            "p": 4,
+            "r": 1,
+            "t": "UNIT_ARTILLERY"
+          },
+          {
+            "c": 180,
+            "p": 3,
+            "r": 10,
+            "t": "UNIT_LINE_INFANTRY"
+          },
+          {
+            "c": 125,
+            "p": 2,
+            "r": 0,
+            "t": "UNIT_PIKE_AND_SHOT"
+          },
+          {
+            "c": 165,
+            "p": 3,
+            "r": 10,
+            "t": "UNIT_CUIRASSIER"
+          },
+          {
+            "c": 119,
+            "p": 2,
+            "t": "PROJECT_ENHANCE_DISTRICT_ENCAMPMENT"
+          },
+          {
+            "c": 119,
+            "p": 2,
+            "t": "PROJECT_ENHANCE_DISTRICT_INDUSTRIAL_ZONE"
+          },
+          {
+            "c": 119,
+            "p": 2,
+            "t": "PROJECT_ENHANCE_DISTRICT_HOLY_SITE"
+          },
+          {
+            "c": 119,
+            "p": 2,
+            "t": "PROJECT_ENHANCE_DISTRICT_CAMPUS"
+          },
+          {
+            "c": 119,
+            "p": 2,
+            "t": "PROJECT_ENHANCE_DISTRICT_THEATER"
+          }
+        ],
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_FACTORY",
+          "BUILDING_STONEHENGE",
+          "BUILDING_MEENAKSHI_TEMPLE"
+        ],
+        "capital": true,
+        "center_yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 1,
+          "science": 0
+        },
+        "damage": 0,
+        "defense": 71,
+        "district_capacity": 6,
+        "districts": [
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 100,
+            "max_wall_damage": 400,
+            "pillaged": false,
+            "type": "DISTRICT_ENCAMPMENT",
+            "wall_damage": 0,
+            "x": 38,
+            "y": 32
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_WONDER",
+            "wall_damage": 0,
+            "x": 40,
+            "y": 31
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_DAM",
+            "wall_damage": 0,
+            "x": 39,
+            "y": 31
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_THEATER",
+            "wall_damage": 0,
+            "x": 41,
+            "y": 30
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 200,
+            "max_wall_damage": 400,
+            "pillaged": false,
+            "type": "DISTRICT_CITY_CENTER",
+            "wall_damage": 0,
+            "x": 40,
+            "y": 30
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_INDUSTRIAL_ZONE",
+            "wall_damage": 0,
+            "x": 39,
+            "y": 30
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_HOLY_SITE",
+            "wall_damage": 0,
+            "x": 41,
+            "y": 29
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_WONDER",
+            "wall_damage": 0,
+            "x": 40,
+            "y": 29
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_AQUEDUCT",
+            "wall_damage": 0,
+            "x": 39,
+            "y": 29
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_CAMPUS",
+            "wall_damage": 0,
+            "x": 42,
+            "y": 28
+          }
+        ],
+        "falls_to": 62,
+        "food": 41.6289,
+        "food_disfavored": false,
+        "food_favored": false,
+        "food_focus_managed": false,
+        "food_surplus": 11,
+        "great_works": [
+          {
+            "building": "BUILDING_AMPHITHEATER",
+            "creator": "LOC_GREAT_PERSON_INDIVIDUAL_HOMER_NAME",
+            "object": "GREATWORKOBJECT_WRITING",
+            "slot": 0,
+            "type": "GREATWORK_HOMER_1"
+          },
+          {
+            "building": "BUILDING_AMPHITHEATER",
+            "creator": "LOC_GREAT_PERSON_INDIVIDUAL_OVID_NAME",
+            "object": "GREATWORKOBJECT_WRITING",
+            "slot": 1,
+            "type": "GREATWORK_OVID_2"
+          }
+        ],
+        "growth_threshold": 103,
+        "growth_turns": 6,
+        "happiness": 4,
+        "happiness_growth_mult": 0,
+        "happiness_yield_mult": 0,
+        "housing": 21,
+        "housing_from_buildings": 4,
+        "housing_from_civics": 3,
+        "housing_from_districts": 3,
+        "housing_from_great_people": 0,
+        "housing_from_great_works": 0,
+        "housing_from_improvements": 4,
+        "housing_from_starting_era": 0,
+        "housing_from_water": 7,
+        "housing_growth_mult": 1,
+        "id": 655369,
+        "loyalty": 100,
+        "loyalty_per_turn": 6.375,
+        "max_damage": 200,
+        "max_wall_damage": 400,
+        "name": "Beijing",
+        "original_capital": true,
+        "original_owner": 1,
+        "overall_growth_mult": 0.996094,
+        "pantheon_active": "BELIEF_RELIGIOUS_SETTLEMENTS",
+        "pillaged_buildings": [
+          "BUILDING_MONUMENT"
+        ],
+        "pop": 17,
+        "producing_hash": 0,
+        "production": 57,
+        "production_cost": -1,
+        "production_progress": -1,
+        "production_turns": -1,
+        "purchasable": [
+          {
+            "f": 175,
+            "t": "UNIT_MISSIONARY"
+          },
+          {
+            "g": 180,
+            "t": "BUILDING_BARRACKS"
+          },
+          {
+            "g": 160,
+            "t": "BUILDING_WATER_MILL"
+          }
+        ],
+        "ranged_strength": 60,
+        "religion": "RELIGION_CATHOLICISM",
+        "religion_turns": -1,
+        "specialists": [],
+        "wall_damage": 0,
+        "wonders": [
+          {
+            "type": "BUILDING_STONEHENGE",
+            "x": 40,
+            "y": 31
+          },
+          {
+            "type": "BUILDING_MEENAKSHI_TEMPLE",
+            "x": 40,
+            "y": 29
+          }
+        ],
+        "worked": [
+          {
+            "x": 41,
+            "y": 33,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 1,
+              "gold": 0,
+              "production": 4,
+              "science": 0
+            }
+          },
+          {
+            "x": 42,
+            "y": 32,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 1,
+              "gold": 0,
+              "production": 4,
+              "science": 0
+            }
+          },
+          {
+            "x": 41,
+            "y": 32,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 1,
+              "gold": 0,
+              "production": 4,
+              "science": 0
+            }
+          },
+          {
+            "x": 40,
+            "y": 32,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 3,
+              "gold": 3,
+              "production": 1,
+              "science": 0
+            }
+          },
+          {
+            "x": 39,
+            "y": 32,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 2,
+              "gold": 0,
+              "production": 4,
+              "science": 0
+            }
+          },
+          {
+            "x": 42,
+            "y": 31,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 2,
+              "gold": 0,
+              "production": 4,
+              "science": 0
+            }
+          },
+          {
+            "x": 41,
+            "y": 31,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 2,
+              "gold": 0,
+              "production": 3,
+              "science": 0
+            }
+          },
+          {
+            "x": 38,
+            "y": 31,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 4,
+              "gold": 0,
+              "production": 1,
+              "science": 0
+            }
+          },
+          {
+            "x": 43,
+            "y": 30,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 2,
+              "gold": 0,
+              "production": 4,
+              "science": 0
+            }
+          },
+          {
+            "x": 42,
+            "y": 30,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 3,
+              "gold": 0,
+              "production": 0,
+              "science": 0
+            }
+          },
+          {
+            "x": 40,
+            "y": 30,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 2,
+              "gold": 0,
+              "production": 1,
+              "science": 0
+            }
+          },
+          {
+            "x": 42,
+            "y": 29,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 1,
+              "gold": 2,
+              "production": 2,
+              "science": 0
+            }
+          },
+          {
+            "x": 40,
+            "y": 28,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 3,
+              "gold": 0,
+              "production": 1,
+              "science": 0
+            }
+          },
+          {
+            "x": 39,
+            "y": 28,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 5,
+              "gold": 0,
+              "production": 0,
+              "science": 0
+            }
+          },
+          {
+            "x": 41,
+            "y": 27,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 1,
+              "gold": 2,
+              "production": 2,
+              "science": 0
+            }
+          },
+          {
+            "x": 40,
+            "y": 27,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 1,
+              "gold": 0,
+              "production": 5,
+              "science": 0
+            }
+          },
+          {
+            "x": 39,
+            "y": 27,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 5,
+              "gold": 0,
+              "production": 0,
+              "science": 0
+            }
+          },
+          {
+            "x": 38,
+            "y": 27,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 5,
+              "gold": 2,
+              "production": 1,
+              "science": 0
+            }
+          }
+        ],
+        "x": 40,
+        "y": 30,
+        "yield_sources": {
+          "culture": "+1 from Modifiers\n+4 from GreatWorks\n+5 from Districts\n +5 from Theater Square\n+5 from Population\n+4 from Buildings\n +3 from Amphitheater\n +1 from Palace",
+          "faith": "+1 from Modifiers\n+1 from Districts\n +1 from Holy Site\n+8 from Buildings\n +3 from Meenakshi Temple\n +2 from Stonehenge\n +3 from Shrine",
+          "food": "+1 from Buildings\n +1 from Granary\n+44 from Worked Tiles",
+          "gold": "+5 from Buildings\n +5 from Palace\n+9 from Worked Tiles",
+          "production": "+6 from Districts\n +5 from Industrial Zone\n +1 from Holy Site\n+10 from Buildings\n +5 from Factory\n +3 from Workshop\n +2 from Palace\n+41 from Worked Tiles",
+          "science": "+2 from Districts\n +2 from Campus\n+8.5 from Population\n+11 from Buildings\n +6 from University\n +3 from Library\n +2 from Palace"
+        },
+        "yields": {
+          "culture": 19.0977,
+          "faith": 10,
+          "food": 45,
+          "gold": 14,
+          "production": 57,
+          "science": 21.5
+        }
+      },
+      "verified_order": {
+        "checked_on": 141,
+        "ctx": "agent",
+        "kind": "order_verified",
+        "order_kind": "produce",
+        "run": "civvis-20261026T083924Z",
+        "subject": 655369,
+        "t": 1793004507,
+        "turn": 140,
+        "utc": "2026-10-26T08:48:27.202Z",
+        "verb": "BUILDING_BARRACKS"
+      },
+      "first_completed_state": {
+        "turn": 141,
+        "frame": 0,
+        "utc": "2026-10-26T08:48:26.959Z"
+      },
+      "post_city": {
+        "amenities": 9,
+        "amenities_bankruptcy": 0,
+        "amenities_city_states": 0,
+        "amenities_civics": 1,
+        "amenities_districts": 0,
+        "amenities_entertainment": 3,
+        "amenities_great_people": 0,
+        "amenities_improvements": 4,
+        "amenities_luxuries": 8,
+        "amenities_national_parks": 0,
+        "amenities_natural_wonders": 0,
+        "amenities_needed": 9,
+        "amenities_religion": 0,
+        "amenities_starting_era": 0,
+        "amenities_war_weariness": 7,
+        "buildable": [
+          {
+            "c": 103,
+            "n": 2,
+            "p": 2,
+            "pr": 0,
+            "s": [
+              {
+                "x": 39,
+                "y": 33
+              },
+              {
+                "x": 40,
+                "y": 33
+              }
+            ],
+            "t": "DISTRICT_HARBOR"
+          },
+          {
+            "c": 175,
+            "n": 12,
+            "p": 3,
+            "pr": 0,
+            "s": [
+              {
+                "x": 41,
+                "y": 31
+              },
+              {
+                "x": 42,
+                "y": 30
+              },
+              {
+                "x": 41,
+                "y": 28
+              },
+              {
+                "x": 40,
+                "y": 28
+              },
+              {
+                "x": 39,
+                "y": 28
+              },
+              {
+                "x": 38,
+                "y": 30
+              },
+              {
+                "x": 38,
+                "y": 31
+              },
+              {
+                "x": 39,
+                "y": 32
+              },
+              {
+                "x": 42,
+                "y": 31
+              },
+              {
+                "x": 42,
+                "y": 29
+              },
+              {
+                "x": 41,
+                "y": 27
+              },
+              {
+                "x": 39,
+                "y": 27
+              }
+            ],
+            "t": "DISTRICT_AERODROME"
+          },
+          {
+            "c": 103,
+            "n": 17,
+            "p": 2,
+            "pr": 0,
+            "s": [
+              {
+                "x": 41,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 31
+              },
+              {
+                "x": 42,
+                "y": 30
+              },
+              {
+                "x": 41,
+                "y": 28
+              },
+              {
+                "x": 40,
+                "y": 28
+              },
+              {
+                "x": 39,
+                "y": 28
+              },
+              {
+                "x": 38,
+                "y": 30
+              },
+              {
+                "x": 38,
+                "y": 31
+              },
+              {
+                "x": 39,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 33
+              },
+              {
+                "x": 42,
+                "y": 32
+              },
+              {
+                "x": 42,
+                "y": 31
+              },
+              {
+                "x": 43,
+                "y": 30
+              },
+              {
+                "x": 42,
+                "y": 29
+              },
+              {
+                "x": 41,
+                "y": 27
+              },
+              {
+                "x": 40,
+                "y": 27
+              }
+            ],
+            "t": "DISTRICT_COMMERCIAL_HUB"
+          },
+          {
+            "c": 103,
+            "n": 17,
+            "p": 2,
+            "pr": 0,
+            "s": [
+              {
+                "x": 41,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 31
+              },
+              {
+                "x": 42,
+                "y": 30
+              },
+              {
+                "x": 41,
+                "y": 28
+              },
+              {
+                "x": 40,
+                "y": 28
+              },
+              {
+                "x": 39,
+                "y": 28
+              },
+              {
+                "x": 38,
+                "y": 30
+              },
+              {
+                "x": 38,
+                "y": 31
+              },
+              {
+                "x": 39,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 33
+              },
+              {
+                "x": 42,
+                "y": 32
+              },
+              {
+                "x": 42,
+                "y": 31
+              },
+              {
+                "x": 43,
+                "y": 30
+              },
+              {
+                "x": 42,
+                "y": 29
+              },
+              {
+                "x": 41,
+                "y": 27
+              },
+              {
+                "x": 40,
+                "y": 27
+              }
+            ],
+            "t": "DISTRICT_ENTERTAINMENT_COMPLEX"
+          },
+          {
+            "c": 175,
+            "n": 17,
+            "p": 3,
+            "pr": 0,
+            "s": [
+              {
+                "x": 41,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 31
+              },
+              {
+                "x": 42,
+                "y": 30
+              },
+              {
+                "x": 41,
+                "y": 28
+              },
+              {
+                "x": 40,
+                "y": 28
+              },
+              {
+                "x": 39,
+                "y": 28
+              },
+              {
+                "x": 38,
+                "y": 30
+              },
+              {
+                "x": 38,
+                "y": 31
+              },
+              {
+                "x": 39,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 33
+              },
+              {
+                "x": 42,
+                "y": 32
+              },
+              {
+                "x": 42,
+                "y": 31
+              },
+              {
+                "x": 43,
+                "y": 30
+              },
+              {
+                "x": 42,
+                "y": 29
+              },
+              {
+                "x": 41,
+                "y": 27
+              },
+              {
+                "x": 40,
+                "y": 27
+              }
+            ],
+            "t": "DISTRICT_NEIGHBORHOOD"
+          },
+          {
+            "c": 103,
+            "n": 2,
+            "p": 2,
+            "pr": 0,
+            "s": [
+              {
+                "x": 39,
+                "y": 33
+              },
+              {
+                "x": 40,
+                "y": 33
+              }
+            ],
+            "t": "DISTRICT_WATER_ENTERTAINMENT_COMPLEX"
+          },
+          {
+            "c": 175,
+            "n": 17,
+            "p": 3,
+            "pr": 0,
+            "s": [
+              {
+                "x": 41,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 31
+              },
+              {
+                "x": 42,
+                "y": 30
+              },
+              {
+                "x": 41,
+                "y": 28
+              },
+              {
+                "x": 40,
+                "y": 28
+              },
+              {
+                "x": 39,
+                "y": 28
+              },
+              {
+                "x": 38,
+                "y": 30
+              },
+              {
+                "x": 38,
+                "y": 31
+              },
+              {
+                "x": 39,
+                "y": 32
+              },
+              {
+                "x": 41,
+                "y": 33
+              },
+              {
+                "x": 42,
+                "y": 32
+              },
+              {
+                "x": 42,
+                "y": 31
+              },
+              {
+                "x": 43,
+                "y": 30
+              },
+              {
+                "x": 42,
+                "y": 29
+              },
+              {
+                "x": 41,
+                "y": 27
+              },
+              {
+                "x": 40,
+                "y": 27
+              }
+            ],
+            "t": "DISTRICT_PRESERVE"
+          },
+          {
+            "c": 30,
+            "p": 1,
+            "t": "BUILDING_MONUMENT"
+          },
+          {
+            "c": 40,
+            "p": 1,
+            "t": "BUILDING_WATER_MILL"
+          },
+          {
+            "c": 60,
+            "p": 1,
+            "t": "BUILDING_TEMPLE"
+          },
+          {
+            "c": 97,
+            "p": 2,
+            "t": "BUILDING_ARMORY"
+          },
+          {
+            "c": 145,
+            "p": 3,
+            "t": "BUILDING_MUSEUM_ART"
+          },
+          {
+            "c": 145,
+            "p": 3,
+            "t": "BUILDING_MUSEUM_ARTIFACT"
+          },
+          {
+            "c": 355,
+            "p": 6,
+            "t": "BUILDING_HAGIA_SOPHIA"
+          },
+          {
+            "c": 355,
+            "p": 6,
+            "t": "BUILDING_MONT_ST_MICHEL"
+          },
+          {
+            "c": 725,
+            "p": 13,
+            "t": "BUILDING_HERMITAGE"
+          },
+          {
+            "c": 810,
+            "p": 14,
+            "t": "BUILDING_CRISTO_REDENTOR"
+          },
+          {
+            "c": 355,
+            "p": 6,
+            "t": "BUILDING_KILWA_KISIWANI"
+          },
+          {
+            "c": 460,
+            "p": 8,
+            "t": "BUILDING_TAJ_MAHAL"
+          },
+          {
+            "c": 150,
+            "p": 3,
+            "t": "BUILDING_COAL_POWER_PLANT"
+          },
+          {
+            "c": 90,
+            "p": 2,
+            "t": "BUILDING_GREAT_BATH"
+          },
+          {
+            "c": 175,
+            "p": 3,
+            "r": 0,
+            "t": "UNIT_SETTLER"
+          },
+          {
+            "c": 77,
+            "p": 2,
+            "r": 0,
+            "t": "UNIT_BUILDER"
+          },
+          {
+            "c": 187,
+            "p": 3,
+            "r": 0,
+            "t": "UNIT_SPY"
+          },
+          {
+            "c": 165,
+            "p": 3,
+            "r": 0,
+            "t": "UNIT_FIELD_CANNON"
+          },
+          {
+            "c": 190,
+            "p": 3,
+            "r": 0,
+            "t": "UNIT_RANGER"
+          },
+          {
+            "c": 120,
+            "p": 2,
+            "r": 0,
+            "t": "UNIT_OBSERVATION_BALLOON"
+          },
+          {
+            "c": 215,
+            "p": 4,
+            "r": 1,
+            "t": "UNIT_ARTILLERY"
+          },
+          {
+            "c": 180,
+            "p": 3,
+            "r": 10,
+            "t": "UNIT_LINE_INFANTRY"
+          },
+          {
+            "c": 125,
+            "p": 2,
+            "r": 0,
+            "t": "UNIT_PIKE_AND_SHOT"
+          },
+          {
+            "c": 165,
+            "p": 3,
+            "r": 10,
+            "t": "UNIT_CUIRASSIER"
+          },
+          {
+            "c": 119,
+            "p": 2,
+            "t": "PROJECT_ENHANCE_DISTRICT_ENCAMPMENT"
+          },
+          {
+            "c": 119,
+            "p": 2,
+            "t": "PROJECT_ENHANCE_DISTRICT_INDUSTRIAL_ZONE"
+          },
+          {
+            "c": 119,
+            "p": 2,
+            "t": "PROJECT_ENHANCE_DISTRICT_HOLY_SITE"
+          },
+          {
+            "c": 119,
+            "p": 2,
+            "t": "PROJECT_ENHANCE_DISTRICT_CAMPUS"
+          },
+          {
+            "c": 119,
+            "p": 2,
+            "t": "PROJECT_ENHANCE_DISTRICT_THEATER"
+          }
+        ],
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_BARRACKS",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_FACTORY",
+          "BUILDING_STONEHENGE",
+          "BUILDING_MEENAKSHI_TEMPLE"
+        ],
+        "capital": true,
+        "center_yields": {
+          "culture": 0,
+          "faith": 0,
+          "food": 2,
+          "gold": 0,
+          "production": 1,
+          "science": 0
+        },
+        "damage": 0,
+        "defense": 71,
+        "district_capacity": 6,
+        "districts": [
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 100,
+            "max_wall_damage": 400,
+            "pillaged": false,
+            "type": "DISTRICT_ENCAMPMENT",
+            "wall_damage": 0,
+            "x": 38,
+            "y": 32
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_WONDER",
+            "wall_damage": 0,
+            "x": 40,
+            "y": 31
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_DAM",
+            "wall_damage": 0,
+            "x": 39,
+            "y": 31
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_THEATER",
+            "wall_damage": 0,
+            "x": 41,
+            "y": 30
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 200,
+            "max_wall_damage": 400,
+            "pillaged": false,
+            "type": "DISTRICT_CITY_CENTER",
+            "wall_damage": 0,
+            "x": 40,
+            "y": 30
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_INDUSTRIAL_ZONE",
+            "wall_damage": 0,
+            "x": 39,
+            "y": 30
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_HOLY_SITE",
+            "wall_damage": 0,
+            "x": 41,
+            "y": 29
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_WONDER",
+            "wall_damage": 0,
+            "x": 40,
+            "y": 29
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_AQUEDUCT",
+            "wall_damage": 0,
+            "x": 39,
+            "y": 29
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_CAMPUS",
+            "wall_damage": 0,
+            "x": 42,
+            "y": 28
+          }
+        ],
+        "falls_to": 62,
+        "food": 52.5859,
+        "food_disfavored": false,
+        "food_favored": false,
+        "food_focus_managed": false,
+        "food_surplus": 11,
+        "great_works": [
+          {
+            "building": "BUILDING_AMPHITHEATER",
+            "creator": "LOC_GREAT_PERSON_INDIVIDUAL_HOMER_NAME",
+            "object": "GREATWORKOBJECT_WRITING",
+            "slot": 0,
+            "type": "GREATWORK_HOMER_1"
+          },
+          {
+            "building": "BUILDING_AMPHITHEATER",
+            "creator": "LOC_GREAT_PERSON_INDIVIDUAL_OVID_NAME",
+            "object": "GREATWORKOBJECT_WRITING",
+            "slot": 1,
+            "type": "GREATWORK_OVID_2"
+          }
+        ],
+        "growth_threshold": 103,
+        "growth_turns": 5,
+        "happiness": 4,
+        "happiness_growth_mult": 0,
+        "happiness_yield_mult": 0,
+        "housing": 22,
+        "housing_from_buildings": 5,
+        "housing_from_civics": 3,
+        "housing_from_districts": 3,
+        "housing_from_great_people": 0,
+        "housing_from_great_works": 0,
+        "housing_from_improvements": 4,
+        "housing_from_starting_era": 0,
+        "housing_from_water": 7,
+        "housing_growth_mult": 1,
+        "id": 655369,
+        "loyalty": 100,
+        "loyalty_per_turn": 14.0312,
+        "max_damage": 200,
+        "max_wall_damage": 400,
+        "name": "Beijing",
+        "original_capital": true,
+        "original_owner": 1,
+        "overall_growth_mult": 0.996094,
+        "pantheon_active": "BELIEF_RELIGIOUS_SETTLEMENTS",
+        "pillaged_buildings": [
+          "BUILDING_MONUMENT"
+        ],
+        "pop": 17,
+        "producing_hash": 0,
+        "production": 58,
+        "production_cost": -1,
+        "production_progress": -1,
+        "production_turns": -1,
+        "purchasable": [],
+        "ranged_strength": 60,
+        "religion": "RELIGION_CATHOLICISM",
+        "religion_turns": -1,
+        "specialists": [],
+        "wall_damage": 0,
+        "wonders": [
+          {
+            "type": "BUILDING_STONEHENGE",
+            "x": 40,
+            "y": 31
+          },
+          {
+            "type": "BUILDING_MEENAKSHI_TEMPLE",
+            "x": 40,
+            "y": 29
+          }
+        ],
+        "worked": [
+          {
+            "x": 41,
+            "y": 33,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 1,
+              "gold": 0,
+              "production": 4,
+              "science": 0
+            }
+          },
+          {
+            "x": 42,
+            "y": 32,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 1,
+              "gold": 0,
+              "production": 4,
+              "science": 0
+            }
+          },
+          {
+            "x": 41,
+            "y": 32,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 1,
+              "gold": 0,
+              "production": 4,
+              "science": 0
+            }
+          },
+          {
+            "x": 40,
+            "y": 32,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 3,
+              "gold": 3,
+              "production": 1,
+              "science": 0
+            }
+          },
+          {
+            "x": 39,
+            "y": 32,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 2,
+              "gold": 0,
+              "production": 4,
+              "science": 0
+            }
+          },
+          {
+            "x": 42,
+            "y": 31,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 2,
+              "gold": 0,
+              "production": 4,
+              "science": 0
+            }
+          },
+          {
+            "x": 41,
+            "y": 31,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 2,
+              "gold": 0,
+              "production": 3,
+              "science": 0
+            }
+          },
+          {
+            "x": 38,
+            "y": 31,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 4,
+              "gold": 0,
+              "production": 1,
+              "science": 0
+            }
+          },
+          {
+            "x": 43,
+            "y": 30,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 2,
+              "gold": 0,
+              "production": 4,
+              "science": 0
+            }
+          },
+          {
+            "x": 42,
+            "y": 30,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 3,
+              "gold": 0,
+              "production": 0,
+              "science": 0
+            }
+          },
+          {
+            "x": 40,
+            "y": 30,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 2,
+              "gold": 0,
+              "production": 1,
+              "science": 0
+            }
+          },
+          {
+            "x": 42,
+            "y": 29,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 1,
+              "gold": 2,
+              "production": 2,
+              "science": 0
+            }
+          },
+          {
+            "x": 40,
+            "y": 28,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 3,
+              "gold": 0,
+              "production": 1,
+              "science": 0
+            }
+          },
+          {
+            "x": 39,
+            "y": 28,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 5,
+              "gold": 0,
+              "production": 0,
+              "science": 0
+            }
+          },
+          {
+            "x": 41,
+            "y": 27,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 1,
+              "gold": 2,
+              "production": 2,
+              "science": 0
+            }
+          },
+          {
+            "x": 40,
+            "y": 27,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 1,
+              "gold": 0,
+              "production": 5,
+              "science": 0
+            }
+          },
+          {
+            "x": 39,
+            "y": 27,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 5,
+              "gold": 0,
+              "production": 0,
+              "science": 0
+            }
+          },
+          {
+            "x": 38,
+            "y": 27,
+            "yields": {
+              "culture": 0,
+              "faith": 0,
+              "food": 5,
+              "gold": 2,
+              "production": 1,
+              "science": 0
+            }
+          }
+        ],
+        "x": 40,
+        "y": 30,
+        "yield_sources": {
+          "culture": "+1 from Modifiers\n+4 from GreatWorks\n+5 from Districts\n +5 from Theater Square\n+5 from Population\n+4 from Buildings\n +3 from Amphitheater\n +1 from Palace",
+          "faith": "+1 from Modifiers\n+1 from Districts\n +1 from Holy Site\n+8 from Buildings\n +3 from Meenakshi Temple\n +2 from Stonehenge\n +3 from Shrine",
+          "food": "+1 from Buildings\n +1 from Granary\n+44 from Worked Tiles",
+          "gold": "+5 from Buildings\n +5 from Palace\n+9 from Worked Tiles",
+          "production": "+6 from Districts\n +5 from Industrial Zone\n +1 from Holy Site\n+11 from Buildings\n +5 from Factory\n +3 from Workshop\n +1 from Barracks\n +2 from Palace\n+41 from Worked Tiles",
+          "science": "+2 from Districts\n +2 from Campus\n+8.5 from Population\n+11 from Buildings\n +6 from University\n +3 from Library\n +2 from Palace"
+        },
+        "yields": {
+          "culture": 19.0977,
+          "faith": 10,
+          "food": 45,
+          "gold": 14,
+          "production": 58,
+          "science": 21.5
+        }
+      },
+      "input_capture": {
+        "archive": "bytes.bin",
+        "complete": true,
+        "directory": "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261026T083924Z/input-captures/process-siol4y28/reads",
+        "error": null,
+        "index": "snapshots.jsonl",
+        "reads": [
+          {
+            "count": 2,
+            "snapshot_id": 399
+          },
+          {
+            "count": 16,
+            "snapshot_id": 400
+          }
+        ],
+        "schema": 1,
+        "source": "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261026T083924Z/events.jsonl"
+      },
+      "binary_sha256": "85d5a904f8df01055d13775e5285fe41737a7a02d96abe61dfe3105ab0f53a09"
+    }
+  ],
+  "scope": "Observed support-stage requests and later host completion; no Engineer, Airstrip or incremental strength attribution.",
+  "files": {
+    "events.jsonl": {
+      "bytes": 54704702,
+      "sha256": "624b2f0de4f1f7ac74fdca1318c3732448caab3f70ac6b483680fd112dac54de"
+    },
+    "decisions.jsonl": {
+      "bytes": 2324298,
+      "sha256": "74762754a2b80cea972497ad9f586a101c7c2508e33191e808a925d0c2f09c5e"
+    },
+    "why.log": {
+      "bytes": 1962945,
+      "sha256": "447716c7748a15e06bad014ca3beb8a5f6d8a21ade3839b20bb90024416041e2"
+    },
+    "summary.json": {
+      "bytes": 46463,
+      "sha256": "81f33f7beb28996989bcefaaa3f9273987b8d26da092e6fdfd841db1e12c8f62"
+    },
+    "runtime_updates.jsonl": {
+      "bytes": 504,
+      "sha256": "140bc5e8dba8bf825720422304b60f67f3a98032dabea217617bb04e3477883d"
+    }
+  }
+}

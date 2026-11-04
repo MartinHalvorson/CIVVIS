@@ -321,6 +321,8 @@ impl AdvancedAi {
                     && g.alliance_with(pid, *partner).is_none()
                     && !pending_with(*partner)
                     && !asked_recently(*partner)
+                    // `alliance-remembers-the-refusal`. Never off.
+                    && !self.alliance_refusal_barred(g, pid, *partner)
                     && grievance(pid, *partner) < COALITION_GRIEVANCE_CEILING
                     && self.rival_victory_pressure(g, *partner).progress < 82
                     && (!self.coalition_before_war_2
@@ -355,6 +357,7 @@ impl AdvancedAi {
         if let Some(coalition) = self.coalition.as_mut() {
             coalition.alliance_asked.insert(partner, turn);
         }
+        self.alliance_note_asked(g, partner);
         *g.players[pid]
             .counters
             .entry("coalition:alliances_proposed".to_string())
@@ -431,6 +434,8 @@ impl AdvancedAi {
                         .coalition
                         .as_ref()
                         .is_some_and(|coalition| coalition.alliance_asked.contains_key(partner))
+                    // `alliance-remembers-the-refusal`. Never off.
+                    && !self.alliance_refusal_barred(g, pid, *partner)
                     && !g.pending_deals.iter().any(|deal| {
                         deal.expires >= turn
                             && ((deal.from == pid && deal.to == *partner)
@@ -464,6 +469,7 @@ impl AdvancedAi {
         if let Some(coalition) = self.coalition.as_mut() {
             coalition.alliance_asked.insert(partner, turn);
         }
+        self.alliance_note_asked(g, partner);
         *g.players[pid]
             .counters
             .entry("coalition:alliances_proposed".to_string())

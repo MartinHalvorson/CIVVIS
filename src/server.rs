@@ -1427,6 +1427,21 @@ struct FrameDelivery {
 }
 
 impl FrameDelivery {
+    /// The furthest frame any attached page reports having painted.
+    ///
+    /// A live mirror publishes every board at sequence 0 (`/load`, not the
+    /// stepper), so the sequence alone ties between two pages and the seat
+    /// whose id sorts last won, whatever it had drawn. The live Civilization
+    /// VI game waits on this turn (`tools/civ6_control/mirror_sync.py`), so a
+    /// second, backgrounded tab must not stand in for the page that is
+    /// keeping up: the turn breaks the tie.
+    fn furthest_painted(&self) -> Option<SpectatorFrame> {
+        self.seats
+            .values()
+            .filter_map(|seat| seat.painted)
+            .max_by_key(|frame| (frame.sequence, frame.turn))
+    }
+
     /// Forget the pages that stopped asking. A seat costs a cached copy of the
     /// world's tiles, and a closed tab must not go on holding turns open for a
     /// viewer that is not there to read them.
@@ -1756,11 +1771,7 @@ impl Shared {
         let mut delivery = lock_or_recover(&self.frame_delivery);
         delivery.retire_departed(Instant::now());
         let missed = delivery.missed;
-        let painted = delivery
-            .seats
-            .values()
-            .filter_map(|seat| seat.painted)
-            .max_by_key(|frame| frame.sequence);
+        let painted = delivery.furthest_painted();
         (missed, painted, delivery.seats.len(), delivery.autoplayed)
     }
 
@@ -4747,6 +4758,9 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
             let Some(name) = parsed["name"].as_str() else {
                 let mut session = lock_or_recover(&sh.session);
                 let result = crate::routes::load_uploaded(&mut session, &parsed);
+                let loaded = result.is_ok().then(|| {
+                    spectator_frame(&session.game, sh.frame_sequence.load(Ordering::Relaxed))
+                });
                 if result.is_ok() {
                     sh.current_seed.store(session.game.seed, Ordering::Relaxed);
                     sh.adopt_live_params(&session.params);
@@ -4760,6 +4774,15 @@ fn handle(stream: &mut TcpStream, sh: &Shared) {
                     Err(error) => json!(error),
                 };
                 drop(session);
+                // ★ Ring the bell. This is how the live mirror publishes every
+                // Civilization VI turn (`tools/follow.py`), and it never woke
+                // the pages parked in `wait_for_next_turn`: they saw the new
+                // turn only when their one-second cap ran out, 0.55 s late on
+                // the median (live, 10-31), while the Firaxis game waited on
+                // the page painting it (`tools/civ6_control/mirror_sync.py`).
+                if let Some(frame) = loaded {
+                    sh.note_turn_ready(frame);
+                }
                 decorate(&mut out, sh);
                 respond_json(stream, &out);
                 return;

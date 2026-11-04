@@ -451,6 +451,20 @@ class OneShape(unittest.TestCase):
         for key in ("handicap", "rival_chairs"):
             self.assertIn(key, gene_ledger.RECORDED_WHEN_SET)
 
+    def test_a_calibrated_faithful_field_is_recorded(self):
+        """`--rival-rung` / `--rival-pace` change the opponent, so a source
+        records them when set and an uncalibrated one stays byte-stable."""
+        calibrated = gene_ledger.profile_of(analysis(
+            [{"tag": "a"}], rivals="firaxis-faithful", handicap="rivals",
+            rival_chairs=5, rival_rung="-1", rival_pace=True))
+        self.assertEqual(calibrated["rival_rung"], "-1")
+        self.assertIs(calibrated["rival_pace"], True)
+        self.assertEqual(gene_ledger.shape_of(calibrated), "standard")
+        plain = gene_ledger.profile_of(analysis(
+            [{"tag": "a"}], rivals="firaxis-faithful", handicap="rivals", rival_chairs=5))
+        self.assertNotIn("rival_rung", plain)
+        self.assertNotIn("rival_pace", plain)
+
     def test_the_tool_and_the_binary_name_the_same_screen(self):
         """`gene_screen`'s bare defaults ARE this shape; if one side moves, the
         ledger would silently accept a batch the binary no longer plays."""

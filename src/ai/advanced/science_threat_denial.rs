@@ -367,7 +367,7 @@ impl AdvancedAi {
     /// past denouncing, won on Science at 268. The pace still admits a threat
     /// for the other rungs.
     pub(crate) fn science_threat_denunciation(&self, g: &mut Game, pid: usize) -> Option<usize> {
-        let ranked: Vec<usize> = self
+        let mut ranked: Vec<usize> = self
             .science_threats(g, pid)
             .into_iter()
             .filter(|threat| {
@@ -378,6 +378,20 @@ impl AdvancedAi {
             .map(|threat| threat.rival)
             .filter(|rival| g.alliance_with(pid, *rival).is_none())
             .collect();
+        // `science-denounce-names-the-leader`: only the most pressing threat
+        // (the most space projects landed, then the biggest technology lead)
+        // is denounced. Denouncing it keeps the formal launcher war legal,
+        // and since the launcher war answers only the leading racer, every
+        // other denunciation buys nothing and costs the friendship, alliance
+        // and goodwill the Culture and Science seats need. Live Immortal
+        // 6-major Science seat civvis-20261031T111516Z denounced all four
+        // rivals with a pad at t142-150 and every 21 turns after ("their space
+        // race is a science threat"); every rival stood DENOUNCED by t160, two
+        // at war with us by t188, and `science-seat-allies` never had a
+        // partner. 104757Z denounced 41 times, 094146Z 49.
+        if self.science_denounce_names_the_leader {
+            ranked.truncate(1);
+        }
         let rival = Self::denounce_most_pressing(g, pid, &ranked)?;
         // The base tag's own record that it reached the board, beside the
         // war tag's `denial_wars`: rungs 1 and 2 leave no unit and no war a

@@ -55,6 +55,8 @@ const THREAT_HORIZON: i32 = 12;
 pub(super) struct TheologicalThreat {
     rival: u32,
     strike_from: Vec<Pos>,
+    /// `stalled-spreader-braves-the-march`: only a lethal blow counts.
+    lethal_only: bool,
 }
 
 impl AdvancedAi {
@@ -84,6 +86,10 @@ impl AdvancedAi {
             return Vec::new();
         };
         let ours = unit.pos;
+        // `stalled-spreader-braves-the-march`: a stalled spreader on a
+        // Religion seat yields only to a lethal blow. See
+        // `advanced/stalled_spreader.rs`.
+        let lethal_only = self.spreader_braves_the_march(g, uid);
         g.units
             .values()
             .filter(|rival| {
@@ -103,17 +109,24 @@ impl AdvancedAi {
                 TheologicalThreat {
                     rival: rival.id,
                     strike_from,
+                    lethal_only,
                 }
             })
             .collect()
     }
 
     /// The rival's mean blow at `ours` standing on `at` kills it, or deals
-    /// more than the rival takes back.
-    fn rival_wins_the_exchange(g: &Game, rival: u32, ours: u32, at: Pos) -> bool {
+    /// more than the rival takes back. With `lethal_only`, only the kill.
+    fn rival_wins_the_exchange(
+        g: &Game,
+        rival: u32,
+        ours: u32,
+        at: Pos,
+        lethal_only: bool,
+    ) -> bool {
         g.theological_exchange_preview_with_defender_at(rival, ours, at)
             .is_some_and(|(dealt, received, defender_hp)| {
-                dealt >= f64::from(defender_hp) || dealt > received
+                dealt >= f64::from(defender_hp) || (!lethal_only && dealt > received)
             })
     }
 
@@ -127,7 +140,7 @@ impl AdvancedAi {
             .strike_from
             .iter()
             .any(|from| *from != position && game.wdist(*from, position) <= 1)
-            && Self::rival_wins_the_exchange(game, threat.rival, ours, position)
+            && Self::rival_wins_the_exchange(game, threat.rival, ours, position, threat.lethal_only)
     }
 
     fn theological_tile_is_safe(
@@ -142,7 +155,7 @@ impl AdvancedAi {
     }
 
     /// How many threats can strike `ours` standing on `pos` and win.
-    fn theological_threats_reaching(
+    pub(super) fn theological_threats_reaching(
         g: &Game,
         ours: u32,
         pos: Pos,
@@ -332,6 +345,7 @@ impl AdvancedAi {
             return Some(self.base.path_move(g, pid, uid, position));
         }
         let kind = g.units[&uid].kind.as_str().to_string();
+        self.record_spreader_hold(g, uid);
         crate::think!(self.journal(), Faith, Detail,
             "{kind} {uid} holds outside a rival Apostle's reach";
             "spreader-steps-out-of-the-apostle: every step toward its target ends where \

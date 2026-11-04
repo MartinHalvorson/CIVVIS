@@ -72,6 +72,17 @@ pub(crate) const FAITH_WAR_POWER_FLOOR: f64 = 0.7;
 /// power.
 pub(crate) const FAITH_WAR_ROUT_RATIO: f64 = 1.5;
 
+/// `faith-war-needs-the-edge`: the faith war opens only on a founder whose
+/// steady power is at most this share of ours. Over the first faith war of
+/// each of 54 retained live games (2026-10-25), a founder under 0.7 times our
+/// power cost 0.89 cities a game and no collapse in 9; at 0.7-1.0 times, 2.21
+/// and 5 collapses (four or more cities lost) in 19; at 1.0 or more, 2.00 and
+/// 6 in 26. Live Immortal civvis-20261025T170120Z opened one on Hungary at
+/// turn 102 (328 against 273) beside a war on Gaul at our power and fell to
+/// one city; Emperor 055158Z opened one on Greece at 434 against 427 and lost
+/// eight cities.
+pub(crate) const FAITH_WAR_EDGE: f64 = 0.7;
+
 /// No faith war beside this many major wars already running.
 pub(crate) const FAITH_WAR_MAX_ENEMIES: usize = 2;
 
@@ -225,6 +236,15 @@ impl AdvancedAi {
                 ),
             ));
         }
+        // `faith-war-needs-the-edge`: see `FAITH_WAR_EDGE`.
+        if self.faith_war_needs_the_edge && steady > FAITH_WAR_EDGE * ours {
+            return Some((
+                "edge",
+                format!(
+                    "their steady {steady:.0} power is over {FAITH_WAR_EDGE:.1} times our {ours:.0}"
+                ),
+            ));
+        }
         let theirs = g.military_power(rival);
         if theirs >= FAITH_WAR_ROUT_RATIO * ours {
             return Some((
@@ -316,7 +336,8 @@ impl AdvancedAi {
     pub(super) fn faith_war_before_the_flip_opening(&mut self, g: &mut Game, pid: usize) -> bool {
         if !self.faith_war_active()
             || !g.victory_conditions.religious
-            || self.active_victory_target(g) != Some(VictoryTarget::Domination)
+            // `faith-war-defends-the-diplomat` opens the Diplomacy lane.
+            || !self.faith_war_lane(g)
             || self.faith_war_before_the_flip_war.is_some()
         {
             return false;

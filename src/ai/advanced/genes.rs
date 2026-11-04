@@ -3293,6 +3293,8 @@ pub const GENES: &[Gene] = &[
     // best). The bridge buys the resource the better gun waits on, sized to
     // the guns its blow needs. See `gun_resource::siege_gun_resource_wants`.
     Gene { tag: "siege-buys-the-gun-resource", field: "siege_buys_the_gun_resource", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_buys_the_gun_resource, disable: AdvancedAi::disable_siege_buys_the_gun_resource },
+    // Native-only purchase proposal; strength requires native trials.
+    Gene { tag: "science-power-buys-fuel", field: "science_power_buys_fuel", kind: Kind::OptIn, enable: AdvancedAi::enable_science_power_buys_fuel, disable: AdvancedAi::disable_science_power_buys_fuel },
     // The decisive window spent ~1,200 science a game off the Advanced
     // Flight path after the air surge's horizon opened (10-06/07 Emperor),
     // and captures ran 0.20 per 100 turns before the Bomber against 1.24
@@ -4139,6 +4141,715 @@ pub const GENES: &[Gene] = &[
     // three tiles, doomed or rotated out by the danger at their stands. See
     // `advanced/defenders_hold_the_walls.rs`.
     Gene { tag: "defenders-hold-the-walls", field: "defenders_hold_the_walls", kind: Kind::OptIn, enable: AdvancedAi::enable_defenders_hold_the_walls, disable: AdvancedAi::disable_defenders_hold_the_walls },
+    // `war-faith-buys-the-army`: live Emperor 10-25, faith income 22-38 a
+    // turn at t100-175 and the host selling Knights for 220 Faith, yet 1,010
+    // Missionaries against ~90 combat units bought. See
+    // `advanced/war_faith.rs`.
+    Gene { tag: "war-faith-buys-the-army", field: "war_faith_buys_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_war_faith_buys_the_army, disable: AdvancedAi::disable_war_faith_buys_the_army },
+    // Version two retains the at-war launch release and stages a physical
+    // Culture air interception; only two fresh selected safe sorties open it.
+    Gene { tag: "elimination-yields-to-a-launch-2", field: "elimination_yields_to_a_launch_2", kind: Kind::OptIn, enable: AdvancedAi::enable_elimination_yields_to_a_launch_2, disable: AdvancedAi::disable_elimination_yields_to_a_launch_2 },
+    // `faith-war-needs-the-edge`: live 10-25, a first faith war on a founder
+    // at 0.7 times our power or more preceded 11 collapses in 45 games, none
+    // in 9 under it. See `faith_war_before_the_flip::FAITH_WAR_EDGE`.
+    Gene { tag: "faith-war-needs-the-edge", field: "faith_war_needs_the_edge", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_war_needs_the_edge, disable: AdvancedAi::disable_faith_war_needs_the_edge },
+
+    // Append the new tag after existing positional rows, before tail markers.
+    Gene { tag: "wing-capital-spotting", field: "wing_capital_spotting", kind: Kind::OptIn, enable: AdvancedAi::enable_wing_capital_spotting, disable: AdvancedAi::disable_wing_capital_spotting },
+    // `the-giant-gets-the-peace-offer`: live Immortal 10-25, 5 of 17 games
+    // collapsed to one city against a rival at 2.5-20 times our power that the
+    // peace gate never offered peace. See `advanced/giant_peace.rs`.
+    Gene { tag: "the-giant-gets-the-peace-offer", field: "the_giant_gets_the_peace_offer", kind: Kind::OptIn, enable: AdvancedAi::enable_the_giant_gets_the_peace_offer, disable: AdvancedAi::disable_the_giant_gets_the_peace_offer },
+    // `the-last-two-capitals-come-first`: retained live games to 10-25, 12
+    // reached two or fewer capitals to take (one won); 139 campaign turns
+    // aimed elsewhere at a rival holding one, against 41 at the capital. See
+    // `advanced/last_two_capitals.rs`.
+    Gene { tag: "the-last-two-capitals-come-first", field: "the_last_two_capitals_come_first", kind: Kind::OptIn, enable: AdvancedAi::enable_the_last_two_capitals_come_first, disable: AdvancedAi::disable_the_last_two_capitals_come_first },
+    Gene { tag: "capital-watch-arms-the-slinger", field: "capital_watch_arms_the_slinger", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_watch_arms_the_slinger, disable: AdvancedAi::disable_capital_watch_arms_the_slinger },
+    // `launcher-war-skips-the-reserve`: retained live games October 22-25,
+    // the treasury reserve held the war on a racer past its Moon on 34 turns
+    // in 11 games; 231506Z declared on Macedon six turns late and lost on
+    // Science. See `advanced/launcher_war.rs`.
+    Gene { tag: "launcher-war-skips-the-reserve", field: "launcher_war_skips_the_reserve", kind: Kind::OptIn, enable: AdvancedAi::enable_launcher_war_skips_the_reserve, disable: AdvancedAi::disable_launcher_war_skips_the_reserve },
+    // `nuclear-goal-needs-a-launcher`: the live bridge builds warheads but
+    // carries no WMD strike; 26 of 123 retained live games spent about 20,200
+    // Production on nuclear projects. Arm it on the live seat only. See
+    // `advanced/nuclear_launcher.rs`.
+    Gene { tag: "nuclear-goal-needs-a-launcher", field: "nuclear_goal_needs_a_launcher", kind: Kind::OptIn, enable: AdvancedAi::enable_nuclear_goal_needs_a_launcher, disable: AdvancedAi::disable_nuclear_goal_needs_a_launcher },
+    Gene { tag: "forward-airfield-project", field: "forward_airfield_project", kind: Kind::OptIn, enable: AdvancedAi::enable_forward_airfield_project, disable: AdvancedAi::disable_forward_airfield_project },
+    // `aluminum-tile-spends-the-war-chest`: live Immortal 070741Z held a
+    // 135-Gold Aluminum tile against a 1,669 reserve from Advanced Flight
+    // (t124) to t169 and never flew a Bomber. The tile now keeps only the
+    // upkeep floor. See `AdvancedAi::aluminum_tile_reserve`.
+    Gene { tag: "aluminum-tile-spends-the-war-chest", field: "aluminum_tile_spends_the_war_chest", kind: Kind::OptIn, enable: AdvancedAi::enable_aluminum_tile_spends_the_war_chest, disable: AdvancedAi::disable_aluminum_tile_spends_the_war_chest },
+    // `friendship-spares-the-converter`: retained live Immortal games to
+    // 10-27, 4 of 14 Religious losses held the faith war on the founder
+    // converting us as "not a legal target": `befriend-the-strongest` had
+    // befriended it at turns 42-54, before its faith reached us. See
+    // `advanced/protective_friendship.rs`.
+    Gene { tag: "friendship-spares-the-converter", field: "friendship_spares_the_converter", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_spares_the_converter, disable: AdvancedAi::disable_friendship_spares_the_converter },
+    // `siege-tier-yields-to-the-bombers-2`: over 261 Immortal control dirs
+    // the window yielded in 26 games, at a median 7 techs from the Bomber
+    // (12 in 031756Z t82, where it gave up Gunpowder; Metal Casting came at
+    // t118, after rival walls reached 400). The yield now waits until the
+    // Bomber is near. See `AdvancedAi::window_yields_to_the_bombers`.
+    Gene { tag: "siege-tier-yields-to-the-bombers-2", field: "siege_tier_yields_to_the_bombers_2", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_tier_yields_to_the_bombers_2, disable: AdvancedAi::disable_siege_tier_yields_to_the_bombers_2 },
+    // `siege-shortfall-claims-the-projects`: retained live Immortal games to
+    // 10-27, capital sieges sat in Stage on 89% of 1,248 turns at a median
+    // 0.09 of their bill while Theater and Campus projects took 4.8% of
+    // wartime Production. See `advanced/siege_shortfall_projects.rs`.
+    Gene { tag: "siege-shortfall-claims-the-projects", field: "siege_shortfall_claims_the_projects", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_shortfall_claims_the_projects, disable: AdvancedAi::disable_siege_shortfall_claims_the_projects },
+    // `disrupt-before-the-sources`: retained live Immortal games to 10-27,
+    // with Disrupt Rocketry offered, a green Spy ran Gain Sources 71 times
+    // against 91 disruptions; 061046Z held a Spy in Beijing 168-196 with it
+    // offered and never ran it. See `advanced/disrupt_before_the_sources.rs`.
+    Gene { tag: "disrupt-before-the-sources", field: "disrupt_before_the_sources", kind: Kind::OptIn, enable: AdvancedAi::enable_disrupt_before_the_sources, disable: AdvancedAi::disable_disrupt_before_the_sources },
+    // `siege-moves-under-the-wing`: post-reboot live Immortal games to 10-28
+    // that reached turn 160 with Bombers spent 385 of 668 siege-turns on an
+    // objective beyond the wing's reach, 120 of them with another city of
+    // the same rival within it (233902Z held Pewen Mapu's unbreachable walls
+    // t150-193 beside Ina Pire Mapu). See `advanced/siege_under_the_wing.rs`.
+    Gene { tag: "siege-moves-under-the-wing", field: "siege_moves_under_the_wing", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_moves_under_the_wing, disable: AdvancedAi::disable_siege_moves_under_the_wing },
+    // `unchosen-war-takes-the-first-peace`: live Immortal 10-26/28, a major's
+    // declaration on us by turn 60 cut our Production share from 0.38 to 0.25
+    // in ten turns (77% retired by turn 95, 37% with no war); white peace was
+    // taken 31/44 at war ages 8-11, yet 35 of 428 war turns at ages 10-30
+    // carried an offer. See `advanced/unchosen_war_peace.rs`.
+    Gene { tag: "unchosen-war-takes-the-first-peace", field: "unchosen_war_takes_the_first_peace", kind: Kind::OptIn, enable: AdvancedAi::enable_unchosen_war_takes_the_first_peace, disable: AdvancedAi::disable_unchosen_war_takes_the_first_peace },
+    // `prey-waits-for-the-march`: live Immortal 10-27/28, the prey waiver
+    // opened wars with the field army's median 12-25 tiles from the
+    // objective; those took no city in 20 wars. See
+    // `advanced/prey_declaration.rs`.
+    Gene { tag: "prey-waits-for-the-march", field: "prey_waits_for_the_march", kind: Kind::OptIn, enable: AdvancedAi::enable_prey_waits_for_the_march, disable: AdvancedAi::disable_prey_waits_for_the_march },
+    // `prey-waits-for-the-march-2`: version one with a median bar of 6 and a
+    // siege gun within 6 of the objective; live war orders on majors took a
+    // city within 20 turns 4/43 at a median ≤6 against 2/46 at 7-10, and 1/66
+    // with no gun fielded. See `advanced/prey_declaration.rs`.
+    Gene { tag: "prey-waits-for-the-march-2", field: "prey_waits_for_the_march_2", kind: Kind::OptIn, enable: AdvancedAi::enable_prey_waits_for_the_march_2, disable: AdvancedAi::disable_prey_waits_for_the_march_2 },
+    // `upkeep-waits-for-the-income`: live Immortal 10-27/10-29, 11 of the 30
+    // games past turn 160 went bankrupt (the host's 10-amenity charge put
+    // every city at -40% and disbanded the costliest units); income went +25
+    // to -37 in nine turns of 162814Z as queued modern units came due. A
+    // Domination seat prices out an upkeep item when income, less every other
+    // queue head's upkeep, less its own, goes below zero and the bank cannot
+    // carry that deficit 15 turns; a queued one under half paid gives the
+    // queue back. A threatened city's land defender never waits, nor does a
+    // Recovery plan's, and nothing waits before standard turn 240 (live t120):
+    // v1 set aside 18 Spearmen/Archers at t45-50 of 052705Z's early war. See
+    // `advanced/upkeep_waits_for_the_income.rs`.
+    Gene { tag: "upkeep-waits-for-the-income", field: "upkeep_waits_for_the_income", kind: Kind::OptIn, enable: AdvancedAi::enable_upkeep_waits_for_the_income, disable: AdvancedAi::disable_upkeep_waits_for_the_income },
+    // `food-focus-grows-the-small-city` (native seat only): live Immortal
+    // 10-28/29, our small cities with housing room grew at a median +2 Food
+    // from t10 to t80 (60-69% at +2 or less); rival capitals reached 10
+    // citizens at t60 against our 6. The native growth recovery favoured Food
+    // only at zero surplus (4-9% of those cities; +0.2 -> +1.7 Food for 7.5 ->
+    // 6.3 Production where it did). This widens its request to a city of up
+    // to five growing at two or less, never to a city training a Settler (v1
+    // put the capital's settler pump on Food: 4 cities at t60 against 5). See
+    // `advanced/food_focus_grows_the_small_city.rs`.
+    Gene { tag: "food-focus-grows-the-small-city", field: "food_focus_grows_the_small_city", kind: Kind::OptIn, enable: AdvancedAi::enable_food_focus_grows_the_small_city, disable: AdvancedAi::disable_food_focus_grows_the_small_city },
+    // `capital-monument-after-the-second-city`: live Immortal 10-28/29, our
+    // culture ran 3.9 / 6.6 / 10.7 against the rivals' 16 / 35 / 54 at t30 /
+    // t45 / t60 and Political Philosophy came at t43; the capital had no
+    // Monument by t85 in more than half the games (monument-first waits for
+    // three cities behind every earlier claim). Fast expanders whose capital
+    // built one within 8 turns of the third city reached Political Philosophy
+    // at t34 against t42. From the second city on, an unthreatened capital at
+    // peace with the majors claims its Monument once. See
+    // `advanced/capital_monument.rs`.
+    Gene { tag: "capital-monument-after-the-second-city", field: "capital_monument_after_the_second_city", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_monument_after_the_second_city, disable: AdvancedAi::disable_capital_monument_after_the_second_city },
+    // `culture-seat-theater-first`: live Prince Pericles 10-30, Drama and
+    // Poetry at t62-63 but the first Acropolis only at t110-121 while the
+    // ungated Campus claims took every first slot (10 Campuses, 3 Acropoleis
+    // and 0 Great Works at t138); one Culture seat lost to France at t228. A
+    // Culture seat's unthreatened cities claim their first Theater Square once
+    // it is unlocked, and the free-slot Campus claim yields them. See
+    // `advanced/culture_theater_first.rs`.
+    Gene { tag: "culture-seat-theater-first", field: "culture_seat_theater_first", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_theater_first, disable: AdvancedAi::disable_culture_seat_theater_first },
+    // The Statue of Liberty is four of the twenty Diplomatic Victory Points;
+    // live King civvis-20261030T074500Z lost to Culture at t207 standing on
+    // 18, and the first live Diplomatic win (081846Z t208) needed one point
+    // between sessions. Under lane delegation nothing prices those wonders:
+    // a Diplomatic seat now keeps one in production in its strongest city.
+    // See `advanced/diplo_wonder_claim.rs`.
+    Gene { tag: "diplo-seat-wonder-claim", field: "diplo_seat_wonder_claim", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_seat_wonder_claim, disable: AdvancedAi::disable_diplo_seat_wonder_claim },
+    // Every live King rival-Technology loss of 2026-10-30 had us leading the
+    // field in science: civvis-20261030T053333Z (Culture seat, 475 a turn
+    // against Mapuche's 428, lost t236), 060008Z (Culture, 456 against the
+    // Aztecs' 441, t209) and 070824Z-cont1 (Diplomatic, 452 against India's
+    // 303, t231) -- and `science-victory-drive` never opens on a seat
+    // assigned another lane. With this on it opens there once a rival has
+    // landed a space project and we lead, and races Science beside the lane.
+    Gene { tag: "science-drive-answers-the-launch", field: "science_drive_answers_the_launch", kind: Kind::OptIn, enable: AdvancedAi::enable_science_drive_answers_the_launch, disable: AdvancedAi::disable_science_drive_answers_the_launch },
+    // The defensive Inquisition (save for the Apostle, launch, Inquisitors
+    // first) was gated to Domination seats when it was written for that lane
+    // (#3656). On the Pericles ladder no seat is Domination: live Emperor
+    // civvis-20261030T103149Z (Diplomatic) held 8 of 9 cities for Buddhism at
+    // t90, bought eleven Missionaries and a Guru at +17-29 Faith, never an
+    // Apostle, and lost to Judaism on Religion at t127. Diplomatic seats now
+    // prepare it too (paired: Diplomatic 3 -> 4 wins of 20; Culture measured
+    // 9 -> 7 and left out). See `advanced/defensive_apostle.rs`.
+    Gene { tag: "inquisition-defends-the-diplomat", field: "inquisition_defends_the_diplomat", kind: Kind::OptIn, enable: AdvancedAi::enable_inquisition_defends_the_diplomat, disable: AdvancedAi::disable_inquisition_defends_the_diplomat },
+    // `culture-seat-monuments`: the first live Emperor Culture seat
+    // (civvis-20261030T090715Z) held one Monument in six cities at t60 and
+    // made 12 Culture a turn against Egypt's 56. A Culture seat's
+    // unthreatened cities claim their Monument once the second city stands,
+    // ahead of a deferrable head, while no major is at war with us. See
+    // `advanced/culture_monuments.rs`.
+    Gene { tag: "culture-seat-monuments", field: "culture_seat_monuments", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_monuments, disable: AdvancedAi::disable_culture_seat_monuments },
+    // Seasteads and Global Warming Mitigation are a Diplomatic Victory Point
+    // each, and near the bar Congress stops paying: live Emperor
+    // civvis-20261030T111154Z stood on 18 of 20 from t180 to its Culture loss
+    // at t213, every rival voting B on it at t200; Seasteads never landed once
+    // the plan read Recovery. From 16 points the seat researches and adopts
+    // both first. See `advanced/diplo_match_point_research.rs`.
+    Gene { tag: "diplo-match-point-beelines-the-points", field: "diplo_match_point_beelines", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_match_point_beelines_the_points, disable: AdvancedAi::disable_diplo_match_point_beelines_the_points },
+    // `culture-keeps-every-border-open`: tourism pressure is banked with the
+    // multiplier in force when it is generated, and a rival's Open Borders
+    // grant is +25% against it. The Culture objective bought one grant every
+    // sixth turn and held 0-2 of three rivals at most turn-25 marks of a
+    // native Immortal culture census. Once our tourism reaches 15 a turn, a
+    // Culture seat buys every allowed grant each turn, the bar holder first,
+    // never into the solvency reserve. See `advanced/culture_open_borders.rs`.
+    Gene { tag: "culture-keeps-every-border-open", field: "culture_keeps_every_border_open", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_keeps_every_border_open, disable: AdvancedAi::disable_culture_keeps_every_border_open },
+    // The defensive Inquisition waits to spread our faith first while it
+    // holds under half our cities -- right for an unconverted empire, wrong
+    // for one a rival faith is taking: live Emperor civvis-20261030T120109Z
+    // (Diplomatic) founded Buddhism, held one Temple city of four against
+    // Catholicism's two from t64 to t80, never launched, lost its Holy City
+    // by t88 and the game to Religion at t114 with 1,169 Faith banked. With
+    // this on, a rival-held city of ours ends the wait. See
+    // `advanced/defensive_apostle.rs`.
+    Gene { tag: "inquisition-answers-a-rival-majority", field: "inquisition_answers_a_rival_majority", kind: Kind::OptIn, enable: AdvancedAi::enable_inquisition_answers_a_rival_majority, disable: AdvancedAi::disable_inquisition_answers_a_rival_majority },
+    // `diplo-seat-statue-harbor`: the Statue of Liberty (+4 Diplomatic
+    // Victory Points) needs a Harbor beside its coast tile; in live Emperor
+    // civvis-20261030T101932Z it never once reached our buildable list (our
+    // only Harbor, in a 15-19 Production city, from t160), and 111154Z sat at
+    // 18 points for thirty turns. A Diplomacy seat's strongest coastal city
+    // claims its first Harbor while the Statue is open. See
+    // `advanced/diplo_statue_harbor.rs`.
+    Gene { tag: "diplo-seat-statue-harbor", field: "diplo_seat_statue_harbor", kind: Kind::OptIn, enable: AdvancedAi::enable_diplo_seat_statue_harbor, disable: AdvancedAi::disable_diplo_seat_statue_harbor },
+    // `hidden-border-yields-to-our-pressure`: live Immortal
+    // civvis-20261030T123145Z held a Settler out from t50 past t80, at peace,
+    // after sixteen "rival border whose city may be hidden" refusals, and
+    // retired at t88 on four cities. The unresolved-border veto yields where
+    // our own cities press the site (population times closeness, 20 or more).
+    // See `advanced/hidden_border_reach.rs`.
+    Gene { tag: "hidden-border-yields-to-our-pressure", field: "hidden_border_yields_to_our_pressure", kind: Kind::OptIn, enable: AdvancedAi::enable_hidden_border_yields_to_our_pressure, disable: AdvancedAi::disable_hidden_border_yields_to_our_pressure },
+    // The founder's Inquisition reserve holds only while the Apostle is five
+    // turns of Faith away; live Immortal civvis-20261030T171157Z (Diplomatic,
+    // 16 DVP to the rivals' 3-6) earned +11-13 a turn, sat 124-184 short of
+    // the Apostle each review, bought five Missionaries t60-94 while its Holy
+    // City held Catholicism with Temple, Shrine and Holy Site, and lost to
+    // Religion at t168. A Diplomatic founder whose Holy City still follows its
+    // faith now saves over fifteen turns. See `advanced/founder_defence.rs`.
+    Gene { tag: "diplomat-saves-for-the-apostle", field: "diplomat_saves_for_the_apostle", kind: Kind::OptIn, enable: AdvancedAi::enable_diplomat_saves_for_the_apostle, disable: AdvancedAi::disable_diplomat_saves_for_the_apostle },
+    // `culture-routes-reach-every-rival`: an international route of ours is
+    // +25% on the tourism pressure banked against its owner, and a native
+    // Immortal culture census found routes to about half the rivals at turns
+    // 100-125 of the tourism ramp. While a Culture seat's tourism is at least
+    // 15, a Trader in one of our cities that can reach a rival without our
+    // route goes there, the bar holder first. See `advanced/culture_routes.rs`.
+    Gene { tag: "culture-routes-reach-every-rival", field: "culture_routes_reach_every_rival", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_routes_reach_every_rival, disable: AdvancedAi::disable_culture_routes_reach_every_rival },
+    // `trade-quotes-pay-the-lump`: `quoted_payment` pays a quote's fraction
+    // as 0.1 Gold a turn, checked against `empire_gold_per_turn` (4 Gold a
+    // city less upkeep, floor zero). A native Immortal culture census read that
+    // proxy as zero from turn 100 in every game while real income was 30-200,
+    // and the seat's luxury, strategic and Great Work quotes fell from 1-5 to
+    // none. This seat's quotes pay a rounded-up lump the payer can cover. See
+    // `advanced/trade_quotes_lump.rs`.
+    Gene { tag: "trade-quotes-pay-the-lump", field: "trade_quotes_pay_the_lump", kind: Kind::OptIn, enable: AdvancedAi::enable_trade_quotes_pay_the_lump, disable: AdvancedAi::disable_trade_quotes_pay_the_lump },
+    // Live Immortal 10-30 civvis-20261030T171157Z (diplomatic): 16 DVP at t160
+    // against 3-6, lost to Islam's Religious Victory at 168. Our Catholicism
+    // held none of our cities from 100, Islam 8 of 10 from 145, 300-780 Faith
+    // banked with no religious unit: the counterweight family answers only
+    // the Domination lane and only a seat that never founded. On the
+    // Diplomacy lane it answers too, and a founder with no city of its faith
+    // defends as faithless. See `advanced/counterweight_diplomat.rs`.
+    Gene { tag: "counterweight-defends-the-diplomat", field: "counterweight_defends_the_diplomat", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_defends_the_diplomat, disable: AdvancedAi::disable_counterweight_defends_the_diplomat },
+    // A Diplomatic seat with no counterweight source has no religious defence
+    // but a war: native diplomatic religious losses 52011/17/18 had every city
+    // on the threat by turns 86-95 with 297-352 Faith banked, and live 171157Z
+    // lost at 168 on 16 DVP. `faith-war-before-the-flip` (spreaders 0.26 a
+    // turn at war against 1.47 at peace) opens on the Diplomacy lane too. See
+    // `faith_war_lane` in `advanced/counterweight_diplomat.rs`.
+    Gene { tag: "faith-war-defends-the-diplomat", field: "faith_war_defends_the_diplomat", kind: Kind::OptIn, enable: AdvancedAi::enable_faith_war_defends_the_diplomat, disable: AdvancedAi::disable_faith_war_defends_the_diplomat },
+    // 13 live religious losses 2026-10-30: a counterfaith city of ours stood in
+    // 7, one with a Holy Site in 1, so no counterweight Missionary could be
+    // bought (171157Z: Buddhist Argos and Rhodes t70-168, no Holy Site, 337-718
+    // Faith banked, 16 DVP at t160). A faithless seat a rival faith presses
+    // claims a Holy Site in its biggest safe-counterfaith city. See
+    // `counterweight_builds_its_source` in `advanced/counterweight_diplomat.rs`.
+    Gene { tag: "counterweight-builds-its-source", field: "counterweight_builds_its_source", kind: Kind::OptIn, enable: AdvancedAi::enable_counterweight_builds_its_source, disable: AdvancedAi::disable_counterweight_builds_its_source },
+    // Live Immortal culture seats 2026-10-30: 38-134 "recovery plan" lines a
+    // game, and Recovery's Faith reserve holds whenever any non-culture unit is
+    // on a menu. 132518Z: a Band (550) or Naturalist (350) for sale with twice
+    // its price banked on 22 turns, 4,384 Faith at t210, none bought. A named
+    // Culture seat in Recovery spends once the bank holds twice the cheapest.
+    // See `advanced/culture_recovery_bank.rs`.
+    Gene { tag: "culture-recovery-spends-the-bank", field: "culture_recovery_spends_the_bank", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_recovery_spends_the_bank, disable: AdvancedAi::disable_culture_recovery_spends_the_bank },
+    // 13 live Science-Victory losses 2026-10-30: the first Disrupt Rocketry
+    // came 30 turns after the racer's first project (153459Z, Culture), 24
+    // (162440Z) and 13 (084235Z), each with a Spy waiting in a leader city
+    // with no pad, its Spaceport unseen. Once the leader has landed a project,
+    // a Spy where Disrupt Rocketry is not offered moves on to the leader's
+    // next city until it finds the pad. Needs `racer-keeps-the-spies`. See
+    // `advanced/racer_keeps_the_spies.rs`.
+    Gene { tag: "racer-spies-search-for-the-pad", field: "racer_spies_search_for_the_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_racer_spies_search_for_the_pad, disable: AdvancedAi::disable_racer_spies_search_for_the_pad },
+    // Live Lv 7 Immortal 2026-10-30: nine Culture/Diplomatic seats lost to a
+    // Science Victory with no war on the racer between its Moon and its
+    // launch, five of them at 0.8x its power or better for most of that window
+    // (224544Z 35/36 turns). `counter-in-lane` answers a Science threat in
+    // lane off Domination, and the launcher war opens only from a Conquest
+    // plan. Off Domination, the racer `launcher_war_opens` names becomes the
+    // Conquest counter. Needs `launcher-war-ignores-the-edge`. See
+    // `advanced/launcher_war_every_lane.rs`.
+    Gene { tag: "launcher-war-serves-every-lane", field: "launcher_war_serves_every_lane", kind: Kind::OptIn, enable: AdvancedAi::enable_launcher_war_serves_every_lane, disable: AdvancedAi::disable_launcher_war_serves_every_lane },
+    // Ten live Lv 7 Culture seats 2026-10-30 held no alliance at t80, t120 or
+    // t160: the live binary and the agent passed alliances only for the
+    // Diplomatic lane, and early wars were the culture seats' worst losses.
+    // A Culture seat allies its nearest safe rival, never the science racer
+    // or the rival that sets our culture bar. See
+    // `advanced/culture_seat_allies.rs`.
+    Gene { tag: "culture-seat-allies", field: "culture_seat_allies", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_allies, disable: AdvancedAi::disable_culture_seat_allies },
+    // Live Immortal seats 2026-10-30 (54 games): the first Builder came at a
+    // median turn 26 (scout, Settler, slinger, Settler first), 5% of owned land
+    // stood improved at turn 40 against the rivals' 26%, and their population
+    // ran 1.6x ours from turn 20. Once the capital's first Settler is out and
+    // the empire has never held a Builder, the capital trains one before its
+    // next Settler. See `BasicAi::opening_builder_after_the_first_settler`.
+    Gene { tag: "opening-builder-after-the-first-settler", field: "opening_builder_after_the_first_settler", kind: Kind::OptIn, enable: AdvancedAi::enable_opening_builder_after_the_first_settler, disable: AdvancedAi::disable_opening_builder_after_the_first_settler },
+    // Live Lv 7/8 2026-10-30/31: 7 of 8 seats declared on by t40 lost a
+    // city by t41, five of them with walls part-built. The walls' live 2.0x
+    // reading stood down when we armed (001453Z: bought warriors lifted us
+    // to 1.7x and Athens built a Monument first) or the rival dipped
+    // (173341Z: 1.6x). A 2x major seen within ten tiles of the capital or a
+    // frontier city keeps that city's walls, and Masonry, armed for the
+    // ten-turn window. Needs `capital-walls-before-the-surprise` and/or
+    // `frontier-walls-before-the-surprise`. See
+    // `advanced/surprise_watch_latch.rs`.
+    Gene { tag: "surprise-watch-holds-its-ratio", field: "surprise_watch_holds_its_ratio", kind: Kind::OptIn, enable: AdvancedAi::enable_surprise_watch_holds_its_ratio, disable: AdvancedAi::disable_surprise_watch_holds_its_ratio },
+    // Live Immortal 10-30, 21 seats: a Settler lived a median 8 turns (51% at
+    // 8+, tails to 58) before founding, and 571 of ~630 "Settler HELD" lines
+    // were the safe-step guard against barbarian raiders, and the stall-expiry
+    // fallback then refused on the same tile risk. With barbarians the only
+    // visible threat and a city that would outlast them (live barbarians do
+    // take cities), the held Settler founds in place.
+    // See `advanced/settler_raiders.rs`.
+    Gene { tag: "settler-founds-under-raiders", field: "settler_founds_under_raiders", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_founds_under_raiders, disable: AdvancedAi::disable_settler_founds_under_raiders },
+    // While a living major is unmet or unlocated, or a city-state is unmet,
+    // the queued sea scout keeps its queue against the governor's rescoring,
+    // ships route toward foreign landfall, and the faster hull is preferred.
+    // See `advanced/contact_fleet.rs`.
+    Gene { tag: "contact-fleet", field: "contact_fleet", kind: Kind::OptIn, enable: AdvancedAi::enable_contact_fleet, disable: AdvancedAi::disable_contact_fleet },
+    // `immortal-skips-the-prophet-race`: live Immortal Culture seats lost
+    // the Prophet race by t58-60 with 36-93 points, the capital (6-9
+    // Production) having spent t34-t55 on the race's Holy Site and Shrine
+    // (civvis-20261030T220042Z, 134907Z), and 16 of 27 retired under the
+    // production rule. At Immortal and Deity a seat aiming at neither Religion
+    // nor Diplomacy stays out of the race unless a Prophet is pending. See
+    // `advanced/immortal_prophet_race.rs`.
+    Gene { tag: "immortal-skips-the-prophet-race", field: "immortal_skips_the_prophet_race", kind: Kind::OptIn, enable: AdvancedAi::enable_immortal_skips_the_prophet_race, disable: AdvancedAi::disable_immortal_skips_the_prophet_race },
+    // Operator 10-31 rolls Religion-target seats into the Lv 7 lane. After
+    // founding (median t44-54 live), a Religion seat's plan reads Expansion
+    // until ~t125, and the spreading posture, the 80-Faith reserve and
+    // religious production all key on the plan, so the corps idles while
+    // rivals finish at t145-176 (native, 6 seats, 0 religious wins). A
+    // Religion-target founder keeps all three in any plan. See
+    // `advanced/religion_lane_spreads.rs`.
+    Gene { tag: "religion-lane-spreads-from-founding", field: "religion_lane_spreads_from_founding", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_lane_spreads_from_founding, disable: AdvancedAi::disable_religion_lane_spreads_from_founding },
+    // Live Immortal 054450Z (Domination, 10-31) held its war on Australia at
+    // 6-12x its power on 49 turns from t101: `war_policy_declaration` read
+    // our own faith war on Macedon as "another major war", although
+    // `faith-war-is-no-front` already keeps that war out of
+    // `one_war_holds_declaration`. Melbourne walled up by t123. The board
+    // reads the same exemption. Needs `faith-war-is-no-front` (or -2). See
+    // `war_policy_declaration` in `advanced/war_policy.rs`.
+    Gene { tag: "board-ignores-the-faith-war", field: "board_ignores_the_faith_war", kind: Kind::OptIn, enable: AdvancedAi::enable_board_ignores_the_faith_war, disable: AdvancedAi::disable_board_ignores_the_faith_war },
+    // Live Immortal 6p Continents 10-31: `naval-escort-patience` counts its
+    // wait per water tile, so a Settler crossing alone held two turns at every
+    // tile (042324Z: t52-79 afloat, 110 holds on 48 turns; 024232Z 22 turns,
+    // 011801Z 19). A voyage that has crossed alone steps on while the sea
+    // stays quiet. See `advanced/naval_crossing.rs`.
+    Gene { tag: "naval-crossing-keeps-going", field: "naval_crossing_keeps_going", kind: Kind::OptIn, enable: AdvancedAi::enable_naval_crossing_keeps_going, disable: AdvancedAi::disable_naval_crossing_keeps_going },
+    // Live Immortal seats 2026-10-30 (30 seats, t<=120): 63% of a Builder's
+    // consecutive jobs sat near a different city, a median 6 turns and 5 hexes
+    // apart against 2 and 2 inside one city, at 7.6 Builder-turns per
+    // improvement. Every destination was scored `value - 0.7 x wdist`, and
+    // 0.7 a hex is nothing against jobs worth 5-100. While a Builder has a
+    // charge to spare it now scores value per Builder-turn; its last charge
+    // keeps the untreated price. See `advanced/builder_travel_turns.rs`.
+    Gene { tag: "builder-prices-travel-in-turns", field: "builder_prices_travel_in_turns", kind: Kind::OptIn, enable: AdvancedAi::enable_builder_prices_travel_in_turns, disable: AdvancedAi::disable_builder_prices_travel_in_turns },
+    // A Religion-target seat that lost the Prophet race keeps a Religion
+    // plan, with no religion, for the rest of the game: the 4th religion
+    // closed the race at a median t47.5 live (6p Immortal), and our seat
+    // founded in 5 of 17. With every slot claimed and none ours, it takes
+    // Science (else Culture, else Domination). See
+    // `advanced/religion_lane_hands_over.rs`.
+    Gene { tag: "religion-lane-hands-over", field: "religion_lane_hands_over", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_lane_hands_over, disable: AdvancedAi::disable_religion_lane_hands_over },
+    // The t80 production gate retires 16 of 20 6p Immortal seats at a median
+    // share of 0.23. The first Trader (~t21) goes foreign or to a city-state
+    // for ~4 Gold in kept and retired seats alike: `commercial-hub-and-traders`
+    // pays 1.5 per Gold, so a domestic route's Production never wins. Within
+    // ~100 Online turns, route Production outbids that premium. See
+    // `advanced/early_route_production.rs`.
+    Gene { tag: "early-route-feeds-production", field: "early_route_feeds_production", kind: Kind::OptIn, enable: AdvancedAi::enable_early_route_feeds_production, disable: AdvancedAi::disable_early_route_feeds_production },
+    // A Religion seat without a religion got the Religion strategy before the
+    // Expansion branch read its city count: 4 of 5 6p Immortal Religion seats
+    // ran Religion at t20-40 (every other lane ran Expansion), held a median 3
+    // cities at t60 against 4-5, and 4 of 5 were retired at the t80 gate. The
+    // prophet race keys on the target, not the strategy. See
+    // `advanced/religion_race_expands.rs`.
+    Gene { tag: "religion-race-keeps-expanding", field: "religion_race_keeps_expanding", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_race_keeps_expanding, disable: AdvancedAi::disable_religion_race_keeps_expanding },
+    // On 6p Continents a Domination plan aimed overseas never declares: the
+    // army is kept on land at peace and the amphibious train forms only at
+    // war. Live 041027Z aimed at overseas Russia t78-85 and retired with no
+    // city; 22 of 45 rival slots in the long 6p games sat across water. Rivals
+    // reachable by land rank first in the frontier and capital picks and the
+    // hand-over bar. See `advanced/domination_land_first.rs`.
+    Gene { tag: "domination-targets-land-first", field: "domination_targets_land_first", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_targets_land_first, disable: AdvancedAi::disable_domination_targets_land_first },
+    // On a Religion seat, `spreader-steps-out-of-the-apostle` pins the corps
+    // in a pocket while an out-trading Apostle camps on every approach: live
+    // Immortal 063431Z logged 821 holds on 43 turns (one Missionary t118-177)
+    // and spread 5 times all game. After three held turns a spreader yields
+    // only to a lethal blow for six turns. See `advanced/stalled_spreader.rs`.
+    Gene { tag: "stalled-spreader-braves-the-march", field: "stalled_spreader_braves_the_march", kind: Kind::OptIn, enable: AdvancedAi::enable_stalled_spreader_braves_the_march, disable: AdvancedAi::disable_stalled_spreader_braves_the_march },
+    // Live Lv 7 2026-10-30: two frontier Corinths fell at t27 (200156Z) and
+    // t28 (201608Z) with no walls while the journal read "Anvil at Corinth:
+    // … slinger in the city". The Anvil gives the city tile to a Shooter
+    // and puts melee on the ring, but an unwalled city's defence is its
+    // garrison's melee strength: 20 with a Warrior inside, 10 with a
+    // Slinger or nobody (Civ VI's own city defence read both ways). In
+    // 201608Z the Warrior that stood inside at t26 (defence 18.6) was posted
+    // to the ring at t27 and the city fell the next turn. With no standing
+    // walls, the Anvil's strongest melee soldier within a tile holds the
+    // city and makes no blow. See `advanced/anvil_garrisons_its_melee.rs`.
+    Gene { tag: "anvil-garrisons-its-melee", field: "anvil_garrisons_its_melee", kind: Kind::OptIn, enable: AdvancedAi::enable_anvil_garrisons_its_melee, disable: AdvancedAi::disable_anvil_garrisons_its_melee },
+    // The defence pass queues walls in a threatened city and the general pass
+    // switches it straight back: "switches to amphitheater, displacing walls"
+    // 50 times on the live journals, and 8 of the 10 cities lost unwalled at
+    // t45-100 on 6p Immortal seats had their walls displaced first. While the
+    // city is damaged or a visible enemy soldier stands within 4 tiles, a
+    // defensive commitment holds against a civilian build. See
+    // `advanced/defence_holds.rs`.
+    Gene { tag: "defence-holds-under-fire", field: "defence_holds_under_fire", kind: Kind::OptIn, enable: AdvancedAi::enable_defence_holds_under_fire, disable: AdvancedAi::disable_defence_holds_under_fire },
+    // Live Immortal 6p Continents 10-30/31: `rapid-city-expansion-2` is asked
+    // before `land_grab`, so every live seat planned the ordinary cadence
+    // floored at ten (1,223 of 1,894 readings past t110) and held 10 cities
+    // at t150-180 against the leader's 11-13. Under the gene the target is
+    // the larger of the two. See `advanced/land_grab_outlasts.rs`.
+    Gene { tag: "land-grab-outlasts-the-opening", field: "land_grab_outlasts_the_opening", kind: Kind::OptIn, enable: AdvancedAi::enable_land_grab_outlasts_the_opening, disable: AdvancedAi::disable_land_grab_outlasts_the_opening },
+    // The operator's non-Diplomatic Lv 7 lane (2026-10-31) seats Science
+    // first, and the live alliance gate passed alliances only for the
+    // Diplomatic lane (and Culture under `culture-seat-allies`): every
+    // Research Alliance `research-alliance-first` proposed on a Science seat
+    // was dropped. A Science seat allies its nearest safe rival, never the
+    // leading science rival or a space racer. See
+    // `advanced/culture_seat_allies.rs`.
+    Gene { tag: "science-seat-allies", field: "science_seat_allies", kind: Kind::OptIn, enable: AdvancedAi::enable_science_seat_allies, disable: AdvancedAi::disable_science_seat_allies },
+    // `capital-walls-at-any-ratio`: 8 of 18 located Immortal city losses
+    // were the capital, and the attacker's power ratio barely told it apart
+    // from neighbours that never declared (medians 2.69 against 3.0); live
+    // civvis-20261030T201608Z lost an unwalled Athens to a 1.41x Egypt. At
+    // Immortal and Deity the capital's walls arm on any watched major soldier
+    // at our door. See `advanced/capital_walls_at_any_ratio.rs`.
+    Gene { tag: "capital-walls-at-any-ratio", field: "capital_walls_at_any_ratio", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_walls_at_any_ratio, disable: AdvancedAi::disable_capital_walls_at_any_ratio },
+    // The operator's non-Diplomatic Lv 7 lane (2026-10-31) rolls Religion
+    // seats, and -3b's audit found every founder defence gated to Domination
+    // (and Diplomacy): the defensive Inquisition, the Holy City guard, the
+    // founder's spreaders kept home, the faithless homeland pass. A Religious
+    // Victory needs our faith to hold our own cities too. Opens them for a
+    // seat aiming at Religion. See `defensive_apostle.rs`.
+    Gene { tag: "religion-seat-defends-its-faith", field: "religion_seat_defends_its_faith", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_defends_its_faith, disable: AdvancedAi::disable_religion_seat_defends_its_faith },
+    // `religion-seat-founds-first`: the live 6p Immortal race is decided by
+    // t30-37, and a Religion seat's Holy Site waits for its third city
+    // (`expansion-before-prophet`): t29 and t36 in two lost races, none in a
+    // third. A Religion-target seat's first idle queue after Astrology starts
+    // it. See `advanced/religion_seat_founds_first.rs`.
+    Gene { tag: "religion-seat-founds-first", field: "religion_seat_founds_first", kind: Kind::OptIn, enable: AdvancedAi::enable_religion_seat_founds_first, disable: AdvancedAi::disable_religion_seat_founds_first },
+    // Live Immortal 6-major seats 2026-10-31 denounced every rival with a
+    // seen pad ("their space race is a science threat"): 111516Z all four at
+    // t142-150 and again every 21 turns, 104757Z 41 times, 094146Z 49. Every
+    // rival stood DENOUNCED by t160, so no seat could make a friend or an
+    // ally. Only the leading racer's denunciation serves the formal launcher
+    // war. Denounce only the most pressing science threat. See
+    // `advanced/science_threat_denial.rs`.
+    Gene { tag: "science-denounce-names-the-leader", field: "science_denounce_names_the_leader", kind: Kind::OptIn, enable: AdvancedAi::enable_science_denounce_names_the_leader, disable: AdvancedAi::disable_science_denounce_names_the_leader },
+    // Live Immortal 2026-10-30/31, seats alive past t120: 32-42% of cities
+    // grew at half or a quarter for housing and 22-28% were short of
+    // Amenities at t80-t140, with our citizens per city at 0.68-0.77 of the
+    // production leader's. The policy counterfactual reads yields only, so a
+    // housing or amenity card read as nearly nothing: Insulae slotted in 1 of
+    // 99 t80 seats holding it, Retainers in 18 of 89. The deck prices each
+    // city's growth surplus. See `BasicAi::deck_prices_growth`.
+    Gene { tag: "deck-prices-growth", field: "deck_prices_growth", kind: Kind::OptIn, enable: AdvancedAi::enable_deck_prices_growth, disable: AdvancedAi::disable_deck_prices_growth },
+    // 24 live Immortal 6-major seats (2026-10-31, non-Diplomatic lanes): 34
+    // declared friendships, 22 lapsed unrenewed, and 9 lapsed friends later
+    // declared war on us (t109-t200). Off Domination, a lapsing friendship is
+    // renewed at once (the host reads Friendly for about a turn after the
+    // lapse) and the Domination-era stronger/prey filters do not apply. See
+    // `advanced/protective_friendship.rs`.
+    Gene { tag: "friendship-keeps-the-peace", field: "friendship_keeps_the_peace", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_keeps_the_peace, disable: AdvancedAi::disable_friendship_keeps_the_peace },
+    // Live Immortal 2026-10-31, deck-prices-growth seats with Retainers
+    // slotted: 1,014 Amenity-short city-turns, 110 (11%) holding a soldier;
+    // at t140 106 of 118 short cities stood at -1. At peace 1.4-1.8 units a
+    // city, 72-79% within three tiles of one. An idle soldier garrisons each
+    // short city while Retainers is slotted. See `ai/retainers_garrison.rs`.
+    Gene { tag: "retainers-garrison-the-short-cities", field: "retainers_garrison_the_short_cities", kind: Kind::OptIn, enable: AdvancedAi::enable_retainers_garrison_the_short_cities, disable: AdvancedAi::disable_retainers_garrison_the_short_cities },
+    // `pillaged-districts-repair-first`: 26 of 63 lane seats had a pillaged
+    // district (77 spells, a median 10 turns, 19 never repaired by t150). The
+    // repair is priced 1,500 but the claim genes take the queue first; live
+    // civvis-20261101T024926Z lost the Prophet race on a Holy Site pillaged
+    // from t30 to t66. The repair now claims its city after every other claim.
+    // See `advanced/pillaged_repairs_first.rs`.
+    Gene { tag: "pillaged-districts-repair-first", field: "pillaged_districts_repair_first", kind: Kind::OptIn, enable: AdvancedAi::enable_pillaged_districts_repair_first, disable: AdvancedAi::disable_pillaged_districts_repair_first },
+    // Live Emperor civvis-20261101T043921Z launched its Exoplanet first (214)
+    // and lost at 224: at turn 180 two racers had their Moon landed, the
+    // launcher war's tie went to the lower seat (Georgia, 60 techs), and
+    // Hungary (64 techs, 387 Science against 267, at half our power) won on
+    // laser stations. A tie now goes to the racer knowing more techs. Needs
+    // `launcher-war-serves-every-lane`. See `advanced/launcher_war_every_lane.rs`.
+    Gene { tag: "launcher-war-fights-the-faster-racer", field: "launcher_war_fights_the_faster_racer", kind: Kind::OptIn, enable: AdvancedAi::enable_launcher_war_fights_the_faster_racer, disable: AdvancedAi::disable_launcher_war_fights_the_faster_racer },
+    // Live Emperor Religion seat civvis-20261031T034930Z (2026-11-01, -3b):
+    // the Apostle bought at t68 held every Faith purchase for the Inquisitor,
+    // silently, while Catholic spreaders worked the Holy City, which flipped
+    // at t80-90 with 254-769 Faith banked; nothing of ours could be bought
+    // after (2,670 Faith unspent at the t218 loss). While the Apostle
+    // travels, a threatened source buys its cover Missionary when the Faith
+    // left covers the first Inquisitor. See `advanced/defensive_apostle.rs`.
+    Gene { tag: "apostle-transit-keeps-the-cover", field: "apostle_transit_keeps_the_cover", kind: Kind::OptIn, enable: AdvancedAi::enable_apostle_transit_keeps_the_cover, disable: AdvancedAi::disable_apostle_transit_keeps_the_cover },
+    // `culture-keeps-every-border-open-2`: version one, buying passage only
+    // from the bar holder (most domestic tourists) — its visitors count twice.
+    // A King screen read version one at −1.7 pp share with wins unchanged. See
+    // `advanced/culture_open_borders.rs`.
+    Gene { tag: "culture-keeps-every-border-open-2", field: "culture_keeps_every_border_open_2", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_keeps_every_border_open_2, disable: AdvancedAi::disable_culture_keeps_every_border_open_2 },
+    // `fog-yields-to-a-stranded-settler`: live civvis-20261101T042616Z held
+    // three cities t40-t127 with a Settler stranded t44-t177, 49 sites refused
+    // as "beyond the empire's Loyalty reach on ground the seat has not
+    // explored"; the hidden-border yield sits below that clause and never
+    // fired. Once a Settler has walked fifteen turns the fog clause yields.
+    // See `advanced/fog_yields_stranded.rs`.
+    Gene { tag: "fog-yields-to-a-stranded-settler", field: "fog_yields_to_a_stranded_settler", kind: Kind::OptIn, enable: AdvancedAi::enable_fog_yields_to_a_stranded_settler, disable: AdvancedAi::disable_fog_yields_to_a_stranded_settler },
+    // Live Emperor 2026-10-31/11-01: one game in three that began a Spaceport
+    // left it for other builds. Once a claim borrows the queue, the placed
+    // foundation reads as a second pad (-10,000) and the first-pad rung has
+    // lapsed (250), so the strategic controller never resumes it. 043921Z: placed t161, finished t193 (8 turns on it),
+    // Satellite 36 turns behind the leader. See `unfinished_launch_pad_site`.
+    Gene { tag: "launch-pad-keeps-its-rung", field: "launch_pad_keeps_its_rung", kind: Kind::OptIn, enable: AdvancedAi::enable_launch_pad_keeps_its_rung, disable: AdvancedAi::disable_launch_pad_keeps_its_rung },
+    // Live King civvis-20261101T075446Z (Religion) led the space race to Mars
+    // (Satellite 208, Moon 215, against the Ottomans' 215 and 224) on 320
+    // science against 394, so `science-drive-answers-the-launch`, which opens
+    // on an outright science lead, never drove: research stayed on the war
+    // plan, Smart Materials came at 227, our Exoplanet launched at 240 against
+    // theirs at 236, and the Ottomans won at 245. The answer now also opens
+    // and holds while our landed projects are level with the leading racer's.
+    // Needs `science-victory-drive` and `science-drive-answers-the-launch`.
+    // See `advanced/science_victory_drive.rs`.
+    Gene { tag: "science-drive-answers-from-the-pad", field: "science_drive_answers_from_the_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_science_drive_answers_from_the_pad, disable: AdvancedAi::disable_science_drive_answers_from_the_pad },
+    // `culture-digs-one-museum`: the two Museums tie and the base AI breaks
+    // toward Art, so a Culture seat never owns an Artifact slot (live King
+    // culture seat 091422Z: 66 Art Museum orders, no Archaeologist, lost t237
+    // 82 visitors short). One Archaeological Museum opens the dig line. See
+    // `advanced/culture_dig_museum.rs`.
+    Gene { tag: "culture-digs-one-museum", field: "culture_digs_one_museum", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_digs_one_museum, disable: AdvancedAi::disable_culture_digs_one_museum },
+    // Live King civvis-20261101T095815Z (with v1 armed) landed its Moon at
+    // 202, one project behind Gran Colombia's Mars at 203, so the level-pad
+    // reading never held. Research ran the war plan until an outright
+    // science lead opened the answer at 218. Smart Materials came at 221 and
+    // Offworld Mission at 231. Our Exoplanet launched at 223 against theirs
+    // at 221 with no laser station possible before 231, and Gran Colombia
+    // won at 233. The answer now also opens within one project of every
+    // rival. Replaces `science-drive-answers-from-the-pad` (either reads the
+    // pads; -2 adds the slack). Needs `science-victory-drive` and
+    // `science-drive-answers-the-launch`. See `advanced/science_victory_drive.rs`.
+    Gene { tag: "science-drive-answers-from-the-pad-2", field: "science_drive_answers_from_the_pad_2", kind: Kind::OptIn, enable: AdvancedAi::enable_science_drive_answers_from_the_pad_2, disable: AdvancedAi::disable_science_drive_answers_from_the_pad_2 },
+    // Live King 2026-11-01: the Spy trainer and other claims take the pad
+    // city's queue, since the launch city is the top producer and a district
+    // at the head counts as routine work. 085353Z: Mbwila placed the pad at
+    // t175, trained a Spy at t180, then a reactor conversion, an air-surge
+    // unit and Research Grants; the pad finished at t206 and the Satellite
+    // landed at 215 against Khmer's 177. 081602Z trained Spies in Rome from
+    // t193 and never landed a Satellite. While no pad stands, the first pad
+    // goes back to the head of its city after every claim, short of a threat
+    // to that city, and the Spy trainer skips it.
+    // See `advanced/launch_pad_holds_its_queue.rs`.
+    Gene { tag: "launch-pad-holds-its-queue", field: "launch_pad_holds_its_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_launch_pad_holds_its_queue, disable: AdvancedAi::disable_launch_pad_holds_its_queue },
+    // `launch-commits-the-endgame`: live civvis-20261101T075446Z (assigned
+    // Religion) tied the tree 77-77 and led every launch, then lost the
+    // Exoplanet leg by four turns: the science endgame admits a launched seat
+    // only while it has no assigned lane, so its schedule never ran. Our own
+    // Earth Satellite now commits any lane but Domination. See
+    // `advanced/launch_commits_endgame.rs`.
+    Gene { tag: "launch-commits-the-endgame", field: "launch_commits_the_endgame", kind: Kind::OptIn, enable: AdvancedAi::enable_launch_commits_the_endgame, disable: AdvancedAi::disable_launch_commits_the_endgame },
+    // `culture-seat-theater-first-2`: version one balanced against the
+    // Campuses: a city claims its first Theater only while the empire's
+    // Theaters (standing or queued) trail its Campuses, or one. Live King
+    // culture seats held 2-4 Campuses to 4-5 Theaters at t100 and lost mostly
+    // to rival Science at t222-244. See `advanced/culture_theater_first.rs`.
+    Gene { tag: "culture-seat-theater-first-2", field: "culture_seat_theater_first_2", kind: Kind::OptIn, enable: AdvancedAi::enable_culture_seat_theater_first_2, disable: AdvancedAi::disable_culture_seat_theater_first_2 },
+    // Live King 2026-11-01: every game ended in a Science victory, and the
+    // Domination seat 073004Z held the whole tree with no pad (all three
+    // exclusions) while Korea won at t257. Within three techs of the field,
+    // once a rival has landed, the seat answers with its own race beside its
+    // war. See `advanced/domination_joins_the_race.rs`.
+    Gene { tag: "domination-joins-the-race", field: "domination_joins_the_race", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_joins_the_race, disable: AdvancedAi::disable_domination_joins_the_race },
+    // Live King 2026-11-01: every Culture seat froze on a turn a rival
+    // refused our alliance ask, and most refusals were the same rival asked
+    // again on the ten-turn retry (081602Z six times, 102116Z four). A
+    // partner that did not ally is not re-asked for thirty turns. See
+    // `advanced/alliance_remembers_the_refusal.rs`.
+    Gene { tag: "alliance-remembers-the-refusal", field: "alliance_remembers_the_refusal", kind: Kind::OptIn, enable: AdvancedAi::enable_alliance_remembers_the_refusal, disable: AdvancedAi::disable_alliance_remembers_the_refusal },
+    // Live King 2026-11-01: 7 of 25 seats assigned Culture, Religion or
+    // Domination led the field outright before any rival landed a space
+    // project, by 9 to 86 turns, and `science-drive-answers-the-launch`
+    // waited for that launch every time. 141505Z and 151815Z (Domination) led
+    // from 143 and 110, opened the drive at 190 and 184, landed their first
+    // project at 211 and 208, and lost to rival Culture at 216 and 214.
+    // 075446Z led from 184 with no rival launch until 215 and lost the
+    // Exoplanet race at 245 by four turns. From Online turn 140 an outright
+    // lead (1.1x the best rival's Science, techs level or ahead) opens the
+    // drive beside the assigned lane. Needs `science-victory-drive` and
+    // `science-drive-answers-the-launch`. See `advanced/science_victory_drive.rs`.
+    Gene { tag: "science-drive-leads-beside-the-lane", field: "science_drive_leads_beside_the_lane", kind: Kind::OptIn, enable: AdvancedAi::enable_science_drive_leads_beside_the_lane, disable: AdvancedAi::disable_science_drive_leads_beside_the_lane },
+    // Native King Domination seats lost to rival Culture behind a declared
+    // friendship: 30700000 accepted France's offer at t128 and t149, 30700004
+    // offered Gaul at t105 and t126; every counter read "barred: we are
+    // declared friends". A racer's offer is refused, and culture alone counts
+    // as racing. See `advanced/protective_friendship.rs`.
+    Gene { tag: "friendship-refuses-the-racer", field: "friendship_refuses_the_racer", kind: Kind::OptIn, enable: AdvancedAi::enable_friendship_refuses_the_racer, disable: AdvancedAi::disable_friendship_refuses_the_racer },
+    // Live Emperor/King 11-01: 144 of 262 near-rival deterrents (55%)
+    // targeted a declared friend, and a declared friend declared war within
+    // ten turns on 1.0 per 100 rival-turns (vs 8.0 unfriendly, 10.3 friendly).
+    // Under the gene a declared friend is not a deterrence neighbour. See
+    // `advanced/deterrence_trusts_a_friend.rs`.
+    Gene { tag: "deterrence-trusts-a-friend", field: "deterrence_trusts_a_friend", kind: Kind::OptIn, enable: AdvancedAi::enable_deterrence_trusts_a_friend, disable: AdvancedAi::disable_deterrence_trusts_a_friend },
+    // Live King 11-01/02 (28 games): Writing landed at a median t37 on
+    // Domination seats (which hold the Campus-unlock goal) but t45 on
+    // Religion, t50 on adaptive and t69 on Culture seats; the first Campus
+    // finished at a median t64 and its turn correlates -0.59 with Science at
+    // t100. Under the gene every lane takes Writing once it holds two
+    // cities, in the Domination goal's slot. See
+    // `advanced/domination_research.rs`.
+    Gene { tag: "campus-unlock-every-lane", field: "campus_unlock_every_lane", kind: Kind::OptIn, enable: AdvancedAi::enable_campus_unlock_every_lane, disable: AdvancedAi::disable_campus_unlock_every_lane },
+    // Live King 11-01/02 (30 games): the first Builder came at a median
+    // t33.5, one improvement by t40, no chop before t40 and no improved
+    // luxury at t40, while a Builder sold for 100 Gold against a median bank
+    // of 86-106 from t15 to t30; the early Gold bought Traders, Warriors,
+    // Monuments and Archers, and 9 Builders in 30 games. Under the gene a
+    // builderless opening with work for a Builder buys one above the upkeep
+    // floor, ahead of the idle-route Trader. See
+    // `advanced/gold_buys_the_opening_builder.rs`.
+    Gene { tag: "gold-buys-the-opening-builder", field: "gold_buys_the_opening_builder", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_buys_the_opening_builder, disable: AdvancedAi::disable_gold_buys_the_opening_builder },
+    // Live King 11-01/02, 23 games with a first pad: under a Science plan
+    // every city prices the first pad at the 3,000-point rung, so the first
+    // idle city takes it: 091117Z placed it in Gori ("about 200 turns at
+    // 4.5 a turn") beside Telavi at 54 Production; 150036Z in Panama ("about
+    // 225 turns"). Over 23 games the first pad stood in a city under 80% of
+    // the best placing producer in 9 (Production share 0.09-0.75) and took
+    // 24-38 turns to build against 11-17 for the rest; the idle-Great-Person
+    // path places it in "the fastest idle city" (105550Z: Chicago at 18 against
+    // 78, 36 turns). Under the gene the first pad goes only to a city within
+    // 80% of the best placing producer. See `ai/first_pad_in_the_forge.rs`.
+    Gene { tag: "first-pad-in-the-forge", field: "first_pad_in_the_forge", kind: Kind::OptIn, enable: AdvancedAi::enable_first_pad_in_the_forge, disable: AdvancedAi::disable_first_pad_in_the_forge },
+    // Live King 11-01/02, 22 games with a standing pad: `launch-pad-holds-
+    // its-queue` holds the pad until it stands and `launch-commits-the-
+    // endgame` commits only once the Earth Satellite lands; in between the
+    // Satellite took a median 7 turns but 14-30 in four games, and 13 of 22
+    // pad cities switched off it twice or more (131016Z: reactor conversion,
+    // Builder, Jet Bomber, Broadcast Center, Helicopter; Satellite ~t217;
+    // lost Science at t223 while leading the field's Science at t200). Under
+    // the gene the best pad city keeps the Satellite at its head until it
+    // lands. See `advanced/satellite_holds_the_pad.rs`.
+    Gene { tag: "satellite-holds-the-pad", field: "satellite_holds_the_pad", kind: Kind::OptIn, enable: AdvancedAi::enable_satellite_holds_the_pad, disable: AdvancedAi::disable_satellite_holds_the_pad },
+    // Native Emperor 20261102T161612Z owned Rocketry at t171, diverted to
+    // Ballistics and wartime upgrades, then owned Satellites at t196.
+    // Keep the first launch through Recovery and optional modernization.
+    Gene { tag: "first-launch-keeps-research", field: "first_launch_keeps_research", kind: Kind::OptIn, enable: AdvancedAi::enable_first_launch_keeps_research, disable: AdvancedAi::disable_first_launch_keeps_research },
+    // Live King 11-01/02: Domination seats won 0 of 13 (8 lost to Science,
+    // 5 to Culture, tech gap −5 at t150) while Religion seats, which
+    // `religion-lane-hands-over` retargets to Science near t47, won 6 of 20,
+    // all by Science, at a gap of −6. 8 of 9 traced Domination seats held no
+    // rival capital at t150. Under the gene a Domination seat that holds no
+    // rival capital at standard turn 180 (live t120) retargets to Science.
+    // See `advanced/stalled_conquest_takes_science.rs`.
+    Gene { tag: "stalled-conquest-takes-science", field: "stalled_conquest_takes_science", kind: Kind::OptIn, enable: AdvancedAi::enable_stalled_conquest_takes_science, disable: AdvancedAi::disable_stalled_conquest_takes_science },
+    // Operator 11-02, live Lv 6 civvis-20261102T163456Z (Inca): the air-surge
+    // beeline reached Flight t127 / Advanced Flight t138 while Iron Working
+    // waited to t116 and Machinery to t139, so the seat bought 12 Warriors
+    // (t81-114) and 12 Archers (t121-138) in the Renaissance and Industrial
+    // eras and still fielded both in the Information era. Under the gene the
+    // research slot takes, ahead of the air surge and every lane beeline, the
+    // technology our land army waits on to upgrade once the world has left
+    // its era, then any technology two eras behind the world. See
+    // `advanced/old_techs_before_the_beeline.rs`.
+    Gene { tag: "old-techs-before-the-beeline", field: "old_techs_before_the_beeline", kind: Kind::OptIn, enable: AdvancedAi::enable_old_techs_before_the_beeline, disable: AdvancedAi::disable_old_techs_before_the_beeline },
+    // `saved-work-is-seen`: live, the host keeps a switched item's progress
+    // (382 of 383 resumed Buildings in 38 Emperor/Immortal games on
+    // 2026-11-02 restarted from it), but the menu export carried `pr` for
+    // districts only, so the mirror's bank never held a paused unit, building
+    // or project: the resume path fired about once a game while a median 17
+    // paused units, buildings and projects a game were never finished, their
+    // saved work 4.9-7.9% of all city production. Under the gene the host's
+    // saved work on paused units, buildings and projects enters
+    // `City::production_progress` before production, as the native engine
+    // already keeps it. Inert on a native board (no host menu). See
+    // `advanced/saved_work_is_seen.rs`.
+    Gene { tag: "saved-work-is-seen", field: "saved_work_is_seen", kind: Kind::OptIn, enable: AdvancedAi::enable_saved_work_is_seen, disable: AdvancedAi::disable_saved_work_is_seen },
+    // `gold-buys-the-backlog-builder`: live (38 Emperor/Immortal games,
+    // 2026-11-02) 64% / 48% of the worked land tiles stood unimproved at t60 /
+    // t80, 4.7-6.5 of them improvable now per game, against 1.0-2.3 Builders
+    // afield; in 17 of 38 games at t40 and 13 at t60 the Builders afield or
+    // training fell short of `builder_backlog_item`'s own quota because the
+    // Campus, Granary, Walls and Settler claims took the queue. Under the gene
+    // the treasury buys that missing Builder above the purchase upkeep floor,
+    // at peace, after the opening Builder and the idle route's Trader, in the
+    // city owning the most unimproved worked tiles (the weakest producer on a
+    // tie) whose cards do not already speed a Builder. See
+    // `advanced/gold_buys_the_backlog_builder.rs`.
+    Gene { tag: "gold-buys-the-backlog-builder", field: "gold_buys_the_backlog_builder", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_buys_the_backlog_builder, disable: AdvancedAi::disable_gold_buys_the_backlog_builder },
+    // Operator 2026-11-02: production is best spent on what a card boosts
+    // (units +50%, Settlers +50%, ships +100%). The deck review prices a
+    // production card by what it adds to the queue heads, but a full deck is
+    // reviewed only every eighth turn. Live, 69 games 11-01/02: Feudal
+    // Contract boosted no head on 84% of its slotted turns, Agoge 72%; an
+    // unlocked unslotted card would have boosted the head on 8,676
+    // city-turns, ~1,290 Production a game (Limes, International Waters,
+    // Grande Armee most). Under the gene the review also runs on the turn
+    // the set of queue cards worth slotting changes. See `ai/deck_queue.rs`.
+    Gene { tag: "deck-follows-the-queue", field: "deck_follows_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_deck_follows_the_queue, disable: AdvancedAi::disable_deck_follows_the_queue },
+    // `city-state-harvest`: live Immortal 11-02 (17 games) captured no city;
+    // the gap to the median rival at t100 was population (56 against 36),
+    // while the median seat at t80 had two city-state cities within eight
+    // tiles at population 5-12 and a fifth of our military. The softest one
+    // with no suzerain but us and at most one of our envoys becomes the
+    // plan's Conquest target for a bounded window. See
+    // `advanced/city_state_harvest.rs`.
+    Gene { tag: "city-state-harvest", field: "city_state_harvest", kind: Kind::OptIn, enable: AdvancedAi::enable_city_state_harvest, disable: AdvancedAi::disable_city_state_harvest },
+    // Live Immortal 6p Continents 11-02/03: the seat never reached its city
+    // target, so Expansion (a beaker 1.2 against Science's 4.2) lasted to the
+    // halfway clock, 55% of the logged strategy turns. Every decided game was
+    // lost to a rival's science victory at t188-215. Under the gene an
+    // assigned Science lane specializes at a third of the clock, as Culture
+    // already does. See `advanced/science_specializes_earlier.rs`.
+    Gene { tag: "science-specializes-earlier", field: "science_specializes_earlier", kind: Kind::OptIn, enable: AdvancedAi::enable_science_specializes_earlier, disable: AdvancedAi::disable_science_specializes_earlier },
+    // `near-done-work-finishes`: live (39 Immortal games with
+    // `saved-work-is-seen`, 2026-11-03), 1,204 items were paused with saved
+    // work; 47% of that work sat in items within two turns of finishing when
+    // they were paused (177 within one turn), because the claims and
+    // governors displace the head every turn and the resume path only sees
+    // an empty queue. Under the gene a head displaced this turn that
+    // finishes within two turns goes back to the head after every ordinary
+    // writer, unless the city is threatened, attacked or recovering, or the
+    // displacing item is a soldier, Settler, defence building, Holy Site,
+    // Shrine, Spaceport, Wonder or project. See
+    // `advanced/near_done_work_finishes.rs`.
+    Gene { tag: "near-done-work-finishes", field: "near_done_work_finishes", kind: Kind::OptIn, enable: AdvancedAi::enable_near_done_work_finishes, disable: AdvancedAi::disable_near_done_work_finishes },
+    // Live, both Māori seats (11-01 King, 11-03 Immortal): the Settler started
+    // embarked on ocean, knew no land, and stood until the defeat "no cities
+    // remain" at turn 6; the mirror's fog priors give a land unit at sea no
+    // route. Under the gene it sails toward the edge of the known sea. See
+    // `advanced/maori_founds_from_the_sea.rs`.
+    Gene { tag: "founding-voyage", field: "founding_voyage", kind: Kind::OptIn, enable: AdvancedAi::enable_founding_voyage, disable: AdvancedAi::disable_founding_voyage },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

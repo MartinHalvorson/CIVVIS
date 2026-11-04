@@ -1444,7 +1444,11 @@ impl AdvancedAi {
         self.settler_targets.remove(&uid);
         self.settler_stalls.remove(&uid);
         self.settler_closest.remove(&uid);
+        let yielded = self.hidden_border_yield_before_founding(g, pid, site);
+        let fogged = self.fog_yield_before_founding(g, pid, site);
         if g.apply(pid, &Action::FoundCity { unit: uid }).is_ok() {
+            self.note_hidden_border_founding(site, yielded);
+            self.note_fog_founding(site, fogged);
             think!(self.journal(), Expansion, Decision, "Founding a city at {site:?} for a decision the unit pass left standing";
                    "the site is worth {worth:.1}"; site);
             OwnerAct::Completed

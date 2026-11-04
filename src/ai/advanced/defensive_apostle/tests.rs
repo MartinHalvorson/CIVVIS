@@ -111,6 +111,79 @@ fn other_lanes_nonfounders_and_disabled_religion_keep_existing_spending() {
     assert!(!ai.defensive_inquisition_ready(&g, 0));
 }
 
+/// `inquisition-defends-the-diplomat`: a Diplomatic seat prepares the
+/// Inquisition with the gene; every other lane but Domination never does.
+#[test]
+fn inquisition_defends_the_diplomat_opens_the_diplomatic_lane() {
+    let (g, ai, _) = fixture();
+    assert!(
+        ai.defensive_inquisition_ready(&g, 0),
+        "Domination, as before"
+    );
+    let mut diplomat = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    assert!(!diplomat.defensive_inquisition_ready(&g, 0), "off");
+    diplomat.enable_inquisition_defends_the_diplomat();
+    assert!(diplomat.defensive_inquisition_ready(&g, 0), "on");
+    for lane in [
+        VictoryTarget::Culture,
+        VictoryTarget::Science,
+        VictoryTarget::Religion,
+        VictoryTarget::Score,
+    ] {
+        let mut seat = AdvancedAi::targeting(lane);
+        seat.enable_inquisition_defends_the_diplomat();
+        assert!(!seat.defensive_inquisition_ready(&g, 0), "{lane:?}: never");
+    }
+    let mut untargeted = AdvancedAi::new();
+    untargeted.enable_inquisition_defends_the_diplomat();
+    assert!(
+        !untargeted.defensive_inquisition_ready(&g, 0),
+        "no target: never"
+    );
+}
+
+/// `religion-seat-defends-its-faith`: a Religion seat prepares the
+/// Inquisition, guards the Holy City and keeps the founder's spreaders home
+/// with the gene; no other lane gains anything.
+#[test]
+fn religion_seat_defends_its_faith_opens_the_religion_lane() {
+    let (g, _, _) = fixture();
+    let mut seat = AdvancedAi::targeting(VictoryTarget::Religion);
+    assert!(!seat.defensive_inquisition_ready(&g, 0), "off");
+    assert!(!seat.religion_seat_or_domination(&g), "off");
+    seat.enable_religion_seat_defends_its_faith();
+    assert!(seat.defensive_inquisition_ready(&g, 0), "on");
+    assert!(seat.religion_seat_or_domination(&g), "on");
+    for lane in [
+        VictoryTarget::Culture,
+        VictoryTarget::Science,
+        VictoryTarget::Diplomacy,
+        VictoryTarget::Score,
+    ] {
+        let mut other = AdvancedAi::targeting(lane);
+        other.enable_religion_seat_defends_its_faith();
+        assert!(!other.religion_seat_or_domination(&g), "{lane:?}: never");
+        if lane != VictoryTarget::Diplomacy {
+            assert!(
+                !other.defensive_inquisition_ready(&g, 0),
+                "{lane:?}: no Inquisition"
+            );
+        }
+    }
+    assert!(
+        AdvancedAi::targeting(VictoryTarget::Domination).religion_seat_or_domination(&g),
+        "Domination, as before"
+    );
+}
+
+#[test]
+fn religion_seat_defends_its_faith_is_opt_in() {
+    crate::ai::advanced::test_support::opt_in_off_in_both_controllers(
+        "religion-seat-defends-its-faith",
+        |ai| ai.religion_seat_defends_its_faith,
+    );
+}
+
 #[test]
 fn initial_spread_precedes_reserve_in_a_mostly_unconverted_empire() {
     let (mut g, ai, home) = fixture();
@@ -126,6 +199,51 @@ fn initial_spread_precedes_reserve_in_a_mostly_unconverted_empire() {
     let uid = g.spawn_test_unit("missionary", 0, (6, 4));
     g.units.get_mut(&uid).unwrap().religion = Some("Buddhism".into());
     assert!(ai.defensive_inquisition_ready(&g, 0));
+}
+
+/// `inquisition-answers-a-rival-majority`: a minority faith at home waits to
+/// spread while the other cities are irreligious, but not once a rival faith
+/// holds one of them.
+#[test]
+fn a_rival_held_city_ends_the_spread_first_wait() {
+    let (mut g, ai, home) = fixture();
+    g.found_city_for(0, (4, 12), None);
+    for cid in g.player_city_ids(0) {
+        if cid != home {
+            let city = g.cities.get_mut(&cid).unwrap();
+            city.pressure.clear();
+            city.atheist_pressure = 0.0;
+            city.pressure.insert("Catholicism".into(), 1000.0);
+        }
+    }
+    assert!(
+        !ai.defensive_inquisition_ready(&g, 0),
+        "off: the wait holds"
+    );
+    let mut answering = ai.clone();
+    answering.enable_inquisition_answers_a_rival_majority();
+    assert!(
+        answering.defensive_inquisition_ready(&g, 0),
+        "on: a rival holds our cities"
+    );
+
+    // Irreligious, not rival-held: the wait stands with the gene too.
+    for cid in g.player_city_ids(0) {
+        if cid != home {
+            let city = g.cities.get_mut(&cid).unwrap();
+            city.pressure.clear();
+            city.atheist_pressure = 1000.0;
+        }
+    }
+    assert!(
+        !answering.defensive_inquisition_ready(&g, 0),
+        "unconverted: spread first"
+    );
+
+    // Another lane still never reads it.
+    let mut culture = AdvancedAi::targeting(VictoryTarget::Culture);
+    culture.enable_inquisition_answers_a_rival_majority();
+    assert!(!culture.defensive_inquisition_ready(&g, 0));
 }
 
 #[test]
@@ -299,5 +417,66 @@ fn nearby_trapped_spreader_does_not_cover_a_threatened_source() {
             .filter(|u| u.owner == 0 && u.kind == "missionary")
             .count(),
         2
+    );
+}
+
+/// `apostle-transit-keeps-the-cover`: while the Apostle travels, a threatened
+/// source buys its cover Missionary when the Faith left still covers the
+/// first Inquisitor; with less it holds, and with the gene off it always
+/// holds, as before.
+#[test]
+fn a_threatened_source_is_covered_while_the_apostle_travels() {
+    let run = |gene: bool, spare: f64| {
+        let (mut g, mut ai, home) = fixture();
+        if gene {
+            ai.enable_apostle_transit_keeps_the_cover();
+        }
+        ai.religious_spending(&mut g, 0, false);
+        assert_eq!(
+            g.units
+                .values()
+                .filter(|u| u.owner == 0 && u.kind == "apostle")
+                .count(),
+            1,
+            "fixture: the Apostle is in the field"
+        );
+        // The Apostle walks off to launch the Inquisition: out of the
+        // source's watch, so it is no cover there.
+        let apostle = g
+            .units
+            .values()
+            .find(|u| u.owner == 0 && u.kind == "apostle")
+            .map(|u| u.id)
+            .unwrap();
+        g.units.get_mut(&apostle).unwrap().pos = (24, 20);
+        approaching_spreader(&mut g, "Orthodoxy", (5, 4));
+        let price = g
+            .unit_purchase_cost(0, home, "missionary", "faith")
+            .unwrap();
+        let ratio = g.rules.units["inquisitor"].cost / g.rules.units["missionary"].cost;
+        g.players[0].faith = price + price * ratio + spare;
+        ai.religious_spending(&mut g, 0, false);
+        let covered = g
+            .units
+            .values()
+            .any(|u| u.owner == 0 && u.kind == "missionary");
+        covered
+    };
+    assert!(
+        !run(false, 1.0),
+        "off: the Apostle's walk holds every purchase"
+    );
+    assert!(run(true, 1.0), "on: the source is covered");
+    assert!(
+        !run(true, -2.0),
+        "on, but the Missionary would eat the Inquisitor: it holds"
+    );
+}
+
+#[test]
+fn apostle_transit_keeps_the_cover_is_opt_in() {
+    crate::ai::advanced::test_support::opt_in_off_in_both_controllers(
+        "apostle-transit-keeps-the-cover",
+        |ai| ai.apostle_transit_keeps_the_cover,
     );
 }

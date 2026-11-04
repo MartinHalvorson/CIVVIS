@@ -1,0 +1,1793 @@
+{
+  "utc": "2026-11-03T02:22:51.055419+00:00",
+  "scope": "Final preregistered feasibility census, not a randomized strength comparison. Missing resource fields remain unknown. Quotes use pay=Gold+25*GPT, not actual payment.",
+  "primary": [
+    {
+      "family": "civvis-20261102T201043Z",
+      "run": "civvis-20261102T201043Z",
+      "difficulty": "DIFFICULTY_EMPEROR",
+      "assigned_target": "science",
+      "summary_arm": "off",
+      "observed_enabled": [
+        false
+      ],
+      "last_turn": 227,
+      "outcome_type": "VICTORY_TECHNOLOGY",
+      "won": false,
+      "retire_confirmed": false,
+      "retirement": null,
+      "binaries": [
+        {
+          "binary_revision": "4aabc1ca37738d83ba673d5dabb5090d2a5d5392",
+          "binary_sha256": "bdb0125b67b2d2936a1937e251738ef4a5ceeb0b80dce94a4b668dc9c7bc19ea"
+        }
+      ],
+      "normalized_genomes": [
+        "3b1af1660afa795c21f4ec4aa4c7df2235fa3d6ddcf91ccc86e52ba9cf65dc03"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {
+        "INDUSTRIALIZATION": 119,
+        "CHEMISTRY": 174,
+        "ROCKETRY": 193,
+        "SATELLITES": 201,
+        "PROJECT_LAUNCH_EARTH_SATELLITE": 216
+      }
+    },
+    {
+      "family": "civvis-20261102T202907Z",
+      "run": "civvis-20261102T202907Z",
+      "difficulty": "DIFFICULTY_IMMORTAL",
+      "assigned_target": "science",
+      "summary_arm": "on",
+      "observed_enabled": [
+        true
+      ],
+      "last_turn": 126,
+      "outcome_type": null,
+      "won": null,
+      "retire_confirmed": true,
+      "retirement": {
+        "below": true,
+        "leader": "4",
+        "leader_production": 506,
+        "line": 0.1667,
+        "ours": 81,
+        "rule": "production_share",
+        "share": 0.1601,
+        "turn": 126,
+        "turns_below": 3
+      },
+      "binaries": [
+        {
+          "binary_revision": "39ee183b42df692f9dcdec9269813fa5e46a307f",
+          "binary_sha256": "bdb0125b67b2d2936a1937e251738ef4a5ceeb0b80dce94a4b668dc9c7bc19ea"
+        }
+      ],
+      "normalized_genomes": [
+        "3b1af1660afa795c21f4ec4aa4c7df2235fa3d6ddcf91ccc86e52ba9cf65dc03"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {}
+    },
+    {
+      "family": "civvis-20261102T205136Z",
+      "run": "civvis-20261102T205136Z",
+      "difficulty": "DIFFICULTY_IMMORTAL",
+      "assigned_target": "science",
+      "summary_arm": "on",
+      "observed_enabled": [
+        true
+      ],
+      "last_turn": 124,
+      "outcome_type": null,
+      "won": null,
+      "retire_confirmed": true,
+      "retirement": {
+        "below": true,
+        "leader": "5",
+        "leader_production": 511,
+        "line": 0.1667,
+        "ours": 85,
+        "rule": "production_share",
+        "share": 0.1663,
+        "turn": 124,
+        "turns_below": 3
+      },
+      "binaries": [
+        {
+          "binary_revision": "39ee183b42df692f9dcdec9269813fa5e46a307f",
+          "binary_sha256": "bdb0125b67b2d2936a1937e251738ef4a5ceeb0b80dce94a4b668dc9c7bc19ea"
+        }
+      ],
+      "normalized_genomes": [
+        "3b1af1660afa795c21f4ec4aa4c7df2235fa3d6ddcf91ccc86e52ba9cf65dc03"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {}
+    },
+    {
+      "family": "civvis-20261102T211245Z",
+      "run": "civvis-20261102T211245Z",
+      "difficulty": "DIFFICULTY_IMMORTAL",
+      "assigned_target": "science",
+      "summary_arm": "on",
+      "observed_enabled": [
+        true
+      ],
+      "last_turn": 199,
+      "outcome_type": "VICTORY_TECHNOLOGY",
+      "won": false,
+      "retire_confirmed": false,
+      "retirement": null,
+      "binaries": [
+        {
+          "binary_revision": "39ee183b42df692f9dcdec9269813fa5e46a307f",
+          "binary_sha256": "bdb0125b67b2d2936a1937e251738ef4a5ceeb0b80dce94a4b668dc9c7bc19ea"
+        }
+      ],
+      "normalized_genomes": [
+        "3b1af1660afa795c21f4ec4aa4c7df2235fa3d6ddcf91ccc86e52ba9cf65dc03"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {
+        "INDUSTRIALIZATION": 114,
+        "CHEMISTRY": 151,
+        "ROCKETRY": 174,
+        "SATELLITES": 179
+      }
+    },
+    {
+      "family": "civvis-20261102T213554Z",
+      "run": "civvis-20261102T213554Z",
+      "difficulty": "DIFFICULTY_IMMORTAL",
+      "assigned_target": "science",
+      "summary_arm": "on",
+      "observed_enabled": [
+        true
+      ],
+      "last_turn": 196,
+      "outcome_type": "VICTORY_TECHNOLOGY",
+      "won": false,
+      "retire_confirmed": false,
+      "retirement": null,
+      "binaries": [
+        {
+          "binary_revision": "39ee183b42df692f9dcdec9269813fa5e46a307f",
+          "binary_sha256": "bdb0125b67b2d2936a1937e251738ef4a5ceeb0b80dce94a4b668dc9c7bc19ea"
+        }
+      ],
+      "normalized_genomes": [
+        "3b1af1660afa795c21f4ec4aa4c7df2235fa3d6ddcf91ccc86e52ba9cf65dc03"
+      ],
+      "candidate_note_rows": 9,
+      "candidate_note_turns": 5,
+      "coal_quotes": [
+        {
+          "run": "civvis-20261102T213554Z",
+          "turn": 164,
+          "target": 4,
+          "requested": "RESOURCE_COAL=20",
+          "submitted": true,
+          "ceiling": 610,
+          "offer_line": 18328,
+          "response_line": 18434,
+          "pay_metric": 1062,
+          "closable": false,
+          "matches": true,
+          "quoted_ours": "GOLD=12x0,GOLD=42x30",
+          "quoted_theirs": "RESOURCES:41=20x0",
+          "close_sent": false,
+          "close_lines": []
+        },
+        {
+          "run": "civvis-20261102T213554Z",
+          "turn": 167,
+          "target": 4,
+          "requested": "RESOURCE_COAL=20",
+          "submitted": true,
+          "ceiling": 610,
+          "offer_line": 18759,
+          "response_line": 18830,
+          "pay_metric": 813,
+          "closable": false,
+          "matches": true,
+          "quoted_ours": "GOLD=163x0,GOLD=26x30",
+          "quoted_theirs": "RESOURCES:41=20x0",
+          "close_sent": false,
+          "close_lines": []
+        },
+        {
+          "run": "civvis-20261102T213554Z",
+          "turn": 182,
+          "target": 4,
+          "requested": "RESOURCE_COAL=20",
+          "submitted": true,
+          "ceiling": 610,
+          "offer_line": 20617,
+          "response_line": 20687,
+          "pay_metric": 803,
+          "closable": false,
+          "matches": true,
+          "quoted_ours": "GOLD=153x0,GOLD=26x30",
+          "quoted_theirs": "RESOURCES:41=20x0",
+          "close_sent": false,
+          "close_lines": []
+        },
+        {
+          "run": "civvis-20261102T213554Z",
+          "turn": 191,
+          "target": 5,
+          "requested": "RESOURCE_COAL=20",
+          "submitted": true,
+          "ceiling": 615,
+          "offer_line": 22270,
+          "response_line": 22277,
+          "pay_metric": 0,
+          "closable": false,
+          "matches": true,
+          "quoted_ours": "",
+          "quoted_theirs": "RESOURCES:41=20x0",
+          "close_sent": false,
+          "close_lines": []
+        },
+        {
+          "run": "civvis-20261102T213554Z",
+          "turn": 194,
+          "target": 5,
+          "requested": "RESOURCE_COAL=20",
+          "submitted": true,
+          "ceiling": 615,
+          "offer_line": 22598,
+          "response_line": 22614,
+          "pay_metric": 0,
+          "closable": false,
+          "matches": true,
+          "quoted_ours": "",
+          "quoted_theirs": "RESOURCES:41=20x0",
+          "close_sent": false,
+          "close_lines": []
+        }
+      ],
+      "milestones": {
+        "INDUSTRIALIZATION": 109,
+        "CHEMISTRY": 156,
+        "ROCKETRY": 181,
+        "SATELLITES": 187
+      }
+    },
+    {
+      "family": "civvis-20261102T234025Z",
+      "run": "civvis-20261102T234025Z",
+      "difficulty": "DIFFICULTY_IMMORTAL",
+      "assigned_target": "science",
+      "summary_arm": "on",
+      "observed_enabled": [
+        true
+      ],
+      "last_turn": 215,
+      "outcome_type": "VICTORY_TECHNOLOGY",
+      "won": false,
+      "retire_confirmed": false,
+      "retirement": null,
+      "binaries": [
+        {
+          "binary_revision": "3ff83fba4488741cb791b1f74cbe85fb72e44a3e",
+          "binary_sha256": "3a26064884da5f21285c279a3e8105b05fa99c6e880376f6849c24fb99514d6d"
+        }
+      ],
+      "normalized_genomes": [
+        "3b1af1660afa795c21f4ec4aa4c7df2235fa3d6ddcf91ccc86e52ba9cf65dc03"
+      ],
+      "candidate_note_rows": 47,
+      "candidate_note_turns": 20,
+      "coal_quotes": [
+        {
+          "run": "civvis-20261102T234025Z",
+          "turn": 161,
+          "target": 4,
+          "requested": "RESOURCE_COAL=20",
+          "submitted": true,
+          "ceiling": 592,
+          "offer_line": 19598,
+          "response_line": 19680,
+          "pay_metric": 1019,
+          "closable": false,
+          "matches": true,
+          "quoted_ours": "GOLD=269x0,GOLD=30x30",
+          "quoted_theirs": "RESOURCES:41=20x0",
+          "close_sent": false,
+          "close_lines": []
+        },
+        {
+          "run": "civvis-20261102T234025Z",
+          "turn": 164,
+          "target": 4,
+          "requested": "RESOURCE_COAL=20",
+          "submitted": true,
+          "ceiling": 597,
+          "offer_line": 20095,
+          "response_line": 20190,
+          "pay_metric": 1019,
+          "closable": false,
+          "matches": true,
+          "quoted_ours": "GOLD=269x0,GOLD=30x30",
+          "quoted_theirs": "RESOURCES:41=20x0",
+          "close_sent": false,
+          "close_lines": []
+        },
+        {
+          "run": "civvis-20261102T234025Z",
+          "turn": 167,
+          "target": 4,
+          "requested": "RESOURCE_COAL=20",
+          "submitted": true,
+          "ceiling": 615,
+          "offer_line": 20643,
+          "response_line": 20751,
+          "pay_metric": 0,
+          "closable": false,
+          "matches": true,
+          "quoted_ours": "",
+          "quoted_theirs": "RESOURCES:41=20x0",
+          "close_sent": false,
+          "close_lines": []
+        },
+        {
+          "run": "civvis-20261102T234025Z",
+          "turn": 170,
+          "target": 4,
+          "requested": "RESOURCE_COAL=20",
+          "submitted": true,
+          "ceiling": 615,
+          "offer_line": 21240,
+          "response_line": 21372,
+          "pay_metric": 679,
+          "closable": false,
+          "matches": true,
+          "quoted_ours": "GOLD=179x0,GOLD=20x30",
+          "quoted_theirs": "RESOURCES:41=20x0",
+          "close_sent": false,
+          "close_lines": []
+        },
+        {
+          "run": "civvis-20261102T234025Z",
+          "turn": 176,
+          "target": 3,
+          "requested": "RESOURCE_COAL=20",
+          "submitted": true,
+          "ceiling": 615,
+          "offer_line": 22169,
+          "response_line": 22280,
+          "pay_metric": 952,
+          "closable": false,
+          "matches": true,
+          "quoted_ours": "GOLD=152x0,GOLD=32x30",
+          "quoted_theirs": "RESOURCES:41=20x0",
+          "close_sent": false,
+          "close_lines": []
+        },
+        {
+          "run": "civvis-20261102T234025Z",
+          "turn": 179,
+          "target": 3,
+          "requested": "RESOURCE_COAL=20",
+          "submitted": true,
+          "ceiling": 615,
+          "offer_line": 22564,
+          "response_line": 22624,
+          "pay_metric": 0,
+          "closable": false,
+          "matches": true,
+          "quoted_ours": "",
+          "quoted_theirs": "RESOURCES:41=20x0",
+          "close_sent": false,
+          "close_lines": []
+        },
+        {
+          "run": "civvis-20261102T234025Z",
+          "turn": 182,
+          "target": 3,
+          "requested": "RESOURCE_COAL=20",
+          "submitted": true,
+          "ceiling": 615,
+          "offer_line": 22929,
+          "response_line": 22982,
+          "pay_metric": 0,
+          "closable": false,
+          "matches": true,
+          "quoted_ours": "",
+          "quoted_theirs": "RESOURCES:41=20x0",
+          "close_sent": false,
+          "close_lines": []
+        },
+        {
+          "run": "civvis-20261102T234025Z",
+          "turn": 185,
+          "target": 3,
+          "requested": "RESOURCE_COAL=20",
+          "submitted": true,
+          "ceiling": 615,
+          "offer_line": 23250,
+          "response_line": 23310,
+          "pay_metric": 0,
+          "closable": false,
+          "matches": true,
+          "quoted_ours": "",
+          "quoted_theirs": "RESOURCES:41=20x0",
+          "close_sent": false,
+          "close_lines": []
+        },
+        {
+          "run": "civvis-20261102T234025Z",
+          "turn": 188,
+          "target": 3,
+          "requested": "RESOURCE_COAL=20",
+          "submitted": true,
+          "ceiling": 615,
+          "offer_line": 23555,
+          "response_line": 23611,
+          "pay_metric": 980,
+          "closable": false,
+          "matches": true,
+          "quoted_ours": "GOLD=180x0,GOLD=32x30",
+          "quoted_theirs": "RESOURCES:41=20x0",
+          "close_sent": false,
+          "close_lines": []
+        },
+        {
+          "run": "civvis-20261102T234025Z",
+          "turn": 191,
+          "target": 3,
+          "requested": "RESOURCE_COAL=20",
+          "submitted": true,
+          "ceiling": 615,
+          "offer_line": 23912,
+          "response_line": 23978,
+          "pay_metric": 0,
+          "closable": false,
+          "matches": true,
+          "quoted_ours": "",
+          "quoted_theirs": "RESOURCES:41=20x0",
+          "close_sent": false,
+          "close_lines": []
+        },
+        {
+          "run": "civvis-20261102T234025Z",
+          "turn": 194,
+          "target": 3,
+          "requested": "RESOURCE_COAL=20",
+          "submitted": true,
+          "ceiling": 615,
+          "offer_line": 24278,
+          "response_line": 24319,
+          "pay_metric": 868,
+          "closable": false,
+          "matches": true,
+          "quoted_ours": "GOLD=218x0,GOLD=26x30",
+          "quoted_theirs": "RESOURCES:41=20x0",
+          "close_sent": false,
+          "close_lines": []
+        },
+        {
+          "run": "civvis-20261102T234025Z",
+          "turn": 197,
+          "target": 3,
+          "requested": "RESOURCE_COAL=20",
+          "submitted": true,
+          "ceiling": 615,
+          "offer_line": 24595,
+          "response_line": 24624,
+          "pay_metric": 0,
+          "closable": false,
+          "matches": true,
+          "quoted_ours": "",
+          "quoted_theirs": "RESOURCES:41=20x0",
+          "close_sent": false,
+          "close_lines": []
+        },
+        {
+          "run": "civvis-20261102T234025Z",
+          "turn": 200,
+          "target": 3,
+          "requested": "RESOURCE_COAL=20",
+          "submitted": true,
+          "ceiling": 615,
+          "offer_line": 24834,
+          "response_line": 24867,
+          "pay_metric": 0,
+          "closable": false,
+          "matches": true,
+          "quoted_ours": "",
+          "quoted_theirs": "RESOURCES:41=20x0",
+          "close_sent": false,
+          "close_lines": []
+        },
+        {
+          "run": "civvis-20261102T234025Z",
+          "turn": 203,
+          "target": 3,
+          "requested": "RESOURCE_COAL=20",
+          "submitted": true,
+          "ceiling": 620,
+          "offer_line": 25149,
+          "response_line": 25212,
+          "pay_metric": 0,
+          "closable": false,
+          "matches": true,
+          "quoted_ours": "",
+          "quoted_theirs": "RESOURCES:41=20x0",
+          "close_sent": false,
+          "close_lines": []
+        },
+        {
+          "run": "civvis-20261102T234025Z",
+          "turn": 206,
+          "target": 3,
+          "requested": "RESOURCE_COAL=20",
+          "submitted": true,
+          "ceiling": 620,
+          "offer_line": 25527,
+          "response_line": 25583,
+          "pay_metric": 0,
+          "closable": false,
+          "matches": true,
+          "quoted_ours": "",
+          "quoted_theirs": "RESOURCES:41=20x0",
+          "close_sent": false,
+          "close_lines": []
+        },
+        {
+          "run": "civvis-20261102T234025Z",
+          "turn": 209,
+          "target": 3,
+          "requested": "RESOURCE_COAL=20",
+          "submitted": true,
+          "ceiling": 620,
+          "offer_line": 25959,
+          "response_line": 26031,
+          "pay_metric": 0,
+          "closable": false,
+          "matches": true,
+          "quoted_ours": "",
+          "quoted_theirs": "RESOURCES:41=20x0",
+          "close_sent": false,
+          "close_lines": []
+        },
+        {
+          "run": "civvis-20261102T234025Z",
+          "turn": 212,
+          "target": 3,
+          "requested": "RESOURCE_COAL=20",
+          "submitted": true,
+          "ceiling": 620,
+          "offer_line": 26452,
+          "response_line": 26528,
+          "pay_metric": 0,
+          "closable": false,
+          "matches": true,
+          "quoted_ours": "",
+          "quoted_theirs": "RESOURCES:41=20x0",
+          "close_sent": false,
+          "close_lines": []
+        },
+        {
+          "run": "civvis-20261102T234025Z",
+          "turn": 215,
+          "target": 3,
+          "requested": "RESOURCE_COAL=20",
+          "submitted": true,
+          "ceiling": 620,
+          "offer_line": 26983,
+          "response_line": 27044,
+          "pay_metric": 0,
+          "closable": false,
+          "matches": true,
+          "quoted_ours": "",
+          "quoted_theirs": "RESOURCES:41=20x0",
+          "close_sent": false,
+          "close_lines": []
+        }
+      ],
+      "milestones": {
+        "INDUSTRIALIZATION": 106,
+        "CHEMISTRY": 148,
+        "ROCKETRY": 154,
+        "SATELLITES": 163,
+        "PROJECT_LAUNCH_EARTH_SATELLITE": 177,
+        "PROJECT_LAUNCH_MOON_LANDING": 188,
+        "PROJECT_LAUNCH_MARS_BASE": 196,
+        "PROJECT_LAUNCH_EXOPLANET_EXPEDITION": 214
+      }
+    },
+    {
+      "family": "civvis-20261103T014143Z",
+      "run": "civvis-20261103T014143Z",
+      "difficulty": "DIFFICULTY_IMMORTAL",
+      "assigned_target": "science",
+      "summary_arm": "off",
+      "observed_enabled": [
+        false
+      ],
+      "last_turn": 180,
+      "outcome_type": "VICTORY_TECHNOLOGY",
+      "won": false,
+      "retire_confirmed": false,
+      "retirement": null,
+      "binaries": [
+        {
+          "binary_revision": "f8bcfa61cae878f1c047e8df2710ffe10f0c89cb",
+          "binary_sha256": "4f269c7368c7aea82b589d09fef2b448b98b161d2ee166d055cf2c1bde50702a"
+        }
+      ],
+      "normalized_genomes": [
+        "bad9651d6223ccbb49c4903957da1269be86e6d2a3bb8f65a537f2d12e3485b2"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {
+        "INDUSTRIALIZATION": 106,
+        "CHEMISTRY": 144,
+        "ROCKETRY": 147,
+        "SATELLITES": 155,
+        "PROJECT_LAUNCH_EARTH_SATELLITE": 173
+      }
+    },
+    {
+      "family": "civvis-20261103T015442Z",
+      "run": "civvis-20261103T015442Z",
+      "difficulty": "DIFFICULTY_IMMORTAL",
+      "assigned_target": "science",
+      "summary_arm": "off",
+      "observed_enabled": [
+        false
+      ],
+      "last_turn": 129,
+      "outcome_type": null,
+      "won": null,
+      "retire_confirmed": true,
+      "retirement": {
+        "below": true,
+        "leader": "4",
+        "leader_production": 488,
+        "line": 0.1667,
+        "ours": 70,
+        "rule": "production_share",
+        "share": 0.1434,
+        "turn": 129,
+        "turns_below": 3
+      },
+      "binaries": [
+        {
+          "binary_revision": "f8bcfa61cae878f1c047e8df2710ffe10f0c89cb",
+          "binary_sha256": "4f269c7368c7aea82b589d09fef2b448b98b161d2ee166d055cf2c1bde50702a"
+        }
+      ],
+      "normalized_genomes": [
+        "bad9651d6223ccbb49c4903957da1269be86e6d2a3bb8f65a537f2d12e3485b2"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {
+        "INDUSTRIALIZATION": 108
+      }
+    }
+  ],
+  "other_lanes": [
+    {
+      "family": "civvis-20261102T191800Z",
+      "run": "civvis-20261102T191800Z",
+      "difficulty": "DIFFICULTY_EMPEROR",
+      "assigned_target": "culture",
+      "summary_arm": "on",
+      "observed_enabled": [
+        true
+      ],
+      "last_turn": 122,
+      "outcome_type": null,
+      "won": null,
+      "retire_confirmed": true,
+      "retirement": {
+        "below": true,
+        "leader": "1",
+        "leader_production": 320,
+        "line": 0.1667,
+        "ours": 17,
+        "rule": "production_share",
+        "share": 0.0531,
+        "turn": 122,
+        "turns_below": 3
+      },
+      "binaries": [
+        {
+          "binary_revision": "5627eed8d115af3abc61f4695c0f30d30d7b89d8",
+          "binary_sha256": "5c0a03e7f5060a46264dcecf560ca8d28932546640d144ef2a3b7402cbb99eb6"
+        }
+      ],
+      "normalized_genomes": [
+        "4c083e12ab8fe02664734ec0a2e457548cbc210cea551ff50d2346d22dc5d18d"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {}
+    },
+    {
+      "family": "civvis-20261102T192554Z",
+      "run": "civvis-20261102T192554Z",
+      "difficulty": "DIFFICULTY_EMPEROR",
+      "assigned_target": "culture",
+      "summary_arm": "off",
+      "observed_enabled": [
+        false
+      ],
+      "last_turn": 146,
+      "outcome_type": null,
+      "won": null,
+      "retire_confirmed": true,
+      "retirement": {
+        "below": true,
+        "leader": "2",
+        "leader_production": 423,
+        "line": 0.1667,
+        "ours": 67,
+        "rule": "production_share",
+        "share": 0.1584,
+        "turn": 146,
+        "turns_below": 3
+      },
+      "binaries": [
+        {
+          "binary_revision": "5627eed8d115af3abc61f4695c0f30d30d7b89d8",
+          "binary_sha256": "5c0a03e7f5060a46264dcecf560ca8d28932546640d144ef2a3b7402cbb99eb6"
+        }
+      ],
+      "normalized_genomes": [
+        "4c083e12ab8fe02664734ec0a2e457548cbc210cea551ff50d2346d22dc5d18d"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {}
+    },
+    {
+      "family": "civvis-20261102T193555Z",
+      "run": "civvis-20261102T193555Z",
+      "difficulty": "DIFFICULTY_EMPEROR",
+      "assigned_target": "religious",
+      "summary_arm": "off",
+      "observed_enabled": [
+        false
+      ],
+      "last_turn": 146,
+      "outcome_type": null,
+      "won": null,
+      "retire_confirmed": true,
+      "retirement": {
+        "below": true,
+        "leader": "2",
+        "leader_production": 435,
+        "line": 0.1667,
+        "ours": 66,
+        "rule": "production_share",
+        "share": 0.1517,
+        "turn": 146,
+        "turns_below": 3
+      },
+      "binaries": [
+        {
+          "binary_revision": "5627eed8d115af3abc61f4695c0f30d30d7b89d8",
+          "binary_sha256": "5c0a03e7f5060a46264dcecf560ca8d28932546640d144ef2a3b7402cbb99eb6"
+        }
+      ],
+      "normalized_genomes": [
+        "01cb66759a3a2b0566c209f97239cc96e2f8116762ce86ee3aee5fb61f999a04"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {
+        "INDUSTRIALIZATION": 131
+      }
+    },
+    {
+      "family": "civvis-20261102T194552Z",
+      "run": "civvis-20261102T194552Z",
+      "difficulty": "DIFFICULTY_EMPEROR",
+      "assigned_target": "culture",
+      "summary_arm": "on",
+      "observed_enabled": [
+        true
+      ],
+      "last_turn": 122,
+      "outcome_type": null,
+      "won": null,
+      "retire_confirmed": true,
+      "retirement": {
+        "below": true,
+        "leader": "5",
+        "leader_production": 404,
+        "line": 0.1667,
+        "ours": 44,
+        "rule": "production_share",
+        "share": 0.1089,
+        "turn": 122,
+        "turns_below": 3
+      },
+      "binaries": [
+        {
+          "binary_revision": "2cdc7b805e23e9275313a0a4e3d9f9ba011043e6",
+          "binary_sha256": "bdb0125b67b2d2936a1937e251738ef4a5ceeb0b80dce94a4b668dc9c7bc19ea"
+        }
+      ],
+      "normalized_genomes": [
+        "4c083e12ab8fe02664734ec0a2e457548cbc210cea551ff50d2346d22dc5d18d"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {}
+    },
+    {
+      "family": "civvis-20261102T195257Z",
+      "run": "civvis-20261102T195257Z",
+      "difficulty": "DIFFICULTY_EMPEROR",
+      "assigned_target": "domination",
+      "summary_arm": "off",
+      "observed_enabled": [
+        false
+      ],
+      "last_turn": 217,
+      "outcome_type": "VICTORY_TECHNOLOGY",
+      "won": false,
+      "retire_confirmed": false,
+      "retirement": null,
+      "binaries": [
+        {
+          "binary_revision": "2cdc7b805e23e9275313a0a4e3d9f9ba011043e6",
+          "binary_sha256": "bdb0125b67b2d2936a1937e251738ef4a5ceeb0b80dce94a4b668dc9c7bc19ea"
+        }
+      ],
+      "normalized_genomes": [
+        "b578f3d9ecbb5a43090208f6d04f0817ea6f31a2ea8ec7db6ebbd20aac1ce4b7"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {
+        "INDUSTRIALIZATION": 118,
+        "CHEMISTRY": 175,
+        "ROCKETRY": 184,
+        "SATELLITES": 187,
+        "PROJECT_LAUNCH_EARTH_SATELLITE": 204,
+        "PROJECT_LAUNCH_MOON_LANDING": 210,
+        "PROJECT_LAUNCH_MARS_BASE": 216
+      }
+    },
+    {
+      "family": "civvis-20261102T203602Z",
+      "run": "civvis-20261102T203602Z",
+      "difficulty": "DIFFICULTY_IMMORTAL",
+      "assigned_target": "religious",
+      "summary_arm": "off",
+      "observed_enabled": [
+        false
+      ],
+      "last_turn": 211,
+      "outcome_type": "VICTORY_TECHNOLOGY",
+      "won": false,
+      "retire_confirmed": false,
+      "retirement": null,
+      "binaries": [
+        {
+          "binary_revision": "39ee183b42df692f9dcdec9269813fa5e46a307f",
+          "binary_sha256": "bdb0125b67b2d2936a1937e251738ef4a5ceeb0b80dce94a4b668dc9c7bc19ea"
+        }
+      ],
+      "normalized_genomes": [
+        "0c37f11d7381487bfb35573def0a91eac6841e9163aadac7405235e072717acb"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {
+        "INDUSTRIALIZATION": 116,
+        "CHEMISTRY": 160,
+        "ROCKETRY": 176,
+        "SATELLITES": 189,
+        "PROJECT_LAUNCH_EARTH_SATELLITE": 204
+      }
+    },
+    {
+      "family": "civvis-20261102T205845Z",
+      "run": "civvis-20261102T205845Z",
+      "difficulty": "DIFFICULTY_IMMORTAL",
+      "assigned_target": "culture",
+      "summary_arm": "off",
+      "observed_enabled": [
+        false
+      ],
+      "last_turn": 194,
+      "outcome_type": "VICTORY_TECHNOLOGY",
+      "won": false,
+      "retire_confirmed": false,
+      "retirement": null,
+      "binaries": [
+        {
+          "binary_revision": "39ee183b42df692f9dcdec9269813fa5e46a307f",
+          "binary_sha256": "bdb0125b67b2d2936a1937e251738ef4a5ceeb0b80dce94a4b668dc9c7bc19ea"
+        }
+      ],
+      "normalized_genomes": [
+        "4e66dfcc8abd9da85299c05623bc607ff1e3d7d8f7082607d93c92af94d7e521"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {
+        "INDUSTRIALIZATION": 101,
+        "CHEMISTRY": 162,
+        "ROCKETRY": 171,
+        "SATELLITES": 176
+      }
+    },
+    {
+      "family": "civvis-20261102T212810Z",
+      "run": "civvis-20261102T212810Z",
+      "difficulty": "DIFFICULTY_IMMORTAL",
+      "assigned_target": "domination",
+      "summary_arm": "on",
+      "observed_enabled": [
+        true
+      ],
+      "last_turn": 132,
+      "outcome_type": null,
+      "won": null,
+      "retire_confirmed": true,
+      "retirement": {
+        "below": true,
+        "leader": "4",
+        "leader_production": 528,
+        "line": 0.1667,
+        "ours": 82,
+        "rule": "production_share",
+        "share": 0.1553,
+        "turn": 132,
+        "turns_below": 3
+      },
+      "binaries": [
+        {
+          "binary_revision": "39ee183b42df692f9dcdec9269813fa5e46a307f",
+          "binary_sha256": "bdb0125b67b2d2936a1937e251738ef4a5ceeb0b80dce94a4b668dc9c7bc19ea"
+        }
+      ],
+      "normalized_genomes": [
+        "b578f3d9ecbb5a43090208f6d04f0817ea6f31a2ea8ec7db6ebbd20aac1ce4b7"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {}
+    },
+    {
+      "family": "civvis-20261102T215109Z",
+      "run": "civvis-20261102T215109Z",
+      "difficulty": "DIFFICULTY_IMMORTAL",
+      "assigned_target": "domination",
+      "summary_arm": "on",
+      "observed_enabled": [
+        true
+      ],
+      "last_turn": 206,
+      "outcome_type": "VICTORY_TECHNOLOGY",
+      "won": false,
+      "retire_confirmed": false,
+      "retirement": null,
+      "binaries": [
+        {
+          "binary_revision": "39ee183b42df692f9dcdec9269813fa5e46a307f",
+          "binary_sha256": "bdb0125b67b2d2936a1937e251738ef4a5ceeb0b80dce94a4b668dc9c7bc19ea"
+        }
+      ],
+      "normalized_genomes": [
+        "b578f3d9ecbb5a43090208f6d04f0817ea6f31a2ea8ec7db6ebbd20aac1ce4b7"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {
+        "INDUSTRIALIZATION": 136,
+        "CHEMISTRY": 174,
+        "ROCKETRY": 191,
+        "SATELLITES": 198
+      }
+    },
+    {
+      "family": "civvis-20261102T220848Z",
+      "run": "civvis-20261102T220848Z",
+      "difficulty": "DIFFICULTY_IMMORTAL",
+      "assigned_target": "religious",
+      "summary_arm": "on",
+      "observed_enabled": [
+        true
+      ],
+      "last_turn": 122,
+      "outcome_type": null,
+      "won": null,
+      "retire_confirmed": true,
+      "retirement": {
+        "below": true,
+        "leader": "4",
+        "leader_production": 306,
+        "line": 0.1667,
+        "ours": 45,
+        "rule": "production_share",
+        "share": 0.1471,
+        "turn": 122,
+        "turns_below": 3
+      },
+      "binaries": [
+        {
+          "binary_revision": "bedefb280e9d052d302134fa99883fe59e098bd4",
+          "binary_sha256": "b9d62c14b78aedb46d5d8461b1392e2c19b6b3d371c0c4650310187414cba205"
+        }
+      ],
+      "normalized_genomes": [
+        "0c37f11d7381487bfb35573def0a91eac6841e9163aadac7405235e072717acb"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {}
+    },
+    {
+      "family": "civvis-20261102T221554Z",
+      "run": "civvis-20261102T221554Z",
+      "difficulty": "DIFFICULTY_IMMORTAL",
+      "assigned_target": "domination",
+      "summary_arm": "off",
+      "observed_enabled": [
+        false
+      ],
+      "last_turn": 122,
+      "outcome_type": null,
+      "won": null,
+      "retire_confirmed": true,
+      "retirement": {
+        "below": true,
+        "leader": "1",
+        "leader_production": 431,
+        "line": 0.1667,
+        "ours": 19,
+        "rule": "production_share",
+        "share": 0.0441,
+        "turn": 122,
+        "turns_below": 3
+      },
+      "binaries": [
+        {
+          "binary_revision": "bedefb280e9d052d302134fa99883fe59e098bd4",
+          "binary_sha256": "b9d62c14b78aedb46d5d8461b1392e2c19b6b3d371c0c4650310187414cba205"
+        }
+      ],
+      "normalized_genomes": [
+        "b578f3d9ecbb5a43090208f6d04f0817ea6f31a2ea8ec7db6ebbd20aac1ce4b7"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {}
+    },
+    {
+      "family": "civvis-20261102T222248Z",
+      "run": "civvis-20261102T222248Z",
+      "difficulty": "DIFFICULTY_IMMORTAL",
+      "assigned_target": "domination",
+      "summary_arm": "on",
+      "observed_enabled": [
+        true
+      ],
+      "last_turn": 122,
+      "outcome_type": null,
+      "won": null,
+      "retire_confirmed": true,
+      "retirement": {
+        "below": true,
+        "leader": "4",
+        "leader_production": 505,
+        "line": 0.1667,
+        "ours": 43,
+        "rule": "production_share",
+        "share": 0.0851,
+        "turn": 122,
+        "turns_below": 3
+      },
+      "binaries": [
+        {
+          "binary_revision": "bedefb280e9d052d302134fa99883fe59e098bd4",
+          "binary_sha256": "b9d62c14b78aedb46d5d8461b1392e2c19b6b3d371c0c4650310187414cba205"
+        }
+      ],
+      "normalized_genomes": [
+        "b578f3d9ecbb5a43090208f6d04f0817ea6f31a2ea8ec7db6ebbd20aac1ce4b7"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {}
+    },
+    {
+      "family": "civvis-20261102T223042Z",
+      "run": "civvis-20261102T223042Z",
+      "difficulty": "DIFFICULTY_IMMORTAL",
+      "assigned_target": "domination",
+      "summary_arm": "on",
+      "observed_enabled": [
+        true
+      ],
+      "last_turn": 189,
+      "outcome_type": "VICTORY_TECHNOLOGY",
+      "won": false,
+      "retire_confirmed": false,
+      "retirement": null,
+      "binaries": [
+        {
+          "binary_revision": "bedefb280e9d052d302134fa99883fe59e098bd4",
+          "binary_sha256": "b9d62c14b78aedb46d5d8461b1392e2c19b6b3d371c0c4650310187414cba205"
+        }
+      ],
+      "normalized_genomes": [
+        "b578f3d9ecbb5a43090208f6d04f0817ea6f31a2ea8ec7db6ebbd20aac1ce4b7"
+      ],
+      "candidate_note_rows": 15,
+      "candidate_note_turns": 5,
+      "coal_quotes": [
+        {
+          "run": "civvis-20261102T223042Z",
+          "turn": 170,
+          "target": 1,
+          "requested": "RESOURCE_COAL=20",
+          "submitted": true,
+          "ceiling": 610,
+          "offer_line": 24391,
+          "response_line": 24537,
+          "pay_metric": 0,
+          "closable": false,
+          "matches": true,
+          "quoted_ours": "",
+          "quoted_theirs": "RESOURCES:41=20x0",
+          "close_sent": false,
+          "close_lines": []
+        },
+        {
+          "run": "civvis-20261102T223042Z",
+          "turn": 179,
+          "target": 1,
+          "requested": "RESOURCE_COAL=20",
+          "submitted": true,
+          "ceiling": 610,
+          "offer_line": 26319,
+          "response_line": 26440,
+          "pay_metric": 949,
+          "closable": false,
+          "matches": true,
+          "quoted_ours": "GOLD=149x0,GOLD=32x30",
+          "quoted_theirs": "RESOURCES:41=20x0",
+          "close_sent": false,
+          "close_lines": []
+        },
+        {
+          "run": "civvis-20261102T223042Z",
+          "turn": 182,
+          "target": 1,
+          "requested": "RESOURCE_COAL=20",
+          "submitted": true,
+          "ceiling": 610,
+          "offer_line": 26922,
+          "response_line": 27056,
+          "pay_metric": 980,
+          "closable": false,
+          "matches": true,
+          "quoted_ours": "GOLD=180x0,GOLD=32x30",
+          "quoted_theirs": "RESOURCES:41=20x0",
+          "close_sent": false,
+          "close_lines": []
+        },
+        {
+          "run": "civvis-20261102T223042Z",
+          "turn": 185,
+          "target": 1,
+          "requested": "RESOURCE_COAL=20",
+          "submitted": true,
+          "ceiling": 615,
+          "offer_line": 27597,
+          "response_line": 27734,
+          "pay_metric": 0,
+          "closable": false,
+          "matches": true,
+          "quoted_ours": "",
+          "quoted_theirs": "RESOURCES:41=20x0",
+          "close_sent": false,
+          "close_lines": []
+        },
+        {
+          "run": "civvis-20261102T223042Z",
+          "turn": 188,
+          "target": 1,
+          "requested": "RESOURCE_COAL=20",
+          "submitted": true,
+          "ceiling": 615,
+          "offer_line": 28309,
+          "response_line": 28415,
+          "pay_metric": 0,
+          "closable": false,
+          "matches": true,
+          "quoted_ours": "",
+          "quoted_theirs": "RESOURCES:41=20x0",
+          "close_sent": false,
+          "close_lines": []
+        }
+      ],
+      "milestones": {
+        "INDUSTRIALIZATION": 116,
+        "CHEMISTRY": 160,
+        "ROCKETRY": 178
+      }
+    },
+    {
+      "family": "civvis-20261102T224444Z",
+      "run": "civvis-20261102T224444Z",
+      "difficulty": "DIFFICULTY_IMMORTAL",
+      "assigned_target": "culture",
+      "summary_arm": "on",
+      "observed_enabled": [
+        true
+      ],
+      "last_turn": 122,
+      "outcome_type": null,
+      "won": null,
+      "retire_confirmed": true,
+      "retirement": {
+        "below": true,
+        "leader": "4",
+        "leader_production": 444,
+        "line": 0.1667,
+        "ours": 68,
+        "rule": "production_share",
+        "share": 0.1532,
+        "turn": 122,
+        "turns_below": 3
+      },
+      "binaries": [
+        {
+          "binary_revision": "bedefb280e9d052d302134fa99883fe59e098bd4",
+          "binary_sha256": "b9d62c14b78aedb46d5d8461b1392e2c19b6b3d371c0c4650310187414cba205"
+        }
+      ],
+      "normalized_genomes": [
+        "4e66dfcc8abd9da85299c05623bc607ff1e3d7d8f7082607d93c92af94d7e521"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {
+        "INDUSTRIALIZATION": 116
+      }
+    },
+    {
+      "family": "civvis-20261102T225146Z",
+      "run": "civvis-20261102T225146Z",
+      "difficulty": "DIFFICULTY_IMMORTAL",
+      "assigned_target": "religious",
+      "summary_arm": "off",
+      "observed_enabled": [
+        false
+      ],
+      "last_turn": 205,
+      "outcome_type": "VICTORY_TECHNOLOGY",
+      "won": false,
+      "retire_confirmed": false,
+      "retirement": null,
+      "binaries": [
+        {
+          "binary_revision": "bedefb280e9d052d302134fa99883fe59e098bd4",
+          "binary_sha256": "b9d62c14b78aedb46d5d8461b1392e2c19b6b3d371c0c4650310187414cba205"
+        }
+      ],
+      "normalized_genomes": [
+        "0c37f11d7381487bfb35573def0a91eac6841e9163aadac7405235e072717acb"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {
+        "INDUSTRIALIZATION": 136,
+        "CHEMISTRY": 184,
+        "ROCKETRY": 195
+      }
+    },
+    {
+      "family": "civvis-20261102T230710Z",
+      "run": "civvis-20261102T230710Z",
+      "difficulty": "DIFFICULTY_IMMORTAL",
+      "assigned_target": "culture",
+      "summary_arm": "on",
+      "observed_enabled": [
+        true
+      ],
+      "last_turn": 188,
+      "outcome_type": "VICTORY_TECHNOLOGY",
+      "won": false,
+      "retire_confirmed": false,
+      "retirement": null,
+      "binaries": [
+        {
+          "binary_revision": "4cdddb41483b70f8872e20b5d33030eb8c797887",
+          "binary_sha256": "b9d62c14b78aedb46d5d8461b1392e2c19b6b3d371c0c4650310187414cba205"
+        }
+      ],
+      "normalized_genomes": [
+        "4e66dfcc8abd9da85299c05623bc607ff1e3d7d8f7082607d93c92af94d7e521"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {
+        "INDUSTRIALIZATION": 130,
+        "CHEMISTRY": 152
+      }
+    },
+    {
+      "family": "civvis-20261102T232025Z",
+      "run": "civvis-20261102T232025Z",
+      "difficulty": "DIFFICULTY_IMMORTAL",
+      "assigned_target": "religious",
+      "summary_arm": "on",
+      "observed_enabled": [
+        true
+      ],
+      "last_turn": 124,
+      "outcome_type": null,
+      "won": null,
+      "retire_confirmed": true,
+      "retirement": {
+        "below": true,
+        "leader": "5",
+        "leader_production": 475,
+        "line": 0.1667,
+        "ours": 68,
+        "rule": "production_share",
+        "share": 0.1432,
+        "turn": 124,
+        "turns_below": 3
+      },
+      "binaries": [
+        {
+          "binary_revision": "3ff83fba4488741cb791b1f74cbe85fb72e44a3e",
+          "binary_sha256": "3a26064884da5f21285c279a3e8105b05fa99c6e880376f6849c24fb99514d6d"
+        }
+      ],
+      "normalized_genomes": [
+        "0c37f11d7381487bfb35573def0a91eac6841e9163aadac7405235e072717acb"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {}
+    },
+    {
+      "family": "civvis-20261102T232731Z",
+      "run": "civvis-20261102T232731Z",
+      "difficulty": "DIFFICULTY_IMMORTAL",
+      "assigned_target": "religious",
+      "summary_arm": "on",
+      "observed_enabled": [
+        true
+      ],
+      "last_turn": 192,
+      "outcome_type": "VICTORY_TECHNOLOGY",
+      "won": false,
+      "retire_confirmed": false,
+      "retirement": null,
+      "binaries": [
+        {
+          "binary_revision": "3ff83fba4488741cb791b1f74cbe85fb72e44a3e",
+          "binary_sha256": "3a26064884da5f21285c279a3e8105b05fa99c6e880376f6849c24fb99514d6d"
+        }
+      ],
+      "normalized_genomes": [
+        "0c37f11d7381487bfb35573def0a91eac6841e9163aadac7405235e072717acb"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {
+        "INDUSTRIALIZATION": 184
+      }
+    },
+    {
+      "family": "civvis-20261102T235733Z",
+      "run": "civvis-20261102T235733Z",
+      "difficulty": "DIFFICULTY_IMMORTAL",
+      "assigned_target": "domination",
+      "summary_arm": "off",
+      "observed_enabled": [
+        false
+      ],
+      "last_turn": 160,
+      "outcome_type": null,
+      "won": null,
+      "retire_confirmed": true,
+      "retirement": {
+        "below": true,
+        "leader": "5",
+        "leader_production": 849,
+        "line": 0.1667,
+        "ours": 138,
+        "rule": "production_share",
+        "share": 0.1625,
+        "turn": 160,
+        "turns_below": 3
+      },
+      "binaries": [
+        {
+          "binary_revision": "76ccb4f30010d5e1583a2e6dd26e6d1ad7359343",
+          "binary_sha256": "3a26064884da5f21285c279a3e8105b05fa99c6e880376f6849c24fb99514d6d"
+        }
+      ],
+      "normalized_genomes": [
+        "b578f3d9ecbb5a43090208f6d04f0817ea6f31a2ea8ec7db6ebbd20aac1ce4b7"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {
+        "INDUSTRIALIZATION": 115
+      }
+    },
+    {
+      "family": "civvis-20261103T000738Z",
+      "run": "civvis-20261103T000738Z",
+      "difficulty": "DIFFICULTY_IMMORTAL",
+      "assigned_target": "culture",
+      "summary_arm": "on",
+      "observed_enabled": [
+        true
+      ],
+      "last_turn": 192,
+      "outcome_type": "VICTORY_TECHNOLOGY",
+      "won": false,
+      "retire_confirmed": false,
+      "retirement": null,
+      "binaries": [
+        {
+          "binary_revision": "76ccb4f30010d5e1583a2e6dd26e6d1ad7359343",
+          "binary_sha256": "3a26064884da5f21285c279a3e8105b05fa99c6e880376f6849c24fb99514d6d"
+        }
+      ],
+      "normalized_genomes": [
+        "4e66dfcc8abd9da85299c05623bc607ff1e3d7d8f7082607d93c92af94d7e521"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {
+        "INDUSTRIALIZATION": 110,
+        "CHEMISTRY": 151,
+        "ROCKETRY": 177,
+        "SATELLITES": 185
+      }
+    },
+    {
+      "family": "civvis-20261103T002240Z",
+      "run": "civvis-20261103T002240Z",
+      "difficulty": "DIFFICULTY_IMMORTAL",
+      "assigned_target": "culture",
+      "summary_arm": "on",
+      "observed_enabled": [
+        true
+      ],
+      "last_turn": 182,
+      "outcome_type": "VICTORY_TECHNOLOGY",
+      "won": false,
+      "retire_confirmed": false,
+      "retirement": null,
+      "binaries": [
+        {
+          "binary_revision": "76ccb4f30010d5e1583a2e6dd26e6d1ad7359343",
+          "binary_sha256": "3a26064884da5f21285c279a3e8105b05fa99c6e880376f6849c24fb99514d6d"
+        }
+      ],
+      "normalized_genomes": [
+        "4e66dfcc8abd9da85299c05623bc607ff1e3d7d8f7082607d93c92af94d7e521"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {
+        "INDUSTRIALIZATION": 164
+      }
+    },
+    {
+      "family": "civvis-20261103T003626Z",
+      "run": "civvis-20261103T003626Z",
+      "difficulty": "DIFFICULTY_IMMORTAL",
+      "assigned_target": "religious",
+      "summary_arm": "off",
+      "observed_enabled": [
+        false
+      ],
+      "last_turn": 207,
+      "outcome_type": "VICTORY_TECHNOLOGY",
+      "won": false,
+      "retire_confirmed": false,
+      "retirement": null,
+      "binaries": [
+        {
+          "binary_revision": "76ccb4f30010d5e1583a2e6dd26e6d1ad7359343",
+          "binary_sha256": "3a26064884da5f21285c279a3e8105b05fa99c6e880376f6849c24fb99514d6d"
+        }
+      ],
+      "normalized_genomes": [
+        "0c37f11d7381487bfb35573def0a91eac6841e9163aadac7405235e072717acb"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {
+        "INDUSTRIALIZATION": 173
+      }
+    },
+    {
+      "family": "civvis-20261103T005452Z",
+      "run": "civvis-20261103T005452Z",
+      "difficulty": "DIFFICULTY_IMMORTAL",
+      "assigned_target": "religious",
+      "summary_arm": "on",
+      "observed_enabled": [
+        true
+      ],
+      "last_turn": 205,
+      "outcome_type": "VICTORY_TECHNOLOGY",
+      "won": false,
+      "retire_confirmed": false,
+      "retirement": null,
+      "binaries": [
+        {
+          "binary_revision": "f4cf8e05957a46b5643ee14055dc8add700a4e3e",
+          "binary_sha256": "3a26064884da5f21285c279a3e8105b05fa99c6e880376f6849c24fb99514d6d"
+        }
+      ],
+      "normalized_genomes": [
+        "0c37f11d7381487bfb35573def0a91eac6841e9163aadac7405235e072717acb"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {
+        "INDUSTRIALIZATION": 119,
+        "CHEMISTRY": 162,
+        "ROCKETRY": 166,
+        "SATELLITES": 188,
+        "PROJECT_LAUNCH_EARTH_SATELLITE": 197,
+        "PROJECT_LAUNCH_MOON_LANDING": 203
+      }
+    },
+    {
+      "family": "civvis-20261103T011358Z",
+      "run": "civvis-20261103T011358Z",
+      "difficulty": "DIFFICULTY_IMMORTAL",
+      "assigned_target": "domination",
+      "summary_arm": "on",
+      "observed_enabled": [
+        true
+      ],
+      "last_turn": 64,
+      "outcome_type": null,
+      "won": null,
+      "retire_confirmed": false,
+      "retirement": null,
+      "binaries": [
+        {
+          "binary_revision": "f4cf8e05957a46b5643ee14055dc8add700a4e3e",
+          "binary_sha256": "3a26064884da5f21285c279a3e8105b05fa99c6e880376f6849c24fb99514d6d"
+        }
+      ],
+      "normalized_genomes": [
+        "b578f3d9ecbb5a43090208f6d04f0817ea6f31a2ea8ec7db6ebbd20aac1ce4b7"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {}
+    },
+    {
+      "family": "civvis-20261103T011804Z",
+      "run": "civvis-20261103T011804Z",
+      "difficulty": "DIFFICULTY_IMMORTAL",
+      "assigned_target": "domination",
+      "summary_arm": "off",
+      "observed_enabled": [
+        false
+      ],
+      "last_turn": 122,
+      "outcome_type": null,
+      "won": null,
+      "retire_confirmed": true,
+      "retirement": {
+        "below": true,
+        "leader": "4",
+        "leader_production": 468,
+        "line": 0.1667,
+        "ours": 70,
+        "rule": "production_share",
+        "share": 0.1496,
+        "turn": 122,
+        "turns_below": 3
+      },
+      "binaries": [
+        {
+          "binary_revision": "f4cf8e05957a46b5643ee14055dc8add700a4e3e",
+          "binary_sha256": "3a26064884da5f21285c279a3e8105b05fa99c6e880376f6849c24fb99514d6d"
+        }
+      ],
+      "normalized_genomes": [
+        "b578f3d9ecbb5a43090208f6d04f0817ea6f31a2ea8ec7db6ebbd20aac1ce4b7"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {}
+    },
+    {
+      "family": "civvis-20261103T012701Z",
+      "run": "civvis-20261103T012701Z",
+      "difficulty": "DIFFICULTY_IMMORTAL",
+      "assigned_target": "culture",
+      "summary_arm": "off",
+      "observed_enabled": [
+        false
+      ],
+      "last_turn": 198,
+      "outcome_type": "VICTORY_TECHNOLOGY",
+      "won": false,
+      "retire_confirmed": false,
+      "retirement": null,
+      "binaries": [
+        {
+          "binary_revision": "08815a718aea745fbe2760a2f35cfe34a29acf77",
+          "binary_sha256": "4f269c7368c7aea82b589d09fef2b448b98b161d2ee166d055cf2c1bde50702a"
+        }
+      ],
+      "normalized_genomes": [
+        "1143ee5f99fafe2109cc13c53700c138aeae5012344b2730fb295ca2bf696aea"
+      ],
+      "candidate_note_rows": 0,
+      "candidate_note_turns": 0,
+      "coal_quotes": [],
+      "milestones": {
+        "INDUSTRIALIZATION": 130,
+        "CHEMISTRY": 181,
+        "ROCKETRY": 185,
+        "SATELLITES": 187
+      }
+    }
+  ],
+  "unclassified_coal_offer_rows": [
+    {
+      "run": "civvis-20261102T195257Z",
+      "line": 18610,
+      "raw_line_sha256": "888d06c20b444416b164c34e1ce1753f6d099def44050a167d2098503d92bd9c",
+      "raw": {
+        "ctx": "agent",
+        "floor": 200,
+        "gave": "RESOURCE_COAL=10x0",
+        "kind": "deal_offer",
+        "reason": "asked",
+        "run": "civvis-20261102T195257Z",
+        "submitted": true,
+        "t": 1793649832,
+        "target": 4,
+        "threw": false,
+        "turn": 162,
+        "utc": "2026-11-02T20:03:52.672Z",
+        "verb": "RESOURCE_COAL=10"
+      }
+    },
+    {
+      "run": "civvis-20261102T205845Z",
+      "line": 12749,
+      "raw_line_sha256": "ec716dd65773a1334e992dc1b920f8e4a97aca4aa3a9b7b423df1e0e50fdd99a",
+      "raw": {
+        "ctx": "agent",
+        "floor": 200,
+        "gave": "RESOURCE_COAL=10x0",
+        "kind": "deal_offer",
+        "reason": "asked",
+        "run": "civvis-20261102T205845Z",
+        "submitted": true,
+        "t": 1793653561,
+        "target": 5,
+        "threw": false,
+        "turn": 132,
+        "utc": "2026-11-02T21:06:01.751Z",
+        "verb": "RESOURCE_COAL=10"
+      }
+    },
+    {
+      "run": "civvis-20261103T000738Z",
+      "line": 17031,
+      "raw_line_sha256": "aab2fe86dcc08717932815dcd4631fb1cdd511c835ab220126fb3767f07fd51c",
+      "raw": {
+        "ctx": "agent",
+        "floor": 200,
+        "gave": "RESOURCE_COAL=10x0",
+        "kind": "deal_offer",
+        "reason": "asked",
+        "run": "civvis-20261103T000738Z",
+        "submitted": true,
+        "t": 1793665026,
+        "target": 2,
+        "threw": false,
+        "turn": 150,
+        "utc": "2026-11-03T00:17:06.155Z",
+        "verb": "RESOURCE_COAL=10"
+      }
+    }
+  ],
+  "counts": {
+    "families": 8,
+    "enabled": 5,
+    "disabled": 3,
+    "terminal_losses": 5,
+    "retirements": 3,
+    "victories": 0,
+    "coal_requests": 23,
+    "coal_closable_replies": 0,
+    "coal_close_sent": 0,
+    "nonzero_quotes": 9,
+    "nonzero_quotes_above_cap": 9,
+    "other_lane_families": 26,
+    "after_boundary_families": 0,
+    "pending_or_setup_at_stop": 0
+  },
+  "stop_receipt": {
+    "utc": "2026-11-03T02:02:09.621488+00:00",
+    "status": "restored_after_eight",
+    "screen_path": "/Users/martbot-mbp-m5-max-128/.civvis-live-screen-gene",
+    "before_sha256": "3a6a4c232fc867ada604a6c9a0e9be5a35aef3b602c2fe6ab129afa1e7848723",
+    "after_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "cohort": [
+      "civvis-20261102T201043Z",
+      "civvis-20261102T202907Z",
+      "civvis-20261102T205136Z",
+      "civvis-20261102T211245Z",
+      "civvis-20261102T213554Z",
+      "civvis-20261102T234025Z",
+      "civvis-20261103T014143Z",
+      "civvis-20261103T015442Z"
+    ],
+    "observed_primary_count": 8,
+    "census_sha256": "4b7d3dd25e956db84d25efa7ee19668ad2959a62f0bd836e0e693d98ecea8c66",
+    "collector_sha256": "50aa006885eec687d9127bbff54242fd2aec33fca4cbb8abb600d7ae933c2576",
+    "authorization": "Preregistered first-eight-family stop rule; no other policy files are written."
+  },
+  "stop_census_sha256": "4b7d3dd25e956db84d25efa7ee19668ad2959a62f0bd836e0e693d98ecea8c66",
+  "archive": {
+    "path": "docs/eval/2026-11-02-native-science-fuel-pilot.raw.tar.xz",
+    "bytes": 1125812,
+    "sha256": "a900ea1d443a5a80eefabd951bf31a6a0c567fbd5659d0115fbdfed14c5960c3",
+    "members": 288,
+    "manifest": "SHA256SUMS.json"
+  }
+}

@@ -25,15 +25,16 @@
 //!
 //! Off: unchanged. A founder is untouched.
 
-use super::{AdvancedAi, VictoryTarget};
+use super::AdvancedAi;
 use crate::game::Game;
 
 impl AdvancedAi {
     fn first_convert_scope(&self, g: &Game, pid: usize) -> bool {
         self.counterweight_from_the_first_convert
-            && self.active_victory_target(g) == Some(VictoryTarget::Domination)
+            // `counterweight-defends-the-diplomat` opens the Diplomacy lane.
+            && self.counterweight_lane(g)
             && g.victory_conditions.religious
-            && g.players[pid].religion.is_none()
+            && self.counterweight_faithless(g, pid)
     }
 
     /// Our cities whose majority follows `faith`.

@@ -117,6 +117,16 @@ pub const SCIENCE_DRIVE_REVIEW: u32 = 5;
 /// A driving seat keeps driving while its science is this share of the
 /// field leader's.
 pub const SCIENCE_DRIVE_HOLD: f64 = 0.75;
+
+/// `science-drive-answers-the-launch`: a Diplomatic seat this many Diplomatic
+/// Victory Points or more keeps its own lane rather than answering a rival's
+/// launch. Live Emperor civvis-20261030T111154Z opened the answer at t194
+/// standing on 18 of 20, one session from its own victory.
+pub const SCIENCE_ANSWER_DIPLO_YIELD: i64 = 16;
+/// `science-drive-leads-beside-the-lane`: the Standard turn (Online turn
+/// 140) from which a seat assigned another lane races on its own outright
+/// science lead, without waiting for a rival's launch.
+pub const SCIENCE_LEAD_OPEN_STANDARD: u32 = 210;
 /// Version 2 requires this relative science lead before an adaptive race
 /// starts. A one-beaker fluctuation is not a victory commitment.
 pub const SCIENCE_DRIVE_LEAD_MARGIN: f64 = 0.10;
@@ -211,6 +221,9 @@ pub struct ScienceDrive {
     /// Driving because Science is assigned or committed, not because of the
     /// reading.
     pub assigned: bool,
+    /// `science-drive-answers-the-launch`: a seat assigned another lane,
+    /// driving because a rival's space race is under way and it leads.
+    pub answering: bool,
 }
 
 /// The seat's science against the field's best: science a turn and techs
@@ -226,6 +239,16 @@ pub struct ScienceStanding {
 impl ScienceStanding {
     /// Leads the field: more science a turn than any rival, or at least as
     /// many techs as any.
+    /// `science-drive-answers-the-launch`: more science a turn than any rival
+    /// AND at least as many techs. The answer opens on this, not on
+    /// [`Self::leads`]: live Emperor civvis-20261030T111154Z answered at t194
+    /// on 288 science against 286 while 62 techs to 67 behind. The paired
+    /// probe's one win (seed 51000: 576 against 392, 77 techs each) leads on
+    /// both.
+    pub fn leads_outright(&self) -> bool {
+        self.own_science > self.best_rival_science && self.own_techs >= self.best_rival_techs
+    }
+
     pub fn leads(&self) -> bool {
         self.own_science > self.best_rival_science || self.own_techs >= self.best_rival_techs
     }
@@ -269,6 +292,11 @@ impl AdvancedAi {
     pub(super) fn raced_target(&self) -> Option<VictoryTarget> {
         if self.victory_portfolio && self.portfolio_specializing() == Some(true) {
             return self.portfolio_target();
+        }
+        // `science-drive-answers-the-launch`: while the answer drives, the
+        // space race's keys read Science beside the assigned lane.
+        if self.science_drive.is_some_and(|drive| drive.answering) {
+            return Some(VictoryTarget::Science);
         }
         self.victory_target.or_else(|| {
             self.science_drive_active()
@@ -378,8 +406,23 @@ impl AdvancedAi {
             self.science_drive = None;
             return;
         }
+        // `science-drive-answers-the-launch`: another lane's seat may drive
+        // once a rival has landed a space project.
+        let answering = self.science_drive_answers_the_launch
+            && self
+                .victory_target
+                .is_some_and(|target| target != VictoryTarget::Science)
+            && Self::rival_landed_a_space_project(g, pid)
+            // A Diplomatic seat near its own victory keeps the lane; an open
+            // answer then closes through the assigned-lane return below.
+            && !(self.victory_target == Some(VictoryTarget::Diplomacy)
+                && g.players[pid].dvp >= SCIENCE_ANSWER_DIPLO_YIELD);
+        // `science-drive-leads-beside-the-lane`: from Online turn 140 a seat
+        // assigned another lane also races on its own outright lead.
+        let leading_open = self.science_lead_opens(g, pid);
         let assigned = match self.victory_target {
             Some(VictoryTarget::Science) => true,
+            Some(_) if answering || leading_open => false,
             Some(_) => {
                 self.science_drive = None;
                 return;
@@ -395,6 +438,8 @@ impl AdvancedAi {
             Some(drive) => g.turn.saturating_sub(drive.reviewed) >= review,
             None => {
                 assigned
+                    || answering
+                    || leading_open
                     || portfolio_science
                     || launch_committed
                     || (g.turn >= start && (g.turn - start).is_multiple_of(review))
@@ -405,12 +450,21 @@ impl AdvancedAi {
         }
         let standing = Self::science_standing(g, pid);
         let adaptive_science_plan = self.adaptive_science_plan(g, pid);
+        // `science-drive-answers-from-the-pad`: the answer also opens, and
+        // holds, while our own landed projects are level with the leading
+        // racer's (within one under `-2`), whatever the science reading.
+        let from_the_pad = answering && self.answer_holds_the_pad(g, pid);
         let driving = assigned
             || portfolio_science
             || adaptive_science_plan
+            || from_the_pad
             || match self.science_drive {
                 Some(_) if self.science_victory_drive_2 => standing.holds_v2(),
                 Some(_) => standing.holds(),
+                None if answering => {
+                    standing.leads_outright() || self.domination_answers_at_parity(&standing)
+                }
+                None if leading_open => Self::science_lead_is_meaningful(&standing),
                 None if self.science_victory_drive_2 => g.turn >= start && standing.leads_v2(),
                 None => g.turn >= start && standing.leads(),
             };
@@ -437,6 +491,23 @@ impl AdvancedAi {
                     launch city {}",
                    if assigned {
                        "the assigned lane"
+                   } else if answering {
+                       if self.domination_answers_at_parity(&standing)
+                           && !standing.leads_outright()
+                           && !from_the_pad
+                       {
+                           "domination-joins-the-race: a Domination seat within reach of the field's techs answers a rival's space race beside its war"
+                       } else if from_the_pad && !standing.leads_outright() {
+                           if self.science_drive_answers_from_the_pad_2 {
+                               "science-drive-answers-from-the-pad-2: our own pads within one of the racer's, answered beside the assigned lane"
+                           } else {
+                               "science-drive-answers-from-the-pad: our own pads level with the racer's, answered beside the assigned lane"
+                           }
+                       } else {
+                           "a rival's space race, answered beside the assigned lane"
+                       }
+                   } else if leading_open {
+                       "science-drive-leads-beside-the-lane: an outright science lead, raced beside the assigned lane"
                    } else if adaptive_science_plan {
                        "the public Science focus"
                    } else {
@@ -452,7 +523,107 @@ impl AdvancedAi {
             standing,
             launch_city,
             assigned,
+            // A lead-opened drive races beside the lane exactly as an answer
+            // does: `raced_target` reads Science, and a Domination seat's
+            // space-race exclusions lift under `domination-joins-the-race`.
+            answering: answering || leading_open,
         });
+    }
+
+    /// `science-drive-leads-beside-the-lane`: whether a seat assigned another
+    /// lane may open the drive on its own lead this turn: the gene and the
+    /// answer on, Online turn 140 reached, and not a Diplomatic seat near its
+    /// own victory. `false` with the gene off.
+    ///
+    /// Live King, 2026-11-01: 7 of 25 seats assigned Culture, Religion or
+    /// Domination led the field outright (Science 1.1x the best rival's and
+    /// a tech more) before any rival landed a space project, 9 to 86 turns
+    /// before it. The answer waited for that launch in every one. Two won
+    /// anyway (071051Z, 110755Z). 075446Z (Religion) led from 184, no rival
+    /// launched until 215, and it lost the Exoplanet race at 245 by four
+    /// turns. 141505Z and 151815Z (Domination) led from 143 and 110, at 1.5x
+    /// and 1.8x the field's Science by 160, opened the drive only at the
+    /// rival launches of 190 and 184, landed their first projects at 211 and
+    /// 208, and lost to rival Culture victories at 216 and 214. 091422Z and
+    /// 131400Z led 13 and 9 turns before the first launch.
+    pub(super) fn science_lead_opens(&self, g: &Game, pid: usize) -> bool {
+        self.science_drive_leads_beside_the_lane
+            && self.science_drive_answers_the_launch
+            && self
+                .victory_target
+                .is_some_and(|target| target != VictoryTarget::Science)
+            && g.turn >= g.standard_duration(SCIENCE_LEAD_OPEN_STANDARD)
+            && !(self.victory_target == Some(VictoryTarget::Diplomacy)
+                && g.players[pid].dvp >= SCIENCE_ANSWER_DIPLO_YIELD)
+    }
+
+    /// An outright lead worth racing on: ahead on techs and at least
+    /// [`SCIENCE_DRIVE_LEAD_MARGIN`] over the best rival's Science.
+    pub(super) fn science_lead_is_meaningful(standing: &ScienceStanding) -> bool {
+        standing.leads_outright()
+            && standing.own_science
+                >= standing.best_rival_science * (1.0 + SCIENCE_DRIVE_LEAD_MARGIN)
+    }
+
+    /// `science-drive-answers-from-the-pad`: whether our own space race is
+    /// level with the field's: at least one project landed, and as many as
+    /// any met, living rival major. The answer opens on an outright science
+    /// lead, which a seat already level on the pads can lack. Live King
+    /// civvis-20261101T075446Z (Religion) landed its Satellite at 208 and its
+    /// Moon at 215, ahead of the Ottomans (215, 224), with 320 science against
+    /// 394: no drive opened, research stayed on the war plan (Predictive
+    /// Systems over Smart Materials at 212), Smart Materials came at 227, our
+    /// Exoplanet launched at 240 against theirs at 236, and the Ottomans won
+    /// at 245. 071051Z, whose answer opened on an outright lead at 181, won.
+    ///
+    /// `science-drive-answers-from-the-pad-2`: within one project of every
+    /// rival, not only level. Live King civvis-20261101T095815Z (v1 armed
+    /// from t203) landed its Moon at 202; Gran Colombia landed Mars at 203,
+    /// one ahead, so the pad reading never held and the answer waited for an
+    /// outright science lead at 218. Research ran the war plan in between
+    /// (Nuclear Fusion over Nanotechnology at 202, then Computers and
+    /// Telecommunications), Smart Materials came at 221 and Offworld Mission
+    /// at 231. Our Exoplanet launched at 223 against theirs at 221, no laser
+    /// station could start before 231, and Gran Colombia won at 233.
+    /// `false` with both genes off.
+    pub(super) fn answer_holds_the_pad(&self, g: &Game, pid: usize) -> bool {
+        if !self.science_drive_answers_from_the_pad && !self.science_drive_answers_from_the_pad_2 {
+            return false;
+        }
+        let slack = usize::from(self.science_drive_answers_from_the_pad_2);
+        let ours = Self::science_denial_stages(g, pid);
+        ours >= 1
+            && g.players
+                .iter()
+                .filter(|rival| {
+                    rival.id != pid
+                        && rival.alive
+                        && !rival.is_minor
+                        && !rival.is_barbarian
+                        && g.has_met(pid, rival.id)
+                })
+                .all(|rival| Self::science_denial_stages(g, rival.id) <= ours + slack)
+    }
+
+    /// `science-drive-answers-the-launch`: whether a met, living rival major
+    /// has landed a space project (the same four `science-threat-denial`
+    /// counts as the physical race).
+    pub(super) fn rival_landed_a_space_project(g: &Game, pid: usize) -> bool {
+        g.players.iter().any(|rival| {
+            rival.id != pid
+                && rival.alive
+                && !rival.is_minor
+                && !rival.is_barbarian
+                && g.has_met(pid, rival.id)
+                && [
+                    "launch_earth_satellite",
+                    "launch_moon_landing",
+                    "launch_mars_colony",
+                    "exoplanet_expedition",
+                ]
+                .iter()
+                .any(|project| rival.science_projects.contains(*project))
+        })
     }
 
     /// The city the race runs from: the Spaceport city (the best producer
@@ -938,6 +1109,11 @@ impl AdvancedAi {
 }
 
 #[cfg(test)]
+mod lead_tests;
+#[cfg(test)]
+mod pad_tests;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::ai::StrategicPlan;
@@ -1095,6 +1271,32 @@ mod tests {
         assert!(!ai.science_victory_drive);
     }
 
+    /// `science-drive-answers-the-launch` opens on an outright lead only.
+    #[test]
+    fn an_outright_lead_needs_both_science_and_techs() {
+        let both = ScienceStanding {
+            own_science: 576.0,
+            best_rival_science: 392.0,
+            own_techs: 77,
+            best_rival_techs: 77,
+        };
+        assert!(both.leads_outright(), "paired seed 51000");
+        let thin = ScienceStanding {
+            own_science: 288.0,
+            best_rival_science: 286.0,
+            own_techs: 62,
+            best_rival_techs: 67,
+        };
+        assert!(thin.leads() && !thin.leads_outright(), "live 111154Z t194");
+        let tied = ScienceStanding {
+            own_science: 80.0,
+            best_rival_science: 80.0,
+            own_techs: 50,
+            best_rival_techs: 44,
+        };
+        assert!(!tied.leads_outright(), "a tie on science is no lead");
+    }
+
     #[test]
     fn the_standing_leads_and_holds() {
         let ahead = ScienceStanding {
@@ -1217,6 +1419,125 @@ mod tests {
             other.science_drive().is_none(),
             "a seat assigned another lane never drives"
         );
+    }
+
+    /// `science-drive-answers-the-launch`: a seat assigned another lane
+    /// drives once a met rival has landed a space project and we lead, races
+    /// Science beside its lane while it does, and not before the landing.
+    #[test]
+    fn another_lane_answers_a_rival_launch_when_it_leads() {
+        let (mut g, ours, _) = board();
+        give_techs(&mut g, 0, 40);
+        give_techs(&mut g, 1, 30);
+        // An outright lead: the techs, and the science a turn of a Library.
+        let site = flat_site(&mut g, ours);
+        g.map.tiles.get_mut(&site).unwrap().district = Some(crate::name!("campus"));
+        let city = g.cities.get_mut(&ours).unwrap();
+        city.districts.insert(crate::name!("campus"), site);
+        city.buildings.push(crate::name!("library"));
+        assert!(
+            AdvancedAi::science_standing(&g, 0).leads_outright(),
+            "{:?}",
+            AdvancedAi::science_standing(&g, 0)
+        );
+        g.players[0].met.insert(1);
+        g.players[1].met.insert(0);
+        g.turn = 150;
+        for lane in [VictoryTarget::Diplomacy, VictoryTarget::Culture] {
+            let mut seat = AdvancedAi::targeting(lane);
+            seat.enable_science_victory_drive();
+            seat.enable_science_drive_answers_the_launch();
+            seat.maintain_science_drive(&g, 0);
+            assert!(
+                seat.science_drive().is_none(),
+                "{lane:?}: no rival launch yet"
+            );
+            assert_eq!(seat.raced_target(), Some(lane));
+
+            let mut landed = g.clone();
+            landed.players[1]
+                .science_projects
+                .insert("launch_earth_satellite".to_string());
+            seat.maintain_science_drive(&landed, 0);
+            let drive = seat.science_drive().expect("the launch is answered");
+            assert!(drive.answering && !drive.assigned, "{lane:?}");
+            assert_eq!(seat.raced_target(), Some(VictoryTarget::Science));
+            assert!(seat.science_drive_opens(GrandStrategy::Diplomacy));
+            assert_eq!(seat.victory_target(), Some(lane), "the lane itself is kept");
+
+            // Off, the assigned lane never drives, launch or not.
+            let mut off = AdvancedAi::targeting(lane);
+            off.enable_science_victory_drive();
+            off.maintain_science_drive(&landed, 0);
+            assert!(off.science_drive().is_none(), "{lane:?}: off");
+
+            // Behind the field, the launch is not answered.
+            let mut behind = landed.clone();
+            give_techs(&mut behind, 1, 60);
+            let mut trailing = AdvancedAi::targeting(lane);
+            trailing.enable_science_victory_drive();
+            trailing.enable_science_drive_answers_the_launch();
+            trailing.maintain_science_drive(&behind, 0);
+            assert!(
+                behind.players[1].techs.len() > behind.players[0].techs.len(),
+                "fixture: the rival leads on techs"
+            );
+            assert!(
+                !AdvancedAi::science_standing(&behind, 0).leads_outright(),
+                "fixture: we do not lead outright"
+            );
+            assert!(trailing.science_drive().is_none(), "{lane:?}: behind");
+        }
+        // Ahead on science a turn but behind on techs: no answer.
+        let mut landed = g.clone();
+        landed.players[1]
+            .science_projects
+            .insert("launch_earth_satellite".to_string());
+        let mut thin = landed.clone();
+        give_techs(&mut thin, 1, 45);
+        let standing = AdvancedAi::science_standing(&thin, 0);
+        assert!(
+            standing.leads() && !standing.leads_outright(),
+            "{standing:?}"
+        );
+        let mut seat = AdvancedAi::targeting(VictoryTarget::Culture);
+        seat.enable_science_victory_drive();
+        seat.enable_science_drive_answers_the_launch();
+        seat.maintain_science_drive(&thin, 0);
+        assert!(
+            seat.science_drive().is_none(),
+            "a thin lead does not answer"
+        );
+        // A Diplomatic seat on 16 points keeps its lane; a Culture seat does
+        // not read Diplomatic points.
+        let mut near = landed.clone();
+        near.players[0].dvp = SCIENCE_ANSWER_DIPLO_YIELD;
+        let mut diplomat = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+        diplomat.enable_science_victory_drive();
+        diplomat.enable_science_drive_answers_the_launch();
+        diplomat.maintain_science_drive(&near, 0);
+        assert!(diplomat.science_drive().is_none(), "near its own victory");
+        let mut curator = AdvancedAi::targeting(VictoryTarget::Culture);
+        curator.enable_science_victory_drive();
+        curator.enable_science_drive_answers_the_launch();
+        curator.maintain_science_drive(&near, 0);
+        assert!(curator.science_drive().is_some(), "Culture is unaffected");
+        // An answer already open closes once the Diplomatic seat nears 20.
+        let mut open = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+        open.enable_science_victory_drive();
+        open.enable_science_drive_answers_the_launch();
+        open.maintain_science_drive(&landed, 0);
+        assert!(open.science_drive().is_some(), "answered below the yield");
+        open.maintain_science_drive(&near, 0);
+        assert!(open.science_drive().is_none(), "the open answer yields");
+        // An unmet rival's landing is not read.
+        let mut unmet = g.clone();
+        unmet.players[0].met.clear();
+        unmet.players[1].met.clear();
+        unmet.players[1]
+            .science_projects
+            .insert("launch_earth_satellite".to_string());
+        assert!(!AdvancedAi::rival_landed_a_space_project(&unmet, 0));
     }
 
     #[test]

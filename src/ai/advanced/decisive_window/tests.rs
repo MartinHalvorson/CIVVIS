@@ -197,6 +197,19 @@ fn the_window_yields_an_off_path_goal_to_the_bombers_under_the_gene() {
     // A goal on the Advanced Flight path never yields.
     assert!(!ai.window_yields_to_the_bombers(&g, 0, name!("industrialization")));
     assert!(!ai.window_yields_to_the_bombers(&g, 0, name!("advanced_flight")));
+    // Version 2 alone keeps the Ballistics waiver, but with Industrialization
+    // still unknown the Bomber is too far for the window to yield.
+    ai.disable_siege_tier_yields_to_the_bombers();
+    ai.enable_siege_tier_yields_to_the_bombers_2();
+    assert_eq!(ai.air_surge_research_goal(&g, 0), Some("industrialization"));
+    assert!(AdvancedAi::air_surge_missing_techs(&g, 0) > BOMBER_YIELD_TECHS);
+    assert!(!ai.window_yields_to_the_bombers(&g, 0, goal));
+    assert_eq!(
+        ai.decisive_window_research_goal(&g, 0, Some(&window)),
+        Some(goal)
+    );
+    ai.disable_siege_tier_yields_to_the_bombers_2();
+    ai.enable_siege_tier_yields_to_the_bombers();
     g.players[0].research = None;
     ai.advanced_research(&mut g, 0, &plan);
     let picked = g.players[0].research.clone().expect("a research pick");
@@ -204,6 +217,51 @@ fn the_window_yields_an_off_path_goal_to_the_bombers_under_the_gene() {
         ai.tech_leads_to(&g, &picked, "industrialization"),
         "{picked:?} is not on the way to the Bomber"
     );
+}
+
+/// `siege-tier-yields-to-the-bombers-2`: the window yields an off-path goal
+/// only while the Bomber is within `BOMBER_YIELD_TECHS`. Live Immortal
+/// 031756Z gave up Gunpowder at t82 with the Bomber 12 technologies away.
+#[test]
+fn the_window_keeps_its_goal_while_the_bomber_is_far_under_version_2() {
+    use super::super::air_surge::AIR_SURGE_GOAL_TECH;
+    let (mut g, mut ai, _) = board("Gran Colombia");
+    g.max_turns = 20_000;
+    let ancestors = g.rules.tech_ancestors[AIR_SURGE_GOAL_TECH].clone();
+    g.players[0]
+        .techs
+        .extend(ancestors.iter().map(|tech| Name::new(tech)));
+    for tech in ["flight", "radio", "steam_power"] {
+        g.players[0].techs.remove(&Name::new(tech));
+    }
+    quote_cheap(&mut g, 0);
+    ai.enable_air_surge_2();
+    ai.enable_siege_tier_yields_to_the_bombers();
+    let goal = name!("military_science");
+    assert!(!ancestors.contains(goal.as_str()));
+    assert_eq!(
+        AdvancedAi::air_surge_missing_techs(&g, 0),
+        BOMBER_YIELD_TECHS
+    );
+    assert_eq!(ai.air_surge_research_goal(&g, 0), Some(AIR_SURGE_GOAL_TECH));
+
+    // Four technologies out, both versions yield. A family holds one version
+    // on at a time, so version 2 stands alone.
+    assert!(ai.window_yields_to_the_bombers(&g, 0, goal));
+    ai.disable_siege_tier_yields_to_the_bombers();
+    ai.enable_siege_tier_yields_to_the_bombers_2();
+    assert!(ai.window_yields_to_the_bombers(&g, 0, goal));
+
+    // A fifth: version 2 keeps the window's goal, version 1 still yields.
+    g.players[0].techs.remove(&name!("industrialization"));
+    assert_eq!(
+        AdvancedAi::air_surge_missing_techs(&g, 0),
+        BOMBER_YIELD_TECHS + 1
+    );
+    assert!(!ai.window_yields_to_the_bombers(&g, 0, goal));
+    ai.disable_siege_tier_yields_to_the_bombers_2();
+    ai.enable_siege_tier_yields_to_the_bombers();
+    assert!(ai.window_yields_to_the_bombers(&g, 0, goal));
 }
 
 /// The same board with both halves unlocked: the window is open, there is

@@ -1,0 +1,16 @@
+{
+  "registered_first_difference_qualified": true,
+  "two_comparisons": true,
+  "same_complete_native_payloads_before": 212,
+  "first_difference": [
+    79,
+    0
+  ],
+  "original_city33": "Industrial Zone",
+  "candidate_city33": "Entertainment Complex for widespread Amenity pressure",
+  "candidate_exact_caller": "src/ai/advanced.rs:31929 in historical diagnostic source",
+  "income": -7.84375,
+  "gold": 81.0,
+  "limitation": "The narrow industrial recovery fix releases that reservation but the existing Amenity pass takes the queue next. It does not establish that income recovery or a Commercial Hub wins the full priority chain, and does not estimate native strength.",
+  "binary_preserved": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/2026-10-25/producer-claims-keep-recovery/historical-backport-binary/civvis_orders"
+}

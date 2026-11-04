@@ -218,27 +218,31 @@ impl BasicAi {
                 })
                 .map(|(pos, _)| pos)
         };
-        let mut ranked: Vec<(f64, u32)> = own
+        let mut ranked: Vec<_> = own
             .iter()
             .copied()
             .filter(|city| {
                 !Self::commercial_hub_held_or_queued(g, *city)
                     && !self.commercial_city_threatened(g, *city)
             })
-            .filter(|city| best_site(*city).is_some())
-            .map(|city| (g.city_yields(city).production, city))
+            .filter_map(|city| {
+                let pos = best_site(city)?;
+                let item = Item::District { district: hub, pos };
+                // Only a city that can take this step may reserve one of its
+                // preferred ranks. A refused or too-slow Hub must leave room
+                // for an eligible city farther down the production ranking.
+                (g.can_produce(pid, city, &item)
+                    && Self::commercial_build_turns(g, pid, city, &item)
+                        <= COMMERCIAL_HUB_MAX_TURNS)
+                    .then(|| (g.city_yields(city).production, city, pos))
+            })
             .collect();
         ranked.sort_by(|a, b| b.0.total_cmp(&a.0).then(a.1.cmp(&b.1)));
-        if !ranked.iter().take(open).any(|(_, city)| *city == cid) {
-            return None;
-        }
-        let item = Item::District {
-            district: hub,
-            pos: best_site(cid)?,
-        };
-        (g.can_produce(pid, cid, &item)
-            && Self::commercial_build_turns(g, pid, cid, &item) <= COMMERCIAL_HUB_MAX_TURNS)
-            .then_some(item)
+        let pos = ranked
+            .iter()
+            .take(open)
+            .find_map(|(_, city, pos)| (*city == cid).then_some(*pos))?;
+        Some(Item::District { district: hub, pos })
     }
 
     /// Turns `cid` needs for `item`: the host's figure where it gave one.

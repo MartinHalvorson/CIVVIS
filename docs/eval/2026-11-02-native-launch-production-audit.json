@@ -1,0 +1,5658 @@
+{
+  "civvis-20261102T161612Z": {
+    "first_owned_techs": {
+      "industrialization": 128,
+      "chemistry": 163,
+      "rocketry": 171,
+      "satellites": 196
+    },
+    "first_observed_projects": {},
+    "first_spaceport": {
+      "turn": 195,
+      "city_id": 65536
+    },
+    "launch_city_observations": [
+      {
+        "turn": 151,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 67,
+        "producing": null,
+        "producing_observed": false,
+        "population": 13,
+        "food_surplus": 4,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_SEWER",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+13 from Districts\n +8 from Industrial Zone\n +2 from Campus\n +3 from Holy Site\n+20 from Buildings\n +8 from Coal Power Plant\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+31 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": 25,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 6,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 152,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 67,
+        "producing": "BUILDING_STOCK_EXCHANGE",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": 4,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_SEWER",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+13 from Districts\n +8 from Industrial Zone\n +2 from Campus\n +3 from Holy Site\n+20 from Buildings\n +8 from Coal Power Plant\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+31 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": 25,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 6,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 153,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 67,
+        "producing": null,
+        "producing_observed": false,
+        "population": 13,
+        "food_surplus": -3,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+13 from Districts\n +8 from Industrial Zone\n +2 from Campus\n +3 from Holy Site\n+20 from Buildings\n +8 from Coal Power Plant\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+29 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": 25,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 6,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 154,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 66,
+        "producing": "BUILDING_CHICHEN_ITZA",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": -2,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+13 from Districts\n +8 from Industrial Zone\n +2 from Campus\n +3 from Holy Site\n+20 from Buildings\n +8 from Coal Power Plant\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+30 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": 25,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 6,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 155,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 66,
+        "producing": "BUILDING_CHICHEN_ITZA",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": -3,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+10 from Districts\n +8 from Industrial Zone\n +2 from Campus\n+20 from Buildings\n +8 from Coal Power Plant\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+33 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": 25,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 6,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 156,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 70,
+        "producing": "BUILDING_HAGIA_SOPHIA",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": 0,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+10 from Districts\n +8 from Industrial Zone\n +2 from Campus\n+20 from Buildings\n +8 from Coal Power Plant\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+37 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": 25,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 6,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 157,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 70,
+        "producing": "BUILDING_HAGIA_SOPHIA",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": 0,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+10 from Districts\n +8 from Industrial Zone\n +2 from Campus\n+20 from Buildings\n +8 from Coal Power Plant\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+37 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": 25,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 6,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 158,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 70,
+        "producing": "BUILDING_HAGIA_SOPHIA",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": 8,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+10 from Districts\n +8 from Industrial Zone\n +2 from Campus\n+20 from Buildings\n +8 from Coal Power Plant\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+36 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": 25,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 6,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 159,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 69,
+        "producing": "BUILDING_HAGIA_SOPHIA",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": 8,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+10 from Districts\n +8 from Industrial Zone\n +2 from Campus\n+20 from Buildings\n +8 from Coal Power Plant\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+36 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": 25,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 6,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 160,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 69,
+        "producing": "BUILDING_HAGIA_SOPHIA",
+        "producing_observed": true,
+        "population": 14,
+        "food_surplus": 6,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+10 from Districts\n +8 from Industrial Zone\n +2 from Campus\n+20 from Buildings\n +8 from Coal Power Plant\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+36 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": 25,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 6,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 161,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 69,
+        "producing": null,
+        "producing_observed": false,
+        "population": 14,
+        "food_surplus": 6,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_HAGIA_SOPHIA",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+10 from Districts\n +8 from Industrial Zone\n +2 from Campus\n+20 from Buildings\n +8 from Coal Power Plant\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+36 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": 25,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 6,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 162,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 69,
+        "producing": null,
+        "producing_observed": false,
+        "population": 13,
+        "food_surplus": 8,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_HAGIA_SOPHIA",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+10 from Districts\n +8 from Industrial Zone\n +2 from Campus\n+20 from Buildings\n +8 from Coal Power Plant\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+36 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": 25,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 6,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 163,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 69,
+        "producing": "BUILDING_BROADCAST_CENTER",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": 8,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_HAGIA_SOPHIA",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+10 from Districts\n +8 from Industrial Zone\n +2 from Campus\n+20 from Buildings\n +8 from Coal Power Plant\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+36 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": 25,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 6,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 164,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 71,
+        "producing": "BUILDING_RESEARCH_LAB",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": 8,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_HAGIA_SOPHIA",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+10 from Districts\n +8 from Industrial Zone\n +2 from Campus\n+20 from Buildings\n +8 from Coal Power Plant\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+38 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": 25,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 6,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 165,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 72,
+        "producing": "UNIT_SPY",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": 0,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_HAGIA_SOPHIA",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+1 towards units\n+3 from Outgoing Trade Routes\n+10 from Districts\n +8 from Industrial Zone\n +2 from Campus\n+20 from Buildings\n +8 from Coal Power Plant\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+39 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": 25,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 6,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 166,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 76,
+        "producing": "UNIT_SPY",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": 0,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_HAGIA_SOPHIA",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+1 towards units\n+3 from Outgoing Trade Routes\n+13 from Districts\n +8 from Industrial Zone\n +2 from Campus\n +3 from Holy Site\n+20 from Buildings\n +8 from Coal Power Plant\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+39 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": 25,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 6,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 167,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 71,
+        "producing": null,
+        "producing_observed": false,
+        "population": 13,
+        "food_surplus": -2,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_HAGIA_SOPHIA",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+13 from Districts\n +8 from Industrial Zone\n +2 from Campus\n +3 from Holy Site\n+20 from Buildings\n +8 from Coal Power Plant\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+34 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": 24,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 168,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 70,
+        "producing": "BUILDING_RESEARCH_LAB",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": -2,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_HAGIA_SOPHIA",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+13 from Districts\n +8 from Industrial Zone\n +2 from Campus\n +3 from Holy Site\n+20 from Buildings\n +8 from Coal Power Plant\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+34 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": 23,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 169,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 69,
+        "producing": null,
+        "producing_observed": false,
+        "population": 13,
+        "food_surplus": -2,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_HAGIA_SOPHIA",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+13 from Districts\n +8 from Industrial Zone\n +2 from Campus\n +3 from Holy Site\n+20 from Buildings\n +8 from Coal Power Plant\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+34 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": 22,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 170,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 70,
+        "producing": null,
+        "producing_observed": false,
+        "population": 13,
+        "food_surplus": -2,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_HAGIA_SOPHIA",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+13 from Districts\n +8 from Industrial Zone\n +2 from Campus\n +3 from Holy Site\n+20 from Buildings\n +8 from Coal Power Plant\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+34 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": 20,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 171,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 67,
+        "producing": null,
+        "producing_observed": false,
+        "population": 13,
+        "food_surplus": -3,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_HAGIA_SOPHIA",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+13 from Districts\n +8 from Industrial Zone\n +2 from Campus\n +3 from Holy Site\n+20 from Buildings\n +8 from Coal Power Plant\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+34 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": 15,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 172,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 70,
+        "producing": null,
+        "producing_observed": false,
+        "population": 13,
+        "food_surplus": 0,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_HAGIA_SOPHIA",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+13 from Districts\n +8 from Industrial Zone\n +2 from Campus\n +3 from Holy Site\n+20 from Buildings\n +8 from Coal Power Plant\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+35 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": 12,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 173,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 69,
+        "producing": "BUILDING_BROADCAST_CENTER",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": 0,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_HAGIA_SOPHIA",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+11 from Districts\n +8 from Industrial Zone\n +3 from Holy Site\n+20 from Buildings\n +8 from Coal Power Plant\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+35 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": 9,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 174,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 69,
+        "producing": null,
+        "producing_observed": false,
+        "population": 13,
+        "food_surplus": 0,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_HAGIA_SOPHIA",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+11 from Districts\n +8 from Industrial Zone\n +3 from Holy Site\n+20 from Buildings\n +8 from Coal Power Plant\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+35 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": 5,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 175,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 67,
+        "producing": "UNIT_FIELD_CANNON",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": 8,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_HAGIA_SOPHIA",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+1 towards units\n+3 from Outgoing Trade Routes\n+8 from Districts\n +8 from Industrial Zone\n+20 from Buildings\n +8 from Coal Power Plant\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+34 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": 1,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 176,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 61,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": 6,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_HAGIA_SOPHIA",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+8 from Districts\n +8 from Industrial Zone\n+17 from Buildings\n +8 from Coal Power Plant\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+30 from Worked Tiles\n-10(-5.7) from Amenities",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 177,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 50,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": 6,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_HAGIA_SOPHIA",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+4 from Districts\n +4 from Industrial Zone\n+13 from Buildings\n +4 from Coal Power Plant\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+30 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 178,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 50,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": 6,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_HAGIA_SOPHIA",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+4 from Districts\n +4 from Industrial Zone\n+13 from Buildings\n +4 from Coal Power Plant\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+30 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 179,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 48,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": -8,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+6 from Districts\n +4 from Industrial Zone\n +2 from Holy Site\n+13 from Buildings\n +4 from Coal Power Plant\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+26 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 180,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 46,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": -8,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+4 from Districts\n +4 from Industrial Zone\n+13 from Buildings\n +4 from Coal Power Plant\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+26 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 181,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 46,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": -8,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+4 from Districts\n +4 from Industrial Zone\n+13 from Buildings\n +4 from Coal Power Plant\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+26 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 182,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 46,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": -2,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+4 from Districts\n +4 from Industrial Zone\n+13 from Buildings\n +4 from Coal Power Plant\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+26 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 183,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 46,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": -2,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+4 from Districts\n +4 from Industrial Zone\n+13 from Buildings\n +4 from Coal Power Plant\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+26 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 184,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 43,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": -8,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+6 from Districts\n +4 from Industrial Zone\n +2 from Holy Site\n+13 from Buildings\n +4 from Coal Power Plant\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+26 from Worked Tiles\n-10(-4.7) from Amenities",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 185,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 48,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": -8,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+6 from Districts\n +4 from Industrial Zone\n +2 from Holy Site\n+13 from Buildings\n +4 from Coal Power Plant\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+26 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 186,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 47,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": -8,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+5 from Districts\n +4 from Industrial Zone\n +1 from Holy Site\n+13 from Buildings\n +4 from Coal Power Plant\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+26 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 187,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 47,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": -8,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+5 from Districts\n +4 from Industrial Zone\n +1 from Holy Site\n+13 from Buildings\n +4 from Coal Power Plant\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+26 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 188,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 48,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 12,
+        "food_surplus": -7,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+5 from Districts\n +4 from Industrial Zone\n +1 from Holy Site\n+13 from Buildings\n +4 from Coal Power Plant\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+24 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 1,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 189,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 45,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 12,
+        "food_surplus": -7,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+5 from Districts\n +4 from Industrial Zone\n +1 from Holy Site\n+13 from Buildings\n +4 from Coal Power Plant\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+24 from Worked Tiles\n-10(-4.5) from Amenities",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 2,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 190,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 36,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 12,
+        "food_surplus": -3,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+5 from Districts\n +4 from Industrial Zone\n +1 from Holy Site\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+21 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 2,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 191,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 41,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 12,
+        "food_surplus": -3,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+5 from Districts\n +4 from Industrial Zone\n +1 from Holy Site\n+9 from Buildings\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+21 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 2,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 192,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 38,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 12,
+        "food_surplus": -3,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+5 from Districts\n +4 from Industrial Zone\n +1 from Holy Site\n+9 from Buildings\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+21 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 2,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 193,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 38,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 12,
+        "food_surplus": -3,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_MADRASA",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+5 from Districts\n +4 from Industrial Zone\n +1 from Holy Site\n+9 from Buildings\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+21 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 2,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": 3
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 3
+        }
+      },
+      {
+        "turn": 194,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 38,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 12,
+        "food_surplus": -3,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+5 from Districts\n +4 from Industrial Zone\n +1 from Holy Site\n+9 from Buildings\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+21 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 2,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": 6
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 3
+        }
+      },
+      {
+        "turn": 195,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 38,
+        "producing": null,
+        "producing_observed": false,
+        "population": 12,
+        "food_surplus": -4,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+5 from Districts\n +4 from Industrial Zone\n +1 from Holy Site\n+9 from Buildings\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+21 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 2,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": 9
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 3
+        }
+      },
+      {
+        "turn": 196,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 38,
+        "producing": "PROJECT_LAUNCH_EARTH_SATELLITE",
+        "producing_observed": true,
+        "population": 12,
+        "food_surplus": -3,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+5 from Districts\n +4 from Industrial Zone\n +1 from Holy Site\n+9 from Buildings\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+21 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 2,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": 12
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 3
+        }
+      },
+      {
+        "turn": 197,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 42,
+        "producing": "PROJECT_LAUNCH_EARTH_SATELLITE",
+        "producing_observed": true,
+        "population": 12,
+        "food_surplus": -3,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+9 from Districts\n +8 from Industrial Zone\n +1 from Holy Site\n+9 from Buildings\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+21 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 1,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": 15
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 3
+        }
+      },
+      {
+        "turn": 198,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 42,
+        "producing": "PROJECT_LAUNCH_EARTH_SATELLITE",
+        "producing_observed": true,
+        "population": 12,
+        "food_surplus": -3,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+9 from Districts\n +8 from Industrial Zone\n +1 from Holy Site\n+9 from Buildings\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+21 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 1,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": 18
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 3
+        }
+      },
+      {
+        "turn": 199,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 34,
+        "producing": "PROJECT_LAUNCH_EARTH_SATELLITE",
+        "producing_observed": true,
+        "population": 9,
+        "food_surplus": 3,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+7 from Districts\n +6 from Industrial Zone\n +1 from Holy Site\n+6 from Buildings\n +3 from Factory\n +1 from Water Mill\n +2 from Palace\n+18 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": 21
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 3
+        }
+      },
+      {
+        "turn": 200,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 35,
+        "producing": "UNIT_AT_CREW",
+        "producing_observed": true,
+        "population": 9,
+        "food_surplus": 3,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+1 towards units\n+3 from Outgoing Trade Routes\n+7 from Districts\n +6 from Industrial Zone\n +1 from Holy Site\n+6 from Buildings\n +3 from Factory\n +1 from Water Mill\n +2 from Palace\n+18 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": 24
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 3
+        }
+      },
+      {
+        "turn": 201,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 35,
+        "producing": "UNIT_AT_CREW",
+        "producing_observed": true,
+        "population": 9,
+        "food_surplus": 3,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+1 towards units\n+3 from Outgoing Trade Routes\n+7 from Districts\n +6 from Industrial Zone\n +1 from Holy Site\n+6 from Buildings\n +3 from Factory\n +1 from Water Mill\n +2 from Palace\n+18 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": 25
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 3
+        }
+      },
+      {
+        "turn": 202,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 35,
+        "producing": "UNIT_AT_CREW",
+        "producing_observed": true,
+        "population": 9,
+        "food_surplus": 3,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+1 towards units\n+3 from Outgoing Trade Routes\n+7 from Districts\n +6 from Industrial Zone\n +1 from Holy Site\n+6 from Buildings\n +3 from Factory\n +1 from Water Mill\n +2 from Palace\n+18 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": 25
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 3
+        }
+      },
+      {
+        "turn": 203,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 33,
+        "producing": "UNIT_AT_CREW",
+        "producing_observed": true,
+        "population": 9,
+        "food_surplus": 1,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+1 towards units\n+1 from Outgoing Trade Routes\n+7 from Districts\n +6 from Industrial Zone\n +1 from Holy Site\n+6 from Buildings\n +3 from Factory\n +1 from Water Mill\n +2 from Palace\n+18 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": 25
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 3
+        }
+      },
+      {
+        "turn": 204,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 33,
+        "producing": "UNIT_AT_CREW",
+        "producing_observed": true,
+        "population": 9,
+        "food_surplus": 2,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+1 towards units\n+1 from Outgoing Trade Routes\n+7 from Districts\n +6 from Industrial Zone\n +1 from Holy Site\n+6 from Buildings\n +3 from Factory\n +1 from Water Mill\n +2 from Palace\n+18 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": 25
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 3
+        }
+      },
+      {
+        "turn": 205,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 32,
+        "producing": null,
+        "producing_observed": false,
+        "population": 9,
+        "food_surplus": 2,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+1 from Outgoing Trade Routes\n+7 from Districts\n +6 from Industrial Zone\n +1 from Holy Site\n+6 from Buildings\n +3 from Factory\n +1 from Water Mill\n +2 from Palace\n+18 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": 25
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 3
+        }
+      },
+      {
+        "turn": 206,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 34,
+        "producing": null,
+        "producing_observed": false,
+        "population": 9,
+        "food_surplus": 2,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+1 from Outgoing Trade Routes\n+9 from Districts\n +8 from Industrial Zone\n +1 from Holy Site\n+6 from Buildings\n +3 from Factory\n +1 from Water Mill\n +2 from Palace\n+18 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": 25
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 3
+        }
+      },
+      {
+        "turn": 207,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 34,
+        "producing": null,
+        "producing_observed": false,
+        "population": 9,
+        "food_surplus": 0,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+1 from Outgoing Trade Routes\n+9 from Districts\n +8 from Industrial Zone\n +1 from Holy Site\n+6 from Buildings\n +3 from Factory\n +1 from Water Mill\n +2 from Palace\n+18 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": 25
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 3
+        }
+      },
+      {
+        "turn": 208,
+        "id": 65536,
+        "name": "Cairo",
+        "production": 35,
+        "producing": null,
+        "producing_observed": false,
+        "population": 9,
+        "food_surplus": 1,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_SHRINE",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_MARKET",
+          "BUILDING_TEMPLE",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_WORKSHOP",
+          "BUILDING_BANK",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_STOCK_EXCHANGE",
+          "BUILDING_SEWER",
+          "BUILDING_BROADCAST_CENTER",
+          "BUILDING_SYNAGOGUE",
+          "BUILDING_CHICHEN_ITZA",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+9 from Districts\n +8 from Industrial Zone\n +1 from Holy Site\n+6 from Buildings\n +3 from Factory\n +1 from Water Mill\n +2 from Palace\n+18 from Worked Tiles\n-10(-3.5) from Amenities",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": 25
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 3,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      }
+    ],
+    "events_sha256": "44319fa1eb081815347a28ac089137a187df03d624185073abdb4b1e95bc2979",
+    "source": "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261102T161612Z/events.jsonl",
+    "interpretation": "First observed native milestones. No causal savings estimate. Missing fields are unknown. UI Factory attribution does not prove an own Factory or stacking. Fuel income and bank are observed separately; neither measures powered status."
+  },
+  "civvis-20261102T165603Z": {
+    "first_owned_techs": {
+      "industrialization": 112,
+      "chemistry": 141,
+      "rocketry": 152,
+      "satellites": 167
+    },
+    "first_observed_projects": {
+      "PROJECT_LAUNCH_EARTH_SATELLITE": 184,
+      "PROJECT_LAUNCH_MOON_LANDING": 197
+    },
+    "first_spaceport": {
+      "turn": 174,
+      "city_id": 65536
+    },
+    "launch_city_observations": [
+      {
+        "turn": 132,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 27,
+        "producing": "BUILDING_WORKSHOP",
+        "producing_observed": true,
+        "population": 7,
+        "food_surplus": 2,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+3 from Buildings\n +1 from Water Mill\n +2 from Palace\n+20 from Worked Tiles\n-10(-3) from Amenities",
+        "factory_production_in_english_ui": null,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 133,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 27,
+        "producing": "BUILDING_WORKSHOP",
+        "producing_observed": true,
+        "population": 7,
+        "food_surplus": 2,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+3 from Buildings\n +1 from Water Mill\n +2 from Palace\n+20 from Worked Tiles\n-10(-3) from Amenities",
+        "factory_production_in_english_ui": null,
+        "support_offers": [],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 134,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 34,
+        "producing": null,
+        "producing_observed": false,
+        "population": 7,
+        "food_surplus": 2,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+6 from Buildings\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+20 from Worked Tiles",
+        "factory_production_in_english_ui": null,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 5,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 135,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 34,
+        "producing": "UNIT_SETTLER",
+        "producing_observed": true,
+        "population": 7,
+        "food_surplus": 2,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+6 from Buildings\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+20 from Worked Tiles",
+        "factory_production_in_english_ui": null,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 5,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 136,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 34,
+        "producing": "UNIT_SETTLER",
+        "producing_observed": true,
+        "population": 7,
+        "food_surplus": 2,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+6 from Buildings\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+20 from Worked Tiles",
+        "factory_production_in_english_ui": null,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 5,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 137,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 36,
+        "producing": null,
+        "producing_observed": false,
+        "population": 7,
+        "food_surplus": 2,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+9 from Buildings\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+20 from Worked Tiles\n-10(-3.6) from Amenities",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 5,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 138,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 32,
+        "producing": "UNIT_CARAVEL",
+        "producing_observed": true,
+        "population": 7,
+        "food_surplus": 1,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+22 from Worked Tiles\n-10(-4) from Amenities",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 5,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 139,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 42,
+        "producing": "UNIT_CARAVEL",
+        "producing_observed": true,
+        "population": 7,
+        "food_surplus": 2,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+21 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 5,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 140,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 36,
+        "producing": "UNIT_BUILDER",
+        "producing_observed": true,
+        "population": 7,
+        "food_surplus": 2,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+21 from Worked Tiles\n-10(-4) from Amenities",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 5,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 141,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 41,
+        "producing": null,
+        "producing_observed": false,
+        "population": 8,
+        "food_surplus": 2,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+22 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 142,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 43,
+        "producing": "BUILDING_RESEARCH_LAB",
+        "producing_observed": true,
+        "population": 8,
+        "food_surplus": 2,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+23 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 143,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 43,
+        "producing": "BUILDING_RESEARCH_LAB",
+        "producing_observed": true,
+        "population": 8,
+        "food_surplus": 2,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+23 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 144,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 43,
+        "producing": "UNIT_BUILDER",
+        "producing_observed": true,
+        "population": 8,
+        "food_surplus": 2,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+23 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 145,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 43,
+        "producing": null,
+        "producing_observed": false,
+        "population": 8,
+        "food_surplus": 2,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+23 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 146,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 43,
+        "producing": "BUILDING_RESEARCH_LAB",
+        "producing_observed": true,
+        "population": 8,
+        "food_surplus": 2,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+23 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 147,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 43,
+        "producing": null,
+        "producing_observed": false,
+        "population": 8,
+        "food_surplus": 0,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+22 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 148,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 42,
+        "producing": null,
+        "producing_observed": false,
+        "population": 8,
+        "food_surplus": 0,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+22 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 149,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 42,
+        "producing": "UNIT_OBSERVATION_BALLOON",
+        "producing_observed": true,
+        "population": 8,
+        "food_surplus": 0,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+22 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 150,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 42,
+        "producing": "UNIT_OBSERVATION_BALLOON",
+        "producing_observed": true,
+        "population": 8,
+        "food_surplus": 0,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+22 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 151,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 42,
+        "producing": null,
+        "producing_observed": false,
+        "population": 8,
+        "food_surplus": 0,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+22 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 152,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 42,
+        "producing": "UNIT_BUILDER",
+        "producing_observed": true,
+        "population": 8,
+        "food_surplus": 0,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+22 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 153,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 42,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 8,
+        "food_surplus": 0,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+22 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 154,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 37,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 8,
+        "food_surplus": 0,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+22 from Worked Tiles\n-10(-4.1) from Amenities",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 5,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 155,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 37,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 8,
+        "food_surplus": 0,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+22 from Worked Tiles\n-10(-4.1) from Amenities",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 5,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 156,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 42,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 8,
+        "food_surplus": 0,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+22 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 157,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 42,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 8,
+        "food_surplus": 0,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+22 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 158,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 42,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 8,
+        "food_surplus": 0,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+22 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 159,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 42,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 8,
+        "food_surplus": 0,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+22 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 160,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 42,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 8,
+        "food_surplus": 0,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+22 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 161,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 42,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 8,
+        "food_surplus": 0,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+22 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 162,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 37,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 8,
+        "food_surplus": 0,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+22 from Worked Tiles\n-10(-4.1) from Amenities",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 5,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 163,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 37,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 8,
+        "food_surplus": 0,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+22 from Worked Tiles\n-10(-4.1) from Amenities",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 5,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 164,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 42,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 8,
+        "food_surplus": 0,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+22 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 165,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 42,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 8,
+        "food_surplus": 0,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+22 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 166,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 40,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 8,
+        "food_surplus": 6,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+20 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 5,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 167,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 40,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 8,
+        "food_surplus": 7,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+20 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 5,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 168,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 35,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 8,
+        "food_surplus": 6,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+3 from Districts\n +3 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+20 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 5,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 169,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 40,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 9,
+        "food_surplus": 5,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+24 from Worked Tiles\n-10(-4.3) from Amenities",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 5,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 170,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 44,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 9,
+        "food_surplus": 5,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+2 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+24 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 171,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 48,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 9,
+        "food_surplus": 8,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+6 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+24 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 172,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 45,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 9,
+        "food_surplus": 8,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+6 from Outgoing Trade Routes\n+3 from Districts\n +3 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+24 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 173,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 46,
+        "producing": "DISTRICT_SPACEPORT",
+        "producing_observed": true,
+        "population": 9,
+        "food_surplus": 8,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+6 from Outgoing Trade Routes\n+3 from Districts\n +3 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+25 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 174,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 46,
+        "producing": null,
+        "producing_observed": false,
+        "population": 9,
+        "food_surplus": 8,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+6 from Outgoing Trade Routes\n+3 from Districts\n +3 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+25 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": null,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 0,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 175,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 46,
+        "producing": "PROJECT_LAUNCH_EARTH_SATELLITE",
+        "producing_observed": true,
+        "population": 10,
+        "food_surplus": 8,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+6 from Outgoing Trade Routes\n+3 from Districts\n +3 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+26 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": 4,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 3,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 176,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 47,
+        "producing": "PROJECT_LAUNCH_EARTH_SATELLITE",
+        "producing_observed": true,
+        "population": 10,
+        "food_surplus": 8,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+6 from Outgoing Trade Routes\n+3 from Districts\n +3 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+26 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": 7,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 3,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 177,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 48,
+        "producing": "PROJECT_LAUNCH_EARTH_SATELLITE",
+        "producing_observed": true,
+        "population": 10,
+        "food_surplus": 8,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+6 from Outgoing Trade Routes\n+3 from Districts\n +3 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+27 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": 8,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 3,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 178,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 48,
+        "producing": "PROJECT_LAUNCH_EARTH_SATELLITE",
+        "producing_observed": true,
+        "population": 10,
+        "food_surplus": 8,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+6 from Outgoing Trade Routes\n+3 from Districts\n +3 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+27 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": 10,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 3,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 179,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 48,
+        "producing": "PROJECT_LAUNCH_EARTH_SATELLITE",
+        "producing_observed": true,
+        "population": 10,
+        "food_surplus": 8,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+6 from Outgoing Trade Routes\n+3 from Districts\n +3 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+27 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": 12,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 3,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 180,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 48,
+        "producing": "PROJECT_LAUNCH_EARTH_SATELLITE",
+        "producing_observed": true,
+        "population": 10,
+        "food_surplus": 9,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+6 from Outgoing Trade Routes\n+3 from Districts\n +3 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+27 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": 14,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 3,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 181,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 48,
+        "producing": "PROJECT_LAUNCH_EARTH_SATELLITE",
+        "producing_observed": true,
+        "population": 11,
+        "food_surplus": 9,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+6 from Outgoing Trade Routes\n+3 from Districts\n +3 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+28 from Worked Tiles\n-10(-4.8) from Amenities",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": 19,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 6,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 182,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 49,
+        "producing": "PROJECT_LAUNCH_EARTH_SATELLITE",
+        "producing_observed": true,
+        "population": 11,
+        "food_surplus": 9,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+6 from Outgoing Trade Routes\n+3 from Districts\n +3 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+28 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": 24,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 6,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 183,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 49,
+        "producing": "PROJECT_LAUNCH_EARTH_SATELLITE",
+        "producing_observed": true,
+        "population": 11,
+        "food_surplus": 10,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+6 from Outgoing Trade Routes\n+3 from Districts\n +3 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+28 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": 25,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 6,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 184,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 52,
+        "producing": null,
+        "producing_observed": false,
+        "population": 11,
+        "food_surplus": 10,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+6 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+28 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 3,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": 25,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 6,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 185,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 52,
+        "producing": "PROJECT_LAUNCH_MOON_LANDING",
+        "producing_observed": true,
+        "population": 11,
+        "food_surplus": 10,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+6 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+28 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": 25,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 6,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 186,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 54,
+        "producing": "PROJECT_LAUNCH_MOON_LANDING",
+        "producing_observed": true,
+        "population": 12,
+        "food_surplus": 9,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+6 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+31 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 3,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": 25,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 6,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 187,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 49,
+        "producing": "PROJECT_LAUNCH_MOON_LANDING",
+        "producing_observed": true,
+        "population": 12,
+        "food_surplus": 9,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+6 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+31 from Worked Tiles\n-10(-5.5) from Amenities",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": 25,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 6,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 188,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 55,
+        "producing": "PROJECT_LAUNCH_MOON_LANDING",
+        "producing_observed": true,
+        "population": 12,
+        "food_surplus": 9,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+6 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+31 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 3,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": 25,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 6,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 189,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 55,
+        "producing": "PROJECT_LAUNCH_MOON_LANDING",
+        "producing_observed": true,
+        "population": 12,
+        "food_surplus": 9,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+6 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+31 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 3,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": 25,
+          "RESOURCE_URANIUM": null
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 6,
+          "RESOURCE_URANIUM": 0
+        }
+      },
+      {
+        "turn": 190,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 64,
+        "producing": "PROJECT_LAUNCH_MOON_LANDING",
+        "producing_observed": true,
+        "population": 12,
+        "food_surplus": 9,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+6 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+7.1 from Population\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+33 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 3,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": 25,
+          "RESOURCE_URANIUM": 4
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 6,
+          "RESOURCE_URANIUM": 3
+        }
+      },
+      {
+        "turn": 191,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 64,
+        "producing": "PROJECT_LAUNCH_MOON_LANDING",
+        "producing_observed": true,
+        "population": 12,
+        "food_surplus": 9,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+6 from Outgoing Trade Routes\n+6 from Districts\n +6 from Industrial Zone\n+7.1 from Population\n+12 from Buildings\n +6 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+33 from Worked Tiles",
+        "factory_production_in_english_ui": 6.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 3,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": 25,
+          "RESOURCE_URANIUM": 10
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 6,
+          "RESOURCE_URANIUM": 6
+        }
+      },
+      {
+        "turn": 192,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 60,
+        "producing": "PROJECT_LAUNCH_MOON_LANDING",
+        "producing_observed": true,
+        "population": 12,
+        "food_surplus": 10,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+7 from Outgoing Trade Routes\n+4 from Districts\n +4 from Industrial Zone\n+7.1 from Population\n+9 from Buildings\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+33 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 3,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": 25,
+          "RESOURCE_URANIUM": 16
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 6,
+          "RESOURCE_URANIUM": 6
+        }
+      },
+      {
+        "turn": 193,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 54,
+        "producing": "PROJECT_LAUNCH_MOON_LANDING",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": 8,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+7 from Outgoing Trade Routes\n+4 from Districts\n +4 from Industrial Zone\n+7.7 from Population\n+9 from Buildings\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+33 from Worked Tiles\n-10(-6) from Amenities",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": 25,
+          "RESOURCE_URANIUM": 22
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 6,
+          "RESOURCE_URANIUM": 6
+        }
+      },
+      {
+        "turn": 194,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 60,
+        "producing": "PROJECT_LAUNCH_MOON_LANDING",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": 8,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+7 from Outgoing Trade Routes\n+4 from Districts\n +4 from Industrial Zone\n+7.7 from Population\n+9 from Buildings\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+33 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 3,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": 25,
+          "RESOURCE_URANIUM": 25
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 6,
+          "RESOURCE_URANIUM": 6
+        }
+      },
+      {
+        "turn": 195,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 60,
+        "producing": "PROJECT_LAUNCH_MOON_LANDING",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": 8,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+7 from Outgoing Trade Routes\n+4 from Districts\n +4 from Industrial Zone\n+7.7 from Population\n+9 from Buildings\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+33 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 3,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": 25,
+          "RESOURCE_URANIUM": 25
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 9,
+          "RESOURCE_URANIUM": 6
+        }
+      },
+      {
+        "turn": 196,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 60,
+        "producing": "PROJECT_LAUNCH_MOON_LANDING",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": 8,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+7 from Outgoing Trade Routes\n+4 from Districts\n +4 from Industrial Zone\n+7.7 from Population\n+9 from Buildings\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+33 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 3,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": 25,
+          "RESOURCE_URANIUM": 25
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 9,
+          "RESOURCE_URANIUM": 6
+        }
+      },
+      {
+        "turn": 197,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 56,
+        "producing": null,
+        "producing_observed": false,
+        "population": 13,
+        "food_surplus": 4,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+3 from Outgoing Trade Routes\n+4 from Districts\n +4 from Industrial Zone\n+7.7 from Population\n+9 from Buildings\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+33 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 3,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": 25,
+          "RESOURCE_URANIUM": 25
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 9,
+          "RESOURCE_URANIUM": 6
+        }
+      },
+      {
+        "turn": 198,
+        "id": 65536,
+        "name": "Majapahit",
+        "production": 54,
+        "producing": "PROJECT_LAUNCH_MARS_BASE",
+        "producing_observed": true,
+        "population": 13,
+        "food_surplus": 3,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH"
+        ],
+        "production_sources": "+1 from Outgoing Trade Routes\n+4 from Districts\n +4 from Industrial Zone\n+7.7 from Population\n+9 from Buildings\n +3 from Factory\n +3 from Workshop\n +1 from Water Mill\n +2 from Palace\n+33 from Worked Tiles",
+        "factory_production_in_english_ui": 3.0,
+        "support_offers": [
+          {
+            "c": 165,
+            "p": 4,
+            "t": "BUILDING_FACTORY"
+          }
+        ],
+        "buildable_observed": true,
+        "fuel_stocks": {
+          "RESOURCE_COAL": null,
+          "RESOURCE_OIL": 25,
+          "RESOURCE_URANIUM": 25
+        },
+        "fuel_income": {
+          "RESOURCE_COAL": 0,
+          "RESOURCE_OIL": 9,
+          "RESOURCE_URANIUM": 6
+        }
+      }
+    ],
+    "events_sha256": "503e956c048fd50c80cfabb4202a248b1966b2e4b1ba14eb4a5c6e3ac806bc8e",
+    "source": "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261102T165603Z/events.jsonl",
+    "interpretation": "First observed native milestones. No causal savings estimate. Missing fields are unknown. UI Factory attribution does not prove an own Factory or stacking. Fuel income and bank are observed separately; neither measures powered status."
+  }
+}

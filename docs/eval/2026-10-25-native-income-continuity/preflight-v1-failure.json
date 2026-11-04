@@ -1,0 +1,4 @@
+{
+  "retained_precommit_failure": "git diff --cached --check found three blank patch-context lines containing the mandatory single unified-diff context space. Initial unstaged diff-check had not included the untracked archive file. No commit or push occurred.",
+  "correction": "Store the exact patch bytes in deterministic gzip; decompressed SHA-256 equals the original qualified source-manifest patch digest. Update artifact names and rerun staged verification. Never strip valid patch context syntax."
+}

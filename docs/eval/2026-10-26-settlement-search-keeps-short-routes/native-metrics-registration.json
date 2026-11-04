@@ -1,0 +1,30 @@
+{
+  "registered_utc": "2026-10-26T06:34:08.353482+00:00",
+  "scope": "Descriptive early-economy readback, no causal or native win-rate estimate. No game/config/lease/force changes.",
+  "baseline_kind": "Retrospective fixed first-eight queue-correction segments; known first seven archived with no outcomes/production-share stop.",
+  "baseline_runs": [
+    "civvis-20261026T060738Z",
+    "civvis-20261026T061110Z",
+    "civvis-20261026T061420Z",
+    "civvis-20261026T061723Z",
+    "civvis-20261026T062026Z",
+    "civvis-20261026T062432Z",
+    "civvis-20261026T062755Z",
+    "civvis-20261026T063103Z"
+  ],
+  "baseline_observer_snapshot_sha256": "4769efb9c220248ed5deab954b0b3b599cec0abc94b32bf270c3326634683a60",
+  "future_kind": "Prospective first-eight attempt segments from first confirmed merged PR4170 BFS source/first decision. Same membership as the prepared observer. Do not replace missing, retired, continued, changed-source or changed-profile segments.",
+  "timepoints": [
+    20,
+    40,
+    50
+  ],
+  "production_metric": "Actual agent kind=turn major_production local_player reading; report our production, largest readable rival production and ratio at each exact turn. Missing exact turn remains missing.",
+  "state_metrics": "First and last exported state at each exact turn: cities, completed Monuments (city.buildings), culture, science, gold, GPT, government, built Settlers and ongoing city production. No interpolation.",
+  "end_metrics": "Preserve actual native outcome/stop reason/turn and production_share reading. Stops have no game outcome, not a loss or replacement.",
+  "limits": [
+    "Operator production-share stops can censor all outcomes.",
+    "Immortal starting advantages, different seeds, unrelated source/profile changes and overlapping cohorts prevent causal attribution.",
+    "A higher early metric is not a demonstrated win-rate improvement."
+  ]
+}

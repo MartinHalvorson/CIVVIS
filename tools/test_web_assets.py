@@ -276,15 +276,67 @@ class TheDedicatedDisplayShowsTheHud(unittest.TestCase):
     one stray click that hid the players overlay hid it for every game after —
     on 2026-09-10 the display beside a live Emperor game showed a bare map."""
 
-    def test_dedicated_mode_shows_only_the_player_hud(self):
+    def test_dedicated_mode_shows_the_player_hud_and_victory_tracker(self):
         source = (REPO / "web" / "assets" / "app.js").read_text(encoding="utf-8")
         gate = source.index('get("display") === "dedicated"')
         # After the saved overlays are read, so the forced values win.
         self.assertGreater(gate, source.index("OVERLAY_STORAGE_KEY) ||"))
         block = source[gate:gate + 400]
         self.assertIn("OVERLAY_VISIBILITY.players = true", block)
-        for name in ("victory", "minimap", "controls", "lenses"):
+        self.assertIn("OVERLAY_VISIBILITY.victory = true", block)
+        for name in ("minimap", "controls", "lenses"):
             self.assertIn(f"OVERLAY_VISIBILITY.{name} = false", block)
+
+    def test_the_tracker_is_the_right_hand_panel_to_the_bottom(self):
+        # Operator, 2026-10-30: the standings span the top; the tracker stands
+        # under them on the right, all the way to the bottom, at every width.
+        source = (REPO / "web" / "assets" / "app.js").read_text(encoding="utf-8")
+        gate = source.index('get("display") === "dedicated"')
+        self.assertIn('document.body.classList.add("display-dedicated")',
+                      source[gate:source.index("\n}\n", gate)])
+        html = INDEX.read_text(encoding="utf-8")
+        start = html.index("body.display-dedicated #maparea #victoryhud {")
+        rule = html[start:html.index("}", start)]
+        self.assertIn("right: var(--panel-edge)", rule)
+        self.assertIn("bottom: var(--panel-edge)", rule)
+        self.assertIn("left: auto", rule)
+        # Two ids and a class plus `body`: outranks the compact band's
+        # `#maparea.player-hud-compact #victoryhud` and its ribbon columns.
+        self.assertIn("body.display-dedicated #maparea #victoryhud .victory-ribbon {", html)
+
+    def test_a_saved_tracker_position_cannot_move_the_panel(self):
+        source = (REPO / "web" / "assets" / "app.js").read_text(encoding="utf-8")
+        loaded = source.index("localStorage.getItem(HUD_LAYOUT_STORAGE_KEY)")
+        start = source.index("if (DEDICATED_DISPLAY && HUD_LAYOUT.victory) {")
+        block = source[start:source.index("\n}\n", start)]
+        self.assertGreater(start, loaded)
+        self.assertLess(start, source.index("HUD_LAYOUT[name] = serializeHudWidget"))
+        self.assertIn("delete HUD_LAYOUT.victory;", block)
+        # Only a rail's width survives the reload, through the stylesheet.
+        self.assertIn('"--dedicated-victory-width"', block)
+        self.assertIn("window.innerWidth * .45", block)
+        html = INDEX.read_text(encoding="utf-8")
+        self.assertIn("width: var(--dedicated-victory-width, max(var(--victory-hud-width), 224px));", html)
+
+    def test_the_paths_nearest_a_win_stand_first_with_two_leaders(self):
+        # Operator, 2026-10-30: "rank the victory tracker victory types in
+        # order of closest to victory ... top 2 only".
+        source = (REPO / "web" / "assets" / "app.js").read_text(encoding="utf-8")
+        self.assertIn("const DEDICATED_VICTORY_LEADERS = 2;", source)
+        overview = source[source.index("function playerHudOverview()"):]
+        overview = overview[:overview.index("\n}\n")]
+        ranking = overview[overview.index("if (DEDICATED_DISPLAY) {"):]
+        ranking = ranking[:ranking.index("\n  }\n")]
+        self.assertIn("+victoryMetric(player, track.id).progress", ranking)
+        self.assertIn("enabledVictoryTracks.sort((a, b) => leading.get(b.id) - leading.get(a.id));", ranking)
+        # The ranking happens before the tracks are drawn from that list.
+        self.assertLess(overview.index("enabledVictoryTracks.sort("),
+                        overview.index("const victoryTracks = enabledVictoryTracks.map("))
+        sync = source[source.index("function syncVictoryLeaderCapacity("):]
+        sync = sync[:sync.index("\n}\n")]
+        self.assertIn("DEDICATED_DISPLAY ? DEDICATED_VICTORY_LEADERS : victoryLeaderCapacity(victoryHud)", sync)
+        # No third row for the viewed civilization on the dedicated display.
+        self.assertIn('(DEDICATED_DISPLAY || entry.dataset.victoryFocus !== "true")', sync)
 
     def test_the_keeper_opens_the_page_in_dedicated_mode(self):
         keeper = (Path(__file__).resolve().parent / "ops" / "civvis-display-keeper.mjs").read_text(encoding="utf-8")

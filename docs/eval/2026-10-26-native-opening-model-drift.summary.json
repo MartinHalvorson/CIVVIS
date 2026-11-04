@@ -1,0 +1,939 @@
+{
+  "amenities": {
+    "known": 219,
+    "material": 2,
+    "maximum_absolute_delta": 1,
+    "mean_absolute_delta": 0.0091324200913242,
+    "unknown": 0
+  },
+  "complete_reads": 83,
+  "corrected_display_yields": {
+    "culture": {
+      "known": 219,
+      "material": 0,
+      "maximum_absolute_delta": 0.0,
+      "mean_absolute_delta": 0.0,
+      "unknown": 0
+    },
+    "faith": {
+      "known": 219,
+      "material": 0,
+      "maximum_absolute_delta": 0.0,
+      "mean_absolute_delta": 0.0,
+      "unknown": 0
+    },
+    "food": {
+      "known": 219,
+      "material": 0,
+      "maximum_absolute_delta": 0.0,
+      "mean_absolute_delta": 0.0,
+      "unknown": 0
+    },
+    "gold": {
+      "known": 219,
+      "material": 0,
+      "maximum_absolute_delta": 0.0,
+      "mean_absolute_delta": 0.0,
+      "unknown": 0
+    },
+    "production": {
+      "known": 219,
+      "material": 0,
+      "maximum_absolute_delta": 0.0,
+      "mean_absolute_delta": 0.0,
+      "unknown": 0
+    },
+    "science": {
+      "known": 219,
+      "material": 0,
+      "maximum_absolute_delta": 0.0,
+      "mean_absolute_delta": 0.0,
+      "unknown": 0
+    }
+  },
+  "exceptions": [
+    {
+      "amenities": {
+        "delta": 0,
+        "host": 0,
+        "known": true,
+        "material": false,
+        "model": 0
+      },
+      "corrected_display_delta": {
+        "culture": {
+          "delta": 0.0,
+          "host": 0.269531,
+          "known": true,
+          "material": false,
+          "model": 0.269531
+        },
+        "faith": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "food": {
+          "delta": 0.0,
+          "host": 3,
+          "known": true,
+          "material": false,
+          "model": 3.0
+        },
+        "gold": {
+          "delta": 0.0,
+          "host": 1.80078,
+          "known": true,
+          "material": false,
+          "model": 1.80078
+        },
+        "production": {
+          "delta": 0.0,
+          "host": 2.70312,
+          "known": true,
+          "material": false,
+          "model": 2.70312
+        },
+        "science": {
+          "delta": 0.0,
+          "host": 0.453125,
+          "known": true,
+          "material": false,
+          "model": 0.453125
+        }
+      },
+      "host_count": 1,
+      "housing": {
+        "delta": 1.0,
+        "display_floor_delta": 1,
+        "host": 2,
+        "known": true,
+        "material": true,
+        "model": 3.0
+      },
+      "housing_sources": {
+        "buildings": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "civics": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "districts": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "great_people": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "great_works": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "improvements": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "starting_era": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "water": {
+          "delta": 1.0,
+          "host": 2,
+          "known": true,
+          "material": true,
+          "model": 3.0
+        }
+      },
+      "known": true,
+      "model_count": 1,
+      "name": "Cuenca",
+      "native_context": {
+        "amenities_needed": 1,
+        "food_surplus": 1,
+        "happiness_growth_mult": -15,
+        "happiness_yield_mult": -10,
+        "housing_growth_mult": 0.5,
+        "overall_growth_mult": 0.425781,
+        "producing": "BUILDING_WALLS",
+        "production": 2,
+        "religion": null,
+        "yield_sources": {
+          "culture": "+0.2 from Population\n-10(-0) from Amenities",
+          "faith": "-10(+0) from Amenities",
+          "food": "+3 from Worked Tiles",
+          "gold": "+2 from Worked Tiles\n-10(-0.1) from Amenities",
+          "production": "+1 from Modifiers\n+2 from Worked Tiles\n-10(-0.2) from Amenities",
+          "science": "+0.5 from Population\n-10(-0) from Amenities"
+        }
+      },
+      "population": 1,
+      "position": [
+        45,
+        31
+      ],
+      "raw_model_yield_delta": {
+        "culture": {
+          "delta": 0.0004689999999999972,
+          "host": 0.269531,
+          "known": true,
+          "material": false,
+          "model": 0.27
+        },
+        "faith": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "food": {
+          "delta": 0.0,
+          "host": 3,
+          "known": true,
+          "material": false,
+          "model": 3.0
+        },
+        "gold": {
+          "delta": -0.0007800000000000029,
+          "host": 1.80078,
+          "known": true,
+          "material": false,
+          "model": 1.8
+        },
+        "production": {
+          "delta": -0.0031200000000000117,
+          "host": 2.70312,
+          "known": true,
+          "material": false,
+          "model": 2.7
+        },
+        "science": {
+          "delta": -0.003124999999999989,
+          "host": 0.453125,
+          "known": true,
+          "material": false,
+          "model": 0.45
+        }
+      },
+      "read": 3,
+      "stem": "civvis-20261026T000859Z",
+      "terrain_worker_difference": {
+        "model_only": [],
+        "native_only": []
+      },
+      "turn": 40
+    },
+    {
+      "amenities": {
+        "delta": 0,
+        "host": 1,
+        "known": true,
+        "material": false,
+        "model": 1
+      },
+      "corrected_display_delta": {
+        "culture": {
+          "delta": 0.0,
+          "host": 0.597656,
+          "known": true,
+          "material": false,
+          "model": 0.597656
+        },
+        "faith": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "food": {
+          "delta": 0.0,
+          "host": 4,
+          "known": true,
+          "material": false,
+          "model": 4.0
+        },
+        "gold": {
+          "delta": 0.0,
+          "host": 2,
+          "known": true,
+          "material": false,
+          "model": 2.0
+        },
+        "production": {
+          "delta": 0.0,
+          "host": 4,
+          "known": true,
+          "material": false,
+          "model": 4.0
+        },
+        "science": {
+          "delta": 0.0,
+          "host": 1,
+          "known": true,
+          "material": false,
+          "model": 1.0
+        }
+      },
+      "host_count": 1,
+      "housing": {
+        "delta": 1.0,
+        "display_floor_delta": 1,
+        "host": 2,
+        "known": true,
+        "material": true,
+        "model": 3.0
+      },
+      "housing_sources": {
+        "buildings": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "civics": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "districts": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "great_people": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "great_works": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "improvements": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "starting_era": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "water": {
+          "delta": 1.0,
+          "host": 2,
+          "known": true,
+          "material": true,
+          "model": 3.0
+        }
+      },
+      "known": true,
+      "model_count": 1,
+      "name": "Cuenca",
+      "native_context": {
+        "amenities_needed": 1,
+        "food_surplus": 0,
+        "happiness_growth_mult": 0,
+        "happiness_yield_mult": 0,
+        "housing_growth_mult": 0.25,
+        "overall_growth_mult": 0.25,
+        "producing": "BUILDING_GRANARY",
+        "production": 4,
+        "religion": null,
+        "yield_sources": {
+          "culture": "+0.5 from Population",
+          "faith": "",
+          "food": "+4 from Worked Tiles",
+          "gold": "+2 from Worked Tiles",
+          "production": "+1 from Modifiers\n+3 from Worked Tiles",
+          "science": "+1 from Population"
+        }
+      },
+      "population": 2,
+      "position": [
+        45,
+        31
+      ],
+      "raw_model_yield_delta": {
+        "culture": {
+          "delta": 0.0023440000000000127,
+          "host": 0.597656,
+          "known": true,
+          "material": false,
+          "model": 0.6
+        },
+        "faith": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "food": {
+          "delta": 0.0,
+          "host": 4,
+          "known": true,
+          "material": false,
+          "model": 4.0
+        },
+        "gold": {
+          "delta": 0.0,
+          "host": 2,
+          "known": true,
+          "material": false,
+          "model": 2.0
+        },
+        "production": {
+          "delta": 0.0,
+          "host": 4,
+          "known": true,
+          "material": false,
+          "model": 4.0
+        },
+        "science": {
+          "delta": 0.0,
+          "host": 1,
+          "known": true,
+          "material": false,
+          "model": 1.0
+        }
+      },
+      "read": 4,
+      "stem": "civvis-20261026T000859Z",
+      "terrain_worker_difference": {
+        "model_only": [],
+        "native_only": []
+      },
+      "turn": 50
+    },
+    {
+      "amenities": {
+        "delta": -1,
+        "host": 3,
+        "known": true,
+        "material": true,
+        "model": 2
+      },
+      "corrected_display_delta": {
+        "culture": {
+          "delta": 0.0,
+          "host": 1.19922,
+          "known": true,
+          "material": false,
+          "model": 1.19922
+        },
+        "faith": {
+          "delta": 0.0,
+          "host": 3,
+          "known": true,
+          "material": false,
+          "model": 3.0
+        },
+        "food": {
+          "delta": 0.0,
+          "host": 11,
+          "known": true,
+          "material": false,
+          "model": 11.0
+        },
+        "gold": {
+          "delta": 0.0,
+          "host": 2,
+          "known": true,
+          "material": false,
+          "model": 2.0
+        },
+        "production": {
+          "delta": 0.0,
+          "host": 10,
+          "known": true,
+          "material": false,
+          "model": 10.0
+        },
+        "science": {
+          "delta": 0.0,
+          "host": 4,
+          "known": true,
+          "material": false,
+          "model": 4.0
+        }
+      },
+      "host_count": 1,
+      "housing": {
+        "delta": 0.0,
+        "display_floor_delta": 0,
+        "host": 7,
+        "known": true,
+        "material": false,
+        "model": 7.0
+      },
+      "housing_sources": {
+        "buildings": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "civics": {
+          "delta": 0.0,
+          "host": 1,
+          "known": true,
+          "material": false,
+          "model": 1.0
+        },
+        "districts": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "great_people": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "great_works": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "improvements": {
+          "delta": 0.0,
+          "host": 1,
+          "known": true,
+          "material": false,
+          "model": 1.0
+        },
+        "starting_era": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "water": {
+          "delta": 0.0,
+          "host": 5,
+          "known": true,
+          "material": false,
+          "model": 5.0
+        }
+      },
+      "known": true,
+      "model_count": 1,
+      "name": "Panam\u00e1",
+      "native_context": {
+        "amenities_needed": 2,
+        "food_surplus": 3,
+        "happiness_growth_mult": 0,
+        "happiness_yield_mult": 0,
+        "housing_growth_mult": 1,
+        "overall_growth_mult": 1,
+        "producing": "BUILDING_LIBRARY",
+        "production": 9,
+        "religion": null,
+        "yield_sources": {
+          "culture": "+1.1 from Population",
+          "faith": "+1 from Districts\n +1 from Holy Site\n+2 from Buildings\n +2 from Shrine",
+          "food": "+11 from Worked Tiles",
+          "gold": "+2 from Worked Tiles",
+          "production": "+1 from Modifiers\n+9 from Worked Tiles",
+          "science": "+2 from Districts\n +2 from Campus\n+2 from Population"
+        }
+      },
+      "population": 4,
+      "position": [
+        10,
+        14
+      ],
+      "raw_model_yield_delta": {
+        "culture": {
+          "delta": 0.0007800000000000029,
+          "host": 1.19922,
+          "known": true,
+          "material": false,
+          "model": 1.2
+        },
+        "faith": {
+          "delta": 0.0,
+          "host": 3,
+          "known": true,
+          "material": false,
+          "model": 3.0
+        },
+        "food": {
+          "delta": 0.0,
+          "host": 11,
+          "known": true,
+          "material": false,
+          "model": 11.0
+        },
+        "gold": {
+          "delta": 0.0,
+          "host": 2,
+          "known": true,
+          "material": false,
+          "model": 2.0
+        },
+        "production": {
+          "delta": 0.0,
+          "host": 10,
+          "known": true,
+          "material": false,
+          "model": 10.0
+        },
+        "science": {
+          "delta": 0.0,
+          "host": 4,
+          "known": true,
+          "material": false,
+          "model": 4.0
+        }
+      },
+      "read": 46,
+      "stem": "civvis-20261026T014409Z",
+      "terrain_worker_difference": {
+        "model_only": [],
+        "native_only": []
+      },
+      "turn": 50
+    },
+    {
+      "amenities": {
+        "delta": 1,
+        "host": 1,
+        "known": true,
+        "material": true,
+        "model": 2
+      },
+      "corrected_display_delta": {
+        "culture": {
+          "delta": 0.0,
+          "host": 1.71094,
+          "known": true,
+          "material": false,
+          "model": 1.71094
+        },
+        "faith": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "food": {
+          "delta": 0.0,
+          "host": 9,
+          "known": true,
+          "material": false,
+          "model": 9.0
+        },
+        "gold": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "production": {
+          "delta": 0.0,
+          "host": 7.20312,
+          "known": true,
+          "material": false,
+          "model": 7.20312
+        },
+        "science": {
+          "delta": 0.0,
+          "host": 1.35156,
+          "known": true,
+          "material": false,
+          "model": 1.35156
+        }
+      },
+      "host_count": 1,
+      "housing": {
+        "delta": 0.0,
+        "display_floor_delta": 0,
+        "host": 4,
+        "known": true,
+        "material": false,
+        "model": 4.0
+      },
+      "housing_sources": {
+        "buildings": {
+          "delta": 0.0,
+          "host": 2,
+          "known": true,
+          "material": false,
+          "model": 2.0
+        },
+        "civics": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "districts": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "great_people": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "great_works": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "improvements": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "starting_era": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "water": {
+          "delta": 0.0,
+          "host": 2,
+          "known": true,
+          "material": false,
+          "model": 2.0
+        }
+      },
+      "known": true,
+      "model_count": 1,
+      "name": "Popay\u00e1n",
+      "native_context": {
+        "amenities_needed": 2,
+        "food_surplus": 3,
+        "happiness_growth_mult": -15,
+        "happiness_yield_mult": -10,
+        "housing_growth_mult": 0.5,
+        "overall_growth_mult": 0.425781,
+        "producing": "DISTRICT_CAMPUS",
+        "production": 6,
+        "religion": "RELIGION_CATHOLICISM",
+        "yield_sources": {
+          "culture": "+0.8 from Population\n+1 from Worked Tiles\n-10(-0.1) from Amenities",
+          "faith": "-10(+0) from Amenities",
+          "food": "+1 from Buildings\n +1 from Granary\n+8 from Worked Tiles",
+          "gold": "-10(+0) from Amenities",
+          "production": "+1 from Modifiers\n+7 from Worked Tiles\n-10(-0.7) from Amenities",
+          "science": "+1.5 from Population\n-10(-0.1) from Amenities"
+        }
+      },
+      "population": 3,
+      "position": [
+        11,
+        19
+      ],
+      "raw_model_yield_delta": {
+        "culture": {
+          "delta": -0.0009399999999999409,
+          "host": 1.71094,
+          "known": true,
+          "material": false,
+          "model": 1.71
+        },
+        "faith": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "food": {
+          "delta": 0.0,
+          "host": 9,
+          "known": true,
+          "material": false,
+          "model": 9.0
+        },
+        "gold": {
+          "delta": 0.0,
+          "host": 0,
+          "known": true,
+          "material": false,
+          "model": 0.0
+        },
+        "production": {
+          "delta": -0.0031200000000000117,
+          "host": 7.20312,
+          "known": true,
+          "material": false,
+          "model": 7.2
+        },
+        "science": {
+          "delta": -0.0015600000000000058,
+          "host": 1.35156,
+          "known": true,
+          "material": false,
+          "model": 1.35
+        }
+      },
+      "read": 46,
+      "stem": "civvis-20261026T014409Z",
+      "terrain_worker_difference": {
+        "model_only": [],
+        "native_only": []
+      },
+      "turn": 50
+    }
+  ],
+  "housing": {
+    "known": 219,
+    "material": 32,
+    "maximum_absolute_delta": 1.0,
+    "mean_absolute_delta": 0.0776255707762557,
+    "unknown": 0
+  },
+  "housing_display_floor_differences": 2,
+  "housing_raw_delta_counts": {
+    "0.0": 187,
+    "0.5": 30,
+    "1.0": 2
+  },
+  "matched_city_read_records": 219,
+  "raw_model_yields": {
+    "culture": {
+      "known": 219,
+      "material": 0,
+      "maximum_absolute_delta": 0.006090000000000151,
+      "mean_absolute_delta": 0.001485771689497721,
+      "unknown": 0
+    },
+    "faith": {
+      "known": 219,
+      "material": 0,
+      "maximum_absolute_delta": 0.0031200000000000117,
+      "mean_absolute_delta": 9.623744292237486e-05,
+      "unknown": 0
+    },
+    "food": {
+      "known": 219,
+      "material": 0,
+      "maximum_absolute_delta": 0.0,
+      "mean_absolute_delta": 0.0,
+      "unknown": 0
+    },
+    "gold": {
+      "known": 219,
+      "material": 0,
+      "maximum_absolute_delta": 0.0031200000000000117,
+      "mean_absolute_delta": 0.0005094977168949823,
+      "unknown": 0
+    },
+    "production": {
+      "known": 219,
+      "material": 0,
+      "maximum_absolute_delta": 0.0031200000000009,
+      "mean_absolute_delta": 0.0005810228310501817,
+      "unknown": 0
+    },
+    "science": {
+      "known": 219,
+      "material": 0,
+      "maximum_absolute_delta": 0.003124999999999989,
+      "mean_absolute_delta": 0.0007629223744292119,
+      "unknown": 0
+    }
+  },
+  "registered_cases": 80,
+  "registered_reads": 83,
+  "same_frame_variants": [
+    {
+      "case_index": 14,
+      "comparisons_identical": true,
+      "reads": [
+        14,
+        15
+      ]
+    },
+    {
+      "case_index": 27,
+      "comparisons_identical": true,
+      "reads": [
+        28,
+        29
+      ]
+    },
+    {
+      "case_index": 78,
+      "comparisons_identical": true,
+      "reads": [
+        80,
+        81
+      ]
+    }
+  ],
+  "scope": "Current snapshot model_yields before per-city correction; per-plot corrections already incorporated. No future growth or strategic strength claim.",
+  "structural_findings": [],
+  "terrain_worker_mismatches": [],
+  "tolerance": 0.05,
+  "unique_city_times": 207
+}

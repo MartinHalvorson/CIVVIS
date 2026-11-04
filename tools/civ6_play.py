@@ -45,16 +45,24 @@ from civ6_control import (capture_budget, gamelock, launcher, macos_capture,
                           macos_input, macos_ocr, macos_window,
                           operator_retire, popup_clear, restart_handoff, vision,
                           watch)  # noqa: E402
-from civ6_control import live_pause  # noqa: E402
+from civ6_control import live_pause, mirror_sync  # noqa: E402
 from civ6_control.orders import (orders_db_path, request_restart,  # noqa: E402
                                  request_retire, reset_orders_db,
-                                 set_operator_pace, set_operator_pause)
+                                 set_mirror_turn, set_operator_pace,
+                                 set_operator_pause)
 # The mod's sentinel for a readback it could not resolve, imported rather than
 # repeated: this harness and the ledger have to agree on what "unreadable"
 # looks like, and a second copy of that fact is a second place for it to rot.
 from civ6_ladder import UNREADABLE, with_diagnostic  # noqa: E402
 
 RUN_ROOT = Path.home() / "civvis-civ6-runs" / "control"
+
+#: The CIVVIS page this many turns behind the game has stopped keeping up (the
+#: mod capped a wait on it): turns stop waiting for it until it is back within
+#: one. See `sync_mirror_turn`.
+MIRROR_GIVE_UP_TURNS = 2
+#: How often the painted turn is carried to the mod (`mirror_sync_beat`).
+MIRROR_SYNC_SECONDS = 0.05
 
 #: How long a finished run keeps its screenshots. Its `events.jsonl`, `why.log`
 #: and `brain.log` are kept forever — they are what every census reads.
@@ -226,6 +234,11 @@ class DesktopRescueQueue:
 DEFAULT_CIVVIS_VICTORY = "science"
 # Keep a deterministic default, while honoring the operator's selected leader.
 ROMAN_LEADER = "LEADER_TRAJAN"
+# `--leader random` keeps Civ VI's own "Random Leader" row, the picker's value
+# on every new game: no row is chosen, no leader is asserted against the seat,
+# and the seat event reports whichever leader the game rolled. Operator
+# 2026-10-31: "starting with the next game, lets go with a random leader".
+RANDOM_LEADER = "random"
 # The turn the opening is scored at. Sixty is where the measured split is
 # sharpest and is still early enough that a treatment has somewhere to act.
 OPENING_TEMPO_TURN = 60
@@ -535,6 +548,197 @@ def production_rank_reading(event: dict, max_rank: int) -> dict | None:
         "majors": len(others) + 1,
         "fires": rank > max_rank,
     }
+
+# ★ OPERATOR 2026-10-26: "lets auto restart if our prod is < 1/3 of the
+# leader".
+#
+# A second Production rule beside the rank one above, on the same turn-record
+# `major_production` map and the same retire path, turned on by
+# CIVVIS_RESTART_BELOW_LEADER_PRODUCTION in ~/.civvis-verification-policy (a
+# share of the leader such as `1/3` or `0.3333`; 0, absent, or anything not
+# strictly between 0 and 1 = off). The leader is the alive major, met or not,
+# producing the most besides us. Unlike the rank rule it is read EVERY turn
+# from :data:`PRODUCTION_SHARE_TURN`, and it fires only after
+# :data:`PRODUCTION_SHARE_TURNS` consecutive turns below the line, so a single
+# record taken while a city changes hands does not end a game. Replayed over
+# the 120 retained live games of 2026-10-22..26: from turn 50 with three turns
+# running it retires 53 of 60 Immortal games (median turn 52) and 38 of 60
+# Emperor games, and none of the best ones -- the Emperor domination win
+# civvis-20261025T145013Z and the Immortal near misses 213230Z (7 capitals),
+# 231506Z (10 cities taken) and 20261026T014409Z (3 of 4 capitals) never stood
+# three turns under a third of the leader from turn 50 on. Before turn 50 the
+# line is noise: at turn 30 it would have retired 95% of Immortal games,
+# 231506Z among them (one turn under, at 41).
+#
+# Operator 2026-10-26, later: "lets change the autorestart to 4x prod of the
+# leader, not 3x" and "applied only after turn 80 too" -- the first turn is
+# CIVVIS_RESTART_BELOW_LEADER_PRODUCTION_FROM_TURN in the same policy file
+# (unset or invalid = :data:`PRODUCTION_SHARE_TURN`).
+PRODUCTION_SHARE_TURN = 50
+PRODUCTION_SHARE_TURNS = 3
+PRODUCTION_SHARE_POLICY_KEY = "CIVVIS_RESTART_BELOW_LEADER_PRODUCTION"
+PRODUCTION_SHARE_FROM_POLICY_KEY = "CIVVIS_RESTART_BELOW_LEADER_PRODUCTION_FROM_TURN"
+
+
+def parse_production_share(value: str | None) -> float:
+    """A share of the leader's Production from `1/3`, `0.3333` or `.25`; 0 = off."""
+    if value is None or value == "":
+        return 0.0
+    try:
+        if "/" in value:
+            top, _, bottom = value.partition("/")
+            share = float(top) / float(bottom)
+        else:
+            share = float(value)
+    except (ValueError, ZeroDivisionError):
+        print(f"[policy] ignoring {PRODUCTION_SHARE_POLICY_KEY}={value!r}: "
+              "not a share such as 1/3 or 0.3333", flush=True)
+        return 0.0
+    if not 0.0 < share < 1.0:
+        if share != 0.0:
+            print(f"[policy] ignoring {PRODUCTION_SHARE_POLICY_KEY}={value!r}: "
+                  "a share must lie strictly between 0 and 1", flush=True)
+        return 0.0
+    return share
+
+
+def production_share_policy(path: Path | None = None) -> float:
+    """The policy's leader-Production share; 0 (off) when unset or invalid."""
+    return parse_production_share(read_policy_value(PRODUCTION_SHARE_POLICY_KEY, path))
+
+
+def parse_production_share_from_turn(value: str | None) -> int:
+    """The first turn the share rule reads, from `80`; default :data:`PRODUCTION_SHARE_TURN`."""
+    if value is None or value == "":
+        return PRODUCTION_SHARE_TURN
+    try:
+        turn = int(value)
+    except ValueError:
+        turn = 0
+    if turn < 1:
+        print(f"[policy] ignoring {PRODUCTION_SHARE_FROM_POLICY_KEY}={value!r}: "
+              f"not a turn number; the rule reads from turn {PRODUCTION_SHARE_TURN}",
+              flush=True)
+        return PRODUCTION_SHARE_TURN
+    return turn
+
+
+def production_share_from_turn_policy(path: Path | None = None) -> int:
+    """The policy's first turn for the share rule; :data:`PRODUCTION_SHARE_TURN` when unset."""
+    return parse_production_share_from_turn(
+        read_policy_value(PRODUCTION_SHARE_FROM_POLICY_KEY, path))
+
+
+def production_share_reading(event: dict, share: float,
+                             from_turn: int = PRODUCTION_SHARE_TURN) -> dict | None:
+    """Our Production as a share of the leader's, or None when this is no reading.
+
+    Returns a dict with `rule: "production_share"` for every READABLE agent
+    turn record at or after `from_turn` (`below` says whether
+    our share is under `share`); `{"unreadable": True, ...}` for a qualifying
+    record without our standing or any rival's; None for anything else,
+    including a share of 0. The run of turns below is the caller's: see the
+    live loop in `_play`.
+    """
+    if (not isinstance(share, (int, float)) or isinstance(share, bool)
+            or not 0.0 < share < 1.0):
+        return None
+    if event.get("kind") != "turn" or event.get("ctx") != "agent":
+        return None
+    turn = event.get("turn")
+    if (not isinstance(turn, int) or isinstance(turn, bool)
+            or turn < from_turn):
+        return None
+    production = event.get("major_production")
+    us = event.get("local_player")
+    readings: dict[str, float | int] = {}
+    if isinstance(production, dict):
+        for player, value in production.items():
+            metric = _nonnegative_metric(value)
+            if metric is not None:
+                readings[str(player)] = metric
+    ours = None
+    if isinstance(us, int) and not isinstance(us, bool):
+        ours = readings.get(str(us))
+    others = {player: value for player, value in readings.items()
+              if player != str(us)}
+    if ours is None or not others:
+        return {"rule": "production_share", "turn": turn, "unreadable": True}
+    leader = max(sorted(others), key=lambda player: others[player])
+    best = others[leader]
+    ratio = ours / best if best > 0 else 1.0
+    return {
+        "rule": "production_share",
+        "turn": turn,
+        "ours": ours,
+        "leader": leader,
+        "leader_production": best,
+        "share": round(ratio, 4),
+        "line": round(share, 4),
+        "below": ratio < share,
+    }
+
+
+def production_share_run(state: dict, reading: dict) -> int:
+    """Count `reading` into the run of consecutive game turns below the line.
+
+    One count per game turn however many records the turn carries; a turn at
+    or above the line ends the run. Returns the run's length after `reading`.
+    """
+    if reading["turn"] == state.get("production_share_turn"):
+        return state.get("production_share_run", 0)
+    state["production_share_turn"] = reading["turn"]
+    run = state.get("production_share_run", 0) + 1 if reading["below"] else 0
+    state["production_share_run"] = run
+    return run
+
+
+# ★ A seat that leads a victory race is not retired on Production. Live 10-31
+# (6p Continents, Diplomatic lane): civvis-20261031T015208Z-cont2 was retired
+# at turn 187 on 19 Diplomatic Victory points against the best rival's 11
+# (share 0.239), civvis-20261031T024232Z at turn 178 on 18 against 11 (share
+# 0.228), each one Congress from the win. The share rule exists to end games
+# we cannot win, and once a race is ours raw Production no longer says that.
+# The lead is re-read from every `state` record, so a lead that lapses lets
+# the running count retire the game on its next turn below the line.
+RACE_LEAD_DVP = 10
+
+
+def _race_points(record: object, key: str) -> float | None:
+    if not isinstance(record, dict):
+        return None
+    return _nonnegative_metric(record.get(key))
+
+
+def victory_race_lead(event: dict) -> dict | None:
+    """The victory race this agent `state` record shows us leading, or None.
+
+    Diplomatic: our Diplomatic Victory points are at least
+    :data:`RACE_LEAD_DVP` and no met rival's are higher. Science: we hold at
+    least half the science victory points we need and no met rival holds
+    more. A record without our points, or without a readable rival, leads
+    nothing, so an unreadable record never spares a game.
+    """
+    if event.get("kind") != "state" or event.get("ctx") != "agent":
+        return None
+    rivals = event.get("rivals")
+    if not isinstance(rivals, list) or not rivals:
+        return None
+    turn = event.get("turn")
+    for race, key, floor in (
+        ("diplomatic", "dvp", RACE_LEAD_DVP),
+        ("science", "science_victory_points",
+         (_race_points(event, "science_victory_points_needed") or 0) / 2),
+    ):
+        ours = _race_points(event, key)
+        theirs = [points for points in (_race_points(rival, key) for rival in rivals)
+                  if points is not None]
+        if ours is None or not theirs or floor <= 0 or ours < floor:
+            continue
+        best = max(theirs)
+        if ours >= best:
+            return {"race": race, "turn": turn, "ours": ours, "best_rival": best}
+    return None
 
 
 DEFAULT_CIVVIS_STRATEGY = ""
@@ -1054,6 +1258,20 @@ def build_config(args: argparse.Namespace) -> dict:
         # fire once the game's Game Core thread parks, because the polls it
         # counts are driven by that thread. See the mod for the measurement.
         "CivvisDecides": args.civvis_decides,
+        # The victory lane CIVVIS is assigned (`--civvis-victory`), so the
+        # agent's World Congress ballot can race for its own Diplomatic Victory
+        # instead of only denying a rival's (`CivvisDiploRacer`). Absent when
+        # the built-ins decide.
+        "VictoryLane": args.civvis_victory if args.civvis_decides else None,
+        # `culture-seat-allies` (src/ai/advanced/culture_seat_allies.rs): a
+        # Culture seat's alliance orders reach the host. The live binary keeps
+        # them only while the tag is armed; the agent's `CivvisAllianceStep`
+        # takes them only with this on.
+        "CultureAllies": bool(args.civvis_decides
+                              and "culture-seat-allies" in (getattr(args, "civvis_with", []) or [])),
+        # `science-seat-allies`: the same for a Science seat.
+        "ScienceAllies": bool(args.civvis_decides
+                              and "science-seat-allies" in (getattr(args, "civvis_with", []) or [])),
         # Hand a builder to Civ 6's own automation when CIVVIS's improvement is
         # refused outright. A policy, counted as IMPROVE_AUTOMATED.
         "AutomateStuckBuilders": args.automate_stuck_builders,
@@ -2368,12 +2586,10 @@ def _leader_intro_visible(path: Path, bounds: tuple[int, int, int, int],
     Create Game page also displays that leader.  Require the intro's rendered
     ``BEGIN GAME`` control in its lower card band before using the fixed click.
     """
-    if not leader:
-        return False
     screen = desktop_size()
     if screen is None:
         return False
-    wanted = _normalized_label(leader_display_name(leader))
+    wanted = _normalized_label(leader_display_name(leader)) if leader else None
     screen_w, screen_h = screen
     x, y, w, h = bounds
     try:
@@ -2398,6 +2614,11 @@ def _leader_intro_visible(path: Path, bounds: tuple[int, int, int, int],
             break
     if not begin_game:
         return False
+    if wanted is None:
+        # RANDOM_LEADER: there is no name to read. The intro's own BEGIN GAME
+        # control in the lower card band is the page discriminator (the Create
+        # Game page's Start Game is rejected above), so it alone proves the card.
+        return True
     for observation in observations:
         if _normalized_label(str(observation.get("text", ""))) != wanted:
             continue
@@ -4404,6 +4625,21 @@ def play(args: argparse.Namespace) -> int:
         print(f"[policy] a game not top {production_rank_limit} by Production at "
               f"turn {PRODUCTION_RANK_TURN} is retired (operator 2026-10-08)",
               flush=True)
+    # Operator 2026-10-26: see `production_share_reading`. Resolved the same
+    # way and for the same reason: `_play`'s closure reads it from `args`.
+    production_share = getattr(args, "restart_below_leader_production", None)
+    production_share = (production_share_policy() if production_share is None
+                        else parse_production_share(str(production_share)))
+    args.restart_below_leader_production = production_share
+    production_share_from = getattr(args, "restart_below_leader_production_from_turn", None)
+    production_share_from = (production_share_from_turn_policy()
+                             if production_share_from is None
+                             else parse_production_share_from_turn(str(production_share_from)))
+    args.restart_below_leader_production_from_turn = production_share_from
+    if production_share > 0:
+        print(f"[policy] a game whose Production stays under {production_share:.0%} "
+              f"of the leader's for {PRODUCTION_SHARE_TURNS} turns from turn "
+              f"{production_share_from} is retired (operator 2026-10-26)", flush=True)
     # A saved game can be alive and waiting for its SQLite decision worker even
     # when the interactive capture path is temporarily unavailable (for example
     # while the operator is recording).  Attaching that worker must never run
@@ -5059,6 +5295,9 @@ def write_attached_summary(args: argparse.Namespace, config: dict, state: dict,
 
 def _play(args: argparse.Namespace) -> int:
     production_rank_limit = getattr(args, "restart_below_production_rank", None) or 0
+    production_share = getattr(args, "restart_below_leader_production", None) or 0.0
+    production_share_from = (getattr(args, "restart_below_leader_production_from_turn", None)
+                             or PRODUCTION_SHARE_TURN)
     run_dir = RUN_ROOT / args.tag
     run_dir.mkdir(parents=True, exist_ok=True)
     # Bound the corpus before adding to it. See `prune_old_run_screenshots`.
@@ -5476,6 +5715,9 @@ def _play(args: argparse.Namespace) -> int:
             live_pause.release_state(args.tag)
             print(f"[pause] the game resumed at turn {event.get('turn')} after "
                   f"{event.get('held_s')}s", flush=True)
+        if kind == "state" and event.get("ctx") == "agent":
+            # Re-read every turn: see `victory_race_lead`.
+            state["race_lead"] = victory_race_lead(event)
         if kind == "host":
             state["hosted"] = bool(event.get("started"))
             print(f"[setup] host started={event.get('started')}")
@@ -5613,9 +5855,9 @@ def _play(args: argparse.Namespace) -> int:
     def abandon_with_retire(verdict: dict) -> bool:
         """Retire the game the verdict has called, and say whether the mod did.
 
-        Shared by every rule that may end a live game (today only the
-        operator's turn-150 production rank; the legacy score branch below is
-        gated off in every lane).
+        Shared by every rule that may end a live game (today the operator's
+        turn-150 production rank and leader Production share; the legacy
+        score branch below is gated off in every lane).
         """
         state["abandoned"] = verdict
         # ⚠⚠ RETIRE RATHER THAN JUST STOP, so the loss is a RESULT.
@@ -5719,6 +5961,45 @@ def _play(args: argparse.Namespace) -> int:
                           f"{reading['rank']} of {reading['majors']}) — retiring so "
                           "the next game starts (operator 2026-10-08)", flush=True)
                     return abandon_with_retire(reading)
+        # ★ OPERATOR 2026-10-26: "lets auto restart if our prod is < 1/3 of
+        # the leader" -- every turn from turn 50 (or the policy's
+        # _FROM_TURN), retired after three turns running below the line. See
+        # `production_share_reading`.
+        if production_share > 0:
+            reading = production_share_reading(event, production_share,
+                                               production_share_from)
+            if reading is not None and reading.get("unreadable"):
+                if not state.get("production_share_unreadable"):
+                    state["production_share_unreadable"] = reading["turn"]
+                    print(f"[policy] turn {reading['turn']}: the turn record has no "
+                          "production standing; reading the next one", flush=True)
+            elif reading is not None:
+                run = production_share_run(state, reading)
+                lead = state.get("race_lead")
+                if run >= PRODUCTION_SHARE_TURNS and lead:
+                    # See `victory_race_lead`: the count runs on, so the
+                    # game retires on the first turn below once it lapses.
+                    spared = state.setdefault("race_lead_spared", {
+                        "first_turn": reading["turn"], "turns": 0})
+                    if spared.get("last_turn") != reading["turn"]:
+                        spared.update(last_turn=reading["turn"],
+                                      turns=spared["turns"] + 1, **lead,
+                                      share=reading["share"])
+                        print(f"[policy] turn {reading['turn']}: our Production is "
+                              f"{reading['share']:.0%} of the leader's, under "
+                              f"{reading['line']:.0%} for {run} turns, but we lead the "
+                              f"{lead['race']} race ({lead['ours']:g} against the best "
+                              f"rival's {lead['best_rival']:g}) — not retiring",
+                              flush=True)
+                elif run >= PRODUCTION_SHARE_TURNS:
+                    reading["turns_below"] = run
+                    print(f"[abandon] turn {reading['turn']}: our Production "
+                          f"{reading['ours']} is {reading['share']:.0%} of the leader's "
+                          f"{reading['leader_production']} (player {reading['leader']}), "
+                          f"under {reading['line']:.0%} for {run} turns running — "
+                          "retiring so the next game starts (operator 2026-10-26)",
+                          flush=True)
+                    return abandon_with_retire(reading)
         verdict = below_leader_score_reading(
             state, event, args.restart_below_leader_ratio
         ) if leader_score_stop_allowed(
@@ -5746,6 +6027,78 @@ def _play(args: argparse.Namespace) -> int:
             return True
         return False
 
+    # ★ THE MIRROR KEEPS UP. Operator 2026-10-30: the
+    # Firaxis game and the CIVVIS page must never be more than one turn
+    # apart. `tools/follow.py` reports the turn the page has painted
+    # (`mirror_sync`); it becomes a `mirror` row, and the mod does not end a
+    # played turn until that turn is on the page. A page that falls two turns
+    # behind anyway (a wait the mod capped: hidden, frozen, restarting) is let
+    # go -- no row, no wait -- until it is back within one, so it costs the
+    # lane one capped wait rather than one per turn.
+    mirror_flow = {"synced": None, "attempt_at": 0.0, "failed": False,
+                   "given_up": False}
+    # ★ On its own 50 ms beat, not the pause poll's. A played turn is waiting
+    # on this hop: the pause poll runs once per `watch.follow` pass (0.25 s
+    # plus the focus keeper's upkeep), which was a third of the mirror wait's
+    # polling latency (first live game, 10-31: median wait 0.64 s a turn). The
+    # beat reads one small host file and writes a row only when it changes.
+    mirror_beat = threading.Event()
+
+    def mirror_sync_beat() -> None:
+        said = None
+        while not mirror_beat.wait(MIRROR_SYNC_SECONDS):
+            try:
+                sync_mirror_turn(time.monotonic())
+            except Exception as error:  # a broken beat must not end the run
+                if str(error) != said:
+                    said = str(error)
+                    print(f"[mirror] sync failed: {error}", flush=True)
+
+    def sync_mirror_turn(now: float) -> None:
+        shown = mirror_sync.shown_turn(args.tag)
+        turn = state.get("turn")
+        if shown is not None and isinstance(turn, int) and turn >= 0:
+            behind = turn - shown
+            if behind >= MIRROR_GIVE_UP_TURNS and not mirror_flow["given_up"]:
+                mirror_flow["given_up"] = True
+                print(f"[mirror] the page shows turn {shown} with the game at {turn}; "
+                      "playing on without it until it catches up", flush=True)
+            elif behind <= 1 and mirror_flow["given_up"]:
+                mirror_flow["given_up"] = False
+                print(f"[mirror] the page caught up (turn {shown}); "
+                      "turns wait for it again", flush=True)
+        wanted = None if mirror_flow["given_up"] else shown
+        if wanted == mirror_flow["synced"]:
+            return
+        # A turn the page has painted is news at once; dropping the row
+        # (nothing to wait for) is not urgent, and a failed write (a busy
+        # channel, or one the brain has not created yet) retries shortly.
+        retry = 1.0 if wanted is None else 0.25 if mirror_flow["failed"] else 0.0
+        if now - mirror_flow["attempt_at"] < retry:
+            return
+        mirror_flow["attempt_at"] = now
+        written = set_mirror_turn(orders_db_path(run_dir, args.orders_db), args.tag, wanted)
+        mirror_flow["failed"] = not written
+        if written:
+            if (wanted is None) != (mirror_flow["synced"] is None):
+                print("[mirror] turns end once the CIVVIS page shows them"
+                      if wanted is not None
+                      else "[mirror] no page to wait for; turns end at once",
+                      flush=True)
+            mirror_flow["synced"] = wanted
+
+    # ★ STARTED BEFORE THE SETUP, not with the follow loop. The control mod
+    # plays the opening on its own while this process is still probing for
+    # leader intros ("live board arrived before a leader intro was visible";
+    # civvis-20261102T145704Z was configured at +73.8 s, with turn 3 already
+    # played), so a beat started with `watch.follow` arrived with the game two
+    # turns past the page, gave up on it, and the CIVVIS page went from turn 1
+    # to turn 4. Operator 11-02: "2, 3, 4 should all be present. no turns
+    # skipped." The setup feeds `record` too, so `state` is live from here;
+    # a channel the brain has not created yet is retried on the beat.
+    threading.Thread(target=mirror_sync_beat, name="mirror-sync",
+                     daemon=True).start()
+
     if args.load_save:
         bootstrapped = bootstrap_saved_game(tail, record, run_dir, args,
                                             verify_s=args.load_wait)
@@ -5757,11 +6110,13 @@ def _play(args: argparse.Namespace) -> int:
             print("[restart] falling back to stopping Civilization VI and "
                   "launching it afresh", flush=True)
             if not launcher.stop():
+                mirror_beat.set()
                 stop_brain()
                 print("could not stop the game the restart left", file=sys.stderr)
                 return 3
             modinstall.install(config)
             if not launch_to_menu():
+                mirror_beat.set()
                 stop_brain()
                 print("the game did not reach the main menu", file=sys.stderr)
                 return 3
@@ -5769,6 +6124,7 @@ def _play(args: argparse.Namespace) -> int:
     else:
         bootstrapped = bootstrap_game(tail, record, run_dir, args)
     if not bootstrapped:
+        mirror_beat.set()
         stop_brain()
         print("could not load the saved game" if args.load_save else
               "could not start a game from the main menu", file=sys.stderr)
@@ -5948,6 +6304,8 @@ def _play(args: argparse.Namespace) -> int:
     # the budget ask "can this still get there?" instead of "is the clock up?".
     ceiling_s = (args.timeout_ceiling if args.timeout_ceiling is not None
                  else args.timeout * 1.5)
+    if refused_at_seat:
+        mirror_beat.set()
     reason = "stopped" if refused_at_seat else watch.follow(
         tail, args.timeout, record, stop_when=finished,
         each_poll=keep_foreground, poll_s=poll_s,
@@ -6015,6 +6373,7 @@ def _play(args: argparse.Namespace) -> int:
             print(f"recovered from stall after {consecutive} attempt(s)", flush=True)
             consecutive = 0
     events.close()
+    mirror_beat.set()
     # Whatever ended the run, it no longer holds a game.
     live_pause.release_state(args.tag)
 
@@ -6120,6 +6479,9 @@ def _play(args: argparse.Namespace) -> int:
         # verification runs never set this: a score gap is telemetry, not an
         # automatic retirement reason.
         "abandoned": state.get("abandoned"),
+        # Turns the Production-share rule would have retired a seat that led
+        # a victory race; see `victory_race_lead`.
+        "race_lead_spared": state.get("race_lead_spared"),
         # Preserve these historical diagnostics for old rows. New automatic
         # score retirements are disabled; operator-requested native retirement
         # is recorded separately as `operator_retire` below.
@@ -6539,6 +6901,18 @@ def main(argv: list[str] | None = None) -> int:
                          "Production at turn 150 (0 = off); unset reads "
                          "CIVVIS_RESTART_BELOW_PRODUCTION_RANK from the host's "
                          "verification policy file (operator 2026-10-08)")
+    ap.add_argument("--restart-below-leader-production", default=None,
+                    help="retire a game whose Production stays under this share "
+                         "of the leading major's (1/3 or 0.3333; 0 = off) for "
+                         f"{PRODUCTION_SHARE_TURNS} turns running from turn "
+                         f"{PRODUCTION_SHARE_TURN}; unset reads "
+                         f"{PRODUCTION_SHARE_POLICY_KEY} from the host's "
+                         "verification policy file (operator 2026-10-26)")
+    ap.add_argument("--restart-below-leader-production-from-turn", type=int, default=None,
+                    help="the first turn --restart-below-leader-production reads "
+                         f"(default {PRODUCTION_SHARE_TURN}); unset reads "
+                         f"{PRODUCTION_SHARE_FROM_POLICY_KEY} from the host's "
+                         "verification policy file (operator 2026-10-26)")
     ap.add_argument("--city-target", type=int, default=6)
     ap.add_argument("--leader", default=ROMAN_LEADER,
                     help="Civ VI leader identifier (default: Trajan)")
@@ -6885,6 +7259,8 @@ def main(argv: list[str] | None = None) -> int:
     if args.status:
         return status()
     args.leader = resolve_live_leader(args.leader)
+    if args.leader.lower() == RANDOM_LEADER:
+        args.leader = None  # Civ VI's Random Leader row stays selected; see RANDOM_LEADER
     if args.tag is None:
         args.tag = (args.difficulty.replace("DIFFICULTY_", "").lower()
                     + "-" + datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))

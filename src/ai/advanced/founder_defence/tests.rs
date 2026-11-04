@@ -132,3 +132,54 @@ fn an_unreachable_inquisition_does_not_hold_the_bank() {
     // No city of our faith sells an Apostle (no Temple): nothing to save for.
     assert!(ai.founder_inquisition_unit_out_of_reach(&g, 0, "apostle"));
 }
+
+/// `diplomat-saves-for-the-apostle`: a Diplomatic founder whose Holy City
+/// still follows its faith saves over fifteen turns of Faith, not five; a
+/// fallen Holy City, the gene off, or another lane keeps five.
+#[test]
+fn a_diplomat_saves_longer_while_its_holy_city_holds() {
+    let (mut g, _, quito) = founder_under_conversion();
+    let income = |g: &Game| -> f64 {
+        g.player_city_ids(0)
+            .into_iter()
+            .map(|cid| g.city_yields(cid).faith)
+            .sum::<f64>()
+            .max(0.0)
+    };
+    assert!(income(&g) > 0.0, "fixture: some Faith income");
+    let faith = g.players[0].faith;
+    let five = faith + FOUNDER_SAVE_TURNS * income(&g);
+    let fifteen = faith + DIPLOMAT_SAVE_TURNS * income(&g);
+
+    let mut diplomat = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    diplomat.enable_founder_defends_its_cities();
+    assert!(
+        diplomat.founder_inquisition_out_of_reach(&g, 0, five + 1.0),
+        "off: five turns"
+    );
+    diplomat.enable_diplomat_saves_for_the_apostle();
+    assert!(
+        !diplomat.founder_inquisition_out_of_reach(&g, 0, five + 1.0),
+        "on: in reach"
+    );
+    assert!(!diplomat.founder_inquisition_out_of_reach(&g, 0, fifteen));
+    assert!(diplomat.founder_inquisition_out_of_reach(&g, 0, fifteen + 1.0));
+
+    // Another lane keeps five.
+    let mut dominator = AdvancedAi::targeting(VictoryTarget::Domination);
+    dominator.enable_founder_defends_its_cities();
+    dominator.enable_diplomat_saves_for_the_apostle();
+    assert!(dominator.founder_inquisition_out_of_reach(&g, 0, five + 1.0));
+
+    // A fallen Holy City keeps five.
+    g.cities
+        .get_mut(&quito)
+        .unwrap()
+        .pressure
+        .insert("Catholicism".into(), 1000.0);
+    let five_now = faith + FOUNDER_SAVE_TURNS * income(&g);
+    assert!(
+        diplomat.founder_inquisition_out_of_reach(&g, 0, five_now + 1.0),
+        "Holy City fell"
+    );
+}

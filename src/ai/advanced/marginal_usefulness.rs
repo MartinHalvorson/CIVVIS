@@ -2,6 +2,7 @@
 //! These corrections belong to the named victory governor. Adaptive genomes
 //! retain their screened behavior; this is not a claim of a global optimum.
 
+use super::builder_travel_turns::BuilderTravel;
 use super::*;
 
 impl AdvancedAi {
@@ -90,6 +91,9 @@ impl AdvancedAi {
         // cannot hide the baseline from the comparison.
         reserved.remove(&current);
         let ranked = self.builder_jobs_ranked(g, pid, uid, strategy, &reserved);
+        // `builder-prices-travel-in-turns`: the same price `builder_jobs_ranked`
+        // just ranked with, so the comparison below reads one scale.
+        let travel = self.builder_travel(g, uid);
         let city_shortfall = g.map.tiles[&current].owner_city.map_or(0.0, |city| {
             self.city_production_foundation_shortfall(g, pid, city)
         });
@@ -114,7 +118,7 @@ impl AdvancedAi {
             let shortfall = g.map.tiles[&pos].owner_city.map_or(0.0, |city| {
                 self.city_production_foundation_shortfall(g, pid, city)
             });
-            let best = self
+            let values: Vec<f64> = self
                 .worthwhile_improvements(g, pid, pos, strategy)
                 .into_iter()
                 .map(|improvement| {
@@ -125,10 +129,29 @@ impl AdvancedAi {
                         &improvement,
                         strategy,
                         shortfall,
-                    ) - f64::from(g.wdist(current, pos)) * 0.7
+                    )
                 })
+                .collect();
+            let distance = g.wdist(current, pos);
+            let best = values
+                .iter()
+                .map(|value| travel.score(*value, distance))
                 .max_by(f64::total_cmp)?;
             if best <= here + 1e-9 {
+                // Say when it is the gene that kept the Builder here: the
+                // untreated price would have walked it to `pos`.
+                if travel.priced_in_turns() {
+                    let untreated = values
+                        .iter()
+                        .map(|value| BuilderTravel::LEGACY.score(*value, distance))
+                        .max_by(f64::total_cmp)
+                        .unwrap_or(f64::NEG_INFINITY);
+                    if untreated > here + 1e-9 {
+                        think!(self.journal(), Expansion, Decision, "Builder finishes the work here";
+                            "builder-prices-travel-in-turns: the job at {pos:?} is worth {best:.1} a turn over {} turn(s), versus {here:.1} here; the untreated price would have walked there for {untreated:.1}",
+                            travel.turns(distance); current);
+                    }
+                }
                 break;
             }
             // The route-step helper can approach an impassable goal. Leaving

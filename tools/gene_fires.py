@@ -29,15 +29,17 @@ in the shape `civvis_inert.py --max 0` already runs at.
 
 WHAT COUNTS AS PROOF, and why it is read rather than asserted
 -------------------------------------------------------------
-A screen's own JSON. A gene whose two arms played different games has a
-non-zero paired statistic; a gene that never fired has `win_delta_pp`,
-`win_se_pp`, `share_delta_pp`, `share_se_pp` and `adjusted_se_pp` all exactly
-zero, which is the documented signature and arises no other way at these
-sample sizes. So proof is a committed screen row with any of those non-zero --
-a number this tool reads out of the artifact, never a sentence somebody wrote.
-A single-gene probe under `docs/gene_screens/fires/` is the cheapest artifact
-that can carry it: `--genes <tag>` holds everything else at the baseline, so
-any divergence between the arms is that gene and nothing else.
+The gate retains its historical acceptance of a screen JSON row with any
+non-zero statistic. That rule alone does not establish activation when games
+draw treatment independently: seed and seat variation can create a contrast
+without a changed policy action. A matched action comparison is stronger.
+
+`captured_native_action_pairs_v1` artifacts can instead name a hash-bound
+archive and raw result members. The gate checks complete, successful queries,
+a shared captured-input digest, identical observed genomes and command lines
+except the named bit, and a changed proposed order. Journal text or a claimed
+changed count cannot pass. This proves recorded proposal activation, not host
+execution, a whole-game effect, or strength. Probes remain outside the ledger.
 
 ⚠ A gene priced by a MULTI-gene screen is proven too, but for a weaker reason:
 its arms differ on other genes as well, so a non-zero contrast there is not
@@ -66,9 +68,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import re
 import sys
+import tarfile
 from pathlib import Path
 from typing import Any
 
@@ -80,14 +84,85 @@ REGISTRY = ROOT / genes.REGISTRY
 SCREENS = ROOT / "docs" / "gene_screens"
 WAIVERS = Path(__file__).resolve().parent / "gene_fire_waivers.json"
 
-# The paired statistics a screen writes per gene. All five are exactly zero
-# when, and only when, the two arms played the same games.
+# Historical statistics accepted by the gate. With an independent treatment
+# draw, variation here alone does not prove a changed policy action.
 STATISTICS = ("win_delta_pp", "win_se_pp", "share_delta_pp", "share_se_pp",
               "adjusted_se_pp")
 
 # Long enough to be a reason rather than a shrug. `test_ci_wiring.py` uses the
 # same bar for `CANNOT_RUN_IN_CI`.
 REASON_CHARACTERS = 40
+
+
+def captured_action_pair_fired(artifact: dict[str, Any]) -> bool:
+    """Check recorded same-input proposals, never claim a host effect or win.
+
+    The archive is hash-bound and read without extraction. Inspect the raw
+    decider results rather than trusting a declared changed/fired boolean.
+    Both observed genomes and arguments must vary only the named gene; mirror
+    directory names may differ because each arm uses a disposable copy.
+    """
+    def require(condition):
+        if not condition:
+            raise ValueError("paired-query controls do not match")
+
+    try:
+        tag = artifact["tag"]
+        require(isinstance(tag, str) and tag)
+        spec = artifact["archive"]
+        relative = Path(spec["path"])
+        require(not relative.is_absolute() and ".." not in relative.parts)
+        path = (ROOT / relative).resolve()
+        require(path.is_relative_to(ROOT.resolve()))
+        require(hashlib.sha256(path.read_bytes()).hexdigest() == spec["sha256"])
+        names = artifact["members"]
+        require(isinstance(names, list) and names and len(names) == len(set(names)))
+        changed = False
+        with tarfile.open(path, "r:*") as archive:
+            for name in names:
+                member = archive.getmember(name)
+                require(member.isfile() and member.size <= 16 * 1024 * 1024)
+                record = json.load(archive.extractfile(member))
+                require(record["complete"] is True and record["reads"])
+                for read in record["reads"]:
+                    require(read["complete"] is True)
+                    require(re.fullmatch(r"[0-9a-f]{64}", read["sha256"]))
+                    require(type(read["bytes"]) is int and read["bytes"] > 0)
+                    arms = read["arms"]
+                    require(len(arms) == 2 and {a["arm"] for a in arms} == {"off", "on"})
+                    off, on = [next(a for a in arms if a["arm"] == arm) for arm in ("off", "on")]
+                    for arm in arms:
+                        require(type(arm["exit"]) is int and arm["exit"] == 0)
+                        require(isinstance(arm["payload"]["orders"], list))
+                    genomes = [dict(a["genome"]) for a in (off, on)]
+                    for field in ("treatments", "forced"):
+                        before, after = [g.pop(field) for g in genomes]
+                        require(isinstance(before, list) and isinstance(after, list))
+                        require(all(isinstance(t, str) for t in before + after))
+                        require(len(set(before)) == len(before) and len(set(after)) == len(after))
+                        require(tag not in before and tag in after)
+                        require(set(after) - {tag} == set(before))
+                    require(genomes[0] == genomes[1])
+
+                    def arguments(arm):
+                        args = list(arm["argv"])
+                        require(args and args.count("--mirror") == 1)
+                        index = args.index("--mirror")
+                        require(index + 1 < len(args))
+                        args[index + 1] = "<same-captured-input>"
+                        if arm["arm"] == "on":
+                            matches = [i for i in range(len(args) - 1)
+                                       if args[i:i + 2] == ["--with", tag]]
+                            require(len(matches) == 1)
+                            del args[matches[0]:matches[0] + 2]
+                        return args
+
+                    require(arguments(off) == arguments(on))
+                    changed |= off["payload"]["orders"] != on["payload"]["orders"]
+        return changed
+    except (KeyError, TypeError, ValueError, OSError, tarfile.TarError) as error:
+        raise SystemExit(f"invalid captured action-pair evidence: {error}") from error
+
 
 def gene_tables() -> dict[str, str]:
     """Every gene `gene_screen` can vary, tag -> the kind of registry row it is.
@@ -129,6 +204,10 @@ def firing_evidence() -> tuple[dict[str, list[str]], list[tuple[str, str]]]:
         except json.JSONDecodeError as broken:
             raise SystemExit(f"{path} is not readable JSON: {broken}") from broken
         name = str(path.relative_to(SCREENS))
+        if screen.get("kind") == "captured_native_action_pairs_v1":
+            if captured_action_pair_fired(screen):
+                fired.setdefault(screen["tag"], []).append(name)
+            continue
         for row in screen.get("genes", []):
             tag = row.get("tag")
             if not tag:

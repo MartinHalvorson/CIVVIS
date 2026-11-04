@@ -1112,20 +1112,26 @@ impl AdvancedAi {
                 }
                 entry.1
             };
-            let crosses = self.naval_escort_patience
-                && waited > super::NAVAL_ESCORT_PATIENCE
-                && !Self::hostile_ship_near(g, pid, current, super::NAVAL_THREAT_RADIUS);
+            let quiet = !Self::hostile_ship_near(g, pid, current, super::NAVAL_THREAT_RADIUS);
+            // `naval-crossing-keeps-going`: a voyage already crossing alone
+            // steps on while the sea stays quiet. See `advanced/naval_crossing.rs`.
+            let underway = quiet && self.naval_crossing_underway(g, uid);
+            let crosses = underway
+                || (self.naval_escort_patience && waited > super::NAVAL_ESCORT_PATIENCE && quiet);
             if !crosses {
                 think!(self.journal(), Expansion, Detail, "Settler holds for a naval escort";
                        "an embarked long expedition cannot advance from {current:?} to {next:?} \
                         without a bound naval guard that can follow the water leg"; current);
                 return false;
             }
-            think!(self.journal(), Expansion, Detail, "Settler crosses without its naval escort";
-                   "{} turns held on the water and no hostile ship is visible within {} tiles; \
-                    every turn afloat is the exposure the escort exists to cut",
-                   waited - 1, super::NAVAL_THREAT_RADIUS; current);
+            if !underway {
+                think!(self.journal(), Expansion, Detail, "Settler crosses without its naval escort";
+                       "{} turns held on the water and no hostile ship is visible within {} tiles; \
+                        every turn afloat is the exposure the escort exists to cut",
+                       waited - 1, super::NAVAL_THREAT_RADIUS; current);
+            }
             self.naval_escort_waits.remove(&current);
+            self.note_naval_crossing(g, uid);
         }
         // See `live_settler_capture_lessons`: the ground that took a settler
         // is entered only stacked, whether or not a raider is visible on it

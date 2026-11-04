@@ -414,7 +414,13 @@ mod city_name_tests;
 mod seating_tests;
 
 #[cfg(test)]
+mod space_project_cost_tests;
+
+#[cfg(test)]
 mod modifier_attachment_tests;
+
+#[cfg(test)]
+mod domestic_tourist_tests;
 
 /// Put `district` on a free tile of a test city and register it.
 ///
@@ -5741,6 +5747,10 @@ pub fn default_speed() -> String {
     "standard".to_string()
 }
 
+/// The standard turn from which `GameOptions::ai_late_science_pct` applies:
+/// turn 100 at Online speed.
+pub const AI_LATE_SCIENCE_FROM_STANDARD: u32 = 150;
+
 /// Everything a setup screen gets to choose about a game.
 #[derive(Clone, Debug)]
 pub struct GameOptions {
@@ -5790,6 +5800,33 @@ pub struct GameOptions {
     /// browser, `odds.rs` prices it as a human, below Prince it is PAID).
     /// Empty in every save written before this field existed.
     pub handicap_exempt: BTreeSet<usize>,
+    /// ⭐ The rung whose YIELD bonus (`ai_yield_pct`) every handicapped AI
+    /// seat plays, in place of `difficulty`'s own. `None` — the default — is
+    /// the game's rung. Only the percentage moves: the bonus start units, the
+    /// era boosts, combat strength and experience stay on the game's rung, and
+    /// so does everything else it decides (city-state walls, the AI behaviour
+    /// that reads the rung). See `Game::handicap_yield_spec`.
+    pub ai_yield_rung: Option<String>,
+    /// ⭐ The percentage every handicapped AI seat pays for the four space
+    /// projects (Earth Satellite, Moon Landing, Mars Colony, Exoplanet
+    /// Expedition), over their ordinary cost. `None` — the default, and every
+    /// live game — is 100. A calibration knob for `gene_screen
+    /// --rival-victory-pace`: the native rival converts its science into a
+    /// launch faster than the live Firaxis AI does. See
+    /// `Game::space_project_cost_scale`.
+    pub ai_space_project_cost_pct: Option<u32>,
+    /// ⭐ The percentage of their ordinary Science every handicapped AI seat
+    /// keeps from [`AI_LATE_SCIENCE_FROM_STANDARD`] standard turns on, applied
+    /// to the rung's yield bonus. `None` — the default, and every live game —
+    /// is 100. A calibration knob for `gene_screen --rival-late-science`: the
+    /// native rival out-researches the live Firaxis AI from about turn 100.
+    pub ai_late_science_pct: Option<u32>,
+    /// ⭐ The techs a handicapped AI major must know before it may start one
+    /// of the four space projects. `None` — the default, and every live game —
+    /// is no floor. A calibration knob for `gene_screen --rival-space-floor`:
+    /// the native rival beelines the space branch and launches its first
+    /// satellite knowing ~50 techs, the live Firaxis AI knowing ~59.
+    pub ai_space_tech_floor: Option<u32>,
     /// Optional pre-game team assignment for each major seat. An empty vector
     /// means free-for-all; otherwise it must contain exactly `players`
     /// entries. Equal non-`None` values place those seats on one team.
@@ -5876,6 +5913,10 @@ impl GameOptions {
             speed: default_speed(),
             human_seats: BTreeSet::new(),
             handicap_exempt: BTreeSet::new(),
+            ai_yield_rung: None,
+            ai_space_project_cost_pct: None,
+            ai_late_science_pct: None,
+            ai_space_tech_floor: None,
             teams: Vec::new(),
             disaster_intensity: DEFAULT_DISASTER_INTENSITY,
             game_modes: BTreeSet::new(),
@@ -6379,6 +6420,24 @@ pub struct Game {
     /// are placed during setup.
     #[serde(default)]
     pub handicap_exempt: BTreeSet<usize>,
+    /// The rung whose yield bonus the AI seats play, when it is not the
+    /// game's own. See `GameOptions::ai_yield_rung`. `None` in every save
+    /// written before this field existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ai_yield_rung: Option<String>,
+    /// The space-project cost the handicapped AI seats pay, in percent. See
+    /// `GameOptions::ai_space_project_cost_pct`. `None` in every save written
+    /// before this field existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ai_space_project_cost_pct: Option<u32>,
+    /// The late Science the handicapped AI seats keep, in percent. See
+    /// `GameOptions::ai_late_science_pct`. `None` in older saves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ai_late_science_pct: Option<u32>,
+    /// The techs a handicapped AI major needs before a space project. See
+    /// `GameOptions::ai_space_tech_floor`. `None` in older saves.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub ai_space_tech_floor: Option<u32>,
     /// The published game whose rules this world is played by. Kept on the
     /// save alongside the rest of the setup so a restart offers what was
     /// actually played, rather than today's default.
@@ -6639,6 +6698,16 @@ pub struct Game {
     /// there.
     #[serde(default)]
     pub observed_wall_tier_rules: bool,
+    /// `trade-quotes-pay-the-lump`: the seat whose own quick-deal quotes are
+    /// paid as one rounded-up Gold lump whenever the payer's treasury covers
+    /// it, instead of the floored lump plus a per-turn sliver that
+    /// `quoted_payment` checks against `empire_gold_per_turn`. That proxy (4
+    /// Gold a city less unit and building upkeep, floored at zero) reads zero
+    /// from about turn 100 for a built-up empire whose real income is 30-200,
+    /// so every fractional quote it is party to vanishes. Set by the seat each
+    /// turn; `None` changes nothing.
+    #[serde(default)]
+    pub lump_quote_viewer: Option<usize>,
     /// `builders-route-around-mountains`: a Builder never enters a mountain,
     /// whatever the Ski Resort unlock. The host's move pathing put none of
     /// ours on a mountain in 984 Builder-turns after Professional Sports over
@@ -6926,6 +6995,16 @@ pub struct Game {
     /// [`Game::item_cost_for_city`] prices from it.
     #[serde(default)]
     pub host_buildable: Arc<BTreeMap<u32, BTreeMap<String, HostMenuEntry>>>,
+    /// The HOST's saved work per city on PAUSED units, buildings and projects
+    /// (`StateCity::buildable[].pr`, from `BuildQueue:GetUnitProgress`,
+    /// `GetBuildingProgress` and `GetProjectProgress`), keyed like
+    /// [`City::production_progress`] (`unit:builder`, `building:library`,
+    /// `project:...`), positive readings only. Districts are bound to their
+    /// foundation by the mirror instead; Wonders and formations need a plot or
+    /// tier this key does not carry and are left out. Read only by the opt-in
+    /// gene `saved-work-is-seen`. Empty in an ordinary game.
+    #[serde(default)]
+    pub host_saved_work: Arc<BTreeMap<u32, BTreeMap<String, f64>>>,
     /// Observed native per-technology costs and saved research progress, by
     /// player. Like production menus, these are refreshed host facts, not rules.
     #[serde(default)]
@@ -7321,6 +7400,14 @@ struct GameSer {
     human_seats: BTreeSet<usize>,
     #[serde(default)]
     handicap_exempt: BTreeSet<usize>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ai_yield_rung: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ai_space_project_cost_pct: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ai_late_science_pct: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    ai_space_tech_floor: Option<u32>,
     #[serde(default)]
     events: Vec<Event>,
     #[serde(default)]
@@ -7586,6 +7673,10 @@ impl From<GameSer> for Game {
             speed,
             human_seats: s.human_seats,
             handicap_exempt: s.handicap_exempt,
+            ai_yield_rung: s.ai_yield_rung,
+            ai_space_project_cost_pct: s.ai_space_project_cost_pct,
+            ai_late_science_pct: s.ai_late_science_pct,
+            ai_space_tech_floor: s.ai_space_tech_floor,
             mods: s.mods,
             events: s.events.into(),
             base_ruleset: s.base_ruleset,
@@ -7658,6 +7749,7 @@ impl From<GameSer> for Game {
             observed_city_ranged_strength: Arc::new(s.observed_city_ranged_strength),
             observed_city_max_wall_hp: Arc::new(s.observed_city_max_wall_hp),
             observed_wall_tier_rules: false,
+            lump_quote_viewer: None,
             observed_builders_avoid_mountains: false,
             heist_reads_the_host_menu: false,
             // Not carried in a save: host refusals are rebuilt from the run's event
@@ -7689,6 +7781,7 @@ impl From<GameSer> for Game {
             blocked_production: Arc::new(BTreeMap::new()),
             blocked_purchases: Arc::new(BTreeMap::new()),
             host_buildable: Arc::new(BTreeMap::new()),
+            host_saved_work: Arc::new(BTreeMap::new()),
             host_research_quotes: Arc::new(BTreeMap::new()),
             host_unit_resource_prices: Arc::new(BTreeMap::new()),
             host_purchasable: Arc::new(BTreeMap::new()),
@@ -7841,6 +7934,10 @@ impl From<Game> for GameSer {
             speed: g.game_speed.id().to_string(),
             human_seats: g.human_seats,
             handicap_exempt: g.handicap_exempt,
+            ai_yield_rung: g.ai_yield_rung,
+            ai_space_project_cost_pct: g.ai_space_project_cost_pct,
+            ai_late_science_pct: g.ai_late_science_pct,
+            ai_space_tech_floor: g.ai_space_tech_floor,
             mods: g.mods,
             events: g.events.into(),
             base_ruleset: g.base_ruleset,
@@ -8187,6 +8284,10 @@ impl Game {
             speed,
             human_seats,
             handicap_exempt,
+            ai_yield_rung,
+            ai_space_project_cost_pct,
+            ai_late_science_pct,
+            ai_space_tech_floor,
             teams,
             disaster_intensity,
             game_modes,
@@ -8338,6 +8439,10 @@ impl Game {
             speed,
             human_seats,
             handicap_exempt,
+            ai_yield_rung,
+            ai_space_project_cost_pct,
+            ai_late_science_pct,
+            ai_space_tech_floor,
             base_ruleset,
             start_era,
             future_era,
@@ -8398,6 +8503,7 @@ impl Game {
             observed_city_ranged_strength: Arc::new(BTreeMap::new()),
             observed_city_max_wall_hp: Arc::new(BTreeMap::new()),
             observed_wall_tier_rules: false,
+            lump_quote_viewer: None,
             observed_builders_avoid_mountains: false,
             heist_reads_the_host_menu: false,
             blocked_city_sites: Arc::new(BTreeSet::new()),
@@ -8432,6 +8538,7 @@ impl Game {
             blocked_production: Arc::new(BTreeMap::new()),
             blocked_purchases: Arc::new(BTreeMap::new()),
             host_buildable: Arc::new(BTreeMap::new()),
+            host_saved_work: Arc::new(BTreeMap::new()),
             host_research_quotes: Arc::new(BTreeMap::new()),
             host_unit_resource_prices: Arc::new(BTreeMap::new()),
             host_purchasable: Arc::new(BTreeMap::new()),
@@ -9166,6 +9273,19 @@ impl Game {
         &self.rules.difficulties[&self.difficulty]
     }
 
+    /// ⭐ The rung whose yield bonus (`ai_yield_pct`) a handicapped AI seat
+    /// plays: the game's own rung unless `ai_yield_rung` names another (a key
+    /// this ruleset lacks falls back to the game's rung). Every discrete grant
+    /// — bonus start units, era boosts, combat strength, experience — always
+    /// reads [`Game::difficulty_spec`]: a calibrated rival field keeps the
+    /// rung's start and fight and converts a lower rung's percentage.
+    pub fn handicap_yield_spec(&self) -> &DifficultySpec {
+        self.ai_yield_rung
+            .as_ref()
+            .and_then(|rung| self.rules.difficulties.get(rung))
+            .unwrap_or_else(|| self.difficulty_spec())
+    }
+
     /// The rung the barbarian seat plays by: its raid band and spawn cadence.
     /// See [`default_barbarian_difficulty`]. Falls back to the seat's rung if
     /// a save names a rung this ruleset does not have.
@@ -9199,6 +9319,51 @@ impl Game {
     /// boosts and the below-Prince human bonuses alike.
     pub fn is_handicap_exempt(&self, pid: usize) -> bool {
         self.handicap_exempt.contains(&pid)
+    }
+
+    /// One of the four space projects a Science victory is built from.
+    pub fn is_space_project(project: &str) -> bool {
+        matches!(
+            project,
+            "launch_earth_satellite"
+                | "launch_moon_landing"
+                | "launch_mars_colony"
+                | "exoplanet_expedition"
+        )
+    }
+
+    /// A handicapped AI major: the seats the calibration knobs reach.
+    fn calibrated_rival_seat(&self, pid: usize) -> bool {
+        self.players
+            .get(pid)
+            .is_some_and(|player| !player.is_minor && !player.is_barbarian && !player.is_free_city)
+            && !self.is_handicap_exempt(pid)
+            && !self.is_human_seat(pid)
+    }
+
+    /// The factor on `project`'s cost for `pid`: `ai_space_project_cost_pct`
+    /// over 100 for one of the four space projects built by a handicapped AI
+    /// major, else 1. Always 1 when the option is unset, which every live game
+    /// and every save written before it is.
+    pub fn space_project_cost_scale(&self, pid: usize, project: &str) -> f64 {
+        match self.ai_space_project_cost_pct {
+            Some(pct) if Self::is_space_project(project) && self.calibrated_rival_seat(pid) => {
+                f64::from(pct) / 100.0
+            }
+            _ => 1.0,
+        }
+    }
+
+    /// Whether `pid` may start `project` under `ai_space_tech_floor`: a
+    /// handicapped AI major needs that many techs for a space project. Always
+    /// true when the option is unset.
+    pub fn space_project_tech_floor_met(&self, pid: usize, project: &str) -> bool {
+        match self.ai_space_tech_floor {
+            Some(floor) if Self::is_space_project(project) && self.calibrated_rival_seat(pid) => {
+                self.players[pid].techs.len() >= floor as usize
+            }
+            _ => true,
+        }
     }
 
     /// Whether this world is a Tactics arena rather than a Civ world.
@@ -9383,7 +9548,15 @@ impl Game {
         if !self.takes_handicap(pid) || self.is_human_seat(pid) {
             return Yields::default();
         }
-        self.difficulty_spec().ai_yield_pct
+        let mut pct = self.handicap_yield_spec().ai_yield_pct;
+        // `GameOptions::ai_late_science_pct`: from the late mark the rival's
+        // Science, bonus included, is that share of what it was.
+        if let Some(keep) = self.ai_late_science_pct {
+            if self.turn >= self.standard_duration(AI_LATE_SCIENCE_FROM_STANDARD) {
+                pct.science = (100.0 + pct.science) * f64::from(keep) / 100.0 - 100.0;
+            }
+        }
+        pct
     }
 
     /// Everything bought with a stockpiled yield scales by the game speed:
@@ -31758,7 +31931,11 @@ impl Game {
             .filter(|source| source.id != pid)
             .map(|source| self.visiting_tourists_from(source.id, pid))
             .sum::<i64>();
-        generated.saturating_sub(visiting_elsewhere)
+        // A civilization's tourists abroad come out of its own pool, which
+        // cannot go below empty: the host's counter never reads negative (0
+        // of 174 live readings, 2026-10-31), and a negative native pool let
+        // any rival clear the Culture Victory bar against it.
+        generated.saturating_sub(visiting_elsewhere).max(0)
     }
 
     fn government_tourism_intolerance(&self, pid: usize) -> f64 {

@@ -400,9 +400,18 @@ type PlotPurchaseCandidate = (f64, std::cmp::Reverse<(u32, Pos)>, Action);
 mod advanced;
 mod campus_buildings;
 mod commercial_hub;
+mod deck_queue;
+#[cfg(test)]
+mod deck_queue_tests;
+mod first_pad_in_the_forge;
 mod industrial_zones;
+mod launch_pad_resume;
 mod movement_risk;
 mod naval_demand;
+mod opening_builder;
+#[cfg(test)]
+mod policy_growth_tests;
+mod retainers_garrison;
 mod scout_first;
 mod scout_inference;
 mod siege_support;
@@ -777,6 +786,15 @@ const POLICY_PRIORITY: [&str; 20] = [
 /// scale of a civic unlocking, not of a turn passing.
 const POLICY_REVIEW_EVERY: u32 = 8;
 
+/// `deck-prices-growth`: a point of growth surplus is priced at this share of
+/// the Food weight, on top of the Food itself. Live Immortal 2026-10-30/31
+/// (seats alive past t120): 32-42% of our cities grew at half or a quarter
+/// for housing and 22-28% were short of Amenities at t80-t140, our citizens
+/// per city stood at 0.68-0.77 of the production leader's, and the deck
+/// slotted Insulae in 1 of the 99 t80 seats that held it and Retainers in 18
+/// of 89.
+const DECK_GROWTH_FOOD_SHARE: f64 = 1.0;
+
 /// A policy review has only a few dozen independent cards, while each active
 /// worker needs a full private game snapshot. Four branches are the measured
 /// knee on the deployment-shaped single-game workload; use the rest of the
@@ -826,6 +844,21 @@ fn empire_reading(
             + w.pol_science * y.science
             + w.pol_culture * y.culture
             + w.pol_faith * y.faith;
+        // `deck-prices-growth`: the Food that reaches the growth bank after
+        // the housing, amenity and loyalty throttles. Skipped at zero, so the
+        // shipped reading is untouched.
+        if w.pol_growth != 0.0 {
+            if let Some(city) = g.cities.get(&cid) {
+                let surplus = g.city_growth_surplus(
+                    pid,
+                    cid,
+                    y.food,
+                    g.city_housing(city),
+                    g.city_amenity_surplus(city),
+                );
+                value += w.pol_growth * surplus.max(0.0);
+            }
+        }
     }
     if let Some(y) = g.observed_yield_adjustments.get(&pid) {
         value += w.pol_food * y.food
@@ -1159,6 +1192,7 @@ fn revise_policy_deck(
     pool: Option<&WorkPool>,
     net_maintenance: bool,
     player_income: bool,
+    force_review: bool,
 ) {
     let slots = g.gov_slots(pid);
     let total = slots.military + slots.economic + slots.diplomatic + slots.wildcard;
@@ -1182,7 +1216,7 @@ fn revise_policy_deck(
         return;
     }
     let held: Vec<Name> = g.players[pid].policies.iter().cloned().collect();
-    if held.len() as i64 >= total && !g.turn.is_multiple_of(POLICY_REVIEW_EVERY) {
+    if held.len() as i64 >= total && !g.turn.is_multiple_of(POLICY_REVIEW_EVERY) && !force_review {
         return;
     }
 
@@ -1405,6 +1439,15 @@ pub struct Weights {
     /// prize is large. The right value is not derivable from that and is what
     /// an evaluation is for; this exists so the axis can be measured at all.
     pub pol_influence: f64,
+    /// What one point of a city's growth surplus -- its Food past consumption
+    /// after the housing, amenity and loyalty throttles
+    /// (`Game::city_growth_surplus`) -- is worth to the policy valuation.
+    ///
+    /// **Zero by default, which reproduces the shipped behaviour exactly.** A
+    /// housing card (Insulae, Medina Quarter) or an amenity card (Retainers,
+    /// Liberalism) moves no yield the sweep reads: it lifts a growth throttle,
+    /// so its value is the growth it releases. `deck-prices-growth` sets it.
+    pub pol_growth: f64,
     /// Fraction by which a challenger must beat the incumbent to take its
     /// slot. Zero re-shuffles the deck on noise; one never swaps at all.
     pub pol_swap_margin: f64,
@@ -1626,6 +1669,7 @@ impl Default for Weights {
             pol_faith: 0.7,
             pol_military: 0.05,
             pol_influence: 0.0,
+            pol_growth: 0.0,
             pol_swap_margin: 0.15,
             // Identity. Every production arm is multiplied by its category
             // gene, and multiplying a finite score by exactly 1.0 is exact, so
@@ -1794,6 +1838,7 @@ impl Weights {
         weights.pol_faith = template.pol_faith;
         weights.pol_military = template.pol_military;
         weights.pol_influence = template.pol_influence;
+        weights.pol_growth = template.pol_growth;
         weights.pol_swap_margin = template.pol_swap_margin;
         weights.policy_deck = template.policy_deck;
         weights.dedication_choice = template.dedication_choice;
@@ -2511,6 +2556,8 @@ pub struct BasicAi {
     /// cannot spend the defender money on a Market in the city being shelled
     /// (run civvis-20260827T113726Z, t162). 0.0 everywhere else.
     pub(crate) reserve_floor: f64,
+    /// Preserve pre-repair defender buying only in the frozen advanced_v1 control.
+    legacy_defender_purchases: bool,
     /// Scale each district family by how much of the empire still lacks it.
     pub(crate) district_coverage: bool,
     /// Version 2 of `district_coverage`: the same coverage term with a
@@ -3076,6 +3123,15 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `campus-buildings-first`.
     pub(crate) campus_buildings_first: bool,
+    /// No Manhattan Project, Operation Ivy or device from the base picker's
+    /// project fallbacks. The live bridge cannot launch a device, so on the
+    /// live seat they are dead Production; live Immortal
+    /// civvis-20261026T162405Z put three cities on the Manhattan Project at
+    /// turn 200 through `pick_item` while the advanced scorer priced it at
+    /// -10,000.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `nuclear-goal-needs-a-launcher`.
+    pub(crate) nuclear_goal_needs_a_launcher: bool,
     /// A Theater Square ahead of the Harbor and every other district while
     /// the empire's Culture trails the strongest rival's, until half the
     /// cities hold one. Culture buys the civics a government and its policy
@@ -3109,6 +3165,14 @@ pub struct BasicAi {
     /// build a Spaceport or launch project. The King Gran Colombia game won
     /// by Science at turn 229 while its public plan remained Conquest.
     pub(crate) exclude_space_race: bool,
+    /// Set every turn by an AdvancedAi seat assigned the Diplomatic lane
+    /// (`diplomatic_lane_refuses_fossil_power`): the baseline governor builds
+    /// no Coal or Oil Power Plant. Under the live `lane-delegates-production-2`
+    /// this governor fills an assigned lane's routine queues for the whole
+    /// game, so the strategic scorer's veto alone never reached the
+    /// `industrial-hub` chain (coal first) or the cheapest-building fallback.
+    /// See `fossil_power_excluded`.
+    pub(crate) exclude_fossil_power: bool,
     /// Set by a targeted Science controller while its expansion plan still
     /// has a city deficit.  The flag applies to every route through the
     /// activation-item chooser for this turn, so an ordinary city-production
@@ -3267,6 +3331,11 @@ pub struct BasicAi {
     /// foreign landfalls rather than treating every coast as interchangeable.
     /// Opt-in gene `island-exploration`.
     pub(crate) island_exploration: bool,
+    /// While a living major is unmet or unlocated, or a city-state is unmet,
+    /// keep the one queued sea scout against the governor's rescoring, route
+    /// ships toward foreign landfall, and prefer the faster hull. Opt-in gene
+    /// `contact-fleet`; see `advanced/contact_fleet.rs`.
+    pub(crate) contact_fleet: bool,
     /// In peacetime the whole field army answers home threats, and a camp
     /// inside the camp reach ranks above raiders in the countryside.
     ///
@@ -3848,6 +3917,33 @@ pub struct BasicAi {
     /// reads the policy income paid to the player (`player_policy_yields`)
     /// beside the cities' yields. Set by the Advanced gene; off by default.
     pub(crate) deck_reads_player_income: bool,
+    /// `retainers-garrison-the-short-cities`: while Retainers is slotted, an
+    /// idle land soldier garrisons each Amenity-short city. See
+    /// `retainers_garrison.rs`. Set by the Advanced gene; off by default.
+    pub(crate) retainers_garrison_the_short_cities: bool,
+    /// Runtime state for `retainers_garrison_the_short_cities`: the city each
+    /// claiming soldier holds.
+    pub(crate) retainers_garrison_claims: BTreeMap<u32, u32>,
+    /// `launch-pad-keeps-its-rung`: an idle city resumes its own placed,
+    /// unfinished Spaceport foundation while no pad of ours stands. See
+    /// `launch_pad_resume.rs`. Set by the Advanced gene; off by default.
+    pub(crate) launch_pad_resumes_its_foundation: bool,
+    /// `culture-digs-one-museum`: while the empire owns no Archaeological
+    /// Museum, the Museum tie breaks toward the Artifact slot. Lent by the
+    /// Advanced gene to a Culture seat's delegated call; off by default.
+    pub(crate) digs_one_museum: bool,
+    /// `deck-prices-growth`: the policy counterfactual prices each city's
+    /// growth surplus (`Weights::pol_growth` at the Food weight), so housing
+    /// and amenity cards are worth the growth they release. Set by the
+    /// Advanced gene; off by default.
+    pub(crate) deck_prices_growth: bool,
+    /// `deck-follows-the-queue`: the policy deck re-reviews off its cadence on
+    /// the turn the queue cards worth slotting change. See `ai/deck_queue.rs`.
+    /// Set by the Advanced gene; off by default.
+    pub(crate) deck_follows_the_queue: bool,
+    /// `deck-follows-the-queue`: each seat's queue-card signature as of its
+    /// last turn. Empty while the gene is off.
+    deck_queue_signature: RefCell<BTreeMap<usize, BTreeSet<Name>>>,
     /// Reserve the first usable empty trade slot before ordinary production
     /// and judge safety at the city that can actually start the route. The
     /// old gate vetoes every Trader when any city in the empire has a local
@@ -4057,6 +4153,23 @@ pub struct BasicAi {
     /// emergency choices remain authoritative. Set through
     /// `AdvancedAi::enable_capital_settler_after_completion`.
     pub(crate) capital_settler_after_completion: bool,
+    /// `opening-builder-after-the-first-settler`: once the capital's first
+    /// Settler is out (walking or founded) and the empire has never held a
+    /// Builder, the capital trains one before its next Settler. Live Immortal
+    /// seats 10-30 (54 games): first Builder at a median turn 26, 5% of owned
+    /// land improved at turn 40 against the rivals' 26%, and the rivals'
+    /// population ran 1.6x ours from turn 20. Set through
+    /// `AdvancedAi::enable_opening_builder_after_the_first_settler`.
+    pub(crate) opening_builder_after_the_first_settler: bool,
+    /// Receipt for `opening_builder_after_the_first_settler`: set the first
+    /// time the empire holds or queues a Builder, so the step fires at most
+    /// once a game and never after a Builder spends its last charge.
+    pub(crate) opening_builder_paid: bool,
+    /// `first-pad-in-the-forge`: while no Spaceport of ours is committed, a
+    /// city may start the first one only within `FIRST_PAD_FORGE_SHARE` of
+    /// the best placing producer. See `ai/first_pad_in_the_forge.rs`. Set
+    /// through `AdvancedAi::enable_first_pad_in_the_forge`.
+    pub(crate) first_pad_in_the_forge: bool,
     /// Independent first-slot exploration experiment.
     pub(crate) scout_first_opening: bool,
     /// Take the pantheon that founds a city. Civilization VI's Religious
@@ -5808,6 +5921,7 @@ impl BasicAi {
             amenity_districts: false,
             garrison_under_fire: false,
             reserve_floor: 0.0,
+            legacy_defender_purchases: false,
             district_coverage: false,
             district_coverage_2: false,
             slot_kind_tiebreak: false,
@@ -5853,9 +5967,11 @@ impl BasicAi {
             district_buildings_first: false,
             capital_library_first: false,
             campus_buildings_first: false,
+            nuclear_goal_needs_a_launcher: false,
             culture_defense_theater: false,
             lent_military_floor_base: None,
             exclude_space_race: false,
+            exclude_fossil_power: false,
             defer_low_impact_science_activation_paths: false,
             pantheon_reads_the_board: false,
             apostle_promotion_by_role: false,
@@ -5866,6 +5982,7 @@ impl BasicAi {
             naval_recon_2: false,
             naval_recon_3: false,
             island_exploration: false,
+            contact_fleet: false,
             camp_party: false,
             come_ashore: false,
             barbarian_settler_capture: false,
@@ -5925,6 +6042,13 @@ impl BasicAi {
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             deck_reads_player_income: false,
+            retainers_garrison_the_short_cities: false,
+            retainers_garrison_claims: BTreeMap::new(),
+            launch_pad_resumes_its_foundation: false,
+            digs_one_museum: false,
+            deck_prices_growth: false,
+            deck_follows_the_queue: false,
+            deck_queue_signature: RefCell::new(BTreeMap::new()),
             solvency_first_trade_slot: false,
             builder_tries_the_next_tile: false,
             naval_threat_triage: false,
@@ -5949,6 +6073,9 @@ impl BasicAi {
             land_grab: false,
             rapid_city_expansion_2: false,
             capital_settler_after_completion: false,
+            opening_builder_after_the_first_settler: false,
+            opening_builder_paid: false,
+            first_pad_in_the_forge: false,
             scout_first_opening: false,
             expansion_pantheon: false,
             pantheon_for_the_prophet_race: false,
@@ -6017,6 +6144,68 @@ impl BasicAi {
     /// Disable the baseline half of the capital-settler-after-completion gene.
     pub(crate) fn disable_capital_settler_after_completion(&mut self) {
         self.capital_settler_after_completion = false;
+    }
+
+    /// See `retainers_garrison_the_short_cities`.
+    pub(crate) fn enable_retainers_garrison_the_short_cities(&mut self) {
+        self.retainers_garrison_the_short_cities = true;
+    }
+
+    /// The twin of `enable_retainers_garrison_the_short_cities`.
+    pub(crate) fn disable_retainers_garrison_the_short_cities(&mut self) {
+        self.retainers_garrison_the_short_cities = false;
+    }
+
+    /// Whether `pid` owns an Archaeological Museum, built or in any queue.
+    pub(crate) fn owns_dig_museum(g: &Game, pid: usize) -> bool {
+        let dig = crate::name!("archaeological_museum");
+        g.cities.values().filter(|city| city.owner == pid).any(|city| {
+            city.buildings.iter().any(|built| g.building_is_family(*built, dig))
+                || city.queue.iter().any(|item| {
+                    matches!(item, Item::Building { building } if g.building_is_family(*building, dig))
+                })
+        })
+    }
+
+    /// See `launch_pad_resumes_its_foundation`.
+    pub(crate) fn enable_launch_pad_resumes_its_foundation(&mut self) {
+        self.launch_pad_resumes_its_foundation = true;
+    }
+
+    /// The twin of `enable_launch_pad_resumes_its_foundation`.
+    pub(crate) fn disable_launch_pad_resumes_its_foundation(&mut self) {
+        self.launch_pad_resumes_its_foundation = false;
+    }
+
+    /// See `deck_prices_growth`.
+    pub(crate) fn enable_deck_prices_growth(&mut self) {
+        self.deck_prices_growth = true;
+    }
+
+    /// The twin of `enable_deck_prices_growth`.
+    pub(crate) fn disable_deck_prices_growth(&mut self) {
+        self.deck_prices_growth = false;
+    }
+
+    /// See `deck_follows_the_queue`.
+    pub(crate) fn enable_deck_follows_the_queue(&mut self) {
+        self.deck_follows_the_queue = true;
+    }
+
+    /// The twin of `enable_deck_follows_the_queue`.
+    pub(crate) fn disable_deck_follows_the_queue(&mut self) {
+        self.deck_follows_the_queue = false;
+        self.deck_queue_signature.borrow_mut().clear();
+    }
+
+    /// See `opening_builder_after_the_first_settler`.
+    pub(crate) fn enable_opening_builder_after_the_first_settler(&mut self) {
+        self.opening_builder_after_the_first_settler = true;
+    }
+
+    /// The twin of `enable_opening_builder_after_the_first_settler`.
+    pub(crate) fn disable_opening_builder_after_the_first_settler(&mut self) {
+        self.opening_builder_after_the_first_settler = false;
     }
 
     /// Lead the pantheon prefix with the two that found a city (see
@@ -6328,6 +6517,7 @@ impl BasicAi {
             amenity_districts: false,
             garrison_under_fire: false,
             reserve_floor: 0.0,
+            legacy_defender_purchases: false,
             district_coverage: false,
             district_coverage_2: false,
             slot_kind_tiebreak: false,
@@ -6373,9 +6563,11 @@ impl BasicAi {
             district_buildings_first: false,
             capital_library_first: false,
             campus_buildings_first: false,
+            nuclear_goal_needs_a_launcher: false,
             culture_defense_theater: false,
             lent_military_floor_base: None,
             exclude_space_race: false,
+            exclude_fossil_power: false,
             defer_low_impact_science_activation_paths: false,
             pantheon_reads_the_board: false,
             apostle_promotion_by_role: false,
@@ -6386,6 +6578,7 @@ impl BasicAi {
             naval_recon_2: false,
             naval_recon_3: false,
             island_exploration: false,
+            contact_fleet: false,
             camp_party: false,
             come_ashore: false,
             barbarian_settler_capture: false,
@@ -6445,6 +6638,13 @@ impl BasicAi {
             camp_bounty_claims: BTreeMap::new(),
             maintenance_aware_deck: false,
             deck_reads_player_income: false,
+            retainers_garrison_the_short_cities: false,
+            retainers_garrison_claims: BTreeMap::new(),
+            launch_pad_resumes_its_foundation: false,
+            digs_one_museum: false,
+            deck_prices_growth: false,
+            deck_follows_the_queue: false,
+            deck_queue_signature: RefCell::new(BTreeMap::new()),
             solvency_first_trade_slot: false,
             builder_tries_the_next_tile: false,
             naval_threat_triage: false,
@@ -6469,6 +6669,9 @@ impl BasicAi {
             land_grab: false,
             rapid_city_expansion_2: false,
             capital_settler_after_completion: false,
+            opening_builder_after_the_first_settler: false,
+            opening_builder_paid: false,
+            first_pad_in_the_forge: false,
             scout_first_opening: false,
             expansion_pantheon: false,
             pantheon_for_the_prophet_race: false,
@@ -8988,13 +9191,28 @@ impl BasicAi {
                 }
             }
         }
+        // `deck-prices-growth`: the same weights with the growth surplus
+        // priced at the Food weight.
+        let priced;
+        let deck_weights = if self.deck_prices_growth {
+            let mut w = self.w.clone();
+            w.pol_growth = w.pol_food * DECK_GROWTH_FOOD_SHARE;
+            priced = w;
+            &priced
+        } else {
+            &self.w
+        };
+        // `deck-follows-the-queue`: a review off the cadence on the turn the
+        // queue cards worth slotting change. False with the gene off.
+        let queue_changed = self.deck_queue_review_due(g, pid);
         revise_policy_deck(
             g,
             pid,
-            &self.w,
+            deck_weights,
             pool,
             self.maintenance_aware_deck,
             self.deck_reads_player_income,
+            queue_changed,
         );
         // The engine's own gate, restated here rather than guessed at. This
         // asked once per player per turn for the whole game and was refused
@@ -10378,6 +10596,9 @@ impl BasicAi {
             }
         }
         let active_settlers = settlers;
+        if builders > 0 {
+            self.opening_builder_paid = true;
+        }
         // Treat queued units as part of the force plan. Without this, every
         // occupied city forgets what it is already building and the next
         // empty city can queue a duplicate settler, builder, or trader.
@@ -10605,6 +10826,12 @@ impl BasicAi {
             // Reserve the first slot before population-two Settler genes can
             // claim it. Successful production consumes exactly one book slot.
             if self.play_scout_first_opening(g, pid, *cid) {
+                continue;
+            }
+            // `opening-builder-after-the-first-settler`: the capital's first
+            // Builder follows its first Settler. See `opening_builder.rs`.
+            if self.play_opening_builder(g, pid, *cid, n_cities, active_settlers, builders) {
+                builders += 1;
                 continue;
             }
             // The normal production picker sits after the scripted opening
@@ -11593,6 +11820,11 @@ impl BasicAi {
         if !Self::city_has_naval_recon_launch(g, pid, cid) {
             return None;
         }
+        // `contact-fleet`: the faster hull, when it is in reach. See
+        // `advanced/contact_fleet.rs`.
+        if let Some(fast) = self.contact_fleet_fast_hull(g, pid, cid) {
+            return Some(fast);
+        }
         let mut best: Option<((i64, i64), String)> = None;
         for (name, spec) in &g.rules.units {
             if spec.class != "military" || spec.domain.as_deref() != Some("sea") {
@@ -11704,12 +11936,23 @@ impl BasicAi {
                         None => spec.has_ranged_attack() || spec.is_melee_capable(),
                     };
                     if spec.class != "military"
+                        || (!self.legacy_defender_purchases && spec.promotion_class == "recon")
                         || spec.domain.as_deref() == Some("sea")
                         || !matches_role
                     {
                         continue;
                     }
-                    let price = spec.cost * 4.0;
+                    // Current controllers budget the actual purchase quote.
+                    // The historical anchor retains its original price and
+                    // predicate order, together with its old recon eligibility.
+                    let price = if self.legacy_defender_purchases {
+                        spec.cost * 4.0
+                    } else {
+                        let Some(price) = g.unit_purchase_cost(pid, *cid, name, "gold") else {
+                            continue;
+                        };
+                        price
+                    };
                     if price > budget + 1e-9
                         || !g.can_produce(pid, *cid, &Item::Unit { unit: *name })
                         || g.purchase_is_blocked(*cid, &Item::Unit { unit: *name })
@@ -12280,6 +12523,7 @@ impl BasicAi {
                         "lagrange_laser_station" | "terrestrial_laser_station"
                     )
             })
+            .filter(|(project, _)| !self.nuclear_project_barred(project.as_str()))
             .filter_map(|(project, spec)| {
                 let item = Item::Project { project: *project };
                 if !g.can_produce(pid, cid, &item) {
@@ -13039,6 +13283,11 @@ impl BasicAi {
                     } else {
                         self.live_great_person_activation_resume_item(g, pid, city)
                     }?;
+                    // `first-pad-in-the-forge`: the first Spaceport only in a
+                    // producer. See `ai/first_pad_in_the_forge.rs`.
+                    if !self.first_pad_item_allowed(g, pid, city, &item) {
+                        return None;
+                    }
                     let remaining = (g.item_cost_for_city(pid, city, &item)
                         - g.cities[&city].production)
                         .max(0.0);
@@ -13079,6 +13328,19 @@ impl BasicAi {
             }
         }
         changed
+    }
+
+    /// `nuclear-goal-needs-a-launcher`: whether `project` is a nuclear
+    /// project the base picker leaves alone. Always false with the gene off.
+    pub(crate) fn nuclear_project_barred(&self, project: &str) -> bool {
+        self.nuclear_goal_needs_a_launcher
+            && matches!(
+                project,
+                "manhattan_project"
+                    | "operation_ivy"
+                    | "build_nuclear_device"
+                    | "build_thermonuclear_device"
+            )
     }
 
     // The counters deliberately remain explicit: the city loop updates them
@@ -13178,6 +13440,12 @@ impl BasicAi {
             return self
                 .economic_recovery_item(g, pid, cid, traders)
                 .or_else(|| self.upkeep_free_recovery_item(g, pid, cid));
+        }
+        // `launch-pad-keeps-its-rung`: the city's own placed Spaceport, until
+        // the empire's first pad stands, ahead of every economy step. Local
+        // defence and economic recovery above still win.
+        if let Some(pad) = self.launch_pad_resume_item(g, pid, cid) {
+            return Some(pad);
         }
         // `housing-bound-city-builds-its-granary`: a housing-bound city's
         // Granary, then a short city's Amenity, ahead of every economy step
@@ -13402,7 +13670,9 @@ impl BasicAi {
             && !emergency_defense
             && !self.settler_due(g, pid, cid, n_cities, settlers)
         {
-            if let Some(item) = Self::industrial_hub_item(g, pid, cid) {
+            if let Some(item) = Self::industrial_hub_item(g, pid, cid)
+                .filter(|item| !self.fossil_power_excluded(item))
+            {
                 think!(self.journal, Cities, Detail,
                        "The industrial hub takes the build";
                        "{} in {}", crate::reasoning::plain(&format!("{item:?}")),
@@ -13635,9 +13905,13 @@ impl BasicAi {
                 // than this simulator's queue entry.
                 Self::empire_district_family_ready_or_queued(g, pid, "spaceport")
             };
+            // `first-pad-in-the-forge`: the empire's first pad only in a
+            // producer. This step hands it to whichever city is being filled.
+            // See `ai/first_pad_in_the_forge.rs`.
             if !self.exclude_space_race
                 && !has_spaceport
                 && g.players[pid].techs.contains(&crate::name!("rocketry"))
+                && self.first_pad_city_allowed(g, pid, cid)
             {
                 if let Some(pos) = g
                     .district_sites(cid, crate::name!("spaceport"))
@@ -13687,6 +13961,7 @@ impl BasicAi {
                                     | "terrestrial_laser_station"
                             ))
                 })
+                .filter(|(project, _)| !self.nuclear_project_barred(project.as_str()))
                 .map(|(project, _)| Item::Project { project: *project })
                 .filter(|item| g.can_produce(pid, cid, item))
                 .collect();
@@ -14127,7 +14402,9 @@ impl BasicAi {
             .buildings
             .iter()
             .filter(|(b, s)| {
-                !s.wonder && g.can_produce(pid, cid, &Item::Building { building: **b })
+                !s.wonder
+                    && !self.fossil_power_excluded(&Item::Building { building: **b })
+                    && g.can_produce(pid, cid, &Item::Building { building: **b })
             })
             .map(|(b, s)| (s.cost as i64, *b))
             .collect();
@@ -14162,8 +14439,11 @@ impl BasicAi {
             let makes_science =
                 |b: &Name| -> bool { science_first && g.rules.buildings[b].yields.science > 0.0 };
             let tiebreak = self.slot_kind_tiebreak;
+            // `culture-digs-one-museum`: a Culture seat's first Museum takes the
+            // Artifact slot. See `advanced/culture_dig_museum.rs`.
+            let dig_first = self.digs_one_museum && !Self::owns_dig_museum(g, pid);
             let slot_worth = |b: &Name| -> f64 {
-                if !tiebreak {
+                if !tiebreak && !dig_first {
                     return 0.0;
                 }
                 g.rules.buildings[b]
@@ -14172,7 +14452,7 @@ impl BasicAi {
                     .map(|(kind, count)| {
                         let count = (*count).max(0) as f64;
                         if kind == "artifact" {
-                            count * 0.5
+                            count * if dig_first { 2.0 } else { 0.5 }
                         } else {
                             count
                         }
@@ -14235,6 +14515,7 @@ impl BasicAi {
                             "lagrange_laser_station" | "terrestrial_laser_station"
                         )
                 })
+                .filter(|(project, _)| !self.nuclear_project_barred(project.as_str()))
                 .map(|(project, _)| Item::Project { project: *project })
                 .filter(|item| g.can_produce(pid, cid, item))
                 .collect();
@@ -15291,13 +15572,20 @@ impl BasicAi {
         } else {
             8
         };
-        let mut frontier: Vec<(Pos, i32)> = g
+        // The observed native seat needs shortest routes for its walking budget.
+        // Headless reference games keep their recorded depth-first traversal.
+        let shortest_routes = pid == crate::game::MIRRORED_SEAT && !g.host_observed.is_empty();
+        let mut frontier: VecDeque<(Pos, i32)> = g
             .player_city_ids(pid)
             .into_iter()
             .map(|city| (g.cities[&city].pos, 0))
             .collect();
         let mut seen: HashSet<Pos> = frontier.iter().map(|(position, _)| *position).collect();
-        while let Some((position, steps)) = frontier.pop() {
+        while let Some((position, steps)) = if shortest_routes {
+            frontier.pop_front()
+        } else {
+            frontier.pop_back()
+        } {
             if self.valid_settle_site(g, pid, position) {
                 return true;
             }
@@ -15320,7 +15608,7 @@ impl BasicAi {
                     continue;
                 }
                 seen.insert(next);
-                frontier.push((next, steps + 1));
+                frontier.push_back((next, steps + 1));
             }
         }
         false
@@ -15626,7 +15914,7 @@ impl BasicAi {
     /// everything it owned kept paying for Builders that then stood on a tile
     /// for the rest of the game - the audit counted nearly two hundred of
     /// them across six games, some idle from turn 25 to the end.
-    fn has_builder_work(g: &Game, pid: usize) -> bool {
+    pub(crate) fn has_builder_work(g: &Game, pid: usize) -> bool {
         // Every owned tile asks the same empire-wide questions of the same
         // empire; hold a memo scope over the whole sweep.
         let _memo = g.query_memo();
@@ -15690,6 +15978,12 @@ impl BasicAi {
     /// [`Self::FIRST_CAMPUS_MAX_TURNS`]. `None` otherwise.
     pub(crate) fn first_campus_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
         Self::first_district_item(g, pid, cid, "campus")
+    }
+
+    /// The first Theater Square (or its replacement, Greece's Acropolis) on
+    /// its best site; see `first_district_item`. `culture-seat-theater-first`.
+    pub(crate) fn first_theater_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        Self::first_district_item(g, pid, cid, "theater_square")
     }
 
     /// This city's first district of `family` (its civilization's
@@ -16114,6 +16408,14 @@ impl BasicAi {
         (!reached && within(&factory)).then_some(factory)
     }
 
+    /// Whether `exclude_fossil_power` refuses this item: a Coal or Oil Power
+    /// Plant while the flag stands. The Nuclear plant emits nothing.
+    pub(crate) fn fossil_power_excluded(&self, item: &Item) -> bool {
+        self.exclude_fossil_power
+            && matches!(item, Item::Building { building }
+                if matches!(building.as_str(), "coal_power_plant" | "oil_power_plant"))
+    }
+
     /// The fewest own cities an `industrial_hub` zone must reach.
     const INDUSTRIAL_HUB_MIN_REACH: usize = 3;
 
@@ -16456,21 +16758,24 @@ impl BasicAi {
         let _memo = g.query_memo();
         g.player_city_ids(pid)
             .into_iter()
-            .map(|cid| {
-                g.city_citizen_plan(cid)
-                    .worked_tiles
-                    .into_iter()
-                    .filter(|pos| {
-                        g.map.get(*pos).is_some_and(|tile| {
-                            tile.district.is_none() && (tile.improvement.is_none() || tile.pillaged)
-                        }) && g
-                            .valid_improvements(pid, *pos)
-                            .iter()
-                            .any(|improvement| g.rules.improvements[improvement].builder_buildable)
-                    })
-                    .count()
-            })
+            .map(|cid| Self::unimproved_worked_tiles_in(g, pid, cid))
             .sum()
+    }
+
+    /// [`BasicAi::unimproved_worked_tiles`] for one city.
+    pub(crate) fn unimproved_worked_tiles_in(g: &Game, pid: usize, cid: u32) -> usize {
+        g.city_citizen_plan(cid)
+            .worked_tiles
+            .into_iter()
+            .filter(|pos| {
+                g.map.get(*pos).is_some_and(|tile| {
+                    tile.district.is_none() && (tile.improvement.is_none() || tile.pillaged)
+                }) && g
+                    .valid_improvements(pid, *pos)
+                    .iter()
+                    .any(|improvement| g.rules.improvements[improvement].builder_buildable)
+            })
+            .count()
     }
 
     /// See `builder_before_the_army_3`: a Builder while the empire holds (or
@@ -18454,19 +18759,26 @@ impl BasicAi {
             HashSet::new()
         };
         let origin = g.units[&uid].pos;
-        let island_home = if self.island_exploration
+        // `contact-fleet`: while the contact gap is open, a ship that can
+        // cross Ocean takes the same long look-ahead and foreign-landfall
+        // ranking as a full home continent. See `advanced/contact_fleet.rs`.
+        let island_home = if (self.island_exploration || self.contact_fleet)
             && !dry_only
             && g.rules.units[g.units[&uid].kind].domain.as_deref() == Some("sea")
         {
             let landmass = Self::capital_landmass(g, pid);
             (!landmass.is_empty()
-                && self.main_landmass_settlement_room(
-                    g,
-                    pid,
-                    &landmass,
-                    ISLAND_EXPLORATION_HOME_SITE_LIMIT + 1,
-                ) <= ISLAND_EXPLORATION_HOME_SITE_LIMIT)
-                .then_some(landmass)
+                && ((self.island_exploration
+                    && self.main_landmass_settlement_room(
+                        g,
+                        pid,
+                        &landmass,
+                        ISLAND_EXPLORATION_HOME_SITE_LIMIT + 1,
+                    ) <= ISLAND_EXPLORATION_HOME_SITE_LIMIT)
+                    || (self.contact_fleet
+                        && Self::naval_recon_can_cross_ocean(g, pid)
+                        && Self::contact_fleet_gap(g, pid))))
+            .then_some(landmass)
         } else {
             None
         };
@@ -20227,6 +20539,11 @@ impl BasicAi {
         if self.modernization_step(g, pid, uid) {
             return true;
         }
+        // `retainers-garrison-the-short-cities`: an idle soldier garrisons
+        // an Amenity-short city while Retainers is slotted.
+        if let Some(acted) = self.retainers_garrison_step(g, pid, uid) {
+            return acted;
+        }
         if self.patrol_step(g, pid, uid) {
             return true;
         }
@@ -20290,6 +20607,9 @@ impl BasicAi {
         false
     }
 }
+
+#[cfg(test)]
+mod military_purchase_tests;
 
 #[cfg(test)]
 mod tests {
@@ -20677,11 +20997,11 @@ mod tests {
         };
 
         let mut serial = initial.clone();
-        revise_policy_deck(&mut serial, 0, &weights, None, false, false);
+        revise_policy_deck(&mut serial, 0, &weights, None, false, false, false);
         for threads in [4, 5] {
             let mut parallel = initial.clone();
             let pool = WorkPool::new(threads);
-            revise_policy_deck(&mut parallel, 0, &weights, Some(&pool), false, false);
+            revise_policy_deck(&mut parallel, 0, &weights, Some(&pool), false, false, false);
 
             assert_eq!(serial.log, parallel.log, "threads={threads}");
             assert_eq!(
@@ -26258,6 +26578,38 @@ mod tests {
             Some(Item::Building {
                 building: crate::name!("coal_power_plant")
             })
+        );
+
+        // `exclude_fossil_power` (a Diplomatic seat): the governor that
+        // fills the delegated queues takes neither fossil plant, from the hub
+        // chain or from the cheapest-building fallback.
+        let coal = Item::Building {
+            building: crate::name!("coal_power_plant"),
+        };
+        let oil = Item::Building {
+            building: crate::name!("oil_power_plant"),
+        };
+        let nuclear = Item::Building {
+            building: crate::name!("nuclear_power_plant"),
+        };
+        let mut stock = BasicAi::new();
+        stock.industrial_hub = true;
+        assert!(!stock.fossil_power_excluded(&coal), "off by default");
+        let mut diplomatic = stock.clone();
+        diplomatic.exclude_fossil_power = true;
+        assert!(diplomatic.fossil_power_excluded(&coal));
+        assert!(diplomatic.fossil_power_excluded(&oil));
+        assert!(!diplomatic.fossil_power_excluded(&nuclear));
+        let pick = |ai: &BasicAi| ai.pick_item(&game, 0, capital, 3, 1, 3, 1, 0, 3, 2, 1);
+        assert_eq!(
+            pick(&stock),
+            Some(coal.clone()),
+            "the hub's stock pick is the coal plant"
+        );
+        let refused = pick(&diplomatic);
+        assert!(
+            refused != Some(coal.clone()) && refused != Some(oil.clone()),
+            "the diplomatic governor picks something else: {refused:?}"
         );
     }
 

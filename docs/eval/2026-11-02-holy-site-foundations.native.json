@@ -1,0 +1,165 @@
+{
+  "schema": 1,
+  "archive": "2026-11-02-holy-site-foundations.native.tar.xz",
+  "archive_bytes": 144372,
+  "archive_sha256": "5d3c0d5a6e3af292ea5cb9ea536d22f9aaa0128fe73b3cb379e5a364a27da042",
+  "members_verified": 64,
+  "proof": {
+    "created_utc": "2026-11-02T21:22:07.400107+00:00",
+    "source_events": "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261102T203602Z/events.jsonl",
+    "source_events_sha256": "c5a0a5c3fc2cef855b327af810608d19eb793222d469fc2e002502987a914c1c",
+    "selected_states": [
+      {
+        "turn": 17,
+        "frame": 0,
+        "source_line": 602,
+        "raw_line_sha256": "d3b1ef22cfdca05140368316e20802bb997546edb01b50b7ca4c8c76e959e239"
+      },
+      {
+        "turn": 18,
+        "frame": 0,
+        "source_line": 674,
+        "raw_line_sha256": "b942104120aff0f4b18060dd3a1702babcd6b2a2d509b19150b5f6c5c9d6db0f"
+      },
+      {
+        "turn": 23,
+        "frame": 0,
+        "source_line": 942,
+        "raw_line_sha256": "20d58691867fb7d55b036d6efb0634a11c367a03c5a42a5068bb1e0354a5ce31"
+      },
+      {
+        "turn": 26,
+        "frame": 0,
+        "source_line": 1099,
+        "raw_line_sha256": "2c9d92465590d188bfc3e3ec8f1aac43aaf0d2ba44453b76fbcc6cb00b260aa4"
+      },
+      {
+        "turn": 27,
+        "frame": 0,
+        "source_line": 1154,
+        "raw_line_sha256": "00c559d63e0b51fb6eeb79cf67bc9c3e07b23da466e8dee87f0eae5d4f3be349"
+      },
+      {
+        "turn": 28,
+        "frame": 0,
+        "source_line": 1235,
+        "raw_line_sha256": "2d35a999ae6f7ed1ac371fcaf8f2aad28701f894bc16eef265bbf5e9124dfe18"
+      },
+      {
+        "turn": 39,
+        "frame": 0,
+        "source_line": 1808,
+        "raw_line_sha256": "893ed865ac28967a6f66ad37470d2d1ee281b77334d21d0c65e697b3d8562f12"
+      },
+      {
+        "turn": 42,
+        "frame": 0,
+        "source_line": 1966,
+        "raw_line_sha256": "272db12b2ccd8d86b46764a6ad125b083a983f9e209432bb4bef2a462cf8ea2a"
+      },
+      {
+        "turn": 57,
+        "frame": 0,
+        "source_line": 2930,
+        "raw_line_sha256": "7301fbaaa583e0f84555cbb2f47fa95678445b3a42bb0336c2491b4859d8dd50"
+      },
+      {
+        "turn": 60,
+        "frame": 0,
+        "source_line": 3127,
+        "raw_line_sha256": "c0b00a5301fe329e327c41923d96fc00850443de9e1dfe3f13c713c29be4c861"
+      },
+      {
+        "turn": 100,
+        "frame": 0,
+        "source_line": 7836,
+        "raw_line_sha256": "cf6ea0afdb660643970526a1cf17970781847847eac9522cf29d59eaa7e4f5eb"
+      },
+      {
+        "turn": 130,
+        "frame": 0,
+        "source_line": 12452,
+        "raw_line_sha256": "350598d0a51fb8b5e083914c1e25a76a3e0678eb932d82faeef8da88cea6b987"
+      },
+      {
+        "turn": 147,
+        "frame": 0,
+        "source_line": 15768,
+        "raw_line_sha256": "b35225351fad1a45d1b949e181f8ffde2b17488175fe545b56e81ce27f6b4fb2"
+      },
+      {
+        "turn": 211,
+        "frame": 0,
+        "source_line": 29010,
+        "raw_line_sha256": "b5648aac48271f2141be59d9ed2359455b067c290278fb75c748739dcb7087dc"
+      }
+    ],
+    "source_manifest_verified": true,
+    "source_base": "e2db9d09da3321fd88656df4187767a16bdf8d7e",
+    "binaries": {
+      "before": {
+        "path": "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/decider-snapshots/civvis-20261102T203602Z/civvis_orders",
+        "sha256": "bdb0125b67b2d2936a1937e251738ef4a5ceeb0b80dce94a4b668dc9c7bc19ea"
+      },
+      "after": {
+        "path": "/Users/martbot-mbp-m5-max-128/civvis-holy-site-foundations-8756/target/ci/civvis_orders",
+        "sha256": "115b58726cef7bcc67877ed6bbade570a1b7879e0edbcf30e3b04f50ff824a1d"
+      }
+    },
+    "scope": "One-shot Religion queries on exact captured reads, not original persistent-process replay, native execution, a race-win claim or strength evidence.",
+    "final_case_changes": [
+      {
+        "turn": 12,
+        "frame": 0,
+        "changed": false
+      },
+      {
+        "turn": 23,
+        "frame": 0,
+        "changed": true
+      },
+      {
+        "turn": 26,
+        "frame": 1,
+        "changed": false
+      },
+      {
+        "turn": 28,
+        "frame": 0,
+        "changed": false
+      }
+    ],
+    "all_other_orders_equal_at_t23": true,
+    "resume_preserved_t28": true,
+    "default_off_and_repeated_control_orders_equal": true,
+    "source_summary_sha256": "1d0e192bf830d5e32f21e06f8a4be1cf9d4970248469394e3e1c7268442744db",
+    "source_why_sha256": "0332c6d6d47938a26ff7ff47ecc2f8fa1db07ae777f2e04450cb61add807c826",
+    "selected_why_lines": [
+      {
+        "source_line": 1,
+        "raw_line_sha256": "9c1cff7815285a3bc22805fc580ffea662221355288d143826d29efddad6a6c0"
+      },
+      {
+        "source_line": 132,
+        "raw_line_sha256": "7e215493dd0c000110e76731c457e46648c981cd94815ba88937114eefc90aab"
+      },
+      {
+        "source_line": 136,
+        "raw_line_sha256": "7e215493dd0c000110e76731c457e46648c981cd94815ba88937114eefc90aab"
+      },
+      {
+        "source_line": 230,
+        "raw_line_sha256": "49ae8c03eb03f90fe112733a1f49a9b6954e37cabe9137e6b1ce3829728a89fb"
+      },
+      {
+        "source_line": 292,
+        "raw_line_sha256": "af2aa5e753589420306e9101811588a2fcae5a431a8506325a2d159c6fec29f4"
+      },
+      {
+        "source_line": 784,
+        "raw_line_sha256": "77f48b71442fb7cb15f34d912dff73044c53fbee9910ae86aa89d117c2d6b532"
+      }
+    ],
+    "source_decisions_sha256": "770f1722a93a750c191520ae50cf88f09b3b584523fb4b13edc8f2262eb7ef13"
+  }
+}

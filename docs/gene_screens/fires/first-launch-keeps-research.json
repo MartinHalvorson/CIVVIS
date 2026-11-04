@@ -1,0 +1,12 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "first-launch-keeps-research",
+  "scope": "One-shot proposals on the same captured native read at turn 182. Identical current controller settings except the named gene. Not historical process replay, host execution, or a strength estimate.",
+  "archive": {
+    "path": "docs/eval/2026-11-02-first-launch-keeps-research.native.tar.xz",
+    "sha256": "a9f4a524ec1641abb3479934cec941566d5c4c8fd7c22c58da57fe1dd5000224"
+  },
+  "members": [
+    "result.json"
+  ]
+}

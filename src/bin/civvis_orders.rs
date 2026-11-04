@@ -414,6 +414,21 @@ fn civ6_build_pos(item: &civvis::game::Item) -> Option<(i32, i32)> {
     }
 }
 
+/// The host's alliance type for a planner alliance kind (`propose_strategic_alliance`
+/// picks one of these five), the `DB.MakeHash` value the shipped screen sets on the
+/// ALLIANCE agreement item (DiplomacyActionView_Expansion1.lua:149-217). `None` for
+/// anything else, so an unknown kind is skipped rather than asked blind.
+fn civ6_alliance_type(kind: &str) -> Option<&'static str> {
+    match kind {
+        "research" => Some("ALLIANCE_RESEARCH"),
+        "cultural" => Some("ALLIANCE_CULTURAL"),
+        "religious" => Some("ALLIANCE_RELIGIOUS"),
+        "military" => Some("ALLIANCE_MILITARY"),
+        "economic" => Some("ALLIANCE_ECONOMIC"),
+        _ => None,
+    }
+}
+
 /// ⚠ THE TWO RULESETS DISAGREE ON ARTICLES, AND IT COSTS A WHOLE TECHNOLOGY.
 ///
 /// `mirror::civvis_node_name` documents the inbound half: Civ 6's `TECH_THE_WHEEL` is
@@ -513,9 +528,10 @@ struct Order {
 fn append_citizen_growth_orders(
     snapshot: &mirror::Snapshot,
     state: &mirror::StateSnapshot,
+    widened: bool,
     orders: &mut Vec<Order>,
 ) -> usize {
-    let choices = citizen_growth::choices(snapshot, state);
+    let choices = citizen_growth::choices(snapshot, state, widened);
     let count = choices.len();
     orders.extend(choices.into_iter().map(|choice| Order {
         kind: "city_focus",
@@ -3592,6 +3608,43 @@ fn plan_keeps_favor(plan: Option<(&str, Option<&str>)>) -> bool {
     plan.is_none()
 }
 
+/// Whether the seat is ASSIGNED the Diplomatic lane: its bank is the
+/// agent's racer ballot (`CivvisDiploRacer` in the agent), so none of it
+/// sells. The note on [`plan_keeps_favor`] predates purchased votes
+/// registering; the ballot casts them now, and a racer's Favor buys its own
+/// Congress Participation points at 4-24 Favor a resolution. Live Prince
+/// civvis-20261030T043401Z (a Culture seat) banked 570 Favor idle for three
+/// sessions; a diplomatic seat that sold that bank before any rival reached
+/// [`FAVOR_HOLD_DVP`] would have sold its first claims.
+fn plan_races_diplomacy(plan: Option<(&str, Option<&str>)>) -> bool {
+    plan.is_some_and(|(_, victory)| victory == Some("diplomatic"))
+}
+
+/// Drop the planner's alliance orders unless the seat is assigned the
+/// Diplomatic lane ([`plan_races_diplomacy`]): an alliance forbids a war on
+/// the ally, and the domination campaign planner does not price that. The
+/// agent's `CivvisAllianceStep` refuses them off the lane too; holding them
+/// here keeps eight to fifteen refusals a game out of the order ledger.
+/// `culture_allies` (`culture-seat-allies` armed on a seat aiming at
+/// Culture, or `science-seat-allies` on one aiming at Science) keeps them for
+/// that lane as well; the agent takes them under `CultureAllies` /
+/// `ScienceAllies`. Returns how many were dropped.
+fn drop_off_lane_alliances(
+    plan: Option<(&str, Option<&str>)>,
+    culture_allies: bool,
+    orders: &mut Vec<Order>,
+) -> usize {
+    if plan_races_diplomacy(plan)
+        || (culture_allies
+            && plan.is_some_and(|(_, victory)| matches!(victory, Some("culture" | "science"))))
+    {
+        return 0;
+    }
+    let before = orders.len();
+    orders.retain(|order| order.kind != "alliance");
+    before - orders.len()
+}
+
 /// Drop the planner's own favor sales when the plan means to cast that favor,
 /// or once a rival's DVP makes the bank votes ([`favor_banked_for_votes`]).
 /// `Game::quick_deals` quotes a ten-favor block to any partner two DVP richer,
@@ -3602,7 +3655,7 @@ fn hold_planner_favor_sales(
     state: &civvis::mirror::StateSnapshot,
     orders: &mut Vec<Order>,
 ) -> usize {
-    if !plan_keeps_favor(plan) && !favor_banked_for_votes(state) {
+    if !plan_keeps_favor(plan) && !favor_banked_for_votes(state) && !plan_races_diplomacy(plan) {
         return 0;
     }
     let before = orders.len();
@@ -3636,10 +3689,39 @@ fn drop_deals_beside_war_or_peace(orders: &mut Vec<Order>) -> usize {
     }
     let before = orders.len();
     orders.retain(|order| {
-        !(matches!(order.kind, "sell" | "buy")
+        !(matches!(order.kind, "sell" | "buy" | "alliance")
             && order
                 .subject
                 .is_some_and(|subject| contested.contains(&subject)))
+    });
+    before - orders.len()
+}
+
+/// Keep a batch's first alliance ask as its only deal session: every other
+/// alliance, sale and purchase in the batch waits for a later turn. Each one
+/// is a `CivvisTrade.ask`, and the asks of one batch open their sessions in
+/// the same frame. A rival that refuses an alliance answers with a statement
+/// of its own, which the host leaves "Adding to pending" while another of our
+/// sessions is still held open, and the game never advances. Live King, 11-01:
+/// every Culture seat froze on the turn of an alliance ask sent beside an
+/// EQUALIZE sale or an open-borders buy to a different rival (102116Z t120,
+/// four times from the same save; 063953Z t186; 091422Z t120; 081602Z t149).
+/// Each time, DiplomacyManager.csv ended on the alliance target's
+/// "AI_REFUSE_DEAL" then "MAKE_DEAL, POSITIVE, POSITIVE, Adding to pending".
+/// Alliance asks sent alone (081602Z t128 and t144; Science seats 043921Z and
+/// 023248Z) did not freeze. Sales and purchases are re-quoted every turn;
+/// the alliance ask is rarer and carries the plan. Returns how many orders
+/// were held back.
+fn hold_deals_beside_an_alliance(orders: &mut Vec<Order>) -> usize {
+    let Some(first) = orders.iter().position(|order| order.kind == "alliance") else {
+        return 0;
+    };
+    let before = orders.len();
+    let mut index = 0;
+    orders.retain(|order| {
+        let keep = index == first || !matches!(order.kind, "sell" | "buy" | "alliance");
+        index += 1;
+        keep
     });
     before - orders.len()
 }
@@ -3656,6 +3738,9 @@ fn append_favor_sale_order(
     // stood here is gone with it — it could never be reached past this line.
     if plan.is_none() {
         return Some("favor_hold:no_plan");
+    }
+    if plan_races_diplomacy(plan) {
+        return Some("favor_hold:diplomatic_lane");
     }
     if favor_banked_for_votes(state) {
         return Some("favor_hold:contender");
@@ -4044,7 +4129,7 @@ fn append_aid_gift_order(
         order.subject == Some(target)
             && matches!(
                 order.kind,
-                "war" | "peace" | "delegation" | "denounce" | "friendship"
+                "war" | "peace" | "delegation" | "denounce" | "friendship" | "alliance"
             )
     }) {
         return Some("aid_gift_hold:diplomacy_conflict");
@@ -4641,11 +4726,8 @@ fn release_foreign_production(
         let Some(cid) = cid_of.get(&city.id).copied() else {
             continue;
         };
-        if let Some(built) = planned_game.cities.get_mut(&cid) {
-            if !built.queue.is_empty() {
-                built.queue.clear();
-                released += 1;
-            }
+        if planned_game.pause_city_production(cid) {
+            released += 1;
         }
     }
     released
@@ -5071,7 +5153,13 @@ fn decide(
     let mut skipped: std::collections::BTreeMap<String, usize> = std::collections::BTreeMap::new();
     let mut skipped_examples: Vec<String> = Vec::new();
     let mut note_bits: Vec<String> = Vec::new();
-    let citizen_growth_orders = append_citizen_growth_orders(snapshot, state, &mut orders);
+    // `food-focus-grows-the-small-city`: see `citizen_growth::choices`.
+    let citizen_growth_orders = append_citizen_growth_orders(
+        snapshot,
+        state,
+        ai.food_focus_grows_the_small_city(),
+        &mut orders,
+    );
     if citizen_growth_orders > 0 {
         note_bits.push(format!("citizen_growth_orders={citizen_growth_orders}"));
     }
@@ -5264,6 +5352,10 @@ fn decide(
     let plan_facts = plan
         .as_ref()
         .map(|report| (report.strategy, report.victory_target));
+    let held_alliances = drop_off_lane_alliances(plan_facts, ai.seat_allies_armed(), &mut orders);
+    if held_alliances > 0 {
+        note_bits.push(format!("alliance_hold:off_lane={held_alliances}"));
+    }
     let held_favor_sales = hold_planner_favor_sales(plan_facts, state, &mut orders);
     if held_favor_sales > 0 {
         note_bits.push(format!(
@@ -5405,6 +5497,39 @@ fn decide(
                 {
                     note_bits.push(why.to_string());
                 }
+            }
+        }
+    }
+    // A power bridge uses the existing strategic market transport. It never
+    // competes with another purchase already proposed in this frame.
+    if !orders.iter().any(|order| order.kind == "buy") {
+        let wants = ai.science_power_fuel_wants(&mirror_state.game, 0);
+        if !wants.is_empty() {
+            let reserve = (ai
+                .purchase_upkeep_floor_reading(&mirror_state.game, 0)
+                .ceil() as i64)
+                .max(100);
+            let worth = |resource: &str, amount: u32| {
+                mirror_state.game.strategic_gold_value(0, resource, amount)
+            };
+            let give_worth = |_: i64, _: &str, _: u32| 0.0;
+            let result = append_resource_buy_order(
+                &wants,
+                &[],
+                state,
+                &mut orders,
+                &worth,
+                &give_worth,
+                ResourceBuyBudget {
+                    reserve,
+                    gold_limit: Some(mirror_state.game.players[0].gold.floor() as i64),
+                    credit_income: true,
+                    cadence: true,
+                },
+            );
+            match result {
+                None => note_bits.push("science_power_fuel_buy=1".to_string()),
+                Some(why) => note_bits.push(format!("science_power_fuel:{why}")),
             }
         }
     }
@@ -5829,6 +5954,10 @@ fn decide(
         note_bits.push(format!(
             "deals_dropped_for_war_or_peace={session_conflicts}"
         ));
+    }
+    let held_beside_alliance = hold_deals_beside_an_alliance(&mut orders);
+    if held_beside_alliance > 0 {
+        note_bits.push(format!("deals_held_beside_alliance={held_beside_alliance}"));
     }
     if let Some((target, needed)) = envoy_reclaim {
         let submitted = orders
@@ -6752,6 +6881,36 @@ fn translate(
             verb: Some("MAKE_PEACE".to_string()),
             pos: None,
         }),
+        // ★★ THE PLANNER'S ALLIANCE, WHICH HAD NO ARM. `propose_strategic_alliance`
+        // proposes `ProposeDeal { friendship: true, alliance: Some(kind), .. }`
+        // 8 to 15 times a game on the live seat ("Proposing a Research Alliance
+        // to Poland", why.log of civvis-20261030T043401Z at t132 and t142), and
+        // every one fell into the skip tally: the friendship arm below requires
+        // `alliance: None`, and the host has no bundled friendship-and-alliance
+        // deal (DIPLOACTION_ALLIANCE needs a declared friendship and Civil
+        // Service on both sides, Base/Assets/Gameplay/Data/DiplomaticActions.xml:69).
+        // The agent's `alliance` arm asks the friendship while there is none and
+        // the alliance once there is, as the shipped screen builds it
+        // (DLC/Expansion1/UI/Replacements/DiplomacyActionView_Expansion1.lua:
+        // 141-217: an AGREEMENTS item, subtype ALLIANCE, value type
+        // ALLIANCE_<KIND>, in a MAKE_DEAL session). An alliance pays its level in
+        // Favor every turn (`WORLD_CONGRESS_ALLIANCE_FAVOR_PER_TURN`).
+        Action::ProposeDeal {
+            player,
+            give_gold,
+            request_gold,
+            peace: false,
+            alliance: Some(kind),
+            ..
+        } if *give_gold <= 0.0 && *request_gold <= 0.0 => {
+            let verb = civ6_alliance_type(kind)?;
+            Some(Order {
+                kind: "alliance",
+                subject: host_player_target(mirror_state, state, *player),
+                verb: Some(verb.to_string()),
+                pos: None,
+            })
+        }
         // A friendship and nothing else — no gold, passage or alliance
         // bundled — is the host's DIPLOACTION_DECLARE_FRIENDSHIP, asked as a
         // session like a denouncement: DiplomacyActionView.lua:472-473 answers
@@ -8592,6 +8751,26 @@ fn verify_order_with_context(
             Some(None) => Verdict::Unverifiable,
             None => failed("player_unseen".to_string()),
         },
+        // The planner's alliance: the agent asks the declared friendship first
+        // and the alliance once it stands (`CivvisAllianceStep`), so either
+        // landing proves the order -- the host's diplomatic state reads ALLIED,
+        // or a friendship declared this turn crossed. `not_allied` covers a
+        // refusal as well as a session that never opened.
+        "alliance" => {
+            let rival = order
+                .subject
+                .and_then(|p| after.rivals.iter().find(|r| r.player as i64 == p));
+            match rival {
+                None => failed("player_unseen".to_string()),
+                Some(r) if r.diplomatic_state.as_deref() == Some("DIPLO_STATE_ALLIED") => {
+                    Verdict::Verified
+                }
+                Some(r) if r.friendship_turn.is_some_and(|since| since >= turn as i64) => {
+                    Verdict::Verified
+                }
+                Some(_) => failed("not_allied".to_string()),
+            }
+        }
         "governor_appoint" | "governor_assign" => {
             let governors =
                 |state: &civvis::mirror::StateSnapshot| state.governors.clone().unwrap_or_default();
@@ -11539,6 +11718,39 @@ mod tests {
 
     use super::*;
 
+    /// See `hold_deals_beside_an_alliance`: beside an alliance ask, every
+    /// sale, purchase and second alliance ask waits; other orders stand, and a
+    /// batch with no alliance ask is untouched.
+    #[test]
+    fn an_alliance_ask_is_the_batch_s_only_deal_session() {
+        let order = |kind: &'static str, subject: i64, verb: &str| Order {
+            kind,
+            subject: Some(subject),
+            verb: Some(verb.to_string()),
+            pos: None,
+        };
+        let mut orders = vec![
+            order("sell", 3, "RESOURCE_NITER=10"),
+            order("friendship", 2, "DECLARE_FRIEND"),
+            order("alliance", 2, "ALLIANCE_CULTURAL"),
+            order("buy", 1, "OPEN_BORDERS"),
+            order("alliance", 4, "ALLIANCE_RESEARCH"),
+            order("envoy", 9, "ENVOY"),
+        ];
+        assert_eq!(hold_deals_beside_an_alliance(&mut orders), 3);
+        let left: Vec<(&str, i64)> = orders
+            .iter()
+            .map(|order| (order.kind, order.subject.unwrap()))
+            .collect();
+        assert_eq!(left, vec![("friendship", 2), ("alliance", 2), ("envoy", 9)]);
+        let mut quiet = vec![
+            order("sell", 3, "RESOURCE_NITER=10"),
+            order("buy", 1, "OPEN_BORDERS"),
+        ];
+        assert_eq!(hold_deals_beside_an_alliance(&mut quiet), 0);
+        assert_eq!(quiet.len(), 2);
+    }
+
     /// See `drop_deals_beside_war_or_peace`: a sale to the rival we declare on
     /// is dropped so the declaration gets the diplomacy session; deals with
     /// anyone else, and the war itself, stand.
@@ -12929,6 +13141,168 @@ mod tests {
         );
         // And the preview never touched the caller's board.
         assert_ne!(planned.current, 0);
+    }
+
+    fn released_queue_progress_board(producing: Option<&str>) -> (Snapshot, StateSnapshot) {
+        let (snapshot, mut state) = production_board();
+        state.cities[0].producing = producing.map(str::to_string);
+        state.cities[0].production = 6.0;
+        state.cities[0].production_cost = 55.0;
+        state.cities[0].production_progress = 17.0;
+        state.cities[0].production_turns = 7.0;
+        (snapshot, state)
+    }
+
+    #[test]
+    fn released_queue_progress_stays_with_the_original_settler() {
+        use civvis::game::Item;
+        let (snapshot, state) = released_queue_progress_board(Some("UNIT_SETTLER"));
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
+        let cid = mirror.cid_of[&7];
+        let mut planned = mirror.game.clone();
+        let ours = std::collections::BTreeMap::from([(7, "UNIT_BUILDER".to_string())]);
+        assert_eq!(
+            release_foreign_production(&mut planned, &mirror.cid_of, &state, &ours),
+            1
+        );
+        assert!(planned.cities[&cid].queue.is_empty());
+        assert_eq!(
+            planned.cities[&cid].production, 0.0,
+            "the Settler's 17 paid production is not free overflow for another item"
+        );
+        assert_eq!(
+            planned.cities[&cid].production_progress.get("unit:settler"),
+            Some(&17.0)
+        );
+        planned
+            .apply(
+                0,
+                &Action::Produce {
+                    city: cid,
+                    item: Item::Unit {
+                        unit: "scout".into(),
+                    },
+                },
+            )
+            .expect("a legal unrelated replacement");
+        assert_eq!(planned.cities[&cid].production, 0.0);
+        planned
+            .apply(
+                0,
+                &Action::Produce {
+                    city: cid,
+                    item: Item::Unit {
+                        unit: "settler".into(),
+                    },
+                },
+            )
+            .expect("resume the original Settler");
+        assert_eq!(planned.cities[&cid].production, 17.0);
+        assert_eq!(mirror.game.cities[&cid].production, 17.0);
+        assert_eq!(
+            mirror.game.cities[&cid].queue[0],
+            Item::Unit {
+                unit: "settler".into()
+            }
+        );
+    }
+
+    #[test]
+    fn released_queue_progress_keeps_other_paused_work_separate() {
+        use civvis::game::Item;
+        let (snapshot, state) = released_queue_progress_board(Some("UNIT_SETTLER"));
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
+        let cid = mirror.cid_of[&7];
+        let mut planned = mirror.game.clone();
+        planned
+            .cities
+            .get_mut(&cid)
+            .unwrap()
+            .production_progress
+            .insert("building:monument".to_string(), 11.0);
+        planned
+            .cities
+            .get_mut(&cid)
+            .unwrap()
+            .queue
+            .push(Item::Unit {
+                unit: "warrior".into(),
+            });
+        assert_eq!(
+            release_foreign_production(
+                &mut planned,
+                &mirror.cid_of,
+                &state,
+                &std::collections::BTreeMap::new()
+            ),
+            1
+        );
+        assert_eq!(
+            planned.cities[&cid].production_progress.get("unit:settler"),
+            Some(&17.0),
+            "releasing the head keeps its own paid work"
+        );
+        assert!(planned.cities[&cid].queue.is_empty());
+        assert!(!planned.cities[&cid]
+            .production_progress
+            .contains_key("unit:warrior"));
+        planned
+            .apply(
+                0,
+                &Action::Produce {
+                    city: cid,
+                    item: Item::Building {
+                        building: "monument".into(),
+                    },
+                },
+            )
+            .expect("resume a separately paid Monument");
+        assert_eq!(planned.cities[&cid].production, 11.0);
+    }
+
+    #[test]
+    fn released_queue_progress_leaves_owned_work_active() {
+        let (snapshot, state) = released_queue_progress_board(Some("UNIT_SETTLER"));
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
+        let cid = mirror.cid_of[&7];
+        let mut planned = mirror.game.clone();
+        let ours = std::collections::BTreeMap::from([(7, "UNIT_SETTLER".to_string())]);
+        assert_eq!(
+            release_foreign_production(&mut planned, &mirror.cid_of, &state, &ours),
+            0
+        );
+        assert_eq!(planned.cities[&cid].production, 17.0);
+        assert_eq!(planned.cities[&cid].queue, mirror.game.cities[&cid].queue);
+    }
+
+    #[test]
+    fn released_queue_progress_leaves_real_idle_overflow_available() {
+        use civvis::game::Item;
+        let (snapshot, state) = released_queue_progress_board(None);
+        let mirror = civvis::mirror::LiveMirror::new(&snapshot, &state, 2, 1, 500, 0);
+        let cid = mirror.cid_of[&7];
+        let mut planned = mirror.game.clone();
+        assert_eq!(
+            release_foreign_production(
+                &mut planned,
+                &mirror.cid_of,
+                &state,
+                &std::collections::BTreeMap::new()
+            ),
+            0
+        );
+        planned
+            .apply(
+                0,
+                &Action::Produce {
+                    city: cid,
+                    item: Item::Unit {
+                        unit: "scout".into(),
+                    },
+                },
+            )
+            .expect("a legal item may use actual unassigned overflow");
+        assert_eq!(planned.cities[&cid].production, 17.0);
     }
 
     #[test]
@@ -16658,8 +17032,10 @@ mod tests {
     }
 
     /// A friendship and nothing else crosses as the host's `DECLARE_FRIEND`
-    /// session (DiplomacyActionView.lua:472-473); a deal that bundles
-    /// anything else with it has no host counterpart and stays skipped.
+    /// session (DiplomacyActionView.lua:472-473); the planner's alliance
+    /// bundle crosses as the agent's `alliance` arm (friendship first, then
+    /// the ALLIANCE agreement); a deal that bundles passage or gold has no
+    /// host counterpart and stays skipped.
     #[test]
     fn a_friendship_only_deal_crosses_as_a_declare_friend_session() {
         let snapshot = Snapshot::from_chunks(&[TilesChunk {
@@ -16703,12 +17079,48 @@ mod tests {
         assert_eq!(order.verb.as_deref(), Some("DECLARE_FRIEND"));
         assert_eq!(order.pos, None);
 
+        // The planner's alliance bundle (`propose_strategic_alliance` sets
+        // friendship and, under `no_free_passage` off, passage with it).
+        for (kind, host) in [
+            ("research", "ALLIANCE_RESEARCH"),
+            ("cultural", "ALLIANCE_CULTURAL"),
+            ("religious", "ALLIANCE_RELIGIOUS"),
+            ("military", "ALLIANCE_MILITARY"),
+            ("economic", "ALLIANCE_ECONOMIC"),
+        ] {
+            for open_borders in [false, true] {
+                let order = translate(
+                    &deal(open_borders, Some(kind), 0.0, 0.0, false),
+                    &mirror,
+                    &state,
+                )
+                .expect("an alliance bundle crosses");
+                assert_eq!(order.kind, "alliance");
+                assert_eq!(order.subject, Some(4));
+                assert_eq!(order.verb.as_deref(), Some(host));
+            }
+        }
+        assert!(
+            translate(
+                &deal(false, Some("imperial"), 0.0, 0.0, false),
+                &mirror,
+                &state
+            )
+            .is_none(),
+            "an alliance kind the host has no type for is skipped"
+        );
+        assert!(
+            translate(
+                &deal(false, Some("research"), 30.0, 0.0, false),
+                &mirror,
+                &state
+            )
+            .is_none(),
+            "an alliance with gold bundled stays skipped"
+        );
+
         for (label, bundled) in [
             ("passage", deal(true, None, 0.0, 0.0, false)),
-            (
-                "an alliance",
-                deal(false, Some("military"), 0.0, 0.0, false),
-            ),
             ("gold given", deal(false, None, 30.0, 0.0, false)),
             ("gold asked", deal(false, None, 0.0, 30.0, false)),
         ] {
@@ -17271,23 +17683,36 @@ mod tests {
         // ... at the engine's own book per point (2.0 here), not a flat Gold.
         assert_eq!(orders[0].pos, Some((300, 0)));
 
-        // A Diplomacy plan sells its surplus too: the favor it was holding
-        // buys only EXTRA votes, and those never register. Run
-        // civvis-20260819T054901Z banked 566 points to t222 and cast none of
-        // them, losing to the rival diplomatic victory it was saving for.
-        for diplomatic in [
-            Some(("diplomacy", None)),
-            Some(("expansion", Some("diplomatic"))),
-        ] {
-            let mut sold = Vec::new();
-            assert_eq!(
-                append_favor_sale_order(diplomatic, &state, &mut sold, 2.0),
-                None,
-                "the diplomatic lane no longer banks what it cannot cast"
-            );
-            assert_eq!(sold.len(), 1, "and the surplus reaches a buyer");
-            assert_eq!(sold[0].verb.as_deref(), Some("FAVOR=150"));
-        }
+        // A Diplomacy STRATEGY on a seat assigned some other lane sells its
+        // surplus: the agent's ballot for that seat banks for denial only.
+        // Run civvis-20260819T054901Z banked 566 points to t222 and cast none
+        // of them, losing to the rival diplomatic victory it was saving for.
+        let mut sold = Vec::new();
+        assert_eq!(
+            append_favor_sale_order(Some(("diplomacy", None)), &state, &mut sold, 2.0),
+            None
+        );
+        assert_eq!(sold.len(), 1, "and the surplus reaches a buyer");
+        assert_eq!(sold[0].verb.as_deref(), Some("FAVOR=150"));
+
+        // A seat ASSIGNED the Diplomatic lane holds every point: its ballot
+        // (`CivvisDiploRacer`) buys its own participation points and claims
+        // with them, and purchased votes register now.
+        let racer = Some(("expansion", Some("diplomatic")));
+        let mut kept = Vec::new();
+        assert_eq!(
+            append_favor_sale_order(racer, &state, &mut kept, 2.0),
+            Some("favor_hold:diplomatic_lane")
+        );
+        assert!(kept.is_empty());
+        let mut racer_quote = vec![Order {
+            kind: "sell",
+            subject: Some(2),
+            verb: Some("FAVOR=10".to_string()),
+            pos: Some((10, 0)),
+        }];
+        assert_eq!(hold_planner_favor_sales(racer, &state, &mut racer_quote), 1);
+        assert!(racer_quote.is_empty());
 
         // No plan report still holds: an unknown intent is not licence to sell.
         let mut held = Vec::new();
@@ -21081,6 +21506,102 @@ mod order_postcondition_tests {
             check(&denounce, &before, &after, &[]),
             failed("player_unseen")
         );
+    }
+
+    /// The planner's alliance is proven by either step landing: ALLIED on the
+    /// next frame, or the declared friendship it asked first.
+    #[test]
+    fn an_alliance_is_verified_by_the_alliance_or_the_friendship_it_asked() {
+        let rival = |state: &str, since: Option<i64>| StateRival {
+            player: 2,
+            diplomatic_state: Some(state.to_string()),
+            friendship_turn: since,
+            ..StateRival::default()
+        };
+        let mut before = frame(120);
+        before.rivals = vec![rival("DIPLO_STATE_DECLARED_FRIEND", Some(100))];
+        let alliance = order("alliance", Some(2), Some("ALLIANCE_RESEARCH"), None);
+        let mut after = frame(121);
+        after.rivals = vec![rival("DIPLO_STATE_ALLIED", Some(100))];
+        assert_eq!(check(&alliance, &before, &after, &[]), Verdict::Verified);
+        after.rivals = vec![rival("DIPLO_STATE_DECLARED_FRIEND", Some(120))];
+        assert_eq!(
+            check(&alliance, &before, &after, &[]),
+            Verdict::Verified,
+            "the friendship step landed"
+        );
+        after.rivals = vec![rival("DIPLO_STATE_DECLARED_FRIEND", Some(100))];
+        assert_eq!(check(&alliance, &before, &after, &[]), failed("not_allied"));
+        after.rivals = vec![rival("DIPLO_STATE_FRIENDLY", None)];
+        assert_eq!(check(&alliance, &before, &after, &[]), failed("not_allied"));
+        after.rivals = Vec::new();
+        assert_eq!(
+            check(&alliance, &before, &after, &[]),
+            failed("player_unseen")
+        );
+    }
+
+    /// Alliance orders cross only on a seat assigned the Diplomatic lane.
+    #[test]
+    fn alliance_orders_cross_on_the_diplomatic_lane_or_an_armed_culture_or_science_seat() {
+        let batch = || {
+            vec![
+                Order {
+                    kind: "alliance",
+                    subject: Some(2),
+                    verb: Some("ALLIANCE_RESEARCH".to_string()),
+                    pos: None,
+                },
+                Order {
+                    kind: "sell",
+                    subject: Some(2),
+                    verb: Some("RESOURCE_DYES=1".to_string()),
+                    pos: Some((56, 0)),
+                },
+            ]
+        };
+        let mut kept = batch();
+        assert_eq!(
+            drop_off_lane_alliances(Some(("expansion", Some("diplomatic"))), false, &mut kept),
+            0
+        );
+        assert_eq!(kept.len(), 2);
+        // `culture-seat-allies`: a Culture seat keeps them while the gene is
+        // armed, and only a Culture seat.
+        let mut kept = batch();
+        assert_eq!(
+            drop_off_lane_alliances(Some(("culture", Some("culture"))), true, &mut kept),
+            0
+        );
+        assert_eq!(kept.len(), 2);
+        let mut orders = batch();
+        assert_eq!(
+            drop_off_lane_alliances(Some(("conquest", Some("domination"))), true, &mut orders),
+            1,
+            "the seat genes open the Culture and Science lanes only"
+        );
+        // `science-seat-allies`: a Science seat keeps them while armed.
+        let mut kept = batch();
+        assert_eq!(
+            drop_off_lane_alliances(Some(("science", Some("science"))), true, &mut kept),
+            0
+        );
+        assert_eq!(kept.len(), 2);
+        for plan in [
+            None,
+            Some(("diplomacy", None)),
+            Some(("conquest", Some("domination"))),
+            Some(("culture", Some("culture"))),
+        ] {
+            let mut orders = batch();
+            assert_eq!(
+                drop_off_lane_alliances(plan, false, &mut orders),
+                1,
+                "{plan:?}"
+            );
+            assert_eq!(orders.len(), 1);
+            assert_eq!(orders[0].kind, "sell");
+        }
     }
 
     /// A friendship is verified by the host's own `GetDeclaredFriendshipTurn`

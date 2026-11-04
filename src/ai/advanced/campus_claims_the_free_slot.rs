@@ -92,6 +92,11 @@ impl AdvancedAi {
         {
             return None;
         }
+        // `culture-seat-theater-first`: a Culture seat's Theater Square takes
+        // this city's slot first.
+        if self.culture_theater_item(g, pid, cid, plan).is_some() {
+            return None;
+        }
         let item = BasicAi::first_campus_item(g, pid, cid)?;
         let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
             g.item_cost_for(pid, &item) / g.city_yields(cid).production.max(0.5)

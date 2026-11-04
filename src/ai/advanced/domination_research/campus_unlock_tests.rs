@@ -152,3 +152,53 @@ fn the_campus_unlock_goes_ahead_of_the_luxury_connection_under_the_gene() {
     assert_ne!(stock.as_deref(), Some("writing"), "stock: {stock:?}");
     assert_eq!(pick(true).as_deref(), Some("writing"));
 }
+
+/// `campus-unlock-every-lane`: a Culture or Religion seat in the same
+/// two-city opening holds no Writing goal of its own; under the gene it takes
+/// the unlock the Domination seat takes.
+#[test]
+fn every_lane_takes_the_campus_unlock_under_the_gene() {
+    for target in [VictoryTarget::Culture, VictoryTarget::Religion] {
+        let pick = |gene: bool| {
+            let (mut g, mut ai, plan) = opening();
+            ai.victory_target = Some(target);
+            if gene {
+                ai.enable_campus_unlock_every_lane();
+            }
+            assert_eq!(ai.domination_campus_unlock_goal(&g, 0), None);
+            ai.advanced_research(&mut g, 0, &plan);
+            g.players[0].research.clone()
+        };
+        let stock = pick(false);
+        assert_ne!(
+            stock.as_deref(),
+            Some("writing"),
+            "{target:?} stock: {stock:?}"
+        );
+        assert_eq!(pick(true).as_deref(), Some("writing"), "{target:?}");
+    }
+}
+
+/// The every-lane goal is bounded like the Domination one: the gene, two
+/// cities, and Writing still missing.
+#[test]
+fn the_every_lane_goal_is_bounded_to_a_missing_unlock() {
+    let (mut g, mut ai, _) = opening();
+    ai.victory_target = Some(VictoryTarget::Culture);
+    assert_eq!(ai.every_lane_campus_unlock_goal(&g, 0), None);
+    ai.enable_campus_unlock_every_lane();
+    assert_eq!(ai.every_lane_campus_unlock_goal(&g, 0), Some("writing"));
+    let second = g.player_city_ids(0)[1];
+    g.cities.get_mut(&second).unwrap().owner = 1;
+    assert_eq!(ai.every_lane_campus_unlock_goal(&g, 0), None);
+    g.cities.get_mut(&second).unwrap().owner = 0;
+    g.players[0].techs.insert(name!("writing"));
+    assert_eq!(ai.every_lane_campus_unlock_goal(&g, 0), None);
+}
+
+#[test]
+fn campus_unlock_every_lane_is_a_native_opt_in_off_in_both_controllers() {
+    super::super::test_support::opt_in_off_in_both_controllers("campus-unlock-every-lane", |ai| {
+        ai.campus_unlock_every_lane
+    });
+}

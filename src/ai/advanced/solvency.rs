@@ -162,24 +162,36 @@ impl AdvancedAi {
             + if capital { effect("capital_gold") } else { 0.0 }
     }
 
-    /// The Gold a turn upgrading `uid` to `target` adds to the unit bill, from
-    /// the ruleset's maintenance and the formation multiplier.
+    /// The estimated Gold a turn an upgrade adds after the per-unit discount.
+    /// A native current bill already includes formation. The successor's bill
+    /// remains modeled; no native successor maintenance quote is exported.
     pub(super) fn upgrade_upkeep_delta(g: &Game, uid: u32, target: Name) -> f64 {
         let Some(unit) = g.units.get(&uid) else {
             return 0.0;
         };
+        let Some(successor) = g.rules.units.get(&target) else {
+            return 0.0;
+        };
+        if g.is_arena() {
+            return 0.0;
+        }
         let formation = match unit.formation {
             1 => 1.5,
             2.. => 2.0,
             _ => 1.0,
         };
-        let old = g.rules.units[unit.kind].maintenance;
-        let new = g
-            .rules
-            .units
-            .get(&target)
-            .map_or(old, |spec| spec.maintenance);
-        (new - old) * formation
+        let old = g
+            .host_unit_facts
+            .get(&uid)
+            .and_then(|facts| facts.maintenance)
+            .unwrap_or(g.rules.units[unit.kind].maintenance * formation)
+            .max(0.0);
+        let new = successor.maintenance * formation;
+        let discount = g.policy_effect(unit.owner, "unit_maintenance_discount");
+        // The zero floor applies to EACH bill. Subtracting gross maintenance
+        // first overprices upgrades from units already covered by the card.
+        // Both units are military, so their per-unit surcharge cancels.
+        (new - discount).max(0.0) - (old - discount).max(0.0)
     }
 
     /// `bankruptcy-exits-the-drain`: income is negative and the treasury holds

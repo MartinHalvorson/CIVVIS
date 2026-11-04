@@ -673,8 +673,12 @@ DEPLOYMENT_FIELD = {
 #: the live seat's shape). Recorded the same way, and read with care: the
 #: win column of such a source is a statement about the seat against
 #: handicapped rivals, not the self-play column beside it (`column_estimate`).
+#: `rival_rung` / `rival_pace` (2026-10-31) say how a `firaxis-faithful`
+#: field was held down to the live one (`--rival-rung`, `--rival-pace`).
+#: Recorded the same way: a calibrated field is a different opponent.
 RECORDED_WHEN_SET = ("victory_mask", "difficulty", "difficulty_rotate", "rivals",
-                     "handicap", "rival_chairs", "player_contract", "target_mix")
+                     "handicap", "rival_chairs", "player_contract", "target_mix",
+                     "rival_rung", "rival_pace")
 #: The profile keys recorded for every source, whether or not they match. The
 #: draw `design` is recorded and NOT checked: it is how each seat's genome was
 #: sampled (`independent` — every seat its own draw, the screen since

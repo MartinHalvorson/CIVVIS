@@ -1,0 +1,22 @@
+{
+  "observed_utc": "2026-10-25T23:09:30.046683+00:00",
+  "validation": [
+    "python3 docs/eval/2026-10-25-native-income-continuity/verify.py: exit0, 1228 complete payload comparisons; four full5336-read controls; two full132-event traces; exact native interruption receipt; all8census members/aggregate assertions; decompressed patch SHA vs source manifest",
+    "Python compile syntax check: exit0",
+    "git diff --cached --check: exit0 after exact-byte patch compression"
+  ],
+  "retained_preflight_failure": "preflight-v1-failure.json",
+  "scope": "Evidence-only archive and independent verifier. No production/controller change, no additional game or native inputs. Full hosted gates still required before merge.",
+  "artifacts_before_this_receipt": {
+    "README.txt": "14b28be1f5456aabb70f5529358f063b36f83fb46264fe4558c31ea088c8eba2",
+    "complete-market-traces.json.gz": "3c619fb37ea8d44fa7f4bddf62e17eed154876383f27945684e13d355bbc98de",
+    "completion-continuity.py": "a54fd57829108414837a0e9a78966c9a10ce781c8cb88b85160c004d7d191a1c",
+    "diagnostic-root.patch.gz": "3c25561ecda155f86786c374718de33956c67273ebca321f635c279641ce93e1",
+    "income-eight.json.gz": "c9d8eec3e378799ac61b7106de357f2c4750bd46cd95ad134df729ba6cf1849a",
+    "preflight-v1-failure.json": "3cd63b3c02347af6c7322632e93a4831051572c038414803929aa4d0c4042c10",
+    "qualified-market.json.gz": "f264168bb331c65eabc43c1173b29a6160465ffb8374642825c470bfe7fb8037",
+    "registration.json": "60ac204846dbe4f9b2fc5deb23521d1bd6d57eb96528ad07c3544f4541d225bd",
+    "source-manifest.json.gz": "1382e1fe6e2c59efe2c4227cba662521d1937523b48debcf7621173027a3ba2a",
+    "verify.py": "a57661479443f71f1e12a56ecda5fe1cf29c4a56876c1ae2f0fdb384e1ad49fc"
+  }
+}

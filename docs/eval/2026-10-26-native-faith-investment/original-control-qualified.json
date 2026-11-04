@@ -1,0 +1,20 @@
+{
+  "scope": "Exact original control qualification; no private caller or treatment efficacy claim.",
+  "controls": [
+    {
+      "passed": true,
+      "requests": 264,
+      "read_count": 4587,
+      "all_complete_payloads_match": true,
+      "all_ordered_reads_match": true
+    },
+    {
+      "passed": true,
+      "requests": 264,
+      "read_count": 4587,
+      "all_complete_payloads_match": true,
+      "all_ordered_reads_match": true
+    }
+  ],
+  "qualification_sha256": "ef6f68690714535e0cb6990b1ba826d8d68777febb77c08fc25a011baa997702"
+}

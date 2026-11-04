@@ -7672,6 +7672,65 @@ fn nuclear_doctrine_hits_a_rival_spaceport_before_a_harder_city() {
     );
 }
 
+/// `nuclear-goal-needs-a-launcher`: the base picker's project fallbacks leave
+/// the nuclear projects alone too. Live Immortal civvis-20261026T162405Z put
+/// three cities on the Manhattan Project through `pick_item` at turn 200.
+#[test]
+fn the_base_picker_bars_the_nuclear_projects_under_the_gene() {
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    assert!(!ai.base.nuclear_project_barred("manhattan_project"), "off");
+    ai.enable_nuclear_goal_needs_a_launcher();
+    for project in [
+        "manhattan_project",
+        "operation_ivy",
+        "build_nuclear_device",
+        "build_thermonuclear_device",
+    ] {
+        assert!(ai.base.nuclear_project_barred(project), "{project}");
+    }
+    assert!(!ai.base.nuclear_project_barred("launch_moon_landing"));
+    ai.disable_nuclear_goal_needs_a_launcher();
+    assert!(!ai.base.nuclear_project_barred("manhattan_project"));
+}
+
+/// `nuclear-goal-needs-a-launcher`: on a seat that cannot launch a device the
+/// goal is gone, and with it the value of every nuclear project.
+#[test]
+fn the_nuclear_goal_needs_a_launcher_under_the_gene() {
+    let (game, _, _, spaceport_city, _) = nuclear_war_fixture();
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Domination);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Conquest,
+        target_player: Some(1),
+        target_city: Some(spaceport_city),
+        threatened_city: None,
+        desired_cities: 4,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    assert!(
+        ai.nuclear_war_goal(&game, 0, GrandStrategy::Conquest, Some(1))
+            .is_some(),
+        "off: the revealed launch site is a goal"
+    );
+    assert!(ai.nuclear_project_value(&game, 0, "manhattan_project", &plan) > 0.0);
+    ai.enable_nuclear_goal_needs_a_launcher();
+    assert!(ai
+        .nuclear_war_goal(&game, 0, GrandStrategy::Conquest, Some(1))
+        .is_none());
+    for project in [
+        "manhattan_project",
+        "operation_ivy",
+        "build_nuclear_device",
+        "build_thermonuclear_device",
+    ] {
+        assert!(
+            ai.nuclear_project_value(&game, 0, project, &plan) <= -10_000.0,
+            "{project}"
+        );
+    }
+}
+
 #[test]
 fn nuclear_program_beelines_only_for_a_reachable_goal_and_stops_at_its_arsenal() {
     let (mut game, launch_city, fortress_city, spaceport_city, spaceport) = nuclear_war_fixture();
@@ -16040,6 +16099,60 @@ fn a_district_keyed_great_work_veto_exempts_the_government_plaza() {
     );
     assert!(!AdvancedAi::new().great_work_veto_by_district);
     assert!(!AdvancedAi::legacy().great_work_veto_by_district);
+}
+
+/// `diplomatic_lane_refuses_fossil_power`: the assigned Diplomatic lane never
+/// prices a Coal or Oil Power Plant (or a reactor conversion to either); the
+/// Nuclear plant, every other lane and a lost lane are untouched.
+#[test]
+fn a_diplomatic_seat_burns_no_coal_or_oil() {
+    let (game, capital, _home) = empire_with_a_capital(71_116);
+    let plan = StrategicPlan {
+        strategy: GrandStrategy::Diplomacy,
+        target_player: None,
+        target_city: None,
+        threatened_city: None,
+        desired_cities: 3,
+        assessed_turn: game.turn,
+        rush: false,
+    };
+    let counts = EmpireCounts::default();
+    let building = |name: &str| Item::Building {
+        building: crate::name::Name::new(name),
+    };
+    let mut diplomatic = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    diplomatic.refresh_research_weight(&game);
+    let science = AdvancedAi::targeting(VictoryTarget::Science);
+
+    for fossil in ["coal_power_plant", "oil_power_plant"] {
+        assert!(diplomatic.diplomatic_lane_refuses_fossil_power(fossil));
+        assert!(!science.diplomatic_lane_refuses_fossil_power(fossil));
+        assert!(!AdvancedAi::new().diplomatic_lane_refuses_fossil_power(fossil));
+        assert_eq!(
+            diplomatic.production_value(&game, 0, capital, &building(fossil), &plan, &counts),
+            -10_000.0,
+            "{fossil} is refused on the diplomatic seat"
+        );
+    }
+    assert!(!diplomatic.diplomatic_lane_refuses_fossil_power("nuclear_power_plant"));
+    assert!(!diplomatic.diplomatic_lane_refuses_fossil_power("factory"));
+
+    let mut lost = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    lost.lane_lost = true;
+    assert!(!lost.diplomatic_lane_refuses_fossil_power("coal_power_plant"));
+
+    // The turn hands the refusal to the baseline governor that fills a
+    // delegating lane's routine queues (`BasicAi::exclude_fossil_power`).
+    let mut game = game;
+    let mut seat = AdvancedAi::targeting(VictoryTarget::Diplomacy);
+    seat.take_turn(&mut game, 0);
+    assert!(
+        seat.base.exclude_fossil_power,
+        "a diplomatic seat's governor refuses them"
+    );
+    let mut other = AdvancedAi::targeting(VictoryTarget::Culture);
+    other.take_turn(&mut game, 0);
+    assert!(!other.base.exclude_fossil_power, "another lane's does not");
 }
 
 /// The debt was previously checked only on an untargeted controller, even
@@ -47966,7 +48079,7 @@ fn settler_site_gate_is_off_by_default_and_reads_the_live_board() {
         .settle_sites(&game, 0, capital, 11)
         .into_iter()
         .filter(|(site, _)| {
-            ai.exhaustion_site_unpriceable(&game, *site).is_none()
+            ai.exhaustion_site_unpriceable(&game, 0, *site).is_none()
                 && !AdvancedAi::inside_rival_sphere(&game, 0, *site)
         })
         .collect();
@@ -52614,3 +52727,5 @@ fn native_campus_finish_invalid_host_quotes_keep_emergency_defense() {
         }
     }
 }
+
+mod recovery_before_amenities;

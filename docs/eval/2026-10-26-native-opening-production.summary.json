@@ -1,0 +1,704 @@
+{
+  "scope": "Summarize the fixed census without selecting a favorable captured-read variant.",
+  "turns": [
+    {
+      "turn": 10,
+      "known_queue_standings": 16,
+      "queue_ratio_median": 0.3157894736842105,
+      "below_one_third": 10,
+      "known_same_state_decompositions": 1,
+      "city_ratio_median_known_leaders": 0.5,
+      "population_per_city_ratio_median_known_leaders": 2.6666666666666665,
+      "city_yield_per_population_ratio_median_known_leaders": 0.31694753696547384,
+      "native_city_samples": 16,
+      "allocation_city_samples": 16,
+      "ambiguous_allocation_city_samples": 0,
+      "cities_with_explicit_current_unworked_quote": 2,
+      "pareto_bound_cities": 0,
+      "food_floor_bound_cities": 0,
+      "pareto_one_worker_delta_sum_across_distinct_games": 0,
+      "food_floor_one_worker_delta_sum_across_distinct_games": 0
+    },
+    {
+      "turn": 20,
+      "known_queue_standings": 16,
+      "queue_ratio_median": 0.2686804451510334,
+      "below_one_third": 11,
+      "known_same_state_decompositions": 3,
+      "city_ratio_median_known_leaders": 0.6666666666666666,
+      "population_per_city_ratio_median_known_leaders": 0.6818181818181819,
+      "city_yield_per_population_ratio_median_known_leaders": 0.665857811722782,
+      "native_city_samples": 30,
+      "allocation_city_samples": 30,
+      "ambiguous_allocation_city_samples": 0,
+      "cities_with_explicit_current_unworked_quote": 20,
+      "pareto_bound_cities": 0,
+      "food_floor_bound_cities": 5,
+      "pareto_one_worker_delta_sum_across_distinct_games": 0,
+      "food_floor_one_worker_delta_sum_across_distinct_games": 6
+    },
+    {
+      "turn": 30,
+      "known_queue_standings": 16,
+      "queue_ratio_median": 0.2984375,
+      "below_one_third": 10,
+      "known_same_state_decompositions": 5,
+      "city_ratio_median_known_leaders": 0.75,
+      "population_per_city_ratio_median_known_leaders": 0.75,
+      "city_yield_per_population_ratio_median_known_leaders": 0.4251957220219329,
+      "native_city_samples": 44,
+      "allocation_city_samples": 44,
+      "ambiguous_allocation_city_samples": 0,
+      "cities_with_explicit_current_unworked_quote": 3,
+      "pareto_bound_cities": 0,
+      "food_floor_bound_cities": 0,
+      "pareto_one_worker_delta_sum_across_distinct_games": 0,
+      "food_floor_one_worker_delta_sum_across_distinct_games": 0
+    },
+    {
+      "turn": 40,
+      "known_queue_standings": 16,
+      "queue_ratio_median": 0.31375310687655344,
+      "below_one_third": 9,
+      "known_same_state_decompositions": 8,
+      "city_ratio_median_known_leaders": 0.775,
+      "population_per_city_ratio_median_known_leaders": 0.7695652173913043,
+      "city_yield_per_population_ratio_median_known_leaders": 0.5389772387894566,
+      "native_city_samples": 54,
+      "allocation_city_samples": 51,
+      "ambiguous_allocation_city_samples": 3,
+      "cities_with_explicit_current_unworked_quote": 21,
+      "pareto_bound_cities": 1,
+      "food_floor_bound_cities": 5,
+      "pareto_one_worker_delta_sum_across_distinct_games": 1,
+      "food_floor_one_worker_delta_sum_across_distinct_games": 5
+    },
+    {
+      "turn": 50,
+      "known_queue_standings": 16,
+      "queue_ratio_median": 0.2969039673711531,
+      "below_one_third": 10,
+      "known_same_state_decompositions": 9,
+      "city_ratio_median_known_leaders": 0.75,
+      "population_per_city_ratio_median_known_leaders": 0.7142857142857143,
+      "city_yield_per_population_ratio_median_known_leaders": 0.5245901639344261,
+      "native_city_samples": 63,
+      "allocation_city_samples": 63,
+      "ambiguous_allocation_city_samples": 0,
+      "cities_with_explicit_current_unworked_quote": 3,
+      "pareto_bound_cities": 0,
+      "food_floor_bound_cities": 2,
+      "pareto_one_worker_delta_sum_across_distinct_games": 0,
+      "food_floor_one_worker_delta_sum_across_distinct_games": 2
+    }
+  ],
+  "turn_50": [
+    {
+      "stem": "civvis-20261026T000859Z",
+      "queue_ratio": 0.19387755102040816,
+      "cities": 3,
+      "population": 9,
+      "public_decomposition": {
+        "city_ratio": 0.5,
+        "city_yield_ratio": 0.1851256418500872,
+        "known": true,
+        "leader": 2,
+        "leader_public": {
+          "city_count": 6,
+          "food": 108,
+          "nuclear_devices": 0,
+          "population": 33,
+          "production": 102.633,
+          "suzerain_count": 1,
+          "thermonuclear_devices": 0,
+          "wonder_count": 2
+        },
+        "own_public": {
+          "city_count": 3,
+          "food": 20,
+          "nuclear_devices": 0,
+          "population": 9,
+          "production": 19,
+          "suzerain_count": 1,
+          "thermonuclear_devices": 0,
+          "wonder_count": 0
+        },
+        "population_per_city_ratio": 0.5454545454545454,
+        "product": 0.18512564185008723,
+        "production_per_population_ratio": 0.6787940201169865,
+        "separate_turn_queue_ratio": 0.19387755102040816
+      },
+      "three_below_by_52": true
+    },
+    {
+      "stem": "civvis-20261026T001624Z",
+      "queue_ratio": 0.45977011494252873,
+      "cities": 6,
+      "population": 25,
+      "public_decomposition": {
+        "city_ratio": 2.0,
+        "city_yield_ratio": 0.48929200194783745,
+        "known": true,
+        "leader": 1,
+        "leader_public": {
+          "city_count": 3,
+          "food": 63,
+          "nuclear_devices": 0,
+          "population": 20,
+          "production": 88.0977,
+          "suzerain_count": 1,
+          "thermonuclear_devices": 0,
+          "wonder_count": 2
+        },
+        "own_public": {
+          "city_count": 6,
+          "food": 71,
+          "nuclear_devices": 0,
+          "population": 25,
+          "production": 43.1055,
+          "suzerain_count": 0,
+          "thermonuclear_devices": 0,
+          "wonder_count": 0
+        },
+        "population_per_city_ratio": 0.625,
+        "product": 0.4892920019478374,
+        "production_per_population_ratio": 0.3914336015582699,
+        "separate_turn_queue_ratio": 0.45977011494252873
+      },
+      "three_below_by_52": false
+    },
+    {
+      "stem": "civvis-20261026T002652Z",
+      "queue_ratio": 0.5324675324675324,
+      "cities": 6,
+      "population": 20,
+      "public_decomposition": {
+        "known": false,
+        "reason": "global_leader_not_in_met_rival_state"
+      },
+      "three_below_by_52": false
+    },
+    {
+      "stem": "civvis-20261026T004001Z",
+      "queue_ratio": 0.45569620253164556,
+      "cities": 5,
+      "population": 19,
+      "public_decomposition": {
+        "city_ratio": 1.25,
+        "city_yield_ratio": 0.4517204904178791,
+        "known": true,
+        "leader": 2,
+        "leader_public": {
+          "city_count": 4,
+          "food": 53,
+          "nuclear_devices": 0,
+          "population": 19,
+          "production": 79.6953,
+          "suzerain_count": 2,
+          "thermonuclear_devices": 0,
+          "wonder_count": 2
+        },
+        "own_public": {
+          "city_count": 5,
+          "food": 52,
+          "nuclear_devices": 0,
+          "population": 19,
+          "production": 36,
+          "suzerain_count": 1,
+          "thermonuclear_devices": 0,
+          "wonder_count": 0
+        },
+        "population_per_city_ratio": 0.7999999999999999,
+        "product": 0.451720490417879,
+        "production_per_population_ratio": 0.45172049041787904,
+        "separate_turn_queue_ratio": 0.45569620253164556
+      },
+      "three_below_by_52": false
+    },
+    {
+      "stem": "civvis-20261026T005035Z",
+      "queue_ratio": 0.1935483870967742,
+      "cities": 3,
+      "population": 15,
+      "public_decomposition": {
+        "city_ratio": 0.6,
+        "city_yield_ratio": 0.19972659840872348,
+        "known": true,
+        "leader": 1,
+        "leader_public": {
+          "city_count": 5,
+          "food": 117,
+          "nuclear_devices": 0,
+          "population": 35,
+          "production": 126.188,
+          "suzerain_count": 1,
+          "thermonuclear_devices": 0,
+          "wonder_count": 1
+        },
+        "own_public": {
+          "city_count": 3,
+          "food": 50,
+          "nuclear_devices": 0,
+          "population": 15,
+          "production": 25.2031,
+          "suzerain_count": 0,
+          "thermonuclear_devices": 0,
+          "wonder_count": 0
+        },
+        "population_per_city_ratio": 0.7142857142857143,
+        "product": 0.19972659840872348,
+        "production_per_population_ratio": 0.4660287296203548,
+        "separate_turn_queue_ratio": 0.1935483870967742
+      },
+      "three_below_by_52": true
+    },
+    {
+      "stem": "civvis-20261026T005810Z",
+      "queue_ratio": 0.5421686746987951,
+      "cities": 6,
+      "population": 22,
+      "public_decomposition": {
+        "city_ratio": 1.5,
+        "city_yield_ratio": 0.5437750757147687,
+        "known": true,
+        "leader": 2,
+        "leader_public": {
+          "city_count": 4,
+          "food": 71,
+          "nuclear_devices": 0,
+          "population": 26,
+          "production": 84.5938,
+          "suzerain_count": 1,
+          "thermonuclear_devices": 0,
+          "wonder_count": 2
+        },
+        "own_public": {
+          "city_count": 6,
+          "food": 61,
+          "nuclear_devices": 0,
+          "population": 22,
+          "production": 46,
+          "suzerain_count": 1,
+          "thermonuclear_devices": 0,
+          "wonder_count": 0
+        },
+        "population_per_city_ratio": 0.5641025641025641,
+        "product": 0.5437750757147687,
+        "production_per_population_ratio": 0.6426432712992721,
+        "separate_turn_queue_ratio": 0.5421686746987951
+      },
+      "three_below_by_52": false
+    },
+    {
+      "stem": "civvis-20261026T011557Z",
+      "queue_ratio": 0.3626373626373626,
+      "cities": 4,
+      "population": 17,
+      "public_decomposition": {
+        "known": false,
+        "reason": "global_leader_not_in_met_rival_state"
+      },
+      "three_below_by_52": false
+    },
+    {
+      "stem": "civvis-20261026T013313Z",
+      "queue_ratio": 0.3064516129032258,
+      "cities": 3,
+      "population": 14,
+      "public_decomposition": {
+        "city_ratio": 0.75,
+        "city_yield_ratio": 0.30899556587376625,
+        "known": true,
+        "leader": 2,
+        "leader_public": {
+          "city_count": 4,
+          "food": 70,
+          "nuclear_devices": 0,
+          "population": 24,
+          "production": 64.0938,
+          "suzerain_count": 2,
+          "thermonuclear_devices": 0,
+          "wonder_count": 0
+        },
+        "own_public": {
+          "city_count": 3,
+          "food": 40,
+          "nuclear_devices": 0,
+          "population": 14,
+          "production": 19.8047,
+          "suzerain_count": 1,
+          "thermonuclear_devices": 0,
+          "wonder_count": 0
+        },
+        "population_per_city_ratio": 0.7777777777777778,
+        "product": 0.30899556587376636,
+        "production_per_population_ratio": 0.529706684355028,
+        "separate_turn_queue_ratio": 0.3064516129032258
+      },
+      "three_below_by_52": true
+    },
+    {
+      "stem": "civvis-20261026T014409Z",
+      "queue_ratio": 0.5116279069767442,
+      "cities": 5,
+      "population": 21,
+      "public_decomposition": {
+        "known": false,
+        "reason": "global_leader_not_in_met_rival_state"
+      },
+      "three_below_by_52": false
+    },
+    {
+      "stem": "civvis-20261026T021028Z",
+      "queue_ratio": 0.2222222222222222,
+      "cities": 2,
+      "population": 10,
+      "public_decomposition": {
+        "city_ratio": 0.4,
+        "city_yield_ratio": 0.2098360655737705,
+        "known": true,
+        "leader": 3,
+        "leader_public": {
+          "city_count": 5,
+          "food": 78,
+          "nuclear_devices": 0,
+          "population": 25,
+          "production": 57.1875,
+          "suzerain_count": 1,
+          "thermonuclear_devices": 0,
+          "wonder_count": 4
+        },
+        "own_public": {
+          "city_count": 2,
+          "food": 26,
+          "nuclear_devices": 0,
+          "population": 10,
+          "production": 12,
+          "suzerain_count": 1,
+          "thermonuclear_devices": 0,
+          "wonder_count": 0
+        },
+        "population_per_city_ratio": 1.0,
+        "product": 0.20983606557377046,
+        "production_per_population_ratio": 0.5245901639344261,
+        "separate_turn_queue_ratio": 0.2222222222222222
+      },
+      "three_below_by_52": true
+    },
+    {
+      "stem": "civvis-20261026T022518Z",
+      "queue_ratio": 0.1875,
+      "cities": 3,
+      "population": 12,
+      "public_decomposition": {
+        "known": false,
+        "reason": "global_leader_not_in_met_rival_state"
+      },
+      "three_below_by_52": true
+    },
+    {
+      "stem": "civvis-20261026T023847Z",
+      "queue_ratio": 0.28735632183908044,
+      "cities": 4,
+      "population": 12,
+      "public_decomposition": {
+        "known": false,
+        "reason": "global_leader_not_in_met_rival_state"
+      },
+      "three_below_by_52": false
+    },
+    {
+      "stem": "civvis-20261026T024315Z",
+      "queue_ratio": 0.22093023255813954,
+      "cities": 3,
+      "population": 12,
+      "public_decomposition": {
+        "known": false,
+        "reason": "global_leader_not_in_met_rival_state"
+      },
+      "three_below_by_52": true
+    },
+    {
+      "stem": "civvis-20261026T025544Z",
+      "queue_ratio": 0.31313131313131315,
+      "cities": 5,
+      "population": 18,
+      "public_decomposition": {
+        "city_ratio": 1.0,
+        "city_yield_ratio": 0.31786280101394165,
+        "known": true,
+        "leader": 1,
+        "leader_public": {
+          "city_count": 5,
+          "food": 75,
+          "nuclear_devices": 0,
+          "population": 24,
+          "production": 100.992,
+          "suzerain_count": 0,
+          "thermonuclear_devices": 0,
+          "wonder_count": 1
+        },
+        "own_public": {
+          "city_count": 5,
+          "food": 50,
+          "nuclear_devices": 0,
+          "population": 18,
+          "production": 32.1016,
+          "suzerain_count": 0,
+          "thermonuclear_devices": 0,
+          "wonder_count": 0
+        },
+        "population_per_city_ratio": 0.75,
+        "product": 0.31786280101394165,
+        "production_per_population_ratio": 0.42381706801858887,
+        "separate_turn_queue_ratio": 0.31313131313131315
+      },
+      "three_below_by_52": true
+    },
+    {
+      "stem": "civvis-20261026T031004Z",
+      "queue_ratio": 0.12295081967213115,
+      "cities": 2,
+      "population": 4,
+      "public_decomposition": {
+        "city_ratio": 0.3333333333333333,
+        "city_yield_ratio": 0.12480775579550853,
+        "known": true,
+        "leader": 3,
+        "leader_public": {
+          "city_count": 6,
+          "food": 87,
+          "nuclear_devices": 0,
+          "population": 30,
+          "production": 124.191,
+          "suzerain_count": 1,
+          "thermonuclear_devices": 0,
+          "wonder_count": 4
+        },
+        "own_public": {
+          "city_count": 2,
+          "food": 10,
+          "nuclear_devices": 0,
+          "population": 4,
+          "production": 15.5,
+          "suzerain_count": 0,
+          "thermonuclear_devices": 0,
+          "wonder_count": 0
+        },
+        "population_per_city_ratio": 0.4,
+        "product": 0.12480775579550851,
+        "production_per_population_ratio": 0.9360581684663138,
+        "separate_turn_queue_ratio": 0.12295081967213115
+      },
+      "three_below_by_52": true
+    },
+    {
+      "stem": "civvis-20261026T032104Z",
+      "queue_ratio": 0.1452991452991453,
+      "cities": 3,
+      "population": 13,
+      "public_decomposition": {
+        "known": false,
+        "reason": "global_leader_not_in_met_rival_state"
+      },
+      "three_below_by_52": true
+    }
+  ],
+  "ambiguous_allocation_cases": [
+    {
+      "stem": "civvis-20261026T032104Z",
+      "turn": 40,
+      "variants": [
+        {
+          "descriptor": {
+            "count": 1,
+            "snapshot_id": 86
+          },
+          "input_sha256": "67ab9c66e984b903b981ab1522aa68d8ad848924ee8bc66fce151e10027a427f",
+          "current_plot_count": 0,
+          "bounds": [
+            {
+              "city": {
+                "id": 65536,
+                "name": "Bogot\u00e1",
+                "pop": 4,
+                "x": 10,
+                "y": 26
+              },
+              "eligible_unworked": 0,
+              "food_floor_tradeoffs": [],
+              "maximum_one_worker_food_floor_tradeoffs_production_delta": 0,
+              "maximum_one_worker_pareto_production_delta": 0,
+              "pareto": [],
+              "scope": "At most one raw terrain-yield exchange; not Native allocation permission or execution.",
+              "specialists": [],
+              "terrain_workers": 4,
+              "unknowns": [
+                "no_eligible_explicit_same_turn_unworked_plot; not proof no opportunity exists"
+              ]
+            },
+            {
+              "city": {
+                "id": 131073,
+                "name": "Panam\u00e1",
+                "pop": 4,
+                "x": 9,
+                "y": 30
+              },
+              "eligible_unworked": 0,
+              "food_floor_tradeoffs": [],
+              "maximum_one_worker_food_floor_tradeoffs_production_delta": 0,
+              "maximum_one_worker_pareto_production_delta": 0,
+              "pareto": [],
+              "scope": "At most one raw terrain-yield exchange; not Native allocation permission or execution.",
+              "specialists": [],
+              "terrain_workers": 4,
+              "unknowns": [
+                "no_eligible_explicit_same_turn_unworked_plot; not proof no opportunity exists"
+              ]
+            },
+            {
+              "city": {
+                "id": 196610,
+                "name": "Guayaquil",
+                "pop": 3,
+                "x": 6,
+                "y": 27
+              },
+              "eligible_unworked": 0,
+              "food_floor_tradeoffs": [],
+              "maximum_one_worker_food_floor_tradeoffs_production_delta": 0,
+              "maximum_one_worker_pareto_production_delta": 0,
+              "pareto": [],
+              "scope": "At most one raw terrain-yield exchange; not Native allocation permission or execution.",
+              "specialists": [],
+              "terrain_workers": 3,
+              "unknowns": [
+                "no_eligible_explicit_same_turn_unworked_plot; not proof no opportunity exists"
+              ]
+            }
+          ]
+        },
+        {
+          "descriptor": {
+            "count": 17,
+            "snapshot_id": 87
+          },
+          "input_sha256": "a3a190ddc1f9805dc5fdc033056eb4da05e907459cf1afe8cb9442e79a00b864",
+          "current_plot_count": 126,
+          "bounds": [
+            {
+              "city": {
+                "id": 65536,
+                "name": "Bogot\u00e1",
+                "pop": 4,
+                "x": 10,
+                "y": 26
+              },
+              "eligible_unworked": 4,
+              "food_floor_tradeoffs": [],
+              "maximum_one_worker_food_floor_tradeoffs_production_delta": 0,
+              "maximum_one_worker_pareto_production_delta": 0,
+              "pareto": [],
+              "scope": "At most one raw terrain-yield exchange; not Native allocation permission or execution.",
+              "specialists": [],
+              "terrain_workers": 4,
+              "unknowns": [
+                {
+                  "plot": [
+                    10,
+                    27
+                  ],
+                  "reason": "missing_native_yield_quote"
+                }
+              ]
+            },
+            {
+              "city": {
+                "id": 131073,
+                "name": "Panam\u00e1",
+                "pop": 4,
+                "x": 9,
+                "y": 30
+              },
+              "eligible_unworked": 3,
+              "food_floor_tradeoffs": [],
+              "maximum_one_worker_food_floor_tradeoffs_production_delta": 0,
+              "maximum_one_worker_pareto_production_delta": 0,
+              "pareto": [],
+              "scope": "At most one raw terrain-yield exchange; not Native allocation permission or execution.",
+              "specialists": [],
+              "terrain_workers": 4,
+              "unknowns": [
+                {
+                  "plot": [
+                    9,
+                    29
+                  ],
+                  "reason": "missing_native_yield_quote"
+                }
+              ]
+            },
+            {
+              "city": {
+                "id": 196610,
+                "name": "Guayaquil",
+                "pop": 3,
+                "x": 6,
+                "y": 27
+              },
+              "eligible_unworked": 3,
+              "food_floor_tradeoffs": [
+                {
+                  "delta": {
+                    "culture": 0,
+                    "faith": 0,
+                    "food": -1,
+                    "gold": 0,
+                    "production": 1,
+                    "science": 0
+                  },
+                  "food_surplus_after_raw_exchange": 3,
+                  "from": [
+                    7,
+                    27
+                  ],
+                  "to": [
+                    6,
+                    26
+                  ]
+                }
+              ],
+              "maximum_one_worker_food_floor_tradeoffs_production_delta": 1,
+              "maximum_one_worker_pareto_production_delta": 0,
+              "pareto": [],
+              "scope": "At most one raw terrain-yield exchange; not Native allocation permission or execution.",
+              "specialists": [],
+              "terrain_workers": 3,
+              "unknowns": [
+                {
+                  "plot": [
+                    5,
+                    27
+                  ],
+                  "reason": "missing_native_yield_quote"
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "case_count": 80,
+  "read_count": 83,
+  "retirement_probe": {
+    "complete": 16,
+    "three_below_by_52": 9,
+    "not_three_below_by_52": 7,
+    "unknown": 0
+  },
+  "turn_50_city_median": 3.5,
+  "turn_50_population_median": 14.5,
+  "source_sha256": "bb042a99cbcd6bbda3ff6781b690791896815b310ae36e6252397e750c759f87"
+}

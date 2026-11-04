@@ -1,0 +1,65 @@
+{
+  "baseline_commit": "6ddd88904",
+  "baseline_worktree": "/Users/martbot-mbp-m5-max-128/civvis-defenders-control-3c67",
+  "candidate_worktree": "/Users/martbot-mbp-m5-max-128/civvis-defenders-skip-recon-3c67",
+  "harness_sha256": "0d6cbce0077d01a5c1886a77e05e5e3555b2168a534e3a36b3e394e159cc2dc3",
+  "copied_module_sha256": "67f6ab457a2200a80ecd8223615236d40e94713e2784c356b435e1157391da05",
+  "profile": "ci",
+  "safest_stand": true,
+  "native_equivalence_claim": false,
+  "assignments": [
+    {
+      "difficulty": "immortal",
+      "seed": 59010625,
+      "builds": [
+        "baseline",
+        "candidate"
+      ],
+      "replacement": false
+    },
+    {
+      "difficulty": "immortal",
+      "seed": 59010626,
+      "builds": [
+        "baseline",
+        "candidate"
+      ],
+      "replacement": false
+    },
+    {
+      "difficulty": "deity",
+      "seed": 59010627,
+      "builds": [
+        "baseline",
+        "candidate"
+      ],
+      "replacement": false
+    },
+    {
+      "difficulty": "deity",
+      "seed": 59010628,
+      "builds": [
+        "baseline",
+        "candidate"
+      ],
+      "replacement": false
+    }
+  ],
+  "required_evidence": [
+    "initial board equality per seed",
+    "complete canonical actions",
+    "complete terminal board and true engine victory",
+    "full focal journal",
+    "all failed attempts and missing games retained",
+    "exact binaries/source/rules/profile hashes"
+  ],
+  "original_harness_sha256": "0beca244011e8bd2b00560ffae59015c37bfd358a0b28956f7c9de5655b40e55",
+  "instrumentation_control": {
+    "seed": 59010625,
+    "difficulty": "immortal",
+    "baseline_commit": "6ddd88904",
+    "purpose": "Verify removing unreachable test-module declaration and formatting the standalone harness changes no complete board/action/outcome/journal output",
+    "retain_original": true,
+    "replacement": false
+  }
+}

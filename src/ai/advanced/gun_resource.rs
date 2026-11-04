@@ -331,6 +331,39 @@ impl AdvancedAi {
                     && self.air_wing_wants_bombers(g, pid)))
     }
 
+    /// `aluminum-tile-spends-the-war-chest`: the reserve the Aluminum tile buy
+    /// keeps, given the purchase pass's `reserve`: one and a half turns of the
+    /// army's upkeep and a threatened city's emergency defender, never more
+    /// than `reserve`. The purchase pass's base, war-treasury and Settler-fund
+    /// terms exist to keep Gold for the war; the tile is what the war's
+    /// Bombers wait on. `reserve` itself with the gene off.
+    ///
+    /// Live Immortal civvis-20261026T070741Z led the Production table from
+    /// turn 100 to 150 and landed Advanced Flight at 124. From then on it
+    /// held a 135-Gold Aluminum tile 22 times, "would leave less than the
+    /// 1669 reserve", drew no Aluminum until 170, flew no Bomber, kept every
+    /// siege staged against 400 walls, and lost on Culture at 178. Of the 13
+    /// retained games of October 22-26 with the hold, four held it 7-46 turns
+    /// against reserves of 560-1,669 for 100-135-Gold tiles.
+    ///
+    /// Every buy reads the live treasury, so this and the other bypasses
+    /// (`age-closer-spends-the-reserve`'s deficit floor) never spend the same
+    /// Gold twice; `launcher-war-skips-the-reserve` spends none.
+    pub(super) fn aluminum_tile_reserve(
+        &self,
+        g: &Game,
+        pid: usize,
+        plan: &StrategicPlan,
+        reserve: f64,
+    ) -> f64 {
+        if !self.aluminum_tile_spends_the_war_chest {
+            return reserve;
+        }
+        let upkeep = super::gold_and_cards::upgrade_floor_from(0.0, g.unit_gold_maintenance(pid));
+        self.reserve_for_the_threatened_city(g, pid, plan, upkeep)
+            .min(reserve)
+    }
+
     /// `aluminum-buys-the-tile`: buy the cheapest unowned Aluminum tile one
     /// of our cities can buy, while the empire wants Aluminum and draws none,
     /// leaving `reserve` (the purchase pass's, `purchases-keep-the-upkeep-

@@ -1,0 +1,14 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "forward-airfield-project",
+  "scope": "Integrated-source production-path cold-start proposal activation, not Native construction or strength. All fixed 213 cases / 247 reads and all three arms remain retained. Five reads across three decisions propose an offered Encampment. The reservation now survives city-ID rebuilds and unconfirmed construction.",
+  "archive": {
+    "path": "docs/eval/2026-10-26-forward-airfield-project.native-handoff.tar.xz",
+    "sha256": "d58de254f27f9e0241a411c158165c2012b2582d2edafd3ed29773a2e40ab5fb"
+  },
+  "members": [
+    "witnesses/0031/result.json",
+    "witnesses/0046/result.json",
+    "witnesses/0048/result.json"
+  ]
+}

@@ -10771,6 +10771,29 @@ impl Game {
             && !deal.demand
     }
 
+    /// [`Self::quoted_payment`], except on a quote `viewer` asks for while
+    /// it is [`Game::lump_quote_viewer`]: then a payer whose treasury covers
+    /// the price rounded up, above the same reserve, pays exactly that lump
+    /// and nothing per turn. Otherwise the ordinary quote.
+    pub(super) fn viewer_quoted_payment(
+        &self,
+        viewer: usize,
+        payer: usize,
+        price: f64,
+    ) -> Option<DealItems> {
+        if self.lump_quote_viewer == Some(viewer) && price.is_finite() && price > 0.0 {
+            let lump = price.ceil();
+            let reserve = (self.players[payer].gold * 0.30).min(40.0);
+            if self.players[payer].gold - reserve >= lump {
+                return Some(DealItems {
+                    gold: lump,
+                    ..DealItems::default()
+                });
+            }
+        }
+        self.quoted_payment(payer, price)
+    }
+
     pub(super) fn quoted_payment(&self, payer: usize, price: f64) -> Option<DealItems> {
         if !price.is_finite() || price <= 0.0 {
             return None;
@@ -10808,7 +10831,7 @@ impl Game {
             if maximum <= minimum + 1.0 {
                 return None;
             }
-            let payment = self.quoted_payment(partner, (minimum + maximum) / 2.0)?;
+            let payment = self.viewer_quoted_payment(viewer, partner, (minimum + maximum) / 2.0)?;
             (asset, payment)
         } else {
             let minimum = self.give_items_cost(partner, viewer, &asset);
@@ -10816,7 +10839,7 @@ impl Game {
             if maximum <= minimum + 1.0 {
                 return None;
             }
-            let payment = self.quoted_payment(viewer, (minimum + maximum) / 2.0)?;
+            let payment = self.viewer_quoted_payment(viewer, viewer, (minimum + maximum) / 2.0)?;
             (payment, asset)
         };
         let (my_value, partner_value) = self

@@ -1,0 +1,2625 @@
+{
+  "complete": true,
+  "verified_raw_replies": 756,
+  "verified_canonical_worlds": 42,
+  "source_registration": {
+    "selection_sha256": "bf1a57508f56c508543c5966047606bc5d81b2711d7728801d9921690a0bbc12",
+    "source_sha256": "b8489102e84a01069661b912ee11356821f5458a491501af02e04b4f1e9afc72",
+    "binaries": {
+      "baseline": "09d9616bfe8c1cfb4bb051be4149db29d054e38d5d64d6bb38cbd6d1e3f26dd8",
+      "candidate": "6fe281c35e237d0ea98c59e2ea5805fa6507761d13c57ac8bdf84d066a2f3ab1"
+    },
+    "timeout_seconds": 300,
+    "genome_sha256": "e37bf2c65c20c1e6a5147d5c37b8e10c0aea435baf8ee1fe3fea9f4546a6a0d6"
+  },
+  "selection_sha256": "bf1a57508f56c508543c5966047606bc5d81b2711d7728801d9921690a0bbc12",
+  "rounds": {
+    "control": {
+      "readings": [
+        {
+          "round": 0,
+          "baseline": 38488684,
+          "candidate": 39233038,
+          "change_pct": 1.933955445190061
+        },
+        {
+          "round": 1,
+          "baseline": 39813589,
+          "candidate": 39010851,
+          "change_pct": -2.0162412386383943
+        },
+        {
+          "round": 2,
+          "baseline": 32803448,
+          "candidate": 31576246,
+          "change_pct": -3.7410762429608058
+        }
+      ],
+      "median_change_pct": -2.0162412386383943
+    },
+    "comparison": {
+      "readings": [
+        {
+          "round": 0,
+          "baseline": 39812913,
+          "candidate": 38845954,
+          "change_pct": -2.4287572225624388
+        },
+        {
+          "round": 1,
+          "baseline": 31112517,
+          "candidate": 29655939,
+          "change_pct": -4.6816462968907295
+        },
+        {
+          "round": 2,
+          "baseline": 38450402,
+          "candidate": 37145947,
+          "change_pct": -3.3925653105005282
+        },
+        {
+          "round": 3,
+          "baseline": 32849556,
+          "candidate": 31879281,
+          "change_pct": -2.9536928900956827
+        },
+        {
+          "round": 4,
+          "baseline": 39886447,
+          "candidate": 37988899,
+          "change_pct": -4.757375356095272
+        }
+      ],
+      "median_change_pct": -3.3925653105005282
+    }
+  },
+  "control_adjusted_rounds": [],
+  "control_adjusted_median_change_pct": null,
+  "cases": [
+    {
+      "index": 0,
+      "turn": 50,
+      "pid": 0,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "baseline": 213585,
+            "candidate": 212168,
+            "ratio": 0.9933656389727743
+          },
+          {
+            "round": 1,
+            "candidate": 146303,
+            "baseline": 138055,
+            "ratio": 1.0597443048060555
+          },
+          {
+            "round": 2,
+            "baseline": 128001,
+            "candidate": 129010,
+            "ratio": 1.0078827509160084
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "baseline": 162293,
+            "candidate": 162397,
+            "ratio": 1.000640816301381
+          },
+          {
+            "round": 1,
+            "candidate": 149325,
+            "baseline": 137804,
+            "ratio": 1.0836042495138023
+          },
+          {
+            "round": 2,
+            "baseline": 132513,
+            "candidate": 130820,
+            "ratio": 0.987223895014074
+          },
+          {
+            "round": 3,
+            "candidate": 177386,
+            "baseline": 178336,
+            "ratio": 0.9946729768526825
+          },
+          {
+            "round": 4,
+            "baseline": 136342,
+            "candidate": 130619,
+            "ratio": 0.9580246732481553
+          }
+        ]
+      },
+      "comparison_median_change_pct": -0.5327023147317478
+    },
+    {
+      "index": 1,
+      "turn": 50,
+      "pid": 1,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "candidate": 405846,
+            "baseline": 320587,
+            "ratio": 1.2659465293352508
+          },
+          {
+            "round": 1,
+            "baseline": 223251,
+            "candidate": 240017,
+            "ratio": 1.075099327662586
+          },
+          {
+            "round": 2,
+            "candidate": 205107,
+            "baseline": 201959,
+            "ratio": 1.0155873221792542
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "candidate": 266602,
+            "baseline": 271404,
+            "ratio": 0.9823068193541731
+          },
+          {
+            "round": 1,
+            "baseline": 221763,
+            "candidate": 208483,
+            "ratio": 0.9401162502311026
+          },
+          {
+            "round": 2,
+            "candidate": 207384,
+            "baseline": 211043,
+            "ratio": 0.9826623010476538
+          },
+          {
+            "round": 3,
+            "baseline": 271939,
+            "candidate": 265388,
+            "ratio": 0.9759100386483733
+          },
+          {
+            "round": 4,
+            "candidate": 208516,
+            "baseline": 207514,
+            "ratio": 1.0048285898782732
+          }
+        ]
+      },
+      "comparison_median_change_pct": -1.7693180645826923
+    },
+    {
+      "index": 2,
+      "turn": 50,
+      "pid": 2,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "baseline": 195007,
+            "candidate": 200258,
+            "ratio": 1.0269272385093868
+          },
+          {
+            "round": 1,
+            "candidate": 167439,
+            "baseline": 136657,
+            "ratio": 1.2252500786641007
+          },
+          {
+            "round": 2,
+            "baseline": 122279,
+            "candidate": 121401,
+            "ratio": 0.9928196992124567
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "baseline": 165536,
+            "candidate": 159534,
+            "ratio": 0.9637420259037309
+          },
+          {
+            "round": 1,
+            "candidate": 131347,
+            "baseline": 132402,
+            "ratio": 0.9920318424192988
+          },
+          {
+            "round": 2,
+            "baseline": 126438,
+            "candidate": 122574,
+            "ratio": 0.9694395672187159
+          },
+          {
+            "round": 3,
+            "candidate": 144200,
+            "baseline": 160890,
+            "ratio": 0.8962645285598856
+          },
+          {
+            "round": 4,
+            "baseline": 121561,
+            "candidate": 121299,
+            "ratio": 0.9978447034822023
+          }
+        ]
+      },
+      "comparison_median_change_pct": -3.0560432781284064
+    },
+    {
+      "index": 3,
+      "turn": 50,
+      "pid": 3,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "candidate": 144566,
+            "baseline": 146489,
+            "ratio": 0.9868727344715302
+          },
+          {
+            "round": 1,
+            "baseline": 97805,
+            "candidate": 101536,
+            "ratio": 1.0381473339808802
+          },
+          {
+            "round": 2,
+            "candidate": 85677,
+            "baseline": 86476,
+            "ratio": 0.9907604422036171
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "candidate": 113241,
+            "baseline": 113894,
+            "ratio": 0.9942665987672749
+          },
+          {
+            "round": 1,
+            "baseline": 88445,
+            "candidate": 86033,
+            "ratio": 0.9727288145174967
+          },
+          {
+            "round": 2,
+            "candidate": 86773,
+            "baseline": 90805,
+            "ratio": 0.9555971587467651
+          },
+          {
+            "round": 3,
+            "baseline": 124441,
+            "candidate": 120680,
+            "ratio": 0.9697768420375921
+          },
+          {
+            "round": 4,
+            "candidate": 87468,
+            "baseline": 90154,
+            "ratio": 0.9702065354837278
+          }
+        ]
+      },
+      "comparison_median_change_pct": -2.9793464516272183
+    },
+    {
+      "index": 4,
+      "turn": 50,
+      "pid": 4,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "baseline": 370581,
+            "candidate": 367673,
+            "ratio": 0.9921528626670013
+          },
+          {
+            "round": 1,
+            "candidate": 266316,
+            "baseline": 249039,
+            "ratio": 1.0693746762555263
+          },
+          {
+            "round": 2,
+            "baseline": 219588,
+            "candidate": 221280,
+            "ratio": 1.0077053390895678
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "baseline": 292508,
+            "candidate": 306857,
+            "ratio": 1.049055068579321
+          },
+          {
+            "round": 1,
+            "candidate": 222156,
+            "baseline": 220791,
+            "ratio": 1.006182317214017
+          },
+          {
+            "round": 2,
+            "baseline": 228285,
+            "candidate": 225465,
+            "ratio": 0.9876470201721532
+          },
+          {
+            "round": 3,
+            "candidate": 312946,
+            "baseline": 303215,
+            "ratio": 1.03209273947529
+          },
+          {
+            "round": 4,
+            "baseline": 228497,
+            "candidate": 218697,
+            "ratio": 0.9571110342805376
+          }
+        ]
+      },
+      "comparison_median_change_pct": 0.6182317214016964
+    },
+    {
+      "index": 5,
+      "turn": 50,
+      "pid": 5,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "candidate": 135337,
+            "baseline": 138334,
+            "ratio": 0.9783350441684618
+          },
+          {
+            "round": 1,
+            "baseline": 94678,
+            "candidate": 93518,
+            "ratio": 0.9877479456684763
+          },
+          {
+            "round": 2,
+            "candidate": 82491,
+            "baseline": 82682,
+            "ratio": 0.9976899446070487
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "candidate": 104353,
+            "baseline": 107238,
+            "ratio": 0.9730972229993099
+          },
+          {
+            "round": 1,
+            "baseline": 84249,
+            "candidate": 82343,
+            "ratio": 0.9773765860722382
+          },
+          {
+            "round": 2,
+            "candidate": 84550,
+            "baseline": 86770,
+            "ratio": 0.9744151204333295
+          },
+          {
+            "round": 3,
+            "baseline": 113202,
+            "candidate": 102445,
+            "ratio": 0.904975177117012
+          },
+          {
+            "round": 4,
+            "candidate": 83620,
+            "baseline": 85259,
+            "ratio": 0.980776223038037
+          }
+        ]
+      },
+      "comparison_median_change_pct": -2.558487956667055
+    },
+    {
+      "index": 6,
+      "turn": 100,
+      "pid": 0,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "baseline": 307371,
+            "candidate": 313945,
+            "ratio": 1.0213878342459113
+          },
+          {
+            "round": 1,
+            "candidate": 206335,
+            "baseline": 214690,
+            "ratio": 0.9610834226093437
+          },
+          {
+            "round": 2,
+            "baseline": 184105,
+            "candidate": 180716,
+            "ratio": 0.9815920262893457
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "baseline": 242903,
+            "candidate": 234879,
+            "ratio": 0.9669662375516153
+          },
+          {
+            "round": 1,
+            "candidate": 190000,
+            "baseline": 188862,
+            "ratio": 1.0060255636390592
+          },
+          {
+            "round": 2,
+            "baseline": 190213,
+            "candidate": 183847,
+            "ratio": 0.9665322559446515
+          },
+          {
+            "round": 3,
+            "candidate": 259100,
+            "baseline": 244526,
+            "ratio": 1.0596010240219853
+          },
+          {
+            "round": 4,
+            "baseline": 187839,
+            "candidate": 187486,
+            "ratio": 0.998120731051592
+          }
+        ]
+      },
+      "comparison_median_change_pct": -0.18792689484079528
+    },
+    {
+      "index": 7,
+      "turn": 100,
+      "pid": 1,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "candidate": 328221,
+            "baseline": 350974,
+            "ratio": 0.9351718360904226
+          },
+          {
+            "round": 1,
+            "baseline": 264833,
+            "candidate": 268221,
+            "ratio": 1.0127929676437604
+          },
+          {
+            "round": 2,
+            "candidate": 202518,
+            "baseline": 197639,
+            "ratio": 1.0246864232261852
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "candidate": 259874,
+            "baseline": 238333,
+            "ratio": 1.0903819445901324
+          },
+          {
+            "round": 1,
+            "baseline": 197189,
+            "candidate": 199375,
+            "ratio": 1.0110858110746543
+          },
+          {
+            "round": 2,
+            "candidate": 209234,
+            "baseline": 216519,
+            "ratio": 0.9663539920284132
+          },
+          {
+            "round": 3,
+            "baseline": 290508,
+            "candidate": 279226,
+            "ratio": 0.9611645806655927
+          },
+          {
+            "round": 4,
+            "candidate": 216499,
+            "baseline": 206163,
+            "ratio": 1.0501350872853035
+          }
+        ]
+      },
+      "comparison_median_change_pct": 1.108581107465434
+    },
+    {
+      "index": 8,
+      "turn": 100,
+      "pid": 2,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "baseline": 453415,
+            "candidate": 484338,
+            "ratio": 1.068200213932049
+          },
+          {
+            "round": 1,
+            "candidate": 351113,
+            "baseline": 349282,
+            "ratio": 1.0052421825344564
+          },
+          {
+            "round": 2,
+            "baseline": 298928,
+            "candidate": 275636,
+            "ratio": 0.922081571482096
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "baseline": 322319,
+            "candidate": 312513,
+            "ratio": 0.9695767236805773
+          },
+          {
+            "round": 1,
+            "candidate": 261850,
+            "baseline": 264469,
+            "ratio": 0.9900971380388628
+          },
+          {
+            "round": 2,
+            "baseline": 278254,
+            "candidate": 278063,
+            "ratio": 0.9993135768039273
+          },
+          {
+            "round": 3,
+            "candidate": 356884,
+            "baseline": 325380,
+            "ratio": 1.0968221771467208
+          },
+          {
+            "round": 4,
+            "baseline": 271861,
+            "candidate": 275754,
+            "ratio": 1.0143198178480914
+          }
+        ]
+      },
+      "comparison_median_change_pct": -0.06864231960727052
+    },
+    {
+      "index": 9,
+      "turn": 100,
+      "pid": 3,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "candidate": 572599,
+            "baseline": 501974,
+            "ratio": 1.1406945379641176
+          },
+          {
+            "round": 1,
+            "baseline": 408462,
+            "candidate": 433519,
+            "ratio": 1.061344751776175
+          },
+          {
+            "round": 2,
+            "candidate": 310930,
+            "baseline": 307819,
+            "ratio": 1.010106588612139
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "candidate": 370345,
+            "baseline": 426779,
+            "ratio": 0.8677676268045054
+          },
+          {
+            "round": 1,
+            "baseline": 310897,
+            "candidate": 315352,
+            "ratio": 1.0143295046269343
+          },
+          {
+            "round": 2,
+            "candidate": 315735,
+            "baseline": 320520,
+            "ratio": 0.9850711344065893
+          },
+          {
+            "round": 3,
+            "baseline": 459735,
+            "candidate": 419302,
+            "ratio": 0.9120515079339184
+          },
+          {
+            "round": 4,
+            "candidate": 318318,
+            "baseline": 337239,
+            "ratio": 0.9438943894389439
+          }
+        ]
+      },
+      "comparison_median_change_pct": -5.610561056105611
+    },
+    {
+      "index": 10,
+      "turn": 100,
+      "pid": 4,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "baseline": 443709,
+            "candidate": 412915,
+            "ratio": 0.9305986581295399
+          },
+          {
+            "round": 1,
+            "candidate": 389016,
+            "baseline": 401664,
+            "ratio": 0.9685109942638623
+          },
+          {
+            "round": 2,
+            "baseline": 299700,
+            "candidate": 300114,
+            "ratio": 1.0013813813813814
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "baseline": 417156,
+            "candidate": 404596,
+            "ratio": 0.9698913595873007
+          },
+          {
+            "round": 1,
+            "candidate": 303372,
+            "baseline": 306563,
+            "ratio": 0.9895910465385581
+          },
+          {
+            "round": 2,
+            "baseline": 313637,
+            "candidate": 319040,
+            "ratio": 1.017226921568565
+          },
+          {
+            "round": 3,
+            "candidate": 437250,
+            "baseline": 438770,
+            "ratio": 0.9965357704492103
+          },
+          {
+            "round": 4,
+            "baseline": 312036,
+            "candidate": 311320,
+            "ratio": 0.9977053929674781
+          }
+        ]
+      },
+      "comparison_median_change_pct": -0.34642295507897325
+    },
+    {
+      "index": 11,
+      "turn": 100,
+      "pid": 5,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "candidate": 336739,
+            "baseline": 330454,
+            "ratio": 1.0190192886150569
+          },
+          {
+            "round": 1,
+            "baseline": 287097,
+            "candidate": 291767,
+            "ratio": 1.0162662793411286
+          },
+          {
+            "round": 2,
+            "candidate": 257166,
+            "baseline": 254245,
+            "ratio": 1.0114889181694822
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "candidate": 344317,
+            "baseline": 341905,
+            "ratio": 1.0070545911876105
+          },
+          {
+            "round": 1,
+            "baseline": 258366,
+            "candidate": 282170,
+            "ratio": 1.092132865779553
+          },
+          {
+            "round": 2,
+            "candidate": 261194,
+            "baseline": 262383,
+            "ratio": 0.9954684564167648
+          },
+          {
+            "round": 3,
+            "baseline": 314218,
+            "candidate": 330052,
+            "ratio": 1.050391766225996
+          },
+          {
+            "round": 4,
+            "candidate": 255640,
+            "baseline": 265180,
+            "ratio": 0.9640244362319934
+          }
+        ]
+      },
+      "comparison_median_change_pct": 0.7054591187610537
+    },
+    {
+      "index": 12,
+      "turn": 150,
+      "pid": 0,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "baseline": 523943,
+            "candidate": 541143,
+            "ratio": 1.032827998465482
+          },
+          {
+            "round": 1,
+            "candidate": 492286,
+            "baseline": 556124,
+            "ratio": 0.8852090540958492
+          },
+          {
+            "round": 2,
+            "baseline": 392721,
+            "candidate": 395563,
+            "ratio": 1.0072366896600895
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "baseline": 478736,
+            "candidate": 481570,
+            "ratio": 1.0059197553557702
+          },
+          {
+            "round": 1,
+            "candidate": 419655,
+            "baseline": 406331,
+            "ratio": 1.0327910004405276
+          },
+          {
+            "round": 2,
+            "baseline": 440124,
+            "candidate": 430170,
+            "ratio": 0.977383646426916
+          },
+          {
+            "round": 3,
+            "candidate": 522414,
+            "baseline": 576054,
+            "ratio": 0.9068837296503452
+          },
+          {
+            "round": 4,
+            "baseline": 421257,
+            "candidate": 410285,
+            "ratio": 0.9739541420083228
+          }
+        ]
+      },
+      "comparison_median_change_pct": -2.2616353573084003
+    },
+    {
+      "index": 13,
+      "turn": 150,
+      "pid": 1,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "candidate": 596368,
+            "baseline": 604586,
+            "ratio": 0.9864072274250479
+          },
+          {
+            "round": 1,
+            "baseline": 639482,
+            "candidate": 677671,
+            "ratio": 1.0597186472801423
+          },
+          {
+            "round": 2,
+            "candidate": 468739,
+            "baseline": 468522,
+            "ratio": 1.000463158613683
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "candidate": 569258,
+            "baseline": 624086,
+            "ratio": 0.9121467233682538
+          },
+          {
+            "round": 1,
+            "baseline": 470510,
+            "candidate": 466254,
+            "ratio": 0.9909544961849908
+          },
+          {
+            "round": 2,
+            "candidate": 462697,
+            "baseline": 490200,
+            "ratio": 0.9438943288453693
+          },
+          {
+            "round": 3,
+            "baseline": 664023,
+            "candidate": 683057,
+            "ratio": 1.0286646697478852
+          },
+          {
+            "round": 4,
+            "candidate": 475617,
+            "baseline": 481094,
+            "ratio": 0.9886155304368793
+          }
+        ]
+      },
+      "comparison_median_change_pct": -1.138446956312067
+    },
+    {
+      "index": 14,
+      "turn": 150,
+      "pid": 2,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "baseline": 1600770,
+            "candidate": 1463136,
+            "ratio": 0.9140201278134897
+          },
+          {
+            "round": 1,
+            "candidate": 1708106,
+            "baseline": 1742963,
+            "ratio": 0.9800012966425564
+          },
+          {
+            "round": 2,
+            "baseline": 1159876,
+            "candidate": 1191382,
+            "ratio": 1.027163248485183
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "baseline": 1480675,
+            "candidate": 1519501,
+            "ratio": 1.0262218245057153
+          },
+          {
+            "round": 1,
+            "candidate": 1133706,
+            "baseline": 1157462,
+            "ratio": 0.9794757840862163
+          },
+          {
+            "round": 2,
+            "baseline": 1263245,
+            "candidate": 1254601,
+            "ratio": 0.9931573051941627
+          },
+          {
+            "round": 3,
+            "candidate": 1433600,
+            "baseline": 1335018,
+            "ratio": 1.0738431991179145
+          },
+          {
+            "round": 4,
+            "baseline": 1194976,
+            "candidate": 1182155,
+            "ratio": 0.9892709142275661
+          }
+        ]
+      },
+      "comparison_median_change_pct": -0.6842694805837324
+    },
+    {
+      "index": 15,
+      "turn": 150,
+      "pid": 3,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "candidate": 789944,
+            "baseline": 743554,
+            "ratio": 1.0623895507253003
+          },
+          {
+            "round": 1,
+            "baseline": 904103,
+            "candidate": 804412,
+            "ratio": 0.8897349085225909
+          },
+          {
+            "round": 2,
+            "candidate": 672136,
+            "baseline": 698818,
+            "ratio": 0.9618183847582632
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "candidate": 777859,
+            "baseline": 839012,
+            "ratio": 0.9271130806233999
+          },
+          {
+            "round": 1,
+            "baseline": 627422,
+            "candidate": 573928,
+            "ratio": 0.9147399995537294
+          },
+          {
+            "round": 2,
+            "candidate": 688152,
+            "baseline": 718318,
+            "ratio": 0.9580046720254818
+          },
+          {
+            "round": 3,
+            "baseline": 688744,
+            "candidate": 699968,
+            "ratio": 1.0162963307121369
+          },
+          {
+            "round": 4,
+            "candidate": 604302,
+            "baseline": 674636,
+            "ratio": 0.895745261148234
+          }
+        ]
+      },
+      "comparison_median_change_pct": -7.288691937660008
+    },
+    {
+      "index": 16,
+      "turn": 150,
+      "pid": 4,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "baseline": 151710,
+            "candidate": 168006,
+            "ratio": 1.1074154637136642
+          },
+          {
+            "round": 1,
+            "candidate": 187008,
+            "baseline": 189022,
+            "ratio": 0.9893451555903545
+          },
+          {
+            "round": 2,
+            "baseline": 147015,
+            "candidate": 142803,
+            "ratio": 0.9713498622589531
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "baseline": 162685,
+            "candidate": 169181,
+            "ratio": 1.039929925930479
+          },
+          {
+            "round": 1,
+            "candidate": 127743,
+            "baseline": 129400,
+            "ratio": 0.987194744976816
+          },
+          {
+            "round": 2,
+            "baseline": 144275,
+            "candidate": 143922,
+            "ratio": 0.9975532836596777
+          },
+          {
+            "round": 3,
+            "candidate": 154537,
+            "baseline": 160218,
+            "ratio": 0.9645420614412863
+          },
+          {
+            "round": 4,
+            "baseline": 129788,
+            "candidate": 134913,
+            "ratio": 1.0394874718772151
+          }
+        ]
+      },
+      "comparison_median_change_pct": -0.24467163403223413
+    },
+    {
+      "index": 17,
+      "turn": 150,
+      "pid": 5,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "candidate": 406237,
+            "baseline": 392147,
+            "ratio": 1.0359304036496517
+          },
+          {
+            "round": 1,
+            "baseline": 476277,
+            "candidate": 495955,
+            "ratio": 1.041316292829593
+          },
+          {
+            "round": 2,
+            "candidate": 360871,
+            "baseline": 375226,
+            "ratio": 0.9617430561848059
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "candidate": 425381,
+            "baseline": 445549,
+            "ratio": 0.9547344960935834
+          },
+          {
+            "round": 1,
+            "baseline": 322872,
+            "candidate": 326853,
+            "ratio": 1.0123299635768974
+          },
+          {
+            "round": 2,
+            "candidate": 380725,
+            "baseline": 406257,
+            "ratio": 0.9371530829007254
+          },
+          {
+            "round": 3,
+            "baseline": 375294,
+            "candidate": 398757,
+            "ratio": 1.0625189851156693
+          },
+          {
+            "round": 4,
+            "candidate": 329333,
+            "baseline": 339027,
+            "ratio": 0.9714064071593118
+          }
+        ]
+      },
+      "comparison_median_change_pct": -2.8593592840688187
+    },
+    {
+      "index": 18,
+      "turn": 200,
+      "pid": 0,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "baseline": 550171,
+            "candidate": 516336,
+            "ratio": 0.938500938799028
+          },
+          {
+            "round": 1,
+            "candidate": 682048,
+            "baseline": 584821,
+            "ratio": 1.1662508699243017
+          },
+          {
+            "round": 2,
+            "baseline": 504281,
+            "candidate": 482806,
+            "ratio": 0.9574146160573173
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "baseline": 647889,
+            "candidate": 625352,
+            "ratio": 0.9652147204227884
+          },
+          {
+            "round": 1,
+            "candidate": 468999,
+            "baseline": 460752,
+            "ratio": 1.0178989998958226
+          },
+          {
+            "round": 2,
+            "baseline": 596099,
+            "candidate": 569706,
+            "ratio": 0.9557237975571172
+          },
+          {
+            "round": 3,
+            "candidate": 556580,
+            "baseline": 528749,
+            "ratio": 1.0526355605400672
+          },
+          {
+            "round": 4,
+            "baseline": 497168,
+            "candidate": 486237,
+            "ratio": 0.9780134682843626
+          }
+        ]
+      },
+      "comparison_median_change_pct": -2.198653171563736
+    },
+    {
+      "index": 19,
+      "turn": 200,
+      "pid": 1,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "candidate": 2464504,
+            "baseline": 2516932,
+            "ratio": 0.9791698782485979
+          },
+          {
+            "round": 1,
+            "baseline": 3040463,
+            "candidate": 2719307,
+            "ratio": 0.8943726662682624
+          },
+          {
+            "round": 2,
+            "candidate": 2264768,
+            "baseline": 2256076,
+            "ratio": 1.0038527070896548
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "candidate": 2768574,
+            "baseline": 2747930,
+            "ratio": 1.007512564002722
+          },
+          {
+            "round": 1,
+            "baseline": 2319096,
+            "candidate": 2294883,
+            "ratio": 0.9895592937937886
+          },
+          {
+            "round": 2,
+            "candidate": 2655958,
+            "baseline": 2688573,
+            "ratio": 0.9878690294070498
+          },
+          {
+            "round": 3,
+            "baseline": 2514881,
+            "candidate": 2419103,
+            "ratio": 0.961915494212251
+          },
+          {
+            "round": 4,
+            "candidate": 2396363,
+            "baseline": 2470625,
+            "ratio": 0.9699420187199596
+          }
+        ]
+      },
+      "comparison_median_change_pct": -1.2130970592950208
+    },
+    {
+      "index": 20,
+      "turn": 200,
+      "pid": 2,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "baseline": 5395947,
+            "candidate": 6351130,
+            "ratio": 1.1770186030366867
+          },
+          {
+            "round": 1,
+            "candidate": 6222394,
+            "baseline": 6409705,
+            "ratio": 0.9707769702349797
+          },
+          {
+            "round": 2,
+            "baseline": 4871054,
+            "candidate": 4882435,
+            "ratio": 1.0023364553133676
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "baseline": 6243812,
+            "candidate": 5805712,
+            "ratio": 0.9298345305720288
+          },
+          {
+            "round": 1,
+            "candidate": 4515232,
+            "baseline": 5045554,
+            "ratio": 0.8948932069699382
+          },
+          {
+            "round": 2,
+            "baseline": 6017905,
+            "candidate": 5744519,
+            "ratio": 0.954571233676836
+          },
+          {
+            "round": 3,
+            "candidate": 4650903,
+            "baseline": 4661818,
+            "ratio": 0.9976586387542371
+          },
+          {
+            "round": 4,
+            "baseline": 5847186,
+            "candidate": 5456983,
+            "ratio": 0.9332665319693952
+          }
+        ]
+      },
+      "comparison_median_change_pct": -6.6733468030604755
+    },
+    {
+      "index": 21,
+      "turn": 200,
+      "pid": 3,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "candidate": 1517149,
+            "baseline": 1464342,
+            "ratio": 1.0360619308877297
+          },
+          {
+            "round": 1,
+            "baseline": 1367005,
+            "candidate": 1679141,
+            "ratio": 1.2283356681211846
+          },
+          {
+            "round": 2,
+            "candidate": 1091818,
+            "baseline": 1112065,
+            "ratio": 0.9817933304258294
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "candidate": 1441409,
+            "baseline": 1484806,
+            "ratio": 0.9707726127184292
+          },
+          {
+            "round": 1,
+            "baseline": 1079367,
+            "candidate": 1079864,
+            "ratio": 1.0004604550630138
+          },
+          {
+            "round": 2,
+            "candidate": 1395706,
+            "baseline": 1467981,
+            "ratio": 0.9507657115453129
+          },
+          {
+            "round": 3,
+            "baseline": 1130932,
+            "candidate": 1050861,
+            "ratio": 0.929199103040678
+          },
+          {
+            "round": 4,
+            "candidate": 1449665,
+            "baseline": 1429988,
+            "ratio": 1.013760255330814
+          }
+        ]
+      },
+      "comparison_median_change_pct": -2.9227387281570816
+    },
+    {
+      "index": 22,
+      "unavailable": true
+    },
+    {
+      "index": 23,
+      "unavailable": true
+    },
+    {
+      "index": 24,
+      "turn": 50,
+      "pid": 0,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "baseline": 147639,
+            "candidate": 149708,
+            "ratio": 1.0140139123131422
+          },
+          {
+            "round": 1,
+            "candidate": 177624,
+            "baseline": 183589,
+            "ratio": 0.9675089466144485
+          },
+          {
+            "round": 2,
+            "baseline": 122726,
+            "candidate": 120520,
+            "ratio": 0.9820249987777651
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "baseline": 153367,
+            "candidate": 173075,
+            "ratio": 1.128502220164703
+          },
+          {
+            "round": 1,
+            "candidate": 122000,
+            "baseline": 125102,
+            "ratio": 0.97520423334559
+          },
+          {
+            "round": 2,
+            "baseline": 159048,
+            "candidate": 143042,
+            "ratio": 0.8993637140988884
+          },
+          {
+            "round": 3,
+            "candidate": 118729,
+            "baseline": 119056,
+            "ratio": 0.9972533933611074
+          },
+          {
+            "round": 4,
+            "baseline": 153410,
+            "candidate": 152498,
+            "ratio": 0.9940551463398736
+          }
+        ]
+      },
+      "comparison_median_change_pct": -0.5944853660126426
+    },
+    {
+      "index": 25,
+      "turn": 50,
+      "pid": 1,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "candidate": 160784,
+            "baseline": 169044,
+            "ratio": 0.9511369820875039
+          },
+          {
+            "round": 1,
+            "baseline": 182685,
+            "candidate": 203808,
+            "ratio": 1.1156252565892109
+          },
+          {
+            "round": 2,
+            "candidate": 125989,
+            "baseline": 133281,
+            "ratio": 0.9452885257463555
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "candidate": 176046,
+            "baseline": 181008,
+            "ratio": 0.9725868469901883
+          },
+          {
+            "round": 1,
+            "baseline": 133074,
+            "candidate": 141398,
+            "ratio": 1.0625516629845049
+          },
+          {
+            "round": 2,
+            "candidate": 142824,
+            "baseline": 140372,
+            "ratio": 1.0174678710854017
+          },
+          {
+            "round": 3,
+            "baseline": 129031,
+            "candidate": 124795,
+            "ratio": 0.9671706799141292
+          },
+          {
+            "round": 4,
+            "candidate": 180131,
+            "baseline": 166690,
+            "ratio": 1.0806347111404404
+          }
+        ]
+      },
+      "comparison_median_change_pct": 1.746787108540171
+    },
+    {
+      "index": 26,
+      "turn": 50,
+      "pid": 2,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "baseline": 130186,
+            "candidate": 120506,
+            "ratio": 0.9256448466040895
+          },
+          {
+            "round": 1,
+            "candidate": 147062,
+            "baseline": 138806,
+            "ratio": 1.0594786968863017
+          },
+          {
+            "round": 2,
+            "baseline": 94420,
+            "candidate": 95096,
+            "ratio": 1.0071595001059097
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "baseline": 132309,
+            "candidate": 135972,
+            "ratio": 1.0276851914835725
+          },
+          {
+            "round": 1,
+            "candidate": 104785,
+            "baseline": 105605,
+            "ratio": 0.9922352161355996
+          },
+          {
+            "round": 2,
+            "baseline": 115462,
+            "candidate": 110887,
+            "ratio": 0.9603765741109629
+          },
+          {
+            "round": 3,
+            "candidate": 92871,
+            "baseline": 92438,
+            "ratio": 1.004684220775006
+          },
+          {
+            "round": 4,
+            "baseline": 113529,
+            "candidate": 112694,
+            "ratio": 0.9926450510442266
+          }
+        ]
+      },
+      "comparison_median_change_pct": -0.7354948955773377
+    },
+    {
+      "index": 27,
+      "turn": 50,
+      "pid": 3,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "candidate": 113211,
+            "baseline": 109498,
+            "ratio": 1.0339092951469433
+          },
+          {
+            "round": 1,
+            "baseline": 139695,
+            "candidate": 131186,
+            "ratio": 0.9390887290167865
+          },
+          {
+            "round": 2,
+            "candidate": 89386,
+            "baseline": 93046,
+            "ratio": 0.960664617501021
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "candidate": 121662,
+            "baseline": 115915,
+            "ratio": 1.049579433205366
+          },
+          {
+            "round": 1,
+            "baseline": 98966,
+            "candidate": 101013,
+            "ratio": 1.0206838712285027
+          },
+          {
+            "round": 2,
+            "candidate": 120696,
+            "baseline": 121614,
+            "ratio": 0.9924515269623563
+          },
+          {
+            "round": 3,
+            "baseline": 87107,
+            "candidate": 88402,
+            "ratio": 1.0148667730492382
+          },
+          {
+            "round": 4,
+            "candidate": 110609,
+            "baseline": 107657,
+            "ratio": 1.0274204185515108
+          }
+        ]
+      },
+      "comparison_median_change_pct": 2.068387122850268
+    },
+    {
+      "index": 28,
+      "turn": 50,
+      "pid": 4,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "baseline": 120755,
+            "candidate": 136807,
+            "ratio": 1.1329303134445778
+          },
+          {
+            "round": 1,
+            "candidate": 127824,
+            "baseline": 121629,
+            "ratio": 1.050933576696347
+          },
+          {
+            "round": 2,
+            "baseline": 103763,
+            "candidate": 99947,
+            "ratio": 0.9632238851999267
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "baseline": 142392,
+            "candidate": 141886,
+            "ratio": 0.9964464295746952
+          },
+          {
+            "round": 1,
+            "candidate": 112616,
+            "baseline": 111782,
+            "ratio": 1.0074609507791952
+          },
+          {
+            "round": 2,
+            "baseline": 139290,
+            "candidate": 135139,
+            "ratio": 0.970198865675928
+          },
+          {
+            "round": 3,
+            "candidate": 97955,
+            "baseline": 97766,
+            "ratio": 1.0019331874066648
+          },
+          {
+            "round": 4,
+            "baseline": 136737,
+            "candidate": 136947,
+            "ratio": 1.0015357949933084
+          }
+        ]
+      },
+      "comparison_median_change_pct": 0.15357949933083592
+    },
+    {
+      "index": 29,
+      "turn": 50,
+      "pid": 5,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "candidate": 182904,
+            "baseline": 182500,
+            "ratio": 1.002213698630137
+          },
+          {
+            "round": 1,
+            "baseline": 185763,
+            "candidate": 162834,
+            "ratio": 0.8765685308699795
+          },
+          {
+            "round": 2,
+            "candidate": 144513,
+            "baseline": 142010,
+            "ratio": 1.0176255193296246
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "candidate": 198771,
+            "baseline": 198543,
+            "ratio": 1.001148365845182
+          },
+          {
+            "round": 1,
+            "baseline": 158022,
+            "candidate": 143192,
+            "ratio": 0.906152307906494
+          },
+          {
+            "round": 2,
+            "candidate": 188124,
+            "baseline": 188614,
+            "ratio": 0.9974021016467495
+          },
+          {
+            "round": 3,
+            "baseline": 140972,
+            "candidate": 140979,
+            "ratio": 1.0000496552506881
+          },
+          {
+            "round": 4,
+            "candidate": 202730,
+            "baseline": 201354,
+            "ratio": 1.0068337356099208
+          }
+        ]
+      },
+      "comparison_median_change_pct": 0.004965525068811871
+    },
+    {
+      "index": 30,
+      "turn": 100,
+      "pid": 0,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "baseline": 442151,
+            "candidate": 471467,
+            "ratio": 1.0663031407822214
+          },
+          {
+            "round": 1,
+            "candidate": 432278,
+            "baseline": 456745,
+            "ratio": 0.9464318164402457
+          },
+          {
+            "round": 2,
+            "baseline": 347498,
+            "candidate": 340177,
+            "ratio": 0.9789322528474984
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "baseline": 511177,
+            "candidate": 495243,
+            "ratio": 0.9688288009828299
+          },
+          {
+            "round": 1,
+            "candidate": 344887,
+            "baseline": 341048,
+            "ratio": 1.011256480026272
+          },
+          {
+            "round": 2,
+            "baseline": 448573,
+            "candidate": 459667,
+            "ratio": 1.0247317604938326
+          },
+          {
+            "round": 3,
+            "candidate": 335558,
+            "baseline": 336482,
+            "ratio": 0.9972539392894717
+          },
+          {
+            "round": 4,
+            "baseline": 491144,
+            "candidate": 483895,
+            "ratio": 0.9852405811737495
+          }
+        ]
+      },
+      "comparison_median_change_pct": -0.27460607105282975
+    },
+    {
+      "index": 31,
+      "turn": 100,
+      "pid": 1,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "candidate": 336256,
+            "baseline": 335067,
+            "ratio": 1.0035485440225387
+          },
+          {
+            "round": 1,
+            "baseline": 350920,
+            "candidate": 362521,
+            "ratio": 1.0330588168243475
+          },
+          {
+            "round": 2,
+            "candidate": 250780,
+            "baseline": 249541,
+            "ratio": 1.0049651159528894
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "candidate": 351252,
+            "baseline": 350433,
+            "ratio": 1.0023371086627115
+          },
+          {
+            "round": 1,
+            "baseline": 244011,
+            "candidate": 249329,
+            "ratio": 1.0217940994463364
+          },
+          {
+            "round": 2,
+            "candidate": 325313,
+            "baseline": 347286,
+            "ratio": 0.9367293815471974
+          },
+          {
+            "round": 3,
+            "baseline": 241508,
+            "candidate": 242236,
+            "ratio": 1.0030143928979578
+          },
+          {
+            "round": 4,
+            "candidate": 351319,
+            "baseline": 351200,
+            "ratio": 1.0003388382687928
+          }
+        ]
+      },
+      "comparison_median_change_pct": 0.2337108662711529
+    },
+    {
+      "index": 32,
+      "turn": 100,
+      "pid": 2,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "baseline": 346607,
+            "candidate": 355101,
+            "ratio": 1.0245061409608
+          },
+          {
+            "round": 1,
+            "candidate": 334141,
+            "baseline": 364856,
+            "ratio": 0.9158161027912382
+          },
+          {
+            "round": 2,
+            "baseline": 254524,
+            "candidate": 256699,
+            "ratio": 1.0085453631091763
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "baseline": 378827,
+            "candidate": 367130,
+            "ratio": 0.9691231089653061
+          },
+          {
+            "round": 1,
+            "candidate": 249999,
+            "baseline": 255719,
+            "ratio": 0.9776316972927315
+          },
+          {
+            "round": 2,
+            "baseline": 349306,
+            "candidate": 340637,
+            "ratio": 0.9751822184560243
+          },
+          {
+            "round": 3,
+            "candidate": 249299,
+            "baseline": 248375,
+            "ratio": 1.0037201811776548
+          },
+          {
+            "round": 4,
+            "baseline": 348516,
+            "candidate": 375361,
+            "ratio": 1.0770265927532738
+          }
+        ]
+      },
+      "comparison_median_change_pct": -2.236830270726853
+    },
+    {
+      "index": 33,
+      "turn": 100,
+      "pid": 3,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "candidate": 507666,
+            "baseline": 501904,
+            "ratio": 1.0114802830820238
+          },
+          {
+            "round": 1,
+            "baseline": 544374,
+            "candidate": 491526,
+            "ratio": 0.9029196838937936
+          },
+          {
+            "round": 2,
+            "candidate": 361545,
+            "baseline": 358875,
+            "ratio": 1.0074399164054337
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "candidate": 507932,
+            "baseline": 543446,
+            "ratio": 0.9346503608454197
+          },
+          {
+            "round": 1,
+            "baseline": 359812,
+            "candidate": 348842,
+            "ratio": 0.9695118561915667
+          },
+          {
+            "round": 2,
+            "candidate": 486008,
+            "baseline": 524073,
+            "ratio": 0.9273669889500127
+          },
+          {
+            "round": 3,
+            "baseline": 350528,
+            "candidate": 350661,
+            "ratio": 1.0003794276063538
+          },
+          {
+            "round": 4,
+            "candidate": 537924,
+            "baseline": 527163,
+            "ratio": 1.0204130411276968
+          }
+        ]
+      },
+      "comparison_median_change_pct": -3.0488143808433343
+    },
+    {
+      "index": 34,
+      "turn": 100,
+      "pid": 4,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "baseline": 363169,
+            "candidate": 373897,
+            "ratio": 1.029539966241612
+          },
+          {
+            "round": 1,
+            "candidate": 418697,
+            "baseline": 470866,
+            "ratio": 0.8892062709985431
+          },
+          {
+            "round": 2,
+            "baseline": 278891,
+            "candidate": 290481,
+            "ratio": 1.0415574543459631
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "baseline": 408268,
+            "candidate": 363995,
+            "ratio": 0.8915589759667669
+          },
+          {
+            "round": 1,
+            "candidate": 288052,
+            "baseline": 290040,
+            "ratio": 0.993145772996828
+          },
+          {
+            "round": 2,
+            "baseline": 389625,
+            "candidate": 329943,
+            "ratio": 0.8468219441770933
+          },
+          {
+            "round": 3,
+            "candidate": 281786,
+            "baseline": 295728,
+            "ratio": 0.9528553265162581
+          },
+          {
+            "round": 4,
+            "baseline": 408347,
+            "candidate": 410052,
+            "ratio": 1.0041753704569887
+          }
+        ]
+      },
+      "comparison_median_change_pct": -4.7144673483741855
+    },
+    {
+      "index": 35,
+      "turn": 100,
+      "pid": 5,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "candidate": 443764,
+            "baseline": 406381,
+            "ratio": 1.091990029061398
+          },
+          {
+            "round": 1,
+            "baseline": 522416,
+            "candidate": 560336,
+            "ratio": 1.0725858319806438
+          },
+          {
+            "round": 2,
+            "candidate": 343321,
+            "baseline": 348632,
+            "ratio": 0.9847661717799858
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "candidate": 419113,
+            "baseline": 460736,
+            "ratio": 0.9096597617724684
+          },
+          {
+            "round": 1,
+            "baseline": 350851,
+            "candidate": 331427,
+            "ratio": 0.9446374671869255
+          },
+          {
+            "round": 2,
+            "candidate": 448007,
+            "baseline": 466413,
+            "ratio": 0.960537120534805
+          },
+          {
+            "round": 3,
+            "baseline": 341368,
+            "candidate": 346291,
+            "ratio": 1.014421386890394
+          },
+          {
+            "round": 4,
+            "candidate": 480729,
+            "baseline": 496266,
+            "ratio": 0.9686921932995611
+          }
+        ]
+      },
+      "comparison_median_change_pct": -3.9462879465195
+    },
+    {
+      "index": 36,
+      "turn": 150,
+      "pid": 0,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "baseline": 312132,
+            "candidate": 330912,
+            "ratio": 1.0601668524854868
+          },
+          {
+            "round": 1,
+            "candidate": 428891,
+            "baseline": 365401,
+            "ratio": 1.1737543137539306
+          },
+          {
+            "round": 2,
+            "baseline": 266028,
+            "candidate": 269474,
+            "ratio": 1.0129535236892357
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "baseline": 348286,
+            "candidate": 382952,
+            "ratio": 1.0995331423025905
+          },
+          {
+            "round": 1,
+            "candidate": 258246,
+            "baseline": 264354,
+            "ratio": 0.9768946185796319
+          },
+          {
+            "round": 2,
+            "baseline": 352869,
+            "candidate": 371513,
+            "ratio": 1.0528354715205925
+          },
+          {
+            "round": 3,
+            "candidate": 267849,
+            "baseline": 274697,
+            "ratio": 0.9750707142779135
+          },
+          {
+            "round": 4,
+            "baseline": 410635,
+            "candidate": 336131,
+            "ratio": 0.8185639314719885
+          }
+        ]
+      },
+      "comparison_median_change_pct": -2.310538142036811
+    },
+    {
+      "index": 37,
+      "turn": 150,
+      "pid": 1,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "candidate": 4064229,
+            "baseline": 3941102,
+            "ratio": 1.0312417694340315
+          },
+          {
+            "round": 1,
+            "baseline": 4684501,
+            "candidate": 4821211,
+            "ratio": 1.0291834711957581
+          },
+          {
+            "round": 2,
+            "candidate": 3279604,
+            "baseline": 3353319,
+            "ratio": 0.9780173016644107
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "candidate": 4493537,
+            "baseline": 4717635,
+            "ratio": 0.9524978087537506
+          },
+          {
+            "round": 1,
+            "baseline": 3308963,
+            "candidate": 3176120,
+            "ratio": 0.9598535855493096
+          },
+          {
+            "round": 2,
+            "candidate": 4247580,
+            "baseline": 4241770,
+            "ratio": 1.0013697112290387
+          },
+          {
+            "round": 3,
+            "baseline": 3495898,
+            "candidate": 3306887,
+            "ratio": 0.9459334911945372
+          },
+          {
+            "round": 4,
+            "candidate": 4391114,
+            "baseline": 4650934,
+            "ratio": 0.9441359520474812
+          }
+        ]
+      },
+      "comparison_median_change_pct": -4.750219124624944
+    },
+    {
+      "index": 38,
+      "turn": 150,
+      "pid": 2,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "baseline": 824035,
+            "candidate": 807405,
+            "ratio": 0.979818818375433
+          },
+          {
+            "round": 1,
+            "candidate": 969884,
+            "baseline": 1041620,
+            "ratio": 0.9311303546398879
+          },
+          {
+            "round": 2,
+            "baseline": 672038,
+            "candidate": 695305,
+            "ratio": 1.0346215541383077
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "baseline": 983428,
+            "candidate": 953281,
+            "ratio": 0.9693449850929605
+          },
+          {
+            "round": 1,
+            "candidate": 671758,
+            "baseline": 686704,
+            "ratio": 0.9782351639134182
+          },
+          {
+            "round": 2,
+            "baseline": 794865,
+            "candidate": 843151,
+            "ratio": 1.0607474225182894
+          },
+          {
+            "round": 3,
+            "candidate": 720949,
+            "baseline": 723676,
+            "ratio": 0.9962317390655486
+          },
+          {
+            "round": 4,
+            "baseline": 1008832,
+            "candidate": 935522,
+            "ratio": 0.9273318054938781
+          }
+        ]
+      },
+      "comparison_median_change_pct": -2.176483608658175
+    },
+    {
+      "index": 39,
+      "unavailable": true
+    },
+    {
+      "index": 40,
+      "unavailable": true
+    },
+    {
+      "index": 41,
+      "turn": 150,
+      "pid": 5,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "candidate": 647995,
+            "baseline": 649388,
+            "ratio": 0.9978549033859573
+          },
+          {
+            "round": 1,
+            "baseline": 873584,
+            "candidate": 691607,
+            "ratio": 0.791689179288998
+          },
+          {
+            "round": 2,
+            "candidate": 556693,
+            "baseline": 560158,
+            "ratio": 0.9938142452665141
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "candidate": 749814,
+            "baseline": 755178,
+            "ratio": 0.9928970388438223
+          },
+          {
+            "round": 1,
+            "baseline": 558966,
+            "candidate": 557261,
+            "ratio": 0.9969497250279982
+          },
+          {
+            "round": 2,
+            "candidate": 733383,
+            "baseline": 762778,
+            "ratio": 0.9614632304549948
+          },
+          {
+            "round": 3,
+            "baseline": 569755,
+            "candidate": 601010,
+            "ratio": 1.0548569121815516
+          },
+          {
+            "round": 4,
+            "candidate": 771131,
+            "baseline": 818405,
+            "ratio": 0.942236423286759
+          }
+        ]
+      },
+      "comparison_median_change_pct": -0.7102961156177701
+    },
+    {
+      "index": 42,
+      "turn": 200,
+      "pid": 0,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "baseline": 599416,
+            "candidate": 618035,
+            "ratio": 1.0310619002495762
+          },
+          {
+            "round": 1,
+            "candidate": 661782,
+            "baseline": 583715,
+            "ratio": 1.1337416376142466
+          },
+          {
+            "round": 2,
+            "baseline": 543444,
+            "candidate": 532931,
+            "ratio": 0.9806548604824048
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "baseline": 754923,
+            "candidate": 765633,
+            "ratio": 1.014186877337159
+          },
+          {
+            "round": 1,
+            "candidate": 521885,
+            "baseline": 524840,
+            "ratio": 0.9943697126743388
+          },
+          {
+            "round": 2,
+            "baseline": 674859,
+            "candidate": 637194,
+            "ratio": 0.9441883415646825
+          },
+          {
+            "round": 3,
+            "candidate": 564994,
+            "baseline": 562872,
+            "ratio": 1.0037699512500178
+          },
+          {
+            "round": 4,
+            "baseline": 755895,
+            "candidate": 760699,
+            "ratio": 1.0063553800461704
+          }
+        ]
+      },
+      "comparison_median_change_pct": 0.3769951250017778
+    },
+    {
+      "index": 43,
+      "turn": 200,
+      "pid": 1,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "candidate": 8271156,
+            "baseline": 8701357,
+            "ratio": 0.9505593208047894
+          },
+          {
+            "round": 1,
+            "baseline": 7984914,
+            "candidate": 7406157,
+            "ratio": 0.9275186933760339
+          },
+          {
+            "round": 2,
+            "candidate": 7235014,
+            "baseline": 8195804,
+            "ratio": 0.8827705006122645
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "candidate": 8358553,
+            "baseline": 8314050,
+            "ratio": 1.0053527462548337
+          },
+          {
+            "round": 1,
+            "baseline": 6876107,
+            "candidate": 6251796,
+            "ratio": 0.9092057467982974
+          },
+          {
+            "round": 2,
+            "candidate": 8435121,
+            "baseline": 9029756,
+            "ratio": 0.9341471685392163
+          },
+          {
+            "round": 3,
+            "baseline": 7041659,
+            "candidate": 6295271,
+            "ratio": 0.8940039556019398
+          },
+          {
+            "round": 4,
+            "candidate": 9321273,
+            "baseline": 10365641,
+            "ratio": 0.8992471377312797
+          }
+        ]
+      },
+      "comparison_median_change_pct": -9.079425320170264
+    },
+    {
+      "index": 44,
+      "turn": 200,
+      "pid": 2,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "baseline": 948295,
+            "candidate": 844227,
+            "ratio": 0.8902577784339262
+          },
+          {
+            "round": 1,
+            "candidate": 733070,
+            "baseline": 723895,
+            "ratio": 1.012674490084888
+          },
+          {
+            "round": 2,
+            "baseline": 901042,
+            "candidate": 854386,
+            "ratio": 0.9482199497914636
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "baseline": 778656,
+            "candidate": 782346,
+            "ratio": 1.0047389347799285
+          },
+          {
+            "round": 1,
+            "candidate": 694994,
+            "baseline": 724815,
+            "ratio": 0.958857087670647
+          },
+          {
+            "round": 2,
+            "baseline": 975094,
+            "candidate": 924268,
+            "ratio": 0.9478757945387829
+          },
+          {
+            "round": 3,
+            "candidate": 724938,
+            "baseline": 697300,
+            "ratio": 1.0396357378459773
+          },
+          {
+            "round": 4,
+            "baseline": 974583,
+            "candidate": 1001487,
+            "ratio": 1.0276056528792314
+          }
+        ]
+      },
+      "comparison_median_change_pct": 0.4738934779928483
+    },
+    {
+      "index": 45,
+      "unavailable": true
+    },
+    {
+      "index": 46,
+      "unavailable": true
+    },
+    {
+      "index": 47,
+      "turn": 200,
+      "pid": 5,
+      "readings": {
+        "control": [
+          {
+            "round": 0,
+            "candidate": 1568450,
+            "baseline": 1541476,
+            "ratio": 1.0174988128261484
+          },
+          {
+            "round": 1,
+            "baseline": 1118137,
+            "candidate": 1124984,
+            "ratio": 1.0061235787743363
+          },
+          {
+            "round": 2,
+            "candidate": 1309018,
+            "baseline": 1415333,
+            "ratio": 0.924883401997975
+          }
+        ],
+        "comparison": [
+          {
+            "round": 0,
+            "candidate": 1284456,
+            "baseline": 1326888,
+            "ratio": 0.9680214155226364
+          },
+          {
+            "round": 1,
+            "baseline": 1163170,
+            "candidate": 1147416,
+            "ratio": 0.9864559780599569
+          },
+          {
+            "round": 2,
+            "candidate": 1572615,
+            "baseline": 1538378,
+            "ratio": 1.0222552584605344
+          },
+          {
+            "round": 3,
+            "baseline": 1142449,
+            "candidate": 1153182,
+            "ratio": 1.0093947300929844
+          },
+          {
+            "round": 4,
+            "candidate": 1595564,
+            "baseline": 1464119,
+            "ratio": 1.0897775385743917
+          }
+        ]
+      },
+      "comparison_median_change_pct": 0.9394730092984416
+    }
+  ],
+  "limits": "Fixed synthetic model workload; raw controls and comparisons retained. Control adjustment is secondary. No Native, whole-game or strength estimate."
+}

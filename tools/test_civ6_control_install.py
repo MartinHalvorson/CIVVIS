@@ -1179,14 +1179,14 @@ class ProtectedInstallTest(unittest.TestCase):
         source = (install.MOD_SOURCE / "CivvisControlAgent.lua").read_text()
         hold = source.split(
             "CivvisBoard.holdVisibleBarbarianCombatCaptureLegs = function", 1
-        )[1].split("CivvisBoard.holdVisibleScoutCaptureLegs", 1)[0]
+        )[1].split("CivvisBoard.holdVisibleBuilderCaptureLegs = function", 1)[0]
 
         self.assertIn("unit = unit,", hold)
         self.assertIn("local function threatReaches(threat, x, y)", hold)
         self.assertIn(
             "UnitManager.GetMoveToPathEx(threat.unit, destination)", hold
         )
-        self.assertIn("local definition = GameInfo.Units[threat.unit:GetUnitType()]", hold)
+        self.assertIn("GameInfo.Units[threat.unit:GetUnitType()]", hold)
         self.assertIn("definition.BaseMoves", hold)
         self.assertIn("if distance >= 0 and distance <= baseMoves then", hold)
         self.assertIn("hostile_reach = reachKind", hold)
@@ -1381,7 +1381,9 @@ class ProtectedInstallTest(unittest.TestCase):
         gate = arm.index("if (tonumber(leaderPoints) or 0) >= floor then")
         spend = arm.index("n = budget;")
         free = arm.index("local n = 1;")
-        selection = arm.index("if tonumber(t) == leader then selection = idx; end")
+        # The leader selection goes through `CivvisCongressDenialTarget`, which
+        # never falls back to a target on us when the leader is not offered.
+        selection = arm.index("option, selection = CivvisCongressDenialTarget(targets, leader,")
         probe = arm.index('elseif cfg.CongressVoteProbe ~= false and budget > 1 then')
         self.assertLess(selection, gate)
         self.assertLess(free, gate)

@@ -1,0 +1,2097 @@
+{
+  "since": "2026-11-01",
+  "source": "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control",
+  "ladder_sha256": "f646bee1c173a7f6e22288f4071976d58a152352ea04320b87eecfbdf37954c5",
+  "model_tech_graph_sha256": "2f467ce9f38a156e272b134a04f5051ea7a9e5b79a2e7ae09afbf2a3eef1758f",
+  "interpretation": "Selection times, not completion times or causal savings. Missing Satellites are censored. Other outcomes can include interruptions; inspect reason and victory_type.",
+  "summary": {
+    "DIFFICULTY_EMPEROR/culture/abandoned": {
+      "attempts": 1,
+      "wins": 0,
+      "rocketry_selected": 0,
+      "satellite_unobserved_after_rocketry": 0,
+      "military_in_interval": 0,
+      "military_off_model_satellite_path": 0,
+      "observed_interval_count": 0,
+      "median_selection_interval": null
+    },
+    "DIFFICULTY_EMPEROR/culture/other": {
+      "attempts": 1,
+      "wins": 0,
+      "rocketry_selected": 1,
+      "satellite_unobserved_after_rocketry": 1,
+      "military_in_interval": 0,
+      "military_off_model_satellite_path": 0,
+      "observed_interval_count": 0,
+      "median_selection_interval": null
+    },
+    "DIFFICULTY_EMPEROR/domination/abandoned": {
+      "attempts": 1,
+      "wins": 0,
+      "rocketry_selected": 1,
+      "satellite_unobserved_after_rocketry": 1,
+      "military_in_interval": 0,
+      "military_off_model_satellite_path": 0,
+      "observed_interval_count": 0,
+      "median_selection_interval": null
+    },
+    "DIFFICULTY_EMPEROR/science/other": {
+      "attempts": 1,
+      "wins": 0,
+      "rocketry_selected": 1,
+      "satellite_unobserved_after_rocketry": 0,
+      "military_in_interval": 1,
+      "military_off_model_satellite_path": 1,
+      "observed_interval_count": 1,
+      "median_selection_interval": 29
+    },
+    "DIFFICULTY_KING/culture/other": {
+      "attempts": 9,
+      "wins": 2,
+      "rocketry_selected": 9,
+      "satellite_unobserved_after_rocketry": 0,
+      "military_in_interval": 2,
+      "military_off_model_satellite_path": 2,
+      "observed_interval_count": 9,
+      "median_selection_interval": 3
+    },
+    "DIFFICULTY_KING/domination/other": {
+      "attempts": 6,
+      "wins": 0,
+      "rocketry_selected": 6,
+      "satellite_unobserved_after_rocketry": 1,
+      "military_in_interval": 5,
+      "military_off_model_satellite_path": 5,
+      "observed_interval_count": 5,
+      "median_selection_interval": 12
+    },
+    "DIFFICULTY_KING/religious/abandoned": {
+      "attempts": 1,
+      "wins": 0,
+      "rocketry_selected": 0,
+      "satellite_unobserved_after_rocketry": 0,
+      "military_in_interval": 0,
+      "military_off_model_satellite_path": 0,
+      "observed_interval_count": 0,
+      "median_selection_interval": null
+    },
+    "DIFFICULTY_KING/religious/other": {
+      "attempts": 13,
+      "wins": 4,
+      "rocketry_selected": 12,
+      "satellite_unobserved_after_rocketry": 1,
+      "military_in_interval": 5,
+      "military_off_model_satellite_path": 5,
+      "observed_interval_count": 11,
+      "median_selection_interval": 10
+    }
+  },
+  "excluded": [
+    {
+      "tag": "civvis-20261101T022355Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T023248Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T024926Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T030539Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T032311Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T033931Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T034930Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T040819Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T042616Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T043921Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T050026Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T051531Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T053401Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T054633Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T060258Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T062425Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T063953Z-cont2",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T071051Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T073004Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T075446Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T081602Z-cont3",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T085353Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T091422Z-cont5",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T095815Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T110607Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T110755Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T112906Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T114811Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T120450Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T120450Z-cont1",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T122808Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T125259Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T131400Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T133323Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T135422Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T141505Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T143722Z-cont2",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T150036Z",
+      "reason": "missing why.log"
+    },
+    {
+      "tag": "civvis-20261101T151815Z",
+      "reason": "missing why.log"
+    }
+  ],
+  "attempts": [
+    {
+      "tag": "civvis-20261102T063640Z",
+      "utc": "2026-11-02T06:54:30Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "religious",
+      "won": true,
+      "reason": "stopped",
+      "turns": 221,
+      "victory_type": "VICTORY_TECHNOLOGY",
+      "revisions": [
+        "c797e2f8aa52b326206559e69bc1cc564c433334"
+      ],
+      "spaceport_turn": 192,
+      "selection_turns": {
+        "writing": 50,
+        "education": 90,
+        "chemistry": 153,
+        "rocketry": 173,
+        "satellites": 174
+      },
+      "rocket_to_satellite_selection_turns": 1,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [],
+      "military_choices_between_rocket_and_satellite": [],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 51,
+          "education": 92,
+          "chemistry": 156,
+          "rocketry": 174,
+          "satellites": 175
+        },
+        "events_sha256": "f9e3b56373280d37cab5dd292fe7532aac3f3eb88f82530c8fec90e602080bf1"
+      },
+      "why_sha256": "1acfcbdbbbeb94ba9cd3d674497f5875d72606df1f9ec811f9b4b43eb79f4084"
+    },
+    {
+      "tag": "civvis-20261102T065458Z",
+      "utc": "2026-11-02T07:14:05Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "religious",
+      "won": false,
+      "reason": "stopped",
+      "turns": 234,
+      "victory_type": "VICTORY_TECHNOLOGY",
+      "revisions": [
+        "c797e2f8aa52b326206559e69bc1cc564c433334"
+      ],
+      "spaceport_turn": 191,
+      "selection_turns": {
+        "writing": 36,
+        "education": 89,
+        "chemistry": 150,
+        "rocketry": 179,
+        "satellites": 194
+      },
+      "rocket_to_satellite_selection_turns": 15,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [
+        {
+          "turn": 182,
+          "tech": "guidance_systems",
+          "reason": "domination-siege-research: unlock guidance systems to supply the missing wall-breaking capability for the campaign"
+        },
+        {
+          "turn": 185,
+          "tech": "combined_arms",
+          "reason": "worth 20 to the conquest plan, ahead of satellites at 12"
+        },
+        {
+          "turn": 188,
+          "tech": "nuclear_fission",
+          "reason": "worth 10 to the diplomacy plan, ahead of satellites at 8"
+        },
+        {
+          "turn": 190,
+          "tech": "lasers",
+          "reason": "worth 11 to the diplomacy plan, ahead of satellites at 8"
+        }
+      ],
+      "military_choices_between_rocket_and_satellite": [],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 37,
+          "education": 91,
+          "chemistry": 154,
+          "rocketry": 182,
+          "satellites": 195
+        },
+        "events_sha256": "d661cc34decda630d018455cda641889e4aba75323e6956f96875d2ed4a7dbc9"
+      },
+      "why_sha256": "06428830c6d0872a0ed61fb3ad3203d5bfde84b0a52b74f957ef94d5a0b2dca9"
+    },
+    {
+      "tag": "civvis-20261102T071430Z",
+      "utc": "2026-11-02T07:33:54Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "culture",
+      "won": false,
+      "reason": "stopped",
+      "turns": 210,
+      "victory_type": "VICTORY_TECHNOLOGY",
+      "revisions": [
+        "c797e2f8aa52b326206559e69bc1cc564c433334"
+      ],
+      "spaceport_turn": null,
+      "selection_turns": {
+        "writing": 50,
+        "education": 107,
+        "chemistry": 176,
+        "rocketry": 179,
+        "satellites": 190
+      },
+      "rocket_to_satellite_selection_turns": 11,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [
+        {
+          "turn": 184,
+          "tech": "advanced_flight",
+          "reason": "worth 18 to the science plan, ahead of rifling at 7"
+        },
+        {
+          "turn": 188,
+          "tech": "rifling",
+          "reason": "worth 7 to the science plan, with nothing else on offer"
+        }
+      ],
+      "military_choices_between_rocket_and_satellite": [],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 51,
+          "education": 110,
+          "chemistry": 179,
+          "rocketry": 184,
+          "satellites": 193
+        },
+        "events_sha256": "de3e36008aaf8459f4201a3da9ea713045179e1d482f063a5a87edc95976dc9a"
+      },
+      "why_sha256": "cd89bac6c0243210c71a6304e3cbe552bc6f65b4febcaccd64da53bf92188714"
+    },
+    {
+      "tag": "civvis-20261102T073418Z",
+      "utc": "2026-11-02T07:53:35Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "domination",
+      "won": false,
+      "reason": "stopped",
+      "turns": 235,
+      "victory_type": "VICTORY_TECHNOLOGY",
+      "revisions": [
+        "c797e2f8aa52b326206559e69bc1cc564c433334"
+      ],
+      "spaceport_turn": null,
+      "selection_turns": {
+        "writing": 34,
+        "education": 93,
+        "chemistry": 175,
+        "rocketry": 177,
+        "satellites": 186
+      },
+      "rocket_to_satellite_selection_turns": 9,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [
+        {
+          "turn": 181,
+          "tech": "guidance_systems",
+          "reason": "decisive-window: the most valuable step toward guidance systems; at crew at 9.0x their power faces Scythia's best defender (85) by -10 and rocket artillery opens tier-4 walls in 4 turns",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 184,
+          "tech": "electricity",
+          "reason": "worth 14 to the conquest plan, ahead of satellites at 13"
+        }
+      ],
+      "military_choices_between_rocket_and_satellite": [
+        {
+          "turn": 181,
+          "tech": "guidance_systems",
+          "reason": "decisive-window: the most valuable step toward guidance systems; at crew at 9.0x their power faces Scythia's best defender (85) by -10 and rocket artillery opens tier-4 walls in 4 turns",
+          "on_model_satellites_prerequisite_path": false
+        }
+      ],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 37,
+          "education": 94,
+          "chemistry": 177,
+          "rocketry": 181,
+          "satellites": 188
+        },
+        "events_sha256": "d5c5d0eee7f1632623199b5c24f3a54001953c82a7c716c8569d5d20ce5f02fa"
+      },
+      "why_sha256": "7963481fb1c8eedfa927fb21942b84c70a7edc43cbcb62b2bb7386b1f427eb8d"
+    },
+    {
+      "tag": "civvis-20261102T075400Z",
+      "utc": "2026-11-02T08:12:22Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "culture",
+      "won": false,
+      "reason": "stopped",
+      "turns": 252,
+      "victory_type": "VICTORY_TECHNOLOGY",
+      "revisions": [
+        "c797e2f8aa52b326206559e69bc1cc564c433334"
+      ],
+      "spaceport_turn": null,
+      "selection_turns": {
+        "writing": 39,
+        "education": 108,
+        "chemistry": 201,
+        "rocketry": 242,
+        "satellites": 245
+      },
+      "rocket_to_satellite_selection_turns": 3,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [],
+      "military_choices_between_rocket_and_satellite": [],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 41,
+          "education": 115,
+          "chemistry": 206,
+          "rocketry": 245,
+          "satellites": 247
+        },
+        "events_sha256": "2a80c348b5806a952f8916f78426c2be1db53fa2e7ff5cdc435dee1c09aa734e"
+      },
+      "why_sha256": "ec46510c95235854aeeb93666cda8acf98c90400e441e6fb2e67024c4fc94bba"
+    },
+    {
+      "tag": "civvis-20261102T081247Z",
+      "utc": "2026-11-02T08:18:55Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "religious",
+      "won": false,
+      "reason": "abandoned",
+      "turns": 122,
+      "victory_type": null,
+      "revisions": [
+        "c797e2f8aa52b326206559e69bc1cc564c433334"
+      ],
+      "spaceport_turn": null,
+      "selection_turns": {
+        "writing": 52,
+        "education": null,
+        "chemistry": null,
+        "rocketry": null,
+        "satellites": null
+      },
+      "rocket_to_satellite_selection_turns": null,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [],
+      "military_choices_between_rocket_and_satellite": [],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 56
+        },
+        "events_sha256": "bc539b6a242f6daa40b6ab5017b6d80eda7189dd69dfa4d880f4918bbf60424c"
+      },
+      "why_sha256": "3bded80b6200b089495c9c5db553e439aa5b983bad14d387bb66d672d78ac3fb"
+    },
+    {
+      "tag": "civvis-20261102T081913Z",
+      "utc": "2026-11-02T08:31:21Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "religious",
+      "won": false,
+      "reason": "stopped",
+      "turns": 193,
+      "victory_type": "VICTORY_CULTURE",
+      "revisions": [
+        "c797e2f8aa52b326206559e69bc1cc564c433334"
+      ],
+      "spaceport_turn": 188,
+      "selection_turns": {
+        "writing": 39,
+        "education": 94,
+        "chemistry": 163,
+        "rocketry": 168,
+        "satellites": 182
+      },
+      "rocket_to_satellite_selection_turns": 14,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [
+        {
+          "turn": 173,
+          "tech": "electricity",
+          "reason": "worth 12 to the science plan, ahead of ballistics at 11"
+        },
+        {
+          "turn": 177,
+          "tech": "ballistics",
+          "reason": "worth 10 to the science plan, ahead of siege tactics at 5"
+        },
+        {
+          "turn": 178,
+          "tech": "siege_tactics",
+          "reason": "worth 5 to the science plan, ahead of printing at 4"
+        },
+        {
+          "turn": 179,
+          "tech": "printing",
+          "reason": "worth 4 to the science plan, with nothing else on offer"
+        },
+        {
+          "turn": 180,
+          "tech": "advanced_flight",
+          "reason": "the most valuable step toward satellites, which science needs"
+        }
+      ],
+      "military_choices_between_rocket_and_satellite": [],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 41,
+          "education": 97,
+          "chemistry": 168,
+          "rocketry": 173,
+          "satellites": 184
+        },
+        "events_sha256": "d401967395e47d0a3a4be386fd7989c897473ef3e45763eee046337a5c8a34c3"
+      },
+      "why_sha256": "9b1db7cbc59060cae38f8104f02d96afdf03d1c52c5c761c422b0bc57766cd89"
+    },
+    {
+      "tag": "civvis-20261102T083143Z",
+      "utc": "2026-11-02T08:47:46Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "religious",
+      "won": false,
+      "reason": "stopped",
+      "turns": 215,
+      "victory_type": "VICTORY_CULTURE",
+      "revisions": [
+        "c797e2f8aa52b326206559e69bc1cc564c433334"
+      ],
+      "spaceport_turn": null,
+      "selection_turns": {
+        "writing": 36,
+        "education": 112,
+        "chemistry": null,
+        "rocketry": null,
+        "satellites": null
+      },
+      "rocket_to_satellite_selection_turns": null,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [],
+      "military_choices_between_rocket_and_satellite": [],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 39,
+          "education": 117
+        },
+        "events_sha256": "1f03b28abf3923aff7a6cdb13d3285d6ee446061e2fcd2031a6983e9870e3125"
+      },
+      "why_sha256": "63361d36d981857d0613411c2f1461558513e0ce65d646bb73bda6b0581dd793"
+    },
+    {
+      "tag": "civvis-20261102T084807Z",
+      "utc": "2026-11-02T09:09:51Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "culture",
+      "won": true,
+      "reason": "stopped",
+      "turns": 244,
+      "victory_type": "VICTORY_CULTURE",
+      "revisions": [
+        "c797e2f8aa52b326206559e69bc1cc564c433334"
+      ],
+      "spaceport_turn": null,
+      "selection_turns": {
+        "writing": 68,
+        "education": 100,
+        "chemistry": 171,
+        "rocketry": 199,
+        "satellites": 207
+      },
+      "rocket_to_satellite_selection_turns": 8,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [
+        {
+          "turn": 201,
+          "tech": "telecommunications",
+          "reason": "worth 7 to the recovery plan, ahead of satellites at 6"
+        },
+        {
+          "turn": 204,
+          "tech": "guidance_systems",
+          "reason": "the most valuable step toward guidance systems, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        }
+      ],
+      "military_choices_between_rocket_and_satellite": [
+        {
+          "turn": 204,
+          "tech": "guidance_systems",
+          "reason": "the most valuable step toward guidance systems, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        }
+      ],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 69,
+          "education": 102,
+          "chemistry": 175,
+          "rocketry": 201,
+          "satellites": 209
+        },
+        "events_sha256": "df87eb88ee9a265f0b66f4da2a4bd781d8287b2537747356166a041f974d69a4"
+      },
+      "why_sha256": "4468c8a7df1ac1696a4e441c9d159cab08cb05150dca1b7d2aa51dba31216838"
+    },
+    {
+      "tag": "civvis-20261102T091117Z",
+      "utc": "2026-11-02T09:27:33Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "domination",
+      "won": false,
+      "reason": "stopped",
+      "turns": 224,
+      "victory_type": "VICTORY_CULTURE",
+      "revisions": [
+        "66b67ec756a8e3ff1067f88f78b04d30c89fb3cf"
+      ],
+      "spaceport_turn": 211,
+      "selection_turns": {
+        "writing": 31,
+        "education": 113,
+        "chemistry": 177,
+        "rocketry": 180,
+        "satellites": 195
+      },
+      "rocket_to_satellite_selection_turns": 15,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [
+        {
+          "turn": 185,
+          "tech": "advanced_ballistics",
+          "reason": "domination-siege-research: unlock guidance systems to supply the missing wall-breaking capability for the campaign"
+        },
+        {
+          "turn": 189,
+          "tech": "guidance_systems",
+          "reason": "the most valuable step toward guidance systems, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        }
+      ],
+      "military_choices_between_rocket_and_satellite": [
+        {
+          "turn": 189,
+          "tech": "guidance_systems",
+          "reason": "the most valuable step toward guidance systems, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        }
+      ],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 33,
+          "education": 114,
+          "chemistry": 180,
+          "rocketry": 185,
+          "satellites": 200
+        },
+        "events_sha256": "3c4e631b6b2ca13f9e20614a07c9af7a1d06df41a4314d2c2f4c5187ab99cfcc"
+      },
+      "why_sha256": "e8f08f1edf50dfcedd02ba0bdb541ddb942226b6335edf9328d241bc80f4dcc2"
+    },
+    {
+      "tag": "civvis-20261102T092756Z",
+      "utc": "2026-11-02T09:48:35Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "culture",
+      "won": false,
+      "reason": "stopped",
+      "turns": 250,
+      "victory_type": "VICTORY_TECHNOLOGY",
+      "revisions": [
+        "66b67ec756a8e3ff1067f88f78b04d30c89fb3cf"
+      ],
+      "spaceport_turn": 247,
+      "selection_turns": {
+        "writing": 34,
+        "education": 108,
+        "chemistry": 203,
+        "rocketry": 207,
+        "satellites": 222
+      },
+      "rocket_to_satellite_selection_turns": 15,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [
+        {
+          "turn": 210,
+          "tech": "guidance_systems",
+          "reason": "domination-siege-research: unlock guidance systems to supply the missing wall-breaking capability for the campaign"
+        },
+        {
+          "turn": 212,
+          "tech": "combustion",
+          "reason": "worth 14 to the conquest plan, ahead of telecommunications at 11"
+        },
+        {
+          "turn": 215,
+          "tech": "combined_arms",
+          "reason": "worth 22 to the conquest plan, ahead of satellites at 11"
+        },
+        {
+          "turn": 217,
+          "tech": "telecommunications",
+          "reason": "worth 11 to the conquest plan, ahead of nuclear fission at 11"
+        },
+        {
+          "turn": 218,
+          "tech": "nuclear_fission",
+          "reason": "worth 11 to the conquest plan, ahead of satellites at 11"
+        },
+        {
+          "turn": 221,
+          "tech": "lasers",
+          "reason": "worth 23 to the conquest plan, ahead of satellites at 11"
+        }
+      ],
+      "military_choices_between_rocket_and_satellite": [],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 37,
+          "education": 112,
+          "chemistry": 207,
+          "rocketry": 210,
+          "satellites": 223
+        },
+        "events_sha256": "2f9b62a5b1c0b71fa11c28ed2548dd58072bdc124932a8a0a66bb8a1ff451ebc"
+      },
+      "why_sha256": "67562d71543640b7d77691be91cd773e5a332737e7572c84a8f9f714760bff43"
+    },
+    {
+      "tag": "civvis-20261102T094900Z",
+      "utc": "2026-11-02T10:15:06Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "domination",
+      "won": false,
+      "reason": "stopped",
+      "turns": 255,
+      "victory_type": "VICTORY_TECHNOLOGY",
+      "revisions": [
+        "66b67ec756a8e3ff1067f88f78b04d30c89fb3cf"
+      ],
+      "spaceport_turn": 204,
+      "selection_turns": {
+        "writing": 34,
+        "education": 79,
+        "chemistry": 152,
+        "rocketry": 168,
+        "satellites": 176
+      },
+      "rocket_to_satellite_selection_turns": 8,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [
+        {
+          "turn": 170,
+          "tech": "guidance_systems",
+          "reason": "domination-siege-research: unlock guidance systems to supply the missing wall-breaking capability for the campaign"
+        },
+        {
+          "turn": 173,
+          "tech": "electricity",
+          "reason": "worth 21 to the conquest plan, ahead of combined arms at 17"
+        },
+        {
+          "turn": 174,
+          "tech": "combined_arms",
+          "reason": "worth 21 to the conquest plan, ahead of satellites at 13"
+        }
+      ],
+      "military_choices_between_rocket_and_satellite": [],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 35,
+          "education": 81,
+          "chemistry": 155,
+          "rocketry": 170,
+          "satellites": 179
+        },
+        "events_sha256": "0e91fa4efa39f1a4aa90a95b14e9beec69ff1aa60c2f75a619d499e6fe27b507"
+      },
+      "why_sha256": "be7e5f0d87aeeb041db8c31cdd7f8c806ffb2ec0f754c6976f4764c74deeff26"
+    },
+    {
+      "tag": "civvis-20261102T101533Z",
+      "utc": "2026-11-02T10:38:34Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "religious",
+      "won": false,
+      "reason": "stopped",
+      "turns": 269,
+      "victory_type": "VICTORY_TECHNOLOGY",
+      "revisions": [
+        "66b67ec756a8e3ff1067f88f78b04d30c89fb3cf"
+      ],
+      "spaceport_turn": 229,
+      "selection_turns": {
+        "writing": 31,
+        "education": 82,
+        "chemistry": 166,
+        "rocketry": 184,
+        "satellites": 188
+      },
+      "rocket_to_satellite_selection_turns": 4,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [],
+      "military_choices_between_rocket_and_satellite": [],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 32,
+          "education": 86,
+          "chemistry": 170,
+          "rocketry": 188,
+          "satellites": 194
+        },
+        "events_sha256": "b9bc735c5fd21a494cec0f94dc9d645109f69ef1a6eb4b406db5941752388a11"
+      },
+      "why_sha256": "af62d28e118f2d676edf94a0d34b34856cd46aac88618c82dae9169149dfefb4"
+    },
+    {
+      "tag": "civvis-20261102T103902Z",
+      "utc": "2026-11-02T10:55:25Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "religious",
+      "won": true,
+      "reason": "stopped",
+      "turns": 220,
+      "victory_type": "VICTORY_TECHNOLOGY",
+      "revisions": [
+        "66b67ec756a8e3ff1067f88f78b04d30c89fb3cf"
+      ],
+      "spaceport_turn": 187,
+      "selection_turns": {
+        "writing": 24,
+        "education": 88,
+        "chemistry": 168,
+        "rocketry": 172,
+        "satellites": 173
+      },
+      "rocket_to_satellite_selection_turns": 1,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [],
+      "military_choices_between_rocket_and_satellite": [],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 27,
+          "education": 90,
+          "chemistry": 169,
+          "rocketry": 173,
+          "satellites": 175
+        },
+        "events_sha256": "0cbd73663c69bf890ae00c8a824415982bc21f7b69576a57b46b4336d3910434"
+      },
+      "why_sha256": "4894aebbcb79aa87344b0f6a5ec9168dd1ec633bb935c066b70e933671d1da40"
+    },
+    {
+      "tag": "civvis-20261102T105550Z",
+      "utc": "2026-11-02T11:19:40Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "religious",
+      "won": true,
+      "reason": "stopped",
+      "turns": 249,
+      "victory_type": "VICTORY_TECHNOLOGY",
+      "revisions": [
+        "66b67ec756a8e3ff1067f88f78b04d30c89fb3cf"
+      ],
+      "spaceport_turn": 224,
+      "selection_turns": {
+        "writing": 28,
+        "education": 83,
+        "chemistry": 169,
+        "rocketry": 186,
+        "satellites": 196
+      },
+      "rocket_to_satellite_selection_turns": 10,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [
+        {
+          "turn": 188,
+          "tech": "guidance_systems",
+          "reason": "domination-siege-research: unlock guidance systems to supply the missing wall-breaking capability for the campaign"
+        },
+        {
+          "turn": 192,
+          "tech": "telecommunications",
+          "reason": "worth 11 to the conquest plan, ahead of nuclear fission at 11"
+        },
+        {
+          "turn": 193,
+          "tech": "nuclear_fission",
+          "reason": "worth 11 to the conquest plan, ahead of satellites at 11"
+        },
+        {
+          "turn": 195,
+          "tech": "lasers",
+          "reason": "worth 24 to the conquest plan, ahead of satellites at 11"
+        }
+      ],
+      "military_choices_between_rocket_and_satellite": [],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 31,
+          "education": 86,
+          "chemistry": 170,
+          "rocketry": 188,
+          "satellites": 198
+        },
+        "events_sha256": "91d94be656e1c45b5d6c96b334ebca4850d63010611cc21d6eaf8108709c98a7"
+      },
+      "why_sha256": "f0bdc0b5306c59a609f7df4372c3e0266c12c6d844f61d43a79316569b97ef57"
+    },
+    {
+      "tag": "civvis-20261102T112008Z",
+      "utc": "2026-11-02T11:43:09Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "domination",
+      "won": false,
+      "reason": "stopped",
+      "turns": 260,
+      "victory_type": "VICTORY_TECHNOLOGY",
+      "revisions": [
+        "66b67ec756a8e3ff1067f88f78b04d30c89fb3cf"
+      ],
+      "spaceport_turn": 241,
+      "selection_turns": {
+        "writing": 30,
+        "education": 93,
+        "chemistry": 169,
+        "rocketry": 188,
+        "satellites": 210
+      },
+      "rocket_to_satellite_selection_turns": 22,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [
+        {
+          "turn": 191,
+          "tech": "plastics",
+          "reason": "decisive-window: the most valuable step toward composites; modern armor beats Babylon's best defender (86) by 9 and bomber opens tier-4 walls in 11 turns",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 193,
+          "tech": "synthetic_materials",
+          "reason": "decisive-window: the most valuable step toward composites; modern armor beats Babylon's best defender (86) by 9 and bomber opens tier-4 walls in 8 turns",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 196,
+          "tech": "composites",
+          "reason": "decisive-window: the most valuable step toward composites; modern armor beats Babylon's best defender (86) by 9 and bomber opens tier-4 walls in 4 turns",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 199,
+          "tech": "combined_arms",
+          "reason": "the most valuable step toward combined arms, needed to reveal fuel for the standing army with no reserve"
+        },
+        {
+          "turn": 201,
+          "tech": "advanced_ballistics",
+          "reason": "domination-siege-research: unlock guidance systems to supply the missing wall-breaking capability for the campaign"
+        },
+        {
+          "turn": 204,
+          "tech": "guidance_systems",
+          "reason": "domination-siege-research: unlock guidance systems to supply the missing wall-breaking capability for the campaign"
+        },
+        {
+          "turn": 208,
+          "tech": "nuclear_fission",
+          "reason": "worth 11 to the conquest plan, ahead of satellites at 11"
+        }
+      ],
+      "military_choices_between_rocket_and_satellite": [
+        {
+          "turn": 191,
+          "tech": "plastics",
+          "reason": "decisive-window: the most valuable step toward composites; modern armor beats Babylon's best defender (86) by 9 and bomber opens tier-4 walls in 11 turns",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 193,
+          "tech": "synthetic_materials",
+          "reason": "decisive-window: the most valuable step toward composites; modern armor beats Babylon's best defender (86) by 9 and bomber opens tier-4 walls in 8 turns",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 196,
+          "tech": "composites",
+          "reason": "decisive-window: the most valuable step toward composites; modern armor beats Babylon's best defender (86) by 9 and bomber opens tier-4 walls in 4 turns",
+          "on_model_satellites_prerequisite_path": false
+        }
+      ],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 32,
+          "education": 94,
+          "chemistry": 173,
+          "rocketry": 191,
+          "satellites": 214
+        },
+        "events_sha256": "a9b615a05c7353621ecdf151005a45bb60a7d854c4ff18a4139280542c81427a"
+      },
+      "why_sha256": "6a46b651efbe09d1205779fa1bb8b504b7b4e6a72574f8133c8420decdb975f2"
+    },
+    {
+      "tag": "civvis-20261102T114335Z",
+      "utc": "2026-11-02T12:00:11Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "religious",
+      "won": false,
+      "reason": "stopped",
+      "turns": 232,
+      "victory_type": "VICTORY_TECHNOLOGY",
+      "revisions": [
+        "66b67ec756a8e3ff1067f88f78b04d30c89fb3cf"
+      ],
+      "spaceport_turn": 224,
+      "selection_turns": {
+        "writing": 36,
+        "education": 103,
+        "chemistry": 169,
+        "rocketry": 185,
+        "satellites": 197
+      },
+      "rocket_to_satellite_selection_turns": 12,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [
+        {
+          "turn": 189,
+          "tech": "electricity",
+          "reason": "worth 15 to the diplomacy plan, ahead of siege tactics at 6"
+        },
+        {
+          "turn": 192,
+          "tech": "siege_tactics",
+          "reason": "worth 5 to the science plan, ahead of printing at 4"
+        },
+        {
+          "turn": 193,
+          "tech": "printing",
+          "reason": "the most valuable step toward rifling, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 194,
+          "tech": "advanced_flight",
+          "reason": "the most valuable step toward advanced flight, which science needs"
+        }
+      ],
+      "military_choices_between_rocket_and_satellite": [
+        {
+          "turn": 193,
+          "tech": "printing",
+          "reason": "the most valuable step toward rifling, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        }
+      ],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 38,
+          "education": 105,
+          "chemistry": 175,
+          "rocketry": 189,
+          "satellites": 200
+        },
+        "events_sha256": "468f77c2fcb3faa8a27b02d2dc4f82ba1bae938a0d6993f964c6669170bd73b1"
+      },
+      "why_sha256": "51251bac4f336e0c8a7578bd2c729839ca6fb8d075de12fccf9c57f286483412"
+    },
+    {
+      "tag": "civvis-20261102T120037Z",
+      "utc": "2026-11-02T12:18:20Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "culture",
+      "won": true,
+      "reason": "stopped",
+      "turns": 233,
+      "victory_type": "VICTORY_TECHNOLOGY",
+      "revisions": [
+        "66b67ec756a8e3ff1067f88f78b04d30c89fb3cf"
+      ],
+      "spaceport_turn": 186,
+      "selection_turns": {
+        "writing": 27,
+        "education": 75,
+        "chemistry": 153,
+        "rocketry": 173,
+        "satellites": 174
+      },
+      "rocket_to_satellite_selection_turns": 1,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [],
+      "military_choices_between_rocket_and_satellite": [],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 31,
+          "education": 76,
+          "chemistry": 155,
+          "rocketry": 174,
+          "satellites": 176
+        },
+        "events_sha256": "668e84653109b2c7facd4cd1066dae0d867082ffca0b5feaed607517a6488ea6"
+      },
+      "why_sha256": "7185cb2eb84bc93584dfd0dc5e36c43bdd05140cc059378a894020ba74aae506"
+    },
+    {
+      "tag": "civvis-20261102T121946Z",
+      "utc": "2026-11-02T12:36:55Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "religious",
+      "won": true,
+      "reason": "stopped",
+      "turns": 207,
+      "victory_type": "VICTORY_TECHNOLOGY",
+      "revisions": [
+        "15550f3105217eb9adb4d9e0adea76b387d7ce1b"
+      ],
+      "spaceport_turn": 143,
+      "selection_turns": {
+        "writing": 30,
+        "education": 64,
+        "chemistry": 116,
+        "rocketry": 129,
+        "satellites": 146
+      },
+      "rocket_to_satellite_selection_turns": 17,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [
+        {
+          "turn": 132,
+          "tech": "electricity",
+          "reason": "worth 16 to the science plan, ahead of ballistics at 10"
+        },
+        {
+          "turn": 135,
+          "tech": "ballistics",
+          "reason": "the most valuable step toward ballistics, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 136,
+          "tech": "siege_tactics",
+          "reason": "the most valuable step toward steel, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 137,
+          "tech": "advanced_flight",
+          "reason": "the most valuable step toward advanced flight, which science needs"
+        },
+        {
+          "turn": 141,
+          "tech": "printing",
+          "reason": "the most valuable step toward steel, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 142,
+          "tech": "military_science",
+          "reason": "the most valuable step toward steel, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 143,
+          "tech": "rifling",
+          "reason": "the most valuable step toward steel, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 144,
+          "tech": "steel",
+          "reason": "the most valuable step toward steel, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        }
+      ],
+      "military_choices_between_rocket_and_satellite": [
+        {
+          "turn": 135,
+          "tech": "ballistics",
+          "reason": "the most valuable step toward ballistics, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 136,
+          "tech": "siege_tactics",
+          "reason": "the most valuable step toward steel, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 141,
+          "tech": "printing",
+          "reason": "the most valuable step toward steel, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 142,
+          "tech": "military_science",
+          "reason": "the most valuable step toward steel, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 143,
+          "tech": "rifling",
+          "reason": "the most valuable step toward steel, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 144,
+          "tech": "steel",
+          "reason": "the most valuable step toward steel, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        }
+      ],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 32,
+          "education": 65,
+          "chemistry": 121,
+          "rocketry": 132,
+          "satellites": 149
+        },
+        "events_sha256": "9d904b862876780a99c74d6df91c87a4cf10c7cfe12be1a4c34879063126742f"
+      },
+      "why_sha256": "72efd9292ed35fd8d289ad6b2d13db44fa7f69896355b21b549a204017608125"
+    },
+    {
+      "tag": "civvis-20261102T123721Z",
+      "utc": "2026-11-02T12:56:25Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "culture",
+      "won": false,
+      "reason": "stopped",
+      "turns": 241,
+      "victory_type": "VICTORY_TECHNOLOGY",
+      "revisions": [
+        "15550f3105217eb9adb4d9e0adea76b387d7ce1b"
+      ],
+      "spaceport_turn": 238,
+      "selection_turns": {
+        "writing": 27,
+        "education": 92,
+        "chemistry": 164,
+        "rocketry": 191,
+        "satellites": 194
+      },
+      "rocket_to_satellite_selection_turns": 3,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [],
+      "military_choices_between_rocket_and_satellite": [],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 31,
+          "education": 93,
+          "chemistry": 168,
+          "rocketry": 194,
+          "satellites": 199
+        },
+        "events_sha256": "0bc5d90ad1f4e6d4c96c8f237ea70e915c74e2c5956f313cab5ee0dc72c5c269"
+      },
+      "why_sha256": "46027eb6379d243db26a36db9fd55c35753529199ff0bb2d6dfe24da29b67234"
+    },
+    {
+      "tag": "civvis-20261102T125650Z",
+      "utc": "2026-11-02T13:09:56Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "domination",
+      "won": false,
+      "reason": "stopped",
+      "turns": 210,
+      "victory_type": "VICTORY_CULTURE",
+      "revisions": [
+        "15550f3105217eb9adb4d9e0adea76b387d7ce1b"
+      ],
+      "spaceport_turn": null,
+      "selection_turns": {
+        "writing": 24,
+        "education": 76,
+        "chemistry": 180,
+        "rocketry": 191,
+        "satellites": null
+      },
+      "rocket_to_satellite_selection_turns": null,
+      "satellite_unobserved_after_rocketry": true,
+      "choices_between_rocket_and_satellite": [
+        {
+          "turn": 195,
+          "tech": "electricity",
+          "reason": "worth 16 to the recovery plan, ahead of combined arms at 8"
+        },
+        {
+          "turn": 198,
+          "tech": "combined_arms",
+          "reason": "decisive-window: the most valuable step toward combined arms; giant death robot beats Byzantium's best defender (95) by 35 and bomber opens tier-4 walls in 31 turns",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 201,
+          "tech": "nuclear_fission",
+          "reason": "decisive-window: the most valuable step toward robotics; giant death robot beats Byzantium's best defender (95) by 35 and bomber opens tier-4 walls in 20 turns",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 204,
+          "tech": "lasers",
+          "reason": "decisive-window: the most valuable step toward robotics; giant death robot beats Byzantium's best defender (95) by 35 and bomber opens tier-4 walls in 16 turns",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 208,
+          "tech": "plastics",
+          "reason": "decisive-window: the most valuable step toward composites; modern armor at 2.1x their power faces Byzantium's best defender (95) by 0 and bomber opens tier-4 walls in 6 turns",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 210,
+          "tech": "synthetic_materials",
+          "reason": "decisive-window: the most valuable step toward composites; modern armor at 2.3x their power faces Byzantium's best defender (95) by 0 and bomber opens tier-4 walls in 4 turns",
+          "on_model_satellites_prerequisite_path": false
+        }
+      ],
+      "military_choices_between_rocket_and_satellite": [
+        {
+          "turn": 198,
+          "tech": "combined_arms",
+          "reason": "decisive-window: the most valuable step toward combined arms; giant death robot beats Byzantium's best defender (95) by 35 and bomber opens tier-4 walls in 31 turns",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 201,
+          "tech": "nuclear_fission",
+          "reason": "decisive-window: the most valuable step toward robotics; giant death robot beats Byzantium's best defender (95) by 35 and bomber opens tier-4 walls in 20 turns",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 204,
+          "tech": "lasers",
+          "reason": "decisive-window: the most valuable step toward robotics; giant death robot beats Byzantium's best defender (95) by 35 and bomber opens tier-4 walls in 16 turns",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 208,
+          "tech": "plastics",
+          "reason": "decisive-window: the most valuable step toward composites; modern armor at 2.1x their power faces Byzantium's best defender (95) by 0 and bomber opens tier-4 walls in 6 turns",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 210,
+          "tech": "synthetic_materials",
+          "reason": "decisive-window: the most valuable step toward composites; modern armor at 2.3x their power faces Byzantium's best defender (95) by 0 and bomber opens tier-4 walls in 4 turns",
+          "on_model_satellites_prerequisite_path": false
+        }
+      ],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 30,
+          "education": 79,
+          "chemistry": 182,
+          "rocketry": 195
+        },
+        "events_sha256": "018c1f02695273dea006bb06b7d2d3409f4cf985285809819cb94803ad539857"
+      },
+      "why_sha256": "0993abf6bbd8cb19f7380be1f2fe069f87936f5fd127cf7e786480e96c001cfd"
+    },
+    {
+      "tag": "civvis-20261102T131016Z",
+      "utc": "2026-11-02T13:30:28Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "religious",
+      "won": false,
+      "reason": "stopped",
+      "turns": 223,
+      "victory_type": "VICTORY_TECHNOLOGY",
+      "revisions": [
+        "15550f3105217eb9adb4d9e0adea76b387d7ce1b"
+      ],
+      "spaceport_turn": 187,
+      "selection_turns": {
+        "writing": 30,
+        "education": 83,
+        "chemistry": 167,
+        "rocketry": 168,
+        "satellites": 178
+      },
+      "rocket_to_satellite_selection_turns": 10,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [
+        {
+          "turn": 172,
+          "tech": "plastics",
+          "reason": "decisive-window: the most valuable step toward composites; modern armor beats Scotland's best defender (85) by 10 and bomber opens tier-4 walls in 8 turns",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 174,
+          "tech": "synthetic_materials",
+          "reason": "decisive-window: the most valuable step toward composites; modern armor beats Scotland's best defender (85) by 10 and bomber opens tier-4 walls in 5 turns",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 176,
+          "tech": "composites",
+          "reason": "the most valuable step toward composites, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        }
+      ],
+      "military_choices_between_rocket_and_satellite": [
+        {
+          "turn": 172,
+          "tech": "plastics",
+          "reason": "decisive-window: the most valuable step toward composites; modern armor beats Scotland's best defender (85) by 10 and bomber opens tier-4 walls in 8 turns",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 174,
+          "tech": "synthetic_materials",
+          "reason": "decisive-window: the most valuable step toward composites; modern armor beats Scotland's best defender (85) by 10 and bomber opens tier-4 walls in 5 turns",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 176,
+          "tech": "composites",
+          "reason": "the most valuable step toward composites, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        }
+      ],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 32,
+          "education": 88,
+          "chemistry": 168,
+          "rocketry": 172,
+          "satellites": 182
+        },
+        "events_sha256": "7bfa5d50cb717be7277cc9aa2fce0c82c1be96e83a4b9f0fbf571ee96d51b374"
+      },
+      "why_sha256": "5bfa0c947143dde49ea45e4a94227c33b357d5ac302e506fa90212f568d57a92"
+    },
+    {
+      "tag": "civvis-20261102T133053Z",
+      "utc": "2026-11-02T13:48:46Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "culture",
+      "won": false,
+      "reason": "stopped",
+      "turns": 241,
+      "victory_type": "VICTORY_TECHNOLOGY",
+      "revisions": [
+        "15550f3105217eb9adb4d9e0adea76b387d7ce1b"
+      ],
+      "spaceport_turn": 212,
+      "selection_turns": {
+        "writing": 23,
+        "education": 103,
+        "chemistry": 168,
+        "rocketry": 197,
+        "satellites": 200
+      },
+      "rocket_to_satellite_selection_turns": 3,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [],
+      "military_choices_between_rocket_and_satellite": [],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 26,
+          "education": 105,
+          "chemistry": 171,
+          "rocketry": 200,
+          "satellites": 202
+        },
+        "events_sha256": "92ce9d3268cc4e039413b3a8ee87a13980c351a7e47e743f668f2933495b47aa"
+      },
+      "why_sha256": "2392261096a6cd15b177761afa56ef6f25ed2d011e8275d06dbac8f93b04a25c"
+    },
+    {
+      "tag": "civvis-20261102T134910Z",
+      "utc": "2026-11-02T14:03:05Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "religious",
+      "won": false,
+      "reason": "stopped",
+      "turns": 222,
+      "victory_type": "VICTORY_TECHNOLOGY",
+      "revisions": [
+        "15550f3105217eb9adb4d9e0adea76b387d7ce1b"
+      ],
+      "spaceport_turn": 183,
+      "selection_turns": {
+        "writing": 29,
+        "education": 86,
+        "chemistry": 152,
+        "rocketry": 161,
+        "satellites": 170
+      },
+      "rocket_to_satellite_selection_turns": 9,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [
+        {
+          "turn": 164,
+          "tech": "electricity",
+          "reason": "worth 12 to the science plan, ahead of siege tactics at 5"
+        },
+        {
+          "turn": 166,
+          "tech": "siege_tactics",
+          "reason": "worth 5 to the science plan, with nothing else on offer"
+        },
+        {
+          "turn": 167,
+          "tech": "advanced_flight",
+          "reason": "the most valuable step toward satellites, which science needs"
+        }
+      ],
+      "military_choices_between_rocket_and_satellite": [],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 33,
+          "education": 89,
+          "chemistry": 156,
+          "rocketry": 164,
+          "satellites": 174
+        },
+        "events_sha256": "bdf00a592ff1d23b74576dc42fdfb526594dfaa08252bbb5d2d859d24de8da00"
+      },
+      "why_sha256": "41f8e61f6d66847b3587db2f44cd774c25e8dc2554738787e5168a30b5e9652d"
+    },
+    {
+      "tag": "civvis-20261102T140434Z",
+      "utc": "2026-11-02T14:24:15Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "culture",
+      "won": false,
+      "reason": "stopped",
+      "turns": 245,
+      "victory_type": "VICTORY_TECHNOLOGY",
+      "revisions": [
+        "76e657eb56df36ae3d531a84d3c80c02ac06c926"
+      ],
+      "spaceport_turn": 208,
+      "selection_turns": {
+        "writing": 33,
+        "education": 68,
+        "chemistry": 168,
+        "rocketry": 194,
+        "satellites": 205
+      },
+      "rocket_to_satellite_selection_turns": 11,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [
+        {
+          "turn": 195,
+          "tech": "synthetic_materials",
+          "reason": "worth 7 to the culture plan, ahead of satellites at 6"
+        },
+        {
+          "turn": 196,
+          "tech": "composites",
+          "reason": "worth 8 to the culture plan, ahead of satellites at 6"
+        },
+        {
+          "turn": 200,
+          "tech": "stealth_technology",
+          "reason": "decisive-window: the most valuable step toward stealth technology; giant death robot beats Australia's best defender (95) by 35 and jet bomber opens tier-4 walls in 16 turns",
+          "on_model_satellites_prerequisite_path": false
+        }
+      ],
+      "military_choices_between_rocket_and_satellite": [
+        {
+          "turn": 200,
+          "tech": "stealth_technology",
+          "reason": "decisive-window: the most valuable step toward stealth technology; giant death robot beats Australia's best defender (95) by 35 and jet bomber opens tier-4 walls in 16 turns",
+          "on_model_satellites_prerequisite_path": false
+        }
+      ],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 35,
+          "education": 72,
+          "chemistry": 171,
+          "rocketry": 195,
+          "satellites": 208
+        },
+        "events_sha256": "3de93f610eceb3c82ffd602b9919999bfb97d611607fe65361b1dd9819a9d940"
+      },
+      "why_sha256": "4aaac4f809c263076452a4dca3d787ac045a1cce38bda92c93d2248b7383270d"
+    },
+    {
+      "tag": "civvis-20261102T142440Z",
+      "utc": "2026-11-02T14:43:44Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "domination",
+      "won": false,
+      "reason": "stopped",
+      "turns": 218,
+      "victory_type": "VICTORY_CULTURE",
+      "revisions": [
+        "76e657eb56df36ae3d531a84d3c80c02ac06c926"
+      ],
+      "spaceport_turn": 205,
+      "selection_turns": {
+        "writing": 36,
+        "education": 125,
+        "chemistry": 174,
+        "rocketry": 175,
+        "satellites": 187
+      },
+      "rocket_to_satellite_selection_turns": 12,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [
+        {
+          "turn": 179,
+          "tech": "guidance_systems",
+          "reason": "the most valuable step toward guidance systems, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 183,
+          "tech": "electricity",
+          "reason": "worth 14 to the diplomacy plan, ahead of composites at 8"
+        },
+        {
+          "turn": 185,
+          "tech": "combined_arms",
+          "reason": "worth 13 to the diplomacy plan, ahead of composites at 8"
+        },
+        {
+          "turn": 186,
+          "tech": "nuclear_fission",
+          "reason": "worth 10 to the diplomacy plan, ahead of composites at 8"
+        }
+      ],
+      "military_choices_between_rocket_and_satellite": [
+        {
+          "turn": 179,
+          "tech": "guidance_systems",
+          "reason": "the most valuable step toward guidance systems, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        }
+      ],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 38,
+          "education": 126,
+          "chemistry": 175,
+          "rocketry": 179,
+          "satellites": 189
+        },
+        "events_sha256": "9cf8411de7a1321b59ead3a9d132536028a7360cffa729d2a64b424e9caa7356"
+      },
+      "why_sha256": "28ab512c076b915fb63b8e3492dc35bbd9b7582992bc79055da3b830f1c9d554"
+    },
+    {
+      "tag": "civvis-20261102T144411Z",
+      "utc": "2026-11-02T14:56:42Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "religious",
+      "won": false,
+      "reason": "stopped",
+      "turns": 191,
+      "victory_type": "VICTORY_CULTURE",
+      "revisions": [
+        "76e657eb56df36ae3d531a84d3c80c02ac06c926"
+      ],
+      "spaceport_turn": null,
+      "selection_turns": {
+        "writing": 32,
+        "education": null,
+        "chemistry": 169,
+        "rocketry": 187,
+        "satellites": null
+      },
+      "rocket_to_satellite_selection_turns": null,
+      "satellite_unobserved_after_rocketry": true,
+      "choices_between_rocket_and_satellite": [
+        {
+          "turn": 191,
+          "tech": "guidance_systems",
+          "reason": "the most valuable step toward guidance systems, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        }
+      ],
+      "military_choices_between_rocket_and_satellite": [
+        {
+          "turn": 191,
+          "tech": "guidance_systems",
+          "reason": "the most valuable step toward guidance systems, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        }
+      ],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 39,
+          "education": 59,
+          "satellites": 159,
+          "chemistry": 175,
+          "rocketry": 191
+        },
+        "events_sha256": "dfbba48e73cf8052e136f76e9635fca3b5595ae2035467c3d0161a341a8185ba"
+      },
+      "why_sha256": "c98b03ba1f2df00b59a68d32de112128a9e75b6841f65dd5ac9868e6bf4597ea"
+    },
+    {
+      "tag": "civvis-20261102T145704Z",
+      "utc": "2026-11-02T15:19:16Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "religious",
+      "won": false,
+      "reason": "stopped",
+      "turns": 231,
+      "victory_type": "VICTORY_DIPLOMATIC",
+      "revisions": [
+        "319e4a5552f6ad40cfd72ec701adf1f01e105f1d"
+      ],
+      "spaceport_turn": 203,
+      "selection_turns": {
+        "writing": 27,
+        "education": 72,
+        "chemistry": 138,
+        "rocketry": 166,
+        "satellites": 172
+      },
+      "rocket_to_satellite_selection_turns": 6,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [
+        {
+          "turn": 168,
+          "tech": "guidance_systems",
+          "reason": "the most valuable step toward guidance systems, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        }
+      ],
+      "military_choices_between_rocket_and_satellite": [
+        {
+          "turn": 168,
+          "tech": "guidance_systems",
+          "reason": "the most valuable step toward guidance systems, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        }
+      ],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 30,
+          "education": 74,
+          "chemistry": 141,
+          "rocketry": 168,
+          "satellites": 174
+        },
+        "events_sha256": "728c48d53bdc8f0bd0ab763e68ee13d7560b2602f8a93a0ea2bc04e74691a22c"
+      },
+      "why_sha256": "2b5ffaeb7d6af29d88f2c41b01eb6439116c77eb37505343d76fd19ae1019920"
+    },
+    {
+      "tag": "civvis-20261102T151945Z",
+      "utc": "2026-11-02T15:36:39Z",
+      "difficulty": "DIFFICULTY_KING",
+      "victory_target": "culture",
+      "won": false,
+      "reason": "stopped",
+      "turns": 238,
+      "victory_type": "VICTORY_TECHNOLOGY",
+      "revisions": [
+        "74615250576947b340bf43142d590b5cfff49c21"
+      ],
+      "spaceport_turn": 210,
+      "selection_turns": {
+        "writing": 26,
+        "education": 94,
+        "chemistry": 166,
+        "rocketry": 199,
+        "satellites": 200
+      },
+      "rocket_to_satellite_selection_turns": 1,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [],
+      "military_choices_between_rocket_and_satellite": [],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 31,
+          "education": 95,
+          "chemistry": 170,
+          "rocketry": 200,
+          "satellites": 202
+        },
+        "events_sha256": "db16f76fb481a5bcae1e0e5a55908708d5d3ee048471802a4a8604d4e8f2b536"
+      },
+      "why_sha256": "872c7b2a4e36c62393b8c92f27e170f6a41d157e696ab947f8bb8324a85b61e8"
+    },
+    {
+      "tag": "civvis-20261102T153704Z",
+      "utc": "2026-11-02T15:52:45Z",
+      "difficulty": "DIFFICULTY_EMPEROR",
+      "victory_target": "domination",
+      "won": false,
+      "reason": "abandoned",
+      "turns": 214,
+      "victory_type": null,
+      "revisions": [
+        "74615250576947b340bf43142d590b5cfff49c21"
+      ],
+      "spaceport_turn": null,
+      "selection_turns": {
+        "writing": 24,
+        "education": 89,
+        "chemistry": 193,
+        "rocketry": 202,
+        "satellites": null
+      },
+      "rocket_to_satellite_selection_turns": null,
+      "satellite_unobserved_after_rocketry": true,
+      "choices_between_rocket_and_satellite": [
+        {
+          "turn": 207,
+          "tech": "military_science",
+          "reason": "worth 14 to the recovery plan, ahead of computers at 2"
+        },
+        {
+          "turn": 210,
+          "tech": "rifling",
+          "reason": "worth 5 to the recovery plan, ahead of computers at 2"
+        },
+        {
+          "turn": 212,
+          "tech": "refining",
+          "reason": "worth 13 to the recovery plan, ahead of satellites at 7"
+        }
+      ],
+      "military_choices_between_rocket_and_satellite": [],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 28,
+          "education": 95,
+          "chemistry": 195,
+          "rocketry": 207
+        },
+        "events_sha256": "31406aa66f7d296eb464218bb460c81ffd1b433184f268ab0a37e4d144adee56"
+      },
+      "why_sha256": "2eaedfe2ef3eb9464a09ebf8584da2d49195a2bc6513d760fbceea6c574f8ed2"
+    },
+    {
+      "tag": "civvis-20261102T155307Z",
+      "utc": "2026-11-02T16:00:56Z",
+      "difficulty": "DIFFICULTY_EMPEROR",
+      "victory_target": "culture",
+      "won": false,
+      "reason": "abandoned",
+      "turns": 122,
+      "victory_type": null,
+      "revisions": [
+        "74615250576947b340bf43142d590b5cfff49c21"
+      ],
+      "spaceport_turn": null,
+      "selection_turns": {
+        "writing": 26,
+        "education": null,
+        "chemistry": null,
+        "rocketry": null,
+        "satellites": null
+      },
+      "rocket_to_satellite_selection_turns": null,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [],
+      "military_choices_between_rocket_and_satellite": [],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 29
+        },
+        "events_sha256": "aa2552d26ddb932b64b72bf52bb5c29078c489f0b7118a73ba2043c1990f6888"
+      },
+      "why_sha256": "9dd9f8be392dba34061d31be09965fd1c7084a0c5023aecc0c282ae98e8d680e"
+    },
+    {
+      "tag": "civvis-20261102T160202Z",
+      "utc": "2026-11-02T16:15:50Z",
+      "difficulty": "DIFFICULTY_EMPEROR",
+      "victory_target": "culture",
+      "won": false,
+      "reason": "stopped",
+      "turns": 189,
+      "victory_type": "VICTORY_CULTURE",
+      "revisions": [
+        "6cb7bed2d6f95ff074e183a17c3372d9144c50ab"
+      ],
+      "spaceport_turn": null,
+      "selection_turns": {
+        "writing": 23,
+        "education": 77,
+        "chemistry": 162,
+        "rocketry": 189,
+        "satellites": null
+      },
+      "rocket_to_satellite_selection_turns": null,
+      "satellite_unobserved_after_rocketry": true,
+      "choices_between_rocket_and_satellite": [],
+      "military_choices_between_rocket_and_satellite": [],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 26,
+          "education": 83,
+          "chemistry": 165
+        },
+        "events_sha256": "582c6c348ffa175533d9490d65a0caa377eeddd50ff088cdc632317fe0cb4e6c"
+      },
+      "why_sha256": "a2956737e813a0fe9817602021cfe5cec2d6027562bad8a9e8dd228f0ee6adbe"
+    },
+    {
+      "tag": "civvis-20261102T161612Z",
+      "utc": "2026-11-02T16:33:24Z",
+      "difficulty": "DIFFICULTY_EMPEROR",
+      "victory_target": "science",
+      "won": false,
+      "reason": "stopped",
+      "turns": 208,
+      "victory_type": "VICTORY_TECHNOLOGY",
+      "revisions": [
+        "6cb7bed2d6f95ff074e183a17c3372d9144c50ab"
+      ],
+      "spaceport_turn": 195,
+      "selection_turns": {
+        "writing": 17,
+        "education": 81,
+        "chemistry": 161,
+        "rocketry": 163,
+        "satellites": 192
+      },
+      "rocket_to_satellite_selection_turns": 29,
+      "satellite_unobserved_after_rocketry": false,
+      "choices_between_rocket_and_satellite": [
+        {
+          "turn": 171,
+          "tech": "ballistics",
+          "reason": "the most valuable step toward ballistics, needed to catch a nearby barbarian army",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 173,
+          "tech": "siege_tactics",
+          "reason": "the most valuable step toward advanced ballistics, needed to catch a nearby barbarian army",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 175,
+          "tech": "electricity",
+          "reason": "worth 16 to the recovery plan, ahead of printing at 4"
+        },
+        {
+          "turn": 178,
+          "tech": "advanced_flight",
+          "reason": "decisive-window: the most valuable step toward advanced flight; modern armor at 2.3x their power faces Khmer's best defender (95) by 0 and bomber opens tier-4 walls in 28 turns",
+          "on_model_satellites_prerequisite_path": true
+        },
+        {
+          "turn": 182,
+          "tech": "printing",
+          "reason": "the most valuable step toward advanced ballistics, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 183,
+          "tech": "military_science",
+          "reason": "the most valuable step toward advanced ballistics, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 185,
+          "tech": "rifling",
+          "reason": "the most valuable step toward advanced ballistics, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 186,
+          "tech": "steel",
+          "reason": "the most valuable step toward advanced ballistics, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 188,
+          "tech": "advanced_ballistics",
+          "reason": "the most valuable step toward advanced ballistics, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        }
+      ],
+      "military_choices_between_rocket_and_satellite": [
+        {
+          "turn": 171,
+          "tech": "ballistics",
+          "reason": "the most valuable step toward ballistics, needed to catch a nearby barbarian army",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 173,
+          "tech": "siege_tactics",
+          "reason": "the most valuable step toward advanced ballistics, needed to catch a nearby barbarian army",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 178,
+          "tech": "advanced_flight",
+          "reason": "decisive-window: the most valuable step toward advanced flight; modern armor at 2.3x their power faces Khmer's best defender (95) by 0 and bomber opens tier-4 walls in 28 turns",
+          "on_model_satellites_prerequisite_path": true
+        },
+        {
+          "turn": 182,
+          "tech": "printing",
+          "reason": "the most valuable step toward advanced ballistics, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 183,
+          "tech": "military_science",
+          "reason": "the most valuable step toward advanced ballistics, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 185,
+          "tech": "rifling",
+          "reason": "the most valuable step toward advanced ballistics, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 186,
+          "tech": "steel",
+          "reason": "the most valuable step toward advanced ballistics, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        },
+        {
+          "turn": 188,
+          "tech": "advanced_ballistics",
+          "reason": "the most valuable step toward advanced ballistics, needed to modernize the standing army at war",
+          "on_model_satellites_prerequisite_path": false
+        }
+      ],
+      "native_witness": {
+        "first_observed_owned_turns": {
+          "writing": 21,
+          "education": 86,
+          "chemistry": 163,
+          "rocketry": 171,
+          "satellites": 196
+        },
+        "events_sha256": "44319fa1eb081815347a28ac089137a187df03d624185073abdb4b1e95bc2979"
+      },
+      "why_sha256": "3816a85b340018c7ae9e5e193eebfec90930dd60b08b208e70f05ba16b42a2bc"
+    }
+  ]
+}

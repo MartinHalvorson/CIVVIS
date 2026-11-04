@@ -352,11 +352,14 @@ impl AdvancedAi {
             Some(*cid) != threatened
                 && !(self.sanctuary_yields_a_held_queue && self.sanctuary_queue_held(g, pid, *cid))
         };
-        let mut eligible = g
+        // A held production queue cannot take another building, but its
+        // completed Shrine still recruits counterfaith units. Count those
+        // sources before restricting which queues this reservation may take.
+        let source_cities = g
             .player_city_ids(pid)
             .into_iter()
             .filter(|cid| {
-                free(cid)
+                Some(*cid) != threatened
                     && g.city_religion(&g.cities[cid]).is_some_and(|faith| {
                         if let Some(own) = founded {
                             faith == own
@@ -365,6 +368,11 @@ impl AdvancedAi {
                         }
                     })
             })
+            .collect::<Vec<_>>();
+        let mut eligible = source_cities
+            .iter()
+            .copied()
+            .filter(free)
             .collect::<Vec<_>>();
         // `counterweight-from-the-first-convert`: with no city on a safe
         // counterfaith, a city that follows no religion yet takes the
@@ -380,8 +388,10 @@ impl AdvancedAi {
         // See `founder_wants_a_second_source`: under the gene a founder stops
         // at two sources, not at the first.
         let second_source = founded.is_some() && self.founder_wants_a_second_source(g, pid);
+        // Keep the original stop for an unconverted fallback sanctuary too:
+        // its completed Shrine waits for a safe faith rather than another site.
         if !second_source
-            && eligible.iter().any(|cid| {
+            && eligible.iter().chain(source_cities.iter()).any(|cid| {
                 g.cities[cid]
                     .buildings
                     .iter()

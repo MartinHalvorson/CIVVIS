@@ -39,6 +39,14 @@ use super::*;
 /// worth saving for, holding every other purchase.
 pub(crate) const FOUNDER_SAVE_TURNS: f64 = 5.0;
 
+/// `diplomat-saves-for-the-apostle`: the window a Diplomatic founder saves
+/// over while its Holy City still follows its faith. Five turns kept
+/// civvis-20261008T101304Z (about 3.5 Faith a turn, 34 turns saving, lost)
+/// from hopeless saving, and fifteen still does (52 against a 200-Faith
+/// Apostle); it lets live Immortal civvis-20261030T171157Z (+11-13 a turn,
+/// 124-184 short) hold its Faith for the Apostle instead of five Missionaries.
+pub(crate) const DIPLOMAT_SAVE_TURNS: f64 = 15.0;
+
 /// The most defensive Missionaries the gene asks for.
 pub(crate) const FOUNDER_DEFENCE_MAX_MISSIONARIES: usize = 4;
 
@@ -90,7 +98,27 @@ impl AdvancedAi {
     ) -> bool {
         self.founder_defence_live(g, pid)
             && price - g.players[pid].faith
-                > FOUNDER_SAVE_TURNS * Self::founder_faith_income(g, pid).max(0.0)
+                > self.founder_save_turns(g, pid) * Self::founder_faith_income(g, pid).max(0.0)
+    }
+
+    /// The save window: [`DIPLOMAT_SAVE_TURNS`] for a Diplomatic founder whose
+    /// Holy City is ours and still follows our faith, with
+    /// `diplomat-saves-for-the-apostle`; [`FOUNDER_SAVE_TURNS`] otherwise.
+    fn founder_save_turns(&self, g: &Game, pid: usize) -> f64 {
+        let holy_city_holds = g.players[pid].religion.as_deref().is_some_and(|own| {
+            g.players[pid]
+                .holy_city
+                .and_then(|cid| g.cities.get(&cid))
+                .is_some_and(|city| city.owner == pid && g.city_religion(city) == Some(own))
+        });
+        if self.diplomat_saves_for_the_apostle
+            && self.active_victory_target(g) == Some(VictoryTarget::Diplomacy)
+            && holy_city_holds
+        {
+            DIPLOMAT_SAVE_TURNS
+        } else {
+            FOUNDER_SAVE_TURNS
+        }
     }
 
     /// Whether the Inquisition's next unit (`unit`) is out of reach in every

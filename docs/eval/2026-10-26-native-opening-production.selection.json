@@ -1,0 +1,57 @@
+{
+  "scope": "Read-only exploratory retrospective census. Fixed entire completed 16-start Immortal Domination Slinger cohort; no outcome selection or treatment-effect claim.",
+  "source": "docs/eval/2026-10-25-capital-watch-slinger-native-trial.collection-10.json.gz",
+  "source_sha256": "a532e0341bf4483f11a9ddffac790ce553d7d2f8b0f6d136c53297b85e8c7b57",
+  "cohort": [
+    "civvis-20261026T000859Z",
+    "civvis-20261026T001624Z",
+    "civvis-20261026T002652Z",
+    "civvis-20261026T004001Z",
+    "civvis-20261026T005035Z",
+    "civvis-20261026T005810Z",
+    "civvis-20261026T011557Z",
+    "civvis-20261026T013313Z",
+    "civvis-20261026T014409Z",
+    "civvis-20261026T021028Z",
+    "civvis-20261026T022518Z",
+    "civvis-20261026T023847Z",
+    "civvis-20261026T024315Z",
+    "civvis-20261026T025544Z",
+    "civvis-20261026T031004Z",
+    "civvis-20261026T032104Z"
+  ],
+  "primary_turns": [
+    10,
+    20,
+    30,
+    40,
+    50
+  ],
+  "retirement_probe_turns": [
+    50,
+    51,
+    52
+  ],
+  "share_rule": {
+    "share": 0.3333333333333333,
+    "minimum_turn": 50,
+    "consecutive_turns": 3
+  },
+  "primary_selection": "For each stem/target choose lowest continuation ordinal containing an actual decision at frame 0; then first such recorded decision. Retain all other same-frame decisions and continuation candidates as controls. Missing exact targets stay missing.",
+  "plots": "Every distinct complete captured read of the selected decision must end at the selected target/frame0. Replace plots on explicit tiles records; do not merge absent keys or stamp metadata-only tiles_delta as a plot read. Only explicit plots with observed turn equal to target qualify as current.",
+  "tile_bounds": {
+    "maximum_one_worker_per_city": true,
+    "production_delta_minimum": 1,
+    "food_surplus_floor_for_tradeoff": 2,
+    "pareto_preserve_all_other_five_yields": true,
+    "upper_bounds_only_not_native_allocation_permission": true
+  },
+  "unknowns": "Retain missing/ambiguous/incomplete/nonfinite/negative sentinel readings; never replace missing with zero or a neighboring turn. Rival city/population decomposition only when the actual all-major leader has met-rival public stats at the same state.",
+  "production_sources": {
+    "retirement": "Build-queue yield per major, with city-yield fallback, from Native turn event.",
+    "city_queue": "city.production is build-queue yield.",
+    "city_yield": "city.yields.production and public_stats.production use City:GetYield.",
+    "decomposition": "Same-state public city-yield Production ratio only, not the retirement build-queue ratio.",
+    "global_completeness": "Require readable local and all reported majors; expected map size turn.majors + 1 when available."
+  }
+}

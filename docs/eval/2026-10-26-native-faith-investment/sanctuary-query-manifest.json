@@ -1,0 +1,6 @@
+{
+  "scope": "Observational query only on actual root Game. Adds immutable eligibility/source/price queries; no action or selection override. Require complete payload/read/trace controls.",
+  "file": "src/ai/advanced/adopted_faith_sanctuary.rs",
+  "before_sha256": "8f0450e738a544db8d207bea7d45359384f52a03b5b7a82c79fc329690f5de61",
+  "after_sha256": "4acc8b58f54562a4b053fd82f869f08378cf019acd13844ec99b24f9e4f2a851"
+}

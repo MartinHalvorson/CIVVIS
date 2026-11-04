@@ -1210,12 +1210,10 @@ screen sets it.
 the gene set exactly the way `gene_table()` does — every screenable row of the
 registry, so a new gene reaches the gate without touching the tool — and reads
 each gene's own rows out of
-`docs/gene_screens/**/*.json`. **A gene is proven when some committed row has a
-non-zero paired statistic**, which is a number read out of an artifact rather
-than a sentence somebody wrote. The cheapest artifact that carries it is a
-single-gene probe, because `--genes <tag>` holds everything else at the
-baseline and any divergence between the arms is then that gene and nothing
-else:
+`docs/gene_screens/**/*.json`. Its historical statistical rule accepts a row
+with a non-zero contrast or standard error. A single-gene probe holds all
+unscreened genes at baseline, but its independent draw does not hold the
+world and player seat fixed across arms:
 
 ```bash
 target/ci/gene_screen --games 6 --jobs 6 --genes <tag> \
@@ -1223,6 +1221,28 @@ target/ci/gene_screen --games 6 --jobs 6 --genes <tag> \
 target/ci/gene_screen --analyze target/<tag>.jsonl \
   --json docs/gene_screens/fires/<tag>.json
 ```
+
+The current independent treatment draw requires care: a nonzero contrast can
+come from different seeds or seats even when the candidate changes no action.
+The gate retains acceptance of historical statistical artifacts, but that
+acceptance alone is not a causal activation check. Use matched worlds or
+same-input action comparisons for a new candidate.
+
+For captured Native-adapter proposals, a JSON artifact under `fires/` may use
+`kind: "captured_native_action_pairs_v1"`, a `tag`, an `archive` object with a
+repository-relative `path` and SHA-256, and `members` naming raw result JSON
+records in that archive. Each record contains `complete: true` and `reads`;
+each read contains `complete: true`, its captured input's positive `bytes`
+and SHA-256, and exactly two `arms` named `off` and `on`. The raw arms carry
+the executed `argv`, zero `exit`, observed `genome` and `payload.orders`.
+The gate reads the archive without extracting files, checks its hash, and
+requires the observed treatment/forced sets and arguments to differ only by
+the named gene (disposable mirror directory names may differ). At least one
+actual order list must differ. Failed/incomplete queries, unrelated genome
+changes and journal-only differences cannot satisfy it. These records count
+proposals, not played seats, and carry no win estimate or ledger rating.
+The captured-input digest binds the two recorded queries; this artifact does
+not independently rerun the controller or attest a Native host effect.
 
 Six games is enough, because the question is qualitative. ⚠ Look at the score
 share as well as wins: `coupled-expansion`'s probe read a win Δ of exactly zero
@@ -2376,8 +2396,8 @@ each:
 | kind | the seat |
 |---|---|
 | `legacy` | `AdvancedAi::legacy()`, the frozen anchor |
-| `firaxis-mix` | the deployment genome (`AdvancedAi::new()`) retargeted at one lane drawn in the shares the live Civilization VI ladder actually loses to — **diplomatic 32 : culture 27 : religious 8 : science 4 : domination 1** (the Hall of Fame census, `docs/eval/2026-08-18-we-screen-against-a-religion-game-and-lose-a-diplomacy-game.md`); 72 consecutive firaxis-mix games play each lane exactly its share |
-| `random` | a genome with every screened gene on at one half, drawn by the screen's own draw |
+| `firaxis-mix` | the **stock** agent (`AdvancedAi::new()`: the six `Production` genes and `Weights::default().city_target` 4 — ⚠ *not* the deployment genome since #3749, 2026-09-24, whatever this row said before) retargeted at one lane drawn in the shares the live Civilization VI ladder lost to in August — **diplomatic 32 : culture 27 : religious 8 : science 4 : domination 1** (the Hall of Fame census, `docs/eval/2026-08-18-we-screen-against-a-religion-game-and-lose-a-diplomacy-game.md`); 72 consecutive firaxis-mix games play each lane exactly its share |
+| `random` | a genome with every screened gene on at one half, drawn by the screen's own draw — under `--deployment-genome`, where nothing is screened, exactly the deployment genome |
 
 **The rival seat is not measured.** Its row is written with `kind: "rival"`
 (and `rival_mix` naming the kind, `rival_target` the lane a firaxis-mix rival
@@ -2429,6 +2449,353 @@ a win column from a `--handicap rivals` source is a statement about the seat
 against handicapped rivals, **not comparable to the self-play columns** beside
 it; the on-off difference (`win_delta_pp`, what the posterior reads) is the
 statement about the gene. The arithmetic is deliberately unchanged.
+
+### ⭐ The faithful field: `--rivals firaxis-faithful` (2026-10-31)
+
+**Why.** The mix's three kinds are three different opponents, and only one of
+them looks like the live Immortal field. On the 49-game Immortal culture screen
+of 2026-10-30 (`--rivals firaxis-mix --handicap rivals --rival-chairs 3`, 4p
+50x32) the measured seat won **12/17 against the stock `firaxis-mix` chair,
+4/16 against `legacy` and 0/16 against `random`** — which under
+`--deployment-genome` is the deployment genome. The live Lv 7 seat won 0 of ~20
+culture seats. Per-turn rival means against the 4p Tiny live census (53
+Immortal Pericles seats, 2026-10-30):
+
+| rival mean | t80 cities / pop / production | t80 wonders | t150 cities | t150 science |
+|---|---|---:|---:|---:|
+| live Immortal | 6.0 / 45 / 134 | 3.7 | 9.3 | 214 |
+| stock (`firaxis-mix`) | 3.3 / 22 / 76 | 0.2 | 4.3 | 90 |
+| `legacy` | 3.3 / 23 / 75 | 3.4 | 4.8 | 134 |
+| deployment genome (`random`) | 8.5 / 55 / 281 | 4.3 | 11 | 299 |
+
+The stock chair never passes five cities and leaves the wonders to us (our
+native culture wins held a median 13.5; the live seat holds 0–1 to turn 175).
+Its lane draw is blocky too: `firaxis_mix_target` indexes a 72-slot sequence by
+`seed / 3`, so 96 consecutive seeds all play the diplomatic lane, and every one
+of that screen's 51 `firaxis-mix` chairs did.
+
+**What it seats.** Every rival chair of every game — no rotation — plays the
+deployment genome, each gene at its ledger default read from the registry
+(`faithful_genome`), not from the table `--live-genome` rewrites, and built by a
+constructor that takes no genome (`faithful_rival_seat`): nothing an arm drew
+reaches the opposition. Each chair's lane is hashed from (seed, chair) over
+`LIVE_IMMORTAL_LANES` — **science 9 : culture 6 : religious 4 : own choice 2**,
+what beat the live Lv 7 seat (technology 9, culture 6, religious 4 of 19 rival
+wins) — so a short batch already plays the census and the chairs of one game
+split. An own-choice chair is not retargeted. Rows say `rival_mix:
+"firaxis-faithful"` and `rival_target` (`own-choice` for an untargeted chair);
+the header says `rivals: "firaxis-faithful"`, so `tools/genes.py` records it
+and `--analyze` refuses to merge it with a `firaxis-mix` source.
+
+**The live shape.** Since 2026-10-31 the live lane is six players on Continents
+`MAPSIZE_SMALL` — 74x46 and 9 city-states (`CIV6_MAP_SIZES` in `src/setup.rs`,
+`(6, 9)` in `tools/civ6_play.py`) — which is **the screen's own default board**,
+so no shape flag is needed:
+
+```
+gene_screen --rivals firaxis-faithful --handicap rivals --rival-chairs 5 \
+  --difficulty immortal --target-mix diplomatic --deployment-genome --trace --out rows.jsonl
+```
+
+(`--difficulty deity` for the 30% Deity rung; drop `--deployment-genome` and
+add `--genes …` to screen.) The Lv 7 corpus above was 4p Tiny Pangaea —
+`--players 4 --rival-chairs 3 --width 60 --height 38 --city-states 6 --map
+pangaea` — for re-reading it.
+
+**`--trace`** writes every major's economy at turns 10–100 by tens, 125, 150,
+175, 200 and 225 onto its row as `trace` (cities, population, the five yields
+with the rung's handicap, tourism, domestic and foreign tourists, techs,
+civics, wonders, districts, and whether the seat was handicapped) — what the
+live `events.jsonl` state rows read for a rival. Rows are byte for byte
+unchanged without it.
+
+**`--journal SEED[,SEED]`** (2026-11-02) writes the measured seat's reasoning
+for those seeds — the `think!` lines on the Strategy, Military and Diplomacy
+topics at Decision depth or above, as `t<turn> p<player> <topic> <headline> |
+<detail>` — to `<out>.journal.<seed>.txt`. The journal is drained every turn,
+so the ring never drops one, and recording changes no decision: seeds
+30700000–04 of a seat-paced King Domination batch replayed byte for byte. To
+replay one game of an earlier batch, repeat its `--start-seed`, `--games` and
+`--jobs`: the rival chairs rotate with the game index. Its first read found
+King Domination seats losing to culture racers while "the Conquest counter is
+barred: we are declared friends".
+
+**Uncalibrated, it is stronger than live.** The deployment genome
+over-delivers on width and science against the live field (above), so an
+uncalibrated faithful source is a harder opponent than live Immortal: on the 6p
+Small board its rivals won by science at t134–153, where the live Lv 7 field's
+technology wins came at t175–226. The two knobs below hold it down. The
+deployment chairs cost more than the stock chair: 3.0 s/turn against 1.27 on
+the same host, about 2.3x per game. And ⚠ `Game::domestic_tourists` is not
+floored at zero, so a seat whose people mostly visit others reads negative
+natively (seen in a trace at −12); the host never does. Engine-side, noted
+here only.
+
+#### ⭐ Calibrated to live: `--rival-rung -2 --rival-pace` (2026-10-31)
+
+Two opt-in knobs, both for `--rivals firaxis-faithful` only, and both needed:
+
+- **`--rival-rung RUNG|-N`** sets `GameOptions::ai_yield_rung`, so the
+  handicapped rival chairs play a lower rung's **yield bonus**
+  (`ai_yield_pct`), named outright or `N` rungs below each game's rung.
+  Every discrete grant stays on the game's rung: the bonus start units (the
+  Immortal Settler), the era boosts, combat strength and experience — the rows
+  `DebugGameplay.sqlite` says the live AI receives. Only the percentage moves,
+  because the measured difference is conversion: the live Firaxis AI turns its
+  +60% Production into a rival that holds 22.9 Production a city at turn 80;
+  the deployment genome turns it into 32.5. Needs `--handicap rivals`.
+- **`--rival-pace`** caps every faithful chair's planned city count at the
+  live field's rival mean — 4 / 5 / 6 / 7 / 9 / 10 / 11 cities at turns 40 /
+  60 / 80 / 100 / 150 / 175 / 225 — with chair 0 of each game (which rotates)
+  allowed two more, the live best rival's margin
+  (`src/ai/advanced/rival_pace.rs`). The cap stops settling; it never razes,
+  and conquest is untouched. At `--difficulty king` the cap follows the live
+  King field instead (2026-11-01): 2 / 4 / 4 / 5 / 7 / 8 / 10 cities at the
+  same turns, the rival mean of 17 live 6p Small King games. See the King
+  re-fit below.
+- **`--seat-pace`** (2026-11-01, opt-in) caps every *measured* seat's planned
+  city count at the live seat's own curve: 3 / 4 / 5 / 6 / 8 / 9 / 10 cities
+  at the same turns, where our live seat runs on every rung within a city
+  through turn 100 (King 2.7 / 4.0 / 5.1 / 6.0 / 7.9 / 8.8 / 10.1). Unpaced, a
+  measured seat holds 9–10 cities at turns 100–150 and a King Culture seat
+  makes 2–3x live's Culture at turn 150. Use it for absolute win-rate reads of
+  genes that do not change expansion; never to screen a gene that does, since
+  the cap masks it. Paired deltas do not need it.
+
+Measured at Immortal on the default 6p Small Continents board, 6 games a
+setting, seeds 31100000–05, `--deployment-genome --trace`, against the live
+Immortal rival mean (4p Tiny Lv 7 census of 2026-10-30, 53 seats; the first 6p
+Small seats of 2026-10-31 agree within ~10% through turn 100). Each cell is
+the rival mean over live as cities / Production / Science, then techs minus
+live's:
+
+| setting | t60 | t100 | t150 | rival wins |
+|---|---|---|---|---|
+| uncalibrated | 1.64 / 1.94 / 1.65, +1 | 1.49 / 2.97 / 2.21, +10 | 1.19 / 2.93 / 2.29, +21 | science t134–153 |
+| game rung King (whole board, a probe) | 1.20 / 0.75 / 0.46, −7 | 1.34 / 1.20 / 1.13, −6 | 1.12 / 1.30 / 1.47, +0 | science t157–202 |
+| `--rival-pace` only | 0.96 / 1.47 / 1.49, +3 | 0.99 / 2.14 / 1.53, +6 | 1.03 / 2.14 / 1.85, +14 | science t148–166 |
+| Emperor economy + pace | 0.98 / 1.18 / 1.16, −0 | 0.97 / 1.66 / 1.38, +2 | 0.97 / 1.46 / 1.43, +6 | science t145–181 |
+| King economy (units, boosts too) + pace | 0.90 / 0.74 / 0.62, −6 | 0.97 / 1.00 / 0.98, −4 | 0.96 / 1.08 / 1.21, −2 | science t177–194 |
+| **`--rival-rung -2 --rival-pace`** | **0.92 / 0.93 / 0.88, −3** | **0.96 / 1.24 / 1.07, −0** | **0.97 / 1.15 / 1.24, +3** | **science t163–188** |
+| `--rival-rung -3 --rival-pace` | 0.90 / 0.68 / 0.61, −5 | 0.94 / 0.86 / 0.89, −4 | 0.91 / 0.78 / 0.95, −4 | science t178–194 |
+
+(The uncalibrated, King-probe, Emperor-economy and King-economy rows played
+`--target-mix diplomatic`, the lane of the day; the others the four lanes the
+live seat now plays, `science,culture,religious,domination`. The rival chairs
+draw their own lanes either way.)
+
+`--rival-rung -2 --rival-pace` is the only setting with every cell inside
+±25% of live at all three marks. Width alone leaves the per-city economy at
+1.4–1.7x live; a lower rung alone leaves the width at 1.34x at turn 100 and
+the science at 1.47x at 150; moving the Settler and the boosts with the
+percentage (King economy) starves the opening (Science 0.62x at turn 60).
+Its rivals' science wins land at t163–188, median 176, against live's
+t175–226: three of six inside the window, three a few turns early, which is
+what five rival chairs racing (6p) rather than live's three (4p) should do.
+At `-3` the wins move into the window and the opening falls out of band. A
+calibrated 6p game took 54–100 s at `--jobs 2` on a loaded fleet Mac.
+
+#### ⭐ Recalibrated to the live finish: `--rival-late-science 75 --rival-space-floor 62 --rival-victory-pace 175` (2026-10-31)
+
+**The recommended faithful field is now** rung −2 + pace **plus** these three
+knobs:
+
+```
+gene_screen --rivals firaxis-faithful --handicap rivals --rival-chairs 5 \
+  --rival-rung -2 --rival-pace \
+  --rival-late-science 75 --rival-space-floor 62 --rival-victory-pace 175 \
+  --difficulty immortal --deployment-genome --trace --out rows.jsonl
+```
+
+**Why.** Under rung −2 + pace the rival *economy* matches the live 6p Small
+Continents Immortal field through t175. Against met rivals' `public_stats`
+from the 10-31 live games, cities run 0.95–1.01x, production 0.91–1.20x,
+science 0.94–1.19x and techs −2 to +4. The rivals still *win* about 20–28
+turns early: Science at a median t181 against live t199–200, Culture at t173
+against t169 (-8e's harness rows read t141). So every uncapped verdict on a
+gene that pays back after ~t150 was under-credited.
+
+The cause is the race, not the economy:
+- **The tech leader runs ahead.** Leader techs at t125 / t150 read 54 / 66
+  against live 49 / 59.
+- **The native racer beelines the space branch.** Its first satellite comes
+  at ~t124 knowing ~50 techs. In 24 live seats the first rival satellite came
+  at a median **t152 knowing 59.5 techs**.
+
+The three knobs act on the handicapped rival chairs only, never on a measured
+seat and never in a live game (every option defaults to `None`):
+
+- **`--rival-late-science PCT`** (`GameOptions::ai_late_science_pct`): from
+  Online turn 100 (`AI_LATE_SCIENCE_FROM_STANDARD` = 150 standard), a rival's
+  Science, bonus included, is PCT percent of what it was.
+- **`--rival-space-floor TECHS`** (`GameOptions::ai_space_tech_floor`): no
+  rival may start a space project (Earth Satellite, Moon Landing, Mars Colony,
+  Exoplanet Expedition) before it knows TECHS techs.
+- **`--rival-victory-pace PCT`** (`GameOptions::ai_space_project_cost_pct`):
+  the four space projects cost a rival PCT percent. Alone this is weak: at
+  200% the finish moved t181 → t179, because the rival pours its production
+  in. It only bites once the floor gates the start.
+
+`--trace` also writes **`project_turns`** on every row: the first turn each
+major landed each space project. The table below is read from it
+(`scratchpad recal/projgaps.py` reads a winner's chain from the file).
+
+Measured at Immortal, 6p Small Continents, `--target-mix
+science,culture,religious,domination`, seeds 31100000+, 12 games a setting
+unless noted. Each cell is the median turn of the Science winner's satellite /
+Moon / Mars / Exoplanet / win, and the median Culture win:
+
+| setting (on top of rung −2 + pace) | sat / moon / mars / exo / win | culture win |
+|---|---|---|
+| none (the previous recommendation) | 124.5 / 128 / 143.5 / 156.5 / 181 | 173 (n 2) |
+| `--rival-victory-pace 200` | 128 / 134 / 155 / 162 / 179 | 149 (n 1) |
+| `--rival-late-science 75` | 136 / 140 / 156 / 164 / 185 | 171 (n 3) |
+| late-science 75 + `--rival-space-floor 62` | 153.5 / 158.5 / 166 / 170 / 187.5 | 173 (n 2) |
+| **late-science 75 + floor 62 + `--rival-victory-pace 175`** | **161 / 168 / 174.5 / 181 / 192** | **175 (n 4)** |
+| live (19 Technology losses, -8e) | 158 / 165 / 179 / 188 / 200 | 169 (n 11) |
+
+With the three knobs:
+- the winner's chain is within ~3–8 turns of live at every stage;
+- on the same seeds the game ends 7 turns later on average (184.7 against
+  177.7);
+- the rival mean techs sit within 2 of live at t150 and t175.
+
+The rival mean Science per turn reads 0.76 / 0.87 / 0.82x live at t100 / 150
+/ 175. That is the cost of matching the tech count and the leader, which drive
+the race.
+
+⚠ **These are rival-only clock knobs.** A file's absolute end turn is not
+comparable across calibrations: a later end is the rivals finishing later,
+not our seat doing better. Paired deltas inside one calibration (end turn,
+survival, score share) remain valid, since both arms share the knobs. Every
+header records all three, the calibration line names them, and `--analyze`
+refuses to merge files that differ on any of them.
+
+**Verdicts decided on the previous calibration, to re-read.** They were all
+measured with rung −2 + pace only, uncapped unless noted, and all
+under-credit late payoff:
+- the stage-1 Campus/Plaza claims re-arm (-f6 Culture, n 9–12);
+- -f6's culture-target lane check and `culture-keeps-every-border-open`;
+- -8b's `opening-builder-after-the-first-settler` (#4244: Culture n=12, end
+  turn +3.4 ± 4.8 without it) and #4287 `deck-prices-growth` (Culture and
+  Science n=12 each, survival ≈ 0, Culture production +10% at t150);
+- -8e's `land-grab-outlasts-the-opening` disarm (#4282);
+- -3b's Religion-seat knockout of its own ten armed genes (n=21, neutral).
+
+#4287 and the Campus claims are the most likely to move under 7+ more turns of
+payback.
+
+**Re-reads on the recalibrated field so far** (uncapped, n=12, seeds 29800000+
+unless noted):
+- **#4287 `deck-prices-growth`** (-8b, Culture): end turn +1.5 ± 3.5, share
+  +0.41 ± 0.35 pp, production +2% and Science +5% at t150. It won 1 game in each
+  arm, the first measured-seat wins seen on the faithful field. This agrees with
+  the old read; the gene stays armed.
+- **#4282 `land-grab-outlasts-the-opening`** (-8e): the old t150 Science and
+  production *cost* disappeared, since it was an artefact of games ending early.
+  Production now reads +3% at t150 and +8% at t175, with +1.3 and +1.9 cities.
+  Survival and end turn are still neutral (−0.5), so the gene stays disarmed. The
+  verdict was a misleading cost and is now an honest null.
+
+#### ⭐ At Emperor (Lv 6): the same flags with `--difficulty emperor` (2026-11-01)
+
+The live lane moved to Emperor on 10-31 after 153620Z. The recommended Emperor
+field keeps every flag above and changes only the difficulty:
+
+```
+gene_screen --rivals firaxis-faithful --handicap rivals --rival-chairs 5 \
+  --rival-rung -2 --rival-pace \
+  --rival-late-science 75 --rival-space-floor 62 --rival-victory-pace 175 \
+  --difficulty emperor --deployment-genome --trace --out rows.jsonl
+```
+
+`--rival-rung` counts from the game's difficulty, so at Emperor rung −2 gives
+the rivals Prince yields. The fit is against the 6 live 6p Small Continents
+Emperor games of 10-31 (met rivals' `public_stats`, 10–17 rivals a mark). Seeds
+were 31100000+, with 8 games at rung −2 and 12 at rung −1. Each cell is the
+harness rival mean over the live rival mean at t60 / t100 / t150 / t175:
+
+| rung | production | Science | techs (difference) | rival Science win |
+|---|---|---|---|---|
+| **−2** | **0.83 / 1.04 / 0.90 / 0.89x** | 0.63 / 0.69 / 0.85 / 0.99x | −4.2 / −2.5 / −4.1 / −4.2 | 8 of 8, median t209.5 |
+| −1 | 1.04 / 1.64 / 1.27 / 1.25x | 0.84 / 0.84 / 1.19 / 1.21x | −2.3 / +0.8 / +1.9 / +2.4 | 8 of 12 at t187; Culture 4 at t156 |
+
+The live Emperor rival finishes so far are two Technology wins, at t188 and t218,
+too few to separate the rungs on the finish. Production separates them cleanly,
+and rung −2 matches it. Under rung −2 the rivals run about 4 techs behind live,
+so the Emperor field is **mildly lenient**: late payoff is slightly
+over-credited. Paired deltas are fine. Refit once a dozen live Emperor games have
+finished.
+
+⚠ **The religion race closes later in the harness than live.** The first trace
+mark at which a 4th major has a religion is a median t85 at rung −2 (t90 at rung
+−1). Live, the 4th religion is founded at a median t65.5 at Emperor (n=4) and
+t48.5 at Immortal (n=54); these come from our seat's `founded_religions`, per
+-43. So a deadline fitted on the harness would over-pray live. Fit religion-race
+timing to live data, and read the harness for founding-rate deltas only.
+
+**What a calibrated source measures.** The measured seat lost all six games
+to a rival science win, ranked 6th of 6 in every one, kept every city it
+founded (one lost in one game) and ended on 10–14% of the table's score.
+At Immortal the win column is at or near zero and carries almost no signal in
+a batch of hundreds; read a gene by **how late the rival finish comes**
+(`turn` on the measured row), **score share** and **rank**, and by the seat's
+own techs and science at turns 100 and 150 in `--trace`.
+
+```
+gene_screen --rivals firaxis-faithful --handicap rivals --rival-chairs 5 \
+  --rival-rung -2 --rival-pace --difficulty immortal \
+  --target-mix science,culture,religious,domination --genes … --out rows.jsonl
+```
+
+Both knobs are recorded on the header (`rival_rung`, `rival_pace`), so
+`tools/genes.py` writes them onto the source and `--analyze` refuses to merge
+a calibrated file with an uncalibrated one.
+
+#### ⭐ At King (Lv 5): the King city curve (2026-11-01)
+
+The live lane moved to King on 11-01. At `--difficulty king`, `--rival-pace`
+now holds the faithful chairs to the live King field's city curve (#4317):
+2 / 4 / 4 / 5 / 7 / 8 / 10 cities at turns 40 / 60 / 80 / 100 / 150 / 175 / 225.
+That curve is the rival mean of 17 live 6p Small King games (2.4 / 3.8 / 4.5 /
+5.4 / 6.9 / 8.0 / 9.8). The other flags are unchanged. `--rival-rung -1` and
+`-2` are the same at King, because no rung at or below Prince has a yield
+bonus:
+
+```
+gene_screen --rivals firaxis-faithful --handicap rivals --rival-chairs 5 \
+  --rival-rung -1 --rival-pace \
+  --rival-late-science 75 --rival-space-floor 62 --rival-victory-pace 175 \
+  --difficulty king --deployment-genome --trace --out rows.jsonl
+```
+
+Rival means against the live King field (met rivals' `public_stats`) at t100 /
+t150 / t175. Each batch is 12 games on seeds 31200000–11 with the live genome
+(the why.log header of 2026-11-01, 523 genes), on the culture / religious /
+domination mix:
+
+| field | cities | production | Science | techs | rival Science win (median) | our wins |
+|---|---|---|---|---|---|---|
+| live King | 5.4 / 6.9 / 8.0 | 84 / 172 / 237 | 77 / 135 / 174 | 30.2 / 44.4 / 51.0 | t237 (13 games) | 2 of ~17 non-Science seats |
+| Immortal curve | 6.2 / 8.5 / 9.5 | 119 / 267 / 358 | 63 / 127 / 203 | 28.3 / 41.6 / 49.5 | t225 (9 of 12) | 0 of 12 |
+| **King curve** | **4.6 / 6.5 / 7.5** | **112 / 230 / 307** | **65 / 129 / 190** | **29.6 / 42.0 / 49.6** | **t227 (8 of 12)** | **0 of 12** |
+
+The King curve brings production from 1.41–1.55x live down to 1.29–1.34x.
+Science and techs are within 16% of live at every mark. A faithful city still
+out-produces a live Firaxis King city: about 36 production at turn 150 against
+25. Rivals settle about 0.7 cities under the cap, so the King curve leaves
+them 10–15% under live on cities. That gap is accepted, because raising the
+cap would raise production further.
+
+`--rival-victory-pace` hardly moves the rival finish. At 175 / 210 / 250 on
+the Immortal curve, rivals won Science at a median t225 / t226 / t227. A rival
+launch is tech-gated, not production-gated, so the King refit leaves it at 175.
+The harness finish is still about 10 turns early against live.
+
+Our measured seat is too strong too. Unpaced, it holds 9–10 cities at turns
+100–150 against the live seat's 6 and 8, and a King Culture seat makes 2–3x
+live's Culture at turn 150 (-f6). Paired deltas stay valid. For absolute
+win-rate reads of genes that don't change expansion, see `--seat-pace`.
 
 ## ⭐ The drift meter (2026-08-25)
 

@@ -10,6 +10,7 @@ spend a rung of the budget. Everything below is that sentence from a different a
 """
 
 from pathlib import Path
+import argparse
 import collections
 import json
 import re
@@ -3580,3 +3581,76 @@ class TheOperatorsTurnCapOutlivesAStaleEnvironment(unittest.TestCase):
                 got, warnings = self.cap(contents)
                 self.assertEqual(got, 250)
                 self.assertTrue(warnings)
+
+
+class OperatorSeatTests(unittest.TestCase):
+    """The per-game seat keys (operator 2026-10-31: random leader, 6p
+    Continents, Lv 7 70% / Lv 8 30%) are read from the policy file."""
+
+    def _args(self):
+        return argparse.Namespace(leader="LEADER_PERICLES", difficulty="DIFFICULTY_IMMORTAL",
+                                  map="Pangaea.lua", map_size="MAPSIZE_TINY", victory="diplomatic")
+
+    def _seat(self, text, rng=None):
+        with tempfile.TemporaryDirectory() as temporary:
+            policy = Path(temporary) / "policy"
+            policy.write_text(text)
+            args, warnings = self._args(), []
+            applied = climb.operator_seat(args, path=policy, warn=warnings.append, rng=rng)
+            return args, applied, warnings
+
+    def test_the_operator_mix_sets_every_seat_key(self) -> None:
+        args, applied, _ = self._seat(
+            "CIVVIS_LEADER=LEADER_PERICLES\n"
+            "CIVVIS_SEAT_LEADER=random  # Civ VI's Random Leader\n"
+            "CIVVIS_SEAT_DIFFICULTY_MIX=DIFFICULTY_IMMORTAL:70,DIFFICULTY_DEITY:30\n"
+            "CIVVIS_SEAT_MAP=Continents.lua\n"
+            "CIVVIS_SEAT_MAP_SIZE=MAPSIZE_SMALL\n")
+        self.assertEqual(args.leader, climb.RANDOM_LEADER)
+        self.assertIn(args.difficulty, ("DIFFICULTY_IMMORTAL", "DIFFICULTY_DEITY"))
+        self.assertEqual((args.map, args.map_size), ("Continents.lua", "MAPSIZE_SMALL"))
+        self.assertEqual(set(applied), {"leader", "difficulty", "map", "map_size"})
+        # The random leader survives the default, so `--leader random` reaches civ6_play.
+        self.assertEqual(climb.resolve_live_leader(args.leader), climb.RANDOM_LEADER)
+
+    def test_the_difficulty_mix_follows_its_weights(self) -> None:
+        import random
+        rng = random.Random(7)
+        rolls = collections.Counter(
+            self._seat("CIVVIS_SEAT_DIFFICULTY_MIX=DIFFICULTY_IMMORTAL:70,DIFFICULTY_DEITY:30\n",
+                       rng=rng)[0].difficulty for _ in range(2000))
+        self.assertEqual(set(rolls), {"DIFFICULTY_IMMORTAL", "DIFFICULTY_DEITY"})
+        self.assertAlmostEqual(rolls["DIFFICULTY_DEITY"] / 2000, 0.30, delta=0.04)
+
+    def test_the_victory_mix_rolls_only_the_named_lanes(self) -> None:
+        import random
+        rng = random.Random(3)
+        mix = "CIVVIS_SEAT_VICTORY_MIX=culture:1,science:1,religious:1,domination:1\n"
+        rolls = collections.Counter(self._seat(mix, rng=rng)[0].victory for _ in range(800))
+        self.assertEqual(set(rolls), {"culture", "science", "religious", "domination"})
+        self.assertTrue(all(150 <= n <= 250 for n in rolls.values()), rolls)
+
+    def test_a_bad_victory_mix_keeps_the_lane(self) -> None:
+        args, applied, warnings = self._seat("CIVVIS_SEAT_VICTORY_MIX=diplomacy:1,science\n")
+        self.assertEqual((args.victory, applied, len(warnings)), ("diplomatic", {}, 1))
+
+    def test_a_single_difficulty_pins_it(self) -> None:
+        args, _, _ = self._seat("CIVVIS_SEAT_DIFFICULTY_MIX=DIFFICULTY_DEITY\n")
+        self.assertEqual(args.difficulty, "DIFFICULTY_DEITY")
+
+    def test_malformed_values_are_ignored_with_a_warning(self) -> None:
+        args, applied, warnings = self._seat(
+            "CIVVIS_SEAT_LEADER=pericles\n"
+            "CIVVIS_SEAT_DIFFICULTY_MIX=DIFFICULTY_GODLIKE:100\n"
+            "CIVVIS_SEAT_MAP=Atlantis.lua\n"
+            "CIVVIS_SEAT_MAP_SIZE=MAPSIZE_ENORMOUS\n")
+        self.assertEqual(vars(args), vars(self._args()))
+        self.assertEqual(applied, {})
+        self.assertEqual(len(warnings), 4)
+
+    def test_absent_keys_and_a_missing_file_change_nothing(self) -> None:
+        args, applied, warnings = self._seat("CIVVIS_LEADER=LEADER_GORGO\n")
+        self.assertEqual((vars(args), applied, warnings), (vars(self._args()), {}, []))
+        args = self._args()
+        self.assertEqual(climb.operator_seat(args, path=Path("/nonexistent/policy")), {})
+        self.assertEqual(vars(args), vars(self._args()))

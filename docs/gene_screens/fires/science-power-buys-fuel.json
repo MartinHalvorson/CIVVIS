@@ -1,0 +1,16 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "science-power-buys-fuel",
+  "scope": "Five fixed native input reads. Three add only a Coal purchase proposal, off-cadence and later Oil controls add none. No host execution or strength claim.",
+  "archive": {
+    "path": "docs/eval/2026-11-02-science-power-buys-fuel.native.tar.xz",
+    "sha256": "1ef616b038de7565afabe628d941048e29b96bc07cf42321cb0b341a68759b2d"
+  },
+  "members": [
+    "case-150/result.json",
+    "case-152/result.json",
+    "case-155/result.json",
+    "case-161/result.json",
+    "case-184/result.json"
+  ]
+}

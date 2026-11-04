@@ -1,0 +1,29 @@
+{
+  "status": "rejected_unresolved_CPU_effect_guard_removed",
+  "original_comparison_median_change_pct": -3.3925653105005282,
+  "original_control_median_change_pct": -2.0162412386383943,
+  "confirmation_comparison_median_change_pct": -3.854642438907918,
+  "confirmation_control_median_change_pct": -2.055950271357232,
+  "confirmation_secondary_control_adjusted_median_pct": -2.83918032505327,
+  "confirmation_secondary_range_pct": [
+    -7.0244473618452545,
+    4.948678960405406
+  ],
+  "verified_raw_replies": 1680,
+  "fixed_available_cases": 42,
+  "unavailable_cases": 6,
+  "candidate_full_rust_tests": {
+    "passed": 6374,
+    "failed": 0,
+    "ignored": 56
+  },
+  "Native_profile_board_cases": 16,
+  "distinct_Native_prefixes": 8,
+  "Native_adapter_queries": 48,
+  "all_Native_responses_genomes_reasoning_equal": true,
+  "production_compiled_inputs_restored_exactly": 833,
+  "actual_baseline_source": "c871172d49375da2e635f2a4c001712a690ebc21",
+  "candidate_source": "609e60698",
+  "production_ai_sha256": "c508c18be80cbbc4b0d16e3ac072ac8f4ec43abd10340b234c1cf910be31211b",
+  "reason": "Small apparent timing reduction overlaps same-binary variation and has an inconsistent control-adjusted confirmation; no resolved performance gain. All correctness checks passed. Keep application behavior unchanged and retain complete evidence."
+}

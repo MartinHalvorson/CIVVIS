@@ -5978,6 +5978,8 @@ impl Game {
                             .unwrap_or(0) as f64,
             ),
             Item::Project { project } => {
+                // `GameOptions::ai_space_project_cost_pct`: 1 unless set.
+                let standard = standard * self.space_project_cost_scale(pid, project.as_str());
                 let maximum = self.rules.projects[project].cost_progression_max_pct;
                 if maximum <= 0.0 {
                     self.game_speed.scale(standard)
@@ -6343,6 +6345,29 @@ impl Game {
             } else {
                 0.0
             }
+    }
+
+    /// Pause a city's queue while keeping its paid work on the current item.
+    /// A replacement may resume its own saved work, but cannot spend this
+    /// item's progress as overflow. An already empty queue keeps its overflow.
+    pub fn pause_city_production(&mut self, cid: u32) -> bool {
+        let Some(item) = self
+            .cities
+            .get(&cid)
+            .and_then(|city| city.queue.first())
+            .cloned()
+        else {
+            return false;
+        };
+        let paid = self.item_invested_production(cid, &item);
+        let key = Self::item_progress_key(&item);
+        let city = self.cities.get_mut(&cid).unwrap();
+        if paid > 0.0 {
+            city.production_progress.insert(key, paid);
+        }
+        city.production = 0.0;
+        city.queue.clear();
+        true
     }
 
     /// Production still required after active progress, item-specific paused
@@ -7216,6 +7241,12 @@ impl Game {
         self.query_memo.producible.borrow_mut().clear();
     }
 
+    /// Replace the host's saved work on paused items (see
+    /// [`Game::host_saved_work`]). Mirror input, refreshed with the menus.
+    pub(crate) fn replace_host_saved_work(&mut self, saved: BTreeMap<u32, BTreeMap<String, f64>>) {
+        self.host_saved_work = Arc::new(saved);
+    }
+
     pub(crate) fn replace_host_unit_resource_prices(
         &mut self,
         prices: BTreeMap<u32, BTreeMap<String, f64>>,
@@ -7675,6 +7706,10 @@ impl Game {
                 }
             }
             Item::Project { project } => {
+                // `GameOptions::ai_space_tech_floor`: true unless set.
+                if !self.space_project_tech_floor_met(pid, project.as_str()) {
+                    return false;
+                }
                 if project == "repair_outer_defenses" {
                     let max = self.city_max_wall_hp(city);
                     return max > 0

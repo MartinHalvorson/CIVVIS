@@ -4669,7 +4669,6 @@ impl AdvancedAi {
         self.unit_preservation = false;
     }
 
-
     /// The twin of `enable_district_buildings_first`.
     pub fn disable_district_buildings_first(&mut self) {
         self.district_buildings_first = false;
@@ -7649,6 +7648,16 @@ impl AdvancedAi {
         self.elimination_yields_to_a_launch = false;
     }
 
+    /// Enable the separately measured staged Culture air-interception version.
+    pub fn enable_elimination_yields_to_a_launch_2(&mut self) {
+        self.elimination_yields_to_a_launch_2 = true;
+    }
+
+    /// Withhold the version-two interception path, retaining independent v1.
+    pub fn disable_elimination_yields_to_a_launch_2(&mut self) {
+        self.elimination_yields_to_a_launch_2 = false;
+    }
+
     /// Opt-in gene `builders-route-around-mountains`; see
     /// `AdvancedAi::builders_route_around_mountains`.
     pub fn enable_builders_route_around_mountains(&mut self) {
@@ -8219,11 +8228,1096 @@ impl AdvancedAi {
         self.defenders_hold_the_walls = false;
     }
 
+    /// Opt-in gene `war-faith-buys-the-army`; see
+    /// [`Self::war_faith_buys_the_army`].
+    pub fn enable_war_faith_buys_the_army(&mut self) {
+        self.war_faith_buys_the_army = true;
+    }
+
+    /// The twin of `enable_war_faith_buys_the_army`.
+    pub fn disable_war_faith_buys_the_army(&mut self) {
+        self.war_faith_buys_the_army = false;
+    }
+
+    /// Opt-in gene `faith-war-needs-the-edge`; see
+    /// [`Self::faith_war_needs_the_edge`].
+    pub fn enable_faith_war_needs_the_edge(&mut self) {
+        self.faith_war_needs_the_edge = true;
+    }
+
+    /// The twin of `enable_faith_war_needs_the_edge`.
+    pub fn disable_faith_war_needs_the_edge(&mut self) {
+        self.faith_war_needs_the_edge = false;
+    }
+
+    /// Opt-in `wing-capital-spotting`; see `advanced/wing_capital_spotting.rs`.
+    pub fn enable_wing_capital_spotting(&mut self) {
+        self.wing_capital_spotting = true;
+    }
+
+    /// The twin of `enable_wing_capital_spotting`.
+    pub fn disable_wing_capital_spotting(&mut self) {
+        self.wing_capital_spotting = false;
+    }
+
+    /// Opt-in gene `the-giant-gets-the-peace-offer`; see
+    /// [`Self::the_giant_gets_the_peace_offer`].
+    pub fn enable_the_giant_gets_the_peace_offer(&mut self) {
+        self.the_giant_gets_the_peace_offer = true;
+    }
+
+    /// The twin of `enable_the_giant_gets_the_peace_offer`.
+    pub fn disable_the_giant_gets_the_peace_offer(&mut self) {
+        self.the_giant_gets_the_peace_offer = false;
+    }
+
+    /// Opt-in gene `the-last-two-capitals-come-first`; see
+    /// [`Self::the_last_two_capitals_come_first`].
+    pub fn enable_the_last_two_capitals_come_first(&mut self) {
+        self.the_last_two_capitals_come_first = true;
+    }
+
+    /// The twin of `enable_the_last_two_capitals_come_first`.
+    pub fn disable_the_last_two_capitals_come_first(&mut self) {
+        self.the_last_two_capitals_come_first = false;
+    }
+
+    /// Opt-in `capital-watch-arms-the-slinger`; see `advanced/capital_watch_slinger.rs`.
+    pub fn enable_capital_watch_arms_the_slinger(&mut self) {
+        self.capital_watch_arms_the_slinger = true;
+    }
+
+    /// The twin of `enable_capital_watch_arms_the_slinger`.
+    pub fn disable_capital_watch_arms_the_slinger(&mut self) {
+        self.capital_watch_arms_the_slinger = false;
+        self.capital_watch_slinger_turn = None;
+    }
+
+    /// Opt-in gene `launcher-war-skips-the-reserve`; see
+    /// [`Self::launcher_war_skips_the_reserve`].
+    pub fn enable_launcher_war_skips_the_reserve(&mut self) {
+        self.launcher_war_skips_the_reserve = true;
+    }
+
+    /// The twin of `enable_launcher_war_skips_the_reserve`.
+    pub fn disable_launcher_war_skips_the_reserve(&mut self) {
+        self.launcher_war_skips_the_reserve = false;
+    }
+
+    /// Opt-in gene `nuclear-goal-needs-a-launcher`; see
+    /// [`Self::nuclear_goal_needs_a_launcher`].
+    pub fn enable_nuclear_goal_needs_a_launcher(&mut self) {
+        self.nuclear_goal_needs_a_launcher = true;
+        self.base.nuclear_goal_needs_a_launcher = true;
+    }
+
+    /// The twin of `enable_nuclear_goal_needs_a_launcher`.
+    pub fn disable_nuclear_goal_needs_a_launcher(&mut self) {
+        self.nuclear_goal_needs_a_launcher = false;
+        self.base.nuclear_goal_needs_a_launcher = false;
+    }
+
+    /// Measure the default-off forward airfield preparation project.
+    pub fn enable_forward_airfield_project(&mut self) {
+        self.forward_airfield_project = true;
+    }
+
+    /// Withhold the project and release its private reservation.
+    pub fn disable_forward_airfield_project(&mut self) {
+        self.forward_airfield_project = false;
+        self.forward_airfield_project_state = None;
+    }
+
+    /// Opt-in gene `aluminum-tile-spends-the-war-chest`; see
+    /// [`Self::aluminum_tile_spends_the_war_chest`].
+    pub fn enable_aluminum_tile_spends_the_war_chest(&mut self) {
+        self.aluminum_tile_spends_the_war_chest = true;
+    }
+
+    /// The twin of `enable_aluminum_tile_spends_the_war_chest`.
+    pub fn disable_aluminum_tile_spends_the_war_chest(&mut self) {
+        self.aluminum_tile_spends_the_war_chest = false;
+    }
+
+    /// Offer no friendship to the founder whose faith we must fight. See
+    /// [`Self::friendship_spares_the_converter`].
+    pub fn enable_friendship_spares_the_converter(&mut self) {
+        self.friendship_spares_the_converter = true;
+    }
+
+    /// The twin of `enable_friendship_spares_the_converter`.
+    pub fn disable_friendship_spares_the_converter(&mut self) {
+        self.friendship_spares_the_converter = false;
+    }
+
+    /// Opt-in gene `siege-tier-yields-to-the-bombers-2`; see
+    /// [`Self::siege_tier_yields_to_the_bombers_2`].
+    pub fn enable_siege_tier_yields_to_the_bombers_2(&mut self) {
+        self.siege_tier_yields_to_the_bombers_2 = true;
+    }
+
+    /// The twin of `enable_siege_tier_yields_to_the_bombers_2`.
+    pub fn disable_siege_tier_yields_to_the_bombers_2(&mut self) {
+        self.siege_tier_yields_to_the_bombers_2 = false;
+    }
+
+    /// Let a siege short of its bill take the repeatable-project queues. See
+    /// [`Self::siege_shortfall_claims_the_projects`].
+    pub fn enable_siege_shortfall_claims_the_projects(&mut self) {
+        self.siege_shortfall_claims_the_projects = true;
+    }
+
+    /// The twin of `enable_siege_shortfall_claims_the_projects`.
+    pub fn disable_siege_shortfall_claims_the_projects(&mut self) {
+        self.siege_shortfall_claims_the_projects = false;
+        self.siege_force_short.clear();
+    }
+
+    /// Let a Spy in the space racer's city disrupt before it trains on Gain
+    /// Sources. See [`Self::disrupt_before_the_sources`].
+    pub fn enable_disrupt_before_the_sources(&mut self) {
+        self.disrupt_before_the_sources = true;
+    }
+
+    /// The twin of `enable_disrupt_before_the_sources`.
+    pub fn disable_disrupt_before_the_sources(&mut self) {
+        self.disrupt_before_the_sources = false;
+    }
+
+    /// Opt-in gene `siege-moves-under-the-wing`; see
+    /// [`Self::siege_moves_under_the_wing`].
+    pub fn enable_siege_moves_under_the_wing(&mut self) {
+        self.siege_moves_under_the_wing = true;
+    }
+
+    /// The twin of `enable_siege_moves_under_the_wing`.
+    pub fn disable_siege_moves_under_the_wing(&mut self) {
+        self.siege_moves_under_the_wing = false;
+    }
+
+    /// Opt-in gene `unchosen-war-takes-the-first-peace`: see
+    /// [`Self::unchosen_war_takes_the_first_peace`].
+    pub fn enable_unchosen_war_takes_the_first_peace(&mut self) {
+        self.unchosen_war_takes_the_first_peace = true;
+    }
+
+    /// The twin of `enable_unchosen_war_takes_the_first_peace`.
+    pub fn disable_unchosen_war_takes_the_first_peace(&mut self) {
+        self.unchosen_war_takes_the_first_peace = false;
+    }
+
+    /// Opt-in gene `prey-waits-for-the-march`; see
+    /// [`Self::prey_waits_for_the_march`].
+    pub fn enable_prey_waits_for_the_march(&mut self) {
+        self.prey_waits_for_the_march = true;
+    }
+
+    /// The twin of `enable_prey_waits_for_the_march`.
+    pub fn disable_prey_waits_for_the_march(&mut self) {
+        self.prey_waits_for_the_march = false;
+    }
+
+    /// Opt-in gene `prey-waits-for-the-march-2`; see
+    /// [`Self::prey_waits_for_the_march_2`].
+    pub fn enable_prey_waits_for_the_march_2(&mut self) {
+        self.prey_waits_for_the_march_2 = true;
+    }
+
+    /// The twin of `enable_prey_waits_for_the_march_2`.
+    pub fn disable_prey_waits_for_the_march_2(&mut self) {
+        self.prey_waits_for_the_march_2 = false;
+    }
+
+    /// Opt-in gene `upkeep-waits-for-the-income`; see
+    /// [`Self::upkeep_waits_for_the_income`].
+    pub fn enable_upkeep_waits_for_the_income(&mut self) {
+        self.upkeep_waits_for_the_income = true;
+    }
+
+    /// The twin of `enable_upkeep_waits_for_the_income`.
+    pub fn disable_upkeep_waits_for_the_income(&mut self) {
+        self.upkeep_waits_for_the_income = false;
+    }
+
+    /// Opt-in gene `food-focus-grows-the-small-city`; see
+    /// [`Self::food_focus_grows_the_small_city`].
+    pub fn enable_food_focus_grows_the_small_city(&mut self) {
+        self.food_focus_grows_the_small_city = true;
+    }
+
+    /// The twin of `enable_food_focus_grows_the_small_city`.
+    pub fn disable_food_focus_grows_the_small_city(&mut self) {
+        self.food_focus_grows_the_small_city = false;
+    }
+
+    /// Opt-in gene `capital-monument-after-the-second-city`; see
+    /// [`Self::capital_monument_after_the_second_city`].
+    pub fn enable_capital_monument_after_the_second_city(&mut self) {
+        self.capital_monument_after_the_second_city = true;
+    }
+
+    /// The twin of `enable_capital_monument_after_the_second_city`.
+    pub fn disable_capital_monument_after_the_second_city(&mut self) {
+        self.capital_monument_after_the_second_city = false;
+    }
+
+    /// Opt-in gene `culture-seat-theater-first`; see
+    /// [`Self::culture_seat_theater_first`].
+    pub fn enable_culture_seat_theater_first(&mut self) {
+        self.culture_seat_theater_first = true;
+        self.culture_seat_theater_first_2 = false;
+    }
+
+    /// The twin of `enable_culture_seat_theater_first`.
+    pub fn disable_culture_seat_theater_first(&mut self) {
+        self.culture_seat_theater_first = false;
+    }
+
+    /// `diplo-seat-wonder-claim`.
+    pub fn enable_diplo_seat_wonder_claim(&mut self) {
+        self.diplo_seat_wonder_claim = true;
+    }
+
+    /// The twin of `enable_diplo_seat_wonder_claim`.
+    pub fn disable_diplo_seat_wonder_claim(&mut self) {
+        self.diplo_seat_wonder_claim = false;
+    }
+
+    /// `science-drive-answers-the-launch`.
+    pub fn enable_science_drive_answers_the_launch(&mut self) {
+        self.science_drive_answers_the_launch = true;
+    }
+
+    /// The twin of `enable_science_drive_answers_the_launch`.
+    pub fn disable_science_drive_answers_the_launch(&mut self) {
+        self.science_drive_answers_the_launch = false;
+    }
+
+    /// `inquisition-defends-the-diplomat`.
+    pub fn enable_inquisition_defends_the_diplomat(&mut self) {
+        self.inquisition_defends_the_diplomat = true;
+    }
+
+    /// The twin of `enable_inquisition_defends_the_diplomat`.
+    pub fn disable_inquisition_defends_the_diplomat(&mut self) {
+        self.inquisition_defends_the_diplomat = false;
+    }
+
+    /// Opt-in gene `culture-seat-monuments`; see
+    /// [`Self::culture_seat_monuments`].
+    pub fn enable_culture_seat_monuments(&mut self) {
+        self.culture_seat_monuments = true;
+    }
+
+    /// The twin of `enable_culture_seat_monuments`.
+    pub fn disable_culture_seat_monuments(&mut self) {
+        self.culture_seat_monuments = false;
+    }
+
+    /// `diplo-match-point-beelines-the-points`.
+    pub fn enable_diplo_match_point_beelines_the_points(&mut self) {
+        self.diplo_match_point_beelines = true;
+    }
+
+    /// The twin of `enable_diplo_match_point_beelines_the_points`.
+    pub fn disable_diplo_match_point_beelines_the_points(&mut self) {
+        self.diplo_match_point_beelines = false;
+    }
+
+    /// Turn on `culture-keeps-every-border-open`. See
+    /// [`Self::culture_keeps_every_border_open`].
+    pub fn enable_culture_keeps_every_border_open(&mut self) {
+        self.culture_keeps_every_border_open = true;
+        self.culture_keeps_every_border_open_2 = false;
+    }
+
+    /// The twin of `enable_culture_keeps_every_border_open`.
+    pub fn disable_culture_keeps_every_border_open(&mut self) {
+        self.culture_keeps_every_border_open = false;
+    }
+
+    /// `inquisition-answers-a-rival-majority`.
+    pub fn enable_inquisition_answers_a_rival_majority(&mut self) {
+        self.inquisition_answers_a_rival_majority = true;
+    }
+
+    /// The twin of `enable_inquisition_answers_a_rival_majority`.
+    pub fn disable_inquisition_answers_a_rival_majority(&mut self) {
+        self.inquisition_answers_a_rival_majority = false;
+    }
+
+    /// Opt-in gene `diplo-seat-statue-harbor`; see
+    /// [`Self::diplo_seat_statue_harbor`].
+    pub fn enable_diplo_seat_statue_harbor(&mut self) {
+        self.diplo_seat_statue_harbor = true;
+    }
+
+    /// The twin of `enable_diplo_seat_statue_harbor`.
+    pub fn disable_diplo_seat_statue_harbor(&mut self) {
+        self.diplo_seat_statue_harbor = false;
+    }
+
+    /// Opt-in gene `hidden-border-yields-to-our-pressure`; see
+    /// [`Self::hidden_border_yields_to_our_pressure`].
+    pub fn enable_hidden_border_yields_to_our_pressure(&mut self) {
+        self.hidden_border_yields_to_our_pressure = true;
+    }
+
+    /// The twin of `enable_hidden_border_yields_to_our_pressure`.
+    pub fn disable_hidden_border_yields_to_our_pressure(&mut self) {
+        self.hidden_border_yields_to_our_pressure = false;
+    }
+
+    /// `diplomat-saves-for-the-apostle`.
+    pub fn enable_diplomat_saves_for_the_apostle(&mut self) {
+        self.diplomat_saves_for_the_apostle = true;
+    }
+
+    /// The twin of `enable_diplomat_saves_for_the_apostle`.
+    pub fn disable_diplomat_saves_for_the_apostle(&mut self) {
+        self.diplomat_saves_for_the_apostle = false;
+    }
+
+    /// Turn on `culture-routes-reach-every-rival`. See
+    /// [`Self::culture_routes_reach_every_rival`].
+    pub fn enable_culture_routes_reach_every_rival(&mut self) {
+        self.culture_routes_reach_every_rival = true;
+    }
+
+    /// The twin of `enable_culture_routes_reach_every_rival`.
+    pub fn disable_culture_routes_reach_every_rival(&mut self) {
+        self.culture_routes_reach_every_rival = false;
+    }
+
+    /// Turn on `trade-quotes-pay-the-lump`. See
+    /// [`Self::trade_quotes_pay_the_lump`].
+    pub fn enable_trade_quotes_pay_the_lump(&mut self) {
+        self.trade_quotes_pay_the_lump = true;
+    }
+
+    /// The twin of `enable_trade_quotes_pay_the_lump`.
+    pub fn disable_trade_quotes_pay_the_lump(&mut self) {
+        self.trade_quotes_pay_the_lump = false;
+    }
+
+    /// Opt-in gene `counterweight-defends-the-diplomat`; see
+    /// [`Self::counterweight_defends_the_diplomat`].
+    pub fn enable_counterweight_defends_the_diplomat(&mut self) {
+        self.counterweight_defends_the_diplomat = true;
+    }
+
+    /// The twin of `enable_counterweight_defends_the_diplomat`.
+    pub fn disable_counterweight_defends_the_diplomat(&mut self) {
+        self.counterweight_defends_the_diplomat = false;
+    }
+
+    /// Opt-in gene `faith-war-defends-the-diplomat`; see
+    /// [`Self::faith_war_defends_the_diplomat`].
+    pub fn enable_faith_war_defends_the_diplomat(&mut self) {
+        self.faith_war_defends_the_diplomat = true;
+    }
+
+    /// The twin of `enable_faith_war_defends_the_diplomat`.
+    pub fn disable_faith_war_defends_the_diplomat(&mut self) {
+        self.faith_war_defends_the_diplomat = false;
+    }
+
+    /// Opt-in gene `counterweight-builds-its-source`; see
+    /// [`Self::counterweight_builds_its_source`].
+    pub fn enable_counterweight_builds_its_source(&mut self) {
+        self.counterweight_builds_its_source = true;
+    }
+
+    /// The twin of `enable_counterweight_builds_its_source`.
+    pub fn disable_counterweight_builds_its_source(&mut self) {
+        self.counterweight_builds_its_source = false;
+    }
+
+    /// Opt-in gene `culture-recovery-spends-the-bank`; see
+    /// [`Self::culture_recovery_spends_the_bank`].
+    pub fn enable_culture_recovery_spends_the_bank(&mut self) {
+        self.culture_recovery_spends_the_bank = true;
+    }
+
+    /// The twin of `enable_culture_recovery_spends_the_bank`.
+    pub fn disable_culture_recovery_spends_the_bank(&mut self) {
+        self.culture_recovery_spends_the_bank = false;
+    }
+
+    /// Opt-in gene `racer-spies-search-for-the-pad`; see
+    /// [`Self::racer_spies_search_for_the_pad`].
+    pub fn enable_racer_spies_search_for_the_pad(&mut self) {
+        self.racer_spies_search_for_the_pad = true;
+    }
+
+    /// The twin of `enable_racer_spies_search_for_the_pad`.
+    pub fn disable_racer_spies_search_for_the_pad(&mut self) {
+        self.racer_spies_search_for_the_pad = false;
+    }
+
+    /// Opt-in gene `launcher-war-serves-every-lane`; see
+    /// [`Self::launcher_war_serves_every_lane`].
+    pub fn enable_launcher_war_serves_every_lane(&mut self) {
+        self.launcher_war_serves_every_lane = true;
+    }
+
+    /// The twin of `enable_launcher_war_serves_every_lane`.
+    pub fn disable_launcher_war_serves_every_lane(&mut self) {
+        self.launcher_war_serves_every_lane = false;
+    }
+
+    /// Opt-in gene `culture-seat-allies`; see [`Self::culture_seat_allies`].
+    pub fn enable_culture_seat_allies(&mut self) {
+        self.culture_seat_allies = true;
+    }
+
+    /// The twin of `enable_culture_seat_allies`.
+    pub fn disable_culture_seat_allies(&mut self) {
+        self.culture_seat_allies = false;
+    }
+
+    /// Opt-in gene `opening-builder-after-the-first-settler`; see
+    /// `BasicAi::opening_builder_after_the_first_settler`.
+    pub fn enable_opening_builder_after_the_first_settler(&mut self) {
+        self.opening_builder_after_the_first_settler = true;
+        self.base.enable_opening_builder_after_the_first_settler();
+    }
+
+    /// The twin of `enable_opening_builder_after_the_first_settler`.
+    pub fn disable_opening_builder_after_the_first_settler(&mut self) {
+        self.opening_builder_after_the_first_settler = false;
+        self.base.disable_opening_builder_after_the_first_settler();
+    }
+
+    /// Opt-in gene `surprise-watch-holds-its-ratio`; see
+    /// [`Self::surprise_watch_holds_its_ratio`].
+    pub fn enable_surprise_watch_holds_its_ratio(&mut self) {
+        self.surprise_watch_holds_its_ratio = true;
+    }
+
+    /// The twin of `enable_surprise_watch_holds_its_ratio`.
+    pub fn disable_surprise_watch_holds_its_ratio(&mut self) {
+        self.surprise_watch_holds_its_ratio = false;
+    }
+
+    /// Opt-in gene `settler-founds-under-raiders`; see
+    /// [`Self::settler_founds_under_raiders`].
+    pub fn enable_settler_founds_under_raiders(&mut self) {
+        self.settler_founds_under_raiders = true;
+    }
+
+    /// The twin of `enable_settler_founds_under_raiders`.
+    pub fn disable_settler_founds_under_raiders(&mut self) {
+        self.settler_founds_under_raiders = false;
+    }
+
+    /// While a living major is unmet or unlocated, or a city-state is unmet,
+    /// the queued sea scout keeps its queue, ships route toward foreign
+    /// landfall, and the faster hull is preferred. Opt-in gene
+    /// `contact-fleet`; see `advanced/contact_fleet.rs`.
+    pub fn enable_contact_fleet(&mut self) {
+        self.base.contact_fleet = true;
+    }
+
+    /// The twin of `enable_contact_fleet`.
+    pub fn disable_contact_fleet(&mut self) {
+        self.base.contact_fleet = false;
+    }
+
+    /// Opt-in gene `immortal-skips-the-prophet-race`; see
+    /// [`Self::immortal_skips_the_prophet_race`].
+    pub fn enable_immortal_skips_the_prophet_race(&mut self) {
+        self.immortal_skips_the_prophet_race = true;
+    }
+
+    /// The twin of `enable_immortal_skips_the_prophet_race`.
+    pub fn disable_immortal_skips_the_prophet_race(&mut self) {
+        self.immortal_skips_the_prophet_race = false;
+    }
+
+    /// Opt-in gene `religion-lane-spreads-from-founding`; see
+    /// [`Self::religion_lane_spreads_from_founding`].
+    pub fn enable_religion_lane_spreads_from_founding(&mut self) {
+        self.religion_lane_spreads_from_founding = true;
+    }
+
+    /// The twin of `enable_religion_lane_spreads_from_founding`.
+    pub fn disable_religion_lane_spreads_from_founding(&mut self) {
+        self.religion_lane_spreads_from_founding = false;
+    }
+
+    /// Opt-in gene `board-ignores-the-faith-war`; see
+    /// [`Self::board_ignores_the_faith_war`].
+    pub fn enable_board_ignores_the_faith_war(&mut self) {
+        self.board_ignores_the_faith_war = true;
+    }
+
+    /// The twin of `enable_board_ignores_the_faith_war`.
+    pub fn disable_board_ignores_the_faith_war(&mut self) {
+        self.board_ignores_the_faith_war = false;
+    }
+
+    /// Opt-in gene `naval-crossing-keeps-going`; see
+    /// [`Self::naval_crossing_keeps_going`].
+    pub fn enable_naval_crossing_keeps_going(&mut self) {
+        self.naval_crossing_keeps_going = true;
+    }
+
+    /// The twin of `enable_naval_crossing_keeps_going`.
+    pub fn disable_naval_crossing_keeps_going(&mut self) {
+        self.naval_crossing_keeps_going = false;
+    }
+
+    /// Opt-in gene `builder-prices-travel-in-turns`; see
+    /// [`Self::builder_prices_travel_in_turns`].
+    pub fn enable_builder_prices_travel_in_turns(&mut self) {
+        self.builder_prices_travel_in_turns = true;
+    }
+
+    /// The twin of `enable_builder_prices_travel_in_turns`.
+    pub fn disable_builder_prices_travel_in_turns(&mut self) {
+        self.builder_prices_travel_in_turns = false;
+    }
+
+    /// Opt-in gene `religion-lane-hands-over`; see
+    /// [`Self::religion_lane_hands_over`].
+    pub fn enable_religion_lane_hands_over(&mut self) {
+        self.religion_lane_hands_over = true;
+    }
+
+    /// The twin of `enable_religion_lane_hands_over`.
+    pub fn disable_religion_lane_hands_over(&mut self) {
+        self.religion_lane_hands_over = false;
+    }
+
+    /// Opt-in gene `early-route-feeds-production`; see
+    /// [`Self::early_route_feeds_production`].
+    pub fn enable_early_route_feeds_production(&mut self) {
+        self.early_route_feeds_production = true;
+    }
+
+    /// The twin of `enable_early_route_feeds_production`.
+    pub fn disable_early_route_feeds_production(&mut self) {
+        self.early_route_feeds_production = false;
+    }
+
+    /// Opt-in gene `religion-race-keeps-expanding`; see
+    /// [`Self::religion_race_keeps_expanding`].
+    pub fn enable_religion_race_keeps_expanding(&mut self) {
+        self.religion_race_keeps_expanding = true;
+    }
+
+    /// The twin of `enable_religion_race_keeps_expanding`.
+    pub fn disable_religion_race_keeps_expanding(&mut self) {
+        self.religion_race_keeps_expanding = false;
+    }
+
+    /// Opt-in gene `domination-targets-land-first`; see
+    /// [`Self::domination_targets_land_first`].
+    pub fn enable_domination_targets_land_first(&mut self) {
+        self.domination_targets_land_first = true;
+    }
+
+    /// The twin of `enable_domination_targets_land_first`.
+    pub fn disable_domination_targets_land_first(&mut self) {
+        self.domination_targets_land_first = false;
+    }
+
+    /// Opt-in gene `stalled-spreader-braves-the-march`; see
+    /// [`Self::stalled_spreader_braves_the_march`].
+    pub fn enable_stalled_spreader_braves_the_march(&mut self) {
+        self.stalled_spreader_braves_the_march = true;
+    }
+
+    /// The twin of `enable_stalled_spreader_braves_the_march`.
+    pub fn disable_stalled_spreader_braves_the_march(&mut self) {
+        self.stalled_spreader_braves_the_march = false;
+    }
+
+    /// Opt-in gene `anvil-garrisons-its-melee`; see
+    /// [`Self::anvil_garrisons_its_melee`].
+    pub fn enable_anvil_garrisons_its_melee(&mut self) {
+        self.anvil_garrisons_its_melee = true;
+    }
+
+    /// The twin of `enable_anvil_garrisons_its_melee`.
+    pub fn disable_anvil_garrisons_its_melee(&mut self) {
+        self.anvil_garrisons_its_melee = false;
+    }
+
+    /// Opt-in gene `defence-holds-under-fire`; see
+    /// [`Self::defence_holds_under_fire`].
+    pub fn enable_defence_holds_under_fire(&mut self) {
+        self.defence_holds_under_fire = true;
+    }
+
+    /// The twin of `enable_defence_holds_under_fire`.
+    pub fn disable_defence_holds_under_fire(&mut self) {
+        self.defence_holds_under_fire = false;
+    }
+
+    /// Opt-in gene `land-grab-outlasts-the-opening`; see
+    /// [`Self::land_grab_outlasts_the_opening`].
+    pub fn enable_land_grab_outlasts_the_opening(&mut self) {
+        self.land_grab_outlasts_the_opening = true;
+    }
+
+    /// The twin of `enable_land_grab_outlasts_the_opening`.
+    pub fn disable_land_grab_outlasts_the_opening(&mut self) {
+        self.land_grab_outlasts_the_opening = false;
+    }
+
+    /// Opt-in gene `science-seat-allies`; see [`Self::science_seat_allies`].
+    pub fn enable_science_seat_allies(&mut self) {
+        self.science_seat_allies = true;
+    }
+
+    /// The twin of `enable_science_seat_allies`.
+    pub fn disable_science_seat_allies(&mut self) {
+        self.science_seat_allies = false;
+    }
+
+    /// Opt-in gene `capital-walls-at-any-ratio`; see
+    /// [`Self::capital_walls_at_any_ratio`].
+    pub fn enable_capital_walls_at_any_ratio(&mut self) {
+        self.capital_walls_at_any_ratio = true;
+    }
+
+    /// The twin of `enable_capital_walls_at_any_ratio`.
+    pub fn disable_capital_walls_at_any_ratio(&mut self) {
+        self.capital_walls_at_any_ratio = false;
+    }
+
+    /// Opt-in gene `religion-seat-defends-its-faith`; see
+    /// [`Self::religion_seat_defends_its_faith`].
+    pub fn enable_religion_seat_defends_its_faith(&mut self) {
+        self.religion_seat_defends_its_faith = true;
+    }
+
+    /// The twin of `enable_religion_seat_defends_its_faith`.
+    pub fn disable_religion_seat_defends_its_faith(&mut self) {
+        self.religion_seat_defends_its_faith = false;
+    }
+
+    /// Opt-in gene `religion-seat-founds-first`; see
+    /// [`Self::religion_seat_founds_first`].
+    pub fn enable_religion_seat_founds_first(&mut self) {
+        self.religion_seat_founds_first = true;
+    }
+
+    /// The twin of `enable_religion_seat_founds_first`.
+    pub fn disable_religion_seat_founds_first(&mut self) {
+        self.religion_seat_founds_first = false;
+    }
+
+    /// Opt-in gene `science-denounce-names-the-leader`; see
+    /// [`Self::science_denounce_names_the_leader`].
+    pub fn enable_science_denounce_names_the_leader(&mut self) {
+        self.science_denounce_names_the_leader = true;
+    }
+
+    /// The twin of `enable_science_denounce_names_the_leader`.
+    pub fn disable_science_denounce_names_the_leader(&mut self) {
+        self.science_denounce_names_the_leader = false;
+    }
+
+    /// Opt-in gene `deck-prices-growth`; see
+    /// `BasicAi::deck_prices_growth`.
+    pub fn enable_deck_prices_growth(&mut self) {
+        self.deck_prices_growth = true;
+        self.base.enable_deck_prices_growth();
+    }
+
+    /// The twin of `enable_deck_prices_growth`.
+    pub fn disable_deck_prices_growth(&mut self) {
+        self.deck_prices_growth = false;
+        self.base.disable_deck_prices_growth();
+    }
+
+    /// Opt-in gene `friendship-keeps-the-peace`; see
+    /// [`Self::friendship_keeps_the_peace`].
+    pub fn enable_friendship_keeps_the_peace(&mut self) {
+        self.friendship_keeps_the_peace = true;
+    }
+
+    /// The twin of `enable_friendship_keeps_the_peace`.
+    pub fn disable_friendship_keeps_the_peace(&mut self) {
+        self.friendship_keeps_the_peace = false;
+    }
+
+    /// Opt-in gene `retainers-garrison-the-short-cities`; see
+    /// `BasicAi::retainers_garrison_the_short_cities`.
+    pub fn enable_retainers_garrison_the_short_cities(&mut self) {
+        self.retainers_garrison_the_short_cities = true;
+        self.base.enable_retainers_garrison_the_short_cities();
+    }
+
+    /// The twin of `enable_retainers_garrison_the_short_cities`.
+    pub fn disable_retainers_garrison_the_short_cities(&mut self) {
+        self.retainers_garrison_the_short_cities = false;
+        self.base.disable_retainers_garrison_the_short_cities();
+    }
+
+    /// Opt-in gene `pillaged-districts-repair-first`; see
+    /// [`Self::pillaged_districts_repair_first`].
+    pub fn enable_pillaged_districts_repair_first(&mut self) {
+        self.pillaged_districts_repair_first = true;
+    }
+
+    /// The twin of `enable_pillaged_districts_repair_first`.
+    pub fn disable_pillaged_districts_repair_first(&mut self) {
+        self.pillaged_districts_repair_first = false;
+    }
+
+    /// Opt-in gene `launcher-war-fights-the-faster-racer`; see
+    /// [`Self::launcher_war_fights_the_faster_racer`].
+    pub fn enable_launcher_war_fights_the_faster_racer(&mut self) {
+        self.launcher_war_fights_the_faster_racer = true;
+    }
+
+    /// The twin of `enable_launcher_war_fights_the_faster_racer`.
+    pub fn disable_launcher_war_fights_the_faster_racer(&mut self) {
+        self.launcher_war_fights_the_faster_racer = false;
+    }
+
+    /// Opt-in gene `apostle-transit-keeps-the-cover`; see
+    /// [`Self::apostle_transit_keeps_the_cover`].
+    pub fn enable_apostle_transit_keeps_the_cover(&mut self) {
+        self.apostle_transit_keeps_the_cover = true;
+    }
+
+    /// The twin of `enable_apostle_transit_keeps_the_cover`.
+    pub fn disable_apostle_transit_keeps_the_cover(&mut self) {
+        self.apostle_transit_keeps_the_cover = false;
+    }
+
+    /// Turn on `culture-keeps-every-border-open-2`. See
+    /// [`Self::culture_keeps_every_border_open_2`].
+    pub fn enable_culture_keeps_every_border_open_2(&mut self) {
+        self.culture_keeps_every_border_open = false;
+        self.culture_keeps_every_border_open_2 = true;
+    }
+
+    /// The twin of `enable_culture_keeps_every_border_open_2`.
+    pub fn disable_culture_keeps_every_border_open_2(&mut self) {
+        self.culture_keeps_every_border_open_2 = false;
+    }
+
+    /// Opt-in gene `fog-yields-to-a-stranded-settler`; see
+    /// [`Self::fog_yields_to_a_stranded_settler`].
+    pub fn enable_fog_yields_to_a_stranded_settler(&mut self) {
+        self.fog_yields_to_a_stranded_settler = true;
+    }
+
+    /// The twin of `enable_fog_yields_to_a_stranded_settler`.
+    pub fn disable_fog_yields_to_a_stranded_settler(&mut self) {
+        self.fog_yields_to_a_stranded_settler = false;
+    }
+
+    /// Opt-in gene `launch-pad-keeps-its-rung`; see
+    /// [`Self::launch_pad_keeps_its_rung`].
+    pub fn enable_launch_pad_keeps_its_rung(&mut self) {
+        self.launch_pad_keeps_its_rung = true;
+        self.base.enable_launch_pad_resumes_its_foundation();
+    }
+
+    /// The twin of `enable_launch_pad_keeps_its_rung`.
+    pub fn disable_launch_pad_keeps_its_rung(&mut self) {
+        self.launch_pad_keeps_its_rung = false;
+        self.base.disable_launch_pad_resumes_its_foundation();
+    }
+
+    /// Opt-in gene `science-drive-answers-from-the-pad`; see
+    /// [`Self::science_drive_answers_from_the_pad`].
+    pub fn enable_science_drive_answers_from_the_pad(&mut self) {
+        self.science_drive_answers_from_the_pad = true;
+    }
+
+    /// The twin of `enable_science_drive_answers_from_the_pad`.
+    pub fn disable_science_drive_answers_from_the_pad(&mut self) {
+        self.science_drive_answers_from_the_pad = false;
+    }
+
+    /// Turn on `culture-digs-one-museum`. See [`Self::culture_digs_one_museum`].
+    pub fn enable_culture_digs_one_museum(&mut self) {
+        self.culture_digs_one_museum = true;
+    }
+
+    /// The twin of `enable_culture_digs_one_museum`.
+    pub fn disable_culture_digs_one_museum(&mut self) {
+        self.culture_digs_one_museum = false;
+    }
+
+    /// Opt-in gene `science-drive-answers-from-the-pad-2`; see
+    /// [`Self::science_drive_answers_from_the_pad_2`].
+    pub fn enable_science_drive_answers_from_the_pad_2(&mut self) {
+        self.science_drive_answers_from_the_pad_2 = true;
+    }
+
+    /// The twin of `enable_science_drive_answers_from_the_pad_2`.
+    pub fn disable_science_drive_answers_from_the_pad_2(&mut self) {
+        self.science_drive_answers_from_the_pad_2 = false;
+    }
+
+    /// Opt-in gene `launch-pad-holds-its-queue`; see
+    /// [`Self::launch_pad_holds_its_queue`].
+    pub fn enable_launch_pad_holds_its_queue(&mut self) {
+        self.launch_pad_holds_its_queue = true;
+    }
+
+    /// The twin of `enable_launch_pad_holds_its_queue`.
+    pub fn disable_launch_pad_holds_its_queue(&mut self) {
+        self.launch_pad_holds_its_queue = false;
+    }
+
+    /// Opt-in gene `launch-commits-the-endgame`; see
+    /// [`Self::launch_commits_the_endgame`].
+    pub fn enable_launch_commits_the_endgame(&mut self) {
+        self.launch_commits_the_endgame = true;
+    }
+
+    /// The twin of `enable_launch_commits_the_endgame`.
+    pub fn disable_launch_commits_the_endgame(&mut self) {
+        self.launch_commits_the_endgame = false;
+    }
+
+    /// Turn on `culture-seat-theater-first-2`. See
+    /// [`Self::culture_seat_theater_first_2`].
+    pub fn enable_culture_seat_theater_first_2(&mut self) {
+        self.culture_seat_theater_first = false;
+        self.culture_seat_theater_first_2 = true;
+    }
+
+    /// The twin of `enable_culture_seat_theater_first_2`.
+    pub fn disable_culture_seat_theater_first_2(&mut self) {
+        self.culture_seat_theater_first_2 = false;
+    }
+
+    /// Opt-in gene `domination-joins-the-race`; see
+    /// [`Self::domination_joins_the_race`].
+    pub fn enable_domination_joins_the_race(&mut self) {
+        self.domination_joins_the_race = true;
+    }
+
+    /// The twin of `enable_domination_joins_the_race`.
+    pub fn disable_domination_joins_the_race(&mut self) {
+        self.domination_joins_the_race = false;
+    }
+
+    /// Opt-in gene `alliance-remembers-the-refusal`; see
+    /// [`Self::alliance_remembers_the_refusal`].
+    pub fn enable_alliance_remembers_the_refusal(&mut self) {
+        self.alliance_remembers_the_refusal = true;
+    }
+
+    /// The twin of `enable_alliance_remembers_the_refusal`.
+    pub fn disable_alliance_remembers_the_refusal(&mut self) {
+        self.alliance_remembers_the_refusal = false;
+    }
+
+    /// Opt-in gene `science-drive-leads-beside-the-lane`; see
+    /// [`Self::science_drive_leads_beside_the_lane`].
+    pub fn enable_science_drive_leads_beside_the_lane(&mut self) {
+        self.science_drive_leads_beside_the_lane = true;
+    }
+
+    /// The twin of `enable_science_drive_leads_beside_the_lane`.
+    pub fn disable_science_drive_leads_beside_the_lane(&mut self) {
+        self.science_drive_leads_beside_the_lane = false;
+    }
+
+    /// Opt-in gene `friendship-refuses-the-racer`; see
+    /// [`Self::friendship_refuses_the_racer`].
+    pub fn enable_friendship_refuses_the_racer(&mut self) {
+        self.friendship_refuses_the_racer = true;
+    }
+
+    /// The twin of `enable_friendship_refuses_the_racer`.
+    pub fn disable_friendship_refuses_the_racer(&mut self) {
+        self.friendship_refuses_the_racer = false;
+    }
+
+    /// Opt-in gene `deterrence-trusts-a-friend`; see
+    /// [`Self::deterrence_trusts_a_friend`].
+    pub fn enable_deterrence_trusts_a_friend(&mut self) {
+        self.deterrence_trusts_a_friend = true;
+    }
+
+    /// The twin of `enable_deterrence_trusts_a_friend`.
+    pub fn disable_deterrence_trusts_a_friend(&mut self) {
+        self.deterrence_trusts_a_friend = false;
+    }
+
+    /// Opt-in gene `campus-unlock-every-lane`; see
+    /// [`Self::campus_unlock_every_lane`].
+    pub fn enable_campus_unlock_every_lane(&mut self) {
+        self.campus_unlock_every_lane = true;
+    }
+
+    /// The twin of `enable_campus_unlock_every_lane`.
+    pub fn disable_campus_unlock_every_lane(&mut self) {
+        self.campus_unlock_every_lane = false;
+    }
+
+    /// Opt-in gene `gold-buys-the-opening-builder`; see
+    /// [`Self::gold_buys_the_opening_builder`].
+    pub fn enable_gold_buys_the_opening_builder(&mut self) {
+        self.gold_buys_the_opening_builder = true;
+    }
+
+    /// The twin of `enable_gold_buys_the_opening_builder`.
+    pub fn disable_gold_buys_the_opening_builder(&mut self) {
+        self.gold_buys_the_opening_builder = false;
+    }
+
+    /// Opt-in gene `first-pad-in-the-forge`; see
+    /// [`Self::first_pad_in_the_forge`].
+    pub fn enable_first_pad_in_the_forge(&mut self) {
+        self.first_pad_in_the_forge = true;
+        self.base.enable_first_pad_in_the_forge();
+    }
+
+    /// The twin of `enable_first_pad_in_the_forge`.
+    pub fn disable_first_pad_in_the_forge(&mut self) {
+        self.first_pad_in_the_forge = false;
+        self.base.disable_first_pad_in_the_forge();
+    }
+
+    /// Opt-in gene `satellite-holds-the-pad`; see
+    /// [`Self::satellite_holds_the_pad`].
+    pub fn enable_satellite_holds_the_pad(&mut self) {
+        self.satellite_holds_the_pad = true;
+    }
+
+    /// The twin of `enable_satellite_holds_the_pad`.
+    pub fn disable_satellite_holds_the_pad(&mut self) {
+        self.satellite_holds_the_pad = false;
+    }
+
+    /// Opt-in gene `stalled-conquest-takes-science`; see
+    /// [`Self::stalled_conquest_takes_science`].
+    pub fn enable_stalled_conquest_takes_science(&mut self) {
+        self.stalled_conquest_takes_science = true;
+    }
+
+    /// The twin of `enable_stalled_conquest_takes_science`.
+    pub fn disable_stalled_conquest_takes_science(&mut self) {
+        self.stalled_conquest_takes_science = false;
+    }
+
+    /// Keep a committed first Science launch on its research path.
+    pub fn enable_first_launch_keeps_research(&mut self) {
+        self.first_launch_keeps_research = true;
+    }
+
+    /// The twin of `enable_first_launch_keeps_research`.
+    pub fn disable_first_launch_keeps_research(&mut self) {
+        self.first_launch_keeps_research = false;
+    }
+
+    /// Ask the native market for Coal serving ready research power.
+    pub fn enable_science_power_buys_fuel(&mut self) {
+        self.science_power_buys_fuel = true;
+    }
+
+    /// The twin of `enable_science_power_buys_fuel`.
+    pub fn disable_science_power_buys_fuel(&mut self) {
+        self.science_power_buys_fuel = false;
+    }
+
+    /// Opt-in gene `old-techs-before-the-beeline`; see
+    /// `advanced/old_techs_before_the_beeline.rs`.
+    pub fn enable_old_techs_before_the_beeline(&mut self) {
+        self.old_techs_before_the_beeline = true;
+    }
+
+    /// The twin of `enable_old_techs_before_the_beeline`.
+    pub fn disable_old_techs_before_the_beeline(&mut self) {
+        self.old_techs_before_the_beeline = false;
+    }
+
+    /// Opt-in gene `saved-work-is-seen`; see `advanced/saved_work_is_seen.rs`.
+    pub fn enable_saved_work_is_seen(&mut self) {
+        self.saved_work_is_seen = true;
+    }
+
+    /// The twin of `enable_saved_work_is_seen`.
+    pub fn disable_saved_work_is_seen(&mut self) {
+        self.saved_work_is_seen = false;
+    }
+
+    /// Opt-in gene `gold-buys-the-backlog-builder`; see
+    /// `advanced/gold_buys_the_backlog_builder.rs`.
+    pub fn enable_gold_buys_the_backlog_builder(&mut self) {
+        self.gold_buys_the_backlog_builder = true;
+    }
+
+    /// The twin of `enable_gold_buys_the_backlog_builder`.
+    pub fn disable_gold_buys_the_backlog_builder(&mut self) {
+        self.gold_buys_the_backlog_builder = false;
+    }
+
+    /// Opt-in gene `deck-follows-the-queue`; the behaviour lives on
+    /// `BasicAi::deck_follows_the_queue`, see `ai/deck_queue.rs`.
+    pub fn enable_deck_follows_the_queue(&mut self) {
+        self.deck_follows_the_queue = true;
+        self.base.enable_deck_follows_the_queue();
+    }
+
+    /// The twin of `enable_deck_follows_the_queue`.
+    pub fn disable_deck_follows_the_queue(&mut self) {
+        self.deck_follows_the_queue = false;
+        self.base.disable_deck_follows_the_queue();
+    }
+
+    /// Aim a bounded Conquest window at a soft city-state city beside the
+    /// empire. See [`Self::city_state_harvest`].
+    pub fn enable_city_state_harvest(&mut self) {
+        self.city_state_harvest = true;
+    }
+
+    /// The twin of `enable_city_state_harvest`.
+    pub fn disable_city_state_harvest(&mut self) {
+        self.city_state_harvest = false;
+        self.city_state_harvest_target = None;
+    }
+
+    /// Opt-in gene `science-specializes-earlier`; see
+    /// [`Self::science_specializes_earlier`].
+    pub fn enable_science_specializes_earlier(&mut self) {
+        self.science_specializes_earlier = true;
+    }
+
+    /// The twin of `enable_science_specializes_earlier`.
+    pub fn disable_science_specializes_earlier(&mut self) {
+        self.science_specializes_earlier = false;
+    }
+
+    /// Opt-in gene `near-done-work-finishes`; see
+    /// `advanced/near_done_work_finishes.rs`.
+    pub fn enable_near_done_work_finishes(&mut self) {
+        self.near_done_work_finishes = true;
+    }
+
+    /// The twin of `enable_near_done_work_finishes`.
+    pub fn disable_near_done_work_finishes(&mut self) {
+        self.near_done_work_finishes = false;
+    }
+
+    /// Opt-in gene `founding-voyage`; see [`Self::founding_voyage`].
+    pub fn enable_founding_voyage(&mut self) {
+        self.founding_voyage = true;
+    }
+
+    /// The twin of `enable_founding_voyage`.
+    pub fn disable_founding_voyage(&mut self) {
+        self.founding_voyage = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
-
     // ---- append: l-o ------------------------------------------------
     // ---- append: p-r ------------------------------------------------
     // ---- append: s-s ------------------------------------------------

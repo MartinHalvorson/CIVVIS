@@ -675,6 +675,68 @@ fn every_turn_waits_for_its_frame_only_while_a_viewer_is_active() {
     );
 }
 
+/// The live mirror publishes each Civilization VI turn by `POST /load`, and
+/// the page parked on the turn it holds must wake for it then, not when its
+/// one-second long-poll cap runs out: the Firaxis game waits on that page.
+#[test]
+fn an_uploaded_board_wakes_the_page_waiting_for_the_next_turn() {
+    let port = exhibition(20_261_031);
+    http_post(port, "/pace", "{\"paused\":true}").expect("pause the exhibition");
+    let read = |target: &str| -> Value {
+        serde_json::from_str(&http_get(port, target).expect("a state")).expect("state is JSON")
+    };
+    let save = http_get(port, "/save").expect("a save of the opening");
+    http_post(port, "/step", "{\"count\":8}").expect("step the game on");
+    let held = read("/state?painted=&viewer=mirror");
+    let waiting = next_painted_state("mirror", &held);
+    let page = std::thread::spawn(move || {
+        let asked = Instant::now();
+        let body = http_get(port, &waiting).expect("the next board");
+        (asked.elapsed(), body)
+    });
+    std::thread::sleep(Duration::from_millis(150));
+    let loaded: Value =
+        serde_json::from_str(&http_post(port, "/load", &save).expect("load the board"))
+            .expect("load answers JSON");
+    assert!(loaded["error"].is_null(), "{}", loaded["error"]);
+    let (waited, body) = page.join().expect("the page thread");
+    let next: Value = serde_json::from_str(&body).expect("state is JSON");
+    assert_ne!(
+        next["turn"], held["turn"],
+        "the page was handed the loaded board"
+    );
+    assert!(
+        waited < Duration::from_millis(700),
+        "the page waited {waited:?} for a board loaded 150 ms after it asked"
+    );
+}
+
+/// A live mirror publishes every board at sequence 0, so the audit's painted
+/// frame must be the furthest TURN any page drew: the live game waits on it,
+/// and a second tab that stopped painting must not hold it back.
+#[test]
+fn a_mirror_reports_the_furthest_painted_turn_of_any_page() {
+    let now = Instant::now();
+    let mirror = |turn| SpectatorFrame {
+        seed: 1,
+        turn,
+        finished: false,
+        sequence: 0,
+    };
+    let mut delivery = FrameDelivery::default();
+    assert_eq!(delivery.furthest_painted(), None);
+    // "zz" sorts last: it used to win every tie whatever it had drawn.
+    for (viewer, turn) in [("aa", 41), ("zz", 37)] {
+        delivery.viewer_request(viewer, None, now);
+        delivery.frame_delivered(viewer, mirror(turn), now);
+        delivery.viewer_request(viewer, Some(mirror(turn)), now);
+    }
+    assert_eq!(
+        delivery.furthest_painted().map(|frame| frame.turn),
+        Some(41)
+    );
+}
+
 /// Two tabs on one exhibition are two promises, not one. The gate used to
 /// keep a single delivery cursor, so either page satisfying it released the
 /// turn and they took alternate ones — each seeing half the game while the
@@ -6351,6 +6413,16 @@ fn browser_orders_controls_interface_setup_and_logs() {
         "a lock is the viewer's stored choice, never derived from the watched civilization"
     );
     assert!(EMBEDDED_INDEX.contains("function seedOwnSeatLock(seats)"));
+    // A live verification game's own seat is always locked (operator
+    // 2026-10-31: "make sure during verification games the active player
+    // stays locked on the player hud"). It comes from the mirror's fixed
+    // seat at draw time, is never written to the viewer's stored set, cannot
+    // be clicked off, and is the first row held when fewer fit.
+    assert!(EMBEDDED_INDEX.contains("function liveSeatLockKey(seats)"));
+    assert!(EMBEDDED_INDEX.contains("if (key === liveSeatLockKey(seats)) return;"));
+    assert!(EMBEDDED_INDEX.contains("JSON.stringify([...chosenSeatLocks()])"));
+    assert!(EMBEDDED_INDEX.contains("const next = new Set(chosenSeatLocks());"));
+    assert!(EMBEDDED_INDEX.contains("const held = new Set([...live, ...locked].slice(0, holds));"));
     // A locked row holds at whichever edge it was about to leave, so it
     // needs both offsets, staggered by one row per row held above it.
     assert!(EMBEDDED_INDEX.contains("top: calc(var(--pin-head, 0) * var(--hud-row-pitch));"));
@@ -6377,8 +6449,9 @@ fn browser_orders_controls_interface_setup_and_logs() {
     assert!(EMBEDDED_INDEX.contains(
         "return Math.max(floor, PLAYER_HUD_CHROME_HEIGHT + rows * playerHudRowPitch());"
     ));
-    assert!(EMBEDDED_INDEX
-        .contains("minHeight:PLAYER_HUD_MIN_HEIGHT,\n            avoidsSidebar:true, fullWidth:true}"));
+    assert!(EMBEDDED_INDEX.contains(
+        "minHeight:PLAYER_HUD_MIN_HEIGHT,\n            avoidsSidebar:true, fullWidth:true}"
+    ));
     // The masthead spans the window whatever width a drag or a saved layout
     // carried (operator 2026-10-15: "full width of the window. not ~1\" from
     // the edge"); only its top and bottom edges are handles.
@@ -6443,14 +6516,15 @@ fn browser_orders_controls_interface_setup_and_logs() {
         ":where(body.overlay-players-hidden, #maparea:has(> #playerhud.standings-collapsed)) #victoryhud {\n    top: var(--panel-edge);"
     ));
     // "Under the masthead" is its actual bottom in every layout. A masthead
-    // the viewer moved publishes its top beside its height, and all three
-    // tracker placements (wide rail, narrow band, compact band) read it; a
-    // reset hands both back to the stylesheet together.
+    // the viewer moved publishes its top beside its height, and all four
+    // tracker placements (wide rail, narrow band, compact band, and the
+    // dedicated display's right-hand rail) read it; a reset hands both back
+    // to the stylesheet together.
     assert_eq!(
         EMBEDDED_INDEX
             .matches("top: calc(var(--player-hud-top, var(--panel-edge)) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));")
             .count(),
-        3
+        4
     );
     assert!(!EMBEDDED_INDEX.contains(
         "top: calc(var(--panel-edge) + min(var(--player-hud-height, 106px), var(--player-hud-max-height)) + var(--panel-gap));"
@@ -6533,11 +6607,13 @@ fn browser_orders_controls_interface_setup_and_logs() {
     assert!(EMBEDDED_INDEX.contains("function hudWidgetIsSquare(config) {"));
     assert!(!EMBEDDED_INDEX.contains("--player-hud-width"));
     // Every path keeps its top three plus the player's own civilization
-    // when that row is lower in this particular victory race.
+    // when that row is lower in this particular victory race — except on the
+    // dedicated display beside Civilization VI, which lists exactly two.
     assert!(EMBEDDED_INDEX.contains("const focusId = SPEC ? state.view_player : state.player;"));
     assert!(EMBEDDED_INDEX.contains("focusRank >= DEFAULT_VICTORY_LEADERS ? 1 : 0"));
-    assert!(EMBEDDED_INDEX
-        .contains("entry.hidden = index >= capacity && entry.dataset.victoryFocus !== \"true\";"));
+    assert!(EMBEDDED_INDEX.contains(
+        "entry.hidden = index >= capacity &&\n        (DEDICATED_DISPLAY || entry.dataset.victoryFocus !== \"true\");"
+    ));
     assert!(EMBEDDED_INDEX.contains("data-victory-focus=\"${isFocus}\""));
     assert!(EMBEDDED_INDEX.contains("grid-auto-rows: var(--hud-row-height);"));
     // A masthead row is one flat track per visible column in the viewer's
@@ -6664,8 +6740,8 @@ fn browser_orders_controls_interface_setup_and_logs() {
         EMBEDDED_INDEX.contains(
             "`<span class=\"closest-victory-road\">${escapeAttr(closest.victory)}</span>` +"
         ) && EMBEDDED_INDEX
-            .contains("`<span class=\"closest-victory-turns\">-${closest.turns}</span>`"),
-        "the cell reads victory-turns, e.g. science-39"
+            .contains("`<span class=\"closest-victory-turns\">-${closestVictoryTurnsLabel(closest.turns)}</span>`"),
+        "the cell reads victory-turns, e.g. science-39 or science-250+"
     );
     assert_eq!(
         EMBEDDED_INDEX

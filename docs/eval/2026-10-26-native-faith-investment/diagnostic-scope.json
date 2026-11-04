@@ -1,0 +1,13 @@
+{
+  "all_source_blobs": 830,
+  "all_other_blobs_exact": true,
+  "only_changed_files": [
+    "src/game/actions.rs",
+    "src/bin/civvis_orders.rs"
+  ],
+  "trace_turns": [
+    1,
+    100
+  ],
+  "scope": "Only root Game-pointer/frame logging, track_caller successful/failed Produce events and original apply delegation. No extra selection/helper calls; simulated clones excluded. Require two264 entire-payload/4587 ordered-read controls and identical full traces before inference."
+}

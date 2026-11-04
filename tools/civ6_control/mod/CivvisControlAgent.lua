@@ -1580,6 +1580,40 @@ CivvisMajorProduction = function()
 	return out;
 end;
 
+-- BEGIN city power observation
+-- Shipped DLC/Expansion2/UI/Additions/CityPanelPower.lua:36,42-54 reads
+-- these same accessors. Keep host readings separate: an active project can
+-- power a city without free + temporary meeting required power. Missing
+-- accessors remain unknown, including on rulesets without the power system.
+-- Bare global: the main chunk is already at its local-variable ceiling.
+CivvisCityPower = function(city)
+	local power = try(function() return city:GetPower(); end, nil);
+	if power == nil then return nil; end
+	local function number(read)
+		local value = try(read, nil);
+		if type(value) == "number" and value == value
+			and value > -math.huge and value < math.huge then return value; end
+		return nil;
+	end
+	local function boolean(read)
+		local value = try(read, nil);
+		if type(value) == "boolean" then return value; end
+		return nil;
+	end
+	local out = {
+		free = number(function() return power:GetFreePower(); end),
+		temporary = number(function() return power:GetTemporaryPower(); end),
+		required = number(function() return power:GetRequiredPower(); end),
+		fully_powered = boolean(function() return power:IsFullyPowered(); end),
+		fully_powered_by_active_project = boolean(function()
+			return power:IsFullyPoweredByActiveProject();
+		end),
+	};
+	if next(out) == nil then return nil; end
+	return out;
+end;
+-- END city power observation
+
 local function rivalBest(player, pid)
 	local diplomacy = try(function() return player:GetDiplomacy(); end);
 	if diplomacy == nil then return nil, 0, nil, 0; end
@@ -6387,6 +6421,8 @@ CivvisMenus.buildable = function(city)
 				t = row.BuildingType,
 				c = try(function() return queue:GetBuildingCost(row.Index); end, -1),
 				p = try(function() return queue:GetTurnsLeft(row.Hash); end, -1),
+				-- Saved work on a paused building (`saved-work-is-seen`).
+				pr = try(function() return queue:GetBuildingProgress(row.Index); end, nil),
 			};
 		end
 	end
@@ -6410,6 +6446,7 @@ CivvisMenus.buildable = function(city)
 						c = try(function() return queue:GetUnitCost(row.Index); end, -1),
 						p = try(function() return queue:GetTurnsLeft(row.Hash); end, -1),
 						r = CivvisMenus.resource_cost(queue, row.Index, standard),
+						pr = try(function() return queue:GetUnitProgress(row.Index); end, nil),
 					};
 					-- `ProductionPanel.lua:2150-2172`: the results table says whether
 					-- a Corps or Army may be trained here; each tier is asked again.
@@ -6449,6 +6486,7 @@ CivvisMenus.buildable = function(city)
 				t = row.ProjectType,
 				c = try(function() return queue:GetProjectCost(row.Index); end, -1),
 				p = try(function() return queue:GetTurnsLeft(row.ProjectType); end, -1),
+				pr = try(function() return queue:GetProjectProgress(row.Index); end, nil),
 			};
 		end
 	end
@@ -7639,6 +7677,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 			name = try(function() return Locale.Lookup(city:GetName()); end, ""),
 			buildings = built,
 			pillaged_buildings = pillagedBuildings,
+			power = CivvisCityPower(city),
 			x = try(function() return city:GetX(); end, -1),
 			y = try(function() return city:GetY(); end, -1),
 			pop = try(function() return city:GetPopulation(); end, -1),
@@ -9661,6 +9700,17 @@ local function exportState(player, pid, turn, frame, eventKind)
 		-- `voteWorldCongress`.
 		dvp = try(function() return player:GetStats():GetDiplomaticVictoryPoints(); end, nil),
 		favor = try(function() return player:GetFavor(); end, nil),
+		-- The shipped Expansion2 TopPanel reads both accessors. A balance alone
+		-- cannot distinguish recurring losses from Congress spending or deals.
+		-- Keep each answer independent and unknown where its API is absent.
+		favor_per_turn = try(function() return player:GetFavorPerTurn(); end, nil),
+		favor_sources = try(function()
+			local text = player:GetFavorPerTurnToolTip();
+			if text == nil then return nil; end
+			text = tostring(text):gsub("%[ICON_[%w_]+%]", "");
+			text = text:gsub("%[NEWLINE%]", "\n"):gsub("[ \t]+", " ");
+			return (text:gsub("^%s+", ""):gsub("%s+$", "")):sub(1, 1600);
+		end, nil),
 		-- The World Congress standing as of the last session, recorded where
 		-- the review is read. Every alive major appears, including ones this
 		-- seat has not met -- the congress seats them all and shows the seat
@@ -9948,7 +9998,10 @@ local function exportState(player, pid, turn, frame, eventKind)
 		-- `civvis_build_unplayable` on 29 turns across eight cities. Keyed by the
 		-- host's resource type; the Rust side translates. Only the strategic
 		-- class — the same filter the shipped TopPanel_Expansion2 uses.
-		-- ⚠ nil, not `{}`, when nothing is stocked: see `great_person_points`.
+		-- Keep successful zero stock readings; omit only unavailable/invalid
+		-- amounts. A nonempty map of zeros distinguishes an empty bank from a
+		-- failed read. With no usable query, keep nil rather than `{}` (which
+		-- the Lua encoder would serialize as an array).
 		-- TopPanel_Expansion2.lua:50-55,64: gross accumulation includes imports
 		-- and bonuses. Unit/power demand is separate, not subtracted here.
 		strategic_resource_income = try(function()
@@ -9982,7 +10035,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 					local amount = try(function()
 						return resources:GetResourceAmount(row.ResourceType);
 					end, nil);
-					if amount ~= nil and amount > 0 then
+					if type(amount) == "number" and amount >= 0 and amount < math.huge then
 						out[row.ResourceType] = amount;
 						any = true;
 					end
@@ -9997,7 +10050,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 		-- does not know a copy is out: live Emperor civvis-20261007T131449Z
 		-- (game 354) sold Turtles and Marble to Kongo at turns 126 and 132,
 		-- then priced both into seven Oil asks from 155 that the last-copy
-		-- guard refused unproposed. nil when none is held, as above.
+		-- guard refused unproposed. Keep nil when none is held here.
 		luxury_counts = try(function()
 			local resources = player:GetResources();
 			if resources == nil then return nil; end
@@ -11752,6 +11805,129 @@ CivvisTrade.abandon = function(subject, why)
 	return true;
 end;
 
+-- ★★ THE PLANNER'S ALLIANCE, ASKED IN THE ORDER THE HOST ALLOWS IT.
+--
+-- CIVVIS's `propose_strategic_alliance` proposes friendship and an alliance
+-- as one deal (8-15 times a game on the live seat) and the bridge used to
+-- drop every one. The host takes them in two steps: a declared friendship
+-- (DIPLOACTION_DECLARE_FRIENDSHIP, the `DECLARE_FRIEND` session), and once
+-- it stands the alliance, an AGREEMENTS item of subtype ALLIANCE whose value
+-- type is the alliance (`ALLIANCE_RESEARCH` ...), sent PROPOSED in a
+-- MAKE_DEAL session (DLC/Expansion1/UI/Replacements/
+-- DiplomacyActionView_Expansion1.lua:141-217; the action rows are
+-- DIPLOACTION_ALLIANCE_<KIND>, Expansion1_Alliances.xml, Civil Service on
+-- both sides). An alliance pays its level in Favor every turn
+-- (WORLD_CONGRESS_ALLIANCE_FAVOR_PER_TURN 1), and live friendships lapsed
+-- after thirty turns and were never renewed (civvis-20261030T043401Z:
+-- declared t45 and t51, merely FRIENDLY by t90, never allied).
+--
+-- Returns "friendship", "alliance", or nil and why not. Only a seat
+-- assigned the Diplomatic lane asks (`VictoryLane`; off with `DiploAllies =
+-- false`): an alliance forbids a war on the ally, which a domination seat's
+-- campaign planner does not price. A Culture seat asks too under
+-- `CultureAllies`. Bare global for alliance_ask_test.lua.
+-- Whether `subject` is a culture racer at `AllianceCultureRacerShare` of
+-- the bar it must pass (see `CivvisAllianceStep`). Bare global for
+-- alliance_ask_test.lua.
+CivvisAllianceCultureRacer = function(subject, config)
+	config = type(config) == "table" and config or {};
+	local tourists = tonumber(try(function()
+		return Players[subject]:GetCulture():GetTouristsTo();
+	end, 0)) or 0;
+	if tourists <= 0 then return false; end
+	local bar = 0;
+	for _, other in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {}) or {}) do
+		local id = tonumber(other);
+		if id ~= nil and id ~= subject then
+			local domestic = tonumber(try(function()
+				return Players[id]:GetCulture():GetStaycationers();
+			end, 0)) or 0;
+			if domestic > bar then bar = domestic; end
+		end
+	end
+	if bar <= 0 then return false; end
+	return tourists / bar >= (tonumber(config.AllianceCultureRacerShare) or 0.5);
+end;
+
+CivvisAllianceStep = function(player, pid, subject, verb, turn, config)
+	config = type(config) == "table" and config or {};
+	-- `CultureAllies` (`culture-seat-allies`, set by civ6_play.py when the
+	-- tag is armed): a Culture seat asks as well; `ScienceAllies`
+	-- (`science-seat-allies`) the same for a Science seat. Its planner never names
+	-- the science racer or the rival setting our culture bar, and the
+	-- culture-racer refusal below still applies.
+	if (config.VictoryLane ~= "diplomatic"
+			and not (config.VictoryLane == "culture" and config.CultureAllies == true)
+			and not (config.VictoryLane == "science" and config.ScienceAllies == true))
+			or config.DiploAllies == false then
+		return nil, "alliance_off_lane";
+	end
+	if verb ~= "ALLIANCE_RESEARCH" and verb ~= "ALLIANCE_CULTURAL" and verb ~= "ALLIANCE_RELIGIOUS"
+			and verb ~= "ALLIANCE_MILITARY" and verb ~= "ALLIANCE_ECONOMIC" then
+		return nil, "alliance_unknown_type";
+	end
+	if subject == nil or subject < 0 then return nil, "alliance_target_unmapped"; end
+	if DealAgreementTypes == nil or DealAgreementTypes.ALLIANCE == nil then
+		return nil, "alliance_unsupported";
+	end
+	if not try(function() return Players[subject]:IsMajor(); end, false) then
+		return nil, "alliance_not_major";
+	end
+	local diplomacy = try(function() return player:GetDiplomacy(); end);
+	if diplomacy == nil then return nil, "no_diplomacy"; end
+	if try(function() return diplomacy:IsAtWarWith(subject); end, false) then
+		return nil, "alliance_at_war";
+	end
+	if (tonumber(try(function() return diplomacy:GetAllianceType(subject); end, -1)) or -1) ~= -1 then
+		return nil, "alliance_already_allied";
+	end
+	CivvisK.allianceAsked = CivvisK.allianceAsked or {};
+	local asked = CivvisK.allianceAsked[subject];
+	if asked ~= nil and (turn - asked) < (tonumber(config.AllianceRetryTurns) or 5) then
+		return nil, "alliance_cooldown";
+	end
+	-- ★★ NOT WITH A CULTURE RACER. A declared friendship or an alliance
+	-- forbids a war on its partner for thirty turns, and the war on the
+	-- tourism sources (`counter-culture-by-conquest`, armed 2026-10-30) is
+	-- the counter to a culture victory: two of the first four live King
+	-- diplomatic seats lost to one (civvis-20261030T073511Z t174,
+	-- 074500Z t207). A rival whose visiting tourists stand at
+	-- `AllianceCultureRacerShare` (0.5) of the highest domestic count any
+	-- other major holds is not asked -- the same reading the ballot's
+	-- culture counter takes (`GetTouristsTo` over `GetStaycationers`).
+	if CivvisAllianceCultureRacer(subject, config) then
+		return nil, "alliance_culture_racer";
+	end
+	if CivvisTrade.sessions[subject] ~= nil or CivvisTrade.pending[subject] ~= nil
+			or try(function() return DealManager.HasPendingDeal(pid, subject); end, false) then
+		return nil, "alliance_session_busy";
+	end
+	local state = try(function()
+		local row = GameInfo.DiplomaticStates[
+			Players[subject]:GetDiplomaticAI():GetDiplomaticStateIndex(pid)];
+		return row ~= nil and row.StateType or nil;
+	end);
+	if state == "DIPLO_STATE_DECLARED_FRIEND" then
+		if try(function()
+			return diplomacy:IsDiplomaticActionValid("DIPLOACTION_" .. verb, subject, true);
+		end) == false then
+			return nil, "alliance_not_offered";
+		end
+		CivvisK.allianceAsked[subject] = turn;
+		return "alliance", "alliance";
+	end
+	if state ~= nil and state ~= "DIPLO_STATE_FRIENDLY" then
+		return nil, "alliance_friendship_not_friendly";
+	end
+	if try(function()
+		return diplomacy:IsDiplomaticActionValid("DIPLOACTION_DECLARE_FRIENDSHIP", subject, true);
+	end) == false then
+		return nil, "alliance_friendship_not_offered";
+	end
+	CivvisK.allianceAsked[subject] = turn;
+	return "friendship", "friendship";
+end;
+
 -- Every diplomacy statement that touches the local seat. Ours opens the
 -- question; the rival's carries the verdict. Bare global for the offline
 -- regression (`deal_session_test.lua`).
@@ -11814,6 +11990,33 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 		return;
 	end
 	if fromPlayer ~= other then return; end
+	-- ★★ A REFUSED ALLIANCE IS FOLLOWED BY THE RIVAL'S COUNTER. Live King
+	-- 2026-11-01: every Culture seat froze on the turn a rival refused our
+	-- alliance ask (102116Z t120 from four saves, 063953Z t186, 091422Z t120,
+	-- 081602Z t149, 143722Z t153). DiplomacyManager.csv ended each time on the
+	-- target's "MAKE_DEAL, AI_REFUSE_DEAL, NEGATIVE", then "MAKE_DEAL,
+	-- POSITIVE, POSITIVE, Adding to pending", never processed: we had closed
+	-- the session about 50 ms after the refusal, before that statement was
+	-- read, and in 143722Z another rival's DIPLOMATIC_KUDO then took the slot
+	-- ("Already has open session!"). The shipped screen leaves the session
+	-- open until the player answers (DiplomacyActionView.lua:2582, "the AI
+	-- will send, ACCEPT, REJECT, etc."), so the refusal keeps it open for
+	-- `AllianceCounterHoldSeconds` and the next statement from the rival in
+	-- it is refused the way DiplomacyDealView.lua OnRefuseDeal does
+	-- (SendWorkingDeal REJECTED, then CloseSession).
+	if session.counter_wait ~= nil then
+		local rejected = pcall(function()
+			DealManager.SendWorkingDeal(DealProposalAction.REJECTED, pid, other);
+		end);
+		emit("counter_answered", { turn = turn, target = other, kind = session.kind,
+			session = session.sessionID or -1, rejected = rejected,
+			deal_action = kVariants.DealAction ~= nil and tostring(kVariants.DealAction) or nil,
+			statement = try(function()
+				return DiplomacyManager.GetKeyName(kVariants.StatementSubType);
+			end, nil) });
+		CivvisTrade.close(pid, other, "counter_answered");
+		return;
+	end
 	local dealAction = kVariants.DealAction;
 	if dealAction == nil then return; end
 	local opening = try(function()
@@ -11876,6 +12079,46 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 		elseif accepted and not equalityChecked then
 			CivvisTrade.close(pid, other, "deal_equality_unreadable");
 			return;
+		elseif not accepted then
+			-- A peace refusal uses the same MAKE_DEAL conversation as an
+			-- alliance refusal. Retain ownership until its counter is answered
+			-- or the bounded closer ends the wait; closing under the following
+			-- statement bypasses the shared counter handler above. This does
+			-- not enable peace sessions in the operator's trade-only mode.
+			local counterHold = tonumber(cfg.PeaceCounterHoldSeconds) or 4;
+			if counterHold > 0 then
+				session.counter_wait = { turn = turn };
+				pcall(function() LuaEvents.CivvisDealSession(other, true, counterHold); end);
+				emit("deal_session", { turn = turn, target = other, kind = session.kind,
+					phase = "counter_wait", session = session.sessionID or -1, hold = counterHold });
+				return;
+			end
+		end
+	elseif session.kind == "alliance" then
+		-- See `CivvisAllianceStep`. The rival's ACCEPTED is its verdict, and
+		-- it is sent back ACCEPTED only when both working deals are equal,
+		-- the shipped `DiplomacyDealView.OnProposeOrAcceptDeal` guard the
+		-- peace branch above keeps; anything else is walked away from. The
+		-- host's alliance type on the next frame is the only proof it landed.
+		local accepted = dealAction == DealProposalAction.ACCEPTED;
+		local dealEqual = accepted and try(function()
+			return DealManager.AreWorkingDealsEqual(pid, other);
+		end, nil) or nil;
+		local submitted = dealEqual == true and pcall(function()
+			DealManager.SendWorkingDeal(DealProposalAction.ACCEPTED, pid, other);
+		end) or false;
+		emit("alliance_response", { turn = turn, target = other, accepted = accepted,
+			deal_equal = dealEqual, submitted = submitted, deal_action = tostring(dealAction) });
+		-- See the counter above: a refusal waits for the rival's counter
+		-- instead of closing under it. `AllianceCounterHoldSeconds = 0`
+		-- restores the immediate close.
+		local counterHold = tonumber(cfg.AllianceCounterHoldSeconds) or 4;
+		if not accepted and counterHold > 0 then
+			session.counter_wait = { turn = turn };
+			pcall(function() LuaEvents.CivvisDealSession(other, true, counterHold); end);
+			emit("deal_session", { turn = turn, target = other, kind = session.kind,
+				phase = "counter_wait", session = session.sessionID or -1, hold = counterHold });
+			return;
 		end
 	else
 		CivvisOnIncomingDeal(other, pid, dealAction);
@@ -11894,6 +12137,10 @@ CivvisOnDealSessionClosed = function(sessionID)
 				-- accepted. Closing that screen is not evidence of a treaty and
 				-- must not produce a synthetic accepted peace result.
 				CivvisTrade.close(pid, subject, "session_closed", true);
+			elseif session.counter_wait ~= nil then
+				-- A refused offer whose counter never came: the rival did
+				-- answer, so this is no unanswered ask and holds no turn.
+				CivvisTrade.close(pid, subject, "counter_not_sent", true);
 			else
 				CivvisTrade.abandon(subject, "session_closed");
 			end
@@ -12958,6 +13205,8 @@ local function applyOrder(player, pid, row, turn)
 		end
 		return fallback or "no_probe_answered";
 	end
+	-- Delayed movement no-ops use this same exact-parameter failure probe.
+	CivvisBoard.operationRefusalReason = refusalReason;
 
 	-- Keep this helper inside the order handler. A file-scope local consumes one
 	-- of the main chunk's 200 Lua registers; crossing that ceiling makes Civ 6
@@ -13658,6 +13907,39 @@ local function applyOrder(player, pid, row, turn)
 		end);
 		if ok then peaceAsked[key] = turn; end
 		return ok, ok and "friendship_asked" or "throw";
+	end
+
+	-- See `CivvisAllianceStep`: the planner's alliance, on a Diplomatic seat.
+	if kind == "alliance" then
+		local step, why = CivvisAllianceStep(player, pid, subject, verb, turn, cfg);
+		if step == "friendship" then
+			local ok = pcall(function()
+				DiplomacyManager.RequestSession(pid, subject, "DECLARE_FRIEND");
+			end);
+			if ok then peaceAsked["DECLARE_FRIEND" .. subject] = turn; end
+			emit("alliance_request", { turn = turn, target = subject, alliance = verb,
+				step = "friendship", submitted = ok });
+			return ok, ok and "alliance_friendship_asked" or "throw";
+		end
+		if step ~= "alliance" then return false, why; end
+		local ran, ok, reason = pcall(function()
+			DealManager.ClearWorkingDeal(DealDirection.OUTGOING, pid, subject);
+			local deal = DealManager.GetWorkingDeal(DealDirection.OUTGOING, pid, subject);
+			if deal == nil then return false, "no_working_deal"; end
+			local item = deal:AddItemOfType(DealItemTypes.AGREEMENTS, pid);
+			if item == nil then return false, "alliance_item_refused"; end
+			item:SetSubType(DealAgreementTypes.ALLIANCE);
+			item:SetValueType(DB.MakeHash(verb));
+			item:SetLocked(true);
+			deal:Validate();
+			if not deal:IsValid() then return false, "invalid_deal"; end
+			CivvisTrade.ask(pid, subject, "PROPOSED", "alliance", turn);
+			return true, "alliance_asked";
+		end);
+		if not ran then ok, reason = false, "throw"; end
+		emit("alliance_request", { turn = turn, target = subject, alliance = verb,
+			step = "alliance", submitted = ok and true or false, reason = reason });
+		return ok, reason;
 	end
 
 	-- ★★★★★ AID REQUEST FINISHER. Firaxis exposes two score routes for Aid
@@ -15741,6 +16023,7 @@ local function applyOrder(player, pid, row, turn)
 				-- and below, and the same use: the Rust side can feed a NAMED refusal
 				-- back so CIVVIS stops re-deriving the same impossible step.
 				emit("move_refused", {
+					operation_failure = refusalReason(unit, OP["UNITOPERATION_MOVE_TO"], params),
 					turn = turn,
 					unit = subject,
 					-- ⚠ `unit_kind`, NOT `kind`. `emit` sets `payload.kind = <event kind>`
@@ -16672,6 +16955,46 @@ CivvisSelectVictoryThreat = function(candidates)
 	return threat, best;
 end
 
+-- ★★ A BALLOT NAMES ONLY A TARGET THE BALLOT OFFERS. A player-target
+-- resolution's `PossibleTargets` lists the majors we can name, and a rival
+-- we have not met is not among them; the leader and the threats are chosen
+-- from every living major. A target not on the ballot left the selection
+-- at its default, the first entry, which is us. Live Immortal
+-- civvis-20261031T003455Z (6 majors, Continents): at t137 the Diplomatic
+-- leader, player 1, was not met until t154, and the free denial vote went
+-- B on ourselves; the counter path's option B on Trade Policy, Border
+-- Control or Migration Treaty would land its penalty on us the same way.
+-- Returns the ballot index of `player`, or nil. Bare globals: the chunk is
+-- at the register cap; congress_unmet_target_test.lua reads them.
+CivvisCongressTargetIndex = function(targets, player)
+	local want = tonumber(player);
+	if want == nil then return nil; end
+	for idx, t in pairs(type(targets) == "table" and targets or {}) do
+		if tonumber(t) == want then return idx; end
+	end
+	return nil;
+end
+
+-- The Diplomatic Victory denial: option B on `leader` when the ballot offers
+-- it; otherwise B on the offered rival with the most points; with none
+-- offered, A on us (never B on us). Returns `option, selection`.
+CivvisCongressDenialTarget = function(targets, leader, candidates, pid, option, selection)
+	local idx = CivvisCongressTargetIndex(targets, leader);
+	if idx ~= nil then return option, idx; end
+	local best, bestPoints = nil, -1;
+	for _, c in ipairs(type(candidates) == "table" and candidates or {}) do
+		local id = type(c) == "table" and tonumber(c.id) or nil;
+		local at = (id ~= nil and id ~= tonumber(pid)) and CivvisCongressTargetIndex(targets, id) or nil;
+		if at ~= nil and (tonumber(c.points) or 0) > bestPoints then
+			best, bestPoints = at, tonumber(c.points) or 0;
+		end
+	end
+	if best ~= nil then return 2, best; end
+	local own = CivvisCongressTargetIndex(targets, pid);
+	if own ~= nil then return 1, own; end
+	return option, selection;
+end
+
 CivvisSelectCongressLeader = function(candidates)
 	local leader, leaderPoints, leaderScore = -1, -1, -1;
 	for _, candidate in ipairs(candidates or {}) do
@@ -16955,6 +17278,397 @@ CivvisCongressRedirect = function(blocks, candidates, pid, budget, maxVotes, con
 	end
 	if best == nil then return nil; end
 	return best, bestVotes, "redirect";
+end
+
+-- ★★★ A DIPLOMATIC SEAT RACES AT CONGRESS INSTEAD OF DENYING.
+--
+-- Every ballot above was written for a seat that is NOT racing Diplomacy: it
+-- banks Favor, casts B at the leader, and lets the other resolutions fall
+-- where they may. On a seat assigned the Diplomatic lane (`VictoryLane`,
+-- from the launcher) that leaves its own points on the table. Over 586
+-- recorded sessions (117 control runs to 2026-10-30) our vote matched the
+-- winning option AND target on 30% of the non-Diplomatic resolutions (282
+-- of 928) -- each match is a Congress Participation point -- and 40% of the
+-- Diplomatic Victory ones. Public Relations is the plainest case: the ballot
+-- casts option B on us (BAN_FIRST) while option A won 37 of 55.
+--
+-- Bought votes win most of them cheaply. Holding the rivals' recorded votes
+-- fixed, A on ourselves takes Border Control at a median 2 votes (4 Favor on
+-- the Online table) and Public Relations at 1-2, and the ballot's own choice
+-- takes Urban Development, Military Advisory and Espionage at 2-3; the votes
+-- below (`CivvisRacerResolutionVotes`) are the 75th percentile per type.
+-- Buying them whenever the price is at most 60 Favor wins 64% of the
+-- resolutions instead of 29%, for 6 Favor a resolution on average: about
+-- +0.7 points a session, about 5 points per 100 Favor. The +2 claim is the
+-- dearer point: A on us needs a median 8-9 votes (112-144 Favor) from turn
+-- 80 to 200, and `least` below (the last session's largest rival A block
+-- plus a quarter, at least 2, plus one) won 66-75% of those sessions at 0.9
+-- points per 100 Favor; a quarter more again wins 82%. So the racer funds
+-- the cheap participation votes first (`CivvisRacerReserve`, prices up to
+-- `DiploRacerCheapCap` 40), then claims, then buys the dearer resolutions
+-- (up to `DiploRacerResolutionCap` 60) from what is left. A rival on the
+-- gang threshold (`DiploVictoryGangCertain`) still gets the denial: the
+-- rivals' B carries it, and our B with theirs is the participation point.
+-- Off with `DiploRacer = false`. Bare globals: the main chunk sits near the
+-- 200-register ceiling, and racer_ballot_test.lua reads them.
+CivvisDiploRacer = function(config)
+	return type(config) == "table" and config.VictoryLane == "diplomatic"
+		and config.DiploRacer ~= false;
+end
+
+CivvisRacerResolutionVotes = function(rtype, favor, costs, config, cap)
+	config = type(config) == "table" and config or {};
+	if type(costs) ~= "table" then return 1, 0; end
+	local need = ({
+		WC_RES_MERCENARY_COMPANIES = 2, WC_RES_WORLD_RELIGION = 2,
+		WC_RES_BORDER_CONTROL = 2, WC_RES_PUBLIC_RELATIONS = 2,
+		WC_RES_SOVEREIGNTY = 3, WC_RES_URBAN_DEVELOPMENT = 3,
+		WC_RES_MILITARY_ADVISORY = 3, WC_RES_ESPIONAGE_PACT = 3,
+		WC_RES_ARMS_CONTROL = 3, WC_RES_HERITAGE_ORG = 4,
+		WC_RES_GLOBAL_ENERGY_TREATY = 4, WC_RES_DEFORESTATION_TREATY = 4,
+		WC_RES_TRADE_TREATY = 8, WC_RES_PATRONAGE = 10,
+		WC_RES_MIGRATION_TREATY = 11, WC_RES_PUBLIC_WORKS = 13,
+		WC_RES_WORLD_IDEOLOGY = 15, WC_RES_LUXURY = 16,
+	})[tostring(rtype)] or 4;
+	-- See `CivvisHeritageDenial`: a racer's tourism is worth nothing, so it
+	-- buys no Heritage votes on its own; the denial buys them on B.
+	if rtype == "WC_RES_HERITAGE_ORG" and config.HeritageDenial ~= false then return 1, 0; end
+	need = need + (tonumber(config.DiploRacerExtraVotes) or 0);
+	local maxVotes = tonumber(costs.MaxVotes) or 1;
+	if need > maxVotes then need = maxVotes; end
+	local price = tonumber(costs[need - 1]);
+	cap = tonumber(cap) or tonumber(config.DiploRacerResolutionCap) or 60;
+	if need < 2 or price == nil or price > cap or price > (tonumber(favor) or 0) then
+		return 1, 0;
+	end
+	return need, price;
+end
+
+-- ★★ HERITAGE ORGANIZATION: NO TOURISM FROM THE CULTURE LEADER'S GREAT WORKS.
+--
+-- WC_RES_HERITAGE_ORG targets a great-work object type (Expansion2_Congress.xml:
+-- effect 1 ADD_TOURISM_FROM_GREAT_WORK_OBJECT, effect 2
+-- NO_TOURISM_FROM_GREAT_WORK_OBJECT, both for every civilization). It is not a
+-- player-target resolution, so the culture counters above never see it, and
+-- the ballot voted option A on the first target. Live Emperor
+-- civvis-20261030T101932Z (Diplomatic): at t139 the racer bought 4 votes for
+-- A on Sculpture -- 7 to 0, our 4 the ones that chose Sculpture over Writing --
+-- and Rome's culture race went 14% at t139, 31% at t150, 84% at t160, its
+-- tourism 149 -> 286 in eleven turns, and its Culture victory came at t177,
+-- two turns before the session that would have put us past 15 points.
+-- Heritage came up in 10 of the day's 20 live games.
+--
+-- A seat whose lane is not Culture earns nothing from tourism, so option B on
+-- the type the culture leader draws the most tourism from costs it nothing:
+-- the rival with the highest culture race (`c.culture`, visiting tourists
+-- over the bar) at `HeritageDenialFloor` (10) or more, its works summed by
+-- `GameInfo.GreatWorks[...].Tourism` per object type, the biggest type on
+-- the ballot. Votes: the last session's Heritage A total plus one (four when
+-- none is recorded), at most `HeritageDenialMaxVotes` (8), as Favor allows.
+-- Rivals' Heritage A ran 3-4 votes over the day, so B usually carries and
+-- the participation point is kept. Returns the target index, votes, price
+-- and the leader; nil when it does not apply. Off with
+-- `HeritageDenial = false`. Bare globals: the chunk is at the register cap.
+CivvisHeritageTourismByType = function(player)
+	local out = {};
+	local p = Players[tonumber(player) or -1];
+	local cities = p and try(function() return p:GetCities(); end);
+	if cities == nil then return out; end
+	for _, city in cities:Members() do
+		local blds = try(function() return city:GetBuildings(); end);
+		local seen = {};
+		for row in GameInfo.Building_GreatWorks() do
+			local info = GameInfo.Buildings[row.BuildingType];
+			if blds ~= nil and info ~= nil and not seen[info.Index]
+				and try(function() return blds:HasBuilding(info.Index); end, false) then
+				seen[info.Index] = true;
+				local slots = tonumber(try(function()
+					return blds:GetNumGreatWorkSlots(info.Index);
+				end, 0)) or 0;
+				for slot = 0, slots - 1 do
+					local idx = tonumber(try(function()
+						return blds:GetGreatWorkInSlot(info.Index, slot);
+					end, -1)) or -1;
+					local work = idx >= 0 and GameInfo.GreatWorks[try(function()
+						return blds:GetGreatWorkTypeFromIndex(idx);
+					end, -1)] or nil;
+					local object = work and GameInfo.GreatWorkObjectTypes[work.GreatWorkObjectType];
+					if object ~= nil then
+						out[object.Name] = (out[object.Name] or 0) + (tonumber(work.Tourism) or 0);
+					end
+				end
+			end
+		end
+	end
+	return out;
+end
+
+-- ★★ WORLD RELIGION: NEVER EMPOWER THE FAITH THAT IS BEATING US.
+--
+-- WC_RES_WORLD_RELIGION targets a religion (Expansion2_Congress.xml:91,
+-- TargetKind="RELIGION"): effect 1 WC_RES_RELIGIOUS_UNITS_STRENGTH -- the
+-- target's religious units fight theological combat stronger -- and effect 2
+-- ANYONE_CONDEMNS_FOR_FAVOR (Expansion2_Congress.xml:142-143). Like Heritage
+-- it never reached a counter, so the ballot voted A on the first target.
+-- Live Emperor civvis-20261030T105026Z (Diplomatic): at t137 the racer's two
+-- votes made A Catholicism the winner (5-0; without them Catholicism,
+-- Sikhism and Buddhism stood one vote each) while Catholicism held all six
+-- of our cities, and Catholicism won on Religion at t143.
+--
+-- Option A stays (it passes nearly every session, so the participation
+-- point stays reachable); the target becomes our own founded religion when
+-- it is on the ballot, else the religion holding the fewest majority cities
+-- among the majors -- a counterweight, never the leader. Returns the target
+-- index or nil. `counts` (religion Name -> majority cities) and `own` (our
+-- religion's Name) are injectable for the offline test. Off with
+-- `WorldReligionGuard = false`. Bare globals: the chunk is at the register cap.
+CivvisReligionMajorityCounts = function()
+	local counts = {};
+	for _, id in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {}) or {}) do
+		local p = Players[id];
+		local cities = p and try(function() return p:GetCities(); end);
+		if cities ~= nil then
+			for _, city in cities:Members() do
+				local rid = tonumber(try(function()
+					return city:GetReligion():GetMajorityReligion();
+				end, -1)) or -1;
+				local row = rid >= 0 and GameInfo.Religions[rid] or nil;
+				if row ~= nil and row.Name ~= nil then
+					counts[row.Name] = (counts[row.Name] or 0) + 1;
+				end
+			end
+		end
+	end
+	return counts;
+end
+
+CivvisWorldReligionTarget = function(rtype, targets, pid, config, counts, own)
+	config = type(config) == "table" and config or {};
+	if config.WorldReligionGuard == false or rtype ~= "WC_RES_WORLD_RELIGION"
+		or type(targets) ~= "table" then
+		return nil;
+	end
+	if own == nil then
+		local created = tonumber(try(function()
+			return Players[pid]:GetReligion():GetReligionTypeCreated();
+		end, -1)) or -1;
+		local row = created >= 0 and GameInfo.Religions[created] or nil;
+		own = row and row.Name or false;
+	end
+	counts = counts or CivvisReligionMajorityCounts();
+	local mine, low, lowCount = nil, nil, nil;
+	for i, t in pairs(targets) do
+		if type(i) == "number" then
+			local name = tostring(t);
+			if own and name == own then mine = i; end
+			local n = tonumber(counts[name]) or 0;
+			if lowCount == nil or n < lowCount or (n == lowCount and i < low) then
+				low, lowCount = i, n;
+			end
+		end
+	end
+	return mine or low;
+end
+
+CivvisHeritageDenial = function(rtype, targets, candidates, pid, favor, costs, lastA, config, tourismOf)
+	config = type(config) == "table" and config or {};
+	if config.HeritageDenial == false or rtype ~= "WC_RES_HERITAGE_ORG"
+		or config.VictoryLane == nil or config.VictoryLane == "culture"
+		or type(costs) ~= "table" then
+		return nil;
+	end
+	local leader, best = nil, -1;
+	for _, c in ipairs(type(candidates) == "table" and candidates or {}) do
+		local culture = tonumber(c.culture) or 0;
+		if tonumber(c.id) ~= nil and tonumber(c.id) ~= tonumber(pid) and culture > best then
+			leader, best = tonumber(c.id), culture;
+		end
+	end
+	if leader == nil or best < (tonumber(config.HeritageDenialFloor) or 10) then return nil; end
+	local tourism = (tourismOf or CivvisHeritageTourismByType)(leader) or {};
+	local idx, top = nil, 0;
+	for i, t in pairs(type(targets) == "table" and targets or {}) do
+		local v = tonumber(tourism[tostring(t)]) or 0;
+		if type(i) == "number" and v > top then idx, top = i, v; end
+	end
+	if idx == nil then return nil; end
+	local last = type(lastA) == "table" and tonumber(lastA[rtype]) or nil;
+	local want = (last or 3) + 1;
+	local cap = math.min(tonumber(config.HeritageDenialMaxVotes) or 8, tonumber(costs.MaxVotes) or 1);
+	if want > cap then want = cap; end
+	while want > 1 and (tonumber(costs[want - 1]) or (tonumber(favor) or 0) + 1) > (tonumber(favor) or 0) do
+		want = want - 1;
+	end
+	return idx, want, (want > 1) and (tonumber(costs[want - 1]) or 0) or 0, leader;
+end
+
+-- ★★ HERITAGE ORGANIZATION ON A CULTURE SEAT: THE TYPE THAT WIDENS OUR LEAD.
+--
+-- `CivvisHeritageDenial` serves the seats whose own tourism is worth nothing.
+-- A Culture seat's own tourism IS the race, and both options act on every
+-- civilization alike, so what matters is the difference: option A on a type
+-- adds what each of us draws from it, option B removes it. Against the
+-- strongest culture rival (the highest `c.culture`), for every type on the
+-- ballot, `ours - theirs` by `CivvisHeritageTourismByType`: A on the type
+-- where that is most positive, else B on the type where it is most negative.
+-- Votes as the denial casts them (the last session's A total plus one, four
+-- by default, `HeritageDenialMaxVotes` at most, as Favor allows). Off with
+-- `HeritageDenial = false` or `HeritageCultureSeat = false`.
+--
+-- Returns `option, selection, votes, favor, spent`: the values passed in,
+-- unchanged, when it does not apply, so the ballot needs no new local (the
+-- chunk is at the register cap).
+CivvisHeritageCultureSeat = function(rtype, targets, candidates, pid, favor, costs, lastA,
+		config, option, selection, votes, spent, tourismOf)
+	config = type(config) == "table" and config or {};
+	if config.HeritageDenial == false or config.HeritageCultureSeat == false
+		or rtype ~= "WC_RES_HERITAGE_ORG" or config.VictoryLane ~= "culture"
+		or type(costs) ~= "table" then
+		return option, selection, votes, favor, spent;
+	end
+	local leader, best = nil, -1;
+	for _, c in ipairs(type(candidates) == "table" and candidates or {}) do
+		local culture = tonumber(c.culture) or 0;
+		if tonumber(c.id) ~= nil and tonumber(c.id) ~= tonumber(pid) and culture > best then
+			leader, best = tonumber(c.id), culture;
+		end
+	end
+	if leader == nil then return option, selection, votes, favor, spent; end
+	local of = tourismOf or CivvisHeritageTourismByType;
+	local ours, theirs = of(pid) or {}, of(leader) or {};
+	local idx, edge = nil, 0;
+	for i, t in pairs(type(targets) == "table" and targets or {}) do
+		local d = (tonumber(ours[tostring(t)]) or 0) - (tonumber(theirs[tostring(t)]) or 0);
+		if type(i) == "number" and math.abs(d) > math.abs(edge) then idx, edge = i, d; end
+	end
+	if idx == nil then return option, selection, votes, favor, spent; end
+	local last = type(lastA) == "table" and tonumber(lastA[rtype]) or nil;
+	local want = (last or 3) + 1;
+	local cap = math.min(tonumber(config.HeritageDenialMaxVotes) or 8, tonumber(costs.MaxVotes) or 1);
+	if want > cap then want = cap; end
+	while want > 1 and (tonumber(costs[want - 1]) or (tonumber(favor) or 0) + 1) > (tonumber(favor) or 0) do
+		want = want - 1;
+	end
+	local price = (want > 1) and (tonumber(costs[want - 1]) or 0) or 0;
+	return (edge > 0) and 1 or 2, idx, want, (tonumber(favor) or 0) - price, (tonumber(spent) or 0) + price;
+end
+
+-- The Favor the cheap participation votes of this session will take, held
+-- back from the claim. `entries` lists the session's resolution types, as
+-- names or as the ballot's `{ rtype = name }` entries.
+CivvisRacerReserve = function(entries, costs, config)
+	config = type(config) == "table" and config or {};
+	-- ★★ A SESSION WITH THE CLAIM ON IT FUNDS THE CLAIM FIRST. The claim is
+	-- won or lost by one vote and swings five points (our +3 against the
+	-- rival's +2); a participation vote is one. Live King
+	-- civvis-20261030T070824Z-cont1 t181: the reserve held 24 Favor for a
+	-- Deforestation vote, the claim cast 9, Portugal's own A block was 9 and
+	-- the tie went to Portugal (10 -> 12); 10 votes were in the bank.
+	for _, entry in ipairs(type(entries) == "table" and entries or {}) do
+		local rtype = type(entry) == "table" and entry.rtype or entry;
+		if rtype == "WC_RES_DIPLOVICTORY" then return 0; end
+	end
+	local total = 0;
+	for _, entry in ipairs(type(entries) == "table" and entries or {}) do
+		local rtype = type(entry) == "table" and entry.rtype or entry;
+		if rtype ~= "WC_RES_DIPLOVICTORY" then
+			local _, price = CivvisRacerResolutionVotes(rtype, 1e9, costs, config,
+				tonumber(config.DiploRacerCheapCap) or 40);
+			total = total + price;
+		end
+	end
+	return total;
+end
+
+-- How many A votes on ourselves the claim casts, or nil when the bank cannot
+-- reach `least` (the ballot then falls back to the redirect and denial
+-- above). With no recorded rival block, `DiploRacerFirstBlock` (8: the
+-- first-session default that won 75% in the replay against 66% at 5). From
+-- match point (`DiploVictoryMatchPoint`, 18) the claim is the win: all in --
+-- reached only when `DiploRacerGangSelf` stands above it (`CivvisRacerBraces`).
+-- ★ AGAINST A CONTENDER, SIZE THE CLAIM FOR ITS BIGGER BLOCK.
+-- The claim is sized from the last session's largest rival A block. A rival
+-- that can take the +2 instead of us does not cast the same block twice:
+-- Immortal civvis-20261030T173341Z's Georgia cast 8, 9, 5 then 12; at t174,
+-- both on 15, our 10 votes (sized from the 5) lost the +2 to its 12, Georgia
+-- went to 17, we denied it back at t194 (17 to 15) and it won on Science at
+-- t199 -- with about 351 Favor in hand at t174, 13 votes (sized from the 9)
+-- would have taken the +2. Of the day's ~30 claims that was the one lost to
+-- sizing rather than to the bank. So when the best rival stands within
+-- `DiploRacerContenderMargin` (2) points of us or ahead, the claim sizes from
+-- the larger of the last two sessions' blocks; otherwise from the last. Off
+-- with `DiploRacerContenderPeak = false`. Bare global: the chunk is at the
+-- register cap.
+CivvisRacerClaimBlock = function(last, prev, ourPoints, leaderPoints, config)
+	config = type(config) == "table" and config or {};
+	last, prev = tonumber(last), tonumber(prev);
+	if config.DiploRacerContenderPeak == false or prev == nil then return last; end
+	local margin = tonumber(config.DiploRacerContenderMargin) or 2;
+	if (tonumber(leaderPoints) or 0) < (tonumber(ourPoints) or 0) - margin then return last; end
+	if last == nil or prev > last then return prev; end
+	return last;
+end
+
+CivvisRacerClaimVotes = function(favor, ourPoints, rivalBlock, costs, maxVotes, config)
+	config = type(config) == "table" and config or {};
+	local block = tonumber(rivalBlock) or tonumber(config.DiploRacerFirstBlock) or 8;
+	if block < 1 then block = 1; end
+	local least = block + math.max(2, math.ceil(block / 4)) + 1;
+	local budget = CivvisCongressVoteBudget(favor, costs, maxVotes);
+	if (tonumber(ourPoints) or 0) >= (tonumber(config.DiploVictoryMatchPoint) or 18) then
+		if budget > 1 then return budget; end
+		return nil;
+	end
+	-- Short of `least`, a bank that still out-votes the last block claims
+	-- with all of it: the fallback is a redirect or a free vote, and the
+	-- live redirect of civvis-20261030T070824Z-cont1 t201 (7 votes, budget
+	-- under `least`) let Portugal take +2 on its way from 12 to 19.
+	if budget < least then
+		if budget > block then return budget; end
+		return nil;
+	end
+	return math.min(least + math.ceil(block / 4), budget);
+end
+
+-- ★★ AND FROM OUR OWN MATCH POINT THE RIVALS GANG ON US: VOTE WITH THEM.
+-- Across October 2-5 the rivals cast B on a Diplomatic leader at 16 points
+-- in 57% of sessions and at 18 in all five. A claim cast into that gang
+-- loses the +2 and the participation point: -2 a session, so a racer at 18
+-- stalls there. B on ourselves matches the winning option and target -- B
+-- and the gang's own target, us -- for +1: -1 a session, and with the two
+-- participation votes bought beside it (~+1.3) the session gains instead of
+-- losing, so a point from anywhere between sessions wins. At 16-17 the gang
+-- is a coin flip and a winning claim is +3 (expected about -0.2 for the
+-- claim against -0.6 for the brace), so the brace waits for
+-- `DiploRacerGangSelf` (18). The free vote only: the Favor goes to the
+-- participation votes.
+--
+-- ★★ AND A RIVAL'S B ON US AT THE LAST SESSION IS THE WARNING. The gang
+-- ramps: one rival turns on the leader, and at the next session they all
+-- do. Live King civvis-20261030T074500Z: at t162 (us 12 -> 15) Georgia cast
+-- 6 B votes on us; at t181 all three cast B on us, 26 votes against our 9
+-- A, and we fell 15 -> 14 having spent 168 Favor -- the brace (B on us,
+-- free) would have held 15. 070824Z-cont1 the same on Portugal: two rivals'
+-- B at t202 (12 -> 19), all three at t222. So from `DiploRacerBraceWarned`
+-- (14) a recorded rival B on us at the last session (`wc_b_on_us`) braces
+-- too.
+CivvisRacerBraces = function(ourPoints, config, warned, passed)
+	config = type(config) == "table" and config or {};
+	local points = tonumber(ourPoints) or 0;
+	if points >= (tonumber(config.DiploRacerGangSelf) or 18) then return true; end
+	-- A B that CARRIED on us is no warning: the rivals relax after a gang
+	-- that landed and press after one that failed. Of today's warned
+	-- sessions, the two after a failed B met 26 and 19 B votes (King
+	-- 074500Z t182, Emperor 111154Z t200: brace right) and the two after a
+	-- B that passed met 3 and 4 (074500Z t202, where our 10-vote claim won;
+	-- Emperor 113137Z t218, where a claim over the 8-vote A block would
+	-- have taken the +2 the rival took). Off with
+	-- `DiploRacerBraceAfterPassedB = true`.
+	if (tonumber(passed) or 0) > 0 and config.DiploRacerBraceAfterPassedB ~= true then
+		return false;
+	end
+	return (tonumber(warned) or 0) > 0
+		and points >= (tonumber(config.DiploRacerBraceWarned) or 14);
 end
 
 -- A ballot is verified against all three native selection fields, not just
@@ -17406,6 +18120,102 @@ CivvisComandante.support = function(player, unit, id, turn, controllerRows)
 	return false;
 end
 
+-- ★★★★ A PROPHET STILL TO FOUND WALKS TO OUR HOLY SITE.
+--
+-- The `religion` order founds only where the host's
+-- `CanStartOperation(FOUND_RELIGION)` holds: a Holy Site (or a civilization's
+-- replacement for it). The Prophet appears in the city centre, and nothing
+-- walked it: `orderGreatPerson` defers every Prophet (its Activate opens the
+-- religion chooser), and the mirror drops Great People. Run
+-- civvis-20261030T062126Z earned John the Baptist at t66 with Athens' Holy Site
+-- two tiles from the centre; the order came back `cannot_found_religion_here`
+-- every turn until Spain's religious victory at t85, with no religion of ours
+-- founded. 060008Z waited 3+ turns on a Holy Site next to the centre.
+-- A walk is an actuation formality: the decision to found was already taken
+-- upstream. "moving" when a MOVE_TO toward our nearest reachable complete
+-- Holy Site was accepted; nil when the Prophet can found where it stands, has
+-- nowhere to go, or the host refused the walk.
+CivvisProphetWalk = { reported = {} };
+-- Why a Prophet still to found was not walked, once per unit per ten turns:
+-- the walk's own refusals, so a live idle Prophet names its reason.
+CivvisProphetWalk.report = function(id, turn, individual, class, reason)
+	local before = CivvisProphetWalk.reported[id];
+	if before ~= nil and (turn - before) < 10 then return; end
+	CivvisProphetWalk.reported[id] = turn;
+	emit("gp", { turn = turn, unit = id, individual = individual, class = class,
+		action = "prophet_walk_refused", reason = reason });
+end;
+CivvisProphetWalk.toHolySite = function(player, unit, id, turn, individual, class)
+	local found = OP["UNITOPERATION_FOUND_RELIGION"];
+	if found == nil then return nil; end
+	if try(function()
+		return UnitManager.CanStartOperation(unit, found, nil, false,
+			OperationResultsTypes.NO_TARGETS);
+	end, false) == true then
+		return nil;
+	end
+	local holy = {};
+	holy["DISTRICT_HOLY_SITE"] = true;
+	pcall(function()
+		for row in GameInfo.DistrictReplaces() do
+			if row.ReplacesDistrictType == "DISTRICT_HOLY_SITE" then
+				holy[row.CivUniqueDistrictType] = true;
+			end
+		end
+	end);
+	local ux = try(function() return unit:GetX(); end, nil);
+	local uy = try(function() return unit:GetY(); end, nil);
+	if ux == nil or uy == nil then return nil; end
+	local pathFinder = try(function() return UnitManager.GetMoveToPathEx; end, nil);
+	local best = nil;
+	eachCity(player, function(city)
+		for _, district in city:GetDistricts():Members() do
+			local row = try(function() return GameInfo.Districts[district:GetType()]; end, nil);
+			local dx = try(function() return district:GetX(); end, nil);
+			local dy = try(function() return district:GetY(); end, nil);
+			if row ~= nil and holy[row.DistrictType] and dx ~= nil and dy ~= nil
+					and try(function() return district:IsComplete(); end, false) == true
+					and try(function() return district:IsPillaged(); end, false) ~= true then
+				-- The host pathfinder, as `activationReachable` reads it: a
+				-- route must exist and end on the Holy Site itself.
+				local reachable = true;
+				if type(pathFinder) == "function" then
+					local destination = try(function() return Map.GetPlotIndex(dx, dy); end, nil);
+					local path = destination ~= nil
+						and try(function() return pathFinder(unit, destination); end, nil) or nil;
+					local n = 0;
+					if path ~= nil and type(path.plots) == "table" then
+						for _ in pairs(path.plots) do n = n + 1; end
+					end
+					reachable = n > 1 and path.plots[n] == destination;
+				end
+				local d = try(function() return Map.GetPlotDistance(ux, uy, dx, dy); end, 9999);
+				if reachable and (best == nil or d < best.d) then
+					best = { x = dx, y = dy, d = d };
+				end
+			end
+		end
+	end);
+	if best == nil then
+		CivvisProphetWalk.report(id, turn, individual, class, "no_reachable_holy_site");
+		return nil;
+	end
+	local params = {};
+	params[UnitOperationTypes.PARAM_X] = best.x;
+	params[UnitOperationTypes.PARAM_Y] = best.y;
+	if not operate(unit, OP["UNITOPERATION_MOVE_TO"], params) then
+		CivvisProphetWalk.report(id, turn, individual, class, "move_refused");
+		return nil;
+	end
+	local pend = gpPending[id];
+	if pend == nil or pend.x ~= best.x or pend.y ~= best.y then
+		emit("gp", { turn = turn, unit = id, individual = individual, class = class,
+			action = "moving_to_found", x = best.x, y = best.y, dist = best.d });
+	end
+	gpPending[id] = { x = best.x, y = best.y };
+	return "moving";
+end;
+
 -- Drive one Great Person toward being used. Returns "activated" | "moving" |
 -- "retired" | "idle", or nil when the unit is not a Great Person this code
 -- should touch.
@@ -17448,6 +18258,14 @@ local function orderGreatPerson(player, unit, id, turn, supportAllowed, controll
 			emit("gp", { turn = turn, unit = id, individual = individual,
 				class = class, action = "retired_founded_prophet" });
 			return "retired";
+		end
+		-- ⚠ No charge test: an unfounded Prophet reads 0 action charges on the
+		-- live host (civvis-20261030T090715Z: Zoroaster stood in Corinth's
+		-- centre beside its finished Holy Site, `cannot_found_religion_here`
+		-- for two turns, and no walk was ever sent).
+		if (religionCreated == nil or religionCreated < 0)
+				and CivvisProphetWalk.toHolySite(player, unit, id, turn, individual, class) then
+			return "moving";
 		end
 		if CivvisK.gpIdleReported[id] == nil then
 			CivvisK.gpIdleReported[id] = turn;
@@ -18472,8 +19290,17 @@ end;
 -- the game's 1,217 no-ops had; the board had read those units `awake` or
 -- `operation` before the order. `activity_name` says which state the accepted
 -- leg left the unit in, an active operation that never steps or something else.
-CivvisBoard.noopEvidence = function(unit, x, y)
+CivvisBoard.noopEvidence = function(unit, x, y, cannotStart)
 	local evidence = {};
+	-- Query only a refused start, with the unit and destination still in hand.
+	-- Keep the classifier separate: a localized reason is not a terrain fact.
+	if cannotStart and type(CivvisBoard.operationRefusalReason) == "function" then
+		local params = {};
+		params[UnitOperationTypes.PARAM_X] = x;
+		params[UnitOperationTypes.PARAM_Y] = y;
+		evidence.operation_failure = CivvisBoard.operationRefusalReason(
+			unit, OP["UNITOPERATION_MOVE_TO"], params);
+	end
 	evidence.core_busy = try(function() return UI.IsGameCoreBusy(); end, nil);
 	evidence.activity = tonumber(try(function() return UnitManager.GetActivityType(unit); end, nil));
 	evidence.activity_name = try(function()
@@ -18584,7 +19411,7 @@ CivvisBoard.moveNoop = function(player, pid, subject, unit, entry, turn, ux, uy,
 		turn = turn, unit = subject, unit_kind = unitTypeName(unit),
 		from = { ux, uy }, want = { wantX, wantY }, moves = moves,
 		ticks = entry.wait, why = why, after_fallback = afterFallback,
-		native = CivvisBoard.noopEvidence(unit, wantX, wantY),
+		native = CivvisBoard.noopEvidence(unit, wantX, wantY, why == "cannot_start"),
 		stall_probe = stalled,
 	});
 	if afterFallback then return false; end
@@ -19548,6 +20375,33 @@ CivvisBoard.holdVisibleBuilderCaptureLegs = function(pid, turn, rows)
 	end);
 	if #threats == 0 then return; end
 
+	-- Read the active host abilities, including trait-granted ones, rather than
+	-- treating every ship as unable to raid a civilian on shore. UnitPanel.lua
+	-- reads GetAbility():GetAbilities(); UnitAbilities.xml binds raiding effects.
+	local function canCoastalRaid(threat)
+		return try(function()
+			local abilities = threat.unit:GetAbility():GetAbilities();
+			if type(abilities) ~= "table" then return nil; end
+			local active = {};
+			for _, index in pairs(abilities) do
+				local ability = GameInfo.UnitAbilities[index];
+				if ability == nil or ability.UnitAbilityType == nil then return nil; end
+				active[ability.UnitAbilityType] = true;
+			end
+			if next(active) == nil then return false; end
+			for link in GameInfo.UnitAbilityModifiers() do
+				if active[link.UnitAbilityType] then
+					local modifier = GameInfo.Modifiers[link.ModifierId];
+					if modifier == nil or modifier.ModifierType == nil then return nil; end
+					if modifier.ModifierType == "MODIFIER_UNIT_ADJUST_RAIDING" then
+						return true;
+					end
+				end
+			end
+			return false;
+		end, nil);
+	end
+
 	local function threatReaches(threat, x, y)
 		if threat.scout then
 			local distance = tonumber(try(function()
@@ -19567,10 +20421,28 @@ CivvisBoard.holdVisibleBuilderCaptureLegs = function(pid, turn, rows)
 				return true, "path";
 			end
 		end
-		local baseMoves = tonumber(try(function()
-			local definition = GameInfo.Units[threat.unit:GetUnitType()];
-			return definition ~= nil and definition.BaseMoves;
-		end, nil)) or 2;
+		local definition = try(function()
+			return GameInfo.Units[threat.unit:GetUnitType()];
+		end, nil);
+		-- A non-raiding naval distance envelope cannot capture a Builder on
+		-- ordinary land. Native 20261102T202907Z t96 held its Iron
+		-- approach for a Caravel under the distance fallback. Keep positive paths,
+		-- water, city/district transitions and unavailable terrain conservative.
+		if definition ~= nil and definition.Domain == "DOMAIN_SEA"
+				and canCoastalRaid(threat) == false then
+			local plot = try(function() return Map.GetPlot(x, y); end, nil);
+			local water = try(function() return plot:IsWater(); end, nil);
+			local city = try(function() return plot:IsCity(); end, nil);
+			local district = tonumber(try(function() return plot:GetDistrictType(); end, nil));
+			if water == false and city == false and district ~= nil and district < 0 then
+				emit("builder_naval_land_clear", {
+					turn = turn, hostile = threat.id, hostile_type = threat.name,
+					at = { x, y }, reason = "known_no_raiding_ability",
+				});
+				return false, "naval_land";
+			end
+		end
+		local baseMoves = tonumber(definition ~= nil and definition.BaseMoves) or 2;
 		local distance = tonumber(try(function()
 			return Map.GetPlotDistance(x, y, threat.x, threat.y);
 		end, -1)) or -1;
@@ -21001,7 +21873,21 @@ local function beginTurn(player, pid, turn)
 					end
 				end
 				local won = a > b and 1 or (b > a and 2 or 0);
-				if rtype == "WC_RES_DIPLOVICTORY" then dvpWon = won; end
+				if rtype == "WC_RES_DIPLOVICTORY" then
+					dvpWon = won;
+					-- See `CivvisRacerBraces`: the rivals' B votes on us.
+					local bOnUs = 0;
+					for _, voter in ipairs(voters) do
+						if voter.option == 2 and voter.player ~= pid
+							and tonumber(voter.target) == pid then
+							bOnUs = bOnUs + (tonumber(voter.votes) or 0);
+						end
+					end
+					envoyTally.wc_b_on_us = bOnUs;
+					-- See `CivvisRacerBraces`: whether that B carried, on us.
+					envoyTally.wc_b_passed_on_us = (won == 2
+						and tonumber(r.ChosenThing) == pid) and 1 or 0;
+				end
 				envoyTally.wc_last_a = envoyTally.wc_last_a or {};
 				envoyTally.wc_last_a[rtype] = a;
 				resolutions[#resolutions + 1] = {
@@ -21058,6 +21944,12 @@ local function beginTurn(player, pid, turn)
 		local key = table.concat(signature, "|");
 		if envoyTally.wc_review_signature == key then return; end
 		envoyTally.wc_review_signature = key;
+		-- See `CivvisRacerClaimBlock`: the largest rival A block of the session
+		-- before, shifted once per new review (re-reads return above).
+		if rivalBlock ~= nil then
+			envoyTally.wc_rival_block_prev = envoyTally.wc_rival_block_new;
+			envoyTally.wc_rival_block_new = rivalBlock;
+		end
 		local dvp = {};
 		for _, other in ipairs(try(function() return PlayerManager.GetAliveMajorIDs(); end, {})) do
 			local id = tonumber(other);
@@ -22067,20 +22959,22 @@ function CivvisBoard.operatorHold(turn)
 	if type(now) ~= "number" or type(hold.polledAt) ~= "number"
 			or now < hold.polledAt or now - hold.polledAt >= hold.pollSeconds then
 		hold.polledAt = now;
-		-- The watch pace rides the same query (`CivvisBoard.paceHold`).
-		local asked, pace = false, 0;
+		-- The watch pace and the mirror's painted turn ride the same query
+		-- (`CivvisBoard.paceHold`, `CivvisBoard.mirrorHold`).
+		local asked, pace, shown = false, 0, nil;
 		if attachOrders() then
 			pcall(function()
 				local rows = DB.Query(string.format(
 					"SELECT kind, x FROM civvis.orders WHERE run = '%s' " ..
-					"AND kind IN ('pause', 'pace')", sqlSafe(cfg.RunTag)));
+					"AND kind IN ('pause', 'pace', 'mirror')", sqlSafe(cfg.RunTag)));
 				for _, row in ipairs(rows) do
 					if row.kind == "pause" then asked = true;
-					elseif row.kind == "pace" then pace = math.max(0, tonumber(row.x) or 0); end
+					elseif row.kind == "pace" then pace = math.max(0, tonumber(row.x) or 0);
+					elseif row.kind == "mirror" then shown = tonumber(row.x); end
 				end
 			end);
 		end
-		hold.asked, hold.paceMs = asked, pace;
+		hold.asked, hold.paceMs, hold.mirrorTurn = asked, pace, shown;
 	end
 	local heldFor = (type(now) == "number" and type(hold.since) == "number")
 		and math.floor(now - hold.since + 0.5) or nil;
@@ -22263,6 +23157,82 @@ function CivvisBoard.paceHold(turn)
 		                    wait_ms = math.floor(left * 1000 + 0.5) });
 	end
 	hold.pacing = true;
+	return true;
+end
+
+-- ★ THE MIRROR KEEPS UP. Operator 2026-10-30: "make sure the firaxis and
+-- civvis games aren't more than 1 turn apart. civvis should be driving
+-- firaxis so they should be roughly on the same turn (+-1) at all times".
+-- The CIVVIS page is rebuilt from this game's exports (`tools/follow.py`), so
+-- it can only trail; nothing used to stop Civilization VI running ahead of
+-- it. `civ6_play.py` writes the turn the page has PAINTED as the `mirror` row
+-- (`hold.mirrorTurn`, read with the pause), and our turn does not END until
+-- the page shows it: Civilization VI then reaches turn N+1 only with turn N
+-- on the page. The moves are not held back -- this waits only once the turn
+-- is settled, so the mirror catches up while they play.
+--
+-- No row (no page, a stale report, a mirror the harness has given up on) is no
+-- wait. A wait is capped at `capSeconds` a turn: a page that cannot paint must
+-- not stall the lane, so the turn ends anyway and says so.
+--
+-- ★ A WAITING TURN PEEKS AT THE ROW EVERY `peekSeconds`, not on the pause's
+-- quarter-second poll: the first gated games (10-31) waited a median 0.64 s
+-- a turn, and the quarter second was a fifth of it. The same budget as the
+-- orders peek (`CivvisQueue.ordersLanded`): wall-clock bounded, one one-row
+-- query, and only while a turn is actually waiting.
+CivvisBoard.mirror = { capSeconds = 10, peekSeconds = 0.05 };
+function CivvisBoard.mirrorPeek(now)
+	local mirror = CivvisBoard.mirror;
+	if type(mirror.peekedAt) == "number" and now >= mirror.peekedAt
+			and now - mirror.peekedAt < mirror.peekSeconds then
+		return;
+	end
+	mirror.peekedAt = now;
+	if not attachOrders() then return; end
+	pcall(function()
+		local rows = DB.Query(string.format(
+			"SELECT x FROM civvis.orders WHERE run = '%s' AND kind = 'mirror'",
+			sqlSafe(cfg.RunTag)));
+		local shown = nil;
+		for _, row in ipairs(rows) do shown = tonumber(row.x); end
+		CivvisBoard.hold.mirrorTurn = shown;
+	end);
+end
+function CivvisBoard.mirrorHold(turn)
+	local hold, mirror = CivvisBoard.hold, CivvisBoard.mirror;
+	hold.mirrorWaiting = false;
+	if mirror.turn == turn and not mirror.done then
+		local now = CivvisClock.now();
+		if type(now) == "number" then CivvisBoard.mirrorPeek(now); end
+	end
+	local shown = hold.mirrorTurn;
+	if type(shown) ~= "number" or shown >= turn then
+		if mirror.turn == turn and mirror.since ~= nil and not mirror.done then
+			mirror.done = true;
+			local now = CivvisClock.now();
+			emit("mirror_caught_up", { turn = turn, shown = shown,
+				waited_ms = type(now) == "number" and now >= mirror.since
+					and math.floor((now - mirror.since) * 1000 + 0.5) or nil });
+		end
+		return false;
+	end
+	if try(function() return UI.HasSentTurnComplete(); end, false) == true then
+		return false;
+	end
+	local now = CivvisClock.now();
+	if type(now) ~= "number" then return false; end
+	if mirror.turn ~= turn then
+		mirror.turn, mirror.since, mirror.done = turn, now, false;
+		emit("mirror_wait", { turn = turn, shown = shown });
+	end
+	if mirror.done then return false; end
+	if now < mirror.since or now - mirror.since >= mirror.capSeconds then
+		mirror.done = true;
+		emit("mirror_wait_capped", { turn = turn, shown = shown,
+			waited_ms = math.floor((now - mirror.since) * 1000 + 0.5) });
+		return false;
+	end
+	hold.mirrorWaiting = true;
 	return true;
 end
 
@@ -22594,6 +23564,10 @@ local function tick()
 				if da ~= db then return da > db; end
 				return a.rtype < b.rtype;
 			end);
+			-- See `CivvisDiploRacer`: the cheap participation votes are funded
+			-- before the claim.
+			envoyTally.racer_reserve = CivvisDiploRacer(cfg)
+				and CivvisRacerReserve(list, costs, cfg) or nil;
 			local cast, spent = 0, 0;
 			-- How the Diplomatic Victory ballot was cast, for `wc_vote`:
 			-- "claim" (A for us with the bank), "deny" (B against the leader
@@ -22605,10 +23579,9 @@ local function tick()
 					local option, selection, votes = 1, 1, 1;
 					local targets = r.PossibleTargets or {};
 					if rtype == "WC_RES_DIPLOVICTORY" then
-						option = 2;
-						for idx, t in pairs(targets) do
-							if tonumber(t) == leader then selection = idx; end
-						end
+						-- See `CivvisCongressDenialTarget`: never the default, us.
+						option, selection = CivvisCongressDenialTarget(targets, leader,
+							candidates, pid, 2, selection);
 						-- ★★★★ FAVOR IS BANKED UNTIL A LEADER IS WITHIN REACH.
 						--
 						-- Run `civvis-20260816T123936Z` ended at turn 239 on a rival's
@@ -22761,6 +23734,33 @@ local function tick()
 								- (tonumber(cfg.DiploVictoryOutvoteReserve) or 60)), costs, maxVotes);
 							if allIn > n then n = allIn; end
 						end
+						-- See `CivvisDiploRacer`: a diplomatic seat claims for
+						-- itself with what the participation votes leave.
+						-- The gang falls on the Diplomatic leader of ALL the
+						-- majors ("PlayerOrDiploLeader"): only a rival AHEAD of us
+						-- on the gang threshold keeps the denial. When we lead,
+						-- the gang is ours to brace for or to outrun.
+						local mine = CivvisDiploRacer(cfg) and tonumber(try(function()
+							return Players[pid]:GetStats():GetDiplomaticVictoryPoints();
+						end, 0)) or 0;
+						if CivvisDiploRacer(cfg) and ourIdx ~= nil
+								and (not ganged or mine > (tonumber(leaderPoints) or 0)) then
+							local k = CivvisRacerClaimVotes(favor - (envoyTally.racer_reserve or 0),
+								mine, CivvisRacerClaimBlock(envoyTally.wc_rival_block,
+									envoyTally.wc_rival_block_prev, mine, leaderPoints, cfg),
+								costs, maxVotes, cfg);
+							if CivvisRacerBraces(mine, cfg, envoyTally.wc_b_on_us, envoyTally.wc_b_passed_on_us) then
+								option, selection, n, mode = 2, ourIdx, 1, "brace";
+							elseif k ~= nil then
+								option, selection, n, mode = 1, ourIdx, k, "race";
+							elseif ganged then
+								-- We lead past the gang threshold and cannot outrun
+								-- it: the free vote with the gang, on us.
+								option, selection, n, mode = 2, ourIdx, 1, "brace";
+							elseif mode == "probe" then
+								n, mode = 1, "free";
+							end
+						end
 						votes = n;
 						local cost = (n > 1 and costs[n - 1]) or 0;
 						favor = favor - cost;
@@ -22793,6 +23793,11 @@ local function tick()
 							and (rtype == "WC_RES_TRADE_TREATY"
 								or rtype == "WC_RES_BORDER_CONTROL"
 								or rtype == "WC_RES_MIGRATION_TREATY");
+						-- See `CivvisCongressTargetIndex`: a threat the ballot does
+						-- not offer would leave option B's penalty on us.
+						if counter and CivvisCongressTargetIndex(targets, threat) == nil then
+							counter = false;
+						end
 						if counter then
 							for idx, t in pairs(targets) do
 								if tonumber(t) == threat then selection = idx; end
@@ -22802,7 +23807,26 @@ local function tick()
 							for idx, t in pairs(targets) do
 								if tonumber(t) == pid then selection = idx; end
 							end
-							if BAN_FIRST[rtype] then option = 2; end
+							-- A racer takes Public Relations' option A on itself:
+							-- it won 37 of 55 recorded sessions, B on us 2.
+							if BAN_FIRST[rtype] and not CivvisDiploRacer(cfg) then option = 2; end
+						end
+					elseif rtype == "WC_RES_WORLD_RELIGION" then
+						-- See `CivvisWorldReligionTarget`: A, never on the leader.
+						selection = CivvisWorldReligionTarget(rtype, targets, pid, cfg) or selection;
+					elseif rtype == "WC_RES_HERITAGE_ORG" then
+						-- See `CivvisHeritageDenial`.
+						local hIdx, hVotes, hPrice = CivvisHeritageDenial(rtype, targets,
+							candidates, pid, favor, costs, envoyTally.wc_last_a, cfg);
+						if hIdx ~= nil then
+							option, selection, votes = 2, hIdx, hVotes;
+							favor = favor - hPrice;
+							spent = spent + hPrice;
+						else
+							-- See `CivvisHeritageCultureSeat`.
+							option, selection, votes, favor, spent = CivvisHeritageCultureSeat(
+								rtype, targets, candidates, pid, favor, costs,
+								envoyTally.wc_last_a, cfg, option, selection, votes, spent);
 						end
 					elseif BAN_FIRST[rtype] then
 						option = 2;
@@ -22811,9 +23835,17 @@ local function tick()
 					-- the denial floor, the option its own vote is predicted
 					-- not to take, with three votes when Favor allows. On a
 					-- player-target resolution option B names the leader.
-					local deny = CivvisParticipationDenialOption(rtype, leader, pid,
-						leaderPoints, envoyTally.wc_last_option, cfg);
-					if deny ~= nil then
+					-- A racer's own participation point is worth more than the
+					-- leader's predicted one: it buys the outcome instead.
+					local deny = (not CivvisDiploRacer(cfg)) and CivvisParticipationDenialOption(rtype,
+						leader, pid, leaderPoints, envoyTally.wc_last_option, cfg) or nil;
+					-- See `CivvisCongressTargetIndex`: no option B naming a leader
+					-- the ballot does not offer.
+					if deny == 2 and r.TargetType == "PlayerType"
+							and CivvisCongressTargetIndex(targets, leader) == nil then
+						deny = nil;
+					end
+					if deny ~= nil and votes == 1 then
 						option = deny;
 						if r.TargetType == "PlayerType" then
 							for idx, t in pairs(targets) do
@@ -22831,6 +23863,14 @@ local function tick()
 						-- See `CivvisCultureEmbargoVotes`.
 						local want, price = CivvisCultureEmbargoVotes(rtype, threat, candidates,
 							favor, costs, leaderPoints, envoyTally.wc_last_a, cfg);
+						if want > 1 then
+							votes = want;
+							favor = favor - price;
+							spent = spent + price;
+						end
+					elseif rtype ~= "WC_RES_DIPLOVICTORY" and CivvisDiploRacer(cfg) then
+						-- See `CivvisRacerResolutionVotes`.
+						local want, price = CivvisRacerResolutionVotes(rtype, favor, costs, cfg);
 						if want > 1 then
 							votes = want;
 							favor = favor - price;
@@ -22984,6 +24024,9 @@ local function tick()
 		if cfg.CivvisDecides and CivvisFrames.repairProduction(player, pid, turn) then
 			return;
 		end
+
+		-- The turn is played; it ends once the CIVVIS page shows it.
+		if CivvisBoard.mirrorHold(turn) then return; end
 
 		-- Answer whatever the game says it is waiting on, then end the turn
 		-- anyway.
@@ -23764,6 +24807,14 @@ CivvisQueue.onPeekPulse = function()
 	-- Orders the brain wrote for a held turn stay landed until it resumes; the
 	-- UI pulse above owns the held game's ticks.
 	if CivvisBoard.hold.held then return; end
+	-- A played turn waiting for the CIVVIS page: tick quietly until it paints.
+	-- One peek per wait: the tick sets it again while the page still trails,
+	-- so a turn that ended some other way cannot leave this ticking.
+	if CivvisBoard.hold.mirrorWaiting then
+		CivvisBoard.hold.mirrorWaiting = false;
+		tick();
+		return;
+	end
 	if not CivvisQueue.ordersLanded() then return; end
 	-- A turn held to the watch pace: tick quietly until its wait is up.
 	if CivvisBoard.hold.pacing then tick(); return; end
@@ -23985,6 +25036,21 @@ end;
 
 function Initialize()
 	emit("loaded", { version = 2, play = cfg.Play ~= false });
+	-- RECORD-ONLY. `deal_response` records the rival's verdict as the
+	-- engine's DealProposalAction NUMBER, and no Lua source names the values.
+	-- Over 30 live runs the asked answers split action 1 (closable when under
+	-- the ceiling) / action 2 (172, never closable, most with a gold ask under
+	-- the ceiling) / action 3 (3), and the closer accepts only ACCEPTED and
+	-- ADJUSTED. Name every member once per load so the ledger can decode it.
+	emit("deal_action_names", {
+		names = try(function()
+			local names = {};
+			for name, value in pairs(DealProposalAction) do
+				names[tostring(value)] = name;
+			end
+			return names;
+		end, {}),
+	});
 	-- RECORD-ONLY. Combat visualization is a serial event the game core waits
 	-- on (G93: +0.69 s of AI phase per visible combat, even with QuickCombat).
 	-- The engine's console has `timescale <value>`, and Firaxis's own

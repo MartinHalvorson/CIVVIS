@@ -200,6 +200,53 @@ fn the_plant_waits_for_coal_and_then_powers_the_factories() {
     );
 }
 
+/// `diplomatic_lane_refuses_fossil_power`: a seat assigned the Diplomatic
+/// lane claims no Coal Power Plant here, though the Coal is in and the
+/// Factories stand; its Factory claims are untouched.
+#[test]
+fn a_diplomatic_seat_claims_no_coal_plant() {
+    let (mut game, ranked) = industrial_empire(94_103);
+    for cid in ranked.iter().take(3) {
+        game.cities
+            .get_mut(cid)
+            .unwrap()
+            .buildings
+            .push(crate::name!("factory"));
+    }
+    all_queue(&mut game, &ranked, &unit("knight"));
+    game.players[0]
+        .strategic_resources
+        .insert(crate::name!("coal"), 10.0);
+    let mut diplomatic = AdvancedAi::targeting(crate::ai::advanced::VictoryTarget::Diplomacy);
+    diplomatic.enable_industrial_zone_claims_the_factory();
+    let plan = diplomatic.assess(&game, 0);
+    let mut fuelled = game.clone();
+    diplomatic.claim_factory(&mut fuelled, 0, &plan);
+    assert!(
+        ranked
+            .iter()
+            .all(|cid| head(&fuelled, *cid) != Some(building("coal_power_plant"))),
+        "the diplomatic seat claims no plant"
+    );
+    for cid in ranked.iter().take(3) {
+        assert!(diplomatic
+            .factory_claim_item(&fuelled, 0, *cid, &plan)
+            .is_none());
+    }
+    // A seat on another lane still claims it (the test above).
+    let mut culture = AdvancedAi::targeting(crate::ai::advanced::VictoryTarget::Culture);
+    culture.enable_industrial_zone_claims_the_factory();
+    let plan = culture.assess(&game, 0);
+    let mut claimed = game.clone();
+    culture.claim_factory(&mut claimed, 0, &plan);
+    assert!(
+        ranked
+            .iter()
+            .any(|cid| head(&claimed, *cid) == Some(building("coal_power_plant"))),
+        "another lane still claims the plant"
+    );
+}
+
 /// The Industrial Zone claim's never-displace rules: a Settler, a reserved
 /// wall breaker and the science lane's University keep their queues.
 #[test]

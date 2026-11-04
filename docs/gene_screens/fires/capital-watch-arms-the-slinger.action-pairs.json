@@ -1,0 +1,12 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "capital-watch-arms-the-slinger",
+  "scope": "Recorded Native-adapter proposal activation only, not host execution or strength. All fixed 279 frames / 290 reads and both successful query arms are preserved; this witness adds an upgrade order.",
+  "archive": {
+    "path": "docs/eval/2026-10-25-capital-watch-slinger.native-queries.tar.xz",
+    "sha256": "46c60bac4d340a460580c26ef12dfc6ad4fec616812114d38683410aa760cd14"
+  },
+  "members": [
+    "native-queries-01/0186/result.json"
+  ]
+}

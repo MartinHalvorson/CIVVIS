@@ -10676,6 +10676,50 @@ fn host_menu_rows_translate_to_the_gates_keys() {
     assert_eq!(key("UNIT_NOT_A_UNIT", None), None);
 }
 
+/// `saved-work-is-seen`: a positive `pr` on a unit, building or project row
+/// reaches `HostMenus::saved_work` under the saved-work bank's own keys; a
+/// district (bound to its foundation elsewhere), a Wonder, a tier row, a zero
+/// and a missing reading do not.
+#[test]
+fn host_menu_saved_work_keeps_positive_unit_building_and_project_readings() {
+    let rules = crate::rules::Rules::embedded();
+    let row = |t: &str, f: Option<u8>, pr: Option<f64>| StateMenuItem {
+        t: t.to_string(),
+        c: 50.0,
+        p: 3.0,
+        pr,
+        f,
+        ..StateMenuItem::default()
+    };
+    let city = StateCity {
+        id: 7,
+        buildable: Some(vec![
+            row("UNIT_WARRIOR", None, Some(12.0)),
+            row("UNIT_WARRIOR", Some(1), Some(30.0)),
+            row("BUILDING_LIBRARY", None, Some(20.0)),
+            row("BUILDING_GRANARY", None, Some(0.0)),
+            row("BUILDING_MONUMENT", None, None),
+            row("BUILDING_PYRAMIDS", None, Some(40.0)),
+            row("DISTRICT_CAMPUS", None, Some(25.0)),
+            row("PROJECT_ENHANCE_DISTRICT_CAMPUS", None, Some(5.0)),
+        ]),
+        ..StateCity::default()
+    };
+    let menus = host_menus_from(&[city], &BTreeMap::from([(3, 7)]), &rules);
+    let saved = &menus.saved_work[&3];
+    assert_eq!(saved.get("unit:warrior"), Some(&12.0));
+    assert_eq!(saved.get("building:library"), Some(&20.0));
+    assert_eq!(saved.get("project:campus_research_grants"), Some(&5.0));
+    assert_eq!(saved.len(), 3, "only the three paused items: {saved:?}");
+    // The key is the one `item_progress_key` writes for the same item.
+    assert_eq!(
+        crate::game::Game::item_progress_key(&crate::game::Item::Building {
+            building: crate::name!("library"),
+        }),
+        "building:library"
+    );
+}
+
 /// A board with one met rival on seat 1, for the host-diplomacy tests.
 fn diplomacy_board(turn: u32, rival: StateRival) -> (Snapshot, StateSnapshot) {
     let owned = |x: i32, y: i32, owner: i32| {

@@ -1,13 +1,39 @@
 use super::*;
 
 impl AdvancedAi {
+    /// The lanes whose founder defences run: Domination, and Religion with
+    /// `religion-seat-defends-its-faith` (the Holy City guard and the
+    /// founder's spreaders kept home read it; the defensive Inquisition and
+    /// the homeland pass name the gene directly).
+    pub(super) fn religion_seat_or_domination(&self, g: &Game) -> bool {
+        match self.active_victory_target(g) {
+            Some(VictoryTarget::Domination) => true,
+            Some(VictoryTarget::Religion) => self.religion_seat_defends_its_faith,
+            _ => false,
+        }
+    }
+
     /// Build the founder's defensive capability while its Temple still follows
     /// our faith. Waiting for a flipped city leaves only a few turns to save
     /// for an Apostle, launch the Inquisition, and buy its first defender.
+    ///
+    /// Domination seats only, as written (#3656). With
+    /// `inquisition-defends-the-diplomat`, Diplomatic seats too. Measured on
+    /// paired live-genome seeds (Emperor, 4 players): Diplomatic seats 3 -> 4
+    /// wins of 20, none lost; Culture seats 9 -> 7, both lost to rival
+    /// Diplomatic victories -- so Culture, like Science, Religion and a seat
+    /// with no target, keeps the old reading. With
+    /// `religion-seat-defends-its-faith`, Religion seats too: a Religious
+    /// Victory needs our faith to hold our own cities as well as everyone
+    /// else's.
     pub(super) fn defensive_inquisition_ready(&self, g: &Game, pid: usize) -> bool {
-        if self.active_victory_target(g) != Some(VictoryTarget::Domination)
-            || !g.victory_conditions.religious
-        {
+        let lane = match self.active_victory_target(g) {
+            Some(VictoryTarget::Domination) => true,
+            Some(VictoryTarget::Diplomacy) => self.inquisition_defends_the_diplomat,
+            Some(VictoryTarget::Religion) => self.religion_seat_defends_its_faith,
+            _ => false,
+        };
+        if !lane || !g.victory_conditions.religious {
             return false;
         }
         let Some(faith) = g.players[pid].religion.as_deref() else {
@@ -43,7 +69,15 @@ impl AdvancedAi {
                 && unit.religion.as_deref() == Some(faith)
                 && unit.charges > 0
         });
-        if established * 2 < cities.len() && !first_spreader {
+        // `inquisition-answers-a-rival-majority`: the wait is for an empire
+        // our faith has not reached yet; a city of ours already held by a
+        // rival faith is the conversion the Inquisition exists to answer.
+        let rival_held = self.inquisition_answers_a_rival_majority
+            && cities.iter().any(|cid| {
+                g.city_religion(&g.cities[cid])
+                    .is_some_and(|religion| religion != faith)
+            });
+        if established * 2 < cities.len() && !first_spreader && !rival_held {
             return false;
         }
         cities.iter().any(|cid| {
@@ -101,6 +135,12 @@ impl AdvancedAi {
         }) {
             // Keep funding the first Inquisitor while the Apostle travels.
             // Once the defender exists, ordinary spending resumes.
+            // `apostle-transit-keeps-the-cover`: a threatened source still
+            // buys its cover Missionary while the Faith left covers the
+            // Inquisitor. Exact no-op while the gene is off.
+            if !launched && self.apostle_transit_keeps_the_cover {
+                self.apostle_transit_cover(g, pid, &faith);
+            }
             return !launched;
         }
         for cid in g.player_city_ids(pid) {
@@ -155,32 +195,13 @@ impl AdvancedAi {
             {
                 continue;
             }
-            let threatened = g.units.values().any(|unit| {
-                unit.owner != pid
-                    && unit.charges > 0
-                    && g.rules.units[unit.kind].religious_spread > 0.0
-                    && unit.religion.as_deref().is_some_and(|other| other != faith)
-                    && g.wdist(city.pos, unit.pos) <= RELIGIOUS_HOME_WATCH
-            });
-            if !threatened {
+            if !Self::source_needs_cover(g, pid, cid, &faith) {
                 continue;
             }
             let Some(price) = g.unit_purchase_cost(pid, cid, "missionary", "faith") else {
                 continue;
             };
             if g.players[pid].faith + f64::EPSILON < price {
-                continue;
-            }
-            let has_cover = g.units.values().any(|unit| {
-                unit.owner == pid
-                    && unit.religion.as_deref() == Some(faith.as_str())
-                    && unit.charges > 0
-                    && g.rules.units[unit.kind].religious_spread > 0.0
-                    && g.wdist(city.pos, unit.pos) <= RELIGIOUS_HOME_WATCH
-                    && g.route_distance(unit.id, city.pos, 1)
-                        .is_some_and(|steps| steps <= RELIGIOUS_HOME_WATCH as usize)
-            });
-            if has_cover {
                 continue;
             }
             if g.apply(
@@ -201,6 +222,97 @@ impl AdvancedAi {
             }
         }
         true
+    }
+
+    /// Whether `cid`, a city on our `faith`, has a rival faith's charged
+    /// spreader within [`RELIGIOUS_HOME_WATCH`] and no charged spreader of
+    /// ours within that radius and a short route of it.
+    fn source_needs_cover(g: &Game, pid: usize, cid: u32, faith: &str) -> bool {
+        let city = &g.cities[&cid];
+        let threatened = g.units.values().any(|unit| {
+            unit.owner != pid
+                && unit.charges > 0
+                && g.rules.units[unit.kind].religious_spread > 0.0
+                && unit.religion.as_deref().is_some_and(|other| other != faith)
+                && g.wdist(city.pos, unit.pos) <= RELIGIOUS_HOME_WATCH
+        });
+        threatened
+            && !g.units.values().any(|unit| {
+                unit.owner == pid
+                    && unit.religion.as_deref() == Some(faith)
+                    && unit.charges > 0
+                    && g.rules.units[unit.kind].religious_spread > 0.0
+                    && g.wdist(city.pos, unit.pos) <= RELIGIOUS_HOME_WATCH
+                    && g.route_distance(unit.id, city.pos, 1)
+                        .is_some_and(|steps| steps <= RELIGIOUS_HOME_WATCH as usize)
+            })
+    }
+
+    /// `apostle-transit-keeps-the-cover`: while our first Apostle walks to
+    /// launch the Inquisition, `prepare_defensive_inquisition` holds every
+    /// Faith purchase for the Inquisitor, the threatened source's cover
+    /// Missionary included, and says nothing. Live Emperor Religion seat
+    /// civvis-20261031T034930Z bought its Apostle at t68; no Faith line
+    /// followed from t69 to t109 while Catholic spreaders worked the Holy
+    /// City, which flipped between t80 and t90 with 254 to 769 Faith banked,
+    /// and once no city followed us nothing of ours could be bought again
+    /// (2,670 Faith unspent at the t218 loss). The cover Missionary is bought
+    /// in the first threatened, uncovered source when the Faith left after
+    /// it still covers the first Inquisitor (priced as the city's Missionary
+    /// scaled by the units' base costs, since the Inquisitor is not for sale
+    /// before the launch); otherwise the hold is journalled.
+    fn apostle_transit_cover(&self, g: &mut Game, pid: usize, faith: &str) {
+        let ratio = match (
+            g.rules.units.get("inquisitor"),
+            g.rules.units.get("missionary"),
+        ) {
+            (Some(inquisitor), Some(missionary)) if missionary.cost > 0.0 => {
+                inquisitor.cost / missionary.cost
+            }
+            _ => 1.0,
+        };
+        let mut held: Option<(String, f64, f64)> = None;
+        for cid in g.player_city_ids(pid) {
+            if g.city_religion(&g.cities[&cid]) != Some(faith)
+                || self.founder_purchase_withheld(g, pid, cid)
+                || !Self::source_needs_cover(g, pid, cid, faith)
+            {
+                continue;
+            }
+            let Some(price) = g.unit_purchase_cost(pid, cid, "missionary", "faith") else {
+                continue;
+            };
+            let reserve = price * ratio;
+            let bank = g.players[pid].faith;
+            if bank + f64::EPSILON < price + reserve {
+                held.get_or_insert((g.cities[&cid].name.clone(), price, reserve));
+                continue;
+            }
+            if g.apply(
+                pid,
+                &Action::Buy {
+                    city: cid,
+                    unit: crate::name!("missionary"),
+                    formation: 0,
+                    currency: "faith".into(),
+                },
+            )
+            .is_ok()
+            {
+                let name = g.cities[&cid].name.clone();
+                think!(self.journal(), Faith, Decision,
+                    "Covering {name} while the Apostle travels";
+                    "apostle-transit-keeps-the-cover: a rival spreader is near and {:.0} Faith covers the Missionary ({price:.0}) and the first Inquisitor (~{reserve:.0})",
+                    bank);
+                return;
+            }
+        }
+        if let Some((name, price, reserve)) = held {
+            think!(self.journal(), Faith, Detail,
+                "Holding {name}'s cover for the Inquisitor while the Apostle travels";
+                "apostle-transit-keeps-the-cover: {:.0} Faith; the Missionary ({price:.0}) would leave less than the first Inquisitor (~{reserve:.0})",
+                g.players[pid].faith);
+        }
     }
 }
 
