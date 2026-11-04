@@ -338,11 +338,18 @@ debug.setupvalue(applyOrders, cfgIndex, agentCfg)
 reset(); scout(); host.preview = 100
 applyOrders(player, PID, 7, { row(10, "ATTACK", 31, 42) })
 check("no directive, no guard", agentCfg.DiploVictoryGuardLeader, nil)
+check("no directive, no congress acknowledgement", lastEvent("combat_policy_applied"), nil)
 reset(); scout(); host.preview = 100
 applyOrders(player, PID, 7, { row(10, "ATTACK", 31, 42),
 	{ kind = "combat_policy", verb = "CONGRESS_GUARDS_THE_LEADER" } })
 check("congress guard set by the directive", agentCfg.DiploVictoryGuardLeader, true)
+check("congress guard consumption acknowledged", field(lastEvent("combat_policy_applied"), "policy"), "CONGRESS_GUARDS_THE_LEADER")
+check("congress guard acknowledgement uses the issued turn", field(lastEvent("combat_policy_applied"), "turn"), 7)
 check("congress guard metadata not counted as an action", field(lastEvent("orders"), "seen"), 1)
+reset(); scout(); host.preview = 100
+applyOrders(player, PID, 7, { row(10, "ATTACK", 31, 42) })
+check("congress guard persists without a new directive", agentCfg.DiploVictoryGuardLeader, true)
+check("an existing guard alone emits no fresh acknowledgement", lastEvent("combat_policy_applied"), nil)
 debug.setupvalue(applyOrders, cfgIndex, stubCfg)
 
 if failures > 0 then error(tostring(failures) .. " failures") end
