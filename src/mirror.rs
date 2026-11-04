@@ -3664,6 +3664,13 @@ pub struct StateRival {
     pub military: f64,
     #[serde(default)]
     pub at_war: bool,
+    /// The other majors this rival is at war with, by host player id, among
+    /// those our seat has met (`IsAtWarWith` on the rival's own diplomacy;
+    /// the diplomacy ribbon shows a met leader's wars). `None` on an older
+    /// export. Mirrored into [`Game::observed_rival_wars`] by
+    /// [`apply_rival_wars`].
+    #[serde(default)]
+    pub at_war_with: Option<Vec<usize>>,
     /// Whether this rival currently grants OUR seat Open Borders — the shipped
     /// overview's "received" direction (`HasOpenBordersFrom`). The import
     /// records the grant on the mirrored seat and stops sealing that rival's
@@ -4073,6 +4080,49 @@ pub fn modeled_major_player_count(game: &crate::game::Game) -> usize {
         .iter()
         .take_while(|player| !player.is_minor)
         .count()
+}
+
+/// Mirror the wars between met rivals into [`Game::observed_rival_wars`].
+///
+/// The seat's own wars cross as each rival's `at_war`; until this nothing
+/// said which rivals were fighting EACH OTHER, so on the live seat every
+/// rival read as at peace with every other major. A desk that wants an ally
+/// already fighting our enemy (`coalition-before-war-3`,
+/// `military-alliance-shield`: a Military Alliance's +5 combat strength holds
+/// against "units of players at war with you and your ally",
+/// Expansion1_InGameText.xml `LOC_ALLIANCE_LV1_MILITARY_EFFECT_1`) therefore
+/// never found one. Each rival's `at_war_with` names the met majors it is at
+/// war with; a pair either side names is a war. The set is rebuilt from the
+/// export each time, so a peace drops the pair. Rivals on an older export
+/// (`None`) contribute nothing. Our own seat is skipped: `at_war` carries
+/// those wars.
+pub fn apply_rival_wars(
+    game: &mut Game,
+    state: &StateSnapshot,
+    seat_of_host: &BTreeMap<usize, usize>,
+) {
+    let mut wars = BTreeSet::new();
+    for rival in &state.rivals {
+        let (Some(list), Some(&seat)) =
+            (rival.at_war_with.as_ref(), seat_of_host.get(&rival.player))
+        else {
+            continue;
+        };
+        if seat == 0 || seat >= game.players.len() {
+            continue;
+        }
+        for host in list {
+            let Some(&other) = seat_of_host.get(host) else {
+                continue;
+            };
+            if other != 0 && other != seat && other < game.players.len() {
+                wars.insert((seat.min(other), seat.max(other)));
+            }
+        }
+    }
+    if *game.observed_rival_wars != wars {
+        game.observed_rival_wars = Arc::new(wars);
+    }
 }
 
 /// Map Civilization VI's major-player ids to CIVVIS's model seats.
@@ -14149,6 +14199,8 @@ pub fn rebuild_from_state(
             }
         }
     }
+    // Who each met rival is fighting besides us. See `apply_rival_wars`.
+    apply_rival_wars(&mut game, state, &seat_of_host);
 
     // Met city-states are public actors, not anonymous blocked territory. Keep
     // their real cities, visible units, war state, Envoys and Suzerain so settling,
@@ -16339,6 +16391,8 @@ impl LiveMirror {
                 apply_foreign_unit_strikes(&mut self.game, uid, unit);
             }
         }
+        // Who each met rival is fighting besides us. See `apply_rival_wars`.
+        apply_rival_wars(&mut self.game, state, &seat_of_host);
 
         let free_city_seats: Vec<usize> = self
             .game
