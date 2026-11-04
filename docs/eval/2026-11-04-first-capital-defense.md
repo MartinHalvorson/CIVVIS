@@ -14,7 +14,7 @@ The archive `2026-11-04-first-capital-defense.native.tar.xz` preserves the raw i
 
 ## Fixture correction and remaining validation
 
-The first integrated allocation test used an attacker three tiles from the capital but outside current sight. CI correctly produced no Defend row and failed the fixture. A Builder on an owned first-ring tile now reveals the attacker through normal visibility; explicit visibility assertions guard the setup. A separate negative test removes that observer and requires no Defend row even when the plan still names the capital threatened. The policy's observation gate was not widened.
+The first integrated allocation test used an attacker three tiles from the capital but outside current sight. CI correctly produced no Defend row and failed the fixture. A Builder on an owned first-ring tile now reveals the attacker through normal visibility; explicit visibility assertions guard the setup. A separate negative test removes that observer and requires no Defend row even when the plan still names the capital threatened. The policy's observation gate was not widened. A subsequent OFF-arm assertion showed that the synthetic capital was still Rome, whose automatic Monument inflates its board value. The fixture now selects Gran Colombia before founding and includes a visible camp guard, matching the native priority conflict without weakening the allocation assertions.
 
 Six tests cover default OFF/withhold, release after expansion or warning clearance, ownership/capital scope, speed-scaled boundaries, actual board allocation from a camp to capital defence, and the unseen-attacker negative control. The source type check passed; execution of the corrected tests and full integration validation remain pending at this checkpoint.
 
