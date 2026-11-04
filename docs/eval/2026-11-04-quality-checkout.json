@@ -1,0 +1,56 @@
+{
+  "recorded_utc": "2026-11-04T17:30:45.461983+00:00",
+  "source_checkpoint": "a84deb9f2c4e4e9a34027a44494c41369819ac99",
+  "production_change": "Add actions/checkout@v4 filter: blob:none, keeping fetch-depth:0 and existing quality command.",
+  "files": {
+    ".github/workflows/quality.yml": "4df1efe0589c498a0b0b7eec3523e61d9aba3496e29e542aaff8cfcaa0c8419a",
+    "tools/test_ci_quality_checkout.py": "b1c8e9b04dbb9cf7b86da1440ae90de268247c4199ba57db0bd6f96fea90de5a"
+  },
+  "local_validation": {
+    "command": "python3 -m unittest discover -s tools -p 'test*quality*.py' -v",
+    "passed": 13,
+    "failed": 0,
+    "log_sha256": "3c000c6c46f66203293b5c977ed84d1acc6fe32360e9f7c7bf00003d0b0a3b1c",
+    "coverage": [
+      "Full versus filtered clone: exact same quality base, Rust files and line ranges for stale-base PR synthetic merge, ordinary push, reversed local merge parents.",
+      "Filtered clone retains full ancestry; obsolete binary remains absent.",
+      "Missing historical Rust blob fetched for diff; unavailable source raises an error.",
+      "Workflow retains full history and unchanged quality command."
+    ]
+  },
+  "motivation": {
+    "policy_pr": 4424,
+    "initial_quality_run": 41868979183,
+    "initial_failure": "Timed out after30m8s in checkout, before Rust checks.",
+    "local_packed_history": "14.59 GiB",
+    "local_tracked_HEAD_blob_bytes": 802972860,
+    "scope": "Repository measurements and one observed checkout timeout motivate the change; they are not controlled hosted CI performance measurements."
+  },
+  "limits": "No claimed wall-time improvement until actual GitHub run. No Rust source, gate logic, base/head selection, simulator or native behavior changed.",
+  "broad_tooling_validation": {
+    "command": "python3 -m unittest discover -s tools -p 'test_*.py'",
+    "tests_run": 3658,
+    "failed": 3,
+    "skipped": 1,
+    "seconds": 345.654,
+    "log_sha256": "95e3ba6bfb0faa6ec2fc32d53867025ad6cbe16d7e9696ef3c67aff2aa4e4366",
+    "failures": [
+      "test_conflict_hotspots.TheCheckIsWiredAndOneDirectional.test_the_live_roadmap_passes_its_own_check",
+      "test_mechanics_sources.EverySourceCitesSomethingTheGameShips.test_every_cited_table_exists_in_the_gameplay_database",
+      "test_ops_foreground_guard.TheGuardRunsWhereItShould.test_it_exits_when_the_lane_has_been_gone_for_the_grace"
+    ],
+    "isolated_recheck": "The roadmap failure reproduces both in this worktree and unchanged main. The database and foreground timing cases pass in both isolated rechecks. No unrelated files changed.",
+    "unchanged_main_revision": "8b7ca2de473ec451ebfcc07500e9c35bf2ebfcf2",
+    "relevant_file_bytes_identical_to_unchanged_main": {
+      "tools/test_conflict_hotspots.py": true,
+      "tools/conflict_hotspots.py": true,
+      "docs/ROADMAP.md": true,
+      "tools/test_mechanics_sources.py": true,
+      "tools/test_ops_foreground_guard.py": true
+    },
+    "recheck_logs": {
+      "baseline-failure-recheck.log": "6669fef9ebf5b0ef8b9d7d48fd392d605abfd9e90979727a859275b7d4662f4b",
+      "task-failure-recheck.log": "8e1d230164aeb4294bd45dbef24d410e7a2b6acaeecc76504aff977039407714"
+    }
+  }
+}
