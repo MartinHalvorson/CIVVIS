@@ -41,8 +41,8 @@ import civ6_env as env  # noqa: E402
 import window_layout  # noqa: E402
 from civ6_control import install as modinstall  # noqa: E402
 from civ6_control import operator_presence  # noqa: E402
-from civ6_control import (capture_budget, gamelock, launcher, macos_capture,
-                          macos_input, macos_ocr, macos_window,
+from civ6_control import (capture_budget, gamelock, host_health, launcher,
+                          macos_capture, macos_input, macos_ocr, macos_window,
                           operator_retire, popup_clear, restart_handoff, vision,
                           watch)  # noqa: E402
 from civ6_control import live_pause, mirror_sync  # noqa: E402
@@ -1631,6 +1631,51 @@ HOST_PROBE_TIMEOUT_S = macos_window.HOST_PROBE_TIMEOUT_S
 def game_window() -> tuple[int, int, int, int] | None:
     """Compatibility boundary for the process-specific macOS probe."""
     return macos_window.game_window(GAME_PROCESS)
+
+
+#: Window probes in a row (about 22 s apart) that must find the game on screen
+#: and invisible to System Events before setup names the host fault and stops.
+#: A healthy setup has waited for its window at most three times (the game
+#: opening on another Space). Each of those waits had System Events answering,
+#: so none of them counts here.
+UNSEEN_WINDOW_STRIKES = 3
+
+
+def unseen_game_window() -> str | None:
+    """Evidence that the game is on screen but System Events cannot see it.
+
+    Call it right after `game_window` returned None. Only a FAILED System Events
+    probe counts. An answer with no window in it is the ordinary "not drawn
+    yet" or "on another Space", and is never evidence. See `host_health`.
+    """
+    error = macos_window.window_probe_error()
+    if error is None:
+        return None
+    windows = macos_window.cg_windows(env.game_pids())
+    if not windows:
+        return None
+    x, y, width, height = max(windows, key=lambda bounds: bounds[2] * bounds[3])
+    return (f"Civ VI's {width}x{height} window is on screen at ({x}, {y}) but System "
+            f"Events cannot see the game: {error}")
+
+
+def note_unseen_game_window(strikes: int, tag: str | None) -> int:
+    """Count a None from `game_window`. Returns the new strike count.
+
+    At `UNSEEN_WINDOW_STRIKES` the host fault is recorded and `-1` is returned:
+    the setup must stop, because no number of further probes will see the game.
+    """
+    evidence = unseen_game_window()
+    if evidence is None:
+        return 0
+    strikes += 1
+    print(f"[host] {evidence} ({strikes}/{UNSEEN_WINDOW_STRIKES})", flush=True)
+    if strikes < UNSEEN_WINDOW_STRIKES:
+        return strikes
+    recorded = host_health.record(evidence, tag=tag)
+    print(f"[host] THIS HOST NEEDS AN OPERATOR: {recorded['remedy']}. The lane holds "
+          f"until then ({host_health.MARKER})", file=sys.stderr, flush=True)
+    return -1
 
 
 def screen_locked() -> bool:
@@ -3898,14 +3943,19 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
     # loaded yet), not "still booting"; the BACK click is empty artwork on a
     # genuinely unready menu, so a false strike costs nothing.
     blind_strikes = 0
+    unseen_strikes = 0
     for attempt in range(1, BOOTSTRAP_ATTEMPTS + 1):
         focus_game(GAME_SIDE, GAME_FRACTION)
         time.sleep(2.0)
         bounds = game_window()
         if bounds is None:
+            unseen_strikes = note_unseen_game_window(unseen_strikes, args.tag)
+            if unseen_strikes < 0:
+                return False
             print("no game window yet, waiting", file=sys.stderr)
             time.sleep(20.0)
             continue
+        unseen_strikes = 0
         x, y, w, h = bounds
         # Make the window key with a click on empty artwork, well clear of the
         # menu: the first click on a background window is consumed activating
@@ -4394,13 +4444,18 @@ def bootstrap_saved_game(tail: watch.LogTail, on_event, run_dir: Path,
         print(f"saved-game input could not be staged: {error}", file=sys.stderr)
         return False
     save_label = save_path.stem
+    unseen_strikes = 0
     for attempt in range(1, BOOTSTRAP_ATTEMPTS + 1):
         focus_game(GAME_SIDE, GAME_FRACTION)
         time.sleep(2.0)
         bounds = game_window()
         if bounds is None:
+            unseen_strikes = note_unseen_game_window(unseen_strikes, args.tag)
+            if unseen_strikes < 0:
+                return False
             time.sleep(20.0)
             continue
+        unseen_strikes = 0
         x, y, w, h = bounds
         click_at(int(x + w * 0.15), int(y + h * 0.85))
         time.sleep(1.5)
@@ -5479,6 +5534,10 @@ def _play(args: argparse.Namespace) -> int:
 
     signal.signal(signal.SIGTERM, _terminate)
 
+    # The game this run launched, until it hosts one. A setup that fails stops
+    # this child even past a refused quit (`launcher.stop_owned_failed_startup`).
+    owned_launch: dict = {"process": None}
+
     def launch_to_menu() -> bool:
         """Launch Civilization VI and bring it to a placed main menu."""
         if not args.keep_game_options:
@@ -5489,6 +5548,7 @@ def _play(args: argparse.Namespace) -> int:
         desktop_size()
         setup_clock_start()
         game_process = launcher.launch(stdout=run_dir / "stdout.log")
+        owned_launch["process"] = game_process
         setup_mark("launched")
         placing = threading.Event()
         placer = place_window_as_it_appears(game_process, placing)
@@ -6170,8 +6230,17 @@ def _play(args: argparse.Namespace) -> int:
         stop_brain()
         print("could not load the saved game" if args.load_save else
               "could not start a game from the main menu", file=sys.stderr)
+        # ★ A CHILD THAT HOSTED NO GAME MUST NOT OUTLIVE ITS RUN. When System
+        # Events cannot see the game, the menu quit cannot reach it and the
+        # game ignored SIGTERM, so the old path left it up holding the seat for
+        # hours (`host_health`). It has no game and no save of ours, so the
+        # launch-time failure policy applies: graceful first, then kill.
+        if owned_launch["process"] is not None:
+            launcher.stop_owned_failed_startup(owned_launch["process"])
         return 5
     setup_mark("configured", stop=True)
+    if host_health.clear():
+        print("[host] a game configured; cleared the recorded host fault", flush=True)
     # ★★★★★ THE SEAT EVENT USUALLY ARRIVES DURING BOOTSTRAP, so `finished` never
     # sees it and the refusal above never fired: live run
     # civvis-20261003T035351Z logged "game modes are ['GAMEMODE_HEROES'], asked

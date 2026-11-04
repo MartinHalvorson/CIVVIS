@@ -692,6 +692,21 @@ while true; do
     sleep 45
   fi
 
+  # >>> host fault hold
+  # ★ A HOST THAT CANNOT SHOW THE HARNESS ITS GAME IS NOT A REASON TO LAUNCH
+  # AGAIN. When LaunchServices stops registering new apps, Civ VI draws its
+  # menu but System Events cannot see it, so every launch failed setup and left
+  # a game up that would not quit. That cost 6-20 h on 09-27, 10-16, 10-27 and
+  # 11-04, and only a restart of the Mac cured it. Setup now records the fault
+  # (`civ6_control/host_health.py`) and stops its own child. Hold here until a
+  # restart (a new boot), a configured game, or the hourly retry clears it.
+  if HOST_HOLD=$(python3 "$HEAD_REPO/tools/civ6_control/host_health.py" --hold 2>/dev/null); then
+    say "HOST NEEDS AN OPERATOR: $HOST_HOLD"
+    sleep 300
+    continue
+  fi
+  # <<< host fault hold
+
   # A wedged core is invisible until a game fails to start, so recycle the game
   # cleanly whenever the previous attempt did not play a turn.
   if (( consecutive_failures > 0 )); then
