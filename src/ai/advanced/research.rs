@@ -53,7 +53,11 @@ impl AdvancedAi {
     /// Data-driven rather than naming Chemistry, so the same rule reaches
     /// Education for a Library-only empire and keeps working if the ruleset
     /// moves a building to a different node.
-    pub(super) fn unreachable_science_building_tech(&self, g: &Game, pid: usize) -> Option<&'static str> {
+    pub(super) fn unreachable_science_building_tech(
+        &self,
+        g: &Game,
+        pid: usize,
+    ) -> Option<&'static str> {
         if !self.research_economy {
             return None;
         }
@@ -1627,7 +1631,13 @@ impl AdvancedAi {
             .map(|(_, node)| node)
     }
 
-    pub(super) fn tech_value(&self, g: &Game, pid: usize, tech: &str, strategy: GrandStrategy) -> f64 {
+    pub(super) fn tech_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        tech: &str,
+        strategy: GrandStrategy,
+    ) -> f64 {
         let spec = &g.rules.techs[tech];
         // The whole opinion about boosts: the credit for one in hand, the wait
         // for one nearly earned, and the credit for the boosts this node makes
@@ -1879,7 +1889,13 @@ impl AdvancedAi {
         (value + 35.0) / spec.cost.max(10.0).sqrt() * self.boost_in_hand_scale(g, pid, tech, true)
     }
 
-    pub(super) fn civic_value(&self, g: &Game, pid: usize, civic: &str, strategy: GrandStrategy) -> f64 {
+    pub(super) fn civic_value(
+        &self,
+        g: &Game,
+        pid: usize,
+        civic: &str,
+        strategy: GrandStrategy,
+    ) -> f64 {
         let spec = &g.rules.civics[civic];
         // The civic half of the same term; see `advanced/boost_research.rs`.
         let mut value = self.boost_research_value(g, pid, civic, false);
