@@ -42,6 +42,8 @@ mod air_fog_targets;
 mod capital_identity;
 mod dedication_history;
 mod host_deaths;
+mod policy_windows;
+pub use policy_windows::StatePolicyChange;
 pub mod input_capture;
 mod religion_state;
 mod settlement_loyalty;
@@ -4434,6 +4436,11 @@ pub struct StateSnapshot {
     pub building_maintenance_total: Option<f64>,
     #[serde(default)]
     pub district_maintenance_total: Option<f64>,
+    /// Native policy transaction window, distinct from which cards are
+    /// available. Absence preserves legacy behavior; partial readings veto a
+    /// changed transaction until the host confirms a free window.
+    #[serde(default)]
+    pub policy_change: Option<StatePolicyChange>,
     /// Faith balance. Unlike the rate fields below, this is a stockpile and
     /// crosses directly, exactly like gold.
     #[serde(default)]
@@ -6937,7 +6944,7 @@ fn state_schema_gaps(value: &serde_json::Value) -> Vec<String> {
         "founded_religion", "founded_religions", "religion_beliefs",
         "holy_city", "inquisition_launched",
         "taken_religion_beliefs", "religions", "prophet_pending",
-        "policies", "available_policies", "policy_slots", "gold", "gold_per_turn",
+        "policies", "available_policies", "policy_slots", "policy_change", "gold", "gold_per_turn",
         "unit_maintenance_total", "building_maintenance_total", "district_maintenance_total",
         "faith", "faith_per_turn",
         "faith_sources", "science",
@@ -7443,6 +7450,7 @@ fn blocked_policies_from(
 }
 
 fn apply_host_policy_choices(game: &mut crate::game::Game, state: &StateSnapshot) {
+    policy_windows::apply(game, state);
     if let Some(names) = &state.available_policies {
         let choices = names
             .iter()

@@ -1,0 +1,3352 @@
+{
+  "independently_verified": true,
+  "source_run": "civvis-20261104T183134Z",
+  "source_revision": "57b5d266d94ea0033cb19a24c3206803a5fdd5c9",
+  "candidate_build": {
+    "recorded_utc": "2026-11-04T19:38:02.407861+00:00",
+    "revision": "af101683091f3c0870d32f8e23211e46d3ecd4f9",
+    "sha256": "06f666d7247fac41ace78a593191298307678916e0c745ae8db4cf8921248601",
+    "source": "local-checkpoint-build",
+    "native_observed": false,
+    "profile": "ci",
+    "local_overrides": {
+      "CARGO_PROFILE_CI_LTO": "off",
+      "CARGO_BUILD_JOBS": "4"
+    },
+    "source_files_sha256": {
+      "src/game.rs": "05ad5a4e46c1de7c433050f57536942b6b4197706a49392cd37143db70a71898",
+      "src/game/actions.rs": "56cf00327de0d02739d14024ccafb56b8ea698c7817337df4dcb93efa8ea3c4a",
+      "src/game/host_policy_windows.rs": "1970d54f1c0d690a36817736204b323418d18c4fdc6d739d62573f3469c84fd6",
+      "src/mirror.rs": "5a4cfd63043c0085c2680f214727edcda237c582208c7352b978412be9f6e48c",
+      "src/mirror/policy_windows.rs": "7bac94503de6e32f2430274c7e627e4a16018995cdf598638abf53a0d2fd450c",
+      "src/ai.rs": "97f1ffa6e22fe9746cd3f600cb68991e3d7ba607431672c1d057feea6d50fd9b",
+      "src/ai/advanced.rs": "248196b4cfd272dffdebff73f70549b0cd62bae55f124dd58ec1583eafd181fc"
+    },
+    "computer": "MacBook Pro",
+    "scope": "Frozen local candidate executable for captured-native queries. Actual native deployment will be verified separately."
+  },
+  "requests_per_arm": 102,
+  "pair_repetitions": 2,
+  "all_arms_actual_eof_exit": 0,
+  "same_capture_argument_within_pair": true,
+  "exact_actual_read_bytes_counts_order": true,
+  "complete_per_arm_payload_checked": true,
+  "genome_identical": true,
+  "native_state_bound_to_each_captured_last_read": true,
+  "window_counts": {
+    "free": 34,
+    "blocked": 68
+  },
+  "window_examples": [
+    {
+      "request": [
+        17,
+        0
+      ],
+      "window": {
+        "currency": "gold",
+        "made": false,
+        "unlock_cost": 0
+      },
+      "held": [],
+      "original_orders": [
+        {
+          "kind": "civic",
+          "subject": null,
+          "verb": "CIVIC_FOREIGN_TRADE",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "unit",
+          "subject": 196608,
+          "verb": "RANGE_ATTACK",
+          "x": 15,
+          "y": 36
+        },
+        {
+          "kind": "unit",
+          "subject": 131073,
+          "verb": "ATTACK",
+          "x": 15,
+          "y": 36
+        },
+        {
+          "kind": "policy_deck",
+          "subject": null,
+          "verb": "POLICY_DISCIPLINE,POLICY_GOD_KING",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DOOMED_BLOW_VETO",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DIALOGUE_NEVER_DECLARES_WAR",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "CONGRESS_GUARDS_THE_LEADER",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "order_verified",
+          "subject": 65536,
+          "verb": "produce:UNIT_SETTLER",
+          "x": 16,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 196608,
+          "verb": "unit:MOVE_TO",
+          "x": 16,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 131073,
+          "verb": "unit:MOVE_TO",
+          "x": 16,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 16,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 16,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 16,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 16,
+          "y": -1
+        },
+        {
+          "kind": "turn_verified",
+          "subject": 16,
+          "verb": "issued=7 verified=7 failed=0 unverifiable=0",
+          "x": null,
+          "y": null
+        }
+      ],
+      "candidate_orders": [
+        {
+          "kind": "civic",
+          "subject": null,
+          "verb": "CIVIC_FOREIGN_TRADE",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "unit",
+          "subject": 196608,
+          "verb": "RANGE_ATTACK",
+          "x": 15,
+          "y": 36
+        },
+        {
+          "kind": "unit",
+          "subject": 131073,
+          "verb": "ATTACK",
+          "x": 15,
+          "y": 36
+        },
+        {
+          "kind": "policy_deck",
+          "subject": null,
+          "verb": "POLICY_DISCIPLINE,POLICY_GOD_KING",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DOOMED_BLOW_VETO",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DIALOGUE_NEVER_DECLARES_WAR",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "CONGRESS_GUARDS_THE_LEADER",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "order_verified",
+          "subject": 65536,
+          "verb": "produce:UNIT_SETTLER",
+          "x": 16,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 196608,
+          "verb": "unit:MOVE_TO",
+          "x": 16,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 131073,
+          "verb": "unit:MOVE_TO",
+          "x": 16,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 16,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 16,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 16,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 16,
+          "y": -1
+        },
+        {
+          "kind": "turn_verified",
+          "subject": 16,
+          "verb": "issued=7 verified=7 failed=0 unverifiable=0",
+          "x": null,
+          "y": null
+        }
+      ]
+    },
+    {
+      "request": [
+        17,
+        1
+      ],
+      "window": {
+        "currency": "gold",
+        "made": true,
+        "unlock_cost": 0
+      },
+      "held": [],
+      "original_orders": [
+        {
+          "kind": "unit",
+          "subject": 131073,
+          "verb": "ATTACK",
+          "x": 15,
+          "y": 36
+        },
+        {
+          "kind": "policy_deck",
+          "subject": null,
+          "verb": "POLICY_DISCIPLINE,POLICY_GOD_KING",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DOOMED_BLOW_VETO",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DIALOGUE_NEVER_DECLARES_WAR",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "CONGRESS_GUARDS_THE_LEADER",
+          "x": null,
+          "y": null
+        }
+      ],
+      "candidate_orders": [
+        {
+          "kind": "unit",
+          "subject": 131073,
+          "verb": "ATTACK",
+          "x": 15,
+          "y": 36
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DOOMED_BLOW_VETO",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DIALOGUE_NEVER_DECLARES_WAR",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "CONGRESS_GUARDS_THE_LEADER",
+          "x": null,
+          "y": null
+        }
+      ]
+    },
+    {
+      "request": [
+        40,
+        0
+      ],
+      "window": {
+        "currency": "gold",
+        "made": false,
+        "unlock_cost": 25
+      },
+      "held": [
+        "POLICY_DISCIPLINE",
+        "POLICY_GOD_KING"
+      ],
+      "original_orders": [
+        {
+          "kind": "research",
+          "subject": null,
+          "verb": "TECH_WRITING",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "unit",
+          "subject": 262146,
+          "verb": "MOVE_TO",
+          "x": 16,
+          "y": 37
+        },
+        {
+          "kind": "unit",
+          "subject": 262146,
+          "verb": "FORTIFY",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "unit",
+          "subject": 327680,
+          "verb": "MOVE_TO",
+          "x": 14,
+          "y": 35
+        },
+        {
+          "kind": "policy_deck",
+          "subject": null,
+          "verb": "POLICY_DISCIPLINE,POLICY_URBAN_PLANNING",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DIALOGUE_NEVER_DECLARES_WAR",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "CONGRESS_GUARDS_THE_LEADER",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "order_verified",
+          "subject": 262146,
+          "verb": "unit:MOVE_TO",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 327680,
+          "verb": "unit:MOVE_TO",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 327680,
+          "verb": "unit:MOVE_TO",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "turn_verified",
+          "subject": 39,
+          "verb": "issued=9 verified=9 failed=0 unverifiable=0",
+          "x": null,
+          "y": null
+        }
+      ],
+      "candidate_orders": [
+        {
+          "kind": "research",
+          "subject": null,
+          "verb": "TECH_WRITING",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "unit",
+          "subject": 262146,
+          "verb": "MOVE_TO",
+          "x": 16,
+          "y": 37
+        },
+        {
+          "kind": "unit",
+          "subject": 262146,
+          "verb": "FORTIFY",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "unit",
+          "subject": 327680,
+          "verb": "MOVE_TO",
+          "x": 14,
+          "y": 35
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DIALOGUE_NEVER_DECLARES_WAR",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "CONGRESS_GUARDS_THE_LEADER",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "order_verified",
+          "subject": 262146,
+          "verb": "unit:MOVE_TO",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 327680,
+          "verb": "unit:MOVE_TO",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 327680,
+          "verb": "unit:MOVE_TO",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "turn_verified",
+          "subject": 39,
+          "verb": "issued=9 verified=9 failed=0 unverifiable=0",
+          "x": null,
+          "y": null
+        }
+      ]
+    },
+    {
+      "request": [
+        42,
+        0
+      ],
+      "window": {
+        "currency": "gold",
+        "made": false,
+        "unlock_cost": 0
+      },
+      "held": [
+        "POLICY_DISCIPLINE",
+        "POLICY_GOD_KING"
+      ],
+      "original_orders": [
+        {
+          "kind": "unit",
+          "subject": 262146,
+          "verb": "RANGE_ATTACK",
+          "x": 16,
+          "y": 39
+        },
+        {
+          "kind": "civic",
+          "subject": null,
+          "verb": "CIVIC_EARLY_EMPIRE",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "pantheon",
+          "subject": null,
+          "verb": "BELIEF_RELIGIOUS_SETTLEMENTS",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "unit",
+          "subject": 327680,
+          "verb": "MOVE_TO",
+          "x": 13,
+          "y": 35
+        },
+        {
+          "kind": "unit",
+          "subject": 131073,
+          "verb": "MOVE_TO",
+          "x": 14,
+          "y": 37
+        },
+        {
+          "kind": "unit",
+          "subject": 131073,
+          "verb": "FORTIFY",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DOOMED_BLOW_VETO",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DIALOGUE_NEVER_DECLARES_WAR",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "CONGRESS_GUARDS_THE_LEADER",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "order_verified",
+          "subject": 262146,
+          "verb": "unit:RANGE_ATTACK",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 327680,
+          "verb": "unit:MOVE_TO",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DOOMED_BLOW_VETO",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 327680,
+          "verb": "unit:MOVE_TO",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 327680,
+          "verb": "unit:MOVE_TO",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "turn_verified",
+          "subject": 41,
+          "verb": "issued=11 verified=11 failed=0 unverifiable=0",
+          "x": null,
+          "y": null
+        }
+      ],
+      "candidate_orders": [
+        {
+          "kind": "unit",
+          "subject": 262146,
+          "verb": "RANGE_ATTACK",
+          "x": 16,
+          "y": 39
+        },
+        {
+          "kind": "civic",
+          "subject": null,
+          "verb": "CIVIC_EARLY_EMPIRE",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "pantheon",
+          "subject": null,
+          "verb": "BELIEF_RELIGIOUS_SETTLEMENTS",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "unit",
+          "subject": 327680,
+          "verb": "MOVE_TO",
+          "x": 13,
+          "y": 35
+        },
+        {
+          "kind": "unit",
+          "subject": 131073,
+          "verb": "MOVE_TO",
+          "x": 14,
+          "y": 37
+        },
+        {
+          "kind": "unit",
+          "subject": 131073,
+          "verb": "FORTIFY",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "policy_deck",
+          "subject": null,
+          "verb": "POLICY_DISCIPLINE,POLICY_URBAN_PLANNING",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DOOMED_BLOW_VETO",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DIALOGUE_NEVER_DECLARES_WAR",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "CONGRESS_GUARDS_THE_LEADER",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "order_verified",
+          "subject": 262146,
+          "verb": "unit:RANGE_ATTACK",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 327680,
+          "verb": "unit:MOVE_TO",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DOOMED_BLOW_VETO",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 327680,
+          "verb": "unit:MOVE_TO",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 327680,
+          "verb": "unit:MOVE_TO",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "turn_verified",
+          "subject": 41,
+          "verb": "issued=11 verified=11 failed=0 unverifiable=0",
+          "x": null,
+          "y": null
+        }
+      ]
+    }
+  ],
+  "order_changes": [
+    {
+      "request": [
+        17,
+        1
+      ],
+      "window": {
+        "currency": "gold",
+        "made": true,
+        "unlock_cost": 0
+      },
+      "original_orders": [
+        {
+          "kind": "unit",
+          "subject": 131073,
+          "verb": "ATTACK",
+          "x": 15,
+          "y": 36
+        },
+        {
+          "kind": "policy_deck",
+          "subject": null,
+          "verb": "POLICY_DISCIPLINE,POLICY_GOD_KING",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DOOMED_BLOW_VETO",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DIALOGUE_NEVER_DECLARES_WAR",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "CONGRESS_GUARDS_THE_LEADER",
+          "x": null,
+          "y": null
+        }
+      ],
+      "candidate_orders": [
+        {
+          "kind": "unit",
+          "subject": 131073,
+          "verb": "ATTACK",
+          "x": 15,
+          "y": 36
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DOOMED_BLOW_VETO",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DIALOGUE_NEVER_DECLARES_WAR",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "CONGRESS_GUARDS_THE_LEADER",
+          "x": null,
+          "y": null
+        }
+      ],
+      "original_actions": [
+        {
+          "policy": "discipline",
+          "type": "slot_policy"
+        },
+        {
+          "policy": "god_king",
+          "type": "slot_policy"
+        },
+        {
+          "target": [
+            -3,
+            36
+          ],
+          "type": "attack",
+          "unit": 52
+        },
+        {
+          "type": "end_turn"
+        }
+      ],
+      "candidate_actions": [
+        {
+          "target": [
+            -3,
+            36
+          ],
+          "type": "attack",
+          "unit": 52
+        },
+        {
+          "type": "end_turn"
+        }
+      ]
+    },
+    {
+      "request": [
+        17,
+        2
+      ],
+      "window": {
+        "currency": "gold",
+        "made": true,
+        "unlock_cost": 0
+      },
+      "original_orders": [
+        {
+          "kind": "unit",
+          "subject": 131073,
+          "verb": "ATTACK",
+          "x": 15,
+          "y": 36
+        },
+        {
+          "kind": "policy_deck",
+          "subject": null,
+          "verb": "POLICY_DISCIPLINE,POLICY_GOD_KING",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DOOMED_BLOW_VETO",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DIALOGUE_NEVER_DECLARES_WAR",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "CONGRESS_GUARDS_THE_LEADER",
+          "x": null,
+          "y": null
+        }
+      ],
+      "candidate_orders": [
+        {
+          "kind": "unit",
+          "subject": 131073,
+          "verb": "ATTACK",
+          "x": 15,
+          "y": 36
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DOOMED_BLOW_VETO",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DIALOGUE_NEVER_DECLARES_WAR",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "CONGRESS_GUARDS_THE_LEADER",
+          "x": null,
+          "y": null
+        }
+      ],
+      "original_actions": [
+        {
+          "policy": "discipline",
+          "type": "slot_policy"
+        },
+        {
+          "policy": "god_king",
+          "type": "slot_policy"
+        },
+        {
+          "target": [
+            -3,
+            36
+          ],
+          "type": "attack",
+          "unit": 52
+        },
+        {
+          "type": "end_turn"
+        }
+      ],
+      "candidate_actions": [
+        {
+          "target": [
+            -3,
+            36
+          ],
+          "type": "attack",
+          "unit": 52
+        },
+        {
+          "type": "end_turn"
+        }
+      ]
+    },
+    {
+      "request": [
+        18,
+        0
+      ],
+      "window": {
+        "currency": "gold",
+        "made": false,
+        "unlock_cost": 105
+      },
+      "original_orders": [
+        {
+          "kind": "unit",
+          "subject": 196608,
+          "verb": "PROMOTE:PROMOTION_GARRISON",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "unit",
+          "subject": 196608,
+          "verb": "MOVE_TO",
+          "x": 15,
+          "y": 36
+        },
+        {
+          "kind": "unit",
+          "subject": 196608,
+          "verb": "RANGE_ATTACK",
+          "x": 16,
+          "y": 36
+        },
+        {
+          "kind": "unit",
+          "subject": 131073,
+          "verb": "MOVE_TO",
+          "x": 14,
+          "y": 35
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DOOMED_BLOW_VETO",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DIALOGUE_NEVER_DECLARES_WAR",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "CONGRESS_GUARDS_THE_LEADER",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "civic:CIVIC_FOREIGN_TRADE",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 196608,
+          "verb": "unit:RANGE_ATTACK",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 131073,
+          "verb": "unit:ATTACK",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "policy_deck:POLICY_DISCIPLINE,POLICY_GOD_KING",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DOOMED_BLOW_VETO",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 131073,
+          "verb": "unit:ATTACK",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "policy_deck:POLICY_DISCIPLINE,POLICY_GOD_KING",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DOOMED_BLOW_VETO",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 131073,
+          "verb": "unit:ATTACK",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "policy_deck:POLICY_DISCIPLINE,POLICY_GOD_KING",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DOOMED_BLOW_VETO",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "turn_verified",
+          "subject": 17,
+          "verb": "issued=17 verified=17 failed=0 unverifiable=0",
+          "x": null,
+          "y": null
+        }
+      ],
+      "candidate_orders": [
+        {
+          "kind": "unit",
+          "subject": 196608,
+          "verb": "PROMOTE:PROMOTION_GARRISON",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "unit",
+          "subject": 196608,
+          "verb": "MOVE_TO",
+          "x": 15,
+          "y": 36
+        },
+        {
+          "kind": "unit",
+          "subject": 196608,
+          "verb": "RANGE_ATTACK",
+          "x": 16,
+          "y": 36
+        },
+        {
+          "kind": "unit",
+          "subject": 131073,
+          "verb": "MOVE_TO",
+          "x": 14,
+          "y": 35
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DOOMED_BLOW_VETO",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DIALOGUE_NEVER_DECLARES_WAR",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "CONGRESS_GUARDS_THE_LEADER",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "civic:CIVIC_FOREIGN_TRADE",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 196608,
+          "verb": "unit:RANGE_ATTACK",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 131073,
+          "verb": "unit:ATTACK",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "policy_deck:POLICY_DISCIPLINE,POLICY_GOD_KING",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DOOMED_BLOW_VETO",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 131073,
+          "verb": "unit:ATTACK",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DOOMED_BLOW_VETO",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 131073,
+          "verb": "unit:ATTACK",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DOOMED_BLOW_VETO",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 17,
+          "y": -1
+        },
+        {
+          "kind": "turn_verified",
+          "subject": 17,
+          "verb": "issued=15 verified=15 failed=0 unverifiable=0",
+          "x": null,
+          "y": null
+        }
+      ],
+      "original_actions": [
+        {
+          "promotion": "garrison",
+          "type": "promote",
+          "unit": 51
+        },
+        {
+          "to": [
+            -3,
+            36
+          ],
+          "type": "move_to",
+          "unit": 51
+        },
+        {
+          "target": [
+            -2,
+            36
+          ],
+          "type": "ranged",
+          "unit": 51
+        },
+        {
+          "to": [
+            -3,
+            35
+          ],
+          "type": "move",
+          "unit": 52
+        },
+        {
+          "type": "end_turn"
+        }
+      ],
+      "candidate_actions": [
+        {
+          "promotion": "garrison",
+          "type": "promote",
+          "unit": 51
+        },
+        {
+          "to": [
+            -3,
+            36
+          ],
+          "type": "move_to",
+          "unit": 51
+        },
+        {
+          "target": [
+            -2,
+            36
+          ],
+          "type": "ranged",
+          "unit": 51
+        },
+        {
+          "to": [
+            -3,
+            35
+          ],
+          "type": "move",
+          "unit": 52
+        },
+        {
+          "type": "end_turn"
+        }
+      ]
+    },
+    {
+      "request": [
+        40,
+        0
+      ],
+      "window": {
+        "currency": "gold",
+        "made": false,
+        "unlock_cost": 25
+      },
+      "original_orders": [
+        {
+          "kind": "research",
+          "subject": null,
+          "verb": "TECH_WRITING",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "unit",
+          "subject": 262146,
+          "verb": "MOVE_TO",
+          "x": 16,
+          "y": 37
+        },
+        {
+          "kind": "unit",
+          "subject": 262146,
+          "verb": "FORTIFY",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "unit",
+          "subject": 327680,
+          "verb": "MOVE_TO",
+          "x": 14,
+          "y": 35
+        },
+        {
+          "kind": "policy_deck",
+          "subject": null,
+          "verb": "POLICY_DISCIPLINE,POLICY_URBAN_PLANNING",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DIALOGUE_NEVER_DECLARES_WAR",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "CONGRESS_GUARDS_THE_LEADER",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "order_verified",
+          "subject": 262146,
+          "verb": "unit:MOVE_TO",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 327680,
+          "verb": "unit:MOVE_TO",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 327680,
+          "verb": "unit:MOVE_TO",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "turn_verified",
+          "subject": 39,
+          "verb": "issued=9 verified=9 failed=0 unverifiable=0",
+          "x": null,
+          "y": null
+        }
+      ],
+      "candidate_orders": [
+        {
+          "kind": "research",
+          "subject": null,
+          "verb": "TECH_WRITING",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "unit",
+          "subject": 262146,
+          "verb": "MOVE_TO",
+          "x": 16,
+          "y": 37
+        },
+        {
+          "kind": "unit",
+          "subject": 262146,
+          "verb": "FORTIFY",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "unit",
+          "subject": 327680,
+          "verb": "MOVE_TO",
+          "x": 14,
+          "y": 35
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DIALOGUE_NEVER_DECLARES_WAR",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "CONGRESS_GUARDS_THE_LEADER",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "order_verified",
+          "subject": 262146,
+          "verb": "unit:MOVE_TO",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 327680,
+          "verb": "unit:MOVE_TO",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 327680,
+          "verb": "unit:MOVE_TO",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 39,
+          "y": -1
+        },
+        {
+          "kind": "turn_verified",
+          "subject": 39,
+          "verb": "issued=9 verified=9 failed=0 unverifiable=0",
+          "x": null,
+          "y": null
+        }
+      ],
+      "original_actions": [
+        {
+          "tech": "writing",
+          "type": "research"
+        },
+        {
+          "policy": "god_king",
+          "type": "unslot_policy"
+        },
+        {
+          "policy": "urban_planning",
+          "type": "slot_policy"
+        },
+        {
+          "to": [
+            -2,
+            37
+          ],
+          "type": "move_to",
+          "unit": 54
+        },
+        {
+          "type": "fortify",
+          "unit": 54
+        },
+        {
+          "to": [
+            -3,
+            35
+          ],
+          "type": "move",
+          "unit": 52
+        },
+        {
+          "type": "fortify",
+          "unit": 52
+        },
+        {
+          "type": "end_turn"
+        }
+      ],
+      "candidate_actions": [
+        {
+          "tech": "writing",
+          "type": "research"
+        },
+        {
+          "to": [
+            -2,
+            37
+          ],
+          "type": "move_to",
+          "unit": 54
+        },
+        {
+          "type": "fortify",
+          "unit": 54
+        },
+        {
+          "to": [
+            -3,
+            35
+          ],
+          "type": "move",
+          "unit": 52
+        },
+        {
+          "type": "fortify",
+          "unit": 52
+        },
+        {
+          "type": "end_turn"
+        }
+      ]
+    },
+    {
+      "request": [
+        40,
+        1
+      ],
+      "window": {
+        "currency": "gold",
+        "made": false,
+        "unlock_cost": 25
+      },
+      "original_orders": [
+        {
+          "kind": "unit",
+          "subject": 262146,
+          "verb": "RANGE_ATTACK",
+          "x": 16,
+          "y": 39
+        },
+        {
+          "kind": "policy_deck",
+          "subject": null,
+          "verb": "POLICY_DISCIPLINE,POLICY_URBAN_PLANNING",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DOOMED_BLOW_VETO",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DIALOGUE_NEVER_DECLARES_WAR",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "CONGRESS_GUARDS_THE_LEADER",
+          "x": null,
+          "y": null
+        }
+      ],
+      "candidate_orders": [
+        {
+          "kind": "unit",
+          "subject": 262146,
+          "verb": "RANGE_ATTACK",
+          "x": 16,
+          "y": 39
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DOOMED_BLOW_VETO",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DIALOGUE_NEVER_DECLARES_WAR",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "CONGRESS_GUARDS_THE_LEADER",
+          "x": null,
+          "y": null
+        }
+      ],
+      "original_actions": [
+        {
+          "policy": "god_king",
+          "type": "unslot_policy"
+        },
+        {
+          "policy": "urban_planning",
+          "type": "slot_policy"
+        },
+        {
+          "target": [
+            -3,
+            39
+          ],
+          "type": "ranged",
+          "unit": 54
+        },
+        {
+          "type": "end_turn"
+        }
+      ],
+      "candidate_actions": [
+        {
+          "target": [
+            -3,
+            39
+          ],
+          "type": "ranged",
+          "unit": 54
+        },
+        {
+          "type": "end_turn"
+        }
+      ]
+    },
+    {
+      "request": [
+        40,
+        2
+      ],
+      "window": {
+        "currency": "gold",
+        "made": false,
+        "unlock_cost": 25
+      },
+      "original_orders": [
+        {
+          "kind": "policy_deck",
+          "subject": null,
+          "verb": "POLICY_DISCIPLINE,POLICY_URBAN_PLANNING",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DIALOGUE_NEVER_DECLARES_WAR",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "CONGRESS_GUARDS_THE_LEADER",
+          "x": null,
+          "y": null
+        }
+      ],
+      "candidate_orders": [
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DIALOGUE_NEVER_DECLARES_WAR",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "CONGRESS_GUARDS_THE_LEADER",
+          "x": null,
+          "y": null
+        }
+      ],
+      "original_actions": [
+        {
+          "policy": "god_king",
+          "type": "unslot_policy"
+        },
+        {
+          "policy": "urban_planning",
+          "type": "slot_policy"
+        },
+        {
+          "type": "end_turn"
+        }
+      ],
+      "candidate_actions": [
+        {
+          "type": "end_turn"
+        }
+      ]
+    },
+    {
+      "request": [
+        41,
+        0
+      ],
+      "window": {
+        "currency": "gold",
+        "made": false,
+        "unlock_cost": 25
+      },
+      "original_orders": [
+        {
+          "kind": "unit",
+          "subject": 262146,
+          "verb": "RANGE_ATTACK",
+          "x": 16,
+          "y": 39
+        },
+        {
+          "kind": "unit",
+          "subject": 327680,
+          "verb": "MOVE_TO",
+          "x": 13,
+          "y": 35
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DOOMED_BLOW_VETO",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DIALOGUE_NEVER_DECLARES_WAR",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "CONGRESS_GUARDS_THE_LEADER",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "research:TECH_WRITING",
+          "x": 40,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 262146,
+          "verb": "unit:MOVE_TO",
+          "x": 40,
+          "y": -1
+        },
+        {
+          "kind": "order_failed",
+          "subject": 262146,
+          "verb": "unit:FORTIFY not_fortified",
+          "x": 40,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 327680,
+          "verb": "unit:MOVE_TO",
+          "x": 40,
+          "y": -1
+        },
+        {
+          "kind": "order_failed",
+          "subject": null,
+          "verb": "policy_deck:POLICY_DISCIPLINE,POLICY_URBAN_PLANNING deferred_policy_change_locked",
+          "x": 40,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 40,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 40,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 262146,
+          "verb": "unit:RANGE_ATTACK",
+          "x": 40,
+          "y": -1
+        },
+        {
+          "kind": "order_failed",
+          "subject": null,
+          "verb": "policy_deck:POLICY_DISCIPLINE,POLICY_URBAN_PLANNING deferred_policy_change_locked",
+          "x": 40,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DOOMED_BLOW_VETO",
+          "x": 40,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 40,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 40,
+          "y": -1
+        },
+        {
+          "kind": "order_failed",
+          "subject": null,
+          "verb": "policy_deck:POLICY_DISCIPLINE,POLICY_URBAN_PLANNING deferred_policy_change_locked",
+          "x": 40,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 40,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 40,
+          "y": -1
+        },
+        {
+          "kind": "turn_verified",
+          "subject": 40,
+          "verb": "issued=15 verified=11 failed=4 unverifiable=0",
+          "x": null,
+          "y": null
+        }
+      ],
+      "candidate_orders": [
+        {
+          "kind": "unit",
+          "subject": 262146,
+          "verb": "RANGE_ATTACK",
+          "x": 16,
+          "y": 39
+        },
+        {
+          "kind": "unit",
+          "subject": 327680,
+          "verb": "MOVE_TO",
+          "x": 13,
+          "y": 35
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DOOMED_BLOW_VETO",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DIALOGUE_NEVER_DECLARES_WAR",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "CONGRESS_GUARDS_THE_LEADER",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "research:TECH_WRITING",
+          "x": 40,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 262146,
+          "verb": "unit:MOVE_TO",
+          "x": 40,
+          "y": -1
+        },
+        {
+          "kind": "order_failed",
+          "subject": 262146,
+          "verb": "unit:FORTIFY not_fortified",
+          "x": 40,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 327680,
+          "verb": "unit:MOVE_TO",
+          "x": 40,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 40,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 40,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 262146,
+          "verb": "unit:RANGE_ATTACK",
+          "x": 40,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DOOMED_BLOW_VETO",
+          "x": 40,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 40,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 40,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 40,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 40,
+          "y": -1
+        },
+        {
+          "kind": "turn_verified",
+          "subject": 40,
+          "verb": "issued=12 verified=11 failed=1 unverifiable=0",
+          "x": null,
+          "y": null
+        }
+      ],
+      "original_actions": [
+        {
+          "target": [
+            -3,
+            39
+          ],
+          "type": "ranged",
+          "unit": 54
+        },
+        {
+          "to": [
+            -4,
+            35
+          ],
+          "type": "move",
+          "unit": 52
+        },
+        {
+          "type": "end_turn"
+        }
+      ],
+      "candidate_actions": [
+        {
+          "target": [
+            -3,
+            39
+          ],
+          "type": "ranged",
+          "unit": 54
+        },
+        {
+          "to": [
+            -4,
+            35
+          ],
+          "type": "move",
+          "unit": 52
+        },
+        {
+          "type": "end_turn"
+        }
+      ]
+    },
+    {
+      "request": [
+        42,
+        0
+      ],
+      "window": {
+        "currency": "gold",
+        "made": false,
+        "unlock_cost": 0
+      },
+      "original_orders": [
+        {
+          "kind": "unit",
+          "subject": 262146,
+          "verb": "RANGE_ATTACK",
+          "x": 16,
+          "y": 39
+        },
+        {
+          "kind": "civic",
+          "subject": null,
+          "verb": "CIVIC_EARLY_EMPIRE",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "pantheon",
+          "subject": null,
+          "verb": "BELIEF_RELIGIOUS_SETTLEMENTS",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "unit",
+          "subject": 327680,
+          "verb": "MOVE_TO",
+          "x": 13,
+          "y": 35
+        },
+        {
+          "kind": "unit",
+          "subject": 131073,
+          "verb": "MOVE_TO",
+          "x": 14,
+          "y": 37
+        },
+        {
+          "kind": "unit",
+          "subject": 131073,
+          "verb": "FORTIFY",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DOOMED_BLOW_VETO",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DIALOGUE_NEVER_DECLARES_WAR",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "CONGRESS_GUARDS_THE_LEADER",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "order_verified",
+          "subject": 262146,
+          "verb": "unit:RANGE_ATTACK",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 327680,
+          "verb": "unit:MOVE_TO",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DOOMED_BLOW_VETO",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 327680,
+          "verb": "unit:MOVE_TO",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 327680,
+          "verb": "unit:MOVE_TO",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "turn_verified",
+          "subject": 41,
+          "verb": "issued=11 verified=11 failed=0 unverifiable=0",
+          "x": null,
+          "y": null
+        }
+      ],
+      "candidate_orders": [
+        {
+          "kind": "unit",
+          "subject": 262146,
+          "verb": "RANGE_ATTACK",
+          "x": 16,
+          "y": 39
+        },
+        {
+          "kind": "civic",
+          "subject": null,
+          "verb": "CIVIC_EARLY_EMPIRE",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "pantheon",
+          "subject": null,
+          "verb": "BELIEF_RELIGIOUS_SETTLEMENTS",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "unit",
+          "subject": 327680,
+          "verb": "MOVE_TO",
+          "x": 13,
+          "y": 35
+        },
+        {
+          "kind": "unit",
+          "subject": 131073,
+          "verb": "MOVE_TO",
+          "x": 14,
+          "y": 37
+        },
+        {
+          "kind": "unit",
+          "subject": 131073,
+          "verb": "FORTIFY",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "policy_deck",
+          "subject": null,
+          "verb": "POLICY_DISCIPLINE,POLICY_URBAN_PLANNING",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DOOMED_BLOW_VETO",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DIALOGUE_NEVER_DECLARES_WAR",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "CONGRESS_GUARDS_THE_LEADER",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "order_verified",
+          "subject": 262146,
+          "verb": "unit:RANGE_ATTACK",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 327680,
+          "verb": "unit:MOVE_TO",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DOOMED_BLOW_VETO",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 327680,
+          "verb": "unit:MOVE_TO",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 327680,
+          "verb": "unit:MOVE_TO",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 41,
+          "y": -1
+        },
+        {
+          "kind": "turn_verified",
+          "subject": 41,
+          "verb": "issued=11 verified=11 failed=0 unverifiable=0",
+          "x": null,
+          "y": null
+        }
+      ],
+      "original_actions": [
+        {
+          "target": [
+            -3,
+            39
+          ],
+          "type": "ranged",
+          "unit": 54
+        },
+        {
+          "civic": "early_empire",
+          "type": "civic"
+        },
+        {
+          "belief": "religious_settlements",
+          "type": "choose_pantheon"
+        },
+        {
+          "to": [
+            -2,
+            35
+          ],
+          "type": "move_to",
+          "unit": 56
+        },
+        {
+          "to": [
+            -5,
+            36
+          ],
+          "type": "move",
+          "unit": 52
+        },
+        {
+          "to": [
+            -4,
+            35
+          ],
+          "type": "move",
+          "unit": 52
+        },
+        {
+          "type": "fortify",
+          "unit": 52
+        },
+        {
+          "to": [
+            -4,
+            37
+          ],
+          "type": "move",
+          "unit": 53
+        },
+        {
+          "type": "fortify",
+          "unit": 53
+        },
+        {
+          "type": "end_turn"
+        }
+      ],
+      "candidate_actions": [
+        {
+          "target": [
+            -3,
+            39
+          ],
+          "type": "ranged",
+          "unit": 54
+        },
+        {
+          "civic": "early_empire",
+          "type": "civic"
+        },
+        {
+          "policy": "god_king",
+          "type": "unslot_policy"
+        },
+        {
+          "policy": "urban_planning",
+          "type": "slot_policy"
+        },
+        {
+          "belief": "religious_settlements",
+          "type": "choose_pantheon"
+        },
+        {
+          "to": [
+            -2,
+            35
+          ],
+          "type": "move_to",
+          "unit": 56
+        },
+        {
+          "to": [
+            -5,
+            36
+          ],
+          "type": "move",
+          "unit": 52
+        },
+        {
+          "to": [
+            -4,
+            35
+          ],
+          "type": "move",
+          "unit": 52
+        },
+        {
+          "type": "fortify",
+          "unit": 52
+        },
+        {
+          "to": [
+            -4,
+            37
+          ],
+          "type": "move",
+          "unit": 53
+        },
+        {
+          "type": "fortify",
+          "unit": 53
+        },
+        {
+          "type": "end_turn"
+        }
+      ]
+    },
+    {
+      "request": [
+        42,
+        1
+      ],
+      "window": {
+        "currency": "gold",
+        "made": false,
+        "unlock_cost": 0
+      },
+      "original_orders": [
+        {
+          "kind": "pantheon",
+          "subject": null,
+          "verb": "BELIEF_FERTILITY_RITES",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DIALOGUE_NEVER_DECLARES_WAR",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "CONGRESS_GUARDS_THE_LEADER",
+          "x": null,
+          "y": null
+        }
+      ],
+      "candidate_orders": [
+        {
+          "kind": "pantheon",
+          "subject": null,
+          "verb": "BELIEF_FERTILITY_RITES",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "policy_deck",
+          "subject": null,
+          "verb": "POLICY_DISCIPLINE,POLICY_URBAN_PLANNING",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DIALOGUE_NEVER_DECLARES_WAR",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "CONGRESS_GUARDS_THE_LEADER",
+          "x": null,
+          "y": null
+        }
+      ],
+      "original_actions": [
+        {
+          "belief": "fertility_rites",
+          "type": "choose_pantheon"
+        },
+        {
+          "type": "fortify",
+          "unit": 53
+        },
+        {
+          "to": [
+            -4,
+            36
+          ],
+          "type": "move",
+          "unit": 55
+        },
+        {
+          "type": "fortify",
+          "unit": 52
+        },
+        {
+          "type": "end_turn"
+        }
+      ],
+      "candidate_actions": [
+        {
+          "policy": "god_king",
+          "type": "unslot_policy"
+        },
+        {
+          "policy": "urban_planning",
+          "type": "slot_policy"
+        },
+        {
+          "belief": "fertility_rites",
+          "type": "choose_pantheon"
+        },
+        {
+          "type": "fortify",
+          "unit": 53
+        },
+        {
+          "to": [
+            -4,
+            36
+          ],
+          "type": "move",
+          "unit": 55
+        },
+        {
+          "type": "fortify",
+          "unit": 52
+        },
+        {
+          "type": "end_turn"
+        }
+      ]
+    },
+    {
+      "request": [
+        43,
+        0
+      ],
+      "window": {
+        "currency": "gold",
+        "made": false,
+        "unlock_cost": 25
+      },
+      "original_orders": [
+        {
+          "kind": "unit",
+          "subject": 327680,
+          "verb": "MOVE_TO",
+          "x": 13,
+          "y": 37
+        },
+        {
+          "kind": "unit",
+          "subject": 131073,
+          "verb": "MOVE_TO",
+          "x": 14,
+          "y": 38
+        },
+        {
+          "kind": "unit",
+          "subject": 524292,
+          "verb": "MOVE_TO",
+          "x": 14,
+          "y": 36
+        },
+        {
+          "kind": "unit",
+          "subject": 131073,
+          "verb": "FORTIFY",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DIALOGUE_NEVER_DECLARES_WAR",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "CONGRESS_GUARDS_THE_LEADER",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "order_verified",
+          "subject": 262146,
+          "verb": "unit:RANGE_ATTACK",
+          "x": 42,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "civic:CIVIC_EARLY_EMPIRE",
+          "x": 42,
+          "y": -1
+        },
+        {
+          "kind": "order_failed",
+          "subject": null,
+          "verb": "pantheon:BELIEF_RELIGIOUS_SETTLEMENTS no_pantheon",
+          "x": 42,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 327680,
+          "verb": "unit:MOVE_TO",
+          "x": 42,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 131073,
+          "verb": "unit:MOVE_TO",
+          "x": 42,
+          "y": -1
+        },
+        {
+          "kind": "order_failed",
+          "subject": 131073,
+          "verb": "unit:FORTIFY not_fortified",
+          "x": 42,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DOOMED_BLOW_VETO",
+          "x": 42,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 42,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 42,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "pantheon:BELIEF_FERTILITY_RITES",
+          "x": 42,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 42,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 42,
+          "y": -1
+        },
+        {
+          "kind": "turn_verified",
+          "subject": 42,
+          "verb": "issued=12 verified=10 failed=2 unverifiable=0",
+          "x": null,
+          "y": null
+        }
+      ],
+      "candidate_orders": [
+        {
+          "kind": "unit",
+          "subject": 327680,
+          "verb": "MOVE_TO",
+          "x": 13,
+          "y": 37
+        },
+        {
+          "kind": "unit",
+          "subject": 131073,
+          "verb": "MOVE_TO",
+          "x": 14,
+          "y": 38
+        },
+        {
+          "kind": "unit",
+          "subject": 524292,
+          "verb": "MOVE_TO",
+          "x": 14,
+          "y": 36
+        },
+        {
+          "kind": "unit",
+          "subject": 131073,
+          "verb": "FORTIFY",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "DIALOGUE_NEVER_DECLARES_WAR",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "combat_policy",
+          "subject": null,
+          "verb": "CONGRESS_GUARDS_THE_LEADER",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "order_verified",
+          "subject": 262146,
+          "verb": "unit:RANGE_ATTACK",
+          "x": 42,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "civic:CIVIC_EARLY_EMPIRE",
+          "x": 42,
+          "y": -1
+        },
+        {
+          "kind": "order_failed",
+          "subject": null,
+          "verb": "pantheon:BELIEF_RELIGIOUS_SETTLEMENTS no_pantheon",
+          "x": 42,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 327680,
+          "verb": "unit:MOVE_TO",
+          "x": 42,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": 131073,
+          "verb": "unit:MOVE_TO",
+          "x": 42,
+          "y": -1
+        },
+        {
+          "kind": "order_failed",
+          "subject": 131073,
+          "verb": "unit:FORTIFY not_fortified",
+          "x": 42,
+          "y": -1
+        },
+        {
+          "kind": "order_failed",
+          "subject": null,
+          "verb": "policy_deck:POLICY_DISCIPLINE,POLICY_URBAN_PLANNING missing=POLICY_URBAN_PLANNING",
+          "x": 42,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DOOMED_BLOW_VETO",
+          "x": 42,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 42,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 42,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "pantheon:BELIEF_FERTILITY_RITES",
+          "x": 42,
+          "y": -1
+        },
+        {
+          "kind": "order_failed",
+          "subject": null,
+          "verb": "policy_deck:POLICY_DISCIPLINE,POLICY_URBAN_PLANNING missing=POLICY_URBAN_PLANNING",
+          "x": 42,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:DIALOGUE_NEVER_DECLARES_WAR",
+          "x": 42,
+          "y": -1
+        },
+        {
+          "kind": "order_verified",
+          "subject": null,
+          "verb": "combat_policy:CONGRESS_GUARDS_THE_LEADER",
+          "x": 42,
+          "y": -1
+        },
+        {
+          "kind": "turn_verified",
+          "subject": 42,
+          "verb": "issued=14 verified=10 failed=4 unverifiable=0",
+          "x": null,
+          "y": null
+        }
+      ],
+      "original_actions": [
+        {
+          "to": [
+            -5,
+            37
+          ],
+          "type": "move_to",
+          "unit": 52
+        },
+        {
+          "to": [
+            -5,
+            38
+          ],
+          "type": "move_to",
+          "unit": 53
+        },
+        {
+          "type": "fortify",
+          "unit": 54
+        },
+        {
+          "to": [
+            -4,
+            36
+          ],
+          "type": "move",
+          "unit": 55
+        },
+        {
+          "type": "fortify",
+          "unit": 53
+        },
+        {
+          "type": "end_turn"
+        }
+      ],
+      "candidate_actions": [
+        {
+          "to": [
+            -5,
+            37
+          ],
+          "type": "move_to",
+          "unit": 52
+        },
+        {
+          "to": [
+            -5,
+            38
+          ],
+          "type": "move_to",
+          "unit": 53
+        },
+        {
+          "type": "fortify",
+          "unit": 54
+        },
+        {
+          "to": [
+            -4,
+            36
+          ],
+          "type": "move",
+          "unit": 55
+        },
+        {
+          "type": "fortify",
+          "unit": 53
+        },
+        {
+          "type": "end_turn"
+        }
+      ]
+    }
+  ],
+  "legacy_full_payload_controls": {
+    "repetitions": 2,
+    "requests_each": 290,
+    "passed": true
+  },
+  "raw_native": {
+    "path": "2026-11-04-native-policy-window.native-before.jsonl.gz",
+    "sha256_gzip": "8f9ed25262e60614db0acb11a26ee61a71c7ae233696d2e83b913ee4d1a9e529",
+    "sha256_uncompressed": "464ed4958fb514ae322f028edc6469fe00a663b7c870be0c28f16b4e8770c719",
+    "bytes_uncompressed": 2111852
+  },
+  "scope": "Frozen native history queries. Metadata consumes schema:state.policy_change at1/0. First order change17/1 removes pending duplicate; paid40 deck removed; newly free42 deck added. Verification-log changes reflect issued-query bookkeeping against original host outcomes, not a continued candidate world. No strength claim.",
+  "local_validation": {
+    "rust_passed": 6848,
+    "unit_tests_ignored": 53,
+    "doctests_ignored": 4,
+    "new_focused_tests_passed": 6,
+    "rust_quality": "changed lines formatted and warning-free",
+    "log_sha256": {
+      "full-rust-suite.log": "c45bd050e4d810e2b75a02d62925717688360e78899485a3fa38053e21df3091",
+      "rust-quality.log": "837fb687ec8f28f540734dd42b9168d3563b904d2ecda2204b67d7cc7b6e173e"
+    }
+  }
+}

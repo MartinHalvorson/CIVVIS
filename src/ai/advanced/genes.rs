@@ -4962,6 +4962,14 @@ pub const GENES: &[Gene] = &[
     // brings a shooter (no return damage; the kill plan fires it first) and
     // `CAMP_AGE_MARGIN` times the guard. See `advanced/camps_close_the_age.rs`.
     Gene { tag: "camps-close-the-age-2", field: "camps_close_the_age_2", kind: Kind::OptIn, enable: AdvancedAi::enable_camps_close_the_age_2, disable: AdvancedAi::disable_camps_close_the_age_2 },
+    // Live Immortal 11-03 21Z..11-04 21Z: in 42 of 79 games the Domination
+    // siege reservation took the backlog Builder's fresh queue the same turn
+    // `backlog-builder-takes-the-queue` set it (282 city-turns, up to 29 in a
+    // game). 204728Z: Bogota (8 production, 12 worked tiles unimproved, no
+    // charges) built two Catapults t154-182 for a war it held off. The
+    // reservation now spares that Builder as it spares the housing Granary.
+    // See `advanced/siege_production.rs`.
+    Gene { tag: "breaker-spares-the-backlog-builder", field: "breaker_spares_the_backlog_builder", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_spares_the_backlog_builder, disable: AdvancedAi::disable_breaker_spares_the_backlog_builder },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

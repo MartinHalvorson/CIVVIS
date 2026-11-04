@@ -9503,6 +9503,17 @@ impl AdvancedAi {
         self.camps_close_the_age_2 = false;
     }
 
+    /// Opt-in gene `breaker-spares-the-backlog-builder`; see
+    /// [`Self::breaker_spares_the_backlog_builder`].
+    pub fn enable_breaker_spares_the_backlog_builder(&mut self) {
+        self.breaker_spares_the_backlog_builder = true;
+    }
+
+    /// The twin of `enable_breaker_spares_the_backlog_builder`.
+    pub fn disable_breaker_spares_the_backlog_builder(&mut self) {
+        self.breaker_spares_the_backlog_builder = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -1,9 +1,11 @@
 //! Core turn engine (mirrors civvis/game.py — same mechanics and action protocol).
 use serde::ser::SerializeMap;
+mod host_policy_windows;
 #[cfg(test)]
 mod host_trade_tests;
 mod native_settlement_loyalty;
 mod player_view;
+pub use host_policy_windows::HostPolicyWindow;
 pub use native_settlement_loyalty::NativeSettlementPressure;
 use serde::{Deserialize, Serialize};
 use std::cmp::Reverse;
@@ -6893,6 +6895,10 @@ pub struct Game {
     /// An absent seat entry preserves ordinary simulation rules.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub host_policy_choices: BTreeMap<usize, BTreeSet<Name>>,
+    /// A native policy transaction window, scoped to its observed seat and
+    /// turn. Absent in ordinary games and legacy host snapshots.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub host_policy_windows: BTreeMap<usize, HostPolicyWindow>,
     /// Pantheon beliefs a HOST has already granted to another player, for the same
     /// reasons and with the same emptiness in an ordinary game as
     /// [`Game::blocked_city_sites`].
@@ -7772,6 +7778,7 @@ impl From<GameSer> for Game {
             blocked_trade_routes: Arc::new(BTreeSet::new()),
             blocked_policies: Arc::new(BTreeSet::new()),
             host_policy_choices: BTreeMap::new(),
+            host_policy_windows: BTreeMap::new(),
             blocked_pantheons: Arc::new(BTreeSet::new()),
             blocked_districts: Arc::new(BTreeMap::new()),
             host_district_sites: Arc::new(BTreeMap::new()),
@@ -8529,6 +8536,7 @@ impl Game {
             blocked_trade_routes: Arc::new(BTreeSet::new()),
             blocked_policies: Arc::new(BTreeSet::new()),
             host_policy_choices: BTreeMap::new(),
+            host_policy_windows: BTreeMap::new(),
             blocked_pantheons: Arc::new(BTreeSet::new()),
             blocked_districts: Arc::new(BTreeMap::new()),
             host_district_sites: Arc::new(BTreeMap::new()),
