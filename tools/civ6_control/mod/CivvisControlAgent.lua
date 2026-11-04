@@ -315,6 +315,24 @@ CivvisPolicy.availableNames = function(culture)
 	if ok then return names; end
 	return nil;
 end;
+-- GovernmentScreen.lua:1383-1422 observes these before enabling Confirm or
+-- Unlock; :1589-1592 pays through UNLOCK_POLICIES. These are observations,
+-- not permission to change a deck. Missing APIs remain unknown per field.
+CivvisPolicy.unlockObservation = function(culture)
+	local result = {};
+	local ok, value = pcall(function() return culture:GetCostToUnlockPolicies(); end);
+	if ok and type(value) == "number" and value > -math.huge and value < math.huge then
+		result.unlock_cost = value;
+	end
+	ok, value = pcall(function() return culture:PolicyChangeMade(); end);
+	if ok and type(value) == "boolean" then result.made = value; end
+	ok, value = pcall(function() return GlobalParameters.GOVERNMENT_UNLOCK_WITH_FAITH; end);
+	if ok and type(value) == "number" and value > -math.huge and value < math.huge then
+		result.currency = value ~= 0 and "faith" or "gold";
+	end
+	if next(result) == nil then return nil; end
+	return result;
+end;
 -- Per-city production names the engine has already rejected on this turn. This is
 -- deliberately turn-scoped: a strategic resource or prerequisite can change later,
 -- but retrying the same impossible choice in every blocker pass cannot help.
@@ -9622,6 +9640,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 		policies = policies,
 		available_policies = CivvisPolicy.availableNames(pcult),
 		policy_slots = policy_slots,
+		policy_change = CivvisPolicy.unlockObservation(pcult),
 		hostiles = hostiles,
 		gold = try(function() return math.floor(player:GetTreasury():GetGoldBalance()); end, -1),
 		-- ★★★★★ NET INCOME, AND WHY THE EMPIRE GOES BANKRUPT WITHOUT NOTICING.
@@ -9660,6 +9679,11 @@ local function exportState(player, pid, turn, frame, eventKind)
 		-- treasury. The board simulates its own bill from its rules for every
 		-- plan it prices; these let the mirrored seat's forecast carry the
 		-- host's components instead. Same nil-not-0 rule as `gold_per_turn`.
+		-- ReportScreen.lua:306 reads this per-unit discount separately from
+		-- the per-formation base bills exported on units above.
+		unit_maintenance_discount = try(function()
+			return player:GetTreasury():GetMaintDiscountPerUnit();
+		end, nil),
 		unit_maintenance_total = try(function()
 			return player:GetTreasury():GetUnitMaintenance();
 		end, nil),
