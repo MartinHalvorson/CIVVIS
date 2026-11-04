@@ -40,6 +40,8 @@ fn fixture(n_cities: usize) -> (Game, Vec<u32>, Vec<u32>, StrategicPlan) {
     g.current = 0;
     g.at_war.clear();
     g.at_war.insert((0, 1));
+    g.players[0].met.insert(1);
+    g.players[1].met.insert(0);
     for tech in [
         "pottery",
         "writing",
@@ -231,4 +233,38 @@ fn first_campus_between_units_does_not_arm_the_parent_claim() {
     ai.enable_first_campus_between_the_units();
     ai.claim_free_slot_campus(&mut g, 0, &plan);
     assert!(queued_campuses(&g, &cities).is_empty());
+}
+
+#[test]
+fn first_campus_between_units_yields_to_the_final_confirmed_siege_handoff() {
+    for siege in [false, true] {
+        let (mut g, cities, _, plan) = fixture(3);
+        for cid in &cities[1..] {
+            g.cities.get_mut(cid).unwrap().queue = vec![Item::Building {
+                building: crate::name!("walls"),
+            }];
+        }
+        if siege {
+            for pos in [at(8, 9), at(9, 8), at(7, 8)] {
+                let id = g.spawn_test_unit("knight", 1, pos);
+                assert!(g.unit_visible_to(id, 0));
+            }
+        }
+        let mut ai = armed();
+        ai.base.garrison_under_fire = true;
+        ai.victory_planning = true;
+        ai.victory_target = Some(VictoryTarget::Domination);
+        ai.claim_free_slot_campus(&mut g, 0, &plan);
+        assert_eq!(queued_campuses(&g, &cities), vec![cities[0]]);
+        assert_eq!(g.cities[&cities[0]].hp, CITY_MAX_HP);
+        let threat = siege.then_some(cities[0]);
+        let defence = ai.redirect_unsafe_city_queue_for_defense(&mut g, 0, threat);
+        if siege {
+            assert!(defence.is_some());
+            assert!(queued_campuses(&g, &cities).is_empty());
+        } else {
+            assert!(defence.is_none());
+            assert_eq!(queued_campuses(&g, &cities), vec![cities[0]]);
+        }
+    }
 }
