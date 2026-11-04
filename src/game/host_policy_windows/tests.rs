@@ -30,6 +30,7 @@ fn window(g: &mut Game, open: bool) {
 fn a_closed_host_window_preserves_the_deck_and_keeps_card_eligibility_visible() {
     let mut g = board();
     g.apply(0, &slot("discipline")).unwrap();
+    let held_again = g.apply(0, &slot("discipline")).unwrap_err();
     let before = g.players[0].policies.clone();
     let gold = g.players[0].gold;
     window(&mut g, false);
@@ -38,9 +39,10 @@ fn a_closed_host_window_preserves_the_deck_and_keeps_card_eligibility_visible() 
     assert!(g.apply(0, &unslot("discipline")).is_err());
     assert_eq!(g.players[0].policies, before);
     assert_eq!(g.players[0].gold, gold);
-    assert!(
-        g.apply(0, &slot("discipline")).is_ok(),
-        "acknowledge an unchanged held card"
+    assert_eq!(
+        g.apply(0, &slot("discipline")).unwrap_err(),
+        held_again,
+        "preserve the existing held-card diagnostic"
     );
     g.current = 1;
     assert!(
