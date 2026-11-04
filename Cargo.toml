@@ -53,6 +53,11 @@ path = "src/bin/siege_replay.rs"
 required-features = ["developer-tools"]
 
 [[bin]]
+name = "defence_replay"
+path = "src/bin/defence_replay.rs"
+required-features = ["developer-tools"]
+
+[[bin]]
 name = "gene_screen"
 path = "src/bin/gene_screen.rs"
 required-features = ["developer-tools"]
