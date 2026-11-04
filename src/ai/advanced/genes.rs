@@ -4928,6 +4928,17 @@ pub const GENES: &[Gene] = &[
     // opening buys that tile above the upkeep floor once a turn, at peace.
     // See `advanced/gold_buys_the_production_tile.rs`.
     Gene { tag: "gold-buys-the-production-tile", field: "gold_buys_the_production_tile", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_buys_the_production_tile, disable: AdvancedAi::disable_gold_buys_the_production_tile },
+    // Live Lv 7 Immortal Standard (11-04), the first battle-planner-2
+    // carriers: the positions plan priced a slot lethal only when the
+    // centre-roll danger met the unit's hit points, so a front slot at 85-95%
+    // of them was taken for a fraction of a turn's cost, and a unit short of
+    // its slot ended on the reachable tile nearest it whether or not the
+    // field read that tile lethal (the sort ranked distance before
+    // lethality, against `position_end_tile`'s own contract). Outside the
+    // Generals' aura those carriers traded 0.71 kills a loss against 1.51 for
+    // the games before them. Under the gene the lethal test reads the top of
+    // the roll in both places. See `advanced/battle_planner.rs`.
+    Gene { tag: "slots-survive-the-roll", field: "slots_survive_the_roll", kind: Kind::OptIn, enable: AdvancedAi::enable_slots_survive_the_roll, disable: AdvancedAi::disable_slots_survive_the_roll },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

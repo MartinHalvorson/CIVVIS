@@ -9249,6 +9249,13 @@ pub struct AdvancedAi {
     /// before production, so the resume path and every remaining-cost price
     /// see it. See `advanced/saved_work_is_seen.rs`. Off by default.
     saved_work_is_seen: bool,
+    /// `slots-survive-the-roll`: under `battle-planner-2` a slot whose
+    /// top-of-the-roll danger meets the unit's hit points is never assigned,
+    /// and a unit short of its slot ends on a tile that roll does not remove
+    /// it on before the nearest one that does. See
+    /// `advanced/battle_planner.rs` (`slot_cost`, `position_end_tile`).
+    /// Off by default.
+    slots_survive_the_roll: bool,
     // ---- append: t-z ------------------------------------------------
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
@@ -12181,6 +12188,7 @@ impl AdvancedAi {
             seat_city_pace: false,
             science_drive_leads_beside_the_lane: false,
             saved_work_is_seen: false,
+            slots_survive_the_roll: false,
             // ---- append: t-z ----------------------------------------
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,
