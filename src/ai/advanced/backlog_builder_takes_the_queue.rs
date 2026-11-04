@@ -110,7 +110,9 @@ impl AdvancedAi {
     ) -> bool {
         // `builderless-empire-trains-one` keeps its Builder through the same
         // hold while the same backlog wants it.
-        if !(self.backlog_builder_takes_the_queue || self.builderless_empire_trains_one)
+        if !(self.backlog_builder_takes_the_queue
+            || self.builderless_empire_trains_one
+            || self.builderless_empire_trains_one_2)
             || !matches!(item, Item::Unit { unit } if *unit == "builder")
         {
             return false;

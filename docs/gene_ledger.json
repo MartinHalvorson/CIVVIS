@@ -4426,6 +4426,15 @@
           "builder-workforce-recovery-3": null
         }
       },
+      "builderless-empire-trains-one": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "builderless-empire-trains-one": null,
+          "builderless-empire-trains-one-2": null
+        }
+      },
       "camps-close-the-age": {
         "rule_on": [],
         "head": null,

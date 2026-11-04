@@ -4970,6 +4970,12 @@ pub const GENES: &[Gene] = &[
     // held, the fastest safe city trains one. See
     // `advanced/builderless_empire_trains_one.rs`.
     Gene { tag: "builderless-empire-trains-one", field: "builderless_empire_trains_one", kind: Kind::OptIn, enable: AdvancedAi::enable_builderless_empire_trains_one, disable: AdvancedAi::disable_builderless_empire_trains_one },
+    // Version two. Live Deity Online civvis-20261104T211604Z: the capital ran
+    // Scout, Slinger and four Settlers and held no Builder until turn 30, so
+    // version one (which keeps every Settler's queue) never fired. A Settler
+    // with no production invested now yields the head once to the empire's
+    // only Builder. See `advanced/builderless_empire_trains_one.rs`.
+    Gene { tag: "builderless-empire-trains-one-2", field: "builderless_empire_trains_one_2", kind: Kind::OptIn, enable: AdvancedAi::enable_builderless_empire_trains_one_2, disable: AdvancedAi::disable_builderless_empire_trains_one_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

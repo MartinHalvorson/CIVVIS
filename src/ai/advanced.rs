@@ -5553,6 +5553,10 @@ pub struct AdvancedAi {
     /// of its fastest safe city. See `advanced/builderless_empire_trains_one.rs`.
     /// Off by default.
     builderless_empire_trains_one: bool,
+    /// `builderless-empire-trains-one-2`: version one, and a Settler with no
+    /// production invested yields the head to the empire's only Builder.
+    /// Off by default.
+    builderless_empire_trains_one_2: bool,
     // ---- append: c-d ------------------------------------------------
     /// `campus-unlock-every-lane`: every seat, not only Domination, takes
     /// the Campus unlock (Writing) once it holds two cities, in the slot the
@@ -11585,6 +11589,7 @@ impl AdvancedAi {
             alliance_remembers_the_refusal: false,
             alliance_ask_turns: BTreeMap::new(),
             builderless_empire_trains_one: false,
+            builderless_empire_trains_one_2: false,
             // ---- append: c-d ----------------------------------------
             campus_unlock_every_lane: false,
             culture_seat_theater_first_2: false,
