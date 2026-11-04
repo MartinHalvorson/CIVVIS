@@ -1,0 +1,136 @@
+{
+  "recorded_utc": "2026-11-04T17:56:50.953167+00:00",
+  "source_checkpoint": "575bb7198dc1584a5ff2b08f68bdf10c14f2da4b",
+  "native_before": {
+    "verified": true,
+    "run": "civvis-20261104T174321Z",
+    "native_context_sha256": "4beb3bf40903b8f6fd8871492f572ee8ed2900ac55221bfd79bb9efadddd8abc",
+    "native_decision_sha256": "8bf2cec57a044d28bbb3024c10e8427bc5eac6f51d36ffe263fae50ba62d2f24",
+    "actual_captured_last_read_state_exactly_matches_native_pre_request": true,
+    "request": [
+      67,
+      0
+    ],
+    "before": {
+      "policy_change": {
+        "currency": "gold",
+        "made": false,
+        "unlock_cost": 115
+      },
+      "gold": 53,
+      "policies": [
+        "POLICY_AGOGE",
+        "POLICY_ILKUM"
+      ],
+      "government": "GOVERNMENT_CHIEFDOM",
+      "civic": "CIVIC_STATE_WORKFORCE",
+      "civic_progress": 11.5742,
+      "civics": [
+        "CIVIC_CODE_OF_LAWS",
+        "CIVIC_CRAFTSMANSHIP",
+        "CIVIC_FOREIGN_TRADE",
+        "CIVIC_EARLY_EMPIRE"
+      ]
+    },
+    "after_same_turn_frame1": {
+      "policy_change": {
+        "currency": "gold",
+        "made": true,
+        "unlock_cost": 175
+      },
+      "gold": 53,
+      "policies": [
+        "POLICY_AGOGE",
+        "POLICY_URBAN_PLANNING"
+      ],
+      "government": "GOVERNMENT_CHIEFDOM",
+      "civic": "CIVIC_STATE_WORKFORCE",
+      "civic_progress": 11.5742,
+      "civics": [
+        "CIVIC_CODE_OF_LAWS",
+        "CIVIC_CRAFTSMANSHIP",
+        "CIVIC_FOREIGN_TRADE",
+        "CIVIC_EARLY_EMPIRE"
+      ]
+    },
+    "next_turn_gold": 57,
+    "native_request_event": {
+      "clear": [
+        0,
+        1
+      ],
+      "ctx": "agent",
+      "desired": [
+        "POLICY_AGOGE",
+        "POLICY_URBAN_PLANNING"
+      ],
+      "kind": "policy_deck_request",
+      "mode": "full",
+      "pcall_ok": true,
+      "pcall_result": true,
+      "run": "civvis-20261104T174321Z",
+      "slots": [
+        {
+          "add": 1187625170,
+          "current": "POLICY_AGOGE",
+          "slot": 0,
+          "slot_type": "SLOT_MILITARY"
+        },
+        {
+          "add": 1036612372,
+          "current": "POLICY_ILKUM",
+          "slot": 1,
+          "slot_type": "SLOT_ECONOMIC"
+        }
+      ],
+      "t": 1793814394,
+      "turn": 67,
+      "utc": "2026-11-04T17:46:34.500Z"
+    },
+    "native_checked_report": {
+      "checked_on": 68,
+      "ctx": "agent",
+      "kind": "order_verified",
+      "order_kind": "policy_deck",
+      "run": "civvis-20261104T174321Z",
+      "t": 1793814396,
+      "turn": 67,
+      "utc": "2026-11-04T17:46:36.483Z",
+      "verb": "POLICY_AGOGE,POLICY_URBAN_PLANNING"
+    },
+    "raw_events_sha256_gzip": "6e08ec369b0011009ea26aec0dc6b2ce3e6733f5a20d776dde39028fb0c0fb62",
+    "raw_events_sha256_uncompressed": "453fffc2e4f27165c4dd04a148d11a028804e6cfe8086378c94ee7aa26c01f33",
+    "scope": "Controller RequestPolicyChanges accepted a changed deck despite positive UI unlock quote exceeding treasury, with no contemporaneous treasury deduction or government/civic change. Observed controller/API behavior; this disproves automatic rejection from quoted cost alone. Shipped UI uses an explicit unlock operation, so verify that UI/controller fidelity separately; no new policy/payment action made here."
+  },
+  "public_native_before_artifact": {
+    "path": "docs/eval/2026-11-04-policy-change-lock.native-before.jsonl.gz",
+    "sha256": "6e08ec369b0011009ea26aec0dc6b2ce3e6733f5a20d776dde39028fb0c0fb62"
+  },
+  "candidate_rule": "Only submit changed cards when native cost is exactly0 and PolicyChangeMade is exactlyfalse. Defer positive/negative/unknown/nonfinite quotes and pending transactions. No automatic UNLOCK_POLICIES/payment. Preserve observed complete-deck acknowledgement and existing government/same-turn handling.",
+  "validation": {
+    "recorded_utc": "2026-11-04T17:55:10.969233+00:00",
+    "lua_version": "5.1.5",
+    "syntax_files": 122,
+    "fixtures": 117,
+    "failures": [],
+    "new_assertions_fail_against_old_source": [
+      {
+        "fixture": "policy_change_lock_test.lua",
+        "old_source_exit": 1,
+        "tail": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/toolchains/lua-5.1.5/src/lua: ...pr8c0000gn/T/tmpueduld5b/policy_change_lock_test.lua:26: attempt to call field 'changeWindow' (a nil value)\nstack traceback:\n\t...pr8c0000gn/T/tmpueduld5b/policy_change_lock_test.lua:26: in function 'window'\n\t...pr8c0000gn/T/tmpueduld5b/policy_change_lock_test.lua:29: in main chunk\n\t[C]: ?\n"
+      },
+      {
+        "fixture": "policy_deck_repair_test.lua",
+        "old_source_exit": 1,
+        "tail": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/toolchains/lua-5.1.5/src/lua: ...pr8c0000gn/T/tmpueduld5b/policy_deck_repair_test.lua:307: assertion failed!\nstack traceback:\n\t[C]: in function 'assert'\n\t...pr8c0000gn/T/tmpueduld5b/policy_deck_repair_test.lua:307: in main chunk\n\t[C]: ?\n"
+      }
+    ],
+    "files": {
+      "CivvisControlAgent.lua": "d4855baf33bc29f20c7798395f1b5a42a7406a4b0f6572a3fdc67a85837d7beb",
+      "policy_change_lock_test.lua": "8c8777394d15840b5b272bad4a53c28c9379015445af7482d23c33b8ad8d1477",
+      "policy_deck_repair_test.lua": "398ad535b3ec4d8a6eae6cce0febe3e76621c0b60553d47df552a2fd7e5c5f99"
+    }
+  },
+  "native_after": "Pending shipping and fresh native process readback. Lua fixtures are not native execution.",
+  "screen_scope": "Campus screen observations before and after this controller correction must be analyzed separately; no pooled strength attribution."
+}
