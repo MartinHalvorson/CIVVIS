@@ -3582,6 +3582,47 @@ class TheOperatorsTurnCapOutlivesAStaleEnvironment(unittest.TestCase):
                 self.assertEqual(got, 250)
                 self.assertTrue(warnings)
 
+    def test_an_override_names_the_speed_limit_it_replaces(self):
+        # 650 was set for Online and silently replaced Standard's 500 on 11-03.
+        warnings = []
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / ".civvis-turn-cap"
+            path.write_text("650\n", encoding="utf-8")
+            got = climb.operator_turn_cap(
+                500, path=path, warn=warnings.append, speed="GAMESPEED_STANDARD")
+        self.assertEqual(got, 650)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("overriding 500 (GAMESPEED_STANDARD's own limit)", warnings[0])
+
+
+class EachSpeedPlaysToItsOwnTurnLimit(unittest.TestCase):
+    """`--max-turns` defaulted to 250, Online's limit, whatever the speed."""
+
+    def test_every_speed_without_max_turns(self):
+        for speed, turns in (("GAMESPEED_ONLINE", 250), ("GAMESPEED_QUICK", 330),
+                             ("GAMESPEED_STANDARD", 500), ("GAMESPEED_EPIC", 750),
+                             ("GAMESPEED_MARATHON", 1500)):
+            with self.subTest(speed=speed):
+                self.assertEqual(climb.game_turn_limit(None, speed), turns)
+
+    def test_an_explicit_max_turns_wins(self):
+        self.assertEqual(climb.game_turn_limit(300, "GAMESPEED_STANDARD"), 300)
+
+    def test_a_non_positive_max_turns_is_no_answer(self):
+        self.assertEqual(climb.game_turn_limit(0, "GAMESPEED_STANDARD"), 500)
+
+    def test_an_unknown_speed_warns_and_plays_the_default_speed_limit(self):
+        warnings = []
+        got = climb.game_turn_limit(None, "GAMESPEED_LUDICROUS", warn=warnings.append)
+        self.assertEqual(got, 250)
+        self.assertEqual(len(warnings), 1)
+        self.assertIn("GAMESPEED_LUDICROUS", warnings[0])
+
+    def test_the_parser_leaves_max_turns_to_the_speed(self):
+        source = Path(climb.__file__).read_text(encoding="utf-8")
+        self.assertIn('ap.add_argument("--max-turns", type=int, default=None)', source)
+        self.assertIn("game_turn_limit(args.max_turns, args.speed)", source)
+
 
 class OperatorSeatTests(unittest.TestCase):
     """The per-game seat keys (operator 2026-10-31: random leader, 6p

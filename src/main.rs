@@ -1658,13 +1658,12 @@ fn main() {
                     match from_value.or_else(|| civvis::mirror::state_from_events(&events, None)) {
                         Some(state) => {
                             // The page prints TURN n/<limit>, so take the limit the game
-                            // was created with, as `civvis-orders` does. A fixed 250 was
-                            // only Online's: a Standard game read "TURN 300/250".
-                            let turn_limit = if state.seat.max_turns > 0 {
-                                state.seat.max_turns as u32
-                            } else {
-                                250
-                            };
+                            // was created with, as `civvis-orders` does, else the speed's
+                            // own. A fixed 250 was only Online's: a Standard game read
+                            // "TURN 300/250". Online is the guess only for a seat that
+                            // names neither.
+                            let turn_limit = civvis::mirror::host_turn_limit(&state)
+                                .unwrap_or(civvis::setup::GameSpeed::Online.turn_limit());
                             let rebuilt = civvis::mirror::rebuild_from_state(
                                 &snapshot,
                                 &state,

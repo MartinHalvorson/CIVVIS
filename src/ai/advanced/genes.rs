@@ -2510,6 +2510,8 @@ pub const GENES: &[Gene] = &[
     // Live King 051413Z: Bogota switched the Art Museum and the Archaeological
     // Museum every turn t187-t214; see `BasicAi::activation_keeps_its_building`.
     Gene { tag: "activation-keeps-its-building", field: "activation_keeps_its_building", kind: Kind::HostOnly, enable: AdvancedAi::enable_activation_keeps_its_building, disable: AdvancedAi::disable_activation_keeps_its_building },
+    // Native 002240Z: Mary Leakey needs an Artifact; two empty Museums are not that work.
+    Gene { tag: "artifact-before-more-museums", field: "artifact_before_more_museums", kind: Kind::OptIn, enable: AdvancedAi::enable_artifact_before_more_museums, disable: AdvancedAi::disable_artifact_before_more_museums },
     // Live King 113755Z: Galleys and Quadriremes ahead of the walkers at
     // three cities; see `BasicAi::settler_before_the_navy`.
     Gene { tag: "settler-before-the-navy", field: "settler_before_the_navy", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_before_the_navy, disable: AdvancedAi::disable_settler_before_the_navy },
@@ -4850,6 +4852,7 @@ pub const GENES: &[Gene] = &[
     // route. Under the gene it sails toward the edge of the known sea. See
     // `advanced/maori_founds_from_the_sea.rs`.
     Gene { tag: "founding-voyage", field: "founding_voyage", kind: Kind::OptIn, enable: AdvancedAi::enable_founding_voyage, disable: AdvancedAi::disable_founding_voyage },
+    Gene { tag: "anvil-follows-the-defense", field: "anvil_follows_the_defense", kind: Kind::OptIn, enable: AdvancedAi::enable_anvil_follows_the_defense, disable: AdvancedAi::disable_anvil_follows_the_defense },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

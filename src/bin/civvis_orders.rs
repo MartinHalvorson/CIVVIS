@@ -118,11 +118,12 @@ fn mirror_setup(
         } else {
             fallback_players
         },
-        if state.seat.max_turns > 0 {
-            state.seat.max_turns as u32
-        } else {
-            fallback_turns
-        },
+        // The engine's readback, else the speed's own limit, else the CLI's. The
+        // CLI fallback is a fixed 250 (`civ6_brain` passes no `--max-turns`), so
+        // a Standard seat whose readback failed used to plan to a 250-turn game:
+        // every clock keyed on min(max_turns, turn_limit) -- the halfway
+        // specialization clock, Culture's third -- fired at half its turn.
+        civvis::mirror::host_turn_limit(state).unwrap_or(fallback_turns),
     )
 }
 
@@ -20090,6 +20091,13 @@ mod tests {
         };
         assert_eq!(mirror_setup(&state, 4, 500), (6, 250));
         assert_eq!(mirror_setup(&StateSnapshot::default(), 4, 500), (4, 500));
+        // No readback: the seat's speed, not the CLI's fixed 250.
+        let mut standard = StateSnapshot::default();
+        standard.seat.speed = "GAMESPEED_STANDARD".to_string();
+        standard.seat.max_turns = -1;
+        assert_eq!(mirror_setup(&standard, 4, 250), (4, 500));
+        standard.seat.max_turns = 650;
+        assert_eq!(mirror_setup(&standard, 4, 250), (4, 650));
     }
 
     fn grass(x: i32, y: i32) -> Plot {

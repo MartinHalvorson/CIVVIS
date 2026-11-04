@@ -1,0 +1,15 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "artifact-before-more-museums",
+  "scope": "Four selected disposable native captured-board proposal comparisons from one historical loss. No persistent replay qualification, native execution, artifact delivery, person activation or strength estimate.",
+  "archive": {
+    "path": "docs/eval/2026-11-03-artifact-activation.raw.tar.xz",
+    "sha256": "d9b5e2e9e9162485c796a218b692b2300b92a66707f1d763b84357165ec77cd1"
+  },
+  "members": [
+    "queries/case-153/result.json",
+    "queries/case-160/result.json",
+    "queries/case-175/result.json",
+    "queries/case-176/result.json"
+  ]
+}
