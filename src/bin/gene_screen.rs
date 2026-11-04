@@ -1067,6 +1067,12 @@ struct TraceSample {
     religion: bool,
     #[serde(default)]
     holy_site: bool,
+    /// ⭐ Cities standing behind walls (any wall hit points). The live census
+    /// of the Firaxis field's known cities reads 11% walled at turn 60, 38% at
+    /// 100, 53% at 150 and 64% at 200 (11-04, Standard Immortal), which is
+    /// what a chair's defence is calibrated against. Absent in older batches.
+    #[serde(default)]
+    walled: usize,
 }
 
 impl TraceSample {
@@ -1075,9 +1081,13 @@ impl TraceSample {
         let mut yields = g.player_yield_extras(pid);
         let (mut population, mut wonders, mut districts) = (0i64, 0usize, 0usize);
         let mut holy_site = false;
+        let mut walled = 0usize;
         for cid in &cities {
             yields.add(g.city_yields(*cid));
             if let Some(city) = g.cities.get(cid) {
+                if g.city_max_wall_hp(city) > 0 {
+                    walled += 1;
+                }
                 population += i64::from(city.pop);
                 wonders += city.wonders.len();
                 districts += city.districts.len();
@@ -1105,6 +1115,7 @@ impl TraceSample {
             districts,
             religion: g.players[pid].religion.is_some(),
             holy_site,
+            walled,
         }
     }
 }
@@ -9133,6 +9144,7 @@ mod tests {
             districts: 12,
             religion: true,
             holy_site: true,
+            walled: 0,
         }];
         let text = serde_json::to_string(&traced).expect("serializes");
         let back: Row = serde_json::from_str(&text).expect("parses");
