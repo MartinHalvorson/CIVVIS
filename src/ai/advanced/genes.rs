@@ -4912,6 +4912,13 @@ pub const GENES: &[Gene] = &[
     // turn fewer than the speed's opening walk budget. Russia and Canada are
     // exempt. See `advanced/frost_capital.rs`.
     Gene { tag: "capital-leaves-the-frost", field: "capital_leaves_the_frost", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_leaves_the_frost, disable: AdvancedAi::disable_capital_leaves_the_frost },
+    // Live Lv 7 Standard, Gran Colombia 2026-11-04T015124Z, eliminated at turn
+    // 18: Vietnam at 4.6x our power stood within 8 tiles from turn 15, the
+    // answer was Masonry, the only Warrior explored ten tiles away and the
+    // capital held no soldier. Under the gene a stronger major's soldier near
+    // a city with no soldier drafts the nearest idle one home. See
+    // `ai/garrison_before_the_surprise.rs`.
+    Gene { tag: "garrison-before-the-surprise", field: "garrison_before_the_surprise", kind: Kind::OptIn, enable: AdvancedAi::enable_garrison_before_the_surprise, disable: AdvancedAi::disable_garrison_before_the_surprise },
     // Live Lv 7 Immortal Standard (11-03/04): Gold sat at 100-190 through
     // t20-t45 because Standard prices put a Warrior at 160 and a Builder near
     // 200, while a border tile costs 50-75; the purchase phase wants
