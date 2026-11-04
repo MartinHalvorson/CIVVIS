@@ -6517,7 +6517,18 @@ pub struct AdvancedAi {
     city_state_harvest_cooldown: u32,
     /// The city-state the harvest declared on, while that war runs.
     city_state_harvest_war: Option<String>,
+    /// `capital-leaves-the-frost`: while the empire has no city, a site's
+    /// frozen ground — snow, tundra and polar ice in its two rings — is
+    /// priced against it, and a first Settler about to found on snow or
+    /// tundra steps toward warmer ground and looks first, within the speed's
+    /// opening budget. See `advanced/frost_capital.rs`. Off by default.
+    capital_leaves_the_frost: bool,
+    /// Tiles the first Settler stood on when `capital_leaves_the_frost`
+    /// stepped it off frozen ground; a look never returns to one.
+    capital_frost_looks: Vec<Pos>,
     // ---- append: e-f ------------------------------------------------
+    /// Give a threatened sole capital opening defence priority. Opt-in.
+    first_capital_before_the_camp: bool,
     /// `founding-voyage`: an embarked Settler of a seat with no city sails to
     /// the edge of the known sea when no site is reachable. See
     /// `advanced/maori_founds_from_the_sea.rs`. Off by default.
@@ -7511,6 +7522,11 @@ pub struct AdvancedAi {
     /// Defend or Relieve task force may close on the attackers of our own
     /// city. See `advanced/guns_stay_out_of_reach.rs`.
     guns_stay_out_of_reach_3: bool,
+    /// `generals-lead-the-army`: the live bridge keeps a Great General or a
+    /// Comandante General with each front of our land army instead of
+    /// retiring it on arrival. See `advanced/generals_lead_the_army.rs`. Off
+    /// by default.
+    generals_lead_the_army: bool,
     /// `garrison-before-the-surprise`: a stronger major's soldier near a city
     /// with no soldier drafts the nearest idle one home. The behaviour lives
     /// on `BasicAi`; see `ai/garrison_before_the_surprise.rs`. Off by default.
@@ -8529,6 +8545,10 @@ pub struct AdvancedAi {
     /// soldier garrisons each Amenity-short city. The behaviour lives on
     /// `BasicAi::retainers_garrison_the_short_cities`. Off by default.
     retainers_garrison_the_short_cities: bool,
+    /// `ranged-finish-on-the-mean`: the live finishing volley commits a line
+    /// whose every attacker is ranged on its centre-roll damage. See
+    /// `advanced/ranged_finish.rs`. Off by default.
+    ranged_finish_on_the_mean: bool,
     // ---- append: s-s ------------------------------------------------
     /// `science-specializes-earlier`: an assigned Science lane leaves the
     /// development half at a third of the clock, as Culture already does.
@@ -9937,6 +9957,8 @@ mod treatment_flags;
 
 mod age_closer;
 mod domination_research_commitment;
+/// `capital-leaves-the-frost`: see `advanced/frost_capital.rs`.
+mod frost_capital;
 mod granary_payback;
 /// Great People never pile up: the `great-person-housing` gene's ladder of
 /// remedies for a class earned and blocked. See
@@ -10174,6 +10196,7 @@ pub(crate) mod contested_land;
 /// and a religious unit steps out of a raider's reach. Two opt-in genes; see
 /// `advanced/missionary_field.rs`.
 mod apostle_evasion;
+mod first_capital_defense;
 /// An assigned lane's first-half production dispatch. Opt-in gene
 /// `lane-delegates-production`; see `advanced/lane_delegates_production.rs`.
 mod lane_delegates_production;
@@ -10191,6 +10214,9 @@ mod outclassed_siege;
 /// planned moves actually crossed. Opt-in gene `own-column-is-not-a-refusal`;
 /// see `advanced/own_column.rs`.
 mod own_column;
+/// `ranged-finish-on-the-mean`: a ranged-only finishing volley commits on
+/// its expected roll. See `advanced/ranged_finish.rs`.
+mod ranged_finish;
 /// Recon disruption: the pass picket. One opt-in gene; see
 /// `advanced/recon_disruption.rs`.
 mod recon_disruption;
@@ -10450,6 +10476,9 @@ mod first_launch_research;
 /// `founder-converts-its-own-cities`: a founder's spreaders convert our own
 /// cities before any foreign one. See `advanced/founder_home.rs`.
 mod founder_home;
+/// `generals-lead-the-army`: the live bridge keeps a General with each front
+/// instead of retiring it. See `advanced/generals_lead_the_army.rs`.
+mod generals_lead_the_army;
 /// `gold-buys-the-backlog-builder`: see `advanced/gold_buys_the_backlog_builder.rs`.
 mod gold_buys_the_backlog_builder;
 /// `gold-buys-the-opening-builder`: a builderless opening buys its Builder
@@ -11695,7 +11724,10 @@ impl AdvancedAi {
             city_state_harvest_target: None,
             city_state_harvest_cooldown: 0,
             city_state_harvest_war: None,
+            capital_leaves_the_frost: false,
+            capital_frost_looks: Vec::new(),
             // ---- append: e-f ----------------------------------------
+            first_capital_before_the_camp: false,
             founding_voyage: false,
             first_launch_keeps_research: false,
             first_pad_in_the_forge: false,
@@ -11848,6 +11880,7 @@ impl AdvancedAi {
             gold_buys_the_backlog_builder: false,
             guns_stay_out_of_reach_2: false,
             guns_stay_out_of_reach_3: false,
+            generals_lead_the_army: false,
             garrison_before_the_surprise: false,
             // ---- append: l-o ----------------------------------------
             old_techs_before_the_beeline: false,
@@ -12001,6 +12034,7 @@ impl AdvancedAi {
             racer_spy_searched: BTreeMap::new(),
             religion_seat_defends_its_faith: false,
             retainers_garrison_the_short_cities: false,
+            ranged_finish_on_the_mean: false,
             // ---- append: s-s ----------------------------------------
             science_specializes_earlier: false,
             spaceport_above_the_sea: false,
@@ -38353,6 +38387,9 @@ impl AdvancedAi {
             self.settlement_static_value_uncached(g, pid, pos)
         };
         value -= self.settlement_safety_penalty(g, pid, pos, visible);
+        // `capital-leaves-the-frost`: the first city's frozen ground. Zero
+        // with the gene off and once the empire holds a city.
+        value -= self.frost_capital_penalty(g, pid, pos);
         // `contested_land_first`: the ground between us and a neighbour,
         // while the army can hold it. Zero with the gene off.
         value += self.contested_land_credit(g, pid, pos);
@@ -41596,6 +41633,12 @@ impl AdvancedAi {
                     .unwrap_or(target)
             });
             if target == Some(current) && g.can_found_city(uid) {
+                // `capital-leaves-the-frost`: on snow or tundra, step toward
+                // warmer ground and look before founding, while the speed's
+                // opening budget allows. `false` with the gene off.
+                if self.frost_capital_look(g, pid, uid, current) {
+                    return true;
+                }
                 if self.settlement_safety
                     && self.settlement_tile_risk(g, pid, Some(uid), current, &visible)
                         > SETTLER_STEP_RISK_LIMIT
