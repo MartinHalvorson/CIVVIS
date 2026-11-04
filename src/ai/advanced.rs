@@ -5548,6 +5548,8 @@ pub struct AdvancedAi {
     /// Partners asked for an alliance, by the turn asked. Written only while
     /// `alliance_remembers_the_refusal` is on.
     alliance_ask_turns: BTreeMap<usize, u32>,
+    /// Opt-in: preserve the original capital's needed Governor Loyalty.
+    capital_keeps_its_governor: bool,
     // ---- append: c-d ------------------------------------------------
     /// `campus-unlock-every-lane`: every seat, not only Domination, takes
     /// the Campus unlock (Writing) once it holds two cities, in the slot the
@@ -11576,6 +11578,7 @@ impl AdvancedAi {
             apostle_transit_keeps_the_cover: false,
             alliance_remembers_the_refusal: false,
             alliance_ask_turns: BTreeMap::new(),
+            capital_keeps_its_governor: false,
             // ---- append: c-d ----------------------------------------
             campus_unlock_every_lane: false,
             culture_seat_theater_first_2: false,
