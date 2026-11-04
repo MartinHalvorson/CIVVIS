@@ -9503,7 +9503,6 @@ impl AdvancedAi {
         self.camps_close_the_age_2 = false;
     }
 
-    // ---- append: a-b ------------------------------------------------
     /// Keep a Governor whose departure would leave our original capital losing Loyalty.
     pub fn enable_capital_keeps_its_governor(&mut self) {
         self.capital_keeps_its_governor = true;
@@ -9516,6 +9515,7 @@ impl AdvancedAi {
         self.base.capital_keeps_its_governor = false;
     }
 
+    // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------

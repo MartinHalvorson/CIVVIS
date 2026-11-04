@@ -4962,9 +4962,9 @@ pub const GENES: &[Gene] = &[
     // brings a shooter (no return damage; the kill plan fires it first) and
     // `CAMP_AGE_MARGIN` times the guard. See `advanced/camps_close_the_age.rs`.
     Gene { tag: "camps-close-the-age-2", field: "camps_close_the_age_2", kind: Kind::OptIn, enable: AdvancedAi::enable_camps_close_the_age_2, disable: AdvancedAi::disable_camps_close_the_age_2 },
-    // ---- append: a-b ------------------------------------------------
     // Preserve the original capital's Loyalty anchor; default OFF.
     Gene { tag: "capital-keeps-its-governor", field: "capital_keeps_its_governor", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_governor, disable: AdvancedAi::disable_capital_keeps_its_governor },
+    // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
