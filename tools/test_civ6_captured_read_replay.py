@@ -11,6 +11,47 @@ from unittest import mock
 import civ6_captured_read_replay as replay
 
 
+class ReadHashTests(unittest.TestCase):
+    def test_repeated_objects_keep_each_read_but_hash_each_run_once(self):
+        first, second = bytes(bytearray(b"first")), bytes(bytearray(b"second"))
+        reads = [first] * 18 + [second] * 3 + [first] * 2
+        expected = [replay.sha(data) for data in reads]
+        with mock.patch.object(replay, "sha", wraps=replay.sha) as digest:
+            self.assertEqual(replay.read_sha256(reads), expected)
+        self.assertEqual(digest.call_count, 3)
+        self.assertEqual(replay.read_sha256([]), [])
+
+    def test_equal_distinct_objects_are_not_cached_by_content(self):
+        first = bytes(bytearray(b"same"))
+        second = bytes(bytearray(b"same"))
+        self.assertIsNot(first, second)
+        with mock.patch.object(replay, "sha", wraps=replay.sha) as digest:
+            hashes = replay.read_sha256([first, second, first])
+        self.assertEqual(hashes, [replay.sha(first)] * 3)
+        self.assertEqual(digest.call_count, 3)
+
+    def test_mutable_buffers_are_rehashed_even_when_identity_is_repeated(self):
+        data = bytearray(b"first")
+        expected = [replay.sha(data), replay.sha(b"other")]
+
+        def changing_reads():
+            yield data
+            data[:] = b"other"
+            yield data
+
+        self.assertEqual(replay.read_sha256(changing_reads()), expected)
+
+    def test_cache_does_not_survive_the_call_or_hide_invalid_input(self):
+        data = b"snapshot"
+        expected = replay.sha(data)
+        with mock.patch.object(replay, "sha", wraps=replay.sha) as digest:
+            self.assertEqual(replay.read_sha256([data, data]), [expected] * 2)
+            self.assertEqual(replay.read_sha256([data]), [expected])
+        self.assertEqual(digest.call_count, 2)
+        with self.assertRaises(TypeError):
+            replay.read_sha256([None])
+
+
 @unittest.skipUnless(hasattr(os, "mkfifo"), "ordered input replay requires POSIX FIFOs")
 class FifoTests(unittest.TestCase):
     def test_writer_stays_connected_until_the_reader_consumes_its_bytes(self):
