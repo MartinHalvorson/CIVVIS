@@ -4692,6 +4692,12 @@ pub struct Player {
     /// currently express.
     #[serde(default)]
     pub citizen_food_bias: f64,
+    /// Whether this player's cities keep growing into their housing cap: the
+    /// citizen strategy neither halves the Food weight nor drops the growth
+    /// surplus at the cap, as the host's own governor plays the live seat.
+    /// Set only by `gene_screen --seat-host-citizens`; off, nothing changes.
+    #[serde(default)]
+    pub citizens_grow_into_the_cap: bool,
     /// What this empire's plan asks of each of its cities, keyed by city id.
     ///
     /// The per-city counterpart of `citizen_food_bias`, and for the same
@@ -5076,6 +5082,7 @@ impl Player {
             gold_per_turn: 0.0,
             bankruptcy_amenity_penalty: 0,
             citizen_food_bias: 0.0,
+            citizens_grow_into_the_cap: false,
             city_directives: BTreeMap::new(),
             faith: 0.0,
             strategic_resources: BTreeMap::new(),
