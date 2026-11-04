@@ -1,0 +1,916 @@
+{
+  "scope": "Selected original native StateCity fields used by the postcondition checker, with unrelated city fields omitted. Not complete replay input or causal execution attribution.",
+  "source_events_sha256": {
+    "civvis-20261103T070446Z": "cd88efd7c862026d680263f3b52c36675400c8406e6e54227348e09b65b10bf0",
+    "civvis-20261103T222149Z": "b40c5e308db7490084b95abbb4f73c653eaf229e75094c772ca60aeeb8c8e4e1"
+  },
+  "cases": [
+    {
+      "run": "civvis-20261103T070446Z",
+      "turn": 160,
+      "subject": 327684,
+      "verb": "DISTRICT_THEATER",
+      "legacy_verdict": {
+        "checked_on": 161,
+        "ctx": "agent",
+        "kind": "order_verified",
+        "order_kind": "produce",
+        "run": "civvis-20261103T070446Z",
+        "subject": 327684,
+        "t": 1793690084,
+        "turn": 160,
+        "utc": "2026-11-03T07:14:44.319Z",
+        "verb": "DISTRICT_THEATER"
+      },
+      "expected_postcondition": "not_verified",
+      "before": {
+        "id": 327684,
+        "name": "Toowoomba",
+        "x": 64,
+        "y": 12,
+        "producing": "BUILDING_FACTORY",
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB"
+        ],
+        "pillaged_buildings": [],
+        "districts": [
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_INDUSTRIAL_ZONE",
+            "wall_damage": 0,
+            "x": 63,
+            "y": 14
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_CAMPUS",
+            "wall_damage": 0,
+            "x": 65,
+            "y": 12
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 200,
+            "max_wall_damage": 400,
+            "pillaged": false,
+            "type": "DISTRICT_CITY_CENTER",
+            "wall_damage": 0,
+            "x": 64,
+            "y": 12
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": true,
+            "type": "DISTRICT_THEATER",
+            "wall_damage": 0,
+            "x": 64,
+            "y": 11
+          }
+        ],
+        "wonders": []
+      },
+      "after": {
+        "id": 327684,
+        "name": "Toowoomba",
+        "x": 64,
+        "y": 12,
+        "producing": "BUILDING_FACTORY",
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_RESEARCH_LAB"
+        ],
+        "pillaged_buildings": [],
+        "districts": [
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_INDUSTRIAL_ZONE",
+            "wall_damage": 0,
+            "x": 63,
+            "y": 14
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_CAMPUS",
+            "wall_damage": 0,
+            "x": 65,
+            "y": 12
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 200,
+            "max_wall_damage": 400,
+            "pillaged": false,
+            "type": "DISTRICT_CITY_CENTER",
+            "wall_damage": 0,
+            "x": 64,
+            "y": 12
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": true,
+            "type": "DISTRICT_THEATER",
+            "wall_damage": 0,
+            "x": 64,
+            "y": 11
+          }
+        ],
+        "wonders": []
+      }
+    },
+    {
+      "run": "civvis-20261103T070446Z",
+      "turn": 160,
+      "subject": 393221,
+      "verb": "DISTRICT_CAMPUS",
+      "legacy_verdict": {
+        "checked_on": 161,
+        "ctx": "agent",
+        "kind": "order_verified",
+        "order_kind": "produce",
+        "run": "civvis-20261103T070446Z",
+        "subject": 393221,
+        "t": 1793690084,
+        "turn": 160,
+        "utc": "2026-11-03T07:14:44.319Z",
+        "verb": "DISTRICT_CAMPUS"
+      },
+      "expected_postcondition": "not_verified",
+      "before": {
+        "id": 393221,
+        "name": "Adelaide",
+        "x": 67,
+        "y": 13,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_CONSULATE"
+        ],
+        "pillaged_buildings": [
+          "BUILDING_LIBRARY",
+          "BUILDING_UNIVERSITY"
+        ],
+        "districts": [
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 200,
+            "max_wall_damage": 400,
+            "pillaged": false,
+            "type": "DISTRICT_CITY_CENTER",
+            "wall_damage": 0,
+            "x": 67,
+            "y": 13
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_DIPLOMATIC_QUARTER",
+            "wall_damage": 0,
+            "x": 66,
+            "y": 13
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": true,
+            "type": "DISTRICT_CAMPUS",
+            "wall_damage": 0,
+            "x": 67,
+            "y": 12
+          }
+        ],
+        "wonders": []
+      },
+      "after": {
+        "id": 393221,
+        "name": "Adelaide",
+        "x": 67,
+        "y": 13,
+        "producing": "BUILDING_SEWER",
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_CONSULATE"
+        ],
+        "pillaged_buildings": [
+          "BUILDING_LIBRARY",
+          "BUILDING_UNIVERSITY"
+        ],
+        "districts": [
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 200,
+            "max_wall_damage": 400,
+            "pillaged": false,
+            "type": "DISTRICT_CITY_CENTER",
+            "wall_damage": 0,
+            "x": 67,
+            "y": 13
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_DIPLOMATIC_QUARTER",
+            "wall_damage": 0,
+            "x": 66,
+            "y": 13
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": true,
+            "type": "DISTRICT_CAMPUS",
+            "wall_damage": 0,
+            "x": 67,
+            "y": 12
+          }
+        ],
+        "wonders": []
+      }
+    },
+    {
+      "run": "civvis-20261103T222149Z",
+      "turn": 290,
+      "subject": 393221,
+      "verb": "DISTRICT_CAMPUS",
+      "legacy_verdict": {
+        "checked_on": 291,
+        "ctx": "agent",
+        "kind": "order_verified",
+        "order_kind": "produce",
+        "run": "civvis-20261103T222149Z",
+        "subject": 393221,
+        "t": 1793745511,
+        "turn": 290,
+        "utc": "2026-11-03T22:38:31.599Z",
+        "verb": "DISTRICT_CAMPUS"
+      },
+      "expected_postcondition": "not_verified",
+      "before": {
+        "id": 393221,
+        "name": "Pydna",
+        "x": 64,
+        "y": 31,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_MARKET"
+        ],
+        "pillaged_buildings": [
+          "BUILDING_LIBRARY"
+        ],
+        "districts": [
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": true,
+            "type": "DISTRICT_CAMPUS",
+            "wall_damage": 0,
+            "x": 65,
+            "y": 33
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_NEIGHBORHOOD",
+            "wall_damage": 0,
+            "x": 64,
+            "y": 33
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_AQUEDUCT",
+            "wall_damage": 0,
+            "x": 64,
+            "y": 32
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 200,
+            "max_wall_damage": 400,
+            "pillaged": false,
+            "type": "DISTRICT_CITY_CENTER",
+            "wall_damage": 0,
+            "x": 64,
+            "y": 31
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_COMMERCIAL_HUB",
+            "wall_damage": 0,
+            "x": 63,
+            "y": 31
+          }
+        ],
+        "wonders": []
+      },
+      "after": {
+        "id": 393221,
+        "name": "Pydna",
+        "x": 64,
+        "y": 31,
+        "producing": "DISTRICT_NEIGHBORHOOD",
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_MARKET"
+        ],
+        "pillaged_buildings": [
+          "BUILDING_LIBRARY"
+        ],
+        "districts": [
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": true,
+            "type": "DISTRICT_CAMPUS",
+            "wall_damage": 0,
+            "x": 65,
+            "y": 33
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_NEIGHBORHOOD",
+            "wall_damage": 0,
+            "x": 64,
+            "y": 33
+          },
+          {
+            "complete": false,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_NEIGHBORHOOD",
+            "wall_damage": 0,
+            "x": 65,
+            "y": 32
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_AQUEDUCT",
+            "wall_damage": 0,
+            "x": 64,
+            "y": 32
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 200,
+            "max_wall_damage": 400,
+            "pillaged": false,
+            "type": "DISTRICT_CITY_CENTER",
+            "wall_damage": 0,
+            "x": 64,
+            "y": 31
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_COMMERCIAL_HUB",
+            "wall_damage": 0,
+            "x": 63,
+            "y": 31
+          }
+        ],
+        "wonders": []
+      }
+    },
+    {
+      "run": "civvis-20261103T222149Z",
+      "turn": 301,
+      "subject": 196610,
+      "verb": "DISTRICT_INDUSTRIAL_ZONE",
+      "legacy_verdict": {
+        "checked_on": 302,
+        "ctx": "agent",
+        "kind": "order_verified",
+        "order_kind": "produce",
+        "run": "civvis-20261103T222149Z",
+        "subject": 196610,
+        "t": 1793745570,
+        "turn": 301,
+        "utc": "2026-11-03T22:39:30.573Z",
+        "verb": "DISTRICT_INDUSTRIAL_ZONE"
+      },
+      "expected_postcondition": "not_verified",
+      "before": {
+        "id": 196610,
+        "name": "Alexandria",
+        "x": 65,
+        "y": 36,
+        "producing": "DISTRICT_NEIGHBORHOOD",
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_VENETIAN_ARSENAL",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "pillaged_buildings": [
+          "BUILDING_LIBRARY",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_FACTORY",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "districts": [
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 200,
+            "max_wall_damage": 400,
+            "pillaged": false,
+            "type": "DISTRICT_CITY_CENTER",
+            "wall_damage": 49,
+            "x": 65,
+            "y": 36
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_AQUEDUCT",
+            "wall_damage": 0,
+            "x": 64,
+            "y": 36
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": true,
+            "type": "DISTRICT_CAMPUS",
+            "wall_damage": 0,
+            "x": 65,
+            "y": 35
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_THEATER",
+            "wall_damage": 0,
+            "x": 64,
+            "y": 35
+          },
+          {
+            "complete": false,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_NEIGHBORHOOD",
+            "wall_damage": 0,
+            "x": 63,
+            "y": 35
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_WONDER",
+            "wall_damage": 0,
+            "x": 66,
+            "y": 34
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": true,
+            "type": "DISTRICT_INDUSTRIAL_ZONE",
+            "wall_damage": 0,
+            "x": 65,
+            "y": 34
+          }
+        ],
+        "wonders": [
+          {
+            "type": "BUILDING_VENETIAN_ARSENAL",
+            "x": 66,
+            "y": 34
+          }
+        ]
+      },
+      "after": {
+        "id": 196610,
+        "name": "Alexandria",
+        "x": 65,
+        "y": 36,
+        "producing": "DISTRICT_NEIGHBORHOOD",
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_GRANARY",
+          "BUILDING_WALLS",
+          "BUILDING_WATER_MILL",
+          "BUILDING_AMPHITHEATER",
+          "BUILDING_WORKSHOP",
+          "BUILDING_MUSEUM_ART",
+          "BUILDING_FACTORY",
+          "BUILDING_VENETIAN_ARSENAL",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "pillaged_buildings": [
+          "BUILDING_WORKSHOP",
+          "BUILDING_FACTORY",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "districts": [
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 200,
+            "max_wall_damage": 400,
+            "pillaged": false,
+            "type": "DISTRICT_CITY_CENTER",
+            "wall_damage": 49,
+            "x": 65,
+            "y": 36
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_AQUEDUCT",
+            "wall_damage": 0,
+            "x": 64,
+            "y": 36
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_THEATER",
+            "wall_damage": 0,
+            "x": 64,
+            "y": 35
+          },
+          {
+            "complete": false,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_NEIGHBORHOOD",
+            "wall_damage": 0,
+            "x": 63,
+            "y": 35
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_WONDER",
+            "wall_damage": 0,
+            "x": 66,
+            "y": 34
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": true,
+            "type": "DISTRICT_INDUSTRIAL_ZONE",
+            "wall_damage": 0,
+            "x": 65,
+            "y": 34
+          }
+        ],
+        "wonders": [
+          {
+            "type": "BUILDING_VENETIAN_ARSENAL",
+            "x": 66,
+            "y": 34
+          }
+        ]
+      }
+    },
+    {
+      "run": "civvis-20261103T070446Z",
+      "turn": 152,
+      "subject": 65536,
+      "verb": "DISTRICT_NEIGHBORHOOD",
+      "legacy_verdict": {
+        "checked_on": 153,
+        "ctx": "agent",
+        "kind": "order_verified",
+        "order_kind": "produce",
+        "run": "civvis-20261103T070446Z",
+        "subject": 65536,
+        "t": 1793690038,
+        "turn": 152,
+        "utc": "2026-11-03T07:13:58.275Z",
+        "verb": "DISTRICT_NEIGHBORHOOD"
+      },
+      "expected_postcondition": "verified",
+      "before": {
+        "id": 65536,
+        "name": "Canberra",
+        "x": 53,
+        "y": 19,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_LIGHTHOUSE",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_FACTORY",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "pillaged_buildings": [],
+        "districts": [
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_INDUSTRIAL_ZONE",
+            "wall_damage": 0,
+            "x": 53,
+            "y": 21
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_GOVERNMENT",
+            "wall_damage": 0,
+            "x": 52,
+            "y": 21
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_THEATER",
+            "wall_damage": 0,
+            "x": 54,
+            "y": 19
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 200,
+            "max_wall_damage": 400,
+            "pillaged": false,
+            "type": "DISTRICT_CITY_CENTER",
+            "wall_damage": 2,
+            "x": 53,
+            "y": 19
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": true,
+            "type": "DISTRICT_NEIGHBORHOOD",
+            "wall_damage": 0,
+            "x": 55,
+            "y": 18
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_CAMPUS",
+            "wall_damage": 0,
+            "x": 54,
+            "y": 18
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_HARBOR",
+            "wall_damage": 0,
+            "x": 53,
+            "y": 18
+          }
+        ],
+        "wonders": []
+      },
+      "after": {
+        "id": 65536,
+        "name": "Canberra",
+        "x": 53,
+        "y": 19,
+        "buildings": [
+          "BUILDING_MONUMENT",
+          "BUILDING_PALACE",
+          "BUILDING_GRANARY",
+          "BUILDING_LIBRARY",
+          "BUILDING_WALLS",
+          "BUILDING_LIGHTHOUSE",
+          "BUILDING_UNIVERSITY",
+          "BUILDING_WORKSHOP",
+          "BUILDING_FACTORY",
+          "BUILDING_RESEARCH_LAB",
+          "BUILDING_GOV_CONQUEST",
+          "BUILDING_GOV_FAITH",
+          "BUILDING_COAL_POWER_PLANT"
+        ],
+        "pillaged_buildings": [],
+        "districts": [
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_INDUSTRIAL_ZONE",
+            "wall_damage": 0,
+            "x": 53,
+            "y": 21
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_GOVERNMENT",
+            "wall_damage": 0,
+            "x": 52,
+            "y": 21
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_THEATER",
+            "wall_damage": 0,
+            "x": 54,
+            "y": 19
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 200,
+            "max_wall_damage": 400,
+            "pillaged": false,
+            "type": "DISTRICT_CITY_CENTER",
+            "wall_damage": 2,
+            "x": 53,
+            "y": 19
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_NEIGHBORHOOD",
+            "wall_damage": 0,
+            "x": 55,
+            "y": 18
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_CAMPUS",
+            "wall_damage": 0,
+            "x": 54,
+            "y": 18
+          },
+          {
+            "complete": true,
+            "damage": 0,
+            "max_damage": 0,
+            "max_wall_damage": 0,
+            "pillaged": false,
+            "type": "DISTRICT_HARBOR",
+            "wall_damage": 0,
+            "x": 53,
+            "y": 18
+          }
+        ],
+        "wonders": []
+      }
+    }
+  ]
+}
