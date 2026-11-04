@@ -9415,6 +9415,17 @@ impl AdvancedAi {
         self.generals_lead_the_army = false;
     }
 
+    /// Opt-in gene `capital-leaves-the-frost`; see
+    /// [`Self::capital_leaves_the_frost`].
+    pub fn enable_capital_leaves_the_frost(&mut self) {
+        self.capital_leaves_the_frost = true;
+    }
+
+    /// The twin of `enable_capital_leaves_the_frost`.
+    pub fn disable_capital_leaves_the_frost(&mut self) {
+        self.capital_leaves_the_frost = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

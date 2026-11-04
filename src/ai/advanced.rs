@@ -6517,6 +6517,15 @@ pub struct AdvancedAi {
     city_state_harvest_cooldown: u32,
     /// The city-state the harvest declared on, while that war runs.
     city_state_harvest_war: Option<String>,
+    /// `capital-leaves-the-frost`: while the empire has no city, a site's
+    /// frozen ground — snow, tundra and polar ice in its two rings — is
+    /// priced against it, and a first Settler about to found on snow or
+    /// tundra steps toward warmer ground and looks first, within the speed's
+    /// opening budget. See `advanced/frost_capital.rs`. Off by default.
+    capital_leaves_the_frost: bool,
+    /// Tiles the first Settler stood on when `capital_leaves_the_frost`
+    /// stepped it off frozen ground; a look never returns to one.
+    capital_frost_looks: Vec<Pos>,
     // ---- append: e-f ------------------------------------------------
     /// Give a threatened sole capital opening defence priority. Opt-in.
     first_capital_before_the_camp: bool,
@@ -9944,6 +9953,8 @@ mod treatment_flags;
 
 mod age_closer;
 mod domination_research_commitment;
+/// `capital-leaves-the-frost`: see `advanced/frost_capital.rs`.
+mod frost_capital;
 mod granary_payback;
 /// Great People never pile up: the `great-person-housing` gene's ladder of
 /// remedies for a class earned and blocked. See
@@ -11709,6 +11720,8 @@ impl AdvancedAi {
             city_state_harvest_target: None,
             city_state_harvest_cooldown: 0,
             city_state_harvest_war: None,
+            capital_leaves_the_frost: false,
+            capital_frost_looks: Vec::new(),
             // ---- append: e-f ----------------------------------------
             first_capital_before_the_camp: false,
             founding_voyage: false,
@@ -38369,6 +38382,9 @@ impl AdvancedAi {
             self.settlement_static_value_uncached(g, pid, pos)
         };
         value -= self.settlement_safety_penalty(g, pid, pos, visible);
+        // `capital-leaves-the-frost`: the first city's frozen ground. Zero
+        // with the gene off and once the empire holds a city.
+        value -= self.frost_capital_penalty(g, pid, pos);
         // `contested_land_first`: the ground between us and a neighbour,
         // while the army can hold it. Zero with the gene off.
         value += self.contested_land_credit(g, pid, pos);
@@ -41612,6 +41628,12 @@ impl AdvancedAi {
                     .unwrap_or(target)
             });
             if target == Some(current) && g.can_found_city(uid) {
+                // `capital-leaves-the-frost`: on snow or tundra, step toward
+                // warmer ground and look before founding, while the speed's
+                // opening budget allows. `false` with the gene off.
+                if self.frost_capital_look(g, pid, uid, current) {
+                    return true;
+                }
                 if self.settlement_safety
                     && self.settlement_tile_risk(g, pid, Some(uid), current, &visible)
                         > SETTLER_STEP_RISK_LIMIT

@@ -1,0 +1,13 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "capital-leaves-the-frost",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Both cases are the committed turn-1 fixtures data/fixtures/capital_frost/*.jsonl (live runs 20261104T054226Z snow and 20261104T015124Z tundra, Gran Colombia Immortal Standard), queried with each run's own requested genome on a ci-profile civvis_orders built from the branch (base 4cde232, the revision both games played). Each off arm reproduces its live FOUND_CITY (civ6 (26,6) and (60,37)); each on arm instead steps the Settler off the frozen ground (MOVE_TO (25,7) and (60,36)).",
+  "archive": {
+    "path": "docs/eval/2026-11-04-capital-leaves-the-frost.native-queries.tar.xz",
+    "sha256": "31891226601fe6e050aaab3e2e03e435e22121311a420475a4125dc53fb9e0bf"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json"
+  ]
+}
