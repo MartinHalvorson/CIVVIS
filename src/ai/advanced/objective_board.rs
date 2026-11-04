@@ -1391,6 +1391,11 @@ impl AdvancedAi {
 
         // ClearCamp: camps within reach of a city, early.
         if !arena && turn < g.standard_duration(CAMP_TURN_LIMIT) {
+            // `camps-close-the-age`: a seat a camp or two short of a Normal
+            // Age raises every ClearCamp row, asks two bodies of each, and
+            // dates them to the era's end. See `advanced/camps_close_the_age.rs`.
+            let camp_age = self.camp_age_short(g, pid).is_some();
+            let camp_age_deadline = camp_age.then(|| self.camp_age_deadline(g)).flatten();
             for camp in g.barb_camps.keys() {
                 let home = our_cities
                     .iter()
@@ -1430,19 +1435,30 @@ impl AdvancedAi {
                 } else {
                     guard_strength
                 };
+                let bodies = if near { CAMP_NEAR_BODIES } else { 0 };
                 rows.push(Objective {
                     kind: ObjectiveKind::ClearCamp,
                     key: ObjectiveKey::Camp(*camp),
                     at: *camp,
-                    value: CAMP_VALUE + guard_cost,
+                    value: CAMP_VALUE
+                        + guard_cost
+                        + if camp_age {
+                            super::camps_close_the_age::CAMP_AGE_PREMIUM
+                        } else {
+                            0.0
+                        },
                     requirement: ForceNeed {
                         strength: guard_strength * CAMP_MARGIN,
                         melee: 1,
                         ranged: 0,
                         siege: 0,
-                        bodies: if near { CAMP_NEAR_BODIES } else { 0 },
+                        bodies: if camp_age {
+                            bodies.max(super::camps_close_the_age::CAMP_AGE_BODIES)
+                        } else {
+                            bodies
+                        },
                     },
-                    deadline: None,
+                    deadline: camp_age_deadline,
                     state: RowState::Open,
                     depends_on: None,
                     land: true,
@@ -3956,3 +3972,6 @@ mod siege_member_tests;
 
 #[cfg(test)]
 mod breaker_match_tests;
+
+#[cfg(test)]
+mod camp_age_tests;

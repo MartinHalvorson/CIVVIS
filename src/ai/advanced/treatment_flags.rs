@@ -9471,6 +9471,16 @@ impl AdvancedAi {
         self.slots_survive_the_roll = false;
     }
 
+    /// Opt-in gene `camps-close-the-age`; see [`Self::camps_close_the_age`].
+    pub fn enable_camps_close_the_age(&mut self) {
+        self.camps_close_the_age = true;
+    }
+
+    /// The twin of `enable_camps_close_the_age`.
+    pub fn disable_camps_close_the_age(&mut self) {
+        self.camps_close_the_age = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
