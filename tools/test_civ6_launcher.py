@@ -167,5 +167,44 @@ class WaitForMainMenuTest(unittest.TestCase):
         asked.assert_not_called()
 
 
+class OwnedFailedStartupTest(unittest.TestCase):
+    """A child that hosted no game is stopped even past a refused quit (2026-11-04)."""
+
+    def child(self, alive: bool = True) -> mock.Mock:
+        process = mock.Mock(pid=34853)
+        process.poll.return_value = None if alive else 0
+        return process
+
+    def test_a_graceful_stop_is_all_it_takes_on_a_healthy_host(self) -> None:
+        process = self.child()
+        with mock.patch.object(launcher, "stop", return_value=True):
+            self.assertTrue(launcher.stop_owned_failed_startup(process))
+        process.kill.assert_not_called()
+
+    def test_our_child_is_killed_when_it_refuses_the_quit(self) -> None:
+        process = self.child()
+        with mock.patch.object(launcher, "stop", return_value=False), \
+                mock.patch.object(launcher.env, "game_pids", return_value=[]), \
+                mock.patch("builtins.print"):
+            self.assertTrue(launcher.stop_owned_failed_startup(process))
+        process.kill.assert_called_once_with()
+        process.wait.assert_called_once()
+
+    def test_a_game_that_is_not_our_child_is_never_killed(self) -> None:
+        process = self.child(alive=False)
+        with mock.patch.object(launcher, "stop", return_value=False):
+            self.assertFalse(launcher.stop_owned_failed_startup(process))
+        process.kill.assert_not_called()
+        with mock.patch.object(launcher, "stop", return_value=False):
+            self.assertFalse(launcher.stop_owned_failed_startup(None))
+
+    def test_a_child_that_survives_the_kill_is_reported(self) -> None:
+        process = self.child()
+        process.wait.side_effect = subprocess.TimeoutExpired("Civ6_Exe_Child", 10)
+        with mock.patch.object(launcher, "stop", return_value=False), \
+                mock.patch("builtins.print"):
+            self.assertFalse(launcher.stop_owned_failed_startup(process))
+
+
 if __name__ == "__main__":
     unittest.main()

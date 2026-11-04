@@ -25,6 +25,10 @@ from civ6_control import macos_capture, macos_input, popup_clear
 HOST_PROBE_TIMEOUT_S = 10.0
 WINDOW_PROBE_ERROR_INTERVAL_S = 60.0
 _window_probe_last_error_at: float | None = None
+#: The error text of the latest System Events geometry probe, or None when it
+#: answered (or timed out, which says nothing about what it can see). Read by
+#: `window_probe_error`; see `host_health` for why it matters.
+_window_probe_error: str | None = None
 
 #: Waits between setup screenshot attempts.  The sequence is bounded and
 #: spreads retries across a transient host-load spike rather than sampling it
@@ -103,7 +107,8 @@ def game_window(game_process: str) -> tuple[int, int, int, int] | None:
     window yet" beside a visible 1634x1084 "Civilization VI" window and
     played no turns.
     """
-    global _window_probe_last_error_at
+    global _window_probe_last_error_at, _window_probe_error
+    _window_probe_error = None
     script = ('tell application "System Events" to tell '
               f'process "{game_process}"\n'
               'set out to ""\n'
@@ -127,9 +132,10 @@ def game_window(game_process: str) -> tuple[int, int, int, int] | None:
         # window. Keep the retry contract, but expose the host error without
         # flooding the setup poll or accepting stdout from a failed probe.
         now = time.monotonic()
+        detail = " ".join((out.stderr or "").split())[:240] or "no error detail"
+        _window_probe_error = detail
         if (_window_probe_last_error_at is None or
                 now - _window_probe_last_error_at >= WINDOW_PROBE_ERROR_INTERVAL_S):
-            detail = " ".join((out.stderr or "").split())[:240] or "no error detail"
             print(f"[window] System Events geometry probe failed "
                   f"(exit {out.returncode}): {detail}; "
                   "treating the geometry as unknown", flush=True)
@@ -147,6 +153,65 @@ def game_window(game_process: str) -> tuple[int, int, int, int] | None:
         if best is None or width * height > best[2] * best[3]:
             best = (x, y, width, height)
     return best
+
+
+def window_probe_error() -> str | None:
+    """System Events' error from the latest `game_window` probe, if it failed."""
+    return _window_probe_error
+
+
+#: Every window CoreGraphics knows of, one ``pid x y width height`` line each.
+#: This asks the window server directly, not System Events or Accessibility, so
+#: it still answers when LaunchServices has stopped registering new apps and
+#: System Events cannot find the game (`host_health`).
+_CG_WINDOWS_JXA = textwrap.dedent("""\
+    ObjC.import("CoreGraphics");
+    const all = ObjC.castRefToObject($.CGWindowListCopyWindowInfo($.kCGWindowListOptionAll, 0));
+    const out = [];
+    for (let i = 0; i < all.count; i++) {
+      const w = all.objectAtIndex(i);
+      const b = ObjC.deepUnwrap(w.objectForKey("kCGWindowBounds"));
+      if (b) out.push([ObjC.unwrap(w.objectForKey("kCGWindowOwnerPID")), b.X, b.Y, b.Width, b.Height].join(" "));
+    }
+    out.join("\\n");
+""")
+
+
+def parse_cg_windows(text: str, pids) -> list[tuple[int, int, int, int]]:
+    """Game-sized windows of ``pids`` from `_CG_WINDOWS_JXA` output.
+
+    Same size floor as `game_window`, so the two readers agree on what counts as
+    the game.
+    """
+    wanted = {int(pid) for pid in pids}
+    found: list[tuple[int, int, int, int]] = []
+    for line in (text or "").splitlines():
+        parts = line.split()
+        if len(parts) != 5:
+            continue
+        try:
+            pid, x, y, width, height = (int(float(part)) for part in parts)
+        except ValueError:
+            continue
+        if pid in wanted and width > 400 and height > 300:
+            found.append((x, y, width, height))
+    return found
+
+
+def cg_windows(pids) -> list[tuple[int, int, int, int]] | None:
+    """Game-sized windows the window server lists for ``pids``, or None if unknown."""
+    pids = list(pids or ())
+    if not pids:
+        return []
+    try:
+        out = subprocess.run(["osascript", "-l", "JavaScript", "-e", _CG_WINDOWS_JXA],
+                             capture_output=True, text=True,
+                             timeout=HOST_PROBE_TIMEOUT_S)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    return parse_cg_windows(out.stdout, pids)
 
 
 def screen_locked() -> bool:
