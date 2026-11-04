@@ -1,0 +1,36 @@
+{
+  "qualification_source": "f088c8e7f6715397ed72dd203938fbf294190343",
+  "repair_scope": "Only append-marker comment lines move. Every remaining source byte, including Rust token order and documentation, is identical. No registry entry or field is reordered.",
+  "files": {
+    "src/ai/advanced.rs": {
+      "old_sha256": "757d0f07574ae3a7253d6be4289c21711c1bcbfdd8d4e067d1dcd1c53d3e9088",
+      "new_sha256": "1bfd2018fc7ad3849d638251513f6178df1012d813b1460cd8bab12b72bc1bfe",
+      "marker_stripped_sha256": "9adf9589c984eeb43587e15c00959bb247bf71369e794e1edf78f3aedfb78198",
+      "all_non_marker_bytes_identical": true
+    },
+    "src/ai/advanced/genes.rs": {
+      "old_sha256": "bc1407c5b849edfa9920fc8609aff155c19264917beaa50c7f6d373d3f8fd6a4",
+      "new_sha256": "830192f47d3a9b33d50ca99a9496b61d1a7a9c6c966bf97c402d1f7773de4daf",
+      "marker_stripped_sha256": "688f10d1212011e6eee03587018ade0c6a6f1a502663e48bf1d4adcb59610ac5",
+      "all_non_marker_bytes_identical": true
+    },
+    "src/ai/advanced/treatment_flags.rs": {
+      "old_sha256": "530258f30655296959767a03731b5fc5a4d61a618ca36d0b43cbd2b66d708e56",
+      "new_sha256": "fd40a55126ff3e9b0dd65ce9ff962bc0351942ca36821904505f7d347c273112",
+      "marker_stripped_sha256": "7e19acfb5ed0763fca0a368285a21fc919558466356300b0a927d6875ad0eee9",
+      "all_non_marker_bytes_identical": true
+    }
+  },
+  "repair_commit": "9f7e3522e350718cd9dc2011e2705fa8eeef535c",
+  "qualified_executable_sha256": "9f1ef5d168f321108da7475eebd822a047c447587afeac36c2cb576fe2375997",
+  "rebuilt_executable_sha256": "9f1ef5d168f321108da7475eebd822a047c447587afeac36c2cb576fe2375997",
+  "rebuilt_executable_byte_identical": true,
+  "append_point_tests_passed": 14,
+  "rust_quality": "changed lines formatted and warning-free",
+  "log_sha256": {
+    "layout-append-tests.log": "80f815b7c25380983fec3582f3cd8fd98151ae6a3940e08c250f8479d77aa04d",
+    "layout-native-build.log": "a0cb8932f3cd0ccc3ae6ab0c529f97dd92c9327e5911b11470ee9703a19eb3d4",
+    "layout-rust-quality.log": "8661f12617f302f27c4d495b8186187eca5edc0957bb3a131001daaf4473e41e"
+  },
+  "raw_evidence_archive_unchanged_sha256": "6e5a42bf8368647443f963f1e9492ca94b1f7554d4664a2bb368de49d53e114c"
+}

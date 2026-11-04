@@ -4971,6 +4971,8 @@ pub const GENES: &[Gene] = &[
     // offensive rows. Under the gene the capital's Defend row is urgent and
     // ranks first. See `objective_board.rs` (`capital_defend_first`).
     Gene { tag: "capital-keeps-its-defender", field: "capital_keeps_its_defender", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_defender, disable: AdvancedAi::disable_capital_keeps_its_defender },
+    // Preserve the original capital's Loyalty anchor; default OFF.
+    Gene { tag: "capital-keeps-its-governor", field: "capital_keeps_its_governor", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_governor, disable: AdvancedAi::disable_capital_keeps_its_governor },
     // Live Immortal 11-03 21Z..11-04 21Z: in 42 of 79 games the Domination
     // siege reservation took the backlog Builder's fresh queue the same turn
     // `backlog-builder-takes-the-queue` set it (282 city-turns, up to 29 in a

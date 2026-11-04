@@ -5031,6 +5031,18 @@ impl AdvancedAi {
         self.capital_keeps_its_defender = false;
     }
 
+    /// Keep a Governor whose departure would leave our original capital losing Loyalty.
+    pub fn enable_capital_keeps_its_governor(&mut self) {
+        self.capital_keeps_its_governor = true;
+        self.base.capital_keeps_its_governor = true;
+    }
+
+    /// Withhold the independently screenable capital Governor guard.
+    pub fn disable_capital_keeps_its_governor(&mut self) {
+        self.capital_keeps_its_governor = false;
+        self.base.capital_keeps_its_governor = false;
+    }
+
     /// Opt-in gene `breaker-spares-the-backlog-builder`; see
     /// [`Self::breaker_spares_the_backlog_builder`].
     pub fn enable_breaker_spares_the_backlog_builder(&mut self) {
