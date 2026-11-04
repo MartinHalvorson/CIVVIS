@@ -9282,6 +9282,38 @@ impl AdvancedAi {
         self.city_state_harvest_target = None;
     }
 
+    /// Opt-in gene `science-specializes-earlier`; see
+    /// [`Self::science_specializes_earlier`].
+    pub fn enable_science_specializes_earlier(&mut self) {
+        self.science_specializes_earlier = true;
+    }
+
+    /// The twin of `enable_science_specializes_earlier`.
+    pub fn disable_science_specializes_earlier(&mut self) {
+        self.science_specializes_earlier = false;
+    }
+
+    /// Opt-in gene `near-done-work-finishes`; see
+    /// `advanced/near_done_work_finishes.rs`.
+    pub fn enable_near_done_work_finishes(&mut self) {
+        self.near_done_work_finishes = true;
+    }
+
+    /// The twin of `enable_near_done_work_finishes`.
+    pub fn disable_near_done_work_finishes(&mut self) {
+        self.near_done_work_finishes = false;
+    }
+
+    /// Opt-in gene `founding-voyage`; see [`Self::founding_voyage`].
+    pub fn enable_founding_voyage(&mut self) {
+        self.founding_voyage = true;
+    }
+
+    /// The twin of `enable_founding_voyage`.
+    pub fn disable_founding_voyage(&mut self) {
+        self.founding_voyage = false;
+    }
+
     /// Enable measured routing to the board's assigned Defend city.
     pub fn enable_anvil_follows_the_defense(&mut self) {
         self.anvil_follows_the_defense = true;

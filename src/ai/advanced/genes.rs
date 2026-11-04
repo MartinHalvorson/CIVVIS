@@ -4825,6 +4825,31 @@ pub const GENES: &[Gene] = &[
     // plan's Conquest target for a bounded window. See
     // `advanced/city_state_harvest.rs`.
     Gene { tag: "city-state-harvest", field: "city_state_harvest", kind: Kind::OptIn, enable: AdvancedAi::enable_city_state_harvest, disable: AdvancedAi::disable_city_state_harvest },
+    // Live Immortal 6p Continents 11-02/03: the seat never reached its city
+    // target, so Expansion (a beaker 1.2 against Science's 4.2) lasted to the
+    // halfway clock, 55% of the logged strategy turns. Every decided game was
+    // lost to a rival's science victory at t188-215. Under the gene an
+    // assigned Science lane specializes at a third of the clock, as Culture
+    // already does. See `advanced/science_specializes_earlier.rs`.
+    Gene { tag: "science-specializes-earlier", field: "science_specializes_earlier", kind: Kind::OptIn, enable: AdvancedAi::enable_science_specializes_earlier, disable: AdvancedAi::disable_science_specializes_earlier },
+    // `near-done-work-finishes`: live (39 Immortal games with
+    // `saved-work-is-seen`, 2026-11-03), 1,204 items were paused with saved
+    // work; 47% of that work sat in items within two turns of finishing when
+    // they were paused (177 within one turn), because the claims and
+    // governors displace the head every turn and the resume path only sees
+    // an empty queue. Under the gene a head displaced this turn that
+    // finishes within two turns goes back to the head after every ordinary
+    // writer, unless the city is threatened, attacked or recovering, or the
+    // displacing item is a soldier, Settler, defence building, Holy Site,
+    // Shrine, Spaceport, Wonder or project. See
+    // `advanced/near_done_work_finishes.rs`.
+    Gene { tag: "near-done-work-finishes", field: "near_done_work_finishes", kind: Kind::OptIn, enable: AdvancedAi::enable_near_done_work_finishes, disable: AdvancedAi::disable_near_done_work_finishes },
+    // Live, both Māori seats (11-01 King, 11-03 Immortal): the Settler started
+    // embarked on ocean, knew no land, and stood until the defeat "no cities
+    // remain" at turn 6; the mirror's fog priors give a land unit at sea no
+    // route. Under the gene it sails toward the edge of the known sea. See
+    // `advanced/maori_founds_from_the_sea.rs`.
+    Gene { tag: "founding-voyage", field: "founding_voyage", kind: Kind::OptIn, enable: AdvancedAi::enable_founding_voyage, disable: AdvancedAi::disable_founding_voyage },
     Gene { tag: "anvil-follows-the-defense", field: "anvil_follows_the_defense", kind: Kind::OptIn, enable: AdvancedAi::enable_anvil_follows_the_defense, disable: AdvancedAi::disable_anvil_follows_the_defense },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
