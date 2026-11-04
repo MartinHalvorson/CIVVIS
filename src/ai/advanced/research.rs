@@ -1301,14 +1301,14 @@ impl AdvancedAi {
                     + spec.slots.wildcard
             })
         };
-        let ours = g.players[pid].government.as_deref().map_or(0, &capacity);
+        let ours = g.players[pid].government.as_deref().map_or(0, capacity);
         let behind = g
             .players
             .iter()
             .filter(|rival| {
                 rival.id != pid && rival.alive && !rival.is_minor && !rival.is_barbarian
             })
-            .any(|rival| rival.government.as_deref().map_or(0, &capacity) > ours);
+            .any(|rival| rival.government.as_deref().map_or(0, capacity) > ours);
         let window = if behind {
             GOVERNMENT_LADDER_BEHIND_WINDOW
         } else {
