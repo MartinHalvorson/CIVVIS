@@ -2939,9 +2939,12 @@ def _first_sentence(doc_lines: str) -> str:
     return sentence
 
 
-#: `pub fn enable_<toggle>(` preceded by its doc-comment block, anywhere in
-#: `treatment_flags.rs`. group(1) is the doc lines, group(2) the toggle name.
-_ENABLE_FN_DOC = re.compile(r"((?:[ \t]*///[^\n]*\n)+)[ \t]*pub fn enable_([a-z0-9_]+)\(")
+#: An `enable_<toggle>` preceded by its doc-comment block, anywhere in
+#: `treatment_flags.rs`: a hand-written `pub fn enable_<toggle>(` or a
+#: `toggles!` entry `<flag> => enable_<toggle>,`. group(1) is the doc lines,
+#: group(2) the toggle name.
+_ENABLE_FN_DOC = re.compile(
+    r"((?:[ \t]*///[^\n]*\n)+)[ \t]*(?:pub fn |[a-z0-9_.]+ => )enable_([a-z0-9_]+)[(,]")
 #: `<field>: bool,` preceded by its doc-comment block, anywhere in
 #: `advanced.rs` / `ai.rs`. group(1) is the doc lines, group(2) the field name.
 _FIELD_DOC = re.compile(

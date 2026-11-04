@@ -4970,6 +4970,14 @@ pub const GENES: &[Gene] = &[
     // reservation now spares that Builder as it spares the housing Granary.
     // See `advanced/siege_production.rs`.
     Gene { tag: "breaker-spares-the-backlog-builder", field: "breaker_spares_the_backlog_builder", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_spares_the_backlog_builder, disable: AdvancedAi::disable_breaker_spares_the_backlog_builder },
+    // Live Immortal Standard 11-04 (16 games): no Builder held anywhere on
+    // 37% of the two-city turns 15-90 against four or more unimproved worked
+    // tiles; the backlog claim (armed) fired once before turn 60. Improved
+    // share 0.26 against the rivals' 0.48 at turn 100, population 17 against
+    // 36.5; Lv 8 Deity Online's science gap was population. With no Builder
+    // held, the fastest safe city trains one. See
+    // `advanced/builderless_empire_trains_one.rs`.
+    Gene { tag: "builderless-empire-trains-one", field: "builderless_empire_trains_one", kind: Kind::OptIn, enable: AdvancedAi::enable_builderless_empire_trains_one, disable: AdvancedAi::disable_builderless_empire_trains_one },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
