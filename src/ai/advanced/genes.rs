@@ -4891,6 +4891,15 @@ pub const GENES: &[Gene] = &[
     // melee lines keep the floor. See `advanced/ranged_finish.rs`.
     Gene { tag: "ranged-finish-on-the-mean", field: "ranged_finish_on_the_mean", kind: Kind::OptIn, enable: AdvancedAi::enable_ranged_finish_on_the_mean, disable: AdvancedAi::disable_ranged_finish_on_the_mean },
     Gene { tag: "first-capital-before-the-camp", field: "first_capital_before_the_camp", kind: Kind::OptIn, enable: AdvancedAi::enable_first_capital_before_the_camp, disable: AdvancedAi::disable_first_capital_before_the_camp },
+    // Gran Colombia receives a Comandante General every era: +5 Combat
+    // Strength and +1 Movement to land units within 2 tiles, in every era.
+    // The live bridge retired each one the turn it arrived (live GC games
+    // 11-03/04: every Comandante activated on its first turn), trading the
+    // aura for a one-shot civic, Trader or promotion. Under the gene the
+    // bridge keeps one General per front with our largest land cluster
+    // nearest the enemy and retires only the surplus. Live bridge only. See
+    // `advanced/generals_lead_the_army.rs`.
+    Gene { tag: "generals-lead-the-army", field: "generals_lead_the_army", kind: Kind::OptIn, enable: AdvancedAi::enable_generals_lead_the_army, disable: AdvancedAi::disable_generals_lead_the_army },
     // Live Immortal Standard 054226Z founded Bogota on turn 1 on a SNOW tile
     // between a lake and the polar sea (3-5 Production for 70 turns; the
     // median capital makes 11 at turn 50); 015124Z founded on lakeside
