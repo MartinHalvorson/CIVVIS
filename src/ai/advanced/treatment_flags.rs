@@ -9383,6 +9383,17 @@ impl AdvancedAi {
         self.guns_stay_out_of_reach_3 = false;
     }
 
+    /// Opt-in gene `capital-leaves-the-frost`; see
+    /// [`Self::capital_leaves_the_frost`].
+    pub fn enable_capital_leaves_the_frost(&mut self) {
+        self.capital_leaves_the_frost = true;
+    }
+
+    /// The twin of `enable_capital_leaves_the_frost`.
+    pub fn disable_capital_leaves_the_frost(&mut self) {
+        self.capital_leaves_the_frost = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

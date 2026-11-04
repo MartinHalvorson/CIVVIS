@@ -4884,6 +4884,18 @@ pub const GENES: &[Gene] = &[
     // two with every member of a Defend or Relieve task force left free to
     // close on the attackers. See `advanced/guns_stay_out_of_reach.rs`.
     Gene { tag: "guns-stay-out-of-reach-3", field: "guns_stay_out_of_reach_3", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_stay_out_of_reach_3, disable: AdvancedAi::disable_guns_stay_out_of_reach_3 },
+    // Live Immortal Standard 054226Z founded Bogota on turn 1 on a SNOW tile
+    // between a lake and the polar sea (3-5 Production for 70 turns; the
+    // median capital makes 11 at turn 50); 015124Z founded on lakeside
+    // tundra with grassland two hexes south (pop 2, 4 Production at t100).
+    // The site score forecasts four citizens, floors the center's yields and
+    // pays fresh water +12 against -20 for dry land, so frozen ground cost
+    // nothing. Under the gene, while the empire has no city, frozen tiles in
+    // a site's footprint cost 4 points each, and a Settler about to found on
+    // snow or tundra steps toward warmer ground and looks first, for one
+    // turn fewer than the speed's opening walk budget. Russia and Canada are
+    // exempt. See `advanced/frost_capital.rs`.
+    Gene { tag: "capital-leaves-the-frost", field: "capital_leaves_the_frost", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_leaves_the_frost, disable: AdvancedAi::disable_capital_leaves_the_frost },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
