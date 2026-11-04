@@ -1406,7 +1406,9 @@ pub struct QueryCache {
     // game, `tile_appeal` was called 1,240,472 times and 97.1% of those calls
     // recomputed an answer the engine had already produced for that tile that
     // turn -- 34 evaluations per tile per turn, of which one was new.
-    appeal: std::cell::RefCell<Option<BTreeMap<Pos, i32>>>,
+    // These per-plot tables are only queried by key, never iterated. Hashing
+    // avoids tree traversal without changing any gameplay iteration order.
+    appeal: std::cell::RefCell<Option<HashMap<Pos, i32>>>,
     /// `modeled_tile_yields` per plot.
     ///
     /// ★★★★ THE SAME PLOT PRICED TWICE PER CITY, EVERY TIME. One city-yield
@@ -1417,7 +1419,7 @@ pub struct QueryCache {
     /// techs, civics and policies and its neighbours — nothing a `&self`
     /// query can change — so the answer is kept for the memo scope, exactly
     /// like `appeal`.
-    tile_yields: std::cell::RefCell<Option<BTreeMap<Pos, Yields>>>,
+    tile_yields: std::cell::RefCell<Option<HashMap<Pos, Yields>>>,
     /// `district_yields` per standing district. One city-yield derivation
     /// asks each of its districts three times — the citizen strategy, the
     /// citizen plan's fixed food, then the sum — and a district's yields
