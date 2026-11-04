@@ -4971,6 +4971,13 @@ pub const GENES: &[Gene] = &[
     // offensive rows. Under the gene the capital's Defend row is urgent and
     // ranks first. See `objective_board.rs` (`capital_defend_first`).
     Gene { tag: "capital-keeps-its-defender", field: "capital_keeps_its_defender", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_defender, disable: AdvancedAi::disable_capital_keeps_its_defender },
+    // Version three (live Lv 8 Deity Korea Online, 11-04, -af's sizing):
+    // barbarians outclass our line from turns 9-17, and the camps within
+    // eight of our cities stood 32-36 turns with no force on ~60% of their
+    // rows while their need rose 38 -> 70 as their units upgraded. A near
+    // camp now gets version two's premium and armed party in any era, so it
+    // is cleared while it is small. See `advanced/camps_close_the_age.rs`.
+    Gene { tag: "camps-close-the-age-3", field: "camps_close_the_age_3", kind: Kind::OptIn, enable: AdvancedAi::enable_camps_close_the_age_3, disable: AdvancedAi::disable_camps_close_the_age_3 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
