@@ -7536,6 +7536,10 @@ pub struct AdvancedAi {
     /// retiring it on arrival. See `advanced/generals_lead_the_army.rs`. Off
     /// by default.
     generals_lead_the_army: bool,
+    /// `garrison-before-the-surprise`: a stronger major's soldier near a city
+    /// with no soldier drafts the nearest idle one home. The behaviour lives
+    /// on `BasicAi`; see `ai/garrison_before_the_surprise.rs`. Off by default.
+    garrison_before_the_surprise: bool,
     // ---- append: l-o ------------------------------------------------
     /// `old-techs-before-the-beeline`: the technology our land army waits on
     /// to upgrade once the world has left its era, then any technology two
@@ -11886,6 +11890,7 @@ impl AdvancedAi {
             guns_stay_out_of_reach_2: false,
             guns_stay_out_of_reach_3: false,
             generals_lead_the_army: false,
+            garrison_before_the_surprise: false,
             // ---- append: l-o ----------------------------------------
             old_techs_before_the_beeline: false,
             launch_commits_the_endgame: false,
