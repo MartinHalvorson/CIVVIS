@@ -101,7 +101,8 @@ hashes and source checkpoints rather than bundled. See its `README.txt`.
 
 ## Validation and deployment
 
-All six new focused tests pass. The full local Rust suite passes 6,854 tests,
+At the initial qualification checkpoint, all six new focused tests pass. The
+full local Rust suite passes 6,854 tests,
 with 53 unit tests and four doctests ignored. Incremental Rust quality reports
 the changed lines formatted and warning-free. The local `ci` build uses
 `CARGO_PROFILE_CI_LTO=off CARGO_BUILD_JOBS=4`; repository/hosted profiles are
@@ -130,3 +131,37 @@ executable is byte-for-byte identical to the qualified executable above;
 14 targeted append-point tests and incremental quality pass after the repair.
 The `.layout-repair.json` records old/new source hashes and the rebuild.
 The original raw evidence archive remains unchanged.
+
+## Requalification after the main conflict
+
+The real main conflict was resolved against `923ff7807` in checkpoint
+`ff86613495432b0ead5c36ec6df3ccf36d7250cc`, retaining both independent capital
+safeguards and the existing registry order. The dedicated Governor helper and
+its tests are unchanged. This is a fresh build and query qualification, unlike
+the earlier byte-identical marker-only repair. Executable SHA256:
+`5629bd2114abb55add8647e6a92d62c541aad99d47c1c224eea0fb9de480f00f`.
+
+The merged candidate repeats both full 225-request OFF controls, both ON
+first-difference probes and both successful 164-request OFF/ON prefix pairs.
+The only order removed remains Magnus's transfer at 69/0. The safe corpus
+repeats all four 344-request OFF/ON queries and preserves every payload,
+including the safe 106/0 transfer. Original native controls and corrected-policy
+reference queries are reused unchanged and are not claimed fresh. One initial
+negative ON query timed out after 44 replies; its partial data is preserved
+and excluded from successful controls. The complete four-query retry restores
+only its own child's Darwin scheduling, retaining the same code and deadline.
+
+The merged library suite passes 6,486 tests, with zero failures and 53 ignored;
+14 append-point tests and incremental Rust quality pass. The current firing
+ratchet reports 770 registered, 733 proven, 37 existing waivers and zero
+unproven; this feature adds no waiver. The prior 6,854-test full-suite result
+belongs to the initial checkpoint.
+
+The separate `.post-merge.native.tar.xz` composite archive preserves the raw
+inputs, reused original controls/reference, fresh per-arm queries, source
+exports, verifiers, timeout data and validation logs. Fresh extraction verifies
+all 166 manifest files and reruns the independent verifier successfully.
+Archive size: 3,235,644 bytes; SHA256:
+`e3c3691fbf75ff4306fc1e8a8fe85808d43cb95d217318ecc7e884ff05f32209`.
+The `.post-merge.json` records the full results and source hashes. The original
+archive remains unchanged. Default OFF, no native ON or strength claim.

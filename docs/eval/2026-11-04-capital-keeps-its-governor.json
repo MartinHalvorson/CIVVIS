@@ -218,5 +218,12 @@
       "layout-rust-quality.log": "8661f12617f302f27c4d495b8186187eca5edc0957bb3a131001daaf4473e41e"
     },
     "raw_evidence_archive_unchanged_sha256": "6e5a42bf8368647443f963f1e9492ca94b1f7554d4664a2bb368de49d53e114c"
+  },
+  "post_merge_requalification": {
+    "report": "docs/eval/2026-11-04-capital-keeps-its-governor.post-merge.json",
+    "sha256": "721b974a80c39973f4cca1db1dcf50315ff868d5006684560b9db2fc9177a45f",
+    "source_revision": "ff86613495432b0ead5c36ec6df3ccf36d7250cc",
+    "executable_sha256": "5629bd2114abb55add8647e6a92d62c541aad99d47c1c224eea0fb9de480f00f",
+    "archive_sha256": "e3c3691fbf75ff4306fc1e8a8fe85808d43cb95d217318ecc7e884ff05f32209"
   }
 }
