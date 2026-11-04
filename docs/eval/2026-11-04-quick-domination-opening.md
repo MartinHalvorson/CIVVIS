@@ -66,6 +66,14 @@ Two additional proposal runs appended only `--with anvil-follows-the-defense` to
 
 Receipts and sealed inputs remain at `~/civvis-tactics-results/2026-11-04/quick-anvil-context/`: `control-through-36/qualification.json` and `anvil-shadow-{0,1}/comparison.json`. Baseline qualification is the tool's original-binary control; proposal comparison results are explicitly labelled as commands modified from the observation.
 
+## Direct mismatch replay with a reconstructed command
+
+The earlier `055705Z` prefix was subsequently replayed as an explicitly reconstructed-command experiment, not observed-process qualification. The later observed argument list was mapped to the earlier run's preserved executable/mirror/capture paths, with its force list checked against the earlier `brain.log`; the working directory was selected from the later observation, not claimed to be observed for the earlier process. The original executable hash is the same in both attempts. Exact native replies and captured reads still gate the comparison.
+
+Both OFF repetitions matched all 81 complete native payloads through turn 36. Both ON repetitions matched the first 71 payloads and stopped at the first difference, turn 32/frame 0, request 72. Every request through that boundary retained exact frame identity and ordered actual read bytes. The ON control payloads match each other throughout the prefix; run-specific recapture metadata differs and is excluded from that payload comparison. The journal now forms the Anvil at Bogotá, matching force 17's assignment. Unit 327683 receives a move toward Bogotá (56,25) instead of (57,27); unit 131073's route also changes.
+
+The first changed reply additionally changes `produce_next` for capital 65536 from `UNIT_WARRIOR` to `UNIT_SCOUT`. This must be investigated before a live activation: the routing correction has a production consequence, and the experiment establishes neither improved defence nor a strength gain. No captured world after this first changed proposal was replayed for the ON arm. Raw receipts, helper script and sealed inputs are preserved under `quick-anvil-context/mismatch-prefix-through36/`; the script is `quick-anvil-context/replay-mismatch-prefix.py`. The fresh `060224Z` control was separately extended through turn 70: two baseline and two ON repetitions match all 163 complete payloads and actual read traces. It remains an unchanged control prefix.
+
 ## Failure telemetry caveat
 
 Through order turn 90, Standard `053740Z` reports 192 `CONGRESS_GUARDS_THE_LEADER/combat_policy_not_acknowledged` failures and 21 `MOVE_TO/did_not_move` failures. Quick `055705Z` reports 231 and 92 respectively. Policy acknowledgements, superseded orders and actual unmoved units require separate counts. A total `order_failed` count is not a movement-failure rate, and repeated replans are not independent turns.
