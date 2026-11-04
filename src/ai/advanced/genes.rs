@@ -4884,6 +4884,7 @@ pub const GENES: &[Gene] = &[
     // two with every member of a Defend or Relieve task force left free to
     // close on the attackers. See `advanced/guns_stay_out_of_reach.rs`.
     Gene { tag: "guns-stay-out-of-reach-3", field: "guns_stay_out_of_reach_3", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_stay_out_of_reach_3, disable: AdvancedAi::disable_guns_stay_out_of_reach_3 },
+    Gene { tag: "first-capital-before-the-camp", field: "first_capital_before_the_camp", kind: Kind::OptIn, enable: AdvancedAi::enable_first_capital_before_the_camp, disable: AdvancedAi::disable_first_capital_before_the_camp },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

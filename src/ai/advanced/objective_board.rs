@@ -1179,7 +1179,9 @@ impl AdvancedAi {
                 land: true,
                 sea: false,
                 label: city.name.clone(),
-                urgent: capital_under_attack || under_fire,
+                urgent: capital_under_attack
+                    || under_fire
+                    || self.first_capital_defense_is_urgent(g, pid, *cid, plan),
             });
             // Relieve: what the units within reach cannot supply.
             let local: f64 = pool

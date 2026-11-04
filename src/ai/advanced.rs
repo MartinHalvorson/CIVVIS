@@ -6518,6 +6518,8 @@ pub struct AdvancedAi {
     /// The city-state the harvest declared on, while that war runs.
     city_state_harvest_war: Option<String>,
     // ---- append: e-f ------------------------------------------------
+    /// Give a threatened sole capital opening defence priority. Opt-in.
+    first_capital_before_the_camp: bool,
     /// `founding-voyage`: an embarked Settler of a seat with no city sails to
     /// the edge of the known sea when no site is reachable. See
     /// `advanced/maori_founds_from_the_sea.rs`. Off by default.
@@ -10170,6 +10172,7 @@ pub(crate) mod contested_land;
 /// and a religious unit steps out of a raider's reach. Two opt-in genes; see
 /// `advanced/missionary_field.rs`.
 mod apostle_evasion;
+mod first_capital_defense;
 /// An assigned lane's first-half production dispatch. Opt-in gene
 /// `lane-delegates-production`; see `advanced/lane_delegates_production.rs`.
 mod lane_delegates_production;
@@ -11692,6 +11695,7 @@ impl AdvancedAi {
             city_state_harvest_cooldown: 0,
             city_state_harvest_war: None,
             // ---- append: e-f ----------------------------------------
+            first_capital_before_the_camp: false,
             founding_voyage: false,
             first_launch_keeps_research: false,
             first_pad_in_the_forge: false,

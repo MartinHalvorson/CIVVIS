@@ -9383,6 +9383,16 @@ impl AdvancedAi {
         self.guns_stay_out_of_reach_3 = false;
     }
 
+    /// Opening defence priority for the threatened sole capital.
+    pub fn enable_first_capital_before_the_camp(&mut self) {
+        self.first_capital_before_the_camp = true;
+    }
+
+    /// Restore the existing objective-board priorities.
+    pub fn disable_first_capital_before_the_camp(&mut self) {
+        self.first_capital_before_the_camp = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
