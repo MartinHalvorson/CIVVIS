@@ -335,6 +335,12 @@ def genome_coverage(repo: Path) -> dict[str, Any]:
             encoding="utf-8"))
     toggles = set(re.findall(r"pub fn (?:enable|disable)_([a-z0-9_]+)\s*\(",
                              flags_source))
+    # A `toggles!` entry, `<flag> => enable_<name>, disable_<name>;`, defines
+    # both halves of a plain pair.
+    for enable, disable in re.findall(
+            r"=>\s*enable_([a-z0-9_]+)\s*,\s*disable_([a-z0-9_]+)\s*;",
+            flags_source):
+        toggles |= {enable, disable}
     if not toggles:
         raise ValueError(
             "src/ai/advanced/treatment_flags.rs yielded no capability toggles; "
