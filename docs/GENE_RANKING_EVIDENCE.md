@@ -205,6 +205,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `campus-claims-the-free-slot-2` | off (unmeasured) | Version 2 of the free-slot Campus claim. | — \| 2 |
 | `campus-unlock-before-the-luxury` | off (unmeasured) | Unlock the Campus ahead of the luxury and Astrology detours. | 1 \| 1 |
 | `campus-unlock-every-lane` | off (unmeasured) | Opt-in gene `campus-unlock-every-lane`; see `Self::campus_unlock_every_lane`. | 1 \| 1 |
+| `capital-keeps-its-defender` | off (unmeasured) | Opt-in gene `capital-keeps-its-defender`; see `Self::capital_keeps_its_defender`. | 1 \| 1 |
 | `capital-leaves-the-frost` | off (unmeasured) | Opt-in gene `capital-leaves-the-frost`; see `Self::capital_leaves_the_frost`. | 1 \| 1 |
 | `capital-monument-after-the-second-city` | off (unmeasured) | Opt-in gene `capital-monument-after-the-second-city`; see `Self::capital_monument_after_the_second_city`. | 1 \| 1 |
 | `capital-walls-at-any-ratio` | off (unmeasured) | Opt-in gene `capital-walls-at-any-ratio`; see `Self::capital_walls_at_any_ratio`. | 1 \| 1 |
@@ -267,6 +268,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `garrison-before-the-surprise` | off (unmeasured) | Opt-in gene `garrison-before-the-surprise`; see `BasicAi::garrison_before_the_surprise`. | 1 \| 1 |
 | `generals-lead-the-army` | off (unmeasured) | Opt-in gene `generals-lead-the-army`; see `Self::generals_lead_the_army`. | 1 \| 1 |
 | `gold-buys-the-backlog-builder` | off (unmeasured) | Opt-in gene `gold-buys-the-backlog-builder`; see `advanced/gold_buys_the_backlog_builder.rs`. | 1 \| 1 |
+| `gold-buys-the-capped-granary` | off (unmeasured) | Opt-in gene `gold-buys-the-capped-granary`; see `Self::gold_buys_the_capped_granary`. | 1 \| 1 |
 | `gold-buys-the-idle-trader` | off (unmeasured) | Buy an empty route slot's Trader with the idle bank. | 1 \| 1 |
 | `gold-buys-the-opening-builder` | off (unmeasured) | Opt-in gene `gold-buys-the-opening-builder`; see `Self::gold_buys_the_opening_builder`. | 1 \| 1 |
 | `gold-buys-the-production-tile` | off (unmeasured) | Opt-in gene `gold-buys-the-production-tile`; see `Self::gold_buys_the_production_tile`. | 1 \| 1 |

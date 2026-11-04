@@ -5053,6 +5053,26 @@ impl AdvancedAi {
     /// The twin of `enable_builderless_empire_trains_one_2`.
     pub fn disable_builderless_empire_trains_one_2(&mut self) {
         self.builderless_empire_trains_one_2 = false;
+    /// Opt-in gene `gold-buys-the-capped-granary`; see
+    /// [`Self::gold_buys_the_capped_granary`].
+    pub fn enable_gold_buys_the_capped_granary(&mut self) {
+        self.gold_buys_the_capped_granary = true;
+    }
+
+    /// The twin of `enable_gold_buys_the_capped_granary`.
+    pub fn disable_gold_buys_the_capped_granary(&mut self) {
+        self.gold_buys_the_capped_granary = false;
+    }
+
+    /// Opt-in gene `capital-keeps-its-defender`; see
+    /// [`Self::capital_keeps_its_defender`].
+    pub fn enable_capital_keeps_its_defender(&mut self) {
+        self.capital_keeps_its_defender = true;
+    }
+
+    /// The twin of `enable_capital_keeps_its_defender`.
+    pub fn disable_capital_keeps_its_defender(&mut self) {
+        self.capital_keeps_its_defender = false;
     }
 
     // ---- append: a-b ------------------------------------------------

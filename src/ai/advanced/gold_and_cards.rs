@@ -425,7 +425,7 @@ impl AdvancedAi {
     /// speed-scaled Production cost, deliberately without the per-city
     /// purchase-slot rule: the reserve is for the city that will be
     /// attacked, not the one whose garrison stands on the centre today.
-    fn emergency_defender_price(&self, g: &Game, pid: usize) -> Option<f64> {
+    pub(super) fn emergency_defender_price(&self, g: &Game, pid: usize) -> Option<f64> {
         let cities = g.player_city_ids(pid);
         let mut ranged: Option<f64> = None;
         let mut melee: Option<f64> = None;

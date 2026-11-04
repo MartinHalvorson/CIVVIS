@@ -4984,6 +4984,22 @@ pub const GENES: &[Gene] = &[
     // with no production invested now yields the head once to the empire's
     // only Builder. See `advanced/builderless_empire_trains_one.rs`.
     Gene { tag: "builderless-empire-trains-one-2", field: "builderless_empire_trains_one_2", kind: Kind::OptIn, enable: AdvancedAi::enable_builderless_empire_trains_one_2, disable: AdvancedAi::disable_builderless_empire_trains_one_2 },
+    // Live Deity Online 11-04: 59% of our city-turns t30-100 stood within two
+    // of their housing; 39% of the capped cities had no Granary while the
+    // treasury held a median 127-145 Gold against a 130-Gold Granary that
+    // `spend_gold`'s 100 + 25 a city reserve never released. The treasury
+    // buys the capped city's Granary above the upkeep floor. See
+    // `advanced/gold_buys_the_capped_granary.rs`.
+    Gene { tag: "gold-buys-the-capped-granary", field: "gold_buys_the_capped_granary", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_buys_the_capped_granary, disable: AdvancedAi::disable_gold_buys_the_capped_granary },
+    // Live Lv 7 Immortal Standard (11-04 10:44Z on, -af's census): 5 of ~25
+    // games lost Bogota before turn 100, and in 4 of them the capital held no
+    // soldier of ours within a tile for the 1-4 turns before it fell. The
+    // board had its Defend row (190341Z t44: "Defend Bogota, value 60, need
+    // 76, no force") but ranked it under Maracaibo's under-fire row, a 280
+    // Escort and a Recon of a rival capital, and urgency holds back only
+    // offensive rows. Under the gene the capital's Defend row is urgent and
+    // ranks first. See `objective_board.rs` (`capital_defend_first`).
+    Gene { tag: "capital-keeps-its-defender", field: "capital_keeps_its_defender", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_defender, disable: AdvancedAi::disable_capital_keeps_its_defender },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
