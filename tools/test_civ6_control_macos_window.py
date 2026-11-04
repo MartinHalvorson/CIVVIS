@@ -609,5 +609,54 @@ class UnavailableHostShotBudgetTests(unittest.TestCase):
             self.assertFalse(macos_window.capture_looks_unavailable())
 
 
+class HostCannotSeeTheGameTests(unittest.TestCase):
+    """The two readers `civ6_play.unseen_game_window` compares (2026-11-04)."""
+
+    def test_a_failed_probe_is_remembered_and_an_answer_forgets_it(self) -> None:
+        failed = SimpleNamespace(returncode=1, stdout="", stderr=(
+            'execution error: System Events got an error: Can’t get process '
+            '"Civ6_Exe_Child". (-1728)'))
+        answered = SimpleNamespace(returncode=0, stdout="0, 33, 1634, 1084;", stderr="")
+        with patch.object(macos_window.subprocess, "run", return_value=failed), \
+                patch("builtins.print"):
+            self.assertIsNone(macos_window.game_window("Civ6_Exe_Child"))
+        self.assertIn("-1728", macos_window.window_probe_error())
+        with patch.object(macos_window.subprocess, "run", return_value=answered):
+            self.assertEqual(macos_window.game_window("Civ6_Exe_Child"),
+                             (0, 33, 1634, 1084))
+        self.assertIsNone(macos_window.window_probe_error())
+
+    def test_a_timed_out_probe_is_not_evidence(self) -> None:
+        with patch.object(macos_window.subprocess, "run",
+                          side_effect=subprocess.TimeoutExpired("osascript", 10)), \
+                patch("builtins.print"):
+            self.assertIsNone(macos_window.game_window("Civ6_Exe_Child"))
+        self.assertIsNone(macos_window.window_probe_error())
+
+    def test_cg_lines_keep_only_game_sized_windows_of_the_game(self) -> None:
+        text = ("34853 -991 58 1634 1084\n"   # the game, partly off screen
+                "34853 59 37 66 20\n"          # its 66x20 "Window"
+                "406 0 0 3456 2234\n"          # another process
+                "garbage line\n"
+                "34853 1.5 2 900.0 700\n")
+        self.assertEqual(macos_window.parse_cg_windows(text, [34853]),
+                         [(-991, 58, 1634, 1084), (1, 2, 900, 700)])
+
+    def test_cg_reader_without_a_game_or_an_answer(self) -> None:
+        self.assertEqual(macos_window.cg_windows([]), [])
+        with patch.object(macos_window.subprocess, "run",
+                          return_value=SimpleNamespace(returncode=1, stdout="", stderr="x")):
+            self.assertIsNone(macos_window.cg_windows([1]))
+        with patch.object(macos_window.subprocess, "run", side_effect=OSError):
+            self.assertIsNone(macos_window.cg_windows([1]))
+
+    def test_cg_reader_runs_jxa_not_system_events(self) -> None:
+        self.assertNotIn("System Events", macos_window._CG_WINDOWS_JXA)
+        with patch.object(macos_window.subprocess, "run", return_value=SimpleNamespace(
+                returncode=0, stdout="7 0 33 1634 1084\n", stderr="")) as run:
+            self.assertEqual(macos_window.cg_windows([7]), [(0, 33, 1634, 1084)])
+        self.assertEqual(run.call_args.args[0][:3], ["osascript", "-l", "JavaScript"])
+
+
 if __name__ == "__main__":
     unittest.main()
