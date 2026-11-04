@@ -9383,6 +9383,19 @@ impl AdvancedAi {
         self.guns_stay_out_of_reach_3 = false;
     }
 
+    /// Opt-in gene `garrison-before-the-surprise`; see
+    /// `BasicAi::garrison_before_the_surprise`.
+    pub fn enable_garrison_before_the_surprise(&mut self) {
+        self.garrison_before_the_surprise = true;
+        self.base.enable_garrison_before_the_surprise();
+    }
+
+    /// The twin of `enable_garrison_before_the_surprise`.
+    pub fn disable_garrison_before_the_surprise(&mut self) {
+        self.garrison_before_the_surprise = false;
+        self.base.disable_garrison_before_the_surprise();
+    }
+
     /// Opt-in gene `economy-clock`; see [`Self::economy_clock`].
     pub fn enable_economy_clock(&mut self) {
         self.economy_clock = true;

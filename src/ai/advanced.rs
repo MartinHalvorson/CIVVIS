@@ -7515,6 +7515,10 @@ pub struct AdvancedAi {
     /// Defend or Relieve task force may close on the attackers of our own
     /// city. See `advanced/guns_stay_out_of_reach.rs`.
     guns_stay_out_of_reach_3: bool,
+    /// `garrison-before-the-surprise`: a stronger major's soldier near a city
+    /// with no soldier drafts the nearest idle one home. The behaviour lives
+    /// on `BasicAi`; see `ai/garrison_before_the_surprise.rs`. Off by default.
+    garrison_before_the_surprise: bool,
     // ---- append: l-o ------------------------------------------------
     /// `old-techs-before-the-beeline`: the technology our land army waits on
     /// to upgrade once the world has left its era, then any technology two
@@ -11851,6 +11855,7 @@ impl AdvancedAi {
             gold_buys_the_backlog_builder: false,
             guns_stay_out_of_reach_2: false,
             guns_stay_out_of_reach_3: false,
+            garrison_before_the_surprise: false,
             // ---- append: l-o ----------------------------------------
             old_techs_before_the_beeline: false,
             launch_commits_the_endgame: false,

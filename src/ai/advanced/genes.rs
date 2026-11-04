@@ -4884,6 +4884,13 @@ pub const GENES: &[Gene] = &[
     // two with every member of a Defend or Relieve task force left free to
     // close on the attackers. See `advanced/guns_stay_out_of_reach.rs`.
     Gene { tag: "guns-stay-out-of-reach-3", field: "guns_stay_out_of_reach_3", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_stay_out_of_reach_3, disable: AdvancedAi::disable_guns_stay_out_of_reach_3 },
+    // Live Lv 7 Standard, Gran Colombia 2026-11-04T015124Z, eliminated at turn
+    // 18: Vietnam at 4.6x our power stood within 8 tiles from turn 15, the
+    // answer was Masonry, the only Warrior explored ten tiles away and the
+    // capital held no soldier. Under the gene a stronger major's soldier near
+    // a city with no soldier drafts the nearest idle one home. See
+    // `ai/garrison_before_the_surprise.rs`.
+    Gene { tag: "garrison-before-the-surprise", field: "garrison_before_the_surprise", kind: Kind::OptIn, enable: AdvancedAi::enable_garrison_before_the_surprise, disable: AdvancedAi::disable_garrison_before_the_surprise },
     // Live moved to Standard speed on 11-03; nearly every window was tuned at
     // Online, so at Standard an opening, expansion or build-cap window ends at
     // 0.76x (written with standard_duration) or 0.5x (raw) of its economy
