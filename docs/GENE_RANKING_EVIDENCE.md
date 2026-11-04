@@ -187,8 +187,10 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `air-wing-grows-with-the-aluminum` | off (unmeasured) | Grow the Bomber wing past four while the Aluminum sustains it. | 1 \| 1 |
 | `alliance-remembers-the-refusal` | off (unmeasured) | Opt-in gene `alliance-remembers-the-refusal`; see `Self::alliance_remembers_the_refusal`. | 1 \| 1 |
 | `aluminum-tile-spends-the-war-chest` | off (unmeasured) | Opt-in gene `aluminum-tile-spends-the-war-chest`; see `Self::aluminum_tile_spends_the_war_chest`. | 1 \| 1 |
+| `anvil-follows-the-defense` | off (unmeasured) | Enable measured routing to the board's assigned Defend city. | 1 \| 1 |
 | `anvil-garrisons-its-melee` | off (unmeasured) | Opt-in gene `anvil-garrisons-its-melee`; see `Self::anvil_garrisons_its_melee`. | 1 \| 1 |
 | `apostle-transit-keeps-the-cover` | off (unmeasured) | Opt-in gene `apostle-transit-keeps-the-cover`; see `Self::apostle_transit_keeps_the_cover`. | 1 \| 1 |
+| `artifact-before-more-museums` | off (unmeasured) | One digger for an owned person's missing Artifact, before more Museums. | 1 \| 1 |
 | `astrology-before-the-second-city` | off (unmeasured) | Opt-in gene `astrology-before-the-second-city`; see `advanced/astrology_before_the_second_city.rs`. | 1 \| 1 |
 | `bankruptcy-exits-the-drain` | off (unmeasured) | Opt-in gene `bankruptcy-exits-the-drain`; see `advanced/solvency.rs`. | 1 \| 1 |
 | `board-ignores-the-faith-war` | off (unmeasured) | Opt-in gene `board-ignores-the-faith-war`; see `Self::board_ignores_the_faith_war`. | 1 \| 1 |
@@ -310,6 +312,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `siege-shortfall-claims-the-projects` | off (unmeasured) | Let a siege short of its bill take the repeatable-project queues. | 1 \| 1 |
 | `siege-tier-yields-to-the-bombers-2` | off (unmeasured) | Opt-in gene `siege-tier-yields-to-the-bombers-2`; see `Self::siege_tier_yields_to_the_bombers_2`. | 1 \| 2 |
 | `solvent-or-hold` | off (unmeasured) | Opt-in gene `solvent-or-hold`; see `advanced/solvency.rs`. | 1 \| 1 |
+| `spaceport-above-the-sea` | off (unmeasured) | Prefer a legal non-lowland site when starting a native Spaceport. | 1 \| 1 |
 | `stage-reads-the-muster-breakers` | off (unmeasured) | Let a mustered siege count the guns it mustered when it stages. | 1 \| 1 |
 | `staging-gun-trusts-its-escort-2` | off (unmeasured) | Opt-in gene `staging-gun-trusts-its-escort-2`; see `Self::staging_gun_trusts_its_escort_2`. | 1 \| 2 |
 | `stalled-conquest-takes-science` | off (unmeasured) | Opt-in gene `stalled-conquest-takes-science`; see `Self::stalled_conquest_takes_science`. | 1 \| 1 |

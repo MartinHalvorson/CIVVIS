@@ -88,9 +88,7 @@
 use std::cmp::Reverse;
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 
-use super::{
-    AdvancedAi, AppliedAttack, ForceDomain, ForceGroup, StrategicPlan, THREAT_RELIEF_RADIUS,
-};
+use super::{AdvancedAi, AppliedAttack, ForceDomain, ForceGroup, StrategicPlan};
 use crate::game::{effective_strength, expected_damage, Action, Game};
 use crate::think;
 use crate::Pos;
@@ -5928,17 +5926,8 @@ impl AdvancedAi {
         plan: &StrategicPlan,
         group: &ForceGroup,
     ) -> Option<bool> {
-        let cid = plan.threatened_city?;
+        let cid = self.anvil_defense_city(g, pid, plan, group)?;
         let city = CityView::of(g, cid).filter(|city| city.owner == pid)?;
-        let nearest = self
-            .force_groups
-            .iter()
-            .filter(|other| other.domain == ForceDomain::Land)
-            .min_by_key(|other| (g.wdist(other.anchor, city.pos), other.id))
-            .map(|other| other.id)?;
-        if group.id != nearest || g.wdist(group.anchor, city.pos) > THREAT_RELIEF_RADIUS {
-            return None;
-        }
         let hostiles = hostiles_near(g, pid, city.pos, ANVIL_HOSTILE_RADIUS);
         if self.anvil_orders_turn != Some((g.turn, cid)) {
             let heals = !g.is_arena() || g.tactics.heal;

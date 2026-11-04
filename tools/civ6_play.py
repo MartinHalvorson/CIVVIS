@@ -1457,6 +1457,17 @@ SCREEN_POLL_BUDGET_S = 20.0
 # menu, and every look costs ~1.5 s on top of it (operator 2026-10-13: a new
 # game "should be fast").
 SCREEN_POLL_S = 1.5
+# ★ The FIRST top-menu attempt of every game starts while Civ VI's boot logos
+# still cover the menu, and 20 s was a hair short of them. Measured over 24
+# games of 2026-11-03 (`[setup-time]` in civvis-climb-logs/*-play.log): the
+# poll began at +12-14 s after launch, the menu became readable at +31-41 s,
+# and in 18 of 24 games attempt 1's budget ran out at +30-34 s -- seconds
+# before the menu drew -- so attempt 2 re-paid the focus/click/settle
+# preamble and read it ~6.3 s later (configured at 66-79 s vs 63-67 s when
+# attempt 1 caught it). 40 s covers every boot seen. Later attempts keep the
+# shorter budget: by then a menu that is still unreadable is more likely a
+# covering dialog, which the branch after the poll recovers from.
+FIRST_MENU_POLL_BUDGET_S = 40.0
 
 
 def _poll_screen(read, budget_s: float = SCREEN_POLL_BUDGET_S,
@@ -3928,7 +3939,8 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
             rows = vision.menu_rows(menushot, bounds) if vision.available() else []
             return (point, rows) if point is not None or len(rows) >= 4 else None
 
-        top = _poll_screen(read_top_menu)
+        top = _poll_screen(read_top_menu, budget_s=FIRST_MENU_POLL_BUDGET_S
+                           if attempt == 1 else SCREEN_POLL_BUDGET_S)
         menu_point, toprows = top if top is not None else (None, [])
         sp_y = MENU["single_player"][1]
         pitch = 0.029

@@ -1,0 +1,238 @@
+{
+  "utc": "2026-11-03T03:21:59.657245+00:00",
+  "tag": "artifact-before-more-museums",
+  "decision": "Publish an explicit opt-in, default OFF; no native screen armed.",
+  "source": {
+    "commit": "31804986534f24ab1d44b8de4e4e804e542d23b0",
+    "files": {
+      "src/ai.rs": "7e00585fd695009be6067bca01d193f00bbe49dc141e12934e0091019ef552f5",
+      "src/ai/advanced.rs": "902320498c3a94a426c2f76e6b881f495058f3db2edd7e274d5a3210b82154e7",
+      "src/ai/advanced/genes.rs": "cbc9ce935f0ff2f6f3cf2afd3b0eedac60aef81e4bbe803169d437f06feb38a3",
+      "src/ai/advanced/treatment_flags.rs": "c645c2b7134cc522db4ece623a5312d4c48795e1e7aa31dfc9825ac69e29da46",
+      "src/ai/advanced/artifact_activation_tests.rs": "b9a9cd31f10cbc44412bfff4fcf2a0aa032c2fc7cf60181e31ed2081bb069079"
+    },
+    "binary_sha256": "3fb991cd28ba9a85499ac28bac2d28af92de526a448989e30767771d9ddbecb9",
+    "binary": "/Users/martbot-mbp-m5-max-128/civvis-runs/2026-11-03-artifact-activation/frozen-candidate-ci-orders",
+    "build_command": "cargo build --profile ci --locked --bin civvis_orders"
+  },
+  "scope": "Four selected disposable native captured-board proposal comparisons from one historical loss. No persistent replay qualification, native execution, artifact delivery, person activation or strength estimate.",
+  "queries": 20,
+  "focused_tests": 7,
+  "cases": [
+    {
+      "turn": 153,
+      "input_sha256": "b8c215b1f2628c79abe335ff7358ce717a8312387b0553798634402472ace5eb",
+      "before_off_full_payload_matches": true,
+      "off_repeat_full_payload_matches": true,
+      "on_repeat_full_payload_matches": true,
+      "added_orders": [
+        {
+          "kind": "produce",
+          "subject": 262147,
+          "verb": "UNIT_ARCHAEOLOGIST",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "produce",
+          "subject": 196610,
+          "verb": "UNIT_CARAVEL",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "produce",
+          "subject": 524295,
+          "verb": "UNIT_FRIGATE",
+          "x": null,
+          "y": null
+        }
+      ],
+      "removed_orders": [
+        {
+          "kind": "produce",
+          "subject": 196610,
+          "verb": "BUILDING_MUSEUM_ARTIFACT",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "produce",
+          "subject": 262147,
+          "verb": "UNIT_FIELD_CANNON",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "produce",
+          "subject": 524295,
+          "verb": "UNIT_CARAVEL",
+          "x": null,
+          "y": null
+        }
+      ]
+    },
+    {
+      "turn": 160,
+      "input_sha256": "e093e55f38b3fa58aad00f51f6f6d20f4a4688162567effa49a8e9cd8dc2baec",
+      "before_off_full_payload_matches": true,
+      "off_repeat_full_payload_matches": true,
+      "on_repeat_full_payload_matches": true,
+      "added_orders": [
+        {
+          "kind": "produce",
+          "subject": 262147,
+          "verb": "UNIT_ARCHAEOLOGIST",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "produce",
+          "subject": 196610,
+          "verb": "UNIT_CARAVEL",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "produce",
+          "subject": 524295,
+          "verb": "UNIT_FRIGATE",
+          "x": null,
+          "y": null
+        }
+      ],
+      "removed_orders": [
+        {
+          "kind": "produce",
+          "subject": 196610,
+          "verb": "BUILDING_MUSEUM_ARTIFACT",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "produce",
+          "subject": 262147,
+          "verb": "UNIT_ARTILLERY",
+          "x": null,
+          "y": null
+        },
+        {
+          "kind": "produce",
+          "subject": 524295,
+          "verb": "UNIT_CARAVEL",
+          "x": null,
+          "y": null
+        }
+      ]
+    },
+    {
+      "turn": 175,
+      "input_sha256": "1faa16b6acf43450a8b03ad118e0cd2e26061a1cc19287e3f724f1a5c9c88fac",
+      "before_off_full_payload_matches": true,
+      "off_repeat_full_payload_matches": true,
+      "on_repeat_full_payload_matches": true,
+      "added_orders": [
+        {
+          "kind": "produce",
+          "subject": 458758,
+          "verb": "UNIT_ARCHAEOLOGIST",
+          "x": null,
+          "y": null
+        }
+      ],
+      "removed_orders": [
+        {
+          "kind": "produce",
+          "subject": 458758,
+          "verb": "BUILDING_THERMAL_BATH",
+          "x": null,
+          "y": null
+        }
+      ]
+    },
+    {
+      "turn": 176,
+      "input_sha256": "5d1a37bb680330da92ae2a1e69602ff844da480b73738aceb8116565946445a8",
+      "before_off_full_payload_matches": true,
+      "off_repeat_full_payload_matches": true,
+      "on_repeat_full_payload_matches": true,
+      "added_orders": [
+        {
+          "kind": "produce",
+          "subject": 262147,
+          "verb": "UNIT_ARCHAEOLOGIST",
+          "x": null,
+          "y": null
+        }
+      ],
+      "removed_orders": [
+        {
+          "kind": "produce",
+          "subject": 262147,
+          "verb": "DISTRICT_ENTERTAINMENT_COMPLEX",
+          "x": 14,
+          "y": 34
+        }
+      ]
+    }
+  ],
+  "side_effects": "At turns153 and160 the removed additional Museum request leaves another city to the ordinary governor; its naval composition choices also change. Do not claim only one order changes.",
+  "retained_failures": [
+    "First focused compile: fixture used crate::map::Pos, corrected to crate::Pos.",
+    "Three of187 gene tests initially failed on the missing generated unmeasured evidence row; regenerated that table only and allthree corrected checks passed.",
+    "First fire ratchet failed because new opt-in had no firing evidence yet.",
+    "First native offer census searched the wrong building name, ARCHAELOGICAL_MUSEUM; corrected to the shipped BUILDING_MUSEUM_ARTIFACT in version2."
+  ],
+  "limits": [
+    "Owned nearby land dig does not prove a traversable route.",
+    "Local hostility and damage guards, legal menu and quote cap can leave the activation path waiting.",
+    "A proposal is not a completed build, accepted dig or activated Mary Leakey.",
+    "No strength ledger or deployment defaults changed."
+  ],
+  "archive": {
+    "path": "docs/eval/2026-11-03-artifact-activation.raw.tar.xz",
+    "bytes": 2888580,
+    "sha256": "d9b5e2e9e9162485c796a218b692b2300b92a66707f1d763b84357165ec77cd1",
+    "members": 76
+  },
+  "validation_after_packaging": {
+    "command": "cargo test --profile ci --locked",
+    "exit": 0,
+    "passed": 6699,
+    "ignored": 56,
+    "suites": [
+      {
+        "passed": 6344,
+        "failed": 0,
+        "ignored": 52
+      },
+      {
+        "passed": 14,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 320,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 17,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0
+      },
+      {
+        "passed": 0,
+        "failed": 0,
+        "ignored": 4
+      }
+    ],
+    "log_sha256": "2f4318b4e698292b7841afc039b251197b714ba72814712700ada26250290da7",
+    "source_commit": "31804986534f24ab1d44b8de4e4e804e542d23b0"
+  }
+}
