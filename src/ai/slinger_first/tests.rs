@@ -23,7 +23,7 @@ fn opening() -> (Game, BasicAi, u32) {
     g.players[0].explored.clear();
     g.players[0].explored.insert(home);
     let mut ai = BasicAi::new();
-    ai.slinger_first_opening = true;
+    ai.opening_ranged_support = true;
     ai.scout_first_opening = true;
     ai.recon_replacement = true;
     (g, ai, capital)
@@ -61,13 +61,13 @@ fn first_slinger_replaces_the_scout_slot_then_releases_the_settler() {
 fn off_preserves_the_existing_scout_overrides() {
     for scout_override in [false, true] {
         let (mut g, mut ai, capital) = opening();
-        ai.slinger_first_opening = false;
+        ai.opening_ranged_support = false;
         ai.scout_first_opening = scout_override;
         ai.cities(&mut g, 0);
         assert_eq!(g.cities[&capital].queue, vec![unit("scout")]);
         assert_eq!(ai.book_pos, 1);
     }
-    assert!(!BasicAi::new().slinger_first_opening);
+    assert!(!BasicAi::new().opening_ranged_support);
 }
 
 #[test]
@@ -97,7 +97,7 @@ fn first_slinger_never_preempts_or_restarts_a_played_opening() {
             2 => g.cities.get_mut(&capital).unwrap().is_capital = false,
             3 => ai.minor = true,
             4 => ai.barb = true,
-            5 => ai.slinger_first_opening = false,
+            5 => ai.opening_ranged_support = false,
             6 => g.cities.get_mut(&capital).unwrap().owner = 1,
             _ => unreachable!(),
         }
@@ -143,4 +143,12 @@ fn an_established_multi_city_empire_does_not_take_an_opening_slot() {
     g.cities.insert(other.id, other);
     assert!(!ai.play_slinger_first_opening(&mut g, 0, capital));
     assert_eq!(ai.book_pos, 0);
+}
+
+#[test]
+fn opening_ranged_support_is_an_opt_in_off_in_both_controllers() {
+    crate::ai::advanced::test_support::opt_in_off_in_both_controllers(
+        "opening-ranged-support",
+        |ai| ai.opening_ranged_support,
+    );
 }

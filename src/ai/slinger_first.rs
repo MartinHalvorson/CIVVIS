@@ -10,7 +10,7 @@ impl BasicAi {
         pid: usize,
         cid: u32,
     ) -> bool {
-        if !self.slinger_first_opening || self.minor || self.barb || self.book_pos != 0 {
+        if !self.opening_ranged_support || self.minor || self.barb || self.book_pos != 0 {
             return false;
         }
         let city = &g.cities[&cid];
@@ -50,7 +50,7 @@ impl BasicAi {
         self.book_pos = 1;
         think!(self.journal, Cities, Decision,
                "{} opens with a Slinger", g.cities[&cid].name;
-               "slinger-first-opening: a nearby melee defender gains ranged support before the first Settler; this replaces one opening slot without changing later recon settings");
+               "opening-ranged-support: a nearby melee defender gains ranged support before the first Settler; this replaces one opening slot without changing later recon settings");
         true
     }
 }

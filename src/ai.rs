@@ -4182,7 +4182,7 @@ pub struct BasicAi {
     /// Independent first-slot exploration experiment.
     pub(crate) scout_first_opening: bool,
     /// Opt-in first-slot ranged support; later recon behavior stays enabled.
-    pub(crate) slinger_first_opening: bool,
+    pub(crate) opening_ranged_support: bool,
     /// Take the pantheon that founds a city. Civilization VI's Religious
     /// Settlements grants a free Settler in the capital
     /// (`RELIGIOUS_SETTLEMENTS_SETTLER_MODIFIER`, `Expansion2_Beliefs.xml`),
@@ -6090,7 +6090,7 @@ impl BasicAi {
             opening_builder_paid: false,
             first_pad_in_the_forge: false,
             scout_first_opening: false,
-            slinger_first_opening: false,
+            opening_ranged_support: false,
             expansion_pantheon: false,
             pantheon_for_the_prophet_race: false,
             opening_settler_waits: false,
@@ -6689,7 +6689,7 @@ impl BasicAi {
             opening_builder_paid: false,
             first_pad_in_the_forge: false,
             scout_first_opening: false,
-            slinger_first_opening: false,
+            opening_ranged_support: false,
             expansion_pantheon: false,
             pantheon_for_the_prophet_race: false,
             opening_settler_waits: false,
