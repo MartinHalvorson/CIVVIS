@@ -115,6 +115,7 @@ impl AdvancedAi {
         if state.disabled_until > g.turn
             || g.turn.saturating_sub(state.assigned_turn) < residence
             || !self.governor_dividend_safe_city(g, pid, current, plan)
+            || !self.base.capital_governor_may_depart(g, pid, governor)
         {
             return None;
         }

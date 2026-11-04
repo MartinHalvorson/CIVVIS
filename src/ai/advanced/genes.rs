@@ -4971,6 +4971,8 @@ pub const GENES: &[Gene] = &[
     // offensive rows. Under the gene the capital's Defend row is urgent and
     // ranks first. See `objective_board.rs` (`capital_defend_first`).
     Gene { tag: "capital-keeps-its-defender", field: "capital_keeps_its_defender", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_defender, disable: AdvancedAi::disable_capital_keeps_its_defender },
+    // Preserve the original capital's Loyalty anchor; default OFF.
+    Gene { tag: "capital-keeps-its-governor", field: "capital_keeps_its_governor", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_governor, disable: AdvancedAi::disable_capital_keeps_its_governor },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
