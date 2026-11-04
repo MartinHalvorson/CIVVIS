@@ -29,7 +29,12 @@ fn opening() -> (Game, u32, u32, StrategicPlan) {
     g.game_speed = GameSpeed::Standard;
     g.turn = 12;
     g.current = 0;
-    g.spawn_test_unit("swordsman", 1, at(11, 8));
+    // A civilian working the capital's first ring reveals the raider three
+    // tiles from the city. Exploration alone does not grant current sight.
+    g.spawn_test_unit("builder", 0, at(13, 8));
+    let raider = g.spawn_test_unit("swordsman", 1, at(11, 8));
+    assert!(g.player_can_see(0, at(11, 8)));
+    assert!(g.unit_visible_to(raider, 0));
     let soldier = g.spawn_test_unit("warrior", 0, at(7, 8));
     g.barb_camps.insert(at(6, 10), g.turn);
     let plan = StrategicPlan {
@@ -135,4 +140,25 @@ fn first_capital_defense_recalls_the_camp_party_before_the_capital_is_hit() {
         g.cities[&capital].hp, 200,
         "defence need not wait for damage"
     );
+}
+
+#[test]
+fn first_capital_defense_does_not_create_a_row_for_an_unseen_raider() {
+    use super::super::objective_board::ObjectiveKey;
+    let (mut g, capital, _, plan) = opening();
+    let observer = g
+        .units
+        .values()
+        .find(|unit| unit.owner == 0 && unit.kind == "builder")
+        .unwrap()
+        .id;
+    g.remove_unit(observer);
+    assert!(!g.player_can_see(0, at(11, 8)));
+    let mut ai = ai(true);
+    ai.rebuild_force_groups(&g, 0, &plan);
+    assert!(!ai
+        .objective_board()
+        .rows
+        .iter()
+        .any(|row| row.key == ObjectiveKey::Defend(capital)));
 }
