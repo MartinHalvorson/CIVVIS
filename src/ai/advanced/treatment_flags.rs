@@ -9314,6 +9314,18 @@ impl AdvancedAi {
         self.founding_voyage = false;
     }
 
+    /// Opt-in gene `guns-stay-out-of-reach-2`; version two of the family, so
+    /// version one is turned off. See [`Self::guns_stay_out_of_reach_2`].
+    pub fn enable_guns_stay_out_of_reach_2(&mut self) {
+        self.guns_stay_out_of_reach = false;
+        self.guns_stay_out_of_reach_2 = true;
+    }
+
+    /// The twin of `enable_guns_stay_out_of_reach_2`.
+    pub fn disable_guns_stay_out_of_reach_2(&mut self) {
+        self.guns_stay_out_of_reach_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

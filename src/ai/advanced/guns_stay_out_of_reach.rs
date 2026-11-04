@@ -22,6 +22,21 @@
 //! field reads ZOC through `strike-reach`, so a screen that stops the
 //! hostile short of the gun clears the tile; a lone or unscreened gun is the
 //! one held back.
+//!
+//! **Version two** (`guns-stay-out-of-reach-2`) carries version one and
+//! refuses the same step for every other land military unit with movement
+//! left that the battle planner did not place this turn. 57 live Immortal
+//! games (2026-11-03/04, `tools/civ6_tactics_ledger.py` and the combat rows)
+//! lost 765 military units: 580 to one blow, and 383 were healthy units
+//! that struck nothing that turn, moved, and were destroyed on the enemy's
+//! turn — 351 of them with the killer in sight within two tiles when our
+//! turn ended (an Archer, a Spearman or a Field Cannon stepping beside a
+//! Line Infantry, a Musketman or a Machine Gun). Those units are not guns,
+//! so version one never read them. Each blow is kept with its source, and
+//! `path_step_allowed` counts only the hostiles still on the board, so a
+//! hostile the ladder kills later in the frame no longer holds the tile.
+//! The step-out stays the guns' own: the planner's heal rotation already
+//! moves every exposed unit it did not give a blow.
 use super::battle_planner::{DangerField, STRUCTURE_SOURCE};
 use super::{AdvancedAi, ForceRole};
 use crate::game::Game;
@@ -36,7 +51,9 @@ impl AdvancedAi {
     /// empty with the gene off.
     pub(super) fn mark_gun_lethal_tiles(&mut self, g: &Game, pid: usize) {
         self.base.gun_lethal_tiles.clear();
-        if !self.guns_stay_out_of_reach {
+        self.base.unit_lethal_blows.clear();
+        let every_unit = self.guns_stay_out_of_reach_2;
+        if !self.guns_stay_out_of_reach && !every_unit {
             return;
         }
         let guns: Vec<u32> = g
@@ -50,10 +67,28 @@ impl AdvancedAi {
                     && !g.is_embarked(unit)
             })
             .collect();
-        if guns.is_empty() {
+        let others: Vec<u32> = if every_unit {
+            g.player_unit_ids(pid)
+                .into_iter()
+                .filter(|uid| {
+                    let unit = &g.units[uid];
+                    let spec = &g.rules.units[unit.kind];
+                    spec.class == "military"
+                        && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                        && !matches!(Self::force_role(g, *uid), ForceRole::Siege)
+                        && unit.moves_left > 0.0
+                        && !g.is_embarked(unit)
+                        && !self.battle_planner_ordered.contains(uid)
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
+        if guns.is_empty() && others.is_empty() {
             return;
         }
         let mut field = DangerField::with_reach(g, pid, self.strike_reach);
+        self.mark_unit_lethal_blows(g, &mut field, &others);
         for uid in guns {
             let unit = &g.units[&uid];
             let hp = f64::from(unit.hp);
@@ -73,6 +108,41 @@ impl AdvancedAi {
                 .collect();
             if !lethal.is_empty() {
                 self.base.gun_lethal_tiles.insert(uid, lethal);
+            }
+        }
+    }
+
+    /// Version two: for each of `units`, every tile it can reach this turn
+    /// (its own included) where a visible hostile unit's blow, at its upper
+    /// roll, meets the unit's health — each such blow kept with its source.
+    /// City and Encampment strikes are left out as for the guns. Left in
+    /// `BasicAi::unit_lethal_blows` for `path_step_allowed`.
+    fn mark_unit_lethal_blows(&mut self, g: &Game, field: &mut DangerField, units: &[u32]) {
+        for &uid in units {
+            let unit = &g.units[&uid];
+            let hp = f64::from(unit.hp);
+            let mut tiles = vec![unit.pos];
+            tiles.extend(g.reachable(uid));
+            let mut lethal: HashMap<Pos, Vec<(u32, f64)>> = HashMap::new();
+            for tile in tiles {
+                if !field.reaches_tile(tile) {
+                    continue;
+                }
+                let blows: Vec<(u32, f64)> = field
+                    .contributions(tile, uid)
+                    .iter()
+                    .filter_map(|(source, blow)| {
+                        let id = (*source).filter(|id| id & STRUCTURE_SOURCE == 0)?;
+                        let upper = (blow * crate::ai::COMBAT_ROLL_MAX).ceil().min(100.0);
+                        (upper >= hp).then_some((id, upper))
+                    })
+                    .collect();
+                if !blows.is_empty() {
+                    lethal.insert(tile, blows);
+                }
+            }
+            if !lethal.is_empty() {
+                self.base.unit_lethal_blows.insert(uid, lethal);
             }
         }
     }
@@ -112,6 +182,9 @@ impl AdvancedAi {
         }
     }
 }
+
+#[cfg(test)]
+mod v2_tests;
 
 #[cfg(test)]
 mod tests {

@@ -7499,6 +7499,10 @@ pub struct AdvancedAi {
     /// treasury buys one in the city that owns the most of them. See
     /// `advanced/gold_buys_the_backlog_builder.rs`. Off by default.
     gold_buys_the_backlog_builder: bool,
+    /// `guns-stay-out-of-reach-2`: version one's one-blow veto on every land
+    /// military unit, not only the siege guns. See
+    /// `advanced/guns_stay_out_of_reach.rs`.
+    guns_stay_out_of_reach_2: bool,
     // ---- append: l-o ------------------------------------------------
     /// `old-techs-before-the-beeline`: the technology our land army waits on
     /// to upgrade once the world has left its era, then any technology two
@@ -11810,6 +11814,7 @@ impl AdvancedAi {
             inquisition_defends_the_diplomat: false,
             inquisition_answers_a_rival_majority: false,
             gold_buys_the_backlog_builder: false,
+            guns_stay_out_of_reach_2: false,
             // ---- append: l-o ----------------------------------------
             old_techs_before_the_beeline: false,
             launch_commits_the_endgame: false,
@@ -50253,6 +50258,7 @@ impl AdvancedAi {
         self.record_turn_start_faith(g, pid);
         self.air_city_assault = None;
         self.base.gun_lethal_tiles.clear();
+        self.base.unit_lethal_blows.clear();
         self.builder_support.clear();
         self.battlefront_frame = None;
         self.settlement_atlas.borrow_mut().clear();

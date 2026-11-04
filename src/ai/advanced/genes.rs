@@ -4850,6 +4850,16 @@ pub const GENES: &[Gene] = &[
     // route. Under the gene it sails toward the edge of the known sea. See
     // `advanced/maori_founds_from_the_sea.rs`.
     Gene { tag: "founding-voyage", field: "founding_voyage", kind: Kind::OptIn, enable: AdvancedAi::enable_founding_voyage, disable: AdvancedAi::disable_founding_voyage },
+    // 57 live Immortal games (11-03/04) lost 765 military units; 383 were
+    // healthy units, no strike that turn, that moved and died, 580 of all 765
+    // to ONE blow, and 351 of the healthy ones had their killer in sight
+    // within two tiles when our turn ended: an Archer or Spearman stepping
+    // beside a Line Infantry or a Machine Gun. Version one refused such a
+    // step for siege guns only. Version two refuses it for every land
+    // military unit the battle planner did not place, and a hostile killed
+    // later in the frame no longer vetoes. See
+    // `advanced/guns_stay_out_of_reach.rs`.
+    Gene { tag: "guns-stay-out-of-reach-2", field: "guns_stay_out_of_reach_2", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_stay_out_of_reach_2, disable: AdvancedAi::disable_guns_stay_out_of_reach_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
