@@ -43,7 +43,7 @@ import time
 import urllib.error
 import urllib.request
 
-from civ6_control import live_pause, mirror_sync
+from civ6_control import game_speed, live_pause, mirror_sync
 
 RIG = os.environ.get(
     "CIVVIS_RIG", os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -187,6 +187,8 @@ def read_events(run_dir):
             "players": 4,
             "height": 38,
             "tiles": False,
+            "speed": None,
+            "max_turns": None,
         }
         _EVENT_CACHE = cache
 
@@ -216,6 +218,10 @@ def read_events(run_dir):
         kind = event.get("kind")
         if kind == "seat":
             cache["players"] = int(event.get("players") or cache["players"])
+            # The clock the page prints: see `seat_clock`.
+            cache["speed"] = event.get("speed") or cache["speed"]
+            if isinstance(event.get("max_turns"), int):
+                cache["max_turns"] = event["max_turns"]
         # The map's own height decides the reflection axis; taking it from the
         # export beats assuming a size, because the ladder changes map size.
         if kind == "tiles":
@@ -243,6 +249,26 @@ def read_events(run_dir):
         cache["lines"], cache["turn"], cache["players"],
         cache["height"], cache["tiles"],
     )
+
+
+def seat_clock(run_dir):
+    """``(speed, turns)`` for ``civvis play --speed/--turns``, from the run's seat.
+
+    The page prints ``TURN n/<turns>`` and names the speed, so both come from the
+    game being shown, never from a constant. ``turns`` is the engine's own
+    readback (``Game.GetMaxGameTurns()``, which the harness may have set to a
+    custom limit), else the speed's Civilization VI limit, else Online's.
+
+    Reads the cache `read_events` keeps, so call that first for the same run.
+    """
+    cache = _EVENT_CACHE or {}
+    if cache.get("path") != os.path.abspath(os.path.join(run_dir, "events.jsonl")):
+        cache = {}
+    speed = game_speed.speed_type(cache.get("speed")) or game_speed.DEFAULT_SPEED
+    turns = cache.get("max_turns")
+    if not isinstance(turns, int) or turns <= 0:
+        turns = game_speed.turn_limit(speed)
+    return game_speed.civvis_id(speed), turns
 
 
 def mirror_axis(height):
@@ -669,9 +695,11 @@ def start_visible_server(run_dir, players, keep_reporting=None):
     is 60x38 with ~160 revealed plots, so it would frame a three-city empire as
     a speck in blank ocean (see civvis-seat-framed-on-own-ground).
 
-    `--speed online --turns 250` because the HUD prints them: a mirror that
-    reports "Standard" for a game being played on Online is quietly wrong on
-    screen, which is the one thing a mirror cannot be.
+    `--speed`/`--turns` from the run's own seat (`seat_clock`) because the
+    HUD prints them: a mirror that reports "Standard" for a game being played
+    on Online is quietly wrong on screen, which is the one thing a mirror
+    cannot be. They were a fixed `online`/`250`, which the first frames of
+    every Standard game printed until 2026-11-03.
 
     `keep_reporting` is called through every wait here (`report_opening`): the
     game is holding its opening turn for this page, and a follower that went
@@ -684,10 +712,11 @@ def start_visible_server(run_dir, players, keep_reporting=None):
     # turned north-up too, or the window is upside down until the first /load.
     lines, _, _, height, _ = read_events(run_dir)
     staged = stage_events(lines or [], height)
+    speed, turns = seat_clock(run_dir)
     process = subprocess.Popen(
         ["nice", "-n", "5", BIN, "play", "--mirror", staged,
          "--players", str(players), "--port", str(PORT), "--paused", "--no-open",
-         "--spectate", "--speed", "online", "--turns", "250",
+         "--spectate", "--speed", speed, "--turns", str(turns),
          "--victories", "science,culture,religious,diplomatic,domination,score",
          # The page's Pause / Resume holds the Civilization VI game this
          # window shows (`civ6_control.live_pause`). Only this server carries

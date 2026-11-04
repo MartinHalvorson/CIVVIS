@@ -65,6 +65,10 @@ struct Outcome {
     turns: u32,
     /// Cities of ours at the end that were not ours at the start, anywhere.
     any_captures: usize,
+    /// Our empire at the end: summed city science, production and population.
+    science: f64,
+    production: f64,
+    population: i32,
 }
 
 fn military_units(g: &Game, pid: usize) -> usize {
@@ -122,6 +126,9 @@ fn replay(
         units_lost: 0,
         turns: 0,
         any_captures: 0,
+        science: 0.0,
+        production: 0.0,
+        population: 0,
     };
     let ours_at_start: std::collections::BTreeSet<(i32, i32)> = g
         .cities
@@ -157,12 +164,22 @@ fn replay(
         .values()
         .filter(|city| city.owner == 0 && !ours_at_start.contains(&city.pos))
         .count();
+    for cid in g.player_city_ids(0) {
+        let yields = g.city_yields(cid);
+        out.science += yields.science;
+        out.production += yields.production;
+        out.population += g.cities[&cid].pop;
+    }
     // `--why`: our seat's journal lines that name the target, to read why a
     // siege held where it did.
     if let Some(name) = why {
         let needle = name.to_lowercase();
         for thought in journal.since(0).thoughts {
-            if thought.player == 0 && thought.headline.to_lowercase().contains(&needle) {
+            // The grand strategy too, so a war's posture cost is visible.
+            if thought.player == 0
+                && (thought.headline.to_lowercase().contains(&needle)
+                    || thought.headline.starts_with("Grand strategy"))
+            {
                 let detail: String = thought.detail.chars().take(220).collect();
                 eprintln!("  t{} {} | {}", thought.turn, thought.headline, detail);
             }
@@ -268,14 +285,17 @@ fn main() {
         captured += usize::from(out.captured.is_some());
         breached += usize::from(out.walls_down.is_some());
         println!(
-            "{{\"seed\":{seed},\"walls_down\":{},\"captured\":{},\"min_hp\":{},\"min_walls\":{},\"units_lost\":{},\"turns\":{},\"any_captures\":{}}}",
+            "{{\"seed\":{seed},\"walls_down\":{},\"captured\":{},\"min_hp\":{},\"min_walls\":{},\"units_lost\":{},\"turns\":{},\"any_captures\":{},\"science\":{:.1},\"production\":{:.1},\"population\":{}}}",
             out.walls_down.map_or("null".into(), |t| t.to_string()),
             out.captured.map_or("null".into(), |t| t.to_string()),
             out.min_hp,
             out.min_walls,
             out.units_lost,
             out.turns,
-            out.any_captures
+            out.any_captures,
+            out.science,
+            out.production,
+            out.population
         );
     }
     eprintln!("{seeds} seeds: walls down in {breached}, captured in {captured}");

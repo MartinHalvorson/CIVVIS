@@ -136,8 +136,48 @@ class ProductionShareRunTest(unittest.TestCase):
         self.assertEqual(len(branch), 2, "the live loop reads the share every turn")
         body = branch[1][:2500]
         self.assertIn("run = production_share_run(state, reading)", body)
-        self.assertIn("if run >= PRODUCTION_SHARE_TURNS:", body)
+        self.assertIn("if run >= production_share_turns:", body)
         self.assertIn("return abandon_with_retire(reading)", body)
+
+
+class ProductionShareSpeedTest(unittest.TestCase):
+    """Operator 2026-11-03: the rule's turns are Online turns, scaled to the speed."""
+
+    def test_online_is_unchanged_and_standard_doubles(self):
+        for turns in (1, 3, 50, 120):
+            self.assertEqual(civ6_play.online_turns(turns, "GAMESPEED_ONLINE"), turns)
+        self.assertEqual(civ6_play.online_turns(120, "GAMESPEED_STANDARD"), 240)
+        self.assertEqual(civ6_play.online_turns(3, "GAMESPEED_STANDARD"), 6)
+
+    def test_every_speed_by_the_engines_cost_ratio(self):
+        cases = {"GAMESPEED_QUICK": (161, 4), "GAMESPEED_EPIC": (360, 9),
+                 "GAMESPEED_MARATHON": (720, 18)}
+        for speed, (from_turn, run) in cases.items():
+            self.assertEqual(civ6_play.online_turns(120, speed), from_turn, speed)
+            self.assertEqual(civ6_play.online_turns(3, speed), run, speed)
+
+    def test_an_unknown_speed_is_read_as_online(self):
+        for speed in (None, "", "GAMESPEED_LIGHTNING"):
+            self.assertEqual(civ6_play.online_turns(120, speed), 120, speed)
+
+    def test_the_table_matches_the_engine(self):
+        setup = (Path(civ6_play.__file__).resolve().parent.parent / "src" / "setup.rs"
+                 ).read_text(encoding="utf-8")
+        body = setup.split("pub const fn cost_percent(self) -> u32 {", 1)[1][:400]
+        for speed, percent in civ6_play.SPEED_COST_PERCENT.items():
+            name = speed.removeprefix("GAMESPEED_").title()
+            self.assertIn(f"Self::{name} => {percent},", body, speed)
+
+    def test_the_live_loop_scales_both_counts_once(self):
+        source = Path(civ6_play.__file__).read_text(encoding="utf-8")
+        play = source.split("def _play(args: argparse.Namespace) -> int:", 1)[1][:1500]
+        self.assertIn('production_share_from = online_turns(production_share_from, '
+                      'getattr(args, "speed", None))', play)
+        self.assertIn('production_share_turns = online_turns(PRODUCTION_SHARE_TURNS, '
+                      'getattr(args, "speed", None))', play)
+        # `play` keeps the Online value on args, so a second `_play` scales once.
+        self.assertIn("args.restart_below_leader_production_from_turn = production_share_from\n",
+                      source)
 
 
 class ProductionSharePolicyTest(unittest.TestCase):
@@ -267,8 +307,8 @@ class VictoryRaceLeadTest(unittest.TestCase):
                       "            # Re-read every turn: see `victory_race_lead`.\n"
                       '            state["race_lead"] = victory_race_lead(event)', source)
         branch = source.split("run = production_share_run(state, reading)", 1)[1][:2500]
-        spare = branch.index("if run >= PRODUCTION_SHARE_TURNS and lead:")
-        retire = branch.index("elif run >= PRODUCTION_SHARE_TURNS:")
+        spare = branch.index("if run >= production_share_turns and lead:")
+        retire = branch.index("elif run >= production_share_turns:")
         self.assertLess(spare, retire)
         self.assertNotIn("abandon_with_retire", branch[spare:retire])
         self.assertIn('"race_lead_spared": state.get("race_lead_spared")', source)

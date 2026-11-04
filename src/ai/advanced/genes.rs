@@ -2510,6 +2510,8 @@ pub const GENES: &[Gene] = &[
     // Live King 051413Z: Bogota switched the Art Museum and the Archaeological
     // Museum every turn t187-t214; see `BasicAi::activation_keeps_its_building`.
     Gene { tag: "activation-keeps-its-building", field: "activation_keeps_its_building", kind: Kind::HostOnly, enable: AdvancedAi::enable_activation_keeps_its_building, disable: AdvancedAi::disable_activation_keeps_its_building },
+    // Native 002240Z: Mary Leakey needs an Artifact; two empty Museums are not that work.
+    Gene { tag: "artifact-before-more-museums", field: "artifact_before_more_museums", kind: Kind::OptIn, enable: AdvancedAi::enable_artifact_before_more_museums, disable: AdvancedAi::disable_artifact_before_more_museums },
     // Live King 113755Z: Galleys and Quadriremes ahead of the walkers at
     // three cities; see `BasicAi::settler_before_the_navy`.
     Gene { tag: "settler-before-the-navy", field: "settler_before_the_navy", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_before_the_navy, disable: AdvancedAi::disable_settler_before_the_navy },
@@ -3295,6 +3297,8 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "siege-buys-the-gun-resource", field: "siege_buys_the_gun_resource", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_buys_the_gun_resource, disable: AdvancedAi::disable_siege_buys_the_gun_resource },
     // Native-only purchase proposal; strength requires native trials.
     Gene { tag: "science-power-buys-fuel", field: "science_power_buys_fuel", kind: Kind::OptIn, enable: AdvancedAi::enable_science_power_buys_fuel, disable: AdvancedAi::disable_science_power_buys_fuel },
+    // Native site proposal only; outcome evidence requires native games.
+    Gene { tag: "spaceport-above-the-sea", field: "spaceport_above_the_sea", kind: Kind::OptIn, enable: AdvancedAi::enable_spaceport_above_the_sea, disable: AdvancedAi::disable_spaceport_above_the_sea },
     // The decisive window spent ~1,200 science a game off the Advanced
     // Flight path after the air surge's horizon opened (10-06/07 Emperor),
     // and captures ran 0.20 per 100 turns before the Bomber against 1.24
@@ -4825,6 +4829,32 @@ pub const GENES: &[Gene] = &[
     // plan's Conquest target for a bounded window. See
     // `advanced/city_state_harvest.rs`.
     Gene { tag: "city-state-harvest", field: "city_state_harvest", kind: Kind::OptIn, enable: AdvancedAi::enable_city_state_harvest, disable: AdvancedAi::disable_city_state_harvest },
+    // Live Immortal 6p Continents 11-02/03: the seat never reached its city
+    // target, so Expansion (a beaker 1.2 against Science's 4.2) lasted to the
+    // halfway clock, 55% of the logged strategy turns. Every decided game was
+    // lost to a rival's science victory at t188-215. Under the gene an
+    // assigned Science lane specializes at a third of the clock, as Culture
+    // already does. See `advanced/science_specializes_earlier.rs`.
+    Gene { tag: "science-specializes-earlier", field: "science_specializes_earlier", kind: Kind::OptIn, enable: AdvancedAi::enable_science_specializes_earlier, disable: AdvancedAi::disable_science_specializes_earlier },
+    // `near-done-work-finishes`: live (39 Immortal games with
+    // `saved-work-is-seen`, 2026-11-03), 1,204 items were paused with saved
+    // work; 47% of that work sat in items within two turns of finishing when
+    // they were paused (177 within one turn), because the claims and
+    // governors displace the head every turn and the resume path only sees
+    // an empty queue. Under the gene a head displaced this turn that
+    // finishes within two turns goes back to the head after every ordinary
+    // writer, unless the city is threatened, attacked or recovering, or the
+    // displacing item is a soldier, Settler, defence building, Holy Site,
+    // Shrine, Spaceport, Wonder or project. See
+    // `advanced/near_done_work_finishes.rs`.
+    Gene { tag: "near-done-work-finishes", field: "near_done_work_finishes", kind: Kind::OptIn, enable: AdvancedAi::enable_near_done_work_finishes, disable: AdvancedAi::disable_near_done_work_finishes },
+    // Live, both Māori seats (11-01 King, 11-03 Immortal): the Settler started
+    // embarked on ocean, knew no land, and stood until the defeat "no cities
+    // remain" at turn 6; the mirror's fog priors give a land unit at sea no
+    // route. Under the gene it sails toward the edge of the known sea. See
+    // `advanced/maori_founds_from_the_sea.rs`.
+    Gene { tag: "founding-voyage", field: "founding_voyage", kind: Kind::OptIn, enable: AdvancedAi::enable_founding_voyage, disable: AdvancedAi::disable_founding_voyage },
+    Gene { tag: "anvil-follows-the-defense", field: "anvil_follows_the_defense", kind: Kind::OptIn, enable: AdvancedAi::enable_anvil_follows_the_defense, disable: AdvancedAi::disable_anvil_follows_the_defense },
     Gene { tag: "launch-pad-spares-the-repair", field: "launch_pad_spares_the_repair", kind: Kind::OptIn, enable: AdvancedAi::enable_launch_pad_spares_the_repair, disable: AdvancedAi::disable_launch_pad_spares_the_repair },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------

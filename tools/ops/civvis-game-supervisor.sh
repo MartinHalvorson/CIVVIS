@@ -378,6 +378,8 @@ TIMEOUT_ARGS=()
 SUP=$LOGS/supervisor.log
 MIRROR_HOME=$HOME/civvis-civ6-mirror
 FOLLOW_LOG=$MIRROR_HOME/follow-nohup.log
+# `tools/civ6_civvis_climb.py` MIRROR_FOLLOW_LOG: the per-batch follower's log.
+BATCH_FOLLOW_LOG=$MIRROR_HOME/follow.log
 MIRROR_PORT=${CIVVIS_MIRROR_PORT:-8610}
 FOLLOW_REVISION_FILE=$MIRROR_HOME/follower-runtime-revision
 
@@ -574,7 +576,14 @@ display_follower_pid() {
   local pid="" stderr_path=""
   for pid in ${(f)"$(pgrep -f '[t]ools/follow.py' 2>/dev/null)"}; do
     stderr_path=$(lsof -a -p "$pid" -d 1 -Fn 2>/dev/null | sed -n 's/^n//p' | head -n 1)
-    if [[ "$stderr_path" == "$FOLLOW_LOG" ]]; then
+    # ★ The follower that is normally up at a boundary is the one the LAST
+    # climb started (`ensure_mirror`), and it writes BATCH_FOLLOW_LOG, not
+    # this loop's own follow-nohup.log. Matching only the latter found no
+    # follower at every boundary, so the refresh below read cwd='absent'
+    # and spent ~9 s of fixed sleeps on all 180 cycles of 2026-11-02/03
+    # restarting a mirror the climb then retires and restarts again.
+    # The mirror keeper made the same distinction (`follower_log_path`).
+    if [[ "$stderr_path" == "$FOLLOW_LOG" || "$stderr_path" == "$BATCH_FOLLOW_LOG" ]]; then
       print -r -- "$pid"
       return 0
     fi

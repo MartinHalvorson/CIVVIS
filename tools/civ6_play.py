@@ -579,6 +579,27 @@ PRODUCTION_SHARE_TURNS = 3
 PRODUCTION_SHARE_POLICY_KEY = "CIVVIS_RESTART_BELOW_LEADER_PRODUCTION"
 PRODUCTION_SHARE_FROM_POLICY_KEY = "CIVVIS_RESTART_BELOW_LEADER_PRODUCTION_FROM_TURN"
 
+# ★ Operator 2026-11-03: "we can scale the retire rule based on game speed." The
+# rule's turns, the policy's _FROM_TURN included, were all set while the lane
+# played Online. Standard charges twice as much for everything, so the same
+# point of a game comes at twice the turn: Online's turn 120 is Standard's 240.
+# `online_turns` moves an Online count to the game's speed by Civilization VI's
+# cost ratio (`GameSpeed::cost_percent` in src/setup.rs). Online is unchanged,
+# and so is a speed this table does not know.
+SPEED_COST_PERCENT = {
+    "GAMESPEED_ONLINE": 50,
+    "GAMESPEED_QUICK": 67,
+    "GAMESPEED_STANDARD": 100,
+    "GAMESPEED_EPIC": 150,
+    "GAMESPEED_MARATHON": 300,
+}
+
+
+def online_turns(turns: int, speed: str | None) -> int:
+    """`turns` counted at Online speed, moved to the same point of a game at `speed`."""
+    percent = SPEED_COST_PERCENT.get(speed or "", SPEED_COST_PERCENT["GAMESPEED_ONLINE"])
+    return max(1, round(turns * percent / SPEED_COST_PERCENT["GAMESPEED_ONLINE"]))
+
 
 def parse_production_share(value: str | None) -> float:
     """A share of the leader's Production from `1/3`, `0.3333` or `.25`; 0 = off."""
@@ -1436,6 +1457,17 @@ SCREEN_POLL_BUDGET_S = 20.0
 # menu, and every look costs ~1.5 s on top of it (operator 2026-10-13: a new
 # game "should be fast").
 SCREEN_POLL_S = 1.5
+# ★ The FIRST top-menu attempt of every game starts while Civ VI's boot logos
+# still cover the menu, and 20 s was a hair short of them. Measured over 24
+# games of 2026-11-03 (`[setup-time]` in civvis-climb-logs/*-play.log): the
+# poll began at +12-14 s after launch, the menu became readable at +31-41 s,
+# and in 18 of 24 games attempt 1's budget ran out at +30-34 s -- seconds
+# before the menu drew -- so attempt 2 re-paid the focus/click/settle
+# preamble and read it ~6.3 s later (configured at 66-79 s vs 63-67 s when
+# attempt 1 caught it). 40 s covers every boot seen. Later attempts keep the
+# shorter budget: by then a menu that is still unreadable is more likely a
+# covering dialog, which the branch after the poll recovers from.
+FIRST_MENU_POLL_BUDGET_S = 40.0
 
 
 def _poll_screen(read, budget_s: float = SCREEN_POLL_BUDGET_S,
@@ -3907,7 +3939,8 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
             rows = vision.menu_rows(menushot, bounds) if vision.available() else []
             return (point, rows) if point is not None or len(rows) >= 4 else None
 
-        top = _poll_screen(read_top_menu)
+        top = _poll_screen(read_top_menu, budget_s=FIRST_MENU_POLL_BUDGET_S
+                           if attempt == 1 else SCREEN_POLL_BUDGET_S)
         menu_point, toprows = top if top is not None else (None, [])
         sp_y = MENU["single_player"][1]
         pitch = 0.029
@@ -4637,9 +4670,12 @@ def play(args: argparse.Namespace) -> int:
                              else parse_production_share_from_turn(str(production_share_from)))
     args.restart_below_leader_production_from_turn = production_share_from
     if production_share > 0:
+        speed = getattr(args, "speed", None)
         print(f"[policy] a game whose Production stays under {production_share:.0%} "
-              f"of the leader's for {PRODUCTION_SHARE_TURNS} turns from turn "
-              f"{production_share_from} is retired (operator 2026-10-26)", flush=True)
+              f"of the leader's for {online_turns(PRODUCTION_SHARE_TURNS, speed)} turns "
+              f"from turn {online_turns(production_share_from, speed)} is retired "
+              f"(operator 2026-10-26; {PRODUCTION_SHARE_TURNS} from turn "
+              f"{production_share_from} at Online, scaled to {speed})", flush=True)
     # A saved game can be alive and waiting for its SQLite decision worker even
     # when the interactive capture path is temporarily unavailable (for example
     # while the operator is recording).  Attaching that worker must never run
@@ -5298,6 +5334,11 @@ def _play(args: argparse.Namespace) -> int:
     production_share = getattr(args, "restart_below_leader_production", None) or 0.0
     production_share_from = (getattr(args, "restart_below_leader_production_from_turn", None)
                              or PRODUCTION_SHARE_TURN)
+    # The policy's turns are Online turns; see `online_turns`. Scaled here, not
+    # where `play` stores them, so a second `_play` on the same args cannot
+    # scale them twice.
+    production_share_from = online_turns(production_share_from, getattr(args, "speed", None))
+    production_share_turns = online_turns(PRODUCTION_SHARE_TURNS, getattr(args, "speed", None))
     run_dir = RUN_ROOT / args.tag
     run_dir.mkdir(parents=True, exist_ok=True)
     # Bound the corpus before adding to it. See `prune_old_run_screenshots`.
@@ -5963,8 +6004,9 @@ def _play(args: argparse.Namespace) -> int:
                     return abandon_with_retire(reading)
         # ★ OPERATOR 2026-10-26: "lets auto restart if our prod is < 1/3 of
         # the leader" -- every turn from turn 50 (or the policy's
-        # _FROM_TURN), retired after three turns running below the line. See
-        # `production_share_reading`.
+        # _FROM_TURN), retired after three turns running below the line, both
+        # counted at Online and scaled to the game's speed. See
+        # `production_share_reading` and `online_turns`.
         if production_share > 0:
             reading = production_share_reading(event, production_share,
                                                production_share_from)
@@ -5976,7 +6018,7 @@ def _play(args: argparse.Namespace) -> int:
             elif reading is not None:
                 run = production_share_run(state, reading)
                 lead = state.get("race_lead")
-                if run >= PRODUCTION_SHARE_TURNS and lead:
+                if run >= production_share_turns and lead:
                     # See `victory_race_lead`: the count runs on, so the
                     # game retires on the first turn below once it lapses.
                     spared = state.setdefault("race_lead_spared", {
@@ -5991,7 +6033,7 @@ def _play(args: argparse.Namespace) -> int:
                               f"{lead['race']} race ({lead['ours']:g} against the best "
                               f"rival's {lead['best_rival']:g}) — not retiring",
                               flush=True)
-                elif run >= PRODUCTION_SHARE_TURNS:
+                elif run >= production_share_turns:
                     reading["turns_below"] = run
                     print(f"[abandon] turn {reading['turn']}: our Production "
                           f"{reading['ours']} is {reading['share']:.0%} of the leader's "
@@ -6912,7 +6954,8 @@ def main(argv: list[str] | None = None) -> int:
                     help="the first turn --restart-below-leader-production reads "
                          f"(default {PRODUCTION_SHARE_TURN}); unset reads "
                          f"{PRODUCTION_SHARE_FROM_POLICY_KEY} from the host's "
-                         "verification policy file (operator 2026-10-26)")
+                         "verification policy file (operator 2026-10-26). Both "
+                         "turn counts are Online turns, scaled to --speed")
     ap.add_argument("--city-target", type=int, default=6)
     ap.add_argument("--leader", default=ROMAN_LEADER,
                     help="Civ VI leader identifier (default: Trajan)")

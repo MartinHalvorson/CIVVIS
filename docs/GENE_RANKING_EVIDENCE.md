@@ -187,8 +187,10 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `air-wing-grows-with-the-aluminum` | off (unmeasured) | Grow the Bomber wing past four while the Aluminum sustains it. | 1 \| 1 |
 | `alliance-remembers-the-refusal` | off (unmeasured) | Opt-in gene `alliance-remembers-the-refusal`; see `Self::alliance_remembers_the_refusal`. | 1 \| 1 |
 | `aluminum-tile-spends-the-war-chest` | off (unmeasured) | Opt-in gene `aluminum-tile-spends-the-war-chest`; see `Self::aluminum_tile_spends_the_war_chest`. | 1 \| 1 |
+| `anvil-follows-the-defense` | off (unmeasured) | Enable measured routing to the board's assigned Defend city. | 1 \| 1 |
 | `anvil-garrisons-its-melee` | off (unmeasured) | Opt-in gene `anvil-garrisons-its-melee`; see `Self::anvil_garrisons_its_melee`. | 1 \| 1 |
 | `apostle-transit-keeps-the-cover` | off (unmeasured) | Opt-in gene `apostle-transit-keeps-the-cover`; see `Self::apostle_transit_keeps_the_cover`. | 1 \| 1 |
+| `artifact-before-more-museums` | off (unmeasured) | One digger for an owned person's missing Artifact, before more Museums. | 1 \| 1 |
 | `astrology-before-the-second-city` | off (unmeasured) | Opt-in gene `astrology-before-the-second-city`; see `advanced/astrology_before_the_second_city.rs`. | 1 \| 1 |
 | `bankruptcy-exits-the-drain` | off (unmeasured) | Opt-in gene `bankruptcy-exits-the-drain`; see `advanced/solvency.rs`. | 1 \| 1 |
 | `board-ignores-the-faith-war` | off (unmeasured) | Opt-in gene `board-ignores-the-faith-war`; see `Self::board_ignores_the_faith_war`. | 1 \| 1 |
@@ -245,6 +247,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `food-focus-grows-the-small-city` | off (unmeasured) | Opt-in gene `food-focus-grows-the-small-city`; see `Self::food_focus_grows_the_small_city`. | 1 \| 1 |
 | `foothold-faces-the-capital` | off (unmeasured) | Aim a Domination conquest at a foothold within Bomber range of a rival capital. | 1 \| 1 |
 | `forward-airfield-project` | off (unmeasured) | Measure the default-off forward airfield preparation project. | 1 \| 1 |
+| `founding-voyage` | off (unmeasured) | Opt-in gene `founding-voyage`; see `Self::founding_voyage`. | 1 \| 1 |
 | `friendship-ends-at-the-race` | off (unmeasured) | Let a friendship lapse once the friend is racing to win. | 1 \| 1 |
 | `friendship-keeps-the-peace` | off (unmeasured) | Opt-in gene `friendship-keeps-the-peace`; see `Self::friendship_keeps_the_peace`. | 1 \| 1 |
 | `friendship-only-with-the-stronger` | off (unmeasured) | Offer a friendship only to a rival at least as strong as us. | 1 \| 1 |
@@ -273,6 +276,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `merchant-confederation-earns-its-slot` | off (unmeasured) | Opt-in gene `merchant-confederation-earns-its-slot`; the deck reading lives on `BasicAi`, the portfolio insert on `AdvancedAi`. | — \| 2 |
 | `merchant-confederation-earns-its-slot-2` | off (unmeasured) | Opt-in gene `merchant-confederation-earns-its-slot-2`; version one plus the seat it may take. | — \| 2 |
 | `naval-crossing-keeps-going` | off (unmeasured) | Opt-in gene `naval-crossing-keeps-going`; see `Self::naval_crossing_keeps_going`. | 1 \| 1 |
+| `near-done-work-finishes` | off (unmeasured) | Opt-in gene `near-done-work-finishes`; see `advanced/near_done_work_finishes.rs`. | 1 \| 1 |
 | `neighborhood-houses-the-capped-city` | off (unmeasured) | Opt-in gene `neighborhood-houses-the-capped-city`; see `advanced/neighborhood_houses_the_capped_city.rs`. | 1 \| 1 |
 | `nuclear-goal-needs-a-launcher` | off (unmeasured) | Opt-in gene `nuclear-goal-needs-a-launcher`; see `Self::nuclear_goal_needs_a_launcher`. | 1 \| 1 |
 | `old-techs-before-the-beeline` | off (unmeasured) | Opt-in gene `old-techs-before-the-beeline`; see `advanced/old_techs_before_the_beeline.rs`. | 1 \| 1 |
@@ -301,6 +305,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `science-drive-leads-beside-the-lane` | off (unmeasured) | Opt-in gene `science-drive-leads-beside-the-lane`; see `Self::science_drive_leads_beside_the_lane`. | 1 \| 1 |
 | `science-power-buys-fuel` | off (unmeasured) | Ask the native market for Coal serving ready research power. | 1 \| 1 |
 | `science-seat-allies` | off (unmeasured) | Opt-in gene `science-seat-allies`; see `Self::science_seat_allies`. | 1 \| 1 |
+| `science-specializes-earlier` | off (unmeasured) | Opt-in gene `science-specializes-earlier`; see `Self::science_specializes_earlier`. | 1 \| 1 |
 | `settler-founds-under-raiders` | off (unmeasured) | Opt-in gene `settler-founds-under-raiders`; see `Self::settler_founds_under_raiders`. | 1 \| 1 |
 | `siege-budget-counts-the-ram` | off (unmeasured) | Price a train-held Ram or Tower in the siege damage budget. | 1 \| 1 |
 | `siege-moves-under-the-wing` | off (unmeasured) | Opt-in gene `siege-moves-under-the-wing`; see `Self::siege_moves_under_the_wing`. | 1 \| 1 |
@@ -308,6 +313,7 @@ These screenable genes have no on/off result, so they receive no rank. Their dis
 | `siege-shortfall-claims-the-projects` | off (unmeasured) | Let a siege short of its bill take the repeatable-project queues. | 1 \| 1 |
 | `siege-tier-yields-to-the-bombers-2` | off (unmeasured) | Opt-in gene `siege-tier-yields-to-the-bombers-2`; see `Self::siege_tier_yields_to_the_bombers_2`. | 1 \| 2 |
 | `solvent-or-hold` | off (unmeasured) | Opt-in gene `solvent-or-hold`; see `advanced/solvency.rs`. | 1 \| 1 |
+| `spaceport-above-the-sea` | off (unmeasured) | Prefer a legal non-lowland site when starting a native Spaceport. | 1 \| 1 |
 | `stage-reads-the-muster-breakers` | off (unmeasured) | Let a mustered siege count the guns it mustered when it stages. | 1 \| 1 |
 | `staging-gun-trusts-its-escort-2` | off (unmeasured) | Opt-in gene `staging-gun-trusts-its-escort-2`; see `Self::staging_gun_trusts_its_escort_2`. | 1 \| 2 |
 | `stalled-conquest-takes-science` | off (unmeasured) | Opt-in gene `stalled-conquest-takes-science`; see `Self::stalled_conquest_takes_science`. | 1 \| 1 |

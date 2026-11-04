@@ -790,7 +790,7 @@ def congress_return_button(rgb, grey):
     # tooltip or a normal HUD button. It always ends in one teal button at the
     # bottom; require both before touching it.
     panel = grey.crop((int(w * 0.12), int(h * 0.12), int(w * 0.95), int(h * 0.90)))
-    panel_dark = sum(value < DARK_LEVEL for value in pixel_values(panel))
+    panel_dark = sum(panel.histogram()[:DARK_LEVEL])
     if panel_dark < 0.25 * (panel.size[0] * panel.size[1]):
         return None
     for cluster in green_clusters(rgb):
@@ -805,11 +805,13 @@ def congress_return_button(rgb, grey):
     return None
 
 
-def advisor_buttons(rgb, grey):
+def advisor_buttons(rgb, grey, *, clusters=None):
     """Blue tutorial-card buttons, only when a bright card encloses them."""
     w, h = rgb.size
     targets, candidates = [], []
-    for cluster in blue_clusters(rgb):
+    if clusters is None:
+        clusters = blue_clusters(rgb)
+    for cluster in clusters:
         if not (
             cluster["n"] >= 80
             and w * 0.33 < cluster["cx"] < w * 0.67
@@ -913,11 +915,13 @@ def click_target(kind, targets, width):
     return targets[-1]
 
 
-def governor_close(rgb):
+def governor_close(rgb, *, clusters=None):
     """The close control on the full-width Governors title panel, if present."""
     w, h = rgb.size
     px = rgb.load()
-    for cluster in red_clusters(rgb):
+    if clusters is None:
+        clusters = red_clusters(rgb)
+    for cluster in clusters:
         if not (
             cluster["n"] >= 10
             and cluster["cx"] > w * 0.96
@@ -1015,7 +1019,7 @@ def deal_refuse_button(rgb):
     return None
 
 
-def notice_button(rgb, gray):
+def notice_button(rgb, gray, *, clusters=None):
     """A centered one-button Firaxis notice, such as ``Unit Captured``.
 
     These notices sit over the map and therefore are neither dark leader
@@ -1024,7 +1028,8 @@ def notice_button(rgb, gray):
     in ordinary HUD controls, while the pair is the measured modal geometry.
     """
     w, h = rgb.size
-    clusters = blue_clusters(rgb)
+    if clusters is None:
+        clusters = blue_clusters(rgb)
     buttons = [
         cluster for cluster in clusters
         if cluster["n"] >= 120
@@ -1085,7 +1090,7 @@ def pause_menu_target(observations, size):
     return x * size[0], y * size[1]
 
 
-def pause_menu_button(window):
+def pause_menu_button(window, *, clusters=None):
     """Read menu text only when a tall central blue panel is present.
 
     The t164 live stall on 2026-09-08 had this panel, but the old classifier
@@ -1093,12 +1098,14 @@ def pause_menu_button(window):
     into a click, and targets Return to Game rather than any exit/retire row.
     """
     w, h = window.size
+    if clusters is None:
+        clusters = blue_clusters(window)
     if not any(0.08 * w < c["w"] < 0.35 * w
                and 0.30 * h < c["h"] < 0.85 * h
                and c["h"] > 1.2 * c["w"]
                and 0.42 * w < c["cx"] < 0.58 * w
                and 0.30 * h < c["cy"] < 0.70 * h
-               for c in blue_clusters(window)):
+               for c in clusters):
         return None
     try:
         with tempfile.TemporaryDirectory(prefix="civvis-pause-menu-") as tmp:
@@ -1126,7 +1133,10 @@ def classify(window):
     if congress:
         return "congress", [congress], dark
 
-    governor = governor_close(window)
+    # The detectors below inspect the same immutable frame. Share each color
+    # scan within this call only; a later capture must always be scanned afresh.
+    red = red_clusters(window)
+    governor = governor_close(window, clusters=red)
     if governor:
         return "governor", [governor], dark
 
@@ -1138,11 +1148,12 @@ def classify(window):
     #
     # Do this before looking for a completion-card close button: barbarians and
     # danger pins can otherwise make an advisor appear to be an unsafe card.
-    advisor = advisor_buttons(window, grey)
+    blue = blue_clusters(window)
+    advisor = advisor_buttons(window, grey, clusters=blue)
     if advisor:
         return "advisor", advisor, dark
 
-    notice = notice_button(window, grey)
+    notice = notice_button(window, grey, clusters=blue)
     if notice:
         return "notice", [notice], dark
 
@@ -1150,7 +1161,7 @@ def classify(window):
     if deal:
         return "deal", [deal], dark
 
-    pause = pause_menu_button(window)
+    pause = pause_menu_button(window, clusters=blue)
     if pause:
         return "pause", [pause], dark
 
@@ -1164,7 +1175,7 @@ def classify(window):
     # blob than the close button, and picking by size clicked the middle of the
     # card three times in a row without closing anything. The close button is at
     # the card's top-right, always above its content.
-    candidates = [c for c in red_clusters(window)
+    candidates = [c for c in red
                   # macOS's own window button lives in the window's top-left corner.
                   if not (c["cx"] < w * 0.08 and c["cy"] < h * 0.08)
                   and 8 <= c["w"] <= 40 and 8 <= c["h"] <= 40 and c["n"] >= 18

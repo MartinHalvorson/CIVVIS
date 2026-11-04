@@ -3204,6 +3204,18 @@ impl AdvancedAi {
         self.base.activation_keeps_its_building = false;
     }
 
+    /// One digger for an owned person's missing Artifact, before more Museums.
+    pub fn enable_artifact_before_more_museums(&mut self) {
+        self.artifact_before_more_museums = true;
+        self.base.artifact_before_more_museums = true;
+    }
+
+    /// Restore the existing activation capacity path.
+    pub fn disable_artifact_before_more_museums(&mut self) {
+        self.artifact_before_more_museums = false;
+        self.base.artifact_before_more_museums = false;
+    }
+
     /// The working reserve, and the first Builder or a missing Monument
     /// bought ahead of the purchase argmax. See `treasury_at_work_2`.
     pub fn enable_treasury_at_work_2(&mut self) {
@@ -9225,6 +9237,16 @@ impl AdvancedAi {
         self.science_power_buys_fuel = false;
     }
 
+    /// Prefer a legal non-lowland site when starting a native Spaceport.
+    pub fn enable_spaceport_above_the_sea(&mut self) {
+        self.spaceport_above_the_sea = true;
+    }
+
+    /// The twin of `enable_spaceport_above_the_sea`.
+    pub fn disable_spaceport_above_the_sea(&mut self) {
+        self.spaceport_above_the_sea = false;
+    }
+
     /// Opt-in gene `old-techs-before-the-beeline`; see
     /// `advanced/old_techs_before_the_beeline.rs`.
     pub fn enable_old_techs_before_the_beeline(&mut self) {
@@ -9282,6 +9304,46 @@ impl AdvancedAi {
         self.city_state_harvest_target = None;
     }
 
+    /// Opt-in gene `science-specializes-earlier`; see
+    /// [`Self::science_specializes_earlier`].
+    pub fn enable_science_specializes_earlier(&mut self) {
+        self.science_specializes_earlier = true;
+    }
+
+    /// The twin of `enable_science_specializes_earlier`.
+    pub fn disable_science_specializes_earlier(&mut self) {
+        self.science_specializes_earlier = false;
+    }
+
+    /// Opt-in gene `near-done-work-finishes`; see
+    /// `advanced/near_done_work_finishes.rs`.
+    pub fn enable_near_done_work_finishes(&mut self) {
+        self.near_done_work_finishes = true;
+    }
+
+    /// The twin of `enable_near_done_work_finishes`.
+    pub fn disable_near_done_work_finishes(&mut self) {
+        self.near_done_work_finishes = false;
+    }
+
+    /// Opt-in gene `founding-voyage`; see [`Self::founding_voyage`].
+    pub fn enable_founding_voyage(&mut self) {
+        self.founding_voyage = true;
+    }
+
+    /// The twin of `enable_founding_voyage`.
+    pub fn disable_founding_voyage(&mut self) {
+        self.founding_voyage = false;
+    }
+
+    /// Enable measured routing to the board's assigned Defend city.
+    pub fn enable_anvil_follows_the_defense(&mut self) {
+        self.anvil_follows_the_defense = true;
+    }
+    /// Preserve the original global threat-city routing.
+    pub fn disable_anvil_follows_the_defense(&mut self) {
+        self.anvil_follows_the_defense = false;
+    }
     /// Preserve an already selected legal repair when the first pad holds.
     pub fn enable_launch_pad_spares_the_repair(&mut self) {
         self.launch_pad_spares_the_repair = true;
