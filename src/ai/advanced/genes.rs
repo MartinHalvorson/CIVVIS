@@ -2510,6 +2510,8 @@ pub const GENES: &[Gene] = &[
     // Live King 051413Z: Bogota switched the Art Museum and the Archaeological
     // Museum every turn t187-t214; see `BasicAi::activation_keeps_its_building`.
     Gene { tag: "activation-keeps-its-building", field: "activation_keeps_its_building", kind: Kind::HostOnly, enable: AdvancedAi::enable_activation_keeps_its_building, disable: AdvancedAi::disable_activation_keeps_its_building },
+    // Native 002240Z: Mary Leakey needs an Artifact; two empty Museums are not that work.
+    Gene { tag: "artifact-before-more-museums", field: "artifact_before_more_museums", kind: Kind::OptIn, enable: AdvancedAi::enable_artifact_before_more_museums, disable: AdvancedAi::disable_artifact_before_more_museums },
     // Live King 113755Z: Galleys and Quadriremes ahead of the walkers at
     // three cities; see `BasicAi::settler_before_the_navy`.
     Gene { tag: "settler-before-the-navy", field: "settler_before_the_navy", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_before_the_navy, disable: AdvancedAi::disable_settler_before_the_navy },
@@ -3295,6 +3297,8 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "siege-buys-the-gun-resource", field: "siege_buys_the_gun_resource", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_buys_the_gun_resource, disable: AdvancedAi::disable_siege_buys_the_gun_resource },
     // Native-only purchase proposal; strength requires native trials.
     Gene { tag: "science-power-buys-fuel", field: "science_power_buys_fuel", kind: Kind::OptIn, enable: AdvancedAi::enable_science_power_buys_fuel, disable: AdvancedAi::disable_science_power_buys_fuel },
+    // Native site proposal only; outcome evidence requires native games.
+    Gene { tag: "spaceport-above-the-sea", field: "spaceport_above_the_sea", kind: Kind::OptIn, enable: AdvancedAi::enable_spaceport_above_the_sea, disable: AdvancedAi::disable_spaceport_above_the_sea },
     // The decisive window spent ~1,200 science a game off the Advanced
     // Flight path after the air surge's horizon opened (10-06/07 Emperor),
     // and captures ran 0.20 per 100 turns before the Bomber against 1.24
@@ -4850,6 +4854,7 @@ pub const GENES: &[Gene] = &[
     // route. Under the gene it sails toward the edge of the known sea. See
     // `advanced/maori_founds_from_the_sea.rs`.
     Gene { tag: "founding-voyage", field: "founding_voyage", kind: Kind::OptIn, enable: AdvancedAi::enable_founding_voyage, disable: AdvancedAi::disable_founding_voyage },
+    Gene { tag: "anvil-follows-the-defense", field: "anvil_follows_the_defense", kind: Kind::OptIn, enable: AdvancedAi::enable_anvil_follows_the_defense, disable: AdvancedAi::disable_anvil_follows_the_defense },
     // 57 live Immortal games (11-03/04) lost 765 military units; 383 were
     // healthy units, no strike that turn, that moved and died, 580 of all 765
     // to ONE blow, and 351 of the healthy ones had their killer in sight

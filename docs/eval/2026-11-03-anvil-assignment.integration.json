@@ -1,0 +1,137 @@
+{
+  "utc": "2026-11-03T06:51:24.135079+00:00",
+  "scope": "Integration conformance and proposal activation. No native execution, saved-city outcome, held-out confirmation or strength estimate.",
+  "source_commit": "19a717d6ecd6b6715274d6e269e3564ed4443335",
+  "main_parent": "2bd9ae08e752ae088867b3c4147f8456b290e384",
+  "candidate_binary_sha256": "847e97d522d2d8a6e5780e1a5859975f16b66db467fc721538fcbe5241c05b3d",
+  "anvil_module_and_tests_unchanged_from": "9b5a17bd8c08b4b608168a059a2ba2f6a77aca7d",
+  "prior_evidence_archive_sha256": "525c1678935ea8d7a1592f288afe788e0f585734839ebc41721b290212380b0d",
+  "main_registry_order_preserved": true,
+  "local_rust": {
+    "command": [
+      "cargo",
+      "test",
+      "--profile",
+      "ci",
+      "--locked",
+      "--",
+      "--test-threads=4"
+    ],
+    "passed": 6720,
+    "failed": 0,
+    "ignored": 56,
+    "routing_tests": 9
+  },
+  "verification": {
+    "scope": "Read-only independent evidence checks; no game execution or strength estimate.",
+    "qualifications": [
+      {
+        "case": "native-qualified-01",
+        "control": 0,
+        "requests": 82
+      },
+      {
+        "case": "native-qualified-01",
+        "control": 1,
+        "requests": 82
+      },
+      {
+        "case": "native-qualified-khmer-01",
+        "control": 0,
+        "requests": 66
+      },
+      {
+        "case": "native-qualified-khmer-01",
+        "control": 1,
+        "requests": 66
+      },
+      {
+        "case": "native-qualified-korea-01",
+        "control": 0,
+        "requests": 63
+      },
+      {
+        "case": "native-qualified-korea-01",
+        "control": 1,
+        "requests": 63
+      }
+    ],
+    "prefixes": [
+      {
+        "revision": "integration",
+        "arm": "off-0",
+        "requests": 82,
+        "matching": 82,
+        "first_change": null
+      },
+      {
+        "revision": "integration",
+        "arm": "off-1",
+        "requests": 82,
+        "matching": 82,
+        "first_change": null
+      },
+      {
+        "revision": "integration",
+        "arm": "on-0",
+        "requests": 79,
+        "matching": 78,
+        "first_change": [
+          39,
+          0
+        ]
+      },
+      {
+        "revision": "integration",
+        "arm": "on-1",
+        "requests": 79,
+        "matching": 78,
+        "first_change": [
+          39,
+          0
+        ]
+      }
+    ],
+    "fresh_boards": [
+      {
+        "revision": "integration",
+        "run": "civvis-20261103T034543Z",
+        "turn": 39,
+        "changed": true
+      },
+      {
+        "revision": "integration",
+        "run": "civvis-20261103T034543Z",
+        "turn": 40,
+        "changed": false
+      },
+      {
+        "revision": "integration",
+        "run": "civvis-20261103T040708Z",
+        "turn": 26,
+        "changed": false
+      },
+      {
+        "revision": "integration",
+        "run": "civvis-20261103T025902Z",
+        "turn": 29,
+        "changed": true
+      }
+    ]
+  },
+  "integration_note": "Retain main Deck and CityStateHarvest entries before Anvil. Both main additions remain opt-in. Regenerate combined coverage counts; retain the ledger and selected deployment genome. Fix the merged city-state module declaration order for rustfmt.",
+  "retained_full_suite_failures": "Initial integrated suite:6363 passed,2 latency assertions failed,52 ignored. Both latency tests passed in isolation; complete four-thread retry is the validation reported above. No threshold or source changes.",
+  "no_native_treatment_armed": true,
+  "archive": {
+    "path": "docs/eval/2026-11-03-anvil-assignment.integration.tar.xz",
+    "bytes": 1283860,
+    "sha256": "7e3ef338b3aa7b5d7282b563557f4692fc9439fc0f79daf19fbf5855f300c63d",
+    "members": 163
+  },
+  "post_archive_checks": {
+    "gene_activation_gate_exit": 0,
+    "genes_check_exit": 0,
+    "metadata_tests": 35,
+    "extracted_verifier_exit": 0
+  }
+}
