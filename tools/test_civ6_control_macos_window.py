@@ -439,7 +439,7 @@ class BoundedHostProbeTests(unittest.TestCase):
 
     def test_window_timeout_means_unknown_geometry(self) -> None:
         with patch.object(macos_window.subprocess, "run") as run:
-            run.return_value = mock.Mock(stdout="10, 20, 800, 600")
+            run.return_value = mock.Mock(stdout="10, 20, 800, 600", returncode=0)
             self.assertEqual(macos_window.game_window(self.PROCESS),
                              (10, 20, 800, 600))
             self.assertEqual(run.call_args.kwargs.get("timeout"),
@@ -456,13 +456,41 @@ class BoundedHostProbeTests(unittest.TestCase):
         # 1634x1084 game second; reading window 1 alone found no game.
         with patch.object(macos_window.subprocess, "run") as run:
             run.return_value = mock.Mock(
-                stdout="0, 33, 66, 20;47, 33, 1634, 1084;\n")
+                stdout="0, 33, 66, 20;47, 33, 1634, 1084;\n", returncode=0)
             self.assertEqual(macos_window.game_window(self.PROCESS),
                              (47, 33, 1634, 1084))
-            run.return_value = mock.Mock(stdout="0, 33, 66, 20;")
+            run.return_value = mock.Mock(stdout="0, 33, 66, 20;", returncode=0)
             self.assertIsNone(macos_window.game_window(self.PROCESS))
-            run.return_value = mock.Mock(stdout="")
+            run.return_value = mock.Mock(stdout="", returncode=0)
             self.assertIsNone(macos_window.game_window(self.PROCESS))
+
+    def test_failed_probe_rejects_geometry_and_reports_bounded_host_error(self) -> None:
+        failed = subprocess.CompletedProcess(
+            "osascript", 1, "47, 33, 1634, 1084;", "syntax error\n" + "x" * 1000)
+        with patch.object(macos_window, "_window_probe_last_error_at", None), \
+             patch.object(macos_window.subprocess, "run", return_value=failed), \
+             patch.object(macos_window.time, "monotonic", side_effect=[0, 1, 60]), \
+             patch("builtins.print") as printed:
+            for _ in range(3):
+                self.assertIsNone(macos_window.game_window(self.PROCESS))
+        self.assertEqual(printed.call_count, 2)
+        message = printed.call_args.args[0]
+        self.assertIn("exit 1", message)
+        self.assertIn("syntax error", message)
+        self.assertNotIn("\n", message)
+        self.assertLess(len(message), 400)
+
+    def test_success_resets_error_report_even_when_no_window_exists(self) -> None:
+        failed = subprocess.CompletedProcess("osascript", 1, "", "Application isn't running (-600)")
+        empty = subprocess.CompletedProcess("osascript", 0, "", "")
+        with patch.object(macos_window, "_window_probe_last_error_at", None), \
+             patch.object(macos_window.subprocess, "run", side_effect=[failed, empty, failed]), \
+             patch.object(macos_window.time, "monotonic", side_effect=[0, 1]), \
+             patch("builtins.print") as printed:
+            for _ in range(3):
+                self.assertIsNone(macos_window.game_window(self.PROCESS))
+        self.assertEqual(printed.call_count, 2)
+        self.assertIn("Application isn't running (-600)", printed.call_args.args[0])
 
     def test_timeout_in_lock_probe_keeps_the_game_playing(self) -> None:
         with patch.object(
