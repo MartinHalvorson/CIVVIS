@@ -160,24 +160,25 @@ fn the_strongest_neighbour_is_asked_off_the_domination_lane() {
     assert!(asks(&game).is_empty());
 }
 
-/// A declared friend outranks a stronger stranger: the host asks it the
-/// alliance itself.
+/// A declared friend outranks an equally strong stranger: the host asks it
+/// the alliance itself. (Equal power, so only the nearness term differs, and
+/// inside the reach it differs by less than [`SHIELD_FRIEND`].)
 #[test]
 fn a_declared_friend_is_asked_first() {
-    let mut game = board();
-    game.turn = 60;
-    power(&mut game, 1, 100.0);
-    power(&mut game, 2, 200.0);
-    game.players[0].friends_until.insert(1, 90);
-    game.players[1].friends_until.insert(0, 90);
-    let mut ai = shield();
-    assert!(ai.military_alliance_shield_step(
-        &mut game,
-        0,
-        &plan(GrandStrategy::Science, None),
-        None
-    ));
-    assert_eq!(asks(&game)[0].0, 1);
+    for friend in [1, 2] {
+        let mut game = board();
+        game.turn = 60;
+        game.players[0].friends_until.insert(friend, 90);
+        game.players[friend].friends_until.insert(0, 90);
+        let mut ai = shield();
+        assert!(ai.military_alliance_shield_step(
+            &mut game,
+            0,
+            &plan(GrandStrategy::Science, None),
+            None
+        ));
+        assert_eq!(asks(&game)[0].0, friend);
+    }
 }
 
 /// No second Military Alliance; never the plan's target, a denounced rival
