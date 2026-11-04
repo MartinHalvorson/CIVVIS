@@ -6497,7 +6497,27 @@ pub struct AdvancedAi {
     /// `deterrence-trusts-a-friend`: no near-rival deterrent against a rival
     /// we are declared friends with. See `advanced/deterrence_trusts_a_friend.rs`.
     deterrence_trusts_a_friend: bool,
+    /// `deck-follows-the-queue`: the policy deck re-reviews off its cadence
+    /// on the turn the queue cards worth slotting change. The behaviour lives
+    /// on `BasicAi::deck_follows_the_queue`; see `ai/deck_queue.rs`. Off by
+    /// default.
+    deck_follows_the_queue: bool,
+    /// `city-state-harvest`: a soft city-state city beside the empire is the
+    /// plan's Conquest target for a bounded window. See
+    /// `advanced/city_state_harvest.rs`. Off by default.
+    city_state_harvest: bool,
+    /// The city the harvest is aimed at. Written only while
+    /// `city_state_harvest` is on.
+    city_state_harvest_target: Option<city_state_harvest::HarvestTarget>,
+    /// No new harvest name before this turn.
+    city_state_harvest_cooldown: u32,
+    /// The city-state the harvest declared on, while that war runs.
+    city_state_harvest_war: Option<String>,
     // ---- append: e-f ------------------------------------------------
+    /// `founding-voyage`: an embarked Settler of a seat with no city sails to
+    /// the edge of the known sea when no site is reachable. See
+    /// `advanced/maori_founds_from_the_sea.rs`. Off by default.
+    founding_voyage: bool,
     /// Keep the first Science launch on its research path. Opt-in.
     first_launch_keeps_research: bool,
     /// `first-pad-in-the-forge`: the empire's first Spaceport only in a city
@@ -7474,6 +7494,11 @@ pub struct AdvancedAi {
     /// "spread our faith first" wait does not hold once a rival faith holds a
     /// city of ours. See `advanced/defensive_apostle.rs`. Off by default.
     inquisition_answers_a_rival_majority: bool,
+    /// `gold-buys-the-backlog-builder`: past the opening, while the empire
+    /// holds fewer Builders than its unimproved worked tiles call for, the
+    /// treasury buys one in the city that owns the most of them. See
+    /// `advanced/gold_buys_the_backlog_builder.rs`. Off by default.
+    gold_buys_the_backlog_builder: bool,
     // ---- append: l-o ------------------------------------------------
     /// `old-techs-before-the-beeline`: the technology our land army waits on
     /// to upgrade once the world has left its era, then any technology two
@@ -8041,6 +8066,11 @@ pub struct AdvancedAi {
     /// every ordinary writer and claim, and the Spy trainer skips that city.
     /// See `advanced/launch_pad_holds_its_queue.rs`. Off by default.
     launch_pad_holds_its_queue: bool,
+    /// `near-done-work-finishes`: a head a production writer displaced this
+    /// turn goes back to the head when it finishes within two turns, unless
+    /// the displacing item is urgent. See
+    /// `advanced/near_done_work_finishes.rs`. Off by default.
+    near_done_work_finishes: bool,
     // ---- append: p-r ------------------------------------------------
     /// `pillaged-districts-repair-first`: a pillaged district's repair claims its
     /// city after every other claim. See `advanced/pillaged_repairs_first.rs`.
@@ -8477,6 +8507,10 @@ pub struct AdvancedAi {
     /// `BasicAi::retainers_garrison_the_short_cities`. Off by default.
     retainers_garrison_the_short_cities: bool,
     // ---- append: s-s ------------------------------------------------
+    /// `science-specializes-earlier`: an assigned Science lane leaves the
+    /// development half at a third of the clock, as Culture already does.
+    /// See `advanced/science_specializes_earlier.rs`. Off by default.
+    science_specializes_earlier: bool,
     /// Prefer a legal non-lowland site for a new native Spaceport. Opt-in.
     spaceport_above_the_sea: bool,
     /// Native fuel bridge for ready research power. Off by default.
@@ -9154,6 +9188,11 @@ pub struct AdvancedAi {
     /// lead, without waiting for a rival's launch. See
     /// `advanced/science_victory_drive.rs`. Off by default.
     science_drive_leads_beside_the_lane: bool,
+    /// `saved-work-is-seen`: the host's saved work on paused units, buildings
+    /// and projects (`Game::host_saved_work`) enters `City::production_progress`
+    /// before production, so the resume path and every remaining-cost price
+    /// see it. See `advanced/saved_work_is_seen.rs`. Off by default.
+    saved_work_is_seen: bool,
     // ---- append: t-z ------------------------------------------------
     /// `trade-quotes-pay-the-lump`: this seat's quick-deal quotes pay a
     /// rounded-up Gold lump the payer can cover instead of a per-turn sliver.
@@ -10224,6 +10263,8 @@ mod war_policy;
 /// bill, and pillage with the movement the march does not use. Two opt-in
 /// genes; see `advanced/city_campaign.rs`.
 mod city_campaign;
+/// `city-state-harvest`: see `advanced/city_state_harvest.rs`.
+mod city_state_harvest;
 /// `city-state-war-is-no-front`: see `advanced/city_state_war_is_no_front.rs`.
 mod city_state_war_is_no_front;
 
@@ -10273,6 +10314,8 @@ mod higher_level_strategy;
 mod land_grab_outlasts;
 /// `naval-crossing-keeps-going`: see `advanced/naval_crossing.rs`.
 mod naval_crossing;
+/// `near-done-work-finishes`: see `advanced/near_done_work_finishes.rs`.
+mod near_done_work_finishes;
 /// `near-rival-deterrence`: a land unit a turn while a neighbour at peace
 /// out-guns us in the opening. One opt-in gene; see
 /// `advanced/near_rival_deterrence.rs`.
@@ -10314,6 +10357,7 @@ mod threatened_reserve;
 /// `advanced/yield_floors.rs`.
 mod yield_floors;
 
+mod maori_founds_from_the_sea;
 mod marginal_usefulness;
 mod production_commitment;
 mod production_compounding;
@@ -10329,6 +10373,8 @@ mod opening_settlement;
 /// `quest-boost`. See `advanced/city_state_quests.rs`.
 pub(crate) mod city_state_quests;
 
+/// `science-specializes-earlier`: see `advanced/science_specializes_earlier.rs`.
+mod science_specializes_earlier;
 /// A known Galápagos or Bermuda science job just beyond the ordinary
 /// settlement forecast's second ring remains a purchasable city asset.
 mod science_wonder_sites;
@@ -10373,6 +10419,8 @@ mod first_launch_research;
 /// `founder-converts-its-own-cities`: a founder's spreaders convert our own
 /// cities before any foreign one. See `advanced/founder_home.rs`.
 mod founder_home;
+/// `gold-buys-the-backlog-builder`: see `advanced/gold_buys_the_backlog_builder.rs`.
+mod gold_buys_the_backlog_builder;
 /// `gold-buys-the-opening-builder`: a builderless opening buys its Builder
 /// with the idle treasury. See `advanced/gold_buys_the_opening_builder.rs`.
 mod gold_buys_the_opening_builder;
@@ -10404,6 +10452,8 @@ mod old_techs_before_the_beeline;
 mod peacetime_republic;
 /// `satellite-holds-the-pad`: see `advanced/satellite_holds_the_pad.rs`.
 mod satellite_holds_the_pad;
+/// `saved-work-is-seen`: see `advanced/saved_work_is_seen.rs`.
+mod saved_work_is_seen;
 mod science_denial_every_pad;
 mod science_denial_trains_spies;
 mod science_endgame;
@@ -11607,7 +11657,13 @@ impl AdvancedAi {
             culture_seat_allies: false,
             domination_joins_the_race: false,
             deterrence_trusts_a_friend: false,
+            deck_follows_the_queue: false,
+            city_state_harvest: false,
+            city_state_harvest_target: None,
+            city_state_harvest_cooldown: 0,
+            city_state_harvest_war: None,
             // ---- append: e-f ----------------------------------------
+            founding_voyage: false,
             first_launch_keeps_research: false,
             first_pad_in_the_forge: false,
             fog_yields_to_a_stranded_settler: false,
@@ -11756,6 +11812,7 @@ impl AdvancedAi {
             industrial_zone_claims_the_factory: false,
             inquisition_defends_the_diplomat: false,
             inquisition_answers_a_rival_majority: false,
+            gold_buys_the_backlog_builder: false,
             // ---- append: l-o ----------------------------------------
             old_techs_before_the_beeline: false,
             launch_commits_the_endgame: false,
@@ -11827,6 +11884,7 @@ impl AdvancedAi {
             launch_pad_keeps_its_rung: false,
             launcher_war_fights_the_faster_racer: false,
             launch_pad_holds_its_queue: false,
+            near_done_work_finishes: false,
             // ---- append: p-r ----------------------------------------
             pillaged_districts_repair_first: false,
             religion_lane_hands_over: false,
@@ -11906,6 +11964,7 @@ impl AdvancedAi {
             religion_seat_defends_its_faith: false,
             retainers_garrison_the_short_cities: false,
             // ---- append: s-s ----------------------------------------
+            science_specializes_earlier: false,
             spaceport_above_the_sea: false,
             science_power_buys_fuel: false,
             satellite_holds_the_pad: false,
@@ -12031,6 +12090,7 @@ impl AdvancedAi {
             science_drive_answers_from_the_pad_2: false,
             seat_city_pace: false,
             science_drive_leads_beside_the_lane: false,
+            saved_work_is_seen: false,
             // ---- append: t-z ----------------------------------------
             trade_quotes_pay_the_lump: false,
             upkeep_waits_for_the_income: false,
@@ -29797,7 +29857,12 @@ impl AdvancedAi {
                     >= g.max_turns.min(g.game_speed.turn_limit())
                         * DOMINATION_SPECIALIZATION_PERCENT;
         }
-        !self.victory_planning || culture_buildup || Self::victory_specialization_active(g)
+        // `science-specializes-earlier`: the Science lane's buildup starts at
+        // the same third. False with the gene off.
+        !self.victory_planning
+            || culture_buildup
+            || self.science_buildup(g)
+            || Self::victory_specialization_active(g)
     }
 
     /// Count completed and queued Harbors so the late Science lane can see a
@@ -41168,6 +41233,11 @@ impl AdvancedAi {
     /// `advanced/settler_never_idles.rs`.
     fn advanced_settler_step(&mut self, g: &mut Game, pid: usize, uid: u32) -> bool {
         let acted = self.advanced_settler_step_inner(g, pid, uid);
+        // `founding-voyage`: a cityless seat's embarked Settler with nowhere to
+        // go sails toward land. See `advanced/maori_founds_from_the_sea.rs`.
+        if !acted && self.founding_voyage_step(g, pid, uid) {
+            return true;
+        }
         if acted || !self.settler_never_idles {
             return acted;
         }
@@ -50313,6 +50383,10 @@ impl AdvancedAi {
         // `assess` aims the army. Exact no-op while off. See
         // `advanced/early_conquest.rs`.
         self.maintain_conquest_opening(g, pid);
+        // `city-state-harvest`: name, keep or release the city-state city
+        // the plan conquers next. Exact no-op while off. See
+        // `advanced/city_state_harvest.rs`.
+        self.maintain_city_state_harvest(g, pid);
         // `city_campaign`: drop the cities the plan has taken, expire one
         // never launched, draw or refresh one at peace. See
         // `advanced/city_campaign.rs`.
@@ -50349,10 +50423,12 @@ impl AdvancedAi {
         if rush_routes_frozen || self.plan_stale(g, pid) {
             let mut next = self.assess(g, pid);
             self.apply_war_plan_to_strategy(&mut next);
+            self.apply_city_state_harvest_to_strategy(g, pid, &mut next);
             self.apply_air_surge_to_strategy(g, pid, &mut next);
             self.plan = Some(next);
         } else if let Some(mut current) = self.plan.take() {
             self.apply_war_plan_to_strategy(&mut current);
+            self.apply_city_state_harvest_to_strategy(g, pid, &mut current);
             self.apply_air_surge_to_strategy(g, pid, &mut current);
             self.plan = Some(current);
         }
@@ -50432,6 +50508,11 @@ impl AdvancedAi {
             // `advanced/gold_buys_the_opening_builder.rs`.
             self.opening_builder_purchase(g, pid, &plan);
             self.idle_trader_purchase(g, pid, &plan);
+            // `gold-buys-the-backlog-builder`: past the opening buy and the
+            // route slot's Trader, a Builder for the unimproved worked tiles
+            // the queues have not answered. See
+            // `advanced/gold_buys_the_backlog_builder.rs`.
+            self.backlog_builder_purchase(g, pid, &plan);
         }
         // Once a city-saving purchase has had its one action, the turn a
         // breakthrough arrives still upgrades appointed predecessors before
@@ -50571,6 +50652,14 @@ impl AdvancedAi {
         // the final pre-production state.
         self.settlement_atlas.borrow_mut().clear();
         self.lane_progress_cache.0.replace(None);
+
+        // `saved-work-is-seen`: the host's paused units, buildings and
+        // projects join the saved-work bank before any production writer
+        // prices an item. Exact no-op while the gene is off.
+        self.see_host_saved_work(g, pid);
+        // `near-done-work-finishes`: every city's head before any production
+        // writer runs. Empty while the gene is off.
+        let near_done_heads = self.near_done_heads(g, pid);
 
         // `border-parity-2`: the severe-deficit preemption, beside the siege
         // reclaim it mirrors.
@@ -50941,6 +51030,11 @@ impl AdvancedAi {
         // `paused-district-finishes`: after every ordinary writer, before the
         // declaration response and the defence handoffs below.
         self.claim_paused_district_finishes(g, pid);
+        // `near-done-work-finishes`: a head displaced this turn that finishes
+        // within two turns goes back to the head, after every ordinary writer
+        // and before the pad holds and the defence handoffs below. Exact
+        // no-op while the gene is off. See `advanced/near_done_work_finishes.rs`.
+        self.claim_near_done_work_finishes(g, pid, &plan, &near_done_heads);
         // `launch-pad-holds-its-queue`: the first pad back at the head of its
         // city, before the defence and loyalty handoffs below.
         self.claim_launch_pad_holds_its_queue(g, pid, &plan);

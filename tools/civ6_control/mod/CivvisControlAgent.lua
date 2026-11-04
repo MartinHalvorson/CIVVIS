@@ -6421,6 +6421,8 @@ CivvisMenus.buildable = function(city)
 				t = row.BuildingType,
 				c = try(function() return queue:GetBuildingCost(row.Index); end, -1),
 				p = try(function() return queue:GetTurnsLeft(row.Hash); end, -1),
+				-- Saved work on a paused building (`saved-work-is-seen`).
+				pr = try(function() return queue:GetBuildingProgress(row.Index); end, nil),
 			};
 		end
 	end
@@ -6444,6 +6446,7 @@ CivvisMenus.buildable = function(city)
 						c = try(function() return queue:GetUnitCost(row.Index); end, -1),
 						p = try(function() return queue:GetTurnsLeft(row.Hash); end, -1),
 						r = CivvisMenus.resource_cost(queue, row.Index, standard),
+						pr = try(function() return queue:GetUnitProgress(row.Index); end, nil),
 					};
 					-- `ProductionPanel.lua:2150-2172`: the results table says whether
 					-- a Corps or Army may be trained here; each tier is asked again.
@@ -6483,6 +6486,7 @@ CivvisMenus.buildable = function(city)
 				t = row.ProjectType,
 				c = try(function() return queue:GetProjectCost(row.Index); end, -1),
 				p = try(function() return queue:GetTurnsLeft(row.ProjectType); end, -1),
+				pr = try(function() return queue:GetProjectProgress(row.Index); end, nil),
 			};
 		end
 	end
@@ -9994,7 +9998,10 @@ local function exportState(player, pid, turn, frame, eventKind)
 		-- `civvis_build_unplayable` on 29 turns across eight cities. Keyed by the
 		-- host's resource type; the Rust side translates. Only the strategic
 		-- class — the same filter the shipped TopPanel_Expansion2 uses.
-		-- ⚠ nil, not `{}`, when nothing is stocked: see `great_person_points`.
+		-- Keep successful zero stock readings; omit only unavailable/invalid
+		-- amounts. A nonempty map of zeros distinguishes an empty bank from a
+		-- failed read. With no usable query, keep nil rather than `{}` (which
+		-- the Lua encoder would serialize as an array).
 		-- TopPanel_Expansion2.lua:50-55,64: gross accumulation includes imports
 		-- and bonuses. Unit/power demand is separate, not subtracted here.
 		strategic_resource_income = try(function()
@@ -10028,7 +10035,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 					local amount = try(function()
 						return resources:GetResourceAmount(row.ResourceType);
 					end, nil);
-					if amount ~= nil and amount > 0 then
+					if type(amount) == "number" and amount >= 0 and amount < math.huge then
 						out[row.ResourceType] = amount;
 						any = true;
 					end
@@ -10043,7 +10050,7 @@ local function exportState(player, pid, turn, frame, eventKind)
 		-- does not know a copy is out: live Emperor civvis-20261007T131449Z
 		-- (game 354) sold Turtles and Marble to Kongo at turns 126 and 132,
 		-- then priced both into seven Oil asks from 155 that the last-copy
-		-- guard refused unproposed. nil when none is held, as above.
+		-- guard refused unproposed. Keep nil when none is held here.
 		luxury_counts = try(function()
 			local resources = player:GetResources();
 			if resources == nil then return nil; end
@@ -12072,6 +12079,20 @@ CivvisOnDiplomacyStatement = function(fromPlayer, toPlayer, kVariants)
 		elseif accepted and not equalityChecked then
 			CivvisTrade.close(pid, other, "deal_equality_unreadable");
 			return;
+		elseif not accepted then
+			-- A peace refusal uses the same MAKE_DEAL conversation as an
+			-- alliance refusal. Retain ownership until its counter is answered
+			-- or the bounded closer ends the wait; closing under the following
+			-- statement bypasses the shared counter handler above. This does
+			-- not enable peace sessions in the operator's trade-only mode.
+			local counterHold = tonumber(cfg.PeaceCounterHoldSeconds) or 4;
+			if counterHold > 0 then
+				session.counter_wait = { turn = turn };
+				pcall(function() LuaEvents.CivvisDealSession(other, true, counterHold); end);
+				emit("deal_session", { turn = turn, target = other, kind = session.kind,
+					phase = "counter_wait", session = session.sessionID or -1, hold = counterHold });
+				return;
+			end
 		end
 	elseif session.kind == "alliance" then
 		-- See `CivvisAllianceStep`. The rival's ACCEPTED is its verdict, and
@@ -12117,7 +12138,7 @@ CivvisOnDealSessionClosed = function(sessionID)
 				-- must not produce a synthetic accepted peace result.
 				CivvisTrade.close(pid, subject, "session_closed", true);
 			elseif session.counter_wait ~= nil then
-				-- A refused alliance whose counter never came: the rival did
+				-- A refused offer whose counter never came: the rival did
 				-- answer, so this is no unanswered ask and holds no turn.
 				CivvisTrade.close(pid, subject, "counter_not_sent", true);
 			else
@@ -20354,6 +20375,33 @@ CivvisBoard.holdVisibleBuilderCaptureLegs = function(pid, turn, rows)
 	end);
 	if #threats == 0 then return; end
 
+	-- Read the active host abilities, including trait-granted ones, rather than
+	-- treating every ship as unable to raid a civilian on shore. UnitPanel.lua
+	-- reads GetAbility():GetAbilities(); UnitAbilities.xml binds raiding effects.
+	local function canCoastalRaid(threat)
+		return try(function()
+			local abilities = threat.unit:GetAbility():GetAbilities();
+			if type(abilities) ~= "table" then return nil; end
+			local active = {};
+			for _, index in pairs(abilities) do
+				local ability = GameInfo.UnitAbilities[index];
+				if ability == nil or ability.UnitAbilityType == nil then return nil; end
+				active[ability.UnitAbilityType] = true;
+			end
+			if next(active) == nil then return false; end
+			for link in GameInfo.UnitAbilityModifiers() do
+				if active[link.UnitAbilityType] then
+					local modifier = GameInfo.Modifiers[link.ModifierId];
+					if modifier == nil or modifier.ModifierType == nil then return nil; end
+					if modifier.ModifierType == "MODIFIER_UNIT_ADJUST_RAIDING" then
+						return true;
+					end
+				end
+			end
+			return false;
+		end, nil);
+	end
+
 	local function threatReaches(threat, x, y)
 		if threat.scout then
 			local distance = tonumber(try(function()
@@ -20373,10 +20421,28 @@ CivvisBoard.holdVisibleBuilderCaptureLegs = function(pid, turn, rows)
 				return true, "path";
 			end
 		end
-		local baseMoves = tonumber(try(function()
-			local definition = GameInfo.Units[threat.unit:GetUnitType()];
-			return definition ~= nil and definition.BaseMoves;
-		end, nil)) or 2;
+		local definition = try(function()
+			return GameInfo.Units[threat.unit:GetUnitType()];
+		end, nil);
+		-- A non-raiding naval distance envelope cannot capture a Builder on
+		-- ordinary land. Native 20261102T202907Z t96 held its Iron
+		-- approach for a Caravel under the distance fallback. Keep positive paths,
+		-- water, city/district transitions and unavailable terrain conservative.
+		if definition ~= nil and definition.Domain == "DOMAIN_SEA"
+				and canCoastalRaid(threat) == false then
+			local plot = try(function() return Map.GetPlot(x, y); end, nil);
+			local water = try(function() return plot:IsWater(); end, nil);
+			local city = try(function() return plot:IsCity(); end, nil);
+			local district = tonumber(try(function() return plot:GetDistrictType(); end, nil));
+			if water == false and city == false and district ~= nil and district < 0 then
+				emit("builder_naval_land_clear", {
+					turn = turn, hostile = threat.id, hostile_type = threat.name,
+					at = { x, y }, reason = "known_no_raiding_ability",
+				});
+				return false, "naval_land";
+			end
+		end
+		local baseMoves = tonumber(definition ~= nil and definition.BaseMoves) or 2;
 		local distance = tonumber(try(function()
 			return Map.GetPlotDistance(x, y, threat.x, threat.y);
 		end, -1)) or -1;

@@ -4785,6 +4785,73 @@ pub const GENES: &[Gene] = &[
     // its era, then any technology two eras behind the world. See
     // `advanced/old_techs_before_the_beeline.rs`.
     Gene { tag: "old-techs-before-the-beeline", field: "old_techs_before_the_beeline", kind: Kind::OptIn, enable: AdvancedAi::enable_old_techs_before_the_beeline, disable: AdvancedAi::disable_old_techs_before_the_beeline },
+    // `saved-work-is-seen`: live, the host keeps a switched item's progress
+    // (382 of 383 resumed Buildings in 38 Emperor/Immortal games on
+    // 2026-11-02 restarted from it), but the menu export carried `pr` for
+    // districts only, so the mirror's bank never held a paused unit, building
+    // or project: the resume path fired about once a game while a median 17
+    // paused units, buildings and projects a game were never finished, their
+    // saved work 4.9-7.9% of all city production. Under the gene the host's
+    // saved work on paused units, buildings and projects enters
+    // `City::production_progress` before production, as the native engine
+    // already keeps it. Inert on a native board (no host menu). See
+    // `advanced/saved_work_is_seen.rs`.
+    Gene { tag: "saved-work-is-seen", field: "saved_work_is_seen", kind: Kind::OptIn, enable: AdvancedAi::enable_saved_work_is_seen, disable: AdvancedAi::disable_saved_work_is_seen },
+    // `gold-buys-the-backlog-builder`: live (38 Emperor/Immortal games,
+    // 2026-11-02) 64% / 48% of the worked land tiles stood unimproved at t60 /
+    // t80, 4.7-6.5 of them improvable now per game, against 1.0-2.3 Builders
+    // afield; in 17 of 38 games at t40 and 13 at t60 the Builders afield or
+    // training fell short of `builder_backlog_item`'s own quota because the
+    // Campus, Granary, Walls and Settler claims took the queue. Under the gene
+    // the treasury buys that missing Builder above the purchase upkeep floor,
+    // at peace, after the opening Builder and the idle route's Trader, in the
+    // city owning the most unimproved worked tiles (the weakest producer on a
+    // tie) whose cards do not already speed a Builder. See
+    // `advanced/gold_buys_the_backlog_builder.rs`.
+    Gene { tag: "gold-buys-the-backlog-builder", field: "gold_buys_the_backlog_builder", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_buys_the_backlog_builder, disable: AdvancedAi::disable_gold_buys_the_backlog_builder },
+    // Operator 2026-11-02: production is best spent on what a card boosts
+    // (units +50%, Settlers +50%, ships +100%). The deck review prices a
+    // production card by what it adds to the queue heads, but a full deck is
+    // reviewed only every eighth turn. Live, 69 games 11-01/02: Feudal
+    // Contract boosted no head on 84% of its slotted turns, Agoge 72%; an
+    // unlocked unslotted card would have boosted the head on 8,676
+    // city-turns, ~1,290 Production a game (Limes, International Waters,
+    // Grande Armee most). Under the gene the review also runs on the turn
+    // the set of queue cards worth slotting changes. See `ai/deck_queue.rs`.
+    Gene { tag: "deck-follows-the-queue", field: "deck_follows_the_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_deck_follows_the_queue, disable: AdvancedAi::disable_deck_follows_the_queue },
+    // `city-state-harvest`: live Immortal 11-02 (17 games) captured no city;
+    // the gap to the median rival at t100 was population (56 against 36),
+    // while the median seat at t80 had two city-state cities within eight
+    // tiles at population 5-12 and a fifth of our military. The softest one
+    // with no suzerain but us and at most one of our envoys becomes the
+    // plan's Conquest target for a bounded window. See
+    // `advanced/city_state_harvest.rs`.
+    Gene { tag: "city-state-harvest", field: "city_state_harvest", kind: Kind::OptIn, enable: AdvancedAi::enable_city_state_harvest, disable: AdvancedAi::disable_city_state_harvest },
+    // Live Immortal 6p Continents 11-02/03: the seat never reached its city
+    // target, so Expansion (a beaker 1.2 against Science's 4.2) lasted to the
+    // halfway clock, 55% of the logged strategy turns. Every decided game was
+    // lost to a rival's science victory at t188-215. Under the gene an
+    // assigned Science lane specializes at a third of the clock, as Culture
+    // already does. See `advanced/science_specializes_earlier.rs`.
+    Gene { tag: "science-specializes-earlier", field: "science_specializes_earlier", kind: Kind::OptIn, enable: AdvancedAi::enable_science_specializes_earlier, disable: AdvancedAi::disable_science_specializes_earlier },
+    // `near-done-work-finishes`: live (39 Immortal games with
+    // `saved-work-is-seen`, 2026-11-03), 1,204 items were paused with saved
+    // work; 47% of that work sat in items within two turns of finishing when
+    // they were paused (177 within one turn), because the claims and
+    // governors displace the head every turn and the resume path only sees
+    // an empty queue. Under the gene a head displaced this turn that
+    // finishes within two turns goes back to the head after every ordinary
+    // writer, unless the city is threatened, attacked or recovering, or the
+    // displacing item is a soldier, Settler, defence building, Holy Site,
+    // Shrine, Spaceport, Wonder or project. See
+    // `advanced/near_done_work_finishes.rs`.
+    Gene { tag: "near-done-work-finishes", field: "near_done_work_finishes", kind: Kind::OptIn, enable: AdvancedAi::enable_near_done_work_finishes, disable: AdvancedAi::disable_near_done_work_finishes },
+    // Live, both Māori seats (11-01 King, 11-03 Immortal): the Settler started
+    // embarked on ocean, knew no land, and stood until the defeat "no cities
+    // remain" at turn 6; the mirror's fog priors give a land unit at sea no
+    // route. Under the gene it sails toward the edge of the known sea. See
+    // `advanced/maori_founds_from_the_sea.rs`.
+    Gene { tag: "founding-voyage", field: "founding_voyage", kind: Kind::OptIn, enable: AdvancedAi::enable_founding_voyage, disable: AdvancedAi::disable_founding_voyage },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

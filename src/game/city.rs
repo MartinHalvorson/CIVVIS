@@ -7241,6 +7241,12 @@ impl Game {
         self.query_memo.producible.borrow_mut().clear();
     }
 
+    /// Replace the host's saved work on paused items (see
+    /// [`Game::host_saved_work`]). Mirror input, refreshed with the menus.
+    pub(crate) fn replace_host_saved_work(&mut self, saved: BTreeMap<u32, BTreeMap<String, f64>>) {
+        self.host_saved_work = Arc::new(saved);
+    }
+
     pub(crate) fn replace_host_unit_resource_prices(
         &mut self,
         prices: BTreeMap<u32, BTreeMap<String, f64>>,

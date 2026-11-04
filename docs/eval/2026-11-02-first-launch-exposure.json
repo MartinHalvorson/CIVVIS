@@ -1,0 +1,54 @@
+{
+  "schema": 1,
+  "archive": "2026-11-02-first-launch-exposure.raw.tar.xz",
+  "archive_bytes": 507700,
+  "archive_sha256": "2e01edb7f92e2cf160605de15fe5160651e8dcf5528a8cc702a939227f9fb755",
+  "members_verified": 28,
+  "proof": {
+    "created_utc": "2026-11-02T21:48:39.960890+00:00",
+    "reference_rows_sha256": "b7af481e0fdac48d07b0fa9a78ac6916f9f399a8c1cc3c4ffe78bee2ecbaf48f",
+    "frozen_binary_sha256": "40a9dacea7326e467e650379cbf077f488478d38834efeb66e4744f753190bbb",
+    "diagnostic_binary_sha256": "3f5a667d84046439fe30f351ea2e19d1954b2c527e646b08638e5458737c9bac",
+    "diagnostic_source_mismatches_after_run": [],
+    "verified_replayed_seats": 18,
+    "new_fixed_off_tags": {
+      "science-power-buys-fuel": 0.0,
+      "old-techs-before-the-beeline": 0.0
+    },
+    "changed_seeds_under_fixed_off_control": [
+      202611020002
+    ],
+    "journals": {
+      "diagnostic-logged.jsonl.journal.202611020000.txt": {
+        "research_topic_lines": 840,
+        "sha256": "1caa054ee08fded308dc393dd754b1d2c51bd2c87c3fe13ee92b886f5e4c8eaf",
+        "includes_civics_and_repeated_planning": true
+      },
+      "diagnostic-logged.jsonl.journal.202611020002.txt": {
+        "research_topic_lines": 812,
+        "sha256": "ad08deaa302ee71a687a7db770b356fd82e4ffb38f5d1846c800507fb01c7ddf",
+        "includes_civics_and_repeated_planning": true
+      }
+    },
+    "enabled_science_selected_research": [
+      {
+        "source_line": 10841,
+        "line": "t97 p4 Research Researching rocketry | the most valuable step toward rocketry, which science needs"
+      },
+      {
+        "source_line": 11287,
+        "line": "t100 p4 Research Researching advanced flight | the most valuable step toward satellites, which science needs"
+      },
+      {
+        "source_line": 11581,
+        "line": "t102 p4 Research Researching satellites | the most valuable step toward satellites, which science needs"
+      },
+      {
+        "source_line": 11591,
+        "line": "t102 p4 Research Researching satellites | the most valuable step toward satellites, which science needs"
+      }
+    ],
+    "selection_correction": "Initial Python character truthiness treated \"0\" as enabled. Retained the original three-seed prefix after correcting the mistake. It contains two all-OFF games and one game with two ON seats.",
+    "scope": "Selected diagnostic replays. No additional independent strength games, native execution claim, default promotion or ledger ingestion."
+  }
+}

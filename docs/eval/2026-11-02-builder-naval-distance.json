@@ -1,0 +1,440 @@
+{
+  "schema": 2,
+  "scope": "Native observation and host-harness actuation regression, no native execution or strength estimate",
+  "source": {
+    "head": "f70e9f5ad8560284181646783c3d8eba99f1abc9",
+    "base_main": "3ff83fba4488741cb791b1f74cbe85fb72e44a3e",
+    "recorded_utc": "2026-11-02T23:29:54.361732+00:00",
+    "files": {
+      "tools/civ6_control/mod/CivvisControlAgent.lua": "661b8e99d5d8e2d630956d484d673cf3bf403565d78c4f0a9d10b444cc4a61be",
+      "tools/civ6_control/mod/host_board_test.lua": "005dee5456f13f83cdd0397867c6f5c30db1e108a88ad41e9863537093accaef",
+      "tools/test_civ6_control_install.py": "8e5b116246839689621f5e83fe670d484b96b26ddb7e5a7720a872c23592606d",
+      "docs/eval/2026-11-02-builder-naval-distance.extract.py": "a03433f6c6ca67381a2a4f369a2aeb1be35977515f9a3924fa18b7587455ce75"
+    },
+    "lua_runtime": "lupa.lua51"
+  },
+  "observations": {
+    "run": "civvis-20261102T202907Z",
+    "source": "/Users/martbot-mbp-m5-max-128/civvis-civ6-runs/control/civvis-20261102T202907Z/events.jsonl",
+    "source_bytes": 18877534,
+    "source_sha256": "18fdeab0e79248fe9d7007c3e458fcc405943d0c367f3ac4ceaf04f71ca76525",
+    "scope": "Native observation slices, not host execution or a production/strength estimate.",
+    "cases": [
+      {
+        "turn": 96,
+        "hold": {
+          "builder": 2490377,
+          "builder_reach": "path",
+          "ctx": "agent",
+          "from": [
+            26,
+            31
+          ],
+          "hostile": 8519700,
+          "hostile_pos": [
+            29,
+            31
+          ],
+          "hostile_reach": "base_moves",
+          "hostile_type": "UNIT_CARAVEL",
+          "kind": "builder_barbarian_capture_hold",
+          "run": "civvis-20261102T202907Z",
+          "sent": [
+            27,
+            31
+          ],
+          "t": 1793651640,
+          "turn": 96,
+          "utc": "2026-11-02T20:34:00.780Z",
+          "want": [
+            27,
+            31
+          ]
+        },
+        "hold_line": 7047,
+        "tile": {
+          "ap": 1,
+          "cl": -1,
+          "ct": "CONTINENT_PANNOTIA",
+          "flooded": false,
+          "fw": false,
+          "i": false,
+          "o": 0,
+          "oc": 131073,
+          "r": "RESOURCE_IRON",
+          "ri": false,
+          "rv": 0,
+          "submerged": false,
+          "t": "TERRAIN_DESERT_HILLS",
+          "vis": true,
+          "w": false,
+          "x": 27,
+          "y": 31,
+          "yl": [
+            0,
+            1,
+            0,
+            1,
+            0,
+            0
+          ]
+        },
+        "tile_line": 7042,
+        "state_line": 7038,
+        "state_turn": 96,
+        "city_centers": [],
+        "owned_districts_on_destination": [],
+        "owned_plain_land": true
+      },
+      {
+        "turn": 97,
+        "hold": {
+          "builder": 2490377,
+          "builder_reach": "path",
+          "ctx": "agent",
+          "from": [
+            26,
+            31
+          ],
+          "hostile": 8519700,
+          "hostile_pos": [
+            30,
+            33
+          ],
+          "hostile_reach": "base_moves",
+          "hostile_type": "UNIT_CARAVEL",
+          "kind": "builder_barbarian_capture_hold",
+          "run": "civvis-20261102T202907Z",
+          "sent": [
+            27,
+            31
+          ],
+          "t": 1793651644,
+          "turn": 97,
+          "utc": "2026-11-02T20:34:04.567Z",
+          "want": [
+            27,
+            31
+          ]
+        },
+        "hold_line": 7188,
+        "tile": {
+          "ap": 1,
+          "cl": -1,
+          "ct": "CONTINENT_PANNOTIA",
+          "flooded": false,
+          "fw": false,
+          "i": false,
+          "o": 0,
+          "oc": 131073,
+          "r": "RESOURCE_IRON",
+          "ri": false,
+          "rv": 0,
+          "submerged": false,
+          "t": "TERRAIN_DESERT_HILLS",
+          "vis": true,
+          "w": false,
+          "x": 27,
+          "y": 31,
+          "yl": [
+            0,
+            1,
+            0,
+            1,
+            0,
+            0
+          ]
+        },
+        "tile_line": 7042,
+        "state_line": 7175,
+        "state_turn": 97,
+        "city_centers": [],
+        "owned_districts_on_destination": [],
+        "owned_plain_land": true
+      },
+      {
+        "turn": 108,
+        "hold": {
+          "builder": 2752516,
+          "builder_reach": "path",
+          "ctx": "agent",
+          "from": [
+            23,
+            35
+          ],
+          "hostile": 9109514,
+          "hostile_pos": [
+            27,
+            39
+          ],
+          "hostile_reach": "base_moves",
+          "hostile_type": "UNIT_CARAVEL",
+          "kind": "builder_barbarian_capture_hold",
+          "run": "civvis-20261102T202907Z",
+          "sent": [
+            24,
+            37
+          ],
+          "t": 1793651674,
+          "turn": 108,
+          "utc": "2026-11-02T20:34:34.829Z",
+          "want": [
+            24,
+            37
+          ]
+        },
+        "hold_line": 8129,
+        "tile": {
+          "ap": 0,
+          "cl": -1,
+          "ct": "CONTINENT_PANNOTIA",
+          "flooded": false,
+          "fw": true,
+          "i": false,
+          "o": 0,
+          "oc": 65536,
+          "ri": true,
+          "rv": 3,
+          "submerged": false,
+          "t": "TERRAIN_TUNDRA",
+          "vis": true,
+          "w": false,
+          "x": 24,
+          "y": 37,
+          "yl": [
+            1,
+            0,
+            0,
+            0,
+            0,
+            0
+          ]
+        },
+        "tile_line": 8124,
+        "state_line": 8120,
+        "state_turn": 108,
+        "city_centers": [],
+        "owned_districts_on_destination": [],
+        "owned_plain_land": true
+      }
+    ],
+    "sources": [
+      {
+        "line": 7038,
+        "file": "line-007038.jsonl",
+        "bytes": 63121,
+        "sha256": "9316fc4d80272dd15c0894e5e5b194c72b615cbcc4163e9ef0bbbb4c61675965"
+      },
+      {
+        "line": 7042,
+        "file": "line-007042.jsonl",
+        "bytes": 35014,
+        "sha256": "36686334fcc5b6a80e8c6d537f0620d199fbdd777547723fe1aef6ee73515736"
+      },
+      {
+        "line": 7047,
+        "file": "line-007047.jsonl",
+        "bytes": 364,
+        "sha256": "3b47e36406706943f7c1fa738bdae7c1580569ec0f0f8e9c44e1b161e076bd3c"
+      },
+      {
+        "line": 7175,
+        "file": "line-007175.jsonl",
+        "bytes": 63739,
+        "sha256": "dc91278a46ffe3e3ba741624effd2af34ba5aaef0abb4e8edc369b484c64b47a"
+      },
+      {
+        "line": 7188,
+        "file": "line-007188.jsonl",
+        "bytes": 364,
+        "sha256": "f0e4dfd577ee5a940d28891390913f4f1f2dc4c1cfb1f2f97c57b48d2b97cf60"
+      },
+      {
+        "line": 8120,
+        "file": "line-008120.jsonl",
+        "bytes": 65928,
+        "sha256": "9cdc74b4053dd8da6c440e95d2e9e02ada0f2fc7bb13f5f44a9cb996725f40a0"
+      },
+      {
+        "line": 8124,
+        "file": "line-008124.jsonl",
+        "bytes": 37054,
+        "sha256": "88d9097b9bcb20a171cc0f43c14f2d37d264bba57cc99f7d9952967ae52dd02a"
+      },
+      {
+        "line": 8129,
+        "file": "line-008129.jsonl",
+        "bytes": 365,
+        "sha256": "9496b2839c136b98c9cdd0d9641511e1d51c03985df73a910fb8c95701195c57"
+      }
+    ]
+  },
+  "tests": {
+    "original_failed": 6,
+    "intermediate_broad_naval_exception_failed_raid_checks": 8,
+    "green_host_board_checks": 197,
+    "lua_test_files": 114,
+    "python_install_tests": 139,
+    "ci_type_validator_passed": true,
+    "runtime": "lupa.lua51",
+    "all_passed": true
+  },
+  "shipped_rules": {
+    "files": {
+      "Base/Assets/Gameplay/Data/Units.xml": "ef9d3984d41c5bbb8363ae2195e646eef1353f7b76b7e5cab95d47b3ab762305",
+      "Base/Assets/Gameplay/Data/UnitAbilities.xml": "f6148b9cf29aa522556150a9131146b68984a7df435dcc2b14951a34bb2020ee",
+      "Base/Assets/UI/Panels/UnitPanel.lua": "59e0ee36a36aeeef927a1024751f2d3c7a259ffefc45159738eb6c684368f8b3"
+    },
+    "facts": [
+      {
+        "source": "Base/Assets/Gameplay/Data/Units.xml:804",
+        "unit": "UNIT_CARAVEL",
+        "domain": "DOMAIN_SEA",
+        "base_moves": 4
+      },
+      {
+        "source": "Base/Assets/UI/Panels/UnitPanel.lua:2225,2267",
+        "api": "GetAbility():GetAbilities()"
+      },
+      {
+        "source": "Base/Assets/Gameplay/Data/UnitAbilities.xml:652-657,1053-1054",
+        "ability_links": [
+          "ABILITY_COASTAL_RAID",
+          "ABILITY_MELEE_COASTAL_RAID"
+        ],
+        "modifier": "UNIT_COASTAL_RAID",
+        "modifier_type": "MODIFIER_UNIT_ADJUST_RAIDING"
+      }
+    ]
+  },
+  "live_readback_event": "builder_naval_land_clear records threat classification, not an executed move or yield gain",
+  "fixture_revision": "CI type-name validation rejected UNIT-prefixed mock modifier IDs; final fixtures use TEST-prefixed IDs without changing their modifier types.",
+  "native_limit": "The captured holds lack the hostile active-ability list. Actual live bypass awaits a supported ability read; unknown abilities preserve the prior hold.",
+  "archive": {
+    "file": "2026-11-02-builder-naval-distance.raw.tar.xz",
+    "bytes": 376016,
+    "sha256": "8fd290c976a32d1c4cb18aef4bb442ac44202d7f856ad6bf17d6039d5f1700f5",
+    "members": [
+      {
+        "path": "all-lua-tests-05.json",
+        "bytes": 11821,
+        "sha256": "8a358580d82e54b6b574708fda7bb7f95d6e32eb59df159b910918c85832c2d7"
+      },
+      {
+        "path": "all-lua-tests-05.log",
+        "bytes": 660103,
+        "sha256": "704b40e39fe743d0de0c6334eadea645ce82184348e2c7753a0f6c932fed5c7d"
+      },
+      {
+        "path": "baseline-agent.lua",
+        "bytes": 1221247,
+        "sha256": "f1bda1ee36eacb768fbdb697c0a86955ee737378f01f6c6ee120c5bcaa62c80d"
+      },
+      {
+        "path": "extract.py",
+        "bytes": 2911,
+        "sha256": "a03433f6c6ca67381a2a4f369a2aeb1be35977515f9a3924fa18b7587455ce75"
+      },
+      {
+        "path": "green-fixture-final.log",
+        "bytes": 148892,
+        "sha256": "9b83e2ec7bff405b3e6a9f86ef5d8c62c8f2d8b91d3e89a229f681db0057d9e1"
+      },
+      {
+        "path": "harness.lua",
+        "bytes": 69564,
+        "sha256": "005dee5456f13f83cdd0397867c6f5c30db1e108a88ad41e9863537093accaef"
+      },
+      {
+        "path": "intermediate-agent.lua",
+        "bytes": 1222023,
+        "sha256": "d4ee927cbd0b707280f926b8eaf542d68aec40abf6fa68306f0a42d14f95d448"
+      },
+      {
+        "path": "intermediate-harness.lua",
+        "bytes": 69294,
+        "sha256": "1fc4b679580938c5e3b61bc11a29fefd46defddf7d2e5c0cdb75f73b1326b4d5"
+      },
+      {
+        "path": "native-observations/line-007038.jsonl",
+        "bytes": 63121,
+        "sha256": "9316fc4d80272dd15c0894e5e5b194c72b615cbcc4163e9ef0bbbb4c61675965"
+      },
+      {
+        "path": "native-observations/line-007042.jsonl",
+        "bytes": 35014,
+        "sha256": "36686334fcc5b6a80e8c6d537f0620d199fbdd777547723fe1aef6ee73515736"
+      },
+      {
+        "path": "native-observations/line-007047.jsonl",
+        "bytes": 364,
+        "sha256": "3b47e36406706943f7c1fa738bdae7c1580569ec0f0f8e9c44e1b161e076bd3c"
+      },
+      {
+        "path": "native-observations/line-007175.jsonl",
+        "bytes": 63739,
+        "sha256": "dc91278a46ffe3e3ba741624effd2af34ba5aaef0abb4e8edc369b484c64b47a"
+      },
+      {
+        "path": "native-observations/line-007188.jsonl",
+        "bytes": 364,
+        "sha256": "f0e4dfd577ee5a940d28891390913f4f1f2dc4c1cfb1f2f97c57b48d2b97cf60"
+      },
+      {
+        "path": "native-observations/line-008120.jsonl",
+        "bytes": 65928,
+        "sha256": "9cdc74b4053dd8da6c440e95d2e9e02ada0f2fc7bb13f5f44a9cb996725f40a0"
+      },
+      {
+        "path": "native-observations/line-008124.jsonl",
+        "bytes": 37054,
+        "sha256": "88d9097b9bcb20a171cc0f43c14f2d37d264bba57cc99f7d9952967ae52dd02a"
+      },
+      {
+        "path": "native-observations/line-008129.jsonl",
+        "bytes": 365,
+        "sha256": "9496b2839c136b98c9cdd0d9641511e1d51c03985df73a910fb8c95701195c57"
+      },
+      {
+        "path": "native-observations/observations.json",
+        "bytes": 5847,
+        "sha256": "16ef15e1bd30d4057834fad748dbdca2848470cad1e37749a7b5d7b3ae896fd5"
+      },
+      {
+        "path": "python-install-tests-02.log",
+        "bytes": 239,
+        "sha256": "b0f1bfaaef1c3487ea917df679bc42b29eeccb0391e6fb62e1fc5c749079754f"
+      },
+      {
+        "path": "red-original-fixture-final.log",
+        "bytes": 149714,
+        "sha256": "bbfdadfe557b666ce59b06d0153b07158eaa57635aa438638102a179a999588e"
+      },
+      {
+        "path": "red-raid-guard.log",
+        "bytes": 145426,
+        "sha256": "945255261ee44778e33ddcb94e05b323d9a8007d3388023e4a0e50a6fe99f6aa"
+      },
+      {
+        "path": "shipped-rule-facts.json",
+        "bytes": 943,
+        "sha256": "85ded23ffbf8e4ee39ecb9d551a2a9734fcddbd38170bac77d4101c8291f7fc4"
+      },
+      {
+        "path": "source-receipt.json",
+        "bytes": 697,
+        "sha256": "482ed221ff49197821a7ec3450b55f12f0ebed74a8a99b780dab678763c88900"
+      },
+      {
+        "path": "source.patch",
+        "bytes": 13900,
+        "sha256": "e96486b9840c4aaf9d435c743c334484db3d6dc1e2a3168756e1660b24a070b2"
+      },
+      {
+        "path": "type-validator.log",
+        "bytes": 52,
+        "sha256": "76b2f2df9945fa147ccab737240ed2365cfae514b97b9afd08b297a1f60818f4"
+      }
+    ]
+  }
+}

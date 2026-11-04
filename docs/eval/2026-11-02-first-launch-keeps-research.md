@@ -58,7 +58,7 @@ with survival/cities-lost and actual wins recorded. The earlier first-pad
 placement and Satellite production treatments retain separate identities;
 do not credit their effect to this research treatment.
 
-Status: implementation and validation in progress; no outcome or win-rate
+Status at preregistration: implementation and validation in progress; no outcome or win-rate
 improvement established, no default promotion authorized by this evidence.
 
 ## Validation observation, 2026-11-02
@@ -120,3 +120,13 @@ Satellites alone would not shorten the observed construction path. The pad
 city produced roughly 40–46 per turn during construction and still lacked
 its own Factory; regional production and power require separate inspection.
 Retain this counterexample when judging the research treatment's payoff.
+
+## Completed 64-game pilot
+
+The fixed pilot completed with 18 wins in 106 enabled seats versus 46 in
+278 controls. Its game-clustered 95% interval is −7.47 to +8.34 percentage
+points: no win improvement is established. Defaults remain off. The
+reserved 128-game confirmation is deferred pending better branch-exposure
+evidence and prioritization of the native Spaceport failure. The complete
+[pilot report](2026-11-02-first-launch-research-pilot.md), source-bound raw
+archive and machine analysis retain the fixed cohort and secondary readings.

@@ -105,6 +105,9 @@ GameInfo = setmetatable({}, { __index = function(_, k)
 			if name == "UNIT_GALLEY" then
 				return { UnitType = name, Combat = 30, RangedCombat = 0, BaseMoves = 3, Domain = "DOMAIN_SEA" }
 			end
+			if name == "UNIT_CARAVEL" then
+				return { UnitType = name, Combat = 55, RangedCombat = 0, BaseMoves = 4, Domain = "DOMAIN_SEA" }
+			end
 			if name == "UNIT_SETTLER" or name == "UNIT_BUILDER" or name == "UNIT_TRADER" then
 				return { UnitType = name, Combat = 0, RangedCombat = 0 }
 			end
@@ -118,6 +121,26 @@ GameInfo = setmetatable({}, { __index = function(_, k)
 			if index == 3 then return { FeatureType = "FEATURE_BURNT_FOREST" } end
 			return nil
 		end })
+	end
+	if k == "UnitAbilities" then
+		return { ABILITY_COASTAL_RAID = { UnitAbilityType = "ABILITY_COASTAL_RAID" },
+			ABILITY_MELEE_COASTAL_RAID = { UnitAbilityType = "ABILITY_MELEE_COASTAL_RAID" },
+			ABILITY_TEST_PASSIVE = { UnitAbilityType = "ABILITY_TEST_PASSIVE" } }
+	end
+	if k == "UnitAbilityModifiers" then
+		return function()
+			local links = {
+				{ UnitAbilityType = "ABILITY_COASTAL_RAID", ModifierId = "TEST_COASTAL_RAID_MODIFIER" },
+				{ UnitAbilityType = "ABILITY_MELEE_COASTAL_RAID", ModifierId = "TEST_COASTAL_RAID_MODIFIER" },
+				{ UnitAbilityType = "ABILITY_TEST_PASSIVE", ModifierId = "TEST_PASSIVE_MODIFIER" },
+			}
+			local index = 0
+			return function() index = index + 1; return links[index] end
+		end
+	end
+	if k == "Modifiers" then
+		return { TEST_COASTAL_RAID_MODIFIER = { ModifierType = "MODIFIER_UNIT_ADJUST_RAIDING" },
+			TEST_PASSIVE_MODIFIER = { ModifierType = "MODIFIER_UNIT_ADJUST_MOVEMENT" } }
 	end
 	return stub()
 end })
@@ -138,6 +161,10 @@ local function unitObject(u)
 		GetMovesRemaining = function() return u.moves end,
 		GetUnitType = function() return u.kind end,
 		GetType = function() return u.kind end,
+		GetAbility = function() return { GetAbilities = function()
+			if u.ability_unknown then return nil end
+			return u.abilities or {}
+		end } end,
 		GetDamage = function() return 0 end,
 		GetGreatPerson = function() return nil end,
 		GetFortifyTurns = function() return 0 end,
@@ -936,6 +963,70 @@ check("proven escort: no scout capture hold", lastEvent("settler_scout_capture_h
 -- Builders are civilians too.  A Builder leaving a city for a tile inside a
 -- visible barbarian combat unit's next-turn reach must not be accepted merely
 -- because the host can execute the MOVE_TO.
+-- The same naval terrain exception already used for Settlers applies to
+-- Builders. Native 20261102T202907Z t96 held a land Iron approach for a Caravel.
+for _, navalKind in ipairs({ "UNIT_GALLEY", "UNIT_CARAVEL" }) do
+	for _, case in ipairs({
+		{ name = "plain land", water = false, city = false, district = -1, held = false },
+		{ name = "water", water = true, city = false, district = -1, held = true },
+		{ name = "city", water = false, city = true, district = -1, held = true },
+		{ name = "district", water = false, city = false, district = 5, held = true },
+		{ name = "unknown", held = true },
+		{ name = "native path", water = false, city = false, district = -1, path = true, held = true },
+		{ name = "raid ability", water = false, city = false, district = -1,
+			abilities = { "ABILITY_COASTAL_RAID" }, held = true },
+		{ name = "melee raid ability", water = false, city = false, district = -1,
+			abilities = { "ABILITY_MELEE_COASTAL_RAID" }, held = true },
+		{ name = "unknown ability read", water = false, city = false, district = -1,
+			ability_unknown = true, held = true },
+		{ name = "unknown ability metadata", water = false, city = false, district = -1,
+			abilities = { "ABILITY_TEST_UNKNOWN" }, held = true },
+		{ name = "non-raiding ability", water = false, city = false, district = -1,
+			abilities = { "ABILITY_TEST_PASSIVE" }, held = false },
+	}) do
+		reset()
+		host.cities[1] = { x = 1, y = 1 }
+		host.units[61] = { id = 61, kind = "UNIT_BUILDER", x = 1, y = 1, moves = 2 }
+		host.barbarians[107] = { id = 107, kind = navalKind, x = 4, y = 1, moves = 0,
+			abilities = case.abilities, ability_unknown = case.ability_unknown }
+		if case.water ~= nil then
+			terrainPlots[plotIndex(2, 1)] = {
+				IsWater = function() return case.water end,
+				IsCity = function() return case.city end,
+				GetDistrictType = function() return case.district end,
+			}
+		end
+		host.paths["61:" .. plotIndex(2, 1)] = {
+			plots = { plotIndex(1, 1), plotIndex(2, 1) }, turns = { 0, 1 } }
+		if case.path then
+			host.paths["107:" .. plotIndex(2, 1)] = {
+				plots = { plotIndex(4, 1), plotIndex(3, 1), plotIndex(2, 1) }, turns = { 0, 1, 1 } }
+		end
+		applyOrders(player, PID, 7, { row(61, "MOVE_TO", 2, 1) })
+		check("builder naval capture " .. navalKind .. " " .. case.name,
+			ops(61), case.held and "" or "UNITOPERATION_MOVE_TO@2,1")
+	end
+end
+
+-- Exact coordinates and unit types from the native t96 hold. The destination
+-- export is owned desert hills with Iron, no city center or placed district.
+reset()
+host.units[2490377] = { id = 2490377, kind = "UNIT_BUILDER", x = 26, y = 31, moves = 2 }
+host.barbarians[8519700] = { id = 8519700, kind = "UNIT_CARAVEL", x = 29, y = 31, moves = 0 }
+terrainPlots[plotIndex(27, 31)] = {
+	IsWater = function() return false end,
+	IsCity = function() return false end,
+	GetDistrictType = function() return -1 end,
+}
+host.paths["2490377:" .. plotIndex(27, 31)] = {
+	plots = { plotIndex(26, 31), plotIndex(27, 31) }, turns = { 0, 1 } }
+applyOrders(player, PID, 96, { row(2490377, "MOVE_TO", 27, 31) })
+check("native Caravel distance hold permits land Builder approach",
+	ops(2490377), "UNITOPERATION_MOVE_TO@27,31")
+check("native Caravel land clear records the observed capability decision",
+	has(lastEvent("builder_naval_land_clear"), '"hostile":8519700')
+	and has(lastEvent("builder_naval_land_clear"), '"reason":"known_no_raiding_ability"'), true)
+
 reset()
 host.cities[1] = { x = 1, y = 1 }
 host.units[60] = { id = 60, kind = "UNIT_BUILDER", x = 1, y = 1, moves = 2 }

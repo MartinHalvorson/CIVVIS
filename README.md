@@ -2,10 +2,12 @@
 
 Try CIVVIS yourself at [civvis.ai](https://www.civvis.ai). A bit janky but mostly operational.
 
-[Lv 6 (Emperor)](https://www.youtube.com/watch?v=2qilc2xTGyU) is the highest level beat so far, using computer control to bridge the gap between CIVVIS and Firaxis Civ 6. I try to keep the [YouTube](https://www.youtube.com/@civvis) channel somewhat up to date with the latest progress.
+Highest Level Won by Victory Type:
+- Lv 7 - [Science](https://www.youtube.com/watch?v=n_8X6bVLzOo), [Diplo](https://www.youtube.com/watch?v=Owd9hyA-8mM)
+- Lv 6 - [Culture](https://www.youtube.com/watch?v=S6oiMRpQ36M), [Domination](https://www.youtube.com/watch?v=DMdNOQT3NS0)
+- Lv 5 - [Religion](https://www.youtube.com/watch?v=36Si52r7We0)
+- Lv 4 - [Score](https://www.youtube.com/watch?v=-ft0Ah99J1g) (score victory is less common on high levels as games are usually decided before the turn limit is reached)
 
-Maybe interesting -> Check out the ranking of our best Civ 6 heuristics: [GENE_HEURISTIC_RANKING](https://github.com/MartinHalvorson/CIVVIS/blob/main/GENE_HEURISTIC_RANKING.md)
-
-Quick simulator UI demo:
+Quick (old) simulator UI demo:
 
 [![CIVVIS spectate mode — an AI-vs-AI game on a planet world, in real time](https://github.com/MartinHalvorson/CIVVIS/releases/download/media-exhibition/exhibition.gif)](https://github.com/MartinHalvorson/CIVVIS/releases/download/media-exhibition/exhibition.mp4)
