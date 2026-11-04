@@ -4860,7 +4860,8 @@
         "ships": null,
         "versions": {
           "guns-stay-out-of-reach": null,
-          "guns-stay-out-of-reach-2": null
+          "guns-stay-out-of-reach-2": null,
+          "guns-stay-out-of-reach-3": null
         }
       },
       "holdout-keeps-the-faith-war": {

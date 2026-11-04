@@ -37,6 +37,14 @@
 //! hostile the ladder kills later in the frame no longer holds the tile.
 //! The step-out stays the guns' own: the planner's heal rotation already
 //! moves every exposed unit it did not give a blow.
+//!
+//! **Version three** (`guns-stay-out-of-reach-3`) is version two with every
+//! member of an Objective Board Defend or Relieve task force left unmarked:
+//! a unit marching to hold one of our own cities closes on its attackers
+//! whatever their blow. Version two read unfavourable on a paired Immortal
+//! domination screen (12 seeds: score −47, z −1.9; cities lost +0.6) while a
+//! defence replay that starts beside the falling city read neutral — the
+//! cost sat in the march to the defence, which this version releases.
 use super::battle_planner::{DangerField, STRUCTURE_SOURCE};
 use super::{AdvancedAi, ForceRole};
 use crate::game::Game;
@@ -52,7 +60,25 @@ impl AdvancedAi {
     pub(super) fn mark_gun_lethal_tiles(&mut self, g: &Game, pid: usize) {
         self.base.gun_lethal_tiles.clear();
         self.base.unit_lethal_blows.clear();
-        let every_unit = self.guns_stay_out_of_reach_2;
+        let every_unit = self.guns_stay_out_of_reach_2 || self.guns_stay_out_of_reach_3;
+        // Version three: the members of a Defend or Relieve task force close
+        // on the attackers of our own city whatever the blow.
+        let defenders: std::collections::BTreeSet<u32> = if self.guns_stay_out_of_reach_3 {
+            self.objective_board()
+                .forces
+                .iter()
+                .filter(|force| {
+                    matches!(
+                        force.objective_key,
+                        super::objective_board::ObjectiveKey::Defend(_)
+                            | super::objective_board::ObjectiveKey::Relieve(_)
+                    )
+                })
+                .flat_map(|force| force.units.iter().copied())
+                .collect()
+        } else {
+            std::collections::BTreeSet::new()
+        };
         if !self.guns_stay_out_of_reach && !every_unit {
             return;
         }
@@ -79,6 +105,7 @@ impl AdvancedAi {
                         && unit.moves_left > 0.0
                         && !g.is_embarked(unit)
                         && !self.battle_planner_ordered.contains(uid)
+                        && !defenders.contains(uid)
                 })
                 .collect()
         } else {
