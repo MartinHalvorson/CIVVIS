@@ -133,6 +133,11 @@ impl Ai for PacedSeat {
                     self.refused += 1;
                 }
             }
+            // ⚠ Ahead of the chair's own turn: `AdvancedAi::take_turn` ends
+            // the turn itself, so nothing after it can still act as the chair.
+            if let Some(walls_pct) = pace.walls_pct {
+                self.vetoed_walls += veto_walls(g, pid, pace.seed, walls_pct);
+            }
             for &target in pace.targets.iter().filter(|_| pace.pct > 0) {
                 if g.winner.is_some() {
                     break;
@@ -149,6 +154,8 @@ impl Ai for PacedSeat {
             }
         }
         Ai::take_turn(&mut self.ai, g, pid);
+        // The chair's turn has ended here (`AdvancedAi::take_turn` sends
+        // `EndTurn`); its pending offers to the seat are still on the table.
         if let Some(pace) = &self.pace {
             let before = g.pending_deals.len();
             g.pending_deals.retain(|deal| {
@@ -156,9 +163,6 @@ impl Ai for PacedSeat {
                     || !(deal.from == pid && pace.targets.contains(&deal.to) && binds(deal))
             });
             self.refused += (before - g.pending_deals.len()) as u32;
-            if let Some(walls_pct) = pace.walls_pct {
-                self.vetoed_walls += veto_walls(g, pid, pace.seed, walls_pct);
-            }
         }
     }
 
@@ -224,6 +228,23 @@ pub fn veto_walls(g: &mut Game, pid: usize, seed: u64, walls_pct: u32) -> u32 {
             )
             .is_ok()
             {
+                // The engine banks the paused wall's progress, and the chair
+                // re-picks walls on its own turn and resumes it. Move the
+                // banked wall progress into the soldier instead: the city
+                // loses no production, and the wall never stands.
+                if let Some(city) = g.cities.get_mut(&cid) {
+                    let banked: Vec<String> = city
+                        .production_progress
+                        .keys()
+                        .filter(|key| key.starts_with("building:") && is_wall(&key[9..]))
+                        .cloned()
+                        .collect();
+                    for key in banked {
+                        if let Some(progress) = city.production_progress.remove(&key) {
+                            city.production += progress;
+                        }
+                    }
+                }
                 vetoed += 1;
             }
         }
