@@ -27,10 +27,25 @@ All four planning-payload repeats match, and the both-on orders match the actual
 
 The dispatcher then advances the book by one, just as the existing Scout substitution does. The recon flags and subsequent recon rules are unchanged. **The opening Scout itself is displaced:** later exploration can be delayed. This is the experiment's cost, alongside possible delays in contact, settlement discovery and city-state rewards. Keeping a flag enabled does not mean its downstream decisions or timing remain identical after the opening changes.
 
+## Captured first-turn control
+
+The published [fixture](../../src/ai/slinger_first/fixture/manifest.json) includes the exact 69,162-byte input archive, its snapshot index, and the three signed Native decision records for turn 1/frames 0, 1 and 2. The original Native executable reproduces the full planning payloads and ordered reads twice. Candidate-OFF does the same twice. Candidate-ON repeats twice and first changes a host order at turn 1/frame 2: the capital starts `UNIT_SLINGER` rather than `UNIT_SCOUT`; all other host orders stay identical. No recorded inputs are followed beyond that first changed host order.
+
+Those candidate controls use source `a88bdf08ff9e0937ef96b4ffda8048095a3de4f4`, frozen unoptimized CLI SHA-256 `50ddde2bd792db87ed3d8f9470bf6e0bef0db4d2156eb2274d4f9d703e1027d1`. The manifest binds the historical Native executable and inputs separately. This qualifies the recorded first turn, including founding and the preceding frames; it does not qualify a later counterfactual world or measure survival.
+
+Reproduce the candidate controls from the repository root with an explicitly supplied CLI and a new output directory:
+
+```sh
+python3 src/ai/slinger_first/replay_opening.py \
+  --binary target/debug/civvis_orders --out /tmp/civvis-opening-prefix
+```
+
+The manual reproducer checks archive hashes and Native record signatures, both OFF planning/read controls, both ON played profiles, and the single host-order change. It runs the planner in isolated directories and does not launch or control Civilization VI. If a future baseline intentionally changes this frame, retain this historical fixture and report the mismatch; do not silently refresh its Native expectations.
+
 ## Validation and limits
 
 Seven focused behavioral tests cover first-slot precedence, release to the Settler after completion, off behavior under both existing Scout routes, existing ranged support, occupied/played/non-capital queues, missing or distant defenders, and multi-city exclusion. The PR records execution results and captured-board controls. These checks do not establish survival or win-rate gains.
 
 No Native arm is enabled by this change. The earlier Anvil pilot stopped when its baseline changed, and the host's System Events suspension remains unresolved. No claim of improved survival or win rate follows from a different production order.
 
-Before a Native trial, qualify candidate-OFF against recorded first-production requests and check repeated ON/OFF queries with exactly one treatment difference. Any headless whole-game screen is a separate instrument: starts already carrying ranged units cannot exercise this opening, and passive rival openings cannot establish rush resistance. A later bounded Native pilot must retain failed starts separately, record actual played genomes and source revisions, keep speeds and difficulties distinct, and retain all assigned overhang. Delivery and earlier support are mechanism endpoints; higher-level wins remain the strength endpoint. No default promotion is justified yet.
+Before a Native trial, recheck the actual published binary against this prefix and confirm the played profiles differ by exactly this treatment. Any headless whole-game screen is a separate instrument: starts already carrying ranged units cannot exercise this opening, and passive rival openings cannot establish rush resistance. A later bounded Native pilot must retain failed starts separately, record actual played genomes and source revisions, keep speeds and difficulties distinct, and retain all assigned overhang. Delivery, earlier support, and the defender positions relative to the capital when the first rival attacks are mechanism endpoints; higher-level wins remain the strength endpoint. No default promotion is justified yet.
