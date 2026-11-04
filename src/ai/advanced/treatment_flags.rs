@@ -9355,6 +9355,8 @@ impl AdvancedAi {
     pub fn disable_garrison_before_the_surprise(&mut self) {
         self.garrison_before_the_surprise = false;
         self.base.disable_garrison_before_the_surprise();
+    }
+
     /// Opt-in gene `guns-stay-out-of-reach-2`; version two of the family, so
     /// version one is turned off. See [`Self::guns_stay_out_of_reach_2`].
     pub fn enable_guns_stay_out_of_reach_2(&mut self) {
