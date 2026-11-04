@@ -9314,6 +9314,14 @@ impl AdvancedAi {
         self.founding_voyage = false;
     }
 
+    /// Enable measured routing to the board's assigned Defend city.
+    pub fn enable_anvil_follows_the_defense(&mut self) {
+        self.anvil_follows_the_defense = true;
+    }
+    /// Preserve the original global threat-city routing.
+    pub fn disable_anvil_follows_the_defense(&mut self) {
+        self.anvil_follows_the_defense = false;
+    }
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

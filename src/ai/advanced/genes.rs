@@ -4850,6 +4850,7 @@ pub const GENES: &[Gene] = &[
     // route. Under the gene it sails toward the edge of the known sea. See
     // `advanced/maori_founds_from_the_sea.rs`.
     Gene { tag: "founding-voyage", field: "founding_voyage", kind: Kind::OptIn, enable: AdvancedAi::enable_founding_voyage, disable: AdvancedAi::disable_founding_voyage },
+    Gene { tag: "anvil-follows-the-defense", field: "anvil_follows_the_defense", kind: Kind::OptIn, enable: AdvancedAi::enable_anvil_follows_the_defense, disable: AdvancedAi::disable_anvil_follows_the_defense },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

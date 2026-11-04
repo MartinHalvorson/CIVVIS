@@ -5080,6 +5080,8 @@ pub struct AdvancedAi {
     // verified by merging rather than asserted.
 
     // ---- append: a-b ------------------------------------------------
+    /// Follow the objective board's own Defend assignment. Off by default.
+    anvil_follows_the_defense: bool,
     /// `board-ignores-the-faith-war`: the war `faith-war-is-no-front`
     /// exempts from `one_war_holds_declaration` does not hold the board's
     /// declaration (`war_policy_declaration`) either. Off by default.
@@ -10203,6 +10205,8 @@ mod close_as_a_body;
 
 mod siege_production;
 
+/// Opt-in routing from a Defend task force to its assigned city.
+mod anvil_assignment;
 /// Siege train and anvil: the doctrines of a force whose objective is a city
 /// — an enemy city to take, a city of ours to hold. Two opt-in genes; see
 /// `advanced/siege_train.rs`.
@@ -11371,6 +11375,7 @@ impl AdvancedAi {
             // on `pub struct AdvancedAi` in `src/ai/advanced.rs`.
 
             // ---- append: a-b ----------------------------------------
+            anvil_follows_the_defense: false,
             board_ignores_the_faith_war: false,
             aluminum_tile_spends_the_war_chest: false,
             breaker_bought_for_the_siege: false,
