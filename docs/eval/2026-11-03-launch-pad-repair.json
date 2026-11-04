@@ -875,5 +875,13 @@
       "bytes": 7949,
       "sha256": "91da3cd173b59ecb7b12b595a9930590de79437db3b9f9070db4df3ed80d026d"
     }
+  },
+  "extracted_verification": {
+    "completed_utc": "2026-11-04T00:55:03.331862+00:00",
+    "archive_sha256": "019daf2f0257e1eb0f45805d505ca4514879e8d01aaca6bfb202ce0c7022d943",
+    "all_member_hashes_passed": true,
+    "standalone_reconstruction_passed": true,
+    "reconstruction_matches_original": true,
+    "verifier_sha256": "91da3cd173b59ecb7b12b595a9930590de79437db3b9f9070db4df3ed80d026d"
   }
 }

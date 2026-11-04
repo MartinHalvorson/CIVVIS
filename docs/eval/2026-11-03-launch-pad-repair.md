@@ -18,3 +18,5 @@ Source `93f036e6ba14c2fa29ee8c6cc3a614d16588a5f7`, based on `2bd9ae08e752ae08886
 The raw archive is `13,942,076`bytes with `194`members: `docs/eval/2026-11-03-launch-pad-repair.raw.tar.xz` (SHA-256 `019daf2f0257e1eb0f45805d505ca4514879e8d01aaca6bfb202ce0c7022d943`). Each retained member is independently hashed. `verify.py` reconstructs source snapshots, repeated replies, profiles, ordered actual reads and the journal census without executing a game.
 
 No native repair execution, faster Spaceport completion, saved city, held-out confirmation, win-rate effect, default promotion or native treatment is claimed. Development inputs were reused. The original draft was closed during operator cleanup while this implementation remained local; source and evidence are preserved on its task branch. Review current-main integration and eligibility for a controlled native pilot before publication or promotion.
+
+A fresh extraction passed every member hash and the complete standalone reconstruction. Its verification report exactly matches the original report: 772 original-control requests, four candidate prefix controls, four captured boards and the census.
