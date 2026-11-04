@@ -9450,6 +9450,16 @@ impl AdvancedAi {
         self.gold_buys_the_production_tile = false;
     }
 
+    /// Prefer a timely anti-cavalry defender against a visible mounted threat.
+    pub fn enable_spears_answer_the_horse(&mut self) {
+        self.spears_answer_the_horse = true;
+    }
+
+    /// The twin of `enable_spears_answer_the_horse`.
+    pub fn disable_spears_answer_the_horse(&mut self) {
+        self.spears_answer_the_horse = false;
+    }
+
     /// Opt-in gene `slots-survive-the-roll`; see
     /// [`Self::slots_survive_the_roll`].
     pub fn enable_slots_survive_the_roll(&mut self) {

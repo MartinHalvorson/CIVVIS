@@ -1,0 +1,13 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "spears-answer-the-horse",
+  "scope": "Production source f43dbc036b7f2e93379906c5e87ddc2f56fe6c71. Two425-request native OFF controls and two250-request ON prefixes qualify an actual same-city HeavyChariot-to-Spearman order substitution at106/0; two persistent paired queries actually exit0. Independent archived verifier reconstructs every read sequence and requires that intended substitution, with every other order retaining its sequence. Development proposal activation only; no native execution, completion, survival or strength result.",
+  "archive": {
+    "path": "docs/eval/2026-11-04-spears-answer-the-horse.native.tar.xz",
+    "sha256": "2949e5ff7bba47100e3e99de935c0a6b11ab605634f4aa41794a365239e65b0f"
+  },
+  "members": [
+    "successful-prefix-pairs/pair-0.json",
+    "successful-prefix-pairs/pair-1.json"
+  ]
+}
