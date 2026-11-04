@@ -5732,6 +5732,12 @@ def _play(args: argparse.Namespace) -> int:
         if not args.keep_game_options:
             apply_verification_options()
         launcher.clear_run_logs()
+        # No game holds the Hall of Fame here; a big one slows the boot ~10 s
+        # and the quit ~5 s (`launcher.rotate_hall_of_fame`).
+        archived = launcher.rotate_hall_of_fame()
+        if archived is not None:
+            print(f"[hall-of-fame] archived to {archived}; Civ VI starts a fresh one",
+                  flush=True)
         # Measured before the launch, so placing the window as it appears pays no
         # AppKit compile (~1.5 s) while it shows full screen.
         desktop_size()
