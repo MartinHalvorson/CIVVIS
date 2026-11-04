@@ -52729,3 +52729,40 @@ fn native_campus_finish_invalid_host_quotes_keep_emergency_defense() {
 }
 
 mod recovery_before_amenities;
+
+/// `domination-specializes-earlier-2` moves the Domination clock to 40% at a
+/// rung above King, where version 1 stands still.
+#[test]
+fn domination_specializes_earlier_2_reaches_every_rung() {
+    let mut emperor = Game::new_full(2, 24, 16, 91_013, 250, 0, false);
+    emperor.difficulty = "emperor".to_string();
+    emperor.turn = 110;
+    let mut v1 = AdvancedAi::targeting(VictoryTarget::Domination);
+    v1.enable_domination_specializes_earlier();
+    assert!(
+        !v1.phase_specialization_active(&emperor),
+        "v1 stops at King"
+    );
+    let mut v2 = AdvancedAi::targeting(VictoryTarget::Domination);
+    v2.enable_domination_specializes_earlier_2();
+    assert!(
+        v2.phase_specialization_active(&emperor),
+        "v2: turn 110 of 250 at Emperor"
+    );
+    emperor.turn = 90;
+    assert!(
+        !v2.phase_specialization_active(&emperor),
+        "turn 90 is before 40%"
+    );
+    emperor.turn = 110;
+    let mut science = AdvancedAi::targeting(VictoryTarget::Science);
+    science.enable_domination_specializes_earlier_2();
+    assert_eq!(
+        science.phase_specialization_active(&emperor),
+        AdvancedAi::targeting(VictoryTarget::Science).phase_specialization_active(&emperor),
+        "only the Domination lane moves"
+    );
+    assert!(super::GENES
+        .iter()
+        .any(|gene| gene.tag == "domination-specializes-earlier-2" && gene.opt_in()));
+}

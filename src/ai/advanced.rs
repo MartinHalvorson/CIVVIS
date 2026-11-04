@@ -5536,6 +5536,12 @@ pub struct AdvancedAi {
     /// `alliance_remembers_the_refusal` is on.
     alliance_ask_turns: BTreeMap<usize, u32>,
     // ---- append: c-d ------------------------------------------------
+    /// `domination-specializes-earlier-2`: an assigned Domination lane turns
+    /// to Conquest at [`DOMINATION_SPECIALIZATION_PERCENT`] of the clock at
+    /// every rung (version 1 stops at King). Live Gran Colombia Domination at
+    /// Lv 7 Standard (002954Z): no declaration in 242 turns, power 78 against
+    /// 293-566 at t135, every war held for an empty Siege row. Off by default.
+    domination_specializes_earlier_2: bool,
     /// `campus-unlock-every-lane`: every seat, not only Domination, takes
     /// the Campus unlock (Writing) once it holds two cities, in the slot the
     /// Domination goal already holds. See `advanced/domination_research.rs`.
@@ -11467,6 +11473,7 @@ impl AdvancedAi {
             alliance_remembers_the_refusal: false,
             alliance_ask_turns: BTreeMap::new(),
             // ---- append: c-d ----------------------------------------
+            domination_specializes_earlier_2: false,
             campus_unlock_every_lane: false,
             culture_seat_theater_first_2: false,
             culture_digs_one_museum: false,
@@ -29843,10 +29850,13 @@ impl AdvancedAi {
         // `domination-specializes-earlier`: an assigned Domination lane turns
         // to Conquest at 40% of the clock rather than halfway. See
         // `AdvancedAi::domination_specializes_earlier`.
-        if self.domination_specializes_earlier
+        // `domination-specializes-earlier-2`: the same 40% clock at every
+        // rung, not only King and below.
+        if (self.domination_specializes_earlier || self.domination_specializes_earlier_2)
             && self.victory_target == Some(VictoryTarget::Domination)
             && g.max_turns > 0
-            && g.difficulty_spec().order <= DOMINATION_SPECIALIZATION_MAX_ORDER
+            && (self.domination_specializes_earlier_2
+                || g.difficulty_spec().order <= DOMINATION_SPECIALIZATION_MAX_ORDER)
         {
             return !self.victory_planning
                 || g.turn.saturating_mul(100)

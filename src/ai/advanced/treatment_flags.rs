@@ -9314,6 +9314,17 @@ impl AdvancedAi {
         self.founding_voyage = false;
     }
 
+    /// Opt-in gene `domination-specializes-earlier-2`; see
+    /// [`Self::domination_specializes_earlier_2`].
+    pub fn enable_domination_specializes_earlier_2(&mut self) {
+        self.domination_specializes_earlier_2 = true;
+    }
+
+    /// The twin of `enable_domination_specializes_earlier_2`.
+    pub fn disable_domination_specializes_earlier_2(&mut self) {
+        self.domination_specializes_earlier_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -4850,6 +4850,12 @@ pub const GENES: &[Gene] = &[
     // route. Under the gene it sails toward the edge of the known sea. See
     // `advanced/maori_founds_from_the_sea.rs`.
     Gene { tag: "founding-voyage", field: "founding_voyage", kind: Kind::OptIn, enable: AdvancedAi::enable_founding_voyage, disable: AdvancedAi::disable_founding_voyage },
+    // `domination-specializes-earlier-2` (2026-11-04): version 1's 40% clock
+    // for an assigned Domination lane at every rung. Version 1 stopped at King
+    // on an Online Emperor read (-1.06 pp, 3 more eliminations). The operator's
+    // Lv 7 Standard Gran Colombia Domination lane never declared in 242 turns
+    // (002954Z), so it is re-read there.
+    Gene { tag: "domination-specializes-earlier-2", field: "domination_specializes_earlier_2", kind: Kind::OptIn, enable: AdvancedAi::enable_domination_specializes_earlier_2, disable: AdvancedAi::disable_domination_specializes_earlier_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
