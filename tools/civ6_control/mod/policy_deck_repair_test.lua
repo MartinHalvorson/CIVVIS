@@ -120,6 +120,8 @@ local host = {
 	-- land. The simulated host will reproduce the observed partial apply.
 	slots = { 1, 2, 3, 4, 7, 6, 8, 9 },
 	calls = {},
+	unlockCost = 0,
+	changeMade = false,
 }
 
 local function copy(list)
@@ -129,6 +131,8 @@ local function copy(list)
 end
 
 local culture = {}
+function culture:GetCostToUnlockPolicies() return host.unlockCost end
+function culture:PolicyChangeMade() return host.changeMade end
 host.government = 1
 function culture:GetCurrentGovernment() return host.government end
 function culture:CanChangeGovernmentAtAll() return true end
@@ -292,4 +296,51 @@ assert(ok and host.government == 1)
 ok, reason = applyOrder(player, 0, changed, 108)
 assert(reason ~= "policy_government_pending", "synchronous native readback needs no artificial delay")
 
-realPrint("ok   policy repairs and government transitions preserve native slot ordering")
+-- A positive native UI quote is a lock even when the direct API would accept
+-- it; no clear/add transaction or automatic fallback may bypass that window.
+host.slots = { 1, 2, 3, 4, 7, 6, 8, 9 }
+host.slotTypes = nil
+host.unlockCost = 115
+local held = copy(host.slots)
+before = #host.calls
+ok, reason = applyOrder(player, 0, order, 200)
+assert(not ok and reason == "policy_change_locked" and #host.calls == before)
+for i, card in pairs(held) do assert(host.slots[i] == card) end
+host.unlockCost = 0
+host.changeMade = true
+ok, reason = applyOrder(player, 0, order, 200)
+assert(not ok and reason == "policy_change_pending" and #host.calls == before)
+host.changeMade = false
+host.unlockCost = nil
+ok, reason = applyOrder(player, 0, order, 200)
+assert(not ok and reason == "policy_change_unknown" and #host.calls == before)
+host.unlockCost = 0
+ok, reason = applyOrder(player, 0, order, 200)
+assert(ok and #host.calls == before + 1,
+	"a deferred request must not poison a later confirmed free window")
+
+-- Preserve acknowledgement of an already-observed complete deck while locked.
+host.slots = { 1, 2, 3, 4, 5, 6, 8, 9 }
+host.unlockCost = 115
+before = #host.calls
+ok, reason = applyOrder(player, 0, order, 201)
+assert(ok and reason == "policy_deck_already_applied" and #host.calls == before)
+
+-- The single-card path must obey the same window before writing an empty slot.
+host.slots = { 1, 2, 3, -1, 5, 6, 8, 9 }
+local single = { kind = "policy", verb = "POLICY_LIBERALISM" }
+ok, reason = applyOrder(player, 0, single, 202)
+assert(not ok and reason == "policy_change_locked" and #host.calls == before)
+host.unlockCost = 0
+host.changeMade = true
+ok, reason = applyOrder(player, 0, single, 202)
+assert(not ok and reason == "policy_change_pending" and #host.calls == before)
+host.changeMade = false
+host.unlockCost = nil
+ok, reason = applyOrder(player, 0, single, 202)
+assert(not ok and reason == "policy_change_unknown" and #host.calls == before)
+host.unlockCost = 0
+ok, reason = applyOrder(player, 0, single, 202)
+assert(ok and #host.calls == before + 1 and host.slots[4] == 7)
+
+realPrint("ok   policy repairs, native locks and government transitions preserve slot ordering")
