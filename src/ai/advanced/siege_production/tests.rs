@@ -812,7 +812,7 @@ fn the_backlog_builder_is_not_given_to_the_siege_gun_under_the_gene() {
         g.players[0].techs.insert(crate::name!("mining"));
         for cid in [home, remote] {
             let center = g.cities[&cid].pos;
-            for position in g.cities[&cid].owned_tiles.to_vec() {
+            for position in g.cities[&cid].owned_tiles.iter().copied() {
                 if position == center || g.map.tiles[&position].district.is_some() {
                     continue;
                 }
