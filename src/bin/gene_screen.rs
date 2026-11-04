@@ -1979,6 +1979,11 @@ struct Header {
     /// horizon to the live seat's own curve. Recorded like `rival_rung`.
     #[serde(default, skip_serializing_if = "is_false")]
     seat_pace: bool,
+    /// ⭐ `--seat-host-citizens` (2026-11-04): whether every measured seat's
+    /// cities kept growing into their housing cap, as the host's governor does
+    /// live (`Player::citizens_grow_into_the_cap`). Recorded like `rival_rung`.
+    #[serde(default, skip_serializing_if = "is_false")]
+    seat_host_citizens: bool,
     /// ⭐ `--rival-victory-pace` (2026-10-31): the percentage the rival chairs
     /// paid for the four space projects, or 0 for their ordinary cost, which
     /// every earlier file played. Recorded like `rival_rung`.
@@ -2368,6 +2373,9 @@ struct Profile {
     /// ⭐ `--seat-pace`: every measured seat's city horizon follows the live
     /// seat's own curve (`rival_pace::LIVE_SEAT_CITY_PACE`).
     seat_pace: bool,
+    /// ⭐ `--seat-host-citizens`: every measured seat's cities keep growing
+    /// into the housing cap (`Player::citizens_grow_into_the_cap`).
+    seat_host_citizens: bool,
     /// ⭐ `--rival-victory-pace`: the space-project cost the rival chairs pay,
     /// in percent (`GameOptions::ai_space_project_cost_pct`). `None` is 100.
     rival_victory_pace: Option<u32>,
@@ -2611,6 +2619,14 @@ fn play_game(
         .journal_seeds
         .contains(&seed)
         .then(Journal::recording);
+    // `--seat-host-citizens`: the measured seats' cities grow into the cap.
+    if profile.seat_host_citizens {
+        for (index, &pid) in majors.iter().enumerate() {
+            if pinned.get(index).copied().flatten().is_none() && rival_chair(index).is_none() {
+                world.players[pid].citizens_grow_into_the_cap = true;
+            }
+        }
+    }
     if let Some(journal) = &journal {
         for (index, &pid) in majors.iter().enumerate() {
             if pinned.get(index).copied().flatten().is_none() && rival_chair(index).is_none() {
@@ -5211,6 +5227,7 @@ fn read_rows(paths: &[String]) -> (Header, Vec<Row>) {
                                 || first.rival_rung != found.rival_rung
                                 || first.rival_pace != found.rival_pace
                                 || first.seat_pace != found.seat_pace
+                                || first.seat_host_citizens != found.seat_host_citizens
                                 || first.rival_victory_pace != found.rival_victory_pace
                                 || first.rival_late_science != found.rival_late_science
                                 || first.rival_space_floor != found.rival_space_floor
@@ -6935,6 +6952,12 @@ fn main() {
     // city curve. Opt-in, for absolute-rate reads of genes that do not change
     // expansion: it masks any gene that does.
     let seat_pace = present(&args, "--seat-pace");
+    // ⭐ `--seat-host-citizens` (2026-11-04): the measured seats' cities keep
+    // growing into their housing cap instead of trading the food away, as the
+    // host's own governor does on the live seat (59% of live Deity city-turns
+    // stood within two of their housing; 54% of those still ran over +4 Food,
+    // against 9% for the measured seat without this).
+    let seat_host_citizens = present(&args, "--seat-host-citizens");
     // ⭐ `--journal SEED[,SEED]`: the measured seats of these seeds write their
     // reasoning journal beside the rows. Diagnostic only: no row changes.
     let journal_seeds: BTreeSet<u64> = text(&args, "--journal")
@@ -7340,6 +7363,7 @@ fn main() {
         rival_rung: rival_rung.as_ref().map(RivalRung::id).unwrap_or_default(),
         rival_pace,
         seat_pace,
+        seat_host_citizens,
         rival_victory_pace: rival_victory_pace.unwrap_or(0),
         rival_late_science: rival_late_science.unwrap_or(0),
         rival_space_floor: rival_space_floor.unwrap_or(0),
@@ -7405,6 +7429,7 @@ fn main() {
         rival_rung: rival_rung.clone(),
         rival_pace,
         seat_pace,
+        seat_host_citizens,
         rival_victory_pace,
         rival_late_science,
         rival_space_floor,
@@ -7593,6 +7618,7 @@ mod tests {
             rival_rung: String::new(),
             rival_pace: false,
             seat_pace: false,
+            seat_host_citizens: false,
             rival_victory_pace: 0,
             rival_late_science: 0,
             rival_space_floor: 0,

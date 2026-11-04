@@ -1637,8 +1637,13 @@ impl Game {
 
         let housing_headroom = self.city_housing(city) - city.pop as f64;
         let amenities = self.city_amenity_surplus(city);
-        let growth_surplus = if housing_headroom > 1.0 && amenities >= -2 {
-            (0.75 + housing_headroom * 0.25).min(2.0)
+        // `Player::citizens_grow_into_the_cap`: the host's governor keeps
+        // feeding a capped city (the measured seat under `gene_screen
+        // --seat-host-citizens`), so the cap neither halves Food nor zeroes the
+        // growth surplus.
+        let grows_into_cap = player.citizens_grow_into_the_cap;
+        let growth_surplus = if (housing_headroom > 1.0 || grows_into_cap) && amenities >= -2 {
+            (0.75 + housing_headroom.max(1.0) * 0.25).min(2.0)
         } else {
             // Do not sacrifice useful production/science to grow into a hard
             // housing cap; the food constraint below still prevents starvation.
