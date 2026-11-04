@@ -1,0 +1,15 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "launch-pad-spares-the-repair",
+  "scope": "Development same-input proposals and exact read controls only; not native execution, held-out confirmation or strength evidence.",
+  "archive": {
+    "path": "docs/eval/2026-11-03-launch-pad-repair.raw.tar.xz",
+    "sha256": "019daf2f0257e1eb0f45805d505ca4514879e8d01aaca6bfb202ce0c7022d943"
+  },
+  "members": [
+    "queries-01/civvis-20261103T070446Z-159/result.json",
+    "queries-01/civvis-20261103T070446Z-160/result.json",
+    "queries-01/civvis-20261103T053148Z-199/result.json",
+    "queries-01/civvis-20261103T024543Z-177/result.json"
+  ]
+}
