@@ -76,6 +76,25 @@ pub(crate) const HARVEST_FROM_TURN: u32 = 40;
 /// count fell behind from turn 60); at turn 80, science at 100 76 -> 45 and
 /// share .119 -> .112; at turn 125, science 45 -> 49 and share .092 -> .094.
 pub(crate) const HARVEST_CITY_STATE_FROM_TURN: u32 = 100;
+
+/// The two turn floors above were read on Online games (250 turns). The live
+/// lane moved to Standard on 2026-11-03 (500 turns; the operator doubled the
+/// retire turn for the same reason), so a floor is the same point of the game
+/// at every speed: the Online turn times the speed's turn budget over
+/// Online's (Quick 330, Standard 500, Epic 750, Marathon 1500). Patience and
+/// cooldown stay in turns: a march and a siege take the same turns at any
+/// speed.
+pub(crate) fn harvest_floor(g: &Game, online_turns: u32) -> u32 {
+    use crate::setup::GameSpeed;
+    let budget = match g.game_speed {
+        GameSpeed::Online => 250,
+        GameSpeed::Quick => 330,
+        GameSpeed::Standard => 500,
+        GameSpeed::Epic => 750,
+        GameSpeed::Marathon => 1500,
+    };
+    online_turns * budget / 250
+}
 /// Tiles from the nearest of our cities to the city-state city.
 pub(crate) const HARVEST_REACH_TILES: i32 = 6;
 /// The city-state city's least population worth a war.
@@ -200,7 +219,7 @@ impl AdvancedAi {
         // A city-state waits for the expansion window to close, and a Science
         // seat (the lane of the first Lv 7 non-Diplomatic win, 025902Z) never
         // opens a city-state war: a Campus plan is where the war costs most.
-        let city_states_open = g.turn >= HARVEST_CITY_STATE_FROM_TURN
+        let city_states_open = g.turn >= harvest_floor(g, HARVEST_CITY_STATE_FROM_TURN)
             && self.active_victory_target(g) != Some(VictoryTarget::Science);
         // A Free Cities seat carries `is_barbarian` and is always at war; a
         // city of ours that rebelled into it is the cheapest city on the
@@ -352,7 +371,7 @@ impl AdvancedAi {
             }
             return;
         }
-        if g.turn < HARVEST_FROM_TURN
+        if g.turn < harvest_floor(g, HARVEST_FROM_TURN)
             || g.turn < self.city_state_harvest_cooldown
             || self.war_plan.is_some()
             || Self::harvest_major_war(g, pid)
