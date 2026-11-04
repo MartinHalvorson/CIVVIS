@@ -33,6 +33,8 @@ fn fixture() -> (Game, u32) {
         g.spawn_test_unit("warrior", 0, (4, 8));
     }
     g.current = 0;
+    // The floors were read on Online games; the fixture plays at that speed.
+    g.game_speed = crate::setup::GameSpeed::Online;
     g.turn = HARVEST_CITY_STATE_FROM_TURN + 5;
     (g, city)
 }
@@ -381,4 +383,23 @@ fn a_war_the_host_refused_releases_the_name() {
     assert_eq!(ai.city_state_harvest_war, None, "no war to remember");
     ai.maintain_city_state_harvest(&mut g, 0);
     assert_eq!(ai.city_state_harvest_target, None, "the cooldown holds");
+}
+
+#[test]
+fn the_floors_follow_the_game_speed() {
+    let (mut g, city) = fixture();
+    let ai = harvest_ai();
+    g.game_speed = crate::setup::GameSpeed::Standard;
+    g.turn = HARVEST_CITY_STATE_FROM_TURN + 5;
+    assert_eq!(
+        ai.city_state_harvest_candidate(&g, 0),
+        None,
+        "t105 on Standard is t52 on Online, inside the expansion window"
+    );
+    g.turn = 2 * HARVEST_CITY_STATE_FROM_TURN;
+    assert_eq!(ai.city_state_harvest_candidate(&g, 0), Some((2, city)));
+    assert_eq!(
+        super::harvest_floor(&g, HARVEST_FROM_TURN),
+        2 * HARVEST_FROM_TURN
+    );
 }
