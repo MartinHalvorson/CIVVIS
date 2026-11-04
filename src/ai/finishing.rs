@@ -28,6 +28,9 @@ pub struct WarFinishingVolley {
     pub reserves: usize,
     pub survival_rejections: usize,
     pub roll_rejections: usize,
+    /// `ranged-finish-on-the-mean`: ranged-only lines the floor refused and
+    /// the centre roll committed. Zero with the gene off.
+    pub mean_finishes: usize,
 }
 
 #[derive(Clone)]
@@ -208,6 +211,18 @@ pub fn live_finishing_damage_floor(
     target: u32,
     candidate: &FinishingCandidate,
 ) -> Option<i32> {
+    live_finishing_damage_at(game, pid, target, candidate, 0.8)
+}
+
+/// [`live_finishing_damage_floor`] at any roll: `game::damage` at `roll`
+/// before rounding and clamping (0.8 the floor, 1.0 the centre).
+pub fn live_finishing_damage_at(
+    game: &crate::game::Game,
+    pid: usize,
+    target: u32,
+    candidate: &FinishingCandidate,
+    roll: f64,
+) -> Option<i32> {
     let mut approach = game.speculative_clone();
     for action in &candidate.simulation {
         let strengths = match action {
@@ -225,7 +240,7 @@ pub fn live_finishing_damage_floor(
         // Match `game::damage` at its lowest 0.8 roll, before rounding and
         // clamping. Scaling its already-clamped mean would turn a guaranteed
         // 100-damage blow into an incorrect 80-damage floor.
-        let damage = 30.0 * ((strengths.0 - strengths.1) / 25.0).exp() * 0.8;
+        let damage = 30.0 * ((strengths.0 - strengths.1) / 25.0).exp() * roll;
         return Some((damage.round() as i32).clamp(1, 100));
     }
     None
@@ -378,8 +393,35 @@ pub fn finish_live_war_units_excluding(
             None => Some(sum),
         });
         if damage_floor.is_none_or(|damage| damage < planned_game.units[&target].hp) {
-            result.roll_rejections += 1;
-            continue;
+            // `ranged-finish-on-the-mean`: a line of shooters only draws no
+            // return damage, so its centre roll may commit it. See
+            // `advanced/ranged_finish.rs`.
+            let ranged_only = ai.ranged_finishes_on_the_mean()
+                && chosen.iter().all(|candidate| candidate.ranged)
+                && backup.is_none_or(|candidate| candidate.ranged);
+            let mean = ranged_only
+                .then(|| {
+                    chosen
+                        .iter()
+                        .chain(backup)
+                        .try_fold(0i32, |sum, candidate| {
+                            Some(
+                                sum + live_finishing_damage_at(
+                                    planned_game,
+                                    pid,
+                                    target,
+                                    candidate,
+                                    1.0,
+                                )?,
+                            )
+                        })
+                })
+                .flatten();
+            if mean.is_none_or(|damage| damage < planned_game.units[&target].hp) {
+                result.roll_rejections += 1;
+                continue;
+            }
+            result.mean_finishes += 1;
         }
 
         for candidate in &chosen {
@@ -421,3 +463,6 @@ pub fn finish_live_war_units_excluding(
     }
     result
 }
+
+#[cfg(test)]
+mod mean_tests;

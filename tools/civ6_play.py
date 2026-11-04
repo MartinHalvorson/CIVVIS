@@ -3676,6 +3676,41 @@ def _main_menu_point(path: Path, bounds: tuple[int, int, int, int]) -> tuple[int
     return _observed_label_point(path, "Single Player", bounds)
 
 
+def _settled_main_menu_point(path: Path, bounds: tuple[int, int, int, int]
+                             ) -> tuple[int, int] | None:
+    """Single Player as the bootstrap may click it: drawn, not still fading in.
+
+    ★ A ROW STILL FADING IN READS AS A LABEL AND TAKES NO CLICK. Civ VI fades
+    the top menu in over the background art. In civvis-20261104T063240Z the
+    enlarged-crop pass read the half-drawn row as ``Ingle Playe`` (two edits
+    from "Single Player", so `_menu_label_matches` accepted it) at x=404, the
+    full-window pass read no menu row at all, and the settled row sits at 408.
+    The click landed before the menu took input, and the submenu poll spent
+    its twenty seconds on nothing (configured at 93.8 s).
+
+    Re-reading all 102 label clicks with a surviving frame (2026-11-03..04):
+    every one of the 99 that opened the submenu was read EXACTLY by the
+    full-window pass; the only crop-only, inexact read was this miss. So the
+    full pass keeps its edit tolerance (the "Single Plaver" misreads it was
+    written for), the crop pass licenses a click only on an exact read, and a
+    crop-only near miss waits one poll for the row to finish drawing. Both
+    passes are cached per capture, so this costs no OCR.
+    """
+    point = _main_menu_point(path, bounds)
+    if point is None:
+        return None
+    if any(_menu_label_matches(str(observation.get("text", "")), "Single Player")
+           for observation in _menu_ocr_observations(path, bounds)):
+        return point
+    wanted = _normalized_label("Single Player")
+    if any(_observed_menu_label(str(observation.get("text", ""))) == wanted
+           for observation in _menu_crop_ocr(path, bounds)):
+        return point
+    print("[setup] Single Player is only partly drawn; waiting for the menu "
+          "to finish fading in", flush=True)
+    return None
+
+
 def return_to_main_menu(bounds: tuple[int, int, int, int], run_dir: Path,
                         attempt: int) -> bool:
     """Back out of setup dialogs and prove the main menu is visible.
@@ -3978,7 +4013,7 @@ def bootstrap_game(tail: watch.LogTail, on_event, run_dir: Path,
             # the outer loop gets a second frame, turning a transient capture
             # miss into minutes of setup latency.
             screenshot(menushot, attempts=SETUP_SCREENSHOT_ATTEMPTS)
-            point = _main_menu_point(menushot, bounds)
+            point = _settled_main_menu_point(menushot, bounds)
             if point is None and dismiss_connection_issue(menushot, bounds):
                 time.sleep(.5)
                 return None  # The polling reader takes a fresh menu frame.
