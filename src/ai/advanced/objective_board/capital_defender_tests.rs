@@ -111,3 +111,105 @@ fn no_capital_row_leaves_the_board_as_it_was() {
     ai.capital_defend_first(&g, 0, &mut without);
     assert_eq!(without, before);
 }
+
+#[test]
+fn version_two_ships_off_and_turns_version_one_off() {
+    let ai = AdvancedAi::new();
+    assert!(!ai.capital_keeps_its_defender_2, "an opt-in ships off");
+    assert!(super::super::GENES
+        .iter()
+        .any(|gene| gene.opt_in() && gene.field == "capital_keeps_its_defender_2"));
+    super::super::test_support::opt_in_off_in_both_controllers(
+        "capital-keeps-its-defender-2",
+        |ai| ai.capital_keeps_its_defender_2,
+    );
+    let mut on = AdvancedAi::new();
+    on.enable_capital_keeps_its_defender();
+    on.enable_capital_keeps_its_defender_2();
+    assert_eq!(
+        (
+            on.capital_keeps_its_defender,
+            on.capital_keeps_its_defender_2
+        ),
+        (false, true),
+        "one version of the family plays"
+    );
+}
+
+/// Our capital and three more founded cities: the first three by id are the
+/// early cities, the fourth is not.
+fn four_cities() -> (Game, [u32; 4]) {
+    let mut g = flat_board(17, &[at(6, 8), at(30, 8)], true);
+    let capital = g.city_at(at(6, 8)).expect("our capital");
+    let second = g.found_city_for(0, at(6, 20), None);
+    let third = g.found_city_for(0, at(12, 4), None);
+    let fourth = g.found_city_for(0, at(14, 12), None);
+    (g, [capital, second, third, fourth])
+}
+
+#[test]
+fn the_early_cities_are_the_first_three_we_founded() {
+    let (g, [capital, second, third, fourth]) = four_cities();
+    let early = early_cities(&g, 0);
+    assert_eq!(early, vec![capital, second, third]);
+    assert!(!early.contains(&fourth));
+}
+
+/// The second city faces three Swordsmen, the capital one Warrior: under
+/// version two the second city's Defend row leads, the capital's follows,
+/// both urgent, and the fourth city and the Escort keep their order behind.
+#[test]
+fn the_early_city_most_at_risk_leads_not_the_capital() {
+    let (mut g, [capital, second, _third, fourth]) = four_cities();
+    super::tests::war(&mut g, 0, 1);
+    for row in [19, 21] {
+        g.spawn_test_unit("swordsman", 1, at(7, row));
+    }
+    g.spawn_test_unit("swordsman", 1, at(5, 20));
+    assert!(
+        g.wdist(at(6, 20), at(6, 8)) > THREAT_RELIEF_RADIUS + 2,
+        "apart"
+    );
+    g.spawn_test_unit("warrior", 1, at(8, 8));
+    let mut rows = vec![
+        row(
+            ObjectiveKind::Escort,
+            ObjectiveKey::Escort(77),
+            280.0,
+            Some(1),
+        ),
+        row(
+            ObjectiveKind::Defend,
+            ObjectiveKey::Defend(fourth),
+            300.0,
+            Some(2),
+        ),
+        row(
+            ObjectiveKind::Defend,
+            ObjectiveKey::Defend(capital),
+            700.0,
+            Some(2),
+        ),
+        row(
+            ObjectiveKind::Defend,
+            ObjectiveKey::Defend(second),
+            400.0,
+            Some(2),
+        ),
+    ];
+    let mut ai = AdvancedAi::new();
+    ai.enable_capital_keeps_its_defender_2();
+    let visible = ai.battlefront_visibility(&g, 0);
+    ai.early_cities_defend_first(&g, 0, &visible, &mut rows);
+    assert_eq!(
+        rows.iter().map(|row| row.key).collect::<Vec<_>>(),
+        vec![
+            ObjectiveKey::Defend(second),
+            ObjectiveKey::Defend(capital),
+            ObjectiveKey::Escort(77),
+            ObjectiveKey::Defend(fourth),
+        ]
+    );
+    assert!(rows[0].urgent && rows[1].urgent);
+    assert!(!rows[3].urgent, "a later city keeps its own urgency");
+}

@@ -5031,6 +5031,19 @@ impl AdvancedAi {
         self.capital_keeps_its_defender = false;
     }
 
+    /// Opt-in gene `capital-keeps-its-defender-2`; see
+    /// [`Self::capital_keeps_its_defender_2`]. One version of the family
+    /// plays.
+    pub fn enable_capital_keeps_its_defender_2(&mut self) {
+        self.capital_keeps_its_defender = false;
+        self.capital_keeps_its_defender_2 = true;
+    }
+
+    /// The twin of `enable_capital_keeps_its_defender_2`.
+    pub fn disable_capital_keeps_its_defender_2(&mut self) {
+        self.capital_keeps_its_defender_2 = false;
+    }
+
     /// Keep a Governor whose departure would leave our original capital losing Loyalty.
     pub fn enable_capital_keeps_its_governor(&mut self) {
         self.capital_keeps_its_governor = true;

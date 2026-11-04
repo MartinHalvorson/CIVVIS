@@ -4476,6 +4476,15 @@
           "campus-claims-the-free-slot-2": null
         }
       },
+      "capital-keeps-its-defender": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "capital-keeps-its-defender": null,
+          "capital-keeps-its-defender-2": null
+        }
+      },
       "capital-prey-opens-a-front": {
         "rule_on": [
           "capital-prey-opens-a-front"

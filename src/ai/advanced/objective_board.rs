@@ -146,6 +146,26 @@ pub const SIEGE_RANGED_FLOOR: usize = 3;
 /// `siege-ranged-floor`: the field bodies a Siege row asks for, the shooters
 /// and a melee taker with a spare.
 pub const SIEGE_BODY_FLOOR: usize = 5;
+/// `capital-keeps-its-defender-2`: the first this many cities we founded —
+/// the operator's early_city_lost restart reads the same three.
+pub const EARLY_CITIES: usize = 3;
+
+/// `capital-keeps-its-defender-2`: the first [`EARLY_CITIES`] cities `pid`
+/// founded and still holds — its own cities never captured, lowest id first
+/// (ids grow with founding).
+pub(super) fn early_cities(g: &Game, pid: usize) -> Vec<u32> {
+    let mut founded: Vec<u32> = g
+        .cities
+        .values()
+        .filter(|city| city.original_owner == pid && city.captured_from.is_none())
+        .map(|city| city.id)
+        .collect();
+    founded.sort_unstable();
+    founded.truncate(EARLY_CITIES);
+    founded.retain(|cid| g.cities[cid].owner == pid);
+    founded
+}
+
 /// A camp's requirement is its guard's strength times this.
 pub const CAMP_MARGIN: f64 = 1.5;
 /// A Destroy row's requirement is the hostile force's strength times this.
@@ -1115,7 +1135,12 @@ impl AdvancedAi {
             // hostile beside it keeps its row through the pressure gate. Off,
             // `under_fire` reads false.
             let under_fire = self.city_under_fire(g, pid, *cid, visible);
-            if danger < BASTION_PRESSURE && !(contact && damaged) && !under_fire {
+            // `capital-keeps-its-defender-2`: an early city with a hostile
+            // soldier in relief range has its row before the pressure gate.
+            let early_threat = self.capital_keeps_its_defender_2
+                && early_cities(g, pid).contains(cid)
+                && self.hostile_strength_near(g, pid, *pos, THREAT_RELIEF_RADIUS, visible) > 0.0;
+            if danger < BASTION_PRESSURE && !(contact && damaged) && !under_fire && !early_threat {
                 continue;
             }
             let capital_under_attack =
@@ -1744,6 +1769,56 @@ impl AdvancedAi {
             "capital-keeps-its-defender: ahead of {}", passed.join(", "));
     }
 
+    /// `capital-keeps-its-defender-2`: the Defend rows of the first
+    /// [`EARLY_CITIES`] cities we founded go ahead of every other row,
+    /// urgent, ordered among themselves by risk — the visible hostile
+    /// strength in relief range over the city's own strength at its health,
+    /// highest first. Version one put the capital first and, at Deity under
+    /// the early_city_lost restart, stripped the second and third cities
+    /// that then fell while the capital never did.
+    pub(super) fn early_cities_defend_first(
+        &mut self,
+        g: &Game,
+        pid: usize,
+        visible: &crate::world::TileBits,
+        rows: &mut Vec<Objective>,
+    ) {
+        let early = early_cities(g, pid);
+        let mut lead: Vec<(f64, Objective)> = Vec::new();
+        let mut rest: Vec<Objective> = Vec::new();
+        for row in std::mem::take(rows) {
+            match row.key {
+                ObjectiveKey::Defend(cid) if early.contains(&cid) => {
+                    let city = &g.cities[&cid];
+                    let health = f64::from(city.hp.max(1)) / f64::from(super::CITY_MAX_HP);
+                    let own = (g.city_strength(cid) * health).max(1.0);
+                    let hostile =
+                        self.hostile_strength_near(g, pid, city.pos, THREAT_RELIEF_RADIUS, visible);
+                    lead.push((hostile / own, row));
+                }
+                _ => rest.push(row),
+            }
+        }
+        if lead.is_empty() {
+            *rows = rest;
+            return;
+        }
+        lead.sort_by(|(a, row_a), (b, row_b)| {
+            b.total_cmp(a).then_with(|| row_a.key.cmp(&row_b.key))
+        });
+        let order: Vec<String> = lead
+            .iter()
+            .map(|(risk, row)| format!("{} {risk:.2}", row.label))
+            .collect();
+        for (_, row) in &mut lead {
+            row.urgent = true;
+        }
+        *rows = lead.into_iter().map(|(_, row)| row).chain(rest).collect();
+        think!(self.journal(), Military, Decision,
+            "The early cities' defense ranks first: {}", order.join(", ");
+            "capital-keeps-its-defender-2: risk = hostile strength in relief range over the city's own at its health; losing any of the first {EARLY_CITIES} cities ends the game");
+    }
+
     /// Move the rows keyed in `first` ahead of the rest, each group in its
     /// existing order.
     fn rows_first(rows: &mut Vec<Objective>, first: &BTreeSet<ObjectiveKey>) {
@@ -1836,6 +1911,10 @@ impl AdvancedAi {
         // secondary city under fire ranks behind the capital.
         if self.capital_keeps_its_defender {
             self.capital_defend_first(g, pid, &mut rows);
+        }
+        // `capital-keeps-its-defender-2`: the early cities first, by risk.
+        if self.capital_keeps_its_defender_2 {
+            self.early_cities_defend_first(g, pid, &visible, &mut rows);
         }
 
         // Last turn's forces, less the dead and the departed.
