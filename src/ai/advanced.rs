@@ -6542,6 +6542,8 @@ pub struct AdvancedAi {
     /// `advanced/camps_close_the_age.rs`. Off by default.
     camps_close_the_age: bool,
     // ---- append: e-f ------------------------------------------------
+    /// Scale only the free-slot Campus claim’s build-time budget. Opt-in.
+    free_slot_campus_clock: bool,
     /// Give a threatened sole capital opening defence priority. Opt-in.
     first_capital_before_the_camp: bool,
     /// `founding-voyage`: an embarked Settler of a seat with no city sails to
@@ -10505,6 +10507,7 @@ mod first_launch_research;
 /// `founder-converts-its-own-cities`: a founder's spreaders convert our own
 /// cities before any foreign one. See `advanced/founder_home.rs`.
 mod founder_home;
+mod free_slot_campus_clock;
 /// `generals-lead-the-army`: the live bridge keeps a General with each front
 /// instead of retiring it. See `advanced/generals_lead_the_army.rs`.
 mod generals_lead_the_army;
@@ -11766,6 +11769,7 @@ impl AdvancedAi {
             capital_frost_looks: Vec::new(),
             camps_close_the_age: false,
             // ---- append: e-f ----------------------------------------
+            free_slot_campus_clock: false,
             first_capital_before_the_camp: false,
             founding_voyage: false,
             first_launch_keeps_research: false,

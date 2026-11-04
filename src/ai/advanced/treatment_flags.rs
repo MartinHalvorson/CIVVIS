@@ -9471,6 +9471,16 @@ impl AdvancedAi {
         self.slots_survive_the_roll = false;
     }
 
+    /// Scale the free-slot Campus time budget relative to Online costs.
+    pub fn enable_free_slot_campus_clock(&mut self) {
+        self.free_slot_campus_clock = true;
+    }
+
+    /// The twin of `enable_free_slot_campus_clock`.
+    pub fn disable_free_slot_campus_clock(&mut self) {
+        self.free_slot_campus_clock = false;
+    }
+
     /// Opt-in gene `camps-close-the-age`; see [`Self::camps_close_the_age`].
     pub fn enable_camps_close_the_age(&mut self) {
         self.camps_close_the_age = true;

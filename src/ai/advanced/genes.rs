@@ -4941,6 +4941,8 @@ pub const GENES: &[Gene] = &[
     // the games before them. Under the gene the lethal test reads the top of
     // the roll in both places. See `advanced/battle_planner.rs`.
     Gene { tag: "slots-survive-the-roll", field: "slots_survive_the_roll", kind: Kind::OptIn, enable: AdvancedAi::enable_slots_survive_the_roll, disable: AdvancedAi::disable_slots_survive_the_roll },
+    // Only the existing free-slot Campus claim; default OFF, Online no-op.
+    Gene { tag: "free-slot-campus-clock", field: "free_slot_campus_clock", kind: Kind::OptIn, enable: AdvancedAi::enable_free_slot_campus_clock, disable: AdvancedAi::disable_free_slot_campus_clock },
     // Live Lv 7 Immortal (83 runs, 11-03/04): 50 seats entered the first
     // Dark Age, 30 of them 1-3 Era Score short of the Normal threshold, and
     // in 14 of those a barbarian camp stood on our own board at the era's end

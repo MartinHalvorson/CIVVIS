@@ -1,0 +1,13 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "free-slot-campus-clock",
+  "scope": "Source9a644ec1f38179d36a588701b3eb3c3d4d543e31. Main source140152: two290-request original controls and two290-request candidate OFF controls; two212-request ON prefixes first differ91/0 with only city262147 Catapult-to-Campus production substitution, all other orders retaining sequence. Two successful persistent OFF/ON prefix pairs exit0; independent archived verifier reconstructs all read bytes/count/order and source/receipt hashes. Second source134411 includes Builder changes and is rejected as an isolated proof; retained for audit. Development proposals only, no native execution, Campus completion, science gain, survival or strength result. Default OFF.",
+  "archive": {
+    "path": "docs/eval/2026-11-04-free-slot-campus-clock.native.tar.xz",
+    "sha256": "fb4aaaa86d1843e634f2332c8e63dd617157c942d91437a4ff8ae3d17a90c4c3"
+  },
+  "members": [
+    "successful-prefix-pairs/pair-0.json",
+    "successful-prefix-pairs/pair-1.json"
+  ]
+}

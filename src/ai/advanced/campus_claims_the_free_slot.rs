@@ -97,7 +97,12 @@ impl AdvancedAi {
         if self.culture_theater_item(g, pid, cid, plan).is_some() {
             return None;
         }
-        let item = BasicAi::first_campus_item(g, pid, cid)?;
+        let item = BasicAi::first_campus_item_with_budget(
+            g,
+            pid,
+            cid,
+            self.free_slot_campus_turn_budget(g),
+        )?;
         let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
             g.item_cost_for(pid, &item) / g.city_yields(cid).production.max(0.5)
         });
