@@ -1,0 +1,43 @@
+{
+  "source_commit": "ac49a92afb78bb9d67f5cdc9a5e725ec5aa08448",
+  "lua_validation": {
+    "recorded_utc": "2026-11-04T16:30:45.952640+00:00",
+    "lua": "/Users/martbot-mbp-m5-max-128/civvis-tactics-results/toolchains/lua-5.1.5/src/lua",
+    "lua_version": "5.1.5",
+    "syntax_root": "tools/civ6_control",
+    "lua_scripts_syntax_checked": 121,
+    "fixtures_executed": 116,
+    "failures": [],
+    "production_sha256": "61ac1171e7f1646e6690d2126d8bb2d77efb3d6f59c9f729df33086a714927e3",
+    "fixture_sha256": "ba3f706efaa93a4dcbe15cdb6e12f6bac6cfceba5719d3ddddf71901d920d3f2",
+    "scope": "Observational fields only, existing policy handlers and Rust consumers unchanged. Native readback remains pending shipping.",
+    "source_commit": "ac49a92afb78bb9d67f5cdc9a5e725ec5aa08448"
+  },
+  "native_readback": "Pending merge and the next native process loading the updated mod. No actual host policy-change availability is inferred for historical142014 turn342.",
+  "shipped_sources": [
+    {
+      "path": "Base/Assets/UI/Screens/GovernmentScreen.lua",
+      "sha256": "42410f7d70017c61dc0ebcc19e7471aa51ff70d7c4474f4660294f2da50a4309",
+      "ranges": [
+        {
+          "start": 1378,
+          "end": 1422
+        },
+        {
+          "start": 1589,
+          "end": 1595
+        }
+      ]
+    },
+    {
+      "path": "Base/Assets/UI/Screens/ReportScreen.lua",
+      "sha256": "4bdc84547ba16ed7df65cfdc15fac319163f9de963393a1f4bca6a3bee83951e",
+      "ranges": [
+        {
+          "start": 300,
+          "end": 309
+        }
+      ]
+    }
+  ]
+}
