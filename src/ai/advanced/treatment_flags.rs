@@ -2768,33 +2768,6 @@ impl AdvancedAi {
         self.enable_live_bridge_universe();
     }
 
-    /// The military half of [`AdvancedAi::enable_engine_repairs`]: force
-    /// assembly, marching, siege, threat reading, and the war/peace decision.
-    ///
-    /// Split out so the composite's *interaction* is measurable rather than
-    /// assumed. If the whole bundle beats `advanced` by more than the war and
-    /// economy halves do separately, the repairs compound; if it does not, the
-    /// bundle is a sum and should be argued for one term at a time.
-    pub fn enable_engine_repairs_war(&mut self) {
-        for gene in super::GENES
-            .iter()
-            .filter(|gene| gene.repair_axis() == Some(super::Axis::War))
-        {
-            (gene.enable)(self);
-        }
-    }
-
-    /// The economic half of [`AdvancedAi::enable_engine_repairs`]: settlement,
-    /// growth, districts, and the policy deck.
-    pub fn enable_engine_repairs_economy(&mut self) {
-        for gene in super::GENES
-            .iter()
-            .filter(|gene| gene.repair_axis() == Some(super::Axis::Economy))
-        {
-            (gene.enable)(self);
-        }
-    }
-
     /// Let a stalled settler found where it stands. Evaluator arm
     /// `advanced_settler_founds_when_stalled`; off in the native production
     /// controller.
