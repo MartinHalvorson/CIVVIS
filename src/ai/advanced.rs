@@ -7254,6 +7254,11 @@ pub struct AdvancedAi {
     /// refused, and a culture race counts toward the racing reading. See
     /// `advanced/protective_friendship.rs`. Off by default.
     friendship_refuses_the_racer: bool,
+    /// `early-cities-keep-their-distance`: while the empire holds fewer
+    /// than three cities, a site loses value for every tile it stands inside
+    /// ten of a charted rival city. See `advanced/early_city_distance.rs`.
+    /// Off by default.
+    early_cities_keep_their_distance: bool,
     // ---- append: g-k ------------------------------------------------
     /// `gold-buys-the-opening-builder`: in the opening, with no Builder afield
     /// and work for one, the treasury buys the Builder. See
@@ -10645,6 +10650,11 @@ mod camp_buyout;
 /// opt-in gene; see `advanced/camps_close_the_age.rs`.
 mod camps_close_the_age;
 
+/// `early-cities-keep-their-distance`: the second and third cities are sited
+/// away from charted rival cities. One opt-in gene; see
+/// `advanced/early_city_distance.rs`.
+mod early_city_distance;
+
 /// `early-archers`: an Archer for every city, the frontier city first, while
 /// the world is Ancient and Classical, and Archery chased until a city can
 /// train one. One opt-in gene; see `advanced/early_archers.rs`.
@@ -11891,6 +11901,7 @@ impl AdvancedAi {
             friendship_keeps_the_peace: false,
             friendship_expiry_seen: std::cell::RefCell::new(BTreeMap::new()),
             friendship_refuses_the_racer: false,
+            early_cities_keep_their_distance: false,
             // ---- append: g-k ----------------------------------------
             gold_buys_the_opening_builder: false,
             immortal_skips_the_prophet_race: false,
@@ -32027,6 +32038,9 @@ impl AdvancedAi {
             self.settlement_static_value_uncached(g, pid, pos)
         };
         value -= self.settlement_safety_penalty(g, pid, pos, visible);
+        // `early-cities-keep-their-distance`: zero with the gene off and from
+        // the third city on. See `advanced/early_city_distance.rs`.
+        value -= self.early_city_rival_penalty(g, pid, pos);
         // `capital-leaves-the-frost`: the first city's frozen ground. Zero
         // with the gene off and once the empire holds a city.
         value -= self.frost_capital_penalty(g, pid, pos);

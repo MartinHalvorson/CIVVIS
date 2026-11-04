@@ -4973,6 +4973,15 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "capital-keeps-its-defender", field: "capital_keeps_its_defender", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_defender, disable: AdvancedAi::disable_capital_keeps_its_defender },
     // Preserve the original capital's Loyalty anchor; default OFF.
     Gene { tag: "capital-keeps-its-governor", field: "capital_keeps_its_governor", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_governor, disable: AdvancedAi::disable_capital_keeps_its_governor },
+    // Operator rule 11-04 (#4435): losing the capital or either of the next
+    // two cities restarts the game. Of 173 live second and third cities
+    // (Immortal and Deity, 11-03/04), those founded 5-6 tiles from a charted
+    // rival city were lost 56% of the time, 7-8 tiles 40%, 9-11 23%, 12 or
+    // more 8%; the site value priced only a border within three tiles. Under
+    // the gene, while the empire holds fewer than three cities, a site loses
+    // 8 a tile inside ten of the nearest charted rival city. See
+    // `advanced/early_city_distance.rs`.
+    Gene { tag: "early-cities-keep-their-distance", field: "early_cities_keep_their_distance", kind: Kind::OptIn, enable: AdvancedAi::enable_early_cities_keep_their_distance, disable: AdvancedAi::disable_early_cities_keep_their_distance },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

@@ -2169,6 +2169,9 @@ impl AdvancedAi {
         free_slot_campus_clock => enable_free_slot_campus_clock, disable_free_slot_campus_clock;
         /// Opt-in gene `camps-close-the-age`; see [`Self::camps_close_the_age`].
         camps_close_the_age => enable_camps_close_the_age, disable_camps_close_the_age;
+        /// Opt-in gene `early-cities-keep-their-distance`; see
+        /// [`Self::early_cities_keep_their_distance`].
+        early_cities_keep_their_distance => enable_early_cities_keep_their_distance, disable_early_cities_keep_their_distance;
     }
 }
 
