@@ -58,6 +58,14 @@ The merged but unarmed `anvil-follows-the-defense` candidate addresses this exac
 
 For subsequent complete games, retain speed, revision, active treatments, second/third city observation turns, city losses, production and science at speed-normalized checkpoints, and actual victory type. Use first and last state frames consistently. Quick turn 67 is approximately Standard turn 100 by the 67/100 cost ratio; equal numbered turns are not equal economic time. Several nearby runs were deliberately interrupted, so they cannot be scored as natural losses or wins. Native replay proves emitted behavior only; full-game outcomes are needed to establish improved strength.
 
+## Fresh Quick reproduction control
+
+For the next live attempt, `civvis-20261104T060224Z`, an actual process observation captured the executable arguments, PID 96505, working directory, executable hash and provenance. `tools/civ6_captured_read_replay.py` reproduced all 82 requests through turn 36 twice from sealed captured reads: both complete payloads and ordered actual read traces matched. Hybrid delivery used the tool's identical-read eligibility check; it did not relax comparison gates.
+
+Two additional proposal runs appended only `--with anvil-follows-the-defense` to that observed command and replayed the same sealed inputs. Both also matched all 82 complete native payloads and read traces. Thus the candidate changes no emitted order in this particular new opening prefix. This is a useful negative control, not treatment activation evidence for the earlier `055705Z` mismatch or evidence about subsequent survival. The earlier run's process had already exited before a complete context receipt was obtained; do not reconstruct its cwd from assumptions and call that an observed-process qualification.
+
+Receipts and sealed inputs remain at `~/civvis-tactics-results/2026-11-04/quick-anvil-context/`: `control-through-36/qualification.json` and `anvil-shadow-{0,1}/comparison.json`. Baseline qualification is the tool's original-binary control; proposal comparison results are explicitly labelled as commands modified from the observation.
+
 ## Failure telemetry caveat
 
 Through order turn 90, Standard `053740Z` reports 192 `CONGRESS_GUARDS_THE_LEADER/combat_policy_not_acknowledged` failures and 21 `MOVE_TO/did_not_move` failures. Quick `055705Z` reports 231 and 92 respectively. Policy acknowledgements, superseded orders and actual unmoved units require separate counts. A total `order_failed` count is not a movement-failure rate, and repeated replans are not independent turns.
