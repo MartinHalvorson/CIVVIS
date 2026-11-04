@@ -1,15 +1,15 @@
 {
   "kind": "captured_native_action_pairs_v1",
   "tag": "first-capital-before-the-camp",
-  "scope": "Pre-integration candidate 33775713b. Development input reused for diagnosis; recorded proposal activation with original-native OFF and actual-read controls. Not native execution, retained cities or strength evidence.",
+  "scope": "Integrated production source f3a9a0e6b. Development inputs; proposal activation and exact actual-read controls only. No native execution, survival or strength result.",
   "archive": {
-    "path": "docs/eval/2026-11-04-first-capital-defense.native.tar.xz",
-    "sha256": "4e356ad4f5cd15ff8302db62e9fa4cf1bbafb6b7554e7b6c0acc59f951568641"
+    "path": "docs/eval/2026-11-04-first-capital-defense.integration.tar.xz",
+    "sha256": "43500d1201b4f44dd83b7f488c7159a9f6cf90043de4da6b4c97aa852217dc7d"
   },
   "members": [
-    "queries/civvis-20261104T060224Z-12/result.json",
-    "queries/civvis-20261104T060224Z-14/result.json",
-    "queries/civvis-20261104T060224Z-16/result.json",
-    "queries/civvis-20261104T060224Z-67/result.json"
+    "integrated-queries/civvis-20261104T060224Z-12/result.json",
+    "integrated-queries/civvis-20261104T060224Z-14/result.json",
+    "integrated-queries/civvis-20261104T060224Z-16/result.json",
+    "integrated-queries/civvis-20261104T060224Z-67/result.json"
   ]
 }
