@@ -4855,6 +4855,13 @@ pub const GENES: &[Gene] = &[
     // `advanced/maori_founds_from_the_sea.rs`.
     Gene { tag: "founding-voyage", field: "founding_voyage", kind: Kind::OptIn, enable: AdvancedAi::enable_founding_voyage, disable: AdvancedAi::disable_founding_voyage },
     Gene { tag: "anvil-follows-the-defense", field: "anvil_follows_the_defense", kind: Kind::OptIn, enable: AdvancedAi::enable_anvil_follows_the_defense, disable: AdvancedAi::disable_anvil_follows_the_defense },
+    // Live Lv 7 Standard, Gran Colombia 2026-11-04T015124Z, eliminated at turn
+    // 18: Vietnam at 4.6x our power stood within 8 tiles from turn 15, the
+    // answer was Masonry, the only Warrior explored ten tiles away and the
+    // capital held no soldier. Under the gene a stronger major's soldier near
+    // a city with no soldier drafts the nearest idle one home. See
+    // `ai/garrison_before_the_surprise.rs`.
+    Gene { tag: "garrison-before-the-surprise", field: "garrison_before_the_surprise", kind: Kind::OptIn, enable: AdvancedAi::enable_garrison_before_the_surprise, disable: AdvancedAi::disable_garrison_before_the_surprise },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

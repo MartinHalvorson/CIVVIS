@@ -407,6 +407,7 @@ mod first_pad_in_the_forge;
 mod industrial_zones;
 mod launch_pad_resume;
 mod movement_risk;
+mod garrison_before_the_surprise;
 mod naval_demand;
 mod opening_builder;
 #[cfg(test)]
@@ -3926,6 +3927,14 @@ pub struct BasicAi {
     /// Runtime state for `retainers_garrison_the_short_cities`: the city each
     /// claiming soldier holds.
     pub(crate) retainers_garrison_claims: BTreeMap<u32, u32>,
+    /// `garrison-before-the-surprise`: a stronger major's soldier near a city
+    /// with no soldier drafts the nearest idle one home. See
+    /// `garrison_before_the_surprise.rs`. Set by the Advanced gene; off by
+    /// default.
+    pub(crate) garrison_before_the_surprise: bool,
+    /// Runtime state for `garrison_before_the_surprise`: the turn and the
+    /// called cities read from that turn's frame.
+    pub(crate) garrison_call_cache: Option<(u32, Vec<Pos>)>,
     /// `launch-pad-keeps-its-rung`: an idle city resumes its own placed,
     /// unfinished Spaceport foundation while no pad of ours stands. See
     /// `launch_pad_resume.rs`. Set by the Advanced gene; off by default.
@@ -6047,6 +6056,8 @@ impl BasicAi {
             deck_reads_player_income: false,
             retainers_garrison_the_short_cities: false,
             retainers_garrison_claims: BTreeMap::new(),
+            garrison_before_the_surprise: false,
+            garrison_call_cache: None,
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
             deck_prices_growth: false,
@@ -6157,6 +6168,17 @@ impl BasicAi {
     /// The twin of `enable_retainers_garrison_the_short_cities`.
     pub(crate) fn disable_retainers_garrison_the_short_cities(&mut self) {
         self.retainers_garrison_the_short_cities = false;
+    }
+
+    /// See `garrison_before_the_surprise`.
+    pub(crate) fn enable_garrison_before_the_surprise(&mut self) {
+        self.garrison_before_the_surprise = true;
+    }
+
+    /// The twin of `enable_garrison_before_the_surprise`.
+    pub(crate) fn disable_garrison_before_the_surprise(&mut self) {
+        self.garrison_before_the_surprise = false;
+        self.garrison_call_cache = None;
     }
 
     /// Whether `pid` owns an Archaeological Museum, built or in any queue.
@@ -6644,6 +6666,8 @@ impl BasicAi {
             deck_reads_player_income: false,
             retainers_garrison_the_short_cities: false,
             retainers_garrison_claims: BTreeMap::new(),
+            garrison_before_the_surprise: false,
+            garrison_call_cache: None,
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
             deck_prices_growth: false,
@@ -20584,6 +20608,12 @@ impl BasicAi {
                 return self.step_toward(g, pid, uid, home);
             }
             return self.fortify_or_stop(g, pid, uid);
+        }
+        // `garrison-before-the-surprise`: a stronger major's soldier near a
+        // city with no soldier drafts the nearest idle one home, ahead of
+        // every errand below.
+        if let Some(acted) = self.garrison_before_the_surprise_step(g, pid, uid) {
+            return acted;
         }
         // An adjacent empty camp is a completed objective, not a route to
         // price: enter it before this otherwise peaceful unit starts a longer

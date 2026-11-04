@@ -7503,6 +7503,10 @@ pub struct AdvancedAi {
     /// treasury buys one in the city that owns the most of them. See
     /// `advanced/gold_buys_the_backlog_builder.rs`. Off by default.
     gold_buys_the_backlog_builder: bool,
+    /// `garrison-before-the-surprise`: a stronger major's soldier near a city
+    /// with no soldier drafts the nearest idle one home. The behaviour lives
+    /// on `BasicAi`; see `ai/garrison_before_the_surprise.rs`. Off by default.
+    garrison_before_the_surprise: bool,
     // ---- append: l-o ------------------------------------------------
     /// `old-techs-before-the-beeline`: the technology our land army waits on
     /// to upgrade once the world has left its era, then any technology two
@@ -11823,6 +11827,7 @@ impl AdvancedAi {
             inquisition_defends_the_diplomat: false,
             inquisition_answers_a_rival_majority: false,
             gold_buys_the_backlog_builder: false,
+            garrison_before_the_surprise: false,
             // ---- append: l-o ----------------------------------------
             old_techs_before_the_beeline: false,
             launch_commits_the_endgame: false,

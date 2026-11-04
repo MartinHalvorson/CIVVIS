@@ -9344,6 +9344,19 @@ impl AdvancedAi {
     pub fn disable_anvil_follows_the_defense(&mut self) {
         self.anvil_follows_the_defense = false;
     }
+    /// Opt-in gene `garrison-before-the-surprise`; see
+    /// `BasicAi::garrison_before_the_surprise`.
+    pub fn enable_garrison_before_the_surprise(&mut self) {
+        self.garrison_before_the_surprise = true;
+        self.base.enable_garrison_before_the_surprise();
+    }
+
+    /// The twin of `enable_garrison_before_the_surprise`.
+    pub fn disable_garrison_before_the_surprise(&mut self) {
+        self.garrison_before_the_surprise = false;
+        self.base.disable_garrison_before_the_surprise();
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
