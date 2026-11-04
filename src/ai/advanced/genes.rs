@@ -4954,6 +4954,14 @@ pub const GENES: &[Gene] = &[
     // of each, and dates them to the era's end. See
     // `advanced/camps_close_the_age.rs`.
     Gene { tag: "camps-close-the-age", field: "camps_close_the_age", kind: Kind::OptIn, enable: AdvancedAi::enable_camps_close_the_age, disable: AdvancedAi::disable_camps_close_the_age },
+    // Version two (live 11-04, the first seven carriers of version one: the
+    // first era still went Dark in 3 of 6). In 162453Z the raised camp stood
+    // 34 turns beside a party of one or two Warriors and a Heavy Chariot:
+    // every Warrior blow on the camp's fortified Spearman dealt about 25 and
+    // took about 38 while the camp kept spawning. The age-closing party now
+    // brings a shooter (no return damage; the kill plan fires it first) and
+    // `CAMP_AGE_MARGIN` times the guard. See `advanced/camps_close_the_age.rs`.
+    Gene { tag: "camps-close-the-age-2", field: "camps_close_the_age_2", kind: Kind::OptIn, enable: AdvancedAi::enable_camps_close_the_age_2, disable: AdvancedAi::disable_camps_close_the_age_2 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

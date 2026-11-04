@@ -11,6 +11,11 @@ fn row(ai: &AdvancedAi, key: ObjectiveKey) -> Option<&Objective> {
 /// `short` Era Score under its Normal threshold, read with and without the
 /// gene. The world-era countdown ends at `countdown_end` when given.
 fn camp_row(gene: bool, short: i64, countdown_end: Option<u32>) -> Objective {
+    camp_row_version(u8::from(gene), short, countdown_end)
+}
+
+/// `camp_row` under version 0 (off), 1 or 2 of the family.
+fn camp_row_version(version: u8, short: i64, countdown_end: Option<u32>) -> Objective {
     let mut g = flat_board(17, &[at(6, 8), at(30, 8)], true);
     let camp = at(15, 8);
     g.barb_camps.insert(camp, g.turn);
@@ -22,8 +27,10 @@ fn camp_row(gene: bool, short: i64, countdown_end: Option<u32>) -> Objective {
     g.players[0].era_score = 11 - short;
     g.world_era_countdown_end = countdown_end;
     let mut ai = on();
-    if gene {
-        ai.enable_camps_close_the_age();
+    match version {
+        1 => ai.enable_camps_close_the_age(),
+        2 => ai.enable_camps_close_the_age_2(),
+        _ => {}
     }
     let plan = conquest(&g, None);
     ai.rebuild_force_groups(&g, 0, &plan);
@@ -104,4 +111,54 @@ fn past_the_medieval_era_a_camp_closes_no_age() {
         None,
         "the Moment does not score in the Renaissance"
     );
+}
+
+#[test]
+fn version_two_ships_off_and_turns_version_one_off() {
+    let ai = AdvancedAi::new();
+    assert!(!ai.camps_close_the_age_2, "an opt-in ships off");
+    assert!(super::super::GENES
+        .iter()
+        .any(|gene| gene.opt_in() && gene.field == "camps_close_the_age_2"));
+    super::super::test_support::opt_in_off_in_both_controllers("camps-close-the-age-2", |ai| {
+        ai.camps_close_the_age_2
+    });
+    let mut on = AdvancedAi::new();
+    on.enable_camps_close_the_age();
+    on.enable_camps_close_the_age_2();
+    assert_eq!(
+        (on.camps_close_the_age, on.camps_close_the_age_2),
+        (false, true),
+        "one version of the family plays"
+    );
+}
+
+/// Version two keeps version one's premium, bodies and deadline, asks a
+/// shooter, and widens the strength margin.
+#[test]
+fn version_two_arms_the_age_closing_party() {
+    let v1 = camp_row_version(1, 2, Some(40));
+    let v2 = camp_row_version(2, 2, Some(40));
+    assert!((v2.value - v1.value).abs() < 1e-9, "the same premium");
+    assert_eq!(v2.requirement.bodies, v1.requirement.bodies);
+    assert_eq!(v2.deadline, v1.deadline);
+    assert_eq!(v1.requirement.ranged, 0);
+    assert_eq!(
+        v2.requirement.ranged,
+        super::super::camps_close_the_age::CAMP_AGE_SHOOTERS
+    );
+    assert!(
+        (v2.requirement.strength
+            - v1.requirement.strength * super::super::camps_close_the_age::CAMP_AGE_MARGIN)
+            .abs()
+            < 1e-9,
+        "{} vs {}",
+        v2.requirement.strength,
+        v1.requirement.strength
+    );
+    // Not short: version two leaves the plain row too.
+    let plain = camp_row_version(0, 0, Some(40));
+    let idle = camp_row_version(2, 0, Some(40));
+    assert_eq!(idle.requirement.ranged, plain.requirement.ranged);
+    assert!((idle.requirement.strength - plain.requirement.strength).abs() < 1e-9);
 }
