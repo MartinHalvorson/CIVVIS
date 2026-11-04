@@ -25,11 +25,15 @@ impl AdvancedAi {
         let Some(resource) = self.air_resource_shortfall(g, pid) else {
             return BTreeSet::new();
         };
-        if self.threatened_city(g, pid).is_some() {
-            return BTreeSet::new();
-        }
-        let visible = g.player_vision_frame(pid);
-        excluded
+        // ★ THE TILE TEST COMES BEFORE THE EMPIRE THREAT SCAN. Both answers
+        // are needed only when some excluded tile is a legal, charted home for
+        // the missing resource, and that is rare; `threatened_city` floods
+        // every enemy's attack reach against every city of ours. Asking it
+        // first spent ~11% of the late-game decider (replay of
+        // civvis-20261104T074315Z from turn 340) on scans whose answer could
+        // not change an empty result. The result is unchanged: threatened
+        // still means no site, and otherwise the same sites pass.
+        let charted: Vec<Pos> = excluded
             .iter()
             .copied()
             .filter(|site| {
@@ -52,6 +56,16 @@ impl AdvancedAi {
                 {
                     return false;
                 }
+                true
+            })
+            .collect();
+        if charted.is_empty() || self.threatened_city(g, pid).is_some() {
+            return BTreeSet::new();
+        }
+        let visible = g.player_vision_frame(pid);
+        charted
+            .into_iter()
+            .filter(|site| {
                 let protected = g
                     .cities
                     .values()
