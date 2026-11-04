@@ -37,6 +37,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
+          # Keep ancestry for the merge-parent discriminator without eagerly
+          # downloading historical native captures. Git fetches any old Rust
+          # blobs needed by the unchanged quality diff on demand.
+          filter: blob:none
           fetch-depth: 0
       - uses: dtolnay/rust-toolchain@stable
         with:
