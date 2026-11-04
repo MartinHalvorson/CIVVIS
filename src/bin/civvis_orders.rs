@@ -4260,14 +4260,22 @@ fn great_person_orders_led(
         // post (or holds beside it) and is never retired while it leads.
         if let Some(post) = led.get(&unit.id) {
             stall.generals_leading += 1;
-            if let Some(tile) = post {
-                orders.push(Order {
+            // A held General is still named: the control mod's own Great
+            // Person pass retires any General no row claims (live 093211Z t55).
+            orders.push(match post {
+                Some(tile) => Order {
                     kind: "unit",
                     subject: Some(unit.id),
                     verb: Some("MOVE_TO".to_string()),
                     pos: Some(*tile),
-                });
-            }
+                },
+                None => Order {
+                    kind: "unit",
+                    subject: Some(unit.id),
+                    verb: Some("KEEP_GREAT_PERSON".to_string()),
+                    pos: None,
+                },
+            });
             continue;
         }
         // ★★★★ A PROPHET WHOSE RELIGION IS ALREADY FOUNDED, WITH NO CHARGE LEFT,
@@ -8589,6 +8597,14 @@ fn verify_unit_order(
                 Verdict::Verified
             } else {
                 Verdict::Failed("no_route".to_string())
+            }
+        }
+        // `generals-lead-the-army`: the General is still ours after the frame.
+        "KEEP_GREAT_PERSON" => {
+            if now.is_some() {
+                Verdict::Verified
+            } else {
+                Verdict::Failed("general_gone".to_string())
             }
         }
         "ACTIVATE_GREAT_PERSON" => {

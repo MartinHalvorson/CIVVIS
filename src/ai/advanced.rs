@@ -1895,14 +1895,23 @@ const SETTLEMENT_GLOBAL_PREFILTER_LIMIT: usize = 512;
 /// still leaving the fleet pool available to the wider AI frontiers.
 const SETTLEMENT_SCORE_MAX_WORKERS: usize = 4;
 
-/// The lane progress table of one seat, kept for one controller turn. A
-/// controller clone is a speculative branch and starts without it, as the
-/// settlement atlas does.
+/// The lane progress tables read during one controller turn, one entry per
+/// seat. A controller clone is a speculative branch and starts without them,
+/// as the settlement atlas does.
 /// The turn, the seat, the map epoch and the table.
+///
+/// ★ ONE SLOT THRASHED ON EVERY RIVAL LOOP. The cache used to hold a single
+/// entry, but its heaviest readers walk the rivals
+/// (`domination_faithless_conversion_counter`, `rival_faith_presses_us`,
+/// `one_war_second_front`), so each read for another seat evicted the last
+/// and recomputed it. Replaying the 1,080 decider requests of
+/// civvis-20261104T074315Z (t393), `lane_progress_table_uncached` was 28% of
+/// the decider's time from turn 340. Each seat now keeps its own entry under
+/// the same (turn, seat, map epoch) key and the same clearing points.
 type LaneProgressEntry = (u32, usize, u64, [i32; 4]);
 
 #[derive(Default)]
-struct LaneProgressCache(RefCell<Option<LaneProgressEntry>>);
+struct LaneProgressCache(RefCell<Vec<LaneProgressEntry>>);
 
 impl Clone for LaneProgressCache {
     fn clone(&self) -> Self {
@@ -7527,6 +7536,14 @@ pub struct AdvancedAi {
     /// retiring it on arrival. See `advanced/generals_lead_the_army.rs`. Off
     /// by default.
     generals_lead_the_army: bool,
+    /// `garrison-before-the-surprise`: a stronger major's soldier near a city
+    /// with no soldier drafts the nearest idle one home. The behaviour lives
+    /// on `BasicAi`; see `ai/garrison_before_the_surprise.rs`. Off by default.
+    garrison_before_the_surprise: bool,
+    /// `gold-buys-the-production-tile`: in the opening, idle Gold buys a
+    /// border tile of two or more Production beside a city working a poorer
+    /// one. See `advanced/gold_buys_the_production_tile.rs`. Off by default.
+    gold_buys_the_production_tile: bool,
     // ---- append: l-o ------------------------------------------------
     /// `old-techs-before-the-beeline`: the technology our land army waits on
     /// to upgrade once the world has left its era, then any technology two
@@ -10480,6 +10497,10 @@ mod gold_buys_the_backlog_builder;
 /// `gold-buys-the-opening-builder`: a builderless opening buys its Builder
 /// with the idle treasury. See `advanced/gold_buys_the_opening_builder.rs`.
 mod gold_buys_the_opening_builder;
+/// `gold-buys-the-production-tile`: opening Gold buys a Production tile
+/// beside a city working a poorer one. See
+/// `advanced/gold_buys_the_production_tile.rs`.
+mod gold_buys_the_production_tile;
 mod gold_buys_the_settler;
 mod granary_claims_the_bound_queue;
 /// `founder-holds-the-holy-city`: a founder keeps its Holy City on its own
@@ -11877,6 +11898,8 @@ impl AdvancedAi {
             guns_stay_out_of_reach_2: false,
             guns_stay_out_of_reach_3: false,
             generals_lead_the_army: false,
+            garrison_before_the_surprise: false,
+            gold_buys_the_production_tile: false,
             // ---- append: l-o ----------------------------------------
             old_techs_before_the_beeline: false,
             launch_commits_the_endgame: false,
@@ -14877,15 +14900,21 @@ impl AdvancedAi {
             return self.lane_progress_table_uncached(g, pid);
         }
         let epoch = g.map.tiles.epoch();
-        if let Some((turn, seat, map_epoch, table)) = *self.lane_progress_cache.0.borrow() {
-            if turn == g.turn && seat == pid && map_epoch == epoch {
-                return table;
-            }
+        if let Some(&(_, _, _, table)) =
+            self.lane_progress_cache
+                .0
+                .borrow()
+                .iter()
+                .find(|(turn, seat, map_epoch, _)| {
+                    *turn == g.turn && *seat == pid && *map_epoch == epoch
+                })
+        {
+            return table;
         }
         let table = self.lane_progress_table_uncached(g, pid);
-        self.lane_progress_cache
-            .0
-            .replace(Some((g.turn, pid, epoch, table)));
+        let mut entries = self.lane_progress_cache.0.borrow_mut();
+        entries.retain(|(_, seat, _, _)| *seat != pid);
+        entries.push((g.turn, pid, epoch, table));
         table
     }
 
@@ -50340,7 +50369,7 @@ impl AdvancedAi {
         self.builder_support.clear();
         self.battlefront_frame = None;
         self.settlement_atlas.borrow_mut().clear();
-        self.lane_progress_cache.0.replace(None);
+        self.lane_progress_cache.0.borrow_mut().clear();
         // Before anything in this turn is priced. Every science term downstream
         // reads this one number, so the horizon cannot drift between the
         // production ordering, the citizen governor, and the search evaluator.
@@ -50587,6 +50616,10 @@ impl AdvancedAi {
             // before the route slot's Trader. See
             // `advanced/gold_buys_the_opening_builder.rs`.
             self.opening_builder_purchase(g, pid, &plan);
+            // `gold-buys-the-production-tile`: then a border tile of two or
+            // more Production beside a city working a poorer one. See
+            // `advanced/gold_buys_the_production_tile.rs`.
+            self.production_tile_purchase(g, pid, &plan);
             self.idle_trader_purchase(g, pid, &plan);
             // `gold-buys-the-backlog-builder`: past the opening buy and the
             // route slot's Trader, a Builder for the unimproved worked tiles
@@ -50731,7 +50764,7 @@ impl AdvancedAi {
         // pricing, so the production pass starts a fresh static atlas from
         // the final pre-production state.
         self.settlement_atlas.borrow_mut().clear();
-        self.lane_progress_cache.0.replace(None);
+        self.lane_progress_cache.0.borrow_mut().clear();
 
         // `saved-work-is-seen`: the host's paused units, buildings and
         // projects join the saved-work bank before any production writer
