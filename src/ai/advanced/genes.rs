@@ -4962,6 +4962,14 @@ pub const GENES: &[Gene] = &[
     // brings a shooter (no return damage; the kill plan fires it first) and
     // `CAMP_AGE_MARGIN` times the guard. See `advanced/camps_close_the_age.rs`.
     Gene { tag: "camps-close-the-age-2", field: "camps_close_the_age_2", kind: Kind::OptIn, enable: AdvancedAi::enable_camps_close_the_age_2, disable: AdvancedAi::disable_camps_close_the_age_2 },
+    // Live Immortal Standard 11-04 (16 games): no Builder held anywhere on
+    // 37% of the two-city turns 15-90 against four or more unimproved worked
+    // tiles; the backlog claim (armed) fired once before turn 60. Improved
+    // share 0.26 against the rivals' 0.48 at turn 100, population 17 against
+    // 36.5; Lv 8 Deity Online's science gap was population. With no Builder
+    // held, the fastest safe city trains one. See
+    // `advanced/builderless_empire_trains_one.rs`.
+    Gene { tag: "builderless-empire-trains-one", field: "builderless_empire_trains_one", kind: Kind::OptIn, enable: AdvancedAi::enable_builderless_empire_trains_one, disable: AdvancedAi::disable_builderless_empire_trains_one },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

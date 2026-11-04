@@ -5020,6 +5020,17 @@ impl AdvancedAi {
         self.camps_close_the_age_2 = false;
     }
 
+    /// Opt-in gene `builderless-empire-trains-one`; see
+    /// [`Self::builderless_empire_trains_one`].
+    pub fn enable_builderless_empire_trains_one(&mut self) {
+        self.builderless_empire_trains_one = true;
+    }
+
+    /// The twin of `enable_builderless_empire_trains_one`.
+    pub fn disable_builderless_empire_trains_one(&mut self) {
+        self.builderless_empire_trains_one = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
