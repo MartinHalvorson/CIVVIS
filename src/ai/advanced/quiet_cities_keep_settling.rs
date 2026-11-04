@@ -73,8 +73,7 @@ impl AdvancedAi {
         {
             return false;
         }
-        if g
-            .cities
+        if g.cities
             .get(&threatened)
             .is_some_and(|front| g.wdist(city.pos, front.pos) <= THREAT_RELIEF_RADIUS)
         {

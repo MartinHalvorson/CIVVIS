@@ -36160,6 +36160,13 @@ impl AdvancedAi {
                             || self.quiet_settle_site(g, pid, plan, *pos)
                     });
                     if let Some(site) = site {
+                        if threatened_recovery_holds_settlers {
+                            think!(self.journal(), Cities, Detail,
+                                   "{} may settle under the Recovery hold", city.name;
+                                   "quiet-cities-keep-settling: out of the war's reach, \
+                                    site ({}, {}) worth {:.1}",
+                                   site.0 .0, site.0 .1, site.1);
+                        }
                         (920.0 + site.1 * 4.0) * self.settler_price
                     } else {
                         -10_000.0
