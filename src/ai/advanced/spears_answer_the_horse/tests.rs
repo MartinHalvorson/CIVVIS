@@ -191,6 +191,11 @@ fn spears_answer_the_horse_does_not_create_an_emergency_or_replace_fortification
             .spear_for_local_horse(&g, 0, cid, &protected, None)
             .is_none());
     }
+    assert!(
+        ai.spear_for_local_horse(&g, 0, cid, &unit("archer"), Some(&selected))
+            .is_none(),
+        "an existing shooter selection keeps its priority over a fresh melee head"
+    );
     let mut unarmed = AdvancedAi::new();
     unarmed.enable_spears_answer_the_horse();
     assert_eq!(

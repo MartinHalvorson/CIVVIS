@@ -48,6 +48,18 @@ impl AdvancedAi {
         if !self.spears_answer_the_horse || !matches!(selected, Item::Unit { .. }) {
             return None;
         }
+        let local_melee = |kind: Name| {
+            let spec = &g.rules.units[kind];
+            spec.class == "military"
+                && !spec.siege
+                && !spec.has_ranged_attack()
+                && spec.is_melee_capable()
+                && !matches!(spec.domain.as_deref(), Some("sea" | "air"))
+                && spec.promotion_class != "recon"
+        };
+        if !matches!(selected, Item::Unit { unit } if local_melee(*unit)) {
+            return None;
+        }
         let reference = match committed.filter(|item| Self::active_queue_answers_siege(g, item)) {
             Some(item @ Item::Unit { .. }) => item,
             Some(_) => return None,
@@ -57,14 +69,7 @@ impl AdvancedAi {
             return None;
         };
         let original = &g.rules.units[baseline];
-        if original.class != "military"
-            || original.siege
-            || original.has_ranged_attack()
-            || !original.is_melee_capable()
-            || matches!(original.domain.as_deref(), Some("sea" | "air"))
-            || original.promotion_class == "recon"
-            || g.item_invested_production(cid, reference) != 0.0
-        {
+        if !local_melee(*baseline) || g.item_invested_production(cid, reference) != 0.0 {
             return None;
         }
         let turns = |item: &Item| {
