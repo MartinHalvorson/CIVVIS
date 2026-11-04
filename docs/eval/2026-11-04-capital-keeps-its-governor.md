@@ -122,3 +122,11 @@ the independent positive/negative corpus checks (verifier exit zero). The
 `tools/gene_fires.py --max 0` passes: 769 genes, 733 shown to fire,
 36 existing waivers, zero unproven; no new waiver. Evaluation inventory and
 gene-ledger/ranking consistency checks pass.
+
+A subsequent append-marker placement correction moves four marker comment
+lines only. Removing append-marker lines leaves every remaining source byte
+identical, including field and registry order. The rebuilt production
+executable is byte-for-byte identical to the qualified executable above;
+14 targeted append-point tests and incremental quality pass after the repair.
+The `.layout-repair.json` records old/new source hashes and the rebuild.
+The original raw evidence archive remains unchanged.
