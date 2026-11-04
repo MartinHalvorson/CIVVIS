@@ -9426,16 +9426,6 @@ impl AdvancedAi {
         self.capital_leaves_the_frost = false;
     }
 
-    /// Let the first Campus interrupt a fresh military build behind a standing army.
-    pub fn enable_first_campus_between_the_units(&mut self) {
-        self.first_campus_between_the_units = true;
-    }
-
-    /// Restore the existing Campus queue protection.
-    pub fn disable_first_campus_between_the_units(&mut self) {
-        self.first_campus_between_the_units = false;
-    }
-
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

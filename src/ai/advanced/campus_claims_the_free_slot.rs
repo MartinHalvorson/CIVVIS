@@ -197,15 +197,7 @@ impl AdvancedAi {
                         Some("Campus building claim")
                     } else if Self::queued_wall_breaker(g, item) {
                         Some("queued wall-breaker")
-                    } else if !Self::capped_aqueduct_may_defer(g, pid, cid, item, at_major_war)
-                        && !self.first_campus_between_units_may_defer(
-                            g,
-                            pid,
-                            cid,
-                            item,
-                            at_major_war,
-                        )
-                    {
+                    } else if !Self::capped_aqueduct_may_defer(g, pid, cid, item, at_major_war) {
                         let remaining = g.item_cost_for_city(pid, cid, item)
                             - g.item_invested_production(cid, item);
                         if remaining <= g.city_yields(cid).production {
