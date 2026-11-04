@@ -3576,7 +3576,52 @@ class TheAbandonWaitsForTheRetireToLand(unittest.TestCase):
         block = source.split("state[\"retire_requested\"] = bool(asked)", 1)[1]
         block = block.split("return True", 1)[0]
         self.assertIn("if asked:", block)
-        self.assertIn("time.sleep(ABANDON_RETIRE_WAIT_S)", block)
+        self.assertIn("_await_retire_answer(args.tag)", block)
+        self.assertNotIn("time.sleep(ABANDON_RETIRE_WAIT_S)", block)
+
+
+class TheAbandonStopsOnceTheRetireLands(unittest.TestCase):
+    """The bound is a ceiling, not a toll: an answered retire ends the wait."""
+
+    def _run(self, answers, wait_s=12.0, poll_s=0.25, settle_s=0.8):
+        now = [0.0]
+        slept = []
+
+        def sleep(seconds):
+            slept.append(seconds)
+            now[0] += seconds
+
+        replies = iter(answers)
+        with mock.patch.object(civ6_play, "_retire_was_answered",
+                               side_effect=lambda tag: next(replies, False)):
+            answered = civ6_play._await_retire_answer(
+                "civvis-run", wait_s=wait_s, poll_s=poll_s, settle_s=settle_s,
+                clock=lambda: now[0], sleep=sleep)
+        return answered, now[0], slept
+
+    def test_an_answer_already_in_the_log_costs_only_the_settle(self) -> None:
+        answered, elapsed, slept = self._run([True])
+        self.assertTrue(answered)
+        self.assertEqual(slept, [0.8])
+
+    def test_a_prompt_answer_ends_the_wait_early(self) -> None:
+        answered, elapsed, _ = self._run([False, False, False, True])
+        self.assertTrue(answered)
+        self.assertAlmostEqual(elapsed, 3 * 0.25 + 0.8)
+
+    def test_no_answer_still_stops_at_the_bound_without_a_settle(self) -> None:
+        answered, elapsed, slept = self._run([])
+        self.assertFalse(answered)
+        self.assertGreaterEqual(elapsed, 12.0)
+        self.assertLess(elapsed, 12.0 + 0.25 + 1e-9)
+        self.assertNotIn(0.8, slept)
+
+    def test_the_settle_matches_the_operator_path(self) -> None:
+        import inspect
+        defaults = inspect.signature(civ6_play._await_retire_answer).parameters
+        self.assertEqual(defaults["settle_s"].default, civ6_play.OPERATOR_RETIRE_SETTLE_S)
+        self.assertEqual(defaults["wait_s"].default, civ6_play.ABANDON_RETIRE_WAIT_S)
+        self.assertLessEqual(civ6_play.ABANDON_RETIRE_POLL_S, 1.0)
 
     def test_the_run_record_says_whether_a_retire_was_asked(self) -> None:
         """A game filed as a loss must be distinguishable from one that stopped."""

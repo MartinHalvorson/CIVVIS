@@ -9383,6 +9383,17 @@ impl AdvancedAi {
         self.guns_stay_out_of_reach_3 = false;
     }
 
+    /// Opt-in gene `ranged-finish-on-the-mean`; see
+    /// [`Self::ranged_finish_on_the_mean`].
+    pub fn enable_ranged_finish_on_the_mean(&mut self) {
+        self.ranged_finish_on_the_mean = true;
+    }
+
+    /// The twin of `enable_ranged_finish_on_the_mean`.
+    pub fn disable_ranged_finish_on_the_mean(&mut self) {
+        self.ranged_finish_on_the_mean = false;
+    }
+
     /// Opt-in gene `generals-lead-the-army`; see
     /// [`Self::generals_lead_the_army`].
     pub fn enable_generals_lead_the_army(&mut self) {

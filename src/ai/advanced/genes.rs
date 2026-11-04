@@ -4884,6 +4884,12 @@ pub const GENES: &[Gene] = &[
     // two with every member of a Defend or Relieve task force left free to
     // close on the attackers. See `advanced/guns_stay_out_of_reach.rs`.
     Gene { tag: "guns-stay-out-of-reach-3", field: "guns_stay_out_of_reach_3", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_stay_out_of_reach_3, disable: AdvancedAi::disable_guns_stay_out_of_reach_3 },
+    // 60 live Immortal runs: the finishing volley made 766 kills and refused
+    // 272 lines on the lowest roll, while 694 enemy units were left alive at
+    // 30 health or less. A ranged blow draws no return damage, so under the
+    // gene a line whose every attacker is ranged commits on its centre roll;
+    // melee lines keep the floor. See `advanced/ranged_finish.rs`.
+    Gene { tag: "ranged-finish-on-the-mean", field: "ranged_finish_on_the_mean", kind: Kind::OptIn, enable: AdvancedAi::enable_ranged_finish_on_the_mean, disable: AdvancedAi::disable_ranged_finish_on_the_mean },
     // Gran Colombia receives a Comandante General every era: +5 Combat
     // Strength and +1 Movement to land units within 2 tiles, in every era.
     // The live bridge retired each one the turn it arrived (live GC games
