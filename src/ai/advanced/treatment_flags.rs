@@ -5053,6 +5053,8 @@ impl AdvancedAi {
     /// The twin of `enable_builderless_empire_trains_one_2`.
     pub fn disable_builderless_empire_trains_one_2(&mut self) {
         self.builderless_empire_trains_one_2 = false;
+    }
+
     /// Opt-in gene `gold-buys-the-capped-granary`; see
     /// [`Self::gold_buys_the_capped_granary`].
     pub fn enable_gold_buys_the_capped_granary(&mut self) {
