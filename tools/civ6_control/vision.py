@@ -47,9 +47,46 @@ MENU_ROW_TOLERANCE = 0.006
 # Civ VII" promo banner and its pager dots read as rows at 0.933/0.949).
 MENU_COLUMN = (0.44, 0.40, 0.62, 0.90)
 
+# ★ A DARK WINDOW IS A LOADING CARD, NOT THE MAIN MENU. Civ VI's boot shows its
+# hex loading mark on a black window before the menu draws. The mark's stripes
+# fall inside MENU_COLUMN and read as four to six rows (pitch 0.036-0.054), and
+# the card carries no text, so neither the Single Player label search nor
+# `_intro_screen_visible` in civ6_play.py can tell it from a menu. The row
+# fallback then clicked "Single Player" on a loading screen, and the submenu
+# poll spent its whole twenty seconds waiting for a submenu that click could
+# never open. Measured over the 116 top-menu clicks with a surviving frame in
+# civvis-civ6-runs/control (2026-11-03 05:10Z .. 11-04 06:02Z, the live
+# 864x542-point window): all 13 row-fallback clicks were on such a card, mean
+# window luminance 5.8-19.4 of 255, and every one opened nothing (setup
+# configured at 80-112 s against 63-67 s for a first-attempt label read). All
+# 103 frames whose label was read off a real main menu measured 58.6-71.7.
+# The cut sits in that gap; the label path does not consult it.
+DARK_WINDOW_LUMA = 35.0
+
 
 def available() -> bool:
     return Image is not None
+
+
+def window_luma(shot: Path, bounds: tuple[int, int, int, int],
+                scale: float = 2.0) -> float | None:
+    """Mean grey level (0-255) of the game window in a screenshot, or None."""
+    if Image is None or not shot.is_file():
+        return None
+    with Image.open(shot) as image:
+        return _window_luma(image.convert("L"), bounds, scale)
+
+
+def _window_luma(grey, bounds: tuple[int, int, int, int],
+                 scale: float) -> float | None:
+    from PIL import ImageStat
+
+    x, y, w, h = bounds
+    crop = grey.crop((int(x * scale), int(y * scale),
+                      int((x + w) * scale), int((y + h) * scale)))
+    if crop.size[0] <= 0 or crop.size[1] <= 0:
+        return None
+    return float(ImageStat.Stat(crop).mean[0])
 
 
 def rows_in(shot: Path, bounds: tuple[int, int, int, int], column,
@@ -63,20 +100,24 @@ def rows_in(shot: Path, bounds: tuple[int, int, int, int], column,
     """
     if Image is None or not shot.is_file():
         return []
-    x, y, w, h = bounds
     with Image.open(shot) as image:
-        grey = image.convert("L")
-        left = int((x + w * column[0]) * scale)
-        top = int((y + h * column[1]) * scale)
-        right = int((x + w * column[2]) * scale)
-        bottom = int((y + h * column[3]) * scale)
-        crop = grey.crop((left, top, right, bottom))
-        width, height = crop.size
-        if width <= 0 or height <= 0:
-            return []
-        pixels = crop.load()
-        profile = [sum(pixels[cx, cy] for cx in range(width)) / width
-                   for cy in range(height)]
+        return _rows_in_grey(image.convert("L"), bounds, column, scale, min_gap)
+
+
+def _rows_in_grey(grey, bounds: tuple[int, int, int, int], column,
+                  scale: float, min_gap: int) -> list[float]:
+    x, y, w, h = bounds
+    left = int((x + w * column[0]) * scale)
+    top = int((y + h * column[1]) * scale)
+    right = int((x + w * column[2]) * scale)
+    bottom = int((y + h * column[3]) * scale)
+    crop = grey.crop((left, top, right, bottom))
+    width, height = crop.size
+    if width <= 0 or height <= 0:
+        return []
+    pixels = crop.load()
+    profile = [sum(pixels[cx, cy] for cx in range(width)) / width
+               for cy in range(height)]
 
     if not profile:
         return []
@@ -180,8 +221,19 @@ def menu_rows(shot: Path, bounds: tuple[int, int, int, int],
     window DOWN, so any fixed fraction aims above the list at empty artwork —
     an entire batch of attempts clicked nothing sixteen times each. The first
     row is "Single Player" on this build's main menu (Continue lives inside
-    the Single Player submenu as "Resume", not at the top level)."""
-    return rows_in(shot, bounds, MENU_COLUMN, scale)
+    the Single Player submenu as "Resume", not at the top level).
+
+    A window darker than DARK_WINDOW_LUMA is the boot loading card, whose
+    logo stripes would otherwise read as rows: it returns no rows, so the
+    caller keeps polling instead of clicking it."""
+    if Image is None or not shot.is_file():
+        return []
+    with Image.open(shot) as image:
+        grey = image.convert("L")
+        luma = _window_luma(grey, bounds, scale)
+        if luma is not None and luma < DARK_WINDOW_LUMA:
+            return []
+        return _rows_in_grey(grey, bounds, MENU_COLUMN, scale, 6)
 
 
 def create_game_row(shot: Path, bounds: tuple[int, int, int, int],
