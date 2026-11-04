@@ -55,6 +55,8 @@ mod formation_refusals;
 mod host_move_postconditions;
 #[path = "civvis_orders/host_ranged_history.rs"]
 mod host_ranged_history;
+#[path = "civvis_orders/spaceport_above_sea.rs"]
+mod spaceport_above_sea;
 #[path = "civvis_orders/unit_identity.rs"]
 mod unit_identity;
 
@@ -5895,6 +5897,10 @@ fn decide(
     // real change, while stale unit/deal replays and conflicting city production
     // requests are not sent twice to the host. Strike retries stay enabled; see
     // the method comment.
+    let safer_pads = spaceport_above_sea::retarget(ai, mirror_state, &mut orders);
+    if safer_pads > 0 {
+        note_bits.push(format!("spaceport_above_the_sea={safer_pads}"));
+    }
     let same_turn_replays = host_move_refusals.suppress_same_turn_replays(&mut orders, state, ours);
     if same_turn_replays > 0 {
         note_bits.push(format!("same_turn_replays={same_turn_replays}"));
@@ -8162,9 +8168,26 @@ fn peace_response(evidence: &[serde_json::Value], subject: Option<i64>) -> Optio
 
 /// Whether a city holds `item` as a finished building, district, or wonder.
 fn city_holds(city: &civvis::mirror::StateCity, item: &str) -> bool {
-    city.buildings.iter().any(|b| b == item)
-        || city.districts.iter().any(|d| d.kind == item)
+    // A pillaged predecessor is not a completed repair. A queued repair is
+    // verified separately by the production arm's current-item check.
+    (city.buildings.iter().any(|b| b == item)
+        && !city
+            .pillaged_buildings
+            .as_ref()
+            .is_some_and(|items| items.iter().any(|b| b == item)))
+        || city.districts.iter().any(|d| d.kind == item && !d.pillaged)
         || city.wonders.iter().any(|w| w.kind == item)
+}
+
+fn building_repair_status_unknown(
+    before: &civvis::mirror::StateSnapshot,
+    city: &civvis::mirror::StateCity,
+    item: &str,
+) -> bool {
+    city.pillaged_buildings.is_none()
+        && own_city(before, city.id)
+            .and_then(|prior| prior.pillaged_buildings.as_ref())
+            .is_some_and(|items| items.iter().any(|b| b == item))
 }
 
 /// A unit of `kind` within one tile of the city that was not there before.
@@ -8654,10 +8677,11 @@ fn verify_order_with_context(
             let unit_appeared = unit_appeared_at_city(before, after, city, verb);
             let purchase_conflict =
                 production_unit_appearance_conflicts_with_purchase(order, context.same_turn_orders);
-            if city.producing.as_deref() == Some(verb)
-                || city_holds(city, verb)
-                || (unit_appeared && !purchase_conflict)
-            {
+            if city.producing.as_deref() == Some(verb) {
+                Verdict::Verified
+            } else if building_repair_status_unknown(before, city, verb) {
+                Verdict::Unverifiable
+            } else if city_holds(city, verb) || (unit_appeared && !purchase_conflict) {
                 Verdict::Verified
             } else if unit_appeared && purchase_conflict {
                 failed("unit_appearance_ambiguous_purchase".to_string())
@@ -8672,8 +8696,9 @@ fn verify_order_with_context(
             let Some(city) = order.subject.and_then(|id| own_city(after, id)) else {
                 return failed("city_gone".to_string());
             };
-            let present =
-                city_holds(city, verb) || unit_appeared_at_city(before, after, city, verb);
+            let repair_unknown = building_repair_status_unknown(before, city, verb);
+            let present = (city_holds(city, verb) && !repair_unknown)
+                || unit_appeared_at_city(before, after, city, verb);
             let treasury_fell = if order.kind == "purchase_faith" {
                 after.faith < before.faith
             } else {
@@ -8681,6 +8706,8 @@ fn verify_order_with_context(
             };
             if present || treasury_fell {
                 Verdict::Verified
+            } else if repair_unknown {
+                Verdict::Unverifiable
             } else {
                 failed("not_bought".to_string())
             }
@@ -23171,3 +23198,7 @@ mod defending_district_tests;
 #[cfg(test)]
 #[path = "civvis_orders/army_upgrade_materials_tests.rs"]
 mod army_upgrade_materials_tests;
+
+#[cfg(test)]
+#[path = "civvis_orders/repair_postconditions_tests.rs"]
+mod repair_postconditions_tests;

@@ -63,6 +63,7 @@
 //!
 //! Off, every entry point returns before reading the board.
 
+use super::outclassed_siege::{field_outclasses, STREAK_TURNS};
 use super::*;
 use crate::think;
 
@@ -76,6 +77,25 @@ pub(crate) const HARVEST_FROM_TURN: u32 = 40;
 /// count fell behind from turn 60); at turn 80, science at 100 76 -> 45 and
 /// share .119 -> .112; at turn 125, science 45 -> 49 and share .092 -> .094.
 pub(crate) const HARVEST_CITY_STATE_FROM_TURN: u32 = 100;
+
+/// The two turn floors above were read on Online games (250 turns). The live
+/// lane moved to Standard on 2026-11-03 (500 turns; the operator doubled the
+/// retire turn for the same reason), so a floor is the same point of the game
+/// at every speed: the Online turn times the speed's turn budget over
+/// Online's (Quick 330, Standard 500, Epic 750, Marathon 1500). Patience and
+/// cooldown stay in turns: a march and a siege take the same turns at any
+/// speed.
+pub(crate) fn harvest_floor(g: &Game, online_turns: u32) -> u32 {
+    use crate::setup::GameSpeed;
+    let budget = match g.game_speed {
+        GameSpeed::Online => 250,
+        GameSpeed::Quick => 330,
+        GameSpeed::Standard => 500,
+        GameSpeed::Epic => 750,
+        GameSpeed::Marathon => 1500,
+    };
+    online_turns * budget / 250
+}
 /// Tiles from the nearest of our cities to the city-state city.
 pub(crate) const HARVEST_REACH_TILES: i32 = 6;
 /// The city-state city's least population worth a war.
@@ -112,6 +132,10 @@ pub(crate) struct HarvestTarget {
     /// re-read from these every frame.
     pub(crate) pos: Pos,
     pub(crate) owner_civ: String,
+    /// Turns running on which the city's visible field outclassed our army
+    /// (`outclassed_siege::field_outclasses`), counted once a turn.
+    pub(crate) outclassed_turns: u32,
+    pub(crate) outclass_seen_turn: u32,
 }
 
 /// The living player of civilization `civ`, the stable key for an owner.
@@ -200,7 +224,7 @@ impl AdvancedAi {
         // A city-state waits for the expansion window to close, and a Science
         // seat (the lane of the first Lv 7 non-Diplomatic win, 025902Z) never
         // opens a city-state war: a Campus plan is where the war costs most.
-        let city_states_open = g.turn >= HARVEST_CITY_STATE_FROM_TURN
+        let city_states_open = g.turn >= harvest_floor(g, HARVEST_CITY_STATE_FROM_TURN)
             && self.active_victory_target(g) != Some(VictoryTarget::Science);
         // A Free Cities seat carries `is_barbarian` and is always at war; a
         // city of ours that rebelled into it is the cheapest city on the
@@ -228,6 +252,14 @@ impl AdvancedAi {
             for cid in g.player_city_ids(m) {
                 let city = &g.cities[&cid];
                 if city.pop < HARVEST_MIN_POP || !g.players[pid].explored.contains(&city.pos) {
+                    continue;
+                }
+                // An army the city's own field out-classes cannot take it:
+                // live 224444Z's harvest declared on Johannesburg, whose field
+                // cannons one-shot our catapults, and the siege never formed.
+                // Total power (73 against our 400) could not see it. See
+                // `advanced/outclassed_siege.rs`.
+                if field_outclasses(g, pid, m, city.pos) {
                     continue;
                 }
                 let distance = ours
@@ -279,12 +311,23 @@ impl AdvancedAi {
             // on Bandar Brunei every frame t175-185 against `war_refused`).
             // The next frame reads no war, so the name goes.
             let refused = target.declared_turn.is_some() && !at_war && owner == Some(target.player);
+            let outclassed =
+                owner == Some(target.player) && field_outclasses(g, pid, target.player, target.pos);
+            if target.outclass_seen_turn != g.turn {
+                target.outclass_seen_turn = g.turn;
+                target.outclassed_turns = if outclassed {
+                    target.outclassed_turns + 1
+                } else {
+                    0
+                };
+            }
             if at_war && target.declared_turn.is_none() {
                 target.declared_turn = Some(g.turn);
                 Self::harvest_count(g, pid, "declared");
             }
             if !at_war
                 && !refused
+                && !outclassed
                 && owner == Some(target.player)
                 && !Self::harvest_major_war(g, pid)
             {
@@ -317,6 +360,11 @@ impl AdvancedAi {
             } else if refused {
                 Self::harvest_count(g, pid, "refused");
                 Some("the host refused the war")
+            } else if target.outclassed_turns >= STREAK_TURNS {
+                // A streak, as the siege board's own stand-down reads it: one
+                // reading would have forfeited 7 of 13 live captures there.
+                Self::harvest_count(g, pid, "outclassed");
+                Some("the city's field outclasses our army")
             } else if Self::harvest_major_war(g, pid) {
                 Some("a major is at war with us")
             } else if target.declared_turn.is_none()
@@ -352,7 +400,7 @@ impl AdvancedAi {
             }
             return;
         }
-        if g.turn < HARVEST_FROM_TURN
+        if g.turn < harvest_floor(g, HARVEST_FROM_TURN)
             || g.turn < self.city_state_harvest_cooldown
             || self.war_plan.is_some()
             || Self::harvest_major_war(g, pid)
@@ -379,6 +427,8 @@ impl AdvancedAi {
             declared_turn: g.is_at_war(pid, player).then_some(g.turn),
             pos: g.cities[&city].pos,
             owner_civ: g.players[player].civ.clone(),
+            outclassed_turns: 0,
+            outclass_seen_turn: g.turn,
         });
         self.plan = None;
     }

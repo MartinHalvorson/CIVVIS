@@ -2860,6 +2860,8 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the HostOnly gene `activation-keeps-its-building`.
     pub(crate) activation_keeps_its_building: bool,
+    /// Native activation opt-in: an empty Museum needs a digger, not another Museum.
+    pub(crate) artifact_before_more_museums: bool,
     /// `granary_before_the_army`, behind the Campus step and the Builder
     /// backlog instead of ahead of them, so the housing reserve displaces
     /// only the military floor. Version 1 stood ahead of
@@ -4014,6 +4016,12 @@ pub struct BasicAi {
     /// blow. Written by the advanced controller each frame; empty with the
     /// gene off. See `advanced/guns_stay_out_of_reach.rs`.
     gun_lethal_tiles: HashMap<u32, HashMap<Pos, f64>>,
+    /// `guns-stay-out-of-reach-2`: per land military unit that is not a
+    /// siege gun, the tiles it can reach this turn where a visible hostile's
+    /// one blow would destroy it, with each such blow by its source. A
+    /// source no longer on the board stops counting. Empty with the gene
+    /// off. See `advanced/guns_stay_out_of_reach.rs`.
+    unit_lethal_blows: HashMap<u32, HashMap<Pos, Vec<(u32, f64)>>>,
     /// Melee units the ancient-rush lane wants in hand, or 0 when no rush is
     /// running. Set once a turn by `AdvancedAi` from its strategic plan.
     ///
@@ -5951,6 +5959,7 @@ impl BasicAi {
             front_weighted_floor_2: false,
             activation_resume_waits: false,
             activation_keeps_its_building: false,
+            artifact_before_more_museums: false,
             granary_before_the_army_2: false,
             housing_bound_city_builds_its_granary: false,
             housing_cap_builds_the_aqueduct: false,
@@ -6064,6 +6073,7 @@ impl BasicAi {
             move_refusal_congested: RefCell::new(HashMap::new()),
             frame_own_tiles: HashMap::new(),
             gun_lethal_tiles: HashMap::new(),
+            unit_lethal_blows: HashMap::new(),
             rush_military_floor: 0,
             settler_strand_discount: false,
             settler_backlog_brake: false,
@@ -6547,6 +6557,7 @@ impl BasicAi {
             front_weighted_floor_2: false,
             activation_resume_waits: false,
             activation_keeps_its_building: false,
+            artifact_before_more_museums: false,
             granary_before_the_army_2: false,
             housing_bound_city_builds_its_granary: false,
             housing_cap_builds_the_aqueduct: false,
@@ -6660,6 +6671,7 @@ impl BasicAi {
             move_refusal_congested: RefCell::new(HashMap::new()),
             frame_own_tiles: HashMap::new(),
             gun_lethal_tiles: HashMap::new(),
+            unit_lethal_blows: HashMap::new(),
             rush_military_floor: 0,
             settler_strand_discount: false,
             settler_backlog_brake: false,
@@ -12905,7 +12917,32 @@ impl BasicAi {
         }
     }
 
-    fn live_great_person_cultural_item(g: &Game, pid: usize, cid: u32, work: &str) -> Option<Item> {
+    fn live_great_person_cultural_item(
+        &self,
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        work: &str,
+    ) -> Option<Item> {
+        if self.artifact_before_more_museums
+            && work == "artifact"
+            && Self::live_artifact_activation_pending(g, pid)
+            && g.cities.values().any(|city| {
+                city.owner == pid
+                    && city
+                        .buildings
+                        .contains(&crate::name!("archaeological_museum"))
+                    && !city
+                        .pillaged_buildings
+                        .contains(&crate::name!("archaeological_museum"))
+                    && g.city_has_district_family(city, crate::name!("theater_square"))
+            })
+        {
+            // The host requires an EXISTING work. More empty slots cannot
+            // supply it. Once one Museum stands, hold this activation path
+            // for one bounded digger instead of constructing more Museums.
+            return self.live_artifact_activation_digger(g, pid, cid);
+        }
         // The host's empty activation-plot list is authoritative. CIVVIS may
         // believe a generic Palace `any` slot is open while Firaxis refuses
         // this exact individual, and trusting the approximation here is what
@@ -12935,6 +12972,81 @@ impl BasicAi {
             }
         }
         None
+    }
+
+    /// One owned person's missing Artifact, using an existing Museum.
+    /// Proximity is a screen, not proof of a legal native walking route.
+    pub(crate) fn live_artifact_activation_pending(g: &Game, pid: usize) -> bool {
+        g.players[pid].counters.get("great_work:artifact") == Some(&0)
+            && g.players[pid]
+                .live_great_person_activation_needs
+                .iter()
+                .any(|need| need.required_great_work.as_deref() == Some("artifact"))
+    }
+
+    fn live_artifact_activation_digger(&self, g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        let city = &g.cities[&cid];
+        if city.hp < 200
+            || !city
+                .buildings
+                .contains(&crate::name!("archaeological_museum"))
+            || city
+                .pillaged_buildings
+                .contains(&crate::name!("archaeological_museum"))
+            || !g.can_house_additional_great_work(pid, "artifact")
+            || g.players[pid]
+                .live_open_great_work_slots
+                .as_ref()
+                .is_some_and(|slots| !slots.contains("artifact"))
+            || g.units
+                .values()
+                .any(|unit| unit.owner == pid && unit.kind == "archaeologist")
+            || g.cities.values().any(|other| {
+                other.owner == pid
+                    && other
+                        .queue
+                        .iter()
+                        .any(|item| matches!(item, Item::Unit { unit } if unit == "archaeologist"))
+            })
+            || g.units.values().any(|unit| {
+                unit.owner != pid
+                    && g.is_at_war(pid, unit.owner)
+                    && g.rules.units[&unit.kind].class == "military"
+                    && g.wdist(city.pos, unit.pos) <= 6
+            })
+        {
+            return None;
+        }
+        let nearby_owned_dig = g
+            .excavation_sites(pid)
+            .iter()
+            .any(|(position, improvement)| {
+                improvement == "archaeological_dig"
+                    && g.wdist(city.pos, *position) <= 6
+                    && g.map
+                        .get(*position)
+                        .and_then(|tile| tile.owner_city)
+                        .is_some_and(|owner| {
+                            g.cities.get(&owner).is_some_and(|other| other.owner == pid)
+                        })
+            });
+        if !nearby_owned_dig {
+            return None;
+        }
+        let item = Item::Unit {
+            unit: crate::name!("archaeologist"),
+        };
+        if !g.can_produce(pid, cid, &item) {
+            return None;
+        }
+        let turns = g.host_production_turns(cid, &item).unwrap_or_else(|| {
+            g.item_remaining_cost_for_city(pid, cid, &item) / g.city_yields(cid).production.max(0.5)
+        });
+        let cap = g.standard_duration(20) as f64;
+        (turns.is_finite()
+            && turns <= cap
+            && g.max_turns.saturating_sub(g.turn) as f64 > turns + cap)
+            .then_some(item)
     }
 
     fn live_great_person_military_item(
@@ -13079,7 +13191,7 @@ impl BasicAi {
             }
 
             if let Some(work) = Self::live_great_person_work(need) {
-                if let Some(building) = Self::live_great_person_cultural_item(g, pid, cid, work) {
+                if let Some(building) = self.live_great_person_cultural_item(g, pid, cid, work) {
                     return Some(building);
                 }
             }
@@ -13245,7 +13357,7 @@ impl BasicAi {
                 continue;
             }
             if let Some(work) = Self::live_great_person_work(need) {
-                if let Some(item) = Self::live_great_person_cultural_item(g, pid, cid, work) {
+                if let Some(item) = self.live_great_person_cultural_item(g, pid, cid, work) {
                     if g.can_produce(pid, cid, &item) {
                         return Some(item);
                     }
@@ -15266,6 +15378,25 @@ impl BasicAi {
                 if lethal.get(&from).is_none_or(|here| blow >= here) {
                     return false;
                 }
+            }
+        }
+        // `guns-stay-out-of-reach-2`: the same refusal for every other land
+        // military unit, counting only blows whose hostile is still on the
+        // board — a hostile killed earlier this frame vetoes nothing. Empty
+        // with the gene off.
+        if let Some(lethal) = self.unit_lethal_blows.get(&uid) {
+            let strongest = |tile: &Pos| {
+                lethal.get(tile).map_or(0.0, |blows| {
+                    blows
+                        .iter()
+                        .filter(|(source, _)| g.units.contains_key(source))
+                        .map(|(_, blow)| *blow)
+                        .fold(0.0_f64, f64::max)
+                })
+            };
+            let blow = strongest(&to);
+            if blow > 0.0 && blow >= strongest(&from) {
+                return false;
             }
         }
         // `live-move-refusal-break`: a step this unit has provably been

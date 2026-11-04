@@ -33,6 +33,8 @@ fn fixture() -> (Game, u32) {
         g.spawn_test_unit("warrior", 0, (4, 8));
     }
     g.current = 0;
+    // The floors were read on Online games; the fixture plays at that speed.
+    g.game_speed = crate::setup::GameSpeed::Online;
     g.turn = HARVEST_CITY_STATE_FROM_TURN + 5;
     (g, city)
 }
@@ -381,4 +383,79 @@ fn a_war_the_host_refused_releases_the_name() {
     assert_eq!(ai.city_state_harvest_war, None, "no war to remember");
     ai.maintain_city_state_harvest(&mut g, 0);
     assert_eq!(ai.city_state_harvest_target, None, "the cooldown holds");
+}
+
+#[test]
+fn the_floors_follow_the_game_speed() {
+    let (mut g, city) = fixture();
+    let ai = harvest_ai();
+    g.game_speed = crate::setup::GameSpeed::Standard;
+    g.turn = HARVEST_CITY_STATE_FROM_TURN + 5;
+    assert_eq!(
+        ai.city_state_harvest_candidate(&g, 0),
+        None,
+        "t105 on Standard is t52 on Online, inside the expansion window"
+    );
+    g.turn = 2 * HARVEST_CITY_STATE_FROM_TURN;
+    assert_eq!(ai.city_state_harvest_candidate(&g, 0), Some((2, city)));
+    assert_eq!(
+        super::harvest_floor(&g, HARVEST_FROM_TURN),
+        2 * HARVEST_FROM_TURN
+    );
+}
+
+/// Twelve Warriors of ours (the power-share filter passes) beside a
+/// city-state whose one Line Infantry, seen by the Warrior at (7, 8),
+/// one-shots every one of them.
+fn outclassing_garrison(g: &mut Game) {
+    for _ in 0..8 {
+        g.spawn_test_unit("warrior", 0, (4, 8));
+    }
+    g.spawn_test_unit("warrior", 0, (7, 8));
+    g.spawn_test_unit("line_infantry", 2, (9, 8));
+    assert!(g.military_power(2) <= super::HARVEST_MAX_POWER_SHARE * g.military_power(0));
+}
+
+#[test]
+fn an_outclassed_army_names_no_target() {
+    let (mut g, city) = fixture();
+    let ai = harvest_ai();
+    assert_eq!(ai.city_state_harvest_candidate(&g, 0), Some((2, city)));
+    outclassing_garrison(&mut g);
+    assert!(crate::ai::advanced::outclassed_siege::field_outclasses(
+        &g,
+        0,
+        2,
+        (8, 8)
+    ));
+    assert_eq!(
+        ai.city_state_harvest_candidate(&g, 0),
+        None,
+        "the field outclasses us"
+    );
+}
+
+#[test]
+fn a_named_target_outclassed_four_turns_running_is_released() {
+    let (mut g, _) = fixture();
+    let mut ai = harvest_ai();
+    ai.maintain_city_state_harvest(&mut g, 0);
+    assert!(ai.city_state_harvest_target.is_some(), "named");
+    outclassing_garrison(&mut g);
+    for turn in 0..super::STREAK_TURNS - 1 {
+        g.turn += 1;
+        ai.maintain_city_state_harvest(&mut g, 0);
+        assert!(
+            ai.city_state_harvest_target.is_some(),
+            "turn {turn}: a streak, not one reading"
+        );
+        assert!(!g.is_at_war(0, 2), "no declaration while outclassed");
+    }
+    g.turn += 1;
+    ai.maintain_city_state_harvest(&mut g, 0);
+    assert_eq!(ai.city_state_harvest_target, None);
+    assert_eq!(
+        g.players[0].counters.get("city_state_harvest:outclassed"),
+        Some(&1)
+    );
 }

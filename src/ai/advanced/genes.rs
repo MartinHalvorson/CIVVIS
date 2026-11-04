@@ -2510,6 +2510,8 @@ pub const GENES: &[Gene] = &[
     // Live King 051413Z: Bogota switched the Art Museum and the Archaeological
     // Museum every turn t187-t214; see `BasicAi::activation_keeps_its_building`.
     Gene { tag: "activation-keeps-its-building", field: "activation_keeps_its_building", kind: Kind::HostOnly, enable: AdvancedAi::enable_activation_keeps_its_building, disable: AdvancedAi::disable_activation_keeps_its_building },
+    // Native 002240Z: Mary Leakey needs an Artifact; two empty Museums are not that work.
+    Gene { tag: "artifact-before-more-museums", field: "artifact_before_more_museums", kind: Kind::OptIn, enable: AdvancedAi::enable_artifact_before_more_museums, disable: AdvancedAi::disable_artifact_before_more_museums },
     // Live King 113755Z: Galleys and Quadriremes ahead of the walkers at
     // three cities; see `BasicAi::settler_before_the_navy`.
     Gene { tag: "settler-before-the-navy", field: "settler_before_the_navy", kind: Kind::OptIn, enable: AdvancedAi::enable_settler_before_the_navy, disable: AdvancedAi::disable_settler_before_the_navy },
@@ -3295,6 +3297,8 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "siege-buys-the-gun-resource", field: "siege_buys_the_gun_resource", kind: Kind::OptIn, enable: AdvancedAi::enable_siege_buys_the_gun_resource, disable: AdvancedAi::disable_siege_buys_the_gun_resource },
     // Native-only purchase proposal; strength requires native trials.
     Gene { tag: "science-power-buys-fuel", field: "science_power_buys_fuel", kind: Kind::OptIn, enable: AdvancedAi::enable_science_power_buys_fuel, disable: AdvancedAi::disable_science_power_buys_fuel },
+    // Native site proposal only; outcome evidence requires native games.
+    Gene { tag: "spaceport-above-the-sea", field: "spaceport_above_the_sea", kind: Kind::OptIn, enable: AdvancedAi::enable_spaceport_above_the_sea, disable: AdvancedAi::disable_spaceport_above_the_sea },
     // The decisive window spent ~1,200 science a game off the Advanced
     // Flight path after the air surge's horizon opened (10-06/07 Emperor),
     // and captures ran 0.20 per 100 turns before the Bomber against 1.24
@@ -4850,6 +4854,36 @@ pub const GENES: &[Gene] = &[
     // route. Under the gene it sails toward the edge of the known sea. See
     // `advanced/maori_founds_from_the_sea.rs`.
     Gene { tag: "founding-voyage", field: "founding_voyage", kind: Kind::OptIn, enable: AdvancedAi::enable_founding_voyage, disable: AdvancedAi::disable_founding_voyage },
+    Gene { tag: "anvil-follows-the-defense", field: "anvil_follows_the_defense", kind: Kind::OptIn, enable: AdvancedAi::enable_anvil_follows_the_defense, disable: AdvancedAi::disable_anvil_follows_the_defense },
+    // 57 live Immortal games (11-03/04) lost 765 military units; 383 were
+    // healthy units, no strike that turn, that moved and died, 580 of all 765
+    // to ONE blow, and 351 of the healthy ones had their killer in sight
+    // within two tiles when our turn ended: an Archer or Spearman stepping
+    // beside a Line Infantry or a Machine Gun. Version one refused such a
+    // step for siege guns only. Version two refuses it for every land
+    // military unit the battle planner did not place, and a hostile killed
+    // later in the frame no longer vetoes. See
+    // `advanced/guns_stay_out_of_reach.rs`.
+    Gene { tag: "guns-stay-out-of-reach-2", field: "guns_stay_out_of_reach_2", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_stay_out_of_reach_2, disable: AdvancedAi::disable_guns_stay_out_of_reach_2 },
+    // Live Immortal Standard 012627Z: the Siege of Chucuito sat in Stage
+    // from turn 222 to 309 while the army went 16 to 5, 44 of 55 losses
+    // healthy land units removed by one blow of an AT Crew, a Cuirassier or a
+    // Giant Death Robot; the board read "743 against their 579" (power is a
+    // linear sum) and every peace offer was refused. Under the gene a Siege
+    // row whose city's visible field units have sat 25+ strength over the
+    // defence of half our land army for four turns running leaves the board
+    // for ten turns, keyed by the city's tile, unless the city is falling
+    // (126 live episodes: 26 would stand down, 2 of 13 captures among them,
+    // 167 of our units lost near those cities afterwards). See
+    // `advanced/outclassed_siege.rs`.
+    Gene { tag: "outclassed-siege-stands-down", field: "outclassed_siege_stands_down", kind: Kind::OptIn, enable: AdvancedAi::enable_outclassed_siege_stands_down, disable: AdvancedAi::disable_outclassed_siege_stands_down },
+    // Version two (the one-blow veto on every land unit) read unfavourable
+    // on a paired Immortal domination screen (12 seeds: score -47, z -1.9;
+    // cities lost +0.6), most plausibly because it also held back the units
+    // marching to defend or relieve our own cities. Version three is version
+    // two with every member of a Defend or Relieve task force left free to
+    // close on the attackers. See `advanced/guns_stay_out_of_reach.rs`.
+    Gene { tag: "guns-stay-out-of-reach-3", field: "guns_stay_out_of_reach_3", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_stay_out_of_reach_3, disable: AdvancedAi::disable_guns_stay_out_of_reach_3 },
     // Live moved to Standard speed on 11-03; nearly every window was tuned at
     // Online, so at Standard an opening, expansion or build-cap window ends at
     // 0.76x (written with standard_duration) or 0.5x (raw) of its economy

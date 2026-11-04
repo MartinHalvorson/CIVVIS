@@ -461,6 +461,10 @@ status)
   else
     say "switch:    ON — no operator halt"
   fi
+  # A host fault holds the ladder whatever the switch says (civ6_control/host_health.py).
+  if host_fault=$(python3 "$REPO/tools/civ6_control/host_health.py" --show 2>/dev/null); then
+    say "host:      NEEDS AN OPERATOR — ${host_fault}"
+  fi
   say "services:  ${LADDER_JOB}: $(job_state $LADDER_JOB)"
   say "           ${SPECTATOR_JOB}: $(job_state $SPECTATOR_JOB)"
   if [[ -x "$WRAPPER" ]]; then

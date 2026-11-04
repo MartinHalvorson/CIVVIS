@@ -8,8 +8,10 @@ nothing keeps the flat 10 s. The block is run under zsh with `pgrep` and
 
 from __future__ import annotations
 
+import os
 import shutil
 import subprocess
+import tempfile
 import unittest
 from pathlib import Path
 
@@ -25,6 +27,47 @@ def _block() -> str:
 
 @unittest.skipUnless(shutil.which("zsh"), "requires the production zsh shell")
 class BoundaryPauseTest(unittest.TestCase):
+    def _count_played(self, current: list[str], old: list[str] | None = None) -> int:
+        """Run the production counter against real files and cycle mtimes."""
+        source = SUPERVISOR.read_text(encoding="utf-8")
+        start = source.index("  played_games=0\n")
+        end = source.index("  if (( played_games > 0 )); then", start)
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            marker = root / "cycle"
+            marker.touch()
+            os.utime(marker, (100, 100))
+            for age, logs in [(99, old or []), (101, current)]:
+                for number, text in enumerate(logs):
+                    path = root / f"civvis-{age}-{number}-play.log"
+                    path.write_text(text, encoding="utf-8")
+                    os.utime(path, (age, age))
+            script = ('LOGS="$1"\nCYCLE_MARK="$1/cycle"\n'
+                      + source[start:end] + 'print "$played_games"\n')
+            done = subprocess.run(["zsh", "-c", script, "counter", directory],
+                                  capture_output=True, text=True, check=True)
+            return int(done.stdout.strip())
+
+    def test_actual_padded_progress_and_unpadded_turn_messages_count(self) -> None:
+        logs = ["[turn   10] score=12 cities=1 units=1\n",
+                "[turn  100] score=200 cities=4 units=12\n",
+                "[turn 1000] score=900 cities=9 units=30\n",
+                "[turn 3] blocked on ENDTURN_BLOCKING_UNITS\n"]
+        for line in logs:
+            with self.subTest(line=line):
+                self.assertEqual(self._count_played([line]), 1)
+
+    def test_only_current_cycle_logs_count_and_setup_is_not_a_turn(self) -> None:
+        self.assertEqual(self._count_played(
+            ["[agent] turn limit asked=500 config=500 game=500\n"],
+            old=["[turn   10] score=12 cities=1 units=1\n"]), 0)
+
+    def test_every_played_game_in_the_batch_counts_once(self) -> None:
+        self.assertEqual(self._count_played([
+            "[turn   10] score=12\n[turn   20] score=18\n",
+            "[turn    1] score=0\n",
+            "[setup] no game started\n"]), 2)
+
     def _run(self, played: int, civ_polls: int) -> list[str]:
         """Sleeps the block asks for, with Civ still listed for `civ_polls` reads."""
         script = (

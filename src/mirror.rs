@@ -1359,6 +1359,92 @@ fn latest_state_line(raw: &str, turn: Option<u32>) -> Option<usize> {
 /// The byte range of the state record [`state_from_events`] selects, and its
 /// `(turn, frame)`; found among the lines naming `"state"` only.
 fn latest_state_range(raw: &str, turn: Option<u32>) -> Option<((usize, usize), (u32, u32))> {
+    if turn.is_none() {
+        return latest_state_range_bounded(raw);
+    }
+    latest_state_range_scan(raw, turn)
+}
+
+/// The largest integer `"turn"` member `line` spells that fits a `u32`, read
+/// with [`integer_turn_ranges`]' lexical rules, and whether any spelled member
+/// was larger than that.
+///
+/// A record's top-level `turn`, whenever a parse reads it as an integer, is one
+/// of these members -- the same premise [`state_line_can_match_turn`] already
+/// rejects other turns' boards on (keys are written by `json.dumps`, never
+/// escaped). So the first value is an upper bound on the turn a parse of the
+/// line can return.
+fn turn_upper_bound(line: &str) -> (Option<u32>, bool) {
+    let mut bound: Option<u32> = None;
+    let mut overflow = false;
+    for (start, end) in integer_turn_ranges(line, 0) {
+        match line[start..end].parse::<u32>() {
+            Ok(value) => bound = Some(bound.map_or(value, |had| had.max(value))),
+            // All digits, so the only failure is a value past `u32`.
+            Err(_) => overflow = true,
+        }
+    }
+    (bound, overflow)
+}
+
+/// Candidate state lines, most promising first: the highest turn bound, and on
+/// a tie the later line (the newest board wins a tie).
+fn by_turn_bound_newest_first(order: &mut [(u32, (usize, usize))]) {
+    order.sort_unstable_by(|a, b| b.0.cmp(&a.0).then(b.1 .0.cmp(&a.1 .0)));
+}
+
+/// ★★★ THE NEWEST BOARD WITHOUT PARSING EVERY OLDER ONE.
+///
+/// With no turn requested, [`latest_state_range_scan`] ran the full typed
+/// parse ([`state_from_json`]: a `Value`, a clone, a struct) of EVERY state
+/// record in the log to keep the last one with the highest turn. The live
+/// mirror's throwaway rebuild (`civvis play --mirror`, started by
+/// `tools/follow.py` for every published turn) has no warm cache, so that walk
+/// grew with the game: 62 MB and 718 records by turn 263 of a Standard game
+/// (civvis-20261104T010447Z), and the board reached the page 0.27 s after Civ
+/// VI exported it at turn 50 but 0.86 s at turn 250. The end-turn gate
+/// (#4246) waits for the page, so late turns waited on it.
+///
+/// The selection is unchanged: the last record of the highest turn. Records
+/// are tried in [`by_turn_bound_newest_first`] order and the walk stops once
+/// no remaining record can beat the best -- a bound below its turn, or the
+/// same bound on an earlier line. A typed state's `turn` is a `u32` the line
+/// spells, so a line that spells none cannot be one.
+fn latest_state_range_bounded(raw: &str) -> Option<((usize, usize), (u32, u32))> {
+    let mut order = Vec::new();
+    for (start, end) in line_ranges_containing(raw, "\"state\"") {
+        if let (Some(bound), _) = turn_upper_bound(&raw[start..end]) {
+            order.push((bound, (start, end)));
+        }
+    }
+    by_turn_bound_newest_first(&mut order);
+    let mut best: Option<(u32, (usize, usize), u32)> = None;
+    for (bound, range) in order {
+        if let Some((turn, at, _)) = best {
+            if bound < turn || (bound == turn && range.0 < at.0) {
+                break;
+            }
+        }
+        let Ok(state) = state_from_json(&raw[range.0..range.1]) else {
+            continue;
+        };
+        if state.turn > bound {
+            // The premise above failed (an escaped key?); trust the walk.
+            return latest_state_range_scan(raw, None);
+        }
+        let newer = best.is_none_or(|(turn, at, _)| {
+            state.turn > turn || (state.turn == turn && range.0 > at.0)
+        });
+        if newer {
+            best = Some((state.turn, range, state.frame));
+        }
+    }
+    best.map(|(turn, range, frame)| (range, (turn, frame)))
+}
+
+/// Every state record in turn, in log order: the reference selection, and the
+/// path for a requested turn (whose lexical hints already skip other boards).
+fn latest_state_range_scan(raw: &str, turn: Option<u32>) -> Option<((usize, usize), (u32, u32))> {
     let mut best: Option<(u32, (usize, usize), u32)> = None;
     for (start, end) in line_ranges_containing(raw, "\"state\"") {
         let line = &raw[start..end];
@@ -10133,6 +10219,85 @@ pub fn state_value_from_events(
     turn: Option<u32>,
 ) -> Option<serde_json::Value> {
     let raw = read_events(path).ok()?;
+    if turn.is_none() {
+        if let Some(found) = latest_state_value_bounded(&raw) {
+            return found;
+        }
+    }
+    state_value_scan(&raw, turn)
+}
+
+/// [`state_value_scan`]'s answer for no requested turn, from the newest
+/// records only (see [`latest_state_range_bounded`] -- the mirror rebuild runs
+/// this walk too, as a full `Value` parse of every line). `None` when the log
+/// holds a record the walk's own rule reads unusually (a turn past `u32`, or a
+/// state with no integer turn, which it reads as 0 and lets anything replace),
+/// or the newest turn is 0; those logs keep the walk.
+fn latest_state_value_bounded(raw: &str) -> Option<Option<serde_json::Value>> {
+    let kind_is = |value: &serde_json::Value, kind: &str| {
+        value.get("kind").and_then(|k| k.as_str()) == Some(kind)
+    };
+    let mut order = Vec::new();
+    for (start, end) in line_ranges_containing(raw, "\"state\"") {
+        let line = &raw[start..end];
+        match turn_upper_bound(line) {
+            (_, true) => return None,
+            (Some(bound), false) => order.push((bound, (start, end))),
+            (None, false) => {
+                if serde_json::from_str::<serde_json::Value>(line)
+                    .is_ok_and(|value| kind_is(&value, "state"))
+                {
+                    return None;
+                }
+            }
+        }
+    }
+    by_turn_bound_newest_first(&mut order);
+    let mut best: Option<(u32, (usize, usize), serde_json::Value)> = None;
+    for (bound, range) in order {
+        if let Some((turn, at, _)) = &best {
+            if bound < *turn || (bound == *turn && range.0 < at.0) {
+                break;
+            }
+        }
+        let Ok(value) = serde_json::from_str::<serde_json::Value>(&raw[range.0..range.1]) else {
+            continue;
+        };
+        if !kind_is(&value, "state") {
+            continue;
+        }
+        let turn = value.get("turn").and_then(|t| t.as_u64())?;
+        if turn > u64::from(bound) {
+            return None;
+        }
+        let turn = turn as u32;
+        let newer = best
+            .as_ref()
+            .is_none_or(|(had, at, _)| turn > *had || (turn == *had && range.0 > at.0));
+        if newer {
+            best = Some((turn, range, value));
+        }
+    }
+    let Some((turn, _, mut state)) = best else {
+        return Some(None);
+    };
+    if turn == 0 {
+        return None;
+    }
+    // The newest seat, wherever it sits; the walk keeps the last one too.
+    let seat = line_ranges_containing(raw, "\"seat\"")
+        .into_iter()
+        .rev()
+        .filter_map(|(start, end)| serde_json::from_str::<serde_json::Value>(&raw[start..end]).ok())
+        .find(|value| kind_is(value, "seat"));
+    if let (Some(object), Some(seat)) = (state.as_object_mut(), seat) {
+        object.insert("seat".into(), seat);
+    }
+    Some(Some(state))
+}
+
+/// Every line in turn, in log order: the reference for [`state_value_from_events`].
+fn state_value_scan(raw: &str, turn: Option<u32>) -> Option<serde_json::Value> {
     let mut best: Option<serde_json::Value> = None;
     let mut seat: Option<serde_json::Value> = None;
     for line in raw.lines() {
@@ -16399,3 +16564,6 @@ fn combat_line_may_match_in_log(raw: &str, range: (usize, usize)) -> bool {
 
 #[cfg(test)]
 mod native_combat_kind_hint_tests;
+
+#[cfg(test)]
+mod latest_state_selection_tests;
