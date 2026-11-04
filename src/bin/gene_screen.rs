@@ -1073,6 +1073,14 @@ struct TraceSample {
     /// what a chair's defence is calibrated against. Absent in older batches.
     #[serde(default)]
     walled: usize,
+    /// ⭐ Cities within 2 of their housing ceiling, and of those the ones
+    /// with more than 4 surplus food: the growth the ceiling holds back. Live
+    /// Deity Online reads 59% of city-turns t30-100 within 2, and 54% of
+    /// those over +4 food (11-04). Absent in older batches.
+    #[serde(default)]
+    near_housing: usize,
+    #[serde(default)]
+    near_housing_fed: usize,
 }
 
 impl TraceSample {
@@ -1082,9 +1090,17 @@ impl TraceSample {
         let (mut population, mut wonders, mut districts) = (0i64, 0usize, 0usize);
         let mut holy_site = false;
         let mut walled = 0usize;
+        let (mut near_housing, mut near_housing_fed) = (0usize, 0usize);
         for cid in &cities {
-            yields.add(g.city_yields(*cid));
+            let city_yields = g.city_yields(*cid);
+            yields.add(city_yields);
             if let Some(city) = g.cities.get(cid) {
+                if g.city_housing_headroom(city) <= 2.0 {
+                    near_housing += 1;
+                    if city_yields.food - 2.0 * f64::from(city.pop) > 4.0 {
+                        near_housing_fed += 1;
+                    }
+                }
                 if g.city_max_wall_hp(city) > 0 {
                     walled += 1;
                 }
@@ -1116,6 +1132,8 @@ impl TraceSample {
             religion: g.players[pid].religion.is_some(),
             holy_site,
             walled,
+            near_housing,
+            near_housing_fed,
         }
     }
 }
@@ -9172,6 +9190,8 @@ mod tests {
             religion: true,
             holy_site: true,
             walled: 0,
+            near_housing: 0,
+            near_housing_fed: 0,
         }];
         let text = serde_json::to_string(&traced).expect("serializes");
         let back: Row = serde_json::from_str(&text).expect("parses");
