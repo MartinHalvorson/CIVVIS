@@ -15659,6 +15659,9 @@ local function applyOrder(player, pid, row, turn)
 		-- `GROUP BY` apart.
 		local unit = liveUnit(pid, subject);
 		if unit == nil then return false, "unit_gone:" .. tostring(subject); end
+		-- `generals-lead-the-army`: CIVVIS keeps this General where it stands.
+		-- No command; the Great Person pass reads the row and does not retire it.
+		if verb == "KEEP_GREAT_PERSON" then return true, verb; end
 		if verb == "ACTIVATE_GREAT_PERSON" then
 			local comandanteTargets = CivvisComandante.forUnit(player, unit);
 			if not CivvisComandante.usefulAt(comandanteTargets,
@@ -17827,6 +17830,26 @@ end
 -- with AOE_LAND_REQUIREMENTS; GranColombia_Maya_Units_Text.xml:135 includes
 -- attack capability. A fully ready army is not a recipient for this charge.
 CivvisComandante = {};
+-- `generals-lead-the-army` (src/bin/civvis_orders/generals_lead_the_army.rs):
+-- a General (Comandante or Great General) that CIVVIS names this frame with
+-- MOVE_TO or KEEP_GREAT_PERSON is leading a front, and this driver must not
+-- retire it underneath that order: the +5 aura outlives any one retirement.
+-- Live civvis-20261104T093211Z, the gene's first carrier: the bridge walked
+-- Santander to the army at t55 and this driver retired him the same frame.
+-- With the gene off CIVVIS names a General only by ACTIVATE_GREAT_PERSON, or
+-- not at all, and nothing here changes.
+CivvisComandante.ledByCivvis = function(id, class, rows)
+	if class ~= "GREAT_PERSON_CLASS_COMANDANTE_GENERAL"
+			and class ~= "GREAT_PERSON_CLASS_GENERAL" then return false; end
+	if type(rows) ~= "table" then return false; end
+	for _, row in ipairs(rows) do
+		if tostring(row.kind or "") == "unit" and tonumber(row.subject) == tonumber(id) then
+			local verb = tostring(row.verb or "");
+			if verb == "MOVE_TO" or verb == "KEEP_GREAT_PERSON" then return true; end
+		end
+	end
+	return false;
+end
 -- Paez's permanent cavalry buff is +4; his live aura is +5 for the land
 -- classes in TypeTags (GranColombia_Maya_GreatPeople.xml:94-107,299-302,
 -- 329-337). Keep him when retiring would remove a stronger local army aura.
@@ -18237,6 +18260,10 @@ local function orderGreatPerson(player, unit, id, turn, supportAllowed, controll
 	local individual, class = gpName(gp);
 	if class == "GREAT_PERSON_CLASS_COMANDANTE_GENERAL" and not supportAllowed then
 		CivvisComandante.auraChecked[id] = turn;
+	end
+	if CivvisComandante.ledByCivvis(id, class, controllerRows) then
+		gpPending[id] = nil;
+		return "moving";
 	end
 	-- ⚠ A Prophet's activation opens the religion chooser, a modal this harness
 	-- does not answer yet — a stalled run loses more than an unspent Prophet.
