@@ -33,9 +33,16 @@
 //! wrapped and a game is byte-for-byte what it was. A declaration is a plain
 //! `Action::DeclareWar`, which the engine may refuse (unmet, a peace treaty
 //! still running). After that the rival chair's own AI fights the war.
+//!
+//! **No friendships.** A chair turns down a measured seat's friendship,
+//! alliance or defensive pact, and its own such offers to one are withdrawn.
+//! The live Immortal AI almost never befriends our seat (91% of rivals were
+//! Unfriendly by turn 10, and 0 of 555 rival-turns were allied). Without this
+//! the seat's friendship offers bought peace from every chair, and a
+//! friendship blocks any declaration until it expires.
 
 use civvis::ai::{AdvancedAi, Ai, ExpansionCensus, PlanReport};
-use civvis::game::{Action, Game};
+use civvis::game::{Action, DiplomaticDeal, Game};
 use civvis::reasoning::Journal;
 
 /// The fitted logit's terms. See the module documentation.
@@ -76,6 +83,8 @@ pub struct PacedSeat {
     pub ai: AdvancedAi,
     pub pace: Option<Pace>,
     pub declared: Vec<Declaration>,
+    /// Friendships, alliances and pacts the knob turned down or withdrew.
+    pub refused: u32,
 }
 
 impl PacedSeat {
@@ -84,6 +93,7 @@ impl PacedSeat {
             ai,
             pace,
             declared: Vec::new(),
+            refused: 0,
         }
     }
 }
@@ -95,6 +105,23 @@ impl Ai for PacedSeat {
 
     fn take_turn(&mut self, g: &mut Game, pid: usize) {
         if let Some(pace) = &self.pace {
+            // The live Firaxis AI at Immortal almost never befriends our seat
+            // (91% of rivals Unfriendly by turn 10; 0 of 555 rival-turns
+            // allied), while a CIVVIS chair accepts the seat's friendship and
+            // the engine then refuses every war until it expires. The chair
+            // turns down a friendship, alliance or defensive pact from a
+            // measured seat, and its own such offers to one are withdrawn.
+            let bonds: Vec<u32> = g
+                .pending_deals
+                .iter()
+                .filter(|deal| deal.to == pid && pace.targets.contains(&deal.from) && binds(deal))
+                .map(|deal| deal.id)
+                .collect();
+            for deal in bonds {
+                if g.apply(pid, &Action::RejectDeal { deal }).is_ok() {
+                    self.refused += 1;
+                }
+            }
             for &target in &pace.targets {
                 if g.winner.is_some() {
                     break;
@@ -111,6 +138,13 @@ impl Ai for PacedSeat {
             }
         }
         Ai::take_turn(&mut self.ai, g, pid);
+        if let Some(pace) = &self.pace {
+            let before = g.pending_deals.len();
+            g.pending_deals.retain(|deal| {
+                !(deal.from == pid && pace.targets.contains(&deal.to) && binds(deal))
+            });
+            self.refused += (before - g.pending_deals.len()) as u32;
+        }
     }
 
     fn strategy_label(&self) -> Option<&'static str> {
@@ -132,6 +166,12 @@ impl Ai for PacedSeat {
     fn attach_journal(&mut self, journal: Journal) {
         Ai::attach_journal(&mut self.ai, journal);
     }
+}
+
+/// A deal that would bind the two players out of war: a friendship, an
+/// alliance or a defensive pact.
+fn binds(deal: &DiplomaticDeal) -> bool {
+    deal.friendship || deal.alliance.is_some() || deal.defensive_pact
 }
 
 /// This turn's chance that `rival` declares on `target`, or `None` when a
