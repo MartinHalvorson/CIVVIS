@@ -4928,6 +4928,8 @@ pub const GENES: &[Gene] = &[
     // opening buys that tile above the upkeep floor once a turn, at peace.
     // See `advanced/gold_buys_the_production_tile.rs`.
     Gene { tag: "gold-buys-the-production-tile", field: "gold_buys_the_production_tile", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_buys_the_production_tile, disable: AdvancedAi::disable_gold_buys_the_production_tile },
+    // Refine an existing emergency land defender; see `advanced/spears_answer_the_horse.rs`.
+    Gene { tag: "spears-answer-the-horse", field: "spears_answer_the_horse", kind: Kind::OptIn, enable: AdvancedAi::enable_spears_answer_the_horse, disable: AdvancedAi::disable_spears_answer_the_horse },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
