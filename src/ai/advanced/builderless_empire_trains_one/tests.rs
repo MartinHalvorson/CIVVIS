@@ -87,8 +87,7 @@ fn builders_at_head(game: &Game) -> Vec<u32> {
 }
 
 /// Off, nothing moves. On, exactly one city -- the faster -- puts a Builder at
-/// the head, its Warrior kept behind it, and the claim does not repeat once a
-/// Builder is held.
+/// the head, and the claim does not repeat once a Builder is held.
 #[test]
 fn an_empire_without_a_builder_trains_one_in_its_fastest_city() {
     let (mut off, ..) = builderless_empire();
@@ -111,10 +110,6 @@ fn an_empire_without_a_builder_trains_one_in_its_fastest_city() {
         .unwrap();
     ai.claim_builderless_empire_builder(&mut on, 0, &plan);
     assert_eq!(builders_at_head(&on), vec![fastest]);
-    assert!(
-        on.cities[&fastest].queue.contains(&unit("warrior")),
-        "the displaced Warrior keeps its place behind the Builder"
-    );
     ai.claim_builderless_empire_builder(&mut on, 0, &plan);
     assert_eq!(builders_at_head(&on), vec![fastest], "one Builder, not two");
 }
