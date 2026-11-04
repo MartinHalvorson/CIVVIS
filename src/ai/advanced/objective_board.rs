@@ -1243,6 +1243,10 @@ impl AdvancedAi {
             }
         }
         let mut previous_siege: Option<ObjectiveKey> = None;
+        // `outclassed-siege-stands-down`: cities whose Siege row is left out
+        // this assessment. They still cover their neighbourhood against
+        // Destroy rows below. Empty with the gene off.
+        let mut stood_down: Vec<Pos> = Vec::new();
         for cid in siege_cities {
             let Some(city) = g.cities.get(&cid) else {
                 continue;
@@ -1250,6 +1254,14 @@ impl AdvancedAi {
             if city.owner == pid || !g.is_at_war(pid, city.owner) {
                 continue;
             }
+            let city_pos = city.pos;
+            if self.siege_stands_down(g, pid, cid, pool) {
+                stood_down.push(city_pos);
+                continue;
+            }
+            let Some(city) = g.cities.get(&cid) else {
+                continue;
+            };
             let state = if self.siege_train {
                 match self.sieges.get(&cid).map(|siege| siege.stage) {
                     Some(SiegeStage::Stage) => RowState::Staging,
@@ -1318,6 +1330,7 @@ impl AdvancedAi {
             .iter()
             .filter(|row| row.kind == ObjectiveKind::Siege)
             .map(|row| row.at)
+            .chain(stood_down.iter().copied())
             .collect();
         for force in self.hostile_forces(g, pid, visible, &our_cities) {
             let tiles: Vec<Pos> = force.iter().map(|uid| g.units[uid].pos).collect();

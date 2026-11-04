@@ -7503,6 +7503,14 @@ pub struct AdvancedAi {
     /// treasury buys one in the city that owns the most of them. See
     /// `advanced/gold_buys_the_backlog_builder.rs`. Off by default.
     gold_buys_the_backlog_builder: bool,
+    /// `guns-stay-out-of-reach-2`: version one's one-blow veto on every land
+    /// military unit, not only the siege guns. See
+    /// `advanced/guns_stay_out_of_reach.rs`.
+    guns_stay_out_of_reach_2: bool,
+    /// `guns-stay-out-of-reach-3`: version two, except that a member of a
+    /// Defend or Relieve task force may close on the attackers of our own
+    /// city. See `advanced/guns_stay_out_of_reach.rs`.
+    guns_stay_out_of_reach_3: bool,
     /// `garrison-before-the-surprise`: a stronger major's soldier near a city
     /// with no soldier drafts the nearest idle one home. The behaviour lives
     /// on `BasicAi`; see `ai/garrison_before_the_surprise.rs`. Off by default.
@@ -8079,6 +8087,13 @@ pub struct AdvancedAi {
     /// the displacing item is urgent. See
     /// `advanced/near_done_work_finishes.rs`. Off by default.
     near_done_work_finishes: bool,
+    /// `outclassed-siege-stands-down`: a Siege row whose city's field units
+    /// have removed-by-one-blow most of the army for four turns running
+    /// leaves the board. See `advanced/outclassed_siege.rs`. Off by default.
+    outclassed_siege_stands_down: bool,
+    /// `outclassed-siege-stands-down`: by city tile, the first and the last
+    /// turn of the field's current outclassed streak. Empty with the gene off.
+    outclassed_sieges: BTreeMap<Pos, (u32, u32)>,
     // ---- append: p-r ------------------------------------------------
     /// `pillaged-districts-repair-first`: a pillaged district's repair claims its
     /// city after every other claim. See `advanced/pillaged_repairs_first.rs`.
@@ -10168,6 +10183,10 @@ mod missionary_field;
 /// with nothing left in reach. Opt-in gene `one-war-at-a-time`; see
 /// `advanced/one_war.rs`.
 mod one_war;
+/// A siege whose field defenders remove most of the army with one blow
+/// stands down. Opt-in gene `outclassed-siege-stands-down`; see
+/// `advanced/outclassed_siege.rs`.
+mod outclassed_siege;
 /// Our own column is not the host's refusal: the live bridge reports which
 /// planned moves actually crossed. Opt-in gene `own-column-is-not-a-refusal`;
 /// see `advanced/own_column.rs`.
@@ -11827,6 +11846,8 @@ impl AdvancedAi {
             inquisition_defends_the_diplomat: false,
             inquisition_answers_a_rival_majority: false,
             gold_buys_the_backlog_builder: false,
+            guns_stay_out_of_reach_2: false,
+            guns_stay_out_of_reach_3: false,
             garrison_before_the_surprise: false,
             // ---- append: l-o ----------------------------------------
             old_techs_before_the_beeline: false,
@@ -11900,6 +11921,8 @@ impl AdvancedAi {
             launcher_war_fights_the_faster_racer: false,
             launch_pad_holds_its_queue: false,
             near_done_work_finishes: false,
+            outclassed_siege_stands_down: false,
+            outclassed_sieges: BTreeMap::new(),
             // ---- append: p-r ----------------------------------------
             pillaged_districts_repair_first: false,
             religion_lane_hands_over: false,
@@ -50275,6 +50298,7 @@ impl AdvancedAi {
         self.record_turn_start_faith(g, pid);
         self.air_city_assault = None;
         self.base.gun_lethal_tiles.clear();
+        self.base.unit_lethal_blows.clear();
         self.builder_support.clear();
         self.battlefront_frame = None;
         self.settlement_atlas.borrow_mut().clear();

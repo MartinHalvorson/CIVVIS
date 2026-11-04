@@ -252,6 +252,39 @@ def wait_for_launched_main_menu(process: subprocess.Popen, timeout_s: float = 42
                 process.wait(timeout=stop_timeout_s)
 
 
+def stop_owned_failed_startup(process: subprocess.Popen, timeout_s: float = 45.0,
+                              kill_wait_s: float = 10.0) -> bool:
+    """Stop the child this run launched when its setup hosted no game.
+
+    `wait_for_launched_main_menu` already applies this policy before the menu.
+    This extends it to the rest of setup. The normal quit runs first: Civ VI's
+    menu quit, then TERM (`stop`). Only when that leaves THIS child running is it
+    killed. Ownership comes from the live Popen handle, as above, never from a
+    name search, so a game someone else opened is never touched.
+
+    It has no game and no save of ours, so the half-written-save hazard that
+    keeps `env.quit_game` from escalating does not apply. The hard-kill hazard
+    in the supervisor's header does not either: that was a kill after every
+    run, and this one runs only when the normal quit has already failed. On a
+    healthy host the quit does not fail.
+    """
+    if stop(timeout_s):
+        return True
+    if process is None or process.poll() is not None:
+        # Whatever refused to stop is not the child this run launched.
+        return False
+    print(f"[startup] owned child {process.pid} hosted no game and refused the "
+          "quit; killing it", file=sys.stderr, flush=True)
+    process.kill()
+    try:
+        process.wait(timeout=kill_wait_s)
+    except subprocess.TimeoutExpired:
+        print(f"[startup] child {process.pid} survived the kill", file=sys.stderr,
+              flush=True)
+        return False
+    return not env.game_pids()
+
+
 def restart(args: list[str] | None = None, stdout: Path | None = None,
             timeout_s: float = 420.0) -> bool:
     """Stop, clear this run's logs, start with arguments, wait for the menu."""

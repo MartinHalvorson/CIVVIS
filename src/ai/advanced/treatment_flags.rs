@@ -9344,6 +9344,45 @@ impl AdvancedAi {
     pub fn disable_anvil_follows_the_defense(&mut self) {
         self.anvil_follows_the_defense = false;
     }
+
+    /// Opt-in gene `guns-stay-out-of-reach-2`; version two of the family, so
+    /// version one is turned off. See [`Self::guns_stay_out_of_reach_2`].
+    pub fn enable_guns_stay_out_of_reach_2(&mut self) {
+        self.guns_stay_out_of_reach = false;
+        self.guns_stay_out_of_reach_3 = false;
+        self.guns_stay_out_of_reach_2 = true;
+    }
+
+    /// The twin of `enable_guns_stay_out_of_reach_2`.
+    pub fn disable_guns_stay_out_of_reach_2(&mut self) {
+        self.guns_stay_out_of_reach_2 = false;
+    }
+
+    /// Opt-in gene `outclassed-siege-stands-down`; see
+    /// [`Self::outclassed_siege_stands_down`].
+    pub fn enable_outclassed_siege_stands_down(&mut self) {
+        self.outclassed_siege_stands_down = true;
+    }
+
+    /// The twin of `enable_outclassed_siege_stands_down`.
+    pub fn disable_outclassed_siege_stands_down(&mut self) {
+        self.outclassed_siege_stands_down = false;
+    }
+
+    /// Opt-in gene `guns-stay-out-of-reach-3`; version three of the
+    /// family, so versions one and two are turned off. See
+    /// [`Self::guns_stay_out_of_reach_3`].
+    pub fn enable_guns_stay_out_of_reach_3(&mut self) {
+        self.guns_stay_out_of_reach = false;
+        self.guns_stay_out_of_reach_2 = false;
+        self.guns_stay_out_of_reach_3 = true;
+    }
+
+    /// The twin of `enable_guns_stay_out_of_reach_3`.
+    pub fn disable_guns_stay_out_of_reach_3(&mut self) {
+        self.guns_stay_out_of_reach_3 = false;
+    }
+
     /// Opt-in gene `garrison-before-the-surprise`; see
     /// `BasicAi::garrison_before_the_surprise`.
     pub fn enable_garrison_before_the_surprise(&mut self) {

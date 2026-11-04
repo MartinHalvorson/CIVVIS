@@ -3959,6 +3959,70 @@ class EarlyWindowPlacementTest(unittest.TestCase):
         place.assert_not_called()
 
 
+class UnseenGameWindowTest(unittest.TestCase):
+    """Setup names a host that cannot see its game instead of waiting it out.
+
+    2026-11-04 (and 09-27, 10-16, 10-27): Civ VI drew its menu, CoreGraphics
+    listed the window, System Events could not find the process, and setup spent
+    sixteen probes before leaving a game up that would not quit.
+    """
+
+    SE_ERROR = 'Can’t get process "Civ6_Exe_Child". (-1728)'
+
+    def note(self, strikes: int, error, windows, record=None):
+        record = record or mock.Mock(return_value={"remedy": "restart this Mac"})
+        with patch.object(civ6_play.macos_window, "window_probe_error",
+                          return_value=error), \
+                patch.object(civ6_play.macos_window, "cg_windows",
+                             return_value=windows), \
+                patch.object(civ6_play.env, "game_pids", return_value=[34853]), \
+                patch.object(civ6_play.host_health, "record", record), \
+                patch("builtins.print"):
+            return civ6_play.note_unseen_game_window(strikes, "civvis-x"), record
+
+    def test_a_system_events_answer_with_no_window_is_not_a_strike(self) -> None:
+        result, record = self.note(2, None, [(0, 33, 1634, 1084)])
+        self.assertEqual(result, 0)
+        record.assert_not_called()
+
+    def test_a_failed_probe_without_a_window_on_screen_is_not_a_strike(self) -> None:
+        for windows in ([], None):
+            result, record = self.note(2, self.SE_ERROR, windows)
+            self.assertEqual(result, 0)
+            record.assert_not_called()
+
+    def test_the_third_strike_records_the_fault_and_stops_setup(self) -> None:
+        result, record = self.note(0, self.SE_ERROR, [(-991, 58, 1634, 1084)])
+        self.assertEqual(result, 1)
+        result, record = self.note(1, self.SE_ERROR, [(-991, 58, 1634, 1084)])
+        self.assertEqual(result, 2)
+        record.assert_not_called()
+        result, record = self.note(2, self.SE_ERROR, [(-991, 58, 1634, 1084)])
+        self.assertEqual(result, -1)
+        evidence = record.call_args.args[0]
+        self.assertIn("1634x1084", evidence)
+        self.assertIn("-1728", evidence)
+        self.assertEqual(record.call_args.kwargs["tag"], "civvis-x")
+
+    def test_both_bootstraps_count_strikes_and_stop_on_the_fault(self) -> None:
+        source = Path(civ6_play.__file__).read_text()
+        for name in ("def bootstrap_game(", "def bootstrap_saved_game("):
+            start = source.index(name)
+            body = source[start:source.index("\ndef ", start + 1)]
+            self.assertIn("note_unseen_game_window(unseen_strikes, args.tag)", body)
+            self.assertIn("if unseen_strikes < 0:\n                return False", body)
+            self.assertIn("unseen_strikes = 0", body)
+
+    def test_a_failed_setup_stops_its_own_child_and_a_configured_game_clears(self) -> None:
+        source = Path(civ6_play.__file__).read_text()
+        failure = source.index('"could not start a game from the main menu", file=sys.stderr)')
+        tail = source[failure:source.index("return 5", failure)]
+        self.assertIn('launcher.stop_owned_failed_startup(owned_launch["process"])', tail)
+        self.assertIn('owned_launch["process"] = game_process', source)
+        configured = source.index('setup_mark("configured", stop=True)')
+        self.assertIn("host_health.clear()", source[configured:configured + 200])
+
+
 if __name__ == "__main__":
     unittest.main()
 
