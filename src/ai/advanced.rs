@@ -1895,14 +1895,23 @@ const SETTLEMENT_GLOBAL_PREFILTER_LIMIT: usize = 512;
 /// still leaving the fleet pool available to the wider AI frontiers.
 const SETTLEMENT_SCORE_MAX_WORKERS: usize = 4;
 
-/// The lane progress table of one seat, kept for one controller turn. A
-/// controller clone is a speculative branch and starts without it, as the
-/// settlement atlas does.
+/// The lane progress tables read during one controller turn, one entry per
+/// seat. A controller clone is a speculative branch and starts without them,
+/// as the settlement atlas does.
 /// The turn, the seat, the map epoch and the table.
+///
+/// ★ ONE SLOT THRASHED ON EVERY RIVAL LOOP. The cache used to hold a single
+/// entry, but its heaviest readers walk the rivals
+/// (`domination_faithless_conversion_counter`, `rival_faith_presses_us`,
+/// `one_war_second_front`), so each read for another seat evicted the last
+/// and recomputed it. Replaying the 1,080 decider requests of
+/// civvis-20261104T074315Z (t393), `lane_progress_table_uncached` was 28% of
+/// the decider's time from turn 340. Each seat now keeps its own entry under
+/// the same (turn, seat, map epoch) key and the same clearing points.
 type LaneProgressEntry = (u32, usize, u64, [i32; 4]);
 
 #[derive(Default)]
-struct LaneProgressCache(RefCell<Option<LaneProgressEntry>>);
+struct LaneProgressCache(RefCell<Vec<LaneProgressEntry>>);
 
 impl Clone for LaneProgressCache {
     fn clone(&self) -> Self {
@@ -14851,15 +14860,19 @@ impl AdvancedAi {
             return self.lane_progress_table_uncached(g, pid);
         }
         let epoch = g.map.tiles.epoch();
-        if let Some((turn, seat, map_epoch, table)) = *self.lane_progress_cache.0.borrow() {
-            if turn == g.turn && seat == pid && map_epoch == epoch {
-                return table;
-            }
+        if let Some(&(_, _, _, table)) = self
+            .lane_progress_cache
+            .0
+            .borrow()
+            .iter()
+            .find(|(turn, seat, map_epoch, _)| *turn == g.turn && *seat == pid && *map_epoch == epoch)
+        {
+            return table;
         }
         let table = self.lane_progress_table_uncached(g, pid);
-        self.lane_progress_cache
-            .0
-            .replace(Some((g.turn, pid, epoch, table)));
+        let mut entries = self.lane_progress_cache.0.borrow_mut();
+        entries.retain(|(_, seat, _, _)| *seat != pid);
+        entries.push((g.turn, pid, epoch, table));
         table
     }
 
@@ -50305,7 +50318,7 @@ impl AdvancedAi {
         self.builder_support.clear();
         self.battlefront_frame = None;
         self.settlement_atlas.borrow_mut().clear();
-        self.lane_progress_cache.0.replace(None);
+        self.lane_progress_cache.0.borrow_mut().clear();
         // Before anything in this turn is priced. Every science term downstream
         // reads this one number, so the horizon cannot drift between the
         // production ordering, the citizen governor, and the search evaluator.
@@ -50696,7 +50709,7 @@ impl AdvancedAi {
         // pricing, so the production pass starts a fresh static atlas from
         // the final pre-production state.
         self.settlement_atlas.borrow_mut().clear();
-        self.lane_progress_cache.0.replace(None);
+        self.lane_progress_cache.0.borrow_mut().clear();
 
         // `saved-work-is-seen`: the host's paused units, buildings and
         // projects join the saved-work bank before any production writer
