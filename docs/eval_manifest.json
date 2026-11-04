@@ -12,11 +12,11 @@
     "withholdable_live_count": 38
   },
   "genome_coverage": {
-    "capability_toggles": 792,
+    "capability_toggles": 790,
     "measured_by_a_screen": 72,
     "reachable_as_a_gene": 770,
     "resolved_by_a_screen": 16,
-    "unreachable_by_any_screen": 45,
+    "unreachable_by_any_screen": 43,
     "unreachable_toggles": [
       "activation_keeps_its_building",
       "activation_resume_waits",
@@ -25,9 +25,7 @@
       "counter_in_lane",
       "deny_while_targeted",
       "engine_repairs",
-      "engine_repairs_economy",
       "engine_repairs_universe",
-      "engine_repairs_war",
       "envelope_cache_across_own_moves",
       "era_paced_expansion",
       "escort_patience_runs_out",
