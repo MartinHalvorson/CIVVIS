@@ -34,7 +34,7 @@ impl AdvancedAi {
     /// Whether the early-route window is open. `false` with the gene off.
     pub(super) fn early_route_window(&self, g: &Game) -> bool {
         self.early_route_feeds_production
-            && g.turn <= g.standard_duration(EARLY_ROUTE_STANDARD_TURNS)
+            && g.turn <= self.econ_window(g, EARLY_ROUTE_STANDARD_TURNS)
     }
 
     /// The premium for a route yielding `yields` inside the window: zero

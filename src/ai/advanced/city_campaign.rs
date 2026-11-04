@@ -643,7 +643,7 @@ impl AdvancedAi {
     /// city, with no weaker neighbour, or with no holdable city the army can
     /// already afford three quarters of.
     pub(crate) fn plan_city_campaign(&self, g: &Game, pid: usize) -> Option<CampaignPlan> {
-        if g.turn < g.standard_duration(CAMPAIGN_MIN_TURN) || g.player_city_ids(pid).len() < 2 {
+        if g.turn < self.econ_window(g, CAMPAIGN_MIN_TURN) || g.player_city_ids(pid).len() < 2 {
             return None;
         }
         let army = self.campaign_field_army(g, pid);
@@ -743,7 +743,7 @@ impl AdvancedAi {
     /// paid is the boundary of the operation rather than permission to extend
     /// it.
     pub(crate) fn plan_city_campaign_2(&self, g: &Game, pid: usize) -> Option<CampaignPlan> {
-        if g.turn < g.standard_duration(CAMPAIGN_MIN_TURN) || g.player_city_ids(pid).len() < 2 {
+        if g.turn < self.econ_window(g, CAMPAIGN_MIN_TURN) || g.player_city_ids(pid).len() < 2 {
             return None;
         }
         let strategic = self

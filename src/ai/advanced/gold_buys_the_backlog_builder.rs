@@ -55,7 +55,7 @@ impl AdvancedAi {
             || self.base.minor
             || self.base.barb
             || plan.threatened_city.is_some()
-            || g.turn >= g.standard_duration(BACKLOG_BUILDER_END_STANDARD)
+            || g.turn >= self.econ_window(g, BACKLOG_BUILDER_END_STANDARD)
             || self.opening_builder_purchase_open(g, pid, plan)
         {
             return None;

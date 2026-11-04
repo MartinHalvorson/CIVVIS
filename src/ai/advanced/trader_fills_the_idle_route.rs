@@ -97,7 +97,7 @@ impl AdvancedAi {
                 g.item_cost_for_city(pid, cid, &trader) - g.item_invested_production(cid, &trader);
             remaining.max(0.0) / production.max(0.5)
         });
-        (turns <= g.standard_duration(IDLE_ROUTE_TRADER_MAX_STANDARD) as f64)
+        (turns <= self.econ_window(g, IDLE_ROUTE_TRADER_MAX_STANDARD) as f64)
             .then_some((trader, turns))
     }
 

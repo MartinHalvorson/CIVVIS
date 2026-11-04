@@ -53,7 +53,9 @@ impl AdvancedAi {
     /// for every tile within the radius of any shortest road and so never
     /// clears a road a hostile could reach.
     pub(super) fn settler_path_clear(&self, g: &Game, pid: usize, uid: u32) -> Option<(Pos, i32)> {
-        if !self.settler_marches_alone_when_clear || g.turn > SETTLER_ALONE_LAST_TURN {
+        if !self.settler_marches_alone_when_clear
+            || g.turn > self.econ_turns(g, SETTLER_ALONE_LAST_TURN)
+        {
             return None;
         }
         let here = g.units.get(&uid)?.pos;

@@ -94,7 +94,7 @@ impl AdvancedAi {
             .collect();
         let cost = Self::engineering_path_cost(g, pid, &missing);
         let turns = cost / Self::empire_science(g, pid).max(1.0);
-        if turns > g.standard_duration(SIEGE_TIER_MAX_RESEARCH_STANDARD) as f64 {
+        if turns > self.econ_window(g, SIEGE_TIER_MAX_RESEARCH_STANDARD) as f64 {
             return None;
         }
         Some(SiegeTierPick {
