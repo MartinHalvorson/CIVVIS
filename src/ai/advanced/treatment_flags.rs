@@ -9237,6 +9237,16 @@ impl AdvancedAi {
         self.science_power_buys_fuel = false;
     }
 
+    /// Prefer a legal non-lowland site when starting a native Spaceport.
+    pub fn enable_spaceport_above_the_sea(&mut self) {
+        self.spaceport_above_the_sea = true;
+    }
+
+    /// The twin of `enable_spaceport_above_the_sea`.
+    pub fn disable_spaceport_above_the_sea(&mut self) {
+        self.spaceport_above_the_sea = false;
+    }
+
     /// Opt-in gene `old-techs-before-the-beeline`; see
     /// `advanced/old_techs_before_the_beeline.rs`.
     pub fn enable_old_techs_before_the_beeline(&mut self) {
