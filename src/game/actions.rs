@@ -1153,19 +1153,21 @@ impl Game {
                     });
                 }
             }
-            for card in self.available_policies(pid) {
-                let mut next = p.policies.clone();
-                next.insert(Name::new(&card));
-                if self.policies_fit(pid, &next) {
-                    acts.push(Action::SlotPolicy {
-                        policy: Name::new(&card),
+            if !self.host_policy_change_blocked(pid) {
+                for card in self.available_policies(pid) {
+                    let mut next = p.policies.clone();
+                    next.insert(Name::new(&card));
+                    if self.policies_fit(pid, &next) {
+                        acts.push(Action::SlotPolicy {
+                            policy: Name::new(&card),
+                        });
+                    }
+                }
+                for card in &p.policies {
+                    acts.push(Action::UnslotPolicy {
+                        policy: Name::new(card),
                     });
                 }
-            }
-            for card in &p.policies {
-                acts.push(Action::UnslotPolicy {
-                    policy: Name::new(card),
-                });
             }
             if self.active_routes(pid) < self.trade_capacity(pid) {
                 for uid in self.player_unit_ids(pid) {
@@ -7415,6 +7417,11 @@ impl Game {
         if !self.available_policies(pid).iter().any(|c| c == policy) {
             return Err("policy unavailable".into());
         }
+        if self.host_policy_change_blocked(pid)
+            && !self.players[pid].policies.contains(&Name::new(policy))
+        {
+            return Err("host policy change window closed".into());
+        }
         let mut next = self.players[pid].policies.clone();
         next.insert(Name::new(policy));
         if !self.policies_fit(pid, &next) {
@@ -7425,6 +7432,11 @@ impl Game {
     }
 
     pub(super) fn do_unslot_policy(&mut self, pid: usize, policy: &str) -> Result<(), String> {
+        if self.host_policy_change_blocked(pid)
+            && self.players[pid].policies.contains(&Name::new(policy))
+        {
+            return Err("host policy change window closed".into());
+        }
         if !self.players[pid].policies.remove(&Name::new(policy)) {
             return Err("policy not slotted".into());
         }

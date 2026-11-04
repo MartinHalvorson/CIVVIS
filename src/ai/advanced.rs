@@ -21619,6 +21619,9 @@ impl AdvancedAi {
     }
 
     fn strategic_policies(&self, g: &mut Game, pid: usize, strategy: GrandStrategy) {
+        if g.host_policy_change_blocked(pid) {
+            return;
+        }
         let objective = self.decision_objective(strategy);
 
         // A successor card removes its predecessor from the policy menu.  An

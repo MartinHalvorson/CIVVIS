@@ -2379,8 +2379,8 @@ class TheTableIsDerived(unittest.TestCase):
             for tag, (field, toggle) in reg.items():
                 candidates = []
                 m = re.search(
-                    r"((?:[ \t]*///[^\n]*\n)+)[ \t]*pub fn enable_"
-                    + re.escape(toggle) + r"\(", flags)
+                    r"((?:[ \t]*///[^\n]*\n)+)[ \t]*(?:pub fn |[a-z0-9_.]+ => )enable_"
+                    + re.escape(toggle) + r"[(,]", flags)
                 if m:
                     candidates.append(genes._first_sentence(m.group(1)))
                 m = re.search(
