@@ -11,7 +11,7 @@ the brain's answer), `polls` is the mod's own count from the `turn` record,
 before `civ6_play.record` stamped them) are skipped, so an old run prints nothing.
 
 The decision summary also pairs every replanning frame's state/orders receipts.
-These gaps include transport and native execution, not just brain computation;
+These gaps include transport, operator pauses and native execution, not just brain computation;
 overlapping gaps count once in the total. Unanswered frames are counted separately.
 """
 from __future__ import annotations
@@ -124,6 +124,7 @@ def decision_waits(events_path: Path) -> dict:
     """
     pending = {}
     completed = set()
+    paused = set()
     samples = []
     intervals = []
     with events_path.open("r", errors="replace") as handle:
@@ -138,7 +139,7 @@ def decision_waits(events_path: Path) -> dict:
             turn = event.get("turn")
             frame = event.get("frame", 0)
             at = parse_stamp(event.get("utc"))
-            if (kind not in ("state", "orders") or at is None
+            if (kind not in ("state", "orders", "operator_paused") or at is None
                     or type(turn) is not int or type(frame) is not int):
                 continue
             key = (turn, frame)
@@ -146,9 +147,13 @@ def decision_waits(events_path: Path) -> dict:
                 continue
             if kind == "state":
                 pending.setdefault(key, at)
+            elif kind == "operator_paused":
+                if key in pending and at >= pending[key]:
+                    paused.add(key)
             elif key in pending and at >= pending[key]:
                 start = pending.pop(key)
                 samples.append({"turn": turn, "frame": frame,
+                                "operator_paused": key in paused,
                                 "seconds": round((at - start).total_seconds(), 3)})
                 intervals.append((start, at))
                 completed.add(key)
@@ -199,6 +204,7 @@ def main(argv: list[str] | None = None) -> int:
           f"{decisions['seconds'] / 60:.2f} min (overlaps counted once; not brain CPU time)")
     print("slowest decision receipts (turn/frame: seconds): " + ", ".join(
         f"{r['turn']}/{r['frame']}: {r['seconds']:.3f}"
+        + (" [operator pause]" if r["operator_paused"] else "")
         for r in sorted(decisions["samples"], key=lambda r: -r["seconds"])[:args.slowest]))
     print("turn  board     dur   wait polls frames popups stuck")
     for r in sorted(timed, key=lambda r: -r["dur"])[:args.slowest]:

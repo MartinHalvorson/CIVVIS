@@ -96,7 +96,21 @@ class DecisionWaitsTest(JsonlTestCase):
         self.assertEqual(found["matched"], 2)
         self.assertEqual(found["unanswered"], 1)
         self.assertEqual(found["seconds"], 30.125)
-        self.assertEqual(found["samples"][-1], {"turn": 4, "frame": 1, "seconds": 30.0})
+        self.assertEqual(found["samples"][-1], {"turn": 4, "frame": 1, "seconds": 30.0,
+                                               "operator_paused": False})
+
+    def test_operator_pause_is_labeled_only_inside_its_pending_frame(self):
+        path = self.write([
+            {"kind": "state", "turn": 4, "utc": stamp(0)},
+            {"kind": "operator_paused", "turn": 4, "utc": stamp(1)},
+            {"kind": "orders", "turn": 4, "utc": stamp(30)},
+            {"kind": "state", "turn": 4, "frame": 1, "utc": stamp(31)},
+            {"kind": "operator_paused", "turn": 4, "utc": stamp(32)},
+            {"kind": "orders", "turn": 4, "frame": 1, "utc": stamp(33)},
+        ])
+        samples = decision_waits(path)["samples"]
+        self.assertEqual([s["operator_paused"] for s in samples], [True, False])
+        self.assertEqual([s["seconds"] for s in samples], [30, 2])
 
     def test_interleaved_receipts_do_not_double_count_wall_time_or_duplicates(self):
         path = self.write([
