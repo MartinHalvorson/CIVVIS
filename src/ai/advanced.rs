@@ -7544,6 +7544,11 @@ pub struct AdvancedAi {
     /// border tile of two or more Production beside a city working a poorer
     /// one. See `advanced/gold_buys_the_production_tile.rs`. Off by default.
     gold_buys_the_production_tile: bool,
+    /// `governor-holds-the-flipping-city`: a Governor moves to a city of ours
+    /// losing Loyalty fast enough to flip, when its +8 a turn stops the slide
+    /// and its post stays loyal without it. See
+    /// `advanced/governor_holds_the_flipping_city.rs`. Off by default.
+    governor_holds_the_flipping_city: bool,
     // ---- append: l-o ------------------------------------------------
     /// `old-techs-before-the-beeline`: the technology our land army waits on
     /// to upgrade once the world has left its era, then any technology two
@@ -10505,6 +10510,9 @@ mod gold_buys_the_opening_builder;
 /// `advanced/gold_buys_the_production_tile.rs`.
 mod gold_buys_the_production_tile;
 mod gold_buys_the_settler;
+/// `governor-holds-the-flipping-city`: a Governor moves to hold a city of
+/// ours about to flip. See `advanced/governor_holds_the_flipping_city.rs`.
+mod governor_holds_the_flipping_city;
 mod granary_claims_the_bound_queue;
 /// `founder-holds-the-holy-city`: a founder keeps its Holy City on its own
 /// faith. See `advanced/holy_city_guard.rs`.
@@ -11904,6 +11912,7 @@ impl AdvancedAi {
             generals_lead_the_army: false,
             garrison_before_the_surprise: false,
             gold_buys_the_production_tile: false,
+            governor_holds_the_flipping_city: false,
             // ---- append: l-o ----------------------------------------
             old_techs_before_the_beeline: false,
             launch_commits_the_endgame: false,
@@ -50706,6 +50715,9 @@ impl AdvancedAi {
         // baseline ancillary pass can dilute them across empty cities.
         self.strategic_governors(g, pid, &plan);
         self.relocate_governors_for_dividends(g, pid, &plan);
+        // `governor-holds-the-flipping-city`: a city about to flip on Loyalty
+        // takes a Governor from a post that holds without it.
+        self.governor_holds_the_flipping_city(g, pid);
         // AdvancedAi owns its turn pipeline instead of delegating through
         // BasicAi::take_turn, so explicitly retain the live-only governor
         // emergency pass that protects an ungoverned city with a measured

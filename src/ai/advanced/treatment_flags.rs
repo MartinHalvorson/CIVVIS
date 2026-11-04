@@ -9460,6 +9460,17 @@ impl AdvancedAi {
         self.spears_answer_the_horse = false;
     }
 
+    /// Opt-in gene `governor-holds-the-flipping-city`; see
+    /// [`Self::governor_holds_the_flipping_city`].
+    pub fn enable_governor_holds_the_flipping_city(&mut self) {
+        self.governor_holds_the_flipping_city = true;
+    }
+
+    /// The twin of `enable_governor_holds_the_flipping_city`.
+    pub fn disable_governor_holds_the_flipping_city(&mut self) {
+        self.governor_holds_the_flipping_city = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

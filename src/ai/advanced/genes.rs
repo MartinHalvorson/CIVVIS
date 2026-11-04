@@ -4930,6 +4930,14 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "gold-buys-the-production-tile", field: "gold_buys_the_production_tile", kind: Kind::OptIn, enable: AdvancedAi::enable_gold_buys_the_production_tile, disable: AdvancedAi::disable_gold_buys_the_production_tile },
     // Refine an existing emergency land defender; see `advanced/spears_answer_the_horse.rs`.
     Gene { tag: "spears-answer-the-horse", field: "spears_answer_the_horse", kind: Kind::OptIn, enable: AdvancedAi::enable_spears_answer_the_horse, disable: AdvancedAi::disable_spears_answer_the_horse },
+    // Live Lv 7 Immortal Standard (11-04): captured cities were lost to
+    // Loyalty, not recapture. 121104Z kept Thebes, Nekhen, Apu and Tushpa and
+    // lost all four at Loyalty 3-7 with no damage, at -3 to -10.5 a turn,
+    // while Victor stayed posted in loyal home cities. Under the gene the city
+    // nearest to flipping, when a Governor's +8 a turn would stop the slide,
+    // takes one from a post that keeps a non-negative rate without it. See
+    // `advanced/governor_holds_the_flipping_city.rs`.
+    Gene { tag: "governor-holds-the-flipping-city", field: "governor_holds_the_flipping_city", kind: Kind::OptIn, enable: AdvancedAi::enable_governor_holds_the_flipping_city, disable: AdvancedAi::disable_governor_holds_the_flipping_city },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
