@@ -4890,6 +4890,7 @@ pub const GENES: &[Gene] = &[
     // gene a line whose every attacker is ranged commits on its centre roll;
     // melee lines keep the floor. See `advanced/ranged_finish.rs`.
     Gene { tag: "ranged-finish-on-the-mean", field: "ranged_finish_on_the_mean", kind: Kind::OptIn, enable: AdvancedAi::enable_ranged_finish_on_the_mean, disable: AdvancedAi::disable_ranged_finish_on_the_mean },
+    Gene { tag: "first-capital-before-the-camp", field: "first_capital_before_the_camp", kind: Kind::OptIn, enable: AdvancedAi::enable_first_capital_before_the_camp, disable: AdvancedAi::disable_first_capital_before_the_camp },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
