@@ -9394,6 +9394,16 @@ impl AdvancedAi {
         self.ranged_finish_on_the_mean = false;
     }
 
+    /// Opening defence priority for the threatened sole capital.
+    pub fn enable_first_capital_before_the_camp(&mut self) {
+        self.first_capital_before_the_camp = true;
+    }
+
+    /// Restore the existing objective-board priorities.
+    pub fn disable_first_capital_before_the_camp(&mut self) {
+        self.first_capital_before_the_camp = false;
+    }
+
     /// Opt-in gene `generals-lead-the-army`; see
     /// [`Self::generals_lead_the_army`].
     pub fn enable_generals_lead_the_army(&mut self) {
