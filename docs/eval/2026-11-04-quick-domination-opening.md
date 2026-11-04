@@ -1,6 +1,6 @@
 # Early development audit: Standard and Quick Immortal domination
 
-Evidence cutoff: native states through turn 91 of `civvis-20261104T055705Z`. Both runs use Gran Colombia at Immortal on Small Continents. The earlier run is Standard; the latter is Quick. The latter is still running at the cutoff. This is a diagnosis, not a treatment win-rate estimate.
+Evidence cutoff: native states through turn 91 of `civvis-20261104T055705Z`. Both runs use Gran Colombia at Immortal on Small Continents. The earlier run is Standard; the latter is Quick. The latter subsequently ended at turn 91 with `reason=killed`, `partial=true`, and no outcome; its opening observations are usable, but it supplies no win/loss result. This is a diagnosis, not a treatment win-rate estimate.
 
 ## What changes the next action
 
