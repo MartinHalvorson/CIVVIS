@@ -1731,6 +1731,38 @@ class Civ6PlayTest(unittest.TestCase):
     def test_main_menu_click_rejects_a_different_long_label(self) -> None:
         self.assertFalse(civ6_play._menu_label_matches("Multiplayer", "Single Player"))
 
+    def _settled(self, window_texts, crop_texts):
+        window = [{"text": text} for text in window_texts]
+        crop = [{"text": text} for text in crop_texts]
+        with patch.object(civ6_play, "_main_menu_point", return_value=(404, 285)), \
+             patch.object(civ6_play, "_menu_ocr_observations", return_value=window), \
+             patch.object(civ6_play, "_menu_crop_ocr", return_value=crop), \
+             patch("builtins.print"):
+            return civ6_play._settled_main_menu_point(Path("menu.png"), (0, 33, 864, 542))
+
+    def test_a_row_still_fading_in_is_not_clicked(self) -> None:
+        """civvis-20261104T063240Z: only the crop read it, as `Ingle Playe`."""
+        self.assertTrue(civ6_play._menu_label_matches("Ingle Playe", "Single Player"))
+        self.assertIsNone(self._settled(["CIVILIZATION VI", "EARTHRISE"], ["Ingle Playe"]))
+
+    def test_the_full_window_read_keeps_its_glyph_tolerance(self) -> None:
+        self.assertEqual(self._settled(["Single Plaver"], []), (404, 285))
+        self.assertEqual(self._settled(["Single Player"], []), (404, 285))
+
+    def test_an_exact_crop_read_still_licenses_the_click(self) -> None:
+        self.assertEqual(self._settled(["GATHERING STORM"], ["Single Player"]), (404, 285))
+
+    def test_no_label_is_still_no_point(self) -> None:
+        with patch.object(civ6_play, "_main_menu_point", return_value=None):
+            self.assertIsNone(civ6_play._settled_main_menu_point(
+                Path("menu.png"), (0, 33, 864, 542)))
+
+    def test_the_bootstrap_aims_only_at_a_settled_row(self) -> None:
+        source = Path(civ6_play.__file__).read_text(encoding="utf-8")
+        reader = source.split("def read_top_menu():", 1)[1].split("top = _poll_screen", 1)[0]
+        self.assertIn("point = _settled_main_menu_point(menushot, bounds)", reader)
+        self.assertNotIn("point = _main_menu_point(menushot, bounds)", reader)
+
     def test_create_game_click_uses_its_visible_label(self) -> None:
         observations = [
             {"text": "Resume Game", "x": 0.75, "y": 0.28,
