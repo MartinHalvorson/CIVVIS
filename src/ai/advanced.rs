@@ -8076,12 +8076,12 @@ pub struct AdvancedAi {
     /// `advanced/near_done_work_finishes.rs`. Off by default.
     near_done_work_finishes: bool,
     /// `outclassed-siege-stands-down`: a Siege row whose city's field units
-    /// remove most of the army with one blow leaves the board for a scaled
-    /// window. See `advanced/outclassed_siege.rs`. Off by default.
+    /// have removed-by-one-blow most of the army for four turns running
+    /// leaves the board. See `advanced/outclassed_siege.rs`. Off by default.
     outclassed_siege_stands_down: bool,
-    /// `outclassed-siege-stands-down`: by city tile, the turn the field was
-    /// last read as outclassing the army. Empty with the gene off.
-    outclassed_sieges: BTreeMap<Pos, u32>,
+    /// `outclassed-siege-stands-down`: by city tile, the first and the last
+    /// turn of the field's current outclassed streak. Empty with the gene off.
+    outclassed_sieges: BTreeMap<Pos, (u32, u32)>,
     // ---- append: p-r ------------------------------------------------
     /// `pillaged-districts-repair-first`: a pillaged district's repair claims its
     /// city after every other claim. See `advanced/pillaged_repairs_first.rs`.

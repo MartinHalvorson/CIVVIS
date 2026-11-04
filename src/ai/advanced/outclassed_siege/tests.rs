@@ -130,21 +130,38 @@ fn line_infantry_outclass_a_medieval_army_and_warriors_do_not() {
     assert_eq!(read.one_blow, 0);
 }
 
-/// The board leaves the outclassed Siege row out with the gene on, keeps it
-/// with the gene off, and draws no Destroy row onto the defenders it left.
+/// Assess the board on `turns` consecutive turns from `g.turn`, leaving
+/// `g.turn` on the last; whether the Siege row stood on each.
+fn assess(g: &mut Game, ai: &mut AdvancedAi, target: u32, turns: u32) -> Vec<bool> {
+    let mut rows = Vec::new();
+    for step in 0..turns {
+        if step > 0 {
+            g.turn += 1;
+        }
+        let plan = conquest(g, target);
+        ai.rebuild_force_groups(g, 0, &plan);
+        rows.push(siege_row(ai, target));
+    }
+    rows
+}
+
+/// The row stands through three outclassed turns and leaves the board on
+/// the fourth with the gene on; with it off it never leaves. No Destroy row
+/// is drawn onto the defenders it left.
 #[test]
-fn an_outclassed_siege_row_leaves_the_board() {
+fn a_siege_outclassed_four_turns_running_leaves_the_board() {
     let (mut g, target) = board();
     armies(&mut g, "line_infantry");
-    let plan = conquest(&g, target);
-
     let mut off = ai(false);
-    off.rebuild_force_groups(&g, 0, &plan);
-    assert!(siege_row(&off, target), "the gene off keeps the row");
+    assert_eq!(assess(&mut g, &mut off, target, 5), vec![true; 5]);
 
+    let (mut g, target) = board();
+    armies(&mut g, "line_infantry");
     let mut on = ai(true);
-    on.rebuild_force_groups(&g, 0, &plan);
-    assert!(!siege_row(&on, target), "{:?}", on.objective_board().rows);
+    assert_eq!(
+        assess(&mut g, &mut on, target, 5),
+        vec![true, true, true, false, false]
+    );
     let pos = g.cities[&target].pos;
     assert!(on
         .objective_board()
@@ -159,10 +176,8 @@ fn an_outclassed_siege_row_leaves_the_board() {
 fn a_weak_field_or_a_falling_city_keeps_the_row() {
     let (mut g, target) = board();
     armies(&mut g, "warrior");
-    let plan = conquest(&g, target);
     let mut on = ai(true);
-    on.rebuild_force_groups(&g, 0, &plan);
-    assert!(siege_row(&on, target));
+    assert_eq!(assess(&mut g, &mut on, target, 5), vec![true; 5]);
 
     let (mut g, target) = board();
     armies(&mut g, "line_infantry");
@@ -171,22 +186,24 @@ fn a_weak_field_or_a_falling_city_keeps_the_row() {
         city.wall_hp = 0;
         city.hp = 60;
     }
-    let plan = conquest(&g, target);
     let mut on = ai(true);
-    on.rebuild_force_groups(&g, 0, &plan);
-    assert!(siege_row(&on, target), "a falling city is still besieged");
+    assert_eq!(
+        assess(&mut g, &mut on, target, 5),
+        vec![true; 5],
+        "a falling city is still besieged"
+    );
 }
 
-/// Out of sight is not gone: the row stays down for the scaled window after
-/// the last outclassed reading, then returns.
+/// Out of sight is not gone: the row stays down for the window after the
+/// last outclassed turn, then returns.
 #[test]
 fn the_stand_down_holds_for_its_window_then_lifts() {
     let (mut g, target) = board();
     armies(&mut g, "line_infantry");
     let mut on = ai(true);
-    let plan = conquest(&g, target);
-    on.rebuild_force_groups(&g, 0, &plan);
+    assess(&mut g, &mut on, target, STREAK_TURNS);
     assert!(!siege_row(&on, target));
+    let last = g.turn;
 
     // The defenders drop out of sight.
     let theirs: Vec<u32> = g
@@ -198,15 +215,40 @@ fn the_stand_down_holds_for_its_window_then_lifts() {
     for uid in theirs {
         g.remove_unit(uid);
     }
-    let window = g.standard_duration(STAND_DOWN_STANDARD_TURNS);
-    g.turn += window - 1;
-    let plan = conquest(&g, target);
-    on.rebuild_force_groups(&g, 0, &plan);
-    assert!(!siege_row(&on, target), "still inside the window");
-
-    g.turn += 1;
-    let plan = conquest(&g, target);
-    on.rebuild_force_groups(&g, 0, &plan);
-    assert!(siege_row(&on, target), "the window has passed");
+    g.turn = last + STAND_DOWN_TURNS - 1;
+    assert_eq!(
+        assess(&mut g, &mut on, target, 1),
+        vec![false],
+        "inside the window"
+    );
+    g.turn = last + STAND_DOWN_TURNS;
+    assert_eq!(
+        assess(&mut g, &mut on, target, 1),
+        vec![true],
+        "the window has passed"
+    );
     assert!(!on.siege_stood_down_at(&g, g.cities[&target].pos));
+}
+
+/// A reading that sees defenders and is no longer outclassed lifts the
+/// stand-down at once.
+#[test]
+fn a_field_that_no_longer_outclasses_lifts_it_at_once() {
+    let (mut g, target) = board();
+    armies(&mut g, "line_infantry");
+    let mut on = ai(true);
+    assess(&mut g, &mut on, target, STREAK_TURNS);
+    assert!(!siege_row(&on, target));
+    let theirs: Vec<u32> = g
+        .units
+        .values()
+        .filter(|unit| unit.owner == 1)
+        .map(|unit| unit.id)
+        .collect();
+    for uid in theirs {
+        g.remove_unit(uid);
+    }
+    spawn(&mut g, "warrior", 1, at(19, 8));
+    g.turn += 1;
+    assert_eq!(assess(&mut g, &mut on, target, 1), vec![true]);
 }

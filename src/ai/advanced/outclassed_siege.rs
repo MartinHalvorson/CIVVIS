@@ -25,11 +25,18 @@
 //! each of our land military units' defence; when at least half of them sit
 //! [`ONE_BLOW_GAP`] or more below it, the field outclasses the army.
 //!
-//! The Siege row is then left out of the board for
-//! [`STAND_DOWN_STANDARD_TURNS`] Standard turns (scaled by game speed), keyed
-//! by the city's tile because live city ids shift between frames, so the
-//! army does not march back the turn the outclassing units fall out of
-//! sight. A stood-down city still covers its neighbourhood against Destroy
+//! One reading is not enough: across 126 live siege episodes (11-03/04) a
+//! single outclassed reading fell in 69 of them, 7 of our 13 captures among
+//! those 69. Once the field has outclassed the army on [`STREAK_TURNS`]
+//! consecutive turns (26 episodes, 2 of the 13 captures, and 167 of our
+//! units destroyed within six tiles of those cities after that point), the
+//! Siege row is left out of the board, and it stays out for
+//! [`STAND_DOWN_TURNS`] turns after the last outclassed reading, so the army
+//! does not march back the turn the outclassing units fall out of sight. A
+//! reading that sees defenders and no longer outclasses the army lifts it at
+//! once. Both counts are tactical, turn-by-turn evidence, so they are not
+//! scaled by game speed. The memory is keyed by the city's tile because live
+//! city ids shift between frames. A stood-down city still covers its neighbourhood against Destroy
 //! rows, so the units around it do not draw the army out as a field fight
 //! instead. A falling city (walls gone, at most half its health) is never
 //! stood down, nor is a city on an arena.
@@ -49,8 +56,11 @@ pub(crate) const ONE_BLOW_GAP: f64 = 25.0;
 /// the rings our stagers stand on.
 pub(crate) const FIELD_RADIUS: i32 = 4;
 
-/// How long a stood-down siege stays down, in Standard-speed turns.
-pub(crate) const STAND_DOWN_STANDARD_TURNS: u32 = 10;
+/// Consecutive outclassed turns before a siege stands down.
+pub(crate) const STREAK_TURNS: u32 = 4;
+
+/// How long a stood-down siege stays down after its last outclassed reading.
+pub(crate) const STAND_DOWN_TURNS: u32 = 10;
 
 /// A falling city's health ceiling: walls gone and at most half of its 200.
 const FALLING_CITY_HP: i32 = 100;
@@ -148,10 +158,11 @@ pub(crate) fn field_outclasses(g: &Game, pid: usize, owner: usize, near: Pos) ->
 
 impl AdvancedAi {
     /// Whether the Siege row on `cid` stands down this assessment. Reads the
-    /// field with `pool` (the board's available units) as our army, records
-    /// an outclassed verdict by the city's tile, and keeps the row down for
-    /// the scaled stand-down window after the last such verdict. False with
-    /// the gene off, on an arena and for a falling city.
+    /// field with `pool` (the board's available units) as our army and keeps
+    /// the city's outclassed streak by its tile: down once the streak reaches
+    /// [`STREAK_TURNS`], and for [`STAND_DOWN_TURNS`] after its last turn;
+    /// lifted by a reading that sees defenders and is not outclassed. False
+    /// with the gene off, on an arena and for a falling city.
     pub(super) fn siege_stands_down(
         &mut self,
         g: &Game,
@@ -170,38 +181,56 @@ impl AdvancedAi {
             return false;
         }
         let (pos, owner, name) = (city.pos, city.owner, city.name.clone());
-        if let Some(read) = field_outclass(g, pid, owner, pos, pool) {
-            if read.outclassed() {
-                let fresh = !self.outclassed_sieges.contains_key(&pos);
-                self.outclassed_sieges.insert(pos, g.turn);
-                if fresh {
+        let turn = g.turn;
+        match field_outclass(g, pid, owner, pos, pool) {
+            Some(read) if read.outclassed() => {
+                let (start, last) = match self.outclassed_sieges.get(&pos) {
+                    Some(&(start, last)) if turn <= last + 1 => (start, last),
+                    _ => (turn, turn),
+                };
+                self.outclassed_sieges.insert(pos, (start, turn));
+                let was_down = (last + 1).saturating_sub(start) >= STREAK_TURNS;
+                let down = (turn + 1).saturating_sub(start) >= STREAK_TURNS;
+                if down && !was_down {
                     crate::think!(self.journal(), Military, Decision,
                         "Siege of {} stands down: its field outclasses the army", name;
-                        "their strongest visible blow near the city is {:.0}; {} of our {} land units defend {:.0} or more below it and fall to one blow",
-                        read.their_best, read.one_blow, read.ours, ONE_BLOW_GAP;
+                        "for {} turns running the strongest visible blow near the city ({:.0}) has sat {:.0} or more over the defence of {} of our {} land units, one blow from removal",
+                        (turn + 1).saturating_sub(start), read.their_best, ONE_BLOW_GAP, read.one_blow, read.ours;
                         pos);
                 }
-                return true;
+                down
             }
-        }
-        let window = g.standard_duration(STAND_DOWN_STANDARD_TURNS);
-        match self.outclassed_sieges.get(&pos) {
-            Some(since) if g.turn.saturating_sub(*since) < window => true,
             Some(_) => {
                 self.outclassed_sieges.remove(&pos);
                 false
             }
-            None => false,
+            None => {
+                let down = self.siege_stood_down_at(g, pos);
+                if self
+                    .outclassed_sieges
+                    .get(&pos)
+                    .is_some_and(|&(_, last)| turn.saturating_sub(last) >= STAND_DOWN_TURNS)
+                {
+                    self.outclassed_sieges.remove(&pos);
+                }
+                down
+            }
         }
     }
 
-    /// Whether the city at `pos` is inside its stand-down window: the siege
-    /// train does not muster for it. False with the gene off.
+    /// Whether the city at `pos` stands down: its outclassed streak reached
+    /// [`STREAK_TURNS`] and its last outclassed turn is under
+    /// [`STAND_DOWN_TURNS`] ago. The siege train does not muster for it.
+    /// False with the gene off.
     pub(super) fn siege_stood_down_at(&self, g: &Game, pos: Pos) -> bool {
         self.outclassed_siege_stands_down
-            && self.outclassed_sieges.get(&pos).is_some_and(|since| {
-                g.turn.saturating_sub(*since) < g.standard_duration(STAND_DOWN_STANDARD_TURNS)
-            })
+            && self
+                .outclassed_sieges
+                .get(&pos)
+                .is_some_and(|&(start, last)| {
+                    (last + 1).saturating_sub(start) >= STREAK_TURNS
+                        && g.turn.saturating_sub(last) < STAND_DOWN_TURNS
+                })
     }
 }
 
