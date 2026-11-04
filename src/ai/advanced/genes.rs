@@ -4877,6 +4877,13 @@ pub const GENES: &[Gene] = &[
     // 167 of our units lost near those cities afterwards). See
     // `advanced/outclassed_siege.rs`.
     Gene { tag: "outclassed-siege-stands-down", field: "outclassed_siege_stands_down", kind: Kind::OptIn, enable: AdvancedAi::enable_outclassed_siege_stands_down, disable: AdvancedAi::disable_outclassed_siege_stands_down },
+    // Version two (the one-blow veto on every land unit) read unfavourable
+    // on a paired Immortal domination screen (12 seeds: score -47, z -1.9;
+    // cities lost +0.6), most plausibly because it also held back the units
+    // marching to defend or relieve our own cities. Version three is version
+    // two with every member of a Defend or Relieve task force left free to
+    // close on the attackers. See `advanced/guns_stay_out_of_reach.rs`.
+    Gene { tag: "guns-stay-out-of-reach-3", field: "guns_stay_out_of_reach_3", kind: Kind::OptIn, enable: AdvancedAi::enable_guns_stay_out_of_reach_3, disable: AdvancedAi::disable_guns_stay_out_of_reach_3 },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
