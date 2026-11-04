@@ -9460,6 +9460,17 @@ impl AdvancedAi {
         self.spears_answer_the_horse = false;
     }
 
+    /// Opt-in gene `slots-survive-the-roll`; see
+    /// [`Self::slots_survive_the_roll`].
+    pub fn enable_slots_survive_the_roll(&mut self) {
+        self.slots_survive_the_roll = true;
+    }
+
+    /// The twin of `enable_slots_survive_the_roll`.
+    pub fn disable_slots_survive_the_roll(&mut self) {
+        self.slots_survive_the_roll = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

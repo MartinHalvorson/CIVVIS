@@ -780,6 +780,23 @@ impl DangerField {
             .sum()
     }
 
+    /// `slots-survive-the-roll`: the whole field at one tile with every
+    /// blow at the top of its roll. A movement hazard is no roll and counts
+    /// as it reads. Unshared: the question is whether the unit can be
+    /// removed there, and any hostile may spend its strike on it.
+    pub(super) fn upper_danger(&mut self, tile: Pos, uid: u32) -> f64 {
+        self.contributions(tile, uid)
+            .iter()
+            .map(|(source, blow)| {
+                if source.is_some() {
+                    upper_roll_damage(*blow)
+                } else {
+                    *blow
+                }
+            })
+            .sum()
+    }
+
     fn upper_danger_without(&mut self, tile: Pos, uid: u32, hp: i32, dead: &BTreeSet<u32>) -> f64 {
         let blows = self.contributions_at_hp(tile, uid, hp);
         let alive = blows
@@ -3237,6 +3254,12 @@ impl AdvancedAi {
         if danger >= f64::from(unit.hp) {
             return UNASSIGNABLE;
         }
+        // `slots-survive-the-roll`: the centre roll is not the bar. A slot
+        // whose blows at the top of their roll meet the unit's hit points is
+        // one it would not survive, and is never assigned.
+        if self.slots_survive_the_roll && field.upper_danger(tile, uid) >= f64::from(unit.hp) {
+            return UNASSIGNABLE;
+        }
         let turns = if tile == unit.pos {
             0.0
         } else if reachable.contains(&tile) {
@@ -3275,16 +3298,29 @@ impl AdvancedAi {
             .into_iter()
             .filter(|tile| *tile == slot || !reserved.contains(tile))
             .collect();
-        let mut keyed: Vec<(i32, bool, Pos)> = free
+        // `slots-survive-the-roll`: a tile the top of the roll removes the
+        // unit on ranks after every tile it does not, whatever the distance.
+        // Without the gene the first key is always `false` and distance
+        // leads, as it always has.
+        let roll = self.slots_survive_the_roll;
+        let mut keyed: Vec<(bool, i32, bool, Pos)> = free
             .iter()
-            .map(|tile| (g.wdist(*tile, slot), field.danger(*tile, uid) >= hp, *tile))
+            .map(|tile| {
+                let removed = roll && field.upper_danger(*tile, uid) >= hp;
+                (
+                    removed,
+                    g.wdist(*tile, slot),
+                    field.danger(*tile, uid) >= hp,
+                    *tile,
+                )
+            })
             .collect();
         keyed.sort_unstable();
-        let unbounded = keyed.first().map(|(_, _, tile)| *tile);
+        let unbounded = keyed.first().map(|(_, _, _, tile)| *tile);
         let bounded = keyed
             .iter()
-            .find(|(_, _, tile)| pace_floor.is_none_or(|floor| g.wdist(*tile, target) >= floor))
-            .map(|(_, _, tile)| *tile);
+            .find(|(_, _, _, tile)| pace_floor.is_none_or(|floor| g.wdist(*tile, target) >= floor))
+            .map(|(_, _, _, tile)| *tile);
         match bounded {
             Some(tile) => (tile, unbounded != Some(tile)),
             None => (unit.pos, unbounded.is_some_and(|tile| tile != unit.pos)),
@@ -3438,6 +3474,9 @@ mod healing_tests;
 
 #[cfg(test)]
 mod linked_recovery_tests;
+
+#[cfg(test)]
+mod roll_tests;
 
 #[cfg(test)]
 mod recon_veto_tests;
