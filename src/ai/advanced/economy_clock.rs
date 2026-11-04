@@ -65,16 +65,22 @@ pub(crate) fn economy_amount(speed: GameSpeed, online_amount: f64) -> f64 {
     online_amount * f64::from(speed.cost_percent()) / f64::from(GameSpeed::Online.cost_percent())
 }
 
+/// [`AdvancedAi::econ_window`] for an associated function that is handed the
+/// gene's flag rather than `self`.
+pub(super) fn econ_window_with(clock: bool, g: &Game, standard: u32) -> u32 {
+    if clock {
+        economy_turns(g.game_speed, GameSpeed::Online.scale_turns(standard))
+    } else {
+        g.standard_duration(standard)
+    }
+}
+
 impl AdvancedAi {
     /// A window the site wrote as `g.standard_duration(standard)` and tuned
     /// at Online: on the economy clock with the gene on, unchanged off. At
     /// Online both read the same.
     pub(super) fn econ_window(&self, g: &Game, standard: u32) -> u32 {
-        if self.economy_clock {
-            economy_turns(g.game_speed, GameSpeed::Online.scale_turns(standard))
-        } else {
-            g.standard_duration(standard)
-        }
+        econ_window_with(self.economy_clock, g, standard)
     }
 
     /// A raw turn count tuned at Online: on the economy clock with the gene

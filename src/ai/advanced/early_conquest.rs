@@ -661,12 +661,17 @@ impl AdvancedAi {
     // ------------------------------------------------------------------
 
     /// The original deadline plus preparation time after reservation opens.
-    fn conquest_commit_base(&self, g: &Game, opening: &ConquestOpening) -> u32 {
-        self.econ_window(g, CONQUEST_COMMIT_DEADLINE).max(
+    /// `clock` is `economy-clock`'s flag (see `advanced/economy_clock.rs`).
+    fn conquest_commit_base(g: &Game, opening: &ConquestOpening, clock: bool) -> u32 {
+        super::economy_clock::econ_window_with(clock, g, CONQUEST_COMMIT_DEADLINE).max(
             opening
                 .opened
                 .max(opening.preparing_since.unwrap_or(opening.opened))
-                .saturating_add(self.econ_window(g, CONQUEST_MIN_PREPARATION_TURNS)),
+                .saturating_add(super::economy_clock::econ_window_with(
+                    clock,
+                    g,
+                    CONQUEST_MIN_PREPARATION_TURNS,
+                )),
         )
     }
 
@@ -696,8 +701,8 @@ impl AdvancedAi {
     /// has a real target and can reserve production, it gets a minimum
     /// preparation window. A near-assembled force may receive one fixed,
     /// bounded extension at that deadline.
-    fn conquest_commit_due(g: &Game, opening: &ConquestOpening) -> u32 {
-        let base = self.conquest_commit_base(g, opening);
+    fn conquest_commit_due(g: &Game, opening: &ConquestOpening, clock: bool) -> u32 {
+        let base = Self::conquest_commit_base(g, opening, clock);
         base.max(opening.grace_until.unwrap_or(base))
     }
 
@@ -706,7 +711,8 @@ impl AdvancedAi {
     pub(super) fn conquest_reservation_open(&self, g: &Game) -> bool {
         self.early_conquest_opening
             && self.conquest_opening.as_ref().is_some_and(|opening| {
-                opening.declared.is_none() && g.turn < Self::conquest_commit_due(g, opening)
+                opening.declared.is_none()
+                    && g.turn < Self::conquest_commit_due(g, opening, self.economy_clock)
             })
     }
 
@@ -1166,7 +1172,8 @@ impl AdvancedAi {
         let opening = self.conquest_opening.as_ref()?;
         if opening.declared.is_some()
             || !opening.force.contains(&uid)
-            || (opening.assembled.is_none() && g.turn >= Self::conquest_commit_due(g, opening))
+            || (opening.assembled.is_none()
+                && g.turn >= Self::conquest_commit_due(g, opening, self.economy_clock))
             || !self.campaign_target_legal(g, pid, opening.target)
             || self.all_reserved_civilian_guards().contains(&uid)
         {
@@ -1513,8 +1520,9 @@ impl AdvancedAi {
             }
         }
         self.conquest_revalidate_rally(g, pid);
+        let clock = self.economy_clock;
         if let Some(opening) = self.conquest_opening.as_mut() {
-            let base = self.conquest_commit_base(g, opening);
+            let base = Self::conquest_commit_base(g, opening, clock);
             if opening.grace_until.is_none()
                 && opening.assembled.is_none()
                 && g.turn >= base
@@ -1627,7 +1635,9 @@ impl AdvancedAi {
                         return;
                     }
                 }
-                if g.turn >= Self::conquest_commit_due(g, opening) && opening.assembled.is_none() {
+                if g.turn >= Self::conquest_commit_due(g, opening, self.economy_clock)
+                    && opening.assembled.is_none()
+                {
                     self.conquest_release(
                         g,
                         "the commit deadline passed before the force ever assembled",
