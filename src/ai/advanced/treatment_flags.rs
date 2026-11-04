@@ -9491,6 +9491,18 @@ impl AdvancedAi {
         self.camps_close_the_age = false;
     }
 
+    /// Opt-in gene `camps-close-the-age-2`; see
+    /// [`Self::camps_close_the_age_2`]. One version of the family plays.
+    pub fn enable_camps_close_the_age_2(&mut self) {
+        self.camps_close_the_age = false;
+        self.camps_close_the_age_2 = true;
+    }
+
+    /// The twin of `enable_camps_close_the_age_2`.
+    pub fn disable_camps_close_the_age_2(&mut self) {
+        self.camps_close_the_age_2 = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

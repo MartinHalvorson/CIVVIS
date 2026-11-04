@@ -6541,6 +6541,10 @@ pub struct AdvancedAi {
     /// them to the era's end once the countdown runs. See
     /// `advanced/camps_close_the_age.rs`. Off by default.
     camps_close_the_age: bool,
+    /// `camps-close-the-age-2`: version one, and the age-closing camp party
+    /// brings a shooter and [`camps_close_the_age::CAMP_AGE_MARGIN`] times
+    /// the guard. Off by default.
+    camps_close_the_age_2: bool,
     // ---- append: e-f ------------------------------------------------
     /// Scale only the free-slot Campus claim’s build-time budget. Opt-in.
     free_slot_campus_clock: bool,
@@ -11768,6 +11772,7 @@ impl AdvancedAi {
             capital_leaves_the_frost: false,
             capital_frost_looks: Vec::new(),
             camps_close_the_age: false,
+            camps_close_the_age_2: false,
             // ---- append: e-f ----------------------------------------
             free_slot_campus_clock: false,
             first_capital_before_the_camp: false,

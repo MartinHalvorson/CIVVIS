@@ -4426,6 +4426,15 @@
           "builder-workforce-recovery-3": null
         }
       },
+      "camps-close-the-age": {
+        "rule_on": [],
+        "head": null,
+        "ships": null,
+        "versions": {
+          "camps-close-the-age": null,
+          "camps-close-the-age-2": null
+        }
+      },
       "campus-adjacency-threshold": {
         "rule_on": [
           "campus-adjacency-threshold-2"

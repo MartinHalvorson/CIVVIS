@@ -1395,6 +1395,9 @@ impl AdvancedAi {
             // Age raises every ClearCamp row, asks two bodies of each, and
             // dates them to the era's end. See `advanced/camps_close_the_age.rs`.
             let camp_age = self.camp_age_short(g, pid).is_some();
+            // `camps-close-the-age-2`: the party brings a shooter and a wider
+            // margin.
+            let camp_age_armed = camp_age && self.camps_close_the_age_2;
             let camp_age_deadline = camp_age.then(|| self.camp_age_deadline(g)).flatten();
             for camp in g.barb_camps.keys() {
                 let home = our_cities
@@ -1448,9 +1451,19 @@ impl AdvancedAi {
                             0.0
                         },
                     requirement: ForceNeed {
-                        strength: guard_strength * CAMP_MARGIN,
+                        strength: guard_strength
+                            * CAMP_MARGIN
+                            * if camp_age_armed {
+                                super::camps_close_the_age::CAMP_AGE_MARGIN
+                            } else {
+                                1.0
+                            },
                         melee: 1,
-                        ranged: 0,
+                        ranged: if camp_age_armed {
+                            super::camps_close_the_age::CAMP_AGE_SHOOTERS
+                        } else {
+                            0
+                        },
                         siege: 0,
                         bodies: if camp_age {
                             bodies.max(super::camps_close_the_age::CAMP_AGE_BODIES)

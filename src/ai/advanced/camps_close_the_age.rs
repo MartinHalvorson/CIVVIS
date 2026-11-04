@@ -21,6 +21,14 @@
 //! - takes the era's end as its deadline once the world-era countdown runs,
 //!   so the board ranks it by the turns left.
 //!
+//! Version two (`camps-close-the-age-2`) keeps all of that and arms the
+//! party: the row asks [`CAMP_AGE_SHOOTERS`] shooter, whose blow draws no
+//! return damage and which the kill plan fires before the melee finisher,
+//! and [`CAMP_AGE_MARGIN`] times the strength version one asks. Live
+//! 162453Z: a raised camp stood 34 turns beside one or two Warriors and a
+//! Heavy Chariot, each Warrior blow on the fortified Spearman dealing ~25
+//! and taking ~38, while the camp kept spawning.
+//!
 //! Off, the board is byte-identical: [`AdvancedAi::camp_age_short`] answers
 //! `None` before reading anything. Tests: `objective_board/camp_age_tests.rs`.
 
@@ -33,6 +41,11 @@ pub(super) const CAMP_AGE_SHORT: i64 = 6;
 pub(super) const CAMP_AGE_PREMIUM: f64 = 200.0;
 /// Bodies a ClearCamp row asks for while it closes an Age.
 pub(super) const CAMP_AGE_BODIES: usize = 2;
+/// `camps-close-the-age-2`: the age-closing party's strength over the
+/// guard's, on top of `CAMP_MARGIN`.
+pub(super) const CAMP_AGE_MARGIN: f64 = 1.5;
+/// `camps-close-the-age-2`: shooters the age-closing party brings.
+pub(super) const CAMP_AGE_SHOOTERS: usize = 1;
 /// The Moment a destroyed camp scores.
 const CAMP_MOMENT: &str = "MOMENT_BARBARIAN_CAMP_DESTROYED";
 
@@ -41,7 +54,7 @@ impl AdvancedAi {
     /// when that is one to [`CAMP_AGE_SHORT`] and a destroyed camp still
     /// scores in the world's era. `None` with the gene off.
     pub(super) fn camp_age_short(&self, g: &Game, pid: usize) -> Option<i64> {
-        if !self.camps_close_the_age {
+        if !(self.camps_close_the_age || self.camps_close_the_age_2) {
             return None;
         }
         let spec = g.rules.historic_moments.get(CAMP_MOMENT)?;
