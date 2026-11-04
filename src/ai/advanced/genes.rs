@@ -4855,6 +4855,16 @@ pub const GENES: &[Gene] = &[
     // `advanced/maori_founds_from_the_sea.rs`.
     Gene { tag: "founding-voyage", field: "founding_voyage", kind: Kind::OptIn, enable: AdvancedAi::enable_founding_voyage, disable: AdvancedAi::disable_founding_voyage },
     Gene { tag: "anvil-follows-the-defense", field: "anvil_follows_the_defense", kind: Kind::OptIn, enable: AdvancedAi::enable_anvil_follows_the_defense, disable: AdvancedAi::disable_anvil_follows_the_defense },
+    // Live Immortal Standard 012627Z: the Siege of Chucuito sat in Stage
+    // from turn 222 to 309 while the army went 16 to 5, 44 of 55 losses
+    // healthy land units removed by one blow of an AT Crew, a Cuirassier or a
+    // Giant Death Robot; the board read "743 against their 579" (power is a
+    // linear sum) and every peace offer was refused. Under the gene a Siege
+    // row whose city's visible field units sit 25+ strength over the defence
+    // of half our land army leaves the board for ten Standard turns, keyed by
+    // the city's tile, unless the city is falling. See
+    // `advanced/outclassed_siege.rs`.
+    Gene { tag: "outclassed-siege-stands-down", field: "outclassed_siege_stands_down", kind: Kind::OptIn, enable: AdvancedAi::enable_outclassed_siege_stands_down, disable: AdvancedAi::disable_outclassed_siege_stands_down },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
