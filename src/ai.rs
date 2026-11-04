@@ -4016,6 +4016,12 @@ pub struct BasicAi {
     /// blow. Written by the advanced controller each frame; empty with the
     /// gene off. See `advanced/guns_stay_out_of_reach.rs`.
     gun_lethal_tiles: HashMap<u32, HashMap<Pos, f64>>,
+    /// `guns-stay-out-of-reach-2`: per land military unit that is not a
+    /// siege gun, the tiles it can reach this turn where a visible hostile's
+    /// one blow would destroy it, with each such blow by its source. A
+    /// source no longer on the board stops counting. Empty with the gene
+    /// off. See `advanced/guns_stay_out_of_reach.rs`.
+    unit_lethal_blows: HashMap<u32, HashMap<Pos, Vec<(u32, f64)>>>,
     /// Melee units the ancient-rush lane wants in hand, or 0 when no rush is
     /// running. Set once a turn by `AdvancedAi` from its strategic plan.
     ///
@@ -6067,6 +6073,7 @@ impl BasicAi {
             move_refusal_congested: RefCell::new(HashMap::new()),
             frame_own_tiles: HashMap::new(),
             gun_lethal_tiles: HashMap::new(),
+            unit_lethal_blows: HashMap::new(),
             rush_military_floor: 0,
             settler_strand_discount: false,
             settler_backlog_brake: false,
@@ -6664,6 +6671,7 @@ impl BasicAi {
             move_refusal_congested: RefCell::new(HashMap::new()),
             frame_own_tiles: HashMap::new(),
             gun_lethal_tiles: HashMap::new(),
+            unit_lethal_blows: HashMap::new(),
             rush_military_floor: 0,
             settler_strand_discount: false,
             settler_backlog_brake: false,
@@ -15370,6 +15378,25 @@ impl BasicAi {
                 if lethal.get(&from).is_none_or(|here| blow >= here) {
                     return false;
                 }
+            }
+        }
+        // `guns-stay-out-of-reach-2`: the same refusal for every other land
+        // military unit, counting only blows whose hostile is still on the
+        // board — a hostile killed earlier this frame vetoes nothing. Empty
+        // with the gene off.
+        if let Some(lethal) = self.unit_lethal_blows.get(&uid) {
+            let strongest = |tile: &Pos| {
+                lethal.get(tile).map_or(0.0, |blows| {
+                    blows
+                        .iter()
+                        .filter(|(source, _)| g.units.contains_key(source))
+                        .map(|(_, blow)| *blow)
+                        .fold(0.0_f64, f64::max)
+                })
+            };
+            let blow = strongest(&to);
+            if blow > 0.0 && blow >= strongest(&from) {
+                return false;
             }
         }
         // `live-move-refusal-break`: a step this unit has provably been
