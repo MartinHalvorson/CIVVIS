@@ -21077,6 +21077,10 @@ local function applyOrders(player, pid, turn, rows)
 			-- next session; the gene holds for the whole game, so the lease
 			-- simply stays set. See `CivvisCongressRedirect`.
 			cfg.DiploVictoryGuardLeader = true;
+			emit("combat_policy_applied", {
+				turn = turn, frame = (CivvisFrames ~= nil and CivvisFrames.current) or 0,
+				policy = "CONGRESS_GUARDS_THE_LEADER",
+			});
 			table.remove(rows, i);
 		elseif row.kind == "observe" and row.verb == "AIR_ASSAULT" then
 			-- A failed spotting move or refused sortie changes no sight/damage,
