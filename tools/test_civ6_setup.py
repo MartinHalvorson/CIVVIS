@@ -85,7 +85,7 @@ class TheVerificationOptionsAreAppliedInPlace(unittest.TestCase):
                 },
                 "UserOptions.txt": {"PlayHistoricMomentAnimation": ("1", 0),
                                     "AutoSaveKeepCount": ("10", 50),
-                                    "AutoSaveFrequency": ("5", 2)},
+                                    "AutoSaveFrequency": ("5", 4)},
                 "GraphicsOptions.txt": {"EnableShadows": ("1", 0),
                                         "EnableCloudShadows": ("1", 0),
                                         "VSync": ("0", 1)},
@@ -173,7 +173,7 @@ class TheHarnessAppliesThemRightBeforeLaunching(unittest.TestCase):
             retained = int(env.read_option(options, "AutoSaveKeepCount"))
             self.assertGreaterEqual(retained, max(climb.RESUME_STEPS) + 2,
                                     "include the parked save and every older recovery stride")
-            self.assertEqual(env.read_option(options, "AutoSaveFrequency"), "2")
+            self.assertEqual(env.read_option(options, "AutoSaveFrequency"), "4")
             # Feed the configured rotation to the real recovery selector. No
             # later attempt should clamp to a newer save merely because the
             # launch retained too few entries.
