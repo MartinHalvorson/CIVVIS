@@ -43,9 +43,9 @@ use crate::game::adjacency::PlanAssumption;
 use crate::game::{Game, Item};
 use crate::name::Name;
 use crate::rules::Yields;
+use crate::think;
 use crate::world::DistrictFoundation;
 use crate::Pos;
-use crate::think;
 use std::collections::BTreeMap;
 
 /// A purchased site must carry at least this much raw adjacency — Gold buys
