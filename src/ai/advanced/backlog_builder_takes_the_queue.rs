@@ -171,6 +171,15 @@ impl AdvancedAi {
             if self.early_settler_floor_holds(g, pid, cid, plan) {
                 continue;
             }
+            // `science-heads-keep-their-queue`: science in progress keeps its
+            // queue; the claim goes to the next-fastest city, or waits.
+            if self.science_head_keeps_its_queue(g, cid) {
+                think!(self.journal(), Economy, Detail,
+                       "{} keeps its science ahead of the backlog Builder", g.cities[&cid].name;
+                       "science-heads-keep-their-queue: {} stays at the head of the queue",
+                       g.cities[&cid].queue.first().map_or_else(String::new, Self::plain_item));
+                continue;
+            }
             // An idle city passed the gate (which already keeps a due
             // Settler's queue); a busy one yields only a deferrable head.
             if let Some(item) = g.cities[&cid].queue.first() {

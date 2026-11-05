@@ -2245,6 +2245,9 @@ impl AdvancedAi {
         /// `plaza-serves-the-scientist`, which it carries); see
         /// `advanced/plaza_serves_the_scientist_2.rs`.
         plaza_serves_the_scientist_2 => enable_plaza_serves_the_scientist_2, disable_plaza_serves_the_scientist_2;
+        /// Opt-in gene `science-heads-keep-their-queue`; see
+        /// `advanced/science_heads_keep_their_queue.rs`.
+        science_heads_keep_their_queue => enable_science_heads_keep_their_queue, disable_science_heads_keep_their_queue;
     }
 }
 
