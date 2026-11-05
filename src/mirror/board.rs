@@ -965,3 +965,15 @@ pub(super) fn apply_territory(
     }
     apply_foreign_infrastructure(game, snapshot);
 }
+
+pub(crate) fn apply_explored(game: &mut crate::game::Game, snapshot: &Snapshot) {
+    // The seat is player 0 throughout this bridge: `plant_unit(&mut game, 0, …)` for
+    // our own units, `game.players[0]` for our civics and techs.
+    let Some(seat) = game.players.get_mut(0) else {
+        return;
+    };
+    seat.explored = snapshot
+        .revealed_positions()
+        .map(|(x, y)| crate::hex::offset_to_axial(x, y))
+        .collect();
+}
