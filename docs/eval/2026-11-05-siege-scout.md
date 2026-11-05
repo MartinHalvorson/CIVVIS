@@ -69,3 +69,9 @@ the downloaded artifact. Checksums are integrity evidence, not signatures.
 Native construction timing, survival and Science strength remain unmeasured
 for this fix. Fresh captured-input queries cannot reconstruct the original
 private planner or prove a counterfactual saved city.
+
+Main was merged once as `688665f94fec5f58efb10f6d2f515714e83bf45f`.
+The tested siege-classification helper and its complete regression module are
+byte-identical to the qualified candidate after integration. Upstream changes
+remain outside this native proposal qualification; the final integrated-head
+CI gate is still required. No combined native strength is inferred.
