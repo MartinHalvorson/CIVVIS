@@ -10155,6 +10155,10 @@ impl SpyLossLedger {
     }
 
     /// The turn of a `unit_lost` line for one of our Spies, else `None`.
+    /// A line that names a `cause` is a removal the mod knows is no loss: a
+    /// Spy starting `SPY_TRAVEL_NEW_CITY` leaves the map and arrives under a
+    /// new unit id (`cause` `spy_travel`), and 163 of the 253 Deity Spy
+    /// removals of 2026-11-04/05 were such journeys.
     fn spy_loss_turn(line: &[u8]) -> Option<u32> {
         let has = |needle: &[u8]| line.windows(needle.len()).any(|window| window == needle);
         if !has(b"unit_lost") || !has(b"UNIT_SPY") {
@@ -10162,10 +10166,11 @@ impl SpyLossLedger {
         }
         let event: serde_json::Value = serde_json::from_slice(line).ok()?;
         (event.get("kind")?.as_str()? == "unit_lost"
-            && event.get("unit_kind")?.as_str()? == "UNIT_SPY")
-            .then(|| event.get("turn")?.as_u64())
-            .flatten()
-            .and_then(|turn| u32::try_from(turn).ok())
+            && event.get("unit_kind")?.as_str()? == "UNIT_SPY"
+            && event.get("cause").is_none_or(serde_json::Value::is_null))
+        .then(|| event.get("turn")?.as_u64())
+        .flatten()
+        .and_then(|turn| u32::try_from(turn).ok())
     }
 
     /// The losses on or before `turn` (a replay reads a log that runs on).
