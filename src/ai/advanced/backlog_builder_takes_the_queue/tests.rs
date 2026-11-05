@@ -242,3 +242,88 @@ fn production_ground_claims_and_holds_past_the_stock_cover() {
         "the stock quota alone would not hold it"
     );
 }
+
+fn building(name: &str) -> Item {
+    Item::Building {
+        building: Name::new(name),
+    }
+}
+
+/// `science-heads-keep-their-queue`: a Campus-family district (Korea's
+/// Seowon too) and its buildings are science, matched by family.
+#[test]
+fn science_heads_are_the_campus_family() {
+    let (game, capital, _second) = backlogged_empire();
+    let pos = game.cities[&capital].pos;
+    let district = |name: &str| Item::District {
+        district: Name::new(name),
+        pos,
+    };
+    for item in [
+        building("library"),
+        building("university"),
+        building("research_lab"),
+        district("campus"),
+        district("seowon"),
+    ] {
+        assert!(
+            AdvancedAi::science_head(&game, &item),
+            "{item:?} is science"
+        );
+    }
+    for item in [
+        building("monument"),
+        building("workshop"),
+        district("theater_square"),
+        unit("warrior"),
+    ] {
+        assert!(!AdvancedAi::science_head(&game, &item), "{item:?} is not");
+    }
+}
+
+/// Science in progress keeps its queue: with both cities on a Library the
+/// guarded claim waits rather than displace one, and with one city on a
+/// Library and the other on a Warrior it takes the Warrior's queue. Off,
+/// the stock claim takes a Library's queue.
+#[test]
+fn the_backlog_builder_spares_science_in_progress() {
+    let (mut game, capital, second) = backlogged_empire();
+    for cid in [capital, second] {
+        game.cities.get_mut(&cid).unwrap().queue = vec![building("library")];
+    }
+    let stock = armed();
+    let mut off = game.clone();
+    let plan = stock.assess(&off, 0);
+    stock.claim_backlog_builder(&mut off, 0, &plan);
+    assert_eq!(
+        builders_at_head(&off),
+        1,
+        "off: the claim takes a Library's queue"
+    );
+
+    let mut guarded = armed();
+    guarded.enable_science_heads_keep_their_queue();
+    let mut both = game.clone();
+    let plan = guarded.assess(&both, 0);
+    guarded.claim_backlog_builder(&mut both, 0, &plan);
+    assert_eq!(
+        builders_at_head(&both),
+        0,
+        "every city on science: the claim waits"
+    );
+    assert!(heads(&both)
+        .iter()
+        .all(|head| *head == Some(building("library"))));
+
+    let mut mixed = game.clone();
+    mixed.cities.get_mut(&second).unwrap().queue = vec![unit("warrior")];
+    let plan = guarded.assess(&mixed, 0);
+    guarded.claim_backlog_builder(&mut mixed, 0, &plan);
+    assert_eq!(builders_at_head(&mixed), 1);
+    assert_eq!(
+        mixed.cities[&capital].queue.first(),
+        Some(&building("library")),
+        "the Library keeps its queue"
+    );
+    assert_eq!(mixed.cities[&second].queue.first(), Some(&unit("builder")));
+}
