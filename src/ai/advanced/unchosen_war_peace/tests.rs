@@ -140,6 +140,56 @@ fn a_war_our_roster_can_win_is_kept() {
     assert_eq!(ai.unchosen_war_peace_since(&g, 0, 1, &plan), None);
 }
 
+/// Native 151911's journal had enough paper strength but no staged units.
+/// Keep this distinction explicit while evaluating a replacement siege veto.
+#[test]
+fn paper_feasibility_vetoes_science_peace_with_an_entirely_distant_army() {
+    let (mut g, plan) = two_majors();
+    let mut ai = AdvancedAi::targeting(VictoryTarget::Science);
+    ai.enable_unchosen_war_takes_the_first_peace();
+    let journal = crate::reasoning::Journal::recording();
+    ai.base.attach_journal(journal.handle());
+    journal.begin_turn(g.turn, 0);
+    ai.observe_unchosen_wars(&g, 0);
+    g.turn += 1;
+    g.at_war.insert((0, 1));
+    watch(&mut ai, &mut g, UNCHOSEN_WAR_PEACE_AGE);
+    assert!(ai.unchosen_war_peace_since(&g, 0, 1, &plan).is_some());
+    assert!(journal
+        .since(0)
+        .thoughts
+        .last()
+        .unwrap()
+        .detail
+        .contains("eligible"));
+    let target = g.cities[&g.player_city_ids(1)[0]].pos;
+    let distant = g
+        .wdisk(target, 24)
+        .into_iter()
+        .filter(|pos| {
+            g.map
+                .get(*pos)
+                .is_some_and(|tile| g.rules.is_passable(tile) && !g.rules.is_water(tile))
+        })
+        .max_by_key(|pos| (g.wdist(*pos, target), *pos))
+        .expect("distant land");
+    assert!(g.wdist(distant, target) > 10);
+    for uid in g.player_unit_ids(0) {
+        g.remove_unit(uid);
+    }
+    for _ in 0..24 {
+        g.spawn_test_unit("swordsman", 0, distant);
+    }
+    assert!(ai.staged_campaign_units(&g, 0, 1, target).is_empty());
+    let (feasible, bill, roster) = ai.war_policy_siege_against(&g, 0, 1);
+    assert!(feasible && roster >= bill);
+    assert_eq!(ai.unchosen_war_peace_since(&g, 0, 1, &plan), None);
+    let trace = journal.since(0);
+    let detail = &trace.thoughts.last().unwrap().detail;
+    assert!(detail.contains("whole-roster siege feasibility"));
+    assert!(detail.contains("cities 1/4"));
+}
+
 #[test]
 fn the_gene_ships_off_and_is_registered() {
     super::super::test_support::opt_in_off_in_both_controllers(

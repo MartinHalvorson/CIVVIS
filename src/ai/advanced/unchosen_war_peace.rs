@@ -121,14 +121,44 @@ impl AdvancedAi {
         if !self.unchosen_war_takes_the_first_peace || !g.is_at_war(pid, rival) {
             return None;
         }
-        let since = *self.unchosen_war_since.get(&rival)?;
-        (g.turn.saturating_sub(since) >= UNCHOSEN_WAR_PEACE_AGE
-            && g.peace_available_at(pid, rival).is_none()
-            && g.player_city_ids(pid).len() < plan.desired_cities
-            && !self.war_policy_siege_against(g, pid, rival).0
-            && !self.domination_siege_is_progressing(g, pid, rival, plan)
-            && !self.domination_siege_train_mobilizing(g, pid, rival, plan))
-        .then_some(since)
+        let since = self.unchosen_war_since.get(&rival).copied();
+        // Report the first binding predicate, in the same order as the gate.
+        // A siege journal describes a different force from the whole-roster
+        // feasibility test; it cannot establish why this offer was withheld.
+        let blocked = match since {
+            None => Some("no observed unchosen declaration"),
+            Some(since) if g.turn.saturating_sub(since) < UNCHOSEN_WAR_PEACE_AGE => {
+                Some("observed war is younger than eight turns")
+            }
+            _ if g.peace_available_at(pid, rival).is_some() => {
+                Some("host minimum war duration has not passed")
+            }
+            _ if g.player_city_ids(pid).len() >= plan.desired_cities => {
+                Some("the empire holds the planned city count")
+            }
+            _ if self.war_policy_siege_against(g, pid, rival).0 => {
+                Some("whole-roster siege feasibility")
+            }
+            _ if self.domination_siege_is_progressing(g, pid, rival, plan) => {
+                Some("a Domination siege is progressing")
+            }
+            _ if self.domination_siege_train_mobilizing(g, pid, rival, plan) => {
+                Some("a Domination siege train is mobilizing")
+            }
+            _ => None,
+        };
+        if self.journal().wants(crate::reasoning::Level::Detail) {
+            think!(self.journal(), Diplomacy, Detail,
+                   "Early peace gate for {}", g.players[rival].civ;
+                   "{}; observed declaration {:?}, turn {}, cities {}/{}",
+                   blocked.unwrap_or("eligible; later diplomacy vetoes still apply"),
+                   since, g.turn, g.player_city_ids(pid).len(), plan.desired_cities);
+        }
+        if blocked.is_none() {
+            since
+        } else {
+            None
+        }
     }
 }
 

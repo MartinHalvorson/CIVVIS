@@ -633,3 +633,131 @@ fn the_short_seowon_pause_keeps_its_scope_and_expansion_safety_guards() {
         assert_eq!(head(&game, cid), Some(unit("settler")), "{case}");
     }
 }
+
+fn korean_campus_and_parity_unit() -> (Game, AdvancedAi, u32, StrategicPlan, Item) {
+    let (mut game, mut ai, cid, plan, campus) = one_citizen_native_korean_city();
+    game.cities.get_mut(&cid).unwrap().pop = 4;
+    game.cities.get_mut(&cid).unwrap().queue = vec![unit("warrior")];
+    game.cities.get_mut(&cid).unwrap().production = 7.0;
+    Arc::make_mut(&mut game.host_buildable)
+        .get_mut(&cid)
+        .unwrap()
+        .get_mut(&Game::production_block_key(&campus))
+        .unwrap()
+        .turns = Some(5.0);
+    Arc::make_mut(&mut game.host_buildable)
+        .get_mut(&cid)
+        .unwrap()
+        .insert(
+            Game::production_block_key(&unit("warrior")),
+            crate::game::HostMenuEntry {
+                cost: Some(40.0),
+                turns: Some(3.0),
+            },
+        );
+    game.place_city(1, (23, 5), None);
+    game.players[0].met.insert(1);
+    game.players[1].met.insert(0);
+    Arc::make_mut(&mut game.observed_military_power).insert(0, 30.0);
+    Arc::make_mut(&mut game.observed_military_power).insert(1, 120.0);
+    ai.enable_near_rival_deterrence();
+    assert!(ai.deterrence_unit_holds(&game, 0, &unit("warrior")));
+    (game, ai, cid, plan, campus)
+}
+
+#[test]
+fn a_five_turn_korean_science_seowon_precedes_parity_without_disabling_it() {
+    let (mut game, ai, cid, plan, campus) = korean_campus_and_parity_unit();
+    let mut control = game.clone();
+    let mut version_one = ai.clone();
+    version_one.disable_campus_claims_the_free_slot_2();
+    version_one.enable_campus_claims_the_free_slot();
+    version_one.claim_free_slot_campus(&mut control, 0, &plan);
+    assert_eq!(head(&control, cid), Some(unit("warrior")));
+    ai.claim_free_slot_campus(&mut game, 0, &plan);
+    assert_eq!(head(&game, cid), Some(campus));
+    assert_eq!(game.item_invested_production(cid, &unit("warrior")), 7.0);
+    assert!(ai.deterrence_threat(&game, 0).is_some());
+}
+
+#[test]
+fn parity_keeps_a_zero_progress_first_seowon_when_the_native_quote_changes() {
+    let (mut game, ai, cid, plan, campus) = korean_campus_and_parity_unit();
+    ai.claim_free_slot_campus(&mut game, 0, &plan);
+    assert_eq!(head(&game, cid), Some(campus.clone()));
+    assert_eq!(game.item_invested_production(cid, &campus), 0.0);
+    Arc::make_mut(&mut game.host_buildable)
+        .get_mut(&cid)
+        .unwrap()
+        .get_mut(&Game::production_block_key(&campus))
+        .unwrap()
+        .turns = Some(6.0);
+    assert!(!ai.short_seowon_precedes_parity(&game, 0, cid, &plan, &campus));
+    assert!(ai.first_seowon_holds_parity(&game, 0, cid, &plan));
+    ai.claim_deterrence_unit(&mut game, 0, &plan);
+    assert_eq!(head(&game, cid), Some(campus));
+}
+
+#[test]
+fn the_parity_pause_keeps_native_budget_and_emergency_guards() {
+    let (base, armed, cid, plan, campus) = korean_campus_and_parity_unit();
+    for case in [
+        "version one",
+        "other civilization",
+        "other victory",
+        "science disabled",
+        "threat",
+        "other city threatened",
+        "recent attack",
+        "rush",
+        "recovery",
+        "war",
+        "no native quote",
+        "slow",
+        "zero",
+        "negative",
+        "nonfinite",
+        "nan",
+    ] {
+        let mut game = base.clone();
+        let mut ai = armed.clone();
+        let mut plan = plan.clone();
+        match case {
+            "version one" => {
+                ai.disable_campus_claims_the_free_slot_2();
+                ai.enable_campus_claims_the_free_slot();
+            }
+            "other civilization" => game.players[0].civ = "Rome".to_string(),
+            "other victory" => ai.victory_target = Some(VictoryTarget::Culture),
+            "science disabled" => game.victory_conditions.science = false,
+            "threat" => plan.threatened_city = Some(cid),
+            "other city threatened" => {
+                plan.threatened_city = game.player_city_ids(0).into_iter().find(|c| *c != cid)
+            }
+            "recent attack" => game.cities.get_mut(&cid).unwrap().last_attacked = game.turn - 1,
+            "rush" => plan.rush = true,
+            "recovery" => plan.strategy = GrandStrategy::Recovery,
+            "war" => {
+                game.at_war.insert((0, 1));
+            }
+            "no native quote" => game.host_buildable = Arc::default(),
+            _ => {
+                Arc::make_mut(&mut game.host_buildable)
+                    .get_mut(&cid)
+                    .unwrap()
+                    .get_mut(&Game::production_block_key(&campus))
+                    .unwrap()
+                    .turns = Some(match case {
+                    "slow" => 6.0,
+                    "zero" => 0.0,
+                    "negative" => -1.0,
+                    "nonfinite" => f64::INFINITY,
+                    "nan" => f64::NAN,
+                    _ => unreachable!(),
+                });
+            }
+        }
+        ai.claim_free_slot_campus(&mut game, 0, &plan);
+        assert_eq!(head(&game, cid), Some(unit("warrior")), "{case}");
+    }
+}

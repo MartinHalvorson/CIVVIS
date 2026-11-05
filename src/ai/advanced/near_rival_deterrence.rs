@@ -193,6 +193,7 @@ impl AdvancedAi {
             if plan.threatened_city == Some(cid)
                 || self.early_settler_floor_holds(g, pid, cid, plan)
                 || !self.deterrence_may_displace(g, pid, cid)
+                || self.first_seowon_holds_parity(g, pid, cid, plan)
                 || g.cities[&cid]
                     .queue
                     .first()
