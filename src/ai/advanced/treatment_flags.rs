@@ -76,8 +76,6 @@ macro_rules! toggles {
 
 impl AdvancedAi {
     toggles! {
-        /// Price the Science lost when a new district crowds an owned Seowon.
-        districts_protect_seowon_science => enable_districts_protect_seowon_science, disable_districts_protect_seowon_science;
         /// Enable `victory-deadline-budget` for measurement.
         victory_deadline_budget => enable_victory_deadline_budget, disable_victory_deadline_budget;
         /// Enable `culture-tourism-payback` for measurement.
@@ -2171,6 +2169,8 @@ impl AdvancedAi {
         free_slot_campus_clock => enable_free_slot_campus_clock, disable_free_slot_campus_clock;
         /// Opt-in gene `camps-close-the-age`; see [`Self::camps_close_the_age`].
         camps_close_the_age => enable_camps_close_the_age, disable_camps_close_the_age;
+        /// Price the Science lost when a new district crowds an owned Seowon.
+        districts_protect_seowon_science => enable_districts_protect_seowon_science, disable_districts_protect_seowon_science;
     }
 }
 

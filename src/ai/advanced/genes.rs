@@ -4981,10 +4981,10 @@ pub const GENES: &[Gene] = &[
     // reservation now spares that Builder as it spares the housing Granary.
     // See `advanced/siege_production.rs`.
     Gene { tag: "breaker-spares-the-backlog-builder", field: "breaker_spares_the_backlog_builder", kind: Kind::OptIn, enable: AdvancedAi::enable_breaker_spares_the_backlog_builder, disable: AdvancedAi::disable_breaker_spares_the_backlog_builder },
-    // ---- append: a-b ------------------------------------------------
-    // ---- append: c-d ------------------------------------------------
     // A new district pays for the Science lost at neighboring owned Seowons.
     Gene { tag: "districts-protect-seowon-science", field: "districts_protect_seowon_science", kind: Kind::OptIn, enable: AdvancedAi::enable_districts_protect_seowon_science, disable: AdvancedAi::disable_districts_protect_seowon_science },
+    // ---- append: a-b ------------------------------------------------
+    // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
     // ---- append: g-k ------------------------------------------------
     // ---- append: l-o ------------------------------------------------
