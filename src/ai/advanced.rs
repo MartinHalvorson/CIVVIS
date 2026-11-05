@@ -20918,8 +20918,15 @@ impl AdvancedAi {
     /// pre-war exemption above also protects economic repairs, but repairing
     /// a Library or Commercial Hub must not cancel an emergency wall order.
     /// Keep repairs to fortified districts, including unique replacements.
+    /// Recon queues likewise retain their pre-war exemption, but cannot hold
+    /// an already-confirmed siege defense: Yangsan kept a Scout while damaged
+    /// and able to build Walls in the native Deity Korea control.
     fn active_queue_answers_siege(g: &Game, item: &Item) -> bool {
         match item {
+            Item::Unit { unit } | Item::Formation { unit, .. } => {
+                g.rules.units[unit].promotion_class != "recon"
+                    && Self::active_queue_is_defensive(g, item)
+            }
             Item::Repair { repair, pos } => {
                 repair == "district"
                     && g.map
