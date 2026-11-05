@@ -5084,6 +5084,12 @@ pub const GENES: &[Gene] = &[
     // steals landed a Eureka (~250-430 Science each) while 131 other orders
     // bought none. See `spies_steal_the_lead.rs`.
     Gene { tag: "spies-steal-the-lead", field: "spies_steal_the_lead", kind: Kind::OptIn, enable: AdvancedAi::enable_spies_steal_the_lead, disable: AdvancedAi::disable_spies_steal_the_lead },
+    // `spy-civics-come-first`: a Science aim researches Nationalism,
+    // Ideology and Cold War (each a Spy slot) sooner, their prerequisites at
+    // half the weight. The Deity win 122513Z reached slots 3 and 4 at t119
+    // and t152; the losses 125414Z at 158/174, 105753Z at 131/173. See
+    // `advanced/spy_civics_come_first.rs`.
+    Gene { tag: "spy-civics-come-first", field: "spy_civics_come_first", kind: Kind::OptIn, enable: AdvancedAi::enable_spy_civics_come_first, disable: AdvancedAi::disable_spy_civics_come_first },
     // `holdable-land-keeps-settling`: past the opening floor (t60 Online),
     // the soonest unthreatened city queues one Settler while the plan wants
     // more cities and a seat we can very likely hold lies in reach: the

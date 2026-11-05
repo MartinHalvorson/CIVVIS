@@ -8706,6 +8706,9 @@ pub struct AdvancedAi {
     /// `advanced/battle_planner.rs`. Off by default.
     ranged_kills_are_free: bool,
     // ---- append: s-s ------------------------------------------------
+    /// `spy-civics-come-first`: a Science aim researches the Spy-slot civics
+    /// sooner. See `advanced/spy_civics_come_first.rs`.
+    spy_civics_come_first: bool,
     /// `spies-steal-the-lead`: foreign cities where a Spy of ours stood and
     /// the host's menu offered no Steal Tech Boost (no Campus, or nothing
     /// left to steal), and the turn it last did. See
@@ -10804,6 +10807,9 @@ mod spaceport_above_sea;
 mod spears_answer_the_horse;
 /// `spies-steal-the-lead`: see `advanced/spies_steal_the_lead.rs`.
 mod spies_steal_the_lead;
+/// `spy-civics-come-first`: the Spy-slot civics sooner. See
+/// `advanced/spy_civics_come_first.rs`.
+mod spy_civics_come_first;
 mod trader_fills_the_idle_route;
 pub use science_victory_drive::ScienceDrive;
 
@@ -12365,6 +12371,7 @@ impl AdvancedAi {
             plaza_serves_the_scientist: false,
             ranged_kills_are_free: false,
             // ---- append: s-s ----------------------------------------
+            spy_civics_come_first: false,
             steal_dry_cities: BTreeMap::new(),
             settler_shelters_from_the_war: false,
             settler_shelters_from_the_war_2: false,
