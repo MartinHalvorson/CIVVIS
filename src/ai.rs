@@ -419,6 +419,9 @@ mod naval_demand;
 mod opening_builder;
 #[cfg(test)]
 mod policy_growth_tests;
+/// `prod-tiles-call-the-builders`: the worked-backlog Builder quota counts
+/// production ground in full. See `ai/prod_tiles_call_the_builders.rs`.
+mod prod_tiles_call_the_builders;
 /// What a city builds next: `pick_item`, its items, gold purchases and the
 /// Trader decision. See `ai/production_choice.rs`.
 mod production_choice;
@@ -2968,6 +2971,13 @@ pub struct BasicAi {
     ///
     /// Set from `AdvancedAi` by the opt-in gene `builders-cover-the-worked-backlog`.
     pub(crate) builders_cover_the_worked_backlog: bool,
+    /// With `builders_cover_the_worked_backlog`, the backlog quota asks one
+    /// whole charge for every unimproved worked tile a production improvement
+    /// fits, and half a charge for every good idle one, instead of 60% of the
+    /// worked backlog. See `ai/prod_tiles_call_the_builders.rs`.
+    ///
+    /// Set from `AdvancedAi` by the opt-in gene `prod-tiles-call-the-builders`.
+    pub(crate) prod_tiles_call_the_builders: bool,
     /// From turn 90 standard (t60 Online), ahead of the military floor: the
     /// Market of a standing Commercial Hub, then a Trader while the empire's
     /// routes and Traders leave a route slot open, then a Commercial Hub on
@@ -5995,6 +6005,7 @@ impl BasicAi {
             housing_bound_city_builds_its_granary: false,
             housing_cap_builds_the_aqueduct: false,
             builders_cover_the_worked_backlog: false,
+            prod_tiles_call_the_builders: false,
             commercial_hub_and_traders: false,
             plan_threatened_city: None,
             industry_before_the_army: false,
@@ -6607,6 +6618,7 @@ impl BasicAi {
             housing_bound_city_builds_its_granary: false,
             housing_cap_builds_the_aqueduct: false,
             builders_cover_the_worked_backlog: false,
+            prod_tiles_call_the_builders: false,
             commercial_hub_and_traders: false,
             plan_threatened_city: None,
             industry_before_the_army: false,
@@ -12637,11 +12649,24 @@ impl BasicAi {
             return None;
         }
         let backlog = Self::unimproved_worked_tiles(g, pid);
-        if backlog < Self::WORKED_BACKLOG_MIN_TILES {
+        // `prod-tiles-call-the-builders`: the quota in charges. Off, it is
+        // `WORKED_BACKLOG_COVER` of `backlog`, and the gates below are the
+        // stock ones. See `ai/prod_tiles_call_the_builders.rs`.
+        let (wanted, production) = self.worked_backlog_charges_wanted(g, pid, backlog);
+        if production.is_none() && backlog < Self::WORKED_BACKLOG_MIN_TILES {
+            return None;
+        }
+        if production.is_some()
+            && wanted < Self::WORKED_BACKLOG_MIN_TILES as f64 * Self::WORKED_BACKLOG_COVER
+        {
             return None;
         }
         let cover = Self::builder_charge_cover(g, pid);
-        if f64::from(cover) >= backlog as f64 * Self::WORKED_BACKLOG_COVER {
+        if production.is_none() && f64::from(cover) >= backlog as f64 * Self::WORKED_BACKLOG_COVER
+        {
+            return None;
+        }
+        if production.is_some() && f64::from(cover) >= wanted {
             return None;
         }
         let builder = Item::Unit {
@@ -12650,7 +12675,19 @@ impl BasicAi {
         if !g.can_produce(pid, cid, &builder) {
             return None;
         }
-        let max_turns = if backlog as f64 >= f64::from(cover) * Self::WORKED_BACKLOG_RUNAWAY_RATIO {
+        // On, the runaway reading compares the quota with the cover in the
+        // same charge units the stock rule uses: a backlog twice the cover is
+        // a quota `2 x WORKED_BACKLOG_COVER` times it.
+        let runaway = match production {
+            None => backlog as f64 >= f64::from(cover) * Self::WORKED_BACKLOG_RUNAWAY_RATIO,
+            Some(_) => {
+                wanted
+                    >= f64::from(cover)
+                        * Self::WORKED_BACKLOG_RUNAWAY_RATIO
+                        * Self::WORKED_BACKLOG_COVER
+            }
+        };
+        let max_turns = if runaway {
             Self::WORKED_BACKLOG_RUNAWAY_MAX_TURNS
         } else {
             Self::WORKED_BACKLOG_BUILDER_MAX_TURNS

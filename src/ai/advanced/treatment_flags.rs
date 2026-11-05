@@ -2177,6 +2177,10 @@ impl AdvancedAi {
         military_alliance_shield => enable_military_alliance_shield, disable_military_alliance_shield;
         /// Price the Science lost when a new district crowds an owned Seowon.
         districts_protect_seowon_science => enable_districts_protect_seowon_science, disable_districts_protect_seowon_science;
+        /// Opt-in gene `prod-tiles-call-the-builders`; acts through
+        /// `builders-cover-the-worked-backlog`'s step. See
+        /// `ai/prod_tiles_call_the_builders.rs`.
+        base.prod_tiles_call_the_builders => enable_prod_tiles_call_the_builders, disable_prod_tiles_call_the_builders;
     }
 }
 

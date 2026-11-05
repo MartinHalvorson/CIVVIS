@@ -202,6 +202,10 @@ impl AdvancedAi {
                     {cover} charges, {turns:.1} turns, ahead of {}",
                    head.map_or_else(|| "an idle queue".to_string(), |item| format!(
                        "{} (it keeps its progress)", Self::plain_item(&item))));
+            if let Some(note) = self.base.production_tile_quota_note(g, pid) {
+                think!(self.journal(), Economy, Detail,
+                       "{name}'s Builder answers the production ground"; "{note}");
+            }
         }
     }
 }

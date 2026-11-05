@@ -5016,6 +5016,16 @@ pub const GENES: &[Gene] = &[
     Gene { tag: "military-alliance-shield", field: "military_alliance_shield", kind: Kind::OptIn, enable: AdvancedAi::enable_military_alliance_shield, disable: AdvancedAi::disable_military_alliance_shield },
     // A new district pays for the Science lost at neighboring owned Seowons.
     Gene { tag: "districts-protect-seowon-science", field: "districts_protect_seowon_science", kind: Kind::OptIn, enable: AdvancedAi::enable_districts_protect_seowon_science, disable: AdvancedAi::disable_districts_protect_seowon_science },
+    // Live Deity games work bare hills and forests through the mid-game (20%
+    // of worked plain hills mined at t60, 44% at t80; 21% / 13% / 5% of the
+    // empire's Production lost at t60/80/100) while the backlog step trains
+    // one Builder at a time. Under the gene the step's quota asks a whole
+    // charge for each unimproved worked tile a Mine, Lumber Mill or Quarry
+    // fits, and half a charge for each good idle one (Food-bearing, within
+    // the work radius), instead of 60% of the worked backlog. Needs
+    // `builders-cover-the-worked-backlog`. See
+    // `ai/prod_tiles_call_the_builders.rs`.
+    Gene { tag: "prod-tiles-call-the-builders", field: "prod_tiles_call_the_builders", kind: Kind::OptIn, enable: AdvancedAi::enable_prod_tiles_call_the_builders, disable: AdvancedAi::disable_prod_tiles_call_the_builders },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
