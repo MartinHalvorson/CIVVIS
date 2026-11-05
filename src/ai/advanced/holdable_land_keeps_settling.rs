@@ -47,7 +47,10 @@
 //! - the city has population [`HOLDABLE_LAND_MIN_POP`] or more, was not
 //!   attacked in the last four turns, has no barbarian raider in its home
 //!   ring, and can train the Settler within the early floor's build cap;
-//! - the city's queue head may give way, by the early floor's own test.
+//! - the city's queue head may give way: by the early floor's own test, or
+//!   because it is a district at most half built (its progress is kept and
+//!   `paused-district-finishes` resumes it), except the empire's first
+//!   Campus while no Campus-family district stands.
 //!
 //! **Holdable** is the existing `settler-site-gate` verdict (an unclaimed
 //! seat, outside every visible rival's Loyalty sphere, worth at least the
@@ -108,6 +111,12 @@ pub(crate) const HOLDABLE_LAND_RAIDER_TILES: i32 = 3;
 /// A city attacked within this many turns keeps its queue.
 const HOLDABLE_LAND_ATTACK_MEMORY: u32 = 4;
 
+/// The most of a district's cost that may already be paid for the floor's
+/// Settler to take its queue. The host keeps a switched item's progress and
+/// `paused-district-finishes` resumes it, so a young district loses only
+/// time; one past half built finishes first.
+pub(crate) const HOLDABLE_LAND_DISTRICT_DISPLACE_SHARE: f64 = 0.5;
+
 /// The site-list radius, the one `settler_site_gate` reads.
 const HOLDABLE_LAND_SITE_RADIUS: i32 = 11;
 
@@ -148,6 +157,46 @@ impl AdvancedAi {
         }
         let (walkers, _) = Self::early_settler_census(g, pid);
         g.player_city_ids(pid).len() + walkers < self.settlement_target(plan)
+    }
+
+    /// Whether `cid`'s queue head may give way to the floor's Settler: the
+    /// early floor's test, or a district at most
+    /// [`HOLDABLE_LAND_DISTRICT_DISPLACE_SHARE`] built with more than
+    /// `paused-district-finishes`'s two turns of work left, except the
+    /// empire's first Campus while none stands. In the live census an
+    /// invested district was the queue that kept an otherwise eligible city
+    /// 173 times on boards where no Settler was queued; Builders and soldiers
+    /// still keep their queues.
+    pub(super) fn holdable_land_may_displace(g: &Game, pid: usize, cid: u32) -> bool {
+        if Self::early_settler_may_displace(g, pid, cid) {
+            return true;
+        }
+        let Some(item @ Item::District { district, .. }) = g.cities[&cid].queue.first() else {
+            return false;
+        };
+        // The empire's first Campus (Korea's Seowon) is its early science
+        // jump and keeps its queue until one stands (-04).
+        let campus = crate::name!("campus");
+        if g.district_family(*district) == campus
+            && !g.player_city_ids(pid).iter().any(|other| {
+                g.cities[other]
+                    .districts
+                    .keys()
+                    .any(|built| g.district_family(*built) == campus)
+            })
+        {
+            return false;
+        }
+        let cost = g.item_cost_for_city(pid, cid, item);
+        let invested = g.item_invested_production(cid, item);
+        // More than `paused-district-finishes`'s two turns of work left, or
+        // that gene puts the district straight back at the head of the queue
+        // and the Settler claim is spent for nothing (3 of 75 census claims).
+        let per_turn = g.city_yields(cid).production.max(0.5);
+        cost > 0.0
+            && invested <= HOLDABLE_LAND_DISTRICT_DISPLACE_SHARE * cost
+            && (cost - invested) / per_turn
+                > super::paused_district_finish::PAUSED_DISTRICT_FINISH_TURNS
     }
 
     /// The land soldier test shared by both soldier filters: a unit that can
@@ -396,7 +445,7 @@ impl AdvancedAi {
                 Some("recently attacked")
             } else if Self::early_settler_raider_near(g, city.pos) {
                 Some("a raider in its ring")
-            } else if !Self::early_settler_may_displace(g, pid, cid) {
+            } else if !Self::holdable_land_may_displace(g, pid, cid) {
                 Some("its queue keeps its item")
             } else if !g.can_produce(pid, cid, &item) {
                 Some("cannot train a Settler")
