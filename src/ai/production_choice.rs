@@ -1876,7 +1876,7 @@ impl BasicAi {
     /// Net Gold a turn below which `industry_before_the_army_2` leaves the
     /// chain alone: a zone and its Workshop cost two Gold a turn in upkeep,
     /// a Factory two more.
-    const INDUSTRY_MIN_GOLD_PER_TURN: f64 = 5.0;
+    pub(super) const INDUSTRY_MIN_GOLD_PER_TURN: f64 = 5.0;
 
     /// The next building of the Industrial Zone this city holds: its
     /// Workshop, else its Factory where no standing own Factory already
@@ -1918,7 +1918,7 @@ impl BasicAi {
     }
 
     /// The fewest own cities an `industrial_hub` zone must reach.
-    const INDUSTRIAL_HUB_MIN_REACH: usize = 3;
+    pub(super) const INDUSTRIAL_HUB_MIN_REACH: usize = 3;
 
     /// The slowest the hub city may build its zone or a hub building.
     const INDUSTRIAL_HUB_MAX_TURNS: f64 = 25.0;
@@ -2433,7 +2433,7 @@ impl BasicAi {
     /// A city at its housing grows at a quarter to a half of its rate, so the
     /// district pays for its own turns there; the cap keeps a tiny city from
     /// spending half the game on it.
-    const HOUSING_CAP_AQUEDUCT_MAX_TURNS: f64 = 25.0;
+    pub(super) const HOUSING_CAP_AQUEDUCT_MAX_TURNS: f64 = 25.0;
     /// The smallest city `housing-cap-builds-the-aqueduct` builds for: a
     /// newly founded one reaches its housing on its first improvements.
     const HOUSING_CAP_AQUEDUCT_MIN_POP: i32 = 3;
@@ -2488,14 +2488,14 @@ impl BasicAi {
     /// See `builders_cover_the_worked_backlog`: the share of the unimproved
     /// worked tiles the charges in hand (and the Builders queued) must cover
     /// before no further Builder is wanted.
-    const WORKED_BACKLOG_COVER: f64 = 0.6;
+    pub(super) const WORKED_BACKLOG_COVER: f64 = 0.6;
     /// See `builders_cover_the_worked_backlog`: no Builder for a backlog
     /// smaller than this many unimproved worked tiles.
-    const WORKED_BACKLOG_MIN_TILES: usize = 4;
+    pub(super) const WORKED_BACKLOG_MIN_TILES: usize = 4;
     /// See `builders_cover_the_worked_backlog`: the slowest Builder this step
     /// orders, in standard turns, so only a city that delivers one promptly
     /// spends its queue on it.
-    const WORKED_BACKLOG_BUILDER_MAX_TURNS: u32 = 8;
+    pub(super) const WORKED_BACKLOG_BUILDER_MAX_TURNS: u32 = 8;
 
     /// See `worked_backlog_builder`: the Builder, journalled.
     fn worked_backlog_builder_step(
