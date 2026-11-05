@@ -8777,6 +8777,12 @@ pub struct AdvancedAi {
     /// Off by default.
     plaza_serves_the_scientist_3: bool,
     // ---- append: s-s ------------------------------------------------
+    /// `science-seat-races-the-congress`: a Science seat's Diplomatic Victory
+    /// ballot runs the racer. Live only: `tools/civ6_play.py` reads the armed
+    /// tag and the agent's `CivvisCongressRacer` casts the ballot, so the
+    /// simulator never reads this field.
+    #[allow(dead_code)]
+    science_seat_races_the_congress: bool,
     /// `science-seat-allies-2`: version one, and a Military Alliance asked
     /// before Diplomatic Service. See `advanced/culture_seat_allies.rs`.
     science_seat_allies_2: bool,
@@ -12494,6 +12500,7 @@ impl AdvancedAi {
             plaza_serves_the_scientist_2: false,
             plaza_serves_the_scientist_3: false,
             // ---- append: s-s ----------------------------------------
+            science_seat_races_the_congress: false,
             science_seat_allies_2: false,
             spy_civics_come_first: false,
             steal_dry_cities: BTreeMap::new(),
