@@ -1771,6 +1771,9 @@ impl AdvancedAi {
         /// Opt-in gene `embassy-finds-the-capital`; see
         /// `AdvancedAi::embassy_finds_the_capital`.
         embassy_finds_the_capital => enable_embassy_finds_the_capital, disable_embassy_finds_the_capital;
+        /// Opt-in gene `embassy-finds-the-capital-2`; see
+        /// `advanced/embassy_capital.rs`.
+        embassy_finds_the_capital_2 => enable_embassy_finds_the_capital_2, disable_embassy_finds_the_capital_2;
         /// Opt-in gene `aluminum-buys-the-tile`; see
         /// `AdvancedAi::aluminum_buys_the_tile`.
         aluminum_buys_the_tile => enable_aluminum_buys_the_tile, disable_aluminum_buys_the_tile;

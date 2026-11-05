@@ -6622,6 +6622,9 @@ pub struct AdvancedAi {
     /// `advanced/denounce_only_to_declare.rs`. Off by default.
     denounce_only_to_declare: bool,
     // ---- append: e-f ------------------------------------------------
+    /// `embassy-finds-the-capital-2`: version one, and a Science aim sends
+    /// the capital-revealing Embassy too. See `advanced/embassy_capital.rs`.
+    embassy_finds_the_capital_2: bool,
     /// Scale only the free-slot Campus claim’s build-time budget. Opt-in.
     free_slot_campus_clock: bool,
     /// Give a threatened sole capital opening defence priority. Opt-in.
@@ -12092,6 +12095,7 @@ impl AdvancedAi {
             captives_come_home: false,
             denounce_only_to_declare: false,
             // ---- append: e-f ----------------------------------------
+            embassy_finds_the_capital_2: false,
             free_slot_campus_clock: false,
             first_capital_before_the_camp: false,
             founding_voyage: false,

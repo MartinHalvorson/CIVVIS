@@ -1,0 +1,25 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "embassy-finds-the-capital-2",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Fourteen live Lv 8 Deity Online Science turns, two in each of seven runs (civvis-20261105T143240Z t107/110, 080206Z t121/124, 092403Z t125/128, 105753Z t118/121, 125414Z t115/118, 093803Z t119/122, 122513Z t125/128), each within 40 turns of our Diplomatic Service while the eventual winner, whose capital we had never seen, read Neutral or warmer toward us at peace. Each is the run's events.jsonl through the turn's first state frame and nothing after it, queried with the run's own requested genome (carrying embassy-finds-the-capital, Domination-only) on a frozen ci-profile civvis_orders built from the branch. 12 of 14 on arms change the mission orders: each sends a RESIDENT_EMBASSY, and in all seven runs the first one goes to the seat that later won (143240Z seat 5, 080206Z seat 1, 092403Z seat 1, 105753Z seat 4, 125414Z seat 2, 093803Z seat 5, 122513Z seat 2). The off arms send none, except 092403Z t128 and 122513Z t128 where the stock cadence's own Embassy goes out (to seat 1 and seat 5); at 122513Z t128 the on arm sends it to seat 2 instead.",
+  "archive": {
+    "path": "docs/eval/2026-11-05-embassy-finds-the-capital-2.native-queries.tar.xz",
+    "sha256": "12688c800b01139d25bf18e80f50906ebb0fcc5d3aa9369b27edbc5299f667d4"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json",
+    "native-queries-01/0002/result.json",
+    "native-queries-01/0003/result.json",
+    "native-queries-01/0004/result.json",
+    "native-queries-01/0005/result.json",
+    "native-queries-01/0006/result.json",
+    "native-queries-01/0007/result.json",
+    "native-queries-01/0008/result.json",
+    "native-queries-01/0009/result.json",
+    "native-queries-01/0010/result.json",
+    "native-queries-01/0011/result.json",
+    "native-queries-01/0012/result.json",
+    "native-queries-01/0013/result.json"
+  ]
+}
