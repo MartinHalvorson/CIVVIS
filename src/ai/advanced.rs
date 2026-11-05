@@ -5580,6 +5580,11 @@ pub struct AdvancedAi {
     /// where one blow at the top of its roll removes it. See
     /// `advanced/anvil_spares_the_one_blow.rs`. Off by default.
     anvil_spares_the_one_blow: bool,
+    /// `districts-price-the-improvement`: the owned tiles a District could
+    /// bulldoze at the start of this turn (improvement, feature, pillaged),
+    /// so a fresh placement on one can be undone before the turn ends.
+    /// Empty while the gene is off.
+    bulldoze_snapshot: BTreeMap<Pos, (Option<Name>, Option<Name>, bool)>,
     // ---- append: c-d ------------------------------------------------
     /// `capture-scar-reads-the-new-city`: a Settler that vanishes within two
     /// tiles of one of our cities counts as founded only when that city is
@@ -6631,6 +6636,10 @@ pub struct AdvancedAi {
     /// denounces; the war opening does, when a war follows. See
     /// `advanced/denounce_only_to_declare.rs`. Off by default.
     denounce_only_to_declare: bool,
+    /// `districts-price-the-improvement`: a district site pays for the
+    /// improvement (and bonus resource) it bulldozes, worked or not. See
+    /// `advanced/district_planning.rs`. Off by default.
+    districts_price_the_improvement: bool,
     // ---- append: e-f ------------------------------------------------
     /// `embassy-finds-the-capital-2`: version one, and a Science aim sends
     /// the capital-revealing Embassy too. See `advanced/embassy_capital.rs`.
@@ -11898,6 +11907,7 @@ impl AdvancedAi {
             alliance_ask_turns: BTreeMap::new(),
             breaker_spares_the_backlog_builder: false,
             anvil_spares_the_one_blow: false,
+            bulldoze_snapshot: BTreeMap::new(),
             // ---- append: c-d ----------------------------------------
             capture_scar_reads_the_new_city: false,
             capture_scar_city_sites: None,
@@ -12107,6 +12117,7 @@ impl AdvancedAi {
             capital_keeps_its_defender_3: false,
             captives_come_home: false,
             denounce_only_to_declare: false,
+            districts_price_the_improvement: false,
             // ---- append: e-f ----------------------------------------
             embassy_finds_the_capital_2: false,
             free_slot_campus_clock: false,
@@ -20958,8 +20969,15 @@ impl AdvancedAi {
     /// pre-war exemption above also protects economic repairs, but repairing
     /// a Library or Commercial Hub must not cancel an emergency wall order.
     /// Keep repairs to fortified districts, including unique replacements.
+    /// Recon queues likewise retain their pre-war exemption, but cannot hold
+    /// an already-confirmed siege defense: Yangsan kept a Scout while damaged
+    /// and able to build Walls in the native Deity Korea control.
     fn active_queue_answers_siege(g: &Game, item: &Item) -> bool {
         match item {
+            Item::Unit { unit } | Item::Formation { unit, .. } => {
+                g.rules.units[unit].promotion_class != "recon"
+                    && Self::active_queue_is_defensive(g, item)
+            }
             Item::Repair { repair, pos } => {
                 repair == "district"
                     && g.map
@@ -22776,6 +22794,12 @@ impl AdvancedAi {
         queue.clear();
         // A finishing Settler has not appeared in the exported unit roster
         // yet, but already fills the single supply-colony request.
+        // `districts-price-the-improvement`: the hint's District gets the same
+        // end-of-turn re-site the main path gives it (`take_turn_inner`), so a
+        // fresh site on a Farm moves to clean ground here too. The snapshot is
+        // this board before anything is placed. Nothing happens while the gene
+        // is off. See `advanced/district_planning.rs`.
+        preview.snapshot_bulldoze_sites(&board, pid);
         if !incoming_settler {
             preview.reserve_air_resource_colony(&mut board, pid, &plan);
         }
@@ -22798,6 +22822,7 @@ impl AdvancedAi {
         if claims_and_writers {
             preview.run_hint_defence_writers(&mut board, pid, &plan);
         }
+        preview.resite_bulldozing_districts(&mut board, pid);
         board.cities.get(&city)?.queue.first().cloned()
     }
 
@@ -29533,6 +29558,8 @@ impl AdvancedAi {
     }
 
     fn take_turn_inner(&mut self, g: &mut Game, pid: usize) {
+        // `districts-price-the-improvement`: what a District could bulldoze.
+        self.snapshot_bulldoze_sites(g, pid);
         // `breach-support-reads-the-wall-tier`: see `Game::observed_wall_tier_rules`.
         g.observed_wall_tier_rules = self.breach_support_reads_the_wall_tier;
         // `builders-route-around-mountains`: see
@@ -30374,6 +30401,9 @@ impl AdvancedAi {
         // The last reading of the turn: what became of every decision, with
         // `Unit::acted` still saying what each unit did. Observes only.
         self.reconcile_commitments(g, pid);
+        // `districts-price-the-improvement`: a fresh District on a Farm,
+        // Mine or bonus resource moves to a clean site before the turn ends.
+        self.resite_bulldozing_districts(g, pid);
         if g.winner.is_none() && g.current == pid {
             let _ = g.apply(pid, &Action::EndTurn);
         }
