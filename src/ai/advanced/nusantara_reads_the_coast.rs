@@ -83,7 +83,11 @@ impl Game {
     /// The yields a district site picker ranks by: [`Game::district_yields`]
     /// plus [`Game::nusantara_site_term`]. Identical to `district_yields`
     /// unless `nusantara-reads-the-coast` named this turn's planner.
-    pub(crate) fn district_site_yields(&self, district: impl AsName, pos: Pos) -> Yields {
+    pub(crate) fn district_site_yields(
+        &self,
+        district: impl crate::name::AsName,
+        pos: Pos,
+    ) -> Yields {
         let district = district.as_name();
         let mut yields = self.district_yields(district, pos);
         yields.add(self.nusantara_site_term(district, pos));
