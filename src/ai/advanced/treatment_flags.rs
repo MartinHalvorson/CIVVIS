@@ -5141,6 +5141,17 @@ impl AdvancedAi {
         self.anvil_spares_the_one_blow = false;
     }
 
+    /// Opt-in gene `ranged-kills-are-free`; see
+    /// [`Self::ranged_kills_are_free`].
+    pub fn enable_ranged_kills_are_free(&mut self) {
+        self.ranged_kills_are_free = true;
+    }
+
+    /// The twin of `enable_ranged_kills_are_free`.
+    pub fn disable_ranged_kills_are_free(&mut self) {
+        self.ranged_kills_are_free = false;
+    }
+
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
