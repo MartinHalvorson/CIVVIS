@@ -2201,6 +2201,9 @@ impl AdvancedAi {
         /// Opt-in gene `spies-steal-the-lead`; see
         /// `advanced/spies_steal_the_lead.rs`.
         spies_steal_the_lead => enable_spies_steal_the_lead, disable_spies_steal_the_lead;
+        /// Opt-in gene `spy-civics-come-first`; see
+        /// `advanced/spy_civics_come_first.rs`.
+        spy_civics_come_first => enable_spy_civics_come_first, disable_spy_civics_come_first;
         /// Opt-in gene `holdable-land-keeps-settling`; see
         /// `advanced/holdable_land_keeps_settling.rs`.
         holdable_land_keeps_settling => enable_holdable_land_keeps_settling, disable_holdable_land_keeps_settling;
@@ -2248,6 +2251,9 @@ impl AdvancedAi {
         /// Opt-in gene `science-heads-keep-their-queue`; see
         /// `advanced/science_heads_keep_their_queue.rs`.
         science_heads_keep_their_queue => enable_science_heads_keep_their_queue, disable_science_heads_keep_their_queue;
+        /// Opt-in gene `denounce-only-to-declare`; see
+        /// `advanced/denounce_only_to_declare.rs`.
+        denounce_only_to_declare => enable_denounce_only_to_declare, disable_denounce_only_to_declare;
         /// Opt-in gene `capture-scar-reads-the-new-city`; see
         /// `advanced/civilian_safety.rs` (`resolve_vanished_settlers`).
         capture_scar_reads_the_new_city => enable_capture_scar_reads_the_new_city, disable_capture_scar_reads_the_new_city;
