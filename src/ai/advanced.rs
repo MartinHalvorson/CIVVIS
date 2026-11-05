@@ -8650,7 +8650,17 @@ pub struct AdvancedAi {
     /// whose every attacker is ranged on its centre-roll damage. See
     /// `advanced/ranged_finish.rs`. Off by default.
     ranged_finish_on_the_mean: bool,
+    /// `plaza-serves-the-scientist`: a Science seat's Government Plaza takes
+    /// the Ancestral Hall and the Intelligence Agency. Read by
+    /// `BasicAi::plaza_building_item_for` through `base.plaza_serves_science`,
+    /// set each turn in `take_turn_inner`. Off by default.
+    plaza_serves_the_scientist: bool,
     // ---- append: s-s ------------------------------------------------
+    /// `spies-steal-the-lead`: foreign cities where a Spy of ours stood and
+    /// the host's menu offered no Steal Tech Boost (no Campus, or nothing
+    /// left to steal), and the turn it last did. See
+    /// `AdvancedAi::racer_spy_post_for`.
+    steal_dry_cities: BTreeMap<u32, u32>,
     /// `denial-spies-count-their-losses`: the turns our Spies were lost on, set
     /// by the live bridge each turn (`observe_spy_losses`).
     spy_loss_turns: Vec<u32>,
@@ -12242,7 +12252,9 @@ impl AdvancedAi {
             religion_seat_defends_its_faith: false,
             retainers_garrison_the_short_cities: false,
             ranged_finish_on_the_mean: false,
+            plaza_serves_the_scientist: false,
             // ---- append: s-s ----------------------------------------
+            steal_dry_cities: BTreeMap::new(),
             spy_loss_turns: Vec::new(),
             science_foundation_before_backlog: false,
             spears_answer_the_horse: false,
@@ -29315,6 +29327,9 @@ impl AdvancedAi {
         // `denial-spies-count-their-losses`: the base production fallback
         // reads this. See `advanced/denial_spies_count_their_losses.rs`.
         self.base.spy_training_paused = self.spy_losses_pause_training(g);
+        // `plaza-serves-the-scientist`: the Plaza's tier list reads this.
+        self.base.plaza_serves_science =
+            self.plaza_serves_the_scientist && self.victory_target == Some(VictoryTarget::Science);
         self.refresh_campus_multiplier_constants(g);
         self.resolve_vanished_settlers(g, pid);
         self.base.minor = g.players[pid].is_minor;

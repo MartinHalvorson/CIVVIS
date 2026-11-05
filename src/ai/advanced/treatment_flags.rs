@@ -2199,6 +2199,9 @@ impl AdvancedAi {
         /// Opt-in gene `war-defense-spends-the-runway`; see
         /// `advanced/war_defense_spends_the_runway.rs`.
         war_defense_spends_the_runway => enable_war_defense_spends_the_runway, disable_war_defense_spends_the_runway;
+        /// Opt-in gene `plaza-serves-the-scientist`; see
+        /// `BasicAi::plaza_building_item_for`.
+        plaza_serves_the_scientist => enable_plaza_serves_the_scientist, disable_plaza_serves_the_scientist;
     }
 }
 

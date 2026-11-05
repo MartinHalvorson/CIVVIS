@@ -1197,7 +1197,9 @@ impl BasicAi {
         // building. A Prophet race still open goes first. See
         // `plaza_building_item` and `plaza_item`.
         if self.plaza_in_the_district_list && !self.minor && !self.barb {
-            if let Some(item) = Self::plaza_building_item(g, pid, cid) {
+            if let Some(item) =
+                Self::plaza_building_item_for(g, pid, cid, self.plaza_serves_science)
+            {
                 return Some(item);
             }
             if !self.plaza_prophet_race_open(g, pid) {
@@ -2676,11 +2678,45 @@ impl BasicAi {
     /// buys land units). A Plaza with another tier-one building goes straight
     /// to the Chapel; one with both, or a tier the host has not unlocked,
     /// offers nothing.
+    ///
+    /// The stock tier list's entry point, kept for the tests that pin it; the
+    /// decider calls [`Self::plaza_building_item_for`].
+    #[cfg(test)]
     pub(crate) fn plaza_building_item(g: &Game, pid: usize, cid: u32) -> Option<Item> {
+        Self::plaza_building_item_for(g, pid, cid, false)
+    }
+
+    /// [`Self::plaza_building_item`], and under `plaza-serves-the-scientist`
+    /// (`science`) the Ancestral Hall, then the Intelligence Agency.
+    ///
+    /// The conquest tiers serve a seat that takes cities: the Warlord's Throne
+    /// pays only on a capture (+20% Production for 5 turns) and a Science seat
+    /// captured almost none at Deity (live 2026-11-04/05: 9 of 17 games past
+    /// turn 130 built the Throne and the Chapel, none ever the Agency). The
+    /// Ancestral Hall has no drawback and serves the expansion gap (+50%
+    /// Production toward Settlers in the Plaza's city, a free Builder for every
+    /// new city); the Intelligence Agency grants a Spy and a Spy slot and makes
+    /// every operation likelier (`BUILDING_GOV_SPIES`, `GovernmentTierRequirement`
+    /// Tier2 like the Chapel), which `spies-steal-the-lead` turns into stolen
+    /// Eurekas. The Audience Chamber was passed over: its -2 Loyalty in every
+    /// city without a Governor is a real risk where loyalty flips already cost
+    /// cities. A Plaza already holding another tier-one building goes straight
+    /// to the Agency, as the stock list goes to the Chapel.
+    pub(crate) fn plaza_building_item_for(
+        g: &Game,
+        pid: usize,
+        cid: u32,
+        science: bool,
+    ) -> Option<Item> {
         if !g.city_has_district_family(&g.cities[&cid], crate::name!("government_plaza")) {
             return None;
         }
-        ["warlords_throne", "grand_masters_chapel"]
+        let tiers = if science {
+            ["ancestral_hall", "intelligence_agency"]
+        } else {
+            ["warlords_throne", "grand_masters_chapel"]
+        };
+        tiers
             .into_iter()
             .find_map(|building| Self::civ_building(g, pid, cid, building))
     }
