@@ -9504,6 +9504,10 @@ pub struct AdvancedAi {
     /// Builder claim. See `advanced/science_heads_keep_their_queue.rs`. Off
     /// by default.
     science_heads_keep_their_queue: bool,
+    /// `sewer-claims-the-capped-queue`: a capped city with Sanitation puts
+    /// its Sewer at the head of its queue. See
+    /// `advanced/sewer_claims_the_capped_queue.rs`. Off by default.
+    sewer_claims_the_capped_queue: bool,
     // ---- append: t-z ------------------------------------------------
     /// `threatened-war-holds-the-claims`: while a war with a major threatens
     /// a home city, the economy's idle-queue claims stand aside. See
@@ -10327,6 +10331,9 @@ mod embassy_capital;
 
 /// `religion-race-keeps-expanding`: see `advanced/religion_race_expands.rs`.
 mod religion_race_expands;
+/// `sewer-claims-the-capped-queue`: the last of the housing claims. See
+/// `advanced/sewer_claims_the_capped_queue.rs`.
+mod sewer_claims_the_capped_queue;
 /// `stalled-conquest-takes-science`: see
 /// `advanced/stalled_conquest_takes_science.rs`.
 mod stalled_conquest_takes_science;
@@ -12627,6 +12634,7 @@ impl AdvancedAi {
             slots_survive_the_roll: false,
             spies_steal_the_lead: false,
             science_heads_keep_their_queue: false,
+            sewer_claims_the_capped_queue: false,
             // ---- append: t-z ----------------------------------------
             threatened_war_holds_the_claims: false,
             war_defense_spends_the_runway: false,
@@ -21943,6 +21951,7 @@ impl AdvancedAi {
             let capped_aqueduct_commitment = committed.as_ref().is_some_and(|(_, item)| {
                 self.capped_aqueduct_holds(g, pid, cid, plan, item)
                     || self.capped_neighborhood_holds(g, pid, cid, plan, item)
+                    || self.capped_sewer_holds(g, pid, cid, plan, item)
             });
             // `campus-building-claims-the-queue`: the claimed Campus building
             // finishes while the Campus still names it.

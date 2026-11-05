@@ -5325,6 +5325,12 @@ pub const GENES: &[Gene] = &[
     // (Leaders.xml STANDARD_DIPLOMATIC_ONE_SIDED_TRADES). See
     // `advanced/tribute_buys_the_friendship.rs`.
     Gene { tag: "tribute-buys-the-friendship", field: "tribute_buys_the_friendship", kind: Kind::OptIn, enable: AdvancedAi::enable_tribute_buys_the_friendship, disable: AdvancedAi::disable_tribute_buys_the_friendship },
+    // `sewer-claims-the-capped-queue` (2026-11-05): 41-48% of live Deity
+    // city-turns stand within one of housing, ~75% of them with food to
+    // spare; no AI code named the Sewer. Sanitation lands ~t126, a built
+    // Sewer follows 25 turns later, and at t160 36% of all cities are capped
+    // without one. See `advanced/sewer_claims_the_capped_queue.rs`.
+    Gene { tag: "sewer-claims-the-capped-queue", field: "sewer_claims_the_capped_queue", kind: Kind::OptIn, enable: AdvancedAi::enable_sewer_claims_the_capped_queue, disable: AdvancedAi::disable_sewer_claims_the_capped_queue },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

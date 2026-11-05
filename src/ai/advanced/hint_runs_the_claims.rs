@@ -123,6 +123,12 @@ impl AdvancedAi {
         if !war_holds {
             self.claim_capped_neighborhood(g, pid, plan);
         }
+        // `sewer-claims-the-capped-queue`: the last of the housing claims.
+        // Exact no-op while the gene is off. See
+        // `advanced/sewer_claims_the_capped_queue.rs`.
+        if !war_holds {
+            self.claim_capped_sewer(g, pid, plan);
+        }
         // `industrial-zone-claims-the-producer-queue`: the producer step's
         // Industrial Zone or Workshop, after the Aqueduct and ahead of the
         // Prophet race and the routine claims. Exact no-op while the gene
