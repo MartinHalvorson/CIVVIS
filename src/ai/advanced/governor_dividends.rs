@@ -372,8 +372,8 @@ impl AdvancedAi {
             return None;
         }
         // Native Online readback establishes ordinary governors in five turns.
-        // The simulation uses its scaled duration. Do not price native travel
-        // with the shorter simulation clock.
+        // Keep the duration-table bound too (Online is also five there).
+        // Never budget less than the observed native interval.
         let duration = g.rules.governors["pingala"].establish_turns;
         let settle = if self.live_governor_assignment_adapter {
             duration.max(g.standard_duration(duration))

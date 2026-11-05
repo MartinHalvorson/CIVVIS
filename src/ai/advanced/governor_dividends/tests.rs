@@ -464,7 +464,8 @@ fn launch_board() -> (Game, AdvancedAi, StrategicPlan, u32, u32) {
         project: Name::new("launch_earth_satellite"),
     };
     g.cities.get_mut(&new).unwrap().queue = vec![item.clone()];
-    let production = g.item_remaining_cost_for_city(0, new, &item) / 20.0;
+    let production = g.item_remaining_cost_for_city(0, new, &item)
+        / (20.0 * g.item_prod_mult(0, new, Some(&item)));
     let before = g.city_yields(new).production;
     std::sync::Arc::make_mut(&mut g.observed_city_yield_adjustments)
         .entry(new)
@@ -579,19 +580,25 @@ fn launch_post_respects_war_recovery_and_short_native_establishment_runway() {
     let mut g = template;
     let item = g.cities[&new].queue[0].clone();
     let before = g.city_yields(new).production;
-    let production = g.item_remaining_cost_for_city(0, new, &item) / 8.0;
+    let production = g.item_remaining_cost_for_city(0, new, &item)
+        / (8.0 * g.item_prod_mult(0, new, Some(&item)));
     std::sync::Arc::make_mut(&mut g.observed_city_yield_adjustments)
         .entry(new)
         .or_default()
         .production += production - before;
+    assert_eq!(
+        g.standard_duration(5),
+        5,
+        "the shipped duration table keeps Online's five-turn interval"
+    );
     assert!(
-        ai.pingala_launch_posts(&g, 0, &plan).is_some(),
-        "eight turns exceed two simulated establishment periods"
+        ai.pingala_launch_posts(&g, 0, &plan).is_none(),
+        "eight turns leave too little establishment/payback runway"
     );
     ai.live_governor_assignment_adapter = true;
     assert!(
         ai.pingala_launch_posts(&g, 0, &plan).is_none(),
-        "eight turns do not exceed two native five-turn periods"
+        "native five-turn establishment also rejects the short project"
     );
 }
 
@@ -602,7 +609,7 @@ fn launch_post_can_establish_during_construction_without_boosting_the_spaceport(
         .get_mut(&new)
         .unwrap()
         .districts
-        .remove("spaceport");
+        .remove(Name::new("spaceport"));
     let item = Item::District {
         district: Name::new("spaceport"),
         pos: g.cities[&new].pos,

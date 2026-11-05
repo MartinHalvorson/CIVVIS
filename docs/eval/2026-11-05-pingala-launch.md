@@ -53,3 +53,15 @@ exists in the CIVVIS native adapter; no new native operation is introduced.
 `DLC/Expansion1/Data/Expansion1_Governors.xml:426–443` attaches Space Initiative
 to launch project production modifiers. Existing simulation tests independently
 exercise its30percentage-point project production bonus after establishment.
+
+## Fixture correction before candidate queries
+
+The first focused optimized run passed13tests and failed2positive launch
+fixtures. Diagnosis showed that the fixture divided cost by raw production,
+while the planner correctly includes the project's production multiplier;
+the supposed20-turn project was actually10turns and failed the two-period
+runway guard. The fixture now includes that multiplier. The duration table
+also explicitly preserves five turns for Online governors; there is no
+shorter Online simulation interval to contrast. The short-project test now
+checks rejection in both paths. Initial failures and diagnostic outputs are
+retained locally; no candidate query ran on the failing fixture version.
