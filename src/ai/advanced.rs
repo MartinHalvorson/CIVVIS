@@ -10150,6 +10150,7 @@ mod air_resource_colony;
 mod air_resource_settlement;
 mod air_surge;
 mod native_air_assault;
+mod native_production_contract;
 pub use air_city_assault::AirCityAssault;
 
 /// Policies and governors: the policy deck, the card checks, and governor
