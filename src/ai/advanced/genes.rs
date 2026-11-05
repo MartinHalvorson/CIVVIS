@@ -5043,6 +5043,9 @@ pub const GENES: &[Gene] = &[
     // ratio) visible soldier within SURPRISE_TILES of an early city does.
     // See `objective_board.rs` (`surprise_strength_near`).
     Gene { tag: "capital-keeps-its-defender-3", field: "capital_keeps_its_defender_3", kind: Kind::OptIn, enable: AdvancedAi::enable_capital_keeps_its_defender_3, disable: AdvancedAi::disable_capital_keeps_its_defender_3 },
+    // A two-city Science seat finishes Writing before optional Astrology or
+    // luxury research, behind all urgent defensive and committed launch goals.
+    Gene { tag: "science-writing-before-the-luxury", field: "science_writing_before_the_luxury", kind: Kind::OptIn, enable: AdvancedAi::enable_science_writing_before_the_luxury, disable: AdvancedAi::disable_science_writing_before_the_luxury },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------
