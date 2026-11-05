@@ -295,3 +295,30 @@ fn insulae_makes_way_first_and_nothing_retires_medina_quarter() {
     let protected = victims(&game, &desired, &|card| card == "insulae");
     assert_eq!(protected, vec![crate::name!("natural_philosophy")]);
 }
+
+/// `medina-yields-to-the-amenities`: with two qualifying cities short of
+/// Amenities the card is not wanted (and a held one makes way); with the
+/// Amenities repaired it is wanted again; with the gene off nothing changes.
+#[test]
+fn medina_yields_while_two_cities_are_short_of_amenities() {
+    let (mut game, mut ai) = empire(2, 2);
+    full_deck(&mut game);
+    ai.enable_medina_quarter_houses_the_districts();
+    // The two population-20 district cities are short of Amenities.
+    assert!(AdvancedAi::medina_amenity_short_cities(&game, 0) >= MEDINA_YIELDS_SHORT_CITIES);
+    assert_eq!(ai.medina_quarter_wanted(&game, 0), Some(2));
+
+    ai.enable_medina_yields_to_the_amenities();
+    assert_eq!(ai.medina_quarter_wanted(&game, 0), None);
+    ai.strategic_policies(&mut game, 0, GrandStrategy::Conquest);
+    assert!(!slotted(&game, "medina_quarter"));
+
+    // Content cities: the card is wanted again.
+    let ids = game.player_city_ids(0);
+    let adjustments = std::sync::Arc::make_mut(&mut game.observed_city_amenity_adjustments);
+    for cid in ids {
+        adjustments.insert(cid, 40);
+    }
+    assert_eq!(AdvancedAi::medina_amenity_short_cities(&game, 0), 0);
+    assert_eq!(ai.medina_quarter_wanted(&game, 0), Some(2));
+}
