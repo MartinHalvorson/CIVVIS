@@ -135,8 +135,17 @@ impl AdvancedAi {
             0
         };
         let cover = BasicAi::builder_charge_cover(g, pid) - own;
-        backlog >= BasicAi::WORKED_BACKLOG_MIN_TILES
-            && f64::from(cover) < backlog as f64 * BasicAi::WORKED_BACKLOG_COVER
+        // `prod-tiles-call-the-builders`: the quota the claim was made under,
+        // so a Builder claimed for the production ground is held too. Off,
+        // `wanted` is the stock `backlog x WORKED_BACKLOG_COVER`.
+        let (wanted, production) = self.base.worked_backlog_charges_wanted(g, pid, backlog);
+        let enough = match production {
+            None => backlog >= BasicAi::WORKED_BACKLOG_MIN_TILES,
+            Some(_) => {
+                wanted >= BasicAi::WORKED_BACKLOG_MIN_TILES as f64 * BasicAi::WORKED_BACKLOG_COVER
+            }
+        };
+        enough && f64::from(cover) < wanted
     }
 
     /// See the module: while the worked backlog runs ahead of the charges,
@@ -202,6 +211,10 @@ impl AdvancedAi {
                     {cover} charges, {turns:.1} turns, ahead of {}",
                    head.map_or_else(|| "an idle queue".to_string(), |item| format!(
                        "{} (it keeps its progress)", Self::plain_item(&item))));
+            if let Some(note) = self.base.production_tile_quota_note(g, pid) {
+                think!(self.journal(), Economy, Detail,
+                       "{name}'s Builder answers the production ground"; "{note}");
+            }
         }
     }
 }

@@ -63,6 +63,11 @@
 //!   declare (Austria 2 tiles from Gwangju at t44, declared t45);
 //! - no visible barbarian or Free City soldier within
 //!   [`HOLDABLE_LAND_RAIDER_TILES`].
+//! - and the walker's own Loyalty forecast passes it, asked exactly as the
+//!   walker asks it before walking (`settle_site_loyalty_verdict` on a
+//!   Science seat or under the rate alarm, the frontier verdict otherwise).
+//!   Without it the first armed games queued Settlers for seats the walker
+//!   then refused: 083100Z stranded one for 26 turns and queued a second.
 //!
 //! The Settler it queues is protected from the routine claims through
 //! `early_settler_floor_holds`, the same way the opening floor's Settler is.
@@ -260,6 +265,29 @@ impl AdvancedAi {
                 None => true,
             },
         );
+        // The walker's own Loyalty forecast, asked the way `settling.rs` asks
+        // it before the walk, last because it is the dearest test. A seat the
+        // walker would refuse is not a seat: live 083100Z queued two Settlers
+        // for seats the walker then refused ("beyond the empire's Loyalty
+        // reach on ground the seat has not explored", 85 refusals), and one
+        // stood stranded for 26 turns while the other was queued beside it.
+        let science_targeted = self.active_victory_target(g) == Some(VictoryTarget::Science);
+        if self.base.loyalty_rate_alarm || self.frontier_loyalty || science_targeted {
+            sites.retain(|(site, _)| {
+                let verdict = if self.base.loyalty_rate_alarm || science_targeted {
+                    self.settle_site_loyalty_verdict(g, pid, *site)
+                } else {
+                    self.settle_site_frontier_loyalty_verdict(g, pid, *site)
+                };
+                if verdict.is_some() {
+                    *refused
+                        .entry("the walker's Loyalty forecast refuses it")
+                        .or_default() += 1;
+                    return false;
+                }
+                true
+            });
+        }
         let claimed: Vec<Pos> = self
             .settler_targets
             .iter()
