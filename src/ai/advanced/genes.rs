@@ -5065,6 +5065,22 @@ pub const GENES: &[Gene] = &[
     // steals landed a Eureka (~250-430 Science each) while 131 other orders
     // bought none. See `spies_steal_the_lead.rs`.
     Gene { tag: "spies-steal-the-lead", field: "spies_steal_the_lead", kind: Kind::OptIn, enable: AdvancedAi::enable_spies_steal_the_lead, disable: AdvancedAi::disable_spies_steal_the_lead },
+    // `holdable-land-keeps-settling`: past the opening floor (t60 Online),
+    // the soonest unthreatened city queues one Settler while the plan wants
+    // more cities and a seat we can very likely hold lies in reach: the
+    // settler-site-gate verdict, nine tiles from charted rival cities, no
+    // stronger major's soldier within six, no raider within three, at peace
+    // with every major. Live Deity Korea Online: Settler starts fell from 70
+    // in t40-59 to 8 in t60-79 across ~39 games while the plan still wanted
+    // ~9 cities against our 5-6. See `holdable_land_keeps_settling.rs`.
+    Gene { tag: "holdable-land-keeps-settling", field: "holdable_land_keeps_settling", kind: Kind::OptIn, enable: AdvancedAi::enable_holdable_land_keeps_settling, disable: AdvancedAi::disable_holdable_land_keeps_settling },
+    // `medina-yields-to-the-amenities`: live Lv 8 Deity Korea Online,
+    // 11-04/05: Medina Quarter held a slot 243 late turns, 159 with two or
+    // more cities short of Amenities and 170 without Rationalism; in 041217Z
+    // it displaced Liberalism and civics Amenities fell 11 -> 0, the host's
+    // Amenities line reaching 10-15% of Science. The housing card is not
+    // wanted while two or more cities are short. See `advanced/medina_quarter.rs`.
+    Gene { tag: "medina-yields-to-the-amenities", field: "medina_yields_to_the_amenities", kind: Kind::OptIn, enable: AdvancedAi::enable_medina_yields_to_the_amenities, disable: AdvancedAi::disable_medina_yields_to_the_amenities },
     // A Science seat's Government Plaza takes the Ancestral Hall (+50% Settler
     // Production in its city, a free Builder per new city) and the
     // Intelligence Agency (a Spy, a Spy slot, likelier operations) instead of
