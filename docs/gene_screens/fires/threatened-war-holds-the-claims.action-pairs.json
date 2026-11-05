@@ -1,0 +1,13 @@
+{
+  "kind": "captured_native_action_pairs_v1",
+  "tag": "threatened-war-holds-the-claims",
+  "scope": "Recorded proposal activation on captured live input only, not host execution or strength. Cases: live Deity Korea civvis-20261105T033244Z t161 and t168 (Aztecs at war, 2409/3377 power against our 561/577; the seat was eliminated at t203), each cut at its turn's first state export and queried with --resumed on a ci-profile civvis_orders built from main fa163831fb plus #4534 and #4545. Both arms carry the run's requested genome plus war-defense-spends-the-runway, threatened-lane-lends-the-army and outmatched-war-prices-the-army (no live control is claimed); the on arm adds the gene. At t161 the off arm's Jeonju takes campus-building-claims-the-queue's Research Lab; on, that claim stands aside and Jeonju trains a Hwacha. t168 is unchanged.",
+  "archive": {
+    "path": "docs/eval/2026-11-05-threatened-war-holds-the-claims.native-queries.tar.xz",
+    "sha256": "03260748d25def423376383a28a7a1fb2eb80ca85917e6458eb7d97cf2b0a61b"
+  },
+  "members": [
+    "native-queries-01/0000/result.json",
+    "native-queries-01/0001/result.json"
+  ]
+}
