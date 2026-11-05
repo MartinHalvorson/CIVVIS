@@ -1,12 +1,13 @@
 use super::*;
 use crate::game::Action;
 
-/// One major: our capital and a second city of ours, turn 30, every unit
+/// Two majors (player 1 unsettled): our capital and a second city of ours,
+/// turn 30, every unit
 /// removed, 50 Production banked on the capital's Monument so the
 /// `capital-monument-after-the-second-city` claim takes it. The second city
 /// is busy, so the only queue a claim can fill is the previewed capital's.
 fn board() -> (Game, u32, Item) {
-    let mut game = Game::new_full(1, 32, 20, 936_431, 200, 0, false);
+    let mut game = Game::new_full(2, 32, 20, 936_431, 200, 0, false);
     game.players[0].civ = "Gran Colombia".to_string();
     let settler = game
         .player_unit_ids(0)
@@ -116,7 +117,7 @@ fn off_or_inside_the_book_the_hint_is_unchanged() {
 #[test]
 fn a_city_in_the_wars_reach_keeps_the_governors_hint() {
     let (mut game, capital, monument) = board();
-    let barb = game.barb_pid.expect("fixture: a barbarian seat");
+    game.at_war.insert((0, 1));
     let home = game.cities[&capital].pos;
     let near = game
         .map
@@ -131,7 +132,7 @@ fn a_city_in_the_wars_reach_keeps_the_governors_hint() {
         .map(|tile| tile.pos)
         .min()
         .expect("fixture: a land tile two out");
-    game.spawn_test_unit("warrior", barb, near);
+    game.spawn_test_unit("warrior", 1, near);
     let on = seat(true, true);
     assert!(on.hint_city_in_reach_of_war(&game, 0, capital));
     let hint = on.preview_live_production(&game, 0, capital);
