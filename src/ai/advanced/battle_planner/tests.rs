@@ -1818,7 +1818,11 @@ fn kill_only_shots_join_a_sequence_that_kills_and_nothing_less() {
         host: Some((25.0, 0.0)),
         kill_only: true,
     };
-    assert!(50.0 >= 38.0 * KILL_MARGIN && 25.0 < 38.0 * KILL_MARGIN);
+    let need = f64::from(targets[0].hp) * KILL_MARGIN;
+    assert!(
+        50.0 >= need && 25.0 < need,
+        "two shots kill at the margin, one does not"
+    );
     let mut field = DangerField::new(&g, 0);
     let both = vec![shot(0, a), shot(1, b)];
     let (sequence, score) = search_kill_sequence(&shooters, &targets, &both, &mut field, false);
@@ -1834,7 +1838,7 @@ fn kill_only_shots_join_a_sequence_that_kills_and_nothing_less() {
         host: Some((20.0, 0.0)),
         ..shot(index, uid)
     };
-    assert!(40.0 < 38.0 * KILL_MARGIN);
+    assert!(40.0 < need, "the pair falls short of the margin");
     let both = vec![light(0, a), light(1, b)];
     let (sequence, score) = search_kill_sequence(&shooters, &targets, &both, &mut field, false);
     assert_eq!(
