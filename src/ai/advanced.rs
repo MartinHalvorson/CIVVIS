@@ -25917,18 +25917,6 @@ impl AdvancedAi {
         }
     }
 
-    fn settlement_housing_growth_mult(headroom: f64) -> f64 {
-        if headroom >= 2.0 {
-            1.0
-        } else if headroom >= 1.0 {
-            0.5
-        } else if headroom > -4.0 {
-            0.25
-        } else {
-            0.0
-        }
-    }
-
     fn settlement_output_value(total: Yields, population: usize) -> f64 {
         let surplus = total.food - 2.0 * population as f64;
         total.production * 2.6
@@ -26075,7 +26063,7 @@ impl AdvancedAi {
 
                     let surplus = branch.total.food - 2.0 * population as f64;
                     let growth_rate = surplus.max(0.0)
-                        * Self::settlement_housing_growth_mult(housing - population as f64);
+                        * Game::housing_growth_mult(housing - population as f64);
                     let remaining = (horizon - branch.elapsed).max(0.0);
                     let growth_turns = if growth_rate > 1e-9 {
                         g.growth_cost(population as i32) / growth_rate

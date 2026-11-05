@@ -9462,22 +9462,28 @@ impl BasicAi {
     /// two forms: issuing another order for the same family wastes a specialty
     /// slot and can spend hundreds of production on a duplicate Spaceport.
     fn empire_district_family_ready_or_queued(g: &Game, pid: usize, family: &str) -> bool {
-        g.player_city_ids(pid).into_iter().any(|city| {
-            let city = &g.cities[&city];
-            g.city_has_district_family(city, Name::new(family))
-                || city.owned_tiles.iter().any(|position| {
-                    g.map
-                        .tiles
-                        .get(position)
-                        .and_then(|tile| tile.district_foundation.as_ref())
-                        .is_some_and(|foundation| g.district_family(foundation.district) == family)
-                })
-                || matches!(
-                    city.queue.first(),
-                    Some(Item::District { district, .. })
-                        if g.district_family(*district) == family
-                )
-        })
+        let family = Name::new(family);
+        g.player_city_ids(pid)
+            .into_iter()
+            .any(|city| Self::district_family_held_or_queued(g, city, family))
+    }
+
+    /// Whether `cid` holds a district of `family`, its foundation, or has one
+    /// first in its queue.
+    fn district_family_held_or_queued(g: &Game, cid: u32, family: Name) -> bool {
+        let city = &g.cities[&cid];
+        g.city_has_district_family(city, family)
+            || city.owned_tiles.iter().any(|pos| {
+                g.map
+                    .get(*pos)
+                    .and_then(|tile| tile.district_foundation.as_ref())
+                    .is_some_and(|foundation| g.district_family(foundation.district) == family)
+            })
+            || matches!(
+                city.queue.first(),
+                Some(Item::District { district, .. })
+                    if g.district_family(*district) == family
+            )
     }
 
     /// Pick a real placed wonder rather than treating it as an ordinary
