@@ -7623,6 +7623,10 @@ pub struct AdvancedAi {
     /// border tile of two or more Production beside a city working a poorer
     /// one. See `advanced/gold_buys_the_production_tile.rs`. Off by default.
     gold_buys_the_production_tile: bool,
+    /// `korea-mines-beside-the-seowon`: Korea's Builders price a Mine +1
+    /// Science and a Farm +1 Food per adjacent own Seowon (Three Kingdoms).
+    /// See `advanced/korea_mines_beside_the_seowon.rs`. Off by default.
+    korea_mines_beside_the_seowon: bool,
     // ---- append: l-o ------------------------------------------------
     /// `outmatched-war-prices-the-army`: a missing land unit gains raw value
     /// while a major at 1.5x our power is at war with us and a home city is
@@ -10883,6 +10887,8 @@ mod threatened_war_holds_the_claims;
 /// luxury ahead of an ordinary tile, priced by the Amenities the empire is
 /// short. One opt-in gene; see `advanced/first_luxury.rs`.
 mod first_luxury;
+/// `korea-mines-beside-the-seowon`: see `advanced/korea_mines_beside_the_seowon.rs`.
+mod korea_mines_beside_the_seowon;
 /// `luxury-asks-pay-in-strategics`: see `advanced/luxury_asks_pay_in_strategics.rs`.
 mod luxury_asks_pay_in_strategics;
 mod luxury_research;
@@ -12153,6 +12159,7 @@ impl AdvancedAi {
             generals_lead_the_army: false,
             garrison_before_the_surprise: false,
             gold_buys_the_production_tile: false,
+            korea_mines_beside_the_seowon: false,
             // ---- append: l-o ----------------------------------------
             outmatched_war_prices_the_army: false,
             medina_yields_to_the_amenities: false,
