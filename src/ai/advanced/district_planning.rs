@@ -57,7 +57,9 @@ pub(super) const PLAN_BUY_MIN_EDGE: f64 = 2.0;
 /// `districts-price-the-improvement`: how much raw district yield a clean
 /// site may give up against the bulldozing one it replaces — a Farm or Mine
 /// pays about one yield a turn for the rest of the game, and its builder
-/// charge besides.
+/// charge besides. Industrial Zones and Campuses (Seowons) get none: their
+/// adjacency compounds with every building in them (a peaceful paired read
+/// at the Deity seat read production at t100 −4.6 with a flat 1.0).
 pub(super) const RESITE_ADJACENCY_SLACK: f64 = 1.0;
 /// The floor every Gold purchase in `advanced_gold_spending` clears.
 pub(super) const PLAN_BUY_SCORE_FLOOR: f64 = 120.0;
@@ -221,6 +223,17 @@ impl AdvancedAi {
                 continue;
             }
             let here = Self::projected_district_yields(g, district, pos).total();
+            // An Industrial Zone's or a Campus's adjacency is Production or
+            // Science that every building in it multiplies, so they move only
+            // to ground at least as good; the rest may give up
+            // `RESITE_ADJACENCY_SLACK` to keep the Farm.
+            let family = g.district_family(district);
+            let slack =
+                if family == crate::name!("industrial_zone") || family == crate::name!("campus") {
+                    0.0
+                } else {
+                    RESITE_ADJACENCY_SLACK
+                };
             // Undo the placement on the board, then read the clean sites
             // with the foundation gone.
             let restore = |g: &mut Game, improvement, feature, pillaged| {
@@ -246,7 +259,7 @@ impl AdvancedAi {
                         Self::projected_district_yields(g, district, site).total(),
                     )
                 })
-                .filter(|(_, value)| *value >= here - RESITE_ADJACENCY_SLACK)
+                .filter(|(_, value)| *value >= here - slack)
                 .max_by(|left, right| {
                     left.1
                         .total_cmp(&right.1)
