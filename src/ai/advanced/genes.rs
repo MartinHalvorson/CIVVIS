@@ -5311,6 +5311,14 @@ pub const GENES: &[Gene] = &[
     // the seat's pickers rank by district_site_yields, which adds the Coast
     // term. Ranking only. See `advanced/nusantara_reads_the_coast.rs`.
     Gene { tag: "nusantara-reads-the-coast", field: "nusantara_reads_the_coast", kind: Kind::OptIn, enable: AdvancedAi::enable_nusantara_reads_the_coast, disable: AdvancedAi::disable_nusantara_reads_the_coast },
+    // `tribute-buys-the-friendship`: the live bridge gifts Gold to the
+    // strongest neighbour at peace while it reads Unfriendly or Neutral, up
+    // to the opinion a Friendly rival holds, so the friendship ask (sent only
+    // to a Friendly rival, accepted 30 of 50 on Deity 11-04/05) can land. A
+    // favorable deal is worth +1 per 10 Gold to the AI, capped at +20
+    // (Leaders.xml STANDARD_DIPLOMATIC_ONE_SIDED_TRADES). See
+    // `advanced/tribute_buys_the_friendship.rs`.
+    Gene { tag: "tribute-buys-the-friendship", field: "tribute_buys_the_friendship", kind: Kind::OptIn, enable: AdvancedAi::enable_tribute_buys_the_friendship, disable: AdvancedAi::disable_tribute_buys_the_friendship },
     // ---- append: a-b ------------------------------------------------
     // ---- append: c-d ------------------------------------------------
     // ---- append: e-f ------------------------------------------------

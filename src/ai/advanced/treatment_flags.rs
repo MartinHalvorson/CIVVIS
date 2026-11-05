@@ -2266,6 +2266,9 @@ impl AdvancedAi {
         /// Opt-in gene `districts-price-the-improvement`; see
         /// [`Self::districts_price_the_improvement`].
         districts_price_the_improvement => enable_districts_price_the_improvement, disable_districts_price_the_improvement;
+        /// Opt-in gene `tribute-buys-the-friendship`; see
+        /// `advanced/tribute_buys_the_friendship.rs`.
+        tribute_buys_the_friendship => enable_tribute_buys_the_friendship, disable_tribute_buys_the_friendship;
     }
 }
 
