@@ -14774,6 +14774,41 @@ fn captives_of_ours_cross_as_a_count() {
     }
 }
 
+/// A rival's opinion of us crosses reason by reason, without a schema gap:
+/// absent from an older mod, an empty list for a rival with no reasons, and
+/// each row its LOC key and score.
+#[test]
+fn opinion_modifiers_cross_reason_by_reason() {
+    let state = state_from_json(r#"{"turn":40,"rivals":[{}]}"#).unwrap();
+    assert!(state.schema_gaps.is_empty(), "{:?}", state.schema_gaps);
+    assert_eq!(state.rivals[0].opinion_modifiers, None);
+
+    let state = state_from_json(r#"{"turn":40,"rivals":[{"opinion_modifiers":[]}]}"#).unwrap();
+    assert!(state.schema_gaps.is_empty(), "{:?}", state.schema_gaps);
+    assert_eq!(state.rivals[0].opinion_modifiers, Some(Vec::new()));
+
+    let state = state_from_json(
+        r#"{"turn":40,"rivals":[{"opinion_modifiers":[
+            {"text":"LOC_DIPLO_MODIFIER_DENOUNCED","score":-9},
+            {"text":"LOC_DIPLO_MODIFIER_DELEGATION","score":3}]}]}"#,
+    )
+    .unwrap();
+    assert!(state.schema_gaps.is_empty(), "{:?}", state.schema_gaps);
+    assert_eq!(
+        state.rivals[0].opinion_modifiers,
+        Some(vec![
+            StateOpinionModifier {
+                text: "LOC_DIPLO_MODIFIER_DENOUNCED".to_string(),
+                score: -9.0,
+            },
+            StateOpinionModifier {
+                text: "LOC_DIPLO_MODIFIER_DELEGATION".to_string(),
+                score: 3.0,
+            },
+        ])
+    );
+}
+
 // Minimized controls from native civvis-20261006T061051Z turn107.
 // The actual 28 MB history and two component contradictions are separately
 // hashed in this research receipt; these fixtures preserve their relative
