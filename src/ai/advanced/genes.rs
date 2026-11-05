@@ -5107,8 +5107,8 @@ pub const GENES: &[Gene] = &[
     // wartime and declaration-window defender purchases bought Ancient
     // bodies late (46 Heavy Chariots in 33 live Deity games, 34 after turn
     // 100; 095229Z bought 16 from turn 142 to 174 against an Industrial
-    // army). A unit two or more eras behind the world is bought only for a
-    // city with no military unit on its tile. See
+    // army), each into a city with no military unit on its tile. No unit two
+    // or more eras behind the world is bought there. See
     // `advanced/parity_upgrades_before_it_buys.rs`.
     Gene { tag: "parity-upgrades-before-it-buys-2", field: "parity_upgrades_before_it_buys_2", kind: Kind::OptIn, enable: AdvancedAi::enable_parity_upgrades_before_it_buys_2, disable: AdvancedAi::disable_parity_upgrades_before_it_buys_2 },
     // 23 of 35 Settlers captured in the Deity games since 11-04 21Z were

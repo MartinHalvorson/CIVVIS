@@ -8223,7 +8223,7 @@ pub struct AdvancedAi {
     parity_upgrades_before_it_buys: bool,
     /// `parity-upgrades-before-it-buys-2`: version one, and the base
     /// controller's wartime defender purchases skip a unit two or more eras
-    /// behind the world unless the city stands empty. See
+    /// behind the world. See
     /// `advanced/parity_upgrades_before_it_buys.rs`.
     parity_upgrades_before_it_buys_2: bool,
     /// `pillaged-districts-repair-first`: a pillaged district's repair claims its
@@ -29402,7 +29402,7 @@ impl AdvancedAi {
         self.base.spy_training_paused = self.spy_losses_pause_training(g);
         // `parity-upgrades-before-it-buys-2`: the base defender purchases
         // read this. See `advanced/parity_upgrades_before_it_buys.rs`.
-        self.base.obsolete_buys_garrison_only = self.obsolete_buys_garrison_only();
+        self.base.obsolete_military_buys_barred = self.obsolete_military_buys_barred();
         // `plaza-serves-the-scientist`: the Plaza's tier list reads this.
         self.base.plaza_serves_science =
             self.plaza_serves_the_scientist && self.victory_target == Some(VictoryTarget::Science);

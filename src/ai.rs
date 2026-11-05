@@ -3975,10 +3975,10 @@ pub struct BasicAi {
     /// no Spy. False otherwise and on a bare `BasicAi`.
     pub(crate) spy_training_paused: bool,
     /// `parity-upgrades-before-it-buys-2`: set by `AdvancedAi` each turn
-    /// while the gene is on. `buy_gold_military` then buys a unit two or more
-    /// eras behind the world only for a city with no military unit of ours on
-    /// its tile. False otherwise and on a bare `BasicAi`.
-    pub(crate) obsolete_buys_garrison_only: bool,
+    /// while the gene is on. `buy_gold_military` then buys no unit
+    /// [`OBSOLETE_BUY_ERAS_BEHIND`] or more eras behind the world. False
+    /// otherwise and on a bare `BasicAi`.
+    pub(crate) obsolete_military_buys_barred: bool,
     /// `plaza-serves-the-scientist`: set by `AdvancedAi` each turn while the
     /// gene is on and the seat aims at Science; the Government Plaza's tier
     /// buildings are then the Ancestral Hall and the Intelligence Agency
@@ -6117,7 +6117,7 @@ impl BasicAi {
             garrison_before_the_surprise: false,
             garrison_call_cache: None,
             spy_training_paused: false,
-            obsolete_buys_garrison_only: false,
+            obsolete_military_buys_barred: false,
             plaza_serves_science: false,
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
@@ -6733,7 +6733,7 @@ impl BasicAi {
             garrison_before_the_surprise: false,
             garrison_call_cache: None,
             spy_training_paused: false,
-            obsolete_buys_garrison_only: false,
+            obsolete_military_buys_barred: false,
             plaza_serves_science: false,
             launch_pad_resumes_its_foundation: false,
             digs_one_museum: false,
@@ -9909,11 +9909,8 @@ impl BasicAi {
                     {
                         continue;
                     }
-                    // `parity-upgrades-before-it-buys-2`: an obsolete body
-                    // only where the city stands empty.
-                    if self.obsolete_buys_garrison_only
-                        && Self::obsolete_buy_barred(g, pid, *cid, name.as_str())
-                    {
+                    // `parity-upgrades-before-it-buys-2`: no obsolete body.
+                    if self.obsolete_military_buys_barred && Self::obsolete_buy(g, name.as_str()) {
                         continue;
                     }
                     // Current controllers budget the actual purchase quote.
@@ -9967,26 +9964,16 @@ impl BasicAi {
         .is_ok()
     }
 
-    /// `parity-upgrades-before-it-buys-2`: whether `unit` is two or more
-    /// eras behind the world (`advanced/parity_upgrades_before_it_buys.rs`'s
-    /// `obsolete` bar) while `city` already holds a military unit of ours on
-    /// its tile. A city standing empty may still buy the body.
-    pub(crate) fn obsolete_buy_barred(g: &Game, pid: usize, city: u32, unit: &str) -> bool {
-        if g.unit_era(unit) + OBSOLETE_BUY_ERAS_BEHIND > g.world_era {
-            return false;
-        }
-        let Some(pos) = g.cities.get(&city).map(|city| city.pos) else {
-            return false;
-        };
-        g.unit_ids_at(pos).iter().any(|uid| {
-            g.units.get(uid).is_some_and(|garrison| {
-                garrison.owner == pid
-                    && g.rules
-                        .units
-                        .get(garrison.kind.as_str())
-                        .is_some_and(|spec| spec.class == "military")
-            })
-        })
+    /// `parity-upgrades-before-it-buys-2`: whether `unit` is
+    /// [`OBSOLETE_BUY_ERAS_BEHIND`] or more eras behind the world, the
+    /// `obsolete` bar of `advanced/parity_upgrades_before_it_buys.rs`. A
+    /// garrison adds no hit points of its own to a city (the city falls when
+    /// its own are gone and a melee unit enters), so an Ancient body bought
+    /// into a city against an Industrial army is upkeep, not defence: live
+    /// 095229Z bought 16 Heavy Chariots from turn 142 to 174, every one into a
+    /// city with no military unit on its tile.
+    pub(crate) fn obsolete_buy(g: &Game, unit: &str) -> bool {
+        g.unit_era(unit) + OBSOLETE_BUY_ERAS_BEHIND <= g.world_era
     }
 
     fn buy_gold_infrastructure(

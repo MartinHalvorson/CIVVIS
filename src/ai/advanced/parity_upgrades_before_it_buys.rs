@@ -90,9 +90,8 @@ impl AdvancedAi {
 impl AdvancedAi {
     /// `parity-upgrades-before-it-buys-2`: the base controller's wartime and
     /// declaration-window defender purchases (`BasicAi::buy_gold_military`)
-    /// take the same `obsolete` bar, except for a city with no military unit
-    /// of ours on its tile. Set each turn before the base turn runs.
-    pub(super) fn obsolete_buys_garrison_only(&self) -> bool {
+    /// take the same `obsolete` bar. Set each turn before the base turn runs.
+    pub(super) fn obsolete_military_buys_barred(&self) -> bool {
         self.parity_upgrades_before_it_buys_2
     }
 }
