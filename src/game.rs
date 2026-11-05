@@ -1148,6 +1148,9 @@ impl Game {
         if let Some(base) = self.host_research_base_rules.take() {
             self.rules = base;
         }
+        self.host_revealed_research = Arc::new(BTreeSet::new());
+        self.host_research_eligibility = Arc::new(BTreeMap::new());
+        let revealed = observations.keys().copied().collect();
         let mut changes = BTreeMap::new();
         for (node, mut parents) in observations {
             let Some(spec) = self.rules.techs.get(&node) else {
@@ -1169,6 +1172,7 @@ impl Game {
             }
         }
         if changes.is_empty() {
+            self.host_revealed_research = Arc::new(revealed);
             return Ok(());
         }
         fn visit(
@@ -1211,6 +1215,7 @@ impl Game {
         // not the direct lists alone. Keep every descendant's index coherent.
         observed.tech_ancestors = crate::rules::ancestry(&observed.techs);
         self.host_research_base_rules = Some(base);
+        self.host_revealed_research = Arc::new(revealed);
         self.rules = Arc::new(observed);
         Ok(())
     }
@@ -7236,6 +7241,14 @@ pub struct Game {
     /// Saves keep that valid generated layout plus the observed differences.
     #[serde(skip)]
     pub(crate) host_research_base_rules: Option<Arc<Rules>>,
+    /// Nodes whose complete prerequisite list was revealed in this host frame.
+    /// Transient observation metadata; refreshed after a native save is loaded.
+    #[serde(skip)]
+    pub(crate) host_revealed_research: Arc<BTreeSet<Name>>,
+    /// Instantaneous native CanResearch readings, by mirrored player and node.
+    /// Hypothetical prerequisite searches continue to use the rules graph.
+    #[serde(skip)]
+    pub(crate) host_research_eligibility: Arc<BTreeMap<usize, BTreeMap<Name, bool>>>,
     /// Native strategic-resource prices for units and formations in each city,
     /// from `BuildQueue:GetUnitResourceCost(index, formation)`. These already
     /// include the host's modifiers; absent prices use the ordinary rules.
@@ -8020,6 +8033,8 @@ impl From<GameSer> for Game {
             host_saved_work: Arc::new(BTreeMap::new()),
             host_research_quotes: Arc::new(BTreeMap::new()),
             host_research_base_rules: None,
+            host_revealed_research: Arc::new(BTreeSet::new()),
+            host_research_eligibility: Arc::new(BTreeMap::new()),
             host_unit_resource_prices: Arc::new(BTreeMap::new()),
             host_purchasable: Arc::new(BTreeMap::new()),
             host_district_plots: Arc::new(BTreeMap::new()),
@@ -8791,6 +8806,8 @@ impl Game {
             host_saved_work: Arc::new(BTreeMap::new()),
             host_research_quotes: Arc::new(BTreeMap::new()),
             host_research_base_rules: None,
+            host_revealed_research: Arc::new(BTreeSet::new()),
+            host_research_eligibility: Arc::new(BTreeMap::new()),
             host_unit_resource_prices: Arc::new(BTreeMap::new()),
             host_purchasable: Arc::new(BTreeMap::new()),
             host_district_plots: Arc::new(BTreeMap::new()),
