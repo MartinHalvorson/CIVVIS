@@ -57,8 +57,10 @@ impl AdvancedAi {
     /// captive (civvis-20261105T154934Z turn 158), which the 200-Gold cap of
     /// version 1 never meets: Gold over 600 stood on 1% of the denial phase's
     /// turns, while the seat held 117-240 Favor all through that game. The
-    /// bridge offers the bank over a reserve, capped, unless it is held for
-    /// Congress (`favor_banked_for_votes`) or the seat races Diplomacy.
+    /// bridge offers the bank over a reserve (30, or 120 while the bank is held
+    /// for Congress, which on the live Deity lane is every turn past 100),
+    /// capped at 150, and none while a rival stands at 15 or more Diplomatic
+    /// Victory points or the seat races Diplomacy.
     pub fn captives_come_home_pays_favor(&self) -> bool {
         self.captives_come_home_2
     }

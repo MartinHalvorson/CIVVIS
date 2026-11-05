@@ -2047,6 +2047,12 @@ const RANSOM_FAVOR_RESERVE: i64 = 30;
 const RANSOM_FAVOR_CAP: i64 = 150;
 /// Below this no Favor is offered (the ask falls back to Gold alone).
 const RANSOM_FAVOR_MIN: i64 = 20;
+/// While the bank is held for Congress (`favor_banked_for_votes`: a rival at
+/// [`FAVOR_HOLD_DVP`] or more, which on the live Deity lane is every turn
+/// past 100), this much Favor stays for the votes.
+const RANSOM_FAVOR_VOTE_RESERVE: i64 = 120;
+/// A rival this near a Diplomatic Victory keeps the whole bank for Congress.
+const RANSOM_FAVOR_DVP_CEILING: i64 = 15;
 
 /// `captives-come-home`: ask one captor at peace with us for one of our
 /// captured Spies (`buy CAPTIVE`), Gold up to the ceiling. The captor is the
@@ -5000,13 +5006,24 @@ fn decide(
             .count();
         let capacity = state.spy_capacity.unwrap_or(0).max(0) as usize;
         if ai.captives_come_home_wanted(&mirror_state.game, 0, held, capacity) {
-            // `captives-come-home-2`: Favor beside the Gold, unless the bank is
-            // held for Congress against a diplomatic racer or the seat races
-            // Diplomacy itself.
+            // `captives-come-home-2`: Favor beside the Gold. A bank held for
+            // Congress keeps a vote reserve; a rival near a Diplomatic Victory,
+            // or a seat racing Diplomacy itself, keeps all of it.
+            let top_dvp = state
+                .rivals
+                .iter()
+                .map(|rival| rival.dvp.unwrap_or(0))
+                .max()
+                .unwrap_or(0);
+            let reserve = if favor_banked_for_votes(state) {
+                RANSOM_FAVOR_VOTE_RESERVE
+            } else {
+                RANSOM_FAVOR_RESERVE
+            };
             let favor = (ai.captives_come_home_pays_favor()
-                && !favor_banked_for_votes(state)
+                && top_dvp < RANSOM_FAVOR_DVP_CEILING
                 && !plan_races_diplomacy(plan_facts))
-            .then(|| state.favor.unwrap_or(0.0).floor() as i64 - RANSOM_FAVOR_RESERVE)
+            .then(|| state.favor.unwrap_or(0.0).floor() as i64 - reserve)
             .filter(|points| *points >= RANSOM_FAVOR_MIN)
             .map(|points| points.min(RANSOM_FAVOR_CAP) as u32);
             match append_captive_ransom_order(state, &mut orders, favor) {
