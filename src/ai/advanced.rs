@@ -16960,9 +16960,9 @@ impl AdvancedAi {
 
     /// The extra beakers a Campus plot at or above the multiplier's adjacency
     /// threshold will earn this city. See `campus_adjacency_threshold`.
-    fn campus_threshold_bonus(&self, g: &Game, family: Name, pos: Pos) -> f64 {
+    fn campus_threshold_bonus(&self, g: &Game, district: Name, pos: Pos) -> f64 {
         if !self.campus_adjacency_threshold_on()
-            || family != crate::name!("campus")
+            || g.district_family(district) != crate::name!("campus")
             || self.campus_multiplier_half <= 0.0
         {
             return 0.0;
@@ -16972,7 +16972,9 @@ impl AdvancedAi {
         // threshold is tested BEFORE they double anything. Reading the doubled
         // number would credit a plot the host will not pay for.
         let mut raw = Yields::default();
-        for source in g.district_adjacency_sources(crate::name!("campus"), pos) {
+        // The concrete district matters: a Seowon's flat adjacency and crowding
+        // penalty differ from the Campus terrain rules it replaces.
+        for source in g.district_adjacency_sources(district, pos) {
             if source.source != "adjacency_bonus" {
                 raw.add(source.yields);
             }
@@ -27758,7 +27760,7 @@ impl AdvancedAi {
                 // the linear yield above cannot see a threshold.
                 let adjacency_threshold = self.yield_value(
                     Yields {
-                        science: self.campus_threshold_bonus(g, family, *pos),
+                        science: self.campus_threshold_bonus(g, *district, *pos),
                         ..Yields::default()
                     },
                     pricing_lane,
