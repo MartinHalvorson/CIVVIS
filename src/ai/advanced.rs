@@ -9505,6 +9505,10 @@ pub struct AdvancedAi {
     /// by default.
     science_heads_keep_their_queue: bool,
     // ---- append: t-z ------------------------------------------------
+    /// `world-religion-condemns-the-faith`: our soldiers condemn a faith
+    /// World Religion's option B names, at peace, and the agent's ballot asks
+    /// for it. See `advanced/world_religion_condemns.rs`. Off by default.
+    world_religion_condemns_the_faith: bool,
     /// `threatened-war-holds-the-claims`: while a war with a major threatens
     /// a home city, the economy's idle-queue claims stand aside. See
     /// `advanced/threatened_war_holds_the_claims.rs`. Off by default.
@@ -11046,6 +11050,9 @@ mod worked_production;
 /// `builders-cover-the-worked-backlog`: the backlog's Builder claims an idle
 /// queue ahead of the routine claims. See `advanced/worked_backlog_claim.rs`.
 mod worked_backlog_claim;
+/// `world-religion-condemns-the-faith`: see
+/// `advanced/world_religion_condemns.rs`.
+mod world_religion_condemns;
 
 /// Masonry, the capital's Walls and a bought defender before a stronger
 /// neighbour at peace can surprise the original capital. Opt-in gene
@@ -12628,6 +12635,7 @@ impl AdvancedAi {
             spies_steal_the_lead: false,
             science_heads_keep_their_queue: false,
             // ---- append: t-z ----------------------------------------
+            world_religion_condemns_the_faith: false,
             threatened_war_holds_the_claims: false,
             war_defense_spends_the_runway: false,
             threatened_lane_lends_the_army: false,

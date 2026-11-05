@@ -5971,6 +5971,16 @@ fn decide(
             pos: None,
         });
     }
+    // `world-religion-condemns-the-faith`: the same lease for the World
+    // Religion ballot.
+    if ai.world_religion_condemns_the_faith_enabled() {
+        orders.push(Order {
+            kind: "combat_policy",
+            subject: None,
+            verb: Some("WORLD_RELIGION_CONDEMNS".to_string()),
+            pos: None,
+        });
+    }
     if own_column_before.is_some() {
         let (sent, unsent) = split_planned_movers(
             &orders,
