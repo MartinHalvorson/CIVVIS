@@ -5141,6 +5141,9 @@ pub const GENES: &[Gene] = &[
     // `builders-cover-the-worked-backlog`. See
     // `ai/prod_tiles_call_the_builders.rs`.
     Gene { tag: "prod-tiles-call-the-builders", field: "prod_tiles_call_the_builders", kind: Kind::OptIn, enable: AdvancedAi::enable_prod_tiles_call_the_builders, disable: AdvancedAi::disable_prod_tiles_call_the_builders },
+    // Native 002152 legacy t133: five Universities, no Chemistry, while the
+    // tank path held research through t142. Bounded foundation experiment.
+    Gene { tag: "science-foundation-before-backlog", field: "science_foundation_before_backlog", kind: Kind::OptIn, enable: AdvancedAi::enable_science_foundation_before_backlog, disable: AdvancedAi::disable_science_foundation_before_backlog },
     // On the Science seat's losing-war turns, 309 of 664 queue decisions
     // (47%) went to the economy's idle-queue claims: Traders, repairs, Campus
     // buildings, Builders, Granaries, Industrial Zones and Theaters. They run
