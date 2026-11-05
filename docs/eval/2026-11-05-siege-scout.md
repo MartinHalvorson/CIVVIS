@@ -40,7 +40,32 @@ with no major war; the inactive treatment and healthy-city cases; restoring a
 confirmed wall after a later Scout writer; and recon formations versus actual
 local defenders. Three existing defense-repair tests remain in the module.
 
-Exact-source CI, Mac native tests/build/smokes, and captured native proposal
-qualification are pending. Native construction timing, survival and Science
-strength remain unmeasured for this fix. Fresh captured-input queries cannot
-reconstruct the original private planner or prove a counterfactual saved city.
+The candidate source `23ae5f4e7d87a088370d3c871773222994a9a9f0` passed
+CI42082854173:7067 Rust tests passed,53 skipped; separate doctests0 passed/4
+ignored, and controller isolation79+21+24 passed. The6 defense-repair,
+12 culture-defense and29 adopted-faith tests all passed.
+
+Mac native run42082951028 passed the same47 focused tests, built both native
+binaries and passed both smokes with Rust1.97.1. All3992 source-file hashes
+matched the clean pinned checkout before querying. Candidate orders SHA256:
+`e7d799784d851b1364fb4d9546f299abc30816e503bb0d1bac81ae5a9c935f69`.
+
+Two candidate cold queries on the original31/0 input both emitted legal Walls,
+with17 identical actual reads each and identical full replies. The two original
+source queries retained the Scout without a Yangsan production change, also
+with17 identical reads each and repeated full replies. Actual genomes are
+identical across these queries; normalized CLI vectors are equal except binary
+and per-query paths. Different source versions remain a limitation: these are
+not an isolated-source strength contrast or original private-planner replay.
+
+The independently verified portable raw archive is
+`2026-11-05-siege-scout.candidate.native.tar.xz` (245452 bytes), SHA256
+`14abf3024fa9c981268d8cf9cfcab89d678fd79df13bfe3c9ef217226ece9b64`.
+It includes the original18 actual reads, all68 proposal reads, full replies,
+genome/command logs, source/build receipt and standalone verifier. The extracted
+archive verifier passed. Executable bytes are not packaged; receipts identify
+the downloaded artifact. Checksums are integrity evidence, not signatures.
+
+Native construction timing, survival and Science strength remain unmeasured
+for this fix. Fresh captured-input queries cannot reconstruct the original
+private planner or prove a counterfactual saved city.
