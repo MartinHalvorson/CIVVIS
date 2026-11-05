@@ -81,3 +81,5 @@ After the full local suite passed and the final head was published, GitHub repor
 
 
 A further GitHub-reported conflict arose from the appended Spy gene while those focused checks ran. Main `1bdcff2b58bf5202e751600f182534c15df220f0` is integrated to resolve that additive registry conflict. The foundation helper and its test file are byte-identical to the previous checked source, and incoming registry order is preserved. The earlier full-suite and focused results retain their stated revisions; the final merged head requires its own optimized CI checks.
+
+All eight GitHub checks passed on `f09ee1f044b4c16e83f54347333aaec58a7eb265`, including cargo-test, paired-cost and rust-quality. Before merge, another actual additive registry conflict required integrating main `700a7d8cba9416694b8c686999413c9e9e1975bf` (holdable-land-keeps-settling). Both rows are retained in incoming order. The foundation helper and tests remain byte-identical; this repair receives a cached library type-check and metadata/append-point checks locally, followed by fresh required CI on its published head. Earlier native and full-suite results retain their explicit revision scopes.
